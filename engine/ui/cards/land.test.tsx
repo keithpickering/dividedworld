@@ -8,7 +8,7 @@ import { economyOf, landsOn, quadrantFree, type CardRules } from '../../rules/ca
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import type { Act } from '../data/api.ts';
 import { livePlays, stackPlays } from './plays.ts';
-import { effectsOf, landing, landingOn, lengthOf, targetOf, waysOn } from './land.ts';
+import { effectsOf, springWords, landing, landingOn, lengthOf, targetOf, waysOn } from './land.ts';
 import type { CardPlay } from './types.ts';
 
 const rules = (key: string, stack?: number): Pick<CardRules, 'key' | 'stack' | 'canApply'> => {
@@ -20,6 +20,21 @@ const post = (body: unknown, kind: Act['kind'] = 'post'): Act => ({
   payload: { body }, currentPayload: { body }, editedAt: null, shownEditedAt: null,
 });
 const play = (card: string, n: number): CardPlay => ({ id: `play-${card}-${n}`, card, layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T21:16:00Z', post: 'p1' });
+
+describe('what a set card says it does', () => {
+  const trap = (outcome: object, match?: object) => ({ play: 'set' as const, rarity: 'common' as const, trap: { trigger: { on: 'cast' as const }, ...(match ? { match } : {}), outcome } }) as never;
+  test('a ride says it pays on each vote, and says "of the kind you name" only where it names one', () => {
+    expect(springWords(trap({ kind: 'ride', share: 0.25, every: true }, { upTo: 'common' }))).toBe('Waits for a card up to common to be cast on this post, lets it land, and pays you a quarter of a vote for each vote it draws.');
+    expect(springWords(trap({ kind: 'ride', share: 1 }))).toBe('Waits for the card it names to be cast on this post, lets it land, and pays you a vote for each vote it draws of the kind you name.');
+  });
+  test('a refund says it lets the cast land and gives the card back to its caster', () => {
+    expect(springWords({ ...(trap({ kind: 'refund' }, { flavors: ['sweet'], upTo: 'uncommon' }) as object), rarity: 'rare' } as never)).toBe('Waits for a Sweet card, up to uncommon, to be cast on this post, lets it land, and gives the card back to its caster.');
+    expect(springWords(trap({ kind: 'refund' }))).toBe('Waits for the card it names to be cast on this post, lets it land, and gives the card back to its caster.');
+  });
+  test('a catching match is unchanged', () => {
+    expect(springWords({ play: 'set', rarity: 'common', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' } } } as never)).toBe('Waits for a card up to common to be cast on this post, and takes it.');
+  });
+});
 
 describe('which posts a card lands on', () => {
   test('a post with room for it, and not an Act that is no post', () => {
@@ -108,6 +123,15 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   test('a cast is not offered where a live ward turns it away, and is where the ward has ended', () => {
     expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { cards })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
     expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
+  });
+
+  test('a cast on a post under a live uncommon ward is offered with a pierce up to uncommon, and not without it', () => {
+    const live = [ward('2999-01-01T00:00:00Z')];
+    const ctx = { cards, own: false, now: Date.now() };
+    expect(waysOn(blot, post('hi'), live, ctx).cast).toBe(false);
+    expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'common' }).cast).toBe(false);
+    expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'uncommon' }).cast).toBe(true);
+    expect(landing(blot, post('hi'), live, { cards, pierce: 'uncommon' }).ok).toBe(true);
   });
 
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {

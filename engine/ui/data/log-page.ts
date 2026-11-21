@@ -31,7 +31,7 @@
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
 import { lineKey } from '../../rules/settle.ts';
-import type { CardEnded, CardEvent, CaughtPlay, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
+import type { LogBallot, LogPollClose, CardEnded, CardEvent, CaughtPlay, CrowdPaid, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -62,6 +62,8 @@ export interface LogRead {
   readonly ledger: readonly LedgerRow[];
   readonly shares: readonly ShareRow[];
   readonly wallet: readonly WalletEvent[];
+  /** The caller's crowd rows (`my_crowd_paid`) for the settlements the wallet rows read name, with their windows; a backend or an older payload that has none leaves it out. Not paged by time: it follows the wallet rows. */
+  readonly crowd?: readonly CrowdPaid[];
   readonly cards: readonly CardEvent[];
   readonly packs: readonly PackEvent[];
   readonly playsOnMine: readonly PlayOnMine[];
@@ -69,6 +71,9 @@ export interface LogRead {
   /** The draws of the caller's characters and the washes that cut them (`my_draws`), and the draws and washes on their own posts' surfaces (`my_walls_drawn_on`); a backend or an older payload that has none leaves them out. */
   readonly draws?: readonly SurfaceLogRow[];
   readonly wallsDrawn?: readonly SurfaceLogRow[];
+  /** The caller's own ballots (`my_ballots`) and the admin closes of their polls (`my_poll_closes`); a backend or an older payload that has none leaves them out. */
+  readonly ballots?: readonly LogBallot[];
+  readonly pollCloses?: readonly LogPollClose[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
   readonly caught: readonly CaughtPlay[];
@@ -107,6 +112,8 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.writes, () => read.writes[read.writes.length - 1]!.at),
     ...reached(read.draws ?? [], () => read.draws![read.draws!.length - 1]!.at),
     ...reached(read.wallsDrawn ?? [], () => read.wallsDrawn![read.wallsDrawn!.length - 1]!.at),
+    ...reached(read.ballots ?? [], () => read.ballots![read.ballots!.length - 1]!.at),
+    ...reached(read.pollCloses ?? [], () => read.pollCloses![read.pollCloses!.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
@@ -137,6 +144,13 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     const line = settlements.get(share.settlement)?.lines.get(lineKey(share.character, share.reason, share.card));
     line?.push({ act: share.act, quadrant: share.quadrant, amount: share.amount });
   }
+  /* Crowd pay follows the wallet rows kept, as the shares follow the ledger's: the rows of a settlement whose crowd event the page holds. A settlement whose only line of the player's is crowd pay has no ledger row,
+     so it is a settlement here with no lines, where the ledger would have held it (it ended after the page's cut); a settlement the ledger does hold is never replaced. */
+  const crowdKept = new Set(read.wallet.filter((e) => e.kind === 'crowd' && e.settlement !== null && keep(e.at)).map((e) => e.settlement));
+  const crowd = (read.crowd ?? []).filter((c) => crowdKept.has(c.settlement));
+  for (const c of crowd) {
+    if (!settlements.has(c.settlement) && keep(c.endsAt)) settlements.set(c.settlement, { row: { settlement: c.settlement, startsAt: c.startsAt, endsAt: c.endsAt, sharesKept: true, character: '', reason: '', amount: 0 }, lines: new Map(), order: [] });
+  }
   const byShare = (a: LogShare, b: LogShare) => Math.abs(b.amount) - Math.abs(a.amount) || (a.act < b.act ? -1 : a.act > b.act ? 1 : 0) || String(a.quadrant).localeCompare(String(b.quadrant));
   const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
   const cardOf = (l: LedgerRow) => (typeof l.params?.card === 'string' ? l.params.card : '');
@@ -150,12 +164,15 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
   return {
     settlements: out,
     wallet: read.wallet.filter((e) => keep(e.at)),
+    ...(read.crowd === undefined ? {} : { crowd }),
     cards: read.cards.filter((e) => keep(e.at)),
     packs: read.packs.filter((e) => keep(e.at)),
     playsOnMine: read.playsOnMine.filter((e) => keep(e.at)),
     writes: read.writes.filter((e) => keep(e.at)),
     ...(read.draws === undefined ? {} : { draws: read.draws.filter((e) => keep(e.at)) }),
     ...(read.wallsDrawn === undefined ? {} : { wallsDrawn: read.wallsDrawn.filter((e) => keep(e.at)) }),
+    ...(read.ballots === undefined ? {} : { ballots: read.ballots.filter((e) => keep(e.at)) }),
+    ...(read.pollCloses === undefined ? {} : { pollCloses: read.pollCloses.filter((e) => keep(e.at)) }),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
     caught: read.caught.filter((e) => keep(e.at)),

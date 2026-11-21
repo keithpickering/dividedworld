@@ -1,6 +1,7 @@
 /**
- * "↳ Spun into: ..." under an Act that threads were spun from: the first few, then "and N more",
- * a button that reads that Act's whole list (up to `SPUN_FROM_MAX`) when pressed.
+ * "↳ Spun into: ..." in the foot of an Act that threads were spun from, under its action buttons: the first few, then "and N more",
+ * a button that reads that Act's whole list (up to `SPUN_FROM_MAX`) when pressed. It is out of the post's content area, so no effect
+ * drawn on the post covers it or is sized around it.
  */
 import { useState } from 'react';
 import { useKayfa } from '../context.tsx';
@@ -22,7 +23,7 @@ export function SpunInto({ act }: { readonly act: Id }) {
   };
   const rest = `${spun.more}${spun.atLeast ? ' or more' : ''}`;
   return (
-    <p className="kb-spun kb-small" data-kb-over-ink="">
+    <p className="kb-spun">
       ↳ Spun into:{' '}
       {threads.map((t, i) => (
         <span key={t.id}>

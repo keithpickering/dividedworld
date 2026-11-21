@@ -18,10 +18,13 @@ export function mergeLogs(newer: Log, older: Log): Log {
   return {
     settlements: [...newer.settlements, ...older.settlements.filter((s) => !have.has(s.id))],
     wallet: [...newer.wallet, ...older.wallet],
+    ...(newer.crowd === undefined && older.crowd === undefined ? {} : { crowd: [...(newer.crowd ?? []), ...(older.crowd ?? [])] }),
     cards: [...newer.cards, ...older.cards],
     packs: [...newer.packs, ...older.packs],
     playsOnMine: [...newer.playsOnMine, ...older.playsOnMine],
     writes: [...newer.writes, ...older.writes],
+    ...(newer.ballots === undefined && older.ballots === undefined ? {} : { ballots: [...(newer.ballots ?? []), ...(older.ballots ?? [])] }),
+    ...(newer.pollCloses === undefined && older.pollCloses === undefined ? {} : { pollCloses: [...(newer.pollCloses ?? []), ...(older.pollCloses ?? [])] }),
     saves: [...newer.saves, ...older.saves],
     setEnds: [...newer.setEnds, ...older.setEnds],
     caught: [...newer.caught, ...older.caught],

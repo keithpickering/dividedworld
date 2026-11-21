@@ -57,21 +57,23 @@ test('a day on the board settles into wallets and standings, once', async () => 
 
   const heel = Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`));
   const lurk = Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`));
-  assert.equal(heel, 20, 'two whole votes of heat on the Heel\'s post');
-  assert.equal(lurk, 0, 'the Lurker reacted early, but one other player is no crowd: no call is paid yet');
+  assert.equal(heel, 40, 'two whole votes of heat on the Heel\'s post, each paying two votes\' worth (heel.heatVotes)');
+  assert.equal(lurk, 2, 'the Lurker reacted early, but one other player is no crowd: no call is paid yet, and the one Act reacted to pays crowd pay (0384) of 0.02');
+  assert.equal(sql(`select string_agg(kind || ':' || change, ',') from wallet_events where account = '${ids['e2e-lurk']}'`), 'crowd:2', 'the Lurker\'s wallet holds the crowd pay alone');
+  assert.equal(sql(`select count(*) from ledger where account = '${ids['e2e-lurk']}'`), '0', 'crowd pay is no ledger line');
   // In the season the window settled into: a debut also wrote a row at 0 in the season the standings read (0030's roster).
-  assert.equal(Number(sql(`select amount from standings where character = '${characters.Pipewrench}' and season = (select season from settlements order by ends_at desc limit 1)`)), 20);
+  assert.equal(Number(sql(`select amount from standings where character = '${characters.Pipewrench}' and season = (select season from settlements order by ends_at desc limit 1)`)), 40);
   assert.equal(sql(`select string_agg(reason, ',' order by reason) from ledger where character = '${characters.Pipewrench}'`), 'heel.drewHeat');
   // The heat is shared on the post it was drawn by, and the Heel reads the share through their own view.
   const shares = JSON.parse(sql(`begin; do $$ begin perform tests.become('${ids['e2e-heel']}'); end $$;
     select coalesce(jsonb_agg(jsonb_build_object('character', character, 'reason', reason, 'act', act, 'quadrant', quadrant, 'amount', amount)), '[]') from my_ledger_shares; rollback;`));
-  assert.deepEqual(shares, [{ character: characters.Pipewrench, reason: 'heel.drewHeat', act: post, quadrant: 'excitedNegative', amount: 20 }], 'the heat, on the post');
+  assert.deepEqual(shares, [{ character: characters.Pipewrench, reason: 'heel.drewHeat', act: post, quadrant: 'excitedNegative', amount: 40 }], 'the heat, on the post');
   // Every ledger line the settlement wrote with shares is what its shares add up to.
   assert.equal(sql(`select count(*) from ledger l join (select ledger, sum(amount) as total from ledger_shares group by ledger) s on s.ledger = l.id where s.total <> l.amount`), '0', 'each line\'s shares add up to it');
 
   const again = await runSettlement(db, instance, until);
   assert.equal(again.status, 'nothing to settle');
-  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 20, 'a second run changes nothing');
+  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 40, 'a second run changes nothing');
 
   // The next day two more players bring the post its crowd of three others: the Lurker's call is
   // paid in that window, by where the post leans then without the Lurker's own vote.
@@ -85,9 +87,9 @@ test('a day on the board settles into wallets and standings, once', async () => 
     ${crowd.map((c, i) => `('${post}', '${c.character}', '${c.account}', 'tomato', 1, '${at(26 + i)}')`).join(',\n    ')}`);
   const second = await runSettlement(db, instance, at(48));
   assert.equal(second.status, 'applied', JSON.stringify(second));
-  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`)), 10, 'the third other player arrived: the call is paid');
+  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-lurk']}'`)), 12, 'the third other player arrived: the call is paid (10), beside the crowd pay of the window before (2), which the Act does not pay again');
   assert.equal(sql(`select string_agg(reason, ',') from ledger where character = '${characters.Shadow}'`), 'lurker.calledIt');
-  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 40, 'and the Heel two more votes of heat');
+  assert.equal(Number(sql(`select balance from wallets where account = '${ids['e2e-heel']}'`)), 80, 'and the Heel two more votes of heat, at two votes\' worth each');
 });
 
 test('a spin from The System\'s reveal settles like any other, and the settlement goes on', async () => {
@@ -138,7 +140,7 @@ test('a player reacting on two days is paid one vote in all, through the real mi
   sql(`insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values
     ('${post}', '${characters['Twice Fan']}', '${ids['e2e-twice-fan']}', 'vomiting', 2, '${at(26)}')`);
   assert.equal((await runSettlement(db, instance, at(48))).status, 'applied');
-  assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Twice Heel']}' and reason = 'heel.drewHeat'`)), 10, 'one vote of heat over two days, not one and a half');
+  assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Twice Heel']}' and reason = 'heel.drewHeat'`)), 20, 'one vote of heat over two days, not one and a half: two votes\' worth for the one vote');
 });
 
 test('two missed days settle as two windows through the real migrations, the halving over each day alone', async () => {
@@ -166,7 +168,7 @@ test('two missed days settle as two windows through the real migrations, the hal
   }
   const out = await runSettlement(db, instance, at(48));
   assert.equal(out.status === 'applied' && out.windows.length, 2);
-  assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 20, 'a whole vote each day, never halved across the two');
+  assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 40, 'a whole vote each day, never halved across the two');
 });
 
 test('the settlement of a season\'s last window announces its debuts and ends in results, and sends both live', async () => {

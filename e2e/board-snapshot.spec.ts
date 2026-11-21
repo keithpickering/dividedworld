@@ -80,6 +80,16 @@ test('the build side searches buildRole, the board side role: right passes, wron
   expect((await snapshotPage(page, m('link'), 'board')).shots[0]!.found).toBe(false);
 });
 
+test('a landmark is found as text on the side whose role is text, and as a role on the other', async ({ page }) => {
+  await page.setContent(`<p>Hurt by bored reactions</p><fieldset><legend>Class</legend>cards</fieldset>`);
+  const m = manifest(lm('row', { role: 'text', name: 'Hurt by bored reactions', buildRole: 'group', buildName: 'Class' }));
+  expect((await snapshotPage(page, m, 'board')).shots[0]!.box!.height).toBeLessThan(30);
+  /* The build side asks for the group named Class, not for the words "Class" (the legend), whose box is the legend's alone. */
+  const build = (await snapshotPage(page, m, 'build')).shots[0]!;
+  expect(build.found).toBe(true);
+  expect(build.box!.height).toBeGreaterThan(30);
+});
+
 test('a press with nth -1 presses the last match, and a press with fill types its text', async ({ page }) => {
   await page.setContent(`<button onclick="this.dataset.hit='1'">Go</button><button onclick="this.dataset.hit='1'">Go</button><button onclick="this.dataset.hit='1'">Go</button>
     <input aria-label="Your message">`);

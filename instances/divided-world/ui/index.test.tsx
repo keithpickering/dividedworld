@@ -19,7 +19,7 @@ import { SIZES } from '../../../engine/ui/cards/template.ts';
 import { logRows } from '../../../engine/ui/log/lines.ts';
 import type { Act, Log } from '../../../engine/ui/data/api.ts';
 import type { ClassInput } from '../../../engine/rules/types.ts';
-import { instanceUi, REASON_KEYS, wordsRead } from './index.ts';
+import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
@@ -30,7 +30,11 @@ import { feelinGlam } from '../cards/feelin-glam.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
+import { popSteal } from '../cards/pop-steal.ts';
 import { ropeBreak } from '../cards/rope-break.ts';
+import { whoopeeCushion } from '../cards/whoopee-cushion.ts';
+import { payItForward } from '../cards/pay-it-forward.ts';
+import { kickMe } from '../cards/kick-me.ts';
 import { STEEL_CHAIR_LASTS } from '../cards/steel-chair.ts';
 import { CUES, laughTrack } from '../cards/laugh-track.ts';
 import { WORDS as THIS_WORDS, thisCard } from '../cards/this.ts';
@@ -347,10 +351,12 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       ? `${instanceUi.classLooks[key]!.description(economy, instance.settings.settlementLength)} ${instanceUi.classLooks[key]!.hurtsBy(economy, instance.settings.settlementLength)}`
       : instanceUi.reasonWords(key, economy));
   const economy = instance.settings.economy;
+  /* The settings beside the economy a reason states, each shifted by 17 too, so a default the economy shares (three days, three voices) is never read for the other's. */
+  const settingsShifted = (key: string) => Object.fromEntries((settingsRead[key] ?? []).map((r) => [r, instance.settings[r] + 17]));
   test('each class\'s words say the numbers in force: shifted by 17, the shifted number is said and the default is not', () => {
     expect(Object.keys(wordsRead).length).toBeGreaterThan(0);
     for (const [key, reads] of Object.entries(wordsRead)) {
-      const shifted = { ...economy, ...Object.fromEntries(reads.map((r) => [r, economy[r]! + 17])) };
+      const shifted = { ...economy, ...Object.fromEntries(reads.map((r) => [r, economy[r]! + 17])), ...settingsShifted(key) };
       const text = said(key, shifted);
       for (const r of reads) {
         expect(text, `${key} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(economy[r]! + 17)}\\b`, 'u'));
@@ -361,14 +367,65 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   test('the numbers a reason\'s earnings carry are the ones its words declare, so a settled line is said with its own', () => {
     const lurker = instance.classes.find((c) => c.key === 'lurker')!;
     const earned = lurker.earn({
-      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [],
+      character: 'lu', from: 0, to: 1, posts: [1, 2, 3, 4, 5].map((n) => ({ act: `p${n}`, at: n })), received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], debates: [],
       threadsSpun: [{ act: 's1', thread: 't', at: 1, fromOthers: true, repliersBefore: 0, repliersNow: economy['lurker.spunThreadRepliers']! }],
     }, instance.settings);
-    const reasons = Object.keys(wordsRead).filter((k) => k.includes('.'));
+    const tweener = instance.classes.find((c) => c.key === 'tweener')!;
+    const lit = tweener.earn({
+      character: 'tw', from: 0, to: 10, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], threadsSpun: [],
+      debates: [{ act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true }],
+    }, instance.settings);
+    const reasons = [...new Set([...Object.keys(wordsRead), ...Object.keys(settingsRead)])].filter((k) => k.includes('.'));
     for (const reason of reasons) {
-      const carried = earned.filter((e) => e.reason === reason);
+      const carried = [...earned, ...lit].filter((e) => e.reason === reason);
       expect(carried.length, `${reason} is earned here`).toBeGreaterThan(0);
-      for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...wordsRead[reason]!].sort());
+      for (const e of carried) expect(Object.keys(e.params ?? {}).sort(), reason).toEqual([...(wordsRead[reason] ?? []), ...(settingsRead[reason] ?? [])].sort());
+    }
+  });
+  test('the Heel\'s multiple reads true at every value the setting allows', () => {
+    const at = (v: number) => said('heel', { ...economy, 'heel.heatVotes': v });
+    expect(at(0)).toContain('which pay nothing');
+    expect(at(0)).not.toMatch(/times over|zero|each paid/);
+    expect(at(1)).toContain('each paid as one vote');
+    expect(at(1)).not.toMatch(/times over|one times/);
+    expect(at(2)).toContain('each paid double');
+    expect(at(3)).toContain('each paid triple');
+    expect(at(4)).toContain('each paid four times over');
+    expect(at(25)).toContain('each paid 25 times over');
+    expect(at(1.5)).toContain('each paid one and a half times over');
+    expect(at(2.5)).toContain('each paid two and a half times over');
+    expect(at(1.25)).toContain('each paid 1.25 times over');
+    expect(at(1.5)).not.toMatch(/\d/);
+    expect(at(0.5)).toContain('each paid as half a vote');
+    expect(at(0.5)).not.toMatch(/zero/);
+  });
+  test('the double the Heel and the Jabroni earn is said, and the Lurker\'s miss and the reveal perk are worded', () => {
+    expect(wordsRead['heel']).toContain('heel.heatVotes');
+    expect(wordsRead['jabroni']).toContain('jabroni.groanVotes');
+    expect(said('heel', economy)).toContain('double');
+    expect(said('jabroni', economy)).toContain('double');
+    expect(said('lurker', economy)).toContain('Hurt by early calls that go the other way');
+    expect(instanceUi.reasonWords('lurker.misread', economy)).toBe('Misread it: among the first to react to a post that then drew a crowd another way');
+    expect(instanceUi.reasonWords('reveal.perk', { share: 0.2 })).toBe('Playing it openly: a fifth more on what reactions earned while the character\'s reveal was current');
+  });
+  test('the Tweener\'s catalyst lines say the numbers they were settled under, and its description says it earns from a debate', () => {
+    expect(instanceUi.reasonWords('tweener.litTheFuse', { 'tweener.catalystVoices': 4, 'tweener.catalystReturned': 3, debateDays: 5 })).toBe(
+      'Lit the fuse: within five days of the character\'s post, four or more other players were arguing under it, three of them more than once, in quotes of it and threads spun from it, and the character\'s player had not posted in it');
+    expect(instanceUi.reasonWords('tweener.litTheFuse', economy)).toMatch(/^Lit the fuse: within three days .* three or more other players .* two of them more than once/u);
+    expect(instanceUi.reasonWords('tweener.outvoted', {})).toBe(
+      'Outvoted: the players arguing under the character\'s post cancel its calm and bored reactions, a player for each vote, less the share a cushion card has covered. Taken back where a reaction moved away');
+    expect(said('tweener', economy)).toContain('Also earns when its post sets others debating and it stays out, and the debate cancels that post\'s shrugs.');
+  });
+  test('a setting a reason states beside the economy is said as tuned: shifted by 17, the shifted number is said and the default is not', () => {
+    expect(Object.keys(settingsRead).length).toBeGreaterThan(0);
+    const s = instance.settings;
+    for (const [reason, reads] of Object.entries(settingsRead)) {
+      const economyShifted = Object.fromEntries((wordsRead[reason] ?? []).map((r) => [r, economy[r]! + 17]));
+      const text = instanceUi.reasonWords(reason, { ...economy, ...economyShifted, ...settingsShifted(reason) });
+      for (const r of reads) {
+        expect(text, `${reason} says ${r} as tuned`).toMatch(new RegExp(`\\b${spelled(s[r] + 17)}\\b`, 'u'));
+        expect(text, `${reason} never says ${r}'s default`).not.toMatch(new RegExp(`\\b${spelled(s[r])}\\b`, 'u'));
+      }
     }
   });
   test('every class description and reason that states a number names the economy keys it states', () => {
@@ -721,8 +778,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('every reason a class pays reads as a sentence of its own', () => {
     const reasons = ['face.cheered', 'face.liftedAPost', 'face.boredTheRoom', 'face.stoleThunder', 'heel.drewHeat', 'heel.stoleThunder', 'heel.shrugged',
-      'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
-      'technician.respected', 'technician.evergreen', 'technician.draggedIn'];
+      'jabroni.drewTheGroan', 'jabroni.soldTheL', 'jabroni.takenSincerely', 'lurker.calledIt', 'lurker.misread', 'reveal.perk', 'lurker.spunAThread', 'lurker.cardDrew', 'lurker.postedTooMuch',
+      'technician.respected', 'technician.evergreen', 'technician.draggedIn',
+      'tweener.splitTheRoom', 'tweener.stirredThePot', 'tweener.shrugged', 'tweener.litTheFuse', 'tweener.outvoted'];
     for (const r of reasons) expect(instanceUi.reasonWords(r, instance.settings.economy), r).not.toMatch(/^Settled under/);
   });
   test('every loss a class charges is one the cushion can read, or is named here', () => {
@@ -745,8 +803,15 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     });
     const i: ClassInput = {
       character: 'c', from: 0, to: 20 * DAY, received, given: [],
+      /* A spark that crosses in the window, and one that paid before it whose calm votes moved away in it, so its refund is taken back. */
+      debates: [
+        { act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true },
+        { act: 'p2', at: -DAY, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1 - DAY, voice })), inOwnDebate: false,
+          standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0, paid: { 'tweener.litTheFuse': 20, 'tweener.outvoted': 10 }, placed: true },
+      ],
       posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
-      held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' }],
+      held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' },
+        { act: 'p8', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'boredNegative' }],
       cardsPlayed: [played('sweet', 'k1'), played('salty', 'k2'), played('pepperoni', 'k3')],
       cardsLanded: [{ act: 'k4', card: 'whoops', alignment: 'salty', readsAs: 'salty', at: 5, on: 'p1' }],
       threadsSpun: [{ act: 'p9', thread: 't1', at: 5, fromOthers: true, repliersBefore: 0, repliersNow: eco('lurker.spunThreadRepliers') }],
@@ -758,7 +823,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     /* Losses no reaction's vote can be read from, with why: the cushion softens a loss from a reaction and a window's loss, and nothing else. */
     const named: Record<string, string> = {
       'lurker.postedTooMuch': 'no reaction causes it; the sheet says nothing lost for any other reason is given back',
+      'lurker.misread': 'a call that missed, charged for where the post ended up; no reaction\'s vote lost it',
       'tweener.splitTheRoom': 'a gain taken back as the room stops being split',
+      'tweener.outvoted': 'a refund taken back as a calm or bored vote moves away; the shrug it answered was the loss, and the cushion read that',
     };
     const seen = new Set<string>();
     const seenNegative = new Set<string>();
@@ -1134,20 +1201,87 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(ui('4d-chess').describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day if nothing');
   });
 
+  test('Whoopee Cushion is a face-down Reversal with every one\'s status, Pepperoni\'s colors, no form and no effect, and its words say what springs it and what it pays', () => {
+    const cushion = ui('whoopee-cushion');
+    expect(cushion.status).toBe(ui('rope-break').status);
+    expect(cushion.status).toBe('Set, face down to everyone else');
+    expect(cushion.art.color).toBe('#d24a2c');
+    expect(cushion.art.ink).toBe('#0d0301');
+    expect(cushion.art.tagline).toBe('Get paid when a common card lands.');
+    expect(cushion.summary).toBe('Set face down on your post. The first common cast there lands, and every reaction to it pays you a quarter of a vote.');
+    expect(cushion.Effect).toBeUndefined();
+    expect(cushion.ConfigForm).toBeUndefined();
+    expect(cushion.describe(instance.settings)).toBe(`A Pepperoni card, ${whoopeeCushion.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first common card cast on that post, of any flavor, springs it and shows it: that card lands as usual and its caster keeps everything it earns, and from then on each vote it draws, of any kind, pays you a quarter of a vote. A card cast by one of your own characters springs it and pays you nothing. A rarer card passes over it, and a card your post's ward turns away never reaches it. It springs once, or comes back to your hand after 7 days if nothing springs it. It costs nothing more to set.`);
+  });
+
   test('Rope Break is a face-down Reversal with the same status as every one, its Sweet colors, no form and no effect, and its words say what it catches', () => {
     const rope = ui('rope-break');
     expect(rope.status).toBe('Set, face down to everyone else');
     expect(rope.status).toBe(ui('card-collector').status);
     expect(rope.art.color).toBe('#2ee6ff');
     expect(rope.art.ink).toBe('#03141a');
-    expect(rope.art.tagline).toBe('Reach the ropes.');
-    expect(rope.summary).toBe('Set face down on your post. Catches the first Salty common cast there, and takes it into your hand.');
+    expect(rope.art.tagline).toBe('Catch a Salty Move.');
+    expect(rope.summary).toBe('Set face down on your post. The first common Salty Move played on it is caught: it does nothing, and the card goes to your hand.');
     expect(rope.Effect).toBeUndefined();
     expect(rope.ConfigForm).toBeUndefined();
     const said = rope.describe(instance.settings);
-    expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Salty common card cast on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).toBe(`A Sweet card, ${ropeBreak.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first common Salty Move played on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
     expect(said).not.toContain('names');
     expect(rope.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
+  });
+
+  test('Pay It Forward is a face-down Reversal with every one\'s status, Sweet\'s colors, no form and no effect, and its words say what springs it and what goes back', () => {
+    const pay = ui('pay-it-forward');
+    expect(pay.status).toBe(ui('rope-break').status);
+    expect(pay.status).toBe('Set, face down to everyone else');
+    expect([pay.art.color, pay.art.ink]).toEqual([ui('rope-break').art.color, ui('rope-break').art.ink]);
+    expect(pay.art.tagline).toBe('Give a Sweet Move back to its player.');
+    expect(pay.summary).toBe("Set face down on your post. The first Sweet Move, up to uncommon, played on it lands, and the card goes back to its player's hand.");
+    expect(pay.Effect).toBeUndefined();
+    expect(pay.ConfigForm).toBeUndefined();
+    expect(pay.describe(instance.settings)).toBe(`A Sweet card, ${payItForward.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first Sweet Move, up to uncommon, played on that post springs it and shows it: that Move lands as usual, and the card goes back to its player's hand (the card, not any price paid to play it). A Mod Bot's Move passes over it. A rarer Move passes over it, and a Move your post's ward turns away never reaches it. It springs once, or comes back to your hand after 7 days. It costs nothing more to set.`);
+    expect(pay.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
+    /* The flavor and the rarity are the rules'. */
+    retuned(payItForward, 'trap', { trigger: { on: 'cast' }, match: { flavors: ['salty'], upTo: 'common' }, outcome: { kind: 'refund' } }, () => {
+      expect(pay.describe(instance.settings)).toContain('The first Salty Move, up to common, played on that post');
+    });
+  });
+
+  test('Kick Me is a Gimmick with Pepperoni\'s colors and an effect, and its words read the earn, the refunds and the span from its rules', () => {
+    const kick = ui('kick-me');
+    expect([kick.art.color, kick.art.ink]).toEqual([ui('whoopee-cushion').art.color, ui('whoopee-cushion').art.ink]);
+    expect(kick.art.tagline).toBe('Earn more when your post bombs.');
+    expect(kick.summary).toBe("Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty Moves played on it go back to their players' hands.");
+    expect(kick.status).toBe('Wearing a Kick Me sign');
+    expect(kick.Effect).toBeDefined();
+    expect(kick.ConfigForm).toBeUndefined();
+    expect(kick.logPlay!({}, {})).toBe('Each negative reaction to that post pays one vote more until it ends, and the first three Salty Moves played on it go back to their players.');
+    const said = () => kick.describe(instance.settings);
+    expect(said()).toBe(`A Pepperoni card, ${kickMe.rarity}, used on one of your own posts. For 3 days a Kick Me sign is taped on it. Each heat or groan vote on that post, from a player of any class, pays its author one vote more. The first three Salty Moves played on that post land as usual, and each card goes back to its player's hand (the card, not any price paid to play it). A Move that a card set face down catches or hands back first, or a Mod Bot's Move, does not count. The sign stays up and keeps paying after the three are used, until it ends. A post carries one at a time. It costs nothing more to use.`);
+    retuned(kickMe, 'refunds', { flavors: ['salty'], count: 2 }, () => {
+      expect(said()).toContain('The first two Salty Moves played on that post');
+      expect(kick.logPlay!({}, {})).toContain('the first two Salty Moves');
+    });
+    retuned(kickMe, 'gimmick', { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], flat: 2 }, () => expect(said()).toContain('pays its author 2 votes more'));
+    retuned(kickMe, 'lasts', { unit: 'day', count: 1 }, () => {
+      expect(said()).toContain('For a day a Kick Me sign');
+    });
+  });
+
+  test('Pop Steal is a face-down Reversal with the same status as every one, its Salty colors, no form and no effect, and its words say what it catches', () => {
+    const pop = ui('pop-steal');
+    expect(pop.status).toBe('Set, face down to everyone else');
+    expect(pop.status).toBe(ui('card-collector').status);
+    expect(pop.art.color).toBe('#ff3d7f');
+    expect(pop.art.ink).toBe('#14030a');
+    expect(pop.art.tagline).toBe('Steal a Sweet Move.');
+    expect(pop.summary).toBe('Set face down on your post. The first common Sweet Move played on it is caught: it does nothing, and the card goes to your hand.');
+    expect(pop.Effect).toBeUndefined();
+    expect(pop.ConfigForm).toBeUndefined();
+    const said = pop.describe(instance.settings);
+    expect(said).toBe(`A Salty card, ${popSteal.rarity}, set face down on one of your own posts. Everyone sees a card back there, the same as any card set face down. The first common Sweet Move played on that post is caught: it lands as caught and does nothing, and you take it into your hand. Any other card passes over it, and a card your post's ward turns away never reaches it. It springs once, or ends by itself after 7 days. It costs nothing more to set.`);
+    expect(said).not.toContain('names');
+    expect(pop.describe({ ...instance.settings, setLasts: { unit: 'day', count: 1 } })).toContain('after 1 day.');
   });
 
   test('Off Day says the class it names and when, before its window opens and from then', () => {
@@ -1175,6 +1309,7 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     expect(said('card.skim', 'mooch')).toBe('Mooch: a tenth of a vote for each vote its post drew in the reactions it named, from players who first reacted after it');
     expect(said('card.ride', 'toll')).toBe('Toll: half a vote for each vote on a Move another player cast on the post');
     expect(said('card.ride', '4d-chess')).toBe('4D Chess: a vote for each vote, of the kind it named, on the Move that sprang it');
+    expect(said('card.ride', 'whoopee-cushion')).toBe('Whoopee Cushion: a quarter of a vote for each vote on the card whose cast sprang it');
     for (const reason of ['card.skim', 'card.ride']) {
       expect(said(reason, 'gone'), reason).toMatch(/^A card: what its payout on a reaction earned$/u);
       expect(said(reason, undefined)).toBe('A card: what its payout on a reaction earned');
@@ -1482,6 +1617,56 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
     const keys = cardsUi.map((c) => c.key);
     expect(keys).toContain('thick-skin');
+    expect(keys).toEqual([...keys].sort());
+  });
+});
+
+describe('Cheap Shot in plain words (the Cheap Shot plan, Task 7)', () => {
+  const shot = instanceUi.cards.find((c) => c.key === 'cheap-shot');
+  const wrap = (text: string) => {
+    const lines: string[] = [];
+    for (const word of text.split(' ')) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && last.length + 1 + word.length <= 20) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    return lines;
+  };
+
+  test('it wears the Salty pink and ink, and says what it does in a tagline, a summary and a status', () => {
+    expect(shot, 'cheap-shot is listed').toBeDefined();
+    expect(shot!.art.color).toBe('#ff3d7f');
+    expect(shot!.art.ink).toBe('#14030a');
+    expect(shot!.art.tagline).toBe('Your next Move slips past defenses.');
+    expect(shot!.summary).toBe("Used on your own character. Its next Move within 3 days can't be turned away or caught by a card up to uncommon.");
+    expect(shot!.status).toBe('Lining up a cheap shot');
+  });
+
+  test('its words are the ones the rules give', () => {
+    expect(shot!.describe(instance.settings)).toBe("A Salty card, uncommon, used on your own character. Its next Move within 3 days gets past any card that would turn it away or catch it, up to uncommon. A card set face down that it gets past stays face down, and only you are told. A card that lets a Move land and pays or gives it back still springs. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.");
+    expect(shot!.logPlay!({}, {})).toBe("That character's next Move can't be turned away or caught by a card up to uncommon.");
+  });
+
+  test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
+    const lines = wrap(shot!.art.tagline!);
+    expect(lines.length, lines.join(' | ')).toBeLessThanOrEqual(2);
+    for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
+  });
+
+  test('it has no effect and no form, says "play" and never "cast", and holds no percent and no class name', () => {
+    expect(shot!.Effect).toBeUndefined();
+    expect(shot!.ConfigForm).toBeUndefined();
+    const words = [shot!.art.tagline, shot!.summary, shot!.status as string, shot!.describe(instance.settings), shot!.logPlay!({}, {})].join('\n');
+    expect(words).not.toMatch(/%|\bcast/iu);
+    /* "face down" is the card's own phrase, not the class Face, so it is set aside before the class check. */
+    const unset = words.replace(/face[- ]down/giu, '');
+    for (const c of instance.classes) expect(unset, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
+  });
+
+  test('the rules over every card hold with it in', () => {
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toContain('cheap-shot');
     expect(keys).toEqual([...keys].sort());
   });
 });

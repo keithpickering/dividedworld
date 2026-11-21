@@ -76,6 +76,8 @@ export const ALLOWED_HOOKS = new Set([
   label its 1fr and the text its 3fr by position, the queue's move by its columns); the part is named for a theme and
   for a test's query, and adds no rule. */
   'kb-write-update-label',
+  /* A ballot origin's line above its poll, in the ORIGIN box's flow: `kb-small` gives its look. */
+  'kb-origin-ballot',
   'kb-write-update-text',
   'kb-queue-when',
   'kb-turn-when',

@@ -22,7 +22,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pron
 import { matchWords, playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
-import type { Act, CardEvent, ConductLogRow, LogCosmetic, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
+import type { Act, CardEvent, ConductLogRow, LogCosmetic, LogPlace, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
 import { micros } from '../data/log-page.ts';
 import { officeRole } from '../board/move-words.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
@@ -47,6 +47,8 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   | 'grouped'
   /* The aura-grant design, section 2: an admin gave the player Aura (docs/plans/2026-11-08-aura-grant-design.md). */
   | 'grant'
+  /* The crowd pay design, section 5: crowd pay, the wallet's own line for the settlement, and the estimate's so far. */
+  | 'crowd'
   /* The conduct design, section 8: an admin hid, brought back or approved the player's own post under the code of conduct. */
   | 'conduct'
   /* The cosmetics plan, Task 12: a Random Event's find, gear an admin gave, a trophy given or taken back, and a belt lost. */
@@ -54,7 +56,9 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* A drive's gift, the giver's and the post's author's (docs/plans/2026-11-03-jimmy-wails-design.md, section 10). */
   | 'gift'
   /* A surface (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11): a draw on one, and a wash of one. */
-  | 'drew' | 'washed';
+  | 'drew' | 'washed'
+  /* The polls plan, Task 8: the player's own ballot (cast, changed or withdrawn) and an admin's close of their poll. */
+  | 'ballot' | 'pollClose';
 
 /** One row of the log. */
 export interface LogRow {
@@ -389,12 +393,14 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...modRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...groupRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...grantRows(data).filter((r) => inTab(r.characters)));
+  rows.push(...crowdRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...cosmeticRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...giftRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...conductRows(data).filter((r) => inTab(r.characters)));
   rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
+  rows.push(...pollRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4, ballot: 4, pollClose: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -435,6 +441,39 @@ function grantRows(data: LogData): LogRow[] {
     rows.push({
       key: `grant:${w.at}`, kind: 'grant', at: w.at, what: 'An admin gave you Aura',
       details: [`An admin gave you ${plain(w.change)} Aura.${w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : ''}`],
+      aura: w.change, wallet: w.balanceAfter, characters: [],
+    });
+  }
+  return rows;
+}
+
+/** "6 Acts", "1 Act". */
+const actCount = (n: number) => `${n} ${n === 1 ? 'Act' : 'Acts'}`;
+/** Acts as links, as the log names an Act elsewhere (`actLink`), joined by commas; an Act that could not be read has no link, and the count says it was there. */
+function crowdLinks(acts: readonly Id[], data: LogData, words: Words): Segment[] {
+  const links = acts.flatMap((id) => { const link = actLink(data.acts.get(id), data, words); return link === null ? [] : [link]; });
+  return links.flatMap((link, i): Segment[] => (i === 0 ? [link] : [', ', link]));
+}
+
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-design.md, section 5): the wallet's own event of kind `crowd`, in plain and true words, with a link to each Act it paid for. It belongs to the account, so it is in
+ * every tab. The Acts are the caller's own `crowd` rows for the event's settlement; it says how many there were, whether that is the most one settlement pays and how much of it the wallet's cap held back.
+ * It names no one who reacted: the Acts are the posts the player reacted to, which the player knows.
+ */
+export function crowdRows(data: LogData, words: Words): LogRow[] {
+  const rows: LogRow[] = [];
+  for (const w of data.log.wallet) {
+    if (w.kind !== 'crowd' || w.settlement === null) continue;
+    const paidFor = (data.log.crowd ?? []).filter((c) => c.settlement === w.settlement);
+    const acts = paidFor.map((c) => c.act);
+    /* The cap in force when this settlement paid (`crowd_paid.most`), never today's setting: an admin's later change must not make an old line false. */
+    const most = paidFor.length > 0 && paidFor.length === paidFor[0]!.most ? " That's the most one settlement pays." : '';
+    const over = w.overflow > 0 ? ` ${plain(w.overflow)} more didn't fit under your wallet's cap.` : '';
+    const paid = acts.length > 0 ? `You reacted to ${actCount(acts.length)} by other players and were paid ${plain(w.change)} Aura.` : `You were paid ${plain(w.change)} Aura for reacting to posts by other players.`;
+    const links = crowdLinks(acts, data, words);
+    rows.push({
+      key: `crowd:${w.settlement}`, kind: 'crowd', at: w.at, what: 'Crowd pay',
+      details: links.length === 0 ? [`${paid}${most}${over}`] : [`${paid}${most}${over} `, ...links, '.'],
       aura: w.change, wallet: w.balanceAfter, characters: [],
     });
   }
@@ -778,6 +817,13 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const when = ends[0] === undefined ? '' : `, ${lifted.length === 1 ? 'which' : 'the longest of which'} was set to end ${utcWhen(ends[0])} UTC`;
     return [lifted.length === 1 ? ` It ended ${target}'s ban${when}.` : ` It ended ${lifted.length} of ${target}'s bans${when}.`];
   };
+  /* A cast a pierce got past a ward says so, from the Act's public `pierce` alone; a back it passed is the alert's to tell, never the log's. */
+  const pierceSaid = (play: Act | undefined): string[] => {
+    const pierce = play?.payload.pierce;
+    if (typeof pierce !== 'object' || pierce === null) return [];
+    const { card, ward } = pierce as { card?: unknown; ward?: unknown };
+    return typeof ward === 'string' ? [` Your ${cardName(card)} got it past ${withArticle(cardName(ward))} that would have turned it away.`] : [];
+  };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
   const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';
   const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
@@ -857,6 +903,15 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       if (e.act === null || (acted ? acted.kind !== 'card' : refund === undefined)) return;
       const actedPost = acted?.targetActId ? data.acts.get(acted.targetActId) : undefined;
       const where = (acted ? placeOf(acted, data) : null) ?? (actedPost ? actLink(actedPost, data, words, acted?.character ?? undefined) : null);
+      const handed = acted?.payload.handedBack as { card?: unknown } | null | undefined;
+      if (acted && typeof handed === 'object' && handed !== null && typeof handed.card === 'string') {
+        rows.push({
+          key: `returned:${e.act}`, kind: 'returned', at: e.at, what: `Your ${cardName(e.card)} came back`,
+          details: [`The ${cardName(handed.card)} on `, where ?? 'a post', ' gave your card back.'],
+          aura: 0, wallet: null, characters: acted.character ? [acted.character] : [],
+        });
+        return;
+      }
       const back = refund && refund.change > 0 ? `so your ${plain(refund.change)} came back, and the card is back in your hand.` : 'so the card is back in your hand.';
       rows.push({
         key: `returned:${e.act}`, kind: 'returned', at: e.at, what: `Your ${cardName(e.card)} came back`,
@@ -917,7 +972,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       details: [
         `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
         `The card was paid for at the machine; ${e.price > 0 ? `this ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
-        ...said(e.card, play),
+        ...said(e.card, play), ...pierceSaid(play),
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
@@ -1128,20 +1183,32 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
       continue;
     }
     const did = spring?.payload.did;
-    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode') {
+    if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned') {
       const by = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
       if (did === 'ended') {
         rows.push({ key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`, details: [`${cardName(e.card)} on `, on, ' sprang when a Mod Bot\'s visit began, and ended the visit.'], aura: 0, wallet: null, characters });
         continue;
       }
+      if (did === 'returned') {
+        const cast = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
+        const move = cardName(cast?.payload.card);
+        rows.push({
+          key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(cast?.character)} cast ${move} on it. ${move} landed, and its card went back to its caster's hand.`],
+          aura: 0, wallet: null, characters,
+        });
+        continue;
+      }
       if (did === 'rode') {
         const rode = typeof spring?.payload.by === 'string' ? data.acts.get(spring.payload.by) : undefined;
         const move = cardName(rode?.payload.card);
-        const share = rules(e.card)?.trap?.outcome?.share;
-        const kind = typeof spring?.payload.quadrant === 'string' ? words.ui.quadrantLabels[spring.payload.quadrant as Quadrant] : undefined;
+        const outcome = rules(e.card)?.trap?.outcome;
+        const share = outcome?.kind === 'ride' ? outcome.share : undefined;
+        const named = typeof spring?.payload.quadrant === 'string';
+        const kind = named ? words.ui.quadrantLabels[spring.payload.quadrant as Quadrant] : undefined;
         rows.push({
           key: `sprung:${e.play}`, kind: 'sprung', at: e.endedAt, what: `Your ${cardName(e.card)} sprang`,
-          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(rode?.character)} cast ${move} on it. ${move} landed as usual, and its caster keeps what it earns. Each vote of ${kind ?? 'the kind it named'} it draws pays you ${share === undefined ? 'a share of a vote' : shareWords(share)}, in each settlement's lines.`],
+          details: [`${cardName(e.card)} on `, on, ` sprang when ${nameOf(rode?.character)} cast ${move} on it. ${move} landed as usual, and its caster keeps what it earns. Each vote ${named ? `of ${kind ?? 'the kind it named'} ` : ''}it draws pays you ${share === undefined ? 'a share of a vote' : shareWords(share)}, in each settlement's lines.`],
           aura: 0, wallet: null, characters,
         });
         continue;
@@ -1202,13 +1269,53 @@ function setEndRows(data: LogData, words: Words, take: (match: (w: WalletEvent) 
 function estimateRows(data: LogData, words: Words, tab: Id | null): LogRow[] {
   const lines = (data.estimate?.lines ?? []).filter((l) => tab === null || l.character === tab);
   const asOf = data.estimate?.asOf ?? new Date(0).toISOString();
-  return lines
+  /* Crowd pay so far (the estimate's `crowd`, null where none): the wallet's, so in every tab, at the estimate's time. */
+  const crowd = data.estimate?.crowd ?? null;
+  const crowdLinked = crowd === null ? [] : crowdLinks(crowd.acts, data, words);
+  const crowdRow: LogRow[] = crowd === null ? [] : [{
+    key: 'estimate:crowd', kind: 'estimate', at: asOf, what: 'Estimate', aura: crowd.amount, wallet: null, characters: [],
+    details: [`Crowd pay so far: ${actCount(crowd.acts.length)}, ${plain(crowd.amount)} Aura.${crowdLinked.length > 0 ? ' ' : ''}`, ...crowdLinked, ...(crowdLinked.length > 0 ? ['.'] : [])],
+  }];
+  return [...crowdRow, ...lines
     .map((l, i) => ({ l, i, at: l.at !== undefined ? new Date(l.at).toISOString() : asOf }))
     .sort((a, b) => micros(b.at) - micros(a.at) || a.i - b.i)
     .map(({ l, i, at }) => ({
       key: `estimate:${i}`, kind: 'estimate' as const, at, what: 'Estimate', details: estimateWords(l, data, words, tab),
       aura: l.amount, wallet: null, characters: [l.character],
-    }));
+    }))];
+}
+
+/**
+ * The poll lines, for the player's own characters (`my_ballots`, `my_poll_closes`), in plain words and true, never in character: a ballot cast, changed or withdrawn, with the picks said from the poll's own options and
+ * "(secret ballot)" where the poll is, and an admin's close of a poll the character wrote. A line says what the character did and names no one else who voted; the picks of a secret ballot are the player's own fact,
+ * read only through `my_ballots`. A row for a character that is not the player's is none.
+ */
+function pollRows(data: LogData, words: Words): LogRow[] {
+  const rows: LogRow[] = [];
+  const mine = (id: Id) => data.mine.some((c) => c.id === id);
+  const nameOf = (id: Id) => data.mine.find((c) => c.id === id)?.name ?? '';
+  const where = (p: LogPlace): Segment => ({ text: `#${p.seq} in ${p.title}`, href: threadHref(p.thread, pageOf(p.seq, words.postsPerPage), p.seq) });
+  const list = (xs: readonly string[]) => (xs.length < 2 ? xs.join('') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
+  for (const b of data.log.ballots ?? []) {
+    if (!mine(b.character)) continue;
+    const name = nameOf(b.character);
+    const their = pronounsIn(data, b.character).their;
+    const picked = list(b.picks.map((i) => b.options[i] ?? `option ${i + 1}`));
+    const ballot = b.picks.length === 0 ? `${name} withdrew ${their} ballot` : b.changed ? `${name} changed ${their} ballot` : `${name} cast a ballot`;
+    const choice = b.picks.length === 0 ? '' : b.changed ? ` to ${picked}` : ` for ${picked}`;
+    rows.push({
+      key: `ballot:${b.act}`, kind: 'ballot', at: b.at, what: ballot, aura: 0, wallet: null, characters: [b.character],
+      details: [`${ballot}${choice} in the poll \u201c${b.question}\u201d on `, where(b.place), `${b.secret ? ' (secret ballot)' : ''}.`],
+    });
+  }
+  for (const c of data.log.pollCloses ?? []) {
+    if (!mine(c.character)) continue;
+    rows.push({
+      key: `pollClose:${c.act}`, kind: 'pollClose', at: c.at, what: `An admin closed ${nameOf(c.character)}'s poll`, aura: 0, wallet: null, characters: [c.character],
+      details: [`An admin closed ${nameOf(c.character)}'s `, { text: `poll \u201c${c.question}\u201d`, href: threadHref(c.place.thread, pageOf(c.place.seq, words.postsPerPage), c.place.seq) }, '.'],
+    });
+  }
+  return rows;
 }
 
 /**
@@ -1244,6 +1351,8 @@ function estimateWords(l: EstimateLine, data: LogData, words: Words, tab: Id | n
 /** The Acts the log's lines name: every share's, every estimate line's, every announcement's and every card line's; then the posts the card plays among them landed on. */
 export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly TurnAnnounced[]): Id[] {
   const ids = new Set<Id>();
+  for (const c of log.crowd ?? []) ids.add(c.act);
+  for (const a of estimate?.crowd?.acts ?? []) ids.add(a);
   for (const s of log.settlements) for (const l of s.lines) for (const sh of l.shares) ids.add(sh.act);
   for (const l of estimate?.lines ?? []) if (l.act) ids.add(l.act);
   for (const t of turns) ids.add(t.act);

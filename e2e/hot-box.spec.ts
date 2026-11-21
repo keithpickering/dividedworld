@@ -35,6 +35,12 @@ if (!Number.isFinite(SWEEP_PX_S)) throw new Error('SWEEP_PX_S is not in instance
 /* The ladder's budget, read from the effect's own source (importing the effect would pull in React and its stylesheet), and refused if it is not found. */
 const FOG_BUDGET_MS = Number(/export const FOG_BUDGET_MS = (\d+(?:\.\d+)?)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
 if (!Number.isFinite(FOG_BUDGET_MS)) throw new Error('FOG_BUDGET_MS is not in instances/divided-world/ui/hot-box/Effect.tsx');
+/* The frames painted at the ladder's last rung before the fog's cost there is judged: as many as the ladder judges its own mean on, read from the effect's
+ * source as the budget is, so that it is a mean. */
+const LADDER_SETTLED = Number(/const LADDER_FIRST = (\d+)/.exec(readFileSync(new URL('../instances/divided-world/ui/hot-box/Effect.tsx', import.meta.url), 'utf8'))?.[1]);
+if (!Number.isInteger(LADDER_SETTLED)) throw new Error('LADDER_FIRST is not in instances/divided-world/ui/hot-box/Effect.tsx');
+/* How long the cost cases' sweep goes on past its length while the ladder has not settled (#864). */
+const SETTLE_CAP_MS = 6000;
 
 /** The smoke's color in the stories is #ff69b4: red 255, green 105, blue 180. */
 /**
@@ -650,18 +656,36 @@ test.describe('what the fog costs', () => {
       new MutationObserver(() => { w.__hbRung = kb.frames(); }).observe(document.querySelector('#post-43 .dw-hotbox')!, { attributes: true, attributeFilter: ['data-dw-fog-level'] });
       return kb.frames();
     });
-    const began = Date.now();
-    for (let i = 0; Date.now() - began < ms; i++) {
-      const phase = (i % 40) / 40;
-      await page.mouse.move(x0 + span * (phase < 0.5 ? phase * 2 : 2 - phase * 2), y);
-    }
-    return page.evaluate((from) => {
+    /* The figures, read in one go: the frames since the sweep began and since the ladder's last step. */
+    const read = () => page.evaluate((from) => {
       const kb = (window as unknown as { __kbTiles: { frames(): number; work(n: number): number[] } }).__kbTiles;
       const work = kb.work(kb.frames() - from);
       const mean = (a: number[]) => (a.length ? a.reduce((x, v) => x + v, 0) / a.length : 0);
       const atRung = kb.work(kb.frames() - (window as unknown as { __hbRung: number }).__hbRung);
       return { frames: work.length, mean: mean(work), last: mean(work.slice(-30)), atRung: mean(atRung), atRungFrames: atRung.length, max: Math.max(0, ...work), level: Number(document.querySelector('#post-43 .dw-hotbox')?.getAttribute('data-dw-fog-level')) };
     }, f0);
+    /* The sweep is `ms` long, then goes on until the ladder has painted LADDER_SETTLED frames at its last rung or SETTLE_CAP_MS more has
+     * passed (#864). The ladder judges the mean of its last frames for as long as the post paints, and at 4x CPU rung 0 costs about the budget, so on a slow runner
+     * its last step can fall in the sweep's last frames; judged then, the rung it took would have nothing painted at it. It steps at most four times
+     * (FOG_LEVEL_MOST), each after at least LADDER_SETTLED frames painted at the rung before, so a ladder that is settling settles well inside the cap. The
+     * figures returned are the ones the last check read, so a step the ladder takes after it cannot empty the rung they judge. */
+    /* A check is a round trip to the page, so once the sweep is past its length it reads every tenth move (about a second at 4x CPU), not every move. */
+    const CHECK_MOVES = 10;
+    const began = Date.now();
+    let waitedFrom: number | null = null;
+    let got: Awaited<ReturnType<typeof read>>;
+    for (let i = 0; ; i++) {
+      const phase = (i % 40) / 40;
+      await page.mouse.move(x0 + span * (phase < 0.5 ? phase * 2 : 2 - phase * 2), y);
+      const swept = Date.now() - began;
+      if (swept < ms || (waitedFrom !== null && i % CHECK_MOVES !== 0)) continue;
+      got = await read();
+      if (got.atRungFrames >= LADDER_SETTLED || swept >= ms + SETTLE_CAP_MS) break;
+      /* Not settled at the sweep's end: the time from here on is what the run waited for it. */
+      waitedFrom ??= swept;
+    }
+    const waited = waitedFrom === null ? null : { ms: Date.now() - began - waitedFrom, capped: got.atRungFrames < LADDER_SETTLED };
+    return { ...got, waited };
   }
 
   for (const [label, story] of [['LongPost', 'long-post'], ['the longest post the instance allows', BUDGET_STORY]] as const) {
@@ -670,13 +694,13 @@ test.describe('what the fog costs', () => {
         test.setTimeout(90_000);
         if (rate > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate });
         const got = await sweepFor(page, rate === 4 ? 6000 : 3000, story);
-        const text = `${label}, ${rate}x CPU, pointer sweeping ${rate === 4 ? 6 : 3} s: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, mean at the rung it settled on ${got.atRung.toFixed(2)} ms over ${got.atRungFrames} frames, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
+        const text = `${label}, ${rate}x CPU, pointer sweeping ${rate === 4 ? 6 : 3} s${got.waited ? ` and ${(got.waited.ms / 1000).toFixed(1)} s past it, waiting for the ladder to settle${got.waited.capped ? ', which it had not by the cap' : ''}` : ''}: ${got.frames} frames, mean ${got.mean.toFixed(2)} ms, mean at the rung it settled on ${got.atRung.toFixed(2)} ms over ${got.atRungFrames} frames, worst ${got.max.toFixed(1)} ms, ladder rung ${got.level}`;
         test.info().annotations.push({ type: 'cost', description: text });
         console.log(`hot-box cost: ${text}`);
         expect(got.frames, 'the painter ran').toBeGreaterThan(10);
         /* Only the throttled run is held to the budget (a phone's speed); the unthrottled one is the figure to compare it with. */
         if (rate === 4) {
-          expect(got.atRungFrames, 'the ladder has settled: frames were painted at its last rung').toBeGreaterThanOrEqual(8);
+          expect(got.atRungFrames, 'the ladder has settled: frames were painted at its last rung').toBeGreaterThanOrEqual(LADDER_SETTLED);
           expect(got.atRung, `the ladder settled on rung ${got.level} and the frames painted at it are within the budget`).toBeLessThanOrEqual(FOG_BUDGET_MS);
         }
       });

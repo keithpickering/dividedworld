@@ -6,6 +6,9 @@
  * lean negative (upstaging what the room booed is the Face doing its job), or where the Act is
  * a cast that reads as Salty (the other player swung first). A tie or no reactions holds the
  * charge. Design, section 6, as revised by docs/plans/2026-11-18-face-thunder-design.md, section 3.
+ *
+ * Its lifts halve: in a window the lifts that pay (`face.liftedAPost`) are taken in the order played, and the n-th pays
+ * `settings.halving ** n` of its full amount. A lift that pays nothing is not in the chain. Class balance design, section 6.
  */
 import type { ClassRules, Earning } from '../../../engine/rules/types.ts';
 import { economyOf } from '../../../engine/rules/cards.ts';
@@ -19,7 +22,8 @@ export const face: ClassRules = {
     ...perVote(input, settings, 'excitedPositive', 1, 'face.cheered'),
     ...input.cardsPlayed
       .filter((c) => c.readsAs === 'sweet' && c.onOthers && c.targetAfter.excitedPositive > 0)
-      .map((c): Earning => ({ reason: 'face.liftedAPost', amount: settings.vote * c.targetAfter.excitedPositive, act: c.act, quadrant: 'excitedPositive', valuing: { act: c.target, from: c.at } })),
+      .sort((a, b) => a.at - b.at)
+      .map((c, n): Earning => ({ reason: 'face.liftedAPost', amount: settings.vote * c.targetAfter.excitedPositive * settings.halving ** n, act: c.act, quadrant: 'excitedPositive', valuing: { act: c.target, from: c.at } })),
     ...perVote(input, settings, 'boredNegative', -1, 'face.boredTheRoom'),
     ...input.cardsPlayed
       .filter((c) => c.onOthers && outdraws(c) && hadThunder(c))

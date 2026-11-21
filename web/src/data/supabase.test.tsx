@@ -25,6 +25,8 @@ const FALLBACK: ScreenSettings = {
   hotReplies: 5,
   editGrace: { unit: 'minute', count: 2 },
   reactionCap: 3,
+  crowdPayEach: 2,
+  crowdPayMost: 10,
   charactersPerPlayer: 6,
   invitesPerPlayer: 3,
   inviteLifetime: { unit: 'day', count: 7 },
@@ -32,6 +34,11 @@ const FALLBACK: ScreenSettings = {
   walletCap: 600,
   postMaxLength: 20000,
   titleMaxLength: 120,
+  pollOptionsMax: 10,
+  pollQuestionMax: 200,
+  pollOptionMax: 100,
+  pollLastsMin: { unit: 'hour', count: 1 },
+  pollLastsMax: { unit: 'day', count: 14 },
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
   setLasts: { unit: 'day', count: 7 },
@@ -125,7 +132,7 @@ describe('what the adapter may request', () => {
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
       api.boot(), api.indexPage(), api.boardPage('general', 1, []), api.searchPosts({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.searchThreads({ q: 'x', author: null, board: null, fromAt: null, toAt: null, titlesOnly: false, sort: null, perPage: null }), api.suggest('ma'), api.threadPage(T, { page: 1 }, 20, []), api.profilePage(B), api.recordPage(B, 'all', 1), api.presenceBox({ kind: 'index' }),
       api.myCharactersPage(), api.seasonPage('news', null, null, null), api.alertsPage(null), api.updatesPage(null, null, null), api.queuePage(), api.logPage(null),
-      api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
+      api.quoteCheck('[quote=x]y[/quote]'), api.myReactions([A]), api.myCards(), api.reading([T]), api.preferences(), api.invites(), api.isAdmin(), api.session(), api.estimate(),
     ]);
     const tables = new Set(h.rest().filter((r) => !r.url.pathname.includes('/rpc/')).map((r) => r.url.pathname.replace(`${REST}/`, '')));
     expect(tables.size).toBeGreaterThan(15);
@@ -208,6 +215,10 @@ describe('what the adapter may request', () => {
     expect(h.to('rpc/my_hidden_version')[0]?.body).toEqual({ act: B });
     answer = { status: 'waiting', version: A, words: 'My edit.' };
     expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
+    answer = { status: 'hiddenUntilEdited', version: B, words: 'My words.', forged: [A] };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'hiddenUntilEdited', version: B, words: 'My words.', forged: [A] });
+    answer = { status: 'waiting', version: A, words: 'My edit.', forged: [] };
+    expect(await h.api.myHiddenVersion(B)).toEqual({ status: 'waiting', version: A, words: 'My edit.' });
     answer = null;
     expect(await h.api.myHiddenVersion(B)).toBeNull();
     answer = { status: 'something', version: A };
@@ -285,6 +296,12 @@ describe('reads and their rows', () => {
         { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: { kind: 'post', thread: T, title: 'U', seq: 5 } }],
       [{ kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null },
         { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null }],
+      [{ kind: 'poll', question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'poll', question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      [{ kind: 'ballot', character: { id: B, name: 'Wario' }, question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'ballot', character: { id: B, name: 'Wario' }, question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      /* A poll or a ballot whose parts are malformed is no place. */
+      [{ kind: 'poll', question: 5, on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, null],
+      [{ kind: 'poll', question: 'Q', on: { kind: 'update', act: A, title: 'U' } }, null],
+      [{ kind: 'ballot', character: { id: B }, question: 'Q', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, null],
       [null, null],
     ];
     for (const [raw, want] of places) {
@@ -1168,6 +1185,48 @@ describe('writes through the act function', () => {
     }
   });
 
+  it('sends a poll with a post, a thread and an edit, and a ballot and the closes as their own actions, mapping their answers to the Act and the poll\'s counts', async () => {
+    const draft = { question: 'Which?', options: ['A', 'B'], pick: 1, secret: false, lasts: { unit: 'day' as const, count: 1 } };
+    const written = { act: ACT_ROW, poll: A, thread: T, counts: [1, 0], voters: 1, ends_at: '2026-10-02T09:00:00+00:00', closed: false };
+    const h = harness((r) => {
+      const a = (r.body as { action: string }).action;
+      if (a === 'castBallot' || a === 'closePoll' || a === 'closePollAsAdmin') return json(written);
+      if (a === 'startThread') return json({ thread: { id: T, board: C, title: 'A title', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' }, act: ACT_ROW });
+      return json(ACT_ROW);
+    });
+    await h.api.post(T, B, 'hi', null, undefined, draft);
+    await h.api.startThread('general', B, 'A title', 'body', undefined, draft);
+    await h.api.edit(A, B, 'new', draft);
+    await h.api.edit(A, B, 'new', { removed: true });
+    const counts = { poll: A, counts: [1, 0], voters: 1, endsAt: '2026-10-02T09:00:00+00:00', closed: false };
+    expect(await h.api.castBallot(A, B, [0])).toEqual({ ok: true, value: { act: ACT, counts } });
+    expect(await h.api.castBallot(A, B, [])).toMatchObject({ ok: true });
+    expect(await h.api.closePoll(A, B)).toEqual({ ok: true, value: { act: ACT, counts } });
+    expect(await h.api.closePollAsAdmin(A)).toEqual({ ok: true, value: { act: ACT, counts } });
+    expect(act(h).map((r) => r.body)).toEqual([
+      { action: 'post', thread: T, character: B, body: 'hi', poll: draft },
+      { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body', poll: draft },
+      { action: 'edit', post: A, character: B, body: 'new', poll: draft },
+      { action: 'edit', post: A, character: B, body: 'new', poll: { removed: true } },
+      { action: 'castBallot', poll: A, character: B, picks: [0] },
+      { action: 'castBallot', poll: A, character: B, picks: [] },
+      { action: 'closePoll', poll: A, character: B },
+      { action: 'closePollAsAdmin', poll: A },
+    ]);
+  });
+
+  it('reads a public poll\'s ballots through poll_ballots by its keyset, and a refusal comes back in its words', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/poll_ballots')
+      ? json({ ballots: [{ act: A, character: { id: B, name: 'Bea', avatar_square: null, avatar_portrait: null }, picks: [1], at: '2026-10-01T09:00:00+00:00' }], more: true }) : undefined));
+    const page = await h.api.pollBallots(T, { at: '2026-10-01T10:00:00+00:00', act: C });
+    expect(page.ok && page.value).toMatchObject({ more: true, ballots: [{ act: A, character: { id: B, name: 'Bea' }, picks: [1], at: '2026-10-01T09:00:00+00:00' }] });
+    expect(h.to('rpc/poll_ballots').map((r) => r.body)).toEqual([{ poll: T, before: '2026-10-01T10:00:00+00:00', before_id: C }]);
+    await h.api.pollBallots(T);
+    expect(h.to('rpc/poll_ballots')[1]!.body).toEqual({ poll: T, before: null, before_id: null });
+    const secret = harness((r) => (r.url.pathname.endsWith('/rpc/poll_ballots') ? json({ message: 'that poll\'s ballots are secret', hint: 'kayfabb.refusal', code: '55000' }, 400) : undefined));
+    expect(await secret.api.pollBallots(T)).toEqual({ ok: false, error: 'that poll\'s ballots are secret' });
+  });
+
   it('sends an apology to the act function, never to the apologize rpc, and maps its answer as a spin\'s', async () => {
     const thread = { id: T, board: C, title: 'Sorry', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' };
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ thread, act: ACT_ROW }) : undefined));
@@ -1532,10 +1591,24 @@ describe('signing in goes through the account function', () => {
 });
 
 describe('the estimate', () => {
+  it('reads an estimate kept before crowd pay, which has no crowd key, as no crowd', async () => {
+    const kept = { entries: [{ character: B, reason: 'face.cheered', amount: 30 }], lines: [], asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
+    const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json(kept) : undefined));
+    expect((await h.api.estimate()).crowd).toBeNull();
+  });
+  it('reads a malformed crowd as none, and keeps only the string Acts of a well-formed one', async () => {
+    const base = { entries: [], lines: [], asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
+    for (const crowd of [{ acts: 'x', amount: 2 }, { acts: [A], amount: '2' }, null]) {
+      const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json({ ...base, crowd }) : undefined));
+      expect((await h.api.estimate()).crowd).toBeNull();
+    }
+    const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json({ ...base, crowd: { acts: [A, 1, null], amount: 2 } }) : undefined));
+    expect((await h.api.estimate()).crowd).toEqual({ acts: [A], amount: 2 });
+  });
   it('asks with the bearer, and answers an ask before freshAfter from the last answer without a request', async () => {
     let now = Date.parse('2026-10-29T12:00:00Z');
     vi.spyOn(Date, 'now').mockImplementation(() => now);
-    const answer = { entries: [{ character: B, reason: 'face.cheered', amount: 30 }], lines: [{ character: B, reason: 'face.cheered', amount: 30, act: A, quadrant: 'excitedPositive', at: 1788000000000 }], asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
+    const answer = { entries: [{ character: B, reason: 'face.cheered', amount: 30 }], lines: [{ character: B, reason: 'face.cheered', amount: 30, act: A, quadrant: 'excitedPositive', at: 1788000000000 }], crowd: { acts: [A], amount: 2 }, asOf: '2026-10-29T12:00:00Z', freshAfter: '2026-10-29T12:00:30Z' };
     const h = harness((r) => (r.url.pathname === '/functions/v1/estimate' ? json(answer) : undefined));
     try {
       expect(await h.api.estimate()).toEqual(answer);
@@ -1731,6 +1804,29 @@ describe('live', () => {
     expect(onEffect).toHaveBeenCalledWith(A, '2026-10-29T00:00:00Z');
     s.channels[0]?.handlers.get('card_text')?.({ payload: { play: A, version: B } });
     expect(onText).toHaveBeenCalledWith(A, B);
+  });
+
+  it('hears a poll\'s numbers as `poll`: the poll and its counts, never who', async () => {
+    const s = stub();
+    const onPoll = vi.fn();
+    s.api.subscribeThread(T, { onPoll });
+    await settle();
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [2, 0], voters: 2, ends_at: '2026-10-02T09:00:00+00:00', closed: true, at: '2026-10-01T09:00:02+00:00' } });
+    expect(onPoll).toHaveBeenCalledWith({ poll: A, counts: [2, 0], voters: 2, endsAt: '2026-10-02T09:00:00+00:00', closed: true, at: '2026-10-01T09:00:02+00:00' });
+    /* A late older event is dropped, and a closed poll is final. */
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [1, 0], voters: 1, ends_at: '2026-10-02T09:00:00+00:00', closed: false, at: '2026-10-01T09:00:01+00:00' } });
+    expect(onPoll).toHaveBeenCalledTimes(1);
+  });
+
+  it('drops a `poll` event with no time, so it cannot freeze the poll\'s later events', async () => {
+    const s = stub();
+    const onPoll = vi.fn();
+    s.api.subscribeThread(T, { onPoll });
+    await settle();
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [9, 9], voters: 9, ends_at: '2026-10-02T09:00:00+00:00', closed: false } });
+    expect(onPoll).not.toHaveBeenCalled();
+    s.channels[0]?.handlers.get('poll')?.({ payload: { poll: A, counts: [1, 0], voters: 1, ends_at: '2026-10-02T09:00:00+00:00', closed: false, at: '2026-10-01T09:00:01+00:00' } });
+    expect(onPoll).toHaveBeenCalledTimes(1);
   });
 
   it('hears a reply a play drew under a post as `under`: the parent, the play and the reply as an Act, and never as an act', async () => {
@@ -2044,6 +2140,7 @@ describe('the log', () => {
         ],
       }],
       wallet: [{ settlement: 9, kind: 'settlement', change: 15, overflow: 0, floored: 0, balanceAfter: 472, ref: null, at: '2026-10-30T08:17:02.123456+00:00' }],
+      crowd: [],
       /* A card with no trap keeps its `springs` (0075); a row that is not a card set face down carries none. */
       cards: [{ card: 'whoops', kind: 'played', act: C, price: 25, at: '2026-10-29T21:52:00+00:00' }, { card: 'dud', kind: 'played', act: SET, price: 0, at: '2026-10-29T18:00:00+00:00', springs: false, catches: 'whoops' },
         /* A purchase keeps whether the Boss had moved its price (0139); a pulled row keeps its pack (0139), and no other row carries either. */
@@ -2539,6 +2636,14 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(await harness(() => rows([])).api.moveNotice(A)).toBeNull();
   });
 
+  it('asks quote_check with the draft and returns the uuids it answers, and rejects when it cannot be read', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/quote_check') ? json([A, 7, B]) : rows([])));
+    expect(await h.api.quoteCheck('[quote=x]y[/quote]')).toEqual([A, B]);
+    expect(h.to('rpc/quote_check')[0]?.body).toEqual({ body: '[quote=x]y[/quote]' });
+    const down = harness((r) => (r.url.pathname.endsWith('/rpc/quote_check') ? json({ message: 'down' }, 400) : rows([])));
+    await expect(down.api.quoteCheck('x')).rejects.toBeDefined();
+  });
+
   it('shows a move without a count when its progress could not be read, and still shows the move', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/acts_public')) return rows([MOVE_ROW]);
@@ -3011,12 +3116,31 @@ describe('a screen in one call', () => {
     expect(page?.tallies).toEqual({ [A]: {}, [ORIGIN]: { fire: 2 }, [PLAY1]: { tea: 1 } });
     /* An origin with no moment and no place, and one the instance no longer holds. */
     const bare = await once('thread_page', { ...DOC, origin: { act: null, plays: [], more: false, moment: null, at: null, cast: [] } }).api.threadPage(T, { page: 1 }, 20, []);
-    expect(bare?.origin).toEqual({ act: null, plays: [], more: false, moment: null, at: null, cast: [] });
+    expect(bare?.origin).toEqual({ act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [], voters: [], votersMore: [], myBallots: [] });
     /* A moment without `at` reads its first layer's time, as playMoment's does. */
     const old = await once('thread_page', { ...DOC, origin: { ...origin, moment: { ...origin.moment, at: undefined } } }).api.threadPage(T, { page: 1 }, 20, []);
     expect(old?.origin?.moment?.at).toBe(ACT.createdAt);
     /* A document without the key (another page, a thread that was not spun) has no origin. */
     expect((await once('thread_page', DOC).api.threadPage(T, { page: 2 }, 20, []))?.origin).toBeNull();
+  });
+
+  it('thread_page: maps the poll parts of the page and of the origin, and a page without them has none', async () => {
+    const poll = { post: A, act: { ...ACT_ROW, id: B, kind: 'poll', seq: null, payload: { question: 'Which?' } }, counts: [2, 1], voters: 3, ends_at: '2026-10-02T09:00:00+00:00', closed: false, close: null };
+    const DOC = { summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [] };
+    const doc = {
+      ...DOC, polls: [poll], voters: [{ poll: B, act: C, character: B, picks: [0], at: '2026-10-01T09:00:00+00:00' }], votersMore: [B],
+      voterCast: [{ character: { id: B, name: 'Bea', joined: '2026-10-01', staff: null, office: null }, profile: {} }], myBallots: [{ act: C, poll: B, character: B, picks: [], at: '2026-10-01T09:00:00+00:00' }],
+    };
+    const page = await once('thread_page', doc).api.threadPage(T, { page: 1 }, 20, []);
+    expect(page?.polls).toMatchObject([{ post: A, counts: [2, 1], voters: 3, endsAt: '2026-10-02T09:00:00+00:00', closed: false, close: null, act: { id: B, kind: 'poll' } }]);
+    expect(page?.voters).toEqual([{ poll: B, act: C, character: B, picks: [0], at: '2026-10-01T09:00:00+00:00' }]);
+    expect(page?.votersMore).toEqual([B]);
+    expect(page?.voterCast.map((c) => c.id)).toEqual([B]);
+    expect(page?.myBallots).toEqual([{ act: C, poll: B, character: B, picks: [], at: '2026-10-01T09:00:00+00:00' }]);
+    const plain = await once('thread_page', DOC).api.threadPage(T, { page: 1 }, 20, []);
+    expect([plain?.polls, plain?.voters, plain?.votersMore, plain?.voterCast, plain?.myBallots]).toEqual([[], [], [], [], []]);
+    const spun = await once('thread_page', { ...DOC, origin: { act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [poll], voters: [], votersMore: [], myBallots: [] } }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(spun?.origin?.polls).toHaveLength(1);
   });
 
   it('thread_page: maps `under`, `cut` and `kept`, and asks the tallies of the nested replies and the kept plays too', async () => {
@@ -3182,12 +3306,36 @@ describe('a screen in one call', () => {
       sources, shares: [], acts: [], states: [], people: [], threads: [], boards: [], standings: [], turns: [], season: null, ...rest,
     });
 
+    it('maps log_page\'s ballots and pollCloses (options, changed, place, a withdrawal\'s empty picks), and an older payload without them reads as none', async () => {
+      const place = { kind: 'post', thread: T, title: 'Best kart?', seq: 12 };
+      const ballot = { act: A, poll: C, character: B, picks: [1], at: '2026-10-30T09:00:00+00:00', question: 'Best part?', secret: true, options: ['Wheel', 'Pipe Frame'], changed: true, place };
+      const close = { act: SET, poll: C, character: B, at: '2026-10-30T10:00:00+00:00', question: 'Best part?', place };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], ballots: [ballot, { ...ballot, act: C, picks: [], changed: false, secret: false }], pollCloses: [close] }))).api.logPage(null);
+      expect(page.log.ballots).toEqual([
+        { act: A, poll: C, character: B, picks: [1], at: ballot.at, question: 'Best part?', secret: true, options: ['Wheel', 'Pipe Frame'], changed: true, place: { thread: T, title: 'Best kart?', seq: 12 } },
+        expect.objectContaining({ act: C, picks: [], secret: false, changed: false }),
+      ]);
+      expect(page.log.pollCloses).toEqual([{ act: SET, poll: C, character: B, at: close.at, question: 'Best part?', place: { thread: T, title: 'Best kart?', seq: 12 } }]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log.ballots ?? []).toEqual([]);
+    });
+
     it('maps the top-level scoredAs rows (named_class to classKey), and an older payload without them reads as none', async () => {
       const row = { settlement: 9, character: B, named_class: 'heel', play: C, card: 'offday', starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00' };
       const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }), { scoredAs: [row] })).api.logPage(null);
       expect(page.log.scoredAs).toEqual([{ settlement: 9, character: B, classKey: 'heel', play: C, card: 'offday', startsAt: row.starts_at, endsAt: row.ends_at }]);
       const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
       expect(older.log).not.toHaveProperty('scoredAs');
+    });
+
+    it('maps the crowd source (0385) to the Acts paid with their window, and a crowd-only settlement is a settlement with no lines', async () => {
+      const wallet = { settlement: 12, kind: 'crowd', change: 4, overflow: 0, floored: 0, balance_after: 500, ref: null, at: '2026-10-31T08:17:02+00:00' };
+      const row = { settlement: 12, act: A, most: 10, starts_at: '2026-10-30T08:17:00+00:00', ends_at: '2026-10-31T08:17:00+00:00' };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], wallet: [wallet], crowd: [row] }))).api.logPage(null);
+      expect(page.log.crowd).toEqual([{ settlement: 12, act: A, most: 10, startsAt: row.starts_at, endsAt: row.ends_at }]);
+      expect(page.log.settlements.map((s) => [s.id, s.lines.length])).toEqual([[12, 0], [9, 1]]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log.crowd).toEqual([]);
     });
 
     it('files each card\'s shares under its own line, where two lines of one character and reason name two cards', async () => {

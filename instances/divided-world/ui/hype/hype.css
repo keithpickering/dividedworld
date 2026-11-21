@@ -1,0 +1,72 @@
+/*
+ * The stage's own rules (Nodes.tsx, Camera.tsx): the commentary nodes, and what the turned board does to what is fixed on the page. Only
+ * the stage story draws either, so the house's themes and every other story are untouched. The colors are the page's own `--kb-` tokens (flat ones: a skin's buttons and bars are gradients, which an SVG fill cannot take);
+ * the fallbacks are for a page with no skin on it.
+ */
+.dw-hype-nodes {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  z-index: 1000;
+}
+.dw-hype-node {
+  position: absolute;
+  width: 56px;
+  height: 56px;
+  margin: -28px 0 0 -28px;
+  padding: 0;
+  border: 0;
+  background: none;
+  cursor: pointer;
+  perspective: 240px;
+  color: var(--kb-fg, #111);
+  filter: drop-shadow(0 0 9px color-mix(in srgb, var(--kb-fg, #111) 55%, transparent));
+  animation: dw-hype-bob 2.4s ease-in-out infinite;
+}
+.dw-hype-node:focus-visible {
+  outline: 3px solid var(--kb-fg, #fff);
+  outline-offset: 3px;
+  border-radius: 50%;
+}
+.dw-hype-node svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.dw-hype-node-ring {
+  fill: color-mix(in srgb, var(--kb-bg, #fff) 70%, transparent);
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-dasharray: 5 4;
+}
+.dw-hype-node-bubble {
+  fill: var(--kb-row-1, #fff);
+  stroke: var(--kb-fg, #111);
+  stroke-width: 2.5;
+  stroke-linejoin: round;
+}
+.dw-hype-node-dot {
+  fill: currentColor;
+}
+.dw-hype-node[data-started] svg {
+  animation: dw-hype-turn 6s linear infinite;
+}
+@keyframes dw-hype-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-7px); }
+}
+@keyframes dw-hype-turn {
+  to { transform: rotateY(360deg); }
+}
+
+/*
+ * A turned board (Camera.tsx): what the page fixes to the window is fixed to the plane instead, since a transformed ancestor is the
+ * containing block of a fixed box, so it sits at the foot of the whole page. The camera sets `--kb-cam-lift` to how far the foot of the window
+ * is above it, and the fixed parts are carried that far, which puts the HUD at the foot of the window again, turned with the board.
+ */
+[data-kb-turned] :is(.kb-hud, .kb-hand-drawer, .kb-hand-peek) {
+  translate: 0 var(--kb-cam-lift, 0px);
+}

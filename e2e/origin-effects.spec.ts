@@ -37,8 +37,8 @@ const STORY = (name: string) => `/?fixture=boards&story=boards-26-origin-effects
 const box = (page: Page) => page.getByRole('group', { name: 'Origin', exact: true });
 const area = (page: Page) => box(page).locator('.kb-origin-area');
 const band = (page: Page) => box(page).locator('.kb-origin-head');
-/** The byline, the first line of the area. */
-const byline = (page: Page) => area(page).locator(':scope > p.kb-small.kb-muted').first();
+/** The byline: a band of the box's own between the band and the area (the owner, 2026-11-21: it is "not part of the post itself"). */
+const byline = (page: Page) => box(page).locator(':scope > .kb-origin-byline');
 const history = (page: Page) => box(page).getByRole('button', { name: 'History', exact: true });
 
 interface Rect { readonly left: number; readonly top: number; readonly right: number; readonly bottom: number }
@@ -156,20 +156,22 @@ const built = (page: Page, whoops: string) => expect.poll(() => page.evaluate((s
 
 /* ------------------------------------------------------------------------------------------ 1. the area ---- */
 
-test('1. the area is the box under its band, out to the box\'s other three borders', async ({ page }) => {
+test('1. the area is the box under its band and byline, out to the box\'s other three borders', async ({ page }) => {
   /* Poison: give `.kb-origin` back its 0.4em bottom padding (the area's bottom edge then stands 0.4em above the frame's inner edge). */
   await open(page, 'whoops');
   const a = await padBox(area(page));
   const bandBottom = (await borderBox(band(page))).bottom;
+  const line = await borderBox(byline(page));
   const inner = await padBox(box(page));
-  expect(Math.abs(a.top - bandBottom), `the area's top against the band's bottom edge (${a.top} against ${bandBottom})`).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(line.top - bandBottom), `the byline's top against the band's bottom edge (${line.top} against ${bandBottom})`).toBeLessThanOrEqual(0.5);
+  expect(Math.abs(a.top - line.bottom), `the area's top against the byline's bottom edge (${a.top} against ${line.bottom})`).toBeLessThanOrEqual(0.5);
   for (const k of ['left', 'right', 'bottom'] as const) expect(Math.abs(a[k] - inner[k]), `the area's ${k} against the box's border box less its 1px border (${a[k]} against ${inner[k]})`).toBeLessThanOrEqual(0.5);
 });
 
 /* ------------------------------------------------------------------------------------------ 2. Whoops! ---- */
 
 for (const [name, size] of [['whoops', { width: 1440, height: 1120 }], ['whoops-phone', { width: 390, height: 844 }]] as const) {
-  test(`2. Whoops! fills the box's area, and its ink is solid in the byline and in the area's bottom-left corner (${name})`, async ({ page }) => {
+  test(`2. Whoops! fills the box's area and is solid in its bottom-left corner, and the byline stands outside it (${name})`, async ({ page }) => {
     /* Poison: `bleed` and the `.kb-act-main` class lookup put back in Whoops!'s measure (the state before Task 4): the ink is the words' box, not the area. */
     await page.setViewportSize(size);
     await page.emulateMedia({ reducedMotion: 'reduce' });
@@ -180,10 +182,8 @@ for (const [name, size] of [['whoops', { width: 1440, height: 1120 }], ['whoops-
     const a = await padBox(area(page));
     const line = await borderBox(byline(page));
     const inkAt = (x: number, y: number) => inkAlpha(page, '.kb-origin canvas.kb-whoops-ink', x, y);
-    /* Ink in the byline, which stands outside the words' box: a stretch of solid ink along its own rows (five across its height, every 3 px across its width). Its width and line height are the machine's fonts', so no one point of it is read. */
-    const along = await solidRun(page, '.kb-origin canvas.kb-whoops-ink', linesIn(line.top, line.bottom, 5), line.left, line.right, 3);
-    expect(along, 'the ink has a stretch of solid ink along the byline').not.toBeNull();
-    expect(along![1] - along![0], `the ink is solid along a stretch of the byline (${along})`).toBeGreaterThanOrEqual(24);
+    /* The byline is the box's band and no part of the post: it stands above the area, so the ink that fills the area never covers it. */
+    expect(line.bottom, `the byline (${JSON.stringify(line)}) stands above the area (${JSON.stringify(a)})`).toBeLessThanOrEqual(a.top + 0.5);
     const atCorner = await inkAt(a.left + 2, a.bottom - 2);
     expect(atCorner, 'the ink at a point 2px inside the area\'s bottom-left corner').not.toBeNull();
     expect(atCorner!, 'the ink is solid in the corner').toBeGreaterThan(40);
@@ -294,7 +294,7 @@ test('4. Feelin\' Fab fills the area at the density its words cost, and lies und
 
 /* ------------------------------------------------------------------------------------------ 5. bright ink ---- */
 
-test('5. under Brighter effects the box\'s words, byline and quote wear the bright ink; History keeps the board\'s, and the band is the column head\'s', async ({ page }) => {
+test('5. under Brighter effects the box\'s words and quote wear the bright ink; the byline and History keep the board\'s, and the band is the column head\'s', async ({ page }) => {
   /* Poison: the quote's border put back as two selector rules in thread.css (the reset's then outweighs the bright one, or the other way round, whichever area is nearer). */
   await open(page, 'fab-bright');
   const bright = await token(page, '--kb-bright-ink');
@@ -302,7 +302,7 @@ test('5. under Brighter effects the box\'s words, byline and quote wear the brig
   await expect(area(page)).toHaveAttribute('data-kb-bright-ink', '');
   const color = (el: Locator, prop: 'color' | 'borderTopColor' | 'textShadow') => el.evaluate((e, p) => getComputedStyle(e)[p as 'color'], prop);
   expect(await color(box(page).locator('.dw-fab-words'), 'color'), 'the words\' color').toBe(bright);
-  expect(await color(byline(page), 'color'), 'the byline\'s color').toBe(bright);
+  expect(await color(byline(page), 'color'), 'the byline, outside the area, does not wear the bright ink').not.toBe(bright);
   expect(await color(box(page).locator('.kb-quote'), 'borderTopColor'), 'the quote\'s border color').toBe(bright);
   expect(await color(history(page), 'color'), 'the History button\'s color is the board\'s').toBe(await token(page, '--kb-button-fg'));
   /* The control: the words wear the bright outline in their text-shadow, so its absence on History is a difference and not a property that never carries it. */
@@ -315,7 +315,7 @@ test('5. under Brighter effects the box\'s words, byline and quote wear the brig
 
 /* ------------------------------------------------------------------------------------------ 6. Hot Box ---- */
 
-test('6. Hot Box fills the area, History stands over it, and a clearing opens on the byline and not on History', async ({ page }) => {
+test('6. Hot Box fills the area and not the byline, History stands over it, and a clearing opens on the words and not on History', async ({ page }) => {
   /* Poison: the History `<p>` loses its `data-kb-over-ink` mark (the smoke is then over the button, and a pointer on it opens a clearing). */
   /* The smoke's canvas is sized (its picture made on a frame the paused clock would not give) before the clock stops. */
   await open(page, 'hot-box', { frozen: true, ready: () => expect.poll(() => page.evaluate(() => (document.querySelector<HTMLCanvasElement>('.kb-origin canvas.dw-hotbox-smoke')?.width ?? 0) > 0), { message: 'the smoke is sized', timeout: 15_000 }).toBe(true) });
@@ -346,12 +346,16 @@ test('6. Hot Box fills the area, History stands over it, and a clearing opens on
   await page.mouse.move(at.x, at.y);
   await run(page, 150);
   expect(await fogAt(at.x, at.y), 'a pointer over History opens no clearing').toBeGreaterThanOrEqual(fogged);
-  const line = await centerOf(byline(page));
-  expect(await fogAt(line.x, line.y), 'the smoke is full strength under the byline').toBeGreaterThanOrEqual(fogged);
+  const by = await borderBox(byline(page));
+  const filled = await padBox(area(page));
+  expect(by.bottom, 'the byline stands above the area the smoke fills').toBeLessThanOrEqual(filled.top + 0.5);
+  /* A point on the first line of the words, which the smoke covers. */
+  const line = { x: (filled.left + filled.right) / 2, y: filled.top + 12 };
+  expect(await fogAt(line.x, line.y), 'the smoke is full strength over the words').toBeGreaterThanOrEqual(fogged);
   await page.mouse.move(line.x, line.y);
   await run(page, 150);
   /* Soft, so that the panel's checks below are still read when the clearing is not there yet. */
-  await expect.soft.poll(() => fogAt(line.x, line.y), { message: 'a pointer over the byline opens a clearing (the canvas\'s alpha there drops)', timeout: 3000 }).toBeLessThanOrEqual(2);
+  await expect.soft.poll(() => fogAt(line.x, line.y), { message: 'a pointer over the words opens a clearing (the canvas\'s alpha there drops)', timeout: 3000 }).toBeLessThanOrEqual(2);
   /* A press on History opens the panel, and the panel is on an opaque ground that covers its list whole, first row to last, margins included.
      The smoke may show between the History line and the panel: each is lifted on a ground of its own (design, section 3). */
   await page.mouse.move(at.x, at.y);

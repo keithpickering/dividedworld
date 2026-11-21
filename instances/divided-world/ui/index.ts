@@ -6,6 +6,7 @@
  * the owner has not yet named (the web plan's brief, item 7); each is marked where it stands.
  */
 import type { ClassLook, GlassTheme, InstanceUi } from '../../../engine/ui/types.ts';
+import type { Settings } from '../../../engine/rules/types.ts';
 import { spanWords } from '../../../engine/ui/characters/format.ts';
 import { fractionWords, shareWords } from '../../../engine/ui/copy-words.ts';
 import glassData from './glass.json';
@@ -65,6 +66,18 @@ const COUNTS = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', '
 const count = (n: number) => (Number.isInteger(n) && n >= 0 && n <= 20 ? COUNTS[n]! : String(n));
 /* A number the words state, from the numbers they are told, or the compiled default where they are told none. */
 const num = (n: Readonly<Record<string, number | string>>, key: string) => { const v = n[key]; return typeof v === 'number' ? v : defaults.economy[key]!; };
+/* A reward's multiple, as the clause that follows what is paid: nothing for 0, half a vote for 0.5, one vote's worth for 1, "double" and "triple", and a count
+ * of times over for the rest, a half said in words ("one and a half") and any other fraction in figures. True at every value `min: 0` allows. */
+const multiple = (n: number) => {
+  if (n === 0) return 'which pay nothing';
+  if (n === 0.5) return 'each paid as half a vote';
+  if (n === 1) return 'each paid as one vote';
+  if (n === 2) return 'each paid double';
+  if (n === 3) return 'each paid triple';
+  if (Number.isInteger(n)) return `each paid ${count(n)} times over`;
+  if (Number.isInteger(n - 0.5) && n > 0 && n < 20) return `each paid ${count(n - 0.5)} and a half times over`;
+  return `each paid ${n} times over`;
+};
 const times = (n: number) => (n === 1 ? 'once' : n === 2 ? 'twice' : `${count(n)} times`);
 
 /** Each ledger reason, as the log says it: what the character did or drew, plainly, with the numbers it was settled under. */
@@ -80,6 +93,7 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'jabroni.soldTheL': 'Sold the L: a Salty card another player landed on the character\'s post',
   'jabroni.takenSincerely': 'Taken sincerely: excited, positive reactions to the character\'s posts and cards',
   'lurker.calledIt': 'Called it: among the first to react to a post that then drew a crowd its way',
+  'lurker.misread': 'Misread it: among the first to react to a post that then drew a crowd another way',
   'lurker.spunAThread': (n) => {
     const k = num(n, 'lurker.spunThreadRepliers');
     return `Spun a thread: a thread the character spun from another's Act drew ${count(k)} other replier${k === 1 ? '' : 's'}`;
@@ -104,6 +118,11 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
     if (amount !== undefined && amount < 0) return `${name}: up to ${shareWords(flat)} taken back for each vote it named that later moved away`;
     return `${name}: up to ${shareWords(flat)} more for each vote it named, from players who first reacted while it was up`;
   },
+  /* The reveal perk (settlement's `reveal.perk`, params `{ share }`): the share is the settings' own, said as a fraction. */
+  'reveal.perk': (n) => {
+    const share = n['share'];
+    return `Playing it openly: ${typeof share === 'number' ? `${fractionWords(share)} more` : 'more'} on what reactions earned while the character's reveal was current`;
+  },
   /* A card's cushion (settlement's `card.cushion`, params `{ card, share }`): the share is the entry's own, said as a fraction; a card this instance does not have is "A card". */
   'card.cushion': (n) => {
     const share = n['share'];
@@ -117,10 +136,17 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
   'card.ride': (n) => {
     const card = instanceCards.find((c) => c.key === n['card']);
     if (card?.gimmick?.kind === 'ride') return `${card.name}: ${shareWords(card.gimmick.share)} for each vote on a Move another player cast on the post`;
-    if (card?.trap?.outcome !== undefined) return `${card.name}: ${shareWords(card.trap.outcome.share)} for each vote, of the kind it named, on the Move that sprang it`;
+    const outcome = card?.trap?.outcome;
+    if (card !== undefined && outcome?.kind === 'ride' && outcome.every === true) return `${card.name}: ${shareWords(outcome.share)} for each vote on the card whose cast sprang it`;
+    if (card !== undefined && outcome?.kind === 'ride') return `${card.name}: ${shareWords(outcome.share)} for each vote, of the kind it named, on the Move that sprang it`;
     return 'A card: what its payout on a reaction earned';
   },
   'tweener.shrugged': 'Shrugged off: calm or bored reactions to the character\'s posts and cards',
+  'tweener.litTheFuse': (n) => {
+    const days = typeof n.debateDays === 'number' ? n.debateDays : defaults.debateDays;
+    return `Lit the fuse: within ${count(days)} day${days === 1 ? '' : 's'} of the character's post, ${count(num(n, 'tweener.catalystVoices'))} or more other players were arguing under it, ${count(num(n, 'tweener.catalystReturned'))} of them more than once, in quotes of it and threads spun from it, and the character's player had not posted in it`;
+  },
+  'tweener.outvoted': 'Outvoted: the players arguing under the character\'s post cancel its calm and bored reactions, a player for each vote, less the share a cushion card has covered. Taken back where a reaction moved away',
 };
 
 /** Every reason this instance's classes write, for the test that holds their words to the numbers in force. */
@@ -132,9 +158,22 @@ export const REASON_KEYS: readonly string[] = Object.freeze(Object.keys(REASONS)
  * description also states the settlement span, which is not an economy key: ClassLook.description is told `settlementLength` (#179).
  */
 export const wordsRead: Readonly<Record<string, readonly string[]>> = Object.freeze({
+  heel: ['heel.heatVotes'],
+  jabroni: ['jabroni.groanVotes'],
   lurker: ['lurker.postsAllowed'],
   'lurker.spunAThread': ['lurker.spunThreadRepliers'],
   'lurker.postedTooMuch': ['lurker.postsAllowed'],
+  'tweener.litTheFuse': ['tweener.catalystVoices', 'tweener.catalystReturned'],
+});
+
+/**
+ * The settings beside the economy each reason states, by key in `Settings`: the earning carries each in its params, under the same key,
+ * so a settled line is said with the number it was settled under, and a test can retune them as it does `wordsRead`'s.
+ */
+/** A key of `Settings` whose value is a number: the only kind a reason's words can state. */
+type NumberSetting = { [K in keyof Settings]: Settings[K] extends number ? K : never }[keyof Settings];
+export const settingsRead: Readonly<Record<string, readonly NumberSetting[]>> = Object.freeze({
+  'tweener.litTheFuse': ['debateDays'],
 });
 
 export const instanceUi: InstanceUi = Object.freeze({
@@ -159,11 +198,11 @@ export const instanceUi: InstanceUi = Object.freeze({
   // Written in the classes' order (classes/index.ts).
   classLooks: Object.freeze<Record<string, ClassLook>>({
     face: { color: '#2e86de', description: () => 'The crowd\'s favorite. Earns from excited, positive reactions, and from the cheers a post draws after its Sweet card lands there.', hurtsBy: () => 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', marks: { label: 'Earns from hype, hurt by the groan', earns: ['excitedPositive'], hurts: ['boredNegative'] } },
-    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Earns heat: excited, negative reactions, and a Salty card that outdraws the post it lands on.', hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
-    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Anti-comedy: posts built to bomb. Earns from bored, negative reactions and from Salty cards others land on the character\'s posts.', hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
+    heel: { color: '#c0392b', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: (e) => `Earns heat: excited, negative reactions, ${multiple(num(e, 'heel.heatVotes'))}, and a Salty card that outdraws the post it lands on.`, hurtsBy: () => 'Hurt by the polite shrug, calm and positive.', marks: { label: 'Earns from heat, hurt by the calm', earns: ['excitedNegative'], hurts: ['calmPositive'] } },
+    jabroni: { color: '#d4ac0d', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: (e) => `Anti-comedy: posts built to bomb. Earns from bored, negative reactions, ${multiple(num(e, 'jabroni.groanVotes'))}, and from Salty cards others land on the character's posts.`, hurtsBy: () => 'Hurt by being taken sincerely, excited and positive.', marks: { label: 'Earns from the groan, hurt by hype', earns: ['boredNegative'], hurts: ['excitedPositive'] } },
     technician: { color: '#1e8449', pattern: 'repeating-linear-gradient(0deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(90deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'The respected regular. Earns from calm, positive reactions to the character\'s posts and cards, and more when an old post still draws them.', hurtsBy: () => 'Hurt by heat: excited, negative reactions.', marks: { label: 'Earns from the calm, hurt by heat', earns: ['calmPositive'], hurts: ['excitedNegative'] } },
-    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
-    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to the character's cards.`, hurtsBy: (e, span) => `Hurt by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
+    tweener: { color: '#d63ab8', pattern: 'repeating-linear-gradient(45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px), repeating-linear-gradient(-45deg, transparent 0 4px, rgb(0 0 0 / 0.25) 4px 6px)', description: () => 'Splits the room. Earns when a post or card draws hype and heat in equal measure, and when the character\'s card sets someone else\'s post arguing. Also earns when its post sets others debating and it stays out, and the debate cancels that post\'s shrugs.', hurtsBy: () => 'Hurt by the shrug: calm or bored reactions.', marks: { label: 'Earns from a room split between hype and heat, hurt by the shrug', splits: ['excitedNegative', 'excitedPositive'], hurts: ['boredNegative', 'calmPositive'] } },
+    lurker: { color: '#7f8c8d', pattern: 'radial-gradient(rgb(0 0 0 / 0.3) 1px, transparent 1.5px) 0 0 / 5px 5px', description: () => `Reads the room. Earns by reacting early in the direction a post ends up, by spinning threads others reply to, and from reactions to the character's cards.`, hurtsBy: (e, span) => `Hurt by early calls that go the other way, and by ${num(e, 'lurker.postsAllowed') === 0 ? 'posting at all' : `posting more than ${times(num(e, 'lurker.postsAllowed'))} in one settlement window (${spanWords(span)})`}.`, marks: { label: 'Earns by calling where any post ends up', calls: ['excitedNegative', 'excitedPositive', 'boredNegative', 'calmPositive'] } },
   }),
   reasonWords: (reason: string, params: Readonly<Record<string, number | string>>, amount?: number) => {
     const w = REASONS[reason];

@@ -1,0 +1,46 @@
+/* The poll's editor under a post's own (PollDraft.tsx): a ruled fieldset in the form's own controls, no color of its own. */
+.kb-poll-draft {
+  margin: 0.6em 0;
+  padding: 0.3em 0.8em 0.6em;
+  border: 1px solid var(--kb-rule);
+}
+
+.kb-poll-draft legend {
+  padding: 0 0.4em;
+  font-weight: bold;
+}
+
+.kb-poll-draft-question {
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.kb-poll-draft-options {
+  margin: 0 0 0.4em;
+  padding: 0;
+  list-style: none;
+}
+
+.kb-poll-draft-options li {
+  display: flex;
+  gap: 0.4em;
+  margin-bottom: 0.3em;
+}
+
+.kb-poll-draft-options .kb-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.kb-poll-draft-check {
+  display: block;
+  margin: 0.6em 0;
+}
+
+.kb-poll-add {
+  margin: 0.4em 0;
+}
+
+.kb-poll-draft .kb-field > span {
+  font-weight: normal;
+}

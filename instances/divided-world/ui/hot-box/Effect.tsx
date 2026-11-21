@@ -958,7 +958,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
   const s = strength(fixedAt ?? at, playedAt, ends);
   const g = waveFactor(m.wavedAt, at, reduced);
   const state = waved ? STATE_WAVED : held ? STATE_WAVING : STATE_SMOKE;
-  const endsText = `Point at the words, or hold ${WAVE_LABEL}, to read.${play.ends === undefined ? '' : ` ${endsWords(play.ends)}.`}`;
+  const endsText = `Point at the words, or hold ${WAVE_LABEL}, to read.${play.ends === undefined ? '' : ` ${endsWords(play.ends, fixedAt ?? at)}.`}`;
   const progress = Math.round((1 - s) * 100) / 100;
   const view = useMemo<CardView>(() => ({
     progress, state, ends: endsText, yours: !waved,

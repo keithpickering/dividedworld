@@ -20,7 +20,7 @@ import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
 import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
 import { DENT_SCALE, FULL_DENT } from './dent.ts';
-import { LATE_MS, SteelChairEffect } from './Effect.tsx';
+import { LATE_MS, SteelChairEffect, VOICES } from './Effect.tsx';
 
 const hub = vi.hoisted(() => ({
   trusted: true,
@@ -1131,14 +1131,14 @@ describe("the throws are staggered in the world's own time", () => {
 });
 
 describe('sound', () => {
-  const heard = () => hub.sound.play.mock.calls as unknown as [string, { group?: string; lateMs?: number }][];
+  const heard = () => hub.sound.play.mock.calls as unknown as [string, { group?: string; voices?: number; lateMs?: number }][];
   const counts = () => {
     const keys = heard().map((c) => c[0]);
     return {
       hits: keys.filter((k) => k === 'steel-chair.hit').length,
       settles: keys.filter((k) => /^steel-chair\.settle-[1-4]$/u.test(k)).length,
       all: keys.length,
-      carried: heard().every((c) => c[1].group === 'steel-chair' && c[1].lateMs === LATE_MS),
+      carried: heard().every((c) => c[1].group === 'steel-chair' && typeof c[1].voices === 'number' && c[1].voices === VOICES && c[1].lateMs === LATE_MS),
     };
   };
 
@@ -1151,7 +1151,7 @@ describe('sound', () => {
     expect(first.hits).toBe(3);
     expect(first.settles).toBe(3);
     expect(first.all).toBe(6);
-    expect(first.carried, 'each play carries the group and lateMs').toBe(true);
+    expect(first.carried, 'each play carries the group, its voices and lateMs').toBe(true);
     hub.sound.play.mockClear();
     see(false); aim(false); see(true); arm(); settled();
     expect(groups()).toHaveLength(3);
@@ -1179,8 +1179,8 @@ describe('sound and met across the effect coming and going inside one mount', ()
     see(true); arm(); settled();
     expect(groups()).toHaveLength(1);
     expect(hub.sound.play).toHaveBeenCalled();
-    expect((hub.sound.play.mock.calls as unknown as [string, { group?: string; lateMs?: number }][]).every((c) => c[1].group === 'steel-chair' && c[1].lateMs === LATE_MS), 'the new run\'s plays carry the group and lateMs').toBe(true);
-    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', lateMs: LATE_MS });
+    expect((hub.sound.play.mock.calls as unknown as [string, { group?: string; voices?: number; lateMs?: number }][]).every((c) => c[1].group === 'steel-chair' && typeof c[1].voices === 'number' && c[1].voices === VOICES && c[1].lateMs === LATE_MS), 'the new run\'s plays carry the group, its voices and lateMs').toBe(true);
+    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', voices: VOICES, lateMs: LATE_MS });
     expect(made.met).toHaveBeenCalledTimes(1);
   });
 
@@ -1283,6 +1283,11 @@ describe('a moment', () => {
     expect(groups(), 'a live post drops it').toHaveLength(0);
   });
 
+  test('a single play whose end is after the moment says "Ends" in the way out, though the page\'s clock is past it', () => {
+    mount({ plays: [play(1, BEHIND)], moment: AT });
+    expect(lastView().ends).toMatch(/^Ends /u);
+  });
+
   test('the run waits for the post to be in view, and does not start before the arming wait', () => {
     mount({ plays: [play(1), play(2)], moment: AT });
     expect(groups(), 'nothing is drawn at mount').toHaveLength(0);
@@ -1310,7 +1315,7 @@ describe('a moment', () => {
   test('the hit sounds are asked of the mixer, in the group and with lateMs', () => {
     mount({ plays: [play(1)], moment: AT });
     run();
-    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', lateMs: LATE_MS });
+    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', voices: VOICES, lateMs: LATE_MS });
   });
 
   test('under reduced motion it is settled at once and silent, as live', () => {
@@ -1374,7 +1379,7 @@ describe('a stale still flag is ignored', () => {
   test('the hit sound is asked of the mixer', () => {
     stale([play(1)]);
     run();
-    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', lateMs: LATE_MS });
+    expect(hub.sound.play).toHaveBeenCalledWith('steel-chair.hit', { group: 'steel-chair', voices: VOICES, lateMs: LATE_MS });
   });
 
   test("Throw again is in the view's controls and throws again", () => {

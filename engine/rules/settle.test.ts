@@ -36,8 +36,8 @@ const instance: Instance = {
     { key: 'tomato', emoji: '🍅', quadrant: 'excitedNegative' },
   ],
   settings: {
-    walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
-    settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
+    walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
+    settlementLength: { unit: 'day', count: 1 }, seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite', postMaxLength: 20000, pollOptionsMax: 10, pollQuestionMax: 200, pollOptionMax: 100, pollLastsMin: { unit: 'hour', count: 1 }, pollLastsMax: { unit: 'day', count: 14 }, titleMaxLength: 120, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: { 'splat.price': 100 }, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
   copy: { announcementsThreadTitle: 'S{season} Promos' },
@@ -1597,6 +1597,7 @@ const payWorld: Instance = {
     { ...splat, key: 'toll', gimmick: { kind: 'ride', share: 0.5 } },
     { ...splat, key: 'chess', play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } }, catches: () => 'splat' },
     { ...splat, key: 'offday', scoresAs: true },
+    { ...splat, key: 'cushion', play: 'set', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every: true } } },
   ],
 };
 const WHO = ['tom', 'ann', 'bob', 'cat', 'dee', 'eve', 'fay'];
@@ -1709,6 +1710,25 @@ test('a ride spring pays a whole vote per vote in its quadrant on the cast that 
   const later = settle(payBoard([cast(), spring()], [...votes, react('cast', 'dee', 'dee-1', 'tea', TO + 2 * H)], { window: { id: 'w2', from: TO, to: TO + 24 * H } }), payWorld);
   assert.equal(ride(later, 'tom-1'), 10, 'a later window pays the votes it holds, with no end');
   assert.equal(ride(settle(payBoard([cast('cast', 'tom-2'), spring()], votes), payWorld), 'tom-1'), 0, 'a cast by the setter\'s own player');
+});
+test('an every ride spring with no quadrant pays a quarter of a vote per other player\'s vote in all four quadrants, and Ann keeps her own pay', () => {
+  const { quadrant: _q, ...noQuadrant } = spring({ card: 'cushion' });
+  const votes = [react('cast', 'bob', 'bob-1', 'fire', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'tea', FROM + 6 * H), react('cast', 'dee', 'dee-1', 'zzz', FROM + 7 * H), react('cast', 'eve', 'eve-1', 'tomato', FROM + 8 * H), react('cast', 'tom', 'tom-2', 'fire', FROM + 9 * H)];
+  const r = settle(payBoard([cast(), noQuadrant], votes), payWorld);
+  assert.equal(ride(r, 'tom-1'), 10, 'four votes by others at a quarter of a vote (2.5) each; Tom\'s own player\'s pays nothing');
+  assert.deepEqual(r.entries.find((e) => e.reason === 'card.ride')!.params, { card: 'cushion' });
+  assert.equal(r.details.filter((d) => d.reason === 'card.ride').length, 4);
+  assert.deepEqual(r.entries.filter((e) => e.character === 'ann-1'), settle(payBoard([cast()], votes), payWorld).entries.filter((e) => e.character === 'ann-1'), 'Ann is paid as without it');
+  const est = estimateForOwner(payBoard([cast(), noQuadrant], votes), payWorld, 'tom').lines.filter((l) => l.reason === 'card.ride');
+  assert.equal(est.length, 4, 'the estimate shows the same lines to Tom\'s player');
+  assert.equal(est.reduce((n, l) => n + l.amount, 0), 10);
+  assert.equal(ride(settle(payBoard([cast(), spring({ card: 'cushion' })], votes), payWorld), 'tom-1'), 10, 'a quadrant on an every ride\'s spring is not read');
+});
+test('a named ride spring pays only its quadrant, and one with no quadrant pays nothing', () => {
+  const votes = [react('cast', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('cast', 'cat', 'cat-1', 'fire', FROM + 6 * H)];
+  assert.equal(ride(settle(payBoard([cast(), spring()], votes), payWorld), 'tom-1'), 10, 'chess pays its calm vote only');
+  const { quadrant: _q, ...noQuadrant } = spring();
+  assert.equal(ride(settle(payBoard([cast(), noQuadrant], votes), payWorld), 'tom-1'), 0, 'a chess spring with no quadrant');
 });
 test('a ride spring pays nothing for a vote by the setter\'s own player, on another mask', () => {
   const r = settle(payBoard([cast(), spring()], [react('cast', 'tom', 'tom-2', 'tea', FROM + 5 * H), react('cast', 'bob', 'bob-1', 'tea', FROM + 6 * H)]), payWorld);
@@ -2384,4 +2404,425 @@ test('with the vote unshared and unhalved and the window ending mid-day, the cus
   const none = settle(cushionBoard([play], [], [], { window }), cushionWorld, options);
   assert.equal(amountOf(none, 'ted-1', 'tallied.outdrawn'), 0);
   assert.equal(cushionsOf(none).length, 0);
+});
+
+/* ---- a post's debate (the Tweener catalyst plan, Task 1) ---- */
+
+const DAY = 24 * H;
+const debateCast = [['ann', 2], ['bob', 2], ['cat', 1], ['dee', 1], ['eve', 1]] as const;
+/** Ann plays ann-1 and ann-2, Bob plays bob-1 and bob-2, and Cat, Dee and Eve one each; every character holds the recording class. */
+const debateBoard = (acts: InputAct[], quotes: { act: string; quoted: string }[], reactions: InputReaction[] = [], over: Partial<SettlementInput> = {}): SettlementInput => ({
+  window: { id: 'w1', from: FROM, to: TO },
+  characters: debateCast.flatMap(([p, n]) => Array.from({ length: n }, (_, i) => ({ id: `${p}-${i + 1}`, player: p, classes: [{ class: 'quiet', from: 0 }] }))),
+  acts, reactions, quotes, ...over,
+});
+const debateWorld = (rules: ClassRules): Instance => ({ ...withClasses(rules), cards: [...instance.cards, sugar, { ...sugar, key: 'half', gimmick: { kind: 'cushion' as const, share: 0.5 } }] });
+const debatesOf = (inputs: readonly ClassInput[], act?: string) => inputs.flatMap((i) => i.debates).filter((d) => act === undefined || d.act === act);
+const voicesOf = (d: { posts: readonly { voice: number }[] } | undefined) => d?.posts.map((p) => p.voice);
+const quote = (act: string, quoted: string) => ({ act, quoted });
+const spin = (id: string, character: string, at: number, thread: string, target: string): InputAct => ({ id, character, kind: 'spin', at, thread, target });
+
+test('a debate is every post that quotes the spark, transitively, and the spin and posts of a thread another player spun from it, each by a numbered voice', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 3 * H), spin('s', 'cat-1', FROM + 4 * H, 'sp', 'p1'), post('c', 'dee-1', FROM + 5 * H, 'sp'), post('x', 'eve-1', FROM + 6 * H, 'unrelated')],
+    [quote('a', 'p1'), quote('b', 'a')],
+  ), debateWorld(rules));
+  const d = debatesOf(inputs, 'p1');
+  assert.equal(d.length, 1);
+  assert.deepEqual(d[0]!.posts, [{ at: FROM + 2 * H, voice: 1 }, { at: FROM + 3 * H, voice: 2 }, { at: FROM + 4 * H, voice: 2 }, { at: FROM + 5 * H, voice: 3 }]);
+  assert.equal(d[0]!.at, FROM + 1 * H, 'the post\'s own time');
+  assert.equal(d[0]!.inOwnDebate, false);
+  assert.equal(JSON.stringify(d).includes('bob'), false, 'a voice names no one');
+});
+
+test('two masks of one player are one voice with the shared vote on, and two voices with it off', () => {
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'bob-2', FROM + 3 * H), post('c', 'cat-1', FROM + 4 * H)], [quote('a', 'p1'), quote('b', 'p1'), quote('c', 'p1')]);
+  const on = spy();
+  settle(b, debateWorld(on.rules));
+  assert.deepEqual(voicesOf(debatesOf(on.inputs, 'p1')[0]), [1, 1, 2]);
+  const off = spy();
+  settle(b, debateWorld(off.rules), { sharedVote: false });
+  assert.deepEqual(voicesOf(debatesOf(off.inputs, 'p1')[0]), [1, 2, 3]);
+});
+
+test('the author\'s other mask quoting the spark is voice 0, with the shared vote off as on', () => {
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'ann-2', FROM + 2 * H), post('b', 'bob-1', FROM + 3 * H)], [quote('a', 'p1'), quote('b', 'p1')]);
+  for (const options of [{}, { sharedVote: false }]) {
+    const { rules, inputs } = spy();
+    settle(b, debateWorld(rules), options);
+    assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [0, 1]);
+  }
+});
+
+test('a thread the author\'s own player spun from the spark adds nothing, its posts included', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), spin('s', 'ann-2', FROM + 3 * H, 'sp', 'p1'), post('c', 'dee-1', FROM + 4 * H, 'sp')],
+    [quote('a', 'p1')],
+  ), debateWorld(rules));
+  assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [1]);
+});
+
+test('a post that quotes the spark at or after the window\'s end is no member', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', TO - 1), post('b', 'cat-1', TO), post('c', 'dee-1', TO + H)],
+    [quote('a', 'p1'), quote('b', 'p1'), quote('c', 'a')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: TO - 1, voice: 1 }]);
+});
+
+test('a quote that does not name an earlier post in the input is read as none: a cycle, a self-quote, a later post, an unknown Act and a tie by id', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 3 * H), post('m1', 'dee-1', FROM + 5 * H), post('m2', 'eve-1', FROM + 5 * H)],
+    [quote('a', 'p1'), quote('b', 'a'), quote('a', 'b'), quote('b', 'b'), quote('p1', 'b'), quote('a', 'ghost'), quote('m1', 'm2')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act).sort(), ['a', 'p1'], 'no post is a spark of a quote from an earlier or equal one');
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM + 2 * H, voice: 1 }, { at: FROM + 3 * H, voice: 2 }]);
+  assert.deepEqual(debatesOf(inputs, 'a')[0]?.posts, [{ at: FROM + 3 * H, voice: 1 }]);
+});
+
+test('a spark with no member in the window is not handed over, and neither is one older than debateDays before it', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('old', 'ann-1', FROM - 2 * DAY), post('earlier', 'bob-1', FROM - 2 * DAY + H), post('stale', 'ann-1', FROM - 4 * DAY), post('quoted', 'bob-1', FROM + H), post('edge', 'ann-1', FROM - 3 * DAY), post('quotedEdge', 'bob-1', FROM + 2 * H)],
+    [quote('earlier', 'old'), quote('quoted', 'stale'), quote('quotedEdge', 'edge')],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act), ['edge'], 'only the one made exactly debateDays before the window\'s start, with a member inside it');
+});
+
+test('the author\'s second post, quoting a reply to the first, is in its own debate; a first post quoting another player\'s post is not', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('a1', 'ann-1', FROM + 1 * H), post('b1', 'bob-1', FROM + 2 * H), post('a2', 'ann-2', FROM + 3 * H), post('c1', 'cat-1', FROM + 4 * H)],
+    [quote('b1', 'a1'), quote('a2', 'b1'), quote('c1', 'a2')],
+  ), debateWorld(rules));
+  assert.equal(debatesOf(inputs, 'a1')[0]?.inOwnDebate, false);
+  assert.equal(debatesOf(inputs, 'b1')[0]?.inOwnDebate, false, 'Bob\'s first post quotes Ann\'s');
+  assert.equal(debatesOf(inputs, 'a2')[0]?.inOwnDebate, true);
+});
+
+test('a post inside a thread spun from an earlier post by the same player is in its own debate', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), spin('s', 'bob-1', FROM + 2 * H, 'sp', 'p1'), post('a2', 'ann-2', FROM + 3 * H, 'sp'), post('c1', 'cat-1', FROM + 4 * H)],
+    [quote('c1', 'a2')],
+  ), debateWorld(rules));
+  assert.equal(debatesOf(inputs, 'a2')[0]?.inOwnDebate, true);
+  assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [1, 0], 'the author took part in the thread');
+});
+
+test('an Act that is not in the input (a staff post, one of The System\'s) is no member', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)],
+    [quote('a', 'p1'), quote('staff1', 'p1'), quote('a', 'sys1')],
+    [], { systemActs: ['sys1'] },
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM + 2 * H, voice: 1 }]);
+});
+
+test('a card or a reaction is no member: only posts and spins are', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), { id: 'k', character: 'cat-1', kind: 'card', at: FROM + 3 * H, thread: 't1', target: 'p1', card: 'sugar' }],
+    [quote('a', 'p1'), quote('k', 'p1')],
+  ), debateWorld(rules));
+  assert.deepEqual(voicesOf(debatesOf(inputs, 'p1')[0]), [1]);
+});
+
+test('a spark with two calm votes from an earlier window and none in this one has them before and now; one a fire joined has calm before and half calm, half hype now', () => {
+  const { rules, inputs } = spy();
+  const calm = { ...noVote, calmPositive: 1 };
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM - 5 * H), post('q1', 'bob-1', FROM + 1 * H), post('p2', 'ann-1', FROM - 4 * H), post('q2', 'bob-1', FROM + 2 * H)],
+    [quote('q1', 'p1'), quote('q2', 'p2')],
+    [react('p1', 'cat', 'cat-1', 'tea', FROM - 3 * H), react('p1', 'dee', 'dee-1', 'tea', FROM - 2 * H), react('p2', 'cat', 'cat-1', 'tea', FROM - 3 * H), react('p2', 'cat', 'cat-1', 'fire', FROM + 3 * H)],
+    { paid: [{ player: 'cat', act: 'p1', weight: 1, shares: { ...noVote, calmPositive: 1 } }, { player: 'dee', act: 'p1', weight: 1, shares: { ...noVote, calmPositive: 1 } }, { player: 'cat', act: 'p2', weight: 1, shares: { ...noVote, calmPositive: 1 } }] },
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.standing, { before: [calm, calm], now: [calm, calm] });
+  assert.deepEqual(debatesOf(inputs, 'p2')[0]?.standing, { before: [calm], now: [{ ...noVote, calmPositive: 0.5, excitedPositive: 0.5 }] }, 'a fire beside the calm splits the one vote');
+});
+
+test('the estimate\'s standing is each earlier reaction as a voter of its own, for a spark no vote moved on', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM - 5 * H), post('q1', 'bob-1', FROM + 1 * H)],
+    [quote('q1', 'p1')],
+    [react('p1', 'cat', 'cat-1', 'tea', FROM - 3 * H), react('p1', 'cat', 'cat-1', 'fire', FROM - 2 * H)],
+  ), debateWorld(rules), { sharedVote: false, halving: false });
+  assert.deepEqual(bySize(debatesOf(inputs, 'p1')[0]!.standing.now), bySize([{ ...noVote, calmPositive: 1 }, { ...noVote, excitedPositive: 1 }]));
+});
+
+test('a spark with a debate and a vote in the window but no member in it is handed over, placed by the vote; one with no member at all is not', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard(
+    [post('p1', 'ann-1', FROM - 3 * H), post('a', 'bob-1', FROM - 2 * H), post('p2', 'ann-1', FROM - 3 * H)],
+    [quote('a', 'p1')],
+    [react('p1', 'cat', 'cat-1', 'fire', FROM + 2 * H), react('p2', 'cat', 'cat-1', 'fire', FROM + 2 * H)],
+  ), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs).map((d) => d.act), ['p1']);
+  assert.deepEqual(debatesOf(inputs, 'p1')[0]?.posts, [{ at: FROM - 2 * H, voice: 1 }]);
+});
+
+const turned = (b: SettlementInput, at: number): SettlementInput => ({ ...b, characters: b.characters.map((c) => (c.id === 'ann-1' ? { ...c, classes: [{ class: 'quiet', from: 0 }, { class: 'quiet', from: at }] } : c)) });
+
+test('a character that Turns inside the window is handed the debate in both stretches, placed only in the stretch of the latest member', () => {
+  const { rules, inputs } = spy();
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H), post('b', 'cat-1', FROM + 9 * H)], [quote('a', 'p1'), quote('b', 'p1')]);
+  settle(turned(b, FROM + 5 * H), debateWorld(rules));
+  const mine = inputs.filter((i) => i.character === 'ann-1').sort((x, y) => x.from - y.from);
+  assert.deepEqual(mine.map((i) => i.debates.map((d) => [d.act, d.placed])), [[['p1', false]], [['p1', true]]], 'placed by Cat\'s post at +9H, in the later stretch');
+  assert.deepEqual(mine.map((i) => i.debates[0]!.paid), [{}, {}], 'no sums, no paid');
+});
+
+test('a tallied earning comes back in `tallied`, summed by Act and reason across the stretches of a Turn, whole, with 0s left out', () => {
+  const tally: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [
+    { reason: 'quiet.fuse', amount: 7.4, act: 'p1', tally: true },
+    { reason: 'quiet.back', amount: -3, act: 'p1', tally: true },
+    { reason: 'quiet.fuse', amount: 0.2, act: 'a', tally: true },
+    { reason: 'quiet.plain', amount: 5, act: 'p1' },
+  ]) };
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)], [quote('a', 'p1')]);
+  const r = settle(turned(b, FROM + 5 * H), debateWorld(tally));
+  assert.deepEqual(r.tallied, [{ act: 'p1', reason: 'quiet.back', amount: -6 }, { act: 'p1', reason: 'quiet.fuse', amount: 15 }]);
+  assert.deepEqual(settle(debateBoard([post('p1', 'ann-1', FROM + 1 * H)], []), debateWorld(spy().rules)).tallied, []);
+});
+
+test('a tally is summed before it is rounded, and is the same whatever order the Acts arrive in', () => {
+  const thirds: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [0, 1, 2].map(() => ({ reason: 'quiet.fuse', amount: 0.4, act: 'p1', tally: true as const }))) };
+  const acts = [post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)];
+  const r = settle(debateBoard(acts, [quote('a', 'p1')]), debateWorld(thirds));
+  assert.deepEqual(r.tallied, [{ act: 'p1', reason: 'quiet.fuse', amount: 1 }]);
+  assert.deepEqual(settle(debateBoard([...acts].reverse(), [quote('a', 'p1')]), debateWorld(thirds)).tallied, r.tallied);
+});
+
+test('a tallied earning with no act is refused, since a tally is kept by Act', () => {
+  const bare: ClassRules = { key: 'quiet', name: 'Quiet', earn: (i) => (i.character !== 'ann-1' ? [] : [{ reason: 'quiet.fuse', amount: 5, tally: true }]) };
+  const b = debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('a', 'bob-1', FROM + 2 * H)], [quote('a', 'p1')]);
+  assert.throws(() => settle(b, debateWorld(bare)), /tallied quiet\.fuse with no act/);
+});
+
+test('a spark older than debateDays with a nonzero tallied sum and a vote moved on it in the window is handed with its paid; without the sum it is not', () => {
+  const run = (tallied?: SettlementInput['tallied']) => {
+    const { rules, inputs } = spy();
+    settle(debateBoard(
+      [post('old', 'ann-1', FROM - 6 * DAY), post('e', 'bob-1', FROM - 5 * DAY)],
+      [quote('e', 'old')],
+      [react('old', 'cat', 'cat-1', 'fire', FROM + 2 * H)],
+      tallied ? { tallied } : {},
+    ), debateWorld(rules));
+    return debatesOf(inputs, 'old');
+  };
+  const d = run([{ act: 'old', reason: 'quiet.fuse', amount: 20 }, { act: 'old', reason: 'quiet.back', amount: -5 }]);
+  assert.equal(d.length, 1);
+  assert.deepEqual(d[0]!.paid, { 'quiet.fuse': 20, 'quiet.back': -5 });
+  assert.equal(d[0]!.placed, true, 'the vote placed it');
+  assert.deepEqual(run(), []);
+  assert.deepEqual(run([{ act: 'old', reason: 'quiet.fuse', amount: 0 }]), [], 'a zero sum is no sum');
+  const still = spy();
+  settle(debateBoard([post('old', 'ann-1', FROM - 6 * DAY), post('e', 'bob-1', FROM - 5 * DAY)], [quote('e', 'old')], [], { tallied: [{ act: 'old', reason: 'quiet.fuse', amount: 20 }] }), debateWorld(still.rules));
+  assert.deepEqual(debatesOf(still.inputs), [], 'no vote moved on it in the window');
+});
+
+test('a half cushion on the spark\'s character that ended before the window but after the spark is 0.5; one that ended before the spark is 0; two plays give the larger', () => {
+  const play = (id: string, card: string, at: number, ends: number, target: string): InputAct => ({ id, character: 'cat-1', kind: 'card', at, thread: 't1', target, card, ends });
+  const run = (plays: InputAct[]) => {
+    const { rules, inputs } = spy();
+    settle(debateBoard([post('p1', 'ann-1', FROM - 10 * H), post('q1', 'bob-1', FROM + 1 * H), ...plays], [quote('q1', 'p1')]), debateWorld(rules));
+    return debatesOf(inputs, 'p1')[0]?.cushioned;
+  };
+  assert.equal(run([]), 0);
+  assert.equal(run([play('g1', 'half', FROM - 12 * H, FROM - 5 * H, 'p1')]), 0.5, 'on the post, ended before the window, after the spark');
+  assert.equal(run([play('g1', 'half', FROM - 20 * H, FROM - 11 * H, 'p1')]), 0, 'ended before the spark');
+  const quarter = { ...sugar, key: 'quarterC', gimmick: { kind: 'cushion' as const, share: 0.25 } };
+  const { rules, inputs } = spy();
+  const world = { ...debateWorld(rules), cards: [...debateWorld(rules).cards, quarter] };
+  settle(debateBoard([post('p1', 'ann-1', FROM - 10 * H), post('q1', 'bob-1', FROM + 1 * H), play('g1', 'quarterC', FROM - 12 * H, FROM - 5 * H, 'p1'), { ...play('g2', 'half', FROM - 9 * H, FROM - 4 * H, 'ann-1'), reach: 'character' as const, on: 'ann-1', target: undefined } as InputAct], [quote('q1', 'p1')]), world);
+  assert.equal(debatesOf(inputs, 'p1')[0]?.cushioned, 0.5, 'two plays: the larger');
+});
+
+test('a class is given no debates for a window post that quotes nothing and sits in no spun thread', () => {
+  const { rules, inputs } = spy();
+  settle(debateBoard([post('p1', 'ann-1', FROM + 1 * H), post('p2', 'bob-1', FROM + 2 * H)], []), debateWorld(rules));
+  assert.deepEqual(debatesOf(inputs), []);
+});
+
+/* ---- crowd pay (docs/plans/2026-11-20-crowd-pay-design.md): a flat sum for each Act of another player a player first reacts to in the window ---- */
+const crowdOf = (input: SettlementInput, settings: Partial<Instance['settings']> = {}) =>
+  settle(input, { ...instance, settings: { ...instance.settings, ...settings } }).crowd;
+const crowdBoard = (reactions: InputReaction[], acts: InputAct[] = [post('c1', 'bob-1', FROM + 1 * H), post('c2', 'bob-1', FROM + 2 * H), post('c3', 'bob-1', FROM + 3 * H)]): SettlementInput =>
+  ({ ...base(), acts, reactions });
+
+test('crowd pay: one Act pays one each, whether the player reacted once or three times with two masks', () => {
+  assert.deepEqual(crowdOf(crowdBoard([react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H)])), [{ player: 'ann', acts: ['c1'], amount: 2 }]);
+  const three = crowdBoard([
+    react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H),
+    react('c1', 'ann', 'ann-quiet', 'tea', FROM + 6 * H),
+    react('c1', 'ann', 'ann-fan', 'zzz', FROM + 7 * H),
+  ]);
+  assert.deepEqual(crowdOf(three), [{ player: 'ann', acts: ['c1'], amount: 2 }]);
+});
+
+test('crowd pay is blind to the quadrant: a hype and a heat reaction each pay the same', () => {
+  const r = crowdBoard([react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H), react('c2', 'ann', 'ann-fan', 'tomato', FROM + 6 * H)]);
+  assert.deepEqual(crowdOf(r), [{ player: 'ann', acts: ['c1', 'c2'], amount: 4 }]);
+});
+
+test('crowd pay: an Act first reacted to before the window pays nothing when reacted to again inside it', () => {
+  const r = crowdBoard([
+    react('c1', 'ann', 'ann-fan', 'fire', FROM - 5 * H),
+    react('c1', 'ann', 'ann-fan', 'tea', FROM + 5 * H),
+    react('c2', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+  ], [post('c1', 'bob-1', FROM - 9 * H), post('c2', 'bob-1', FROM + 2 * H)]);
+  assert.deepEqual(crowdOf(r), [{ player: 'ann', acts: ['c2'], amount: 2 }]);
+});
+
+test('crowd pay: a reaction on a System Act or an unscored staff post pays nothing', () => {
+  const r: SettlementInput = {
+    ...crowdBoard([
+      react('sys-1', 'ann', 'ann-fan', 'fire', FROM + 5 * H),
+      react('boss-post', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+    ]),
+    systemActs: ['sys-1'],
+    unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }],
+  };
+  assert.deepEqual(crowdOf(r), []);
+});
+
+test('crowd pay: a reaction on an Act of the player\'s own character pays nothing', () => {
+  const r = crowdBoard([react('own', 'ann', 'ann-quiet', 'fire', FROM + 5 * H), react('c1', 'ann', 'ann-quiet', 'fire', FROM + 6 * H)], [post('own', 'ann-fan', FROM + 1 * H), post('c1', 'bob-1', FROM + 2 * H)]);
+  assert.deepEqual(crowdOf(r), [{ player: 'ann', acts: ['c1'], amount: 2 }]);
+});
+
+test('crowd pay: past the cap the earliest first reactions are paid, a tie in time going to the smaller Act id', () => {
+  const r = crowdBoard([
+    react('c3', 'ann', 'ann-fan', 'fire', FROM + 5 * H),
+    react('c2', 'ann', 'ann-fan', 'fire', FROM + 7 * H),
+    react('c1', 'ann', 'ann-fan', 'fire', FROM + 7 * H),
+  ]);
+  assert.deepEqual(crowdOf(r, { crowdPayMost: 2 }), [{ player: 'ann', acts: ['c3', 'c1'], amount: 4 }]);
+  assert.deepEqual(crowdOf(r, { crowdPayMost: 10 }), [{ player: 'ann', acts: ['c3', 'c1', 'c2'], amount: 6 }]);
+});
+
+test('crowd pay: crowdPayEach 0 gives no rows', () => {
+  assert.deepEqual(crowdOf(crowdBoard([react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H)]), { crowdPayEach: 0 }), []);
+});
+
+test('crowd pay is the same in whatever order the rows arrive, and rows are sorted by player', () => {
+  const r = crowdBoard([
+    react('c1', 'dee', 'dee-1', 'fire', FROM + 5 * H),
+    react('c2', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+    react('c1', 'ann', 'ann-fan', 'zzz', FROM + 6 * H),
+    react('c3', 'cat', 'cat-1', 'tea', FROM + 8 * H),
+  ]);
+  const want = crowdOf(r);
+  assert.deepEqual(want.map((w) => w.player), ['ann', 'cat', 'dee']);
+  assert.deepEqual(want[0], { player: 'ann', acts: ['c1', 'c2'], amount: 4 });
+  assert.deepEqual(crowdOf({ ...r, reactions: [...r.reactions].reverse(), acts: [...r.acts].reverse(), characters: [...r.characters].reverse() }), want);
+});
+
+test('crowd pay is a wallet\'s alone: entries, standings and byClass are the same at 2 and at 0', () => {
+  const r = base();
+  const on = settle(r, instance);
+  const off = settle(r, { ...instance, settings: { ...instance.settings, crowdPayEach: 0 } });
+  assert.ok(on.crowd.length > 0 && off.crowd.length === 0);
+  assert.deepEqual(on.entries, off.entries);
+  assert.deepEqual(on.standings, off.standings);
+  assert.deepEqual(on.byClass, off.byClass);
+});
+
+test('the estimate\'s crowd is the caller\'s row of crowd pay, never another player\'s', () => {
+  // Ann and Dee each reacted to two of Bob's Acts; each is asked, and each is told only of their own.
+  const r = crowdBoard([
+    react('c1', 'ann', 'ann-fan', 'fire', FROM + 5 * H), react('c2', 'ann', 'ann-fan', 'fire', FROM + 6 * H),
+    react('c1', 'dee', 'dee-1', 'fire', FROM + 7 * H), react('c3', 'dee', 'dee-1', 'fire', FROM + 8 * H),
+  ]);
+  assert.deepEqual(estimateForOwner(r, instance, 'ann').crowd, { acts: ['c1', 'c2'], amount: 4 });
+  assert.deepEqual(estimateForOwner(r, instance, 'dee').crowd, { acts: ['c1', 'c3'], amount: 4 });
+  assert.equal(estimateForOwner(r, instance, 'cat').crowd, null, 'a player with no crowd Acts has none');
+  assert.ok(!JSON.stringify(estimateForOwner(r, instance, 'ann').crowd).includes('c3'), 'Dee\'s Act is not in Ann\'s answer');
+});
+
+/* ---- The reveal perk (class balance design, section 2): what a class marks `fromReactions` earns `revealPerk` more while the reveal is current ---- */
+/** "flagged" marks the earnings a reaction caused: fire is a flagged gain, zzz a flagged loss; tea is a gain it does not mark. */
+const flagged: ClassRules = {
+  key: 'flagged',
+  name: 'Flagged',
+  earn: (input, settings) => input.received.map((r): Earning => {
+    if (r.quadrant === 'excitedPositive') return { reason: 'flagged.cheer', amount: settings.vote * r.votes, votes: r.votes, fromReactions: true, act: r.act, quadrant: r.quadrant, at: r.at };
+    if (r.quadrant === 'calmPositive') return { reason: 'flagged.calm', amount: settings.vote * r.votes, votes: r.votes, act: r.act, quadrant: r.quadrant, at: r.at };
+    return { reason: 'flagged.sting', amount: -settings.vote * r.votes, votes: r.votes, fromReactions: true, act: r.act, quadrant: r.quadrant, at: r.at };
+  }),
+};
+const perkWorld: Instance = { ...cushionWorld, classes: [...cushionWorld.classes, flagged], settings: { ...cushionWorld.settings, revealPerk: 0.2 } };
+const perkBoard = (classes: { class: string; from: number }[], reveals: number[], reactions: InputReaction[], gimmicks: InputAct[] = []): SettlementInput =>
+  flatBoard(gimmicks, reactions, [], {
+    characters: [
+      { id: 'tom-1', player: 'tom', classes, reveals },
+      { id: 'tom-2', player: 'tom', classes: [{ class: 'quiet', from: 0 }] },
+      { id: 'uma-1', player: 'uma', classes: [{ class: 'quiet', from: 0 }] },
+      ...['bob', 'cat', 'dee', 'eve', 'fay'].map((p) => ({ id: `${p}-1`, player: p, classes: [{ class: 'quiet', from: 0 }] })),
+    ],
+  });
+const perksOf = (r: ReturnType<typeof settle>) => r.entries.filter((e) => e.reason === 'reveal.perk');
+const FLAG = [{ class: 'flagged', from: 0 }];
+
+test('a revealed character earns a fifth more on a flagged gain, and nothing on an unflagged gain or a loss', () => {
+  const r = settle(perkBoard(FLAG, [FROM - H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'tea', FROM + 6 * H),
+    react('tp1', 'dee', 'dee-1', 'zzz', FROM + 7 * H),
+  ]), perkWorld);
+  assert.deepEqual(perksOf(r).map((e) => [e.character, e.amount, e.params]), [['tom-1', 2, { share: 0.2 }]]);
+  assert.equal(amountOf(r, 'tom-1', 'flagged.cheer'), 10, 'the class\'s own earning is whole');
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => [d.act, d.quadrant, d.at, d.amount]), [['tp1', 'excitedPositive', FROM + 5 * H, 2]]);
+});
+
+test('a character never revealed earns no perk', () => {
+  assert.equal(perksOf(settle(perkBoard(FLAG, [], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), perkWorld)).length, 0);
+});
+
+test('a silent Turn ends the perk from the Turn\'s time, inside the window', () => {
+  const turned = [{ class: 'flagged', from: 0 }, { class: 'flagged', from: FROM + 8 * H }];
+  const r = settle(perkBoard(turned, [FROM - H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 9 * H),
+  ]), perkWorld);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => d.at), [FROM + 5 * H], 'the vote before the Turn is perked, the one after is not');
+});
+
+test('a new reveal after the Turn starts the perk again', () => {
+  const turned = [{ class: 'flagged', from: 0 }, { class: 'flagged', from: FROM + 8 * H }];
+  const r = settle(perkBoard(turned, [FROM - H, FROM + 10 * H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 9 * H),
+    react('tp1', 'dee', 'dee-1', 'fire', FROM + 11 * H),
+  ]), perkWorld);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => d.at), [FROM + 5 * H, FROM + 11 * H]);
+});
+
+test('a reveal made at a Turn\'s moment is current', () => {
+  const turned = [{ class: 'flagged', from: 0 }, { class: 'flagged', from: FROM + 8 * H }];
+  const r = settle(perkBoard(turned, [FROM + 8 * H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 9 * H),
+  ]), perkWorld);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'reveal.perk').map((d) => d.at), [FROM + 9 * H], 'the later vote is perked; the one before the reveal is not');
+});
+
+test('revealPerk 0 pushes nothing', () => {
+  const r = settle(perkBoard(FLAG, [FROM - H], [react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H)]), { ...perkWorld, settings: { ...perkWorld.settings, revealPerk: 0 } });
+  assert.equal(perksOf(r).length, 0);
+});
+
+test('a Thick Skin up cushions the loss and gives nothing back on the perk entry', () => {
+  const r = settle(perkBoard(FLAG, [FROM - H], [
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 6 * H),
+    react('tp1', 'cat', 'cat-1', 'zzz', FROM + 5 * H),
+  ], [onTom('g1', 'softCushion', FROM + 2 * H)]), perkWorld);
+  assert.deepEqual(cushionsOf(r).map((e) => e.amount), [5], 'only the class\'s own loss is cushioned');
+  assert.deepEqual(perksOf(r).map((e) => e.amount), [2]);
 });

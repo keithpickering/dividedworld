@@ -52,6 +52,8 @@ begin
 
   -- ---- A second hide until edited, and what search and quotes then show ----
   pz := tests.post(ch_author, th, 'The word is zanzibar.', base + interval '2 minutes');
+  -- The quote is written before any version is hidden: a quote written after is a counterfeit (a hidden version's words are never compared), and its words stand as written.
+  q := tests.post(ch_other, th, format('See [quote=%s]The word is zanzibar.[/quote] ok', pz), base + interval '3 minutes');
   perform tests.become(admin_a);
   perform decide(null, pz, 'hideUntilEdited', null, 'first');
   perform tests.unbecome();
@@ -68,7 +70,6 @@ begin
   end loop;
   perform tests.unbecome();
   -- A quote of the post is concealed while any of its versions is hidden, an edit's included: withheld until the job's layer, then emptied.
-  q := tests.post(ch_other, th, format('See [quote=%s]Finally kilimanjaro.[/quote] ok', pz), base + interval '3 minutes');
   perform tests.become(rep);
   select a.current_payload ->> 'body' into words from acts_public a where a.id = q;
   perform tests.unbecome();

@@ -6,7 +6,9 @@
  *
  * What this task (the board-look plan's Task 6) owns here is the post's three cells at the thread's foot and the bottom row (the pager and Unfollow).
  * Departures, each a decision:
- *  - Users browsing this thread and the footer stand 9.9px and 16.5px lower than the board's, under the reply box's own 10px and the footer's usual few more (as in 02-board).
+ *  - Users browsing this thread and the footer stand 50.1px and 56.6px lower than the board's: 9.9px and 16.5px under the reply box's own 10px and the footer's usual few more (as in 02-board), and 40.2px and 40.1px more for the "Add a poll" row below.
+ *  - The build's reply box carries an "Add a poll" row under the editor that the board lacks (polls, docs/plans/2026-11-20-polls-plan.md), 40.2px tall as measured (the browsing heading's and the footer's offsets from the last post grew by that much), so
+ *    everything under the box stands that much lower; the board image stays as drawn and no landmark holds the row.
  *  - The reply box (Task 7) is held from the last post's bottom edge like the pager: its band by its type alone (the board's is a cell with the heading inside it, the build's heading is the whole
  *    band), the form's parts standing 7.6px to 10.3px lower than the board's (the build's bottom row and the form's margin are a little taller), Preview at 12.5px where the board draws
  *    11.25px, and Preview and Send farther right by 64.8px and 69.3px: the build's foot is right-aligned and has no Reveal… to stand beside. Send is held by place alone: the build draws it disabled while the box is empty,
@@ -35,8 +37,8 @@ const manifest: BoardManifest = {
     { id: 'reply-count', role: 'text', name: '0 of 20000', origin: 'last-spin', originEdge: 'bottom', box: 'position', buildShift: { y: 9.5 } },
     { id: 'reply-preview', role: 'button', name: 'Preview', origin: 'last-spin', originEdge: 'bottom', box: 'position', buildSize: 12.5, buildShift: { x: 64.8, y: 8.1 } },
     { id: 'reply-send', role: 'button', name: 'Send', origin: 'last-spin', originEdge: 'bottom', box: 'position', type: false, buildShift: { x: 69.3, y: 10.3 } },
-    { id: 'browsing', role: 'heading', name: 'Users browsing this thread', origin: 'last-spin', originEdge: 'bottom', box: 'position', buildShift: { y: 9.9 } },
-    { id: 'footer', role: 'contentinfo', name: '', origin: 'last-spin', originEdge: 'bottom', box: 'position', type: false, buildShift: { y: 16.5 } },
+    { id: 'browsing', role: 'heading', name: 'Users browsing this thread', origin: 'last-spin', originEdge: 'bottom', box: 'position', buildShift: { y: 50.1 } },
+    { id: 'footer', role: 'contentinfo', name: '', origin: 'last-spin', originEdge: 'bottom', box: 'position', type: false, buildShift: { y: 56.6 } },
     { id: 'unfollow', role: 'button', name: 'Unfollow this thread', origin: 'last-spin', originEdge: 'bottom', box: 'position', buildSize: 12.5, buildShift: { x: -18.3 } },
   ],
 };

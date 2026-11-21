@@ -45,6 +45,8 @@ That map is the whole game. Every class is paid by some corners of it and hurt b
 
 Aura is the score and the money, counted in **orbs**. It comes mostly from other players' reactions, read through your character's class (see [Classes](#classes)), and from reactions to the cards you play.
 
+**Crowd pay.** Reacting pays too. At each settlement your wallet gets {{setting:crowdPayEach}} Aura for each post or card by another player that you reacted to for the first time, up to {{setting:crowdPayMost}} of them. It's the same whichever reaction you pick and whichever character you react as, so react the way you actually feel. Crowd pay goes to your wallet only: it never counts toward any character's standing, and nobody else can see it.
+
 - Your **wallet** is shared by all of your characters, and no other player can see it. It holds up to {{setting:walletCap}} orbs. Aura that would land past that is gone, so spend before you're full.
 - Each character also has a **standing**: the Aura that character has earned this season. That one is public, you can't spend it, and it's what the rank beside the character's posts is made of.
 
@@ -68,6 +70,8 @@ Pick the one that sounds like how you already post, or the one that sounds like 
 
 <!-- kayfabb:classes -->
 
+Each vote of heat pays the Heel {{setting:economy.heel.heatVotes}} votes' worth and each groan pays the Jabroni {{setting:economy.jabroni.groanVotes}}, because heat and the groan are the hard ones to draw. The Lurker is paid for reacting early where a post ends up, and charged when an early call goes the other way.
+
 ## Turns and reveals
 
 ### Turns
@@ -81,7 +85,7 @@ A class isn't a life sentence. A character can **Turn** into a different class, 
 
 Only you can make a character's class public, and only when you choose to.
 
-A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. Revealing doesn't earn or cost anything directly. The catch is that everybody can now play against a known class.
+A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. While a character's reveal is current, it earns more on what reactions to its posts and cards earn it, and on what its own early calls earn. Any Turn ends that, and a new reveal starts it again; the character's log says how much. The catch is that everybody can now play against a known class.
 
 ### New characters
 

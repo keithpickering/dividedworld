@@ -159,7 +159,7 @@ end $$;
 do $$
 declare
   seen jsonb;
-  listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
+  listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'crowdPayEach', 'crowdPayMost', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
                          'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
                          -- How often a page polls who is browsing it, and the window it counts (0041).
                          'presencePollSeconds', 'presenceWindow',
@@ -170,7 +170,9 @@ declare
                          -- The member groups' looks (0128): every group's key, name, color and stripe.
                          'groups',
                          -- How long a card set face down lasts (0156), for the line a card about to be set shows.
-                         'setLasts'];
+                         'setLasts',
+                         -- The poll editor's bounds (0395).
+                         'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax'];
   k text;
 begin
   perform tests.become_anon();

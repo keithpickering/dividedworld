@@ -76,7 +76,7 @@ begin
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "set", "trap": {"trigger": {"on": "cast"}}, "reaches": ["character"], "gimmick": {"kind": "earn", "quadrants": ["calmPositive"], "by": 0.1}}]');
   if why is distinct from 'card "poison" has a gimmick, and only a use card has one, or a cast card on a character alone or a post alone an earn' then raise exception 'a set card with an earn: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "hex"}}]');
-  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride, noQuote or cushion' then raise exception 'the kinds a gimmick may be: %', why; end if;
+  if why is distinct from 'card "poison" has a gimmick of kind "hex"; a gimmick is ward, earn, price, ride, noQuote, cushion or pierce' then raise exception 'the kinds a gimmick may be: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "reaches": ["character"], "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "noQuote"}}]');
   if why is distinct from 'card "poison" stops quotes, and a card that stops quotes reaches a post alone' then raise exception 'a no-quote card that reaches a character: %', why; end if;
   why := card_kinds_problem('[{"key": "poison", "rarity": "common", "play": "use", "reaches": ["post", "thread"], "lasts": {"unit": "day", "count": 7}, "gimmick": {"kind": "noQuote"}}]');

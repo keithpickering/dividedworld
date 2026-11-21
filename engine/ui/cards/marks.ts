@@ -74,13 +74,13 @@ const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${nam
  * The end is the one the server stored when the card was set (`back.endsAt`), the same span for every Set, so it names no card either; a back
  * with none (a read from before 0156 carried no end) says only that its end is not shown, which is true where nothing else is known. `cardName` is asked only of a back that sprang.
  */
-export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
+export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string, now: number): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
   if (back.revealed) {
     const card = cardName(back.revealed.card);
     return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
   }
   if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
-  const ends = back.endsAt ? `${endsWords(back.endsAt)}, unless it springs first.` : 'Its end is not shown here.';
+  const ends = back.endsAt ? `${endsWords(back.endsAt, now)}, unless it springs first.` : 'Its end is not shown here.';
   return { name: `A card set face down by ${setter}`, state: 'Face down on this post', note: `Set face down by ${setter} on ${localDate(back.playedAt)}.`, ends };
 }
 
@@ -91,11 +91,10 @@ const list = (words: readonly string[]): string => (words.length <= 2 ? words.jo
  * A use card's words, as the Lens's status for a live one: what it does while it is up, and when it ends (or ended), the end in the
  * reader's zone. They are read from the effect's own numbers: a ward says everything it turns away (a card by the name `nameOf` gives), a price what a cast
  * costs more, an earn how much more a reaction earns (an earn's `by` is a share: 0.1 is 10%) or pays (its `flat` is a share of a vote), a cushion the share of a loss it gives back, a ride the share of a vote's price it pays its
- * author for a card another player casts there, and a no-quote only that the post cannot be quoted.
+ * author for a card another player casts there, a no-quote only that the post cannot be quoted, and a pierce what its character's next Move gets past. It is said only of a live gimmick: a spent one is the Lens's `ENDED_STATE`, and `now` only says "Ends" or "Ended" of the end (`endsWords`).
  */
 export function gimmickWords(effect: GimmickEffect, ends: string | undefined, now: Date, nameOf: (key: string) => string = (key) => key): { readonly state: string; readonly ends?: string; readonly report?: string } {
-  if (ends !== undefined && Date.parse(ends) <= now.getTime()) return { state: 'Ended, changing nothing', ends: `Ended ${dayAndTime(ends)}` };
-  const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends) } : {}), ...(report !== undefined ? { report } : {}) });
+  const finish = (state: string, report?: string) => ({ state, ...(ends !== undefined ? { ends: endsWords(ends, now.getTime()) } : {}), ...(report !== undefined ? { report } : {}) });
   if (effect.kind === 'price') return finish(`${list(effect.flavors.map(capital))} cards cost ${orbs(effect.add)} more here`);
   if (effect.kind === 'earn') {
     /* A flat earn pays a share of a vote for each vote it names, to any class: the heading is the short status, and the report says the size. */
@@ -106,17 +105,23 @@ export function gimmickWords(effect: GimmickEffect, ends: string | undefined, no
   if (effect.kind === 'noQuote') return finish('Cannot be quoted');
   /* A ride pays the post's author, from the cards others cast on it: the heading is the short status, and the report says how much, from the effect's own share. */
   if (effect.kind === 'ride') return finish('Pays its author for votes here', `Each vote on a card another player casts here pays its author ${shareWords(effect.share)}.`);
+  /* A pierce gets its character's next Move past the cards no rarer than its own rarity, and that Move spends it: the heading is the short status, and the report says both. */
+  if (effect.kind === 'pierce') return finish('Next Move slips past defenses', `This character's next Move can't be turned away or caught by a card up to ${effect.upTo}, and that Move uses it up.`);
   /* A ward turns away a card that meets any one of its conditions, so it says every one, in the order the rules read them. When that is more than a heading may run, the heading is the short "some cards" and the whole list is the detail. */
   const away = [...(effect.upTo !== undefined ? [`cards up to ${effect.upTo}`] : []), ...(effect.flavors?.length ? [`${list(effect.flavors.map(capital))} cards`] : []), ...(effect.cards?.map(nameOf) ?? [])];
   const full = `Turns away ${away.length > 0 ? list(away) : 'some cards'}`;
   return full.split(/\s+/u).length <= STATUS_MAX_WORDS ? finish(full) : finish('Turns away some cards', `${full}.`);
 }
 
-/** When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone ("Ends Nov 7, 9:14 PM"). */
-export const endsWords = (ends: string): string => `Ends ${dayAndTime(ends)}`;
+/**
+ * When a play beyond a post ends, as its Lens line says it: on its timer, in the reader's zone. It is "Ends Nov 7, 9:14 PM" while the end is ahead
+ * of `now` (ms) and "Ended Nov 7, 9:14 PM" at it and after. `now` is required so that a caller cannot forget the tense: a line that says
+ * "Ends" of a time already gone is a lie the reader can see.
+ */
+export const endsWords = (ends: string, now: number): string => `${Date.parse(ends) > now ? 'Ends' : 'Ended'} ${dayAndTime(ends)}`;
 
 /** The way out of a card that keeps, once its time is up: the posts written while it was up keep what it did (`CardRules.keeps`), in the reader's zone. */
-export const keptEndedWords = (ends: string): string => `Ended ${dayAndTime(ends)}. Posts written while it was up keep it.`;
+export const keptEndedWords = (ends: string, now: number): string => `${endsWords(ends, now)}. Posts written while it was up keep it.`;
 
 /**
  * A caught play's note: what caught it, where the trap has been revealed (it always is, once it caught something). The card is spent unless the spring says
@@ -134,6 +139,8 @@ export const endedWords = (): string => 'Ended by an admin';
  */
 export const UNTAKEN_STATE = 'Didn\'t take';
 export const untakenWords = (): string => 'Didn\'t take. Its text never arrived, so it is not in effect on this post.';
+/** The Lens's heading for a kind whose every play ran out of time (spent-marks design, section 3): plain words, the same for every card, so a spent gimmick, a ward or an effect that forgot its own end all read it. */
+export const ENDED_STATE = 'Ended';
 /** The state for a kind whose plays are all over, some ended by an admin and some not taken: true of both. */
 export const OVER_STATE = 'Over';
 /** The Lens's heading for a kind whose plays a trap caught: a short status, the same for every kind; what caught it is each play's note (`caughtWords`). */

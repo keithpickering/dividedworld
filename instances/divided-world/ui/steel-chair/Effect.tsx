@@ -58,8 +58,9 @@
  *
  * Sound. Every animated run plays `steel-chair.hit` on each hit and one of the four settle sounds on each chair's first floor contact, in
  * the group `steel-chair`, whether it started from a scroll, from Throw again or from a new play landing; a reduced draw does not
- * sound. Two limits keep a thread from being a wall of clangs: the one group (a new clang takes over the one still sounding) and the 300 ms
- * a post must be in view before a run starts. A sound that would start later than `LATE_MS` after its hit or settle is skipped.
+ * sound. Three limits keep a thread from being a wall of clangs: the group's cap of `VOICES` sounds at once across the page (a newer clang
+ * fades out the oldest past it), the limiter the engine puts on every sound, and the 300 ms a post must be in view before a run starts. A
+ * sound that would start later than `LATE_MS` after its hit or settle is skipped.
  */
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
@@ -128,6 +129,8 @@ const SETTLE_SOUNDS = 4;
  * shows (docs/plans/2026-11-17-sound-preload-design.md, 2.3).
  */
 export const LATE_MS = 120;
+/** How many of Steel Chair's sounds may sound at once on the page; a newer one fades out the oldest past this (docs/plans/2026-11-20-sound-stack-design.md, 2.6). */
+export const VOICES = 6;
 const GROUP = 'steel-chair';
 
 /** A fresh seed from the reader's own screen: nothing about who they are, only what makes one run differ from the next. */
@@ -234,7 +237,9 @@ export function SteelChairEffect(props: EffectProps) {
   const { plays, show, children } = props;
   const inMoment = props.moment !== null;
   const ends = useMemo(() => plays.flatMap((p) => (p.ends !== undefined ? [Date.parse(p.ends)] : [])), [plays]);
-  const now = useAt(inMoment ? [] : ends);
+  const clock = useAt(inMoment ? [] : ends);
+  /* In a moment the way out is worded at the moment's time, not the page's. */
+  const now = props.moment ? props.moment.at : clock;
   /* A moment draws every play it is handed, as they stood; a live post drops the plays whose end has passed (the engine goes on handing them over). */
   const live = useMemo(
     () => (inMoment ? plays : plays.filter((p) => p.ends === undefined || Date.parse(p.ends) > now)).slice(0, MOST),
@@ -243,7 +248,7 @@ export function SteelChairEffect(props: EffectProps) {
   /* What holds for the life of the effect on the page, not of one stretch of live plays (the chairs component below unmounts when the last
      play ends and mounts again when a new one lands): whether the card has been met. */
   const memory = useRef<Memory>({ met: false });
-  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} /> : <Bare show={show}>{children}</Bare>;
+  return live.length > 0 ? <Chairs {...props} live={live} memory={memory.current} now={now} /> : <Bare show={show}>{children}</Bare>;
 }
 
 /** No live play: the words alone, and nothing to show. */
@@ -252,8 +257,8 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
   return <>{children}</>;
 }
 
-function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory }) {
-  const { live, show, met, children, memory } = props;
+function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory; now: number }) {
+  const { live, show, met, children, memory, now } = props;
   const inMoment = props.moment !== null;
   const reduced = useMotionReduced();
   const sound = useSound();
@@ -451,9 +456,9 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x + INSET, y: e.at.y - HIT_LIFT, full: false }]));
         growing.set(play, null);
         shake();
-        if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP, lateMs: LATE_MS });
+        if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       } else if (e.kind === 'floor' && loud) {
-        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(soundRand() * SETTLE_SOUNDS)}`, { group: GROUP, lateMs: LATE_MS });
+        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(soundRand() * SETTLE_SOUNDS)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       }
     };
 
@@ -657,7 +662,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const view = useMemo<CardView>(() => {
     const at = soonest === null ? null : new Date(soonest).toISOString();
     const ends = at === null ? undefined
-      : n === 1 ? endsWords(at)
+      : n === 1 ? endsWords(at, now)
       : `The first chair is gone ${dayAndTime(at)}; each lasts ${spanWords(STEEL_CHAIR_LASTS)}.`;
     return {
       progress: null,
@@ -670,7 +675,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       ],
       notes: {},
     };
-  }, [n, soonest, replay, gameSound.on, gameSound.set]);
+  }, [n, soonest, now, replay, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 

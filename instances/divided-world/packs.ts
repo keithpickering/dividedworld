@@ -17,5 +17,7 @@ export const packs: readonly PackRules[] = deepFreeze<PackRules[]>([
     ],
   },
   // The Starter Pack (docs/plans/2026-11-18-starter-pack-design.md): a fixed pack, the same six commons for everyone, two of each flavor.
-  { key: 'starter', contents: ['feelin-fab', 'rope-break', 'steel-chair', 'whoops', 'this', 'autocorrect'] },
+  // Hype-Up took Rope Break's place (docs/plans/2026-11-20-class-balance-design.md, section 3): a Reversal that catches Salty
+  // commons in every hand taxed the Heel's own starter cards.
+  { key: 'starter', contents: ['feelin-fab', 'hype-up', 'steel-chair', 'whoops', 'this', 'autocorrect'] },
 ]);

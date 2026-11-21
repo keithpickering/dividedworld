@@ -35,7 +35,7 @@ import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { takeInOrigin } from '../spin/Origin.tsx';
-import { createPlays, effectCards, hydrate, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, keepingKeys, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -65,6 +65,7 @@ import { text } from './lines.tsx';
 import { createMine } from '../reactions/mine.ts';
 import { spunCount, spunLoader, type Spun } from '../spin/spun.ts';
 import { createTallies } from './tallies.ts';
+import { createPolls } from '../polls/store.ts';
 import { useShowOpenThread } from './open.tsx';
 import './thread.css';
 
@@ -117,6 +118,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const [atBottom, setAtBottom] = useState(() => typeof IntersectionObserver === 'undefined');
   const [lines, setLines] = useState<readonly { readonly key: number; readonly text: string }[]>([]);
   const tallies = useMemo(() => createTallies(), []);
+  /* The polls on the posts on screen, taken from each page read and from the poll, ballot and close events heard (polls/store.ts). */
+  const polls = useMemo(() => createPolls(() => ++tickets.current), []);
   const mine = useMemo(() => createMine(), []);
   /* The card plays on the posts on screen (engine/ui/cards/plays.ts), and which cards the instance draws an effect for: only theirs have a state to read. */
   const plays = useMemo(() => createPlays(), []);
@@ -126,7 +129,12 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
    * (the ticket of the read that carried it is `originTicket`).
    */
   const originPlays = useMemo(() => createPlays(), []);
+  /* The polls of a thread spun from a poll or a ballot: the origin's poll and its voters, in a store apart from the page's (the box is the origin thread's). */
+  const originPolls = useMemo(() => createPolls(() => ++tickets.current), []);
   const originTicket = useRef(-1);
+  /* A post's `now` at its first billing while this thread is open: a re-read or a catch-up judges spent at that time,
+     so a clock never moves a mark (cards/billing.ts). */
+  const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
   const effects = useMemo(() => effectCards(ui), [ui]);
   const effectList = useMemo(() => [...effects], [effects]);
@@ -307,17 +315,19 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const under = page.under.map((u) => u.act);
     const posts = [...page.acts, ...under].filter((a) => isPost(a.kind)).map((a) => a.id);
     /* The origin's Act and its plays are Acts of the page's document too: their reactions and spins are the page's, which the box reads from the same stores. */
-    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
+    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...page.polls.map((x) => x.act.id), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
+    polls.take(page, ticket, posts);
     for (const id of ids) mine.merge(id, page.mine.filter((r) => r.act === id));
     const loader = spunLoader(api);
     const from = new Map<Id, ThreadSummary[]>();
     for (const t of page.spun) if (t.originActId !== null) from.set(t.originActId, [...(from.get(t.originActId) ?? []), t]);
     const spun = new Map<Id, Spun>();
     for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
+    const over = { now: api.now(), keeps: keepingKeys(instance.cards), billedAt: billedAt.current };
     /* The origin's plays join the box's store and are billed here, once for this read and outside any render, from the tallies and spins this page just put in the thread's stores. */
-    if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun);
-    for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)));
+    if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun, over, originPolls, ticket);
+    for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
     let moved = false;
     for (const v of page.visits) {
       const was = visitsHeld.current.get(v.post);
@@ -348,7 +358,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (back.size === 0) return page;
     const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
     return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
-  }, [api, tallies, mine, plays, originPlays, veils, putNested, dropNested]);
+  }, [api, instance.cards, tallies, mine, plays, polls, originPlays, originPolls, veils, putNested, dropNested]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
@@ -703,6 +713,14 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       onAct(a) {
         /* A draw or a wash is no post and no line of the thread: the surface it is on is told on its own event (`onSurface`). */
         if (a.kind === 'draw' || a.kind === 'wash') return;
+        /* A poll, a ballot and a close are no place in the thread: each changes the one poll it names. A voter the poll does not name yet is read once, for the name alone. */
+        if (a.kind === 'poll') { polls.pollAct(a); return; }
+        if (a.kind === 'poll_close') { polls.closeAct(a); return; }
+        if (a.kind === 'ballot') {
+          const stranger = polls.ballotAct(a, own.current);
+          if (stranger !== null && !people.current.has(stranger)) void api.characters([stranger]).then((found) => polls.named(found), quietly);
+          return;
+        }
         /* A card play is a tag on its post, never a place in the thread: it is added to the post it names, wherever that post is, once its caster is known. */
         if (a.kind === 'card') {
           void ensurePeople([a.character]).then(() => {
@@ -774,6 +792,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         if (plays.wantsSurface(play)) void readSurface(api, plays, play);
       },
       onJoined() { joinedAt('thread'); },
+      onPoll(e) { polls.counts(e); },
       onTally(act, t) {
         const grew = tallies.merge(act, t);
         if (!grew) return;
@@ -787,7 +806,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const off = api.subscribeThread(thread, listener);
     return () => { off(); joined.current.thread = false; };
-  }, [api, thread, ensurePeople, tallies, plays, effects, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard]);
+  }, [api, thread, ensurePeople, tallies, polls, plays, effects, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard]);
 
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
@@ -893,8 +912,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, mine, plays, origin, originPlays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, mine, plays, origin, originPlays, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {

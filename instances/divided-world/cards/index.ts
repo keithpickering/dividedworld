@@ -15,6 +15,7 @@ import { autocorrect, price as autocorrectPrice } from './autocorrect.ts';
 import { belowTheFold, price as belowTheFoldPrice } from './below-the-fold.ts';
 import { blindStudy, price as blindStudyPrice } from './blind-study.ts';
 import { cardCollector as cardCollectorBase, price as cardCollectorPrice } from './card-collector.ts';
+import { cheapShot, price as cheapShotPrice } from './cheap-shot.ts';
 import { classClown, price as classClownPrice } from './class-clown.ts';
 import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
 import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
@@ -29,6 +30,7 @@ import { heatMagnet, price as heatMagnetPrice } from './heat-magnet.ts';
 import { hotBox, price as hotBoxPrice } from './hot-box.ts';
 import { hypeUp, price as hypeUpPrice } from './hype-up.ts';
 import { jimmyWails, price as jimmyWailsPrice } from './jimmy-wails.ts';
+import { kickMe, price as kickMePrice } from './kick-me.ts';
 import { lastWord, price as lastWordPrice } from './last-word.ts';
 import { laughTrack, price as laughTrackPrice } from './laugh-track.ts';
 import { lineCutter, price as lineCutterPrice } from './line-cutter.ts';
@@ -36,6 +38,8 @@ import { mainEvent, price as mainEventPrice } from './main-event.ts';
 import { mooch, price as moochPrice } from './mooch.ts';
 import { offDay, price as offDayPrice } from './off-day.ts';
 import { overreaction, price as overreactionPrice } from './overreaction.ts';
+import { payItForward, price as payItForwardPrice } from './pay-it-forward.ts';
+import { popSteal, price as popStealPrice } from './pop-steal.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
 import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
@@ -51,6 +55,7 @@ import { thisCard, price as thisCardPrice } from './this.ts';
 import { toll, price as tollPrice } from './toll.ts';
 import { ultraHappyHeart, price as ultraHappyHeartPrice } from './ultra-happy-heart.ts';
 import { whodunnit, price as whodunnitPrice } from './whodunnit.ts';
+import { whoopeeCushion, price as whoopeeCushionPrice } from './whoopee-cushion.ts';
 import { whoops, price as whoopsPrice } from './whoops.ts';
 import { youWereSaying, price as youWereSayingPrice } from './you-were-saying.ts';
 
@@ -60,6 +65,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [belowTheFold as CardRules, belowTheFoldPrice],
   [blindStudy as CardRules, blindStudyPrice],
   [cardCollectorBase as CardRules, cardCollectorPrice],
+  [cheapShot as CardRules, cheapShotPrice],
   [classClown as CardRules, classClownPrice],
   [feelinFab as CardRules, feelinFabPrice],
   [feelinGlam as CardRules, feelinGlamPrice],
@@ -74,6 +80,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [hotBox as CardRules, hotBoxPrice],
   [hypeUp as CardRules, hypeUpPrice],
   [jimmyWails as CardRules, jimmyWailsPrice],
+  [kickMe as CardRules, kickMePrice],
   [lastWord as CardRules, lastWordPrice],
   [laughTrack as CardRules, laughTrackPrice],
   [lineCutter as CardRules, lineCutterPrice],
@@ -81,6 +88,8 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [mooch as CardRules, moochPrice],
   [offDay as CardRules, offDayPrice],
   [overreaction as CardRules, overreactionPrice],
+  [payItForward as CardRules, payItForwardPrice],
+  [popSteal as CardRules, popStealPrice],
   [publicityTour as CardRules, publicityTourPrice],
   [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],
@@ -96,6 +105,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [toll as CardRules, tollPrice],
   [ultraHappyHeart as CardRules, ultraHappyHeartPrice],
   [whodunnit as CardRules, whodunnitPrice],
+  [whoopeeCushion as CardRules, whoopeeCushionPrice],
   [whoops as CardRules, whoopsPrice],
   [youWereSaying as CardRules, youWereSayingPrice],
 ];

@@ -579,18 +579,21 @@ describe('the ORIGIN box\'s content area', () => {
     return wrap;
   };
 
-  test('a post origin: the band, then one area holding the byline, the words, Last edited and History', async () => {
+  test('a post origin: the band, the byline in a band of its own (the owner, 2026-11-21: it is "not part of the post itself"), then one area holding the words, Last edited and History', async () => {
     const w = threadWorld(3);
     const spun = await spinFrom(w, w.ids[1]!);
     openSpun(w, spun);
     const box = await origin();
     await waitFor(() => expect(box).toHaveTextContent('post 2'));
-    expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-area']);
+    expect([...box.children].map((c) => c.className)).toEqual(['kb-origin-head', 'kb-origin-byline', 'kb-origin-area']);
     const inside = area(box)!;
     expect(inside, 'the box draws a .kb-origin-area[data-kb-content-area]').not.toBeNull();
     expect(box.querySelectorAll('[data-kb-content-area]')).toHaveLength(1);
     expect(inside).toContainElement(within(box).getByText('post 2'));
-    expect(inside).toContainElement(box.querySelector('time')!);
+    const byline = box.querySelector('.kb-origin-byline')!;
+    expect(byline, 'the byline holds the date').toContainElement(box.querySelector('time')!);
+    expect(inside.contains(byline), 'the byline is outside the content area').toBe(false);
+    expect(inside, 'a post\'s words keep a post\'s room').toHaveAttribute('data-kb-room');
     expect(inside).toContainElement(within(box).getByRole('button', { name: 'History' }));
     expect(box.querySelector('.kb-origin-head')!.closest('.kb-origin-area')).toBeNull();
   });
@@ -1234,8 +1237,11 @@ describe('Spun into', () => {
     const article = await screen.findByRole('article', { name: /^Post 2 /u });
     const line = await within(article).findByText(/Spun into:/u);
     expect(line.closest('p')).toHaveTextContent('↳ Spun into: Crimson Incident (1 reply) · Is Pipewrench a Heel? (0 replies)');
-    /* Lifted over a card's ink, and marked so that an effect starts no stroke on it (the Whoops! refinements design's section 5). */
-    expect(line.closest('p')).toHaveAttribute('data-kb-over-ink');
+    /* In the post's foot, under its action buttons: out of the content area, so an effect drawn on the post neither covers it nor is sized around it. */
+    const foot = line.closest('.kb-act-foot')!;
+    expect(foot).not.toBeNull();
+    expect(line.closest('[data-kb-content-area]')).toBeNull();
+    expect(within(foot as HTMLElement).getByRole('button', { name: 'Spin thread' }).compareDocumentPosition(line) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
     expect(within(article).getByRole('link', { name: 'Crimson Incident' })).toHaveAttribute('href', `/t/${first}`);
     expect(many).not.toHaveBeenCalled();
     expect(one).not.toHaveBeenCalled();

@@ -53,6 +53,17 @@ test('a live ward turns away a cast at or below its rarity, before the card\'s o
   assert.equal(rarer.ok, true);
 });
 
+test('a pierce gets a cast past a ward no rarer than it, and only that', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon };
+  const salty = { ...plain, alignment: 'salty' as const };
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names }).ok, false, 'refused with no pierce');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'uncommon' }).ok, true, 'lands past an uncommon ward');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'rare' }).ok, false, 'a rare ward still holds');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'common' }).ok, true, 'lands past a ward below it');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => undefined }).ok, false, 'a ward of an unknown card still holds');
+  assert.equal(decidePlay(salty, settings, post, [{ ...ward, card: null }], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'common' }).ok, false, 'a ward with no card still holds');
+});
+
 test('an ended ward refuses nothing', () => {
   const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'legendary' }, ends: gone };
   assert.equal(decidePlay(plain, settings, post, [ward], {}, '').ok, true);
@@ -275,6 +286,25 @@ test('staffOffers: a cast card that carries a gimmick is never offered, and is a
   assert.equal(staffOffers(earner), false, 'a staff character\'s Acts are not settled, so an earn a persona cast would never be paid');
   const { gimmick: _gone, ...bare } = earner;
   assert.equal(staffOffers(bare as CardRules), true, 'the same card without the earn');
+});
+
+test('staffOffers: a set card with a ride outcome is never offered, and is again without it', () => {
+  const rider: CardRules = { ...snare, trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } } };
+  assert.equal(staffOffers(rider), false, 'a staff character has no wallet and its Acts are not settled');
+  assert.equal(staffOffers(snare), true, 'the same card without its outcome');
+});
+
+test('staffOffers: a set card with a refund outcome is offered, and one with a ride outcome is not', () => {
+  const refunder: CardRules = { ...snare, trap: { trigger: { on: 'cast' }, outcome: { kind: 'refund' } } };
+  assert.equal(staffOffers(refunder), true);
+  assert.equal(staffOffers({ ...snare, trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 0.5 } } }), false);
+});
+
+test('decideSet of a refund set card needs no quadrant, and a ride without every still does', () => {
+  const refunder: CardRules = { ...snare, key: 'refunder', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'refund' } }, catches: undefined, validateConfig: () => ok({}) };
+  assert.deepEqual(decideSet(refunder, settings, post, [], {}, []), { ok: true, value: { price: 0, config: {} } });
+  const rider: CardRules = { ...refunder, trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.5 } } };
+  assert.throws(() => decideSet(rider, settings, post, [], {}, []), /names no quadrant/);
 });
 
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {
@@ -589,6 +619,16 @@ test('a ride trap names its quadrant in its configuration: a card that drops it 
   assert.equal(decideSet(snare, settings, post, [], { card: 'inky' }, [inky]).ok, true);
 });
 
+test('a ride with every beside a match needs no quadrant and no catch; without every the quadrant guard still stands', () => {
+  const trap = (outcome: { kind: 'ride'; share: number; every?: true }): CardRules => ({ ...snare, key: 'every-set', name: 'Test Every', catches: undefined, validateConfig: (c) => ok(c), trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome } });
+  const every = decideSet(trap({ kind: 'ride', share: 0.25, every: true }), settings, post, [], {}, [inky]);
+  assert.equal(every.ok, true);
+  const value = (every as { value: { price: number; catches?: string } }).value;
+  assert.equal(value.price, 0);
+  assert.equal(value.catches, undefined);
+  assert.throws(() => decideSet(trap({ kind: 'ride', share: 0.25 }), settings, post, [], {}, [inky]), /card every-set has a ride and its checked configuration names no quadrant/);
+});
+
 test('a card\'s repairStaff is the persona\'s alone: a player\'s play with the same options is decided as given, never repaired', () => {
   const trimmed = { path: 'card.config.fixer.list', predicate: 'mostTwo', before: 3, after: 2 };
   const fixer: CardRules = {
@@ -730,6 +770,14 @@ test('a card that carries a reply lands on a plain post, and not on a reply draw
   assert.equal(refused.ok ? '' : refused.why, 'a reply drawn under a post takes no reply under it');
   assert.equal(decidePlay(plain, settings, under, [], {}, '').ok, true, 'a card without the flag is not stopped by it');
   assert.equal(postTarget('r', 'post', 'x').under, undefined);
+});
+
+test('a post target reads a forged quote as the poster\'s own words, and a real one as another post\'s', () => {
+  const id = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const body = `[quote=${id}]quoted words[/quote] mine`;
+  assert.equal(postTarget('p', 'post', body).text.includes('quoted words'), false);
+  assert.equal(postTarget('p', 'post', body, undefined, undefined, undefined, [id]).text.includes('quoted words'), true);
+  assert.equal(postTarget('p', 'post', body, undefined, undefined, undefined, ['1f8fad5b-d9cb-469f-a165-70867728950e']).text.includes('quoted words'), false);
 });
 
 test('a card that carries a reply is cast face up and never set face down, and no staff persona is offered it', () => {

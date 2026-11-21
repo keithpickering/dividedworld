@@ -699,6 +699,95 @@ describe('quote heads', () => {
   });
 });
 
+/* Forged quotes (docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 7 and 9): a real quote whose words are not in the post it names is drawn as a counterfeit of that post's author. */
+describe('forged quotes', () => {
+  const MIN = 60_000;
+  const okAnswer = <T,>(value: T) => ({ ok: true as const, value });
+  const veiling: Instance = {
+    ...testInstance,
+    anonymous: { name: 'Nobody', tagline: 'Could be anyone.' },
+    cards: [...testInstance.cards, {
+      key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni', rarity: 'rare', reaches: ['post'], lasts: { unit: 'minute', count: 10 }, veil: 'author',
+      playPrice: () => 0, validateConfig: (c) => okAnswer(c ?? {}), canApply: (t, e, _c, now) => landsOn({ key: 'whodunnit', reaches: ['post'] }, t, e, now),
+    }],
+  };
+
+  test('a doctored quote shows the counterfeit head: the author\'s name as text, no link, the mark', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${w.ids[0]}]post 1, which it never said[/quote]I agree.`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const quote = reply.querySelector('blockquote')!;
+    expect(quote).toHaveAttribute('data-kb-counterfeit');
+    await waitFor(() => expect(quote.querySelector('cite')).toHaveTextContent('Spritey'));
+    expect(quote.querySelector('cite a')).toBeNull();
+    expect(quote.querySelector('cite')).not.toHaveTextContent('Post #1');
+  });
+
+  test('an honest quote of the same post shows the real head, with both links', async () => {
+    const w = world(2);
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${w.ids[0]}]post 1[/quote]I agree.`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const head = await waitFor(() => {
+      const h = reply.querySelector('blockquote cite') as HTMLElement;
+      expect(within(h).getByRole('link', { name: 'Spritey' })).toBeInTheDocument();
+      return h;
+    });
+    expect(reply.querySelector('blockquote')).not.toHaveAttribute('data-kb-counterfeit');
+    expect(within(head).getByRole('link', { name: 'Post #1' })).toBeInTheDocument();
+  });
+
+  test('a quote of an Act that is no post says "Someone", with no link', async () => {
+    const w = world(2);
+    const nowhere = '99999999-9999-4999-8999-999999999999';
+    w.fake.seed.post(w.thread, w.pipe, `[quote=${nowhere}]words[/quote]`);
+    open(w);
+    const reply = await screen.findByRole('article', { name: /^Post 3 /u });
+    const quote = reply.querySelector('blockquote')!;
+    expect(quote).toHaveAttribute('data-kb-counterfeit');
+    await waitFor(() => expect(quote.querySelector('cite')).toHaveTextContent(/^Someone$/u));
+    expect(quote.querySelector('cite a')).toBeNull();
+  });
+
+  test('History draws each version with its own verdict: an honest quote in the original, a doctored one in the edit', async () => {
+    const w = world(2);
+    const mine = (await w.fake.myCharacters())[0]!.id;
+    const made = await w.fake.post(w.thread, mine, `[quote=${w.ids[0]}]post 1[/quote]original`, null);
+    if (!made.ok) throw new Error(made.error);
+    w.fake.clock.advance(10 * MIN);
+    await w.fake.edit(made.value.id, mine, `[quote=${w.ids[0]}]post one, reworded[/quote]edited`);
+    open(w);
+    const article = await screen.findByRole('article', { name: /^Post 3 /u });
+    await userEvent.click(within(article).getByRole('button', { name: 'History' }));
+    const list = await within(article).findByRole('list', { name: 'Versions of this post, oldest first' });
+    const [original, edited] = within(list).getAllByRole('listitem');
+    await waitFor(() => expect(original!.querySelector('blockquote cite a')).not.toBeNull());
+    expect(original!.querySelector('blockquote')).not.toHaveAttribute('data-kb-counterfeit');
+    expect(edited!.querySelector('blockquote')).toHaveAttribute('data-kb-counterfeit');
+    await waitFor(() => expect(edited!.querySelector('blockquote cite')).toHaveTextContent('Spritey'));
+    expect(edited!.querySelector('blockquote cite a')).toBeNull();
+  });
+
+  test('under a live veil the counterfeit head names the stand-in, and the author\'s name is nowhere in the markup', async () => {
+    const w = world(3, undefined, veiling);
+    const third = w.fake.seed.account('third');
+    w.fake.seed.character(third, 'Thirdwheel', 'face');
+    w.fake.seed.cards(w.other, { whodunnit: 1 });
+    w.fake.signInAs(w.other);
+    expect((await w.fake.playCard('whodunnit', w.spritey, w.ids[1]!, {}, '')).ok).toBe(true);
+    w.fake.seed.post(w.thread, w.spritey, `[quote=${w.ids[1]}]post 2, as nobody wrote it[/quote]`);
+    w.fake.signInAs(third);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: veiling });
+    const reply = await screen.findByRole('article', { name: /^Post 4 /u });
+    const quote = reply.querySelector('blockquote')!;
+    expect(quote).toHaveAttribute('data-kb-counterfeit');
+    await waitFor(() => expect(quote.querySelector('cite')).toHaveTextContent('Nobody'));
+    expect(quote.querySelector('cite a')).toBeNull();
+    expect(quote.innerHTML).not.toContain('Pipewrench');
+  });
+});
+
 describe('quotes', () => {
   test('a quote of an Act in this thread links to its post', async () => {
     const w = world(2);
@@ -1441,7 +1530,7 @@ describe('quotes and tallies off the page', () => {
     const w = world(2);
     const other = w.fake.seed.thread('general', w.spritey, 'Elsewhere', 'x');
     const quoted = Array.from({ length: n }, (_, i) => w.fake.seed.post(other.thread, w.pipe, `elsewhere ${i}`));
-    for (const q of quoted) w.fake.seed.post(w.thread, w.pipe, `[quote=${q}]x[/quote]`);
+    quoted.forEach((q, i) => w.fake.seed.post(w.thread, w.pipe, `[quote=${q}]elsewhere ${i}[/quote]`));
     return { w, other, quoted };
   };
 
@@ -1472,7 +1561,7 @@ describe('quotes and tallies off the page', () => {
     await waitFor(() => expect(within(again).getByRole('link', { name: 'Post #2' })).toBeInTheDocument());
   });
 
-  test('a quote of an Act that does not exist says "Quoted post" and links nowhere, and is not asked about again', async () => {
+  test('a quote of an Act that does not exist is a counterfeit that says "Someone" and links nowhere, and is not asked about again', async () => {
     const w = world(2);
     w.fake.seed.post(w.thread, w.pipe, `[quote=${UNKNOWN}]gone[/quote]reply`);
     const many = vi.spyOn(w.fake, 'actsById');
@@ -1480,7 +1569,8 @@ describe('quotes and tallies off the page', () => {
     const reply = await screen.findByRole('article', { name: /^Post 3 /u });
     await waitFor(() => expect(many).toHaveBeenCalledTimes(1));
     await pause(30);
-    expect(reply).toHaveTextContent('Quoted post');
+    expect(reply.querySelector('blockquote')).toHaveAttribute('data-kb-counterfeit');
+    expect(reply.querySelector('blockquote cite')).toHaveTextContent(/^Someone$/u);
     expect(within(reply).queryByRole('link', { name: /^Post #/u })).toBeNull();
     expect(await actLoader(w.fake).ask(UNKNOWN)).toBeNull();
     expect(many).toHaveBeenCalledTimes(1);
@@ -2750,12 +2840,15 @@ describe('a reply cut in under its post', () => {
     /* The tap is of the broadcast's own order: the answer's echo of the reply (the adapter's) would deliver it first. */
     fake.broadcast.echoAnswers(false);
     const kept: Parameters<NonNullable<ThreadListener['onUnder']>>[] = [];
+    let joined = false;
     const real = fake.subscribeThread.bind(fake);
     fake.subscribeThread = (t, l) => {
       listener = l;
-      return real(t, { ...l, onUnder: (...a) => { kept.push(a); if (!holding) l.onUnder?.(...a); } });
+      return real(t, { ...l, onJoined: () => { joined = true; l.onJoined?.(); }, onUnder: (...a) => { kept.push(a); if (!holding) l.onUnder?.(...a); } });
     };
-    return { kept, hold: (on: boolean) => { holding = on; }, send: (a: Parameters<NonNullable<ThreadListener['onUnder']>>) => deliver(() => listener!.onUnder!(...a)) };
+    /* The screen subscribes in an effect and the fake's listener joins a microtask later, so an event sent before that is lost: a test waits for the join first (with joins held, it releases them). */
+    const listening = async () => { await act(async () => { fake.broadcast.join(); }); await waitFor(() => expect(joined).toBe(true)); };
+    return { kept, listening, hold: (on: boolean) => { holding = on; }, send: (a: Parameters<NonNullable<ThreadListener['onUnder']>>) => deliver(() => listener!.onUnder!(...a)) };
   }
   const order = () => [...document.querySelectorAll('.kb-acts > article.kb-act')].map((a) => a.id);
 
@@ -2892,8 +2985,10 @@ describe('a reply cut in under its post', () => {
   test('an under event heard before the post\'s page is loaded nests the reply once when that page is', async () => {
     const w = await cutWorld(45, null);
     const heard = underTap(w.fake);
+    w.fake.broadcast.holdJoins();
     openCut(w, '', '?page=3');
     await screen.findByRole('article', { name: /^Post 45 /u });
+    await heard.listening();
     await act(async () => { must(await w.cast(w.ids[2]!, 'Excuse me.')); });
     expect(heard.kept).toHaveLength(1);
     expect(document.getElementById('post-46')).toBeNull();
@@ -2922,8 +3017,10 @@ describe('a reply cut in under its post', () => {
   test('an under event heard twice nests the reply once', async () => {
     const w = await cutWorld(10, null);
     const heard = underTap(w.fake);
+    w.fake.broadcast.holdJoins();
     openCut(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await heard.listening();
     await act(async () => { must(await w.cast(w.ids[2]!, 'Cut in.')); });
     await screen.findByRole('article', { name: 'Post 11 by Pipewrench, cut in under post 3' });
     heard.send(heard.kept[0]!);
@@ -2936,9 +3033,11 @@ describe('a reply cut in under its post', () => {
   test('the end of a play heard before its under event keeps the reply out from under its post: it is at its number', async () => {
     const w = await cutWorld(10, null);
     const heard = underTap(w.fake);
+    w.fake.broadcast.holdJoins();
     heard.hold(true);
     openCut(w);
     await screen.findByRole('article', { name: /^Post 10 /u });
+    await heard.listening();
     const play = must(await w.cast(w.ids[2]!, 'Cut in.'));
     w.fake.signInAs(w.root);
     await act(async () => { must(await w.fake.reverseCard(play.id)); await pause(20); });

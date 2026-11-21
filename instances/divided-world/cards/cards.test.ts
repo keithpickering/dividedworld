@@ -36,6 +36,7 @@ test('the instance sells its cards at their prices', () => {
     ['below-the-fold', 'salty', 100],
     ['blind-study', 'pepperoni', 150],
     ['card-collector', 'salty', 150],
+    ['cheap-shot', 'salty', 150],
     ['class-clown', 'pepperoni', 150],
     ['feelin-fab', 'sweet', 20],
     ['feelin-glam', 'sweet', 300],
@@ -50,6 +51,7 @@ test('the instance sells its cards at their prices', () => {
     ['hot-box', 'salty', 100],
     ['hype-up', 'sweet', 100],
     ['jimmy-wails', 'sweet', 200],
+    ['kick-me', 'pepperoni', 100],
     ['last-word', 'salty', 150],
     ['laugh-track', 'pepperoni', 150],
     ['line-cutter', 'pepperoni', 300],
@@ -57,6 +59,8 @@ test('the instance sells its cards at their prices', () => {
     ['mooch', 'salty', 150],
     ['off-day', 'salty', 500],
     ['overreaction', 'pepperoni', 100],
+    ['pay-it-forward', 'sweet', 150],
+    ['pop-steal', 'salty', 100],
     ['publicity-tour', 'sweet', 150],
     ['required-reading', 'sweet', 100],
     ['rope-break', 'sweet', 100],
@@ -72,6 +76,7 @@ test('the instance sells its cards at their prices', () => {
     ['toll', 'pepperoni', 150],
     ['ultra-happy-heart', 'sweet', 600],
     ['whodunnit', 'pepperoni', 300],
+    ['whoopee-cushion', 'pepperoni', 100],
     ['whoops', 'salty', 100],
     ['you-were-saying', 'pepperoni', 100],
   ]);
@@ -416,7 +421,8 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.ok(chance.get('ultra-happy-heart')! > 0, 'Ultra Happy Heart can be pulled');
   assert.ok(Math.abs([...chance.values()].reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the hit pull\'s odds sum to 1');
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
-  assert.equal(uncommons.length, 20);
+  // Pay It Forward (uncommon, Refund Outcome, Task 6) joined them, so twenty-one share the 74. Cheap Shot (uncommon, pierce, the Cheap Shot plan's Task 6) makes twenty-two.
+  assert.equal(uncommons.length, 22);
   assert.equal(chance.has('hype-up'), false, 'Hype-Up is a common, so the hit pull leaves it out');
   for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / uncommons.length) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + rares.length + legendaries.length);
@@ -760,7 +766,7 @@ test("Heat Magnet pays three quarters of a vote on a heat vote, under any class,
   assert.equal(amountFor(tech, 'card.boost'), 8, '7.5, rounded');
   assert.deepEqual(tech.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
   const heel = settle(flatBoard('heel', [useOnTom('g1', 'heat-magnet')], [heatFromBob]), instance);
-  assert.equal(amountFor(heel, 'heel.drewHeat'), 10);
+  assert.equal(amountFor(heel, 'heel.drewHeat'), 20, 'one vote of heat pays two votes\' worth');
   assert.equal(amountFor(heel, 'card.boost'), 8);
   assert.deepEqual(heel.entries.find((e) => e.reason === 'card.boost')!.params, { card: 'heat-magnet', flat: 0.75 });
 });

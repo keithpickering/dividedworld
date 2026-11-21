@@ -744,7 +744,7 @@ describe('Laugh Track: with Game sounds off', () => {
     fakeSound();
     mount({ sounds: true });
     await act(async () => { fireEvent.click(pieces()[0]!); await Promise.resolve(); await Promise.resolve(); });
-    expect(captions.current()).toMatchObject({ text: 'The audience boos' });
+    expect(captions.lines().at(-1)).toMatchObject({ text: 'The audience boos' });
   });
 });
 

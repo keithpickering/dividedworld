@@ -10,7 +10,7 @@
  *
  * A quote names an Act, not a place: where that Act is (this thread, another, which page) is the
  * screen's to say, so the screen hands a `quoteHead` that draws the head of a quote (its author and its post's link). With none,
- * the quote is still a quote, without a link. A counterfeit quote (`[quote=Name]`) quotes nobody's post: its name is plain text,
+ * the quote is still a quote, without a link. A counterfeit quote (`[quote=Name]`, or a real quote the Act's verdict says is forged) quotes nobody's post: its name is plain text,
  * never a link, which is the cue a screen reader hears; its look (bbcode.css, Wobble.tsx) is the cue an eye sees.
  */
 import { Fragment, memo, useEffect, useMemo, useState, type ReactNode } from 'react';
@@ -31,18 +31,23 @@ export interface BbCodeProps {
   readonly text: string;
   /** The head of a quote: who is quoted and where, by the quote's kind. */
   readonly quoteHead?: (q: QuoteOf) => ReactNode;
+  /** The Act's verdict (its payload's `forged`, `forgedList`): the posts whose quotes in these words are doctored. A real quote of one is drawn as a counterfeit that names that post's author. */
+  readonly forged?: readonly string[] | undefined;
 }
 
-/** What a quote's head is asked to draw: a real quote names an Act; a counterfeit names nobody's post, only what its player typed. */
+/**
+ * What a quote's head is asked to draw: a real quote names an Act; a counterfeit names what its player typed, and a forged quote (a real quote whose words are not in the post it names) also carries that
+ * post's Act in `act`, for the head to draw its author, never a link. A counterfeit written as one has `act: null`.
+ */
 export type QuoteOf =
   | { readonly kind: 'real'; readonly act: string }
-  | { readonly kind: 'counterfeit'; readonly user: string | null; readonly name: string | null };
+  | { readonly kind: 'counterfeit'; readonly user: string | null; readonly name: string | null; readonly act: string | null };
 
 /** The head a quote has when the screen gives none: an earlier post, or a counterfeit's typed name and letter (never a link). */
 function defaultHead(q: QuoteOf): ReactNode {
   if (q.kind === 'real') return 'Quoting an earlier post';
   if (q.name !== null) return <><Mini character={undefined} name={q.name} /><span className="kb-byline-name">{q.name}</span></>;
-  return q.user === null ? 'Quote' : 'Someone';
+  return q.user === null && q.act === null ? 'Quote' : 'Someone';
 }
 
 const REL = 'noopener noreferrer nofollow ugc';
@@ -240,8 +245,8 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
         : <a key={key} href={n.href} rel={REL} referrerPolicy="no-referrer">{inside}</a>;
     }
     case 'img':
-      /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown. */
-      if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer">image: {n.src}</a>;
+      /* The parser keeps what the player wrote, http: included; the page's img-src is https only (web/headers.ts), so an http: image would be a broken picture. A link to it is what can be shown; its "image: " words are the page's, and an image has no words in a post's text, so a highlight leaves them out (a quote holds only the post's own words, forged-quotes design, section 4). */
+      if (/^http:/i.test(n.src)) return <a key={key} href={n.src} rel={REL} referrerPolicy="no-referrer" data-kb-quotable="hidden">image: {n.src}</a>;
       return <img key={key} className="kb-bb-img" src={n.src} alt={altFor(n.src)} loading="lazy" referrerPolicy="no-referrer" />;
     case 'video': return <Video key={key} video={n.video} />;
     case 'quote':
@@ -262,7 +267,7 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
     case 'counterfeit':
       return (
         <blockquote key={key} className="kb-quote" data-kb-counterfeit="">
-          <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'counterfeit', user: n.user, name: n.name })}</cite>
+          <cite className="kb-quote-from">{(quoteHead ?? defaultHead)({ kind: 'counterfeit', user: n.user, name: n.name, act: n.act })}</cite>
           <div className="kb-quote-body">{nodes(n.children, quoteHead, layered)}</div>
         </blockquote>
       );
@@ -299,8 +304,10 @@ function node(n: BbNode, key: number, quoteHead: BbCodeProps['quoteHead'], layer
 }
 
 /** A post's, a signature's or a preview's words as the page shows them. Parsed once per text. */
-export const BbCode = memo(function BbCode({ text, quoteHead }: BbCodeProps) {
-  const tree = useMemo(() => parse(text), [text]);
+export const BbCode = memo(function BbCode({ text, quoteHead, forged }: BbCodeProps) {
+  /* The verdict is keyed by its ids, so a list made again with the same ids does not parse the words again. */
+  const verdict = forged && forged.length > 0 ? forged.join(',') : '';
+  const tree = useMemo(() => parse(text, undefined, verdict === '' ? undefined : new Set(verdict.split(','))), [text, verdict]);
   const runs = useTextLayers();
   // Only a post with layers over it is walked; one with none draws exactly as it always has. The walk reads the tree alone, so
   // it is kept while layers come and go, and only made again when the words change or the first layer arrives.

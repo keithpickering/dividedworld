@@ -51,6 +51,12 @@
  *   a flat earn, whether it names quadrants or reaction kinds, never costs the character: its flat boosts as a whole never sum below zero. One play's own
  *   lines can, when a larger play paid and ended and a smaller one still up takes the share back.
  *   An earn may be a cast card's on a character or a post.
+ * - The reveal perk: while a character's reveal is current, each positive earning of its class that the class marks `fromReactions` (Earning.fromReactions: a
+ *   reaction to the character's own Acts, or its own early call, caused it) and that has a time adds `settings.revealPerk` times itself as `reveal.perk`, with
+ *   `{ share }` in the entry's params and no class. A reveal is the time of an `unmask` Act (InputCharacter.reveals); it is current at a time `t` when the latest
+ *   reveal `u <= t` has no class row of the character starting in `(u, t]`, so any Turn, announced or silent, ends it from the Turn's time, a new reveal starts it
+ *   again, and a reveal made at a Turn's moment is current. It reads the class's own earnings as returned, so a loss, a boost, a cushion and a payout are never
+ *   perked, and a perk is never cushioned; with `revealPerk` 0 or no reveal it adds nothing.
  * - A cushion play (a use card whose gimmick is `cushion`), on a character or a post and not ended, with an `ends`, gives back
  *   `share` of a loss from a reaction: each earning of the character's own class that has a time, an Act of that character, a negative amount and
  *   positive `votes` (Earning.votes, the signed votes of the one reaction it pays for, which a class sets where it pays per vote), inside the play's
@@ -75,8 +81,8 @@
  *   week is a negative vote there and takes back what it paid, so a play never costs more than it paid.
  * - A ride pays `card.ride` for the votes on a card cast on a post, on the unhalved share of a vote: a ride gimmick (a use card on a post)
  *   pays its user's character its share for each vote, in any quadrant, before it ends, on a cast made while it was up; a ride spring (a
- *   trap whose outcome is a ride) pays its setter's character its share for each vote in the quadrant the set named, on the cast that
- *   sprang it, with no end. Neither pays for a cast by the post's author's player, nor the paid character's own player's votes.
+ *   trap whose outcome is a ride) pays its setter's character its share for each vote in the quadrant the set named, or in every quadrant,
+ *   where its outcome says `every`, on the cast that sprang it, with no end. Neither pays for a cast by the post's author's player, nor the paid character's own player's votes.
  * - A character in `scoredAs` is given the named class's rules in every stretch of the window, whatever class it holds or Turns to.
  * - A card's payout is a contribution with no class, so it is in no class's season total (`byClass`).
  * - A play an admin reversed before the window's end is not in the input, nor are the votes on it
@@ -93,15 +99,29 @@
  *   one, which has no room in the input to read it by.
  * - A spun thread's repliers are the distinct other players who posted in it, counted before
  *   the window and by its end, so a class can pay the window in which a threshold is crossed.
+ * - A post's debate is every post that quotes it, transitively, and the spin and posts of each thread another
+ *   player spun from it, up to the window's end. The walk follows threads spun "from the spark" only: a thread spun
+ *   from a post inside the debate is not followed. Only `quotes` and the Acts in the input count (a staff post or one
+ *   of The System's is not in the input, so it is no member). A character's class is handed a `SparkedDebate` for
+ *   each of its posts made no earlier than `debateDays` before the window with a member inside the window, or with a
+ *   member and a vote that moved on it inside the window, or of any age with a nonzero tallied sum (`input.tallied`) and a vote that
+ *   moved on it inside the window (a take-back finds its spark; `paid` is the sums by reason): the members as times and voices that name no one (0 the
+ *   author's player, then 1, 2... by first post, a character each with the shared vote off), whether the post is
+ *   itself in an earlier post's debate by its own player, every other player's vote on it at the stretch's start and
+ *   end, and the largest cushion share up on it or its character since it was made. It is handed to every stretch of the window, with
+ *   `placed` true in the one its latest member's time (or its latest moved vote's) falls in; a spark costs its debate's size, with quotes indexed once.
+ *   A class marks an earning `tally` and `settle` returns its window sums by Act and reason as `tallied`.
  * - A character that Turned inside the window is settled under each class it held, each for
  *   its own stretch; a reaction belongs to the class its target held when it landed.
+ * - Crowd pay (`crowdPay`, docs/plans/2026-11-20-crowd-pay-design.md) is each player's flat sum for each Act of another player's that they
+ *   first reacted to in the window, up to a cap; it is a wallet's alone, in no entry, no standing and no class's total.
  * - Input is read in a canonical order and amounts are summed before they are rounded, so the
  *   result is the same whatever order the rows arrive in.
  */
 import { payVotes, shareVotes, type PaidVote } from './votes.ts';
 import type {
   ActKind, ActStanding, Alignment, ClassInput, ClassRules, GivenReaction, HeldVote, InputAct, InputCharacter, InputReaction, Instance,
-  LandedCard, PlayedCard, Quadrant, ReceivedReaction, SettlementInput, SpunThread, Standing, UnscoredTarget,
+  LandedCard, PlayedCard, Quadrant, ReceivedReaction, Settings, SettlementInput, SparkedDebate, SpunThread, Standing, UnscoredTarget,
 } from './types.ts';
 import { QUADRANTS, isPost } from './types.ts';
 import type { GimmickEffect } from './cards.ts';
@@ -156,6 +176,13 @@ export interface Settlement {
   readonly byClass: Readonly<Record<string, number>>;
   /** Each vote this window touched, as now paid: stored with the settlement, read by the next. */
   readonly paid: readonly PaidVote[];
+  /** The window's sums of the earnings a class marked `tally`, by Act and reason, whole, with 0s left out, in Act then reason order: stored with the settlement, read by the next as `input.tallied`. */
+  readonly tallied: readonly { readonly act: string; readonly reason: string; readonly amount: number }[];
+  /**
+   * Each player's crowd pay for the window (docs/plans/2026-11-20-crowd-pay-design.md): the Acts paid, in the order paid, and the amount.
+   * A wallet's alone: in no entry, no standing and no class's total.
+   */
+  readonly crowd: readonly { readonly player: string; readonly acts: readonly string[]; readonly amount: number }[];
 }
 
 /** A reason's shape, as the ledger holds it (supabase/migrations/0003_aura.sql): `class.what`. */
@@ -199,6 +226,37 @@ export interface SettleOptions {
   readonly halving?: boolean;
 }
 
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-design.md): for each player, a flat sum for each Act of another player's character
+ * that the player first reacted to inside the window, up to `crowdPayMost` Acts, the earliest first reactions and then the smaller
+ * Act id. It reads only the reacting player's own reactions, and neither their quadrant, kind nor character, and it is no vote's:
+ * the shared vote, the halving and `SettleOptions` do not touch it. The Acts it can count are those in `input.acts`, so none of
+ * The System's, no unscored staff post and no gift or admin-ended play, which `settlement_input` does not send.
+ */
+export function crowdPay(input: SettlementInput, settings: Pick<Settings, 'crowdPayEach' | 'crowdPayMost'>): Settlement['crowd'] {
+  if (settings.crowdPayEach <= 0) return [];
+  const { window } = input;
+  const ownerOf = new Map(input.characters.map((c) => [c.id, c.player]));
+  const authorOf = new Map<string, string | undefined>();
+  for (const a of input.acts) if (a.at < window.to) authorOf.set(a.id, ownerOf.get(a.character));
+  /* Each player's earliest reaction on each Act, over every reaction the input holds. */
+  const first = new Map<string, Map<string, number>>();
+  for (const r of input.reactions) {
+    if (!authorOf.has(r.act) || authorOf.get(r.act) === r.player) continue;
+    const mine = first.get(r.player) ?? new Map<string, number>();
+    const seen = mine.get(r.act);
+    if (seen === undefined || r.at < seen) mine.set(r.act, r.at);
+    first.set(r.player, mine);
+  }
+  const rows: { player: string; acts: string[]; amount: number }[] = [];
+  for (const [player, mine] of first) {
+    const acts = [...mine].filter(([, at]) => at >= window.from && at < window.to)
+      .sort((a, b) => a[1] - b[1] || cmp(a[0], b[0])).slice(0, settings.crowdPayMost).map(([act]) => act);
+    if (acts.length > 0) rows.push({ player, acts, amount: acts.length * settings.crowdPayEach });
+  }
+  return rows.sort((a, b) => cmp(a.player, b.player));
+}
+
 export function settle(input: SettlementInput, instance: Instance, options: SettleOptions = {}): Settlement {
   const { window } = input;
   const settings = instance.settings;
@@ -215,11 +273,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const c of instance.cards) if (c.gimmick?.kind === 'cushion') cushionOf.set(c.key, c.gimmick.share);
   const skimOf = new Map<string, number>();
   const rideGimmickOf = new Map<string, number>();
-  const rideTrapOf = new Map<string, number>();
+  const rideTrapOf = new Map<string, { share: number; every: boolean }>();
   for (const c of instance.cards) {
     if (c.skim) skimOf.set(c.key, c.skim.share);
     if (c.gimmick?.kind === 'ride') rideGimmickOf.set(c.key, c.gimmick.share);
-    if (c.trap?.outcome?.kind === 'ride') rideTrapOf.set(c.key, c.trap.outcome.share);
+    if (c.trap?.outcome?.kind === 'ride') rideTrapOf.set(c.key, { share: c.trap.outcome.share, every: c.trap.outcome.every === true });
   }
   /* The class a character is scored as for this window, if a play named one: the instance must have it, as for a held class. */
   const scoredAs = new Map<string, string>();
@@ -411,28 +469,33 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     given.set(v.character, list);
   }
   /* Each Act a vote moved on in the window, with every other player's vote there at the window's start and end: one pass
-     over the window's votes and the paid votes of the Acts they touched, indexed by Act. The paid votes are what earlier
-     windows paid (weight x shares); `payVotes` returned what this window changed, which replaces them. With the shared
+     over the window's votes and the paid votes (or earlier reactions) of every Act, indexed by Act, whole. The paid votes are
+     what earlier windows paid (weight x shares); `payVotes` returned what this window changed, which replaces them. With the shared
      vote off (the estimate) nothing is paid, so each earlier reaction is a voter of its own at a whole vote. */
   const asVote = (weight: number, shares: Readonly<Record<Quadrant, number>>): Standing => ({
     excitedPositive: weight * shares.excitedPositive, excitedNegative: weight * shares.excitedNegative, calmPositive: weight * shares.calmPositive, boredNegative: weight * shares.boredNegative,
   });
-  const touched = new Set(windowVotes.map((v) => v.act));
-  const paidBefore = group(sharedVote ? (input.paid ?? []).filter((p) => touched.has(p.act)) : [], (p) => p.act);
-  const reactedBefore = sharedVote ? new Map<string, typeof reactions>() : group(reactions.filter((r) => r.at < window.from && touched.has(r.act)), (r) => r.act);
+  /* Indexed by Act, whole: an Act a vote moved on and a spark whose debate moved both read them (the input holds only those Acts'). */
+  const paidBefore = group(sharedVote ? input.paid ?? [] : [], (p) => p.act);
+  const reactedBefore = sharedVote ? new Map<string, typeof reactions>() : group(reactions.filter((r) => r.at < window.from), (r) => r.act);
   const paidNow = group(paidOnActs, (p) => p.act);
   const standings = new Map<string, ActStanding[]>();
   /** Each touched Act's votes now, by voter, which the cards below read for the players they drew. */
   const nowOn = new Map<string, Map<string, Standing>>();
-  for (const [act, vs] of group(windowVotes, (v) => v.act)) {
-    const target = actOf(act);
-    const author = playerOf(target.character);
+  const inOrder = (m: Map<string, Standing>) => byVote([...m.values()]);
+  /** Every other player's vote on an Act at the window's start and at its end, by voter. */
+  const standingMaps = (act: string) => {
+    const author = playerOf(actOf(act).character);
     const before = new Map<string, Standing>();
     for (const p of paidBefore.get(act) ?? []) if (p.player !== author) before.set(p.player, asVote(p.weight, p.shares));
     for (const r of reactedBefore.get(act) ?? []) before.set(r.player, { ...zero(), [r.quadrant]: 1 });
     const now = new Map(before);
     for (const p of paidNow.get(act) ?? []) now.set(p.player, asVote(p.weight, p.shares));
-    const inOrder = (m: Map<string, Standing>) => byVote([...m.values()]);
+    return { before, now };
+  };
+  for (const [act, vs] of group(windowVotes, (v) => v.act)) {
+    const target = actOf(act);
+    const { before, now } = standingMaps(act);
     const list = standings.get(target.character) ?? [];
     list.push({ act, actKind: target.kind, at: vs.reduce((m, v) => Math.max(m, v.at), -Infinity), before: inOrder(before), now: inOrder(now) });
     standings.set(target.character, list);
@@ -556,7 +619,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
 
   /* ---- each class's rules, stretch by stretch ---- */
-  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number; ofWindow?: true };
+  type Contribution = Detail & { class?: string; params?: Readonly<Record<string, number | string>>; kind?: string; votes?: number; ofWindow?: true; fromReactions?: true; tally?: true };
   const contributions: Contribution[] = [];
   /* The earn gimmicks up in the input, indexed once by what they are on: a character (a character-reach play) or a post. An admin-ended
      play is not in the input. Each character's pass below reads only its own and its posts' lists, so the pass costs its earnings
@@ -580,8 +643,94 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     if ('flat' in earn) push(flatsOn, on, { card: a.card!, play: a.id, from: a.at, ends: a.ends, flat: earn.flat, quadrants, reactions, ...(earn.acts ? { acts: earn.acts } : {}) });
     else push(boostsOn, on, { card: a.card!, from: a.at, ends: a.ends, by: earn.by, quadrants, reactions });
   }
+  /* ---- the debate under each post (the Tweener catalyst design, sections 1 and 8) ----
+     A post's debate is every post that quotes it, transitively, and the spin and posts of each thread another player spun from it. The
+     quote edges and the spins are indexed once, so a spark costs its debate's size: its members are collected by one walk down the
+     edges, put in time order, and numbered as voices. Whether a post is in an earlier post's debate by its own player is read from the
+     players above it, which each post keeps once (`above`, built in time order), never by walking up for every post. Only an Act in the
+     input is a member: a staff post and one of The System's are not in it. */
+  const dayMs = settings.debateDays * 86_400_000;
+  const actList = [...acts.values()];
+  const order = new Map<string, number>(actList.map((a, i) => [a.id, i]));
+  const quotedBy = new Map<string, string[]>();
+  const quoting = new Map<string, string[]>();
+  for (const q of input.quotes ?? []) {
+    const a = acts.get(q.act);
+    const b = acts.get(q.quoted);
+    // A quote names an earlier post: an edge that does not is read as none, so no cycle can be walked.
+    if (!a || !b || !isPost(a.kind) || !isPost(b.kind) || order.get(b.id)! >= order.get(a.id)!) continue;
+    push(quotedBy, b.id, a.id);
+    push(quoting, a.id, b.id);
+  }
+  const spinsOf = group([...acts.values()].filter((a) => a.kind === 'spin' && a.target !== undefined && acts.has(a.target)), (a) => a.target!);
+  const spinOfThread = new Map([...acts.values()].filter((a) => a.kind === 'spin').map((a) => [a.thread, a]));
+  /** The players of every post whose debate a post is in by a quote, built in time order from the posts it quotes. */
+  const above = new Map<string, ReadonlySet<string>>();
+  for (const a of acts.values()) {
+    const parents = quoting.get(a.id);
+    if (!parents) continue;
+    const players = new Set<string>();
+    for (const q of parents) { players.add(playerOf(actOf(q).character)); for (const x of above.get(q) ?? []) players.add(x); }
+    above.set(a.id, players);
+  }
+  /** Whether a post is in the debate of an earlier post by its own player: by a quote, or by a thread another player spun from it. */
+  const inOwnDebateOf = (a: InputAct) => {
+    const me = playerOf(a.character);
+    if (above.get(a.id)?.has(me)) return true;
+    const spun = a.kind === 'spin' ? a : spinOfThread.get(a.thread);
+    const from = spun?.target === undefined ? undefined : acts.get(spun.target);
+    return from !== undefined && isPost(from.kind) && playerOf(from.character) === me && playerOf(spun!.character) !== me;
+  };
+  /* A post with a nonzero tallied sum stays a spark at any age while a vote moves on it in the window, so a take-back finds it. */
+  const talliedOn = new Map<string, Record<string, number>>();
+  for (const t of input.tallied ?? []) if (t.amount !== 0) talliedOn.set(t.act, { ...talliedOn.get(t.act), [t.reason]: t.amount });
+  const sparksBy = group([...acts.values()].filter((a) => a.kind === 'post' && (quotedBy.has(a.id) || spinsOf.has(a.id))
+    && (a.at >= window.from - dayMs || (talliedOn.has(a.id) && windowVotesOn.has(a.id)))), (a) => a.character);
+  const cushionedOn = (spark: InputAct) => {
+    let most = 0;
+    for (const g of [...(cushionsOn.get(spark.id) ?? []), ...(cushionsOn.get(spark.character) ?? [])]) if (g.ends > spark.at && g.share > most) most = g.share;
+    return most;
+  };
+  /** A character's sparks whose debate moved in the window, each with the time that places it: its latest member's, or the latest vote that moved on it. */
+  const debatesOf = (character: string) => {
+    const out: { placed: number; debate: SparkedDebate }[] = [];
+    const author = playerOf(character);
+    for (const spark of sparksBy.get(character) ?? []) {
+      const seen = new Set<string>([spark.id]);
+      const members: number[] = [];
+      const take = (id: string) => { if (!seen.has(id)) { seen.add(id); members.push(order.get(id)!); } };
+      const down = [spark.id];
+      for (let id = down.pop(); id !== undefined; id = down.pop()) {
+        for (const q of quotedBy.get(id) ?? []) if (!seen.has(q)) { seen.add(q); members.push(order.get(q)!); down.push(q); }
+      }
+      for (const s of spinsOf.get(spark.id) ?? []) {
+        if (playerOf(s.character) === author) continue;
+        take(s.id);
+        for (const t of postsIn.get(s.thread) ?? []) take(t.id);
+      }
+      if (!members.length) continue;
+      members.sort((x, y) => x - y);
+      const voices = new Map<string, number>();
+      const posts = members.map((i) => {
+        const m = actList[i]!;
+        const p = playerOf(m.character);
+        const key = sharedVote ? p : m.character;
+        let voice = 0;
+        if (p !== author) { voice = voices.get(key) ?? voices.size + 1; voices.set(key, voice); }
+        return { at: m.at, voice };
+      });
+      const latest = posts[posts.length - 1]!.at;
+      const moved = windowVotesOn.get(spark.id);
+      if (!inWindow(latest) && !moved) continue;
+      const placed = inWindow(latest) ? latest : moved!.reduce((m, v) => Math.max(m, v.at), -Infinity);
+      const { before, now } = standingMaps(spark.id);
+      out.push({ placed, debate: { act: spark.id, at: spark.at, posts, inOwnDebate: inOwnDebateOf(spark), standing: { before: inOrder(before), now: inOrder(now) }, cushioned: cushionedOn(spark), paid: talliedOn.get(spark.id) ?? {}, placed: false } });
+    }
+    return out.sort((x, y) => x.placed - y.placed || cmp(x.debate.act, y.debate.act));
+  };
   for (const c of characters.values()) {
     const firstOfCharacter = contributions.length;
+    const sparked = debatesOf(c.id);
     for (const stretch of stretchesOf(c)) {
       const inside = <T extends { at: number }>(xs: readonly T[] | undefined) => (xs ?? []).filter((x) => x.at >= stretch.from && x.at < stretch.to);
       const classInput: ClassInput = {
@@ -598,14 +747,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         cardsLanded: inside(landed.get(c.id)).sort(byTime),
         threadsSpun: inside(spun.get(c.id)).sort(byTime),
         standings: inside(standings.get(c.id)).sort(byTime),
+        debates: sparked.map((d) => ({ ...d.debate, placed: d.placed >= stretch.from && d.placed < stretch.to })),
       };
       const empty = !classInput.posts.length && !classInput.received.length && !classInput.given.length && !classInput.held.length
-        && !classInput.cardsPlayed.length && !classInput.cardsLanded.length && !classInput.threadsSpun.length && !classInput.standings.length;
+        && !classInput.cardsPlayed.length && !classInput.cardsLanded.length && !classInput.threadsSpun.length && !classInput.standings.length && !classInput.debates.length;
       if (empty) continue;
       for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
+        if (e.tally && e.act === undefined) throw new Error(`settle: class ${stretch.class} tallied ${e.reason} with no act`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
-        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}) });
+        contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}), ...(e.fromReactions ? { fromReactions: true as const } : {}), ...(e.tally ? { tally: true as const } : {}) });
       }
     }
     /* Earn by a percentage: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
@@ -618,6 +769,25 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         const boost = tidy(e.amount * g.by);
         if (!boost) continue;
         contributions.push({ player: e.player, character: e.character, class: e.class, reason: 'card.boost', amount: boost, params: { card: g.card, by: g.by }, act: e.act, quadrant: e.quadrant, at: e.at });
+      }
+    }
+    /* The reveal perk: each positive earning the class marks `fromReactions`, of the character's own Act and at a time its reveal is current, adds
+       `revealPerk` times itself as `reveal.perk`, with no class. Current at `t`: a reveal at `u <= t` (the latest such) and no class row starting in
+       (u, t], so a Turn ends it and a reveal made at the Turn's moment is current. Read from `own` and pushed after the boosts, so a boost, a cushion
+       or a payout is never perked, and a perk is never boosted or cushioned. */
+    if (settings.revealPerk > 0 && c.reveals?.length) {
+      const reveals = [...c.reveals].sort((x, y) => x - y);
+      const turns = c.classes.map((k) => k.from);
+      const current = (t: number) => {
+        let u = -Infinity;
+        for (const r of reveals) if (r <= t) u = r;
+        return u !== -Infinity && !turns.some((f) => f > u && f <= t);
+      };
+      for (const e of own) {
+        if (!e.fromReactions || !(e.amount > 0) || e.at === undefined || !current(e.at)) continue;
+        const perk = tidy(e.amount * settings.revealPerk);
+        if (!perk) continue;
+        contributions.push({ player: e.player, character: e.character, reason: 'reveal.perk', amount: perk, params: { share: settings.revealPerk }, ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), at: e.at });
       }
     }
     /* A cushion: a loss of the character's own Act, inside a cushion's window on the character or on the Act, gives back the largest share that
@@ -664,15 +834,17 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   }
   /* Ride: the gimmicks up and the springs that rode, each indexed once, by the post and by the cast they are on. */
   const gimmicksOn = new Map<string, { id: string; card: string; user: string; at: number; ends: number; share: number }[]>();
-  const springsBy = new Map<string, { card: string; setter: string; quadrant: Quadrant; share: number }[]>();
+  const springsBy = new Map<string, { card: string; setter: string; quadrant?: Quadrant; share: number }[]>();
   for (const a of acts.values()) {
     if (a.kind === 'card' && a.card && a.reach === undefined && a.target !== undefined && a.ends !== undefined && rideGimmickOf.has(a.card)) {
       const list = gimmicksOn.get(a.target) ?? [];
       list.push({ id: a.id, card: a.card, user: a.character, at: a.at, ends: a.ends, share: rideGimmickOf.get(a.card)! });
       gimmicksOn.set(a.target, list);
-    } else if (a.kind === 'spring' && a.card && a.by !== undefined && a.quadrant !== undefined && rideTrapOf.has(a.card)) {
+    } else if (a.kind === 'spring' && a.card && a.by !== undefined && rideTrapOf.has(a.card)) {
+      const trap = rideTrapOf.get(a.card)!;
+      if (!trap.every && a.quadrant === undefined) continue;
       const list = springsBy.get(a.by) ?? [];
-      list.push({ card: a.card, setter: a.character, quadrant: a.quadrant, share: rideTrapOf.get(a.card)! });
+      list.push({ card: a.card, setter: a.character, ...(trap.every ? {} : { quadrant: a.quadrant }), share: trap.share });
       springsBy.set(a.by, list);
     }
   }
@@ -684,7 +856,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     // A gimmick is no cast of its own to ride, and rides only a cast made while it was up.
     const up = (gimmicksOn.get(cast.target) ?? []).filter((g) => g.id !== cast.id && g.at <= cast.at && cast.at < g.ends);
     for (const g of up) for (const v of votes) if (v.at < g.ends && v.owner !== playerOf(g.user)) payout('card.ride', g.card, g.user, g.share, v);
-    for (const s of springsBy.get(cast.id) ?? []) for (const v of votes) if (v.quadrant === s.quadrant && v.owner !== playerOf(s.setter)) payout('card.ride', s.card, s.setter, s.share, v);
+    for (const s of springsBy.get(cast.id) ?? []) for (const v of votes) if ((s.quadrant === undefined || v.quadrant === s.quadrant) && v.owner !== playerOf(s.setter)) payout('card.ride', s.card, s.setter, s.share, v);
   }
 
   /* Flat earns: one pass over the window's votes, each read against the flat plays on its Act's character and on the Act, indexed once above, so
@@ -753,6 +925,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       });
     });
   }
+  /* The window's tallied sums by Act and reason, whole as an entry is, 0s left out. */
+  const tallied = [...sum((c) => (c.tally ? `${c.act ?? ''}\u0000${c.reason}` : ''))]
+    .filter(([k]) => k !== '')
+    .map(([, { first, amount }]) => ({ act: first.act ?? '', reason: first.reason, amount: round(amount) }))
+    .filter((t) => t.amount !== 0);
   const standing = new Map<string, number>();
   for (const e of entries) standing.set(e.character, (standing.get(e.character) ?? 0) + e.amount);
   const byClass: Record<string, number> = {};
@@ -764,6 +941,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     standings: [...standing].sort((a, b) => cmp(a[0], b[0])).map(([character, amount]) => ({ character, amount })),
     byClass,
     paid,
+    tallied,
+    crowd: crowdPay(input, settings),
   };
 }
 
@@ -868,10 +1047,12 @@ export interface EstimateLine {
  *   vote's own amount;
  * - any other is one line with no time.
  *
+ * `crowd` is the caller's row of `crowdPay` over the same input, or null: the crowd pay so far, exact for the caller.
+ *
  * The lines add up to the entries. Run on the server, from estimate_input()
  * (supabase/migrations/0017_estimate.sql), which reads only what this player's estimate needs.
  */
-export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[] } {
+export function estimateForOwner(input: SettlementInput, instance: Instance, player: string): { entries: { character: string; reason: string; amount: number; params?: Readonly<Record<string, number | string>> }[]; lines: EstimateLine[]; crowd: { acts: string[]; amount: number } | null } {
   const s = settle(input, instance, { sharedVote: false, halving: false });
   const mine = new Set(input.characters.filter((c) => c.player === player).map((c) => c.id));
   const playerOf = new Map(input.characters.map((c) => [c.id, c.player]));
@@ -898,5 +1079,8 @@ export function estimateForOwner(input: SettlementInput, instance: Instance, pla
       lines.push({ ...line, at, amount: each + step });
     }
   }
-  return { entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
+  // The crowd pay so far: the caller's own row of the window's, which is the open one when this runs on estimate_input.
+  const row = s.crowd.find((c) => c.player === player);
+  const crowd = row ? { acts: [...row.acts], amount: row.amount } : null;
+  return { crowd, entries: s.entries.filter((e) => e.player === player).map(({ character, reason, amount, params }) => ({ character, reason, amount, ...(typeof params?.card === 'string' ? { params: { card: params.card } } : {}) })), lines: lines.filter((l) => l.amount !== 0) };
 }

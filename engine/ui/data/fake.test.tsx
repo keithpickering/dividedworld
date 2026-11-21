@@ -17,18 +17,19 @@ import type { Act, Refusal, Slot, Tally } from './api.ts';
 import { TIP_KEYS } from '../tips/keys.ts';
 import { createFake, FAKE_BACKEND_MARKER, START, TEST_CODE, TEST_LINK } from './fake.ts';
 import { cutLog, LOG_ROWS, micros } from './log-page.ts';
+import { targetOf as targetOf2 } from '../cards/land.ts';
 import { actsFollowed, actsNamed } from '../log/lines.ts';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../../rules/test-system.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import { localReaction } from '../../rules/emoji.ts';
 
 const settings: Settings = {
-  walletCap: 600, vote: 10, halving: 0.5, reactionCap: 3, charactersPerPlayer: 3,
+  walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
-  postMaxLength: 50, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
+  postMaxLength: 50, pollOptionsMax: 10, pollQuestionMax: 200, pollOptionMax: 100, pollLastsMin: { unit: 'hour', count: 1 }, pollLastsMax: { unit: 'day', count: 14 }, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
 };
 
 const earn = () => [];
@@ -583,7 +584,6 @@ describe('live events', () => {
     await fake.edit(post.id, anaFace, 'two');
     await fake.react(opener, anaFace, 'fire');
     expect(fake.broadcast.log.map((e) => e.event)).toEqual(['act', 'act', 'tally']);
-    expect(boFace).toBeDefined();
   });
   test('a Turn, a new character, an invite and a mark are not broadcast', async () => {
     const { fake, anaFace, thread } = world();
@@ -2059,7 +2059,7 @@ describe('the player\'s own log: the ledger with its shares, the wallet\'s event
     validateConfig: (c: unknown) => ({ ok: true as const, value: c ?? {} }),
   };
   const shop: Instance = { ...instance, cards: [splat], machine: [{ item: { card: splat.key }, availability: 'onSale' as const, price: 100 }], settings: { ...settings, economy: {} } };
-  const empty = { infractions: [], bans: [], falls: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], draws: [], wallsDrawn: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
+  const empty = { infractions: [], bans: [], falls: [], groupMoves: [], reports: [], appeals: [], settlements: [], wallet: [], cards: [], packs: [], playsOnMine: [], writes: [], draws: [], wallsDrawn: [], ballots: [], pollCloses: [], saves: [], setEnds: [], caught: [], ended: [], cosmetics: [], before: null };
 
   function logWorld() {
     const fake = createFake({ instance: shop });
@@ -2550,14 +2550,15 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
   const named = { ...warding, key: 'namedward', name: 'Name Ward', gimmick: { kind: 'ward' as const, cards: ['sugar'] } };
   const vibes = { ...base, key: 'vibes', name: 'Vibes', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'use' as const, reaches: ['thread' as const, 'board' as const], gimmick: { kind: 'price' as const, flavors: ['salty' as const], add: 25 }, lasts: { unit: 'day' as const, count: 3 }, canApply: () => ok(undefined) };
   const net = { ...base, key: 'net', name: 'Net', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const] } }, canApply: () => ok(undefined) };
+  const cushion = { ...base, key: 'cushion', name: 'Cushion', alignment: 'pepperoni' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { upTo: 'common' as const }, outcome: { kind: 'ride' as const, share: 0.25, every: true as const } }, canApply: () => ok(undefined) };
   function setup2() {
-    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, warding, named, vibes, net] } });
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, warding, named, vibes, net, cushion] } });
     const ana = fake.seed.account('ana');
     const bo = fake.seed.account('bo');
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'First post');
-    fake.seed.cards(ana, { snare: 2, saltward: 1, namedward: 1, vibes: 1, net: 1 });
+    fake.seed.cards(ana, { snare: 2, saltward: 1, namedward: 1, vibes: 1, net: 1, cushion: 1 });
     fake.seed.cards(bo, { blot: 3, sugar: 3, vibes: 1 });
     fake.signInAs(ana);
     return { fake, ana, bo, anaFace, boFace, thread, opener };
@@ -2607,6 +2608,182 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
   });
 
+  /* Cheap Shot (the pierce plan's Task 3): the fake mirrors place_cast's read of the caster's pierce. */
+  const lift = { ...base, key: 'lift', name: 'Lift', alignment: 'salty' as const, rarity: 'rare' as const, play: 'use' as const, reaches: ['character' as const], gimmick: { kind: 'pierce' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
+  const rareShield = { ...shield, key: 'rareshield', name: 'Rare Shield', rarity: 'rare' as const };
+  const csnare = { ...snare, key: 'csnare', name: 'Common Snare', rarity: 'common' as const };
+  const rsnare = { ...snare, key: 'rsnare', name: 'Rare Snare', rarity: 'rare' as const };
+  const spark = { ...base, key: 'spark', name: 'Spark', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'cast' as const, reaches: ['character' as const, 'thread' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+  const reachWard = (key: string, reach: 'character' | 'thread') => ({ ...shield, key, name: key, reaches: [reach] });
+  const lift2 = { ...lift, key: 'lift2', name: 'Lift Two' };
+  /* One whose own rules refuse a second while one is up (landsOn), so what reachEffects hands them is seen. */
+  const lift3 = { ...lift, key: 'lift3', name: 'Lift Three', canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lift3', reaches: ['character'] }, t, e, now) };
+  function pierceSetup() {
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, lift, lift2, lift3, spark, reachWard('cward', 'character'), reachWard('tward', 'thread'), reachWard('bward', 'thread'), rareShield, csnare, rsnare, cushion] } });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'Ana here.');
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.seed.cards(ana, { lift: 3, lift2: 2, lift3: 2, blot: 3, shield: 1, spark: 4 });
+    fake.seed.cards(bo, { cward: 1, tward: 1, shield: 1, rareshield: 1, csnare: 1, rsnare: 1, cushion: 1, blot: 1 });
+    fake.signInAs(ana);
+    const lifted = async () => must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine));
+    return { fake, ana, bo, anaFace, boFace, thread, mine, bos, lifted };
+  }
+  const trapStruck = async (fake: ReturnType<typeof createFake>) => (await fake.alerts()).filter((a) => a.kind === 'trapStruck');
+
+  test('a pierce gets the next cast past a ward no rarer than it, names the play, the card and the ward, and is spent', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    const pierce = await lifted();
+    fake.signInAs(bo);
+    must(await fake.useCard('shield', boFace, bos, {}, ''));
+    fake.signInAs(ana);
+    const landed = must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect(landed.payload.caught).toBeUndefined();
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: 'shield' });
+    // Spent: a second cast carries no pierce, and the ward turns it away.
+    expect(await fake.playCard('blot', anaFace, bos, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
+  });
+
+  test('a rare ward turns a pierced cast away in its words and spends nothing', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    await lifted();
+    fake.signInAs(bo);
+    must(await fake.useCard('rareshield', boFace, bos, {}, ''));
+    fake.signInAs(ana);
+    expect(await fake.playCard('blot', anaFace, bos, {}, '')).toEqual(refused('this post\'s Rare Shield turns away cards up to uncommon', 'config'));
+    // Still live: it is up when the ward is gone, so a cast with no ward on a post carries it.
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ card: 'lift' });
+  });
+
+  test('a pierce passes a common catching back: it lands, nothing springs, the back stays set and the caster alone is told', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    const pierce = await lifted();
+    fake.signInAs(bo);
+    const set = must(await fake.setCard('csnare', boFace, bos, {}));
+    fake.signInAs(ana);
+    const landed = must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect(landed.payload.caught).toBeUndefined();
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift' });
+    expect((await fake.cardsOn(bos, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect(await trapStruck(fake)).toMatchObject([{ kind: 'trapStruck', sub: 'passed', act: landed.id }]);
+    fake.signInAs(bo);
+    expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'csnare' });
+    expect(await trapStruck(fake)).toEqual([]);
+  });
+
+  test('a rare catching back still catches a pierced cast, and the pierce is spent', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    const pierce = await lifted();
+    fake.signInAs(bo);
+    must(await fake.setCard('rsnare', boFace, bos, {}));
+    fake.signInAs(ana);
+    const caught = must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect(caught.payload.caught).toBeDefined();
+    expect(caught.payload.pierce).toEqual({ by: pierce.id, card: 'lift' });
+    expect(await trapStruck(fake)).toEqual([]);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toBeUndefined();
+  });
+
+  test('a ride back springs as it does without a pierce', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    await lifted();
+    fake.signInAs(bo);
+    must(await fake.setCard('cushion', boFace, bos, {}));
+    fake.signInAs(ana);
+    must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect((await fake.cardsOn(bos, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'cushion', did: 'rode' });
+    expect(await trapStruck(fake)).toEqual([]);
+  });
+
+  test('a Use reads no pierce, and the pierce survives it', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    await lifted();
+    const used = must(await fake.useCard('shield', anaFace, mine, {}, ''));
+    expect(used.payload.pierce).toBeUndefined();
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ card: 'lift' });
+  });
+
+  test.each(['character', 'thread', 'board'] as const)('a pierce gets a cast at %s reach past a ward of that reach, names it, and is spent', async (reach) => {
+    const { fake, ana, bo, anaFace, boFace, bos, thread, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    fake.signInAs(bo);
+    const bothread = fake.seed.thread('general', boFace, 'Bo thread', 'Bo opens.');
+    const target = { character: boFace, thread: bothread.thread, board: general.id }[reach];
+    const key = { character: 'cward', thread: 'tward', board: 'bward' }[reach];
+    if (reach === 'board') fake.seed.reach(boFace, 'board', general.id, key);
+    else must(await fake.useCard(key, boFace, reach === 'character' ? boFace : bothread.thread, {}, '', reach, reach === 'character' ? bos : undefined));
+    fake.signInAs(ana);
+    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined);
+    const landed = must(await cast());
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: key });
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
+    // Spent: the next cast meets the ward.
+    expect(await cast()).toMatchObject({ ok: false });
+  });
+
+  test('a Use at a reach reads no pierce, and the pierce stays live', async () => {
+    const { fake, anaFace, mine, thread, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const used = must(await fake.useCard('lift2', anaFace, anaFace, {}, '', 'character', mine));
+    expect(used.payload.pierce).toBeUndefined();
+    expect((await fake.effectsAbove([anaFace], thread, null)).some((e) => e.play === pierce.id)).toBe(true);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: pierce.id });
+  });
+
+  test('with two live pierces the oldest is spent first', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    const first = await lifted();
+    fake.clock.advance(1000);
+    const second = must(await fake.useCard('lift2', anaFace, anaFace, {}, '', 'character', mine));
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: first.id });
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: second.id });
+  });
+
+  test('an expired pierce is not used', async () => {
+    const { fake, anaFace, lifted } = pierceSetup();
+    await lifted();
+    fake.clock.advance(8 * 24 * 3_600_000);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toBeUndefined();
+  });
+
+  test('a cast as another account\'s character is refused as before and spends no pierce', async () => {
+    const { fake, boFace, anaFace, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(await fake.playCard('blot', boFace, act, {}, '')).toMatchObject({ ok: false });
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: pierce.id });
+  });
+
+  test('reachEffects leaves a spent pierce out: its own card can be used again only once it is spent', async () => {
+    const { fake, anaFace, mine } = pierceSetup();
+    const use = async () => fake.useCard('lift3', anaFace, anaFace, {}, '', 'character', mine);
+    const first = must(await use());
+    expect(await use()).toMatchObject({ ok: false, error: 'this character already carries that card' });
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: first.id });
+    expect(must(await use()).kind).toBe('card');
+  });
+
+  test('a pierce is left out of the effects once spent, and a second can be used at once', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    const first = await lifted();
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === first.id)).toBe(true);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    must(await fake.playCard('blot', anaFace, act, {}, ''));
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === first.id)).toBe(false);
+    expect(must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine)).kind).toBe('card');
+  });
+
   test('a banned character cannot take a back, in the ban\'s words', async () => {
     const { fake, anaFace, opener } = setup2();
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
@@ -2640,6 +2817,21 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     fake.signInAs(bo);
     expect(must(await fake.playCard('sugar', boFace, opener, {}, '')).payload.caught).toBeUndefined();
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBe(set.id);
+  });
+
+  test('a match ride back springs on a common card with no quadrant on the spring, and the setter takes nothing', async () => {
+    const { fake, ana, bo, anaFace, boFace, opener } = setup2();
+    const back = must(await fake.setCard('cushion', anaFace, opener, {}));
+    const before = (await fake.myCards()).find((c) => c.card === 'sugar')?.held;
+    fake.signInAs(bo);
+    const cast = must(await fake.playCard('sugar', boFace, opener, {}, ''));
+    expect(cast.payload).toMatchObject({ rode: back.id });
+    expect(cast.payload).not.toHaveProperty('caught');
+    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    expect(spring.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
+    expect(spring.payload).not.toHaveProperty('quadrant');
+    fake.signInAs(ana);
+    expect((await fake.myCards()).find((c) => c.card === 'sugar')?.held).toBe(before);
   });
 });
 
@@ -3192,6 +3384,129 @@ describe('framed alerts', () => {
   });
 });
 
+/* Forged quotes (docs/plans/2026-11-20-forged-quotes-design.md, sections 1, 3, 5 and 7): the fake works out the verdict as the database does, with Task 1's TypeScript, when a post, spin or edit is written. */
+describe('forged quotes', () => {
+  function forgedWorld() {
+    const w = world({ postMaxLength: 2000 });
+    return { ...w, quoted: w.fake.seed.post(w.thread, w.boFace, 'I like Mario a lot') };
+  }
+  const forgedOf = async (w: { fake: ReturnType<typeof createFake> }, id: string) => ((await w.fake.actsById([id]))[0]!.payload as { forged?: unknown }).forged;
+  const targetOf = async (w: { fake: ReturnType<typeof createFake> }, id: string) => (await w.fake.actsById([id]))[0]!.targetActId;
+  const alertsFor = async (w: { fake: ReturnType<typeof createFake>; ana: string; bo: string }, account: string, kind: string) => { w.fake.signInAs(account); const rows = (await w.fake.alerts()).filter((a) => a.kind === kind); w.fake.signInAs(w.ana); return rows; };
+
+  test('an honest quote leaves the Act with no verdict, keeps its target, and writes a quote alert and no framed one', async () => {
+    const w = forgedWorld();
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]agreed`, w.quoted));
+    expect(await forgedOf(w, made.id)).toBeUndefined();
+    expect(await targetOf(w, made.id)).toBe(w.quoted);
+    expect(await alertsFor(w, w.bo, 'quote')).toHaveLength(1);
+    expect(await alertsFor(w, w.bo, 'framed')).toEqual([]);
+  });
+
+  test('a doctored quote carries the verdict, drops the target, writes no quote alert, and writes a framed one to the quoted post\'s author', async () => {
+    const w = forgedWorld();
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]I hate Mario a lot[/quote]so there`, w.quoted));
+    expect(await forgedOf(w, made.id)).toEqual([w.quoted]);
+    expect(await targetOf(w, made.id)).toBeNull();
+    expect(await alertsFor(w, w.bo, 'quote')).toEqual([]);
+    expect(await alertsFor(w, w.bo, 'framed')).toMatchObject([{ kind: 'framed', act: made.id, character: w.boFace }]);
+  });
+
+  test('the verdict is one per quoted post (a forged quote taints the others of it), lowercase and sorted, and a client\'s own is dropped', async () => {
+    const w = forgedWorld();
+    const other = w.fake.seed.post(w.thread, w.boFace, 'second words');
+    const body = `[quote=${w.quoted}]Mario a lot[/quote][quote=${w.quoted}]never said[/quote][quote=${other}]second words[/quote]`;
+    const made = must(await w.fake.post(w.thread, w.anaFace, body, null));
+    expect(await forgedOf(w, made.id)).toEqual([w.quoted]);
+  });
+
+  test('a quote that stands only in an edit written before the save is authentic; one that stands only in an edit written after is forged', async () => {
+    const w = forgedWorld();
+    w.fake.clock.advance(60_000);
+    w.fake.seed.edit(w.quoted, w.boFace, 'I like Luigi now');
+    w.fake.clock.advance(60_000);
+    const before = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Luigi now[/quote]`, null));
+    const original = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]`, null));
+    expect(await forgedOf(w, before.id)).toBeUndefined();
+    expect(await forgedOf(w, original.id)).toBeUndefined();
+    const fresh = w.fake.seed.post(w.thread, w.boFace, 'brand new words');
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${fresh}]Waluigi[/quote]`, null));
+    w.fake.clock.advance(60_000);
+    w.fake.seed.edit(fresh, w.boFace, 'Waluigi is here');
+    expect(await forgedOf(w, made.id)).toEqual([fresh]);
+  });
+
+  test('a quote that matches only a hidden version is forged, and a hidden version\'s words are not read', async () => {
+    const w = forgedWorld();
+    const secret = w.fake.seed.post(w.thread, w.boFace, 'a secret sentence');
+    w.fake.seed.hide(secret, 'hide');
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${secret}]secret sentence[/quote]`, null));
+    expect(await forgedOf(w, made.id)).toEqual([secret]);
+  });
+
+  test('an id that is no Act, a card\'s id and an empty quote of a real post', async () => {
+    const w = forgedWorld();
+    const nowhere = '99999999-9999-4999-8999-999999999999';
+    const card = w.fake.seed.card(w.anaFace, w.quoted, 'dab', { live: true });
+    const made = must(await w.fake.post(w.thread, w.anaFace, `[quote=${nowhere}]x[/quote][quote=${w.quoted}][/quote][quote=${card}]x[/quote]`, null));
+    expect(await forgedOf(w, made.id)).toEqual([nowhere, card].sort());
+  });
+
+  test('a spin and an edit carry their own verdicts, and an edit writes no framed alert', async () => {
+    const w = forgedWorld();
+    const spun = must(await w.fake.spin(w.opener, w.anaFace, 'Spun', `[quote=${w.quoted}]never said[/quote]`, []));
+    expect(((spun.act.payload) as { forged?: unknown }).forged).toEqual([w.quoted]);
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    const mine = must(await w.fake.post(w.thread, w.anaFace, 'plain', null));
+    must(await w.fake.edit(mine.id, w.anaFace, `[quote=${w.quoted}]never said it either[/quote]`));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    const versions = await w.fake.history(mine.id);
+    expect(versions.map((v) => (v.payload as { forged?: unknown }).forged)).toEqual([undefined, [w.quoted]]);
+  });
+
+  test('a forged quote of a post hidden later keeps its words, since no layer is asked for it, and an honest quote of the same post is emptied', async () => {
+    const w = forgedWorld();
+    const doctored = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Words never said[/quote]tail`, null));
+    const honest = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]tail`, null));
+    w.fake.seed.hide(w.quoted, 'hide');
+    const [d, h] = await w.fake.actsById([doctored.id, honest.id]);
+    expect(d!.payload.body).toBe(`[quote=${w.quoted}]Words never said[/quote]tail`);
+    expect(h!.payload.body).toBe(`[quote=${w.quoted}][/quote]tail`);
+  });
+
+  test('a character named by `framing` is never told a second time through a forged quote, whether or not the framing alert was skipped', async () => {
+    const w = forgedWorld();
+    /* Told once by framing (named in the body), and its post is also forged: one alert. */
+    must(await w.fake.post(w.thread, w.anaFace, `[quote=Someone user=${w.boFace}]x[/quote][quote=${w.quoted}]never said[/quote]`, null, [w.boFace]));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+    /* Named in `framing` but not in the body, so the framing alert is skipped: the forged quote does not tell it either. */
+    must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]never said it again[/quote]`, null, [w.boFace]));
+    expect(await alertsFor(w, w.bo, 'framed')).toHaveLength(1);
+  });
+
+  test('a play on a phrase inside a doctored quote lands on the post as the poster\'s own words, and inside an honest quote it does not', async () => {
+    const w = forgedWorld();
+    const hits = (target: unknown) => (target as { text: string }).text;
+    const doctored = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Luigi never said this[/quote]tail`, null));
+    const honest = must(await w.fake.post(w.thread, w.anaFace, `[quote=${w.quoted}]Mario a lot[/quote]tail`, null));
+    const [d, h] = await w.fake.actsById([doctored.id, honest.id]);
+    expect(hits(targetOf2(d!))).toContain('Luigi never said this');
+    expect(hits(targetOf2(h!))).not.toContain('Mario a lot');
+  });
+
+  test('a thread start frames the author of each forged post, and with `framing` ids no more than five alerts are written, each character once', async () => {
+    const w = forgedWorld();
+    const faces = Array.from({ length: 6 }, (_, i) => w.fake.seed.character(w.bo, `Bo ${i}`, 'face'));
+    const posts = faces.map((c, i) => w.fake.seed.post(w.thread, c, `words ${i}`));
+    const named = faces.slice(0, 3).map((c) => `[quote=Someone user=${c}]x[/quote]`).join('');
+    const forged = posts.map((p) => `[quote=${p}]never said[/quote]`).join('');
+    must(await w.fake.startThread('general', w.anaFace, 'Fresh', `${named}${forged}`, faces.slice(0, 3)));
+    const rows = await alertsFor(w, w.bo, 'framed');
+    expect(rows).toHaveLength(5);
+    expect(new Set(rows.map((r) => r.character)).size).toBe(5);
+  });
+});
+
 describe('a play on a post is not announced on reach', () => {
   test('only a character, a thread or a board play is', async () => {
     const w = world();
@@ -3440,6 +3755,7 @@ describe('a screen in one call is what the separate calls answer', () => {
       moment: null,
       at: null,
       cast: await fake.characters([boFace]),
+      polls: [], voters: [], votersMore: [], myBallots: [],
     });
     expect(first.origin!.plays.filter((a) => a.kind === 'card')).toHaveLength(20);
     expect(first.origin!.plays.filter((a) => a.kind === 'card_end')).toHaveLength(1);
@@ -4214,6 +4530,126 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     });
   });
 
+  /* A refund outcome (docs/plans/2026-11-20-refund-outcome-plan.md, Task 3): the back and the sign hand a landed cast back to the caster's hand, once, as place_cast does. */
+  describe('a refund back and a refunds use play', () => {
+    const rfBase = { ...base, validateConfig: (c: unknown) => ok(c ?? {}) };
+    const rfgift = { ...rfBase, key: 'rfgift', name: 'Rf Gift', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['sweet' as const], upTo: 'uncommon' as const }, outcome: { kind: 'refund' as const } }, canApply: () => ok(undefined) };
+    const rfsign = { ...rfBase, key: 'rfsign', name: 'Rf Sign', alignment: 'pepperoni' as const, rarity: 'common' as const, play: 'use' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, refunds: { flavors: ['salty' as const], count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsign', reaches: ['post'], stack: 1 }, t, e, now) };
+    const rfsweet = { ...rfBase, key: 'rfsweet', name: 'Rf Sweet', alignment: 'sweet' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsweet', stack: 6 }, t, e, now) };
+    const rfrare = { ...rfsweet, key: 'rfrare', name: 'Rf Rare', rarity: 'rare' as const, canApply: () => ok(undefined) };
+    const rfsalty = { ...rfsweet, key: 'rfsalty', name: 'Rf Salty', alignment: 'salty' as const, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsalty', stack: 6 }, t, e, now) };
+    const rfcatch = { ...rfBase, key: 'rfcatch', name: 'Rf Catch', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'rfsalty', canApply: () => ok(undefined) };
+    /* A newer sign that refunds sweet casts alone, and a back that rides a common salty cast. */
+    const rfsign2 = { ...rfsign, key: 'rfsign2', name: 'Rf Sign Two', refunds: { flavors: ['sweet' as const], count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsign2', reaches: ['post'], stack: 1 }, t, e, now) };
+    const rfride = { ...rfBase, key: 'rfride', name: 'Rf Ride', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'common' as const }, outcome: { kind: 'ride' as const, share: 1 } }, canApply: () => ok(undefined) };
+    const rfCards = [rfgift, rfsign, rfsign2, rfride, rfsweet, rfrare, rfsalty, rfcatch] as unknown as CardRules[];
+    const rfWorld: Instance = { ...instance, cards: rfCards, machine: [], settings: { ...settings, economy: {} } };
+    function rf() {
+      const fake = createFake({ instance: rfWorld });
+      const ana = fake.seed.account('ana');
+      const bo = fake.seed.account('bo');
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+      const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+      const posts = [1, 2, 3, 4].map((i) => fake.seed.thread('general', anaFace, `T${i}`, `Post ${i}`).act);
+      fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
+      fake.seed.cards(ana, { rfgift: 4, rfsign: 4, rfcatch: 2, rfsalty: 4, rfsign2: 2, rfride: 2 });
+      fake.seed.cards(bo, { rfsweet: 6, rfrare: 2, rfsalty: 12 });
+      fake.signInAs(ana);
+      return { fake, ana, bo, anaFace, anaHeel, boFace, posts };
+    }
+    const held = async (fake: ReturnType<typeof rf>['fake'], card: string) => (await fake.myCards()).find((c) => c.card === card)?.held ?? 0;
+    const returned = async (fake: ReturnType<typeof rf>['fake']) => (await fake.log()).cards.filter((e) => e.kind === 'returned' && e.act !== null);
+
+    test('a refund back hands the landed cast it matches back: a returned spring with no quadrant, the cast names the back, the hand is whole, and the back is spent', async () => {
+      const { fake, ana, bo, anaFace, boFace, posts } = rf();
+      const post = posts[0]!;
+      const back = must(await fake.setCard('rfgift', anaFace, post, { quadrant: 'calmPositive' })); /* a refund set card never stores a quadrant, even one in its config */
+      fake.signInAs(bo);
+      must(await fake.playCard('rfrare', boFace, post, {}, ''));
+      expect((await fake.cardsOn(post, 8)).some((a) => a.kind === 'spring')).toBe(false);
+      const before = await held(fake, 'rfsweet');
+      const cast = must(await fake.playCard('rfsweet', boFace, post, {}, ''));
+      const spring = (await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')!;
+      expect(spring.payload).toEqual({ card: 'rfgift', trigger: 'cast', did: 'returned', set: back.id, by: cast.id });
+      expect(cast.payload).toMatchObject({ card: 'rfsweet', layer: 1, handedBack: { by: back.id, card: 'rfgift' } });
+      expect(cast.payload).not.toHaveProperty('caught');
+      expect(await held(fake, 'rfsweet')).toBe(before);
+      expect(await returned(fake)).toEqual([expect.objectContaining({ card: 'rfsweet', act: cast.id, price: 0 })]);
+      const second = must(await fake.playCard('rfsweet', boFace, post, {}, ''));
+      expect(second.payload).not.toHaveProperty('handedBack');
+      expect(await held(fake, 'rfsweet')).toBe(before - 1);
+      fake.signInAs(ana);
+      expect((await fake.log()).cards.filter((e) => e.kind === 'returned' || e.kind === 'caught')).toEqual([]);
+    });
+
+    test('a sign hands back three casts of its flavor and not the fourth; a cast of another flavor is not handed back', async () => {
+      const { fake, ana, bo, anaFace, boFace, posts } = rf();
+      const post = posts[0]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      fake.signInAs(bo);
+      must(await fake.playCard('rfsweet', boFace, post, {}, ''));
+      const before = await held(fake, 'rfsalty');
+      const casts: Act[] = [];
+      for (let i = 0; i < 4; i++) casts.push(must(await fake.playCard('rfsalty', boFace, post, {}, '')));
+      expect(casts.slice(0, 3).map((c) => c.payload.handedBack)).toEqual([0, 1, 2].map(() => ({ by: sign.id, card: 'rfsign' })));
+      expect(casts[3]!.payload).not.toHaveProperty('handedBack');
+      expect(await held(fake, 'rfsalty')).toBe(before - 1);
+      expect((await returned(fake)).map((e) => e.act).sort()).toEqual(casts.slice(0, 3).map((c) => c.id).sort());
+      expect((await returned(fake)).map((e) => e.price)).toEqual([0, 0, 0]);
+      expect((await fake.cardsOn(post, 8)).find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
+      void ana;
+    });
+
+    test('the own other mask of the sign\'s player is handed back exactly as a stranger is', async () => {
+      const { fake, anaFace, anaHeel, posts } = rf();
+      const post = posts[1]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      const before = await held(fake, 'rfsalty');
+      const cast = must(await fake.playCard('rfsalty', anaHeel, post, {}, ''));
+      expect(cast.payload).toMatchObject({ handedBack: { by: sign.id, card: 'rfsign' } });
+      expect(await held(fake, 'rfsalty')).toBe(before);
+    });
+
+    test('the sign is the latest one that qualifies: an older salty sign hands a salty cast back when the newer sign is for another flavor', async () => {
+      const { fake, bo, anaFace, boFace, posts } = rf();
+      const post = posts[3]!;
+      const older = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      fake.clock.advance(1000);
+      must(await fake.useCard('rfsign2', anaFace, post, {}, ''));
+      fake.signInAs(bo);
+      const cast = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
+      expect(cast.payload).toMatchObject({ handedBack: { by: older.id, card: 'rfsign' } });
+    });
+
+    test('a ride back and a refunds sign on one post: the landed cast rides and is handed back by the sign', async () => {
+      const { fake, bo, anaFace, boFace, posts } = rf();
+      const post = posts[2]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      const back = must(await fake.setCard('rfride', anaFace, post, { quadrant: 'calmPositive' }));
+      fake.signInAs(bo);
+      const cast = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
+      expect(cast.payload).toMatchObject({ rode: back.id, handedBack: { by: sign.id, card: 'rfsign' } });
+      expect((await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
+    });
+
+    test('a back that catches the cast takes it: nothing is handed back and no kick is used', async () => {
+      const { fake, bo, anaFace, boFace, posts } = rf();
+      const post = posts[2]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      must(await fake.setCard('rfcatch', anaFace, post, {}));
+      fake.signInAs(bo);
+      const caught = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
+      expect(caught.payload).toHaveProperty('caught');
+      expect(caught.payload).not.toHaveProperty('handedBack');
+      expect(await returned(fake)).toEqual([]);
+      /* Its kick is unspent: the next three casts are all handed back by the sign. */
+      const next = [];
+      for (let i = 0; i < 3; i++) next.push(must(await fake.playCard('rfsalty', boFace, post, {}, '')));
+      expect(next.map((c) => (c.payload.handedBack as { by: string } | undefined)?.by)).toEqual([sign.id, sign.id, sign.id]);
+    });
+  });
+
   describe('a scored-as play', () => {
     const NEXT = START + DAY / 2;
     /* The last settlement ended now; the next is half a day on, the window after it a settlement's length (one day) long. */
@@ -4594,35 +5030,46 @@ describe('a no-quote on a post, and a cast card that carries an earn', () => {
     expect(via).toMatchObject({ ok: false });
     expect((via as Refusal).error).toContain(words(1));
     expect((via as Refusal).error).toMatch(/; take that quote out and send again$/);
-    const inBody = await fake.post(thread, boFace, `[quote=${opener}]yes[/quote] no`, null);
+    const inBody = await fake.post(thread, boFace, `[quote=${opener}]First post[/quote] no`, null);
     expect((inBody as Refusal).error).toContain(words(1));
     expect(must(await fake.post(thread, boFace, `Replying.`, null)).kind).toBe('post');
     /* A thread started or spun with the quote in its words is refused too, and a spin from the stopped post is not. */
-    expect((await fake.startThread('general', boFace, 'New', `[quote=${opener}]x[/quote]`) as Refusal).error).toContain('a post in another thread');
-    expect((await fake.spin(opener, boFace, 'Spun', `[quote=${opener}]x[/quote]`) as Refusal).error).toContain('a post in another thread');
+    expect((await fake.startThread('general', boFace, 'New', `[quote=${opener}]First post[/quote]`) as Refusal).error).toContain('a post in another thread');
+    expect((await fake.spin(opener, boFace, 'Spun', `[quote=${opener}]First post[/quote]`) as Refusal).error).toContain('a post in another thread');
     expect(must(await fake.spin(opener, boFace, 'Spun', `Plain.`)).act.kind).toBe('spin');
+  });
+
+  test('a doctored quote of a stopped post is written (it is a counterfeit, which No-quote never refused), an honest one is refused', async () => {
+    const { fake, bo, boFace, thread, opener, anaFace } = setup();
+    must(await fake.useCard('hush', anaFace, opener, {}, ''));
+    fake.signInAs(bo);
+    const doctored = must(await fake.post(thread, boFace, `[quote=${opener}]Words the post never held[/quote] no`, null));
+    expect((await fake.actsById([doctored.id]))[0]!.payload).toMatchObject({ forged: [opener] });
+    expect(((await fake.post(thread, boFace, `[quote=${opener}]First post[/quote]`, null)) as Refusal).error).toContain(words(1));
+    /* A reply whose target is forged drops the target, so the stopped post is not quoted at all. */
+    expect((await fake.actsById([must(await fake.post(thread, boFace, `[quote=${opener}]Never held[/quote]`, opener)).id]))[0]!.targetActId).toBeNull();
   });
 
   test('the post\'s own author is refused the same way, a quote inside code is no quote, and an ended play stops nothing', async () => {
     const { fake, thread, opener, anaFace } = setup();
     must(await fake.useCard('hush', anaFace, opener, {}, ''));
     expect(((await fake.post(thread, anaFace, `Me.`, opener)) as Refusal).error).toContain(words(1));
-    expect(must(await fake.post(thread, anaFace, `[code][quote=${opener}]x[/quote][/code]`, null)).kind).toBe('post');
+    expect(must(await fake.post(thread, anaFace, `[code][quote=${opener}]First post[/quote][/code]`, null)).kind).toBe('post');
     fake.clock.advance(2 * 86_400_000);
     expect(must(await fake.post(thread, anaFace, `Me again.`, opener)).kind).toBe('post');
   });
 
   test('an edit that adds the quote is refused; one that keeps a quote the post already held is written', async () => {
     const { fake, thread, opener, anaFace } = setup();
-    const held = must(await fake.post(thread, anaFace, `[quote=${opener}]x[/quote] first`, null));
+    const held = must(await fake.post(thread, anaFace, `[quote=${opener}]First post[/quote] first`, null));
     must(await fake.useCard('hush', anaFace, opener, {}, ''));
-    expect(must(await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] changed words`)).kind).toBe('post');
+    expect(must(await fake.edit(held.id, anaFace, `[quote=${opener}]First post[/quote] changed words`)).kind).toBe('post');
     const plain = must(await fake.post(thread, anaFace, `No quote yet.`, null));
-    const refusedEdit = await fake.edit(plain.id, anaFace, `[quote=${opener}]x[/quote] now`);
+    const refusedEdit = await fake.edit(plain.id, anaFace, `[quote=${opener}]First post[/quote] now`);
     expect((refusedEdit as Refusal).error).toContain(words(1));
     /* An edit compares against the post's current body: once an edit drops the quote, one that puts it back adds it. */
     expect(must(await fake.edit(held.id, anaFace, `Dropped the quote.`)).kind).toBe('post');
-    const readded = await fake.edit(held.id, anaFace, `[quote=${opener}]x[/quote] back again`);
+    const readded = await fake.edit(held.id, anaFace, `[quote=${opener}]First post[/quote] back again`);
     expect((readded as Refusal).error).toContain(words(1));
   });
 
@@ -5927,5 +6374,229 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
     expect(await fake.sealedPacks()).toEqual([]);
     expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }, { card: 'dud', held: 1 }]);
     expect((await fake.log(null)).packs[0]).toMatchObject({ source: 'bought', openedAt: expect.any(String) });
+  });
+});
+
+describe('polls (0395, 0396)', () => {
+  const draft = { question: 'Which?', options: ['A', 'B', 'C'], pick: 2, secret: false, lasts: { unit: 'day' as const, count: 1 } };
+  const poll = async (secret = false) => {
+    const w = world();
+    const post = must(await w.fake.post(w.thread, w.anaFace, 'Vote.', null, undefined, { ...draft, secret }));
+    const page = (await w.fake.threadPage(w.thread, { page: 1 }, null, []))!;
+    return { ...w, post, id: page.polls[0]!.act.id, page };
+  };
+
+  test('a poll rides on its post, with its counts, and a draft the settings refuse is refused in the words poll_written uses', async () => {
+    const { page, post, anaFace, fake, thread } = await poll();
+    expect(page.polls).toHaveLength(1);
+    expect(page.polls[0]).toMatchObject({ post: post.id, counts: [0, 0, 0], voters: 0, closed: false, close: null });
+    expect(page.polls[0]!.act.kind).toBe('poll');
+    expect(page.polls[0]!.act.seq).toBeNull();
+    expect(await fake.post(thread, anaFace, 'No.', null, undefined, { ...draft, options: ['A', 'A'] })).toEqual(refused('no two options are the same', 'poll'));
+    expect(await fake.post(thread, anaFace, 'No.', null, undefined, { ...draft, lasts: { unit: 'minute', count: 5 } })).toEqual(refused('a poll lasts from 1 hour to 14 days', 'poll'));
+    expect(await fake.startThread('general', anaFace, 'T', 'b', undefined, { ...draft, pick: 9 })).toEqual(refused('a poll lets 1 to 3 options be picked', 'poll'));
+  });
+
+  test('a poll and a public ballot can be spun: the place names them, the page\'s origin carries the poll, and the refusals are the server\'s', async () => {
+    const { fake, id, anaFace, thread, post, ana } = await poll();
+    const ballot = must(await fake.castBallot(id, anaFace, [1])).act;
+    const on = { kind: 'post', thread, title: 'Hello', seq: post.seq };
+    const polled = must(await fake.spin(id, anaFace, 'About the poll', 'b'));
+    expect(polled.thread.origin).toEqual({ kind: 'poll', question: 'Which?', on });
+    const origin = (await fake.threadPage(polled.thread.id, { page: 1 }, null, []))!.origin!;
+    expect([origin.polls.map((x) => x.act.id), origin.at]).toEqual([[id], { thread, seq: post.seq }]);
+    expect(origin.polls[0]!.counts).toEqual([0, 1, 0]);
+    const balloted = must(await fake.spin(ballot.id, anaFace, 'About the ballot', 'b'));
+    expect(balloted.thread.origin).toMatchObject({ kind: 'ballot', character: { id: anaFace, name: expect.any(String) }, question: 'Which?', on });
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    const close = must(await fake.closePollAsAdmin(id)).act;
+    fake.signInAs(ana);
+    expect(await fake.spin(close.id, anaFace, 'About the close', 'b')).toEqual(refused('spin the poll'));
+  });
+
+  test('a secret ballot cannot be spun, and a replaced or removed poll cannot be spun', async () => {
+    const secret = await poll(true);
+    const ballot = must(await secret.fake.castBallot(secret.id, secret.anaFace, [0])).act;
+    expect(await secret.fake.spin(ballot.id, secret.anaFace, 'No', 'b')).toEqual(refused('a secret ballot cannot be spun'));
+    const w = await poll();
+    must(await w.fake.edit(w.post.id, w.anaFace, 'Vote again.', { ...draft, question: 'Which now?' }));
+    expect(await w.fake.spin(w.id, w.anaFace, 'No', 'b')).toEqual(refused('that poll was replaced'));
+  });
+
+  test('a ballot counts its characters; the latest ballot counts, a withdrawal takes it back, and a refusal names the rule', async () => {
+    const { fake, id, anaFace, anaHeel } = await poll();
+    expect(must(await fake.castBallot(id, anaFace, [2, 0])).counts).toMatchObject({ counts: [1, 0, 1], voters: 1 });
+    fake.clock.advance(1_000);
+    expect(must(await fake.castBallot(id, anaFace, [1])).counts).toMatchObject({ counts: [0, 1, 0], voters: 1 });
+    // Two masks of one player each count.
+    expect(must(await fake.castBallot(id, anaHeel, [1])).counts).toMatchObject({ counts: [0, 2, 0], voters: 2 });
+    fake.clock.advance(1_000);
+    expect(must(await fake.castBallot(id, anaFace, [])).counts).toMatchObject({ counts: [0, 1, 0], voters: 1 });
+    expect(await fake.castBallot(id, anaFace, [0, 1, 2])).toEqual(refused('pick up to 2 options'));
+    expect(await fake.castBallot(id, anaFace, [3])).toEqual(refused('pick up to 2 options'));
+    expect(await fake.castBallot(id, anaFace, [1, 1])).toEqual(refused('pick up to 2 options'));
+    expect(await fake.castBallot(id, anaFace, [0.5])).toMatchObject({ ok: false, field: 'picks' });
+    expect(await fake.castBallot('00000000-0000-4000-8000-00000000ffff', anaFace, [0])).toEqual(refused('there is no such poll'));
+  });
+
+  test('the log holds the caller\'s own ballots (cast, changed, withdrawn, secret) with the poll\'s words and place, and an admin\'s close of their poll; no one else\'s', async () => {
+    const { fake, id, anaFace, anaHeel, post, thread, ana } = await poll();
+    const secret = await (async () => {
+      must(await fake.post(thread, anaHeel, 'Secretly.', null, undefined, { ...draft, question: 'Hush?', secret: true }));
+      const polls = [...(await fake.threadPage(thread, { page: 1 }, null, []))!.polls, ...((await fake.threadPage(thread, { page: 2 }, null, []))?.polls ?? [])];
+      return polls.find((x) => x.act.id !== id)!.act.id;
+    })();
+    const first = must(await fake.castBallot(id, anaFace, [1])).act.id;
+    fake.clock.advance(1_000);
+    const second = must(await fake.castBallot(id, anaFace, [2])).act.id;
+    fake.clock.advance(1_000);
+    const withdrawn = must(await fake.castBallot(id, anaFace, [])).act.id;
+    fake.clock.advance(1_000);
+    /* A cast after a withdrawal is a cast, not a change: the character's previous ballot picked nothing. */
+    const recast = must(await fake.castBallot(id, anaFace, [0])).act.id;
+    const hushed = must(await fake.castBallot(secret, anaFace, [2])).act.id;
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    const close = must(await fake.closePollAsAdmin(id)).act.id;
+    fake.signInAs(ana);
+    const log = (await fake.log(null));
+    const place = { thread, title: 'Hello', seq: post.seq };
+    const byAct = new Map((log.ballots ?? []).map((b) => [b.act, b]));
+    expect([first, second, withdrawn, recast].map((a) => [byAct.get(a)!.picks, byAct.get(a)!.changed])).toEqual([[[1], false], [[2], true], [[], true], [[0], false]]);
+    expect(byAct.get(first)).toMatchObject({ poll: id, character: anaFace, question: 'Which?', secret: false, options: ['A', 'B', 'C'], place });
+    expect(byAct.get(hushed)).toMatchObject({ character: anaFace, picks: [2], secret: true, question: 'Hush?', changed: false });
+    expect(log.pollCloses).toEqual([{ act: close, poll: id, character: anaFace, at: expect.any(String), question: 'Which?', place }]);
+    fake.signInAs(fake.seed.account('someone-else'));
+    const other = await fake.log(null);
+    expect([other.ballots, other.pollCloses]).toEqual([[], []]);
+  });
+
+  test('a poll closes by itself at its end, by its author, and by an admin; a closed poll takes no ballot and a second close is refused', async () => {
+    const { fake, id, anaFace } = await poll();
+    must(await fake.castBallot(id, anaFace, [0]));
+    fake.clock.advance(DAY);
+    expect(await fake.castBallot(id, anaFace, [1])).toEqual(refused('that poll has closed'));
+
+    const early = await poll();
+    expect(await early.fake.closePoll(early.id, early.boFace)).toEqual(refused('you do not play that character'));
+    must(await early.fake.castBallot(early.id, early.anaFace, [1]));
+    early.fake.clock.advance(1_000);
+    expect(must(await early.fake.closePoll(early.id, early.anaFace)).counts).toMatchObject({ counts: [0, 1, 0], voters: 1, closed: true });
+    expect(await early.fake.castBallot(early.id, early.anaFace, [0])).toEqual(refused('that poll has closed'));
+    expect(await early.fake.closePoll(early.id, early.anaFace)).toEqual(refused('that poll has closed'));
+    const shown = (await early.fake.threadPage(early.thread, { page: 1 }, null, []))!.polls[0]!;
+    expect(shown.closed).toBe(true);
+    expect(shown.close).toMatchObject({ kind: 'poll_close', payload: { by: 'author' } });
+
+    const adminned = await poll();
+    expect(await adminned.fake.closePollAsAdmin(adminned.id)).toEqual(refused('only an admin closes a poll'));
+    adminned.fake.signInAs(adminned.fake.seed.account('boss', { admin: true }));
+    expect(must(await adminned.fake.closePollAsAdmin(adminned.id)).act).toMatchObject({ kind: 'poll_close', character: null, payload: { by: 'admin' } });
+  });
+
+  test('a late older poll event does not overwrite a newer one, and a closed one is final', async () => {
+    const { fake, id, anaFace, thread } = await poll();
+    const heard: { counts: readonly number[]; closed: boolean; at: string }[] = [];
+    fake.subscribeThread(thread, { onPoll: (e) => heard.push(e) });
+    await flush();
+    fake.broadcast.hold();
+    must(await fake.castBallot(id, anaFace, [0]));
+    fake.clock.advance(1_000);
+    must(await fake.closePoll(id, anaFace));
+    fake.broadcast.flush({ reverse: true, twice: true });
+    await flush();
+    expect(heard.map((e) => e.closed)).toEqual([true]);
+    expect(heard[0]!.at > new Date(START).toISOString()).toBe(true);
+  });
+  test('an author closes only its own poll', async () => {
+    const { fake, id, bo, boFace } = await poll();
+    fake.signInAs(bo);
+    expect(await fake.closePoll(id, boFace)).toEqual(refused('only a poll\'s author can close it'));
+  });
+
+  test('a public poll lists its voters, newest first, with their faces; the caller\'s own ballots come back as myBallots', async () => {
+    const { fake, id, anaFace, anaHeel, boFace, bo, thread } = await poll();
+    must(await fake.castBallot(id, anaFace, [0]));
+    fake.clock.advance(1_000);
+    fake.signInAs(bo);
+    must(await fake.castBallot(id, boFace, [2]));
+    const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(page.voters.map((v) => [v.character, v.picks])).toEqual([[boFace, [2]], [anaFace, [0]]]);
+    expect(page.voterCast.map((c) => c.id).sort()).toEqual([anaFace, boFace].sort());
+    expect(page.myBallots.map((b) => b.character)).toEqual([boFace]);
+    expect(page.votersMore).toEqual([]);
+    const ballots = must(await fake.pollBallots(id));
+    expect(ballots.ballots.map((b) => [b.character.name, b.picks])).toEqual([['Bo Face', [2]], ['Ana Face', [0]]]);
+    expect(ballots.more).toBe(false);
+    expect(anaHeel).toBeDefined();
+  });
+
+  test('a secret poll names no one to anyone: the ballot Act, the event, the page and the record are the same for every caller, and the owner reads their own through myBallots', async () => {
+    const { fake, id, anaFace, bo, ana, thread } = await poll(true);
+    const heard: Act[] = [];
+    const counts: unknown[] = [];
+    fake.subscribeThread(thread, { onAct: (a) => heard.push(a), onPoll: (c) => counts.push(c) });
+    await flush();
+    const cast = must(await fake.castBallot(id, anaFace, [1]));
+    await flush();
+    expect(cast.act).toMatchObject({ kind: 'ballot', character: null, payload: { secret: true }, currentPayload: { secret: true } });
+    expect(JSON.stringify(heard)).not.toContain(anaFace);
+    expect(heard[0]).toEqual(cast.act);
+    expect(counts).toEqual([{ poll: id, counts: [0, 1, 0], voters: 1, endsAt: expect.any(String), closed: false, at: cast.act.createdAt }]);
+    expect(fake.broadcast.log.map((e) => e.event)).toContain('poll');
+    const mine = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(mine.myBallots).toEqual([{ act: cast.act.id, poll: id, character: anaFace, picks: [1], at: expect.any(String) }]);
+    expect(mine.voters).toEqual([]);
+    fake.signInAs(bo);
+    const theirs = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(theirs.myBallots).toEqual([]);
+    expect({ ...theirs.polls[0], act: null }).toEqual({ ...mine.polls[0], act: null });
+    expect(theirs.voters).toEqual([]);
+    expect(await fake.pollBallots(id)).toEqual(refused('that poll\'s ballots are secret'));
+    expect((await fake.actsById([cast.act.id]))[0]).toMatchObject({ character: null, payload: { secret: true } });
+    expect(ana).toBeDefined();
+  });
+
+  test('an edit may replace or remove a poll with no ballot; one with a ballot, or a closed one, cannot change, and the words still edit', async () => {
+    const { fake, anaFace, post, id, thread } = await poll();
+    must(await fake.edit(post.id, anaFace, 'Vote again.', { ...draft, question: 'Which one?' }));
+    const replaced = (await fake.threadPage(thread, { page: 1 }, null, []))!.polls[0]!;
+    expect(replaced.act.payload.question).toBe('Which one?');
+    expect(await fake.castBallot(id, anaFace, [0])).toEqual(refused('that poll was replaced'));
+    must(await fake.castBallot(replaced.act.id, anaFace, [0]));
+    expect(await fake.edit(post.id, anaFace, 'Vote once more.', { removed: true })).toEqual(refused('a poll cannot change once a ballot is cast; you can still close it'));
+    must(await fake.edit(post.id, anaFace, 'Words only.'));
+    expect((await fake.threadPage(thread, { page: 1 }, null, []))!.polls).toHaveLength(1);
+    // Closed with a ballot it is still the ballot that says so first; closed with none, it is final all the same.
+    must(await fake.closePoll(replaced.act.id, anaFace));
+    expect(await fake.edit(post.id, anaFace, 'Words only.', draft)).toEqual(refused('a poll cannot change once a ballot is cast; you can still close it'));
+    const bare = await poll();
+    must(await bare.fake.closePoll(bare.id, bare.anaFace));
+    expect(await bare.fake.edit(bare.post.id, bare.anaFace, 'Words only.', draft)).toEqual(refused('a closed poll cannot change'));
+    must(await bare.fake.edit(bare.post.id, bare.anaFace, 'Words only.'));
+  });
+
+  test('a removal takes a post\'s poll away; on a post with none it writes no poll', async () => {
+    const { fake, anaFace, post, thread } = await poll();
+    must(await fake.edit(post.id, anaFace, 'Never mind.', { removed: true }));
+    expect((await fake.threadPage(thread, { page: 1 }, null, []))!.polls).toEqual([]);
+    must(await fake.edit(post.id, anaFace, 'Never mind.', { removed: true }));
+    expect(await fake.edit(post.id, anaFace, 'x'.repeat(51), draft)).toEqual(refused('is longer than 50 characters', 'body'));
+  });
+
+  test('a poll is a place in no thread, and the settlement\'s Acts do not see it', async () => {
+    const { fake, id, anaFace, thread } = await poll();
+    must(await fake.castBallot(id, anaFace, [0]));
+    expect((await fake.thread(thread))?.lastSeq).toBe(2);
+  });
+
+  test('the seed writes a poll and a ballot as their characters do', async () => {
+    const { fake, anaFace, ana, thread } = world();
+    const post = fake.seed.post(thread, anaFace, 'Vote.');
+    const id = fake.seed.poll(post, draft, { at: START });
+    fake.seed.ballot(anaFace, id, [1], { at: START + MINUTE });
+    expect(() => fake.seed.poll(post, { ...draft, options: ['one'] })).toThrow(/a poll has 2 to 10 options/);
+    const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+    expect(page.polls[0]).toMatchObject({ counts: [0, 1, 0], endsAt: new Date(START + DAY).toISOString() });
+    expect(ana).toBeDefined();
   });
 });

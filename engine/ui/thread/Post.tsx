@@ -40,7 +40,9 @@ import { GroupMoveLine, RulingTag, rulingOf } from './GroupMove.tsx';
 import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/Hidden.tsx';
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
+import { forgedList } from '../../bbcode/quoted.ts';
 import { FoldBar } from './FoldBar.tsx';
+import { Poll } from '../polls/Poll.tsx';
 import { RowFoldCtx, useFoldMotion } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
@@ -86,7 +88,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
         <>
           <MoveTag kind={text(act.payload.kind)} office={moveOffice(act.payload)} />
           <GroupMoveLine act={act} office={moveOffice(act.payload)} />
-          <BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} />
+          <BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} />
           <Reactions act={act.id} author={act.character} authorName={spoken} tallies={tallies} mine={mine} />
           {person && <Signature text={person.character.signature} />}
         </>
@@ -120,10 +122,11 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
               ? (
                 <>
                   <HiddenNote />
-                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} /></HiddenOwn>}
+                  {own && <HiddenOwn own={own} onEdit={onEdit}><BbCode text={own.words} quoteHead={quoteHead} forged={own.forged} /></HiddenOwn>}
                 </>
               )
-              : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} /></PostEffects>}
+              : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>}
+          {!editing && !hidden && act.concealing !== true && <Poll post={act.id} />}
           <LastEdited act={act} />
           <Reactions act={act.id} author={by} authorName={spoken} tallies={tallies} mine={mine} plays={plays} />
           {person && <Signature text={person.character.signature} />}
@@ -193,6 +196,8 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
           {act.kind === 'post' && history.button}
           {onReport && <button type="button" className="kb-button" data-kb-size="small" aria-haspopup="dialog" onClick={(e) => onReport(e.currentTarget)}>Report</button>}
         </div>
+        {/* Under the buttons, out of the content area: an effect on the post neither covers the list nor is sized around it. */}
+        <SpunInto act={act.id} />
       </footer>
       <div className="kb-act-panels">
         <div id={`spin-${act.id}`}>
@@ -336,7 +341,6 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
         </header>
         <div className="kb-act-main" data-kb-cell="words" data-kb-content-area>
           <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
-          <SpunInto act={act.id} />
         </div>
         <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
       </div>
