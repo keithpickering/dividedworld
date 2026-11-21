@@ -18,6 +18,7 @@
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import type { Instance } from '../../../../engine/rules/types.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
+import { cardOf } from '../../../../engine/ui/story.tsx';
 import fangamePortrait from '../avatars/fangame-portrait.webp?url';
 import fangameSquare from '../avatars/fangame-square.webp?url';
 import { frontDoor } from '../front-door.ts';
@@ -90,7 +91,7 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
    * So the clock is brought to the page's before anything is made, and what the page does from here is dated now.
    */
   fake.clock.advance(now - fake.clock.now());
-  const lasts = (card: string) => instance.cards.find((c) => c.key === card)?.lasts !== undefined;
+  const lasts = (card: string) => cardOf(instance.cards, card).lasts !== undefined;
   /** The end a card that wears off is seeded with: well past any film. */
   const ends = new Date(now + 5 * 24 * HOUR).toISOString();
   fake.seed.season({ number: 1, startsAt: new Date(now - 30 * 24 * HOUR).toISOString() });
