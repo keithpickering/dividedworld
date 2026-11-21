@@ -1,7 +1,7 @@
 /**
  * A poll's rules in TypeScript: what a draft must be, and the arithmetic of a poll's counts. `pollDraftProblems` says each refusal in the
- * words `poll_written` says it in (supabase/migrations/0392_polls.sql, held beside it in polls.test.ts by supabase/tests/0392-polls.sql's
- * sentences); `countedBallots` and `pollCounts` are `poll_counts`'s arithmetic (0392, section 7), for a client's preview of a live event
+ * words `poll_written` says it in (supabase/migrations/0393_polls.sql, held beside it in polls.test.ts by supabase/tests/0393-polls.sql's
+ * sentences); `countedBallots` and `pollCounts` are `poll_counts`'s arithmetic (0393, section 7), for a client's preview of a live event
  * and for the fake. The engine knows no instance: the limits come from the settings it is handed.
  */
 import type { Span } from './types.ts';

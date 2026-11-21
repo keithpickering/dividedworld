@@ -1,5 +1,5 @@
 /**
- * Polls, end to end (supabase/migrations/0392_polls.sql and 0393_poll_reads.sql; docs/plans/2026-11-20-polls-plan.md, Task 9, "The masks"):
+ * Polls, end to end (supabase/migrations/0393_polls.sql and 0394_poll_reads.sql; docs/plans/2026-11-20-polls-plan.md, Task 9, "The masks"):
  * ballots cast through the Edge Function's own core (supabase/functions/act/core.ts) as players, against the real migrations, and every read another
  * account can make of a secret poll, which holds no character of a secret ballot ("A response never proves a private fact").
  *

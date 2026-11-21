@@ -5946,7 +5946,7 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
   });
 });
 
-describe('polls (0392, 0393)', () => {
+describe('polls (0393, 0394)', () => {
   const draft = { question: 'Which?', options: ['A', 'B', 'C'], pick: 2, secret: false, lasts: { unit: 'day' as const, count: 1 } };
   const poll = async (secret = false) => {
     const w = world();

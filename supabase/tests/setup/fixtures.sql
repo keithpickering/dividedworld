@@ -29,7 +29,7 @@ insert into settings (key, value) values
   ('inviteLifetime', '{"unit": "day", "count": 7}'),
   ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
-  -- A poll (0392): the most options, the longest question and option, and the least and most a poll may last (spans may count hours).
+  -- A poll (0393): the most options, the longest question and option, and the least and most a poll may last (spans may count hours).
   ('pollOptionsMax', '10'),
   ('pollQuestionMax', '200'),
   ('pollOptionMax', '100'),

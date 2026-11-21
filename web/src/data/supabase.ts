@@ -287,7 +287,7 @@ const toPollCounts = (r: Row): PollCounts => ({ poll: r['poll'] as Id, counts: t
 /** A `poll` event with no time cannot be ordered against the others, so it is dropped rather than heard as the newest or the oldest. */
 const toPollEvent = (r: Row): PollEvent | null => (typeof r['at'] === 'string' ? { ...toPollCounts(r), at: r['at'] } : null);
 const toPollWritten = (r: Row): PollWritten => ({ act: toAct(r['act'] as Row), counts: toPollCounts(r) });
-/** thread_page's poll parts (0393), for the page and for the origin alike; a document without them reads as none. */
+/** thread_page's poll parts (0394), for the page and for the origin alike; a document without them reads as none. */
 const toPollParts = (d: Row) => ({
   polls: rowsOf(d['polls']).map((p): Poll => ({ post: p['post'] as Id, act: toAct(p['act'] as Row), counts: toPicks(p['counts']), voters: num(p['voters']), endsAt: String(p['ends_at']), closed: p['closed'] === true, close: isObject(p['close']) ? toAct(p['close']) : null, balloted: p['balloted'] === true })),
   voters: rowsOf(d['voters']).map((v): PollVoter => ({ poll: v['poll'] as Id, act: v['act'] as Id, character: v['character'] as Id, picks: toPicks(v['picks']), at: String(v['at']) })),
@@ -331,7 +331,7 @@ function toPlace(raw: unknown): OriginPlace | null {
     /* `from` and `at` (0351) are each a post place, else null: a row from before the migration has neither key. */
     return { kind: 'play', card: raw['card'], on: toPlaceOn(raw['on']), from: toPostPlace(raw[PLAY_FROM]), at: toPostPlace(raw['at']) };
   }
-  /* A poll, and a public ballot on one (0393): the question and the poll's post; a ballot also names its character. */
+  /* A poll, and a public ballot on one (0394): the question and the poll's post; a ballot also names its character. */
   if (raw['kind'] === 'poll' || raw['kind'] === 'ballot') {
     const on = toPostPlace(raw['on']);
     const who = raw['character'];
@@ -2305,7 +2305,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     startThread: (board, character, title, body, framing, poll) => act({ action: 'startThread', board, character, title, body, ...framed(framing), ...(poll ? { poll } : {}) }, (r) => ({ thread: toNewThread(r['thread'], toAct(r['act'])), act: toAct(r['act']) })),
     post: (thread, character, body, quote, framing, poll) => act({ action: 'post', thread, character, body, ...(quote ? { quote } : {}), ...framed(framing), ...(poll ? { poll } : {}) }, toAct),
     edit: (post, character, body, poll) => act({ action: 'edit', post, character, body, ...(poll ? { poll } : {}) }, toAct),
-    /* A ballot or a close answers the Act's projection (a secret poll's names no one) and the poll's counts, the shape the `poll` event carries (0392 cast_ballot). */
+    /* A ballot or a close answers the Act's projection (a secret poll's names no one) and the poll's counts, the shape the `poll` event carries (0393 cast_ballot). */
     castBallot: (poll, character, picks) => act({ action: 'castBallot', poll, character, picks: [...picks] }, toPollWritten),
     closePoll: (poll, character) => act({ action: 'closePoll', poll, character }, toPollWritten),
     closePollAsAdmin: (poll) => act({ action: 'closePollAsAdmin', poll }, toPollWritten),
