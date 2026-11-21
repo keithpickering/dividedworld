@@ -7,6 +7,13 @@ import type { TrapStruckFacts } from '../../../engine/ui/types.ts';
 import { cards } from '../cards/index.ts';
 
 export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; readonly detail: string } | undefined {
+  /* A pierce's cast got past a card set face down: nothing about the back is public, so no setter is named. The voice may gloat, and says only that the card stays face down and its setter is not told. */
+  if (f.how === 'passed') {
+    return {
+      line: 'Cheap shot! It slipped right past.',
+      detail: `Your ${f.card ?? 'card'} got your ${f.laid ?? 'Move'} past a card set face down. That card stays face down, and the one who set it is not told.`,
+    };
+  }
   if (f.setter === null) return undefined;
   /* A ride back's cast landed as usual: the voice says only what the spring shows everyone. A setter's card that names its card (`catches`, 4D Chess) says it named the cast; one that names none (Whoopee Cushion) says it sprang on it. Where the spring was not read (`f.card` null) more than one card rides, so the card is only "card". */
   if (f.how === 'rode') {

@@ -16,6 +16,7 @@ import { ui as autocorrectUi } from './cards/autocorrect/ui.ts';
 import { ui as belowTheFoldUi } from './cards/below-the-fold/ui.ts';
 import { ui as blindStudyUi } from './cards/blind-study/ui.ts';
 import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
+import { ui as cheapShotUi } from './cards/cheap-shot/ui.ts';
 import { ui as classClownUi } from './cards/class-clown/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
@@ -67,6 +68,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   belowTheFoldUi,
   blindStudyUi,
   cardCollectorUi,
+  cheapShotUi,
   classClownUi,
   feelinFabUi,
   feelinGlamUi,
