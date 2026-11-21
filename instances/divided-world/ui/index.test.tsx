@@ -1658,7 +1658,9 @@ describe('Cheap Shot in plain words (the Cheap Shot plan, Task 7)', () => {
     expect(shot!.ConfigForm).toBeUndefined();
     const words = [shot!.art.tagline, shot!.summary, shot!.status as string, shot!.describe(instance.settings), shot!.logPlay!({}, {})].join('\n');
     expect(words).not.toMatch(/%|\bcast/iu);
-    for (const c of instance.classes) expect(words, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'u'));
+    /* "face down" is the card's own phrase, not the class Face, so it is set aside before the class check. */
+    const unset = words.replace(/face[- ]down/giu, '');
+    for (const c of instance.classes) expect(unset, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
   });
 
   test('the rules over every card hold with it in', () => {
