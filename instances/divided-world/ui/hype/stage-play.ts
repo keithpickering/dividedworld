@@ -342,6 +342,21 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       mark(`staff:memo:${key}`);
       return id;
     },
+    /**
+     * A member of the Staff posts one of the rehearsal's lines in a thread of the stage, now: \`say('fangame', 'announcements', 'posted')\`. \`who\` is a key of \`made.staff\` (fangame, qc, ontopic), \`where\` a thread
+     * the stage names (\`made.threads\`, which a beat's own result adds to) and \`key\` a line of staff-lines.json. A film uses it for a post that must ARRIVE while the camera watches the thread. Returns the post's Act.
+     */
+    async say(who: string, where: string, key: string): Promise<string> {
+      const staffer = made.staff[who];
+      if (staffer === undefined) throw new Error(`the stage has no staff member "${who}": they are ${Object.keys(made.staff).join(', ')}`);
+      const thread = made.threads[where];
+      if (thread === undefined) throw new Error(`the stage has no thread "${where}": its threads are ${Object.keys(made.threads).join(', ')}`);
+      fake.clock.advance(1000);
+      const id = fake.seed.staffPost(staffer, thread, lineOf(key).text);
+      fake.broadcast.rejoin();
+      mark(`staff:say:${key}`);
+      return id;
+    },
     /** The Boss merges the Palace into World -1, with his reason (the rehearsal's) on the move's notice; the closed board links where its threads went. */
     async merge(): Promise<string> {
       const { palace, minus } = made.boards;
@@ -461,7 +476,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       return { ...done, press: [`#post-${done.seq} .kb-visit-mark (the "Filed" tab on the post: the Lens opens on the filing)`, 'the "Appeal · 0.50 Aura" tile in the Lens (the form: "Your plea (public)")', 'type a plea in the textarea, then the button "Appeal · 0.50 Aura" sends it'] };
     },
     /** A Mod's star review, posted in a thread of the stage: `stars` (ONTOPIC 5.0's one star, on a thread titled "a") or `fiveStars` (his five, on the Pointless Post Palace). Returns the thread, the review's Act and its key to `show('thread:<key>')`. */
-    async review(key: string): Promise<{ readonly thread: string; readonly post: string; readonly key: string }> {
+    async review(key: string, options: { readonly hold?: boolean } = {}): Promise<{ readonly thread: string; readonly post: string; readonly key: string }> {
       if (key !== 'stars' && key !== 'fiveStars') throw new Error(`there is no review "${key}": the reviews are stars and fiveStars`);
       const one = key === 'stars';
       const opened = one ? fake.seed.thread('general', characterOf('Snuckles'), 'a', 'a') : opens('Pointless Post Palace', 'Human Josh', 'Describe your day in one word', 'Describe your day in one word. (This might belong on General.)');
@@ -469,6 +484,8 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
         ? [['D-Guy', 'I have receipts. I will not say for what.'], ['Serious Deer', 'hard disagree'], ['Human Josh', 'bump'], ['Snuckles', 'bookmarked']]
         : [['Serious Deer', 'nobody asked for a point'], ['Snuckles', 'Tuesday, at least.'], ['Chadluminum', 'wrong board, wrong take'], ['D-Guy', 'worst thing I have read today']];
       for (const [by, words] of replies) writes(opened.thread, by, words);
+      /* `hold`: the thread and its replies are there and the review is not (`say('ontopic', result.key, key)` posts it while a film watches the thread). */
+      if (options.hold === true) { fake.broadcast.rejoin(); return { thread: opened.thread, post: '', key: register(`review-${key}`, opened.thread) }; }
       fake.clock.advance(1000);
       const post = fake.seed.staffPost(made.staff['ontopic']!, opened.thread, lineOf(key).text);
       fake.broadcast.rejoin();

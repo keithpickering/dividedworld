@@ -1,7 +1,7 @@
 /**
  * The Staff, second build (docs/plans/2026-11-21-commentary-video-revision-plan.md, Task R7): every mechanism the Staff run, filmed close, in the cast's
- * names. Each take is two to five seconds at the camera's 960 x 540 CSS px and 3x density (written at 2880 x 1620), so the game is drawn large, as a person
- * who has zoomed their browser sees it, and a paused frame of a staff member's words reads at once. Takes 1 to 7 are level, and a REAL pointer does every
+ * names. Each take is two to three and a half seconds at the DESKTOP layout (the camera's 1440 x 810 CSS px at 2x density, written at 2880 x 1620), so the glass is laid out as a desktop draws it and a
+ * paused frame reads at once (the edit crops in: each take's json says how). The glass takes are level, and a REAL pointer does every
  * press (a button that is not where the pointer lands is a take that throws); takes 8 to 11 play under the full orchestra, when the camera has lost control,
  * so the board is turned a few degrees in space and no pointer aims.
  *
@@ -35,13 +35,14 @@ import { OUT, flag, openStage, settle } from './stage.mjs';
 
 const LINES = JSON.parse(readFileSync('instances/divided-world/ui/hype/staff-lines.json', 'utf8'));
 const SIZE = { width: 2880, height: 1620 };
-const CSS = { width: 960, height: 540 };
+const CSS = { width: 1440, height: 810 };
 const FPS = 60;
 const only = flag('only', null);
 const PORT = Number(flag('port', 4323));
 const easeInOut = (u) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, u)));
 
 /** In the page: how a take names an element to aim at (a CSS selector, or `{ sel, text, within }` for the button of a text), and its place in the window. */
+const cam = (h) => h.cam;
 const FIND_JS = `(() => {
   window.__aim = {
     el(spec) {
@@ -72,6 +73,8 @@ const FIND_JS = `(() => {
       const r = e.getBoundingClientRect(), b = body.getBoundingClientRect();
       return r.top >= b.top - 1 && r.bottom <= b.bottom + 1;
     },
+    /** Whether a post of the page holds the line (its runs of space made one; the first sixty characters, which is what a post's words start with). */
+    has(line) { const want = line.replace(/\\s+/g, ' ').trim().slice(0, 60); return [...document.querySelectorAll('article.kb-act')].some((a) => a.innerText.replace(/\\s+/g, ' ').includes(want)); },
     /** The page's text with its runs of space made one, to compare a line to. */
     text() { return document.body.innerText.replace(/\\s+/g, ' '); },
     /** Where an element stands on the page by layout (offsets), unmoved by a turn. */
@@ -85,10 +88,11 @@ const squash = (s) => s.replace(/\s+/gu, ' ').trim();
  * unless the take turns it. Throws, and films nothing worth keeping, if the page does not show what the take claims.
  *
  * @param {string} name
- * @param {{ as?: string | null, quiet?: string[], setup?: (cam: any) => Promise<void>, play: (h: any) => Promise<void>, handsOff?: boolean }} take
+ * `move` is the crop the edit frames the take with (moves.mjs's `{ from, to, ease }`, rectangles as shares of the frame): the glass takes are filmed whole at the desktop layout and magnified there.
+ * @param {{ as?: string | null, quiet?: string[], setup?: (cam: any) => Promise<void>, play: (h: any) => Promise<void>, handsOff?: boolean, move?: object | null }} take
  */
-async function film(name, { as = null, quiet = ['toasts', 'host', 'hud'], setup = async () => {}, play, handsOff = false }) {
-  const cam = await openStage({ as, css: CSS, scale: 3, quiet, port: PORT });
+async function film(name, { as = null, quiet = ['toasts', 'host', 'hud'], setup = async () => {}, play, handsOff = false, move = null }) {
+  const cam = await openStage({ as, css: CSS, scale: 2, quiet, port: PORT });
   try {
     await cam.evaluate(FIND_JS);
     await setup(cam);
@@ -180,9 +184,9 @@ async function film(name, { as = null, quiet = ['toasts', 'host', 'hud'], setup 
       },
     };
     await play(h);
-    await h.frames(24); // the page is still for the last 0.4 s
+    await h.frames(Math.max(12, 126 - n)); // the page is still for the last 0.2 s, and a take is two seconds at least
     await out.end();
-    writeFileSync(`${OUT}/${name}.json`, JSON.stringify({ landed }, null, 2));
+    writeFileSync(`${OUT}/${name}.json`, JSON.stringify({ landed, move }, null, 2));
     console.log(`${name}: ${n} frames, ${(n / FPS).toFixed(2)} s; landed`, landed.map((l) => `${l.what}@${l.frame}`).join(' '), '; errors:', cam.errors);
   } finally {
     await cam.close();
@@ -208,6 +212,7 @@ const HIDE_VERDICT = `(() => { const sheet = new CSSStyleSheet(); sheet.insertRu
 async function visit() {
   const LINE = LINES.openerQcHelp.text;
   await film('s-visit', {
+    move: { from: { x: 0.2, y: 0, w: 0.8, roll: 0 }, to: { x: 0.34, y: 0, w: 0.66, roll: 0 }, ease: 'out' },
     setup: async (cam) => {
       const v = await cam.evaluate(`window.__shot.staff.visit('qc', null, {}).then((r) => { window.__shot.show('thread:' + r.key); return r; })`);
       if (v.line !== LINE) throw new Error(`the visit's opener is ${v.line}`);
@@ -236,6 +241,7 @@ async function visit() {
 /** 2. The quiz, from the seat of the post's author: a wrong choice, and the game's answer to it. */
 async function quiz() {
   await film('s-quiz', {
+    move: { from: { x: 0.3, y: 0.05, w: 0.7, roll: 0 }, to: { x: 0.38, y: 0.15, w: 0.62, roll: 0 }, ease: 'out' },
     setup: async (cam) => {
       const v = await cam.evaluate(`window.__shot.staff.visit('qc', null, { quiz: true }).then((r) => { window.__shot.show('thread:' + r.key); return r; })`);
       await settle(cam, 20);
@@ -270,6 +276,7 @@ async function hallpass() {
   const NOTICE = 'A trap set on this post sprang when the visit began, and the visit ended';
   let held;
   await film('s-hallpass', {
+    move: { from: { x: 0.25, y: 0, w: 0.75, roll: 0 }, to: { x: 0.34, y: 0, w: 0.66, roll: 0 }, ease: 'inOut' },
     setup: async (cam) => {
       held = await cam.evaluate(`window.__shot.staff.hallPass(null, { hold: true }).then((r) => { window.__shot.show('thread:' + r.key); return r; })`);
       await settle(cam, 20);
@@ -280,16 +287,21 @@ async function hallpass() {
     },
     async play(h) {
       h.land('begin');
-      await h.frames(36);
+      /* The countdown is seen to tick: the page's time runs a minute on, twice, with the take's frames between, so the mark reads 3:00, 2:59, 2:58 before the pass springs. */
+      const mark = () => h.ev(`document.querySelector('.kb-visit-mark .kb-visit-time')?.textContent ?? null`);
+      const seen = [await mark()];
+      await h.frames(10);
+      for (let i = 0; i < 2; i++) { await cam(h).skip(60_000); await h.frames(20); seen.push(await mark()); }
+      if (new Set(seen).size !== 3) throw new Error(`s-hallpass: the countdown did not tick: ${seen.join(', ')}`);
       await h.ev(`window.__shot.staff.springPass(${JSON.stringify(held.set)}, ${JSON.stringify(held.visit)})`);
       h.land('spring');
       await h.until(`document.querySelector('#post-${held.seq} [data-kb-back="sprung"]') && document.querySelector('.kb-visit-mark')?.getAttribute('data-kb-visit') === 'trapped'`, 'the spring');
-      await h.frames(20);
-      await h.go('.kb-visit-mark', 0.5, { seed: 6 });
+      await h.frames(8);
+      await h.go('.kb-visit-mark', 0.4, { seed: 6 });
       await h.click();
       await h.until(`${LENS} && window.__aim.text().includes(${JSON.stringify(NOTICE)})`, 'the trapped notice');
       h.land('ended');
-      await h.frames(30);
+      await h.frames(14);
       await h.said(NOTICE, 'the trapped notice');
     },
   });
@@ -300,6 +312,7 @@ async function filing(name, mod, key) {
   const LINE = LINES[key].text;
   let held, seq;
   await film(name, {
+    move: { from: { x: 0, y: 0.05, w: 0.65, roll: 0 }, to: { x: 0.35, y: 0, w: 0.65, roll: 0 }, ease: 'inOut' },
     setup: async (cam) => {
       /* The author has a mark against them already, so the bar is seen to rise and not to appear. */
       await cam.evaluate(`window.__shot.staff.filing('qc', null, 'filingQcGames', { by: ${JSON.stringify(LINES[key].post.by)} })`);
@@ -337,6 +350,7 @@ async function filing(name, mod, key) {
 /** 6. A player reports a post: the real Report button, a reason typed with real keys, the send. */
 async function report() {
   await film('s-report', {
+    move: { from: { x: 0.15, y: 0.15, w: 0.85, roll: 0 }, to: { x: 0.4, y: 0.1, w: 0.6, roll: 0 }, ease: 'out' },
     as: 'Chadluminum',
     setup: async (cam) => {
       await cam.evaluate(`window.__shot.staff.report('Chadluminum', 5)`);
@@ -370,6 +384,8 @@ async function report() {
 /** 7. The filed player appeals: the Filed mark, the Appeal tile, a plea typed with real keys, the send. */
 async function appeal() {
   await film('s-appeal', {
+    quiet: ['toasts', 'host'],
+    move: { from: { x: 0.3, y: 0.05, w: 0.7, roll: 0 }, to: { x: 0.3, y: 0.3, w: 0.7, roll: 0 }, ease: 'inOut' },
     setup: async (cam) => {
       await cam.evaluate(HIDE_VERDICT);
       const a = await cam.evaluate(`window.__shot.staff.appeal('Snuckles').then((r) => { window.__shot.show('thread:' + r.key); return r; })`);
@@ -378,9 +394,13 @@ async function appeal() {
       await settle(cam, 10);
     },
     async play(h) {
+      /* The HUD is in frame, so the price is seen to leave the orbs: its Aura reading is read here and again once the appeal is sent. */
+      const aura = async () => Number(await h.ev(`(document.querySelector('.kb-hud-glass')?.innerText ?? '').replace(/\\s+/g, ' ').match(/(\\d+\\.\\d\\d) \\/ \\d/)?.[1] ?? 'NaN'`));
+      const before = await aura();
+      if (Number.isNaN(before)) throw new Error('s-appeal: the HUD shows no Aura reading');
       h.land('open');
-      await h.frames(8);
-      await h.go('.kb-visit-mark', 0.45, { seed: 12 });
+      await h.frames(6);
+      await h.go('.kb-visit-mark', 0.4, { seed: 12 });
       await h.click();
       await h.until(`${LENS} && document.querySelector('.kb-lens .kb-visit-appeal')`, 'the Appeal tile');
       await h.go('.kb-lens .kb-visit-appeal', 0.4, { seed: 13 });
@@ -388,7 +408,7 @@ async function appeal() {
       await h.until(`document.querySelector('.kb-lens textarea')`, 'the appeal form');
       await h.go('.kb-lens textarea', 0.3, { seed: 14 });
       await h.click();
-      await h.type('it was a joke', 3);
+      await h.type('it was a joke', 2);
       h.land('typed');
       const plea = await h.ev(`document.querySelector('.kb-lens textarea').value`);
       if (plea !== 'it was a joke') throw new Error(`s-appeal: the plea typed is "${plea}"`);
@@ -397,38 +417,53 @@ async function appeal() {
       await h.click();
       await h.until(`document.querySelector('.kb-lens .kb-visit-result')?.textContent.includes('heard it')`, 'the appeal filed (the page\'s confirmation)');
       h.land('sent');
-      await h.frames(34);
+      let after = before;
+      for (let i = 0; i < 60 && Math.abs(before - after - 0.5) > 0.005; i++) { await h.frames(1); after = await aura(); }
+      if (Math.abs(before - after - 0.5) > 0.005) throw new Error(`s-appeal: the Aura went ${before} -> ${after}, not down by 0.50`);
+      h.land('price');
+      await h.frames(30);
+      console.log(`s-appeal: the Aura went ${before} -> ${after}`);
     },
   });
 }
 
 /**
- * 8 to 11. The Staff under the full orchestra, when the camera has lost control: the board a few degrees off level and drifting, nothing aimed. `go` runs
- * unfilmed, to put the beat on the page and the notice in the window; the take is the drift and a slow scroll into the notice.
+ * 8 to 14. A board page with a notice or a staff post, which is not glass: it keeps its framing (the page as the board draws it, a few degrees off level and
+ * drifting, as the camera loses control under the full orchestra) and gives a second of looking a reason: the notice or post ARRIVES in frame. The page is
+ * scrolled before the take so that the last post of the thread has just left the top of the window; `live` then runs in the page, a moment into the take (the
+ * Staff post as the camera watches), and the new post comes in under where the last one ended. A post long enough or low enough not to be in view where it
+ * lands is then scrolled to, eased. The board is turned by `turn` every frame (at most 6 degrees about any axis, never near its back). Nothing is aimed.
  */
-async function turned(name, { setup, find, line, label, drift = 1 }) {
-  let place = 0;
+async function turned(name, { setup, live, line, label, drift = 1 }) {
   await film(name, {
     handsOff: true,
     setup: async (cam) => {
       await setup(cam);
       await settle(cam, 20);
-      await cam.evaluate('document.scrollingElement.scrollTop = 0');
+      /* At the thread's foot with the last post just out of the top of the window: a post that comes in is in frame as it lands, and is not held behind the "new post" pill. */
+      await cam.evaluate(`(() => { const last = [...document.querySelectorAll('article.kb-act')].at(-1); document.scrollingElement.scrollTop += last.getBoundingClientRect().bottom - 36; })()`);
       await settle(cam, 6);
-      place = await cam.evaluate(find);
+      if (await cam.evaluate(`window.__aim.has(${JSON.stringify(line)})`)) throw new Error(`${name}: the line is on the page before it is posted: ${label}`);
     },
     async play(h) {
-      const COUNT = 150; // 2.5 s of drift, then a still page
+      const COUNT = 168; // 2.8 s of drift; the post arrives a quarter second in
       const turn = (i) => {
         const t = i / FPS;
         return `window.__shot.turn({ rx: ${(2.4 * drift * Math.sin(t * 1.3 + 0.4)).toFixed(3)}, ry: ${(-6 * drift * Math.sin(t * 0.9 + 1.1)).toFixed(3)}, rz: ${(1.6 * drift * Math.sin(t * 0.7)).toFixed(3)}, scale: 1.04 })`;
       };
-      h.land('notice');
-      const from = await h.ev('scrollY');
+      let arrived = -1, from = 0, place = 0;
       await h.frames(COUNT, async (i) => {
-        await h.ev(`document.scrollingElement.scrollTop = ${from + (place - from) * easeInOut(i / 36)}`);
+        if (i === 14) await h.ev(live);
+        if (arrived < 0 && i > 14 && await h.ev(`window.__aim.has(${JSON.stringify(line)})`)) {
+          arrived = i;
+          h.land('notice');
+          place = await h.ev(WHERE(line));
+          from = await h.ev('scrollY');
+        }
+        if (arrived >= 0 && Math.abs(place - from) > 24) await h.ev(`document.scrollingElement.scrollTop = ${from + (place - from) * easeInOut((i - arrived) / 40)}`);
         await h.ev(turn(i));
       });
+      if (arrived < 0) throw new Error(`${name}: the post never arrived: ${label}`);
       await h.said(line, label);
     },
   });
@@ -442,39 +477,52 @@ const WHERE = (line) => `(() => {
   return window.__aim.top('#' + e.id) - 46;
 })()`;
 
+/** The Staff Announcements thread, named to the stage (the Boss's beats name it only when they first post in it) and shown. */
+const ANNOUNCEMENTS = `window.__kbStage.fake.boardPage('announcements', 1, []).then((p) => { window.__kbStage.threads.announcements = p.threads[0].id; window.__shot.show('thread:announcements'); })`;
+
+/* The Boss's board notices: the seeded ones before them are on the page already (above the window), and this one is posted as the camera watches. */
 const made = () => turned('s-made', {
-  setup: (cam) => cam.evaluate(`window.__shot.staff.created().then(() => window.__shot.show('thread:announcements'))`),
-  find: WHERE(LINES.created.text), line: LINES.created.text, label: "the Boss's reason for the board",
+  setup: (cam) => cam.evaluate(ANNOUNCEMENTS),
+  live: `window.__shot.staff.created()`,
+  line: LINES.created.text, label: "the Boss's reason for the board",
 });
 const moved = () => turned('s-moved', {
-  setup: (cam) => cam.evaluate(`window.__shot.staff.moved().then(() => window.__shot.show('thread:announcements'))`),
-  find: WHERE(LINES.moved.text), line: LINES.moved.text, label: "the Boss's reason for the move",
+  setup: (cam) => cam.evaluate(ANNOUNCEMENTS),
+  live: `window.__shot.staff.moved()`,
+  line: LINES.moved.text, label: "the Boss's reason for the move",
 });
 const merged = () => turned('s-merged', {
-  setup: (cam) => cam.evaluate(`window.__shot.staff.merge().then(() => window.__shot.show('thread:announcements'))`),
-  find: WHERE(LINES.merged.text), line: LINES.merged.text, label: "the Boss's reason for the merge",
+  setup: (cam) => cam.evaluate(ANNOUNCEMENTS),
+  live: `window.__shot.staff.merge()`,
+  line: LINES.merged.text, label: "the Boss's reason for the merge",
 });
 const memo = () => turned('s-memo', {
-  /* The memo is the twenty-first post of the main thread, which is on its second page: the page's own "Continue to page 2" link is followed. */
+  /* The memo is the twenty-second post of the main thread, which is on its second page: the page's own "Continue to page 2" link is followed. */
   setup: async (cam) => {
-    await cam.evaluate(`window.__shot.staff.memo('main', 'orderNoAllowance').then(() => window.__shot.show('thread'))`);
+    await cam.evaluate(`window.__shot.show('thread')`);
     await settle(cam, 20);
     await cam.evaluate(`[...document.querySelectorAll('a')].find((a) => /Continue to page 2/i.test(a.textContent)).click()`);
-    await cam.until(`Boolean(document.querySelector('#post-21'))`, 'the second page of the thread');
+    await cam.until(`Boolean(document.querySelector('#post-21'))`, { label: 'the second page of the thread' });
   },
-  find: WHERE(LINES.orderNoAllowance.text), line: LINES.orderNoAllowance.text, label: "FanGaME's memo",
+  live: `window.__shot.staff.memo('main', 'orderNoAllowance')`,
+  line: LINES.orderNoAllowance.text, label: "FanGaME's memo",
 });
 const stars = () => turned('s-stars', {
-  setup: (cam) => cam.evaluate(`window.__shot.staff.review('stars').then((r) => window.__shot.show('thread:' + r.key))`),
-  find: WHERE(LINES.stars.text), line: LINES.stars.text, label: "ONTOPIC 5.0's review", drift: 0.8,
+  /* The thread titled "a" and its four replies are there; ONTOPIC 5.0's review is posted under them as the camera watches. */
+  setup: (cam) => cam.evaluate(`window.__shot.staff.review('stars', { hold: true }).then((r) => { window.__stars = r.key; window.__shot.show('thread:' + r.key); })`),
+  live: `window.__shot.staff.say('ontopic', window.__stars, 'stars')`,
+  line: LINES.stars.text, label: "ONTOPIC 5.0's review", drift: 0.8,
 });
 const farewell = () => turned('s-farewell', {
-  setup: (cam) => cam.evaluate(`window.__shot.show('thread:goodbye')`),
-  find: WHERE(LINES.posted.text), line: LINES.posted.text, label: "FanGaME's last post",
+  /* FanGaME's last post as Boss, posted in the announcements as the camera watches (the stage's `goodbye` thread has it seeded already, which would not arrive). */
+  setup: (cam) => cam.evaluate(ANNOUNCEMENTS),
+  live: `window.__shot.staff.say('fangame', 'announcements', 'posted')`,
+  line: LINES.posted.text, label: "FanGaME's last post",
 });
 const seat = () => turned('s-seat', {
-  setup: (cam) => cam.evaluate(`window.__shot.staff.handover().then((r) => window.__shot.show('thread:announcements'))`),
-  find: WHERE(LINES.arrival.text), line: LINES.arrival.text, label: "QC-1000 taking the seat",
+  setup: (cam) => cam.evaluate(ANNOUNCEMENTS),
+  live: `window.__shot.staff.handover()`,
+  line: LINES.arrival.text, label: "QC-1000 taking the seat",
 });
 
 /** 12. A warn bar at its full 10: five real filings of one author, the last arriving while the camera watches the postbit. */
@@ -483,6 +531,7 @@ async function warnFull() {
   const last = KEYS.at(-1);
   let held, seq;
   await film('s-warn-full', {
+    move: { from: { x: 0, y: 0, w: 0.9, roll: 0 }, to: { x: 0, y: 0.05, w: 0.66, roll: 0 }, ease: 'out' },
     setup: async (cam) => {
       for (const k of KEYS.slice(0, -1)) await cam.evaluate(`window.__shot.staff.filing(${JSON.stringify(LINES[k].by === 'ontopic' ? 'ontopic' : 'qc')}, null, ${JSON.stringify(k)}, { by: 'D-Guy' })`);
       held = await cam.evaluate(`window.__shot.staff.filing('ontopic', null, ${JSON.stringify(last)}, { by: 'D-Guy', hold: true }).then((r) => { window.__shot.show('thread:' + r.key); return r; })`);

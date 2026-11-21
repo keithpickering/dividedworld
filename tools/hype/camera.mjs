@@ -221,6 +221,17 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
       if (Math.abs(left) > dt) throw new Error(`the frame's clock and the page's are ${left.toFixed(1)}ms apart after being set together`);
       return left;
     },
+    /**
+     * The page's time runs `ms` on with no frame drawn in it (a countdown that ticks by the minute is seen to tick in a take of seconds): its timers fire, and the frame clock moves
+     * with it, so the page's time and the frame's stay one clock. Only after \`freeze()\`.
+     */
+    async skip(ms) {
+      if (!virtual) throw new Error('skip: the page\'s time is not the film\'s yet');
+      const done = cdp.once('Emulation.virtualTimeBudgetExpired', sessionId);
+      await S('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: ms });
+      await done;
+      ticks += ms;
+    },
     /** A drawn arrow that follows the pointer (the page's CSP takes no style sheet, so it is styled through the CSSOM). */
     async drawPointer() {
       await evaluate(`(() => {

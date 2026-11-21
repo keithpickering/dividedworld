@@ -87,7 +87,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
        *   filing(mod, postSeq | null, key, { by, hold })  (hold: the visit stays open until endFiling(key, visit) files it)  the filing's aimed-at post is written (null) and filed; key is filingQcHelp, filingQcGames, filingQcGotcha, filingOtThematic, filingOtPatience or filingOtPalace. Adds { infraction }
        *   report(name, postSeq)                         names what to press for a report; the film's player must be name (\`as=name\`), and not the post's author. Returns { seq, press }
        *   appeal(name, key = 'filingQcHelp')            a filing against name's own post, appeal still to make; the film's player must be name (\`as=name\`). Returns the filing's and { press }
-       *   review(key)                                   ONTOPIC 5.0's review: stars or fiveStars. Returns { thread, post, key }
+       *   review(key)                                   ONTOPIC 5.0's review: stars or fiveStars. Returns { thread, post, key }; { hold: true } leaves the review out, for say()
+       *   say(who, where, key)                          a Staff line (staff-lines.json) posted live as fangame, qc or ontopic in a thread (a key of the stage's threads, or review's key). Returns the Act
        *   handover()                                    FanGaME leaves, QC-1000 takes the seat: the farewell and the arrival in the announcements. Returns { farewell, arrival, note, thread }
        */
       staff: Object.assign((key, ...args) => { if (!play.staff[key]) throw new Error('there is no staff beat "' + key + '": the beats are ' + Object.keys(play.staff).join(', ')); return play.staff[key](...args); }, play.staff),

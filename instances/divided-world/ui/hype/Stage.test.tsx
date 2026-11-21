@@ -724,6 +724,28 @@ describe('R4: the Staff\'s helpers', () => {
     expect(page?.threads.map((t) => t.id)).toContain(moved.thread);
   });
 
+  test('the Boss\'s reason for a board made is on the announcements once, when created() posts it: the world does not seed it twice before it', async () => {
+    const { fake, play } = await stage();
+    const announcements = (await fake.boardPage('announcements', 1, []))!.threads[0]!.id;
+    const said = async () => (await fake.acts(announcements, 1, 80)).filter((a) => JSON.stringify(a.payload).includes(LINES.created.text)).length;
+    expect(await said()).toBe(0);
+    await play.staff.created();
+    expect(await said()).toBe(1);
+  });
+
+  test('say() posts a line of the rehearsal\'s as a member of the Staff in a thread now, and review(hold) leaves the review for it', async () => {
+    const { fake, play } = await stage();
+    const held = await play.staff.review('stars', { hold: true });
+    const says = async () => (await fake.acts(held.thread, 1, 60)).filter((a) => JSON.stringify(a.currentPayload ?? a.payload).includes(LINES.stars.text.slice(0, 11)));
+    expect(held.post).toBe('');
+    expect(await says()).toHaveLength(0);
+    const id = await play.staff.say('ontopic', held.key, 'stars');
+    const acts = await says();
+    expect(acts.map((a) => a.id)).toEqual([id]);
+    await expect(play.staff.say('nobody', held.key, 'stars')).rejects.toThrow(/staff member/);
+    await expect(play.staff.say('ontopic', 'nowhere', 'stars')).rejects.toThrow(/no thread/);
+  });
+
   test('handover() names the new Boss and posts the farewell and the arrival where the season news reads them', async () => {
     const { fake, made, play } = await stage();
     expect(typeof play.staff.handover).toBe('function');

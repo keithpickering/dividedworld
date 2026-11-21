@@ -227,11 +227,15 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   const goodbye = fake.seed.thread('general', who('Snuckles'), 'so is the season over', 'Somebody said the Boss is leaving tonight. Does my sprite sheet still count?', { at: now - 4 * HOUR });
   fake.seed.staffPost(fangame, goodbye.thread, LINES.posted.text, { at: now - 3.5 * HOUR });
   fake.seed.staffPost(qc, goodbye.thread, LINES.followup.text, { at: now - 3.2 * HOUR });
-  /* The Boss's moves, each with the reason he gave for it: two boards made, and the two merged when nobody came to his. */
+  /*
+   * The Boss's moves: two boards made, long ago, with no reason on their notices. The reason the rehearsal gave ("The board is arguing whether a fangame is a video game. World -1
+   * settles it ...") is for a board made while the camera runs (`staff.created()`), and it was seeded twice, once on each board, which made a take of the announcements show the
+   * same words three times (docs/plans/2026-11-21-commentary-video-revision-plan.md, Task R7: "two identical Created a board posts").
+   */
   const palace = { name: 'Plumber Platformer Palace', premise: 'Mario fangames.', description: 'A board for Mario fangames.' };
   const minus = { name: 'World -1', premise: 'Everything else.', description: 'Everything that is not a Mario fangame.' };
-  fake.seed.move('fangame', { board: '', name: '', body: LINES.created.text, at: now - 6 * 24 * HOUR, lasting: { kind: 'createBoard', params: palace } });
-  fake.seed.move('fangame', { board: '', name: '', body: LINES.created.text, at: now - 6 * 24 * HOUR + 1000, lasting: { kind: 'createBoard', params: minus } });
+  fake.seed.move('fangame', { board: '', name: '', body: '', at: now - 6 * 24 * HOUR, lasting: { kind: 'createBoard', params: palace } });
+  fake.seed.move('fangame', { board: '', name: '', body: '', at: now - 6 * 24 * HOUR + 1000, lasting: { kind: 'createBoard', params: minus } });
   /*
    * The Boss's profile, filled in for the trailer (the owner, 2026-11-14: "a trailer is a good opportunity to exaggerate"): what he says of
    * himself, the season he leads, and a longer record of moves than the rehearsal gave him. These are written for the video, in his voice.
