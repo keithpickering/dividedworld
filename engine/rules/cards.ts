@@ -283,6 +283,9 @@ export const OLD_VOICE_OFF = "The old voice isn't running on this forum, so this
 /** A trap's ride: the setter is paid `share` of a vote for each vote the cast draws, in the set's quadrant or, with `every`, in all four. */
 export type RideOutcome = { readonly kind: 'ride'; readonly share: number; readonly every?: true };
 
+/** A trap's lockout: the Move that springs the trap lands as usual, and its character is locked out of that post's thread for `hours` (a whole number from 1 to 168). */
+export type LockoutOutcome = { readonly kind: 'lockout'; readonly hours: number };
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
@@ -298,9 +301,9 @@ export interface CardRules<Config = unknown> {
    * With an `outcome` the spring is not a catch: the cast that springs the trap lands as usual. A ride pays the setter `share` of a vote for each
    * vote that cast draws; where it says `every` it pays in all four quadrants and reads no quadrant from the configuration, otherwise it pays in
    * the quadrant the set named (its checked configuration's `quadrant`). A refund hands the cast's card back to its caster's hand, and a staff
-   * cast passes over it. Either may sit beside a `match` or a `catches`.
+   * cast passes over it. A lockout lets the cast land and locks its character out of the post's thread for `hours`. Any may sit beside a `match` or a `catches`.
    */
-  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: RideOutcome | { readonly kind: 'refund' } };
+  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: RideOutcome | { readonly kind: 'refund' } | LockoutOutcome };
   /** A use card on a post alone with a time up: while it is up, the first `count` casts on its post whose printed flavor is one of `flavors`, landing and not handed back by a card set face down, each go back to their caster's hand. A staff cast passes over it. */
   readonly refunds?: { readonly flavors: readonly Alignment[]; readonly count: number };
   /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap may name its card here too). Only a set card that springs on a cast and has no `match` has it. */
