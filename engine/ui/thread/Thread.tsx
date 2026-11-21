@@ -163,19 +163,29 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const people = useRef(new Map<Id, PostbitPerson>());
   const asked = useRef(new Map<Id, Promise<void>>());
   const [, bump] = useState(0);
-  /* The lockout springs heard live in this thread: who each locks and until when, so an admin's end of one (a `card_end` on it) can lift the stamp. */
+  /* A character's lockout from this thread is the latest end of every live lockout: the one the page was read with (`lockedUntil`, the server's own latest), and each spring heard since, but for the ones an admin has ended
+     (a `card_end` may arrive before its spring, so the ended springs are kept as ids). */
   const lockouts = useRef(new Map<Id, { readonly who: Id; readonly until: string }>());
-  /** Put on a person the latest end of the lockouts heard for them, or take the stamp off when none is left ahead. A person not read yet takes it when they are (the page's own read says it too). */
+  const pageLocks = useRef(new Map<Id, string>());
+  const endedSprings = useRef(new Set<Id>());
+  const latestLock = useCallback((who: Id): string | undefined => {
+    const now = api.now();
+    const ends = [...lockouts.current].filter(([spring, l]) => l.who === who && !endedSprings.current.has(spring)).map(([, l]) => l.until);
+    const page = pageLocks.current.get(who);
+    if (page !== undefined) ends.push(page);
+    const ahead = ends.filter((u) => Date.parse(u) > now);
+    return ahead.length > 0 ? ahead.reduce((x, y) => (Date.parse(y) > Date.parse(x) ? y : x)) : undefined;
+  }, [api]);
+  /** Put on a person the latest lockout end known for them, or take the stamp off when none is left ahead. A person not read yet takes it when they are (the page's own read says it too). */
   const markLocked = useCallback((who: Id) => {
     const held = people.current.get(who);
     if (!held) return;
-    const ahead = [...lockouts.current.values()].filter((l) => l.who === who && Date.parse(l.until) > api.now()).map((l) => l.until);
-    const until = ahead.length > 0 ? ahead.reduce((a, b) => (Date.parse(b) > Date.parse(a) ? b : a)) : undefined;
+    const until = latestLock(who);
     if (held.character.lockedUntil === until) return;
     const { lockedUntil: _was, ...rest } = held.character;
     people.current.set(who, { ...held, character: until === undefined ? rest : { ...rest, lockedUntil: until } });
     bump((n) => n + 1);
-  }, [api]);
+  }, [latestLock]);
   const ensurePeople = useCallback(async (ids: readonly (Id | null)[]): Promise<void> => {
     const wanted = [...new Set(ids.filter((c): c is Id => c !== null))];
     const need = wanted.filter((id) => !asked.current.has(id));
@@ -273,8 +283,12 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const said = reveals(page.people.flatMap((p) => p.reveals), page.people.flatMap((p) => p.turns));
     for (const p of page.people) {
       const statement = said.get(p.character.id);
+      /* The page's own lockout is kept apart, and what the screen holds of springs heard since is laid over it. */
+      if (p.character.lockedUntil !== undefined) pageLocks.current.set(p.character.id, p.character.lockedUntil); else pageLocks.current.delete(p.character.id);
+      const lockedUntil = latestLock(p.character.id);
+      const { lockedUntil: _page, ...unlocked } = p.character;
       const person: PostbitPerson = {
-        character: p.character, posts: p.posts, standing: p.standing,
+        character: lockedUntil === undefined ? unlocked : { ...unlocked, lockedUntil }, posts: p.posts, standing: p.standing,
         revealed: statement?.revealed ?? null, turnedAt: statement?.turnedAt ?? null,
       };
       /* A person read again who is as they were stays the same object, so a page read again redraws no post for it. */
@@ -371,7 +385,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (back.size === 0) return page;
     const acts = [...page.acts, ...[...back.values()].filter((a) => !onPage.has(a.id))].sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0));
     return { ...page, acts, cut: page.cut.filter((c) => !back.has(c.seq)) };
-  }, [api, instance.cards, tallies, mine, plays, polls, originPlays, originPolls, veils, putNested, dropNested]);
+  }, [api, instance.cards, tallies, mine, plays, polls, originPlays, originPolls, veils, putNested, dropNested, latestLock]);
 
   /* The first page: from the document, before the first render, so the first frame is whole. */
   /* What the thread showed and knew of when the reader left for the glass, when Back brought them here; the first page only. */
@@ -751,12 +765,18 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           /* The end of a lockout spring lifts the stamp it put on; the back it sprang from is ended with it. */
           if (typeof a.targetActId === 'string') {
             const spring = a.targetActId;
+            /* Remembered whether or not its spring has been heard: the end may come first, and a spring that arrives ended locks no one. */
+            endedSprings.current.add(spring);
             const held = lockouts.current.get(spring);
-            if (held) { lockouts.current.delete(spring); markLocked(held.who); }
-            void api.actsById([spring]).then(([found]) => {
-              if (!found || found.kind !== 'spring' || found.payload.did !== 'lockedOut') return;
-              if (!held && typeof found.payload.locks === 'string') markLocked(found.payload.locks);
-            }, quietly);
+            if (held) markLocked(held.who);
+            else {
+              void api.actsById([spring]).then(([found]) => {
+                if (!found || found.kind !== 'spring' || found.payload.did !== 'lockedOut' || typeof found.payload.locks !== 'string') return;
+                /* A spring the page was read with: if its end is the one the page carries, that lockout is over (any other the page held is not known to be, and stays). */
+                if (pageLocks.current.get(found.payload.locks) === found.payload.until) pageLocks.current.delete(found.payload.locks);
+                markLocked(found.payload.locks);
+              }, quietly);
+            }
           }
           if (endsVeil(plays, feedRef.current.shown.keys(), veils, a)) askCatchUp.current();
           /* The end of a play that drew a reply under a post sets the reply on its number: the feed takes it where its number is shown. */

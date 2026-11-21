@@ -6,7 +6,8 @@ import { act, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { lockOut, lockoutCards, lockoutInstance, lockoutWorld } from '../composer/lockout-world.tsx';
 import { LoadedThread } from '../loaded.tsx';
-import { renderIn } from '../test-world.tsx';
+import { renderIn, tapThread } from '../test-world.tsx';
+import type { Act } from '../data/api.ts';
 
 class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
 beforeEach(() => { vi.stubGlobal('IntersectionObserver', Observer); Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); window.history.replaceState(null, '', '/'); });
@@ -51,5 +52,44 @@ describe('the LOCKED OUT stamp, live', () => {
     w.fake.clock.advance(24 * 3_600_000 + 1000);
     await act(async () => { await vi.advanceTimersByTimeAsync(24 * 3_600_000 + 1000); });
     await waitFor(() => expect(stamps()).toHaveLength(0));
+  });
+});
+
+/* The stamp is the latest end of every live lockout: the page's own and each spring heard since, less the ones an admin ended, in whatever order the Acts come. */
+describe('the LOCKED OUT stamp with springs of different ends', () => {
+  const HOUR = 3_600_000;
+  async function paged() {
+    const w = lockoutWorld();
+    w.fake.seed.post(w.thread, w.pipe, 'my own post');
+    await lockOut(w);
+    const tap = tapThread(w.fake);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await waitFor(() => expect(stamps().length).toBeGreaterThan(0));
+    const read = stamps()[0]!.textContent;
+    const spring = (id: string, hours: number): Act => ({ id, character: w.spritey, kind: 'spring', thread: w.thread, targetActId: w.post, seq: null, createdAt: new Date(w.fake.clock.now()).toISOString(), payload: { card: 'lkback', trigger: 'cast', did: 'lockedOut', set: `${id}-set`, by: `${id}-by`, locks: w.pipe, until: new Date(w.fake.clock.now() + hours * HOUR).toISOString() }, currentPayload: {}, editedAt: null, shownEditedAt: null });
+    const end = (target: string): Act => ({ id: `${target}-end`, character: null, kind: 'card_end', thread: w.thread, targetActId: target, seq: null, createdAt: new Date(w.fake.clock.now()).toISOString(), payload: { why: 'reversed', by: 'admin' }, currentPayload: {}, editedAt: null, shownEditedAt: null });
+    return { w, tap, read, spring, end };
+  }
+
+  test('a shorter spring heard live does not replace the longer lockout the page was read with', async () => {
+    const { tap, read, spring } = await paged();
+    await act(async () => { tap().onAct?.(spring('short', 1)); });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(stamps()[0]!.textContent).toBe(read);
+  });
+
+  test('ending a live spring leaves the lockout the page was read with', async () => {
+    const { tap, read, spring, end } = await paged();
+    await act(async () => { tap().onAct?.(spring('short', 1)); tap().onAct?.(end('short')); });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(stamps()[0]!.textContent).toBe(read);
+  });
+
+  test('a card_end that arrives before its spring is remembered: the spring locks no one', async () => {
+    const { tap, read, spring, end } = await paged();
+    await act(async () => { tap().onAct?.(end('long')); tap().onAct?.(spring('long', 72)); });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(stamps()[0]!.textContent).toBe(read);
   });
 });

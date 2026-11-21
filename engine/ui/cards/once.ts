@@ -2,7 +2,7 @@
  * What the Lens reads once for a spring (sprung.ts), kept for the api it was read from: a spring never changes, so its line and its caught card's fate are
  * each asked of the api once, in one place keyed by the spring. An answer of null (nothing could be read) is not kept, so the next row asks again.
  */
-export type SpringRead = 'words' | 'fate';
+export type SpringRead = 'words' | 'fate' | 'lockout';
 
 const kept = new WeakMap<object, Map<string, Map<SpringRead, Promise<unknown>>>>();
 

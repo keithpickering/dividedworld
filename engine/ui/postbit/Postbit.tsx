@@ -10,9 +10,10 @@
  * (postbit.css) lays that markup out for the narrow screen. The square is for the stacked band and
  * for a mask with no portrait.
  */
-import { memo, useEffect, useState, type CSSProperties, type ReactNode } from 'react';
+import { memo, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { useKayfa } from '../context.tsx';
+import { useAhead } from '../composer/until.ts';
 import { useNarrow } from '../media.ts';
 import type { Character } from '../data/api.ts';
 import { outfitOverhang } from '../../rules/cosmetics.ts';
@@ -91,19 +92,6 @@ export function Pips({ ranks, index, name, style }: { readonly ranks: number; re
   );
 }
 
-/** Re-renders once when `until` passes, so a stamp that holds until a time goes by itself (as `useBannedUntil` drops the composer's note), in as many timers as a long wait takes. */
-function useHeldUntil(until: string | undefined, api: { now(): number }): boolean {
-  const [ticks, tick] = useState(0);
-  useEffect(() => {
-    if (until === undefined) return;
-    const left = Date.parse(until) - api.now();
-    if (left <= 0) return;
-    const timer = setTimeout(() => tick((n) => n + 1), Math.min(left, 2 ** 31 - 1));
-    return () => clearTimeout(timer);
-  }, [until, api, ticks]);
-  return until !== undefined && Date.parse(until) > api.now();
-}
-
 export const Postbit = memo(function Postbit({ person, layout, marks = null, link = true }: {
   readonly person: PostbitPerson; readonly layout: PostbitLayout;
   /** The name links to the character's profile; false draws it as text, for a made-up character with no profile behind it (the front door). */
@@ -129,7 +117,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   /* A ban holds while its time is in the future (characters_public.banned_until): the page read it, and the title line says so for as long as the page is open. */
   const banned = c.bannedUntil !== undefined && Date.parse(c.bannedUntil) > api.now();
   /* A lockout from this thread holds while its time is in the future (`thread_page`'s locked_until), and goes by itself at its time. */
-  const locked = useHeldUntil(c.lockedUntil, api);
+  const locked = useAhead(c.lockedUntil);
   /* The side layout shows the chosen trophies and any belt under the rank; the stacked band and a phone show a held belt only, beside the name. */
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);

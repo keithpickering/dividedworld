@@ -53,6 +53,7 @@ import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWord
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
 import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
+import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { ReportLink, type ReportTo } from '../conduct/Report.tsx';
@@ -552,19 +553,20 @@ export const endable = (play: CardPlay, now: number, keeps: boolean, lockout?: {
   return play.caught === undefined && !play.reversed && !play.untaken && (keeps || !(play.ends !== undefined && Date.parse(play.ends) <= now));
 };
 
-/** The lockout a sprung back made, once its spring is read (a spring never changes): `{ until }`, or null for a back that is not a lockout or is not read yet. */
-function useLockoutOf(play: CardPlay): { readonly until: string } | null {
+/** The lockout a sprung back made, once its spring is read (a spring never changes, so it is read once for all viewers of it, as the Lens's other spring reads are: once.ts): `{ until }`, or null for a back that is not a lockout, is not read yet, or is shown to a reader who cannot end it (only an admin's Lens asks). */
+function useLockoutOf(play: CardPlay, admin: boolean): { readonly until: string } | null {
   const { api } = useKayfa();
-  const spring = play.faceDown ? play.revealed?.spring : undefined;
+  const spring = admin && play.faceDown ? play.revealed?.spring : undefined;
   const [read, setRead] = useState<{ readonly spring: Id; readonly until: string | null } | null>(null);
   useEffect(() => {
     if (spring === undefined) return undefined;
     let live = true;
-    void api.actsById([spring]).then(([found]) => {
-      if (!live) return;
-      const until = found?.kind === 'spring' && found.payload.did === 'lockedOut' && typeof found.payload.until === 'string' ? found.payload.until : null;
-      setRead({ spring, until });
-    }, () => { /* nothing is offered until the spring is read */ });
+    /* The answer is an object either way, so a spring that is no lockout is kept too (a null answer is not kept). */
+    onceFor(api, spring, 'lockout', async () => {
+      const [found] = await api.actsById([spring]);
+      if (!found) return null;
+      return { until: found.kind === 'spring' && found.payload.did === 'lockedOut' && typeof found.payload.until === 'string' ? found.payload.until : null };
+    }).then((answer) => { if (live && answer) setRead({ spring, until: answer.until }); }, () => { /* nothing is offered until the spring is read */ });
     return () => { live = false; };
   }, [api, spring]);
   return spring !== undefined && read?.spring === spring && read.until !== null ? { until: read.until } : null;
@@ -583,7 +585,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
   const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
-  const lockout = useLockoutOf(play);
+  const lockout = useLockoutOf(play, admin);
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* The setter's own back, still face down: not sprung, not taken back, not past its time (the same end every Set has). */

@@ -72,4 +72,14 @@ describe('the Lens on a lockout back', () => {
     const { dialog } = await lens(true, true);
     expect(within(dialog).queryByRole('button', { name: 'End this card' })).toBeNull();
   });
+
+  test('a reader who is no admin does not read the spring at all', async () => {
+    const w = lockoutWorld(false);
+    const sprung = await lockOut(w);
+    const asked = vi.spyOn(w.fake, 'actsById');
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
+    await userEvent.click(await within(await screen.findByRole('article', { name: /^Post 1 /u })).findByRole('button', { name: /Lk Back/u }));
+    await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^1 play · / }));
+    expect(asked.mock.calls.filter(([ids]) => ids.includes(sprung.spring.id)).length).toBe(0);
+  });
 });
