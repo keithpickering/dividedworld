@@ -38,6 +38,12 @@ describe('what a set card says it does', () => {
     expect(springWords(lock({ flavors: ['sweet'] }))).toContain('that is Sweet, up to rare:');
     expect(springWords(lock({ flavors: ['sweet', 'salty', 'pepperoni'], upTo: 'legendary' }, 'legendary'))).toBe('It springs on the first Move played on your post: the Move lands, and whoever played it is locked out of the thread for 24 hours.');
     expect(springWords(lock())).toContain('the first Move played on your post that it names:');
+    /* Every match shape reads as a sentence. */
+    expect(springWords(lock({ upTo: 'rare' }))).toBe('It springs on the first Move played on your post that is up to rare: the Move lands, and whoever played it is locked out of the thread for 24 hours.');
+    expect(springWords(lock({ flavors: ['sweet', 'salty', 'pepperoni'], upTo: 'rare' }))).toContain('your post that is up to rare:');
+    expect(springWords(lock({ flavors: ['sweet', 'salty'], upTo: 'rare' }))).toContain("that isn't Pepperoni, up to rare:");
+    expect(springWords(lock({}, 'legendary'))).toContain('your post: the Move lands');
+    expect(springWords(lock({ flavors: ['sweet'], upTo: 'legendary' }, 'legendary'))).toContain('that is Sweet: the Move');
     for (const m of [{ flavors: ['salty', 'pepperoni'], upTo: 'rare' }, undefined]) expect(springWords(lock(m))).not.toMatch(/cast/i);
   });
   test('a catching match is unchanged', () => {

@@ -128,7 +128,7 @@ function lockoutMatchWords(match: NonNullable<CardRules['trap']>['match'], own: 
   const left = ALIGNMENTS.filter((a) => !flavors.includes(a));
   const kind = flavors.length === 0 || left.length === 0 ? null : left.length === 1 ? `isn't ${cap(left[0]!)}` : `is ${flavors.map(cap).join(' or ')}`;
   const upTo = rarity === RARITIES[RARITIES.length - 1] ? '' : `up to ${rarity}`;
-  return kind === null ? (upTo ? `, ${upTo}` : '') : ` that ${kind}${upTo ? `, ${upTo}` : ''}`;
+  return kind === null ? (upTo ? ` that is ${upTo}` : '') : ` that ${kind}${upTo ? `, ${upTo}` : ''}`;
 }
 
 /**
