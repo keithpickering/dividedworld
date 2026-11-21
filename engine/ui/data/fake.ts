@@ -2149,12 +2149,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (lands && !staffCaster) {
       if (returns) handed = { by: trap!.set, card: trap!.card };
       else {
+        /* The post's card Acts, read once. A handed-back cast uses its kick whether or not it was later ended or reversed, as place_cast counts the card Acts naming the sign. */
+        const onTarget = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target);
         /* The latest live refunds play that qualifies: its flavor holds the cast's and its kicks are not used up, so an older one is not skipped for a newer that cannot serve. */
-        const signs = [...acts.values()].filter((a) => {
-          const r = a.kind === 'card' && a.target === target && onPost(a) && !over(a.id) && a.payload.caught === undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at
+        const signs = onTarget.filter((a) => {
+          const r = onPost(a) && !over(a.id) && a.payload.caught === undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at
             ? instance.cards.find((k) => k.key === a.payload.card)?.refunds : undefined;
           return r !== undefined && r.flavors.includes(rules.alignment)
-            && [...acts.values()].filter((x) => x.kind === 'card' && x.target === target && (x.payload.handedBack as { by?: unknown } | undefined)?.by === a.id).length < r.count;
+            && onTarget.filter((x) => (x.payload.handedBack as { by?: unknown } | undefined)?.by === a.id).length < r.count;
         });
         const sign = signs[signs.length - 1];
         if (sign) handed = { by: sign.id, card: String(sign.payload.card) };

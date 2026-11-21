@@ -4296,6 +4296,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(casts[3]!.payload).not.toHaveProperty('handedBack');
       expect(await held(fake, 'rfsalty')).toBe(before - 1);
       expect((await returned(fake)).map((e) => e.act).sort()).toEqual(casts.slice(0, 3).map((c) => c.id).sort());
+      expect((await returned(fake)).map((e) => e.price)).toEqual([0, 0, 0]);
       expect((await fake.cardsOn(post, 8)).find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
       void ana;
     });
