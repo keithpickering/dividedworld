@@ -268,6 +268,21 @@ test('a card with no default and no configurations of its own is not offered', a
   assert.equal(d.count('staff_play_card'), 0);
 });
 
+test('a card out of print is not offered, so a Mod Bot never gives out a copy of one', async () => {
+  // Out of print, and so in no pack and no slot (instanceProblems refuses an instance that keeps a source of it).
+  const retired = {
+    ...dividedWorld,
+    cards: dividedWorld.cards.map((c) => (c.key === 'whoops' ? { ...c, retired: true as const } : c)),
+    packs: dividedWorld.packs.map((p) => ('contents' in p && p.contents ? { ...p, contents: p.contents.filter((k) => k !== 'whoops') } : p)),
+    machine: dividedWorld.machine.filter((s) => !('card' in s.item) || s.item.card !== 'whoops'),
+  } as Instance;
+  const d = fakeDb({ pool: { threadsWeekly: 0 } });
+  const m = fakeModels((r) => ({ words: 'x', card: { key: 'whoops', on: 'reply' } }));
+  await run(d, m, retired);
+  assert.ok(!m.chats.some((c) => JSON.stringify(c.schema).includes('whoops')), 'Whoops! is not on offer');
+  assert.equal(d.count('staff_play_card'), 0);
+});
+
 test('a persona is asked in the frame of the office it holds now: a member opens with the member premise, a Boss with the Boss premise, a Mod with the Mod premise', async () => {
   const d = fakeDb({ named: [CLERK, HYPE, SIGH], pool: { threadsWeekly: 0 } });
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));

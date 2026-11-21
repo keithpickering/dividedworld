@@ -46,7 +46,7 @@
  * fail, the trim names the predicate and plain code's seeded configuration is played instead; where code can build none, the card is dropped
  * (`cardRefused`) and the post stands. The database then holds every rule it holds for a player's play.
  */
-import { writeTokensMost, withheld, atOrBelow, decideDraw, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffDrawOf, staffOffers, type DecidedDraw, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
+import { writeTokensMost, withheld, atOrBelow, inPrint, decideDraw, decidePlay, decideSet, effectsOnTarget, playOf, postTarget, staffConfigOf, staffDrawOf, staffOffers, type DecidedDraw, type CardEffect, type CardTarget, type EffectsAbove } from '../../../engine/rules/cards.ts';
 import { forgedList } from '../../../engine/bbcode/quoted.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
@@ -242,9 +242,10 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
 
   const slugs = new Set(Object.values(context.boards));
   const offerable = settings.pool.cardRarityMost;
+  // A card out of print is never offered: a Mod Bot's play is a rare drop from The System, a new copy, and nothing gives one out (the card retirement design, section 2).
   const cardsOnOffer = tuned.cards.filter((c) => {
     const play = playOf(c);
-    return (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c) && !withheld(c, settings);
+    return inPrint(c) && (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c) && !withheld(c, settings);
   });
 
   for (const p of picked.picks) {
