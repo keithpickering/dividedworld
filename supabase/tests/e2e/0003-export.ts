@@ -576,8 +576,6 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into card_kinds (key, name, alignment, rarity, play, retired_at) values ('expretired', 'Exported Retired', 'sweet', 'common', 'cast', now());
       insert into card_kinds (key, name, alignment, rarity, play) values ('expold', 'Exported Old Name', 'sweet', 'common', 'cast'), ('expnew', 'Exported New Name', 'sweet', 'common', 'cast'), ('expgone', 'Exported Gone', 'sweet', 'common', 'cast');
       insert into card_ledger (account, card, kind, price) values (ann, 'expold', 'bought', 0), (bob, 'expgone', 'bought', 0);
-      perform card_leaves('expold', 'expnew', null);
-      perform card_leaves('expgone', null, 40);
       insert into pack_kinds (key, pulls, leaves, retired_at) values ('expretiredpack', '[{"weights": {"common": 1}}]', '{}', now());
       -- A doctored quote (Forged quotes, Task 7): Bob's mask quotes Ann's post p with words it never had, so the Act is written with its verdict (forged, the quoted post's id), no
       -- target (the verdict drops it), and its quote_sources row; the export carries all three and the import writes them as a replica.
@@ -585,6 +583,10 @@ test('an instance exported and imported into a fresh database is the same instan
       perform post(t, b, '[quote=' || p || ']Never said in this post.[/quote] Bob, doctored.', p);
       perform tests.unbecome();
     end $$;
+    -- Each leaving is its own transaction, as the seed makes it: the deferred trigger card_ledger_gone_card refuses a copy of a card in the transaction that inserted it, so the
+    -- copies above (bought before the card left) must commit first. The renamed card's new key and the withdrawal's refund are written by card_leaves.
+    select card_leaves('expold', 'expnew', null);
+    select card_leaves('expgone', null, 40);
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);

@@ -275,15 +275,18 @@ alter function public.admin_machine() set jit = off;
 
 -- ---- 7. open_pack ----
 
--- A card's current key and refund: following `became` (a card renamed twice since a pack was made reaches the last), the card it is now and, where the chain ends in a withdrawal, its refund. At most eight links.
+-- A card's current key and refund: following `became` (a card renamed more than once since a pack was made reaches the last) to the card it is now or to the withdrawal the chain ends in, with its refund. Total: a key that is no card
+-- passes through as itself with no refund, and a chain that does not end within 32 links (a cycle) answers the key it stopped at.
 create function card_now(card text) returns table (key text, refund integer)
 language sql stable set search_path = public, pg_temp as $$
   with recursive r(key, became, refund, n) as (
     select k.key, k.became, k.refund, 0 from card_kinds k where k.key = card_now.card
     union all
-    select k.key, k.became, k.refund, r.n + 1 from r join card_kinds k on k.key = r.became where r.n < 8
-  )
-  select r.key, r.refund from r order by r.n desc limit 1
+    select k.key, k.became, k.refund, r.n + 1 from r join card_kinds k on k.key = r.became where r.n < 32
+  ), last as (select r.key, r.refund from r order by r.n desc limit 1)
+  select l.key, l.refund from last l
+  union all
+  select card_now.card, null::integer where not exists (select 1 from last)
 $$;
 revoke execute on function card_now(text) from public, anon, authenticated;
 
@@ -484,15 +487,20 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   pays jsonb;
   pay jsonb;
+  holders uuid[];
   copies bigint := 0;
 begin
   if (card_leaves.became is null) = (card_leaves.refund is null) then raise exception 'a card leaves renamed or withdrawn, not both and not neither' using errcode = '22023'; end if;
   if exists (select 1 from card_kinds k where k.key = card_leaves.old and k.gone_at is not null) then return 0; end if;
-  perform 1 from accounts a
-  where a.id in (select l.account from card_ledger l where l.card = card_leaves.old union select f.account from face_down f where f.card = card_leaves.old and f.account is not null)
-  order by a.id for no key update;
+  select coalesce(array_agg(h.account), '{}') into holders
+  from (select l.account from card_ledger l where l.card = card_leaves.old union select f.account from face_down f where f.card = card_leaves.old and f.account is not null) h;
+  perform 1 from accounts a where a.id = any (holders) order by a.id for no key update;
+  -- A withdrawal's wallets, in id order and before the table lock below: the refund locks a wallet after the table, and a purchase (buy_card, buy_pack) locks the wallet first and inserts into the ledger after, taking no account row,
+  -- so a purchase holding a wallet and waiting for the table would deadlock with a move that took the table first and then waited for that wallet. Taken here, the move waits for the purchase to commit and counts its copy.
+  -- (An account that holds nothing yet, and so is not in `holders`, is refunded only if a purchase in flight commits first; its wallet is free by the time the refund wants it.)
+  if card_leaves.refund is not null then perform 1 from wallets w where w.account = any (holders) order by w.account for update; end if;
   -- The ledger's table lock (share row exclusive): it waits for every insert in flight to commit, so a copy bought, found or caught as the card leaves is counted, and it makes later inserts wait until this commits, where the
-  -- constraint trigger below refuses a copy of a card that has left. Taken after the account rows, never before: a play holds its account row and then inserts, so a seed that held the table first and waited for the account would
+  -- constraint trigger below refuses a copy of a card that has left. Taken after the account rows and the wallets, never before: a play holds its account row and then inserts, so a seed that held the table first and waited for the account would
   -- wait on a play that waits for the table. Taken this way round, whoever holds a ledger row in flight and is waited for holds no account row this waits on (play_card and take_back lock the account before they insert), and
   -- a copy that reaches an account this did not lock is stopped by the table lock all the same. Once per key ever: a key already gone returned above, and the lock is let go at commit.
   lock table card_ledger in share row exclusive mode;
@@ -696,8 +704,8 @@ begin
          case when jsonb_typeof(e -> 'contents') = 'array' then array(select jsonb_array_elements_text(e -> 'contents')) end
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves, contents = excluded.contents;
-  -- A pack kind the payload does not list is out of print, one it lists is not (0401): its slot is left out of the machine, and a sealed pack of it still opens.
-  if retiring then
+  -- A pack kind the payload does not list is out of print, one it lists is not (0401; a payload with no `packs` says nothing of pack kinds): its slot is left out of the machine, and a sealed pack of it still opens.
+  if retiring and payload ? 'packs' then
     update pack_kinds k set retired_at = x.want
     from (select p.key, case when l.key is null then coalesce(p.retired_at, now()) end as want
           from pack_kinds p left join (select distinct e ->> 'key' as key from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e) l on l.key = p.key) x

@@ -172,6 +172,52 @@ begin
   if card_held(r, 'crsold') <> -2 or card_held(r, 'crsnew') <> 4 then raise exception 'the race left % and % copies', card_held(r, 'crsold'), card_held(r, 'crsnew'); end if;
 end $$;
 
+-- A third account: a withdrawal's refund locks a wallet after the ledger's table lock, and a purchase (buy_card, buy_pack) locks the wallet first and inserts into the ledger after, taking no account row. S spends from the wallet
+-- and has not inserted yet; the move starts and must not take the table lock before the wallet, or S's insert would wait for the table while the move waits for S's wallet: a deadlock one of them would be aborted for.
+-- Either order is coherent, and neither may be a deadlock: here S's copy commits first and is counted and refunded.
+do $$
+declare
+  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer; blocked integer; got bigint; err_s text; err_b text;
+begin
+  perform tests.commit(format($sql$
+    insert into auth.users (id, email) values (%1$L, 'cr-race3@test.invalid');
+    insert into accounts (id, created_at) values (%1$L, '2000-01-01T00:00:00Z');
+    insert into wallets (account, balance) values (%1$L, 100);
+    insert into card_kinds (key, name, alignment, rarity, play, stack) values ('crwold', 'Crw Old', 'salty', 'common', 'cast', 3);
+    insert into card_ledger (account, card, kind, price) select %1$L, 'crwold', 'bought', 0 from generate_series(1, 2);
+  $sql$, r));
+  perform extensions.dblink_connect('cr_w', url); perform extensions.dblink_connect('cr_b', url);
+  perform extensions.dblink_exec('cr_w', 'begin');
+  perform * from extensions.dblink('cr_w', format('select wallet_spend(%L, 10, ''purchase'', null)', r)) as t(x integer);
+  perform extensions.dblink_exec('cr_b', 'begin');
+  perform extensions.dblink_send_query('cr_b', 'select card_leaves(''crwold'', null, 150)');
+  waited := 0; blocked := 0;
+  while blocked = 0 and waited < 100 loop
+    perform pg_sleep(0.1); perform pg_stat_clear_snapshot(); waited := waited + 1;
+    select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%card_leaves%' and pid <> pg_backend_pid();
+  end loop;
+  if blocked = 0 then raise exception 'the withdrawal did not wait for a wallet another session held'; end if;
+  perform extensions.dblink_send_query('cr_w', format('insert into card_ledger (account, card, kind, price) values (%L, ''crwold'', ''bought'', 0)', r));
+  waited := 0;
+  while waited < 40 and extensions.dblink_is_busy('cr_w') = 1 and extensions.dblink_is_busy('cr_b') = 1 loop
+    perform pg_sleep(0.1); waited := waited + 1;
+  end loop;
+  begin perform * from extensions.dblink_get_result('cr_w') as t(x text); perform * from extensions.dblink_get_result('cr_w') as t(x text); exception when others then err_s := sqlerrm; end;
+  if err_s is null then
+    begin perform extensions.dblink_exec('cr_w', 'commit'); exception when others then err_s := sqlerrm; end;
+  end if;
+  begin select t.r into got from extensions.dblink_get_result('cr_b') as t(r bigint); perform * from extensions.dblink_get_result('cr_b') as t(r bigint); exception when others then err_b := sqlerrm; end;
+  if err_b is null then
+    begin perform extensions.dblink_exec('cr_b', 'commit'); exception when others then err_b := sqlerrm; end;
+  end if;
+  begin perform extensions.dblink_exec('cr_w', 'rollback'); exception when others then null; end;
+  begin perform extensions.dblink_exec('cr_b', 'rollback'); exception when others then null; end;
+  perform extensions.dblink_disconnect('cr_w'); perform extensions.dblink_disconnect('cr_b');
+  if err_s is not null or err_b is not null then raise exception 'the purchase and the withdrawal met: purchase says %, withdrawal says %', err_s, err_b; end if;
+  if got is distinct from 3 then raise exception 'the withdrawal moved % copies, 3 held', got; end if;
+  if (select balance from wallets where account = r) is distinct from 540 then raise exception 'the wallet should hold 100 - 10 + 3 x 150: %', (select balance from wallets where account = r); end if;
+end $$;
+
 select tests.unbecome();
 create temp table w (name text primary key, id uuid not null);
 grant select on w to public;
@@ -216,7 +262,7 @@ begin
       jsonb_build_object('pack', 'cr-pull', 'availability', 'onSale', 'price', 140), jsonb_build_object('pack', 'cr-other', 'availability', 'onSale', 'price', 150))));
   perform pg_temp.expect(got ? 'retired' and got ? 'renamed' and got ? 'withdrawn', format('the seed answer lacks retired, renamed or withdrawn: %s', got));
   perform pg_temp.expect(got -> 'renamed' = '[]'::jsonb and got -> 'withdrawn' = '[]'::jsonb and got -> 'retired' = '[]'::jsonb, format('a first seed with nothing leaving reported leaving: %s', got));
-  perform pg_temp.expect((select count(*) from card_kinds where key like 'cr%' and key !~ '^cr[rs]') = 7, 'the seed wrote the cards');
+  perform pg_temp.expect((select count(*) from card_kinds where key like 'cr%' and key !~ '^cr[rsw]') = 7, 'the seed wrote the cards');
 end $$;
 
 -- ---- 1. The columns and their checks ----
@@ -378,7 +424,7 @@ begin
   perform pg_temp.expect(why like '22023%' and why like '%cralt%', format('a seed that drops a card was not refused naming it: %s', why));
   why := pg_temp.coded($q$select seed_instance(pg_temp.pl(drop_keys => array['cralt', 'crcatch']))$q$);
   perform pg_temp.expect(why like '22023%' and why like '%cralt%' and why like '%crcatch%', format('a seed that drops two cards was not refused naming both: %s', why));
-  perform pg_temp.expect(not exists (select 1 from card_kinds where gone_at is not null and key !~ '^cr[rs]') and (select count(*) from card_ledger) = ledger_before, 'a refused seed wrote');
+  perform pg_temp.expect(not exists (select 1 from card_kinds where gone_at is not null and key !~ '^cr[rsw]') and (select count(*) from card_ledger) = ledger_before, 'a refused seed wrote');
   -- The guard is for what a seed wrote: a card row put in directly (a test's, a hand's) is not the seed's to account for, and a seeded one dropped is.
   insert into card_kinds (key, name, alignment, rarity, play) values ('crdirect', 'Cr Direct', 'salty', 'common', 'cast');
   perform pg_temp.expect((select from_seed from card_kinds where key = 'cralt') and not (select from_seed from card_kinds where key = 'crdirect'), 'from_seed is true for a seeded card and false for one inserted directly');
@@ -578,6 +624,10 @@ begin
   perform pg_temp.expect(exists (select 1 from machine_now where slot = s_other), 'listing the pack kind again did not bring its slot back');
   perform pg_temp.expect((select retired_at from pack_kinds where key = 'cr-other') is null, 'listing the pack kind again did not clear retired_at');
 
+  -- A payload with no `packs` says nothing of pack kinds, and retires none (a payload that carries `withdrawn` but not `packs` is a partial one).
+  perform seed_instance(pg_temp.pl() - 'packs');
+  perform pg_temp.expect(not exists (select 1 from pack_kinds where retired_at is not null and key like 'cr-%'), 'a seed with no packs list retired a pack kind');
+
   -- A Pull open on a slot and a flash sale open on a hidden one: shown while the card is in print; neither shown nor sold once it has left.
   perform pg_temp.moves(s_keep, s_hit);
   perform pg_temp.expect((select availability from machine_now where slot = s_keep) = 'onSale' and (select availability from machine_now where slot = s_hit) = 'soldOut', 'the shim''s moves are not read by machine_now');
@@ -597,6 +647,21 @@ begin
   perform pg_temp.expect(machine_move_problem('pullSlot', jsonb_build_object('slot', s_hit), '{}'::jsonb, now(), now() + interval '1 day', true) is null, 'a Pull on a slot in print was refused');
   perform pg_temp.expect(machine_move_problem('flashSale', jsonb_build_object('slot', s_keep, 'hours', 24), null, now(), now() + interval '24 hours', true) is null, 'a flash sale on a hidden slot in print was refused');
   perform pg_temp.expect(exists (select 1 from jsonb_array_elements(meeting_context() -> 'machine') e where (e ->> 'id')::uuid = s_hit), 'the meeting''s machine lost a slot that is in print again');
+end $$;
+
+-- ---- 7b. card_now follows a rename chain to the card in print, and passes an unknown key through ----
+do $$
+declare
+  cur record;
+begin
+  perform pg_temp.expect((select (n.key, n.refund) is not distinct from ('crnosuch', null::integer) from card_now('crnosuch') n), 'card_now dropped a key that is no card');
+  insert into card_kinds (key, name, alignment, rarity, play) values ('crch10', 'Ch 10', 'salty', 'common', 'cast');
+  for i in reverse 9..0 loop
+    insert into card_kinds (key, name, alignment, rarity, play, gone_at, became) values ('crch' || i, 'Ch ' || i, 'salty', 'common', 'cast', now(), 'crch' || (i + 1));
+  end loop;
+  perform pg_temp.expect((select n.key from card_now('crch0') n) = 'crch10', 'card_now stopped short of the card in print on a long chain');
+  insert into card_kinds (key, name, alignment, rarity, play, gone_at, refund) values ('crch11', 'Ch 11', 'salty', 'common', 'cast', now(), 90);
+  perform pg_temp.expect((select n.key = 'crch11' and n.refund = 90 from card_now('crch11') n), 'card_now lost a withdrawn card''s refund');
 end $$;
 
 -- ---- 10. Nothing here edited a row, and the triggers are as they were ----
