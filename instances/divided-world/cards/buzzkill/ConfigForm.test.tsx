@@ -34,13 +34,30 @@ describe('the Gimmick it ends', () => {
     expect(radios[1]!.closest('label')!.textContent).not.toMatch(/ends /u);
   });
 
-  test('choosing one gives { play }, and the keyboard reaches it', async () => {
+  test('each radio shows its card\'s mark image, kind tag and rarity word; an unknown card key falls back to its key with no face', () => {
+    show(() => {}, [...gimmicks, { play: 'c', card: 'no-such-card', caster: 'c3' }]);
+    const [kick, field, unknown] = screen.getAllByRole('radio').map((r) => r.closest('label')!);
+    expect(kick!.querySelector('img.kb-trap-face-mark')).not.toBeNull();
+    expect(kick!.querySelector('.kb-trap-face-tag')!.textContent).toBe('Gimmick');
+    expect(kick!.querySelector('.kb-trap-face-rarity')!.textContent).toMatch(/Common/u);
+    expect(field!.querySelector('.kb-trap-face-rarity')!.textContent).toMatch(/\w/u);
+    expect(unknown!.querySelector('.kb-trap-face-name')!.textContent).toBe('no-such-card');
+    expect(unknown!.querySelector('img')).toBeNull();
+    expect(unknown!.querySelector('.kb-trap-face-tag')).toBeNull();
+    expect(unknown!.querySelector('.kb-trap-face-rarity')).toBeNull();
+  });
+
+  test('choosing one gives { play }; the keyboard reaches the group by Tab and an arrow key changes the choice', async () => {
     const onChange = vi.fn();
+    const user = userEvent.setup();
     show(onChange);
-    await userEvent.click(screen.getAllByRole('radio')[1]!);
+    await user.click(screen.getAllByRole('radio')[0]!);
+    expect(onChange).toHaveBeenLastCalledWith({ play: A });
+    (document.activeElement as HTMLElement).blur();
+    await user.tab();
+    expect(document.activeElement).toBe(screen.getAllByRole('radio')[0]);
+    await user.keyboard('{ArrowDown}');
     expect(onChange).toHaveBeenLastCalledWith({ play: B });
-    await userEvent.tab();
-    expect(onChange).toHaveBeenCalledTimes(1);
   });
 
   test('with none up says so plainly and offers nothing', () => {
