@@ -252,6 +252,16 @@ describe('a post\'s history version nests the same way', () => {
   });
 });
 
+describe('a play is handed how many casts name it (the refund outcome)', () => {
+  test('an Effect on a post with a sign play and two casts naming it is given the sign\'s play with handedOut: 2', () => {
+    const seen: (number | undefined)[] = [];
+    const Spy = ({ plays, children }: EffectProps): ReactNode => { for (const p of plays) seen.push(p.handedOut); return <>{children}</>; };
+    const named = (id: string, n: number): Act => ({ ...play('two', n), id, payload: { card: 'two', message: '', config: {}, layer: n, handedBack: { by: 'play-one', card: 'one' } } });
+    drawn([ui('one', { Effect: Spy }), ui('two')], ['one', named('cast-a', 2), named('cast-b', 3)]);
+    expect(seen.at(-1)).toBe(2);
+  });
+});
+
 describe('a card that folds the row is given the row\'s fold (CardUi.foldsRow)', () => {
   /* Records the `fold` each draw of the effect is given. */
   const seen: (EffectProps['fold'] | 'none')[] = [];
