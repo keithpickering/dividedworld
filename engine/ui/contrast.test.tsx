@@ -233,6 +233,33 @@ describe('the page\'s own ground (--kb-page-bg) is held as the page is', () => {
       expect(f.some((x) => x.includes(what) && /page ground/u.test(x)), `${what} on the page ground\n${f.join('\n')}`).toBe(true);
     }
   });
+  test('a layer may carry its own position and tile size, and its stops are still held', () => {
+    const inks = '--kb-bg: #000; --kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-link-visited: #fff; --kb-link-hover: #fff; --kb-rule: #fff; --kb-focus: #fff; --kb-pip: #fff;';
+    const sized = (c: string) => `radial-gradient(16px 14px at 20px 20px, ${c} 98%, transparent 100%) 0 0 / 40px 40px, #000`;
+    expect(pageFails(`${inks} --kb-page-bg: ${sized('#0a1448')};`)).toEqual([]);
+    expect(pageFails(`${inks} --kb-page-bg: ${sized('#cccccc')};`).length).toBeGreaterThan(0);
+    /* What follows the gradient may only place and size it: anything else is not read past. */
+    expect(pageFails(`${inks} --kb-page-bg: radial-gradient(#000, #000) banana, #000;`).some((x) => /cannot (be )?read/u.test(x))).toBe(true);
+  });
+  test('an inline SVG layer is held on every color it paints, and what it cannot read fails closed', () => {
+    const inks = '--kb-bg: #000; --kb-fg: #fff; --kb-muted: #fff; --kb-link: #fff; --kb-link-visited: #fff; --kb-link-hover: #fff; --kb-rule: #fff; --kb-focus: #fff; --kb-pip: #fff;';
+    const open = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 40 40' fill='none'>`;
+    const svg = (inner: string, o = open) => `url("data:image/svg+xml,${o}${inner}</svg>") 0 0 / 40px 40px, #000`;
+    const page = (v: string) => pageFails(`${inks} --kb-page-bg: ${v};`);
+    expect(page(svg(`<path fill='%230a1448' d='M0 0h9v9z'/><path fill='%230f1c5c' stroke='none' d='M0 0'/>`))).toEqual([]);
+    /* A light shape in the tile fails, by fill, by stroke and by a gradient stop inside the SVG. */
+    for (const light of [`<path fill='%23cccccc' d='M0 0'/>`, `<path stroke='%23cccccc' d='M0 0'/>`, `<linearGradient id='g'><stop stop-color='%23cccccc'/></linearGradient>`]) {
+      expect(page(svg(light)).length, light).toBeGreaterThan(0);
+    }
+    const unread = (v: string) => page(v).some((x) => /cannot (be )?read/u.test(x));
+    /* With no fill on its root, a shape with none of its own paints black unread; a light theme's text would never be held on it. */
+    expect(unread(svg(`<path d='M0 0'/>`, `<svg xmlns='http://www.w3.org/2000/svg'>`))).toBe(true);
+    for (const bad of [`<path fill='currentColor' d='M0 0'/>`, `<path fill='navy' d='M0 0'/>`, `<path opacity='0.5' fill='%23000' d='M0 0'/>`, `<path style='fill:%23fff' d='M0 0'/>`, `<style>path{fill:%23fff}</style>`, `<path fill='%23000' d='M0 0'/><linearGradient id='g'><stop offset='0'/></linearGradient>`]) {
+      expect(unread(svg(bad)), bad).toBe(true);
+    }
+    /* An SVG lets the page through between its shapes, so it is never the last layer. */
+    expect(unread(`url("data:image/svg+xml,${open}<path fill='%23000' d='M0 0'/></svg>")`)).toBe(true);
+  });
   test('a page ground it cannot read fails closed', () => {
     expect(pageFails('--kb-page-bg: url(x.png);').some((x) => /cannot (be )?read/u.test(x))).toBe(true);
   });
