@@ -4230,6 +4230,100 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     });
   });
 
+  /* A refund outcome (docs/plans/2026-11-20-refund-outcome-plan.md, Task 3): the back and the sign hand a landed cast back to the caster's hand, once, as place_cast does. */
+  describe('a refund back and a refunds use play', () => {
+    const rfBase = { ...base, validateConfig: (c: unknown) => ok(c ?? {}) };
+    const rfgift = { ...rfBase, key: 'rfgift', name: 'Rf Gift', alignment: 'sweet' as const, rarity: 'uncommon' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['sweet' as const], upTo: 'uncommon' as const }, outcome: { kind: 'refund' as const } }, canApply: () => ok(undefined) };
+    const rfsign = { ...rfBase, key: 'rfsign', name: 'Rf Sign', alignment: 'pepperoni' as const, rarity: 'common' as const, play: 'use' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, refunds: { flavors: ['salty' as const], count: 3 }, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsign', reaches: ['post'], stack: 1 }, t, e, now) };
+    const rfsweet = { ...rfBase, key: 'rfsweet', name: 'Rf Sweet', alignment: 'sweet' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsweet', stack: 6 }, t, e, now) };
+    const rfrare = { ...rfsweet, key: 'rfrare', name: 'Rf Rare', rarity: 'rare' as const, canApply: () => ok(undefined) };
+    const rfsalty = { ...rfsweet, key: 'rfsalty', name: 'Rf Salty', alignment: 'salty' as const, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'rfsalty', stack: 6 }, t, e, now) };
+    const rfcatch = { ...rfBase, key: 'rfcatch', name: 'Rf Catch', alignment: 'salty' as const, rarity: 'common' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'rfsalty', canApply: () => ok(undefined) };
+    const rfCards = [rfgift, rfsign, rfsweet, rfrare, rfsalty, rfcatch] as unknown as CardRules[];
+    const rfWorld: Instance = { ...instance, cards: rfCards, machine: [], settings: { ...settings, economy: {} } };
+    function rf() {
+      const fake = createFake({ instance: rfWorld });
+      const ana = fake.seed.account('ana');
+      const bo = fake.seed.account('bo');
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+      const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+      const posts = [1, 2, 3, 4].map((i) => fake.seed.thread('general', anaFace, `T${i}`, `Post ${i}`).act);
+      fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
+      fake.seed.cards(ana, { rfgift: 4, rfsign: 4, rfcatch: 2, rfsalty: 4 });
+      fake.seed.cards(bo, { rfsweet: 6, rfrare: 2, rfsalty: 12 });
+      fake.signInAs(ana);
+      return { fake, ana, bo, anaFace, anaHeel, boFace, posts };
+    }
+    const held = async (fake: ReturnType<typeof rf>['fake'], card: string) => (await fake.myCards()).find((c) => c.card === card)?.held ?? 0;
+    const returned = async (fake: ReturnType<typeof rf>['fake']) => (await fake.log()).cards.filter((e) => e.kind === 'returned' && e.act !== null);
+
+    test('a refund back hands the landed cast it matches back: a returned spring with no quadrant, the cast names the back, the hand is whole, and the back is spent', async () => {
+      const { fake, ana, bo, anaFace, boFace, posts } = rf();
+      const post = posts[0]!;
+      const back = must(await fake.setCard('rfgift', anaFace, post, { quadrant: 'calmPositive' })); /* a refund set card never stores a quadrant, even one in its config */
+      fake.signInAs(bo);
+      must(await fake.playCard('rfrare', boFace, post, {}, ''));
+      expect((await fake.cardsOn(post, 8)).some((a) => a.kind === 'spring')).toBe(false);
+      const before = await held(fake, 'rfsweet');
+      const cast = must(await fake.playCard('rfsweet', boFace, post, {}, ''));
+      const spring = (await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')!;
+      expect(spring.payload).toEqual({ card: 'rfgift', trigger: 'cast', did: 'returned', set: back.id, by: cast.id });
+      expect(cast.payload).toMatchObject({ card: 'rfsweet', layer: 1, handedBack: { by: back.id, card: 'rfgift' } });
+      expect(cast.payload).not.toHaveProperty('caught');
+      expect(await held(fake, 'rfsweet')).toBe(before);
+      expect(await returned(fake)).toEqual([expect.objectContaining({ card: 'rfsweet', act: cast.id, price: 0 })]);
+      const second = must(await fake.playCard('rfsweet', boFace, post, {}, ''));
+      expect(second.payload).not.toHaveProperty('handedBack');
+      expect(await held(fake, 'rfsweet')).toBe(before - 1);
+      fake.signInAs(ana);
+      expect((await fake.log()).cards.filter((e) => e.kind === 'returned' || e.kind === 'caught')).toEqual([]);
+    });
+
+    test('a sign hands back three casts of its flavor and not the fourth; a cast of another flavor is not handed back', async () => {
+      const { fake, ana, bo, anaFace, boFace, posts } = rf();
+      const post = posts[0]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      fake.signInAs(bo);
+      must(await fake.playCard('rfsweet', boFace, post, {}, ''));
+      const before = await held(fake, 'rfsalty');
+      const casts: Act[] = [];
+      for (let i = 0; i < 4; i++) casts.push(must(await fake.playCard('rfsalty', boFace, post, {}, '')));
+      expect(casts.slice(0, 3).map((c) => c.payload.handedBack)).toEqual([0, 1, 2].map(() => ({ by: sign.id, card: 'rfsign' })));
+      expect(casts[3]!.payload).not.toHaveProperty('handedBack');
+      expect(await held(fake, 'rfsalty')).toBe(before - 1);
+      expect((await returned(fake)).map((e) => e.act).sort()).toEqual(casts.slice(0, 3).map((c) => c.id).sort());
+      expect((await fake.cardsOn(post, 8)).find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
+      void ana;
+    });
+
+    test('the own other mask of the sign\'s player is handed back exactly as a stranger is', async () => {
+      const { fake, anaFace, anaHeel, posts } = rf();
+      const post = posts[1]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      const before = await held(fake, 'rfsalty');
+      const cast = must(await fake.playCard('rfsalty', anaHeel, post, {}, ''));
+      expect(cast.payload).toMatchObject({ handedBack: { by: sign.id, card: 'rfsign' } });
+      expect(await held(fake, 'rfsalty')).toBe(before);
+    });
+
+    test('a back that catches the cast takes it: nothing is handed back and no kick is used', async () => {
+      const { fake, bo, anaFace, boFace, posts } = rf();
+      const post = posts[2]!;
+      const sign = must(await fake.useCard('rfsign', anaFace, post, {}, ''));
+      must(await fake.setCard('rfcatch', anaFace, post, {}));
+      fake.signInAs(bo);
+      const caught = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
+      expect(caught.payload).toHaveProperty('caught');
+      expect(caught.payload).not.toHaveProperty('handedBack');
+      expect(await returned(fake)).toEqual([]);
+      /* Its kick is unspent: the next three casts are all handed back by the sign. */
+      const next = [];
+      for (let i = 0; i < 3; i++) next.push(must(await fake.playCard('rfsalty', boFace, post, {}, '')));
+      expect(next.map((c) => (c.payload.handedBack as { by: string } | undefined)?.by)).toEqual([sign.id, sign.id, sign.id]);
+    });
+  });
+
   describe('a scored-as play', () => {
     const NEXT = START + DAY / 2;
     /* The last settlement ended now; the next is half a day on, the window after it a settlement's length (one day) long. */
