@@ -711,7 +711,8 @@ begin
   perform tests.become_service();
   got := start_visit(clean, 'vf-bot', jsonb_build_object('rule_number', null, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'rule', 'about_act', clean, 'rule', 'the premise'))::text;
   perform tests.unbecome();
-  if got is not null then raise exception 'start_visit answered % for a post whose author is hidden', got; end if;
+  -- It names why it opened none (0401): {"visit": null, "veiled": true}.
+  if got::jsonb is distinct from '{"visit": null, "veiled": true}'::jsonb then raise exception 'start_visit answered % for a post whose author is hidden', got; end if;
   if exists (select 1 from acts v where v.kind = 'visit' and v.target_act_id = clean) then raise exception 'a visit opened on a post whose author is hidden'; end if;
 
   -- It cannot be reported until then, and nothing is spent: the words name when.
