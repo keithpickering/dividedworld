@@ -828,7 +828,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { ...payload, body: concealQuotes(payload['body'], asked) };
   };
 
-  /** An Act as a reader sees it: a ballot on a secret poll names no character and no picks, for every reader alike (acts_public, 0394). */
+  /** An Act as a reader sees it: a ballot on a secret poll names no character and no picks, for every reader alike (acts_public, 0395). */
   function publicAct(a: ActRec): Act {
     const shown = plainAct(a);
     return a.kind === 'ballot' && a.target !== null && pollOf(a.target)?.payload.secret === true
@@ -933,7 +933,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const pressed = first?.kind === 'spin' && typeof first.payload.at === 'string' ? postPlace(acts.get(first.payload.at)) : null;
       return { kind: 'play', card, on, from, at: pressed };
     }
-    /* A poll, and a public ballot on one (0395): the question and the poll's post; a secret ballot has no character to name and is no origin. */
+    /* A poll, and a public ballot on one (0396): the question and the poll's post; a secret ballot has no character to name and is no origin. */
     if (origin.kind === 'poll' || origin.kind === 'ballot') {
       const poll = origin.kind === 'poll' ? origin : acts.get(origin.target!);
       const post = poll?.target == null ? undefined : acts.get(poll.target);
@@ -1630,7 +1630,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ ballots: page.map((b) => ({ act: b.id, character: named.find((x) => x.id === b.character)!, picks: b.payload.picks as readonly number[], at: iso(b.at) })), more: older.length > 50 });
   }
   /**
-   * The polls a set of posts draw, as thread_page reads them (0395): each post's current poll with its counts and close, a public poll's counted ballots with picks (the newest 50) and the polls with more,
+   * The polls a set of posts draw, as thread_page reads them (0396): each post's current poll with its counts and close, a public poll's counted ballots with picks (the newest 50) and the polls with more,
    * and the caller's own counted ballots, a secret one's and a withdrawal's too. `cast` names the voters listed.
    */
   function pollParts(posts: readonly Id[]): { polls: Poll[]; voters: PollVoter[]; votersMore: Id[]; myBallots: Ballot[]; cast: Id[] } {
@@ -1705,7 +1705,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     const from = acts.get(origin);
     if (!from || from.kind === 'edit') return refuse('there is no such Act to spin from');
-    /* spin_written (0394): a close is not spun, a replaced or removed poll is not, and a secret ballot would have no one to name. */
+    /* spin_written (0395): a close is not spun, a replaced or removed poll is not, and a secret ballot would have no one to name. */
     if (from.kind === 'poll_close') return refuse('spin the poll');
     if (from.kind === 'poll' && currentPoll(from.target!)?.id !== from.id) return refuse('that poll was replaced');
     if (from.kind === 'ballot' && acts.get(from.target!)?.payload.secret === true) return refuse('a secret ballot cannot be spun');
@@ -4052,7 +4052,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             draws: newest(surfaces.draws.filter((x) => fits(x.ms))).map(({ r }) => r),
             wallsDrawn: newest(surfaces.walls.filter((x) => fits(x.ms))).map(({ r }) => r),
           }))(account === undefined ? { draws: [], walls: [] } : surfaceLog(account)),
-          /* my_ballots and my_poll_closes (0394, 0395), as log_page's `ballots` and `pollCloses` read them: the caller's own ballots (a secret one's character and picks too, a withdrawal's picks empty, `changed` where the character's previous ballot on the poll picked something) and an admin's closes of the polls their characters wrote. */
+          /* my_ballots and my_poll_closes (0395, 0396), as log_page's `ballots` and `pollCloses` read them: the caller's own ballots (a secret one's character and picks too, a withdrawal's picks empty, `changed` where the character's previous ballot on the poll picked something) and an admin's closes of the polls their characters wrote. */
           ...((rows) => ({
             ballots: newest(rows.ballots.filter((x) => fits(x.ms))).map(({ r }) => r),
             pollCloses: newest(rows.closes.filter((x) => fits(x.ms))).map(({ r }) => r),

@@ -171,7 +171,7 @@ declare
                          'groups',
                          -- How long a card set face down lasts (0156), for the line a card about to be set shows.
                          'setLasts',
-                         -- The poll editor's bounds (0394).
+                         -- The poll editor's bounds (0395).
                          'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax'];
   k text;
 begin

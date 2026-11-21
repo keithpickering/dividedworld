@@ -10,7 +10,7 @@
 --   2. the payloads     acts_poll_payload, acts_ballot_payload, acts_poll_close_payload, with builtins alone (jsonpath), so a direct writer meets no function it may not run. Lengths and counts that depend on settings are the writers'.
 --   3. indexes          acts_ballots (a poll's ballots by character, newest first: a character's history), acts_polls (a post's polls, newest first: the current poll by key), acts_one_poll_close (a poll has one close).
 --                       And the derived row, poll_latest_ballots: each (poll, character)'s latest ballot, kept by a trigger on the ballot Act's insert (see section 3).
---   4. the settings     pollOptionsMax, pollQuestionMax, pollOptionMax, pollLastsMin, pollLastsMax, held where written (settings_held, copied whole from 0383); engine/rules/instance.ts and 0079-settings-held.sql hold the same.
+--   4. the settings     pollOptionsMax, pollQuestionMax, pollOptionMax, pollLastsMin, pollLastsMax, held where written (settings_held, copied whole from 0394_reveal_perk.sql); engine/rules/instance.ts and 0079-settings-held.sql hold the same.
 --   5. acts_well_formed (copied whole from 0374) holds each Act to its target: a poll to a post_kind Act by the same character in the same thread, a ballot and a close to a poll in the same thread, an author's close to the poll's own character.
 --   6. the writers      poll_written (internal), latest_poll and ballot_secret (a public fact of a poll, for the readers of acts_public); span_words (0055) says a span in a refusal; post, start_thread and edit_post gain a last parameter, `poll jsonb default null` (the old signatures are dropped, so no call is ambiguous);
 --                       cast_ballot(poll, through, picks), close_poll(poll, through), close_poll_as_admin(poll), granted to authenticated. A draft is {question, options, pick, secret, lasts}; `lasts` is an interval string
@@ -49,7 +49,7 @@
 --
 -- Lock order: POST, THEN visits_open, THEN CHARACTER (0357's header), in each function below that takes more than one. edit_post takes the post `for no key update` before it checks anything when it sets or removes a poll, and cast_ballot and
 -- the closes take the poll's post `for share` before they read the post's current poll or check the character, so an edit and a ballot meet at the post's row and never hold one row each and wait on the other: whichever
--- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0394-polls.sql, section 1). A close also takes the poll's own row
+-- commits second is refused (a ballot on the replaced poll, or an edit of a poll that has a ballot), never a ballot that counts on a replaced poll (supabase/tests/0395-polls.sql, section 1). A close also takes the poll's own row
 -- `for no key update`, which a ballot's foreign key (`for key share`) does not conflict with, so two closes are laid one at a time and the second is refused. No function here takes a character's row; the veil's advisory lock
 -- (veil_cover_lock) is taken by the triggers after every row lock, as 0371 has it.
 --
@@ -160,8 +160,8 @@ end $$;
 revoke execute on function rebuild_poll_latest_ballots(uuid[]) from public, anon, authenticated;
 
 -- ===================================================================================== 4. the settings ====
--- settings_held (0391 debates' copy over crowd pay's 0383), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
--- and a whole count from 1 to 1000; an hour is allowed here as a card's `lasts` allows it). Everything else as 0383 wrote it (the crowd pay's two keys included). engine/rules/instance.ts (SETTINGS) holds the same, and 0079-settings-held.sql lists a poison at each edge.
+-- settings_held (0394_reveal_perk.sql's copy, which holds `revealPerk` over 0391 debates' copy over crowd pay's 0383), also holding the five poll settings: the most options a poll has (2 to 100), the longest question and option (characters, at least 1), and the least and most a poll may last (a span: a unit of hour, day, week or month
+-- and a whole count from 1 to 1000; an hour is allowed here as a card's `lasts` allows it). Everything else as 0394_reveal_perk.sql wrote it (the crowd pay's two keys, `debateDays` and `revealPerk` included). engine/rules/instance.ts (SETTINGS) holds the same, and 0079-settings-held.sql lists a poison at each edge.
 create or replace function public.settings_held()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -180,6 +180,7 @@ begin
     when 'vote' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
     when 'halving' then case when not coalesce(jsonb_typeof(v) = 'number' and setting_positive(v) and (v #>> '{}')::numeric <= 1, false)
       then 'a fraction above 0 and at most 1' end
+    when 'revealPerk' then case when not coalesce(jsonb_typeof(v) = 'number' and (v #>> '{}')::numeric between 0 and 1, false) then 'a number from 0 to 1' end
     -- How many days a post's debate is followed (0391): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
     when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
@@ -986,8 +987,8 @@ begin
   return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
 end $function$;
 
--- settlement_input (0378) and estimate_input (0378): a poll, a ballot and a close are not in a settlement's Acts. They pay no Aura, are no source of any, and are no one's to settle: `win_acts` leaves out all three kinds, as it leaves out
--- a gift (a donation). Everything else as 0378 wrote it.
+-- settlement_input and estimate_input (each 0394_reveal_perk.sql's copy, which holds each character's `reveals` over 0390's): a poll, a ballot and a close are not in a settlement's Acts. They pay no Aura, are no source of any, and are no one's to settle: `win_acts` leaves out all three kinds, as it leaves out
+-- a gift (a donation). Everything else as 0394_reveal_perk.sql wrote it.
 create or replace function settlement_input(window_start timestamptz, window_end timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   with recursive
@@ -1162,7 +1163,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
     'characters', coalesce((
       select jsonb_agg(jsonb_build_object('id', c.id, 'player', c.owner, 'classes', coalesce((
         select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
-        from class_history h where h.character = c.id and h.started_at < window_end), '[]')) order by c.id)
+        from class_history h where h.character = c.id and h.started_at < window_end), '[]'),
+        'reveals', coalesce((select jsonb_agg((extract(epoch from u.at) * 1000)::bigint order by u.at, u.act)
+          from class_reveals u where u.character = c.id and u.at < window_end), '[]')) order by c.id)
       from characters c join named n on n.id = c.id), '[]'),
     'acts', coalesce((
       select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,
@@ -1459,10 +1462,12 @@ begin
       select jsonb_agg(x order by x ->> 'id') from (
         select jsonb_build_object('id', c.id, 'player', you, 'classes', coalesce((
           select jsonb_agg(jsonb_build_object('class', h.class_key, 'from', (extract(epoch from h.started_at) * 1000)::bigint) order by h.started_at)
-          from class_history h where h.character = c.id and h.started_at < window_end), '[]')) as x
+          from class_history h where h.character = c.id and h.started_at < window_end), '[]'),
+          'reveals', coalesce((select jsonb_agg((extract(epoch from u.at) * 1000)::bigint order by u.at, u.act)
+            from class_reveals u where u.character = c.id and u.at < window_end), '[]')) as x
         from characters c join mine m on m.id = c.id
         union all
-        select jsonb_build_object('id', o.id, 'player', o.player, 'classes', '[]'::jsonb) from others o
+        select jsonb_build_object('id', o.id, 'player', o.player, 'classes', '[]'::jsonb, 'reveals', '[]'::jsonb) from others o
       ) cs), '[]'),
     'acts', coalesce((
       select jsonb_agg(jsonb_strip_nulls(jsonb_build_object('id', a.id, 'character', a.character, 'kind', a.kind,

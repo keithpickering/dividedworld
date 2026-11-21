@@ -175,8 +175,8 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15; index_page's and board_page's, PR 727's, the same day,
  * the first with who is online pinned: 5.954 and 8.498 MB, every other figure within 0.001 MB of PR 720's), each rounded up to one decimal plus 0.3 MB; a search read
  * is called with a term and no filter, since the plan it keeps does not depend on the term.
- * Re-recorded on the workflow's Postgres 17 for the polls migration (0394 redefines acts_public with a third select, so planning keeps more): board_page 9.789, boot 8.770,
- * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged. thread_page again for 0395's
+ * Re-recorded on the workflow's Postgres 17 for the polls migration (0395 redefines acts_public with a third select, so planning keeps more): board_page 9.789, boot 8.770,
+ * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged. thread_page again for 0396's
  * poll_latest_ballots reads (poll_counts, poll_voter_acts and my_latest_ballots in its poll block): 21.198 MB, so 21.5.
  */
 export const BUDGETS: Record<string, Budget> = {

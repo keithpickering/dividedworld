@@ -159,6 +159,8 @@ export interface Settings {
   readonly halving: number;
   /** How many days after a post the settlement follows the debate it sparked. Whole, at least 1. */
   readonly debateDays: number;
+  /** What a character's earnings from reactions count more while its reveal is current, as a share (0.2 is a fifth). 0 for none. */
+  readonly revealPerk: number;
   /** The most distinct reactions one player leaves on one Act, across all their characters. */
   readonly reactionCap: number;
   /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
@@ -512,6 +514,8 @@ export interface InputCharacter {
   readonly id: string;
   readonly player: string;
   readonly classes: readonly { readonly class: string; readonly from: number }[];
+  /** The times of the character's reveals (its `unmask` Acts) before the window's end, oldest first. */
+  readonly reveals?: readonly number[];
 }
 
 /**
@@ -736,6 +740,8 @@ export interface ClassInput {
 export interface Earning {
   readonly reason: string;
   readonly amount: number;
+  /** A reaction to the character's own Acts, or its own early call, caused it: the reveal perk reads it. */
+  readonly fromReactions?: true;
   /**
    * The economy numbers the reason's words state, by key, as this earning used them (the core loop design, section 6, #57): the
    * settlement writes them into the ledger row (`ledger.params`), so a line settled before a retune is said with the numbers it was

@@ -12,9 +12,9 @@ test('a well formed draft has no problem, whether lasts is a span or an interval
   assert.deepEqual(pollDraftProblems({ ...good, lasts: '1 hour' }, S), []);
 });
 
-/* Each refusal held beside the sentence supabase/tests/0394-polls.sql expects of poll_written (those lines are named). */
+/* Each refusal held beside the sentence supabase/tests/0395-polls.sql expects of poll_written (those lines are named). */
 const TABLE: [string, Record<string, unknown>, string][] = [
-  ['one option (0394-polls.sql:270)', { options: ['a'] }, 'a poll has 2 to 10 options'],
+  ['one option (0395-polls.sql:270)', { options: ['a'] }, 'a poll has 2 to 10 options'],
   ['eleven options (:272)', { options: Array.from({ length: 11 }, (_, i) => String(i)) }, 'a poll has 2 to 10 options'],
   ['options that are no list (:274)', { options: 'ab' }, 'a poll has 2 to 10 options'],
   ['pick 0 (:284)', { pick: 0 }, 'a poll lets 1 to 3 options be picked'],

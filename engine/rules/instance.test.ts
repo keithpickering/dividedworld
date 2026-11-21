@@ -14,6 +14,7 @@ const settings: Settings = {
   vote: 10,
   halving: 0.5,
   debateDays: 3,
+  revealPerk: 0.2,
   reactionCap: 3,
   crowdPayEach: 2,
   crowdPayMost: 10,
@@ -328,6 +329,8 @@ test('settings out of range are problems', () => {
   assert.match(settingsProblems({ ...settings, walletCap: 0 }).join('\n'), /walletCap/);
   assert.match(settingsProblems({ ...settings, vote: 2.5 }).join('\n'), /vote/);
   assert.match(settingsProblems({ ...settings, halving: 1.5 }).join('\n'), /halving/);
+  for (const bad of [-0.1, 1.5, '0.2', null]) assert.match(settingsProblems({ ...settings, revealPerk: bad as number }).join('\n'), /revealPerk/, `revealPerk ${JSON.stringify(bad)}`);
+  for (const good of [0, 0.2, 1]) assert.deepEqual(settingsProblems({ ...settings, revealPerk: good }).filter((p) => /revealPerk/.test(p)), [], `revealPerk ${good}`);
   assert.match(settingsProblems({ ...settings, reactionCap: 0 }).join('\n'), /reactionCap/);
   for (const bad of [0, 1.5, -2, '3', NaN, 366, 3_000_000_000]) assert.match(settingsProblems({ ...settings, debateDays: bad as number }).join('\n'), /debateDays/, `debateDays ${String(bad)}`);
   assert.deepEqual(settingsProblems({ ...settings, debateDays: 1 }), [], 'one day is the least');

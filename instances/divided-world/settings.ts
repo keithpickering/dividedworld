@@ -18,6 +18,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   halving: 0.5,
   /** A post's debate is followed for three days: long enough for a thread to catch fire over a weekend, short enough that a stale post is not a spark. */
   debateDays: 3,
+  revealPerk: 0.2,
   reactionCap: 3,
   /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
   crowdPayEach: 2,
@@ -240,8 +241,12 @@ export const defaults: Settings = deepFreeze<Settings>({
     'tweener.catalystVoices': 3,
     'tweener.catalystReturned': 2,
     'heel.saltyOutdraws': 20,
+    /** What one vote of heat pays the Heel, in votes' worth. */
+    'heel.heatVotes': 2,
     'face.cardOutdraws': -20,
     'jabroni.saltyLanded': 20,
+    /** What one vote of the groan pays the Jabroni, in votes' worth. */
+    'jabroni.groanVotes': 2,
     /** Evergreen: what a calm-positive vote on an old post of the Technician's pays, on top of Respected. */
     'technician.evergreen': 5,
     /** How many whole days old a Technician's post is when a calm-positive vote on it first pays Evergreen. */

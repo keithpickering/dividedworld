@@ -101,6 +101,21 @@ const fires = (markdown, pattern, o = {}) => {
     ['in bold', '## A\n\nUp to **three** reactions.\n'],
     ['in a block quote', '## A\n\n> Up to 9 orbs.\n'],
   ];
+  const worded = [
+    ['double', '## A\n\nThe Heel will earn double from its corners.\n'],
+    ['a fifth', '## A\n\nA reveal earns a fifth more.\n'],
+    ['triple', '## A\n\nA Gimmick pays triple.\n'],
+    ['twice', '## A\n\nIt pays twice what a vote does.\n'],
+    ['half', '## A\n\nIt costs half as much.\n'],
+    ['two thirds', '## A\n\nIt keeps two thirds of the wallet.\n'],
+    ['a quarter', '## A\n\nIt earns a quarter more.\n'],
+    ['four times', '## A\n\nEach vote counts four times over.\n'],
+    ['in bold', '## A\n\nIt pays **double**.\n'],
+  ];
+  for (const [name, markdown] of worded) {
+    const r = faultsOf(markdown);
+    check(`a retyped multiplier or fraction fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
+  }
   for (const [name, markdown] of retyped) {
     const r = faultsOf(markdown);
     check(`a retyped number fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
@@ -113,6 +128,9 @@ const fires = (markdown, pattern, o = {}) => {
     ['an ordinal', 'The second day and the first reaction.'],
     ['a number beside a word the settings do not name', 'There are 16 emoji and 2 rows.'],
     ['a version', 'Pre-alpha 0.1 is all there is.'],
+    ['a frame that is doubled', 'A Reversal\'s frame is doubled with a folded corner.'],
+    ['one of your masks, a half-baked idea', 'One of your masks has a plan and a thirdhand rumor.'],
+    ['a marker where the multiple goes', 'Each vote pays {{setting:cardEconomy.whoops.price}} votes\' worth.'],
   ];
   for (const [name, text] of clean) {
     const r = faultsOf(`## A\n\n${text}\n`);

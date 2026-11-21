@@ -24,7 +24,7 @@ import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.t
 import { localReaction } from '../../rules/emoji.ts';
 
 const settings: Settings = {
-  walletCap: 600, vote: 10, halving: 0.5, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
+  walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
@@ -6081,7 +6081,7 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
   });
 });
 
-describe('polls (0394, 0395)', () => {
+describe('polls (0395, 0396)', () => {
   const draft = { question: 'Which?', options: ['A', 'B', 'C'], pick: 2, secret: false, lasts: { unit: 'day' as const, count: 1 } };
   const poll = async (secret = false) => {
     const w = world();
