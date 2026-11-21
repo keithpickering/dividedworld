@@ -817,6 +817,13 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const when = ends[0] === undefined ? '' : `, ${lifted.length === 1 ? 'which' : 'the longest of which'} was set to end ${utcWhen(ends[0])} UTC`;
     return [lifted.length === 1 ? ` It ended ${target}'s ban${when}.` : ` It ended ${lifted.length} of ${target}'s bans${when}.`];
   };
+  /* A cast a pierce got past a ward says so, from the Act's public `pierce` alone; a back it passed is the alert's to tell, never the log's. */
+  const pierceSaid = (play: Act | undefined): string[] => {
+    const pierce = play?.payload.pierce;
+    if (typeof pierce !== 'object' || pierce === null) return [];
+    const { card, ward } = pierce as { card?: unknown; ward?: unknown };
+    return typeof ward === 'string' ? [` Your ${cardName(card)} got it past ${withArticle(cardName(ward))} that would have turned it away.`] : [];
+  };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
   const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';
   const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
@@ -965,7 +972,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       details: [
         `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
         `The card was paid for at the machine; ${e.price > 0 ? `this ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
-        ...said(e.card, play),
+        ...said(e.card, play), ...pierceSaid(play),
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });

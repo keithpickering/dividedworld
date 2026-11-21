@@ -120,6 +120,23 @@ describe('a trap', () => {
       ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Spritey',
     });
   });
+  describe('passed: a pierce got the cast past a card set face down', () => {
+    const cast = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', reach: 'post', pierce: { by: 'pc', card: 'pass' } } });
+    const r = row({ kind: 'trapStruck', sub: 'passed', act: 's', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+    test('the engine\'s words name the pierce and the cast, say nothing of the back, and link the cast\'s post', () => {
+      expect(said(r, ctx([cast, act('post43', { seq: 43 })]))).toEqual({
+        line: 'Your Hall Pass got your Whoops! past a card set face down',
+        detail: 'It stays face down and didn\'t spring, and whoever set it isn\'t told. In Hobbies.',
+        ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Spritey',
+      });
+    });
+    test('the instance\'s voice is asked first with how: passed, and no setter, span or back card', () => {
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      expect(said(r, ctx([cast, act('post43', { seq: 43 })], { ui }))).toMatchObject({ line: 'L', detail: 'D' });
+      expect(seen).toEqual([{ how: 'passed', setter: null, card: 'Hall Pass', laid: 'Whoops!', span: null, setterStaff: false }]);
+    });
+  });
   test('struck by a quote that met conditions: the matched ones, shortened, and never an Anyone-but list', () => {
     const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
     const passage = 'the punchline that goes on and on and on past forty characters of a long joke';

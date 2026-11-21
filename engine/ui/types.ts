@@ -167,7 +167,8 @@ export interface AlertCopy {
 export interface TrapStruckFacts {
   /** `rode`: a cast landed as usual on a ride back's post (the setter is paid for its reactions); `laid` is the caster's own card that landed, and `card` the setter's card, null where its spring was not read. */
   /** `returned`: a cast landed on a refund back's post and its card went back to its caster's hand (the caster is told). */
-  readonly how: 'quote' | 'caught' | 'rode' | 'returned';
+  /** `passed`: a pierce got the player's cast past a set card that would have caught it; `laid` is the cast's card, `card` the pierce's card, and `setter` and `span` are null (nothing about the back is public). */
+  readonly how: 'quote' | 'caught' | 'rode' | 'returned' | 'passed';
   readonly setter: string | null;
   readonly card: string | null;
   readonly laid: string | null;
