@@ -4758,6 +4758,31 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect((await fake.myCharacters()).find((c) => c.id === boFace)!.lockouts).toBeUndefined();
     });
 
+    test('an admin\'s end of a lockout is in the log of the setter\'s player and of the locked character\'s player, and of no one else', async () => {
+      const { fake, ana, bo, root, anaFace, boFace, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      fake.signInAs(root);
+      const end = must(await fake.reverseCard(spring.id));
+      const ended = async (who: string) => { fake.signInAs(who); return (await fake.log()).ended.filter((e) => e.play === spring.id); };
+      expect(await ended(ana)).toMatchObject([{ cardEnd: end.act, play: spring.id, card: 'lkback', side: 'cast', character: anaFace }]);
+      expect(await ended(bo)).toMatchObject([{ cardEnd: end.act, play: spring.id, card: 'lkback', side: 'onMine', character: boFace }]);
+      expect(await ended(root)).toEqual([]);
+    });
+
+    test('the refusal names the character and the time and nothing of the player, the same words the SQL says', async () => {
+      const { fake, bo, anaFace, boFace, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      const refusal = await fake.playCard('lksalty', boFace, post, {}, '');
+      expect(refusal).toEqual(refused(lockedWords(String(spring.payload.until))));
+      expect(JSON.stringify(refusal)).not.toMatch(/Bo Heel|"bo"/);
+    });
+
     test('a lockout that has run its time is over by itself, and cannot be ended', async () => {
       const { fake, bo, root, anaFace, boFace, thread, post } = lk();
       must(await fake.setCard('lkback', anaFace, post, {}));

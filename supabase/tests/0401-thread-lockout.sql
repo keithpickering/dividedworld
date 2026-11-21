@@ -131,7 +131,7 @@ declare
   p5 uuid := tests.post(a, t, 'Pepperoni.'); p6 uuid := tests.post(a, t, 'Reply.'); p7 uuid := tests.post(a, t, 'Staff.');
   bp1 uuid := tests.post(b, t, 'Bob earlier.'); bp2 uuid := tests.post(b, t, 'Bob earlier two.');
   back uuid; back3 uuid; back4 uuid; back5 uuid; back6 uuid; back7 uuid;
-  r jsonb; cp jsonb; sp jsonb; sp_id uuid; why text; until_b timestamptz; page jsonb; person jsonb; n integer; sp_c uuid; end_at timestamptz;
+  r jsonb; cp jsonb; sp jsonb; sp_id uuid; why text; until_b timestamptz; page jsonb; person jsonb; sp_c uuid; end_id uuid;
 begin
   perform pg_temp.cards();
   perform pg_temp.hand(ann, 'lkback');
@@ -162,6 +162,8 @@ begin
   perform tests.unbecome(); perform tests.become(bob);
   why := pg_temp.coded(format('select post(%L, %L, %L)', t, b, 'Posting while locked.'));
   if why is distinct from '55000 ' || pg_temp.words('Lk Bob', until_b) then raise exception 'post while locked out: %', why; end if;
+  -- The refusal names the character and the time and nothing else: no account, no other character of the player's.
+  if why like '%lk-bob%' or why like '%Lk Bob Two%' or why like '%' || bob::text || '%' then raise exception 'the refusal names more than the character and the time: %', why; end if;
   why := pg_temp.coded(format('select post(%L, %L, %L, %L)', t, b, 'Quoting while locked.', p2));
   if why is distinct from '55000 ' || pg_temp.words('Lk Bob', until_b) then raise exception 'a quoting post while locked out: %', why; end if;
   perform tests.unbecome(); perform tests.become_service();
@@ -265,6 +267,7 @@ begin
   perform tests.become(admin_acc);
   r := reverse_card(sp_id);
   perform tests.unbecome();
+  end_id := (r ->> 'id')::uuid;
   if r ->> 'kind' is distinct from 'card_end' or (r ->> 'target_act_id')::uuid is distinct from sp_id or (r -> 'payload') is distinct from '{"why": "reversed", "by": "admin"}'::jsonb then raise exception 'the end of a lockout: %', r; end if;
   if locked_out_until(b, t) is not null then raise exception 'locked_out_until is not null after the end'; end if;
   if lockout_ends(sp_id) is distinct from (select created_at from acts where id = (r ->> 'id')::uuid) then raise exception 'lockout_ends after the end: %', lockout_ends(sp_id); end if;
@@ -275,9 +278,20 @@ begin
   why := pg_temp.coded(format('select reverse_card(%L)', sp_id));
   perform tests.unbecome();
   if why is null or why not like '55000 an admin has already ended that card%' then raise exception 'a second end: %', why; end if;
-  -- The setter's alert reads on.
+  -- The setter's alert reads on: exactly one cardEnded alert, to the setter's player, about the card_end; the locked character's player is told nothing (design 3.4).
+  if (select count(*) from alerts where kind = 'cardEnded' and act = end_id) is distinct from 1::bigint
+     or not exists (select 1 from alerts where kind = 'cardEnded' and act = end_id and account = ann and character = a) then
+    raise exception 'the setter''s cardEnded alert: %', (select jsonb_agg(to_jsonb(x)) from alerts x where x.act = end_id);
+  end if;
+  if exists (select 1 from alerts where kind = 'cardEnded' and account = bob) then raise exception 'the locked character''s player was alerted'; end if;
+  -- The log's ended source (my_cards_ended) carries the end to the setter's player ('cast') and the locked character's player ('onMine'), and to nobody else.
   perform tests.become(ann);
-  perform alerts_page(null);
+  if (select count(*) from my_cards_ended where card_end = end_id and play = sp_id and side = 'cast' and character = a) is distinct from 1::bigint then raise exception 'the setter''s log does not carry the end of the lockout'; end if;
+  perform tests.unbecome(); perform tests.become(bob);
+  if (select count(*) from my_cards_ended where card_end = end_id and play = sp_id and side = 'onMine' and character = b) is distinct from 1::bigint then raise exception 'the locked character''s log does not carry the end of the lockout'; end if;
+  if exists (select 1 from my_cards_ended where character = b2) then raise exception 'the locked player''s other character reads the end'; end if;
+  perform tests.unbecome(); perform tests.become(carol);
+  if exists (select 1 from my_cards_ended where card_end = end_id) then raise exception 'a third player reads the end of a lockout'; end if;
   perform tests.unbecome();
   page := null;
   perform tests.become(carol);
@@ -343,4 +357,17 @@ begin
   end loop;
   if plan not like '%acts_lockout_by%' then raise exception 'the lockout probe does not use acts_lockout_by: %', plan; end if;
   if locked_out_until(a, t) is null then raise exception 'locked_out_until missed a lockout among filler'; end if;
+  -- my_characters and pool_context ask for a character's lockouts across threads, by `locks` alone: the same index, led by `locks`, serves them.
+  plan := '';
+  for line in execute format($q$explain (costs off) select s.thread, lockout_ends(s.id) from acts s
+      where s.kind = 'spring' and s.payload ->> 'did' = 'lockedOut' and s.payload ->> 'locks' = %L and (s.payload ->> 'until')::timestamptz > now()$q$, a::text) loop
+    plan := plan || line || E'\n';
+  end loop;
+  if plan not like '%acts_lockout_by%' then raise exception 'the locks-only lockout read does not use acts_lockout_by: %', plan; end if;
+  select prosrc into src from pg_proc where proname = 'pool_context';
+  if src not like '%payload ->> ''locks'' = c.id::text and (s.payload ->> ''until'')::timestamptz > now()%' then raise exception 'pool_context does not filter the cheap until before lockout_ends'; end if;
+  if pg_get_viewdef('my_characters'::regclass) not like '%((s.payload ->> ''until''::text))::timestamp with time zone > now()%' then raise exception 'my_characters does not filter the cheap until before lockout_ends: %', pg_get_viewdef('my_characters'::regclass); end if;
+  -- post() asks not_locked_out again once lock_for_quote has returned: a reply quoting the post a lockout sprang on waits on its row lock, and the spring is committed when it gets it.
+  select prosrc into src from pg_proc where proname = 'post' and pronargs = 6;
+  if src not like '%lock_for_quote(through, in_thread, quoting);%not_locked_out(through, in_thread)%' then raise exception 'post() does not ask not_locked_out again after lock_for_quote'; end if;
 end $$;

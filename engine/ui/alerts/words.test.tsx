@@ -388,6 +388,14 @@ describe('a card an admin ended', () => {
     expect(said(r, ctx([end, play({ reach: 'thread', thread: 't9', targetName: 'Hobbies' })])).line).toBe('An admin ended your Whoops! on the thread Hobbies.');
     expect(said(r, ctx([end, play({ reach: 'board', board: 'b1', targetName: 'Lobby' })])).line).toBe('An admin ended your Whoops! on the Lobby board.');
   });
+  test('an end of a lockout (the target is a lockedOut spring) says the lockout was ended, never that a card or its cost was lost, and never says "cast"', () => {
+    const lockEnd = act('e', { character: null, kind: 'card_end', seq: null, targetActId: 'sp', payload: { why: 'reversed', by: 'admin' } });
+    const sp = act('sp', { kind: 'spring', character: 'c1', seq: null, targetActId: 'post4', payload: { card: 'trap', trigger: 'cast', did: 'lockedOut', set: 'set1', by: 'k', locks: 'cL', until: '2026-11-03T09:41:00.000Z' } });
+    const s = said(r, ctx([lockEnd, sp, act('post4', { character: 'cG', seq: 4 })], { names: new Map([['cG', 'Gizmo'], ['cL', 'Spritey']]) }));
+    expect(s.line).toBe('An admin ended the lockout your Card Collector on Gizmo\'s post #4 put on Spritey.');
+    expect(s.detail).toBe('In Hobbies.');
+    expect(`${s.line} ${s.detail}`).not.toMatch(/cast|refund|cost/i);
+  });
   test('says it plainly when the play could not be read', () => {
     expect(said(r, ctx([end])).line).toBe('An admin ended your card.');
     expect(said(r, ctx()).line).toBe('An admin ended your card.');

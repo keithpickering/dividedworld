@@ -8,12 +8,13 @@
 --    3. acts_spring_payload     dropped and added again from 0397_refund_outcome.sql: ('cast', 'lockedOut') joins the pairs, and `locks` and `until` the allowed keys, each present exactly when `did` is lockedOut.
 --    4. spring_traps            copied whole from 0400_pierce.sql (its pierce lines kept): a lockout outcome springs `did: lockedOut` with `locks` and `until`; not passed over for a staff cast; no card_ledger row. It gains a
 --                               last argument `locking` (the Move's character), dropped and created again as 0400 did for `passing`: place_cast calls it before the Move's Act is written, so the plan's f.by_character is null there.
---    5. acts_lockout_by, lockout_ends, locked_out_until, not_locked_out  new: the partial index, a lockedOut spring's end (its `until` or an admin's card_end), the latest live end for a character in a thread, and the refusal.
+--    5. acts_lockout_by, lockout_ends, locked_out_until, not_locked_out  new: the partial index (led by `locks`, then thread, so a locks-only read by my_characters and pool_context and locked_out_until's read by both are each one probe), a lockedOut spring's end (its `until` or an admin's card_end), the latest live end for a character in a thread, and the refusal.
 --    6. acts_well_formed        copied whole from 0395_polls.sql: a card_end may be of a lockedOut spring as well as of a card play (the trigger refused any other target; a gap in the plan's list).
 --    7. post                    copied whole from 0395_polls.sql: not_locked_out(through, in_thread) right after not_barred.
 --    8. place_cast              (the play that lands through a lockedOut spring carries `lockedOut`, the spring's id, as a ride's carries `rode`; no card payload constraint names its keys, acts_well_formed checks none) copied whole from 0400_pierce.sql: not_locked_out(caster, in_thread) for a post, thread or character reach, before the back is met; `lands` takes lockedOut; the spring is told `locking => caster`.
 --    9. place_set               copied whole from 0397_refund_outcome.sql: not_locked_out(setter, the post's thread) once the post is read.
 --   10. write_staff_act         copied whole from 0393_forged_quotes.sql: not_locked_out for a staff `post` in a thread.
+--   11b. my_cards_ended (view) copied whole from 0375_spun_thread_reads.sql: a lockedOut spring an admin ended is a row for the setter's player ('cast') and the locked character's player ('onMine'), no one else.
 --   11. reverse_card            copied whole from 0349_thread_page_under.sql: also takes a lockedOut spring (worn off by `until`; a card play's own checks skipped).
 --   12. thread_page             copied whole from 0396_poll_reads.sql: each person's character object gains `locked_until` for this thread.
 --   13. my_characters (view)    from 0147_reveal_once.sql: a last column `lockouts`, [{thread, until}], through lockout_ends.
@@ -28,7 +29,8 @@
 -- lands: it is written, as any post written a moment before the lockout would have been, and the lockout holds the next one. It waits on nothing the spring holds that it did not already wait on, since the spring is written by
 -- place_cast under its own lock order (target post, then the back's face_down row, then the spring's inserts) and post() takes the quoted post, the back and the thread in that same order (lock_for_quote); the added read is
 -- a plain index read, so no new edge joins the lock graph and a deadlock is no likelier than before. The Move that springs the lockout asks not_locked_out before the back is met and nothing after it (the carried reply, the
--- Lens, a refunds Gimmick) asks it again.
+-- Lens, a refunds Gimmick) asks it again. post() and write_staff_act ask it a second time right after lock_for_quote returns: a reply that quotes the post a lockout sprang on waits on that post's row lock, and the spring
+-- is committed by the time it gets it, so the second ask refuses it where the first, made before the wait, did not.
 --
 -- Masks: every answer reads the public spring and the character's name, never an owner. A refusal names the locked character and the time, the same for every caller; the owner of a locked character trying another character
 -- of theirs gets what any other player would, since the asking is by character.
@@ -419,7 +421,7 @@ revoke execute on function spring_traps(text, uuid, uuid, text, uuid[], uuid, te
 -- ---- 5. acts_lockout_by, lockout_ends, locked_out_until, not_locked_out ----
 
 -- The partial index locked_out_until reads, so a post or a play asks one index and nothing else: a thread's lockedOut springs by the character they lock.
-create index acts_lockout_by on acts (thread, (payload ->> 'locks')) where kind = 'spring' and payload ->> 'did' = 'lockedOut';
+create index acts_lockout_by on acts ((payload ->> 'locks'), thread) where kind = 'spring' and payload ->> 'did' = 'lockedOut';
 
 -- When a lockedOut spring's lockout ends: its `until`, or the time an admin's card_end on it was written, whichever is first; null for anything that is not a lockedOut spring. Grants as ban_ends has.
 create function lockout_ends(spring uuid) returns timestamptz
@@ -616,6 +618,8 @@ begin
   perform forged_verdict_stage(body);
   -- Steps 3 to 5 of the lock order, for the quoted post's back (lock_for_quote).
   locked := lock_for_quote(through, in_thread, quoting);
+  -- Asked again now the quoted post's row lock is held: a Move that sprang a lockout on this post while this reply waited on that lock has committed by now, and the reply it would have quoted is refused.
+  perform not_locked_out(through, in_thread);
   insert into acts (character, kind, thread, target_act_id, payload)
   values (through, 'post', in_thread, quoting, jsonb_build_object('body', body)) returning id, target_act_id into written, kept;
   if poll is not null then perform poll_written(written, through, poll); end if;
@@ -1209,7 +1213,10 @@ begin
   -- A staff post in a thread its character is locked out of is refused, as a player's is (a spin, a card, an edit and the rest are not asked: a card goes through place_cast and place_set).
   if kind = 'post' and write_staff_act.thread is not null then perform not_locked_out(who, write_staff_act.thread); end if;
   -- A pool post that quotes: the quoted post's back, the thread and the count rows, in the lock order, before the insert.
-  if quoting then locked := lock_for_quote(who, write_staff_act.thread, target); end if;
+  if quoting then
+    locked := lock_for_quote(who, write_staff_act.thread, target);
+    if write_staff_act.thread is not null and kind = 'post' then perform not_locked_out(who, write_staff_act.thread); end if;
+  end if;
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into acts (character, kind, thread, target_act_id, payload) values (who, kind, write_staff_act.thread, target, stamped) returning id, target_act_id into written, kept;
   perform set_config('kayfabb.staff_writer', '', true);
@@ -1265,6 +1272,70 @@ begin
   return act_projection(written) || jsonb_strip_nulls(jsonb_build_object('play', p.id,
     'reach', case when p.payload ->> 'reach' in ('character', 'thread', 'board') then p.payload ->> 'reach' end));
 end $$;;
+
+-- ---- 11b. my_cards_ended ----
+
+-- my_cards_ended (0375_spun_thread_reads), two more kinds of row: an admin's card_end on a lockedOut spring, to the setter's player (side 'cast', `play` the spring, the setter's character) and to the locked character's player
+-- (side 'onMine', that character), and to no one else (a spring whose setter is also the locked character's player is the setter's row alone). The log's lockout lines read the card_end from these rows' `card_end`.
+-- Everything else as 0375 wrote it; create or replace keeps the view's owner, options and grants.
+create or replace view my_cards_ended as
+  with mine as (select c.id from characters c where c.owner = auth.uid()),
+  plays as (
+    select e.id as card_end, k.id as play, k.payload ->> 'card' as card, e.created_at as at, 'cast'::text as side,
+           k.character as caster, coalesce(pr.reach, 'post') as reach, k.target_act_id, k.payload ->> 'targetName' as named,
+           pr.character as reach_character, pr.thread as reach_thread, pr.board as reach_board, k.character as mine_character
+    from mine
+    join acts k on k.character = mine.id and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    left join play_reach pr on pr.play = k.id
+    where pr.play is not null or coalesce(k.payload ->> 'reach', 'post') = 'post'
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'post', k.target_act_id, null, null, null, null, p.character
+    from mine
+    join acts p on p.character = mine.id and post_kind(p.kind)
+    join acts k on k.target_act_id = p.id and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where coalesce(k.payload ->> 'reach', 'post') = 'post' and not exists (select 1 from play_reach x where x.play = k.id)
+      and k.character not in (select id from mine)
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'character', k.target_act_id, k.payload ->> 'targetName', pr.character, null, null, pr.character
+    from mine
+    join play_reach pr on pr.character = mine.id
+    join acts k on k.id = pr.play and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where k.character not in (select id from mine)
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'thread', k.target_act_id, k.payload ->> 'targetName', null, pr.thread, null, o.character
+    from mine
+    join acts o on o.character = mine.id and o.seq = 1
+    join play_reach pr on pr.thread = o.thread
+    join acts k on k.id = pr.play and k.kind = 'card'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where k.character not in (select id from mine)
+    union all
+    -- A lockedOut spring an admin ended (0401): the setter's own Act ('cast', the setter's character) and, for the locked character's player, the spring that locks it ('onMine'); each is read only by the player whose character the line is about, and a spring both own is one row, the setter's.
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'cast', k.character, 'post', k.target_act_id, null, null, null, null, k.character
+    from mine
+    join acts k on k.character = mine.id and k.kind = 'spring' and k.payload ->> 'did' = 'lockedOut'
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    union all
+    select e.id, k.id, k.payload ->> 'card', e.created_at, 'onMine', k.character, 'post', k.target_act_id, null, null, null, null, mine.id
+    from mine
+    join acts k on k.kind = 'spring' and k.payload ->> 'did' = 'lockedOut' and k.payload ->> 'locks' = mine.id::text and k.character is distinct from mine.id
+    join acts e on e.target_act_id = k.id and e.kind = 'card_end'
+    where k.character not in (select id from mine)
+  )
+  select pl.card_end, pl.play, pl.card, pl.at, pl.side, pl.reach,
+         case pl.reach
+           when 'character' then coalesce(pl.named, (select cp.name from characters_public cp where cp.id = pl.reach_character))
+           when 'thread' then coalesce(pl.named, (select th.title from threads th where th.id = pl.reach_thread))
+           when 'board' then coalesce(pl.named, (select bd.name from boards bd where bd.id = pl.reach_board))
+         end as target_name,
+         case when pl.reach = 'post' then (select cp.name from acts pa join characters_public cp on cp.id = case when exists (select 1 from post_veils_live sv where sv.post = pa.id and sv.veil = 'author') then (select sk.id from characters sk where sk.staff_kind = 'anonymous') else pa.character end where pa.id = pl.target_act_id) end as post_author_name,
+         case when pl.side = 'cast' then (select cp.name from characters_public cp where cp.id = pl.caster)
+              else (select cp.name from acts_public ap join characters_public cp on cp.id = ap."character" where ap.id = pl.play) end as caster_name,
+         pl.mine_character as character
+  from plays pl;
 
 -- ---- 12. thread_page ----
 
@@ -2020,7 +2091,7 @@ create or replace view my_characters as
          (select max(r.at) from class_reveals r where r.character = c.id and r.class = h.class_key and r.at >= h.started_at) as class_shown_at,
          coalesce((select jsonb_agg(jsonb_build_object('thread', l.thread, 'until', l.ends) order by l.ends, l.thread)
                    from (select s.thread, lockout_ends(s.id) as ends from acts s
-                         where s.kind = 'spring' and s.payload ->> 'did' = 'lockedOut' and s.payload ->> 'locks' = c.id::text) l
+                         where s.kind = 'spring' and s.payload ->> 'did' = 'lockedOut' and s.payload ->> 'locks' = c.id::text and (s.payload ->> 'until')::timestamptz > now()) l
                    where l.ends > now()), '[]'::jsonb) as lockouts
   from characters c
   cross join lateral (select x.class_key, x.started_at, x.due_at from class_history x where x.character = c.id order by x.started_at desc limit 1) h
@@ -2050,6 +2121,6 @@ language sql stable security definer set search_path = public, pg_temp as $$
     -- Each persona's live lockouts, public as the springs are: the chatter offers no reply or card in a thread its persona is locked out of, so no paid answer goes to a post that would be refused. `staff` is the persona's
     -- character id (the values of `characters` above) and `thread` the thread, both text.
     'lockouts', coalesce((select jsonb_agg(jsonb_build_object('staff', c.id::text, 'thread', s.thread::text) order by s.created_at, s.id)
-                          from characters c join acts s on s.kind = 'spring' and s.payload ->> 'did' = 'lockedOut' and s.payload ->> 'locks' = c.id::text
+                          from characters c join acts s on s.kind = 'spring' and s.payload ->> 'did' = 'lockedOut' and s.payload ->> 'locks' = c.id::text and (s.payload ->> 'until')::timestamptz > now()
                           where c.staff is not null and c.staff_kind = 'persona' and lockout_ends(s.id) > now()), '[]'::jsonb))
 $$;;

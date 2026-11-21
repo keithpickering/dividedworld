@@ -4189,6 +4189,20 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
              (`onMine`); a reversal between two other players is in neither's view. */
           ended: newest([...acts.values()].filter((e) => e.kind === 'card_end' && e.target !== null && fits(e.at)).flatMap((e) => {
             const play = acts.get(e.target!);
+            /* A lockedOut spring an admin ended (my_cards_ended, 0401): the setter's player reads it as 'cast', the locked character's player as 'onMine'; no one else does. */
+            if (play?.kind === 'spring' && play.payload.did === 'lockedOut') {
+              const setter = characters.get(play.character ?? '')?.owner === account;
+              const locked = typeof play.payload.locks === 'string' ? play.payload.locks : '';
+              if (!setter && characters.get(locked)?.owner !== account) return [];
+              const targetPost = acts.get(play.target ?? '');
+              const targetAuthor = targetPost ? shownAuthor(targetPost, false) : undefined;
+              return [{ ms: e.at, order: e.order, e: {
+                cardEnd: e.id, play: play.id, card: String(play.payload.card), at: iso(e.at), side: setter ? 'cast' as const : 'onMine' as const, reach: 'post' as const, targetName: null,
+                postAuthorName: targetAuthor == null ? null : charOf(targetAuthor)?.name ?? null,
+                casterName: characters.get(play.character ?? '')?.name ?? null,
+                character: (setter ? play.character : locked) as Id,
+              } }];
+            }
             if (!play || play.kind !== 'card') return [];
             const cast = characters.get(play.character ?? '')?.owner === account;
             if (!cast && targetOwner(play) !== account) return [];

@@ -288,6 +288,14 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
     }
     case 'cardEnded': {
       const play = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
+      /* An admin's end of a lockout (the target is a lockedOut spring, the setter's Act): nothing was spent or lost, so none of a card's words about cost apply. */
+      if (play?.kind === 'spring' && play.payload.did === 'lockedOut') {
+        const post = play.targetActId ? ctx.acts.get(play.targetActId) : undefined;
+        const owner = post?.character == null ? null : post.character === row.character ? 'your' : ctx.names?.get(post.character) ?? null;
+        const where = post && post.seq !== null ? `${owner === 'your' ? 'your post' : owner ? `${owner}'s post` : 'post'} #${post.seq}` : 'a post';
+        const locked = typeof play.payload.locks === 'string' ? ctx.names?.get(play.payload.locks) ?? null : null;
+        return { line: [`An admin ended the lockout your ${cardName(play.payload.card, ctx) ?? 'card'} on ${where} put on ${locked ?? 'a character'}.`], detail: sentences([], inTitle(row)), ways: postWay(post, row, ctx), who };
+      }
       if (!play || play.kind !== 'card') return { line: ['An admin ended your card.'], detail: sentences(['Its cost and the card are not refunded.'], inTitle(row)), ways: threadWay(row), who };
       const on = endedOn(row, play, ctx);
       return {

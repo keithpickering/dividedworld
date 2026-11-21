@@ -285,6 +285,14 @@ describe('cards set face down, traps and catches', () => {
     test('actsFollowed reaches the spring from the play\'s `lockedOut`', () => {
       expect(actsFollowed(new Map([['k1', move]]))).toEqual(expect.arrayContaining(['sp']));
     });
+    test('the log names the end of a lockout (`my_cards_ended`) so its Act is read, and the lockout\'s own lines say it; no line of "your card ended" is added', () => {
+      const entry = { cardEnd: 'end', play: 'sp', card: 'snare', at, side: 'onMine' as const, reach: 'post' as const, targetName: null, postAuthorName: 'Pipewrench', casterName: 'Pipewrench', character: 's' };
+      expect(actsNamed({ ...empty, ended: [entry] }, null, [])).toEqual(expect.arrayContaining(['sp', 'end']));
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k1', price: 0, at }], ended: [entry] };
+      const rows = logRows(data({ log, mine: [char('s', 'Spritey', 'heel')], acts: new Map([...posts, move, lock, end].map((a) => [a.id, a])), names: new Map([['p', 'Pipewrench']]) }), w, 600, null);
+      expect(rows.map((r) => r.kind)).toEqual(['played', 'struck']);
+      expect(text(rows.find((r) => r.kind === 'struck')!)).toContain('An admin ended it at Oct 31 · 12:30 UTC.');
+    });
     test('the caster\'s line, after its play line, names the card, the post and the character', () => {
       const rows = caster();
       expect(rows.map((r) => r.kind)).toEqual(['played', 'struck']);

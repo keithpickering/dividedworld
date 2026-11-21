@@ -1143,7 +1143,8 @@ function surfaceRows(data: LogData, words: Words): LogRow[] {
  */
 function endedRows(data: LogData, words: Words): LogRow[] {
   const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
-  return data.log.ended.map((e): LogRow => {
+  /* An admin's end of a lockout has its words in the lockout's own lines ("An admin ended it at {time}.", from the card_end this entry names), so it adds none. */
+  return data.log.ended.filter((e) => data.acts.get(e.play)?.kind !== 'spring').map((e): LogRow => {
     const play = data.acts.get(e.play);
     const post = play?.targetActId ? data.acts.get(play.targetActId) : undefined;
     const mine = e.side === 'onMine';
@@ -1394,7 +1395,7 @@ export function actsNamed(log: Log, estimate: Estimate | null, turns: readonly T
   for (const s of log.saves) { ids.add(s.play); ids.add(s.post); }
   for (const e of log.setEnds) { ids.add(e.post); if (e.spring) ids.add(e.spring); }
   for (const c of log.caught) { ids.add(c.play); ids.add(c.post); ids.add(c.spring); }
-  for (const e of log.ended) ids.add(e.play);
+  for (const e of log.ended) { ids.add(e.play); ids.add(e.cardEnd); }
   for (const w of log.wallet) if ((w.kind === 'bribe' || w.kind === 'gift_out' || w.kind === 'gift_in') && w.ref) ids.add(w.ref);
   return [...ids];
 }
