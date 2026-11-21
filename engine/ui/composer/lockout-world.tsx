@@ -15,7 +15,7 @@ const lkback = { ...base, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as 
 const lksalty = { ...base, key: 'lksalty', name: 'Lk Salty', alignment: 'salty' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lksalty', stack: 6 }, t, e, now) };
 const lkwide = { ...base, key: 'lkwide', name: 'Lk Wide', alignment: 'sweet' as const, rarity: 'common' as const, reaches: ['post' as const, 'thread' as const, 'character' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
 export const lockoutInstance: Instance = { ...testInstance, cards: [lkback, lksalty, lkwide] as unknown as CardRules[], machine: [], settings: { ...testInstance.settings, economy: {} } };
-const art = { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' };
+const art = { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)', canvas: '', mark: '', credit: 'Test' };
 export const lockoutCards: CardUi[] = ['lkback', 'lksalty', 'lkwide'].map((key) => ({ key, art, describe: () => `${key}.`, summary: `${key}.` }));
 
 const must = <T,>(a: { ok: true; value: T } | Refusal): T => { if (!a.ok) throw new Error(`refused: ${a.error}`); return a.value; };
