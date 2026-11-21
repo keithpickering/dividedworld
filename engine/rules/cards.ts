@@ -854,7 +854,7 @@ export const listed = (reaches: readonly Reach[]): string => {
  * carries at most its stack of it (one unless the card says more) that are still up, each its own play, counting only the
  * effects on that same target, never those above it. A board carries one board card at a time, of any card, until it ends.
  */
-export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'discipline'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
+export function landsOn(rules: Pick<CardRules, 'key' | 'stack' | 'reaches' | 'discipline' | 'cuts'> & { readonly surface?: unknown }, target: CardTarget, effects: readonly CardEffect[], now: Date = new Date()): Verdict {
   const reaches = reachesOf(rules);
   if (!reaches.includes(target.reach)) return refuse(`this card lands on ${listed(reaches)}`);
   if (target.reach === 'post' && !isPost(target.kind)) return refuse('a card lands on a post');
