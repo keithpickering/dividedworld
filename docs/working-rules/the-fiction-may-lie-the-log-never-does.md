@@ -18,3 +18,12 @@ sort of zazzed up." Asked, the owner accepted the rewording ("Yeah, that works f
 tooltips for onboarding technically could appear on any page, whatever page is relevant. And those should not be
 excluded from this developer persona voice either." The last sentence now names the welcome page, the guide and the
 tips, committed to the repository and approved by the owner in review.
+
+The owner's words. In the design session for Gabe's voice of 2026-11-21 (`docs/plans/2026-11-21-gabes-voice-design.md`,
+section 1; #904). The owner wrote an intro post as Gabe, a tall tale from its first line (the RAM sold for a yacht, a
+shelved Half-Life sequel, Personality Cores left over from an escape room, "nothing will go horribly wrong. That's the
+Gabe-N Guar-N-tee"), and asked for a style guide built from it. The rule said the persona was "always true" and "never
+bluffs", which to the letter forbade the post. Asked where the line is, with tall tales about himself and the game's
+origin free and the mechanics always true proposed, the owner answered: "You've got it right. Gabe is facetiously
+optimistic that this will be the final and only boss, and he will claim the same every time a new one takes over." The
+rule's last sentences now say what the persona may make up and what he may never be wrong about.
