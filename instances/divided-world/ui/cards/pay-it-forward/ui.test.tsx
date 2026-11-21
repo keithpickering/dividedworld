@@ -25,11 +25,10 @@ function setup(inst = instance) {
   const anaFace = fake.seed.character(ana, 'Ana Face', instance.classes[0]!.key);
   const boFace = fake.seed.character(bo, 'Bo Face', instance.classes[0]!.key);
   const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'Words of Ana\'s post');
-  const { act: second } = fake.seed.thread('general', anaFace, 'Again', 'More words of Ana\'s');
   fake.seed.cards(ana, { 'pay-it-forward': 3 });
   fake.seed.cards(bo, { 'hype-up': 3, 'feelin-fab': 3 });
   fake.signInAs(ana);
-  return { fake, ana, bo, anaFace, boFace, opener, second };
+  return { fake, ana, bo, anaFace, boFace, opener };
 }
 
 const held = async (fake: ReturnType<typeof setup>['fake'], card: string) => (await fake.myCards()).find((c) => c.card === card)?.held ?? 0;
