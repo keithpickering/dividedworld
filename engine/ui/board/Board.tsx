@@ -251,12 +251,12 @@ function Pinned({ loaded, plays, tallies, mine, nameOf, faceOf, perPage, hot, on
   readonly perPage: number; readonly hot: number; readonly onSpin: (origin: SpinOrigin) => void;
 }) {
   const pins = useMemo(() => loaded.pins.map((p) => playOf(p.act)).filter((p) => p !== null), [loaded.pins]);
-  /* A pin an admin ended is marked reversed in the store when its card_end is heard (the read of the board no longer lists it): it goes at once. */
+  /* A pin an admin ended is marked reversed in the store when its card_end is heard (the read of the board no longer lists it), and one a cutting card ended is marked cut: it goes at once. */
   const subscribeEnds = useCallback((wake: () => void) => {
     const offs = pins.map((p) => plays.subscribe(homeOf(p), wake));
     return () => { for (const off of offs) off(); };
   }, [pins, plays]);
-  const endedPins = useSyncExternalStore(subscribeEnds, () => pins.filter((p) => plays.get(homeOf(p)).plays.some((q) => q.id === p.id && q.reversed)).map((p) => p.id).join(','));
+  const endedPins = useSyncExternalStore(subscribeEnds, () => pins.filter((p) => plays.get(homeOf(p)).plays.some((q) => q.id === p.id && (q.reversed || q.cut !== undefined))).map((p) => p.id).join(','));
   const standing = useMemo(() => pins.map((p) => (endedPins.split(',').includes(p.id) ? { ...p, reversed: true as const } : p)), [pins, endedPins]);
   const now = useUntil(standing);
   const live = new Set(livePlays(standing, now).map((p) => p.id));

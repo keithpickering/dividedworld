@@ -3050,5 +3050,15 @@ describe('a Gimmick a cutting card ended', () => {
     const text = await rowLines(/^Card 2, 1 play/u);
     expect(text).not.toContain('Ended early by');
     expect(text).not.toContain('Ended by an admin');
+    /* The cutting play's own row no longer says it ended anything. */
+    await userEvent.click(within(lens()).getByRole('tab', { name: 'Card 3' }));
+    expect(lens().textContent).not.toContain('Ended the Card 2 here early');
+  });
+
+  test('a kind whose every play was cut is headed Ended early', async () => {
+    width(false);
+    strip();
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    expect(lens().querySelector('.kb-lens-line')!.textContent).toBe('Ended early');
   });
 });

@@ -325,6 +325,10 @@ describe('a card that replies, on a reply drawn under a post', () => {
 
 /* The Buzzkill: a card that cuts is offered where a live Use-card Gimmick it may end is up, and nowhere else. */
 describe('a card that cuts, as a screen offers it', () => {
+  test('effectsOf leaves a cut play out, as it leaves a reversed one', () => {
+    const cut = { ...play('jimmy', 1), cut: { by: 'b', card: 'buzzkill' } };
+    expect(effectsOf([cut, play('jimmy', 2)], []).map((e) => e.act)).toEqual(['play-jimmy-2']);
+  });
   const now = Date.parse('2026-10-30T00:00:00Z');
   const buzz = { ...rules('buzzkill'), name: 'Buzzkill', rarity: 'rare', play: 'cast', reaches: ['post'], cuts: { upTo: 'rare' } } as unknown as CardRules;
   const gimmick = { ...rules('jimmy'), name: 'Jimmy', rarity: 'rare', play: 'use', reaches: ['post'], gimmick: 'jimmy' } as unknown as CardRules;

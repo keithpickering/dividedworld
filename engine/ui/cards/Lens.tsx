@@ -622,7 +622,7 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
         <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
         <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
       </div>
-      {play.cuts && <p className="kb-lens-note">{cutWords(nameOfCard(play.cuts.card))}</p>}
+      {play.cuts && !play.reversed && <p className="kb-lens-note">{cutWords(nameOfCard(play.cuts.card))}</p>}
       {play.pierce && <p className="kb-lens-note">{pierceWords(nameOfCard(play.pierce.card), play.pierce.ward === undefined ? undefined : nameOfCard(play.pierce.ward))}</p>}
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}

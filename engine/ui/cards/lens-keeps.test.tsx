@@ -129,5 +129,7 @@ describe('endable, the rule the End control is offered by', () => {
     expect(endable(worn, now, true)).toBe(true);
     expect(endable({ ...worn, ends: '2026-11-25T00:00:00.000Z' }, now, false)).toBe(true);
     expect(endable({ ...worn, reversed: true }, now, true)).toBe(false);
+    /* A Gimmick a cutting card ended is ended by that card's end, not its own. */
+    expect(endable({ ...worn, ends: '2026-11-25T00:00:00.000Z', cut: { by: 'b1', card: 'buzzkill' } }, now, true)).toBe(false);
   });
 });

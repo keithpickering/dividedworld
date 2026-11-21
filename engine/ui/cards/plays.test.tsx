@@ -8,7 +8,7 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
+import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -1015,5 +1015,29 @@ describe('a Gimmick a cutting card ended', () => {
     early.add([cutting(), second(), end('b1')]);
     early.add([gimmick()]);
     expect(early.get('p1').plays.find((p) => p.id === 'g1')?.cut?.by).toBe('b2');
+  });
+
+  test('two cutters ended out of order: ending the second while the first still marks leaves it cut', () => {
+    const second = () => act('b2', 'card', { card: 'buzzkill', instant: true, cut: { play: 'g1', card: 'jimmy-wails' } });
+    const plays = createPlays();
+    plays.add([gimmick(), cutting(), second()]);
+    plays.add([end('b2')]);
+    expect(plays.get('p1').plays.find((p) => p.id === 'g1')?.cut?.by).toBe('b1');
+    plays.add([end('b1')]);
+    expect(plays.get('p1').plays.find((p) => p.id === 'g1')).not.toHaveProperty('cut');
+  });
+
+  test('asThen strips the cut of a play stood in a moment, and keeps the array where nothing changes', () => {
+    const base = { id: 'g', card: 'k', layer: 1, caster: 'c', message: '', config: {}, playedAt: '2026-10-01T00:00:00Z', post: 'p' };
+    const plays = [{ ...base, cut: { by: 'b', card: 'x' } }] as CardPlay[];
+    expect(asThen(plays, new Set(['g']))[0]).not.toHaveProperty('cut');
+    expect(asThen(plays, new Set(['other']))).toBe(plays);
+  });
+
+  test('markedPlays drops a cut play beyond a post, as it drops a reversed one, and keeps one on a post', () => {
+    const base = { id: 'g', card: 'k', layer: 1, caster: 'c', message: '', config: {}, playedAt: '2026-10-01T00:00:00Z', post: 'p', cut: { by: 'b', card: 'x' } };
+    const far = { ...base, reach: 'character' as const, on: 'ch', ends: '2099-01-01T00:00:00Z' } as CardPlay;
+    expect(markedPlays([far], Date.now())).toEqual([]);
+    expect(markedPlays([base as CardPlay], Date.now())).toHaveLength(1);
   });
 });
