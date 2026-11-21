@@ -42,7 +42,7 @@ import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
@@ -218,9 +218,11 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * those that fall on this post (`playsFallingOn`): up now, or of a card that keeps and written while the post was up, so a week-long play still lights a post written inside it.
    */
   const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  /* The post's plays with the sign's count (`withHandedOut`), so a refunded cast arriving live redraws the sign. Only the post layer handed to Effects reads it; the moment, tails and drives reads below use `here.plays`, which carry no count. */
+  const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: here.plays.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
+    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping
@@ -609,6 +611,7 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
     return own;
   }, [moment, parts]);
   const here = store.get(moment.version.id);
+  const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   /* The moment's ink registry, one for all its effects (claims.ts), ranked as PostEffects ranks them. */
   const claims = useMemo(createClaims, []);
   const at = useMemo(() => momentTime(moment), [moment]);
@@ -630,11 +633,11 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
   const order = useMemo(() => {
     const wraps = [
       ...(parts.above ? [{ key: parts.above.card, reach: 'character' as const, mine: [parts.above] }] : []),
-      ...[...new Set(here.plays.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: here.plays.filter((p) => p.card === key) })),
+      ...[...new Set(counted.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: counted.filter((p) => p.card === key) })),
     ];
     const nested = nestOrder(wraps, ui.cards, writing);
     return [...nested.writing, ...nested.rest, ...nested.takeovers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
-  }, [here, parts.above, ui.cards, writing, written]);
+  }, [counted, parts.above, ui.cards, writing, written]);
   let wrapped = children;
   for (const [rank, { key, reach, mine, written: tails }] of order.entries()) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;

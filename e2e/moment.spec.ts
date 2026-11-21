@@ -10,15 +10,20 @@ for (const { story, size } of [
   { story: 'boards-01-marks--as-it-landed', size: { width: 1440, height: 1120 } },
   { story: 'boards-01-marks--as-it-landed-phone', size: { width: 390, height: 844 } },
 ]) {
-  test(`the moment's tag and list cover no words outside the moment (${story})`, async ({ page }) => {
+  test(`the moment's tag and list cover no words outside the moment, and the list stands in the post's foot (${story})`, async ({ page }) => {
     await page.setViewportSize(size);
     await page.goto(`/?fixture=boards&story=${story}`);
     const moment = page.locator('#post-41 .kb-moment');
     await expect(moment).toBeVisible({ timeout: 15_000 });
-    await expect(moment.locator('.kb-moment-list')).toBeVisible();
+    /* The list is the frame's small print and no part of the post (the owner, 2026-11-21): first in the post's foot, out of the content area an effect fills. */
+    const list = page.locator('#post-41 .kb-act-foot > .kb-moment-list[data-kb-strip]');
+    await expect(list).toBeVisible();
+    expect(await list.evaluate((el) => el.closest('[data-kb-content-area]'))).toBeNull();
+    expect(await list.evaluate((el) => el.parentElement!.firstElementChild === el || getComputedStyle(el).order === '-1')).toBe(true);
     const covered = await page.evaluate(() => {
       const box = document.querySelector('#post-41 .kb-moment')!;
-      const hung = [...box.querySelectorAll<HTMLElement>('.kb-moment-tag, .kb-moment-list')].map((el) => el.getBoundingClientRect());
+      const strip = document.querySelector<HTMLElement>('#post-41 .kb-moment-list')!;
+      const hung = [...box.querySelectorAll<HTMLElement>('.kb-moment-tag'), strip].map((el) => el.getBoundingClientRect());
       const meets = (a: DOMRect, b: DOMRect) => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
       /* Every run of words on the page outside the moment and outside the floating Lens, by the box of its text. */
       const out: string[] = [];
@@ -26,7 +31,7 @@ for (const { story, size } of [
       for (let n = walk.nextNode(); n; n = walk.nextNode()) {
         const el = n.parentElement;
         /* In the thread the tag hangs over the post's own date, which the moment stands in for while it shows (the owner, 2026-11-06: "Moving it up to cover the post date works"). */
-        if (!el || !n.textContent?.trim() || box.contains(el) || el.closest('.kb-float, [hidden], .kb-visually-hidden, #post-41 .kb-act-meta > time')) continue;
+        if (!el || !n.textContent?.trim() || box.contains(el) || strip.contains(el) || el.closest('.kb-float, [hidden], .kb-visually-hidden, #post-41 .kb-act-meta > time')) continue;
         const range = document.createRange();
         range.selectNodeContents(n);
         for (const r of range.getClientRects()) if (r.width > 0 && hung.some((h) => meets(h, r))) out.push(n.textContent.trim().slice(0, 40));
@@ -39,15 +44,16 @@ for (const { story, size } of [
 
 /**
  * The moment's frame is the post body's own edge (the owner, 2026-11-06: "the 'As it landed' frame should extend all the way to the
- * edges accordingly, so it can show the effect accurately"): in the thread its ring is the body's box (`.kb-act-main`), border to
- * border and bar to bar, and nothing between an effect drawn in the moment and the body clips it, so a splat that reaches the body's
- * corners live reaches them as it landed too. Held on #41 with Whoops!'s moment shown, at a desktop's width and a phone's.
+ * edges accordingly, so it can show the effect accurately"), and a mask (the owner, 2026-11-21: the chamfered area "does not act as a true
+ * mask, the effect area overflows it"): in the thread its ring is the body's box (`.kb-act-main`), border to border and bar to bar, the words'
+ * wrapper is cut to that box along the ring's chamfers, and nothing else between an effect drawn in the moment and the body clips it. Held on #41
+ * with Whoops!'s moment shown, at a desktop's width and a phone's.
  */
 for (const { story, size } of [
   { story: 'boards-01-lens--washed-clean-as-it-landed', size: { width: 1440, height: 1120 } },
   { story: 'boards-01-lens--washed-clean-as-it-landed-phone', size: { width: 390, height: 844 } },
 ]) {
-  test(`the moment's frame is the post body's edge, and clips no effect inside it (${story})`, async ({ page }) => {
+  test(`the moment's frame is the post body's edge, and masks the effect along it (${story})`, async ({ page }) => {
     await page.setViewportSize(size);
     await page.goto(`/?fixture=boards&story=${story}`);
     const moment = page.locator('#post-41 .kb-moment');
@@ -64,24 +70,56 @@ for (const { story, size } of [
       const out: string[] = [];
       const cell = document.querySelector<HTMLElement>('#post-41 .kb-act-main')!;
       const ring = document.querySelector<HTMLElement>('#post-41 .kb-moment-ring');
+      const words = document.querySelector<HTMLElement>('#post-41 .kb-moment-body')!;
       if (!ring) return ['the moment draws no ring'];
       const c = cell.getBoundingClientRect(), r = ring.getBoundingClientRect();
       for (const k of ['left', 'top', 'right', 'bottom'] as const) {
         if (Math.abs(c[k] - r[k]) > 1) out.push(`the ring's ${k} is ${Math.round(r[k])}, the body's is ${Math.round(c[k])}`);
       }
-      /* Every element from an effect's ink up to the body: none may clip what it holds. */
+      /* The mask: the words' wrapper is cut, and its cut is the ring's box. */
+      if (getComputedStyle(words).clipPath === 'none') out.push('the moment does not mask what it draws');
+      const w = words.getBoundingClientRect(), s = words.style;
+      const cut = { left: w.left + parseFloat(s.getPropertyValue('--kb-moment-clip-left')), top: w.top + parseFloat(s.getPropertyValue('--kb-moment-clip-top')) };
+      const cutBox = { ...cut, right: cut.left + parseFloat(s.getPropertyValue('--kb-moment-clip-w')), bottom: cut.top + parseFloat(s.getPropertyValue('--kb-moment-clip-h')) };
+      for (const k of ['left', 'top', 'right', 'bottom'] as const) {
+        if (!(Math.abs(cutBox[k] - r[k]) <= 1)) out.push(`the mask's ${k} is ${Math.round(cutBox[k])}, the ring's is ${Math.round(r[k])}`);
+      }
+      /* Every other element from an effect's ink up to the body: none may clip what it holds. */
       for (const ink of document.querySelectorAll<HTMLElement>('#post-41 .kb-moment [data-kb-effect-ink]')) {
         for (let el = ink.parentElement; el && el !== cell; el = el.parentElement) {
-          const s = getComputedStyle(el);
-          if (s.clipPath !== 'none') out.push(`${el.className} clips the effect with a clip-path`);
-          if (s.overflow !== 'visible' && s.overflow !== 'visible visible') out.push(`${el.className} clips the effect (overflow ${s.overflow})`);
+          const st = getComputedStyle(el);
+          if (el !== words && st.clipPath !== 'none') out.push(`${el.className} clips the effect with a clip-path`);
+          if (st.overflow !== 'visible' && st.overflow !== 'visible visible') out.push(`${el.className} clips the effect (overflow ${st.overflow})`);
         }
       }
+      /* A point past the ring's top right chamfer, inside the body's box, is cut: what is drawn there is not the moment's. */
+      const corner = document.elementFromPoint(r.right - 3, r.top + 3);
+      if (corner && words.contains(corner)) out.push('the top right chamfer does not cut the effect');
       return [...new Set(out)];
     });
     await expect.poll(read, { timeout: 5_000 }).toEqual([]);
   });
 }
+
+/**
+ * On a phone the Lens's sheet is held low while a moment shows (the owner, 2026-11-21: at its full height the sheet "takes up about 75% of the
+ * screen", and a quick effect plays out of sight): the moment's whole content area stands in the window above it.
+ */
+test('on a phone the sheet is held low under a shown moment, and the moment stands whole above it', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto('/?fixture=boards&story=boards-01-marks--as-it-landed-phone');
+  await expect(page.locator('#post-41 .kb-moment')).toBeVisible({ timeout: 15_000 });
+  const read = () => page.evaluate(() => {
+    const area = document.querySelector<HTMLElement>('#post-41 .kb-act-main')!.getBoundingClientRect();
+    const sheet = document.querySelector<HTMLElement>('.kb-float-box')!.getBoundingClientRect();
+    const out: string[] = [];
+    if (area.top < 0) out.push(`the moment's top is ${Math.round(area.top)}, above the window`);
+    if (area.bottom > sheet.top + 1) out.push(`the moment's foot is at ${Math.round(area.bottom)}, under the sheet's top at ${Math.round(sheet.top)}`);
+    if (sheet.height > window.innerHeight * 0.3) out.push(`the sheet is ${Math.round(sheet.height)}px, more than 30% of the window`);
+    return out;
+  });
+  await expect.poll(read, { timeout: 5_000 }).toEqual([]);
+});
 
 /**
  * The tag takes no room in the post (the owner, 2026-11-06: "position:absolute the 'As it landed' label so it doesn't reflow the post

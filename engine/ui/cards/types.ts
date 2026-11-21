@@ -81,8 +81,14 @@ export interface CardPlay {
   readonly took?: number;
   /** How many running bans an unban play lifted, from its payload (`lifted`'s length). */
   readonly lifted?: number;
-  /** A Take the Fall play a filing has spent (an infraction names it as `fall_play`): read from the thread page's `spent`, never from the play's own Act. */
+  /** A play something has spent: a Take the Fall play a filing named (the thread page's `spent`), or a pierce play a cast named in `pierce.by`. */
   readonly spent?: true;
+  /** A cast that got past a ward with a pierce (a Cheap Shot): the pierce play it spent, that play's card, and the Ward it got past where there was one, from the cast's own payload (`pierce`), public. */
+  readonly pierce?: { readonly by: Id; readonly card: string; readonly ward?: string };
+  /** A cast whose card was handed back by a play (a refund outcome): that play and its card, from the cast's own payload (`handedBack`), public. */
+  readonly handedBack?: { readonly by: Id; readonly card: string };
+  /** How many casts on this play's post name it in `handedBack`: set only where it is above zero, by `withHandedOut` where a post's plays are assembled. */
+  readonly handedOut?: number;
 }
 
 /**

@@ -184,6 +184,109 @@ describe('where the ghost mark stands', () => {
   });
 });
 
+/* A Cheap Shot up (the Cheap Shot design, section 3.4): the cast form says the Move uses it up, and the ward it gets past no longer hides the card. */
+describe('with a pierce up', () => {
+  const shotRules: CardRules = { key: 'cheap-shot', name: 'Cheap Shot', alignment: 'salty', rarity: 'rare', play: 'use', gimmick: { kind: 'pierce', upTo: 'uncommon' }, playPrice: () => 0, canApply: (t, e, _config, now) => landsOn({ key: 'cheap-shot' }, t, e, now), validateConfig: (c) => ok(c) };
+  const withShot: Instance = { ...instance, cards: [...instance.cards, shotRules] };
+  const asked = async (w: ReturnType<typeof world>, up: boolean) => {
+    const real = w.fake.effectsAbove.bind(w.fake);
+    const above = vi.spyOn(w.fake, 'effectsAbove').mockImplementation(async (...args) => {
+      const read = await real(...args);
+      if (!up || !args[0].includes(w.pipe)) return read;
+      const act = { id: 'shot-1', character: w.pipe, kind: 'card', thread: w.thread, targetActId: null, seq: null, createdAt: '2026-10-29T21:00:00Z', payload: { card: 'cheap-shot', reach: 'character', character: w.pipe, ends: '2999-01-01T00:00:00.000Z' }, currentPayload: {}, editedAt: null, shownEditedAt: null } as const;
+      return [...read, { play: act.id, reach: 'character' as const, target: w.pipe, endsAt: '2999-01-01T00:00:00.000Z', act }];
+    });
+    const user = userEvent.setup();
+    await open(w, cards, withShot);
+    await arm(user);
+    await waitFor(() => expect(above).toHaveBeenCalled());
+    return { user, above };
+  };
+  test('the form says the Move uses up the Cheap Shot, and not without one', async () => {
+    const w = world();
+    const { user } = await asked(w, true);
+    await user.click(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' }));
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(form).getByText('This Move uses up your Cheap Shot.')).toBeInTheDocument();
+    cleanup();
+    const bare = world();
+    const next = await asked(bare, false);
+    await next.user.click(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' }));
+    const plain = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(plain).queryByText(/uses up your/u)).toBeNull();
+  });
+  test('the form setting a Move face down says nothing of using up the Cheap Shot, and says it again when switched back to playing', async () => {
+    const w = world();
+    const { user } = await asked(w, true);
+    await user.click(await within(post(3)).findByRole('button', { name: 'Play Whoops! on post 3' }));
+    const form = await screen.findByRole('dialog', { name: /Whoops!/u });
+    expect(within(form).getByText('This Move uses up your Cheap Shot.')).toBeInTheDocument();
+    await user.click(within(form).getByRole('radio', { name: 'Set face down' }));
+    expect(within(form).queryByText(/uses up your/u)).toBeNull();
+    await user.click(within(form).getByRole('radio', { name: 'Play it now' }));
+    expect(within(form).getByText('This Move uses up your Cheap Shot.')).toBeInTheDocument();
+  });
+  test('every ghost mark on the page shares one read of the acting character\'s plays', async () => {
+    const w = world();
+    const { above } = await asked(w, true);
+    await screen.findByRole('button', { name: 'Play Whoops! on post 2' });
+    expect(above.mock.calls.filter(([chars]) => chars.length === 1 && chars[0] === w.pipe)).toHaveLength(1);
+  });
+});
+
+/* The pierce the store holds, as the page reads it (pierce.ts): a Move that names it ends it, a ward's refusal turns on it, and a failed read is made again. */
+describe('the page\'s pierce', () => {
+  const shotRules: CardRules = { key: 'cheap-shot', name: 'Cheap Shot', alignment: 'salty', rarity: 'rare', play: 'use', gimmick: { kind: 'pierce', upTo: 'uncommon' }, playPrice: () => 0, canApply: (t, e, _config, now) => landsOn({ key: 'cheap-shot' }, t, e, now), validateConfig: (c) => ok(c) };
+  const shield: CardRules = { key: 'shield', name: 'Shield', alignment: 'sweet', rarity: 'uncommon', play: 'use', gimmick: { kind: 'ward', upTo: 'uncommon' }, playPrice: () => 0, canApply: (t, e, _config, now) => landsOn({ key: 'shield' }, t, e, now), validateConfig: (c) => ok(c) };
+  const server: Instance = { ...instance, cards: [...instance.cards, shotRules, shield] };
+  /** The thread under a live uncommon Shield on post 2, the acting character holding a Cheap Shot or not, and a Move that names it or not. */
+  const draw = async (up: boolean, spends: boolean) => {
+    const w = world();
+    w.fake.seed.card(w.gloomba, w.ids[1]!, 'shield', { message: 'no', layer: 1, config: {} });
+    const real = w.fake.effectsAbove.bind(w.fake);
+    vi.spyOn(w.fake, 'effectsAbove').mockImplementation(async (...args) => {
+      const read = await real(...args);
+      if (!up || !args[0].includes(w.pipe)) return read;
+      const shot = { id: 'shot-1', character: w.pipe, kind: 'card', thread: w.thread, targetActId: null, seq: null, createdAt: '2026-10-29T21:00:00Z', payload: { card: 'cheap-shot', reach: 'character', character: w.pipe, ends: '2999-01-01T00:00:00.000Z' }, currentPayload: {}, editedAt: null, shownEditedAt: null } as const;
+      const move = { ...shot, id: 'move-1', targetActId: w.ids[1]!, seq: 5, payload: { card: 'whoops', pierce: { by: 'shot-1', card: 'cheap-shot' } } } as const;
+      return [...read, { play: shot.id, reach: 'character' as const, target: w.pipe, endsAt: '2999-01-01T00:00:00.000Z', act: shot }, ...(spends ? [{ play: move.id, reach: 'post' as const, target: w.ids[1]!, endsAt: null, act: move }] : [])] as typeof read;
+    });
+    const user = userEvent.setup();
+    await open(w, cards, server);
+    await arm(user);
+    return { w, user };
+  };
+  test('a ghost mark is drawn on a post under an uncommon ward with a pierce up', async () => {
+    await draw(true, false);
+    expect(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' })).toBeInTheDocument();
+  });
+  test('and none without one', async () => {
+    await draw(false, false);
+    await within(post(3)).findByRole('button', { name: 'Play Whoops! on post 3' });
+    expect(here(2)).toBeNull();
+  });
+  test('a pierce a Move has named is spent: the ward turns the card away again', async () => {
+    await draw(true, true);
+    await within(post(3)).findByRole('button', { name: 'Play Whoops! on post 3' });
+    await waitFor(() => expect(screen.getByRole('button', { name: /^Hand, 3 postcards/u })).toBeInTheDocument());
+    expect(here(2)).toBeNull();
+  });
+  test('a read of the acting character\'s plays that failed is made again by the next ask', async () => {
+    const w = world();
+    const real = w.fake.effectsAbove.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'effectsAbove').mockRejectedValueOnce(new Error('down'));
+    read.mockImplementation(real);
+    const mine = () => read.mock.calls.filter(([c]) => c.length === 1 && c[0] === w.pipe).length;
+    const user = userEvent.setup();
+    await open(w, cards, server);
+    await arm(user);
+    await waitFor(() => expect(mine()).toBe(1));
+    await user.keyboard('{Escape}');
+    await arm(user);
+    await waitFor(() => expect(mine()).toBe(2));
+  });
+});
+
 describe('the form opens whole', () => {
   test('the ghost mark is busy while the post is read, nothing opens until it lands, and the form\'s first render holds its content', async () => {
     const user = userEvent.setup();

@@ -6,11 +6,11 @@
  * second row's ground, so the words lifted in are told from the spinner's own: the opening post is seq 1, always on the first row's.
  * What inside paints the post's ground (a play's moment, cards/moment.css) paints the box's.
  *
- * Everything under the band stands in one element, the area (`.kb-origin-area`, marked `data-kb-content-area` so an effect finds it as it finds a post's
+ * Everything under the band and the byline (a band of the box's own, below) stands in one element, the area (`.kb-origin-area`, marked `data-kb-content-area` so an effect finds it as it finds a post's
  * body: docs/plans/2026-11-15-origin-box-effects-design.md). The box has no padding and the band no negative margin; the area takes the inset, so its padding
- * box is the band's rule above and the frame's inner edges on the other three sides, and an effect that fills it reaches the frame. It isolates, as a post's body
+ * box is the rule above it and the frame's inner edges on the other three sides, and an effect that fills it reaches the frame. It isolates, as a post's body
  * does, so a layer an effect lays under the words (z-index -1) lands inside the box over its ground and not under it in the opening post's stacking context.
- * The byline and Last edited lie under the effect with the words. Lifted over it, each on a ground of its own, are the History button, its open panel and the
+ * Last edited lies under the effect with the words; the byline is outside the area, so no effect covers it. Lifted over it, each on a ground of its own, are the History button, its open panel and the
  * "More than" note (`data-kb-over-ink`, as a post's reactions row is); the box is lifted whole over the opening post's ink (thread.css). Where nothing stands
  * under the band no area is drawn.
  */
@@ -42,38 +42,60 @@
   min-height: calc(var(--kb-meta-tile) - 0.4rem);
 }
 
-/* The content area under the band: no min-height (a post's is its postbit's ratio, and the box has no postbit), no overflow and no position. */
+/*
+ * The byline (Origin.tsx `Byline`): who wrote what the box shows and when, a band of the box's own between the head and the content area, as a post's date bar
+ * stands over its body, so it is the frame's and no part of the post an effect fills. The board's fine print on the first row's ground, ruled off from the area.
+ */
+.kb-origin-byline {
+  margin: 0;
+  padding: 0.3em var(--kb-origin-inset);
+  background: var(--kb-row-1);
+  color: var(--kb-muted);
+  border-bottom: 1px solid var(--kb-grid);
+  font-size: var(--kb-size-fine);
+  line-height: 1.35;
+}
+
+/*
+ * The content area under the band: no overflow and no position. Where it holds a post's words (`data-kb-room`), live or as a moment, it keeps a post's room, a
+ * shorter one than a thread's body (whose height is its postbit's ratio), so an effect on one short line still has the room to play that it has on a post
+ * (the owner, 2026-11-21: "spun post needs min height to give its effects respectable room to breathe"). A system line or a notice keeps its own height.
+ */
 .kb-origin-area {
   padding: 0.4em var(--kb-origin-inset);
   isolation: isolate;
 }
 
+/* At no weight of its own, so a card that needs more room for its effect (Steel Chair's `[data-dw-chair-room]`) sets the area's least height over it. */
+:where(.kb-origin-area[data-kb-room]) {
+  min-height: 12em;
+}
+
 /*
- * The foot (`.kb-origin-foot`): what a moment says under its post (cards/Moment.tsx, docs/plans/2026-11-16-playable-moments-design.md, section 7) in the board's small
- * print on the box's own ground, under the content area and outside it, so no effect that fills the area passes under it. It takes no room while it is empty.
+ * The foot (`.kb-origin-foot`): what a moment says under its post (cards/Moment.tsx, docs/plans/2026-11-16-playable-moments-design.md, section 7), the moment's
+ * strip (cards/moment.css `[data-kb-strip]`) laid as the box's bottom band, under the content area and outside it, so no effect that fills the area passes under
+ * it. It takes no room while it is empty.
  */
 .kb-origin-foot {
   /* Lifted by its own rule, not by an ancestor's: an effect that leaves the content area paints over the box, and never over what the moment says. */
   position: relative;
   z-index: 2;
-  padding: 0 var(--kb-origin-inset) 0.4em;
+}
+
+/* A band of the box, not a chip: the full width of the box, where the engine's rule for what is lifted over ink gives a chip its content's width (thread.css). */
+.kb-origin .kb-origin-foot[data-kb-over-ink] {
+  width: auto;
 }
 
 .kb-origin-foot:empty {
   display: none;
 }
 
-.kb-origin-foot .kb-moment-list {
-  margin-top: 0.1em;
-  background: var(--kb-post-bg);
-  color: var(--kb-muted);
-  font-family: var(--kb-font-body);
-  font-size: var(--kb-size-small);
-  line-height: 1.3;
-}
-
-.kb-origin-foot .kb-moment-list p {
-  margin: 0;
+/* The box's frame is the strip's: only a rule over it and the play's ink down its left edge, so it is a band of the box, as the byline is at the top. */
+.kb-origin-foot .kb-moment-list[data-kb-strip] {
+  border-width: 1px 0 0 4px;
+  padding-inline-start: calc(var(--kb-origin-inset) - 4px);
+  background: var(--kb-row-1);
 }
 
 /*

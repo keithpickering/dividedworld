@@ -4,6 +4,7 @@
  * that finishes at once, so the beats' order and targets are what is asserted, not their pixels.
  */
 import { fireEvent, screen, waitFor } from '@testing-library/react';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { CardRules } from '../../rules/cards.ts';
 import { facesOf } from '../cards/faces.ts';
@@ -56,7 +57,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-const open = () => renderIn(buildWorld(), <Layers><PackOpening hit name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '' }} cards={pulled} note={null} onClose={vi.fn()} /></Layers>);
+const open = (onClose: () => void = vi.fn()) => renderIn(buildWorld(), <Layers><PackOpening hit name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '' }} cards={pulled} note={null} onClose={onClose} /></Layers>);
 const pull = (el: Element) => Number((el.closest('[data-kb-pull]') ?? el).getAttribute('data-kb-pull'));
 const onCard = (c: Call) => c.el.hasAttribute('data-kb-pull');
 
@@ -160,6 +161,67 @@ describe('the pile under a feel', () => {
       tap(card, 300, j % 2 ? 400 : 200);
       expect(counter()).toHaveTextContent(j === 5 ? '5 of 5' : `${j} of 5 turned over`);
     }
+  });
+
+  test('once all are turned, a swipe sends the last card off toward its side and closes the reveal; a short drag springs back; a tap does nothing', async () => {
+    const onClose = vi.fn();
+    open(onClose);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    expect(counter()).toHaveTextContent('5 of 5');
+    const last = await top(4);
+    const stage = document.querySelector('.kb-opening-stage')!;
+    /* A tap on the last card sends nothing off and closes nothing: Done is the button for that. */
+    calls.length = 0;
+    tap(last);
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(calls.filter((c) => pull(c.el) === 4 && c.target.opacity === 0)).toEqual([]);
+    expect(onClose).not.toHaveBeenCalled();
+    /* A drag short of a third of the card's width springs back. */
+    fireEvent.pointerDown(stage, { clientX: 300, buttons: 1 });
+    fireEvent.pointerMove(stage, { clientX: 260, buttons: 1 });
+    fireEvent.pointerUp(stage, { clientX: 260 });
+    expect(calls.at(-1)?.target).toMatchObject({ x: 0, rotate: 0 });
+    expect(onClose).not.toHaveBeenCalled();
+    /* Past a third, to the right: the card is sent off to the right, and the reveal closes as Done would. */
+    calls.length = 0;
+    fireEvent.pointerDown(stage, { clientX: 100, buttons: 1 });
+    fireEvent.pointerMove(stage, { clientX: 250, buttons: 1 });
+    fireEvent.pointerUp(stage, { clientX: 250 });
+    expect(calls.find((c) => pull(c.el) === 4 && c.target.opacity === 0)?.target).toMatchObject({ x: window.innerWidth, opacity: 0 });
+    await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1));
+  });
+
+  test('a drag of a few pixels on the last card springs back too', async () => {
+    open();
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    await top(4);
+    const stage = document.querySelector('.kb-opening-stage')!;
+    fireEvent.pointerDown(stage, { clientX: 300, buttons: 1 });
+    fireEvent.pointerMove(stage, { clientX: 295, buttons: 1 });
+    fireEvent.pointerUp(stage, { clientX: 295 });
+    expect(calls.at(-1)?.target).toMatchObject({ x: 0, rotate: 0 });
+  });
+
+  test('the exit after the last card is swiped away flies the others to the hand and leaves that one gone', async () => {
+    function Host() {
+      const [on, setOn] = useState(true);
+      return <Layers>{on && <PackOpening hit name="Booster" art={{ color: '#ffd93d', ink: '#1a1403', canvas: '', mark: '' }} cards={pulled} note={null} onClose={() => setOn(false)} />}</Layers>;
+    }
+    renderIn(buildWorld(), <Host />);
+    await ready();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn all' }));
+    await top(4);
+    const stage = document.querySelector('.kb-opening-stage')!;
+    calls.length = 0;
+    fireEvent.pointerDown(stage, { clientX: 300, buttons: 1 });
+    fireEvent.pointerMove(stage, { clientX: 100, buttons: 1 });
+    fireEvent.pointerUp(stage, { clientX: 100 });
+    /* A flight to the hand is the one beat whose x is keyframes. */
+    const flights = () => calls.filter((c) => onCard(c) && Array.isArray(c.target.x)).map((c) => pull(c.el));
+    await waitFor(() => expect(flights().length).toBeGreaterThan(0));
+    expect(flights()).not.toContain(4);
   });
 
   test('a pointer cancelled mid-drag springs the card back and clears the drag; a move with no finger down does nothing', async () => {

@@ -6,6 +6,7 @@
  */
 import { useMemo } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
 import { visibleText } from '../../../../engine/bbcode/visible.ts';
 import type { ConfigFormProps } from '../../../../engine/ui/cards/types.ts';
 import { ConfigField } from '../../../../engine/ui/cards/config/ConfigField.tsx';
@@ -19,7 +20,9 @@ export function ConfigForm({ config, onChange, post, id }: ConfigFormProps) {
   const phrase = typeof config?.phrase === 'string' ? config.phrase : '';
   const replacement = typeof config?.replacement === 'string' ? config.replacement : '';
   const body = typeof post.currentPayload?.body === 'string' ? post.currentPayload.body : '';
-  const text = useMemo(() => visibleText(parse(body)), [body]);
+  /* A forged quote (the Act's verdict) is a counterfeit, so its words are the poster's own and count (forged-quotes design, section 1). */
+  const forged = forgedList(post.currentPayload);
+  const text = useMemo(() => visibleText(parse(body, undefined, forgedSet(forged))), [body, forged]);
   const places = useMemo(() => (phrase.trim() ? occurrences(text, phrase.trim()).length : 0), [text, phrase]);
   const countId = `${id}-count`;
   return (

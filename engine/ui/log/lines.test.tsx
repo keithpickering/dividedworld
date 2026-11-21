@@ -388,6 +388,25 @@ describe('cards set face down, traps and catches', () => {
     });
   });
 
+  describe('a Move a pierce got past a ward', () => {
+    const read = (payload: Record<string, unknown>) => {
+      const cast = act('k3', 'card', 'p', { targetActId: 'post4', payload: { card: 'whoops', reach: 'post', ...payload } });
+      const log = { ...empty, cards: [{ card: 'whoops', kind: 'played' as const, act: 'k3', price: 75, at }] };
+      return logRows(data({ log, mine, acts: new Map([...posts, cast].map((a) => [a.id, a])), names }), w, 600, null).filter((r) => r.kind === 'played').map(text);
+    };
+    test('the caster\'s line gains the pierce and the ward it got past', () => {
+      expect(read({ pierce: { by: 'pc', card: 'pass', ward: 'whoops' } })[0]).toContain(' Your Hall Pass got it past a Whoops! that would have turned it away.');
+    });
+    test('a pierce with no ward adds nothing, and a cast with no pierce reads as before', () => {
+      expect(read({ pierce: { by: 'pc', card: 'pass' } })[0]).not.toContain('got it past');
+      expect(read({})[0]).not.toContain('got it past');
+    });
+    test('a malformed pierce adds nothing', () => {
+      expect(read({ pierce: 'pass' })[0]).not.toContain('got it past');
+      expect(read({ pierce: { by: 'pc', card: 'pass', ward: 123 } })[0]).not.toContain('got it past');
+    });
+  });
+
   test('a caught play is the caster\'s line, with its whole cost, and no line of its own as a play', () => {
     const others = [act('post9', 'post', 's', { seq: 9 }), act('k2', 'card', 'p', { targetActId: 'post9', payload: { card: 'whoops', caught: 'setX' } })];
     const log = { ...empty,
@@ -712,6 +731,19 @@ describe('a card play that the old voice did not answer', () => {
     expect(rows.map((r) => r.kind)).toEqual(['played', 'returned']);
     expect(text(rows[1]!)).toBe(`The old voice didn't answer for your ${name} on your post #3, so the card is back in your hand.`);
     expect(text(rows[1]!)).not.toContain('came back');
+  });
+
+  test('a card a refund handed back says which card gave it back, for a back and for a sign alike, with no aura and no wallet', () => {
+    const handed = (by: string, card: string) => act('k1', 'card', 'c', { targetActId: 'post3', payload: { card: key, handedBack: { by, card } } });
+    for (const giver of [key, 'other']) {
+      const cast = handed('set1', giver);
+      const rows = logRows(data({ log: { ...empty, cards: [playedRow, { card: key, kind: 'returned' as const, act: 'k1', price: 0, at }], wallet: [] }, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, cast].map((a) => [a.id, a])) }), w, 600, null);
+      const returned = rows.find((r) => r.kind === 'returned')!;
+      expect(returned.what).toBe(`Your ${name} came back`);
+      expect(text(returned)).toBe(`The ${giver === key ? name : 'Other Card'} on your post #3 gave your card back.`);
+      expect(returned.aura).toBe(0);
+      expect(returned.wallet).toBeNull();
+    }
   });
 
   test('a returned row names the instance\'s card it is for, never another', () => {
@@ -1312,6 +1344,25 @@ describe('the payout cards\' lines', () => {
     expect(text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), half, 600, null)[0]!)).toContain('pays you half a vote,');
   });
 
+  test('a refund back that returned a cast says the cast landed and its card went back to its caster\'s hand', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', handedBack: { by: 'set1', card: 'chess' } } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'chess', trigger: 'cast', did: 'returned', set: 'set1', by: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'chess', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows.map((r) => r.kind)).toEqual(['sprung']);
+    expect(text(rows[0]!)).toBe('4D Chess on your post #3 sprang when Spritey cast Whoops! on it. Whoops! landed, and its card went back to its caster\'s hand.');
+  });
+
+  test('a ride that rode with no quadrant says each vote it draws pays, never "of the kind"', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', rode: 'set1' } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'chess', trigger: 'cast', did: 'rode', set: 'set1', by: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'chess', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
+    const quarter = { ...w, instance: { ...w.instance, cards: w.instance.cards.map((c) => (c.key === 'chess' ? { ...c, trap: { trigger: { on: 'cast' as const }, outcome: { kind: 'ride' as const, share: 0.25, every: true as const } } } : c)) } };
+    const t = text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), quarter, 600, null)[0]!);
+    expect(t).toContain('Each vote it draws pays you a quarter of a vote');
+    expect(t).not.toContain('of the kind');
+  });
+
   /* An Off Day on Pipewrench, played from post 3 by Pipewrench: it names a Heel for the window of Oct 29 to Oct 30. */
   const named = act('k1', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: day0, ends: day1 } });
   const scoredRow = { settlement: 1, character: 'p', classKey: 'heel', play: 'k1', card: 'offday', startsAt: day0, endsAt: day1 };
@@ -1351,7 +1402,7 @@ describe('the payout cards\' lines', () => {
     const now = w.now;
     const open = act('k2', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now - 3_600_000).toISOString(), ends: new Date(now + 3_600_000).toISOString() } });
     const soon = act('k3', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: new Date(now + 3_600_000).toISOString(), ends: new Date(now + 7_200_000).toISOString() } });
-    const estimate = { entries: [], asOf: new Date(now).toISOString(), freshAfter: null, lines: [{ character: 'p', reason: 'heel.drewHeat', amount: 5 }] };
+    const estimate = { entries: [], asOf: new Date(now).toISOString(), freshAfter: null, crowd: null, lines: [{ character: 'p', reason: 'heel.drewHeat', amount: 5 }] };
     const mine = [char('p', 'Pipewrench', 'face')];
     const [row] = logRows(data({ estimate, mine, acts: new Map([...posts, open].map((a) => [a.id, a])) }), w, 600, 'p');
     expect(text(row!)).toContain(' Scored as a Heel this window by Off Day.');
@@ -1673,5 +1724,175 @@ describe('a pack in the log', () => {
   test('a sealed welcome pack shows the gift line alone', () => {
     const rows = lines({ ...empty, packs: [pack({ kind: 'starter', price: 0, source: 'welcome', contents: [], openedAt: null })] });
     expect(rows.map((r) => r.what)).toEqual(['Welcome gift: a sealed Starter Pack']);
+  });
+});
+
+/**
+ * Crowd pay (docs/plans/2026-11-20-crowd-pay-plan.md, Task 5): a wallet event of kind `crowd` is a row of its own in every tab, in plain and true words, with a link to each Act paid
+ * for; the estimate says the crowd pay so far in a row of its own. The wallet's, so no character's: nothing here says who reacted, and none moves a character's Aura.
+ */
+describe('the crowd pay line', () => {
+  const at = '2099-11-20T09:00:00.000Z';
+  const act = (id: string, seq: number): Act =>
+    ({ id, kind: 'post', character: 'g', thread: 'th', targetActId: null, seq, createdAt: at, payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null });
+  const acts = (n: number) => Array.from({ length: n }, (_, i) => act(`a${i + 1}`, i + 1));
+  const heldActs = (n: number) => new Map(acts(n).map((a) => [a.id, a]));
+  const names = new Map([['g', 'Gloomba']]);
+  const mine = [char('p', 'Pat', 'face'), char('q', 'Quinn', 'heel')];
+  const event = (change: number, overflow: number, settlement = 5): Log['wallet'][number] => ({ settlement, kind: 'crowd', change, overflow, floored: 0, balanceAfter: 300, ref: null, at });
+  const paid = (n: number, settlement = 5, most = 7) => acts(n).map((a) => ({ settlement, act: a.id, most, startsAt: '2099-11-19T09:00:00.000Z', endsAt: at }));
+  const w: Words = words;
+  const rowsOf = (log: Log, tab: string | null, n: number) => logRows(data({ log, mine, names, acts: heldActs(n) }), w, 600, tab).filter((r) => r.kind === 'crowd');
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+  const links = (r: { details: readonly unknown[] }) => r.details.filter((d) => typeof d !== 'string') as { text: string; href: string }[];
+
+  test('a crowd event of 14 over 6 Acts says the sentence, with 6 links, in All and in a tab alike', () => {
+    for (const tab of [null, 'p', 'q']) {
+      const [row, ...rest] = rowsOf({ ...empty, wallet: [event(14, 0)], crowd: paid(6) }, tab, 6);
+      expect(rest).toEqual([]);
+      expect(row).toMatchObject({ key: 'crowd:5', kind: 'crowd', at, what: 'Crowd pay', aura: 14, wallet: 300, characters: [] });
+      expect(said(row!)).toBe(`You reacted to 6 Acts by other players and were paid 0.14 Aura. ${acts(6).map((a) => `Gloomba's post #${a.seq}`).join(', ')}.`);
+      expect(links(row!)).toHaveLength(6);
+      expect(links(row!)[0]).toEqual({ text: "Gloomba's post #1", href: expect.stringContaining('th') });
+    }
+  });
+
+  test('one Act is "1 Act", not "1 Acts"', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(2, 0)], crowd: paid(1) }, null, 1);
+    expect(said(row!)).toMatch(/^You reacted to 1 Act by other players and were paid 0.02 Aura\. /u);
+  });
+
+  test('at the most one settlement pays, it says so', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(14, 0)], crowd: paid(7) }, null, 7);
+    expect(said(row!)).toMatch(/^You reacted to 7 Acts by other players and were paid 0.14 Aura\. That's the most one settlement pays\. Gloomba's post #1/u);
+    expect(links(row!)).toHaveLength(7);
+    const [under] = rowsOf({ ...empty, wallet: [event(12, 0)], crowd: paid(6) }, null, 6);
+    expect(said(under!)).not.toContain('the most one settlement pays');
+  });
+
+  test('the cap sentence is the cap recorded when it was paid, never today\'s setting', () => {
+    const [older] = rowsOf({ ...empty, wallet: [event(6, 0)], crowd: paid(3, 5, 10) }, null, 3);
+    expect(said(older!)).not.toContain('the most one settlement pays');
+    const [reached] = rowsOf({ ...empty, wallet: [event(6, 0)], crowd: paid(3, 5, 3) }, null, 3);
+    expect(said(reached!)).toContain("That's the most one settlement pays.");
+  });
+
+  test('what the wallet\'s cap held back is said, and only when it held something back', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(10, 4)], crowd: paid(7) }, null, 7);
+    expect(said(row!)).toMatch(/Aura\. That's the most one settlement pays\. 0.04 more didn't fit under your wallet's cap\. Gloomba's post #1/u);
+    const [none] = rowsOf({ ...empty, wallet: [event(10, 0)], crowd: paid(5) }, null, 5);
+    expect(said(none!)).not.toContain("didn't fit");
+  });
+
+  test('another settlement\'s Acts are not this one\'s, and an Act that could not be read keeps the count without a link', () => {
+    const log = { ...empty, wallet: [event(4, 0, 5), event(2, 0, 6)], crowd: [...paid(2, 5), { settlement: 6, act: 'gone', most: 7, startsAt: at, endsAt: at }] };
+    const rows = rowsOf(log, null, 2);
+    expect(rows.map((r) => r.key)).toEqual(['crowd:5', 'crowd:6']);
+    expect(links(rows[0]!)).toHaveLength(2);
+    expect(said(rows[1]!)).toMatch(/^You reacted to 1 Act by other players and were paid 0.02 Aura\.$/u);
+  });
+
+  test('it names no one who reacted, and no class', () => {
+    const [row] = rowsOf({ ...empty, wallet: [event(14, 0)], crowd: paid(7) }, null, 7);
+    expect(said(row!)).not.toMatch(/heel|face|Pat|Quinn/iu);
+  });
+
+  test('the estimate with crowd pay shows its row in All and in a tab, linking the Acts; without it, none', () => {
+    const estimate = (crowd: { acts: string[]; amount: number } | null) => ({ entries: [], asOf: at, freshAfter: null, crowd, lines: [] });
+    for (const tab of [null, 'p']) {
+      const rows = logRows(data({ estimate: estimate({ acts: ['a1', 'a2', 'a3'], amount: 6 }), mine, names, acts: heldActs(3) }), w, 600, tab).filter((r) => r.kind === 'estimate');
+      expect(rows).toHaveLength(1);
+      expect(rows[0]).toMatchObject({ key: 'estimate:crowd', what: 'Estimate', wallet: null, characters: [] });
+      expect(said(rows[0]!)).toBe("Crowd pay so far: 3 Acts, 0.06 Aura. Gloomba's post #1, Gloomba's post #2, Gloomba's post #3.");
+      expect(links(rows[0]!)).toHaveLength(3);
+    }
+    expect(said(logRows(data({ estimate: estimate({ acts: ['a1'], amount: 2 }), mine, names, acts: heldActs(1) }), w, 600, null)[0]!)).toMatch(/^Crowd pay so far: 1 Act, 0.02 Aura\./u);
+    expect(logRows(data({ estimate: estimate(null), mine }), w, 600, null)).toEqual([]);
+  });
+
+  test('actsNamed names the Acts paid and the Acts the estimate counts', () => {
+    const estimate = { entries: [], asOf: at, freshAfter: null, crowd: { acts: ['e1'], amount: 2 }, lines: [] };
+    expect(actsNamed({ ...empty, crowd: paid(2) }, estimate, []).sort()).toEqual(['a1', 'a2', 'e1']);
+  });
+
+  test('two pages merged keep each page\'s crowd rows', () => {
+    const merged = mergeLogs({ ...empty, crowd: paid(1, 6) }, { ...empty, crowd: paid(2, 5) });
+    expect(merged.crowd).toHaveLength(3);
+  });
+
+  test('the crowd row sits with the wallet\'s other rows, after the settlement\'s at one time', () => {
+    const log = { ...empty, wallet: [event(2, 0)], crowd: paid(1), settlements: [settled(5, at, [{ character: 'p', reason: 'heel.drewHeat', amount: 5, shares: [] }])] };
+    expect(logRows(data({ log, mine, names, acts: heldActs(1) }), w, 600, null).map((r) => r.kind)).toEqual(['settlement', 'crowd']);
+  });
+});
+
+/**
+ * The poll lines (the polls plan, Task 8): the player's own ballots (cast, changed, withdrawn, secret or not) and an admin's close of their poll, in plain words and true. The picks are said from the
+ * poll's options; a line names the character's own name and pronoun and never another voter.
+ */
+describe('the poll lines', () => {
+  const mine = [char('b', 'Wario', 'heel', undefined, PRONOUN_PRESETS.he), char('c', 'Waluigi', 'face', undefined, PRONOUN_PRESETS.they)];
+  const at = '2026-11-20T12:00:00.000Z';
+  const place = { thread: 'th', title: 'Best kart?', seq: 12 };
+  const ballot = (over: Partial<NonNullable<Log['ballots']>[number]> = {}): NonNullable<Log['ballots']>[number] =>
+    ({ act: 'a1', poll: 'pl', character: 'b', picks: [1], at, question: 'Best part?', secret: false, options: ['Wheel', 'Pipe Frame', 'Engine'], changed: false, place, ...over });
+  const rowsOf = (log: Partial<Log>, tab: string | null = null) => logRows(data({ log: { ...empty, ...log }, mine }), words, 600, tab).filter((r) => r.kind === 'ballot' || r.kind === 'pollClose');
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a cast ballot says what it picked, in which poll, and where the post is', () => {
+    const [r] = rowsOf({ ballots: [ballot()] });
+    expect(r).toMatchObject({ kind: 'ballot', at, aura: 0, wallet: null, characters: ['b'], what: 'Wario cast a ballot' });
+    expect(said(r!)).toBe('Wario cast a ballot for Pipe Frame in the poll “Best part?” on #12 in Best kart?.');
+    expect(r!.details).toContainEqual({ text: '#12 in Best kart?', href: '/t/th?page=1#post-12' });
+  });
+  test('two picks and three are said in a list', () => {
+    expect(said(rowsOf({ ballots: [ballot({ picks: [0, 1] })] })[0]!)).toContain('for Wheel and Pipe Frame in');
+    expect(said(rowsOf({ ballots: [ballot({ picks: [0, 1, 2] })] })[0]!)).toContain('for Wheel, Pipe Frame and Engine in');
+  });
+  test('a secret ballot says so, to its own player', () => {
+    expect(said(rowsOf({ ballots: [ballot({ secret: true })] })[0]!)).toBe('Wario cast a ballot for Pipe Frame in the poll “Best part?” on #12 in Best kart? (secret ballot).');
+  });
+  test('a change of ballot says it changed, with the pronoun the log reads for the character', () => {
+    const [r] = rowsOf({ ballots: [ballot({ changed: true, picks: [2] })] });
+    expect(said(r!)).toBe('Wario changed his ballot to Engine in the poll “Best part?” on #12 in Best kart?.');
+    expect(r!.what).toBe('Wario changed his ballot');
+    expect(said(rowsOf({ ballots: [ballot({ changed: true, character: 'c' })] })[0]!)).toContain('Waluigi changed their ballot to Pipe Frame');
+  });
+  test('a withdrawal says it was withdrawn, and a secret one says so too', () => {
+    expect(said(rowsOf({ ballots: [ballot({ changed: true, picks: [] })] })[0]!)).toBe('Wario withdrew his ballot in the poll “Best part?” on #12 in Best kart?.');
+    expect(said(rowsOf({ ballots: [ballot({ changed: true, picks: [], secret: true })] })[0]!)).toBe('Wario withdrew his ballot in the poll “Best part?” on #12 in Best kart? (secret ballot).');
+  });
+  test('a pick the poll no longer lists is said by its number, never dropped', () => {
+    expect(said(rowsOf({ ballots: [ballot({ picks: [7] })] })[0]!)).toContain('for option 8 in the poll');
+  });
+  test('an admin closing a poll of the player\'s says so, and names the character', () => {
+    const [r] = rowsOf({ pollCloses: [{ act: 'k1', poll: 'pl', character: 'b', at, question: 'Best part?', place }] });
+    expect(r).toMatchObject({ kind: 'pollClose', at, aura: 0, wallet: null, characters: ['b'] });
+    expect(said(r!)).toBe('An admin closed Wario\'s poll “Best part?”.');
+  });
+  test('a line is in its character\'s tab and in All, and a character that is not the player\'s has none', () => {
+    const log = { ballots: [ballot(), ballot({ act: 'a2', character: 'c' }), ballot({ act: 'a3', character: 'zz' })] };
+    expect(rowsOf(log, 'b').map((r) => r.key)).toEqual(['ballot:a1']);
+    expect(rowsOf(log, null).map((r) => r.key).sort()).toEqual(['ballot:a1', 'ballot:a2']);
+  });
+  test('a line names no one else, whatever the options hold', () => {
+    const [r] = rowsOf({ ballots: [ballot()], pollCloses: [{ act: 'k1', poll: 'pl', character: 'b', at, question: 'Best part?', place }] });
+    expect(JSON.stringify(r)).not.toMatch(/voter|reacted/u);
+  });
+});
+
+describe('merging pages with poll lines', () => {
+  const place = { thread: 't', title: 'T', seq: 1 };
+  const b = (act: string) => ({ act, poll: 'p', character: 'c', picks: [0], at: '2026-11-20T12:00:00.000Z', question: 'Q', secret: false, options: ['A', 'B'], changed: false, place });
+  const k = (act: string) => ({ act, poll: 'p', character: 'c', at: '2026-11-20T12:00:00.000Z', question: 'Q', place });
+  test('ballots and closes of both pages are kept, newer first', () => {
+    const merged = mergeLogs({ ...empty, ballots: [b('b1')], pollCloses: [k('k1')] }, { ...empty, ballots: [b('b2')], pollCloses: [k('k2')] });
+    expect(merged.ballots?.map((x) => x.act)).toEqual(['b1', 'b2']);
+    expect(merged.pollCloses?.map((x) => x.act)).toEqual(['k1', 'k2']);
+  });
+  test('where only one page has them they survive, and where neither does they stay absent', () => {
+    expect(mergeLogs({ ...empty, ballots: [b('b1')] }, { ...empty }).ballots?.map((x) => x.act)).toEqual(['b1']);
+    expect(mergeLogs({ ...empty }, { ...empty, pollCloses: [k('k2')] }).pollCloses?.map((x) => x.act)).toEqual(['k2']);
+    expect(mergeLogs({ ...empty }, { ...empty }).ballots).toBeUndefined();
   });
 });

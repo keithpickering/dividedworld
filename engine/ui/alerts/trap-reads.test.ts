@@ -41,6 +41,19 @@ describe('readTrapActs', () => {
     assert.deepEqual(calls, [['set1']]);
     assert.deepEqual([...got.names], [['cPipe', 'Pipewrench']]);
   });
+  test('a cast a refund handed back names the play that handed it back, and the setter is named', async () => {
+    const calls: string[][] = [];
+    const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', handedBack: { by: 'set1', card: 'kick' } } })]]);
+    const got = await readTrapActs(api(calls), [row('k')], held);
+    assert.deepEqual(calls, [['set1']]);
+    assert.deepEqual([...got.names], [['cPipe', 'Pipewrench']]);
+  });
+  test('a cast that rode and was then refunded by a sign names the ride\'s set, never the sign', async () => {
+    const calls: string[][] = [];
+    const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', rode: 'set1', handedBack: { by: 'sign1', card: 'kick' } } })]]);
+    await readTrapActs(api(calls), [row('k')], held);
+    assert.deepEqual(calls, [['set1']]);
+  });
   test('a failed character read keeps the Acts already read', async () => {
     const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', spring: 'sp' } })]]);
     const noFaces = { actsById: async (ids: readonly string[]) => ids.flatMap((i) => world.get(i) ?? []), characters: async () => { throw new Error('down'); } } as never;

@@ -63,7 +63,7 @@ import type { Character } from '../data/api.ts';
 import { useKayfa } from '../context.tsx';
 import { playIn, playOut, type Stop } from '../glass/play.ts';
 import { SecretLock } from '../glass/SecretLock.tsx';
-import { fanDeal, overlay as overlayPreset, stagger, useFeel } from '../glass/motion.ts';
+import { fanDeal, overlay as overlayPreset, recast, stagger, useFeel } from '../glass/motion.ts';
 import { usePlayer } from '../player.tsx';
 import { registerHref, signInHref } from '../account/next.ts';
 import { isLeaving } from '../glass/Held.tsx';
@@ -128,7 +128,7 @@ export function Hud() {
   const menuSource = menuWait.source;
   const { board, scale } = useBoard();
   const wide = board === 'main';
-  const [readFace, setFace] = useState<Character | null>(null);
+  const [readFaces, setFaces] = useState<readonly Character[]>([]);
   const [readNext, setNext] = useState<string | null>(null);
   const [tab, setTab] = useState<readonly [number, number, number, number] | null>(null);
   const handButton = useRef<HTMLButtonElement>(null);
@@ -193,17 +193,46 @@ export function Hud() {
   useTip('ghost', aura, { when: signedIn && player.wallet !== null && player.pending !== 0 });
 
   const hudId = hud?.id ?? null;
-  /* Boot's faces are in the first render; a mask boot does not hold (made after it) is read, and a later page asks again. */
-  const bootFace = hudId && boot ? boot.faces.find((f) => f.id === hudId) ?? null : null;
-  const face = bootFace ?? readFace;
+  /*
+   * Every mask the picker offers has its face ready before it is chosen, so a swap draws the new mask's picture in the commit that
+   * swaps it, under the recast, and never its letter first. Boot's faces are in the first render; the masks boot does not hold (made
+   * after it, or no boot at all) are read in one read for all of them, not one per swap, and a later page asks again. A mask whose face
+   * is not read yet has its letter in the slot.
+   */
+  const acting = player.actingCharacters;
+  const unbooted = useMemo(() => acting.map((c) => c.id).filter((id) => !boot?.faces.some((f) => f.id === id)), [acting, boot]);
+  const unbootedKey = unbooted.join(',');
   useEffect(() => {
     let live = true;
-    setFace(null);
-    if (!hudId || bootFace) return;
-    /* No face is the initial in the slot; a later page asks again. */
-    void api.characters([hudId]).then((cs) => { if (live) setFace(cs[0] ?? null); }, () => {});
+    /* What was read stays drawn until the new read lands: a face is found by its id, so one no longer offered is never drawn. */
+    if (unbooted.length === 0) return;
+    void api.characters(unbooted).then((cs) => { if (live) setFaces(cs); }, () => {});
     return () => { live = false; };
-  }, [api, hudId, bootFace]);
+  // The read is of the ids, not of the array that carries them: a new array with the same masks reads nothing again.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [api, unbootedKey]);
+  const faceOf = (id: string) => boot?.faces.find((f) => f.id === id) ?? readFaces.find((f) => f.id === id) ?? null;
+  const face = hudId ? faceOf(hudId) : null;
+  /*
+   * And its picture is in the browser's cache, decoded: each mask's avatar is fetched once, ahead, and held here so it is not let go
+   * before it lands. These are the player's own masks' public pictures, asked for by their own browser; no other player sees the asking.
+   * At six masks a player, at most six small files, whatever the size of the instance.
+   */
+  const avatarUrls = acting.map((c) => faceOf(c.id)?.avatarSquare ?? null).filter((u): u is string => u !== null);
+  const avatarKey = avatarUrls.join('\n');
+  const warmed = useRef(new Map<string, HTMLImageElement>());
+  useEffect(() => {
+    for (const url of avatarUrls) {
+      if (warmed.current.has(url)) continue;
+      const img = new Image();
+      img.decoding = 'async';
+      img.src = url;
+      warmed.current.set(url, img);
+      /* Setting the source fetches it; decoding it too, where the browser can, saves the first paint that work. */
+      if (typeof img.decode === 'function') void img.decode().catch(() => {});
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [avatarKey]);
 
   const booted = boot !== null;
   const next = booted ? boot.nextSettlementAt : readNext;
@@ -448,6 +477,58 @@ export function Hud() {
     }
     drawerRun.current = () => { for (const stop of runs) stop(); el.removeAttribute('data-kb-dealing'); };
   }, [handOpen, feel]);
+
+  /*
+   * The plate recast for another mask (motion.ts `recast`; the owner's choice of 2026-11-20, "Recast in place"). When the HUD's mask
+   * changes to another of the same account's, the new mask's parts arrive in a short stagger, from below when it lies after the one left
+   * in the picker's order and from above when before (or from below when the one left is gone from it), and the plate's edge flares once
+   * (frame.css, data-kb-recast). Enter only: the old mask is gone with the change, so nothing is read twice, and the picker is the same
+   * element throughout, so the keyboard stays on it. It plays before paint, so the new mask is never drawn at rest first. Nothing plays
+   * when the HUD first draws its mask, when the account changes, or under Off. A change before the last has landed stops it and gives
+   * every part back to its stylesheet first. It reads only the player's own rows and sends nothing (player.tsx).
+   */
+  const account = player.session.account;
+  const recastFrom = useRef<{ readonly account: string | null; readonly id: string | null }>({ account, id: hudId });
+  const recastRun = useRef<(() => void) | null>(null);
+  useLayoutEffect(() => {
+    const was = recastFrom.current;
+    recastFrom.current = { account, id: hudId };
+    if (was.id === hudId && was.account === account) return;
+    recastRun.current?.();
+    recastRun.current = null;
+    const el = plate.current;
+    if (!el || !feel || hudId === null || was.id === null || was.account !== account) return;
+    const order = acting.map((c) => c.id);
+    const from = order.indexOf(was.id);
+    const dir: 1 | -1 = from < 0 || order.indexOf(hudId) > from ? 1 : -1;
+    /* The parts the board draws: the phone has no name line, and draws the name over the picker instead. */
+    const sel = wide ? ['.kb-hud-avatar', '.kb-hud-name', '.kb-hud-class-line'] : ['.kb-hud-avatar', '.kb-hud-picked'];
+    const parts = sel.map((s) => el.querySelector<HTMLElement>(s)).filter((p): p is HTMLElement => p !== null);
+    const delays = stagger(feel, parts.length);
+    const unpose = (p: HTMLElement) => { for (const prop of ['transform', 'opacity', 'filter', 'clip-path']) p.style.removeProperty(prop); };
+    const stops = parts.map((p, i) => { unpose(p); return playIn(p, recast(feel, dir, delays, i)); });
+    /* The flare is the stylesheet's, on the feel's screen duration and ease, set again from its start for each change. The phone's plate is not a box (frame.css), so it has no edge to flare. */
+    const flareEnd = (e: Event) => { if (e.target === el) el.removeAttribute('data-kb-recast'); };
+    if (wide) {
+      el.style.setProperty('--kb-hud-recast-ms', `${feel.screen}ms`);
+      el.style.setProperty('--kb-hud-recast-ease', feel.ease);
+      el.removeAttribute('data-kb-recast');
+      void el.offsetWidth;
+      el.setAttribute('data-kb-recast', '');
+      el.addEventListener('animationend', flareEnd);
+      el.addEventListener('animationcancel', flareEnd);
+    }
+    recastRun.current = () => {
+      for (const stop of stops) stop();
+      for (const p of parts) unpose(p);
+      el.removeEventListener('animationend', flareEnd);
+      el.removeEventListener('animationcancel', flareEnd);
+      el.removeAttribute('data-kb-recast');
+    };
+  // Only a change of mask plays: the order, the board and the feel are read as they stand when it changes.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hudId, account]);
+  useLayoutEffect(() => () => { recastRun.current?.(); recastRun.current = null; }, []);
 
   /* Esc on the board: the hand's when it is open, else the menu's. */
   useEffect(() => {

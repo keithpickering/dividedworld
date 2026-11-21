@@ -303,7 +303,7 @@ export function PlayerProvider({ api, initial, children }: { readonly api: Kayfa
     if (account && wallet && store.get(`kb-wallet-seen:${account}`) === null) store.set(`kb-wallet-seen:${account}`, String(wallet.balance));
   }, [account, wallet]);
 
-  const pending = estimate ? estimate.entries.reduce((s, e) => s + e.amount, 0) : 0;
+  const pending = estimate ? estimate.entries.reduce((s, e) => s + e.amount, 0) + (estimate.crowd?.amount ?? 0) : 0;
 
   const value = useMemo<Player>(() => ({
     session, sessionKnown, characters, actingCharacters, writingCharacters, hudCharacter, setHudCharacter, wallet, walletSeen, markWalletSeen,

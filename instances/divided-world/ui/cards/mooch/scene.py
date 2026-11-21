@@ -16,7 +16,7 @@ rig.floor(G, rig.checker('floor', '#3a0a22', '#b82a70', 50, rough=0.12))
 
 # ---- the pig: built facing the camera about its own middle, then turned toward the coins ---------
 pink = rig.plastic('pig', rig.hexrgb('#ff6aa8'), rough=0.06, coat=1.0, emit=0.08)
-deep = rig.plastic('pig-deep', rig.hexrgb('#e0387a'), rough=0.1, coat=1.0)
+deep = rig.plastic('pig-deep', rig.hexrgb('#e0388a'), rough=0.1, coat=1.0)
 ink = rig.plastic('ink', (0.05, 0.01, 0.03), rough=0.3)
 RX, RY, RZ = 1.15, 1.4, 1.08
 def pf(x, z, lift=0.0):

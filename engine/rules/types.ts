@@ -157,8 +157,16 @@ export interface Settings {
   readonly vote: Hundredths;
   /** Each further Act by one character a player votes on in a window weighs this times the one before. */
   readonly halving: number;
+  /** How many days after a post the settlement follows the debate it sparked. Whole, at least 1. */
+  readonly debateDays: number;
+  /** What a character's earnings from reactions count more while its reveal is current, as a share (0.2 is a fifth). 0 for none. */
+  readonly revealPerk: number;
   /** The most distinct reactions one player leaves on one Act, across all their characters. */
   readonly reactionCap: number;
+  /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
+  readonly crowdPayEach: Hundredths;
+  /** The most Acts one player is paid crowd pay for in one settlement window, across all their characters. */
+  readonly crowdPayMost: number;
   /** The most characters one player runs. */
   readonly charactersPerPlayer: number;
   /** When The System settles, as a five-field cron expression in UTC. */
@@ -190,6 +198,16 @@ export interface Settings {
   readonly editGrace: Span;
   /** The longest a post's text may be, in characters (code points). */
   readonly postMaxLength: number;
+  /** The most options a poll may have (2 to 100). */
+  readonly pollOptionsMax: number;
+  /** The longest a poll's question may be, in characters. */
+  readonly pollQuestionMax: number;
+  /** The longest one of a poll's options may be, in characters. */
+  readonly pollOptionMax: number;
+  /** The least a poll may last, from the moment it is written until it closes by itself. A span, which may count hours. */
+  readonly pollLastsMin: Span;
+  /** The most a poll may last. A span, which may count hours. */
+  readonly pollLastsMax: Span;
   /** The longest a thread's title may be, in characters. */
   readonly titleMaxLength: number;
   /** How many posts a thread shows on one page. */
@@ -496,6 +514,8 @@ export interface InputCharacter {
   readonly id: string;
   readonly player: string;
   readonly classes: readonly { readonly class: string; readonly from: number }[];
+  /** The times of the character's reveals (its `unmask` Acts) before the window's end, oldest first. */
+  readonly reveals?: readonly number[];
 }
 
 /**
@@ -526,6 +546,10 @@ export interface SettlementInput {
    * the character earns that class's reasons in every stretch of the window, whatever class it holds. `play` is the Act that named it.
    */
   readonly scoredAs?: readonly { readonly character: string; readonly class: string; readonly play: string }[];
+  /** Each quote among the input's Acts: `act` quotes `quoted`. */
+  readonly quotes?: readonly { readonly act: string; readonly quoted: string }[];
+  /** The sums of the tallied earnings (`Earning.tally`) of earlier windows, by Act and reason, for the Acts the input hands as sparks. */
+  readonly tallied?: readonly { readonly act: string; readonly reason: string; readonly amount: number }[];
   /**
    * What earlier windows paid for each player's vote on each Act this window's reactions touch
    * (engine/rules/votes.ts's payVotes): its weight, and each quadrant's share at it.
@@ -671,6 +695,29 @@ export interface SpunThread {
 }
 
 /**
+ * One of the character's posts and the debate under it: every post that quotes it, or quotes a post that does, and the
+ * spin and posts of each thread another player spun from it, up to the window's end, in time order. A voice is a number
+ * that names no one: 0 for the post's author's player, and 1, 2, and so on for each other player in the order they
+ * first posted in it. With the shared vote off a voice is a character, and 0 only the author's player's own.
+ */
+export interface SparkedDebate {
+  readonly act: string;
+  /** When the post itself was made. The debate is placed in the window by its latest member, or by the latest vote that moved on it. */
+  readonly at: number;
+  readonly posts: readonly { readonly at: number; readonly voice: number }[];
+  /** The post is itself in the debate of an earlier post by its author's player. */
+  readonly inOwnDebate: boolean;
+  /** Every other player's vote on the post at the stretch's start and at its end, as `ActStanding` lists them. */
+  readonly standing: { readonly before: readonly Standing[]; readonly now: readonly Standing[] };
+  /** The largest share of a cushion play that has been up on the post or on its character at any time since the post was made; 0 with none. */
+  readonly cushioned: number;
+  /** What earlier windows' tallied earnings (`Earning.tally`) summed to on this post, by reason; `{}` with none. */
+  readonly paid: Readonly<Record<string, number>>;
+  /** True in the one stretch this debate is placed in: the one its latest member, or its latest moved vote, falls in. Every spark is handed to every stretch of the window. */
+  readonly placed: boolean;
+}
+
+/**
  * What a class's rules read: only Acts, things anyone could see happen. A character that
  * Turned inside the window is given one input per class it held, each covering its stretch.
  */
@@ -687,6 +734,8 @@ export interface ClassInput {
   readonly threadsSpun: readonly SpunThread[];
   /** The character's own Acts with a vote moved in the window, each with every other player's vote there. */
   readonly standings: readonly ActStanding[];
+  /** Every one of the character's posts whose debate a post reached in the window, or on which a vote moved with a tally or a debate still followed, each with its debate, in every stretch; `placed` says which stretch it falls in. */
+  readonly debates: readonly SparkedDebate[];
 }
 
 /**
@@ -697,6 +746,8 @@ export interface ClassInput {
 export interface Earning {
   readonly reason: string;
   readonly amount: number;
+  /** A reaction to the character's own Acts, or its own early call, caused it: the reveal perk reads it. */
+  readonly fromReactions?: true;
   /**
    * The economy numbers the reason's words state, by key, as this earning used them (the core loop design, section 6, #57): the
    * settlement writes them into the ledger row (`ledger.params`), so a line settled before a retune is said with the numbers it was
@@ -704,6 +755,11 @@ export interface Earning {
    */
   readonly params?: Readonly<Record<string, number | string>>;
   readonly act?: string;
+  /**
+   * Keep this earning's window sum by (`act`, `reason`): the settlement returns it as `tallied`, the store holds the running sums and hands them
+   * back as `SettlementInput.tallied`, and a class reads them as `SparkedDebate.paid`. Needs `act`. The engine names no reason: it sums what a class marks.
+   */
+  readonly tally?: true;
   readonly quadrant?: Quadrant;
   /** The kind of the one reaction it pays for, where it pays for one: an earn gimmick that names reactions boosts by it. */
   readonly kind?: string;

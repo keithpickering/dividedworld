@@ -11,6 +11,9 @@
  * Marks are positioned over the post and never in the page's flow (marks.css), so a post is as tall with no marks as
  * with nine. Order is billing's, set when the page was read: a kind's place is the place of its first play there, and
  * a play that arrives live puts a new kind at the end, so no live reaction moves a mark under a reader's pointer.
+ * Billing puts the spent kinds last (spent-marks design, section 4), so live cards fill the strip before "+N". Spent
+ * is judged at a post's first billing in this page's life, so a clock passing, on a re-read or a catch-up, never moves
+ * a mark; a kind that goes spent while the page is open keeps its place.
  * Past four marks on a desktop, or three under the thread's 40em, the rest are one "+N" mark that opens the first kind
  * it hides. While a card is armed and can land on the post, the strip ends in the ghost mark (PlayActions.tsx).
  *
@@ -29,13 +32,13 @@ import type { Mine } from '../reactions/mine.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, useNarrow, useOnInk, useUntil } from './Effects.tsx';
 import { Callout, useCallout } from './Callout.tsx';
-import { Lens, useLensFor, useLensHost, useLensStore, useResolvedView } from './Lens.tsx';
+import { Lens, useLensFor, useLensHost, useLensStore, useMomentThen, useResolvedView } from './Lens.tsx';
 import { GhostMark, ReachGhost, type ReachAt } from './PlayActions.tsx';
 import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
 import { VISIT_KIND } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { asThen, inPlayOrder, isBack, keepingKeys, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
+import { asThen, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import '../glass/meta-tile.css';
 /* The back's cloud is postcard.css's, which marks.css draws over, so it loads first. */
@@ -92,7 +95,7 @@ interface MarkProps {
 }
 
 const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt, then }: MarkProps) {
-  const { instance, ui } = useKayfa();
+  const { api, instance, ui } = useKayfa();
   const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
   const revealed = back ? plays.find((p) => p.revealed)?.revealed?.card : undefined;
@@ -101,10 +104,15 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const cardUi = ui.cards.find((c) => c.key === shownKind);
   const view = useResolvedView(store, post, kind, nameOf, postAt, then);
   const more = useOutdrawing(tallies, plays, postTotal, compare);
-  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k).name : rules?.name ?? kind;
+  /* Only the name is read here, so the clock passed does not matter. */
+  const name = back ? backWords(plays[0]!, nameOf?.(plays[0]!.caster) ?? 'someone', (k) => instance.cards.find((c) => c.key === k)?.name ?? k, api.now()).name : rules?.name ?? kind;
   const art = back && !revealed ? undefined : cardUi?.art;
   const icon = art?.mark;
-  const caught = plays.every((p) => p.caught || p.reversed || p.untaken);
+  /* Spent (spent-marks design, section 2): every play of the kind is over. The clock is `useUntil`'s, so a play's end unlights the mark with no re-read. */
+  const now = useUntil(plays);
+  const keeps = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const judged = useMomentThen(store, post, then);
+  const spent = kindSpent(plays, now, keeps, judged);
   /* What the mark counts: the plays that took. A play that did not take (`untaken`) is over, so it is no layer on the post; where none took, the mark counts them all, since it still says what became of each. */
   const counted = plays.filter((p) => !p.untaken).length || plays.length;
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
@@ -114,8 +122,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const progress = view.progress === null ? null : Math.min(1, Math.max(0, view.progress));
   const style = {
     ...(art ? { '--kb-mark-color': art.color } : {}),
-    ...(ink ? { '--kb-mark-ink': ink } : {}),
-    ...(progress === null ? {} : { '--kb-mark-progress': progress }),
+    ...(ink && !spent ? { '--kb-mark-ink': ink } : {}),
+    ...(progress === null || spent ? {} : { '--kb-mark-progress': progress }),
   } as CSSProperties;
   const button = useRef<HTMLButtonElement>(null);
   const chosen = useCallout(kind, cardUi?.hint, button);
@@ -123,8 +131,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   return (
     <>
     <button
-      ref={button} type="button" className="kb-mark kb-meta-tile" data-kb-card={kind} data-kb-plays={counted} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null ? undefined : 'true'}
-      data-kb-back={back ? (revealed ? 'sprung' : 'down') : undefined} data-kb-caught={caught ? 'true' : undefined}
+      ref={button} type="button" className="kb-mark kb-meta-tile" data-kb-card={kind} data-kb-plays={counted} data-kb-alignment={back && !revealed ? undefined : rules?.alignment} data-kb-edge={progress === null || spent ? undefined : 'true'}
+      data-kb-back={back ? (revealed ? 'sprung' : 'down') : undefined} data-kb-spent={spent ? 'true' : undefined}
       aria-label={markName({ card: name, plays: counted, state: back ? '' : view.state, more, yours: view.yours, where })} aria-haspopup="dialog" aria-expanded={expanded} aria-describedby={callout ?? undefined}
       style={style} onClick={(e) => onOpen(kind, e.currentTarget)}
     >
@@ -133,7 +141,7 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
         {back && !revealed ? <span className="kb-card-back" /> : icon ? <img className="kb-mark-icon" src={icon} alt="" draggable={false} /> : <span className="kb-mark-swatch" />}
         {counted > 1 && <span className="kb-mark-count">×{counted}</span>}
       </span>
-      {progress !== null && <span className="kb-mark-edge" aria-hidden="true" />}
+      {progress !== null && !spent && <span className="kb-mark-edge" aria-hidden="true" />}
       {view.yours && <span className="kb-mark-notch" data-kb-notch="" aria-hidden="true" />}
       {more && <span className="kb-mark-sign" data-kb-more="" aria-hidden="true" />}
     </button>

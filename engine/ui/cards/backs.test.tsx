@@ -175,7 +175,7 @@ describe('a caught play', () => {
     expect(caught.ok && caught.value.payload.caught).toBe(w.set.ok && w.set.value.id);
     await open(w);
     const mark = await within(post(2)).findByRole('button', { name: /^Blot, 1 play/u });
-    expect(mark.getAttribute('data-kb-caught')).toBe('true');
+    expect(mark.getAttribute('data-kb-spent')).toBe('true');
     /* The Lens's heading for a caught kind is a short status; what caught it is the play's note (the same for every card kind). */
     const user = userEvent.setup();
     await user.click(mark);

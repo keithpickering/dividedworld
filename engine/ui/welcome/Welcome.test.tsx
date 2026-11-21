@@ -134,10 +134,10 @@ describe('the welcome page', () => {
     expect(within(before).getByText('45%')).toBeInTheDocument();
     expect((await fake.preferences()).gameVolume).toBe(80);
     /* The preview is warmed (fetched) once its bus is on, but nothing plays on input: no caption is said until the release. */
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     fireEvent.change(slider, { target: { value: '45' } });
     await waitFor(async () => expect((await fake.preferences()).gameVolume).toBe(45));
-    await waitFor(() => expect(captions.current()).not.toBeNull());
+    await waitFor(() => expect(captions.lines()).not.toEqual([]));
     expect(fetched).toHaveBeenCalledWith('/boo.mp3');
     /* The interface bus names no preview here: releasing its volume plays nothing more. */
     await userEvent.click(within(within(before).getByRole('radiogroup', { name: 'Interface sounds' })).getByRole('radio', { name: 'On' }));

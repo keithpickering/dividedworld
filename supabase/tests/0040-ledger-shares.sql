@@ -147,10 +147,10 @@ begin
   if to_regprocedure('apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb)') is not null then
     raise exception 'the five-argument apply_settlement still exists';
   end if;
-  if to_regprocedure('apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb)') is null then raise exception 'the six-argument apply_settlement is missing'; end if;
-  if not has_function_privilege('service_role', 'apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb)', 'execute')
-     or has_function_privilege('authenticated', 'apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb)', 'execute')
-     or has_function_privilege('anon', 'apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb)', 'execute') then
+  if to_regprocedure('apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb)') is null then raise exception 'the eight-argument apply_settlement is missing (0384 added crowd, 0398 the tallied sums)'; end if;
+  if not has_function_privilege('service_role', 'apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb)', 'execute')
+     or has_function_privilege('authenticated', 'apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb)', 'execute')
+     or has_function_privilege('anon', 'apply_settlement(timestamptz, timestamptz, jsonb, jsonb, jsonb, jsonb, jsonb, jsonb)', 'execute') then
     raise exception 'apply_settlement is the service role''s alone';
   end if;
   if has_table_privilege('authenticated', 'ledger_shares', 'select') or has_table_privilege('anon', 'ledger_shares', 'select') then

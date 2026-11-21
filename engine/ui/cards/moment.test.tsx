@@ -77,6 +77,20 @@ const named = (m: PlayMoment) => momentParts(m, instance.cards, cards, (c) => (c
 
 afterEach(() => { seen.length = 0; vi.restoreAllMocks(); });
 
+describe('a moment hands a play its count of casts that named it (the refund outcome)', () => {
+  test('the sign\'s play is given handedOut: 2 in a moment with two casts naming it', () => {
+    const got = new Map<string, number | undefined>();
+    const Spy = ({ plays, children }: EffectProps) => { for (const p of plays) got.set(p.id, p.handedOut); return <>{children}</>; };
+    const handed = (id: string, minutes: number) => card(id, 'ripple', minutes, { handedBack: { by: 'sign', card: 'smear' } });
+    const m = moment([{ act: card('sign', 'smear', 1), state: null }, { act: handed('cast-a', 2), state: null }, { act: handed('cast-b', 3), state: null }], [], at(4));
+    const api = buildWorld({}, instance);
+    const kayfa = { api, instance, ui: { cards: [ui('smear', { Effect: Spy }), ui('ripple', { Effect: Spy })], glass: {} }, settings: {} } as unknown as Kayfa;
+    render(<KayfaProvider value={kayfa}><CalloutProvider met={[]}><MomentEffects moment={m} place="thread" nameOf={() => ''} onView={() => {}}><span>then</span></MomentEffects></CalloutProvider></KayfaProvider>);
+    expect(got.get('sign')).toBe(2);
+    expect(got.get('cast-a')).toBeUndefined();
+  });
+});
+
 describe('a card with a surface or a drive in a moment', () => {
   test('a surface card is named and never drawn, and so is a card with a drive (issue #774 gives them the read of the past)', () => {
     const drivey = rule('drivey', 'Drivey', { drive: { lasts: { unit: 'day', count: 1 }, gifts: [], overhead: '' } });

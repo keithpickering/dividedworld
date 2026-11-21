@@ -37,6 +37,10 @@ import type { BoardManifest, Landmark } from '../../board-match.ts';
 
 /** How much lower the bar and what stands under it are than the board draws them: the clearance from the top right cut (the header's last departure). */
 export const CHAMFER_CLEAR = 22;
+/* The card's icon on its tab (docs/plans/2026-11-20-spent-marks-design.md, section 5) is why the Whoops! tab is wider than the record's, and why the tab after it stands further right. */
+export const TAB_ICON_WIDTH = 25.15;
+export const TAB_ICON_SHIFT = 31.67;
+export const TAB_ICON_PHONE_SHIFT = 25.87;
 
 /** A part of the Lens, held by its place from the dialog's corner. */
 export const part = (id: string, role: string, name: string, more: Partial<Landmark> = {}): Landmark => ({ id, role, name, within: 'dialog', origin: 'dialog', box: 'position', type: false, ...more });
@@ -54,8 +58,8 @@ const manifest: BoardManifest = {
   landmarks: [
     { ...dialog(), box: 'full' },
     part('tabs', 'tablist', '', { buildName: 'Card kinds', box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
-    part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', within: 'tabs', buildShift: { y: CHAMFER_CLEAR } }),
-    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', within: 'tabs', buildShift: { y: CHAMFER_CLEAR } }),
+    part('tab-whoops', 'tab', 'WHOOPS!', { box: 'full', within: 'tabs', buildShift: { y: CHAMFER_CLEAR, width: TAB_ICON_WIDTH } }),
+    part('tab-stick-around', 'tab', 'STICK AROUND', { box: 'position', within: 'tabs', buildShift: { x: TAB_ICON_SHIFT, y: CHAMFER_CLEAR } }),
     part('close', 'button', 'Close', { box: 'position', buildShift: { y: CHAMFER_CLEAR } }),
     part('headline', 'text', '41% washed for you', { buildName: '32% washed for you', box: 'position', buildShift: { y: -18.5 + CHAMFER_CLEAR } }),
     part('ends', 'text', 'Ends on your screen when you scrub every layer off. The author can wash it for everyone.', { box: 'position', buildShift: { y: -30 + CHAMFER_CLEAR } }),
@@ -109,7 +113,7 @@ export const phone: BoardManifest = {
   build: { story: 'boards-01-lens--lens-whoops-phone' },
   landmarks: [
     { id: 'tab', role: 'text', name: 'WHOOPS!', box: 'none', type: false },
-    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 }),
+    sheet('tab-stick-around', 'text', 'STICK AROUND', { x: 8 + TAB_ICON_PHONE_SHIFT }),
     sheet('headline', 'text', "3 layers · top: Gloomba's yellow, 41% washed", { x: -9, y: -8.5 }, { buildName: '33% washed for you' }),
     sheet('hold', 'text', 'HOLD TO SCRUB', { x: -11.2, y: -25 }, { buildName: 'Hold to scrub' }),
     sheet('fold', 'text', '⌄ 3 plays · Gloomba, Pipewrench, Mrs. Hooligan', {}, { box: 'none', buildName: '3 plays · Gloomba, Pipewrench, Mrs. Hooligan' }),

@@ -37,6 +37,7 @@
  */
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import { parse } from '../../../../engine/bbcode/parse.ts';
+import { forgedList, forgedSet } from '../../../../engine/bbcode/quoted.ts';
 import { visibleWalk, type Stretch } from '../../../../engine/bbcode/visible.ts';
 import { TextLayer, type TextRun } from '../../../../engine/ui/bbcode/layers.tsx';
 import { useSound } from '../../../../engine/ui/audio/sound.ts';
@@ -95,7 +96,9 @@ function spotsOf(text: string, links: readonly Stretch[], plays: readonly CardPl
 
 function useSpots(post: EffectProps['post'], plays: readonly CardPlay[]) {
   const body = typeof post.currentPayload.body === 'string' ? post.currentPayload.body : '';
-  const { text, links } = useMemo(() => visibleWalk(parse(body)), [body]);
+  /* A forged quote (the Act's verdict) is a counterfeit, so its words are the poster's own and count (forged-quotes design, section 1). */
+  const forged = forgedList(post.currentPayload);
+  const { text, links } = useMemo(() => visibleWalk(parse(body, undefined, forgedSet(forged))), [body, forged]);
   /* The plays by content, so a new array of equal plays is not a new set of places. */
   const playsKey = JSON.stringify(plays.map((p) => [p.id, p.caught ?? null, p.config]));
   const spots = useMemo(() => spotsOf(text, links, plays), [text, links, playsKey]); // eslint-disable-line react-hooks/exhaustive-deps

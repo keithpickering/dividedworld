@@ -12,9 +12,12 @@ select set_config('kayfabb.seeding', 'on', false);
 insert into settings (key, value) values
   ('charactersPerPlayer', '6'),
   ('reactionCap', '3'),
+  ('crowdPayEach', '2'),
+  ('crowdPayMost', '10'),
   ('walletCap', '600'),
   ('vote', '10'),
   ('halving', '0.5'),
+  ('debateDays', '3'),
   ('settlementCron', '"17 8 * * *"'),
   ('viewCountCron', '"41 * * * *"'),
   ('settlementLength', '{"unit": "day", "count": 1}'),
@@ -26,6 +29,12 @@ insert into settings (key, value) values
   ('inviteLifetime', '{"unit": "day", "count": 7}'),
   ('editGrace', '{"unit": "minute", "count": 2}'),
   ('postMaxLength', '20000'),
+  -- A poll (0395): the most options, the longest question and option, and the least and most a poll may last (spans may count hours).
+  ('pollOptionsMax', '10'),
+  ('pollQuestionMax', '200'),
+  ('pollOptionMax', '100'),
+  ('pollLastsMin', '{"unit": "hour", "count": 1}'),
+  ('pollLastsMax', '{"unit": "day", "count": 14}'),
   -- The code of conduct (0340): its version, its sections' keys, and the most open reports an account holds.
   ('conductVersion', '1'),
   ('conductSections', '["mask", "hate", "outing"]'),

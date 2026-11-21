@@ -1704,7 +1704,7 @@ describe('what it tells the Lens', () => {
     const s = setup();
     expect(last(s)).toMatchObject({
       state: 'Smoke over the words',
-      ends: `Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS))}.`,
+      ends: `Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), NOW)}.`,
       yours: true,
       notes: {},
     });
@@ -2020,6 +2020,13 @@ describe('a moment', () => {
     pass(200, 50);
     expect(alphas(recOf(canvas(s)))).toEqual(new Set([a]));
     expect(host(s)).not.toBeNull();
+  });
+
+  test('the way out says "Ends" at the moment, though the page\'s clock is past the end', () => {
+    const s = past();
+    expect(last(s).ends).toBe(`Point at the words, or hold Wave the smoke, to read. ${endsWords(iso(ENDS), AT)}.`);
+    expect(last(s).ends).toContain('Ends ');
+    expect(last(s).ends).not.toContain('Ended');
   });
 
   test('the standing play is the one up at the moment: the first whose end is after it', () => {

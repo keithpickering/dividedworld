@@ -16,6 +16,7 @@ import { ui as autocorrectUi } from './cards/autocorrect/ui.ts';
 import { ui as belowTheFoldUi } from './cards/below-the-fold/ui.ts';
 import { ui as blindStudyUi } from './cards/blind-study/ui.ts';
 import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
+import { ui as cheapShotUi } from './cards/cheap-shot/ui.ts';
 import { ui as classClownUi } from './cards/class-clown/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
@@ -30,6 +31,7 @@ import { ui as heatMagnetUi } from './cards/heat-magnet/ui.ts';
 import { ui as hotBoxUi } from './cards/hot-box/ui.ts';
 import { ui as hypeUpUi } from './cards/hype-up/ui.ts';
 import { ui as jimmyWailsUi } from './cards/jimmy-wails/ui.ts';
+import { ui as kickMeUi } from './cards/kick-me/ui.ts';
 import { ui as lastWordUi } from './cards/last-word/ui.ts';
 import { ui as laughTrackUi } from './cards/laugh-track/ui.ts';
 import { ui as lineCutterUi } from './cards/line-cutter/ui.ts';
@@ -37,6 +39,8 @@ import { ui as mainEventUi } from './cards/main-event/ui.ts';
 import { ui as moochUi } from './cards/mooch/ui.ts';
 import { ui as offDayUi } from './cards/off-day/ui.ts';
 import { ui as overreactionUi } from './cards/overreaction/ui.ts';
+import { ui as payItForwardUi } from './cards/pay-it-forward/ui.ts';
+import { ui as popStealUi } from './cards/pop-steal/ui.ts';
 import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
 import { ui as requiredReadingUi } from './cards/required-reading/ui.ts';
 import { ui as ropeBreakUi } from './cards/rope-break/ui.ts';
@@ -52,6 +56,7 @@ import { ui as thisUi } from './cards/this/ui.ts';
 import { ui as tollUi } from './cards/toll/ui.ts';
 import { ui as ultraHappyHeartUi } from './cards/ultra-happy-heart/ui.ts';
 import { ui as whodunnitUi } from './cards/whodunnit/ui.ts';
+import { ui as whoopeeCushionUi } from './cards/whoopee-cushion/ui.ts';
 import { ui as whoopsUi } from './cards/whoops/ui.ts';
 import { ui as youWereSayingUi } from './cards/you-were-saying/ui.ts';
 
@@ -63,6 +68,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   belowTheFoldUi,
   blindStudyUi,
   cardCollectorUi,
+  cheapShotUi,
   classClownUi,
   feelinFabUi,
   feelinGlamUi,
@@ -77,6 +83,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   hotBoxUi,
   hypeUpUi,
   jimmyWailsUi,
+  kickMeUi,
   lastWordUi,
   laughTrackUi,
   lineCutterUi,
@@ -84,6 +91,8 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   moochUi,
   offDayUi,
   overreactionUi,
+  payItForwardUi,
+  popStealUi,
   publicityTourUi,
   requiredReadingUi,
   ropeBreakUi,
@@ -99,6 +108,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   tollUi,
   ultraHappyHeartUi,
   whodunnitUi,
+  whoopeeCushionUi,
   whoopsUi,
   youWereSayingUi,
 ] satisfies CardUi[]);

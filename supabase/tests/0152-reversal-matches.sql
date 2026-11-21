@@ -171,11 +171,11 @@ begin
   -- The incoming card is a Pepperoni one: it misses the named catch and the flavor match, is no Move's concern, and the last back is asked with a Salty one so that it does spring.
   for i in 1 .. 4 loop
     select * into fd from face_down where play = backs[i];
-    w := pg_temp.calls('ward_refusal(text, uuid, card_kinds)'::regprocedure);
+    w := pg_temp.calls('ward_refusal(text, uuid, card_kinds, text)'::regprocedure);
     r := pg_temp.calls('rarity_rank(text)'::regprocedure);
     c := pg_temp.calls('card_ended(uuid)'::regprocedure);
     f := spring_facts(fd, 'cast', by_act, case when i = 4 then 'tbsaltyc' else 'tbpep' end);
-    ws := ws || (pg_temp.calls('ward_refusal(text, uuid, card_kinds)'::regprocedure) - w);
+    ws := ws || (pg_temp.calls('ward_refusal(text, uuid, card_kinds, text)'::regprocedure) - w);
     rs := rs || (pg_temp.calls('rarity_rank(text)'::regprocedure) - r);
     cs := cs || (pg_temp.calls('card_ended(uuid)'::regprocedure) - c);
     shape := shape || (f.caught::text);

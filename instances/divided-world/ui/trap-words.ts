@@ -4,16 +4,32 @@
  * setter's character, the card and how long it was set face down before it sprang. It names no account and no class.
  */
 import type { TrapStruckFacts } from '../../../engine/ui/types.ts';
-import { fourDChess } from '../cards/4d-chess.ts';
+import { cards } from '../cards/index.ts';
 
 export function trapStruckWords(f: TrapStruckFacts): { readonly line: string; readonly detail: string } | undefined {
-  if (f.setter === null) return undefined;
-  /* A ride back's cast landed as usual: the voice says only what the spring shows everyone, that the Move it named was cast and the setter is paid for its reactions. The setter's card is 4D Chess, the only one that rides, and is named so where the spring was not read. */
-  if (f.how === 'rode') {
+  /* A pierce's cast got past a card set face down: nothing about the back is public, so no setter is named. The voice may gloat, and says only that the card stays face down and its setter is not told. */
+  if (f.how === 'passed') {
     return {
-      line: `${f.setter} wanted you to do that.`,
-      detail: `Their face-down ${f.card ?? fourDChess.name} named your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for the reactions it draws.`,
+      line: 'Cheap shot! It slipped right past.',
+      detail: `Your ${f.card ?? 'card'} got your ${f.laid ?? 'Move'} past a card set face down. That card stays face down, and the one who set it is not told.`,
     };
+  }
+  if (f.setter === null) return undefined;
+  /* A ride back's cast landed as usual: the voice says only what the spring shows everyone. A setter's card that names its card (`catches`, 4D Chess) says it named the cast; one that names none (Whoopee Cushion) says it sprang on it. Where the spring was not read (`f.card` null) more than one card rides, so the card is only "card". */
+  if (f.how === 'rode') {
+    const card = f.card === null ? undefined : cards.find((c) => c.name === f.card);
+    const named = card?.catches !== undefined;
+    return {
+      /* Whoopee Cushion's own line is the owner's (#902); every other ride, and an unread card, keep the setter's gloat. */
+      line: card?.key === 'whoopee-cushion' ? `PFFFT! You sat on ${f.setter}'s whoopee cushion.` : `${f.setter} wanted you to do that.`,
+      detail: named
+        ? `Their face-down ${f.card} named your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for the reactions it draws.`
+        : `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'cast'}. It landed as usual and you keep everything it earns; ${f.setter} is paid for ${f.card === null ? 'the reactions' : 'every reaction'} it draws.`,
+    };
+  }
+  /* A refund back's cast landed as usual and its card went back to its caster: the glass may be warm, and it says only what the spring shows everyone. Where the spring was not read (`f.card` null) it is only "card". */
+  if (f.how === 'returned') {
+    return { line: 'Paid forward', detail: `Their face-down ${f.card ?? 'card'} sprang on your ${f.laid ?? 'Move'}. It landed as usual, and the card is back in your hand.` };
   }
   if (f.card === null) return undefined;
   if (f.how === 'quote') {

@@ -23,7 +23,7 @@ declare
                            'reading', 'my_reactions', 'thread_view_counts',
                            'pip_styles', 'account_preferences', 'character_profiles',
                            'class_reveals', 'turns_announced',
-                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'my_draws', 'my_walls_drawn_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
+                           'my_characters', 'my_wallet', 'my_ledger', 'my_ledger_shares', 'my_crowd_paid', 'my_scored_as', 'my_wallet_events', 'my_card_ledger', 'my_posts_played_on', 'my_posts_written_on', 'my_draws', 'my_walls_drawn_on', 'screen_settings', 'thread_list', 'character_post_counts', 'season_size', 'board_counts', 'current_standings', 'current_season',
                            'staff_now', 'staff_office_now', 'staff_profile_now', 'boards_now', 'moves_log', 'bars_now', 'face_down', 'my_face_down', 'my_caught', 'my_cards_ended', 'my_veiled_posts', 'play_reach', 'play_moments', 'play_moment_layers', 'spin_moments', 'spin_moment_layers',
                            -- The replies a play in force draws under their parents (0348): every column is a public fact of public Acts, written by play_card alone.
                            'post_under',
@@ -35,9 +35,21 @@ declare
                            -- The search index (0117): one row per post or spin, readable as the Acts are; the table is no client's to write.
                            'post_search',
                            -- The admins' re-review list (0340): the versions brought back by an author's edit, read by admins alone (the view is empty for anyone else).
-                           'reviews_due'];
-  callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[])', 'post(uuid,uuid,text,uuid,uuid[])',
-                           'edit_post(uuid,uuid,text)', 'spin(uuid,uuid,text,text,uuid[],uuid)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
+                           'reviews_due',
+                           -- Polls (0395): every poll's counts, the same for every caller (characters counted, no owner read), and the caller's own ballots, a secret one's character and picks included.
+                           'poll_counts', 'my_ballots', 'my_latest_ballots',
+                           -- The poll reads (0396): the caller's own ballots' sibling, an admin's closes of the caller's own polls, read by the log alone.
+                           'my_poll_closes'];
+  callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[],jsonb)', 'post(uuid,uuid,text,uuid,uuid[],jsonb)',
+                           'edit_post(uuid,uuid,text,jsonb)',
+                           -- A ballot and a poll's two closes (0395): the player's doors, which verify the caller plays the character; an admin's close checks the caller inside. The poll's draft is written inside post, start_thread and edit_post.
+                           'cast_ballot(uuid,uuid,integer[])', 'close_poll(uuid,uuid)', 'close_poll_as_admin(uuid)',
+                           -- A public poll's ballots, every one and 50 at a time (0396): an invoker over acts_public, the same for every caller; a secret poll is refused whatever the caller.
+                           'poll_ballots(uuid,timestampwithtimezone,uuid)',
+                           -- The two readers behind it and behind thread_page's voters (0396): definers that read the ids of a public poll's ballots newest first (nothing for a secret poll), which the invokers then read through acts_public by id.
+                           'poll_voter_acts(uuid,timestampwithtimezone,integer)', 'poll_ballot_acts(uuid,timestampwithtimezone,uuid,integer)',
+                           -- Whether a poll is secret (0395): a column of acts_public's projection of a ballot, whose reader executes it (a view's functions run as its reader); a public fact of any poll id, naming no one.
+                           'ballot_secret(uuid)', 'spin(uuid,uuid,text,text,uuid[],uuid)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
                            'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'origin_moment(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text,text,integer,text,integer,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text,jsonb)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
                            'open_pack(uuid)', 'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'admin_machine()', 'set_slot(uuid,text,integer)', 'move_slot(uuid,text)', 'save_machine(jsonb)', 'hold_move(bigint)', 'replace_queued_description(bigint,text)', 'describe_board(uuid,text)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'post_tails(uuid[])', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(integer)', 'move_progress(uuid)',
                            'here(text,uuid,uuid)', 'set_presence_hidden(uuid,boolean)',
@@ -118,15 +130,15 @@ declare
                            -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused (each reads no table).
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)',
                            -- The search index's words (0117): the folded text an index of names and titles is written with, the stemming language and the words of a text, each reading nothing but a
-                           -- setting and its arguments; the search reads (security invoker) call them.
-                           'fold_text(text)', 'bbcode_plain(text)', 'bbcode_plain_u16len(text)', 'bbcode_plain_url_ok(text,text[],boolean)',
+                           -- setting and its arguments; the search reads (security invoker) call them. act_forged (0393) reads an Act's verdict (its payload's `forged`) out of the payload it is given, which the readers pass to bbcode_plain and search_words.
+                           'fold_text(text)', 'bbcode_plain(text,uuid[])', 'act_forged(jsonb)', 'quote_check(text)', 'bbcode_plain_u16len(text)', 'bbcode_plain_url_ok(text,text[],boolean)',
                            -- 0118: the helpers bbcode_plain calls for the tags it learned (quote heads, video addresses); each reads nothing but its arguments.
                            'bbcode_plain_trim(text)', 'bbcode_plain_quote_head(text)', 'bbcode_plain_pct(text)', 'bbcode_plain_query_v(text)', 'bbcode_plain_ipv4_number(text)', 'bbcode_plain_punycode_ok(text)', 'bbcode_plain_host_ok(text)', 'bbcode_plain_video_ok(text)',
                            -- 0142: the phrase matcher a face-down Move's spring asks of a post's plain words, and the case fold it reads them through; each reads nothing but its arguments.
-                           'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_norm(text)', 'bbcode_walk(text,uuid)', 'bbcode_plain_quote_act(text)', 'phrase_word_class()',
+                           'phrase_in(text,text)', 'phrase_fold(text)', 'phrase_norm(text)', 'bbcode_walk(text,uuid,uuid[],boolean)', 'quote_norm(text)', 'quote_run_cap(text)', 'bbcode_plain_quote_act(text)', 'phrase_word_class()',
                            -- The cosmetics log's rows (0213): my_cosmetic_log runs it as the caller, and it reads only the caller's own characters' rows by auth.uid().
                            'cosmetic_log_rows(timestampwithtimezone,integer)',
-                           'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig)',
+                           'search_lang()', 'search_words(text,text)', 'search_words(text,text,regconfig,uuid[])',
                            -- The search reads (0117): three screens' reads, security invoker and stable, and the functions they call. The two definers say only a public fact of their arguments: the Updates thread's id,
                            -- and the id and name of a debuted character a prefix finds (all characters_public shows of one; `characters` is owner-only).
                            'search_posts(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)', 'search_threads(text,uuid,uuid,timestampwithtimezone,timestampwithtimezone,boolean,text,jsonb,integer)',

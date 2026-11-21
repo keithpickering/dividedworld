@@ -103,6 +103,12 @@ export default manifest;
  *    onto more lines in the phone's narrow card, and a line count that also moves with how a browser breaks it. The class note and what is held from it stand lower
  *    by those lines, so the note is held from the bottom of the Face's hurt (`origin`, `originEdge: 'bottom'`) and not from the CLASS label, and `face-hurt` holds the
  *    build's sentence in `buildName`.
+ *  - The class carousel's row is as tall as its tallest card, and the cards' words differ in length: the Tweener's description (the Tweener plan, and longer again
+ *    with the debate rule) makes its card the tallest, 382.5px where the Face's is 359px, so the Face's hurt does not move while the note under the row stands
+ *    23.5px lower, and a longer line in any class's words would move it again. So the note is held from the bottom of the row, which the tallest class card sets,
+ *    and not from the bottom of the Face's hurt. The board draws one card with no landmark of its own, whose bottom is its hurt's bottom and the card's
+ *    padding; the build's row is the Class group (the carousel's fieldset). `row` is therefore found by the board's hurt and the build's Class group, and the
+ *    note's `buildShift` (20px across, -20px down) is the card's padding and gap that the board's hurt does not include, measured from the first run.
  *  - My characters' count stands on its own line under the title: the board's "3 OF 6" is the build's "(3 of 6)", its box a line of its own that is not broken.
  */
 const PHONE = '2026-11-05-backfill/27-characters-phone';
@@ -134,7 +140,8 @@ export const phone: BoardManifest = {
     { id: 'class-label', role: 'text', name: 'CLASS', type: false, box: 'none' },
     held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 6' }),
     { id: 'face-hurt', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildName: 'Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.', type: false, box: 'none' },
-    held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { y: 0 }, { origin: 'face-hurt', originEdge: 'bottom' }),
+    { id: 'row', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildRole: 'group', buildName: 'Class', type: false, box: 'none' },
+    held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { x: 20, y: -20 }, { origin: 'row', originEdge: 'bottom' }),
     held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 486.8 }, { origin: 'note', originEdge: 'bottom' }),
     held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],

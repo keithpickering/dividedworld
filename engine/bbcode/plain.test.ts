@@ -8,9 +8,10 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { collapse, PLAIN_FIXTURES } from './plain.fixtures.ts';
+import { collapse, PLAIN_FIXTURES, type PlainFixture } from './plain.fixtures.ts';
 import { MAX_DEPTH, parse } from './parse.ts';
 import { excerptText, quotedActs, visibleText } from './visible.ts';
+import { quoteHeld, quoteSource } from './quoted.ts';
 
 test('the fixtures that spell out the nesting cap were written for the cap of 16', () => {
   // plain.fixtures.ts is JSON (tools/bbcode-plain.mjs reads it without a loader), so a body past the cap spells out its levels: change MAX_DEPTH and write them again
@@ -28,6 +29,9 @@ test("the cap in SQL is parse.ts's MAX_DEPTH: bbcode_walk's max_depth and supaba
   assert.equal(Number(capTest?.[1]), MAX_DEPTH, "0295-quote-past-cap.sql's pg_temp.cap()");
 });
 
+/** The verdict a fixture gives its body: the posts whose quotes in it are forged. */
+const forgedOf = (f: PlainFixture): ReadonlySet<string> => new Set(f.forged ?? []);
+
 test('there are fixtures, each named once', () => {
   assert.ok(PLAIN_FIXTURES.length >= 20);
   assert.equal(new Set(PLAIN_FIXTURES.map((f) => f.name)).size, PLAIN_FIXTURES.length);
@@ -35,23 +39,46 @@ test('there are fixtures, each named once', () => {
 
 for (const f of PLAIN_FIXTURES) {
   test(`plain words: ${f.name}`, () => {
-    assert.equal(collapse(visibleText(parse(f.body))), f.plain);
+    assert.equal(collapse(visibleText(parse(f.body, undefined, forgedOf(f)))), f.plain);
   });
 }
 
 for (const f of PLAIN_FIXTURES) {
   if (f.excerptOf === undefined) continue;
   test(`excerpt: ${f.name}`, () => {
-    assert.equal(collapse(excerptText(parse(f.body), f.excerptOf!)), f.excerpt);
+    assert.equal(collapse(excerptText(parse(f.body, undefined, forgedOf(f)), f.excerptOf!)), f.excerpt);
   });
 }
 
 for (const f of PLAIN_FIXTURES) {
   if (f.quotes === undefined) continue;
   test(`quotes: ${f.name}`, () => {
-    assert.deepEqual(quotedActs(parse(f.body)), f.quotes);
+    assert.deepEqual(quotedActs(parse(f.body, undefined, forgedOf(f))), f.quotes);
   });
 }
+
+for (const f of PLAIN_FIXTURES) {
+  if (f.held === undefined && f.source === undefined) continue;
+  test(`held and source: ${f.name}`, () => {
+    if (f.held !== undefined) assert.deepEqual(Object.fromEntries(quoteHeld(parse(f.body, undefined, forgedOf(f)))), f.held);
+    if (f.source !== undefined) assert.equal(quoteSource(parse(f.body, undefined, forgedOf(f))), f.source);
+  });
+}
+
+test('the fixture of a quote holding a cut is written from MAX_DEPTH: the outermost quotes fill the cap and two more stand past it', () => {
+  const f = PLAIN_FIXTURES.find((x) => x.name === 'quoted: a quote holding a cut has two pieces (MAX_DEPTH + 2 deep)');
+  assert.ok(f);
+  const a = '0f8fad5b-d9cb-469f-a165-70867728950e';
+  const b = '6ba7b810-9dad-41d1-80b4-00c04fd430c8';
+  assert.equal(f.body, `[quote=${a}]`.repeat(MAX_DEPTH) + 'before ' + `[quote=${b}]`.repeat(2) + 'deep' + '[/quote]'.repeat(2) + ' after' + '[/quote]'.repeat(MAX_DEPTH));
+  assert.equal(f.held?.[a]?.length, MAX_DEPTH);
+});
+
+test('the fixtures hold forged quotes, each forged post named in lowercase and quoted in the body', () => {
+  const forged = PLAIN_FIXTURES.filter((f) => f.forged !== undefined);
+  assert.ok(forged.length >= 4);
+  for (const f of forged) for (const a of f.forged!) assert.ok(f.body.toLowerCase().includes(`[quote=${a}]`), f.name);
+});
 
 test('a fixture names an excerpt and the Act it is of together, and some are of an Act', () => {
   for (const f of PLAIN_FIXTURES) assert.equal(f.excerptOf === undefined, f.excerpt === undefined, f.name);

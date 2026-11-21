@@ -13,7 +13,11 @@ const settings: Settings = {
   walletCap: 600,
   vote: 10,
   halving: 0.5,
+  debateDays: 3,
+  revealPerk: 0.2,
   reactionCap: 3,
+  crowdPayEach: 2,
+  crowdPayMost: 10,
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',
   viewCountCron: '41 * * * *',
@@ -24,6 +28,11 @@ const settings: Settings = {
   turnCooldown: { unit: 'day', count: 30 },
   registrationMode: 'invite',
   postMaxLength: 20000,
+  pollOptionsMax: 10,
+  pollQuestionMax: 200,
+  pollOptionMax: 100,
+  pollLastsMin: { unit: 'hour', count: 1 },
+  pollLastsMax: { unit: 'day', count: 14 },
   titleMaxLength: 120,
   postsPerPage: 20,
   hotReplies: 10,
@@ -320,7 +329,12 @@ test('settings out of range are problems', () => {
   assert.match(settingsProblems({ ...settings, walletCap: 0 }).join('\n'), /walletCap/);
   assert.match(settingsProblems({ ...settings, vote: 2.5 }).join('\n'), /vote/);
   assert.match(settingsProblems({ ...settings, halving: 1.5 }).join('\n'), /halving/);
+  for (const bad of [-0.1, 1.5, '0.2', null]) assert.match(settingsProblems({ ...settings, revealPerk: bad as number }).join('\n'), /revealPerk/, `revealPerk ${JSON.stringify(bad)}`);
+  for (const good of [0, 0.2, 1]) assert.deepEqual(settingsProblems({ ...settings, revealPerk: good }).filter((p) => /revealPerk/.test(p)), [], `revealPerk ${good}`);
   assert.match(settingsProblems({ ...settings, reactionCap: 0 }).join('\n'), /reactionCap/);
+  for (const bad of [0, 1.5, -2, '3', NaN, 366, 3_000_000_000]) assert.match(settingsProblems({ ...settings, debateDays: bad as number }).join('\n'), /debateDays/, `debateDays ${String(bad)}`);
+  assert.deepEqual(settingsProblems({ ...settings, debateDays: 1 }), [], 'one day is the least');
+  assert.deepEqual(settingsProblems({ ...settings, debateDays: 365 }), [], 'a year is the most');
   for (const cron of ['daily', '* * * * * *', '99 99 * * *', '60 * * * *', '* 24 * * *', '* * 0 * *', '* * * 13 *', '* * * * 8', '*/0 * * * *', '5-1 * * * *', 'MON * * * *', ''])
     assert.match(settingsProblems({ ...settings, settlementCron: cron }).join('\n'), /settlementCron/, `cron ${JSON.stringify(cron)}`);
   for (const cron of ['17 8 * * *', '*/15 0-6 * * 1-5', '0 0 1,15 * 0', '0 12 * * 7'])
@@ -786,6 +800,19 @@ test('a cast card on a character or a post alone may carry an earn, and nothing 
   assert.match(cast({ rarity: 'rare', reaches: ['character', 'post'], gimmick: earn, lasts: days3 }), gimmickWords, 'a cast earn on a character and a post');
 });
 
+test('a pierce is a use card on a character alone, up to no rarer than itself', () => {
+  const hours = { unit: 'hour', count: 36 };
+  const pierce = (over: Record<string, unknown>, gimmick: Record<string, unknown> = { upTo: 'uncommon' }) => instanceProblems(withCards({ play: 'use', rarity: 'uncommon', reaches: ['character'], lasts: hours, gimmick: { kind: 'pierce', ...gimmick }, ...over })).join('\n');
+  assert.equal(pierce({}), '', 'a use card reaching a character, up to its own rarity');
+  assert.match(pierce({}, {}), /card "splat" has a pierce up to undefined; a rarity is common, uncommon, rare or legendary/);
+  assert.match(pierce({}, { upTo: 'mythic' }), /card "splat" has a pierce up to "mythic"; a rarity is common, uncommon, rare or legendary/);
+  assert.match(pierce({ play: 'cast' }), /card "splat" has a pierce and is not a use card/);
+  assert.match(pierce({ reaches: ['post'] }), /card "splat" has a pierce and reaches more than a character/);
+  assert.match(pierce({ reaches: ['character', 'post'] }), /card "splat" has a pierce and reaches more than a character/);
+  assert.doesNotMatch(pierce({}, { upTo: 'mythic' }), /rarer than the card/, 'an unknown rarity is one problem, not two');
+  assert.match(pierce({}, { upTo: 'rare' }), /card "splat" has a pierce up to rare, rarer than the card/);
+});
+
 test('a card that stops quotes reaches a post alone', () => {
   const week = { unit: 'day', count: 7 };
   const stop = (over: Record<string, unknown>) => instanceProblems(withCards({ play: 'use', lasts: week, gimmick: { kind: 'noQuote' }, ...over })).join('\n');
@@ -803,7 +830,7 @@ test('a gimmick is a ward, an earn or a price, each with its numbers', () => {
   assert.match(use({ kind: 'ward' }), /card "splat" has a ward that names no rarity, flavor or card/);
   assert.match(use({ kind: 'ward', upTo: 'mythic' }), /card "splat" has a ward up to "mythic"/);
   assert.match(use({ kind: 'ward', flavors: ['bitter'] }), /card "splat" has a ward of the flavors \["bitter"\]/);
-  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride, noQuote or cushion/);
+  assert.match(use({ kind: 'sneeze' }), /card "splat" has a gimmick of kind "sneeze"; a gimmick is ward, earn, price, ride, noQuote, cushion or pierce/);
   assert.equal(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0.5 }), '');
   assert.equal(use({ kind: 'earn', reactions: ['fire'], by: 1 }), '');
   assert.match(use({ kind: 'earn', quadrants: ['excitedPositive'], by: 0 }), /card "splat" has an earn of 0; by is above 0 and at most 1/);
@@ -852,10 +879,15 @@ test('a trap outcome is a ride on a set card that springs on a cast and names it
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 0 } }), /card "splat" has an outcome of share 0; share is above 0 and at most 1/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 2 } }), /card "splat" has an outcome of share 2; share is above 0 and at most 1/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride' } }), /card "splat" has an outcome with no share/);
-  assert.match(set({ trigger: cast, outcome: { kind: 'sneeze', share: 1 } }), /card "splat" has an outcome of kind "sneeze"; an outcome is ride/);
+  assert.match(set({ trigger: cast, outcome: { kind: 'sneeze', share: 1 } }), /card "splat" has an outcome of kind "sneeze"; an outcome is ride or refund/);
   assert.match(set({ trigger: cast, outcome: 'ride' }), /card "splat" has an outcome that is not an object/);
   assert.match(set({ trigger: { on: 'visit' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome, and only a set card that springs on a cast does/);
-  assert.match(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" has an outcome beside a match; a ride outcome names its card \(catches\)/);
+  const everyRide = (every: unknown) => set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every } }, {});
+  assert.doesNotMatch(set({ trigger: cast, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every: true } }, {}), /card "splat"/);
+  assert.match(everyRide('yes'), /card "splat" has an outcome whose every is "yes"; every is true or left out/);
+  assert.match(everyRide(false), /card "splat" has an outcome whose every is false; every is true or left out/);
+  // An every left undefined is left out, as it is once the card is JSON in the database.
+  assert.doesNotMatch(everyRide(undefined), /card "splat"/);
   assert.match(set({ trigger: cast, outcome: { kind: 'ride', share: 1 } }, {}), /card "splat" springs on a cast and names no card to catch/);
   assert.match(instanceProblems(withCards({ trap: { trigger: cast, outcome: { kind: 'ride', share: 1 } } })).join('\n'), /card "splat" has a trap, and only a set card has one/);
 });
@@ -898,6 +930,31 @@ test('a veil or a reaction is a cast card on a post, a veil ends, and the two ne
   assert.match(bad({ reaction: true, writes: { tokens: () => 1, frame: () => ({ prompt: '', stop: [] }) } }), /card "splat" has a reaction and writes; a card with a reaction does not write/);
   assert.match(bad({ reaction: true, seeded: true }), /card "splat" has a reaction and is seeded; a card with a reaction is not/);
   assert.match(bad({ reaction: 'yes' }), /card "splat" has a reaction of "yes"; a reaction is true or left out/);
+});
+
+test('a refund outcome has a kind alone, and refunds is a use card on a post alone with a time up', () => {
+  const cast = { on: 'cast' };
+  const match = { flavors: ['sweet'], upTo: 'uncommon' };
+  const set = (outcome: unknown) => instanceProblems(withCards({ play: 'set', trap: { trigger: cast, match, outcome } })).join('\n');
+  assert.equal(set({ kind: 'refund' }), '');
+  assert.match(set({ kind: 'refund', share: 1 }), /card "splat" has a refund outcome with share; a refund outcome has a kind alone/);
+  assert.equal(set({ kind: 'refund', every: true }), 'card "splat" has a refund outcome with every; a refund outcome has a kind alone');
+  assert.equal(set({ kind: 'refund', every: 'x' }), 'card "splat" has a refund outcome with every; a refund outcome has a kind alone');
+  assert.match(set({ kind: 'gift' }), /card "splat" has an outcome of kind "gift"; an outcome is ride or refund/);
+  const lasts = { unit: 'day', count: 7 };
+  const refunds = { flavors: ['salty'], count: 3 };
+  const use = (r: unknown, more: Record<string, unknown> = {}) => instanceProblems(withCards({ play: 'use', reaches: ['post'], lasts, gimmick: { kind: 'ward', upTo: 'common' }, refunds: r, ...more })).join('\n');
+  assert.equal(use(refunds), '');
+  assert.match(use('x'), /card "splat" has refunds that are not an object/);
+  assert.match(use(null), /card "splat" has refunds that are not an object/);
+  assert.match(instanceProblems(withCards({ play: 'cast', reaches: ['post'], lasts, refunds })).join('\n'), /card "splat" has refunds, and only a use card does/);
+  assert.match(use(refunds, { reaches: ['post', 'thread'], rarity: 'rare' }), /card "splat" has refunds, and a card with refunds reaches a post alone/);
+  assert.match(use(refunds, { lasts: undefined }), /card "splat" has refunds with no time up \(lasts\)/);
+  assert.match(use({ flavors: [], count: 3 }), /card "splat" has refunds whose flavors are \[\]; flavors are one or more of sweet, salty and pepperoni/);
+  assert.match(use({ flavors: ['salty', 'salty'], count: 3 }), /card "splat" has refunds whose flavors are \["salty","salty"\]; flavors are one or more of sweet, salty and pepperoni/);
+  assert.match(use({ flavors: ['bitter'], count: 3 }), /card "splat" has refunds whose flavors are \["bitter"\]; flavors are one or more of sweet, salty and pepperoni/);
+  assert.match(use({ count: 3 }), /card "splat" has refunds whose flavors are undefined; flavors are one or more of sweet, salty and pepperoni/);
+  for (const count of [0, 11, 1.5, '3']) assert.match(use({ flavors: ['salty'], count }), new RegExp(`card "splat" has refunds whose count is ${JSON.stringify(count).replace(/"/g, '\\"')}; count is a whole number from 1 to 10`));
 });
 
 test('a skim is a cast card that reaches a post alone, lasts, and does not write', () => {
@@ -1519,4 +1576,23 @@ test('a starting pack is a fixed pack the instance has, or null', () => {
   assert.match(said(withStart('p', [pull, fixed])), /setting "startingPack" is "p".*pull pack.*fixed/);
   assert.deepEqual(instanceProblems(withStart(null, [fixed, pull])), []);
   assert.match(settingsProblems({ ...settings, startingPack: 7 } as never).join('\n'), /startingPack/);
+});
+
+test('a Turn cooldown is never shorter than a settlement window (#931), a month counting 28 days in the cooldown and 31 in the window', () => {
+  const pair = (turnCooldown: Settings['turnCooldown'], settlementLength: Settings['settlementLength']) =>
+    settingsProblems({ ...settings, turnCooldown, settlementLength }).filter((p) => p.includes('settlementLength'));
+  const refused = /^setting "turnCooldown" is .*; it must be a span no shorter than settlementLength/;
+  assert.match(pair({ unit: 'day', count: 6 }, { unit: 'week', count: 1 }).join('\n'), refused, 'six days against a week');
+  assert.match(pair({ unit: 'day', count: 30 }, { unit: 'month', count: 1 }).join('\n'), refused, 'a 31-day month outlasts 30 days');
+  assert.match(pair({ unit: 'month', count: 1 }, { unit: 'month', count: 2 }).join('\n'), refused, 'a month against two');
+  assert.match(pair({ unit: 'month', count: 1 }, { unit: 'day', count: 29 }).join('\n'), refused, 'a 28-day month is shorter than 29 days');
+  assert.match(pair({ unit: 'month', count: 1 }, { unit: 'day', count: 30 }).join('\n'), refused, 'a 28-day month is shorter than 30 days');
+  assert.deepEqual(pair({ unit: 'day', count: 31 }, { unit: 'month', count: 1 }), [], 'thirty-one days cover any month');
+  assert.deepEqual(pair({ unit: 'month', count: 1 }, { unit: 'week', count: 4 }), [], 'any month covers four weeks');
+  assert.deepEqual(pair({ unit: 'month', count: 1 }, { unit: 'month', count: 1 }), [], 'a month covers a month');
+  assert.deepEqual(pair({ unit: 'week', count: 1 }, { unit: 'day', count: 7 }), [], 'a week covers seven days');
+  assert.deepEqual(pair({ unit: 'day', count: 30 }, { unit: 'day', count: 1 }), [], 'the defaults');
+  assert.deepEqual(settingsProblems(settings), [], 'the whole of the test settings, unfiltered');
+  // A row that is not a span is its own refusal, never this one.
+  assert.deepEqual(pair({ unit: 'day', count: 0 }, { unit: 'week', count: 1 }), []);
 });

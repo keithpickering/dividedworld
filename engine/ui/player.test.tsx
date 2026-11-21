@@ -12,7 +12,7 @@ const char = (id: string, over: Partial<MyCharacter> = {}): MyCharacter => ({
 
 function stubApi(over: Partial<KayfaApi> = {}) {
   const session: Session = { signedIn: true, account: 'acc-1', bar: null, conductAccepted: true };
-  const estimate = vi.fn(async (): Promise<Estimate> => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 30 }], lines: [], asOf: new Date(Date.now()).toISOString(), freshAfter: new Date(Date.now() + 30_000).toISOString() }));
+  const estimate = vi.fn(async (): Promise<Estimate> => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 30 }], lines: [], crowd: null, asOf: new Date(Date.now()).toISOString(), freshAfter: new Date(Date.now() + 30_000).toISOString() }));
   const api = {
     session: async () => session,
     onSession: () => () => {},
@@ -141,6 +141,11 @@ describe('the estimate is asked for on events, never on a timer', () => {
     await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('30'));
     expect(estimate).toHaveBeenCalledTimes(1);
   });
+  test('the pending figure adds the crowd pay so far to the entries: 10 and 4 is 14', async () => {
+    const { api } = stubApi({ estimate: async (): Promise<Estimate> => ({ entries: [{ character: 'a', reason: 'face.cheered', amount: 10 }], lines: [], crowd: { acts: ['x', 'y'], amount: 4 }, asOf: null, freshAfter: null }) });
+    render(<PlayerProvider api={api}><Probe /></PlayerProvider>);
+    await waitFor(() => expect(screen.getByTestId('pending').textContent).toBe('14'));
+  });
   test('a storm of reactions before freshAfter is one ask at freshAfter', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true });
     const { api, estimate } = stubApi();
@@ -179,7 +184,7 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
     let resolveA: (e: Estimate) => void = () => {};
     const estimate = vi.fn((): Promise<Estimate> => {
       if (estimate.mock.calls.length === 1) return new Promise((r) => { resolveA = r; });
-      return Promise.resolve({ entries: [{ character: 'x', reason: 'face.cheered', amount: 7 }], lines: [], asOf: null, freshAfter: null });
+      return Promise.resolve({ entries: [{ character: 'x', reason: 'face.cheered', amount: 7 }], lines: [], crowd: null, asOf: null, freshAfter: null });
     });
     const api = {
       session: async () => ({ signedIn: true, account: 'acc-a', bar: null, conductAccepted: true }),
@@ -189,7 +194,7 @@ describe('from the Task 3 quality review: an account switch, a failed read', () 
       myCards: async () => [],
       estimate,
     } as unknown as KayfaApi;
-    return { api, estimate, switchTo: (account: string | null) => act(() => listener({ signedIn: account !== null, account, bar: null, conductAccepted: true })), answerA: (amount: number) => resolveA({ entries: [{ character: 'a', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null }) };
+    return { api, estimate, switchTo: (account: string | null) => act(() => listener({ signedIn: account !== null, account, bar: null, conductAccepted: true })), answerA: (amount: number) => resolveA({ entries: [{ character: 'a', reason: 'face.cheered', amount }], lines: [], crowd: null, asOf: null, freshAfter: null }) };
   }
   test('an estimate that answers after the account changed is dropped, and the new account asks at once', async () => {
     const w = switchable();
@@ -309,7 +314,7 @@ describe('from PR #49\'s fifth review: what the provider holds is the account\'s
     const switchTo = (next: string) => act(() => { account = next; listener({ signedIn: true, account: next, bar: null, conductAccepted: true }); });
     return { api, switchTo };
   }
-  const answer = (amount: number): Estimate => ({ entries: [{ character: 'x', reason: 'face.cheered', amount }], lines: [], asOf: null, freshAfter: null });
+  const answer = (amount: number): Estimate => ({ entries: [{ character: 'x', reason: 'face.cheered', amount }], lines: [], crowd: null, asOf: null, freshAfter: null });
 
   test('no commit pairs the account signed in now with rows read for the last one', async () => {
     const w = twoAccounts({ a: async () => answer(11), b: async () => answer(77) });

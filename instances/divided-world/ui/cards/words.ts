@@ -10,6 +10,7 @@ import { quadrantLabels } from '../quadrant-labels.ts';
 import { mooch } from '../../cards/mooch.ts';
 import { toll } from '../../cards/toll.ts';
 import { fourDChess } from '../../cards/4d-chess.ts';
+import { whoopeeCushion } from '../../cards/whoopee-cushion.ts';
 
 /**
  * The sentence a Move's words gain on setting it (the face-down Moves design, section 3): set face down on your own post, it springs on the
@@ -57,8 +58,12 @@ export const tollShare = () => {
   return shareWords(toll.gimmick.share);
 };
 export const rideShare = () => {
-  if (fourDChess.trap?.outcome === undefined) throw new Error('4D Chess has no ride outcome');
+  if (fourDChess.trap?.outcome?.kind !== 'ride') throw new Error('4D Chess has no ride outcome');
   return shareWords(fourDChess.trap.outcome.share);
+};
+export const cushionShare = () => {
+  if (whoopeeCushion.trap?.outcome?.kind !== 'ride') throw new Error('Whoopee Cushion has no ride outcome');
+  return shareWords(whoopeeCushion.trap.outcome.share);
 };
 
 /** A quadrant a play named, in the instance's own word for it; "reactions" where the play names none the card can read. */

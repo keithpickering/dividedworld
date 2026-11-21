@@ -105,9 +105,10 @@ function locate(page: Page, landmark: Landmark, side: 'board' | 'build', found: 
   const root: Page | Locator = landmark.within ? found.get(landmark.within) ?? page.locator(':not(*)') : page;
   const whole = new RegExp(`^${escapeRegExp(name)}$`, 'i');
   const nth = side === 'build' ? landmark.buildNth ?? landmark.nth ?? 0 : landmark.nth ?? 0;
-  /* A text's own words are read raw, so the markup's line breaks and indents around and between them are spaces. */
-  if (landmark.role === 'text') return root.getByText(new RegExp(`^\\s*${name.trim().split(/\s+/).map(escapeRegExp).join('\\s+')}\\s*$`, 'i')).nth(nth);
   const role = side === 'build' ? landmark.buildRole ?? landmark.role : landmark.role;
+  /* A text's own words are read raw, so the markup's line breaks and indents around and between them are spaces. The side's own role decides it, so a part the board
+     drew as bare text can be a role in the build (the phone's class row: the board's one card, found by its hurt's words, and the build's Class group). */
+  if (role === 'text') return root.getByText(new RegExp(`^\\s*${name.trim().split(/\s+/).map(escapeRegExp).join('\\s+')}\\s*$`, 'i')).nth(nth);
   return root.getByRole(role as Parameters<Page['getByRole']>[0], { name: whole }).nth(nth);
 }
 

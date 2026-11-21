@@ -6,8 +6,8 @@ import { axeViolations, describeViolations } from '../a11y.ts';
 import { RouterProvider } from '../router.tsx';
 import { MAX_DEPTH } from '../../bbcode/parse.ts';
 
-const show = (text: string, quoteHead?: (q: QuoteOf) => React.ReactNode) =>
-  render(<RouterProvider><div data-testid="out"><BbCode text={text} quoteHead={quoteHead} /></div></RouterProvider>);
+const show = (text: string, quoteHead?: (q: QuoteOf) => React.ReactNode, forged?: readonly string[]) =>
+  render(<RouterProvider><div data-testid="out"><BbCode text={text} quoteHead={quoteHead} forged={forged} /></div></RouterProvider>);
 const out = () => screen.getByTestId('out');
 
 describe('the BBCode renderer', () => {
@@ -123,13 +123,53 @@ describe('the BBCode renderer', () => {
     test('is handed to the screen\'s head with the typed name and the user', () => {
       const seen: QuoteOf[] = [];
       show(`[quote="Geno Wario" user=${user}]x[/quote]`, (q) => { seen.push(q); return 'head'; });
-      expect(seen).toEqual([{ kind: 'counterfeit', user, name: 'Geno Wario' }]);
+      expect(seen).toEqual([{ kind: 'counterfeit', user, name: 'Geno Wario', act: null }]);
     });
 
     test('is axe clean beside a real quote', async () => {
       show('[quote=11111111-1111-4111-8111-111111111111]x[/quote][quote=Geno]y[/quote]');
       const found = await axeViolations(out());
       expect(describeViolations(found)).toBe('');
+    });
+  });
+
+  describe('a real quote whose Act is in the verdict (forged)', () => {
+    const A = '0f8fad5b-d9cb-469f-a165-70867728950e';
+    const B = '1f8fad5b-d9cb-469f-a165-70867728950e';
+    /* The head a thread draws for it: the quoted post's author as plain text, never a link. */
+    const head = (q: QuoteOf) => (q.kind === 'counterfeit' && q.act !== null ? <span className="kb-byline-name">Wario</span> : q.kind === 'real' ? <a href={`/p/${q.act}`}>Post</a> : 'typed');
+
+    test('is drawn as a counterfeit: the mark, no link in its head, and the author\'s name as text', () => {
+      show(`[quote=${A}]words never said[/quote]`, head, [A]);
+      const q = out().querySelector('blockquote')!;
+      expect(q).toHaveAttribute('data-kb-counterfeit');
+      expect(q.querySelector('cite a')).toBeNull();
+      expect(q.querySelector('cite')).toHaveTextContent('Wario');
+      expect(q).toHaveTextContent('words never said');
+    });
+
+    test('hands the head the Act it falsely names; a counterfeit written as one hands none', () => {
+      const seen: QuoteOf[] = [];
+      show(`[quote=${A}]x[/quote][quote=Geno]y[/quote]`, (q) => { seen.push(q); return 'head'; }, [A]);
+      expect(seen).toEqual([{ kind: 'counterfeit', user: null, name: null, act: A }, { kind: 'counterfeit', user: null, name: 'Geno', act: null }]);
+    });
+
+    test('with no head given says "Someone", and still no link', () => {
+      show(`[quote=${A}]x[/quote]`, undefined, [A]);
+      expect(out().querySelector('cite')).toHaveTextContent(/^Someone$/u);
+      expect(out().querySelector('a')).toBeNull();
+    });
+
+    test('every quote of a forged post is a counterfeit, and a quote of another post stays real', () => {
+      show(`[quote=${A}]one[/quote][quote=${B}]two[/quote][quote=${A.toUpperCase()}]three[/quote]`, head, [A]);
+      const quotes = [...out().querySelectorAll('blockquote')];
+      expect(quotes.map((q) => q.hasAttribute('data-kb-counterfeit'))).toEqual([true, false, true]);
+      expect(quotes[1]!.querySelector('cite a')).not.toBeNull();
+    });
+
+    test('without the verdict the same body is a real quote', () => {
+      show(`[quote=${A}]words[/quote]`, head);
+      expect(out().querySelector('blockquote')).not.toHaveAttribute('data-kb-counterfeit');
     });
   });
 

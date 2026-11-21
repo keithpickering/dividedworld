@@ -63,10 +63,13 @@ export type CardTarget =
   | { readonly reach: 'board'; readonly board: string };
 export type PostTarget = Extract<CardTarget, { reach: 'post' }>;
 
-/** A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. */
-export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string, author?: string): PostTarget {
+/**
+ * A post as a card's rules see it, from its current body: its length in characters and its visible text, and its version where the server read one. `forged` is the version's verdict (its payload's `forged`):
+ * a forged quote is a counterfeit, so its words are the poster's own and are in the text the rules see.
+ */
+export function postTarget(act: string, kind: PostTarget['kind'], body: unknown, version?: string, under?: string, author?: string, forged?: readonly string[]): PostTarget {
   const words = typeof body === 'string' ? body : '';
-  const { text, links } = visibleWalk(parse(words));
+  const { text, links } = visibleWalk(parse(words, undefined, forged && forged.length > 0 ? new Set(forged) : undefined));
   return { reach: 'post', act, kind, length: [...words].length, text, links, ...(version ? { version } : {}), ...(under ? { under } : {}), ...(author ? { author } : {}) };
 }
 
@@ -102,6 +105,8 @@ export interface CardEffect {
  * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
  * a no-quote stops a post that quotes the post it is on, before that post is written.
  * A cast card that reaches one character or one post alone may carry an earn too, ending at its `lasts`.
+ * A pierce, used on the player's own character, gets that character's next cast past every live ward, and every set card that
+ * would catch it, whose card is no rarer than `upTo`; that cast spends it.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
@@ -110,9 +115,10 @@ export type GimmickEffect =
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
   | { readonly kind: 'ride'; readonly share: number }
   | { readonly kind: 'noQuote' }
-  | { readonly kind: 'cushion'; readonly share: number };
+  | { readonly kind: 'cushion'; readonly share: number }
+  | { readonly kind: 'pierce'; readonly upTo: Rarity };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion', 'pierce']);
 
 /** What a cast does to the staff's discipline of its target, one of a fixed list; each card picks one and sets its numbers. */
 export type DisciplineEffect =
@@ -274,6 +280,9 @@ export interface Writes<Config = unknown> {
 
 export const OLD_VOICE_OFF = "The old voice isn't running on this forum, so this card can't be played.";
 
+/** A trap's ride: the setter is paid `share` of a vote for each vote the cast draws, in the set's quadrant or, with `every`, in all four. */
+export type RideOutcome = { readonly kind: 'ride'; readonly share: number; readonly every?: true };
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
@@ -286,11 +295,15 @@ export interface CardRules<Config = unknown> {
    * the cards its `match` covers, and takes it; a visit trap ends the visit. Every set card has one. A cast card has none: set face down,
    * it springs on a quote, and the quote lands it. A cast trap names its card (`catches`) or has a `match`, never both.
    *
-   * With an `outcome` the spring is a ride and not a catch: the cast that springs the trap lands as usual, and the setter is paid `share` of a
-   * vote for each vote that cast draws in the quadrant the set named (its checked configuration's `quadrant`). Only a trap that names its card has one.
+   * With an `outcome` the spring is not a catch: the cast that springs the trap lands as usual. A ride pays the setter `share` of a vote for each
+   * vote that cast draws; where it says `every` it pays in all four quadrants and reads no quadrant from the configuration, otherwise it pays in
+   * the quadrant the set named (its checked configuration's `quadrant`). A refund hands the cast's card back to its caster's hand, and a staff
+   * cast passes over it. Either may sit beside a `match` or a `catches`.
    */
-  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: { readonly kind: 'ride'; readonly share: number } };
-  /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap names its card here too). Only a set card that springs on a cast and has no `match` has it. */
+  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: RideOutcome | { readonly kind: 'refund' } };
+  /** A use card on a post alone with a time up: while it is up, the first `count` casts on its post whose printed flavor is one of `flavors`, landing and not handed back by a card set face down, each go back to their caster's hand. A staff cast passes over it. */
+  readonly refunds?: { readonly flavors: readonly Alignment[]; readonly count: number };
+  /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap may name its card here too). Only a set card that springs on a cast and has no `match` has it. */
   catches?(config: Config): string;
   /** A cast card's set phrase: the phrase its landing needs, found in the quoting post's own words, from its checked configuration. Only a cast card has it. */
   setPhrase?(config: Config): string;
@@ -550,6 +563,10 @@ export interface PlayContext {
   readonly first?: unknown;
   /** The character the play is made through, by id; a discipline card compares it with a post's author (`disciplineRefusal`). */
   readonly caster?: string;
+  /** The caster's live pierce, where one is up: a ward whose card is at or below it does not turn the cast away. */
+  readonly pierce?: Rarity;
+  /** A card's rarity by key, so a pierce can be weighed against the ward's own card. */
+  readonly rarityOf?: (key: string) => Rarity | undefined;
 }
 
 /**
@@ -567,7 +584,12 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   const now = context.now ?? new Date();
   // A reply drawn under a post is a post of its own, and takes none under it: one reply under a post, never a chain.
   if (rules.replies === true && target.reach === 'post' && target.under !== undefined) return refuse('a reply drawn under a post takes no reply under it');
-  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
+  const pierced = (e: CardEffect): boolean => {
+    if (e.card === null || context.pierce === undefined) return false;
+    const rarity = context.rarityOf?.(e.card);
+    return rarity !== undefined && atOrBelow(rarity, context.pierce);
+  };
+  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
   const staffed = disciplineRefusal(rules, target, context, now);
   if (staffed) return staffed;
@@ -660,8 +682,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (!lands.ok) return lands;
   const checked = rules.validateConfig(config);
   if (!checked.ok) return checked;
-  // A ride trap pays on the quadrant the set names, so a card whose validator lets it through unset is at fault.
-  if (rules.trap?.outcome !== undefined && !namedQuadrant(checked.value)) throw new Error(`card ${rules.key} has a ride and its checked configuration names no quadrant`);
+  // A ride trap pays on the quadrant the set names unless it says every, so a card whose validator lets it through unset is at fault.
+  if (rules.trap?.outcome?.kind === 'ride' && rules.trap.outcome.every !== true && !namedQuadrant(checked.value)) throw new Error(`card ${rules.key} has a ride and its checked configuration names no quadrant`);
   let catches: string | undefined;
   if (rules.catches) {
     catches = rules.catches(checked.value);
@@ -865,6 +887,8 @@ export function color(value: unknown): string | null {
  */
 export function staffOffers(card: CardRules): boolean {
   if (card.trap?.trigger.on === 'visit') return false;
+  // A staff character has no wallet and its Acts are not settled, so a ride a persona set would pay nobody.
+  if (card.trap?.outcome?.kind === 'ride') return false;
   // A staff character's Acts are not settled, so an earn a persona cast would never be paid.
   if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
   // A persona plays a card with no caster message, so a card that needs one could never land.

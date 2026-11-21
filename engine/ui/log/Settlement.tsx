@@ -41,8 +41,8 @@ import { usePlayer } from '../player.tsx';
 import { useNavigate } from '../router.tsx';
 import { GlassLink } from '../glass/Link.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
-import { heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, utcDay, utcWhen, type LogData, type Words } from './lines.ts';
-import { tabsOf, type LogOpening } from './Log.tsx';
+import { crowdRows, heldBack, inOrder, plain, rankChanges, scoredAs, signed, turnsTaken, utcDay, utcWhen, type LogData, type Words } from './lines.ts';
+import { Said, tabsOf, type LogOpening } from './Log.tsx';
 import { useLog } from './useLog.ts';
 import { economyNow, paramsOf } from '../economy.ts';
 import './settlement.css';
@@ -63,11 +63,15 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
   const tabs = tabsOf(data);
   const current = shownTab(data, tab);
   const lines = inOrder(s.lines.filter((l) => l.character === current?.id));
-  const event = data.log.wallet.find((e) => e.kind === 'settlement' && e.settlement === s.id);
+  const settlementEvent = data.log.wallet.find((e) => e.kind === 'settlement' && e.settlement === s.id);
+  /* Crowd pay is the wallet's own, after the settlement's own moves: the wallet's move is both together, and the line is the log's, in every tab. */
+  const crowd = crowdRows(data, words).find((r) => r.key === `crowd:${s.id}`);
+  const crowdEvent = data.log.wallet.find((e) => e.kind === 'crowd' && e.settlement === s.id);
+  const event = settlementEvent && crowdEvent ? { balanceAfter: crowdEvent.balanceAfter, change: settlementEvent.change + crowdEvent.change } : settlementEvent ?? crowdEvent;
   const cls = scoredAs(lines, instance);
   const rank = (rankChanges(data, instance).get(s.id) ?? []).find((r) => r.character === current?.id);
   const turn = (turnsTaken(data, instance).get(s.id) ?? []).find((t) => t.character === current?.id);
-  const held = heldBack(event, settings.walletCap);
+  const held = heldBack(settlementEvent, settings.walletCap);
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
   const why = `Why, in plain words${cls ? ` · scored as ${/^[aeiou]/iu.test(className(cls)) ? 'an' : 'a'} ${className(cls)}` : ''}`;
   const turnAct = turn?.announced ? data.acts.get(turn.announced.act) : undefined;
@@ -122,6 +126,7 @@ export function Summary({ data, tab, onTab }: { readonly data: LogData; readonly
               </div>
             )
             : <p className="kb-settled-why">Nothing was settled for {current?.name ?? 'you'} in this window.</p>}
+          {crowd && <p className="kb-settled-crowd" data-kb-crowd=""><Said parts={crowd.details} /></p>}
         </section>
 
         <div className="kb-settled-cards">

@@ -60,6 +60,34 @@ export function asThen(plays: readonly CardPlay[], then: ReadonlySet<Id> | undef
   });
 }
 
+/** A cast's `handedBack` (the play whose refund it was handed, and that play's card), as `{ handedBack }` where the payload's is an object with a string `by` and `card`, else nothing. */
+function handedBackOf(raw: unknown): { readonly handedBack?: NonNullable<CardPlay['handedBack']> } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const { by, card } = raw as Record<string, unknown>;
+  return typeof by === 'string' && typeof card === 'string' ? { handedBack: { by, card } } : {};
+}
+
+/** A cast's `pierce` (the pierce play it spent, that play's card and the Ward it got past), as `{ pierce }` where the payload's is an object with a string `by` and `card` (`ward` is kept only where a string), else nothing. */
+function pierceOf(raw: unknown): { readonly pierce?: NonNullable<CardPlay['pierce']> } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const { by, card, ward } = raw as Record<string, unknown>;
+  return typeof by === 'string' && typeof card === 'string' ? { pierce: { by, card, ...(typeof ward === 'string' ? { ward } : {}) } } : {};
+}
+
+/** The pierce play a card Act's payload names as spent (`pierce.by`), or null for any other Act. */
+const spendsOf = (act: Act): Id | null => (act.kind === 'card' ? pierceOf(act.payload.pierce).pierce?.by ?? null : null);
+
+/**
+ * Each play with `handedOut`: how many of these plays' casts name it in `handedBack` (the refund sign's count). Set only where it is above zero, so a play nobody names
+ * carries no key; the same array where none is named.
+ */
+export function withHandedOut(plays: readonly CardPlay[]): readonly CardPlay[] {
+  const counts = new Map<Id, number>();
+  for (const p of plays) if (p.handedBack) counts.set(p.handedBack.by, (counts.get(p.handedBack.by) ?? 0) + 1);
+  if (!plays.some((p) => counts.has(p.id))) return plays;
+  return plays.map((p) => (counts.has(p.id) ? { ...p, handedOut: counts.get(p.id)! } : p));
+}
+
 /**
  * A card play, from its card Act or its set Act (a card back); null for any other Act, or a card Act with no card in it. A spring
  * is no play of its own: `Plays.add` reveals the back it names.
@@ -96,6 +124,8 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
     ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
     ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
+    ...(handedBackOf(act.payload.handedBack)),
+    ...(pierceOf(act.payload.pierce)),
     ...(instant ? {
       instant: true as const,
       ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),
@@ -120,6 +150,20 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
   const live = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !p.spent && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
 }
+
+/**
+ * Whether a play is over (spent-marks design, section 1): caught, ended by an admin, didn't take, instant, spent by a filing, a back that sprang, or its
+ * time is up and its card does not keep. In a moment (`then`), a play named there is judged as it stood: its timed end does not count.
+ */
+export function playOver(p: CardPlay, now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean {
+  if (p.caught || p.reversed || p.untaken || p.instant || p.spent || p.revealed) return true;
+  if (then?.has(p.id)) return false;
+  return p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card);
+}
+
+/** Whether a kind is spent on a post: it has plays, and every one is over. */
+export const kindSpent = (plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean =>
+  plays.length > 0 && plays.every((p) => playOver(p, now, keeps, then));
 
 /**
  * The plays that hold a place in a target's stack, which is what the form and the ghost marks ask the rules whether another card lands on: `livePlays`, and also a fall a filing has spent, as the
@@ -221,11 +265,11 @@ export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<Ca
     .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
-/** The soonest end still ahead among plays beyond a post, as an epoch, or null: when what is drawn changes next by itself. */
+/** The soonest end still ahead among plays that have one (a play beyond a post, or a ward on a post), as an epoch, or null: when what is drawn, or what a mark says, changes next by itself. */
 export function nextEnd(plays: readonly CardPlay[], now: number): number | null {
   let soonest: number | null = null;
   for (const p of plays) {
-    if (!p.reach || p.ends === undefined) continue;
+    if (p.ends === undefined) continue;
     const at = Date.parse(p.ends);
     if (at > now && (soonest === null || at < soonest)) soonest = at;
   }
@@ -303,11 +347,16 @@ export function sameView(a: CardView, b: CardView): boolean {
  * else its `summary`, else the first sentence of what `describe` says under `settings`, else (no settings to describe under)
  * its name; no edge, no notch, no controls. A play that ends on a timer (`endsAt`, a Use's `ends`) gives the view its way out,
  * "Ends Nov 7, 9:14 PM", in the reader's zone; a card that keeps (`rules.keeps`) whose end has passed at `now` says "Ended Nov 7, 9:14 PM. Posts written while it was up keep it." A status that is a function is given the card's `plays` on the post.
+ * The overloads: with no `endsAt` there is no end to word and no clock is needed; with an `endsAt` (even one that may be `undefined`) a `now` is required, so the tense of "Ends" or "Ended" is never guessed.
+ * A strip showing a post in a moment passes a clock before the end, so the end reads as it stood then.
  */
-export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now?: number): CardView {
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: undefined, plays?: readonly CardPlay[]): CardView;
+/** With an end that may be given, the clock is required: the tense of "Ends" or "Ended" is the clock's to give. */
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings: Settings | undefined, endsAt: string | undefined, plays: readonly CardPlay[], now: number): CardView;
+export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<CardUi, 'status' | 'summary' | 'describe'> | undefined, settings?: Settings, endsAt?: string, plays: readonly CardPlay[] = [], now = 0): CardView {
   const described = ui && settings ? ui.describe(settings) : '';
   const first = /^.*?[.!?](?=\s|$)/s.exec(described.trim())?.[0] ?? described.trim();
-  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && now !== undefined && Date.parse(endsAt) <= now ? keptEndedWords(endsAt) : endsWords(endsAt) } : {}), yours: false, controls: [], notes: {} };
+  return { progress: null, state: (typeof ui?.status === 'function' ? ui.status(plays) : ui?.status) ?? ui?.summary ?? (first || rules.name), ...(endsAt !== undefined ? { ends: rules.keeps === true && Date.parse(endsAt) <= now ? keptEndedWords(endsAt, now) : endsWords(endsAt, now) } : {}), yours: false, controls: [], notes: {} };
 }
 
 export interface Plays {
@@ -450,6 +499,15 @@ export function createPlays(): Plays {
         }
         const found = playOf(act);
         if (!found) continue;
+        /* A Move that got past a ward with a pierce spends that play (as `setSpent` does for a filing's fall): marked now, or held for when the play arrives. */
+        const spends = spendsOf(act);
+        if (spends !== null) {
+          spentPlays.add(spends);
+          const at = postOf.get(spends);
+          const mine = at === undefined ? undefined : byPost.get(at);
+          const was = mine?.get(spends);
+          if (mine && was && !was.spent) { mine.set(spends, { ...was, spent: true }); touched.add(at!); }
+        }
         const early = found.faceDown ? springs.get(found.id) : undefined;
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
@@ -680,12 +738,13 @@ export async function rereadSurfaces(api: KayfaApi, plays: Plays, surfaces: Read
 
 /**
  * Read the live plays above a page's posts (`KayfaApi.effectsAbove`): on its distinct authors, its thread and its board, in one read
- * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post.
+ * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post. `failed`, if given,
+ * is called when the read of the plays failed, for a caller that reads again.
  */
-export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>): Promise<readonly Act[]> {
+export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>, failed?: () => void): Promise<readonly Act[]> {
   const authors = [...new Set(characters.filter((c): c is Id => c !== null))];
   if (authors.length === 0 && thread === null && board === null) return [];
-  const above = await api.effectsAbove(authors, thread, board).catch(() => []);
+  const above = await api.effectsAbove(authors, thread, board).catch(() => { failed?.(); return []; });
   const acts = above.map((p) => p.act);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);
@@ -697,5 +756,5 @@ export async function readAbove(api: KayfaApi, plays: Plays, characters: readonl
  * default case draws the words in `PostEffects`) and the ORIGIN box both ask `holdsEffects`, so the kinds that wear an
  * effect, and so carry marks, are one list.
  */
-const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash']);
+const WITHOUT_EFFECTS: ReadonlySet<ActKind> = new Set<ActKind>(['card', 'unmask', 'announce', 'tally', 'reveal', 'move', 'move_end', 'move_keep', 'set', 'take_back', 'spring', 'update', 'card_end', 'visit', 'visit_join', 'visit_end', 'report', 'report_verdict', 'intercept', 'infraction', 'ban', 'appeal', 'appeal_ruling', 'donation', 'draw', 'wash', 'poll', 'ballot', 'poll_close']);
 export const holdsEffects = (kind: ActKind): boolean => !WITHOUT_EFFECTS.has(kind);

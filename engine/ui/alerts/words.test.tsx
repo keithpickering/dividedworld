@@ -120,6 +120,23 @@ describe('a trap', () => {
       ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Spritey',
     });
   });
+  describe('passed: a pierce got the cast past a card set face down', () => {
+    const cast = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', reach: 'post', pierce: { by: 'pc', card: 'pass' } } });
+    const r = row({ kind: 'trapStruck', sub: 'passed', act: 's', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+    test('the engine\'s words name the pierce and the cast, say nothing of the back, and link the cast\'s post', () => {
+      expect(said(r, ctx([cast, act('post43', { seq: 43 })]))).toEqual({
+        line: 'Your Hall Pass got your Whoops! past a card set face down',
+        detail: 'It stays face down and didn\'t spring, and whoever set it isn\'t told. In Hobbies.',
+        ways: [{ text: 'Go to the post', to: '/t/t1?page=3#post-43' }], who: 'Spritey',
+      });
+    });
+    test('the instance\'s voice is asked first with how: passed, and no setter, span or back card', () => {
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      expect(said(r, ctx([cast, act('post43', { seq: 43 })], { ui }))).toMatchObject({ line: 'L', detail: 'D' });
+      expect(seen).toEqual([{ how: 'passed', setter: null, card: 'Hall Pass', laid: 'Whoops!', span: null, setterStaff: false }]);
+    });
+  });
   test('struck by a quote that met conditions: the matched ones, shortened, and never an Anyone-but list', () => {
     const laid = act('s', { kind: 'card', targetActId: 'post43', payload: { card: 'whoops', spring: 'sp' } });
     const passage = 'the punchline that goes on and on and on past forty characters of a long joke';
@@ -240,6 +257,11 @@ describe('a trap', () => {
         { how: 'rode', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: 'two days', setterStaff: false },
       ]);
     });
+    test('sprang (yours) with no quadrant on the spring says every reaction pays', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+      const bare = spring({ payload: { card: 'chess', trigger: 'cast', did: 'rode', set: 'set1', by: 'k' } });
+      expect(said(r, withChess([bare, act('post9', { seq: 9 })])).detail).toBe('A card it was waiting for was cast there and set it off. The cast landed, and every reaction to it pays you at each settlement. In Hobbies.');
+    });
     test('sprang (yours) says the cast landed and its reactions of the kind named pay at each settlement', () => {
       const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
       expect(said(r, withChess([rode, act('post9', { seq: 9 })]))).toEqual({
@@ -247,6 +269,48 @@ describe('a trap', () => {
         detail: 'A cast of the card it named set it off. The cast landed, and its reactions of the kind you named pay you at each settlement. In Hobbies.',
         ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-9' }], who: 'Pipewrench',
       });
+    });
+  });
+  /* A refund back or sign (the refund outcome): the cast landed and its card went back to its caster; the words branch on the data, never a card's key. */
+  describe('a refund', () => {
+    const cast = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', handedBack: { by: 'set1', card: 'gift' }, layer: 1 } });
+    const gift = { key: 'gift', name: 'Gift', play: 'set' };
+    const kick = { key: 'kick', name: 'Kick', play: 'use' };
+    const withRefunds = (acts: readonly Act[], o: Partial<WordsContext> = {}) => ctx(acts, { instance: { cards: [...(ctx([], {}).instance as unknown as { cards: object[] }).cards, gift, kick] } as unknown as WordsContext['instance'], ...o });
+    test('sprang (yours): the cast landed and its card went back to its caster', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+      const returned = spring({ payload: { card: 'whoops', trigger: 'cast', did: 'returned', set: 'set1', by: 'k' } });
+      expect(said(r, ctx([returned, act('post9', { seq: 9 })])).detail).toBe('A card it was waiting for was cast there and set it off. The cast landed, and its card went back to its caster. In Hobbies.');
+    });
+    test('a cast a sign alone handed back is never told as a face-down card springing', () => {
+      const signed = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', handedBack: { by: 'sign1', card: 'kick' }, layer: 1 } });
+      const sign = act('sign1', { kind: 'card', character: 'cPipe', targetActId: 'post9', seq: null, payload: { card: 'kick' } });
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const s = said(r, withRefunds([signed, sign, act('post9', { seq: 9, character: 'cPipe' })], { names }));
+      expect(s.detail).not.toContain('your card is back in your hand');
+      const seen: { how?: unknown }[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: { how?: unknown }) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      said(r, withRefunds([signed, sign, act('post9', { seq: 9, character: 'cPipe' })], { names, ui }));
+      expect(seen.map((f) => f.how)).not.toContain('returned');
+    });
+    test('a cast a ride back let land and a sign then refunded is told the ride back\'s words, naming the ride back\'s setter', () => {
+      const both = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', rode: 'set1', handedBack: { by: 'sign1', card: 'kick' }, layer: 1 } });
+      const sign = act('sign1', { kind: 'card', character: 'cOther', targetActId: 'post9', seq: null, payload: { card: 'kick' } });
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const s = said(r, ctx([both, sign, set(), act('post9', { seq: 9, character: 'cPipe' })], { names }));
+      expect(s.line).toBe('Pipewrench\'s face-down card was waiting for your Whoops!');
+      expect(s.detail).toContain('landed as usual');
+    });
+    test('the caster is told its card is back, in the engine\'s words, and the instance voice is handed how: returned', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const acts = [cast, set(), act('post9', { seq: 9, character: 'cPipe' })];
+      const s = said(r, withRefunds(acts, { names }));
+      expect(s.line).toBe('Pipewrench\'s face-down card was waiting for your Whoops!');
+      expect(s.detail).toBe('A card set face down on that post sprang on your cast. It landed, and your card is back in your hand. In Hobbies.');
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      said(r, withRefunds(acts, { names, ui }));
+      expect(seen).toEqual([{ how: 'returned', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: 'two days', setterStaff: false }]);
     });
   });
   test('sprang, as it was written before: the old words', () => {
