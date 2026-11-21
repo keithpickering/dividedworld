@@ -271,6 +271,10 @@ describe('a trap', () => {
       const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
       const s = said(r, withRefunds([signed, sign, act('post9', { seq: 9, character: 'cPipe' })], { names }));
       expect(s.detail).not.toContain('your card is back in your hand');
+      const seen: { how?: unknown }[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: { how?: unknown }) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      said(r, withRefunds([signed, sign, act('post9', { seq: 9, character: 'cPipe' })], { names, ui }));
+      expect(seen.map((f) => f.how)).not.toContain('returned');
     });
     test('a cast a ride back let land and a sign then refunded is told the ride back\'s words, naming the ride back\'s setter', () => {
       const both = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', rode: 'set1', handedBack: { by: 'sign1', card: 'kick' }, layer: 1 } });
