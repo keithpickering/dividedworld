@@ -139,6 +139,11 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
       expect(reach, `${c.key}'s reach is one the rule has words for`).toBeDefined();
       expect(face(c.key).describe, c.key).toContain(`You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on ${reach} at no further cost, using up the card.`);
     }
+    /* A card that cuts is faceUpOnly: it is no row of the table above, and its sheet holds no face-down offer or landing place. */
+    const cut = instance.cards.find((c) => c.key === 'buzzkill')!;
+    expect(settable.map((c) => c.key)).not.toContain('buzzkill');
+    expect(faceUpOnly(cut)).toBe(true);
+    expect(face('buzzkill').describe).not.toMatch(/You can also set it face down/u);
     expect(face('autocorrect').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
     expect(face('this').describe).toMatch(/set one lands only when the quote's own words hold its phrase/u);
   });

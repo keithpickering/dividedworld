@@ -15,6 +15,7 @@ import { ui as fourDChessUi } from './cards/4d-chess/ui.ts';
 import { ui as autocorrectUi } from './cards/autocorrect/ui.ts';
 import { ui as belowTheFoldUi } from './cards/below-the-fold/ui.ts';
 import { ui as blindStudyUi } from './cards/blind-study/ui.ts';
+import { ui as buzzkillUi } from './cards/buzzkill/ui.ts';
 import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
 import { ui as cheapShotUi } from './cards/cheap-shot/ui.ts';
 import { ui as classClownUi } from './cards/class-clown/ui.ts';
@@ -68,6 +69,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   autocorrectUi,
   belowTheFoldUi,
   blindStudyUi,
+  buzzkillUi,
   cardCollectorUi,
   cheapShotUi,
   classClownUi,
