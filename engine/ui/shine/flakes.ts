@@ -1111,6 +1111,19 @@ function bandAt(host: HTMLElement, now: number): Band | null {
   return band;
 }
 
+/**
+ * A sticky host's box, kept for `BAND_MS` while the page has not scrolled: a roll over a spot swept bare takes nothing, and must not cost
+ * a layout read on every move that rolls.
+ */
+let rects = new WeakMap<HTMLElement, { at: number; sx: number; sy: number; r: DOMRect }>();
+function rectAt(host: HTMLElement, now: number): DOMRect {
+  const had = rects.get(host), sx = window.scrollX, sy = window.scrollY;
+  if (had && now - had.at >= 0 && now - had.at < BAND_MS && had.sx === sx && had.sy === sy) return had.r;
+  const r = host.getBoundingClientRect();
+  rects.set(host, { at: now, sx, sy, r });
+  return r;
+}
+
 function sizeCanvas(): void {
   if (!canvas) return;
   ratio = Math.min(2, window.devicePixelRatio || 1);
@@ -1153,6 +1166,7 @@ function dispose(): void {
   removeEventListener('pointermove', onMove);
   media?.off(); media = null;
   bands = new WeakMap();
+  rects = new WeakMap();
   cancelAnimationFrame(frame);
   frame = 0;
   carried = []; falling = []; mouse = null; lastTick = null;
@@ -1203,9 +1217,11 @@ function pickUp(host: HTMLElement, opts: ClingOptions, x: number, y: number, tar
   /* A board whose band cannot be computed gets no glitter lent from it: nothing is drawn that has no band to hold. */
   const band = bandAt(host, t);
   if (!band) return;
-  const r = host.getBoundingClientRect();
+  const r = rectAt(host, t);
   const f = take(opts.flakes!, x - r.left, y - r.top, REACH_PICK);
   if (!f) return;
+  /* The post shows its gap at its next draw: asked for now, so a sweep on a still page clears as it goes. */
+  try { opts.landed?.(); } catch (err) { console.error(err); }
   ensure();
   const a = cr() * Math.PI * 2, d = ring ? 12 + cr() * 12 : 4 + cr() * 14;
   carried.push({ f: { ...f }, ox: r.left + f.x - x, oy: r.top + f.y - y, tx: Math.cos(a) * d + (ring ? 0 : 6), ty: Math.sin(a) * d + (ring ? 0 : 10), ph: f.rot * 6, band });
@@ -1247,7 +1263,11 @@ function touchOf(e: Event, id: number | null): TouchPoint | null {
 }
 
 function onTouchStart(e: Event): void {
-  if (finger) return;
+  /* A finger already followed keeps the layer, unless this is the only finger down: then the last one's end never reached the page
+     (its target was taken out mid-gesture), and what it carried is let go so the new one is followed. */
+  const down = (e as TouchEvent).touches as unknown as ArrayLike<TouchPoint> | undefined;
+  if (finger && !(down && down.length === 1)) return;
+  if (finger) { finger = null; toss(0, 0); }
   const p = touchOf(e, null);
   if (p) finger = { id: p.identifier, x: p.clientX, y: p.clientY, sx: window.scrollX, sy: window.scrollY, t: e.timeStamp, vx: 0, vy: 0 };
 }
@@ -1267,7 +1287,8 @@ function onTouchMove(e: Event): void {
   }
   was.x = p.clientX; was.y = p.clientY; was.sx = sx; was.sy = sy; was.t = e.timeStamp;
   if (clingReduced()) return;
-  const moved = Math.hypot(rx, ry);
+  /* As for the mouse, a move after a gap is seeded afresh: a finger rested, then set down a way off, is not one huge slide. */
+  const moved = dt * 1000 < STALE_MS ? Math.hypot(rx, ry) : 0;
   mouse = { x: p.clientX, y: p.clientY, speed: moved, t: e.timeStamp };
   /* The point under the finger is hit-tested only for a move that would pick up, or while something rides it. */
   const want = rolls(moved);
@@ -1286,8 +1307,9 @@ function onTouchEnd(e: Event): void {
   const was = finger;
   if (!was || !touchOf(e, was.id)) return;
   finger = null;
-  toss(was.vx, was.vy);
-  mouse = null;
+  /* A finger that stopped before it lifted throws nothing: what it carried drops where it is. */
+  const still = e.timeStamp - was.t >= STALE_MS;
+  toss(still ? 0 : was.vx, still ? 0 : was.vy);
 }
 
 /** Everything the finger carries leaves it at `TOSS` of its velocity over the page (capped), sprayed sideways, and flies. */
@@ -1300,6 +1322,7 @@ function toss(vx: number, vy: number): void {
     falling.push({ f: c.f, x: mouse.x + c.ox, y: mouse.y + c.oy, vx: ux * j + (cr() - 0.5) * 2 * spray, vy: uy * j + (cr() - 0.5) * 2 * spray, ph: c.ph, spin: 6 + cr() * 14, age: 0, hang: HANG_S * (0.6 + cr() * 0.8), next: 0, band: c.band });
   }
   carried = [];
+  mouse = null;
   if (!frame) frame = requestAnimationFrame(loop);
 }
 
@@ -1529,7 +1552,8 @@ export const cling = {
 
   /**
    * A pointer moved over a registered host. Until the layer exists this is how the first pickup happens; once it does, the
-   * layer listens to the whole page itself. A touch or pen pointer, a coarse device, and reduced motion pick nothing up.
+   * layer listens to the whole page itself. A touch or pen pointer's events, a coarse device, and reduced motion pick nothing up here; a
+   * finger is followed by its touch events instead (`TOUCH`).
    */
   over(e: PointerEvent): void {
     if (!canvas) onMove(e);

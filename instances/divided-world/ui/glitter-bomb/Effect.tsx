@@ -16,7 +16,7 @@
  * `rootMargin`), and once it has stayed there `ARM_MS` by the loop's clock the rest fly out of it and land. A scroll that only
  * passes the spot fires nothing. The burst fires once per mount: leaving and coming back shows every flake landed. Out of view the flakes object is released and dropped (it is deterministic, so it is built
  * again from its seed when the post returns, at ~4,200 flakes a post this is the memory of a long scroll), and so is the cling
- * registration. The surface is `sticky` for cling (a mouse passing over picks glitter up, which lands loose on a post, the reader's own
+ * registration. The surface is `sticky` for cling (a mouse passing over, or a finger slid over it, picks glitter up, which lands loose on a post, the reader's own
  * and never saved or sent; the pointer is over it as the body it covers, since it takes none itself), and unmounting unregisters it and drops the loose glitter.
  * What a pointer picks up is taken off the post, and the mount remembers it (`taken`), so its gap survives a rebuild from the seed.
  * A play's moment runs this same live effect (the engine gives it the moment's own clock and no reader; this effect never reads

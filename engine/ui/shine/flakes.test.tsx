@@ -5,7 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { tokensOf, ratio } from '../contrast.ts';
 import { liftedOver } from '../cards/body.ts';
 import { POST_INK } from './band.ts';
-import { cling, dropLoose, DRAG, GRAVITY, HANG_S, IDLE_MS, landAll, loose, MAX_AIR, MAX_CARRIED, MAX_LOOSE, makeFlakes, shake, SHAKE_PER_FLICK, SHAKE_SPEED, SPRAY, sweepLoose, THROW, burst, type Flakes } from './flakes.ts';
+import { cling, dropLoose, DRAG, GRAVITY, HANG_S, IDLE_MS, landAll, loose, MAX_AIR, MAX_CARRIED, MAX_LOOSE, makeFlakes, shake, SHAKE_PER_FLICK, SHAKE_SPEED, SPRAY, sweepLoose, take, THROW, burst, type Flakes } from './flakes.ts';
 
 /* Divided World's glint (the engine may not import the instance, so the tests carry a copy). */
 const GLINT = '#ffffff';
@@ -532,6 +532,52 @@ describe('a finger slides glitter (docs/plans/2026-11-21-glitter-hands-plan.md, 
     expect(cling.carried()).toBeGreaterThan(0);
     touch('touchcancel', 100, 100);
     expect(cling.carried()).toBe(0);
+  });
+
+  it('a finger that stopped before it lifted throws nothing: what it carried drops where it is', () => {
+    page();
+    touch('touchstart', 10, 150);
+    for (let i = 1; i < 400 && cling.carried() < MAX_CARRIED; i++) touch('touchmove', 10 + ((i * 7) % 280), 150 + ((i * 13) % 40) - 20);
+    for (let x = 20; x <= 140; x += 30) touch('touchmove', x, 150);
+    /* Held still for a second, then lifted. */
+    clock += 1000;
+    touch('touchend', 140, 150);
+    const n = cling.falling();
+    expect(n).toBeGreaterThan(0);
+    for (let t = 0; t < 160; t += 16) cling.tick(t);
+    drawn.at.length = 0;
+    cling.tick(160);
+    /* Nothing thrown: a tenth of a second and more on, every flake is still within its ring of the finger and a flutter's sway. */
+    expect(drawn.at.length).toBeGreaterThan(0);
+    for (const [x] of drawn.at) expect(Math.abs(x - 140)).toBeLessThan(30);
+  });
+
+  it('a touch whose end never reached the page does not stop the next one: a lone new finger is followed', () => {
+    const { flakes } = page();
+    touch('touchstart', 10, 20, 1);
+    /* Finger 1's end is lost (its target was taken out of the page). A new gesture starts with one finger down. */
+    const n = flakes.settled.length;
+    const e = new Event('touchstart', { bubbles: true });
+    Object.defineProperty(e, 'changedTouches', { value: [{ identifier: 2, clientX: 10, clientY: 20 }] });
+    Object.defineProperty(e, 'touches', { value: [{ identifier: 2, clientX: 10, clientY: 20 }] });
+    Object.defineProperty(e, 'timeStamp', { value: (clock += 16) });
+    window.dispatchEvent(e);
+    for (let i = 1; i < 200; i++) { const [x, y] = spread(i); touch('touchmove', x, y, 2); }
+    expect(flakes.settled.length).toBeLessThan(n);
+  });
+
+  it('a pickup roll over a bare spot measures the post at most once per 100 ms, not once a move', () => {
+    const { a, flakes } = page();
+    /* Two spots swept bare: every roll over them is a miss. */
+    for (const x of [150, 190]) while (take(flakes, x, 150, 30)) { /* bare */ }
+    let measured = 0;
+    const was = a.getBoundingClientRect;
+    a.getBoundingClientRect = () => (measured++, was());
+    touch('touchstart', 150, 150);
+    for (let i = 1; i < 60; i++) touch('touchmove', 150 + (i % 2) * 40, 150);
+    expect(cling.carried()).toBe(0);
+    /* 59 moves 16 ms apart: under 1 s, so about ten measures at most. */
+    expect(measured).toBeLessThanOrEqual(11);
   });
 
   it('picks nothing up under reduced motion', () => {
