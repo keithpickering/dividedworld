@@ -1194,7 +1194,9 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
    * plays needs no more rows than it has, and ID_CHUNK bounds each read. Returned beside the plays in the same list; the plays are unchanged.
    */
   const endsOf = async (plays: readonly Row[]): Promise<Row[]> => {
-    const ids = plays.filter((r) => r['kind'] === 'card' && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
+    /* A card play's ends, and a lockout's: an admin ends a lockout with a card_end on its lockedOut spring (0401). */
+    const endable = (r: Row) => r['kind'] === 'card' || (r['kind'] === 'spring' && (r['payload'] as Row | null)?.['did'] === 'lockedOut');
+    const ids = plays.filter((r) => endable(r) && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
     if (ids.length === 0) return [];
     const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
     return merged(rows, 'created_at', 'id');

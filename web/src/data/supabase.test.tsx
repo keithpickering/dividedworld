@@ -60,6 +60,7 @@ const SESSION = { access_token: JWT, refresh_token: 'refresh-1', expires_in: 360
 const A = '11111111-1111-4111-8111-111111111111';
 const B = '22222222-2222-4222-8222-222222222222';
 const C = '33333333-3333-4333-8333-333333333333';
+const D = '44444444-4444-4444-8444-444444444444';
 const SET = '55555555-5555-4555-8555-555555555555';
 const PACK = '66666666-6666-4666-8666-666666666666';
 const SPRING = '66666666-6666-4666-8666-666666666666';
@@ -515,6 +516,14 @@ describe('reads and their rows', () => {
     const plays = await h.api.cardsOnMany([B], 10);
     expect(plays.map((p) => [p.id, p.endsAt])).toEqual([[A, END], [C, undefined]]);
     expect(plays.slice(1)).toSatisfy((rest: readonly object[]) => rest.every((p) => !('endsAt' in p)));
+  });
+  it('reads the end of a lockout (a card_end on a lockedOut spring, 0401) with the plays, and no end of any other spring', async () => {
+    const END = { ...ACT_ROW, id: D, kind: 'card_end', target_act_id: A };
+    const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([END]) : rows([{ ...ACT_ROW, id: A, kind: 'spring', target_act_id: B, payload: { did: 'lockedOut', locks: C, until: '2026-11-22T00:00:00+00:00' } }, { ...ACT_ROW, id: C, kind: 'spring', target_act_id: B, payload: { did: 'rode' } }])));
+    const plays = await h.api.cardsOnMany([B], 10);
+    const ask = h.to('acts_public').find((q) => q.url.searchParams.get('kind') === 'eq.card_end')?.url.searchParams.get('target_act_id');
+    expect(ask).toBe(`in.(${A})`);
+    expect(plays.map((p) => p.kind)).toEqual(['spring', 'spring', 'card_end']);
   });
   it('carries `untaken`, the public flag of a play that did not take (acts_public, 0149), onto the Act, and nothing of a play without it', async () => {
     const h = harness((r) => (r.url.searchParams.get('kind') === 'eq.card_end' ? rows([]) : rows([{ ...ACT_ROW, id: A, kind: 'card', target_act_id: B, untaken: true }, { ...ACT_ROW, id: C, kind: 'card', target_act_id: B, untaken: false }, { ...ACT_ROW, id: B, kind: 'card', target_act_id: B }])));
