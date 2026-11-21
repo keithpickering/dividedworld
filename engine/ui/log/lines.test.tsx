@@ -714,6 +714,19 @@ describe('a card play that the old voice did not answer', () => {
     expect(text(rows[1]!)).not.toContain('came back');
   });
 
+  test('a card a refund handed back says which card gave it back, for a back and for a sign alike, with no aura and no wallet', () => {
+    const handed = (by: string, card: string) => act('k1', 'card', 'c', { targetActId: 'post3', payload: { card: key, handedBack: { by, card } } });
+    for (const giver of [key, 'other']) {
+      const cast = handed('set1', giver);
+      const rows = logRows(data({ log: { ...empty, cards: [playedRow, { card: key, kind: 'returned' as const, act: 'k1', price: 0, at }], wallet: [] }, mine: [char('c', 'Spritey', 'heel')], acts: new Map([post, cast].map((a) => [a.id, a])) }), w, 600, null);
+      const returned = rows.find((r) => r.kind === 'returned')!;
+      expect(returned.what).toBe(`Your ${name} came back`);
+      expect(text(returned)).toBe(`The ${giver === key ? name : 'Other Card'} on your post #3 gave your card back.`);
+      expect(returned.aura).toBe(0);
+      expect(returned.wallet).toBeNull();
+    }
+  });
+
   test('a returned row names the instance\'s card it is for, never another', () => {
     const rows = rowsOf([{ card: 'other', kind: 'returned' as const, act: 'k1', price: 0, at }], []);
     const returned = rows.find((r) => r.kind === 'returned')!;
@@ -1310,6 +1323,15 @@ describe('the payout cards\' lines', () => {
     /* Retuned, the new share is the one said. */
     const half = { ...w, instance: { ...w.instance, cards: w.instance.cards.map((c) => (c.key === 'chess' ? { ...c, trap: { trigger: { on: 'cast' as const }, outcome: { kind: 'ride' as const, share: 0.5 } } } : c)) } };
     expect(text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), half, 600, null)[0]!)).toContain('pays you half a vote,');
+  });
+
+  test('a refund back that returned a cast says the cast landed and its card went back to its caster\'s hand', () => {
+    const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', handedBack: { by: 'set1', card: 'chess' } } });
+    const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'chess', trigger: 'cast', did: 'returned', set: 'set1', by: 'k1' } });
+    const log = { ...empty, setEnds: [{ play: 'set1', card: 'chess', post: 'post3', spring: 'sp', endedAt: later, endedBy: 'sprung' as const }] };
+    const rows = logRows(data({ log, mine: [char('p', 'Pipewrench', 'heel')], acts: new Map([...posts, play, spring].map((a) => [a.id, a])), names }), w, 600, null);
+    expect(rows.map((r) => r.kind)).toEqual(['sprung']);
+    expect(text(rows[0]!)).toBe('4D Chess on your post #3 sprang when Spritey cast Whoops! on it. Whoops! landed, and its card went back to its caster\'s hand.');
   });
 
   test('a ride that rode with no quadrant says each vote it draws pays, never "of the kind"', () => {

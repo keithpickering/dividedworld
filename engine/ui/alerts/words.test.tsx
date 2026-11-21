@@ -254,6 +254,26 @@ describe('a trap', () => {
       });
     });
   });
+  /* A refund back or sign (the refund outcome): the cast landed and its card went back to its caster; the words branch on the data, never a card's key. */
+  describe('a refund', () => {
+    const cast = act('k', { kind: 'card', character: 'c1', targetActId: 'post9', seq: null, payload: { card: 'whoops', handedBack: { by: 'set1', card: 'kick' }, layer: 1 } });
+    test('sprang (yours): the cast landed and its card went back to its caster', () => {
+      const r = row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+      const returned = spring({ payload: { card: 'whoops', trigger: 'cast', did: 'returned', set: 'set1', by: 'k' } });
+      expect(said(r, ctx([returned, act('post9', { seq: 9 })])).detail).toBe('A card it was waiting for was cast there and set it off. The cast landed, and its card went back to its caster. In Hobbies.');
+    });
+    test('the caster is told its card is back, in the engine\'s words, and the instance voice is handed how: returned', () => {
+      const r = row({ kind: 'trapStruck', act: 'k', character: 'c1', name: 'Spritey', title: 'Hobbies' });
+      const acts = [cast, set(), act('post9', { seq: 9, character: 'cPipe' })];
+      const s = said(r, ctx(acts, { names }));
+      expect(s.line).toBe('Pipewrench\'s face-down card was waiting for your Whoops!');
+      expect(s.detail).toBe('A card set face down on that post sprang on your cast. It landed, and your card is back in your hand. In Hobbies.');
+      const seen: unknown[] = [];
+      const ui = { copy: { ...ctx().ui.copy, alerts: { trapStruck: (f: unknown) => { seen.push(f); return { line: 'L', detail: 'D' }; } } } } as unknown as WordsContext['ui'];
+      said(r, ctx(acts, { names, ui }));
+      expect(seen).toEqual([{ how: 'returned', setter: 'Pipewrench', card: null, laid: 'Whoops!', span: 'two days', setterStaff: false }]);
+    });
+  });
   test('sprang, as it was written before: the old words', () => {
     const old = act('sp', { kind: 'card', targetActId: 'post9', payload: { card: 'whoops', trigger: 'cast' } });
     const s = said(row({ kind: 'trapSprang', act: 'sp', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([old, act('post9', { seq: 9 })]));

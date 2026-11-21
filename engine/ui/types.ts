@@ -166,7 +166,8 @@ export interface AlertCopy {
 /** What a `trapStruck` alert's words may say (AlertCopy.trapStruck): public facts of the spring, never an account or a class. */
 export interface TrapStruckFacts {
   /** `rode`: a cast landed as usual on a ride back's post (the setter is paid for its reactions); `laid` is the caster's own card that landed, and `card` the setter's card, null where its spring was not read. */
-  readonly how: 'quote' | 'caught' | 'rode';
+  /** `returned`: a cast landed on a refund back's post and its card went back to its caster's hand (the caster is told). */
+  readonly how: 'quote' | 'caught' | 'rode' | 'returned';
   readonly setter: string | null;
   readonly card: string | null;
   readonly laid: string | null;

@@ -27,6 +27,10 @@ describe('what a set card says it does', () => {
     expect(springWords(trap({ kind: 'ride', share: 0.25, every: true }, { upTo: 'common' }))).toBe('Waits for a card up to common to be cast on this post, lets it land, and pays you a quarter of a vote for each vote it draws.');
     expect(springWords(trap({ kind: 'ride', share: 1 }))).toBe('Waits for the card it names to be cast on this post, lets it land, and pays you a vote for each vote it draws of the kind you name.');
   });
+  test('a refund says it lets the cast land and gives the card back to its caster', () => {
+    expect(springWords(trap({ kind: 'refund' }, { flavors: ['sweet'], upTo: 'uncommon' }))).toBe('Waits for a Sweet card, up to common, to be cast on this post, lets it land, and gives the card back to its caster.');
+    expect(springWords(trap({ kind: 'refund' }))).toBe('Waits for the card it names to be cast on this post, lets it land, and gives the card back to its caster.');
+  });
   test('a catching match is unchanged', () => {
     expect(springWords({ play: 'set', rarity: 'common', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' } } } as never)).toBe('Waits for a card up to common to be cast on this post, and takes it.');
   });

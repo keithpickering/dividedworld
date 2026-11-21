@@ -23,7 +23,8 @@ export async function readTrapActs(api: Pick<KayfaApi, 'actsById' | 'characters'
       if (want.length > 0) for (const a of await api.actsById(want)) gotActs.set(a.id, a);
     };
     await read(struck.map((a) => text(a.payload.spring)));
-    const setOf = (a: Act) => text(a.payload.caught) ?? text(a.payload.rode) ?? text(held(text(a.payload.spring) ?? '')?.payload.set);
+    const handedBackBy = (a: Act): Id | null => { const h = a.payload.handedBack; return typeof h === 'object' && h !== null ? text((h as { by?: unknown }).by) : null; };
+    const setOf = (a: Act) => text(a.payload.caught) ?? text(a.payload.rode) ?? handedBackBy(a) ?? text(held(text(a.payload.spring) ?? '')?.payload.set);
     await read(struck.map(setOf));
     const setters = struck.map((a) => held(setOf(a) ?? '')?.character ?? held(text(a.payload.spring) ?? '')?.character ?? null);
     /* Every setter is read, named already or not: a staff setter's catching set card takes nothing, and whether a character is staff is public but is not held with a name. */
