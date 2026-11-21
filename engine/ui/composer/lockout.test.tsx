@@ -69,6 +69,7 @@ describe('the reply box of a locked-out mask', () => {
     open(w);
     await box();
     await screen.findByText(/is locked out of this thread until/u);
+    await w.listening();
     expect((await w.fake.reverseCard(spring.id)).ok).toBe(true);
     await waitFor(() => expect(screen.queryByText(/is locked out of this thread until/u)).toBeNull());
     await userEvent.click(await box());
@@ -81,6 +82,7 @@ describe('the reply box of a locked-out mask', () => {
     open(w);
     await box();
     expect(screen.queryByText(/is locked out of this thread until/u)).toBeNull();
+    await w.listening();
     await act(async () => { await lockOut(w); });
     await screen.findByText(/is locked out of this thread until/u);
   });

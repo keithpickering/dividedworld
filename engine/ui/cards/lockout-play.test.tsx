@@ -53,6 +53,7 @@ describe('the play form of a locked-out mask', () => {
     const { spring } = await lockOut(w);
     const form = await formOn(w, w.thread, 2);
     expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
+    await w.listening();
     expect((await w.fake.reverseCard(spring.id)).ok).toBe(true);
     await waitFor(() => expect(within(form).queryByText(/is locked out of this thread until/u)).toBeNull());
     expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();

@@ -8,6 +8,7 @@ import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { Instance } from '../../rules/types.ts';
 import type { Act, Id, Refusal } from '../data/api.ts';
 import type { CardUi } from '../cards/types.ts';
+import { waitFor } from '@testing-library/react';
 import { buildWorld, testInstance } from '../test-world.tsx';
 
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
@@ -35,7 +36,12 @@ export function lockoutWorld(admin = false) {
   fake.seed.cards(me, { lksalty: 6, lkwide: 6 }); fake.seed.cards(other, { lkback: 3 });
   if (admin) fake.seed.admin(me);
   fake.signInAs(me);
-  return { fake, me, other, pipe, zed, spritey, thread, post, second, elsewhere: away.thread, elsewherePost: away.act };
+  /* A live Act sent before an open thread has subscribed reaches no one, so a test that plays or ends a lockout while a thread is open waits on `listening` first. */
+  const subscribed = new Set<Id>();
+  const subscribe = fake.subscribeThread.bind(fake);
+  fake.subscribeThread = (t, l) => { const off = subscribe(t, l); subscribed.add(t); return off; };
+  const listening = async (t: Id = thread) => { await waitFor(() => { if (!subscribed.has(t)) throw new Error(`thread ${t} is not subscribed yet`); }); };
+  return { fake, me, other, pipe, zed, spritey, thread, post, second, elsewhere: away.thread, elsewherePost: away.act, listening };
 }
 export type LockoutWorld = ReturnType<typeof lockoutWorld>;
 

@@ -19,6 +19,7 @@ async function open(admin = false) {
   w.fake.seed.post(w.thread, w.pipe, 'my own post');
   renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
   await screen.findByRole('article', { name: /^Post 3 /u });
+  await w.listening();
   return w;
 }
 const stamps = () => document.querySelectorAll('.kb-postbit-locked');
