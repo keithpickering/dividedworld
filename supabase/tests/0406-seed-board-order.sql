@@ -15,8 +15,8 @@ declare
 begin
   perform seed_instance(payload);
   -- The times themselves, so the red does not rest on how three random ids happen to sort.
-  if not (select (select created_at from boards where slug = 'zz-last-made-first') < (select created_at from boards where slug = 'aa-second')
-             and (select created_at from boards where slug = 'aa-second') < (select created_at from boards where slug = 'mm-third')) then
+  if (select (select created_at from boards where slug = 'zz-last-made-first') < (select created_at from boards where slug = 'aa-second')
+         and (select created_at from boards where slug = 'aa-second') < (select created_at from boards where slug = 'mm-third')) is not true then
     raise exception 'each board should be made after the one before it in the payload: %',
       (select jsonb_object_agg(slug, created_at) from boards where slug = any (array['zz-last-made-first', 'aa-second', 'mm-third']));
   end if;
