@@ -438,8 +438,9 @@ begin
   if (select p.lock_until from play_post p where p.play = lb[1]) is distinct from (select (s.payload ->> 'until')::timestamptz from acts s where s.kind = 'spring' and s.payload ->> 'set' = lb[1]::text) then raise exception '7 lock_until is not the spring''s until'; end if;
   select string_agg(d.why, '; ') into drift from play_post_drift() d where d.play = any (lb || gb || array[ln, gn, lu, gu, l, g]);
   if drift is not null then raise exception '7 the kept rows drift: %', drift; end if;
-  -- Still over for the stack, the limit and the counts: a sprung back is over at its spring, locked out or not.
-  if exists (select 1 from play_post p where p.play = any (lb || gb) and p.over_at is null) then raise exception '7 a back sprung into a lockout is not over'; end if;
+  -- Changed by 0412_lockout_play_post.sql: a back sprung into a lockout is in force while the lockout is, so its ends_at is the spring's until and its over_at is null (no admin has ended it); post_effects_up still counts it for no slot.
+  if exists (select 1 from play_post p where p.play = any (lb || gb) and p.over_at is not null) then raise exception '7 a back sprung into a lockout is over before an admin ends it'; end if;
+  if exists (select 1 from play_post p where p.play = any (lb || gb) and p.ends_at is distinct from (select (s.payload ->> 'until')::timestamptz from acts s where s.kind = 'spring' and s.payload ->> 'set' = p.play::text)) then raise exception '7 a back sprung into a lockout does not end at the spring''s until'; end if;
   if post_effects_up(l) <> 0 or post_effects_up(g) <> 0 then raise exception '7 a back sprung into a lockout holds a slot of the post: %, %', post_effects_up(l), post_effects_up(g); end if;
   if (select plays from post_kinds where post = l and kind = '') is distinct from 3 or (select plays from post_kinds where post = g and kind = '') is distinct from 3 then raise exception '7 the count of backs that sprang is not 3 on each post'; end if;
   -- The page: the lockouts ahead keep their backs up, with the newest sprung back and the Use; the lockouts past leave the stand-ins alone.
@@ -464,6 +465,9 @@ begin
   r := post_plays(array[l]);
   perform tests.unbecome();
   if (select p.lock_until from play_post p where p.play = lb[1]) is not null then raise exception '7 an ended lockout still holds a lock_until'; end if;
+  -- Changed by 0412: the admin's end is the back's over_at (the card_end's time), and its ends_at stays the spring's until.
+  if (select p.over_at from play_post p where p.play = lb[1]) is distinct from (select e.created_at from acts e where e.kind = 'card_end' and e.target_act_id = sp) then raise exception '7 an admin''s end of the lockout is not the back''s over_at'; end if;
+  if (select p.over_at from play_post p where p.play = lb[2]) is not null then raise exception '7 the lockout that was not ended is over'; end if;
   if (select p.lock_until from play_post p where p.play = lb[2]) is null then raise exception '7 the lockout that was not ended lost its lock_until'; end if;
   got := pg_temp.play_ids(r -> 'plays');
   if got is distinct from pg_temp.sorted(array[lb[2], ln, lu]) then raise exception '7 after an admin ended one lockout the page holds % and should hold %', got, pg_temp.sorted(array[lb[2], ln, lu]); end if;
