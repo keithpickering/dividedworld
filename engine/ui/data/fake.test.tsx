@@ -5062,6 +5062,24 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await backs()).toEqual([second.id]);
     });
 
+    test('postPlays drops a sprung back whose lockout an admin ended, and keeps the one whose lockout holds', async () => {
+      const { fake, ana, bo, root, anaFace, boFace, boHeel, post } = lk();
+      const first = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      fake.clock.advance(MINUTE);
+      fake.signInAs(ana);
+      const second = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boHeel, post, {}, ''));
+      const backs = async () => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'set').map((a) => a.id).sort();
+      expect(await backs()).toEqual([first.id, second.id].sort());
+      const firstSpring = (await fake.postPlays([post])).plays.find((a) => a.kind === 'spring' && a.payload.set === first.id)!;
+      fake.signInAs(root);
+      must(await fake.reverseCard(firstSpring.id));
+      expect(await backs()).toEqual([second.id]);
+    });
+
     test('the Move that springs it still writes the reply it carries', async () => {
       const { fake, bo, anaFace, boFace, thread, post } = lk();
       must(await fake.setCard('lkback', anaFace, post, {}));

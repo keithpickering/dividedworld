@@ -8,7 +8,7 @@
 --     backs page with `card` null; `spun` and `cast` come with a page.
 --   * thread_page's plays for a post equal post_plays's, and its origin's likewise; its `counts` and the origin's are the counts.
 --   * A back that sprang into a lockout (`did: lockedOut`, the spring's `until`) stays on the page while that lockout is ahead (the owner's answer to #993, option a): `play_post.lock_until` holds the end, post_play_ids carries
---     the back, and it stays over for post_effects_up and the counts. Two such backs, a newer sprung back with no lockout and a most-drawn Use: the page holds all of them; with the lockouts' ends past, only the stand-ins.
+--     the back, and it stays over for post_effects_up and the counts. Two such backs, a newer sprung back with no lockout and a most-drawn Use: the page holds all of them; with the lockouts' ends past, only the stand-ins; an admin's end of one lockout drops its back.
 --   * The kept tables are no signed-in player's, and an anonymous visitor reaches none of the reads.
 -- The cards are this file's own (ppl...). The row bounds of the reads are in 0409-post-plays-scale.sql.
 
@@ -411,7 +411,7 @@ declare
   reader uuid := tests.account('ppl-7-reader'); rc uuid := tests.character(reader, 'Ppl Seven Reader');
   t uuid := tests.thread('Ppl lockouts');
   l uuid := tests.post(a, t, 'Locked.'); g uuid := tests.post(a, t, 'Gone.');
-  lb uuid[] := '{}'; gb uuid[] := '{}'; ln uuid; gn uuid; lu uuid; gu uuid; r jsonb; got uuid[]; i integer; k integer;
+  lb uuid[] := '{}'; gb uuid[] := '{}'; ln uuid; gn uuid; lu uuid; gu uuid; sp uuid; r jsonb; got uuid[]; i integer; k integer;
   drift text;
 begin
   perform pg_temp.cards();
@@ -455,4 +455,18 @@ begin
   r := post_plays(array[l, g]);
   if pg_temp.play_ids(r -> 'plays') is distinct from pg_temp.sorted(lb || array[ln, lu, gn, gu]) then raise exception '7 two posts in one call: %', pg_temp.play_ids(r -> 'plays'); end if;
   perform tests.unbecome();
+  -- An admin ends the first lockout early (reverse_card writes a card_end on its spring, as lockout_ends reads): its back leaves the page (it is no stand-in), its lock_until is null, the other stays, and nothing drifts.
+  insert into admins (account) values (aacct);
+  sp := (select s.id from acts s where s.kind = 'spring' and s.payload ->> 'set' = lb[1]::text);
+  perform tests.become(aacct);
+  perform reverse_card(sp);
+  perform tests.become(reader);
+  r := post_plays(array[l]);
+  perform tests.unbecome();
+  if (select p.lock_until from play_post p where p.play = lb[1]) is not null then raise exception '7 an ended lockout still holds a lock_until'; end if;
+  if (select p.lock_until from play_post p where p.play = lb[2]) is null then raise exception '7 the lockout that was not ended lost its lock_until'; end if;
+  got := pg_temp.play_ids(r -> 'plays');
+  if got is distinct from pg_temp.sorted(array[lb[2], ln, lu]) then raise exception '7 after an admin ended one lockout the page holds % and should hold %', got, pg_temp.sorted(array[lb[2], ln, lu]); end if;
+  select string_agg(d.why, '; ') into drift from play_post_drift() d where d.play = any (lb || gb || array[ln, gn, lu, gu, l, g]);
+  if drift is not null then raise exception '7 the kept rows drift after an admin ended a lockout: %', drift; end if;
 end $$;

@@ -44,7 +44,7 @@ create index play_post_lock on play_post (post, lock_until) where lock_until is 
 -- ---- 2. play_row ----
 
 -- A play's row, computed from the Acts and the rows beside them, or null for an Act that is not a `card` or `set` with a target. Its fields are play_post's columns in order, the last being `lock_until`: a back's spring's `until` when that spring
--- is a lockout (`did: lockedOut`), else null. It ends nothing (the back is over at its spring); the page reads it to keep the back up while the lockout is live.
+-- is a lockout (`did: lockedOut`) that no admin's `card_end` has ended (lockout_ends, 0402), else null. It ends nothing (the back is over at its spring); the page reads it to keep the back up while the lockout is live.
 --
 -- Every way a play ends, and the predicate it mirrors. A new ender's author adds its line here, its trigger line below and its case to supabase/tests/0407-play-post.sql, or play_post_drift() names the play.
 --   by time          a card's `ends` (payload), or play_reach.ends_at for a card reaching beyond a post, which writes no `ends`; a back's face_down.ends_at; a drive play's drive close (below).   -> ends_at
@@ -85,7 +85,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
          rf.play is null,
          a.kind = 'set' and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text),
          coalesce((select sum(t.count) from reaction_tallies t where t.act = a.id), 0)::integer + (select count(*) from threads th where th.origin_act_id = a.id)::integer,
-         case when a.kind = 'set' then (select min((s.payload ->> 'until')::timestamptz) from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text and s.payload ->> 'did' = 'lockedOut') end
+         case when a.kind = 'set' then (select min((s.payload ->> 'until')::timestamptz) from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text and s.payload ->> 'did' = 'lockedOut'
+                                                                   and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = s.id)) end
   from acts a
   left join face_down f on f.play = a.id and a.kind = 'set'
   left join play_reach pr on pr.play = a.id and a.kind = 'card'
@@ -143,6 +144,8 @@ begin
   elsif new.kind = 'card_end' then
     -- The play the admin ended, and what it cut: an admin's end of a cutting play brings the cut play back.
     perform refresh_play_post(new.target_act_id);
+    -- A lockout's spring an admin ended: the back it names holds no lockout now (lock_until).
+    perform refresh_play_post((t2.payload ->> 'set')::uuid) from acts t2 where t2.id = new.target_act_id and t2.kind = 'spring';
     perform refresh_play_post((t.payload #>> '{cut,play}')::uuid) from acts t where t.id = new.target_act_id and t.kind = 'card' and t.payload ? 'cut';
   else
     -- A spring and a take-back: the back they name.

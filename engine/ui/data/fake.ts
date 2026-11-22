@@ -1940,7 +1940,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if ((a.kind !== 'card' && a.kind !== 'set') || a.target === null || !posts.has(a.target)) continue;
       if (a.kind === 'set') {
         const f = faceDown.get(a.id);
-        const lock = [...acts.values()].find((s) => s.kind === 'spring' && s.payload.set === a.id && s.payload.did === 'lockedOut' && typeof s.payload.until === 'string');
+        const lock = [...acts.values()].find((s) => s.kind === 'spring' && s.payload.set === a.id && s.payload.did === 'lockedOut' && typeof s.payload.until === 'string' && ![...acts.values()].some((e) => e.kind === 'card_end' && e.target === s.id));
         if (f) rows.push({ act: a, kind: '', over: f.sprung !== null || f.takenBack !== undefined, ends: f.endsAt, took: true, sprung: f.sprung !== null, drawn: drawOf.get(a.id) ?? 0, lockUntil: lock === undefined ? null : Date.parse(lock.payload.until as string) });
         continue;
       }
