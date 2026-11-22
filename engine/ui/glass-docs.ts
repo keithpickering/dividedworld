@@ -206,6 +206,20 @@ export interface LogDoc {
 /** The Acts an estimate's lines name beyond those held. */
 export const estimateActIds = (estimate: Estimate, held: ReadonlySet<Id>): Id[] => [...new Set([...estimate.lines.flatMap((l) => (l.act ? [l.act] : [])), ...(estimate.crowd?.acts ?? [])].filter((id) => !held.has(id)))];
 
+/**
+ * The plays whose cutting Acts (`actsCutting`) the log's lines need: the page's own played cards, whose Gimmick rows say when they really
+ * ended, and every play a cut already read names, whose admin-reversed cutter's row says it is back up only where no other cutter holds it.
+ */
+export function playsCutAsked(log: Pick<LogPage['log'], 'cards'>, acts: Iterable<Act>): Id[] {
+  const plays = new Set(log.cards.flatMap((c) => (c.act === null ? [] : [c.act])));
+  for (const a of acts) {
+    const cut = a.kind === 'card' ? a.payload.cut : undefined;
+    const play = typeof cut === 'object' && cut !== null && !Array.isArray(cut) ? (cut as { play?: unknown }).play : undefined;
+    if (typeof play === 'string') plays.add(play);
+  }
+  return [...plays];
+}
+
 /** My log and the settlement summary are one document, so a move between them loads nothing. */
 export const logKey = (): string => '/log';
 
@@ -233,7 +247,13 @@ export function loadLog(env: GlassEnv, preload: Preload): Promise<ScreenDoc<LogD
       },
       () => null,
     ).catch(() => null);
-    const page = await paged;
+    /* The Acts that cut the page's plays (actsCutting): a Gimmick's row says when it really ended, and the row that names its cut may be on no
+       page read. It decides a fact, not a decoration, so its failure fails the page as the page's own read does. */
+    const read = await paged;
+    const held = new Set(read.acts.map((a) => a.id));
+    const plays = playsCutAsked(read.log, read.acts);
+    const cutting = plays.length === 0 ? [] : (await env.api.actsCutting(plays)).filter((a) => !held.has(a.id));
+    const page = cutting.length === 0 ? read : { ...read, acts: [...read.acts, ...cutting] };
     const conduct = await conductRead;
     let timer: ReturnType<typeof setTimeout> | undefined;
     const waited = await Promise.race([withActs, new Promise<'late'>((resolve) => { timer = setTimeout(() => resolve('late'), ESTIMATE_WAIT_MS); })]);

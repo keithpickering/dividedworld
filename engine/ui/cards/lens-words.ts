@@ -163,3 +163,10 @@ export function olderWords(count: number, words: SurfaceWords): string {
 
 /** The Lens's line under a Move that got past a ward with a pierce (a Cheap Shot): the card it was played on, and the Ward it got past where there was one. Both are card names. */
 export const pierceWords = (card: string, ward?: string): string => `Played on a ${card}${ward === undefined ? '' : `, past ${ward}`}`;
+
+/** A cutting play's row in the Lens: the Gimmick it ended, by the instance's card name. */
+export const cutWords = (card: string): string => `Ended the ${card} here early`;
+/** A cut play's row in the Lens: what ended it early, by the instance's card name. */
+export const cutByWords = (card: string): string => `Ended early by a ${card}`;
+/** The heading of a kind whose every play was cut. */
+export const CUT_STATE = 'Ended early';

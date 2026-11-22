@@ -14,6 +14,7 @@ import { fourDChess as fourDChessBase, price as fourDChessPrice } from './4d-che
 import { autocorrect, price as autocorrectPrice } from './autocorrect.ts';
 import { belowTheFold, price as belowTheFoldPrice } from './below-the-fold.ts';
 import { blindStudy, price as blindStudyPrice } from './blind-study.ts';
+import { buzzkill, price as buzzkillPrice } from './buzzkill.ts';
 import { cardCollector as cardCollectorBase, price as cardCollectorPrice } from './card-collector.ts';
 import { cheapShot, price as cheapShotPrice } from './cheap-shot.ts';
 import { classClown, price as classClownPrice } from './class-clown.ts';
@@ -65,6 +66,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [autocorrect as CardRules, autocorrectPrice],
   [belowTheFold as CardRules, belowTheFoldPrice],
   [blindStudy as CardRules, blindStudyPrice],
+  [buzzkill as CardRules, buzzkillPrice],
   [cardCollectorBase as CardRules, cardCollectorPrice],
   [cheapShot as CardRules, cheapShotPrice],
   [classClown as CardRules, classClownPrice],

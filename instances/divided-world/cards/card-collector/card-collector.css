@@ -73,7 +73,8 @@
 }
 
 .kb-trap-face-tag,
-.kb-trap-face-rarity {
+.kb-trap-face-rarity,
+.kb-trap-face-ends {
   font-size: var(--kb-glass-size-label);
   font-weight: 700;
   color: var(--kb-glass-text-2);
@@ -88,6 +89,11 @@
 
 .kb-trap-face-rarity {
   grid-area: rarity;
+}
+
+/* Buzzkill's "ends <time>": a row of its own under the rarity, set apart as the other meta text is. */
+.kb-trap-face-ends {
+  grid-column: 1 / -1;
 }
 
 .kb-trap-face:hover .kb-trap-face-in {

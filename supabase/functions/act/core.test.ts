@@ -487,6 +487,22 @@ test('a cast under a ward is refused in the ward card\'s name', async () => {
   assert.deepEqual(out.body, { field: 'config', error: 'this post\'s Test Shield turns away cards up to uncommon' });
 });
 
+test('a card that cuts is decided against the Gimmicks card_target_reach sent: a play not among them is refused before play_card', async () => {
+  const buzz = { ...base, key: 'test-cut', name: 'Test Cut', rarity: 'rare' as const, cuts: { upTo: 'rare' as const }, validateConfig: (c: unknown) => (typeof (c as { play?: unknown } | null)?.play === 'string' ? ok({ play: (c as { play: string }).play }) : { ok: false as const, why: 'Test Cut names the Gimmick it ends' }) };
+  const world = { ...tested, cards: [...tested.cards, buzz] };
+  const live = new Date(Date.now() + 1e6).toISOString();
+  const up = { card: 'test-hush', act: 'h', gimmick: { kind: 'noQuote' }, ends: live };
+  const answers = { whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'x'.repeat(10), effects: [up] }, play_card: { id: 'k', kind: 'card' } };
+  const missing = pair(answers);
+  const out = await runAction(missing.dbs, world, { action: 'playCard', card: 'test-cut', character: id, target, config: { play: 'zzz' } });
+  assert.deepEqual(out.body, { field: 'config', error: 'that Gimmick isn\'t up on this post' });
+  assert.equal(missing.calls.some((c) => c.includes(':play_card:')), false, missing.calls.join('\n'));
+  const named = pair(answers);
+  const landed = await runAction(named.dbs, world, { action: 'playCard', card: 'test-cut', character: id, target, config: { play: 'h' } });
+  assert.equal(landed.status, 200, JSON.stringify(landed.body));
+  assert.equal(named.calls.some((c) => c.includes(':play_card:')), true);
+});
+
 test('a spring, and a strike\'s card, go out live as Acts of their own', async () => {
   const thread = '44444444-4444-4444-8444-444444444444';
   const spring = { id: 's', kind: 'spring', thread, payload: { card: 'test-snare' } };

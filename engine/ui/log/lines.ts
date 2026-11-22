@@ -844,6 +844,12 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
   const cardName = (key: unknown) => (typeof key === 'string' ? cardNameOf(instance, key) : undefined) ?? 'a card';
+  /* A cutting card's player says what it ended; the Gimmick's player says what ended it, and when. Both from the Act's public `cut` alone. */
+  const cutSaid = (play: Act | undefined): string[] => { const cut = cutOf(play); return cut ? [` It ended the ${cardName(cut.card)} there.`] : []; };
+  const cutOnMine = (play: Act | undefined, when: string): string[] => { const cut = cutOf(play); return cut ? [` It ended your ${cardName(cut.card)} early, at ${utcWhen(when)} UTC.`] : []; };
+  /* The first landed cutting Act that names a play and that no admin reversed: the play's real end. */
+  const cuts = cuttingIndex(data);
+  const cutting = (id: Id | null): Act | undefined => (id === null ? undefined : cuts.get(id)?.[0]);
   const mine = (id: Id | null | undefined) => id !== null && id !== undefined && data.mine.some((c) => c.id === id);
   const nameOf = (id: Id | null | undefined, unknown: string) => (id ? data.mine.find((c) => c.id === id)?.name ?? data.names.get(id) ?? unknown : unknown);
   const at = (iso: string) => micros(iso);
@@ -1014,11 +1020,14 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     /* A Use with a time up says when it ended, once that time has passed, whichever use card it was (the design's section 10: "a timed end"). */
     const ends = typeof play?.payload.ends === 'string' ? play.payload.ends : null;
     /* A scored-as card's end is its window's: the settlement's row (or the row of its own, `scoredAsRows`) says it, so no second row says it ended. */
-    if (ends && Date.parse(ends) <= words.now && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
+    const cutAct = cutting(e.act);
+    if ((cutAct || (ends && Date.parse(ends) <= words.now)) && !instance.cards.find((c) => c.key === e.card)?.scoresAs) {
       rows.push({
-        key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: ends, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
-        /* A card that keeps (`CardRules.keeps`) says what it left: the posts written while it was up keep it. Not a play an admin ended (its `ended` entry, `my_cards_ended`): no post keeps that. */
-        details: [`${cardName(e.card)} on `, link ?? 'your post', instance.cards.find((c) => c.key === e.card)?.keeps === true && !data.log.ended.some((x) => x.play === e.act) ? ' ended. Posts written while it was up keep it.' : ' ended.'],
+        key: `gimmickEnded:${e.act}`, kind: 'gimmickEnded', at: cutAct ? cutAct.createdAt : ends!, what: `${cardName(e.card)}${place ? ` on ${place}` : ''} ended`,
+        /* A card that keeps (`CardRules.keeps`) says what it left: the posts written while it was up keep it. Not a play an admin ended (its `ended` entry, `my_cards_ended`): no post keeps that. A play cut early says what cut it, in place of its timed end. */
+        details: cutAct
+          ? [`${cardName(e.card)} on `, link ?? 'your post', `. A ${cardName(cutAct.payload.card)} ended it early.${instance.cards.find((c) => c.key === e.card)?.keeps === true ? ' Posts written while it was up keep it.' : ''}`]
+          : [`${cardName(e.card)} on `, link ?? 'your post', instance.cards.find((c) => c.key === e.card)?.keeps === true && !data.log.ended.some((x) => x.play === e.act) ? ' ended. Posts written while it was up keep it.' : ' ended.'],
         aura: 0, wallet: null, characters: caster ? [caster] : [],
       });
     }
@@ -1027,7 +1036,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       details: [
         `As ${nameOf(caster, 'one of your characters')}, on `, link ?? 'a post', `${ownOther ? ', a post of one of your own characters' : ''}. `,
         `The card was paid for at the machine; ${e.price > 0 ? `this ${place ? 'play' : 'post'} added ${plain(e.price)}.` : 'this play cost nothing more.'}`,
-        ...said(e.card, play), ...pierceSaid(play),
+        ...said(e.card, play), ...pierceSaid(play), ...cutSaid(play),
       ],
       aura: -e.price, wallet: paid?.balanceAfter ?? null, characters: [caster, ownOther ? post!.character : null].filter((c): c is Id => c !== null),
     });
@@ -1079,14 +1088,14 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       const target = p.reach === 'thread' ? (p.targetName ? `'${p.targetName}'` : 'a thread') : p.targetName ?? 'a character';
       rows.push({
         key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: `A card on your ${p.reach}`,
-        details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`, ...said(play?.payload.card, play)],
+        details: [`${cardName(play?.payload.card)} was played on ${target}${message ? `, with the message “${message}”` : ''}.`, ...said(play?.payload.card, play), ...cutOnMine(play, p.at)],
         aura: 0, wallet: null, characters: p.targetCharacter ? [p.targetCharacter] : [],
       });
       continue;
     }
     rows.push({
       key: `onMine:${p.play}`, kind: 'onMine', at: p.at, what: 'A card on your post',
-      details: [`${nameOf(play?.character, 'Someone')} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`, ...said(play?.payload.card, play)],
+      details: [`${nameOf(play?.character, 'Someone')} played ${cardName(play?.payload.card)} on `, (post && actLink(post, data, words, post.character ?? undefined)) ?? 'your post', `${message ? `, with the message “${message}”` : ''}.`, ...said(play?.payload.card, play), ...cutOnMine(play, p.at)],
       aura: 0, wallet: null, characters: post?.character ? [post.character] : [],
     });
   }
@@ -1184,6 +1193,27 @@ function surfaceRows(data: LogData, words: Words): LogRow[] {
   return rows;
 }
 
+/** The landed cutting Acts no admin reversed (a `card_end` in `data.log.ended`), by the play each names, earliest first: read once for a set of rows. */
+function cuttingIndex(data: LogData): ReadonlyMap<Id, readonly Act[]> {
+  const reversed = new Set(data.log.ended.map((x) => x.play));
+  const index = new Map<Id, Act[]>();
+  for (const a of [...data.acts.values()].filter((x) => x.kind === 'card' && !reversed.has(x.id)).sort((x, y) => Date.parse(x.createdAt) - Date.parse(y.createdAt))) {
+    const cut = cutOf(a);
+    if (cut) index.set(cut.play, [...(index.get(cut.play) ?? []), a]);
+  }
+  return index;
+}
+
+/**
+ * What a landed cutting card's Act names (its public `cut`: the Gimmick's play and the Gimmick's card), or null for any other Act. Read from the Act's payload alone.
+ */
+function cutOf(play: Act | undefined): { readonly play: Id; readonly card: string } | null {
+  const cut = play?.payload.cut;
+  if (typeof cut !== 'object' || cut === null) return null;
+  const { play: target, card } = cut as { play?: unknown; card?: unknown };
+  return typeof target === 'string' && typeof card === 'string' ? { play: target, card } : null;
+}
+
 /**
  * The cards an admin ended (`my_cards_ended`): plain and true, never in character. The caster's player is told it was ended and that
  * nothing came back; the one it landed on is told whose card it was. A reversal between two other players is in neither's view, so no
@@ -1192,6 +1222,7 @@ function surfaceRows(data: LogData, words: Words): LogRow[] {
  */
 function endedRows(data: LogData, words: Words): LogRow[] {
   const cardName = (key: unknown) => (typeof key === 'string' ? cardNameOf(words.instance, key) : undefined) ?? 'a card';
+  const cuts = cuttingIndex(data);
   /* An admin's end of a lockout has its words in the lockout's own lines ("An admin ended it at {time}.", from the card_end this entry names), so it adds none. */
   return data.log.ended.filter((e) => data.acts.get(e.play)?.kind !== 'spring').map((e): LogRow => {
     const play = data.acts.get(e.play);
@@ -1212,11 +1243,19 @@ function endedRows(data: LogData, words: Words): LogRow[] {
       }
     }
     const card = cardName(e.card);
+    /* An admin's end of a cutting card brings its Gimmick back for the rest of its time: the Gimmick's player is told so, from the cut's public facts and the Gimmick's own `ends`. */
+    const cut = mine ? cutOf(play) : null;
+    const cutEnds = cut ? data.acts.get(cut.play)?.payload.ends : undefined;
+    /* Said only where nothing else ended the Gimmick: no other landed cutter names it, and no admin ended it itself (its own row tells that). */
+    const up = cut !== null && !cuts.has(cut.play) && !data.log.ended.some((x) => x.play === cut.play);
+    const back = up && cut && typeof cutEnds === 'string'
+      ? [Date.parse(cutEnds) > words.now ? ` Your ${cardName(cut.card)} is back up until ${utcWhen(cutEnds)} UTC.` : ` Your ${cardName(cut.card)} came back and has since ended.`]
+      : [];
     return {
       key: `ended:${e.cardEnd}`, kind: 'ended', at: e.at,
       what: mine ? `${e.casterName ?? 'Someone'}'s ${card} was ended` : `Your ${card} was ended`,
       details: mine
-        ? [`An admin ended ${e.casterName ?? 'someone'}'s ${card} on `, ...place, '.']
+        ? [`An admin ended ${e.casterName ?? 'someone'}'s ${card} on `, ...place, '.', ...back]
         : [`An admin ended your ${card} on `, ...place, '. Its cost and the card are not refunded.'],
       aura: 0, wallet: null,
       characters: [e.character],
@@ -1457,6 +1496,8 @@ export function actsFollowed(acts: ReadonlyMap<Id, Act>): Id[] {
   const ids = new Set<Id>();
   for (const a of acts.values()) {
     if ((a.kind === 'card' || a.kind === 'spring' || a.kind === 'set' || a.kind === 'donation') && a.targetActId) ids.add(a.targetActId);
+    /* A cutting card's Gimmick: its play holds the end the line says came back. */
+    if (a.kind === 'card') { const cut = cutOf(a); if (cut) ids.add(cut.play); }
     if (a.kind === 'intercept' && typeof a.payload.visit_act === 'string') ids.add(a.payload.visit_act);
     for (const key of ['spring', 'caught', 'by', 'lockedOut'] as const) {
       const v = a.payload[key];

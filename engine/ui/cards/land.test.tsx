@@ -322,3 +322,26 @@ describe('a card that replies, on a reply drawn under a post', () => {
     expect(targetOf(post('hi'))).not.toHaveProperty('under');
   });
 });
+
+/* The Buzzkill: a card that cuts is offered where a live Use-card Gimmick it may end is up, and nowhere else. */
+describe('a card that cuts, as a screen offers it', () => {
+  test('effectsOf leaves a cut play out, as it leaves a reversed one', () => {
+    const cut = { ...play('jimmy', 1), cut: { by: 'b', card: 'buzzkill' } };
+    expect(effectsOf([cut, play('jimmy', 2)], []).map((e) => e.act)).toEqual(['play-jimmy-2']);
+  });
+  const now = Date.parse('2026-10-30T00:00:00Z');
+  const buzz = { ...rules('buzzkill'), name: 'Buzzkill', rarity: 'rare', play: 'cast', reaches: ['post'], cuts: { upTo: 'rare' } } as unknown as CardRules;
+  const gimmick = { ...rules('jimmy'), name: 'Jimmy', rarity: 'rare', play: 'use', reaches: ['post'], gimmick: 'jimmy' } as unknown as CardRules;
+  const cards = [buzz, gimmick];
+  test('waysOn offers it on a post with a live rare Use-card play, not on one with none, nor with a cut one', () => {
+    expect(waysOn(buzz, post('hi'), [play('jimmy', 1)], { cards, own: false, now }).cast).toBe(true);
+    expect(waysOn(buzz, post('hi'), [], { cards, own: false, now }).cast).toBe(false);
+    expect(waysOn(buzz, post('hi'), [{ ...play('jimmy', 1), cut: { by: 'b', card: 'buzzkill' } }], { cards, own: false, now }).cast).toBe(false);
+  });
+  test('whether the Gimmick is still up is read on the page\'s clock, not the wall\'s', () => {
+    /* Up a day past the page's now, and long over by any wall clock this test runs under. */
+    const timed = { ...play('jimmy', 1), ends: '2026-10-31T00:00:00Z' };
+    expect(waysOn(buzz, post('hi'), [timed], { cards, own: false, now }).cast).toBe(true);
+    expect(waysOn(buzz, post('hi'), [timed], { cards, own: false, now: Date.parse('2026-11-01T00:00:00Z') }).cast).toBe(false);
+  });
+});

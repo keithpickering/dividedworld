@@ -1546,6 +1546,18 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (wanted.length === 0) return [];
       return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
     },
+    /* The ids first (cutting_acts, 0405, which reads acts by its partial index acts_cut_play: a filter on acts_public's payload cannot reach it),
+       then those Acts as anyone reads them. */
+    async actsCutting(plays) {
+      const wanted = [...new Set(plays)].filter(idOk);
+      if (wanted.length === 0) return [];
+      const ids = await byChunks(wanted, async (part) => {
+        const r = await read(() => client.rpc('cutting_acts', { plays: part }));
+        return (Array.isArray(r.data) ? (r.data as unknown[]) : []).filter((id): id is string => typeof id === 'string' && idOk(id));
+      });
+      if (ids.length === 0) return [];
+      return (await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
+    },
     async openingActs(threads) {
       const wanted = [...new Set(threads)].filter(idOk);
       if (wanted.length === 0) return [];

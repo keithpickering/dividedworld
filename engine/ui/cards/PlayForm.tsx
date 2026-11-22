@@ -27,7 +27,7 @@
 import { useEffect, useId, useMemo, useRef, useState, type FormEvent } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
 import { isPost } from '../../rules/types.ts';
-import { casterMessage, castOnPost, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
+import { casterMessage, castOnPost, cuttable, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -43,7 +43,7 @@ import { newer } from '../thread/feed.ts';
 import { faceOf, orbs, plainRefusal, withCardEconomy } from './faces.ts';
 import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf, waysOn } from './land.ts';
-import type { CardPlay } from './types.ts';
+import type { CardPlay, ConfigFormProps } from './types.ts';
 import { usePierce } from './pierce.ts';
 import { effectCards, livePlays, PLAYS_PER_POST, readEffects, stackPlays, usePlays } from './plays.ts';
 import type { PlayTarget } from './play.tsx';
@@ -172,7 +172,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const lockThread = beyond?.reach === 'board' ? null : beyond?.reach === 'thread' ? beyond.target : postThread;
   const lockedUntil = useLockedOutUntil(setting ? setter : hud, lockThread);
 
-  const context = { cards: instance.cards, ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
+  const context = { cards: instance.cards, now: api.now(), ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   /* The live price effects above the target, from the plays the page holds on its thread, board and author (a post's) or the ones the reach was read with: each says which card adds what, where. */
@@ -345,6 +345,17 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   };
 
   const Config = cardUi?.ConfigForm;
+  /* A card that cuts is given the Gimmicks it may end on its target: the store's live plays there (a post's own, or a character's, which the page reads above its posts), and the engine's `cuttable` says which. */
+  const gimmicks: ConfigFormProps['gimmicks'] = rules?.cuts === undefined || !goal ? undefined : (() => {
+    const now = api.now();
+    /* As the ghost marks read them (`effectsOf`): a caught play is no Gimmick there. */
+    const plays = livePlays(carried, now).filter((p) => !p.caught);
+    const effects: CardEffect[] = plays.map((p) => ({ card: p.card, act: p.id, ...(p.reach ? { reach: p.reach } : {}), ...(p.ends ? { ends: p.ends } : {}) }));
+    const named = new Set(cuttable(rules, effects, goal, new Date(now), (key) => instance.cards.find((c) => c.key === key)).map((e) => e.act));
+    return plays.filter((p) => named.has(p.id) && p.caster !== null)
+      .sort((a, b) => Date.parse(a.playedAt) - Date.parse(b.playedAt))
+      .map((p) => ({ play: p.id, card: p.card, caster: p.caster!, ...(p.ends ? { ends: p.ends } : {}) }));
+  })();
   const surcharge = cardUi?.surcharge?.(priced) ?? 'This post';
   const hint = `${id}-hint`;
   const pick = (value: boolean) => { setDown(value); onChoose?.(value); setRefusal(null); setAgain(false); };
@@ -383,7 +394,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
           </p>
           {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
           {setting && <p className="kb-play-sets" data-kb-sets>{springs}</p>}
-          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} faceDown={setting ? 'will' : choosing ? 'can' : 'no'} /></div>}
+          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} faceDown={setting ? 'will' : choosing ? 'can' : 'no'} {...(gimmicks ? { gimmicks } : {})} /></div>}
           {conditional && post && (
             <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
           )}

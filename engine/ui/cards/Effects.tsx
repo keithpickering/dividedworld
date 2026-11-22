@@ -85,7 +85,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
    */
   const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
-  const tailRows = useTails(post, here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken).map((p) => p.id));
+  const tailRows = useTails(post, here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.cut && !p.untaken).map((p) => p.id));
   /*
    * A play whose first generation failed for good is over, which the page holds only from the plays' read (`untaken`). A page showing it learns
    * it from its tails: every row of a play the page counts failed, none waiting, none a text (a failure a newer job waits behind shows that job
@@ -100,7 +100,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const retry = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => () => { if (retry.current !== null) clearTimeout(retry.current); }, []);
   useEffect(() => {
-    const over = here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.untaken && !reread.current.has(p.id)
+    const over = here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.cut && !p.untaken && !reread.current.has(p.id)
       && (() => { const own = tailRows.filter((r) => r.play === p.id); return own.length > 0 && own.every((r) => r.failed && r.text === null && !r.waiting); })());
     if (over.length === 0) return;
     for (const p of over) reread.current.add(p.id);
@@ -222,7 +222,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.untaken && !p.faceDown && !p.reach), of: here },
+    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping

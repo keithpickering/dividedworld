@@ -6,7 +6,7 @@
  * the play (`decidePlay`), whatever this said.
  */
 import { ALIGNMENTS, QUADRANTS } from '../../rules/types.ts';
-import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, atOrBelow, matchWords, playOf as playOfRules, RARITIES, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Rarity, type Verdict } from '../../rules/cards.ts';
+import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, cuttable, effectsOnTarget, atOrBelow, matchWords, playOf as playOfRules, RARITIES, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Rarity, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 import { shareWords, upperFirst } from '../copy-words.ts';
@@ -27,7 +27,7 @@ export function targetOf(post: Act, under?: string): PostTarget {
 
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */
 export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity'>[]): CardEffect[] {
-  return plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p): CardEffect => {
+  return plays.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).map((p): CardEffect => {
     if (p.faceDown) { const ends = p.revealed?.at ?? p.takenBack?.at ?? p.endsAt; return { card: null, act: p.id, faceDown: true, ...(ends ? { ends } : {}) }; }
     const ward = cards.find((c) => c.key === p.card);
     return { card: p.card, act: p.id, ...(ward?.gimmick ? { gimmick: ward.gimmick } : {}), ...(p.ends ? { ends: p.ends } : {}) };
@@ -47,6 +47,8 @@ export interface LandingContext {
   readonly under?: string;
   /** The caster's live pierce (a Cheap Shot's `upTo`): a ward whose card is at or below it does not turn the cast away (`decidePlay`). */
   readonly pierce?: Rarity;
+  /** The page's clock (`api.now()`), against which a play's end is read: a card that cuts is offered only where a Gimmick is still up. */
+  readonly now?: number;
 }
 
 /**
@@ -56,7 +58,7 @@ export interface LandingContext {
  * is the caller's to ask. With no context, it is the card's `canApply` alone.
  */
 export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>, post: Act, plays: readonly CardPlay[], context?: LandingContext): Verdict {
-  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post, context?.under), plays.filter((p) => !p.caught && !p.reversed && !p.untaken).map((p) => ({ card: p.card, act: p.id })));
+  if (!context || !rules.key || !rules.rarity) return rules.canApply(targetOf(post, context?.under), plays.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).map((p) => ({ card: p.card, act: p.id })));
   return landingOn(rules as CardRules, targetOf(post, context.under), plays, context);
 }
 
@@ -72,7 +74,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity }): { readonly cast: boolean; readonly set: boolean } {
   const live = stackPlays(plays, context.now);
   const cast = landing(rules, post, live, context).ok;
-  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
+  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, now: context.now, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
   return { cast, set };
 }
 
@@ -92,16 +94,20 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
    * length (what it buys is the form's, from the live economy). It still writes, so the rules' refusals of a card that writes still hold here:
    * a Set refuses one face down.
    */
+  /* A card that cuts names the Gimmick it ends, which is the form's choice: here it names one it may end if the target holds any (decidePlay refuses a target holding none first, in words of its own). */
+  const rulesOf = (key: string) => context.cards.find((c) => c.key === key);
+  const at = context.now === undefined ? undefined : new Date(context.now);
+  const names = rules.cuts === undefined ? undefined : cuttable(rules, effects, target, at, rulesOf)[0]?.act;
   const lenient: CardRules = {
     /* A surface card's first draw is the composer's, made after the mark is pressed: the decision here is only where the card lands, so it is asked as a card with no surface (its own `canApply` still holds the wall it is). */
-    ...rules, surface: undefined, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any' } }), playPrice: () => 0,
+    ...rules, surface: undefined, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any', ...(names === undefined ? {} : { play: names }) } }), playPrice: () => 0,
     ...(rules.writes ? { writes: { ...rules.writes, tokens: () => 1 } } : {}),
     canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now), needsMessage: undefined,
   };
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
-    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
+    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, rulesOf, ...(at === undefined ? {} : { now: at }), ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
   return decided.ok ? { ok: true, value: undefined } : decided;
 }
 

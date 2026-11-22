@@ -8,7 +8,7 @@
  */
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import type { Act, Estimate, EffectState, Id, KayfaApi, Log, MyCharacter } from '../data/api.ts';
-import { estimateActIds, type LogDoc } from '../glass-docs.ts';
+import { estimateActIds, playsCutAsked, type LogDoc } from '../glass-docs.ts';
 import { useNavigation } from '../router.tsx';
 import { actsFollowed, actsNamed, type LogData } from './lines.ts';
 
@@ -69,6 +69,10 @@ export async function around(api: KayfaApi, log: Log, own: LogData): Promise<Log
     if (followed.length === 0) break;
     for (const a of await api.actsById(followed)) acts.set(a.id, a);
   }
+  /* What cut a Gimmick the page shows: its Act is named by no row of this page when the row that names it (a play on the player's post) is on another. Only the plays of this page's own cards, and those its cuts name, are asked (`own` holds the pages read before), once. It decides a fact, so its failure fails the page as `actsById`'s does. */
+  const held = new Set(playsCutAsked(own.log, own.acts.values()));
+  const gimmicks = playsCutAsked(log, acts.values()).filter((p) => !held.has(p));
+  if (gimmicks.length > 0) for (const a of await api.actsCutting(gimmicks)) acts.set(a.id, a);
   const names = new Map(own.names);
   const staff = new Set(own.staff ?? []);
   /* A play beyond a post carries its target's name (play_card, 0056); one written without reads it as it stands, so only those are asked

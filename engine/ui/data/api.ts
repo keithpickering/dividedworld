@@ -2848,6 +2848,11 @@ export interface KayfaApi {
   act(id: Id): Promise<Act | null>;
   /** Several Acts by id in one read; an id that is not an Act (or none the reader may see) is left out. Order is not promised. */
   actsById(ids: readonly Id[]): Promise<readonly Act[]>;
+  /**
+   * The landed card Acts whose public `cut.play` names one of these plays, in one read: what the log reads to say a Gimmick ended at the cut, wherever the log has paged to.
+   * The cut is public on the Act, so this reads nothing private. A play nothing cut has no Act here; order is not promised.
+   */
+  actsCutting(plays: readonly Id[]): Promise<readonly Act[]>;
   /** The first post (seq 1) of each of these threads, in one read; a thread with none the reader may see is left out. Order is not promised. */
   openingActs(threads: readonly Id[]): Promise<readonly Act[]>;
   /** A post's every version, the original first, each as it was written. */

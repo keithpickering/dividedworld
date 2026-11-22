@@ -58,6 +58,10 @@ export interface CardPlay {
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
   readonly reversed?: true;
+  /** A Gimmick a cutting card ended early (the Buzzkill): the cutting play and its card, public, marked by the store. Its layer is off like a reversed play's, and comes back when the cutting play is ended by an admin. */
+  readonly cut?: { readonly by: Id; readonly card: string };
+  /** On a cutting play itself: the Gimmick play it ended and that play's card, from its payload (`cut`). */
+  readonly cuts?: { readonly play: Id; readonly card: string };
   /** The play's first generation failed, so it was refunded and is over (`Act.untaken`): not in force, never counted, though the play stays an Act the room can react to. */
   readonly untaken?: true;
   /** When a Use's effect ends, as the server wrote it when it landed; a play beyond a post's end, which it is drawn until. */
@@ -314,6 +318,8 @@ export interface ConfigFormProps {
    * speaks of a back (Laugh Track's "waits for this phrase"), which Laugh Track says only for `'will'`: not while the play is still chosen as played now (`'can'`), and not where no back can happen. The engine says what is true; what a card does with `'can'` is the card's.
    */
   readonly faceDown?: 'no' | 'can' | 'will';
+  /** The live Gimmicks on the target up to the card's `cuts.upTo`, oldest first, for a card that cuts (`CardRules.cuts`); undefined for any other card. */
+  readonly gimmicks?: readonly { readonly play: Id; readonly card: string; readonly caster: Id; readonly ends?: string }[];
 }
 
 /**

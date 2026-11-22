@@ -245,7 +245,7 @@ describe('the alerts, updates, queue and log loaders', () => {
     const write = vi.fn();
     const api = apiOf({
       alertsPage: () => Promise.resolve({}), updatesPage: () => Promise.resolve({}), queuePage: () => Promise.resolve({}), boards: () => Promise.resolve([]),
-      logPage: () => Promise.resolve({ acts: [] }), estimate: () => Promise.resolve({ lines: [] }),
+      logPage: () => Promise.resolve({ acts: [], log: { cards: [] } }), estimate: () => Promise.resolve({ lines: [] }),
       seeAlerts: write, seeSettlement: write, seeWelcome: write, markRead: write,
     });
     const env = { api, signedIn: signed(true) };
@@ -254,7 +254,7 @@ describe('the alerts, updates, queue and log loaders', () => {
   });
 
   test('the log reads its page beside the estimate, and the estimate\'s Acts the page did not name', async () => {
-    const logPage = vi.fn(() => Promise.resolve({ acts: [{ id: 'a1' }] }));
+    const logPage = vi.fn(() => Promise.resolve({ acts: [{ id: 'a1' }], log: { cards: [] } }));
     const estimate = vi.fn(() => Promise.resolve({ lines: [{ act: 'a1' }, { act: 'a2' }, { act: null }, { act: 'a2' }] }));
     const actsById = vi.fn((ids: readonly string[]) => Promise.resolve(ids.map((id) => ({ id }))));
     const doc = await loadLog({ api: apiOf({ logPage, estimate, actsById }), signedIn: signed(true) }, chunk);
@@ -264,9 +264,23 @@ describe('the alerts, updates, queue and log loaders', () => {
     expect(doc).toMatchObject({ estimate: { lines: expect.any(Array) }, estimateActs: [{ id: 'a2' }] });
   });
 
+  test('the log reads the Acts that cut its page\'s plays, past those the page holds, and a failed read fails the page', async () => {
+    /* c0 is a reversed cutter the page names (its ended row): the play it cut is asked too, as another cutter may still hold it. */
+    const logPage = () => Promise.resolve({ acts: [{ id: 'k1' }, { id: 'c0', kind: 'card', payload: { cut: { play: 'g9', card: 'kick' } } }], log: { cards: [{ act: 'k1' }, { act: 'k1' }, { act: 'k2' }, { act: null }] } });
+    const estimate = () => Promise.resolve({ lines: [] });
+    const actsCutting = vi.fn(() => Promise.resolve([{ id: 'c0' }, { id: 'c1' }]));
+    const doc = await loadLog({ api: apiOf({ logPage, estimate, actsCutting }), signedIn: signed(true) }, chunk);
+    expect(actsCutting).toHaveBeenCalledWith(['k1', 'k2', 'g9']);
+    expect((doc as { page: { acts: readonly { id: string }[] } }).page.acts.map((a) => a.id)).toEqual(['k1', 'c0', 'c1']);
+    await expect(loadLog({ api: apiOf({ logPage, estimate, actsCutting: () => Promise.reject(new Error('down')) }), signedIn: signed(true) }, chunk)).rejects.toThrow('down');
+    const cutting = vi.fn(() => Promise.resolve([]));
+    await expect(loadLog({ api: apiOf({ logPage: () => Promise.reject(new Error('lost')), estimate, actsCutting: cutting }), signedIn: signed(true) }, chunk)).rejects.toThrow('lost');
+    expect(cutting).not.toHaveBeenCalled();
+  });
+
   test('a failed estimate leaves the log without one, and a slow one is not waited for past its bound', async () => {
-    const logPage = () => Promise.resolve({ acts: [] });
-    expect(await loadLog({ api: apiOf({ logPage, estimate: () => Promise.reject(new Error('lost')) }), signedIn: signed(true) }, chunk)).toEqual({ page: { acts: [] }, estimate: null });
+    const logPage = () => Promise.resolve({ acts: [], log: { cards: [] } });
+    expect(await loadLog({ api: apiOf({ logPage, estimate: () => Promise.reject(new Error('lost')) }), signedIn: signed(true) }, chunk)).toEqual({ page: { acts: [], log: { cards: [] } }, estimate: null });
     vi.useFakeTimers();
     try {
       const slow = deferred<{ lines: [] }>();
@@ -289,7 +303,7 @@ describe('the alerts, updates, queue and log loaders', () => {
   test('a chunk and the document of the log are awaited together', async () => {
     const gate = deferred();
     let landed = false;
-    void loadLog({ api: apiOf({ logPage: () => Promise.resolve({ acts: [] }), estimate: () => Promise.resolve({ lines: [] }) }), signedIn: signed(true) }, () => gate.promise).then(() => { landed = true; });
+    void loadLog({ api: apiOf({ logPage: () => Promise.resolve({ acts: [], log: { cards: [] } }), estimate: () => Promise.resolve({ lines: [] }) }), signedIn: signed(true) }, () => gate.promise).then(() => { landed = true; });
     await settled();
     expect(landed).toBe(false);
     gate.resolve();
@@ -302,7 +316,7 @@ describe('the log\'s estimate bound covers its Acts', () => {
   test('an actsById that never answers cannot hold the page: it lands at the bound, the estimate filling in later', async () => {
     vi.useFakeTimers();
     try {
-      const logPage = () => Promise.resolve({ acts: [] });
+      const logPage = () => Promise.resolve({ acts: [], log: { cards: [] } });
       const estimate = () => Promise.resolve({ lines: [{ act: 'a1' }] });
       const actsById = () => new Promise<never>(() => {});
       const landed = vi.fn();

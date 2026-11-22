@@ -3096,6 +3096,27 @@ describe('a reply cut in under its post', () => {
     expect(document.querySelector('.kb-acts > article.kb-act')).toBe(post(41));
   });
 
+  test('a reply heard under a play a cutting card ended goes to the tail, as under a reversed play', async () => {
+    const w = await cutWorld(45, null);
+    const heard = tapThread(w.fake)();
+    openCut(w, '', '?page=3');
+    await screen.findByRole('article', { name: /^Post 45 /u });
+    const at = '2026-10-29T21:16:00Z';
+    const card = (payload: Record<string, unknown>) => live(w.thread, null as unknown as number, w.pipe, { kind: 'card', seq: null, targetActId: w.ids[41]!, payload, currentPayload: payload, createdAt: at });
+    deliver(() => heard.onAct!(card({ card: 'whoops', layer: 1 })));
+    const gimmick = card({ card: 'whoops', layer: 1 });
+    deliver(() => heard.onAct!(gimmick));
+    deliver(() => heard.onAct!(card({ card: 'whoops', instant: true, cut: { play: gimmick.id, card: 'whoops' } })));
+    /* The plays are taken in once their casters are read. */
+    await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
+    const reply = live(w.thread, 12, w.pipe);
+    deliver(() => heard.onUnder!(w.ids[41]!, gimmick.id, reply));
+    /* A reply under a play still in force is nested, which also says the one before has been handled by then. */
+    deliver(() => heard.onUnder!(w.ids[42]!, 'play-in-force', live(w.thread, 13, w.pipe)));
+    await screen.findByRole('article', { name: 'Post 13 by Pipewrench, cut in under post 43' });
+    expect(screen.queryByRole('article', { name: 'Post 12 by Pipewrench, cut in under post 42' })).toBeNull();
+  });
+
   test('is axe clean, nested', async () => {
     const w = await cutWorld();
     openCut(w);

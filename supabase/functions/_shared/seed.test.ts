@@ -28,14 +28,14 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const readKeys = (c: (typeof instance.cards)[number]) => (c.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key));
   assert.deepEqual(seed.cards, instance.cards.map((c) => ({
     key: c.key, name: c.name, alignment: c.alignment, stack: c.stack ?? 1, seeded: c.seeded === true, reads: readKeys(c),
-    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, refunds: c.refunds, discipline: c.discipline, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined, replies: c.replies === true, keeps: c.keeps === true,
+    rarity: c.rarity, play: c.play ?? 'cast', trap: c.trap, gimmick: c.gimmick, refunds: c.refunds, cuts: c.cuts, discipline: c.discipline, lasts: c.lasts, skim: c.skim, scoresAs: c.scoresAs, reaches: c.reaches ?? ['post'], pins: c.pins === true, writes: c.writes !== undefined, replies: c.replies === true, keeps: c.keeps === true,
     draws: c.draws, drive: c.drive, needsMessage: c.needsMessage, veil: c.veil, addsReaction: c.reaction === true, surface: c.surface !== undefined, retired: c.retired === true,
   })));
   assert.deepEqual(seed.cards.filter((c) => c.surface).map((c) => c.key), instance.cards.filter((c) => c.surface !== undefined).map((c) => c.key), 'the SQL knows which cards hold a wall by this flag alone');
   assert.ok(seed.cards.some((c) => c.surface), 'a surface card is flagged');
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],
-    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, refunds: undefined, discipline: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, veil: undefined, addsReaction: false, surface: false, retired: false,
+    rarity: 'common', play: 'cast', trap: undefined, gimmick: undefined, refunds: undefined, cuts: undefined, discipline: undefined, lasts: undefined, skim: undefined, scoresAs: undefined, reaches: ['post'], pins: false, writes: false, replies: false, keeps: false, draws: undefined, drive: undefined, needsMessage: undefined, veil: undefined, addsReaction: false, surface: false, retired: false,
   }, 'the stack, the seed, the economy numbers its rules read, its rarity and its play reach the SQL (0039, screen_settings\'s cardEconomy; 0054)');
   // A card that replies and a card that keeps (0348): the SQL knows only these two flags, never which card. A card of each the instance may not hold is seeded here too.
   assert.deepEqual(seed.cards.filter((c) => c.replies).map((c) => c.key), instance.cards.filter((c) => c.replies === true).map((c) => c.key), 'the SQL knows which cards carry a reply by this flag alone');
@@ -49,6 +49,10 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const disciplined = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'disciplined', discipline: { kind: 'watch', weight: 2 } }] }, conduct).cards;
   assert.deepEqual(disciplined.find((c) => c.key === 'disciplined')!.discipline, { kind: 'watch', weight: 2 }, 'the seed carries the discipline');
   assert.deepEqual(disciplined.filter((c) => c.discipline !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.discipline !== undefined).map((c) => c.key), 'disciplined'], 'a card without one travels with none');
+  // A card that cuts travels as the card wrote it (card_kinds.cuts, 0405); a card without one travels with none, and no card's key is read by the SQL.
+  const cutting = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'cutting', cuts: { upTo: 'rare' } }] }, conduct).cards;
+  assert.deepEqual(cutting.find((c) => c.key === 'cutting')!.cuts, { upTo: 'rare' }, 'the seed carries the cuts');
+  assert.deepEqual(cutting.filter((c) => c.cuts !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.cuts !== undefined).map((c) => c.key), 'cutting'], 'a card without one travels with none');
   // The packs and the machine's slots (0139): the pulls as the instance writes them, a slot's item flattened to `card` or `pack`, in grid order.
   const pulled = seed.packs.filter((p): p is Extract<typeof p, { pulls: unknown }> => 'pulls' in p);
   assert.deepEqual(pulled.map((p) => [p.key, p.pulls.length, p.leaves]), instance.packs.filter((p): p is PullPack => !isFixed(p)).map((p) => [p.key, p.pulls.length, [...(p.leaves ?? [])]]));

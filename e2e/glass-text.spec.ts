@@ -332,6 +332,9 @@ test.describe('under high contrast', () => {
       test.use({ viewport });
       for (const s of [...PAGES, ...OVERLAYS].filter((x) => !x.signedOut).map(onTheAccount)) {
         test(`${s.name}: every line of glass text stands on solid ground`, async ({ page }) => {
+          /* The same read as the text sizes' (every line's pixels, against its smoke): the Strategy Guide grows a sheet with every card the
+             instance adds, so it outgrew the default 30s at 1920×1080 when Buzzkill joined it. 90s still ends a hang, as above. */
+          test.setTimeout(90_000);
           await chooseHighContrast(page);
           await open(page, s);
           await expect(page.locator('html')).toHaveAttribute('data-kb-glass-key', 'high');

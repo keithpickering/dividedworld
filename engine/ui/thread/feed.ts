@@ -258,7 +258,7 @@ export function nextVeilEnd(plays: Plays, posts: Iterable<Id>, veils: ReadonlySe
   let soonest: number | null = null;
   for (const post of posts) {
     for (const p of plays.get(post).plays) {
-      if (!veils.has(p.card) || p.reversed || p.untaken || p.caught || p.faceDown || p.reach || p.ends === undefined) continue;
+      if (!veils.has(p.card) || p.reversed || p.cut || p.untaken || p.caught || p.faceDown || p.reach || p.ends === undefined) continue;
       const at = Date.parse(p.ends);
       if (at > now && (soonest === null || at < soonest)) soonest = at;
     }

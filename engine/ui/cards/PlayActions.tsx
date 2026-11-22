@@ -161,7 +161,7 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     ...(at.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above, ...(pierce === undefined ? {} : { pierce }) }).ok) return null;
+  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above, now: api.now(), ...(pierce === undefined ? {} : { pierce }) }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (

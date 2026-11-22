@@ -3006,3 +3006,59 @@ describe('a card\'s icon on its tab', () => {
     expect(within(l).getByRole('tab', { name: 'Card 2' }).querySelector('img.kb-lens-tab-icon')).not.toBeNull();
   });
 });
+
+/* The Buzzkill: a cutting card's row says which Gimmick it ended, the Gimmick's row says what ended it, and an admin's end of the cutting card brings the Gimmick's row back to normal. */
+describe('a Gimmick a cutting card ended', () => {
+  function strip() {
+    const w = world();
+    const plays = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const gimmick = { card: 'k2' };
+    const cutting = { card: 'k3', instant: true, cut: { play: 'gimmick', card: 'k2' } };
+    plays.add([
+      { ...base, id: 'gimmick', kind: 'card', payload: gimmick, currentPayload: gimmick },
+      { ...base, id: 'cutting', kind: 'card', payload: cutting, currentPayload: cutting },
+    ]);
+    plays.setBilling(w.second, ['gimmick', 'cutting']);
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
+    return plays;
+  }
+  const rowLines = async (name: RegExp) => {
+    await userEvent.click(await screen.findByRole('button', { name }));
+    await userEvent.click(whoButton());
+    return lens().textContent ?? '';
+  };
+
+  test("the cutting play's row says which card it ended", async () => {
+    width(false);
+    strip();
+    expect(await rowLines(/^Card 3, 1 play/u)).toContain('Ended the Card 2 here early');
+  });
+
+  test("the cut play's row says what ended it early, where an admin's end would read Ended by an admin", async () => {
+    width(false);
+    strip();
+    const text = await rowLines(/^Card 2, 1 play/u);
+    expect(text).toContain('Ended early by a Card 3');
+    expect(text).not.toContain('Ended by an admin');
+  });
+
+  test('with the cutting play reversed, the cut row is back to normal', async () => {
+    width(false);
+    const plays = strip();
+    act(() => { plays.setEnded(['cutting']); });
+    const text = await rowLines(/^Card 2, 1 play/u);
+    expect(text).not.toContain('Ended early by');
+    expect(text).not.toContain('Ended by an admin');
+    /* The cutting play's own row no longer says it ended anything. */
+    await userEvent.click(within(lens()).getByRole('tab', { name: 'Card 3' }));
+    expect(lens().textContent).not.toContain('Ended the Card 2 here early');
+  });
+
+  test('a kind whose every play was cut is headed Ended early', async () => {
+    width(false);
+    strip();
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    expect(lens().querySelector('.kb-lens-line')!.textContent).toBe('Ended early');
+  });
+});

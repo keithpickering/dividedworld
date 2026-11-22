@@ -48,14 +48,14 @@ export function shownPlays(plays: readonly CardPlay[], now: number): readonly Ca
 }
 
 /**
- * These plays as the ones named in `then` stood in a moment (an ORIGIN box draws them as they were, so an end since is no part of what it shows): those plays without `reversed`, the one
- * state that can come after a moment. `untaken` is no such state (a play that never took never did, then or now), so it is kept. The same array where nothing changes.
+ * These plays as the ones named in `then` stood in a moment (an ORIGIN box draws them as they were, so an end since is no part of what it shows): those plays without `reversed`, the states
+ * that can come after a moment (an admin's end, a cutting card's cut). `untaken` is no such state (a play that never took never did, then or now), so it is kept. The same array where nothing changes.
  */
 export function asThen(plays: readonly CardPlay[], then: ReadonlySet<Id> | undefined): readonly CardPlay[] {
-  if (then === undefined || !plays.some((p) => p.reversed && then.has(p.id))) return plays;
+  if (then === undefined || !plays.some((p) => (p.reversed || p.cut) && then.has(p.id))) return plays;
   return plays.map((p) => {
-    if (!p.reversed || !then.has(p.id)) return p;
-    const { reversed: _reversed, ...kept } = p;
+    if (!(p.reversed || p.cut) || !then.has(p.id)) return p;
+    const { reversed: _reversed, cut: _cut, ...kept } = p;
     return kept;
   });
 }
@@ -72,6 +72,13 @@ function pierceOf(raw: unknown): { readonly pierce?: NonNullable<CardPlay['pierc
   if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
   const { by, card, ward } = raw as Record<string, unknown>;
   return typeof by === 'string' && typeof card === 'string' ? { pierce: { by, card, ...(typeof ward === 'string' ? { ward } : {}) } } : {};
+}
+
+/** A cutting play's `cut` (the Gimmick play it ended and that play's card), as `{ cuts }` where the payload's is an object with a string `play` and `card`, else nothing. */
+function cutsOf(raw: unknown): { readonly cuts?: NonNullable<CardPlay['cuts']> } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const { play, card } = raw as Record<string, unknown>;
+  return typeof play === 'string' && typeof card === 'string' ? { cuts: { play, card } } : {};
 }
 
 /** The pierce play a card Act's payload names as spent (`pierce.by`), or null for any other Act. */
@@ -126,6 +133,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
     ...(handedBackOf(act.payload.handedBack)),
     ...(pierceOf(act.payload.pierce)),
+    ...(act.kind === 'card' ? cutsOf(act.payload.cut) : {}),
     ...(instant ? {
       instant: true as const,
       ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),
@@ -147,7 +155,7 @@ export const homeOf = (play: Pick<CardPlay, 'post' | 'on'>): Id => play.on ?? pl
  * a card or pins a thread reads this; the marks and the Lens read `markedPlays`, which keeps an ended play on a post to say so.
  */
 export function livePlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
-  const live = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !p.spent && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  const live = plays.filter((p) => !p.reversed && !p.cut && !p.untaken && !p.instant && !p.spent && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return live.length === plays.length ? plays : live;
 }
 
@@ -156,7 +164,7 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
  * time is up and its card does not keep. In a moment (`then`), a play named there is judged as it stood: its timed end does not count.
  */
 export function playOver(p: CardPlay, now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean {
-  if (p.caught || p.reversed || p.untaken || p.instant || p.spent || p.revealed) return true;
+  if (p.caught || p.reversed || p.cut || p.untaken || p.instant || p.spent || p.revealed) return true;
   if (then?.has(p.id)) return false;
   return p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card);
 }
@@ -171,7 +179,7 @@ export const kindSpent = (plays: readonly CardPlay[], now: number, keeps: Readon
  * `livePlays` is what draws.
  */
 export function stackPlays(plays: readonly CardPlay[], now: number): readonly CardPlay[] {
-  const held = plays.filter((p) => !p.reversed && !p.untaken && !p.instant && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
+  const held = plays.filter((p) => !p.reversed && !p.cut && !p.untaken && !p.instant && !(p.reach && p.ends !== undefined && Date.parse(p.ends) <= now));
   return held.length === plays.length ? plays : held;
 }
 
@@ -183,7 +191,7 @@ export function stackPlays(plays: readonly CardPlay[], now: number): readonly Ca
  * is drawn on every postbit of the character, so a strip on a post's own postbit gives that post's date (`postAt`) and an ended one is kept only where the post was written while it was up (`fallsOn`).
  */
 export function markedPlays(plays: readonly CardPlay[], now: number, keeps: ReadonlySet<string> = NO_KEYS, postAt?: string): readonly CardPlay[] {
-  const marked = plays.filter((p) => !(p.reach && (p.reversed || (p.ends !== undefined && Date.parse(p.ends) <= now && (!keeps.has(p.card) || (p.reach === 'character' && postAt !== undefined && !fallsOn({ at: p.playedAt, ends: p.ends }, { at: postAt }, true, new Date(now))))))));
+  const marked = plays.filter((p) => !(p.reach && (p.reversed || p.cut || (p.ends !== undefined && Date.parse(p.ends) <= now && (!keeps.has(p.card) || (p.reach === 'character' && postAt !== undefined && !fallsOn({ at: p.playedAt, ends: p.ends }, { at: postAt }, true, new Date(now))))))));
   return marked.length === plays.length ? plays : marked;
 }
 
@@ -199,7 +207,7 @@ export const keepingKeys = (cards: readonly Pick<CardRules, 'key' | 'keeps'>[]):
  */
 export function playsFallingOn(plays: readonly CardPlay[], post: { readonly createdAt: string }, keeps: ReadonlySet<string>, now: number): readonly CardPlay[] {
   const at = new Date(now);
-  const falling = plays.filter((p) => !p.reversed && !p.untaken && fallsOn({ at: p.playedAt, ...(p.ends !== undefined ? { ends: p.ends } : {}) }, { at: post.createdAt }, keeps.has(p.card), at));
+  const falling = plays.filter((p) => !p.reversed && !p.cut && !p.untaken && fallsOn({ at: p.playedAt, ...(p.ends !== undefined ? { ends: p.ends } : {}) }, { at: post.createdAt }, keeps.has(p.card), at));
   return falling.length === plays.length ? plays : falling;
 }
 
@@ -250,7 +258,7 @@ export function localKindsOf(plays: readonly CardPlay[], cards: readonly Pick<Ca
     if (emoji === null || quadrant === undefined) continue;
     const key = localKey(emoji);
     if (out.some((k) => k.key === key)) continue;
-    out.push({ key, emoji, quadrant, play: p.id, ended: p.reversed === true });
+    out.push({ key, emoji, quadrant, play: p.id, ended: p.reversed === true || p.cut !== undefined });
   }
   return out;
 }
@@ -261,7 +269,7 @@ export interface BlindPlay { readonly play: Id; readonly caster: Id | null; read
 /** The plays on a post that hide its reaction totals now: a `totals` veil, in force, whose end is still ahead. */
 export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'veil'>[], now: number): readonly BlindPlay[] {
   return plays
-    .filter((p) => standing(p) && !p.reversed && p.ends !== undefined && Date.parse(p.ends) > now && cards.some((c) => c.key === p.card && c.veil === 'totals'))
+    .filter((p) => standing(p) && !p.reversed && !p.cut && p.ends !== undefined && Date.parse(p.ends) > now && cards.some((c) => c.key === p.card && c.veil === 'totals'))
     .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
@@ -420,6 +428,11 @@ export function createPlays(): Plays {
   const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
   const ended = new Set<Id>();
+  /* Every cutting play of a Gimmick, by the Gimmick play's id, in the order they arrived (one that came before its Gimmick is kept for when it does): the first one an admin has not ended is what cut it. */
+  const cutters = new Map<Id, { readonly by: Id; readonly card: string }[]>();
+  /* Each cutting play's Gimmick, by the cutting play's id. */
+  const cuttingOf = new Map<Id, Id>();
+  const cutOf = (gimmick: Id): NonNullable<CardPlay['cut']> | undefined => cutters.get(gimmick)?.find((c) => !ended.has(c.by));
   /* The falls a filing spent: a mark that arrived before its play is kept here for when the play does. */
   const spentPlays = new Set<Id>();
   /* Each post's billing order, by play id: set by a read of its page, with a play that arrives later appended. */
@@ -435,6 +448,19 @@ export function createPlays(): Plays {
       snapshots.delete(post);
       for (const l of [...(listeners.get(post) ?? [])]) l();
     }
+  };
+  /* An admin's end of a cutting play brings its Gimmick back: the cut is cleared from the play it named, and from the held set. */
+  const clearCut = (cutting: Id, touched: Set<Id>) => {
+    const gimmick = cuttingOf.get(cutting);
+    if (gimmick === undefined) return;
+    const at = postOf.get(gimmick);
+    const mine = at === undefined ? undefined : byPost.get(at);
+    const was = mine?.get(gimmick);
+    if (!mine || !was?.cut || was.cut.by !== cutting) return;
+    const next = cutOf(gimmick);
+    if (next) mine.set(gimmick, { ...was, cut: next });
+    else { const { cut: _cut, ...back } = was; mine.set(gimmick, back); }
+    touched.add(at!);
   };
   const newer = (a: EffectState, b: EffectState) => Date.parse(a.savedAt) > Date.parse(b.savedAt);
   return {
@@ -500,6 +526,7 @@ export function createPlays(): Plays {
             own.set(marked, { ...was, reversed: true });
             touched.add(home!);
           }
+          clearCut(target, touched);
           continue;
         }
         const found = playOf(act);
@@ -517,8 +544,22 @@ export function createPlays(): Plays {
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
+        /* A cutting play ends the Gimmick it names in place: marked now, or held for when that play arrives. One an admin already ended cuts nothing. */
+        if (found.cuts && !cuttingOf.has(found.id)) {
+          cuttingOf.set(found.id, found.cuts.play);
+          cutters.set(found.cuts.play, [...(cutters.get(found.cuts.play) ?? []), { by: found.id, card: found.card }]);
+          if (!ended.has(found.id)) {
+            const mark = cutOf(found.cuts.play)!;
+            const at = postOf.get(found.cuts.play);
+            const mine = at === undefined ? undefined : byPost.get(at);
+            const was = mine?.get(found.cuts.play);
+            if (mine && was && was.cut?.by !== mark.by) { mine.set(was.id, { ...was, cut: mark }); touched.add(at!); }
+          }
+        }
         const withEnd = ended.has(found.id) || (early !== undefined && ended.has(early.spring)) ? { ...withTaken, reversed: true as const } : withTaken;
-        const play = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
+        const withSpent = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
+        const cutNow = cutOf(found.id);
+        const play = cutNow ? { ...withSpent, cut: cutNow } : withSpent;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
         /* A play already held is the same play, with one change it can learn: that it did not take (`untaken`, 0149), set in place so its place in the billing stays. */
@@ -560,6 +601,7 @@ export function createPlays(): Plays {
           own.set(target, { ...was, reversed: true });
           touched.add(home!);
         }
+        clearCut(target, touched);
       }
       changed(touched);
       return remembered || touched.size > 0;

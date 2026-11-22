@@ -91,7 +91,7 @@ export interface PlayedDrive {
 export function drivesOfPlays(plays: readonly CardPlay[], rules: DriveRules, now: number): readonly PlayedDrive[] {
   const grouped = new Map<Id, CardPlay[]>();
   for (const p of plays) {
-    if (!rules.has(p.card) || p.caught !== undefined || p.reversed || p.untaken || p.faceDown || p.reach) continue;
+    if (!rules.has(p.card) || p.caught !== undefined || p.reversed || p.cut || p.untaken || p.faceDown || p.reach) continue;
     if (p.ends !== undefined && Date.parse(p.ends) <= now) continue;
     const id = p.drive ?? p.id;
     grouped.set(id, [...(grouped.get(id) ?? []), p]);

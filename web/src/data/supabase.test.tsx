@@ -1104,6 +1104,23 @@ describe('failures', () => {
     }
   });
 
+  it('reads the cutting Acts of plays through cutting_acts, whose ids it then reads from acts_public, and never asks for a non-id', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/cutting_acts` ? json([A]) : rows([ACT_ROW])));
+    expect(await h.api.actsCutting([A, B])).toEqual([ACT]);
+    expect(h.to('rpc/cutting_acts')[0]?.body).toEqual({ plays: [A, B] });
+    expect(h.to('acts_public')).toHaveLength(1);
+    expect(h.to('acts_public')[0]!.url.searchParams.get('id')).toBe(`in.(${A})`);
+    expect(await h.api.actsCutting(['not an id', "1),(2"])).toEqual([]);
+    expect(await h.api.actsCutting([])).toEqual([]);
+    expect(h.to('rpc/cutting_acts')).toHaveLength(1);
+  });
+
+  it('reads no Acts where cutting_acts finds none', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/cutting_acts` ? json([]) : rows([ACT_ROW])));
+    expect(await h.api.actsCutting([A])).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(0);
+  });
+
   it('reads Acts by id in one acts_public read', async () => {
     const h = harness(() => rows([ACT_ROW]));
     expect(await h.api.actsById([A, B])).toEqual([ACT]);
