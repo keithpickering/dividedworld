@@ -9,23 +9,32 @@
  * are in the recording, and both fall in the rests before a statement's downbeat; what is removed is `to - from`, which is the length
  * of the statements removed within 20 ms (the analysis put the entering downbeat a few ms off the grid).
  *
+ * A LENGTHENED version is the same in reverse (the revision design, section 11): `{ repeat: [first, last], times, join: { out, in }, crossfadeMs }`
+ * plays the recording to `out` (the rest before the statement after `last`), crossfades back to `in` (the rest before statement `first`'s downbeat)
+ * and plays `first` to `last` again, `times` times in all, and on to the end. What is added is `times * (out - in)`, which is the length of the
+ * repeated statements. Only a pair of block 1 may be repeated, for the reason a pair may be removed from it (one tempo, one level). The map of
+ * such a version carries every statement, a repeated one with the recording's own `n` and a `copy` (0 for the original, 1 for its first repeat).
+ *
  * A VERSION's map (`versionMap`) is the same shape with the removed statements gone and every later time earlier by what was removed.
  * The statement before the join is lengthened or shortened to end where the next one now begins, so each still ends where the next
  * begins. Only statements of block 1 may be removed: it is at a constant tempo and level, so a pair taken out of it leaves a step under
  * one percent; block 2 accelerates and a join there is audible.
  */
 
-export const VERSIONS = ['full', 'mk-a', 'mk-b'];
+export const VERSIONS = ['full', 'mk-a', 'mk-b', 'mk-plus1', 'mk-plus2', 'mk-plus3'];
 
-/** @typedef {{ n: number, block: number, start: number, length: number, beats: number, confident: boolean, original?: number }} Statement */
+/** @typedef {{ n: number, block: number, start: number, length: number, beats: number, confident: boolean, original?: number, copy?: number }} Statement */
 /** @typedef {{ name: string, seconds: number, drone: { start: number, end: number, confident: boolean }, statements: Statement[], coda: { chords: { t: number, confident: boolean }[], end: { t: number, confident: boolean } }, joins: { t: number, crossfadeMs: number }[] }} Version */
 
 /** The seconds a version's file must run: the recording's length less what its join removes. @param {{ seconds: number, versions?: Record<string, any> }} map @param {string} name */
 export function expectedSeconds(map, name) {
   if (name === 'full') return map.seconds;
   const r = recipe(map, name);
-  return map.seconds - (r.join.to - r.join.from);
+  return map.seconds + added(r);
 }
+
+/** The seconds a recipe adds to the recording: negative when it removes. @param {any} r */
+const added = (r) => (r.repeat ? r.times * (r.join.out - r.join.in) : -(r.join.to - r.join.from));
 
 /** @param {{ versions?: Record<string, any> }} map @param {string} name */
 function recipe(map, name) {
@@ -43,6 +52,7 @@ export function versionMap(map, name) {
   const base = { drone: map.drone, coda: map.coda };
   if (name === 'full') return { name, seconds: map.seconds, ...structuredClone(base), statements: map.statements.map((/** @type {Statement} */ s) => ({ ...s, original: s.n })), joins: [] };
   const r = recipe(map, name);
+  if (r.repeat) return repeated(map, name, r, base);
   const [first, last] = r.remove;
   const inBlockOne = (/** @type {number} */ n) => map.statements.find((/** @type {Statement} */ s) => s.n === n)?.block === 1;
   if (!(first > 1) || !(last >= first) || !inBlockOne(first) || !inBlockOne(last)) throw new Error(`${name} removes statements ${first} to ${last}: only statements of block 1 after the first may be removed (a join in block 2's accelerando is audible)`);
@@ -54,6 +64,28 @@ export function versionMap(map, name) {
   statements[at - 1].length = statements[at].start - statements[at - 1].start;
   const coda = { chords: map.coda.chords.map((/** @type {{ t: number, confident: boolean }} */ c) => ({ ...c, t: shift(c.t) })), end: { ...map.coda.end, t: shift(map.coda.end.t) } };
   return { name, seconds: map.seconds - removed, drone: structuredClone(map.drone), statements, coda, joins: [{ t: r.join.from, crossfadeMs: r.crossfadeMs }] };
+}
+
+/** @param {any} map @param {string} name @param {any} r @param {{ drone: any, coda: any }} base @returns {Version} */
+function repeated(map, name, r, base) {
+  const [first, last] = r.repeat;
+  const inBlockOne = (/** @type {number} */ n) => map.statements.find((/** @type {Statement} */ s) => s.n === n)?.block === 1;
+  if (!Number.isInteger(r.times) || r.times < 1) throw new Error(`${name} repeats ${r.times} times: \`times\` is a whole number of repeats, 1 or more`);
+  if (!(first > 1) || !(last >= first) || !inBlockOne(first) || !inBlockOne(last)) throw new Error(`${name} repeats statements ${first} to ${last}: only statements of block 1 after the first (statement 1 stays alone) may be repeated, in a constant tempo`);
+  const loop = r.join.out - r.join.in, total = r.times * loop;
+  /** @type {Statement[]} */
+  const out = [];
+  for (const s of map.statements) {
+    if (s.n >= first && s.n <= last) for (let k = 0; k <= r.times; k++) out.push({ ...s, original: s.n, copy: k, start: s.start + k * loop });
+    else out.push({ ...s, original: s.n, copy: 0, start: s.n > last ? s.start + total : s.start });
+  }
+  out.sort((a, b) => a.start - b.start);
+  /* The statement a join leaves ends where the one it enters begins. */
+  out.forEach((s, i) => { if (i + 1 < out.length && s.n === last) s.length = out[i + 1].start - s.start; });
+  const shift = (/** @type {number} */ t) => t + total;
+  const coda = { chords: base.coda.chords.map((/** @type {{ t: number, confident: boolean }} */ c) => ({ ...c, t: shift(c.t) })), end: { ...base.coda.end, t: shift(base.coda.end.t) } };
+  const joins = Array.from({ length: r.times }, (_, k) => ({ t: r.join.out + k * loop, crossfadeMs: r.crossfadeMs }));
+  return { name, seconds: map.seconds + total, drone: structuredClone(map.drone), statements: out, coda, joins };
 }
 
 /**
