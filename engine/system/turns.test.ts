@@ -76,3 +76,8 @@ test('planTurns: the same inputs plan the same, whatever order they arrive in; a
   for (let s = 0; s < 20; s++) orders.add(planTurns(threads, sessions, 3, TURNS, SLOT + s * 15 * MIN).map((p) => p.staff).join());
   assert.ok(orders.size > 1, 'the slot changes how a tie breaks');
 });
+
+test('planTurns: a thread listed twice for one persona still plans one turn', () => {
+  const plan = planTurns([open('a', 't1', ['r1']), open('a', 't1', ['r2'])], [awake('a')], 5, TURNS, SLOT);
+  assert.equal(plan.length, 1);
+});
