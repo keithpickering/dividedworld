@@ -361,6 +361,18 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   cosmetics: cosmeticsRule,
 };
 
+/**
+ * Whether a Turn cooldown covers a settlement window, so that a Turn at any moment of a window leaves the next one past its close (#931).
+ * Both in months, the counts compare: month addition keeps order, a day past a month's end clamped to its last day, so a Turn at or after
+ * the window's opening plus M months is at or after the opening plus N months whenever M >= N. Otherwise they compare in days, a week 7, and
+ * a month at its shortest (28 days) in the cooldown and its longest (31) in the window. SQL's turn_cooldown_covers (0399) is the same.
+ */
+export function cooldownCoversWindow(cooldown: Span, win: Span): boolean {
+  if (cooldown.unit === 'month' && win.unit === 'month') return cooldown.count >= win.count;
+  const days = (s: Span, month: number): number => s.count * (s.unit === 'week' ? 7 : s.unit === 'month' ? month : 1);
+  return days(cooldown, 28) >= days(win, 31);
+}
+
 export function settingsProblems(settings: Settings): string[] {
   if (typeof settings !== 'object' || settings === null) return ['the settings are missing'];
   const out: string[] = [];
@@ -374,6 +386,10 @@ export function settingsProblems(settings: Settings): string[] {
   if (isSpan(settings.pollLastsMin, LASTS_UNITS) && isSpan(settings.pollLastsMax, LASTS_UNITS)
       && settings.pollLastsMin.count * hours[settings.pollLastsMin.unit] > settings.pollLastsMax.count * hours[settings.pollLastsMax.unit]) {
     out.push(`setting "pollLastsMin" is ${JSON.stringify(settings.pollLastsMin)}; it must be a span no longer than pollLastsMax`);
+  }
+  // A character never Turns twice within one settlement window (#931): the cooldown covers the window, as SQL's settings_held holds it (0399).
+  if (isSpan(settings.turnCooldown) && isSpan(settings.settlementLength) && !cooldownCoversWindow(settings.turnCooldown, settings.settlementLength)) {
+    out.push(`setting "turnCooldown" is ${JSON.stringify(settings.turnCooldown)}; it must be a span no shorter than settlementLength (${spanWords(settings.settlementLength)}), a month counting 28 days in the cooldown and 31 in the window`);
   }
   // No sentence relates the window to the floor: SQL's settings_held checks each row alone, and writeTokensMost computes the most from the pair, never
   // below 1, so no pair of valid rows stops the instance (design section 4; the owner's answer on #582).
@@ -661,6 +677,12 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (c.catches !== undefined && typeof c.catches !== 'function') out.push(`${who} has a catch that is not a function`);
   else if (c.catches !== undefined && !(play === 'set' && on === 'cast')) out.push(`${who} has a catch, and only a set card that springs on a cast does`);
   if (c.gimmick?.kind === 'noQuote' && c.reaches !== undefined && !(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${who} stops quotes, and a card that stops quotes reaches a post alone`);
+  if (c.gimmick?.kind === 'pierce') {
+    if (play !== 'use') out.push(`${who} has a pierce and is not a use card`);
+    if (!(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'character')) out.push(`${who} has a pierce and reaches more than a character`);
+    const upTo = c.gimmick.upTo;
+    if (RARITIES.includes(upTo) && RARITIES.includes(c.rarity) && !atOrBelow(upTo, c.rarity)) out.push(`${who} has a pierce up to ${upTo}, rarer than the card`);
+  }
   if (c.gimmick?.kind === 'ride' && postAlone === false) out.push(`${who} has a ride, and a card with a ride reaches a post alone`);
   if (c.trap?.outcome !== undefined) out.push(...outcomeProblems(c.trap.outcome, who, play, on));
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
@@ -752,7 +774,7 @@ function shareProblem(e: Record<string, unknown>, who: string, what: string, sai
   return null;
 }
 
-/** A cast trap's outcome (Part 6 of the card notes): a ride or a refund, on a set card that springs on a cast, beside a named card or a match. */
+/** A cast trap's outcome (Part 6 of the card notes): a ride, a refund or a lockout, on a set card that springs on a cast, beside a named card or a match. */
 function outcomeProblems(o: unknown, who: string, play: string, on: unknown): string[] {
   if (typeof o !== 'object' || o === null) return [`${who} has an outcome that is not an object`];
   if (play !== 'set' || on !== 'cast') return [`${who} has an outcome, and only a set card that springs on a cast does`];
@@ -761,7 +783,14 @@ function outcomeProblems(o: unknown, who: string, play: string, on: unknown): st
   if (e.kind === 'refund') {
     const extra = Object.keys(e).find((k) => k !== 'kind');
     if (extra !== undefined) out.push(`${who} has a refund outcome with ${extra}; a refund outcome has a kind alone`);
-  } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride or refund`);
+  } else if (e.kind === 'lockout') {
+    const extra = Object.keys(e).find((k) => k !== 'kind' && k !== 'hours');
+    if (extra !== undefined) out.push(`${who} has a lockout outcome with ${extra}; a lockout outcome has hours alone`);
+    const h = e.hours;
+    // A number reads bare and anything else as its JSON, so "24" (a string) does not read as a valid 24.
+    if (h === undefined) out.push(`${who} has a lockout outcome with no hours; a lockout is a whole number of hours from 1 to 168`);
+    else if (typeof h !== 'number' || !Number.isInteger(h) || h < 1 || h > 168) out.push(`${who} locks out for ${typeof h === 'number' ? String(h) : JSON.stringify(h)} hours; a lockout is a whole number of hours from 1 to 168`);
+  } else if (e.kind !== 'ride') out.push(`${who} has an outcome of kind ${JSON.stringify(e.kind)}; an outcome is ride, refund or lockout`);
   else {
     // `every` is a ride's alone; a refund names it as a key it does not take.
     if (e.every !== undefined && e.every !== true) out.push(`${who} has an outcome whose every is ${JSON.stringify(e.every)}; every is true or left out`);
@@ -871,6 +900,8 @@ function gimmickProblems(g: unknown, who: string, reactionKeys: ReadonlySet<stri
     if (why) out.push(why);
   } else if (e.kind === 'cushion') {
     if (typeof e.share !== 'number' || !(e.share > 0 && e.share <= 1)) out.push(`${who} has a cushion of ${JSON.stringify(e.share) ?? 'undefined'}; share is above 0 and at most 1`);
+  } else if (e.kind === 'pierce') {
+    if (!RARITIES.includes(e.upTo as never)) out.push(`${who} has a pierce up to ${JSON.stringify(e.upTo)}; a rarity is ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
   } else if (e.kind === 'noQuote') {
     // It has no numbers: a card that stops quotes stops them all, and what it reaches is playProblems'.
   } else {

@@ -15,6 +15,7 @@ import { autocorrect, price as autocorrectPrice } from './autocorrect.ts';
 import { belowTheFold, price as belowTheFoldPrice } from './below-the-fold.ts';
 import { blindStudy, price as blindStudyPrice } from './blind-study.ts';
 import { cardCollector as cardCollectorBase, price as cardCollectorPrice } from './card-collector.ts';
+import { cheapShot, price as cheapShotPrice } from './cheap-shot.ts';
 import { classClown, price as classClownPrice } from './class-clown.ts';
 import { feelinFab, price as feelinFabPrice } from './feelin-fab.ts';
 import { feelinGlam, price as feelinGlamPrice } from './feelin-glam.ts';
@@ -42,6 +43,7 @@ import { popSteal, price as popStealPrice } from './pop-steal.ts';
 import { publicityTour, price as publicityTourPrice } from './publicity-tour.ts';
 import { requiredReading, price as requiredReadingPrice } from './required-reading.ts';
 import { ropeBreak, price as ropeBreakPrice } from './rope-break.ts';
+import { soVeryHappy, price as soVeryHappyPrice } from './so-very-happy.ts';
 import { steelChair, price as steelChairPrice } from './steel-chair.ts';
 import { stickAround, price as stickAroundPrice } from './stick-around.ts';
 import { sugarCoat, price as sugarCoatPrice } from './sugar-coat.ts';
@@ -64,6 +66,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [belowTheFold as CardRules, belowTheFoldPrice],
   [blindStudy as CardRules, blindStudyPrice],
   [cardCollectorBase as CardRules, cardCollectorPrice],
+  [cheapShot as CardRules, cheapShotPrice],
   [classClown as CardRules, classClownPrice],
   [feelinFab as CardRules, feelinFabPrice],
   [feelinGlam as CardRules, feelinGlamPrice],
@@ -91,6 +94,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [publicityTour as CardRules, publicityTourPrice],
   [requiredReading as CardRules, requiredReadingPrice],
   [ropeBreak as CardRules, ropeBreakPrice],
+  [soVeryHappy as CardRules, soVeryHappyPrice],
   [steelChair as CardRules, steelChairPrice],
   [stickAround as CardRules, stickAroundPrice],
   [sugarCoat as CardRules, sugarCoatPrice],

@@ -11,7 +11,7 @@ const DAY = 24 * 60 * 60 * 1000;
 const persona = (key: string, beats: string[] = []): Persona => ({ key, name: key, beats }) as unknown as Persona;
 const ROSTER = [persona('boss1'), persona('old'), persona('mod1', ['general']), persona('mem1', ['arcade']), persona('wait'), persona('bench'), persona('fresh', ['general'])];
 const OFFICES = { boss1: 'boss', old: 'member', mod1: 'mod', mem1: 'member', wait: 'waiting', bench: 'benched', fresh: 'member' };
-const CTX: PoolContext = { offices: OFFICES, boards: { b1: 'general', b2: 'arcade' }, characters: { mod1: 'c-mod1', old: 'c-old' } };
+const CTX: PoolContext = { offices: OFFICES, boards: { b1: 'general', b2: 'arcade' }, characters: { mod1: 'c-mod1', old: 'c-old' }, lockouts: [] };
 const none: PoolSignals = { named: [], quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] };
 const PHASES = {
   honeymoon: { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 },
@@ -277,4 +277,29 @@ test('the holdback is not pushed up by float error: 7 percent of 100 is 7', () =
   const { picks } = pick([...vets, ...rooks].map((s) => cand(s)), pr, 100, 0, dayRng('d'), { ...POOL, holdback: 0.07 });
   assert.equal(picks.length, 100);
   assert.equal(picks.filter((p) => rooks.includes(p.staff)).length, 7, 'exactly seven of a hundred are held for rookies');
+});
+
+/* ------------------------------------------------------------------------------------------------------ lockouts ---- */
+
+test('lockouts: a persona locked out of a thread gets no candidate there, keeps its others, and others keep theirs', () => {
+  const ctx: PoolContext = { ...CTX, lockouts: [{ staff: 'c-mod1', thread: 't1' }] };
+  const signals: PoolSignals = {
+    ...none,
+    named: [
+      { staff: 'mod1', act: 'a1', thread: 't1', n: 1 },
+      { staff: 'mod1', act: 'a2', thread: 't2', n: 1 },
+      { staff: 'mem1', act: 'a3', thread: 't1', n: 1 },
+    ],
+    reversals: [],
+  };
+  const cs = candidates(signals, ROSTER, {}, PHASE, ctx);
+  assert.deepEqual(cs.filter((c) => c.staff === 'mod1').map((c) => c.thread), ['t2']);
+  assert.deepEqual(cs.filter((c) => c.staff === 'mem1').map((c) => c.thread), ['t1']);
+});
+
+test('lockouts: a candidate with no thread (a thread start) is never dropped', () => {
+  const ctx: PoolContext = { ...CTX, lockouts: [{ staff: 'c-old', thread: 't1' }] };
+  const cs = candidates({ ...none, reversals: [{ staff: 'boss1', act: 'a9', thread: 't1' } as never] }, ROSTER, {}, { ...PHASE, since: 78 * DAY, until: 80 * DAY }, ctx);
+  assert.ok(cs.some((c) => c.staff === 'old' && c.thread === null), 'the thread-less stumble stays');
+  assert.ok(!cs.some((c) => c.staff === 'old' && c.thread === 't1'), 'the locked thread is dropped');
 });

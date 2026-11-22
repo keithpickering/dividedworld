@@ -88,7 +88,7 @@ async function actsAround(api: KayfaApi, rows: readonly Alert[], held: ReadonlyM
   /* A card an admin ended is the card_end, then the play, then the post it landed on and that post's author's name. */
   const ended = rows.filter((r) => r.kind === 'cardEnded' && r.act !== null).map((r) => acts.get(acts.get(r.act!)?.targetActId ?? ''));
   await read(ended.map((p) => p?.targetActId).filter((id): id is Id => typeof id === 'string'));
-  const authors = ended.map((p) => (p?.targetActId ? acts.get(p.targetActId)?.character : undefined)).filter((c): c is Id => typeof c === 'string' && !names.has(c));
+  const authors = ended.flatMap((p) => [p?.targetActId ? acts.get(p.targetActId)?.character : undefined, typeof p?.payload.locks === 'string' ? p.payload.locks : undefined]).filter((c): c is Id => typeof c === 'string' && !names.has(c));
   for (const part of await Promise.all(inChunks([...new Set(authors)]).map((chunk) => orElse(api.characters(chunk), [])))) for (const c of part) names.set(c.id, c.name);
   /* A face-down card that struck names its spring and its set, and the setter's character. */
   const trap = await readTrapActs(api, rows, acts);
@@ -134,7 +134,7 @@ export function useAlerts(api: KayfaApi, doc: AlertsPage, mine: readonly MyChara
 
   /* The page's first rows: a trapStruck alert's spring, set and setter are read beside the document, and fill in when they arrive. */
   useEffect(() => {
-    if (!doc.alerts.some((r) => r.kind === 'trapStruck')) return;
+    if (!doc.alerts.some((r) => r.kind === 'trapStruck' || r.kind === 'trapSprang')) return;
     let live = true;
     void readTrapActs(api, doc.alerts, new Map(doc.acts.map((a) => [a.id, a]))).then((got) => {
       if (!live || (got.acts.size === 0 && got.names.size === 0)) return;

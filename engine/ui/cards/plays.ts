@@ -67,6 +67,16 @@ function handedBackOf(raw: unknown): { readonly handedBack?: NonNullable<CardPla
   return typeof by === 'string' && typeof card === 'string' ? { handedBack: { by, card } } : {};
 }
 
+/** A cast's `pierce` (the pierce play it spent, that play's card and the Ward it got past), as `{ pierce }` where the payload's is an object with a string `by` and `card` (`ward` is kept only where a string), else nothing. */
+function pierceOf(raw: unknown): { readonly pierce?: NonNullable<CardPlay['pierce']> } {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return {};
+  const { by, card, ward } = raw as Record<string, unknown>;
+  return typeof by === 'string' && typeof card === 'string' ? { pierce: { by, card, ...(typeof ward === 'string' ? { ward } : {}) } } : {};
+}
+
+/** The pierce play a card Act's payload names as spent (`pierce.by`), or null for any other Act. */
+const spendsOf = (act: Act): Id | null => (act.kind === 'card' ? pierceOf(act.payload.pierce).pierce?.by ?? null : null);
+
 /**
  * Each play with `handedOut`: how many of these plays' casts name it in `handedBack` (the refund sign's count). Set only where it is above zero, so a play nobody names
  * carries no key; the same array where none is named.
@@ -115,6 +125,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.drawn === 'string' ? { drawn: act.payload.drawn } : {}),
     ...(typeof act.payload.targetName === 'string' ? { targetName: act.payload.targetName } : {}),
     ...(handedBackOf(act.payload.handedBack)),
+    ...(pierceOf(act.payload.pierce)),
     ...(instant ? {
       instant: true as const,
       ...(typeof act.payload.took === 'number' && Number.isSafeInteger(act.payload.took) ? { took: act.payload.took } : {}),
@@ -403,6 +414,8 @@ export function createPlays(): Plays {
   const taken = new Map<Id, number>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
   const springs = new Map<Id, NonNullable<ReturnType<typeof springOf>>>();
+  /* The back each spring revealed, by the spring's id: an admin ends a lockout by a `card_end` on its spring, which ends the back it sprang from. */
+  const setOfSpring = new Map<Id, Id>();
   /* The backs their setters took back: a `take_back` that arrived before its back is kept here for when the back does. */
   const takenBacks = new Map<Id, string>();
   /* The plays an admin ended: a `card_end` that arrived before its play is kept here for when the play does. */
@@ -451,11 +464,12 @@ export function createPlays(): Plays {
         const sprung = springOf(act);
         if (sprung) {
           springs.set(sprung.set, sprung);
+          setOfSpring.set(sprung.spring, sprung.set);
           const post = postOf.get(sprung.set);
           const own = post === undefined ? undefined : byPost.get(post);
           const back = own?.get(sprung.set);
           if (own && back && !back.revealed) {
-            own.set(back.id, { ...back, card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}) } });
+            own.set(back.id, { ...back, ...(ended.has(sprung.spring) ? { reversed: true as const } : {}), card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}) } });
             touched.add(homeOf(back));
           }
           continue;
@@ -477,22 +491,33 @@ export function createPlays(): Plays {
         const target = endOf(act);
         if (target !== null) {
           ended.add(target);
-          const home = postOf.get(target);
+          /* The end of a spring (a lockout) ends the back it sprang from. */
+          const marked = setOfSpring.get(target) ?? target;
+          const home = postOf.get(marked);
           const own = home === undefined ? undefined : byPost.get(home);
-          const was = own?.get(target);
+          const was = own?.get(marked);
           if (own && was && !was.reversed) {
-            own.set(target, { ...was, reversed: true });
+            own.set(marked, { ...was, reversed: true });
             touched.add(home!);
           }
           continue;
         }
         const found = playOf(act);
         if (!found) continue;
+        /* A Move that got past a ward with a pierce spends that play (as `setSpent` does for a filing's fall): marked now, or held for when the play arrives. */
+        const spends = spendsOf(act);
+        if (spends !== null) {
+          spentPlays.add(spends);
+          const at = postOf.get(spends);
+          const mine = at === undefined ? undefined : byPost.get(at);
+          const was = mine?.get(spends);
+          if (mine && was && !was.spent) { mine.set(spends, { ...was, spent: true }); touched.add(at!); }
+        }
         const early = found.faceDown ? springs.get(found.id) : undefined;
         const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
-        const withEnd = ended.has(found.id) ? { ...withTaken, reversed: true as const } : withTaken;
+        const withEnd = ended.has(found.id) || (early !== undefined && ended.has(early.spring)) ? { ...withTaken, reversed: true as const } : withTaken;
         const play = spentPlays.has(found.id) ? { ...withEnd, spent: true as const } : withEnd;
         const home = homeOf(play);
         const own = byPost.get(home) ?? new Map<Id, CardPlay>();
@@ -718,12 +743,13 @@ export async function rereadSurfaces(api: KayfaApi, plays: Plays, surfaces: Read
 
 /**
  * Read the live plays above a page's posts (`KayfaApi.effectsAbove`): on its distinct authors, its thread and its board, in one read
- * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post.
+ * however many posts the page holds, each kept on its target. A failed read leaves them undrawn: a mark is missing, never a post. `failed`, if given,
+ * is called when the read of the plays failed, for a caller that reads again.
  */
-export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>): Promise<readonly Act[]> {
+export async function readAbove(api: KayfaApi, plays: Plays, characters: readonly (Id | null)[], thread: Id | null, board: Id | null, cards: ReadonlySet<string>, failed?: () => void): Promise<readonly Act[]> {
   const authors = [...new Set(characters.filter((c): c is Id => c !== null))];
   if (authors.length === 0 && thread === null && board === null) return [];
-  const above = await api.effectsAbove(authors, thread, board).catch(() => []);
+  const above = await api.effectsAbove(authors, thread, board).catch(() => { failed?.(); return []; });
   const acts = above.map((p) => p.act);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);

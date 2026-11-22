@@ -22,10 +22,13 @@ import type { Act, Id } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { Link } from '../router.tsx';
+import { landBox } from '../shine/landing.ts';
 import { text as textOf } from '../thread/lines.tsx';
 import { BannedNote } from './BannedNote.tsx';
 import { BarredNote, useBar } from './BarredNote.tsx';
 import { useBannedUntil } from './ban.ts';
+import { LockedOutNote } from './LockedOutNote.tsx';
+import { useLockedOutUntil } from './lockout.ts';
 import { draftKey, readDraft, useWhoPosts, writeDraft } from './draft.ts';
 import { PollEditor, problemOf, samePoll } from '../polls/PollDraft.tsx';
 import type { PollDraft } from '../data/api.ts';
@@ -83,9 +86,15 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   /* The last quote took the draft over the longest post. */
   const [quoted, setQuoted] = useState(false);
   const editor = useRef<EditorHandle>(null);
+  /* The Reply box catches glitter that falls on it (engine/ui/shine/landing.ts `landBox`): it paints its own ground, so it is no part
+     of the page's, and a flake over it would fall on through (docs/plans/2026-11-21-glitter-hands-plan.md). */
+  const landing = useCallback((form: HTMLFormElement | null) => (form ? landBox(form) : undefined), []);
   const hud = hudCharacter?.id ?? null;
   const who = useWhoPosts(hud, text.trim() !== '', kept?.as ?? null);
   const bannedUntil = useBannedUntil(hudCharacter);
+  /* A lockout holds this thread alone; a ban's note says its own first where both hold. */
+  const lockedUntil = useLockedOutUntil(hudCharacter, thread);
+  const lockedOut = lockedUntil !== null;
   const bar = useBar(hudCharacter, board);
 
   const { adopt } = who;
@@ -162,7 +171,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
 
   const submit = async (e?: FormEvent) => {
     e?.preventDefault();
-    if (busy || blank || over || bannedUntil !== null) return;
+    if (busy || blank || over || bannedUntil !== null || lockedOut) return;
     if (who.changed) { who.confirm(); return; }
     const problem = poll ? problemOf(poll, settings) : null;
     if (problem !== null) { setPollProblem(problem); return; }
@@ -184,10 +193,11 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
   };
 
   return (
-    <form className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
+    <form ref={landing} className="kb-composer kb-box kb-form" aria-labelledby={`composer-head-${thread}`} onSubmit={(e) => void submit(e)} noValidate>
       <h2 className="kb-box-head" id={`composer-head-${thread}`}>Reply</h2>
       <p className="kb-composer-as kb-small" id={`composer-as-${thread}`}>Posting as <strong>{hudCharacter.name}</strong></p>
       {bannedUntil !== null && <BannedNote character={hudCharacter} until={bannedUntil} />}
+      {bannedUntil === null && lockedUntil !== null && <LockedOutNote character={hudCharacter} until={lockedUntil} />}
       <div className="kb-composer-now-region" role="status">
         {who.changed && (
           <p className="kb-notice kb-composer-now">
@@ -206,7 +216,7 @@ function ComposerBody({ thread, board, latest, since, onPosted, ref, account }: 
         onQuote={latest ? () => quote(latest.id, latest.body) : undefined}
         onSubmit={() => void submit()}
       >
-        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null}>
+        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || blank || over || bannedUntil !== null || lockedOut}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? 'Send again anyway' : 'Send'}
         </button>
       </Editor>

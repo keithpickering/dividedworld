@@ -31,6 +31,21 @@ describe('what a set card says it does', () => {
     expect(springWords({ ...(trap({ kind: 'refund' }, { flavors: ['sweet'], upTo: 'uncommon' }) as object), rarity: 'rare' } as never)).toBe('Waits for a Sweet card, up to uncommon, to be cast on this post, lets it land, and gives the card back to its caster.');
     expect(springWords(trap({ kind: 'refund' }))).toBe('Waits for the card it names to be cast on this post, lets it land, and gives the card back to its caster.');
   });
+  test('a lockout says the Move lands and its player is locked out, with the match named from the flavor left out', () => {
+    const lock = (match?: object, rarity = 'rare') => ({ play: 'set' as const, rarity, trap: { trigger: { on: 'cast' as const }, ...(match ? { match } : {}), outcome: { kind: 'lockout', hours: 24 } } }) as never;
+    expect(springWords(lock({ flavors: ['salty', 'pepperoni'], upTo: 'rare' }))).toBe("It springs on the first Move played on your post that isn't Sweet, up to rare: the Move lands, and whoever played it is locked out of the thread for 24 hours.");
+    expect(springWords(lock({ flavors: ['sweet', 'pepperoni'], upTo: 'rare' }))).toContain("that isn't Salty, up to rare:");
+    expect(springWords(lock({ flavors: ['sweet'] }))).toContain('that is Sweet, up to rare:');
+    expect(springWords(lock({ flavors: ['sweet', 'salty', 'pepperoni'], upTo: 'legendary' }, 'legendary'))).toBe('It springs on the first Move played on your post: the Move lands, and whoever played it is locked out of the thread for 24 hours.');
+    expect(springWords(lock())).toContain('the first Move played on your post that it names:');
+    /* Every match shape reads as a sentence. */
+    expect(springWords(lock({ upTo: 'rare' }))).toBe('It springs on the first Move played on your post that is up to rare: the Move lands, and whoever played it is locked out of the thread for 24 hours.');
+    expect(springWords(lock({ flavors: ['sweet', 'salty', 'pepperoni'], upTo: 'rare' }))).toContain('your post that is up to rare:');
+    expect(springWords(lock({ flavors: ['sweet', 'salty'], upTo: 'rare' }))).toContain("that isn't Pepperoni, up to rare:");
+    expect(springWords(lock({}, 'legendary'))).toContain('your post: the Move lands');
+    expect(springWords(lock({ flavors: ['sweet'], upTo: 'legendary' }, 'legendary'))).toContain('that is Sweet: the Move');
+    for (const m of [{ flavors: ['salty', 'pepperoni'], upTo: 'rare' }, undefined]) expect(springWords(lock(m))).not.toMatch(/cast/i);
+  });
   test('a catching match is unchanged', () => {
     expect(springWords({ play: 'set', rarity: 'common', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' } } } as never)).toBe('Waits for a card up to common to be cast on this post, and takes it.');
   });
@@ -123,6 +138,15 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   test('a cast is not offered where a live ward turns it away, and is where the ward has ended', () => {
     expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { cards })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
     expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
+  });
+
+  test('a cast on a post under a live uncommon ward is offered with a pierce up to uncommon, and not without it', () => {
+    const live = [ward('2999-01-01T00:00:00Z')];
+    const ctx = { cards, own: false, now: Date.now() };
+    expect(waysOn(blot, post('hi'), live, ctx).cast).toBe(false);
+    expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'common' }).cast).toBe(false);
+    expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'uncommon' }).cast).toBe(true);
+    expect(landing(blot, post('hi'), live, { cards, pierce: 'uncommon' }).ok).toBe(true);
   });
 
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {

@@ -2608,6 +2608,182 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
   });
 
+  /* Cheap Shot (the pierce plan's Task 3): the fake mirrors place_cast's read of the caster's pierce. */
+  const lift = { ...base, key: 'lift', name: 'Lift', alignment: 'salty' as const, rarity: 'rare' as const, play: 'use' as const, reaches: ['character' as const], gimmick: { kind: 'pierce' as const, upTo: 'uncommon' as const }, lasts: { unit: 'day' as const, count: 7 }, canApply: () => ok(undefined) };
+  const rareShield = { ...shield, key: 'rareshield', name: 'Rare Shield', rarity: 'rare' as const };
+  const csnare = { ...snare, key: 'csnare', name: 'Common Snare', rarity: 'common' as const };
+  const rsnare = { ...snare, key: 'rsnare', name: 'Rare Snare', rarity: 'rare' as const };
+  const spark = { ...base, key: 'spark', name: 'Spark', alignment: 'salty' as const, rarity: 'uncommon' as const, play: 'cast' as const, reaches: ['character' as const, 'thread' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+  const reachWard = (key: string, reach: 'character' | 'thread') => ({ ...shield, key, name: key, reaches: [reach] });
+  const lift2 = { ...lift, key: 'lift2', name: 'Lift Two' };
+  /* One whose own rules refuse a second while one is up (landsOn), so what reachEffects hands them is seen. */
+  const lift3 = { ...lift, key: 'lift3', name: 'Lift Three', canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lift3', reaches: ['character'] }, t, e, now) };
+  function pierceSetup() {
+    const fake = createFake({ instance: { ...world, cards: [...world.cards, sugar, lift, lift2, lift3, spark, reachWard('cward', 'character'), reachWard('tward', 'thread'), reachWard('bward', 'thread'), rareShield, csnare, rsnare, cushion] } });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: mine } = fake.seed.thread('general', anaFace, 'Mine', 'Ana here.');
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.seed.cards(ana, { lift: 3, lift2: 2, lift3: 2, blot: 3, shield: 1, spark: 4 });
+    fake.seed.cards(bo, { cward: 1, tward: 1, shield: 1, rareshield: 1, csnare: 1, rsnare: 1, cushion: 1, blot: 1 });
+    fake.signInAs(ana);
+    const lifted = async () => must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine));
+    return { fake, ana, bo, anaFace, boFace, thread, mine, bos, lifted };
+  }
+  const trapStruck = async (fake: ReturnType<typeof createFake>) => (await fake.alerts()).filter((a) => a.kind === 'trapStruck');
+
+  test('a pierce gets the next cast past a ward no rarer than it, names the play, the card and the ward, and is spent', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    const pierce = await lifted();
+    fake.signInAs(bo);
+    must(await fake.useCard('shield', boFace, bos, {}, ''));
+    fake.signInAs(ana);
+    const landed = must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect(landed.payload.caught).toBeUndefined();
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: 'shield' });
+    // Spent: a second cast carries no pierce, and the ward turns it away.
+    expect(await fake.playCard('blot', anaFace, bos, {}, '')).toEqual(refused('this post\'s Shield turns away cards up to uncommon', 'config'));
+  });
+
+  test('a rare ward turns a pierced cast away in its words and spends nothing', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    await lifted();
+    fake.signInAs(bo);
+    must(await fake.useCard('rareshield', boFace, bos, {}, ''));
+    fake.signInAs(ana);
+    expect(await fake.playCard('blot', anaFace, bos, {}, '')).toEqual(refused('this post\'s Rare Shield turns away cards up to uncommon', 'config'));
+    // Still live: it is up when the ward is gone, so a cast with no ward on a post carries it.
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ card: 'lift' });
+  });
+
+  test('a pierce passes a common catching back: it lands, nothing springs, the back stays set and the caster alone is told', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    const pierce = await lifted();
+    fake.signInAs(bo);
+    const set = must(await fake.setCard('csnare', boFace, bos, {}));
+    fake.signInAs(ana);
+    const landed = must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect(landed.payload.caught).toBeUndefined();
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift' });
+    expect((await fake.cardsOn(bos, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect(await trapStruck(fake)).toMatchObject([{ kind: 'trapStruck', sub: 'passed', act: landed.id }]);
+    fake.signInAs(bo);
+    expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'csnare' });
+    expect(await trapStruck(fake)).toEqual([]);
+  });
+
+  test('a rare catching back still catches a pierced cast, and the pierce is spent', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    const pierce = await lifted();
+    fake.signInAs(bo);
+    must(await fake.setCard('rsnare', boFace, bos, {}));
+    fake.signInAs(ana);
+    const caught = must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect(caught.payload.caught).toBeDefined();
+    expect(caught.payload.pierce).toEqual({ by: pierce.id, card: 'lift' });
+    expect(await trapStruck(fake)).toEqual([]);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toBeUndefined();
+  });
+
+  test('a ride back springs as it does without a pierce', async () => {
+    const { fake, ana, bo, anaFace, boFace, bos, lifted } = pierceSetup();
+    await lifted();
+    fake.signInAs(bo);
+    must(await fake.setCard('cushion', boFace, bos, {}));
+    fake.signInAs(ana);
+    must(await fake.playCard('blot', anaFace, bos, {}, ''));
+    expect((await fake.cardsOn(bos, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'cushion', did: 'rode' });
+    expect(await trapStruck(fake)).toEqual([]);
+  });
+
+  test('a Use reads no pierce, and the pierce survives it', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    await lifted();
+    const used = must(await fake.useCard('shield', anaFace, mine, {}, ''));
+    expect(used.payload.pierce).toBeUndefined();
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ card: 'lift' });
+  });
+
+  test.each(['character', 'thread', 'board'] as const)('a pierce gets a cast at %s reach past a ward of that reach, names it, and is spent', async (reach) => {
+    const { fake, ana, bo, anaFace, boFace, bos, thread, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    fake.signInAs(bo);
+    const bothread = fake.seed.thread('general', boFace, 'Bo thread', 'Bo opens.');
+    const target = { character: boFace, thread: bothread.thread, board: general.id }[reach];
+    const key = { character: 'cward', thread: 'tward', board: 'bward' }[reach];
+    if (reach === 'board') fake.seed.reach(boFace, 'board', general.id, key);
+    else must(await fake.useCard(key, boFace, reach === 'character' ? boFace : bothread.thread, {}, '', reach, reach === 'character' ? bos : undefined));
+    fake.signInAs(ana);
+    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined);
+    const landed = must(await cast());
+    expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: key });
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
+    // Spent: the next cast meets the ward.
+    expect(await cast()).toMatchObject({ ok: false });
+  });
+
+  test('a Use at a reach reads no pierce, and the pierce stays live', async () => {
+    const { fake, anaFace, mine, thread, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const used = must(await fake.useCard('lift2', anaFace, anaFace, {}, '', 'character', mine));
+    expect(used.payload.pierce).toBeUndefined();
+    expect((await fake.effectsAbove([anaFace], thread, null)).some((e) => e.play === pierce.id)).toBe(true);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: pierce.id });
+  });
+
+  test('with two live pierces the oldest is spent first', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    const first = await lifted();
+    fake.clock.advance(1000);
+    const second = must(await fake.useCard('lift2', anaFace, anaFace, {}, '', 'character', mine));
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: first.id });
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: second.id });
+  });
+
+  test('an expired pierce is not used', async () => {
+    const { fake, anaFace, lifted } = pierceSetup();
+    await lifted();
+    fake.clock.advance(8 * 24 * 3_600_000);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toBeUndefined();
+  });
+
+  test('a cast as another account\'s character is refused as before and spends no pierce', async () => {
+    const { fake, boFace, anaFace, lifted } = pierceSetup();
+    const pierce = await lifted();
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(await fake.playCard('blot', boFace, act, {}, '')).toMatchObject({ ok: false });
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: pierce.id });
+  });
+
+  test('reachEffects leaves a spent pierce out: its own card can be used again only once it is spent', async () => {
+    const { fake, anaFace, mine } = pierceSetup();
+    const use = async () => fake.useCard('lift3', anaFace, anaFace, {}, '', 'character', mine);
+    const first = must(await use());
+    expect(await use()).toMatchObject({ ok: false, error: 'this character already carries that card' });
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    expect(must(await fake.playCard('blot', anaFace, act, {}, '')).payload.pierce).toMatchObject({ by: first.id });
+    expect(must(await use()).kind).toBe('card');
+  });
+
+  test('a pierce is left out of the effects once spent, and a second can be used at once', async () => {
+    const { fake, anaFace, mine, lifted } = pierceSetup();
+    const first = await lifted();
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === first.id)).toBe(true);
+    const { act } = fake.seed.thread('general', anaFace, 'Other', 'Open post.');
+    must(await fake.playCard('blot', anaFace, act, {}, ''));
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === first.id)).toBe(false);
+    expect(must(await fake.useCard('lift', anaFace, anaFace, {}, '', 'character', mine)).kind).toBe('card');
+  });
+
   test('a banned character cannot take a back, in the ban\'s words', async () => {
     const { fake, anaFace, opener } = setup2();
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
@@ -2861,6 +3037,9 @@ describe('an admin ends a card play (reverse_card)', () => {
     const ended = must(await fake.reverseCard(play.id));
     expect((await fake.cardsOn(opener, 10)).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card', play.id, opener], ['card_end', ended.act, play.id]]);
     expect((await fake.cardsOnMany([opener], 10)).map((a) => a.kind)).toEqual(['card', 'card_end']);
+    expect((await fake.cardEnds([play.id, 'nope'])).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card_end', ended.act, play.id]]);
+    expect(await fake.cardEnds([opener])).toEqual([]);
+    expect(await fake.cardEnds([])).toEqual([]);
   });
 
   test('an ended play keeps no state and is not released from: both are refused in the server\'s words, after the checks that come first', async () => {
@@ -4474,6 +4653,163 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
     });
   });
 
+  /* A lockout outcome (docs/plans/2026-11-21-so-very-happy-plan.md, Task 4): the Move that springs the back lands, and its character is locked out of the thread, as place_cast and not_locked_out say. */
+  describe('a lockout back', () => {
+    const lkBase = { ...base, validateConfig: (c: unknown) => ok(c ?? {}) };
+    const lkback = { ...lkBase, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const, 'pepperoni' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
+    const lksalty = { ...lkBase, key: 'lksalty', name: 'Lk Salty', alignment: 'salty' as const, rarity: 'common' as const, stack: 6, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lksalty', stack: 6 }, t, e, now) };
+    const lkcutter = { ...lkBase, key: 'lkcutter', name: 'Lk Cutter', alignment: 'pepperoni' as const, rarity: 'rare' as const, replies: true as const, canApply: (t: CardTarget, e: readonly CardEffect[], _c?: unknown, now?: Date) => landsOn({ key: 'lkcutter', reaches: ['post'] }, t, e, now) };
+    const lkwide = { ...lkBase, key: 'lkwide', name: 'Lk Wide', alignment: 'sweet' as const, rarity: 'common' as const, reaches: ['post' as const, 'thread' as const, 'character' as const, 'board' as const], lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+    const lkWorld: Instance = { ...instance, cards: [lkback, lksalty, lkcutter, lkwide] as unknown as CardRules[], machine: [], settings: { ...settings, postMaxLength: 500, economy: {} } };
+    function lk() {
+      const fake = createFake({ instance: lkWorld });
+      const ana = fake.seed.account('ana');
+      const bo = fake.seed.account('bo');
+      const root = fake.seed.account('root');
+      fake.seed.admin(root);
+      const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+      const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+      const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
+      const { thread, act: post } = fake.seed.thread('general', anaFace, 'T1', 'Post 1');
+      const other = fake.seed.thread('general', anaFace, 'T2', 'Post 2');
+      fake.seed.wallet(ana, 900); fake.seed.wallet(bo, 900);
+      fake.seed.cards(ana, { lkback: 3 });
+      fake.seed.cards(bo, { lksalty: 6, lkcutter: 2, lkback: 1, lkwide: 6 });
+      fake.signInAs(ana);
+      return { fake, ana, bo, root, anaFace, boFace, boHeel, thread, post, otherThread: other.thread, otherPost: other.act };
+    }
+    const lockedWords = (until: string) => `Bo Face is locked out of this thread until ${refusalTime(new Date(Math.ceil(Date.parse(until) / MINUTE) * MINUTE).toISOString())}; the lockout ends by itself then, and it holds only this character, not your other characters`;
+    const springOf = async (fake: ReturnType<typeof lk>['fake'], post: string) => (await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')!;
+
+    test('the Move that springs it lands, and the spring says lockedOut with who it locks and until when, with no card handed anywhere', async () => {
+      const { fake, bo, anaFace, boFace, post } = lk();
+      const back = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      const before = (await fake.myCards()).find((c) => c.card === 'lksalty')!.held;
+      const move = must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      expect(move.payload).not.toHaveProperty('caught');
+      expect(move.payload).not.toHaveProperty('rode');
+      const spring = await springOf(fake, post);
+      expect(spring.payload).toEqual({ card: 'lkback', trigger: 'cast', did: 'lockedOut', set: back.id, by: move.id, locks: boFace, until: new Date(Date.parse(spring.createdAt) + 24 * 3_600_000).toISOString() });
+      expect((await fake.myCards()).find((c) => c.card === 'lksalty')!.held).toBe(before - 1);
+      expect((await fake.log()).cards.filter((e) => e.kind === 'returned' || e.kind === 'caught')).toEqual([]);
+    });
+
+    test('the locked character is refused a post, a Move and a back in that thread in the SQL\'s words, until an admin ends it; its other mask and other threads are not held', async () => {
+      const { fake, bo, root, anaFace, boFace, boHeel, thread, post, otherPost, otherThread } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      const until = String(spring.payload.until);
+      expect(await fake.post(thread, boFace, 'Hello', null)).toEqual(refused(lockedWords(until)));
+      expect(await fake.playCard('lksalty', boFace, post, {}, '')).toMatchObject({ ok: false, error: lockedWords(until) });
+      /* Not held: another mask of the same account, another thread. */
+      must(await fake.post(thread, boHeel, 'Hello', null));
+      must(await fake.post(otherThread, boFace, 'Hello elsewhere', null));
+      must(await fake.playCard('lksalty', boFace, otherPost, {}, ''));
+      fake.signInAs(root);
+      must(await fake.reverseCard(spring.id));
+      fake.signInAs(bo);
+      must(await fake.post(thread, boFace, 'Hello again', null));
+    });
+
+    test('a back is not set by the locked character in that thread', async () => {
+      const { fake, bo, anaFace, boFace, thread, post } = lk();
+      const mine = fake.seed.post(thread, boFace, 'Mine');
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const until = String((await springOf(fake, post)).payload.until);
+      expect(await fake.setCard('lkback', boFace, mine, {})).toMatchObject({ ok: false, error: lockedWords(until) });
+    });
+
+    test('a thread or character play in the locked thread is refused; a board play, an edit, a reaction and a quote from another thread are not', async () => {
+      const { fake, bo, anaFace, boFace, thread, post, otherThread } = lk();
+      const mine = fake.seed.post(thread, boFace, 'Mine');
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const until = String((await springOf(fake, post)).payload.until);
+      expect(await fake.playCard('lkwide', boFace, thread, {}, '', 'thread')).toMatchObject({ ok: false, error: lockedWords(until) });
+      expect(await fake.playCard('lkwide', boFace, anaFace, {}, '', 'character', post)).toMatchObject({ ok: false, error: lockedWords(until) });
+      const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+      must(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board'));
+      must(await fake.edit(mine, boFace, 'Mine, edited'));
+      must(await fake.react(post, boFace, 'fire'));
+      must(await fake.post(otherThread, boFace, `[quote=${post}]Post 1[/quote]over here`, post));
+    });
+
+    test('an admin ends a live lockout once; a second end is refused; the page and my characters carry it only while it holds', async () => {
+      const { fake, bo, root, anaFace, boFace, boHeel, thread, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      const until = String(spring.payload.until);
+      const lockedOf = async (id: string) => (await fake.threadPage(thread, { page: 1 }, null, []))!.people.find((p) => p.character.id === id)?.character.lockedUntil;
+      expect(await lockedOf(boFace)).toBe(until);
+      expect(await lockedOf(boHeel)).toBeUndefined();
+      expect((await fake.myCharacters()).find((c) => c.id === boFace)!.lockouts).toEqual([{ thread, until }]);
+      expect((await fake.myCharacters()).find((c) => c.id === boHeel)!.lockouts).toBeUndefined();
+      expect(await fake.reverseCard(spring.id)).toEqual(refused('only an admin ends a card'));
+      fake.signInAs(root);
+      must(await fake.reverseCard(spring.id));
+      expect(await fake.reverseCard(spring.id)).toEqual(refused('an admin has already ended that card'));
+      fake.signInAs(bo);
+      expect(await lockedOf(boFace)).toBeUndefined();
+      expect((await fake.myCharacters()).find((c) => c.id === boFace)!.lockouts).toBeUndefined();
+    });
+
+    test('an admin\'s end of a lockout is in the log of the setter\'s player and of the locked character\'s player, and of no one else', async () => {
+      const { fake, ana, bo, root, anaFace, boFace, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      fake.signInAs(root);
+      const end = must(await fake.reverseCard(spring.id));
+      const ended = async (who: string) => { fake.signInAs(who); return (await fake.log()).ended.filter((e) => e.play === spring.id); };
+      expect(await ended(ana)).toMatchObject([{ cardEnd: end.act, play: spring.id, card: 'lkback', side: 'cast', character: anaFace }]);
+      expect(await ended(bo)).toMatchObject([{ cardEnd: end.act, play: spring.id, card: 'lkback', side: 'onMine', character: boFace }]);
+      expect(await ended(root)).toEqual([]);
+    });
+
+    test('the refusal names the character and the time and nothing of the player, the same words the SQL says', async () => {
+      const { fake, bo, anaFace, boFace, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      const refusal = await fake.playCard('lksalty', boFace, post, {}, '');
+      expect(refusal).toEqual(refused(lockedWords(String(spring.payload.until))));
+      expect(JSON.stringify(refusal)).not.toMatch(/Bo Heel|"bo"/);
+    });
+
+    test('a lockout that has run its time is over by itself, and cannot be ended', async () => {
+      const { fake, bo, root, anaFace, boFace, thread, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const spring = await springOf(fake, post);
+      fake.clock.advance(25 * 60 * MINUTE);
+      must(await fake.post(thread, boFace, 'Back', null));
+      fake.signInAs(root);
+      expect(await fake.reverseCard(spring.id)).toEqual(refused('that card has already worn off'));
+    });
+
+    test('the Move that springs it still writes the reply it carries', async () => {
+      const { fake, bo, anaFace, boFace, thread, post } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      const move = must(await fake.playCard('lkcutter', boFace, post, {}, '', undefined, undefined, undefined, { body: 'Excuse me.' }));
+      expect(move.payload).toHaveProperty('reply');
+      expect((await springOf(fake, post)).payload).toMatchObject({ did: 'lockedOut', locks: boFace });
+      const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
+      expect(page.under.map((u) => u.act.currentPayload)).toEqual([{ body: 'Excuse me.' }]);
+    });
+  });
+
   describe('a scored-as play', () => {
     const NEXT = START + DAY / 2;
     /* The last settlement ended now; the next is half a day on, the window after it a settlement's length (one day) long. */
@@ -5305,6 +5641,89 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
     expect(await w.fake.fileReport(w.anaFace, w.post, 'rude')).toEqual(refused(`this post's author is hidden until ${until} UTC; report it after`));
     expect(await w.fake.wallet()).toEqual({ balance: 500, cap: 600 });
     expect(await w.fake.reportsLeft(w.anaFace)).toBe(3);
+  });
+
+  /** A report judged a visit that opens none gets its price back (report-no-visit plan, Task 3). */
+  describe('a visit verdict that opens no visit', () => {
+    const noVisitWorld = () => {
+      const w = veilWorld();
+      const mod = w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+      w.fake.seed.wallet(w.ana, 500);
+      w.fake.seed.judging({ report: 'visit' });
+      const visitActs = async () => (await w.fake.threadPage(w.thread, { page: 1 }, 5, []))!.visits;
+      return { ...w, mod, visitActs };
+    };
+    test('a veil that lands while the Mod judges: no visit, refund veiled, the wallet back, the quota spent, the log and no visit Act', async () => {
+      const w = noVisitWorld();
+      let played: ReturnType<typeof w.fake.playCard> | undefined;
+      w.fake.seed.judging({ meanwhile: () => { played = w.fake.playCard('whodunnit', w.anaFace, w.post, {}, ''); } });
+      const a = await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      must(await played!);
+      expect(a).toMatchObject({ ok: true, value: { verdict: 'visit', visit: null, refund: { why: 'veiled', amount: 25 } } });
+      expect(await w.fake.wallet()).toEqual({ balance: 500, cap: 600 });
+      expect(await w.fake.reportsLeft(w.anaFace)).toBe(2);
+      expect((await w.fake.log()).reports[0]).toMatchObject({ verdict: 'visit', refund: 'veiled' });
+      expect(await w.visitActs()).toEqual([]);
+    });
+    test('a post whose earlier report visit has ended: refund visited, the same; a reversed one does not count', async () => {
+      const w = noVisitWorld();
+      const earlier = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      w.fake.seed.visitEnd(earlier, { outcome: 'filed' });
+      const a = await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      expect(a).toMatchObject({ ok: true, value: { verdict: 'visit', visit: null, refund: { why: 'visited', amount: 25 } } });
+      expect(await w.fake.wallet()).toEqual({ balance: 500, cap: 600 });
+      expect(await w.fake.reportsLeft(w.anaFace)).toBe(2);
+      expect((await w.fake.log()).reports[0]).toMatchObject({ refund: 'visited' });
+      expect(await w.visitActs()).toHaveLength(1);
+      const other = w.fake.seed.post(w.thread, w.cyFace, 'Another');
+      const gone = w.fake.seed.visit(w.mod, other, { charges: [{ cause: 'report' }] });
+      w.fake.seed.visitEnd(gone, { outcome: 'reversed' });
+      const b = await w.fake.fileReport(w.anaFace, other, 'rude');
+      expect(b).toMatchObject({ ok: true, value: { verdict: 'visit', refund: null } });
+      expect(b.ok && b.value.visit).not.toBeNull();
+      expect(b.ok && b.value.visit).not.toBe(gone);
+    });
+    test('a failed judgment clears the meanwhile hook: the next report does not run it', async () => {
+      const w = noVisitWorld();
+      let ran = 0;
+      w.fake.seed.judging({ report: 'failed', meanwhile: () => { ran += 1; } });
+      expect(await w.fake.fileReport(w.anaFace, w.post, 'rude')).toMatchObject({ ok: false });
+      w.fake.seed.judging({ report: 'visit' });
+      expect(await w.fake.fileReport(w.anaFace, w.post, 'rude')).toMatchObject({ ok: true, value: { verdict: 'visit' } });
+      expect(ran).toBe(0);
+    });
+    test('a repeat while an older visit is still open answers it, though a newer one ended: no refund', async () => {
+      const w = noVisitWorld();
+      const older = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      w.fake.clock.advance(1000);
+      const newer = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      w.fake.seed.visitEnd(newer, { outcome: 'filed' });
+      const a = await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      expect(a).toMatchObject({ ok: true, value: { verdict: 'visit', visit: older, refund: null } });
+      expect(await w.fake.wallet()).toEqual({ balance: 475, cap: 600 });
+    });
+    test('with that visit still open: the report joins it, no new visit Act, no refund', async () => {
+      const w = noVisitWorld();
+      const open = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      const a = await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      expect(a).toMatchObject({ ok: true, value: { verdict: 'visit', visit: open, refund: null } });
+      expect(await w.fake.wallet()).toEqual({ balance: 475, cap: 600 });
+      expect(await w.visitActs()).toHaveLength(1);
+      expect((await w.fake.log()).reports[0]!.refund).toBeNull();
+    });
+    test('the Mod\'s moves log says on each report row whether its verdict carried a visit', async () => {
+      const w = noVisitWorld();
+      const earlier = w.fake.seed.visit(w.mod, w.post, { charges: [{ cause: 'report' }] });
+      w.fake.seed.visitEnd(earlier, { outcome: 'filed' });
+      await w.fake.fileReport(w.anaFace, w.post, 'rude');
+      const fresh = w.fake.seed.post(w.thread, w.cyFace, 'Fresh');
+      await w.fake.fileReport(w.anaFace, fresh, 'rude');
+      w.fake.seed.judging({ report: 'dismissed' });
+      const other = w.fake.seed.post(w.thread, w.cyFace, 'Another');
+      await w.fake.fileReport(w.anaFace, other, 'rude');
+      const rows = (await w.fake.movesLog('s-mod')).rows.filter((r) => r.kind === 'report');
+      expect(rows.map((r) => [r.params['verdict'], r.params['visited']]).sort()).toEqual([['dismissed', false], ['visit', false], ['visit', true]]);
+    });
   });
 
   test('a blind post gives its tallies to its author\'s player and the caster alone, and a reaction to it answers no tally and sends none', async () => {

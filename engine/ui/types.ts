@@ -167,13 +167,19 @@ export interface AlertCopy {
 export interface TrapStruckFacts {
   /** `rode`: a cast landed as usual on a ride back's post (the setter is paid for its reactions); `laid` is the caster's own card that landed, and `card` the setter's card, null where its spring was not read. */
   /** `returned`: a cast landed on a refund back's post and its card went back to its caster's hand (the caster is told). */
-  readonly how: 'quote' | 'caught' | 'rode' | 'returned';
+  /** `passed`: a pierce got the player's cast past a set card that would have caught it; `laid` is the cast's card, `card` the pierce's card, and `setter` and `span` are null (nothing about the back is public). */
+  /** `lockedOut`: a cast landed on a lockout back's post and its character is locked out of the thread until `until`; `card` is the setter's card, `laid` the caster's own. */
+  readonly how: 'quote' | 'caught' | 'rode' | 'returned' | 'passed' | 'lockedOut';
   readonly setter: string | null;
   readonly card: string | null;
   readonly laid: string | null;
   readonly span: string | null;
   /** Whether the setter is a staff character (a public fact of a character): a staff catching set card takes nothing, so the caught card is spent. */
   readonly setterStaff: boolean;
+  /** For `lockedOut`: when the lockout ends, already written as the alerts write times ("Nov 3 · 09:41 UTC"). */
+  readonly until?: string;
+  /** For `lockedOut`: when an admin ended the lockout early, already written as the alerts write times; absent where it has not been ended. */
+  readonly ended?: string;
   /** For a quote that met conditions: the passage the quoted excerpt held, already shortened and in quotation marks; null where none was set. Never an Anyone-but list. */
   readonly passage?: string | null;
   /** For a quote that met conditions: the phrase the quoting post said, already shortened and in quotation marks; null where none was set. */

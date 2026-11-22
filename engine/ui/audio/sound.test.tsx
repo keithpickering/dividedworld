@@ -84,11 +84,11 @@ describe('the page sound', () => {
       const { result } = renderHook(() => useSound(), { wrapper: wrap });
       await act(async () => { await result.current.play('boo'); });
       expect(fetchBytes).not.toHaveBeenCalled();
-      expect(captions.current()).toMatchObject({ text: 'boo caption', ink: 'red', held: false });
+      expect(captions.lines().at(-1)).toMatchObject({ text: 'boo caption', ink: 'red', held: false });
       act(() => { vi.advanceTimersByTime(CAPTION_MS - 1); });
-      expect(captions.current()?.text).toBe('boo caption');
+      expect(captions.lines().at(-1)?.text).toBe('boo caption');
       act(() => { vi.advanceTimersByTime(2); });
-      expect(captions.current()).toBeNull();
+      expect(captions.lines()).toEqual([]);
     } finally { vi.useRealTimers(); }
   });
 
@@ -97,15 +97,15 @@ describe('the page sound', () => {
     try {
       const { result } = renderHook(() => useSound(), { wrapper: wrap });
       await act(async () => { await result.current.play('click'); });
-      expect(captions.current()).toBeNull();
+      expect(captions.lines()).toEqual([]);
       on('interface');
       await gesture();
       await act(async () => { await result.current.play('click'); });
-      expect(captions.current()?.text).toBe('click caption');
+      expect(captions.lines().at(-1)?.text).toBe('click caption');
       act(() => { vi.advanceTimersByTime(1499); });
-      expect(captions.current()?.text).toBe('click caption');
+      expect(captions.lines().at(-1)?.text).toBe('click caption');
       act(() => { vi.advanceTimersByTime(2); });
-      expect(captions.current()).toBeNull();
+      expect(captions.lines()).toEqual([]);
     } finally { vi.useRealTimers(); }
   });
 
@@ -168,18 +168,29 @@ describe('the page sound', () => {
     expect(voice.linearRampToValueAtTime).toHaveBeenLastCalledWith(0, 1.5);
   });
 
+  test('play(key, { group, voices }) hands the cap to the mixer: two plays of one slot with voices 2 both sound', async () => {
+    on('game');
+    const { result } = renderHook(() => useSound(), { wrapper: wrap });
+    await gesture();
+    await act(async () => { await result.current.play('boo', { group: 'g', fadeMs: 100, voices: 2 }); });
+    await act(async () => { await result.current.play('boo', { group: 'g', fadeMs: 100, voices: 2 }); });
+    expect(sources).toHaveLength(2);
+    expect(sources.every((s) => (s.start as ReturnType<typeof vi.fn>).mock.calls.length === 1)).toBe(true);
+    expect(sources.map((s) => (s.stop as ReturnType<typeof vi.fn>).mock.calls.length)).toEqual([0, 0]);
+  });
+
   test('a loop holds its caption while the gain is above HELD_FROM and releases it below', async () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     on('game');
     await gesture();
     const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
     act(() => handle.setGain(HELD_FROM + 0.1));
-    expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+    expect(captions.lines().at(-1)).toMatchObject({ text: 'build caption', held: true });
     act(() => handle.setGain(HELD_FROM - 0.05));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     act(() => handle.setGain(0.9));
     act(() => handle.stop(0));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   const interfaceLoop = slot('hum', 'interface', { loop: true });
@@ -193,13 +204,13 @@ describe('the page sound', () => {
     await gesture();
     const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
     act(() => handle.setGain(0.9));
-    expect(captions.current()?.held).toBe(true);
+    expect(captions.lines().at(-1)?.held).toBe(true);
     act(() => setSoundPreference({ gameSound: 'off', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 }));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     act(() => handle.setGain(0.9));
-    expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+    expect(captions.lines().at(-1)).toMatchObject({ text: 'build caption', held: true });
     act(() => handle.setGain(0));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('a sounding interface loop whose bus goes off releases its caption and holds nothing after', async () => {
@@ -208,11 +219,11 @@ describe('the page sound', () => {
     await gesture();
     const handle = await loopLoaded(result.current, 'hum', { id: 'hum' });
     act(() => handle.setGain(0.9));
-    expect(captions.current()?.held).toBe(true);
+    expect(captions.lines().at(-1)?.held).toBe(true);
     act(() => setSoundPreference({ gameSound: 'off', gameVolume: 100, interfaceSound: 'off', interfaceVolume: 100 }));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     act(() => handle.setGain(0.9));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('a loop that was stopped, or replaced by its group, holds no caption after', async () => {
@@ -222,11 +233,11 @@ describe('the page sound', () => {
     const first = await loopLoaded(result.current, 'build', { id: 'a', group: 'g' });
     await loopLoaded(result.current, 'build', { id: 'b', group: 'g' });
     act(() => first.setGain(0.9));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     const own = await loopLoaded(result.current, 'build', { id: 'c' });
     act(() => own.stop(0));
     act(() => own.setGain(0.9));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('a loop starts silent: its voice is at gain 0 until a setGain raises it', async () => {
@@ -249,7 +260,7 @@ describe('the page sound', () => {
       handle = result.current.loop('build', { id: 'meter' });
       handle.setGain(0.9);
       handle.setGain(0.4);
-      expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+      expect(captions.lines().at(-1)).toMatchObject({ text: 'build caption', held: true });
       for (let i = 0; i < 8; i++) await Promise.resolve();
     });
     expect(sources).toHaveLength(1);
@@ -264,14 +275,14 @@ describe('the page sound', () => {
     await act(async () => {
       const handle = result.current.loop('build', { id: 'meter' });
       handle.setGain(0.9);
-      expect(captions.current()?.held).toBe(true);
+      expect(captions.lines().at(-1)?.held).toBe(true);
       handle.stop(0);
-      expect(captions.current()).toBeNull();
+      expect(captions.lines()).toEqual([]);
       for (let i = 0; i < 8; i++) await Promise.resolve();
       handle.setGain(0.9);
     });
     expect(sources).toHaveLength(0);
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('a stop in the gap between the mixer\'s answer and its handle arriving still ends the source', async () => {
@@ -291,19 +302,19 @@ describe('the page sound', () => {
     await gesture();
     await act(async () => { handle = result.current.loop('build', { id: 'meter' }); });
     await vi.waitFor(() => { expect(sources).toHaveLength(1); expect(sources[0]!.stop).toHaveBeenCalled(); });
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('a loop skipped for a bus that is off still holds and releases its game caption by gain', async () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     const handle = await loopLoaded(result.current, 'build', { id: 'meter' });
     act(() => handle.setGain(0.9));
-    expect(captions.current()).toMatchObject({ text: 'build caption', held: true });
+    expect(captions.lines().at(-1)).toMatchObject({ text: 'build caption', held: true });
     act(() => handle.setGain(0));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     act(() => handle.setGain(0.9));
     act(() => handle.stop(0));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
     expect(fetchBytes).not.toHaveBeenCalled();
   });
 
@@ -311,7 +322,7 @@ describe('the page sound', () => {
     const { result } = renderHook(() => useSound(), { wrapper: withSlots([interfaceLoop]) });
     const handle = await loopLoaded(result.current, 'hum', { id: 'hum' });
     act(() => handle.setGain(0.9));
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('a legacy context that decodes only through callbacks still sounds', async () => {
@@ -334,7 +345,7 @@ describe('the page sound', () => {
   test('caption(key) says a slot\'s caption without playing it', () => {
     const { result } = renderHook(() => useSound(), { wrapper: wrap });
     act(() => result.current.caption('boo'));
-    expect(captions.current()?.text).toBe('boo caption');
+    expect(captions.lines().at(-1)?.text).toBe('boo caption');
     expect(fetchBytes).not.toHaveBeenCalled();
   });
 
@@ -351,7 +362,7 @@ describe('the page sound', () => {
     try {
       const { result } = renderHook(() => useSound(), { wrapper: wrap });
       expect(await result.current.play('nope')).toBeNull();
-      expect(captions.current()).toBeNull();
+      expect(captions.lines()).toEqual([]);
     } finally { vi.unstubAllEnvs(); }
   });
 });
@@ -408,11 +419,11 @@ describe('the page warms the sounds a screen names', () => {
       let played: { lengthMs: number } | null = { lengthMs: 0 };
       await act(async () => { played = await result.current.play('boo', { lateMs: 10 }); });
       expect(played).toBeNull();
-      expect(captions.current()).toMatchObject({ text: 'boo caption', held: false });
+      expect(captions.lines().at(-1)).toMatchObject({ text: 'boo caption', held: false });
       act(() => { vi.advanceTimersByTime(CAPTION_MS - 1); });
-      expect(captions.current()?.text).toBe('boo caption');
+      expect(captions.lines().at(-1)?.text).toBe('boo caption');
       act(() => { vi.advanceTimersByTime(2); });
-      expect(captions.current()).toBeNull();
+      expect(captions.lines()).toEqual([]);
     } finally { vi.useRealTimers(); }
   });
 
@@ -436,7 +447,7 @@ describe('the page warms the sounds a screen names', () => {
     let played: { lengthMs: number } | null = { lengthMs: 0 };
     await act(async () => { played = await result.current.play('click', { lateMs: 10 }); });
     expect(played).toBeNull();
-    expect(captions.current()).toBeNull();
+    expect(captions.lines()).toEqual([]);
   });
 
   test('no keys, or an empty list, warms nothing', () => {

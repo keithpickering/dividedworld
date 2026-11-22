@@ -32,7 +32,7 @@
 import { createClient, type SupabaseClient } from '@supabase/supabase-js';
 import type { SignedIn } from '../../../engine/ui/data/api.ts';
 import { forgedList } from '../../../engine/bbcode/quoted.ts';
-import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
+import { DEFAULT_PREFERENCES, LOST_ANSWER, pollHeard, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, REPORT_REFUNDS, SPUN_FROM_MAX } from '../../../engine/ui/data/api.ts';
 import { readLogPage, type LedgerRow, type LogRange, type LogRead, type ShareRow } from '../../../engine/ui/data/log-page.ts';
 import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/moves.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
@@ -603,7 +603,13 @@ function toMyCharacter(r: Row): MyCharacter {
     presenceHidden: r['presence_hidden'] === true,
     ...(typeof r['banned_until'] === 'string' && Date.parse(r['banned_until']) > Date.now() ? { bannedUntil: r['banned_until'] } : {}),
     ...(toBars(r['bars']).length > 0 ? { bars: toBars(r['bars']) } : {}),
+    ...(toLockouts(r['lockouts']).length > 0 ? { lockouts: toLockouts(r['lockouts']) } : {}),
   };
+}
+
+/** The lockouts `my_characters.lockouts` carries, `[{ thread, until }]`; a malformed entry, or one whose time has passed, is left out. */
+function toLockouts(v: unknown): { thread: string; until: string }[] {
+  return Array.isArray(v) ? v.filter((x): x is { thread: string; until: string } => isObject(x) && typeof x['thread'] === 'string' && typeof x['until'] === 'string' && Date.parse(x['until']) > Date.now()).map((x) => ({ thread: x.thread, until: x.until })) : [];
 }
 
 /** The bars `my_characters.bars` carries: each board, the move, the group and when it ends; a malformed entry is left out. */
@@ -725,7 +731,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     reports: src['reports'].map((r): LogReport => ({
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
-      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: r['refund'] === 'failed' || r['refund'] === 'stale' ? r['refund'] : null,
+      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: REPORT_REFUNDS.find((w) => w === r['refund']) ?? null,
     })),
     cosmetics: src['cosmetics'].map((r): LogCosmetic => ({
       kind: COSMETIC_KINDS.find((k) => k === r['kind']) ?? 'found', id: String(r['id']), at: r['at'], character: str(r['character']),
@@ -1061,6 +1067,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       joined: c['joined'] ?? '',
       ...(typeof c['warn_points'] === 'number' && c['warn_points'] > 0 ? { warnPoints: c['warn_points'] } : {}),
       ...(typeof c['banned_until'] === 'string' && Date.parse(c['banned_until']) > Date.now() ? { bannedUntil: c['banned_until'] } : {}),
+      ...(typeof c['locked_until'] === 'string' && Date.parse(c['locked_until']) > Date.now() ? { lockedUntil: c['locked_until'] } : {}),
       ...(typeof c['staff'] === 'string' ? { staff: c['staff'], ...(toOffice(c['office']) ? { office: toOffice(c['office'])! } : {}) } : {}),
       group: typeof c['group'] === 'string' ? c['group'] : '',
     });
@@ -1187,8 +1194,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
    * plays needs no more rows than it has, and ID_CHUNK bounds each read. Returned beside the plays in the same list; the plays are unchanged.
    */
   const endsOf = async (plays: readonly Row[]): Promise<Row[]> => {
-    const ids = plays.filter((r) => r['kind'] === 'card' && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
+    /* A card play's ends, and a lockout's: an admin ends a lockout with a card_end on its lockedOut spring (0402). */
+    const endable = (r: Row) => r['kind'] === 'card' || (r['kind'] === 'spring' && (r['payload'] as Row | null)?.['did'] === 'lockedOut');
+    const ids = plays.filter((r) => endable(r) && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
     if (ids.length === 0) return [];
+    return endsByTarget(ids);
+  };
+  const endsByTarget = async (ids: readonly string[]): Promise<Row[]> => {
     const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
     return merged(rows, 'created_at', 'id');
   };
@@ -1557,6 +1569,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* A post's plays, its card backs and their springs (0054): each is a layer on the post, read through it. */
       const rows = await list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
       return [...rows, ...await endsOf(rows)].map(toAct);
+    },
+    async cardEnds(targets) {
+      const wanted = [...new Set(targets)].filter(idOk);
+      return wanted.length === 0 ? [] : (await endsByTarget(wanted)).map(toAct);
     },
     async cardsOnMany(actIds, limit) {
       const wanted = [...new Set(actIds)].filter(idOk);
@@ -1979,7 +1995,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await edge('staff', { through, post, reason }, LOST);
       if (!a.ok) return a;
       const verdict = VERDICTS.find((v) => v === a.value['verdict']) ?? null;
-      return { ok: true, value: { report: String(a.value['report'] ?? ''), verdict, line: str(a.value['line']) ?? '', visit: str(a.value['visit']) } };
+      const back = a.value['refund'];
+      const given: Record<string, unknown> = typeof back === 'object' && back !== null ? { ...back } : {};
+      const refund: ReportResult['refund'] = given['why'] === 'veiled' || given['why'] === 'visited' ? { why: given['why'], amount: num(given['amount']) } : null;
+      return { ok: true, value: { report: String(a.value['report'] ?? ''), verdict, line: str(a.value['line']) ?? '', visit: str(a.value['visit']), refund } };
     },
     async fileAppeal(through, punishment, plea): Promise<Answer<AppealResult>> {
       if (!idOk(through) || !idOk(punishment)) return refusal('that punishment could not be found');

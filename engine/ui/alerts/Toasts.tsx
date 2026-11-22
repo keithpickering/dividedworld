@@ -90,7 +90,7 @@ async function read(api: KayfaApi, a: Arrival, base: Pick<WordsContext, 'instanc
       ]);
       row = { ...row, thread: about?.thread ?? null, title, name: who };
       /* A face-down card that struck: its spring, its set and the setter's character (its own catch inside). */
-      if (a.kind === 'trapStruck') {
+      if (a.kind === 'trapStruck' || a.kind === 'trapSprang') {
         const got = await readTrapActs(api, [row], acts);
         for (const [id, x] of got.acts) acts.set(id, x);
         for (const [id, n] of got.names) names.set(id, n);

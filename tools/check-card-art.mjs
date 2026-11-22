@@ -114,8 +114,8 @@ function rootFaults(name, text, what, ok) {
   return ok(box) ? [] : [`${name}: its viewBox is "${vb[1].trim()}"; ${what}`];
 }
 
-/** Faults of an SVG that runs or reaches out (rule 6 and the hostile cases). */
-function safetyFaults(name, text) {
+/** Faults of an SVG that runs or reaches out (rule 6 and the hostile cases). tools/check-theme.mjs reads a theme's inline SVG with it too. */
+export function safetyFaults(name, text) {
   const out = [];
   const lower = text.toLowerCase();
   for (const bad of ['<script', '<foreignobject', '<image', '@import', '<!doctype', '<!entity']) {

@@ -373,7 +373,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     const tweener = instance.classes.find((c) => c.key === 'tweener')!;
     const lit = tweener.earn({
       character: 'tw', from: 0, to: 10, posts: [], received: [], given: [], held: [], cardsPlayed: [], cardsLanded: [], standings: [], threadsSpun: [],
-      debates: [{ act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0 }],
+      debates: [{ act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true }],
     }, instance.settings);
     const reasons = [...new Set([...Object.keys(wordsRead), ...Object.keys(settingsRead)])].filter((k) => k.includes('.'));
     for (const reason of reasons) {
@@ -696,7 +696,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('the Face\'s stolen thunder says when it is not charged: a booed post, or a card that answered a Salty play', () => {
     expect(instanceUi.reasonWords('face.stoleThunder', instance.settings.economy)).toBe('Stole the thunder: a card the character played on another\'s post drew more votes than the post this window. Not charged where the post\'s reactions are mostly negative, or where the card answered a Salty play');
-    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by a card that outdraws the post it was played on, unless the room booed that post or the card answered a Salty play.');
+    expect(instanceUi.classLooks.face!.hurtsBy(instance.settings.economy, instance.settings.settlementLength)).toBe('Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.');
   });
   test('every pip style has images', () => {
     for (const p of instance.pipStyles) expect(instanceUi.pips[p.key], p.key).toBeDefined();
@@ -805,9 +805,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
       character: 'c', from: 0, to: 20 * DAY, received, given: [],
       /* A spark that crosses in the window, and one that paid before it whose calm votes moved away in it, so its refund is taken back. */
       debates: [
-        { act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0 },
+        { act: 'p1', at: 0, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1, voice })), inOwnDebate: false, standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true },
         { act: 'p2', at: -DAY, posts: [1, 2, 1, 2, 3].map((voice, n) => ({ at: n + 1 - DAY, voice })), inOwnDebate: false,
-          standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0 },
+          standing: { before: [{ ...none, calmPositive: 1 }, { ...none, calmPositive: 1 }], now: [] }, cushioned: 0, paid: { 'tweener.litTheFuse': 20, 'tweener.outvoted': 10 }, placed: true },
       ],
       posts: Array.from({ length: eco('lurker.postsAllowed') + 1 }, (_, n) => ({ act: `q${n}`, at: n })),
       held: [{ act: 'p9', quadrant: 'excitedPositive', at: 5, reactedAt: 4, share: 1, rank: 1, othersBefore: 0, othersNow: eco('lurker.crowd'), endsUp: 'excitedPositive' },
@@ -1247,6 +1247,15 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     });
   });
 
+  test('So Very Happy is a face-down Reversal with every one\'s status, Salty\'s colors, no form and no effect, and its tagline is the glass\'s', () => {
+    const svh = ui('so-very-happy');
+    expect(svh.status).toBe('Set, face down to everyone else');
+    expect([svh.art.color, svh.art.ink]).toEqual([ui('steel-chair').art.color, ui('steel-chair').art.ink]);
+    expect(svh.art.tagline).toBe('Play it Sweet or get locked out');
+    expect(svh.Effect).toBeUndefined();
+    expect(svh.ConfigForm).toBeUndefined();
+  });
+
   test('Kick Me is a Gimmick with Pepperoni\'s colors and an effect, and its words read the earn, the refunds and the span from its rules', () => {
     const kick = ui('kick-me');
     expect([kick.art.color, kick.art.ink]).toEqual([ui('whoopee-cushion').art.color, ui('whoopee-cushion').art.ink]);
@@ -1617,6 +1626,56 @@ describe('Thick Skin in plain words (the Thick Skin plan, Task 3)', () => {
     expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
     const keys = cardsUi.map((c) => c.key);
     expect(keys).toContain('thick-skin');
+    expect(keys).toEqual([...keys].sort());
+  });
+});
+
+describe('Cheap Shot in plain words (the Cheap Shot plan, Task 7)', () => {
+  const shot = instanceUi.cards.find((c) => c.key === 'cheap-shot');
+  const wrap = (text: string) => {
+    const lines: string[] = [];
+    for (const word of text.split(' ')) {
+      const last = lines[lines.length - 1];
+      if (last !== undefined && last.length + 1 + word.length <= 20) lines[lines.length - 1] = `${last} ${word}`;
+      else lines.push(word);
+    }
+    return lines;
+  };
+
+  test('it wears the Salty pink and ink, and says what it does in a tagline, a summary and a status', () => {
+    expect(shot, 'cheap-shot is listed').toBeDefined();
+    expect(shot!.art.color).toBe('#ff3d7f');
+    expect(shot!.art.ink).toBe('#14030a');
+    expect(shot!.art.tagline).toBe('Your next Move slips past defenses.');
+    expect(shot!.summary).toBe("Used on your own character. Its next Move within 3 days can't be turned away or caught by a card up to uncommon.");
+    expect(shot!.status).toBe('Lining up a cheap shot');
+  });
+
+  test('its words are the ones the rules give', () => {
+    expect(shot!.describe(instance.settings)).toBe("A Salty card, uncommon, used on your own character. Its next Move within 3 days gets past any card that would turn it away or catch it, up to uncommon. A card set face down that it gets past stays face down, and only you are told. A card that lets a Move land and pays or gives it back still springs. It does nothing for a Move that lands from a quote. That Move uses it up, whatever was in the way. It costs nothing more to use.");
+    expect(shot!.logPlay!({}, {})).toBe("That character's next Move can't be turned away or caught by a card up to uncommon.");
+  });
+
+  test('its tagline fits the plate: at most two lines of at most 20 characters', () => {
+    const lines = wrap(shot!.art.tagline!);
+    expect(lines.length, lines.join(' | ')).toBeLessThanOrEqual(2);
+    for (const line of lines) expect(line.length, line).toBeLessThanOrEqual(20);
+  });
+
+  test('it has no effect and no form, says "play" and never "cast", and holds no percent and no class name', () => {
+    expect(shot!.Effect).toBeUndefined();
+    expect(shot!.ConfigForm).toBeUndefined();
+    const words = [shot!.art.tagline, shot!.summary, shot!.status as string, shot!.describe(instance.settings), shot!.logPlay!({}, {})].join('\n');
+    expect(words).not.toMatch(/%|\bcast/iu);
+    /* "face down" is the card's own phrase, not the class Face, so it is set aside before the class check. */
+    const unset = words.replace(/face[- ]down/giu, '');
+    for (const c of instance.classes) expect(unset, c.name).not.toMatch(new RegExp(`\\b${c.name}\\b`, 'iu'));
+  });
+
+  test('the rules over every card hold with it in', () => {
+    expect(instanceUiProblems(instanceUi, instance)).toEqual([]);
+    const keys = cardsUi.map((c) => c.key);
+    expect(keys).toContain('cheap-shot');
     expect(keys).toEqual([...keys].sort());
   });
 });

@@ -53,6 +53,17 @@ test('a live ward turns away a cast at or below its rarity, before the card\'s o
   assert.equal(rarer.ok, true);
 });
 
+test('a pierce gets a cast past a ward no rarer than it, and only that', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon };
+  const salty = { ...plain, alignment: 'salty' as const };
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names }).ok, false, 'refused with no pierce');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'uncommon' }).ok, true, 'lands past an uncommon ward');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'rare' }).ok, false, 'a rare ward still holds');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'common' }).ok, true, 'lands past a ward below it');
+  assert.equal(decidePlay(salty, settings, post, [ward], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => undefined }).ok, false, 'a ward of an unknown card still holds');
+  assert.equal(decidePlay(salty, settings, post, [{ ...ward, card: null }], {}, '', { nameOf: names, pierce: 'uncommon', rarityOf: () => 'common' }).ok, false, 'a ward with no card still holds');
+});
+
 test('an ended ward refuses nothing', () => {
   const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'legendary' }, ends: gone };
   assert.equal(decidePlay(plain, settings, post, [ward], {}, '').ok, true);
@@ -294,6 +305,12 @@ test('decideSet of a refund set card needs no quadrant, and a ride without every
   assert.deepEqual(decideSet(refunder, settings, post, [], {}, []), { ok: true, value: { price: 0, config: {} } });
   const rider: CardRules = { ...refunder, trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.5 } } };
   assert.throws(() => decideSet(rider, settings, post, [], {}, []), /names no quadrant/);
+});
+
+test('staffOffers offers a lockout set card, and decideSet of it needs no quadrant', () => {
+  const locker: CardRules = { ...snare, key: 'locker', trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'lockout', hours: 24 } }, catches: undefined, validateConfig: () => ok({}) };
+  assert.equal(staffOffers(locker), true);
+  assert.deepEqual(decideSet(locker, settings, post, [], {}, []), { ok: true, value: { price: 0, config: {} } });
 });
 
 test('staffOffers: a card with staffOptions and no default is offered, and a card with neither is not', () => {

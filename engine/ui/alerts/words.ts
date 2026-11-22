@@ -11,7 +11,7 @@ import { FOLLOWED_COUNT_CAP } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { shortQuote, springConditions } from '../cards/lens-words.ts';
 import { upperFirst } from '../copy-words.ts';
-import { inSentence } from '../log/lines.ts';
+import { inSentence, lockoutEnd } from '../log/lines.ts';
 
 /** A run of words: plain, or a title set in italics, as the board draws it. */
 export type Part = string | { readonly em: string };
@@ -67,6 +67,20 @@ function postWay(post: Act | undefined, row: Alert, ctx: WordsContext): Way[] {
 const aboutPost = (a: Act | undefined, ctx: WordsContext): Act | undefined => (a?.kind === 'card' && a.targetActId ? ctx.acts.get(a.targetActId) : a);
 
 const cardName = (key: unknown, ctx: WordsContext): string | null => ctx.instance.cards.find((c) => c.key === key)?.name ?? null;
+
+
+/**
+ * A lockout back's spring: the Move it let land locks its character out of the spring's thread until `until` (public as the Move is). `play` is the spring's `by`;
+ * `ended` is when an admin ended it early, from a `card_end` on the spring, where one is held. Read from the spring's own `did`, never from a card's key.
+ */
+function lockoutOf(spring: Act | undefined, ctx: WordsContext): { spring: Act; until: string; play: Act | undefined; caster: string | null; ended: string | null } | null {
+  if (!spring || spring.kind !== 'spring' || spring.payload.did !== 'lockedOut' || typeof spring.payload.until !== 'string') return null;
+  const play = typeof spring.payload.by === 'string' ? ctx.acts.get(spring.payload.by) : undefined;
+  const locks = typeof spring.payload.locks === 'string' ? spring.payload.locks : play?.character ?? null;
+  const t = lockoutEnd(spring, ctx.acts);
+  return { spring, until: t.until, play, caster: locks === null ? null : ctx.names?.get(locks) ?? null, ended: t.ended };
+}
+const adminEnded = (l: { ended: string | null }): string[] => (l.ended === null ? [] : [`An admin ended it at ${l.ended}.`]);
 
 /** A card play's parts: its name, where it landed, the detail and the way to it. Null when the play could not be read. */
 function cardOn(row: Alert, ctx: WordsContext): { card: string; place: Part[]; detail: Part[]; ways: Way[] } | null {
@@ -148,11 +162,23 @@ export function spanWords(ms: number): string {
 
 /**
  * A face-down card struck the player: it landed on their quoting post (the card Act names its spring), or a catching set card caught their cast (the play
- * names the set that caught it). Both are public Acts, so nothing here is computed from a private fact: the setter is the character the spring
+ * names the set that caught it), or a pierce got their cast past one (the play names the pierce, and nothing about the back). Each is a public Act, so nothing here is computed from a private fact: the setter is the character the spring
  * (or the set) names, never an account. A part that could not be read is left out, never guessed.
  */
 function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const who = row.name ?? 'Yours';
+  /* A pierce got the cast past a card set face down: the Act's public `pierce` names the pierce card, and nothing about the back is told (it stays face down, and its setter is not told). */
+  if (row.sub === 'passed' && act) {
+    const pierce = act.payload.pierce;
+    const pierceCard = cardName(typeof pierce === 'object' && pierce !== null ? (pierce as { card?: unknown }).card : undefined, ctx);
+    const laid = cardName(act.payload.card, ctx);
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'passed', setter: null, card: pierceCard, laid, span: null, setterStaff: false });
+    return {
+      line: own ? [own.line] : [`Your ${pierceCard ?? 'card'} got your ${laid ?? 'card'} past a card set face down`],
+      detail: own ? [own.detail] : sentences(["It stays face down and didn't spring, and whoever set it isn't told."], inTitle(row)),
+      ways: postWay(act.targetActId ? ctx.acts.get(act.targetActId) : undefined, row, ctx), who,
+    };
+  }
   const springId = act && typeof act.payload.spring === 'string' ? act.payload.spring : null;
   const spring = springId ? ctx.acts.get(springId) : undefined;
   const caughtSet = act && typeof act.payload.caught === 'string' ? act.payload.caught : null;
@@ -170,6 +196,22 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   const span = set && Number.isFinite(ended) ? spanWords(ended - Date.parse(set.createdAt)) : null;
   const laid = cardName(act?.payload.card, ctx);
   const setterStaff = setterId !== null && ctx.staff?.has(setterId) === true;
+  /* A lockout back's spring is named by the caster's play (`lockedOut`), as a ride's set is (`rode`). */
+  const locked = act && typeof act.payload.lockedOut === 'string' ? lockoutOf(ctx.acts.get(act.payload.lockedOut), ctx) : null;
+  if (locked && act) {
+    const post = act.targetActId ? ctx.acts.get(act.targetActId) : undefined;
+    const owner = post?.character ? ctx.names?.get(post.character) ?? null : null;
+    const where = post && post.seq !== null ? `${owner ? `${owner}'s post` : 'post'} #${post.seq}` : owner ? `a post of ${owner}'s` : 'that post';
+    const card = cardName(locked.spring.payload.card, ctx);
+    const lockSetter = locked.spring.character ?? null;
+    const setterName = lockSetter === null ? null : ctx.names?.get(lockSetter) ?? null;
+    const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'lockedOut', setter: setterName, card, laid, span: null, setterStaff: lockSetter !== null && ctx.staff?.has(lockSetter) === true, until: locked.until, ...(locked.ended === null ? {} : { ended: locked.ended }) });
+    return {
+      line: own ? [own.line] : [`${laid ? `Your ${laid}` : 'Your play'} set off ${setterName ? `${setterName}'s` : 'a'} face-down ${card ?? 'card'}`],
+      detail: own ? sentences([own.detail], adminEnded(locked)) : sentences([`The ${card ?? 'card'} on ${where} locked ${who === 'Yours' ? 'your character' : who} out of this thread until ${locked.until}.`], adminEnded(locked), inTitle(row)),
+      ways: postWay(post, row, ctx), who,
+    };
+  }
   if (handedSet !== null && act) {
     const own = ctx.ui.copy.alerts?.trapStruck?.({ how: 'returned', setter, card: null, laid, span, setterStaff });
     return {
@@ -244,6 +286,14 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
     }
     case 'cardEnded': {
       const play = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
+      /* An admin's end of a lockout (the target is a lockedOut spring, the setter's Act): nothing was spent or lost, so none of a card's words about cost apply. */
+      if (play?.kind === 'spring' && play.payload.did === 'lockedOut') {
+        const post = play.targetActId ? ctx.acts.get(play.targetActId) : undefined;
+        const owner = post?.character == null ? null : post.character === row.character ? 'your' : ctx.names?.get(post.character) ?? null;
+        const where = post && post.seq !== null ? `${owner === 'your' ? 'your post' : owner ? `${owner}'s post` : 'post'} #${post.seq}` : 'a post';
+        const locked = typeof play.payload.locks === 'string' ? ctx.names?.get(play.payload.locks) ?? null : null;
+        return { line: [`An admin ended the lockout your ${cardName(play.payload.card, ctx) ?? 'card'} on ${where} put on ${locked ?? 'a character'}.`], detail: sentences([], inTitle(row)), ways: postWay(post, row, ctx), who };
+      }
       if (!play || play.kind !== 'card') return { line: ['An admin ended your card.'], detail: sentences(['Its cost and the card are not refunded.'], inTitle(row)), ways: threadWay(row), who };
       const on = endedOn(row, play, ctx);
       return {
@@ -257,6 +307,18 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       const card = cardName(act?.payload.card, ctx);
       /* A spring written before the face-down Moves has no `did`: its words stay as they were. */
       const did = act?.kind === 'spring' ? act.payload.did : undefined;
+      const locked = did === 'lockedOut' ? lockoutOf(act, ctx) : null;
+      if (locked) {
+        /* "Your post": the setter's own, where the Act that set it is not needed; the Move's card and its character are public with the Move. */
+        const move = cardName(locked.play?.payload.card, ctx) ?? 'a Move';
+        const who2 = locked.caster ?? 'someone';
+        const where = post && post.seq !== null ? `your post #${post.seq}` : 'your post';
+        return {
+          line: [card ? `Your face-down ${card} sprang` : 'Your face-down card sprang'],
+          detail: sentences([`${card ?? 'A card'} on ${where} sprang when ${who2} played ${move} on it. ${upperFirst(move)} landed, and ${who2} ${locked.ended === null ? 'is' : 'was'} locked out of the thread until ${locked.until}.`], adminEnded(locked), inTitle(row)),
+          ways: postWay(post, row, ctx), who,
+        };
+      }
       if (did === 'landed' || did === 'caught' || did === 'ended' || did === 'rode' || did === 'returned') {
         const m = springConditions(act?.payload ?? {});
         const quote = `A quote${m.passage ? ` of ${shortQuote(m.passage)}` : ''}${m.says ? ` saying ${shortQuote(m.says)}` : ''}`;

@@ -832,7 +832,7 @@ test('settled whole: a Tweener\'s card pays twice the smaller side of the player
 /* ---- Tweener: lit the fuse, and outvoted (docs/plans/2026-11-18-tweener-catalyst-plan.md, Task 3) ---- */
 const spark = (voices: readonly number[], over: Partial<SparkedDebate> = {}): SparkedDebate => ({
   act: 's1', at: 0, posts: voices.map((voice, i) => ({ at: (i + 1) * H, voice })), inOwnDebate: false,
-  standing: { before: [], now: [] }, cushioned: 0, ...over,
+  standing: { before: [], now: [] }, cushioned: 0, paid: {}, placed: true, ...over,
 });
 const calm = (n: number, weight = 1): Standing[] => Array.from({ length: n }, () => ({ ...none, calmPositive: weight }));
 const fuse = (debates: readonly SparkedDebate[], over: Partial<ClassInput> = {}, s = settings) =>
@@ -840,6 +840,11 @@ const fuse = (debates: readonly SparkedDebate[], over: Partial<ClassInput> = {},
 const outvoted = (debates: readonly SparkedDebate[], over: Partial<ClassInput> = {}, s = settings) =>
   tweener.earn(input({ from: 0, to: 100 * H, debates, ...over }), s).filter((e) => e.reason === 'tweener.outvoted');
 const sumOf = (es: readonly { amount: number }[]) => es.reduce((t, e) => t + e.amount, 0);
+/** A spark in a later window than its crossing, as the store hands it: what the earlier windows tallied on it is the refund standing at the stretch's start. */
+const afterPaying = (voices: readonly number[], before: Standing[], now: Standing[], over: Partial<SparkedDebate> = {}): SparkedDebate => {
+  const d = spark(voices, { standing: { before, now }, ...over });
+  return { ...d, paid: { 'tweener.litTheFuse': 20, 'tweener.outvoted': refundAt(d, 24 * H, before, settings) } };
+};
 
 test('a spark pays when it holds three other players, two of them back, at the time that happened', () => {
   const [e, ...more] = fuse([spark([1, 2, 1, 2, 3])]);
@@ -902,24 +907,29 @@ test('Outvoted: in the window the spark pays, the players arguing give back the 
   assert.equal(sumOf(outvoted([spark([1, 2, 1, 0, 2, 3], { standing: { before: [], now: calm(4) } })])), 0, 'voided');
   assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], { inOwnDebate: true, standing: { before: [], now: calm(4) } })])), 0);
 });
+test('Outvoted is paid only in the stretch the debate is placed in; an unplaced stretch still pays the crossing inside it', () => {
+  const d = spark([1, 2, 1, 2, 3, 4], { placed: false, standing: { before: [], now: calm(2) } });
+  assert.deepEqual(outvoted([d]), [], 'unplaced: no refund, so a Turn inside the window never pays it twice');
+  assert.equal(sumOf(fuse([d])), 20, 'unplaced: the crossing inside it still pays');
+  assert.equal(sumOf(outvoted([{ ...d, placed: true }])), 10);
+});
 test('Outvoted moves with the debate and the nods in a later window, and takes back what a nod that moved away had given', () => {
   const later = (voices: number[], before: Standing[], now: Standing[], over: Partial<SparkedDebate> = {}) =>
-    sumOf(outvoted([spark(voices, { standing: { before, now }, ...over })], { from: 24 * H }));
+    sumOf(outvoted([afterPaying(voices, before, now, over)], { from: 24 * H }));
   const withFourth = [1, 2, 1, 2, 3, 4].map((v, i) => ({ at: i < 5 ? (i + 1) * H : 30 * H, voice: v }));
   assert.equal(later([], calm(4), calm(4), { posts: withFourth }), 5, 'a fourth voice with four nods standing');
   assert.equal(later([1, 2, 1, 2, 3, 4], calm(2), calm(3)), 5, 'a third nod with four voices');
   assert.equal(later([1, 2, 1, 2, 3, 4], calm(4), [...calm(3), { ...none, excitedPositive: 1 }]), -5, 'a nod that moved to hype');
-  assert.equal(outvoted([spark([1, 2, 1, 2, 3, 4], { standing: { before: calm(4), now: calm(4) } })], { from: 24 * H }).length, 0, 'nothing changing gives nothing');
+  assert.equal(outvoted([afterPaying([1, 2, 1, 2, 3, 4], calm(4), calm(4))], { from: 24 * H }).length, 0, 'nothing changing gives nothing');
 });
 test('a voice whose only post is after debateDays adds no allowance', () => {
   const d = spark([1, 2, 1, 2, 3, 4], { posts: [1, 2, 1, 2, 3, 4].map((voice, i) => ({ at: i < 5 ? (i + 1) * H : 3 * DAY + H, voice })) });
   assert.equal(refundAt(d, 100 * H, calm(4), settings), 15);
   assert.equal(refundAt(spark([1, 2, 1, 2, 3, 4]), 100 * H, calm(4), settings), 20);
 });
-test('refundAt is nothing before the spark has paid, and the shrugs on a halved vote cost, and give back, half as much', () => {
+test('refundAt is the refund standing, and the shrugs on a halved vote cost, and give back, half as much', () => {
   const d = spark([1, 2, 1, 2, 3, 4]);
-  assert.equal(refundAt(d, 4 * H, calm(4), settings), 0, 'it crosses at 5H');
-  assert.equal(refundAt(d, 5 * H, calm(4), settings), 0, 'a stretch is open at its start: not paid at its start');
+  assert.equal(refundAt(d, 4 * H, calm(4), settings), 10, 'two voices by 4H; whether the spark has paid is for the stretch to say');
   assert.equal(refundAt(d, 6 * H, calm(4), settings), 20);
   assert.equal(refundAt(d, 100 * H, calm(4, 0.5), settings), 10);
   assert.equal(refundAt(d, 100 * H, [{ ...none, boredNegative: 1 }, { ...none, excitedPositive: 1 }], settings), 5);
@@ -927,7 +937,8 @@ test('refundAt is nothing before the spark has paid, and the shrugs on a halved 
 test('Outvoted is stamped at the latest member inside the stretch, never after its end', () => {
   const d = spark([1, 2, 1, 2, 3, 4], { standing: { before: [], now: calm(4) } });
   assert.equal(outvoted([d], { from: 0, to: 5.5 * H })[0]?.at, 5 * H, 'the sixth post is at 6H, after the stretch closed at 5.5H');
-  assert.equal(outvoted([d], { from: 5.5 * H, to: 5.75 * H })[0]?.at, 5.75 * H, 'no member in the stretch: its end');
+  const paid = { ...d, paid: { 'tweener.litTheFuse': 20 } };
+  assert.equal(outvoted([paid], { from: 5.5 * H, to: 5.75 * H })[0]?.at, 5.75 * H, 'no member in the stretch: its end');
 });
 test('Outvoted reads the vote and debateDays from the settings', () => {
   const d = spark([1, 2, 1, 2, 3, 4], { standing: { before: [], now: calm(4) } });
@@ -939,8 +950,8 @@ test('Outvoted reads the vote and debateDays from the settings', () => {
 test('a cushion halves each refund', () => {
   const half = (over: Partial<SparkedDebate>) => ({ ...over, cushioned: 0.5 });
   assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3], half({ standing: { before: [], now: calm(4) } }))])), 7, 'standing 7.5, floored');
-  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(2), now: calm(3) } }))], { from: 24 * H })), 2, 'standing 5, then 7.5 floored to 7');
-  assert.equal(sumOf(outvoted([spark([1, 2, 1, 2, 3, 4], half({ standing: { before: calm(4), now: [...calm(3), { ...none, excitedPositive: 1 }] } }))], { from: 24 * H })), -3, 'standing 10, then 7.5 floored to 7');
+  assert.equal(sumOf(outvoted([afterPaying([1, 2, 1, 2, 3, 4], calm(2), calm(3), { cushioned: 0.5 })], { from: 24 * H })), 2, 'standing 5, then 7.5 floored to 7');
+  assert.equal(sumOf(outvoted([afterPaying([1, 2, 1, 2, 3, 4], calm(4), [...calm(3), { ...none, excitedPositive: 1 }], { cushioned: 0.5 })], { from: 24 * H })), -3, 'standing 10, then 7.5 floored to 7');
 });
 
 const cushionCard = { key: 'half', name: 'Half', alignment: 'sweet' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), gimmick: { kind: 'cushion' as const, share: 0.5 } };
@@ -982,6 +993,112 @@ for (const nods of [1, 3]) for (const share of [0.3, 0.5, 0.7]) {
     assert.ok(sum <= 0, `shrugged ${of('tweener.shrugged')}, cushion ${of('card.cushion')}, outvoted ${of('tweener.outvoted')} sum to ${sum}`);
   });
 }
+/* ---- The debates fixes (docs/plans/2026-11-21-debates-fixes-plan.md, Task 2): a refund starts from what was paid, and a crossing pays the class that held it ---- */
+const dbIds = ['a', 'b', 'c', 'd', 'e'];
+const dbCast = (twClasses: { class: string; from: number }[]) => [
+  { id: 'tw', player: 'pt', classes: twClasses },
+  { id: 'k', player: 'pk', classes: [{ class: 'face', from: -1 }] },
+  ...dbIds.map((id) => ({ id, player: `p-${id}`, classes: [{ class: 'face', from: -1 }] })),
+];
+/** The spark `sp` at 1H and the posts that quote it: three other players each back once and a fourth who posts once at 10H, so it crosses at 7H and its latest member is at 10H. */
+const dbActs = [
+  { id: 'sp', character: 'tw', kind: 'post' as const, at: 1 * H, thread: 't' },
+  ...[['a0', 'a', 3], ['a1', 'a', 4], ['b0', 'b', 5], ['b1', 'b', 6], ['c0', 'c', 7], ['c1', 'c', 8], ['d0', 'd', 10]].map(([id, character, at]) => ({ id: id as string, character: character as string, kind: 'post' as const, at: (at as number) * H, thread: 't' })),
+];
+const dbQuotes = dbActs.slice(1).map((a) => ({ act: a.id, quoted: 'sp' }));
+const dbNod = (who: string, kind: string, at: number) => ({ act: 'sp', player: `p-${who}`, character: who, kind, at });
+type Stage = { readonly window: { id: string; from: number; to: number }; readonly reactions: SettlementInput['reactions']; readonly acts?: SettlementInput['acts']; readonly classes?: { class: string; from: number }[] };
+/** Settles the windows in order, carrying what the store carries: each vote's latest payment (`paid`) and the sums of the tallied lines (`tallied`). */
+function chain(stages: readonly Stage[], twClasses: { class: string; from: number }[], w: typeof fuseWorld = fuseWorld) {
+  const results: ReturnType<typeof settle>[] = [];
+  const sums = new Map<string, { act: string; reason: string; amount: number }>();
+  for (const st of stages) {
+    const r = settle({
+      window: st.window, characters: dbCast(st.classes ?? twClasses), acts: (st.acts ?? dbActs).filter((a) => a.at < st.window.to), quotes: dbQuotes,
+      reactions: st.reactions.filter((x) => x.at < st.window.to), paid: upTo(...results), tallied: [...sums.values()],
+    }, w);
+    results.push(r);
+    for (const t of r.tallied) {
+      const key = `${t.act} ${t.reason}`;
+      sums.set(key, { act: t.act, reason: t.reason, amount: (sums.get(key)?.amount ?? 0) + t.amount });
+    }
+  }
+  return results;
+}
+const dbOf = (r: ReturnType<typeof settle>, reason: string) => r.entries.filter((e) => e.character === 'tw' && e.reason === reason);
+const dbSum = (rs: readonly ReturnType<typeof settle>[], reason: string) => rs.reduce((t, r) => t + sumOf(dbOf(r, reason)), 0);
+const W1 = { id: 'w1', from: 0, to: 24 * H };
+const W5 = { id: 'w5', from: 96 * H, to: 120 * H };
+const TW = [{ class: 'tweener', from: -1 }];
+
+test('F1 (#893): four nods that move to fire once the debate is no longer followed take the refund back, and shrugs and refund never sum above nothing', () => {
+  const nods = ['a', 'b', 'c', 'd'].map((id) => dbNod(id, 'folded-hands', 2 * H));
+  const moves = ['a', 'b', 'c', 'd'].map((id) => dbNod(id, 'fire', 100 * H));
+  const rs = chain([{ window: W1, reactions: nods }, { window: W5, reactions: [...nods, ...moves] }], TW);
+  assert.deepEqual([dbSum(rs.slice(0, 1), 'tweener.litTheFuse'), dbSum(rs.slice(0, 1), 'tweener.outvoted'), dbSum(rs.slice(0, 1), 'tweener.shrugged')], [20, 20, -20], 'the first window: four voices, four nods');
+  assert.ok(dbSum(rs, 'tweener.shrugged') + dbSum(rs, 'tweener.outvoted') <= 0, `shrugged ${dbSum(rs, 'tweener.shrugged')} and outvoted ${dbSum(rs, 'tweener.outvoted')}`);
+  assert.ok(dbSum(rs.slice(1), 'tweener.outvoted') < 0, 'a refund is taken back');
+  assert.equal(dbSum(rs.slice(1), 'tweener.outvoted'), -dbSum(rs.slice(1), 'tweener.shrugged'), 'as much as the shrugs given back');
+});
+test('F1 (#893): a cushion played after the refund paid does not leave the refund standing when the nods move away', () => {
+  const nods = ['a', 'b', 'c', 'd'].map((id) => dbNod(id, 'folded-hands', 2 * H));
+  const moves = ['a', 'b', 'c', 'd'].map((id) => dbNod(id, 'fire', 100 * H));
+  const card = { id: 'g1', character: 'k', kind: 'card' as const, at: 30 * H, thread: 't', target: 'sp', card: 'half', ends: 200 * H };
+  const W2 = { id: 'w2', from: 24 * H, to: 48 * H };
+  const rs = chain([{ window: W1, reactions: nods }, { window: W2, reactions: nods, acts: [...dbActs, card] }, { window: W5, reactions: [...nods, ...moves], acts: [...dbActs, card] }], TW);
+  const sum = dbSum(rs, 'tweener.shrugged') + dbSum(rs, 'card.cushion') + dbSum(rs, 'tweener.outvoted');
+  assert.ok(sum <= rs.length, `shrugged ${dbSum(rs, 'tweener.shrugged')}, cushion ${dbSum(rs, 'card.cushion')}, outvoted ${dbSum(rs, 'tweener.outvoted')} sum to ${sum}`);
+  assert.ok(dbSum(rs, 'tweener.outvoted') >= 0);
+});
+test('F2 (#893): a spark that crossed while the character was a Face, which then Turned to Tweener, pays and takes back no refund', () => {
+  const nods = ['a', 'b', 'c', 'd'].map((id) => dbNod(id, 'folded-hands', 2 * H));
+  const moves = ['a', 'b', 'c', 'd'].map((id) => dbNod(id, 'fire', 40 * H));
+  const W2 = { id: 'w2', from: 24 * H, to: 48 * H };
+  const rs = chain([{ window: W1, reactions: nods }, { window: W2, reactions: [...nods, ...moves] }], [{ class: 'face', from: -1 }, { class: 'tweener', from: 30 * H }]);
+  assert.deepEqual(rs.flatMap((r) => dbOf(r, 'tweener.outvoted')), [], 'no outvoted line at all');
+  assert.deepEqual(rs.flatMap((r) => dbOf(r, 'tweener.litTheFuse')), [], 'and no fuse either: the crossing was a Face\'s');
+});
+test('F3 (#894): a crossing is paid to the class held at the crossing, though the latest member falls after a Turn away in the same window', () => {
+  const [w] = chain([{ window: W1, reactions: [] }], [{ class: 'tweener', from: -1 }, { class: 'face', from: 8 * H }]);
+  assert.equal(sumOf(dbOf(w!, 'tweener.litTheFuse')), 20, 'a Tweener until 8H, crossing at 7H, latest member at 10H');
+  const [control] = chain([{ window: W1, reactions: [] }], [{ class: 'tweener', from: -1 }, { class: 'face', from: 12 * H }]);
+  assert.equal(sumOf(dbOf(control!, 'tweener.litTheFuse')), 20, 'the control, a Turn at 12H');
+});
+test('the clamp: after debateDays a new nod on a paid spark raises no refund', () => {
+  const three = ['a', 'b', 'c'].map((id) => dbNod(id, 'folded-hands', 2 * H));
+  const fourth = dbNod('d', 'folded-hands', 100 * H);
+  const rs = chain([{ window: W1, reactions: three }, { window: W5, reactions: [...three, fourth] }], TW);
+  assert.equal(dbSum(rs.slice(0, 1), 'tweener.outvoted'), 15);
+  assert.equal(dbSum(rs.slice(1), 'tweener.outvoted'), 0, 'the fourth nod is charged as a shrug and not given back');
+  assert.equal(dbSum(rs.slice(1), 'tweener.shrugged'), -5);
+});
+test('one spark settled over many windows, with nods landing and moving, cushions and Turns, never nets a gain past #860\'s rounding, and its refund never totals below nothing', () => {
+  let seed = 0x5eed;
+  const rand = (n: number) => { seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0; return seed % n; };
+  const kinds = ['folded-hands', 'fire', 'tomato', 'yawn'];
+  for (let run = 0; run < 80; run++) {
+    const windows = 2 + rand(5);
+    const stages: Stage[] = [];
+    const history: ReturnType<typeof dbNod>[] = [];
+    const card = rand(3) === 0 ? { id: 'g1', character: 'k', kind: 'card' as const, at: (24 * rand(windows) + 1 + rand(20)) * H, thread: 't', target: 'sp', card: 'half', ends: 400 * H } : null;
+    /* A Turn at a window's start. One inside a window leaves the window's end standing (`standing.now`) to the stretch the debate is placed in, so a nod
+       landing after a Turn away is refunded there with no shrug charged to match: a gap in the plan, reported with this change and not swept here. */
+    const turn = rand(3);
+    const classes = turn === 0 ? [{ class: 'tweener', from: -1 }] : turn === 1 ? [{ class: 'tweener', from: -1 }, { class: 'face', from: 24 * rand(windows + 1) * H }] : [{ class: 'face', from: -1 }, { class: 'tweener', from: 24 * rand(windows + 1) * H }];
+    for (let w = 0; w < windows; w++) {
+      for (const id of ['a', 'b', 'c', 'd']) if (rand(3) === 0) history.push(dbNod(id, kinds[rand(kinds.length)]!, (24 * w + 1 + rand(22)) * H));
+      stages.push({ window: { id: `w${w}`, from: 24 * w * H, to: 24 * (w + 1) * H }, reactions: [...history], acts: card ? [...dbActs, card] : dbActs });
+    }
+    const rs = chain(stages, classes);
+    const label = `run ${run}: ${JSON.stringify({ classes, card: card?.at, reactions: history })}`;
+    let running = 0;
+    rs.forEach((r, i) => { running += sumOf(dbOf(r, 'tweener.outvoted')); assert.ok(running >= 0, `${label}: outvoted ${running} after window ${i}`); });
+    /* The Face's shrug (bored-negative) is a loss a cushion refunds as well, while a Face holds the character. */
+    const net = dbSum(rs, 'tweener.shrugged') + dbSum(rs, 'face.boredTheRoom') + dbSum(rs, 'card.cushion') + dbSum(rs, 'tweener.outvoted');
+    assert.ok(net <= rs.length, `${label}: shrugged, cushion and outvoted net ${net}`);
+  }
+});
+
 test('settled whole: two masks of one player and one other player, each back twice, are two voices and pay nothing; estimated by character they are three', () => {
   const characters = [
     { id: 'tw', player: 'pt', classes: [{ class: 'tweener', from: -1 }] },

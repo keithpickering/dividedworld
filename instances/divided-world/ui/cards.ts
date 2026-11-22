@@ -16,6 +16,7 @@ import { ui as autocorrectUi } from './cards/autocorrect/ui.ts';
 import { ui as belowTheFoldUi } from './cards/below-the-fold/ui.ts';
 import { ui as blindStudyUi } from './cards/blind-study/ui.ts';
 import { ui as cardCollectorUi } from './cards/card-collector/ui.ts';
+import { ui as cheapShotUi } from './cards/cheap-shot/ui.ts';
 import { ui as classClownUi } from './cards/class-clown/ui.ts';
 import { ui as feelinFabUi } from './cards/feelin-fab/ui.ts';
 import { ui as feelinGlamUi } from './cards/feelin-glam/ui.ts';
@@ -43,6 +44,7 @@ import { ui as popStealUi } from './cards/pop-steal/ui.ts';
 import { ui as publicityTourUi } from './cards/publicity-tour/ui.ts';
 import { ui as requiredReadingUi } from './cards/required-reading/ui.ts';
 import { ui as ropeBreakUi } from './cards/rope-break/ui.ts';
+import { ui as soVeryHappyUi } from './cards/so-very-happy/ui.ts';
 import { ui as steelChairUi } from './cards/steel-chair/ui.ts';
 import { ui as stickAroundUi } from './cards/stick-around/ui.ts';
 import { ui as sugarCoatUi } from './cards/sugar-coat/ui.ts';
@@ -67,6 +69,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   belowTheFoldUi,
   blindStudyUi,
   cardCollectorUi,
+  cheapShotUi,
   classClownUi,
   feelinFabUi,
   feelinGlamUi,
@@ -94,6 +97,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   publicityTourUi,
   requiredReadingUi,
   ropeBreakUi,
+  soVeryHappyUi,
   steelChairUi,
   stickAroundUi,
   sugarCoatUi,

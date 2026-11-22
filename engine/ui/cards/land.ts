@@ -5,11 +5,11 @@
  * the screen and the server agree because they ask the same function. The server decides again at
  * the play (`decidePlay`), whatever this said.
  */
-import { QUADRANTS } from '../../rules/types.ts';
-import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, matchWords, playOf as playOfRules, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Verdict } from '../../rules/cards.ts';
+import { ALIGNMENTS, QUADRANTS } from '../../rules/types.ts';
+import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, effectsOnTarget, atOrBelow, matchWords, playOf as playOfRules, RARITIES, reachesOf, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Rarity, type Verdict } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
-import { shareWords } from '../copy-words.ts';
+import { shareWords, upperFirst } from '../copy-words.ts';
 import type { Act } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
 import { stackPlays } from './plays.ts';
@@ -45,6 +45,8 @@ export interface LandingContext {
   readonly faceDown?: true;
   /** The post the one asked about is drawn under, where it is a reply a play carries: a card that replies takes none under it. */
   readonly under?: string;
+  /** The caster's live pierce (a Cheap Shot's `upTo`): a ward whose card is at or below it does not turn the cast away (`decidePlay`). */
+  readonly pierce?: Rarity;
 }
 
 /**
@@ -67,7 +69,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
  * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a
  * needed message aside, so decideSet would not refuse it here.
  */
-export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string }): { readonly cast: boolean; readonly set: boolean } {
+export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity }): { readonly cast: boolean; readonly set: boolean } {
   const live = stackPlays(plays, context.now);
   const cast = landing(rules, post, live, context).ok;
   const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
@@ -99,7 +101,7 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
-    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf });
+    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
   return decided.ok ? { ok: true, value: undefined } : decided;
 }
 
@@ -115,6 +117,20 @@ const LANDS_ON: Readonly<Record<'post' | BeyondPost, string>> = {
 export const landsWords = (rules: Pick<CardRules, 'reaches'>): string => LANDS_ON[reachesOf(rules)[0] ?? 'post'];
 
 /**
+ * What a lockout back's match says of the Move it springs on, from the match and never a card's key: "that isn't Sweet, up to rare" where it leaves one flavor
+ * out of the instance's flavors, "that is Sweet" where it takes some, and nothing of flavor where it takes all. A rarity below the card's own is named; the top one is not.
+ */
+function lockoutMatchWords(match: NonNullable<CardRules['trap']>['match'], own: Rarity): string {
+  if (!match) return ' that it names';
+  const rarity = match.upTo !== undefined && atOrBelow(match.upTo, own) ? match.upTo : own;
+  const flavors = ALIGNMENTS.filter((a) => match.flavors?.includes(a));
+  const left = ALIGNMENTS.filter((a) => !flavors.includes(a));
+  const kind = flavors.length === 0 || left.length === 0 ? null : left.length === 1 ? `isn't ${upperFirst(left[0]!)}` : `is ${flavors.map(upperFirst).join(' or ')}`;
+  const upTo = rarity === RARITIES[RARITIES.length - 1] ? '' : `up to ${rarity}`;
+  return kind === null ? (upTo ? ` that is ${upTo}` : '') : ` that ${kind}${upTo ? `, ${upTo}` : ''}`;
+}
+
+/**
  * What a card set face down does, in one plain sentence, from the card's rules and never its name: a Move springs on a quote and lands on
  * what its first reach says; a set card waits for the card it names, or the cards its match covers, to be cast on the post (and takes it, or lets it land and pays on its votes), or for a
  * Mod Bot's visit to the post to start (and ends it), or does nothing.
@@ -127,6 +143,7 @@ export function springWords(rules: Pick<CardRules, 'play' | 'reaches' | 'trap' |
     const waits = rules.trap?.match ? matchWords(rules.trap.match, rules.rarity) : 'the card it names';
     const comma = waits.includes(', up to ') ? ',' : '';
     const outcome = rules.trap?.outcome;
+    if (outcome?.kind === 'lockout') return `It springs on the first Move played on your post${lockoutMatchWords(rules.trap?.match, rules.rarity)}: the Move lands, and whoever played it is locked out of the thread for ${outcome.hours} hours.`;
     if (outcome?.kind === 'ride') return `Waits for ${waits}${comma} to be cast on this post, lets it land, and pays you ${shareWords(outcome.share)} for each vote it draws${outcome.every ? '' : ' of the kind you name'}.`;
     if (outcome?.kind === 'refund') return `Waits for ${waits}${comma} to be cast on this post, lets it land, and gives the card back to its caster.`;
     return `Waits for ${waits}${comma} to be cast on this post, and takes it.`;

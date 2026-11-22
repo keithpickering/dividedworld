@@ -446,6 +446,24 @@ html[data-kb-float='sheet'] .kb-frame {
 }
 
 /*
+ * A new mask takes the plate (Hud.tsx, the recast): its edge flares once, white-hot and lit from within, and cools to its rest over the
+ * feel's screen duration as the avatar, the name and the class line arrive. Only the start is drawn here; the end is the plate's own
+ * border and glow above. Hud.tsx sets the mark and the timing only when a feel is on, so under Off nothing flares.
+ */
+@keyframes kb-hud-recast {
+  from {
+    border-color: var(--kb-glass-text-hi);
+    box-shadow:
+      inset 0 0 30px color-mix(in srgb, var(--kb-glass-neon) 45%, transparent),
+      0 0 22px color-mix(in srgb, var(--kb-glass-neon) 50%, transparent);
+  }
+}
+
+.kb-hud-plate--cast[data-kb-recast] {
+  animation: kb-hud-recast var(--kb-hud-recast-ms, 0ms) var(--kb-hud-recast-ease, ease);
+}
+
+/*
  * The plate's words are in its flow, to the avatar's right, at the board's places at 100% text
  * (the name 10px down, the class line under it, the mask picker under that), so a larger text size
  * grows the plate and stacks them rather than laying one over another.
@@ -706,6 +724,27 @@ button.kb-hud-secret:focus-visible {
 
 /* ---- the clock, over Menu and the hand ---- */
 
+/*
+ * The right side stands in two rows, the clock and Alerts over Menu and Hand, set on the glass's own lean: the lower row is moved left by the
+ * skew's run over one row's step, so Hand's slanted edge carries on down from Alerts' and Menu's from the clock, one leaning column rather than
+ * two upright stacks. The two rows are centered on the plate (2.5rem down and 9.375rem tall), so the corner balances the plate across the bar.
+ * They are :root's, since the arc and the peek (below) stand over Hand from boxes of their own and read the same place.
+ */
+:root {
+  /* Between the rows, and between Menu and Hand: one step, so the four read as one group. */
+  --kb-hud-side-gap: 1.25rem;
+  --kb-hud-side-col-gap: 20px;
+  /* Alerts' top: the rows' 7.75rem (two 3.25rem buttons and the gap) centered in the plate's 9.375rem. */
+  --kb-hud-side-top: calc(2.5rem + (9.375rem - 2 * 3.25rem - var(--kb-hud-side-gap)) / 2);
+  /* The clock stands 0.625rem above Alerts, so its time sits level with the bell's word. */
+  --kb-hud-clock-top: calc(var(--kb-hud-side-top) - 0.625rem);
+  --kb-hud-row-top: calc(var(--kb-hud-side-top) + 3.25rem + var(--kb-hud-side-gap));
+  /* How far the lower row stands left of the upper: the skew's run over one row's step (about 13px at 100% text). */
+  --kb-hud-lean: calc(tan(calc(var(--kb-glass-skew) * -1)) * (3.25rem + var(--kb-hud-side-gap)));
+  /* Menu, the gap and Hand: the lower row's width, which also places the clock over Menu's leaning edge. */
+  --kb-hud-row-width: calc(210px + var(--kb-hud-side-col-gap) + 170px);
+}
+
 .kb-hud-side {
   grid-column: 5;
   align-self: stretch;
@@ -716,11 +755,12 @@ button.kb-hud-secret:focus-visible {
   display: flex;
   flex-direction: column;
   align-items: flex-start;
-  /* Ends before the Alerts button, which stands at the right of the same corner (1229px at the board's 1440): the date and time are never drawn under it. */
-  max-width: 240px;
+  /* Ends 16px before the Alerts button, which stands at the right of the same corner (its left at 256px less its skew's 4.6px): the date and time are never drawn under it. */
+  max-width: calc(var(--kb-hud-row-width) - 170px - 4.6px - 16px);
   /* The clock's calm is its box, so the box is its words' width, and the hand's fan lies on nothing of it. */
   width: fit-content;
-  margin: 1.875rem 0 0;
+  /* Over Menu's leaning edge: Menu's left plus the lean, which is the row's width short of the column's right. */
+  margin: var(--kb-hud-clock-top) 0 0 calc(100% - var(--kb-hud-row-width));
 }
 
 .kb-hud-clock-label {
@@ -742,20 +782,19 @@ button.kb-hud-secret:focus-visible {
 
 .kb-hud-actions {
   position: absolute;
-  top: 8.875rem;
-  left: 10px;
-  right: 0;
+  top: var(--kb-hud-row-top);
+  right: var(--kb-hud-lean);
   display: flex;
-  justify-content: space-between;
+  gap: var(--kb-hud-side-col-gap);
 }
 
 /*
  * Alerts, above Hand and beside the clock (board 01-board-toasts.html): the bell, its word and a gold count of what is new, in a skewed panel with
- * a border in the ready color. Hand and Menu stay where they are below it. Same 170 by 52 as Hand, and over it.
+ * a border in the ready color. Same 170 by 52 as Hand, and over it, its slanted edges carried on by Hand's below.
  */
 .kb-hud-alerts {
   position: absolute;
-  top: 2.5rem;
+  top: var(--kb-hud-side-top);
   right: 0;
   display: inline-flex;
   align-items: center;
@@ -1178,9 +1217,9 @@ button.kb-hud-secret:focus-visible {
 
 :where(:root:not([data-kb-layout='phone'])) .kb-hand-card {
   position: absolute;
-  /* The arc's card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. The fifth column is the grid's last 426px at every width (the two gaps before it shrink below a 1440px window), so the card's x is measured from 426px short of the list's right edge: 256 - 426 = -170. */
-  left: min(calc(100% - 170px + var(--kb-fan-x)), calc(100% - 134px));
-  top: calc(8.875rem + var(--kb-fan-y));
+  /* The arc's card stands where its turn leaves it inside the window: 150px wide, and about 18px more a side where it leans. The fifth column is the grid's last 426px at every width (the two gaps before it shrink below a 1440px window), so the card's x is measured from the hand button's left, 170px and the lean short of the list's right edge. */
+  left: min(calc(100% - 170px - var(--kb-hud-lean) + var(--kb-fan-x)), calc(100% - 134px));
+  top: calc(var(--kb-hud-row-top) + var(--kb-fan-y));
   z-index: var(--kb-fan-z);
   /* Written as the same three functions the lift's transform has, so the lift interpolates each one (the turn straightens as the card rises and grows). */
   transform: translateY(0) rotate(var(--kb-fan-turn)) scale(1);
@@ -1191,10 +1230,10 @@ button.kb-hud-secret:focus-visible {
  * The cards stand over the HUD's clock, as the board draws them. A larger text size widens the clock
  * under them (its label and time grow with the text and reach the cards' left edge), and a card over
  * a player's words is a card over words they cannot read, so at any size but the board's own the arc
- * stands clear above the HUD, every row of it: 7rem less 5px higher, which puts its foot at the clock's top.
+ * stands clear above the HUD, every row of it: its row's top moved to the clock's, less 5px, which puts its foot at the clock's top.
  */
 :where(:root[data-kb-text-size]:not([data-kb-text-size='100'], [data-kb-layout='phone'])) .kb-hand-card {
-  top: calc(8.875rem + var(--kb-fan-y) - 7rem + 5px);
+  top: calc(var(--kb-hud-clock-top) + var(--kb-fan-y) + 5px);
 }
 
 /*
@@ -1298,8 +1337,8 @@ button.kb-hud-secret:focus-visible {
 
 .kb-hand-peek-card {
   position: absolute;
-  /* Over the hand button as a card at x 0 stands: the peek is not a grid and its absolute card is placed from its padding box, so the fifth column starts 34px + 426px short of the right edge, and 256 - 460 = -204. */
-  left: calc(100% - 204px);
+  /* Over the hand button as a card at x 0 stands: the peek is not a grid and its absolute card is placed from its padding box, so the hand button's left is the bar's 34px padding, the lean and its 170px short of the right edge. */
+  left: calc(100% - 204px - var(--kb-hud-lean));
   top: -90px;
   pointer-events: none;
 }

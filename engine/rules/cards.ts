@@ -105,6 +105,8 @@ export interface CardEffect {
  * a ride pays the author of the post it is on `share` of a vote for each vote on a card another player casts on that post while it is up;
  * a no-quote stops a post that quotes the post it is on, before that post is written.
  * A cast card that reaches one character or one post alone may carry an earn too, ending at its `lasts`.
+ * A pierce, used on the player's own character, gets that character's next cast past every live ward, and every set card that
+ * would catch it, whose card is no rarer than `upTo`; that cast spends it.
  */
 export type GimmickEffect =
   | { readonly kind: 'ward'; readonly upTo?: Rarity; readonly flavors?: readonly Alignment[]; readonly cards?: readonly string[] }
@@ -113,9 +115,10 @@ export type GimmickEffect =
   | { readonly kind: 'price'; readonly flavors: readonly Alignment[]; readonly add: Hundredths }
   | { readonly kind: 'ride'; readonly share: number }
   | { readonly kind: 'noQuote' }
-  | { readonly kind: 'cushion'; readonly share: number };
+  | { readonly kind: 'cushion'; readonly share: number }
+  | { readonly kind: 'pierce'; readonly upTo: Rarity };
 export type WardEffect = Extract<GimmickEffect, { kind: 'ward' }>;
-export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion']);
+export const GIMMICK_KINDS: readonly GimmickEffect['kind'][] = Object.freeze(['ward', 'earn', 'price', 'ride', 'noQuote', 'cushion', 'pierce']);
 
 /** What a cast does to the staff's discipline of its target, one of a fixed list; each card picks one and sets its numbers. */
 export type DisciplineEffect =
@@ -280,6 +283,9 @@ export const OLD_VOICE_OFF = "The old voice isn't running on this forum, so this
 /** A trap's ride: the setter is paid `share` of a vote for each vote the cast draws, in the set's quadrant or, with `every`, in all four. */
 export type RideOutcome = { readonly kind: 'ride'; readonly share: number; readonly every?: true };
 
+/** A trap's lockout: the Move that springs the trap lands as usual, and its character is locked out of that post's thread for `hours` (a whole number from 1 to 168). */
+export type LockoutOutcome = { readonly kind: 'lockout'; readonly hours: number };
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
@@ -295,9 +301,9 @@ export interface CardRules<Config = unknown> {
    * With an `outcome` the spring is not a catch: the cast that springs the trap lands as usual. A ride pays the setter `share` of a vote for each
    * vote that cast draws; where it says `every` it pays in all four quadrants and reads no quadrant from the configuration, otherwise it pays in
    * the quadrant the set named (its checked configuration's `quadrant`). A refund hands the cast's card back to its caster's hand, and a staff
-   * cast passes over it. Either may sit beside a `match` or a `catches`.
+   * cast passes over it. A lockout lets the cast land and locks its character out of the post's thread for `hours`. Any may sit beside a `match` or a `catches`.
    */
-  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: RideOutcome | { readonly kind: 'refund' } };
+  readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: RideOutcome | { readonly kind: 'refund' } | LockoutOutcome };
   /** A use card on a post alone with a time up: while it is up, the first `count` casts on its post whose printed flavor is one of `flavors`, landing and not handed back by a card set face down, each go back to their caster's hand. A staff cast passes over it. */
   readonly refunds?: { readonly flavors: readonly Alignment[]; readonly count: number };
   /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap may name its card here too). Only a set card that springs on a cast and has no `match` has it. */
@@ -560,6 +566,10 @@ export interface PlayContext {
   readonly first?: unknown;
   /** The character the play is made through, by id; a discipline card compares it with a post's author (`disciplineRefusal`). */
   readonly caster?: string;
+  /** The caster's live pierce, where one is up: a ward whose card is at or below it does not turn the cast away. */
+  readonly pierce?: Rarity;
+  /** A card's rarity by key, so a pierce can be weighed against the ward's own card. */
+  readonly rarityOf?: (key: string) => Rarity | undefined;
 }
 
 /**
@@ -577,7 +587,12 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   const now = context.now ?? new Date();
   // A reply drawn under a post is a post of its own, and takes none under it: one reply under a post, never a chain.
   if (rules.replies === true && target.reach === 'post' && target.under !== undefined) return refuse('a reply drawn under a post takes no reply under it');
-  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules));
+  const pierced = (e: CardEffect): boolean => {
+    if (e.card === null || context.pierce === undefined) return false;
+    const rarity = context.rarityOf?.(e.card);
+    return rarity !== undefined && atOrBelow(rarity, context.pierce);
+  };
+  const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
   const staffed = disciplineRefusal(rules, target, context, now);
   if (staffed) return staffed;

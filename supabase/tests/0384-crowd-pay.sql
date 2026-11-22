@@ -252,8 +252,8 @@ begin
   why := pg_temp.refusal($f$select wallet_move((select id from accounts limit 1), 1, 'bogus', null, null)$f$);
   if why is null or why not like '23514 %wallet_events_kind_check%' then raise exception 'a wallet kind that is none: %', why; end if;
   if (select count(*) from pg_proc where proname = 'apply_settlement') is distinct from 1::bigint
-     or (select pronargs from pg_proc where proname = 'apply_settlement') is distinct from 7::smallint then
-    raise exception 'apply_settlement should be one function of seven parameters: %', (select jsonb_agg(oid::regprocedure::text) from pg_proc where proname = 'apply_settlement');
+     or (select pronargs from pg_proc where proname = 'apply_settlement') is distinct from 8::smallint then
+    raise exception 'apply_settlement should be one function of eight parameters: %', (select jsonb_agg(oid::regprocedure::text) from pg_proc where proname = 'apply_settlement');
   end if;
   if not has_function_privilege('service_role', (select oid from pg_proc where proname = 'apply_settlement'), 'execute')
      or has_function_privilege('anon', (select oid from pg_proc where proname = 'apply_settlement'), 'execute')

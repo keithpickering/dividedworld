@@ -8,7 +8,9 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { LoadedThread } from '../loaded.tsx';
-import { buildWorld, renderIn } from '../test-world.tsx';
+import { landsOn, ok } from '../../rules/cards.ts';
+import type { Instance } from '../../rules/types.ts';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 
 beforeEach(() => {
   Element.prototype.scrollIntoView = vi.fn();
@@ -16,8 +18,8 @@ beforeEach(() => {
 });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-function world() {
-  const fake = buildWorld();
+function world(instance?: Instance) {
+  const fake = buildWorld({}, instance);
   const me = fake.seed.account('me');
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
@@ -32,7 +34,7 @@ function world() {
   return { fake, me, other, pipe, spritey, clerk, thread, second, mine, staffPost };
 }
 type World = ReturnType<typeof world>;
-const open = (w: World) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, copy: { modRole: 'A Moderator' } });
+const open = (w: World, instance?: Instance) => renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, copy: { modRole: 'A Moderator' }, ...(instance ? { instance } : {}) });
 const article = (seq: number) => screen.findByRole('article', { name: new RegExp(`^Post ${seq} `, 'u') });
 const reportLink = async (seq: number) => within(await article(seq)).queryByRole('button', { name: 'Report' });
 const dialog = (name: string | RegExp) => screen.findByRole('dialog', { name });
@@ -71,8 +73,8 @@ describe('the Report link', () => {
 });
 
 describe('the report form', () => {
-  async function opened(w: World = world()) {
-    open(w);
+  async function opened(w: World = world(), instance?: Instance) {
+    open(w, instance);
     await userEvent.click(await within(await article(2)).findByRole('button', { name: 'Report' }));
     const panel = await dialog('Report this post');
     return { w, panel };
@@ -84,7 +86,7 @@ describe('the report form', () => {
     expect(tabs.map((t) => t.textContent)).toEqual(['Report post #2']);
     expect(tabs[0]).toHaveFocus();
     await waitFor(() => expect(panel).toHaveTextContent('Your report is public: it names Pipewrench, and anyone can react to it. The Clerk, on General\'s beat, judges it now: a visit, dismissed, or it backfires onto Pipewrench\'s latest post.'));
-    expect(panel).toHaveTextContent('If the Mod cannot judge it, your Aura comes back.');
+    expect(panel).toHaveTextContent('If the Mod cannot judge it, or judges it a visit and none can open, your Aura comes back.');
   });
 
   test('a judgment that failed says plainly that the Aura came back and the report can be made again, and keeps the reason', async () => {
@@ -159,6 +161,39 @@ describe('the report form', () => {
     expect(file).toHaveBeenCalledTimes(1);
     release();
     await waitFor(() => expect(within(panel).getByRole('status')).toHaveTextContent('Your report was heard and dismissed.'));
+  });
+
+  test('a visit judged while the post\'s author is veiled says no visit opened and the Aura came back, then the Mod\'s line, and the count of reports left is one less', async () => {
+    /* A veil card in the instance, as the fake's own tests have one: the Mod's judging window is where it lands. */
+    const whodunnit = { key: 'whodunnit', name: 'Whodunnit?', alignment: 'pepperoni' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 3 }, veil: 'author' as const, playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}), canApply: (t: Parameters<typeof landsOn>[1], e: Parameters<typeof landsOn>[2], _c?: unknown, now?: Date) => landsOn({ key: 'whodunnit', stack: 1, reaches: ['post'] }, t, e, now) };
+    const instance: Instance = { ...testInstance, cards: [whodunnit], machine: [{ item: { card: 'whodunnit' }, availability: 'onSale' as const, price: 100 }] };
+    const w = world(instance);
+    const { panel } = await opened(w, instance);
+    w.fake.seed.cards(w.me, { whodunnit: 3 });
+    w.fake.seed.judging({ report: 'visit', meanwhile: () => { void w.fake.playCard('whodunnit', w.pipe, w.second, {}, ''); } });
+    await userEvent.type(within(panel).getByRole('textbox'), 'a repeat');
+    await userEvent.click(within(panel).getByRole('button', { name: /^Report ·/u }));
+    const status = within(panel).getByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent('Your report was judged a visit, but no visit opened: post #2\'s author is hidden right now. Your 0.25 Aura came back. It still counts toward Pipewrench\'s reports today.'));
+    expect(status.textContent).not.toContain('is spent');
+    expect(status.textContent).toMatch(/counts toward Pipewrench's reports today\. A Moderator said: /u);
+    await waitFor(() => expect(panel).toHaveTextContent('Pipewrench has 2 reports left today.'));
+  });
+
+  test('a visit judged on a post already visited after a report on that charge says no visit opened and the Aura came back, then the Mod\'s line, and the count of reports left is one less', async () => {
+    const w = world();
+    /* An earlier visit on the post, charged for a report, has ended (filed, not reversed): a post is not charged twice for one breach. */
+    const earlier = w.fake.seed.visit(w.clerk, w.second, { at: Date.now() - 7_200_000, charges: [{ cause: 'report' }] });
+    w.fake.seed.visitEnd(earlier, { outcome: 'filed', line: 'Filed.', at: Date.now() - 3_600_000 });
+    const { panel } = await opened(w);
+    w.fake.seed.judging({ report: 'visit' });
+    await userEvent.type(within(panel).getByRole('textbox'), 'a repeat');
+    await userEvent.click(within(panel).getByRole('button', { name: /^Report ·/u }));
+    const status = within(panel).getByRole('status');
+    await waitFor(() => expect(status).toHaveTextContent('Your report was judged a visit, but no visit opened: post #2 was already visited after a report on that charge. Your 0.25 Aura came back. It still counts toward Pipewrench\'s reports today.'));
+    expect(status.textContent).not.toContain('is spent');
+    expect(status.textContent).toMatch(/counts toward Pipewrench's reports today\. A Moderator said: /u);
+    await waitFor(() => expect(panel).toHaveTextContent('Pipewrench has 2 reports left today.'));
   });
 
   test('says a visit is on its way, and that a backfire went to the reporter\'s latest post', async () => {

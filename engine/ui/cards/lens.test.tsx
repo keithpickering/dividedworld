@@ -1185,6 +1185,38 @@ describe('plays shown as they stood (then)', () => {
 });
 
 
+/* A Move that got past a ward says so in its row, from its own public payload: the card it was played on, and the Ward it got past where there was one. */
+describe('a play that was played on a Cheap Shot', () => {
+  function strip(pierce: Record<string, unknown> | undefined) {
+    const w = world();
+    const plays = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const payload = { card: 'k2', ...(pierce ? { pierce } : {}) };
+    plays.add([{ ...base, id: 'pierced', kind: 'card', payload, currentPayload: payload }]);
+    plays.setBilling(w.second, ['pierced']);
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
+  }
+  test('says the card it was played on, and the Ward it got past', async () => {
+    width(false);
+    strip({ by: 'cs', card: 'k3', ward: 'k4' });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(within(lens()).getByText('Played on a Card 3, past Card 4')).toBeInTheDocument();
+  });
+  test('says the card alone where there was no Ward, and nothing for a play with no pierce', async () => {
+    width(false);
+    strip({ by: 'cs', card: 'k3' });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(within(lens()).getByText('Played on a Card 3')).toBeInTheDocument();
+    cleanup();
+    strip(undefined);
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(within(lens()).queryByText(/Played on a/u)).toBeNull();
+  });
+});
+
 /* An admin's End this card (docs/plans/2026-11-05-bot-card-options-plan.md, Task 6): on a face-up play still in force, to an admin alone. */
 describe('End this card', () => {
   const endButton = () => within(lens()).queryByRole('button', { name: 'End this card' });

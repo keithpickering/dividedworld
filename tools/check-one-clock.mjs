@@ -36,6 +36,7 @@ export const WALL_CLOCK = {
   'engine/ui/player.tsx': { count: 4, why: 'how long an estimate stays fresh, counted from receipt (the header says so): elapsed time between two reads of the same clock' },
   'engine/ui/spin/spun.ts': { count: 1, why: 'the spun loader\'s cache age (SPUN_TTL_MS), `Date.now` passed as its `now`: elapsed time between two reads of the same clock, compared with no data time' },
   'engine/ui/alerts/Toasts.tsx': { count: 2, why: 'the time a toast has left on its own countdown, which pauses under a pointer: elapsed time' },
+  'engine/ui/audio/captions.ts': { count: 2, why: 'when a said caption line ends, set from its own `ms` and moved later by a repeat: elapsed time on the page\'s own timers, compared with no data time' },
   'engine/ui/reactions/send.ts': { count: 1, why: 'a pressed reaction\'s grace (REACTION_GRACE_MS) starts from the press: its `due` is a time on the page\'s own clock, compared with no data time' },
   'engine/ui/reactions/Reactions.tsx': { count: 4, why: 'the time a pending reaction\'s grace has left, for its ring, its name and its seconds, and the staged page\'s own grace: elapsed time against a `due` set on the same clock, compared with no data time' },
 };

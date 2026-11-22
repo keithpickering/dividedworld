@@ -54,6 +54,24 @@ describe('readTrapActs', () => {
     await readTrapActs(api(calls), [row('k')], held);
     assert.deepEqual(calls, [['set1']]);
   });
+  test('a cast a lockout back let land names its spring (`lockedOut`); the spring names the set, and the setter is named', async () => {
+    const calls: string[][] = [];
+    const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', lockedOut: 'sp' } })]]);
+    const got = await readTrapActs(api(calls), [row('k')], held);
+    assert.deepEqual(calls, [['sp'], ['set1']]);
+    assert.deepEqual([...got.names], [['cPipe', 'Pipewrench']]);
+  });
+  test('a lockout an admin ended: the card_end on its spring is read by the spring id, once, for the caster\'s and the setter\'s alerts', async () => {
+    const calls: string[][] = [];
+    const lock = act('lk', { kind: 'spring', character: 'cPipe', targetActId: 'post1', payload: { did: 'lockedOut', locks: 'cX', until: '2026-11-03T09:41:00.000Z' } });
+    const end = act('en', { kind: 'card_end', character: 'cAdmin', targetActId: 'lk' });
+    const other = act('en2', { kind: 'card_end', targetActId: 'elsewhere' });
+    const spy: unknown = { ...(api([]) as object), cardEnds: async (ids: readonly string[]) => { calls.push([...ids]); return [end, other]; } };
+    const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', lockedOut: 'lk' } })], ['lk', lock]]);
+    const got = await readTrapActs(spy as never, [row('k'), row('lk', 'trapSprang')], held);
+    assert.deepEqual(calls, [['lk']]);
+    assert.deepEqual([...got.acts.keys()], ['en']);
+  });
   test('a failed character read keeps the Acts already read', async () => {
     const held = new Map([['k', act('k', { kind: 'card', payload: { card: 'whoops', spring: 'sp' } })]]);
     const noFaces = { actsById: async (ids: readonly string[]) => ids.flatMap((i) => world.get(i) ?? []), characters: async () => { throw new Error('down'); } } as never;

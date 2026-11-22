@@ -7,6 +7,8 @@
  * - `landPost(article)` registers each of a post's cells (the element children of its inner `.kb-act-grid`; of the article itself where it has no grid, as a front-door post has none; a visually hidden heading is no cell) as a landing place of
  *   the `cell` rank, so a Glitter Bomb on the body wins the body (docs/plans/2026-11-11-shake-plan.md, task 1). Its way out lets go of
  *   them and drops their glitter and tiles.
+ * - `landBox(el)` makes one element a landing place of that same rank, with tiles in it: the thread's Reply box, whose own ground is
+ *   not the page's (docs/plans/2026-11-21-glitter-hands-plan.md). Its way out drops its glitter and tiles.
  * - `landPage()` makes the thread screen's own page a landing place, in document px, wherever the ground under the point is the page's
  *   (`groundOf`) and no registered host is there. Its way out sweeps every loose flake on the page and removes the page's tiles.
  * - Tiles: a canvas of at most `TILE_W` by `TILE_H` CSS px of a surface's own px, made where the first flake lands in that cell of the
@@ -243,29 +245,52 @@ function release(): void { if (--hooked === 0) { setLanding(null); marked.clear(
  * later is not one (the cells are read once).
  */
 export function landPost(article: HTMLElement): () => void {
-  const mine: Array<{ cell: HTMLElement; s: Surface; off: () => void }> = [];
   const cells = article.querySelector(':scope > .kb-act-grid') ?? article;
+  const mine: Array<() => void> = [];
   for (const child of Array.from(cells.children)) {
     if (!(child instanceof HTMLElement) || child.classList.contains('kb-visually-hidden')) continue;
-    const s: Surface = { kind: 'cell', host: child, el: child, tiles: new Map() };
-    surfaces.set(child, s);
-    const off = cling.register(child, { rank: 'cell', landed: () => { const l = loose(child); const f = l[l.length - 1]; if (f) mark(s, f as LooseFlake, true); } });
-    let ro: ResizeObserver | null = null;
-    if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(() => refit(s)); ro.observe(child); }
-    mine.push({ cell: child, s, off: () => { off(); ro?.disconnect(); } });
+    mine.push(landCell(child));
   }
+  return heldWhile(mine);
+}
+
+/**
+ * Makes one element a landing place of the `cell` rank, with tiles of its own, as each of a post's cells is: the thread's Reply box,
+ * which paints its own ground and so is not the page's (docs/plans/2026-11-21-glitter-hands-plan.md, task 3). It is marked
+ * `data-kb-land-box`, by which `engine/ui/base.css` lays its tiles over its ground and under its content. Called when it mounts; the
+ * way out drops its glitter and tiles and lets go of it.
+ */
+export function landBox(el: HTMLElement): () => void {
+  el.setAttribute('data-kb-land-box', '');
+  const off = landCell(el);
+  return heldWhile([() => { off(); el.removeAttribute('data-kb-land-box'); }]);
+}
+
+/** Registers one element as a `cell` surface; the way back out lets go of it and drops its glitter, tiles and mark. */
+function landCell(cell: HTMLElement): () => void {
+  const s: Surface = { kind: 'cell', host: cell, el: cell, tiles: new Map() };
+  surfaces.set(cell, s);
+  const off = cling.register(cell, { rank: 'cell', landed: () => { const l = loose(cell); const f = l[l.length - 1]; if (f) mark(s, f as LooseFlake, true); } });
+  let ro: ResizeObserver | null = null;
+  if (typeof ResizeObserver !== 'undefined') { ro = new ResizeObserver(() => refit(s)); ro.observe(cell); }
+  return () => {
+    off();
+    ro?.disconnect();
+    dropLoose(cell);
+    removeTiles(s);
+    surfaces.delete(cell);
+    cell.removeAttribute('data-kb-landed');
+  };
+}
+
+/** Holds the landing hooks while these surfaces live; the way out, once only, lets go of them all and of the hold. */
+function heldWhile(outs: Array<() => void>): () => void {
   hold();
   let gone = false;
   return () => {
     if (gone) return;
     gone = true;
-    for (const { cell, s, off } of mine) {
-      off();
-      dropLoose(cell);
-      removeTiles(s);
-      surfaces.delete(cell);
-      cell.removeAttribute('data-kb-landed');
-    }
+    for (const out of outs) out();
     release();
   };
 }
