@@ -93,7 +93,10 @@ export interface CardEffect {
   readonly closes?: string;
   /** The quadrant a live skim play names (its checked configuration's `quadrant`), carried so a second play of the card on the post can be refused for the same one (quadrantFree). */
   readonly quadrant?: Quadrant;
-
+  /** The play draws an effect (`CardRules.drawsEffect`) and counts toward the post's limit unless `cleared`. */
+  readonly drawing?: true;
+  /** A drawing play whose card says it is cleared, for the post as it is now; it counts none. */
+  readonly cleared?: true;
 }
 
 /**
@@ -176,6 +179,27 @@ export const isLive = (effect: Pick<CardEffect, 'ends'>, now: Date = new Date())
 /** Whether a ward turns a card away: its rarity is at or below `upTo`, its printed alignment is one of `flavors`, or its key is one of `cards`. */
 export const wardTurnsAway = (effect: WardEffect, rules: Pick<CardRules, 'key' | 'rarity' | 'alignment'>): boolean =>
   (effect.upTo !== undefined && atOrBelow(rules.rarity, effect.upTo)) || (effect.flavors?.includes(rules.alignment) ?? false) || (effect.cards?.includes(rules.key) ?? false);
+
+/**
+ * How many of a post's slots are taken (`Settings.postEffects`): on a post target, its own effects (`reach` unset or `'post'`) that are
+ * live and either a card face down or a drawing play that is not cleared. A mark-only effect, an effect from above and an ended play
+ * count none, and any other target is 0.
+ */
+export const effectsUp = (target: CardTarget, effects: readonly CardEffect[], now: Date): number =>
+  target.reach !== 'post' ? 0 : effects.filter((e) => (e.reach === undefined || e.reach === 'post') && isLive(e, now) && (e.faceDown === true || (e.drawing === true && e.cleared !== true))).length;
+
+/** The refusal of a play on a full post, said by the rules and by the database alike; the words take no capital and no closing period, as `landsOn`'s do. */
+export const postFullWords = (n: number): string => `this post already shows ${n} effects, the most it takes. A slot opens when one ends, is ended by an admin, or its author clears it`;
+
+/**
+ * Refuses a play that would take a slot on a full post: the target is a post, the play counts (the card declares `drawsEffect`, or it is
+ * set face down) and the post's effects up are at `settings.postEffects`. Called after the card's own landing, so its refusal is said first.
+ */
+export function roomOnPost(rules: Pick<CardRules, 'drawsEffect'>, settings: Pick<Settings, 'postEffects'>, target: CardTarget, effects: readonly CardEffect[], now: Date, set = false): Verdict {
+  if (target.reach !== 'post' || !isPost(target.kind)) return ok(undefined);
+  if (!set && rules.drawsEffect === undefined) return ok(undefined);
+  return effectsUp(target, effects, now) >= settings.postEffects ? refuse(postFullWords(settings.postEffects)) : ok(undefined);
+}
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
 
@@ -380,6 +404,12 @@ export interface CardRules<Config = unknown> {
    */
   readonly draws?: readonly string[];
   /**
+   * The card draws an effect on the post it lands on, and counts toward `Settings.postEffects` while its play is in force and not cleared.
+   * `cleared` reads the play's saved state: true is cleared, `{ version }` is cleared for that version of the post only. It is not `draws`,
+   * which is what the server draws one of at each play. Only a card that reaches a post and is not a set card declares it (instanceProblems).
+   */
+  readonly drawsEffect?: { readonly cleared?: (state: unknown) => boolean | { readonly version: string } };
+  /**
    * The plays of this card on one post share a drive, which closes `lasts` after its latest play. `gifts` are the economy keys of the
    * amounts a gift to the drive may be, and `overhead` the economy key of the percentage The System keeps of every gift. Only a Cast
    * reaching a post alone has one.
@@ -527,6 +557,8 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   if (checked.ok) namedProblem(rules, checked.value);
   const lands = rules.canApply(target, effects, checked.ok ? checked.value : undefined, now);
   if (!lands.ok) return lands;
+  const room = roomOnPost(rules, settings, target, effects, now);
+  if (!room.ok) return room;
   if (!checked.ok) return checked;
   // A card that cuts names the Gimmick it ends (`play`); with a `rulesOf` the engine reads that it is up on this target and not rarer than the card's `upTo`.
   if (rules.cuts !== undefined && context.rulesOf !== undefined) {
@@ -732,6 +764,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (play === 'set' && rules.trap === undefined) return refuse(`${rules.name} has no trap to spring`);
   const lands = reachesOf(rules).includes('post') ? rules.canApply(target, effects, undefined, now) : ok(undefined);
   if (!lands.ok) return lands;
+  const room = roomOnPost(rules, settings, target, effects, now, true);
+  if (!room.ok) return room;
   const checked = rules.validateConfig(config);
   if (!checked.ok) return checked;
   // A ride trap pays on the quadrant the set names unless it says every, so a card whose validator lets it through unset is at fault.

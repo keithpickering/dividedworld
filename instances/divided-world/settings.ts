@@ -20,6 +20,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   debateDays: 3,
   revealPerk: 0.2,
   reactionCap: 3,
+  postEffects: 8,
   /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
   crowdPayEach: 2,
   /** At most 0.20 orb a day, about a common card a week from reacting alone. */

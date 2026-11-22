@@ -273,6 +273,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   halving: (v) => (typeof v === 'number' && v > 0 && v <= 1 ? null : 'a fraction above 0 and at most 1'),
   revealPerk: (v) => (typeof v === 'number' && v >= 0 && v <= 1 ? null : 'a number from 0 to 1'),
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
+  postEffects: whole(1, 'effects', 16),
   crowdPayEach: (v) => (isWhole(v, 0) ? null : 'a whole number of hundredths, at least 0'),
   crowdPayMost: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   charactersPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
@@ -689,6 +690,8 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (play === 'keep') out.push(`${who} is kept, and Keep is not built until it is designed`);
   if (c.trap !== undefined && play !== 'set') out.push(`${who} has a trap, and only a set card has one`);
   if (play === 'set' && c.trap === undefined) out.push(`${who} is a set card with no trap`);
+  if (c.drawsEffect !== undefined && !(c.reaches === undefined || (Array.isArray(c.reaches) && c.reaches.includes('post')))) out.push(`${who} draws an effect and reaches no post; an effect is drawn on a post`);
+  if (c.drawsEffect !== undefined && play === 'set') out.push(`${who} draws an effect and is a set card; a set card counts as a back and declares nothing`);
   const beyond = Array.isArray(c.reaches) && c.reaches.some((r) => r !== 'post');
   const postAlone = !beyond;
   // A cast earn reaches a character alone or a post alone (reaches left out is a post).

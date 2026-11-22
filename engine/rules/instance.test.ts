@@ -16,6 +16,7 @@ const settings: Settings = {
   debateDays: 3,
   revealPerk: 0.2,
   reactionCap: 3,
+  postEffects: 8,
   crowdPayEach: 2,
   crowdPayMost: 10,
   charactersPerPlayer: 6,
@@ -333,6 +334,8 @@ test('settings out of range are problems', () => {
   for (const bad of [-0.1, 1.5, '0.2', null]) assert.match(settingsProblems({ ...settings, revealPerk: bad as number }).join('\n'), /revealPerk/, `revealPerk ${JSON.stringify(bad)}`);
   for (const good of [0, 0.2, 1]) assert.deepEqual(settingsProblems({ ...settings, revealPerk: good }).filter((p) => /revealPerk/.test(p)), [], `revealPerk ${good}`);
   assert.match(settingsProblems({ ...settings, reactionCap: 0 }).join('\n'), /reactionCap/);
+  for (const bad of [0, 17, 2.5, undefined]) assert.match(settingsProblems({ ...settings, postEffects: bad as number }).join('\n'), /postEffects/, `postEffects ${String(bad)}`);
+  for (const good of [1, 8, 16]) assert.deepEqual(settingsProblems({ ...settings, postEffects: good }).filter((p) => /postEffects/.test(p)), [], `postEffects ${good}`);
   for (const bad of [0, 1.5, -2, '3', NaN, 366, 3_000_000_000]) assert.match(settingsProblems({ ...settings, debateDays: bad as number }).join('\n'), /debateDays/, `debateDays ${String(bad)}`);
   assert.deepEqual(settingsProblems({ ...settings, debateDays: 1 }), [], 'one day is the least');
   assert.deepEqual(settingsProblems({ ...settings, debateDays: 365 }), [], 'a year is the most');
@@ -755,6 +758,12 @@ test('toastDefaults: the kinds that toast until a player chooses, each a kind of
 // The card mechanic's pairings (docs/plans/2026-11-01-card-plays-plan.md, Task 1): each refused, naming the card.
 // The cards under test, beside the three whose rarities the event odds name.
 const withCards = (...cards: Record<string, unknown>[]) => ({ ...good, cards: [...cards.map(testCard), ...packCards] }) as unknown as Instance;
+
+test('a card that draws an effect reaches a post and is not a set card', () => {
+  assert.deepEqual(instanceProblems(withCards({ drawsEffect: {} })), []);
+  assert.match(instanceProblems(withCards({ drawsEffect: {}, reaches: ['character'], lasts: { unit: 'day', count: 1 } })).join('\n'), /card "splat" draws an effect and reaches no post/);
+  assert.match(instanceProblems(withCards({ drawsEffect: {}, play: 'set', trap: { trigger: { on: 'visit' } } })).join('\n'), /card "splat" draws an effect and is a set card/);
+});
 
 test('a card carries one of the four rarities', () => {
   assert.deepEqual(instanceProblems(withCards({ rarity: 'legendary' })), []);
