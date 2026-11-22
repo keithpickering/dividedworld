@@ -84,7 +84,7 @@ const ROW_AT_FOOT = 118.8;
 /**
  * The reactions row keeps a pending tile's grace ring clear of its neighbors and the post's edge (PR #885: the list's block padding, engine/ui/reactions/
  * reactions.css `--kb-grace-reach`), so the row is 12px taller, and the picker, which fills the room the row leaves it in the window
- * (engine/ui/glass/Overlay.tsx's maxHeight), stands 13.8px shorter. The owner's call on #885, 2026-11-21: the shorter picker is accepted.
+ * (engine/ui/glass/Overlay.tsx's maxHeight), stands 13.8px shorter. The owner accepted the shorter picker (option (a) in #885's PR body).
  */
 const GRACE_REACH_ROOM = 13.8;
 
