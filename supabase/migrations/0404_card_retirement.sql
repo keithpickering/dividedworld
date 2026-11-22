@@ -571,7 +571,7 @@ end $$;
 revoke execute on function card_ledger_gone_card() from public, anon, authenticated;
 create constraint trigger card_ledger_gone_card after insert on card_ledger deferrable initially deferred for each row execute function card_ledger_gone_card();
 
--- seed_instance (0403_departed_personas's), with the three ways a card leaves (see the header, 9): the guard before the cards are written, the steps after them and after the packs, and the answer's three lists. Everything else as 0397 wrote it.
+-- seed_instance (0403_departed_personas's), with the three ways a card leaves (see the header, 9): the guard before the cards are written, the steps after them and after the packs, and the answer's three lists. Everything else as 0403_departed_personas wrote it.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
