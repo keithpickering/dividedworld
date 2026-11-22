@@ -170,6 +170,22 @@ begin
   perform pg_temp.nodrift('a play whose time passed');
 end $$;
 
+-- ---- A card beyond a post writes no `ends` and its play_reach row after its Act: the row's end follows the play_reach row's insert, on its own ----
+select tests.unbecome();
+do $$
+declare
+  b uuid := pg_temp.fix('b'); t uuid := pg_temp.fix('t'); p uuid := pg_temp.fix('pb');
+  c uuid; r play_post; stale timestamptz;
+begin
+  c := tests.act(b, 'card', t, jsonb_build_object('card', 'ppchar', 'reach', 'character', 'layer', 1), p);
+  stale := (pg_temp.pr(c)).ends_at;
+  if stale is not null then raise exception 'a card with no end has an end before its play_reach row'; end if;
+  insert into play_reach (play, reach, character, ends_at) values (c, 'character', b, now() + interval '2 days');
+  r := pg_temp.pr(c);
+  if r.ends_at is distinct from now() + interval '2 days' then raise exception 'the play_reach row did not give the play its end: %', to_jsonb(r); end if;
+  perform pg_temp.nodrift('a play_reach row written after its Act');
+end $$;
+
 -- ---- A play over the moment it lands: caught, and instant ----
 select tests.unbecome();
 do $$

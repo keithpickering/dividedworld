@@ -44,7 +44,7 @@ create index play_post_up on play_post (post, ends_at) where over_at is null;
 -- Every way a play ends, and the predicate it mirrors. A new ender's author adds its line here, its trigger line below and its case to supabase/tests/0406-play-post.sql, or play_post_drift() names the play.
 --   by time          a card's `ends` (payload), or play_reach.ends_at for a card reaching beyond a post, which writes no `ends`; a back's face_down.ends_at; a drive play's drive close (below).   -> ends_at
 --   caught           a card Act with `caught` in its payload never landed (place_cast; the stack's count leaves it out).                                                                   -> over_at = played_at
---   instant          a card Act with `instant` true is over as it lands (a relief, an unban, a card that cuts; the stack's count leaves it out).                                             -> over_at = played_at
+--   instant          a card Act with `instant` in its payload is over as it lands (a relief, an unban, a card that cuts; the stack's count leaves it out).                                             -> over_at = played_at
 --   an admin's end   a `card_end` Act that targets it                                                                                           (card_ended, 0405_cut.sql).               -> over_at = its created_at
 --   a refund         a card_write_refunds row                                                                                                   (card_ended).                             -> over_at = its `at`
 --   a spent pierce   the next card Act of its caster whose payload `pierce.by` names it, landed or caught                                       (card_ended; acts_pierce_by).             -> over_at = that Act's created_at
@@ -72,7 +72,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
                 least((select min(s.created_at) from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text),
                       (select min(tb.created_at) from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = a.id::text))
               else
-                least(case when a.payload ? 'caught' or a.payload ->> 'instant' = 'true' then a.created_at end,
+                least(case when a.payload ? 'caught' or a.payload ? 'instant' then a.created_at end,
                       (select min(e.created_at) from acts e where e.kind = 'card_end' and e.target_act_id = a.id),
                       rf.at,
                       (select min(c.created_at) from acts c where c.kind = 'card' and c.payload ? 'pierce' and (c.payload #>> '{pierce,by}') = a.id::text),
