@@ -100,6 +100,24 @@ const tab = (name: string) => within(lens()).getByRole('tab', { name });
 const unfold = (id: Id) => userEvent.click(lens().querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
 const whoButton = () => within(lens()).getByRole('button', { name: /^\d+ plays? · / });
 const rows = () => [...lens().querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play')!);
+/**
+ * A post's Lens off the thread page, where Go to post leads somewhere (a spun thread's ORIGIN box, the board index): the strip with a `to`, over a store of
+ * one Card 2 play in force. On the thread page the Lens is drawn with `to={null}` (the reader is on the post's page), so Go to post is read here.
+ */
+const offPage = (to: string) => {
+  const w = world();
+  const plays = createPlays();
+  const payload = { card: 'k2', message: 'off the page' };
+  plays.add([{ character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null, id: 'off-page', kind: 'card', payload, currentPayload: payload }]);
+  plays.setBilling(w.second, ['off-page']);
+  renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to={to} nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
+  return w;
+};
+const offPageLens = async (to = `/t/elsewhere?page=1#post-2`) => {
+  offPage(to);
+  await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+  await userEvent.click(whoButton());
+};
 
 describe('opening and closing', () => {
   test('a mark opens the Lens on its tab, and the mark says it is open', async () => {
@@ -590,7 +608,8 @@ describe('what the Lens says and offers', () => {
     expect(row.querySelector('.kb-lens-note')).toHaveTextContent('Layer 1 of 3, on top');
     expect(await within(row).findByText('1 thread spun from this play')).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: 'All about the ink' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
-    expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+    /* The reader is on the post's page: Go to post would lead nowhere new, so the thread page's Lens draws none. */
+    expect(within(row).queryByRole('link', { name: 'Go to post' })).toBeNull();
   });
 
   test('an ink too dark for the glass is drawn lifted, on the open tab and the row, so their words and edges read', async () => {
@@ -696,7 +715,7 @@ describe('what the Lens says and offers', () => {
     expect(within(other).getByRole('button', { name: 'React' })).toBeInTheDocument();
   });
 
-  test('every play of a kind is reachable by Spin thread and Go to post from its row', async () => {
+  test('every play of a kind is reachable by Spin thread from its row, and the thread page draws no Go to post', async () => {
     width(false);
     const w = world();
     w.play('k2', w.spritey); w.play('k2', w.gloomba); w.play('k2', w.pipe);
@@ -705,16 +724,18 @@ describe('what the Lens says and offers', () => {
     await userEvent.click(whoButton());
     expect(rows()).toHaveLength(3);
     expect(within(lens()).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(3);
-    expect(within(lens()).getAllByRole('link', { name: 'Go to post' })).toHaveLength(3);
+    expect(within(lens()).queryAllByRole('link', { name: 'Go to post' })).toHaveLength(0);
+  });
+
+  test('a Lens given a post to lead to draws Go to post on its row; one given none draws no Go to post', async () => {
+    width(false);
+    await offPageLens('/t/elsewhere?page=1#post-2');
+    expect(within(lens()).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', '/t/elsewhere?page=1#post-2');
   });
 
   test('every control in a row is the kit\'s skewed tile, as Hold to scrub is: React, Spin thread and Go to post speak one shape', async () => {
     width(false);
-    const w = world();
-    w.play('k2', w.spritey); w.play('k2', w.gloomba);
-    open(w);
-    await userEvent.click(await markOf(2, 'Card 2'));
-    await userEvent.click(whoButton());
+    await offPageLens();
     const controls = [...lens().querySelectorAll<HTMLElement>('.kb-lens-row :is(button, a)')];
     expect(controls.map((c) => c.textContent)).toEqual(expect.arrayContaining(['+ React', 'Spin thread', 'Go to post']));
     for (const c of controls) {
@@ -2247,24 +2268,21 @@ describe('the buttons, odd and even', () => {
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
     const tiles = () => [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
     const spans = () => tiles().filter((t) => t.hasAttribute('data-kb-span'));
-    expect(tiles()).toHaveLength(4);
-    expect(spans()).toHaveLength(0);
-    /* One tile gone (a card with no moment to look at): three are left, and the last stands across the row. */
-    await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
+    /* On the thread page: React, Spin thread and As it landed (no Go to post), and the last stands across the row. */
     expect(tiles()).toHaveLength(3);
     await waitFor(() => expect(spans()).toEqual([tiles()[2]]));
     expect(ruleOf(".kb-lens-row-foot [data-kb-span]")).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
+    /* One tile gone (a card with no moment to look at): two are left, and none spans. */
+    await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
+    expect(tiles()).toHaveLength(2);
+    await waitFor(() => expect(spans()).toHaveLength(0));
   });
 });
 
 describe('the buttons', () => {
-  test('a play\'s four actions are one grid of two by two, React, Spin thread, As it landed, Go to post, every one a tile', async () => {
+  test('a play\'s four actions off the thread page are one grid of two by two, React, Spin thread, As it landed, Go to post, every one a tile', async () => {
     width(false);
-    const w = world();
-    w.play('k2', w.spritey);
-    open(w);
-    await userEvent.click(await markOf(2, 'Card 2'));
-    await userEvent.click(whoButton());
+    await offPageLens();
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
     const tiles = [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
     expect(tiles.map((t) => t.textContent?.trim())).toEqual(['+ React', 'Spin thread', 'As it landed', 'Go to post']);

@@ -379,7 +379,7 @@ interface RowProps {
   readonly tallies: Tallies;
   readonly mine: Mine;
   readonly compare: boolean;
-  /** The post the play landed on, where Go to post leads; none where it cannot be found. */
+  /** The post the play landed on, where Go to post leads; null where it cannot be found, or where the Lens is on the page the post is on (the thread page's strips), so it would lead nowhere new. */
   readonly to: string | null;
   readonly onSpin: (play: CardPlay, name: string) => void;
   /** The store the play is kept in: an admin's end is added to it at once, so the layer comes off without waiting for the broadcast. */
