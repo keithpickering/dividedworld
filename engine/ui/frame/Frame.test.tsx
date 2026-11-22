@@ -264,7 +264,7 @@ describe('the HUD: the glass, docked at the bottom', () => {
   });
   test('the clock says when the next settlement is', async () => {
     setup();
-    expect(await within(await hud()).findByText('Next settlement')).toBeInTheDocument();
+    expect(await within(await hud()).findByText('Next settle')).toBeInTheDocument();
   });
   test('Menu, with Esc as its key, opens the glass at My characters and keeps the board\'s place; it navigates, so it claims no popup', async () => {
     window.history.replaceState(null, '', '/b/general?page=2');

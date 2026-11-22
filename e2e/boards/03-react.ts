@@ -81,6 +81,12 @@ const GROUP_BAR_ROOM = 17.8;
  * board draws it straight under the words: the row, and the picker under it, stand 118.8px lower, so the picker fills that much less room above the foot.
  */
 const ROW_AT_FOOT = 118.8;
+/**
+ * The reactions row keeps a pending tile's grace ring clear of its neighbors and the post's edge (PR #885: the list's block padding, engine/ui/reactions/
+ * reactions.css `--kb-grace-reach`), so the row is 12px taller, and the picker, which fills the room the row leaves it in the window
+ * (engine/ui/glass/Overlay.tsx's maxHeight), stands 13.8px shorter. The owner accepted the shorter picker (option (a) in #885's PR body).
+ */
+const GRACE_REACH_ROOM = 13.8;
 
 const buttons: Landmark[] = KINDS.map(([name, quadrant, built]) => ({
   id: `kind-${name.toLowerCase().replace(/\W+/g, '-')}`, role: 'button', name, buildName: `${(built ?? name).replace('-', ' ')}, ${quadrant}`, within: 'picker', origin: 'picker', type: false, buildShift: { y: LOWER },
@@ -92,7 +98,7 @@ const manifest: BoardManifest = {
   build: { story: 'boards-03-react--board' },
   press: [{ role: 'button', name: 'React' }],
   landmarks: [
-    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 - GROUP_BAR_ROOM - ROW_AT_FOOT } },
+    { id: 'picker', role: 'dialog', name: 'React to Mrs. Hooligan\'s post', box: 'size', buildShift: { height: LOWER - 12 - GROUP_BAR_ROOM - ROW_AT_FOOT - GRACE_REACH_ROOM } },
     { id: 'heading', role: 'heading', name: 'React', within: 'picker', origin: 'picker', buildShift: { y: BAR_LOWER } },
     { id: 'left', role: 'text', name: '2 of 3 left', within: 'picker', origin: 'picker', buildShift: { x: -COUNT_LEFT - CLOSE_IN, y: BAR_LOWER } },
     { id: 'excited', role: 'text', name: 'Excited', within: 'picker', origin: 'picker', buildShift: { y: LOWER } },

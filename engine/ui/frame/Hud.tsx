@@ -744,7 +744,7 @@ export function Hud() {
               {signedIn && (
                 <div className="kb-hud-side">
                   <CalmRegion as="p" className="kb-hud-clock">
-                    <span className="kb-hud-clock-label">Next settlement</span>
+                    <span className="kb-hud-clock-label">Next settle</span>
                     {next ? <time className="kb-hud-clock-time kb-num" dateTime={next}>{dayAndTime(next)}</time> : <span className="kb-hud-clock-time">not yet set</span>}
                   </CalmRegion>
                   <Link
