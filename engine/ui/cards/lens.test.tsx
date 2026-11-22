@@ -99,6 +99,14 @@ const tab = (name: string) => within(lens()).getByRole('tab', { name });
 /** Unfolds an ended play's compact row (an ended play is one button until it is pressed). */
 const unfold = (id: Id) => userEvent.click(lens().querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
 const whoButton = () => within(lens()).getByRole('button', { name: /^\d+ plays? · / });
+/** Reads the kind's older plays, page after page, until the Lens has every one (the page holds a kind's plays in force and its newest and most-drawn). */
+const pageAll = async () => {
+  const button = () => within(lens()).queryByRole('button', { name: /^(Show older plays|Couldn\u2019t load older plays)/u });
+  for (let more = button(); more !== null; more = button()) {
+    await userEvent.click(more);
+    await waitFor(() => expect(button()?.getAttribute('aria-busy') ?? null).toBeNull());
+  }
+};
 const rows = () => [...lens().querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play')!);
 /**
  * A post's Lens off the thread page, where Go to post leads somewhere (a spun thread's ORIGIN box, the board index): the strip with a `to`, over a store of
@@ -498,6 +506,9 @@ describe('what the Lens says and offers', () => {
       open(w);
       await userEvent.click(await markOf(2, 'Card 2'));
       await userEvent.click(whoButton());
+      /* The page holds the newest play; the two that ended are older, and are read by the button at the foot of Ended. */
+      expect(heads()).toEqual(['Up now', 'Ended · 2']);
+      await pageAll();
       expect(heads()).toEqual(['Up now', 'Ended · 2']);
       expect(rows()).toEqual([up, adminEnded, timed]);
       expect(groupOf(up)).toBe('Up now');
@@ -529,6 +540,7 @@ describe('what the Lens says and offers', () => {
       open(w);
       await userEvent.click(await markOf(2, 'Card 2'));
       await userEvent.click(whoButton());
+      await pageAll();
       expect(heads()).toEqual(['Ended · 2']);
       expect(rows()).toEqual([b, a]);
     });
@@ -544,6 +556,7 @@ describe('what the Lens says and offers', () => {
       open(w);
       await userEvent.click(await markOf(2, 'Card 1'));
       await userEvent.click(whoButton());
+      await pageAll();
       expect(heads()).toEqual(['Up now', 'Ended · 1']);
       expect(rows()).toEqual([three, one, two]);
       expect(groupOf(two)).toBe('Ended · 1');
@@ -2667,7 +2680,7 @@ describe('the discipline cards\' Lens', () => {
     openIt(w);
     const l = await lensOf(2, 'T Heart');
     expect(heading()).toBe('Took points off');
-    expect([...l.querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play'))).toEqual([one.id, two.id]);
+    expect([...l.querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play'))).toEqual([two.id, one.id]);
     expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
     expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
     /* It is a play like any: reacted to and spun from, and it names the caster. */
@@ -3288,6 +3301,8 @@ describe('ended rows', () => {
     open(w);
     await userEvent.click(await markOf(2, 'Card 2'));
     await userEvent.click(whoButton());
+    /* The page holds a kind's newest play; the rest of what an admin ended are read here, as a reader reads them. */
+    await pageAll();
     return { w, ids, playedAt };
   }
 
@@ -3370,6 +3385,7 @@ describe('ended rows', () => {
     open(w);
     await userEvent.click(await markOf(2, 'Card 2'));
     await userEvent.click(whoButton());
+    await pageAll();
     expect(lineOf(said)!.textContent).toContain('said so');
     expect(buttonOf(mute).querySelector('.kb-lens-compact-line')).toBeNull();
   });
@@ -3582,5 +3598,173 @@ describe('the kinds grid', () => {
     const panel = await screen.findByRole('dialog', { name: 'Report this post' });
     overflow(within(panel).getByRole('tablist'), true);
     expect(within(panel).queryByRole('button', { name: /^All \d+$/u })).toBeNull();
+  });
+});
+
+describe('older plays (docs/plans/2026-11-21-post-plays-design.md, section 3)', () => {
+  const HOUR = 3_600_000;
+  const heads = () => [...lens().querySelectorAll('.kb-lens-group-head')].map((h) => h.textContent);
+  const endedIds = () => [...lens().querySelectorAll('li[data-kb-ended]')].map((r) => r.getAttribute('data-kb-play')!);
+  const upIds = () => [...lens().querySelectorAll('li.kb-lens-row:not([data-kb-ended])')].map((r) => r.getAttribute('data-kb-play')!);
+  const older = () => within(lens()).queryByRole('button', { name: /^Show older plays/u });
+  const compact = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!;
+  /** 45 Card 2 plays that ran out, oldest first, and two in force, the newest on the post; the newest ended play has drawn a reaction, so the page holds it and no other ended one. */
+  async function long() {
+    width(false);
+    const w = world();
+    const by = [w.spritey, w.gloomba, w.pipe];
+    const ids: Id[] = [];
+    for (let i = 0; i < 45; i++) {
+      w.fake.clock.advance(60_000);
+      ids.push(w.fake.seed.card(by[i % 3]!, w.second, 'k2', { message: `old ${i}`, ends: new Date(w.fake.clock.now() + 30 * 60_000).toISOString() }));
+    }
+    w.fake.clock.advance(2 * HOUR);
+    const up = [w.play('k2', w.spritey), w.play('k2', w.gloomba)];
+    w.fake.seed.react(w.thirdAccount, w.gloomba, ids[44]!, 'fire');
+    open(w);
+    const mark = await within(await article(2)).findByRole('button', { name: /^Card 2, \d+ plays?/u });
+    return { w, ids, up, mark };
+  }
+  async function unfolded() {
+    const read = await long();
+    await userEvent.click(read.mark);
+    await userEvent.click(whoButton());
+    return read;
+  }
+
+  test('the mark and the fold count every play the post has had, not the ones the page sent', async () => {
+    const { mark } = await long();
+    expect(mark).toHaveAttribute('data-kb-plays', '47');
+    expect(mark).toHaveAccessibleName(/^Card 2, 47 plays/u);
+    await userEvent.click(mark);
+    expect(whoButton().textContent).toContain('47 plays · ');
+  });
+
+  test('Up now holds the two in force, Ended says 45 and holds what the page sent, and the button says how many are left', async () => {
+    const { ids, up } = await unfolded();
+    expect(heads()).toEqual(['Up now', 'Ended · 45']);
+    expect(upIds().sort()).toEqual([...up].sort());
+    expect(endedIds()).toEqual([ids[44]]);
+    expect(older()).toHaveAccessibleName('Show older plays (44 more)');
+  });
+
+  test('a press adds twenty, newest first, after the rows held; the count drops by twenty, and focus is on the first new row', async () => {
+    const { ids } = await unfolded();
+    await userEvent.click(older()!);
+    await waitFor(() => expect(endedIds()).toHaveLength(21));
+    expect(endedIds()).toEqual([44, 43, 42, 41, 40, 39, 38, 37, 36, 35, 34, 33, 32, 31, 30, 29, 28, 27, 26, 25, 24].map((i) => ids[i]));
+    expect(older()).toHaveAccessibleName('Show older plays (24 more)');
+    expect(heads()).toEqual(['Up now', 'Ended · 45']);
+    expect(compact(ids[43]!)).toHaveFocus();
+    expect(whoButton().textContent).toContain('47 plays · ');
+  });
+
+  test('a read is out: the button is busy and a second press does nothing', async () => {
+    const { w } = await unfolded();
+    const real = w.fake.kindPlays.bind(w.fake);
+    let release: () => void = () => {};
+    const held = new Promise<void>((r) => { release = r; });
+    const read = vi.spyOn(w.fake, 'kindPlays').mockImplementationOnce(async (...a) => { await held; return real(...a); });
+    const button = older()!;
+    await userEvent.click(button);
+    expect(button).toHaveAttribute('aria-busy', 'true');
+    await userEvent.click(button);
+    expect(read).toHaveBeenCalledTimes(1);
+    release();
+    await waitFor(() => expect(endedIds()).toHaveLength(21));
+    expect(read).toHaveBeenCalledTimes(1);
+    expect(older()).not.toHaveAttribute('aria-busy');
+  });
+
+  test('presses until none are left: the button is gone, focus is on the last new row, and no row repeats', async () => {
+    const { ids } = await unfolded();
+    let presses = 0;
+    while (older() !== null && presses < 6) {
+      const before = endedIds().length;
+      await userEvent.click(older()!);
+      await waitFor(() => expect(endedIds().length).toBeGreaterThan(before));
+      presses += 1;
+    }
+    expect(presses).toBe(3);
+    expect(older()).toBeNull();
+    expect(endedIds()).toEqual([...ids].reverse());
+    expect(new Set(endedIds()).size).toBe(45);
+    expect(heads()).toEqual(['Up now', 'Ended · 45']);
+    expect(compact(ids[0]!)).toHaveFocus();
+  });
+
+  test('a read that fails keeps the rows and says so on the button, and a press reads again', async () => {
+    const { w, ids } = await unfolded();
+    vi.spyOn(w.fake, 'kindPlays').mockRejectedValueOnce(new Error('offline'));
+    await userEvent.click(older()!);
+    const failed = await within(lens()).findByRole('button', { name: 'Couldn’t load older plays. Try again' });
+    expect(endedIds()).toEqual([ids[44]]);
+    expect(failed).not.toHaveAttribute('aria-busy');
+    await userEvent.click(failed);
+    await waitFor(() => expect(endedIds()).toHaveLength(21));
+    expect(older()).toHaveAccessibleName('Show older plays (24 more)');
+  });
+
+  test('a reaction on a paged row reaches the tally store: the row counts it in place', async () => {
+    const { w, ids } = await unfolded();
+    await userEvent.click(older()!);
+    await waitFor(() => expect(endedIds()).toHaveLength(21));
+    const react = vi.spyOn(w.fake, 'react');
+    await userEvent.click(compact(ids[30]!));
+    const row = lens().querySelector<HTMLElement>(`[data-kb-play="${ids[30]}"]`)!;
+    await userEvent.click(within(row).getByRole('button', { name: 'React' }));
+    await userEvent.click(within(screen.getByRole('dialog', { name: /^React to / })).getByRole('button', { name: 'Tea, Calm' }));
+    await waitFor(() => expect(react).toHaveBeenCalledWith(ids[30], w.pipe, 'tea'));
+    await waitFor(() => expect(within(row).getByRole('button', { name: /^Tea, 1/u })).toBeInTheDocument());
+  });
+
+  describe('card backs', () => {
+    /** Five backs, each set face down as another card and sprung, oldest first; the oldest has drawn a reaction, so the page holds it and the newest. */
+    async function backs() {
+      width(false);
+      const w = world();
+      const sets: Id[] = [];
+      for (const key of ['k2', 'k3', 'k4', 'k5', 'k6']) {
+        w.fake.clock.advance(60_000);
+        const set = w.fake.seed.set(w.spritey, w.second, key, { at: w.fake.clock.now() });
+        w.fake.clock.advance(1_000);
+        w.fake.seed.spring(set, { trigger: 'quote', by: w.third });
+        sets.push(set);
+      }
+      w.fake.seed.react(w.me, w.pipe, sets[0]!, 'fire');
+      open(w);
+      return { w, sets };
+    }
+    const backMarks = async () => (await within(await article(2)).findAllByRole('button', { name: /set face down/u }));
+
+    test('two marks: the newest and the most drawn; the newest\'s tab pages the other three, each named for its card', async () => {
+      const { sets } = await backs();
+      const marks = await backMarks();
+      expect(marks).toHaveLength(2);
+      expect(marks.map((m) => m.getAttribute('aria-label'))).toEqual([expect.stringMatching(/^Card 2, /u), expect.stringMatching(/^Card 6, /u)]);
+      await userEvent.click(marks[1]!);
+      await userEvent.click(whoButton());
+      expect(within(lens()).getAllByRole('tab')).toHaveLength(2);
+      expect(endedIds()).toEqual([sets[4]]);
+      expect(older()).toHaveAccessibleName('Show older plays (3 more)');
+      await userEvent.click(older()!);
+      await waitFor(() => expect(endedIds()).toEqual([sets[4], sets[3], sets[2], sets[1]]));
+      expect(compact(sets[3]!).textContent).toContain('Became Card 5');
+      expect(compact(sets[2]!).textContent).toContain('Became Card 4');
+      expect(compact(sets[1]!).textContent).toContain('Became Card 3');
+      expect(older()).toBeNull();
+      /* No new mark or tab for a paged back. */
+      expect(within(lens()).getAllByRole('tab')).toHaveLength(2);
+      expect(await backMarks()).toHaveLength(2);
+    });
+
+    test('the most-drawn sprung back keeps its own mark and tab, and pages nothing', async () => {
+      const { sets } = await backs();
+      const marks = await backMarks();
+      await userEvent.click(marks[0]!);
+      await userEvent.click(whoButton());
+      expect(endedIds()).toEqual([sets[0]]);
+      expect(older()).toBeNull();
+    });
   });
 });

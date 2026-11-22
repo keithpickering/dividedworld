@@ -665,6 +665,12 @@
   margin: 0;
 }
 
+/* The foot of the Ended group (Older.tsx): one glass button, in the side room a row keeps, one breath under the last row. */
+.kb-lens-older {
+  margin: 10px 0 0;
+  padding: 0 14px;
+}
+
 /* An ended row keeps its ink bar and takes about half the padding: its compact button is the row until it is opened. */
 .kb-lens-row[data-kb-ended] {
   padding: 4px 14px 5px;

@@ -393,8 +393,9 @@ export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<C
 
 export interface Plays {
   get(post: Id): PostPlays;
-  /** Take in card Acts, and the `card_end` of a play (it marks its play reversed, or is held for when the play arrives); anything else is ignored. True when a play was new or ended. A play is its Act's id: the same again is the same play. */
-  add(acts: readonly Act[]): boolean;
+  /** Take in card Acts, and the `card_end` of a play (it marks its play reversed, or is held for when the play arrives); anything else is ignored. True when a play was new or ended. A play is its Act's id: the same again is the same play.
+   * `older`: plays a kind's page read (`kindPlays`), which the server's count already holds and the billing never named: they are kept, and neither move a kind's count nor take a place in the billing, so a paged back is no mark of its own. */
+  add(acts: readonly Act[], options?: { readonly older?: true }): boolean;
   /** Keep each play's newest saved state, by when it was saved; true when any was newer. A state for a play not here is kept for when it is. */
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
   /** Mark each of these plays reversed in place, as its `card_end` would (one not held yet is remembered, as an early `card_end` is); true when a play was marked or newly remembered. */
@@ -526,7 +527,8 @@ export function createPlays(): Plays {
       }
       return snap;
     },
-    add(acts) {
+    add(acts, options) {
+      const older = options?.older === true;
       const touched = new Set<Id>();
       for (const act of acts) {
         /* A spring reveals its back in place: the same play, keeping its place in the billing, so no mark moves. */
@@ -540,7 +542,7 @@ export function createPlays(): Plays {
           if (own && back && !back.revealed) {
             own.set(back.id, { ...back, ...(ended.has(sprung.spring) ? { reversed: true as const } : {}), card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}), ...(sprung.until !== undefined ? { until: sprung.until } : {}) } });
             touched.add(homeOf(back));
-            bump(homeOf(back), CARD_BACK, 1, back.untaken ? 0 : 1, touched);
+            if (!older) bump(homeOf(back), CARD_BACK, 1, back.untaken ? 0 : 1, touched);
           }
           continue;
         }
@@ -613,9 +615,9 @@ export function createPlays(): Plays {
           continue;
         }
         own.set(play.id, play);
-        bump(home, countedKind(play), 1, play.untaken ? 0 : 1, touched);
+        if (!older) bump(home, countedKind(play), 1, play.untaken ? 0 : 1, touched);
         byPost.set(home, own);
-        order.set(home, [...(order.get(home) ?? []), play.id]);
+        if (!older) order.set(home, [...(order.get(home) ?? []), play.id]);
         postOf.set(play.id, home);
         touched.add(home);
       }
