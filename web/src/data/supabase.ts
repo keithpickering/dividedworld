@@ -1546,7 +1546,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (wanted.length === 0) return [];
       return (await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('id', part)))).map(toAct);
     },
-    /* The ids first (cutting_acts, 0404, which reads acts by its partial index acts_cut_play: a filter on acts_public's payload cannot reach it),
+    /* The ids first (cutting_acts, 0405, which reads acts by its partial index acts_cut_play: a filter on acts_public's payload cannot reach it),
        then those Acts as anyone reads them. */
     async actsCutting(plays) {
       const wanted = [...new Set(plays)].filter(idOk);

@@ -49,7 +49,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   const disciplined = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'disciplined', discipline: { kind: 'watch', weight: 2 } }] }, conduct).cards;
   assert.deepEqual(disciplined.find((c) => c.key === 'disciplined')!.discipline, { kind: 'watch', weight: 2 }, 'the seed carries the discipline');
   assert.deepEqual(disciplined.filter((c) => c.discipline !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.discipline !== undefined).map((c) => c.key), 'disciplined'], 'a card without one travels with none');
-  // A card that cuts travels as the card wrote it (card_kinds.cuts, 0404); a card without one travels with none, and no card's key is read by the SQL.
+  // A card that cuts travels as the card wrote it (card_kinds.cuts, 0405); a card without one travels with none, and no card's key is read by the SQL.
   const cutting = instanceSeed({ ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'cutting', cuts: { upTo: 'rare' } }] }, conduct).cards;
   assert.deepEqual(cutting.find((c) => c.key === 'cutting')!.cuts, { upTo: 'rare' }, 'the seed carries the cuts');
   assert.deepEqual(cutting.filter((c) => c.cuts !== undefined).map((c) => c.key), [...instance.cards.filter((c) => c.cuts !== undefined).map((c) => c.key), 'cutting'], 'a card without one travels with none');

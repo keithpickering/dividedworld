@@ -161,7 +161,7 @@ declare
                            'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
                            -- Whether an Act's kind is a post for a card (0374, granted in 0375): thread_page is a security invoker and asks it as the signed-in player. It reads nothing, takes one text and says nothing about anyone.
                            'post_kind(text)',
-                           -- The ids of the Acts that cut a given list of plays (0404), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.
+                           -- The ids of the Acts that cut a given list of plays (0405), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.
                            'cutting_acts(uuid[])'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',

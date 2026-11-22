@@ -1908,10 +1908,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const untakenPlays = new Set<Id>();
   /** The pierce plays a cast named in `pierce.by`: spent, which is ended for every reader as `card_ended` has it (0149 and Cheap Shot's pierce migration). */
   const spentPierces = new Set<Id>();
-  /** card_cut_at (0404): the earliest landed card Act that names `play` in its `cut` and that no admin has ended, or undefined. It reads the admin's end itself, as card_cut_at reads `card_end`. */
+  /** card_cut_at (0405): the earliest landed card Act that names `play` in its `cut` and that no admin has ended, or undefined. It reads the admin's end itself, as card_cut_at reads `card_end`. */
   const cutters = new Map<Id, Id[]>();
   const cutBy = (play: Id): ActRec | undefined => (cutters.get(play) ?? []).map((id) => acts.get(id)!).find((a) => !reversedPlays.has(a.id));
-  /** card_ended (0149, 0404): ended by an admin, or over because it did not take, was spent as a pierce or was cut. Every reader of "in force" asks this. */
+  /** card_ended (0149, 0405): ended by an admin, or over because it did not take, was spent as a pierce or was cut. Every reader of "in force" asks this. */
   const over = (play: Id): boolean => reversedPlays.has(play) || untakenPlays.has(play) || spentPierces.has(play) || cutBy(play) !== undefined;
   /** post_under (0348): the reply each play of a card that replies carried, by the play: the post it was played on and the reply, a post of the thread with a number of its own. Never edited; the end is the play's own. */
   const underPlays = new Map<Id, { parent: Id; reply: Id }>();
@@ -2394,7 +2394,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
-    /* A staff character casts no card that ends a Gimmick (place_cast, 0404), said before the Ward is asked; the fake's acting() turns a staff character away anyway, so this mirrors the server's guard. */
+    /* A staff character casts no card that ends a Gimmick (place_cast, 0405), said before the Ward is asked; the fake's acting() turns a staff character away anyway, so this mirrors the server's guard. */
     if (rules.cuts !== undefined && characters.get(character)?.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
     /* A card that replies carries its reply; its words and their length are the act function's, above, and the rest of the reply's refusals are play_card's, below (0348). */
     const carries = rules.replies === true;
@@ -2446,7 +2446,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     account.cards[card]! -= 1;
     /* The layer counts every play that landed, a reversed one too (acts_card_layers refuses a reused layer); only the stack count drops it. */
     const layer = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target && a.payload.card === card && a.payload.caught === undefined && onPost(a)).length + 1;
-    /* A card that cuts is over when it lands: no layer, no end, no place in a stack; where it lands it names the Gimmick it ended (place_cast, 0404). */
+    /* A card that cuts is over when it lands: no layer, no end, no place in a stack; where it lands it names the Gimmick it ended (place_cast, 0405). */
     const cutting = rules.cuts !== undefined;
     /* A live catching set card that names this very card, whatever its rarity, catches the play and takes it (spring_traps): the spring is written first, as the server writes it. */
     const trap = liveBack(target);
@@ -2658,7 +2658,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const out: CardEffect[] = [];
     for (const a of acts.values()) {
       if (a.target !== target) continue;
-      /* A play that is over when it lands (a card that cuts) takes no place in a stack: the post's count leaves out instant plays (place_cast, 0404). */
+      /* A play that is over when it lands (a card that cuts) takes no place in a stack: the post's count leaves out instant plays (place_cast, 0405). */
       if (a.kind === 'card' && a.payload.caught === undefined && !over(a.id) && onPost(a) && a.payload.instant === undefined) {
         const r = instance.cards.find((c) => c.key === a.payload.card);
         /* A skim play carries the quadrant it names, so its card's rules can refuse a second for the same one (card_target, 0151). */
@@ -2689,7 +2689,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * `least(what is left, what is still wanted)` from each; an unban lifts every running ban. Neither leaves a time up or a `play_reach` row.
    */
   function landInstant(rules: CardRules, account: AccountRec, price: number, message: string, config: unknown, character: Id, target: Id, from: ActRec, at: number, pierce?: Record<string, unknown>): Answer<Act> {
-    /* A card that cuts has no discipline: its Act names the Gimmick it ended and nothing else is written (place_cast, 0404). */
+    /* A card that cuts has no discipline: its Act names the Gimmick it ended and nothing else is written (place_cast, 0405). */
     const effect = rules.discipline ?? { kind: 'cut' as const };
     const targetName = characters.get(target)?.name ?? null;
     const id = uuid();
@@ -2802,7 +2802,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     account.cards[card]! -= 1;
     /* A heart does its work the moment it lands: no time up, no `play_reach` row, and the Act says what it did (place_cast, 0361). */
-    /* A cast records the pierce it was made under and spends it, an instant one too (place_cast, 0404). */
+    /* A cast records the pierce it was made under and spends it, an instant one too (place_cast, 0405). */
     const passed = shot === null ? undefined : passedWard(rules, effects, reach, shot.upTo, at);
     const pierceNote = shot === null ? undefined : { by: shot.play, card: shot.card, ...(passed === undefined ? {} : { ward: passed }) };
     if (instant(rules) && reach === 'character') {
@@ -3993,7 +3993,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (ends !== null && ends <= now() && instance.cards.find((c) => c.key === p.payload.card)?.keeps !== true) return refuse('that card has already worn off');
       if (reversedPlays.has(play)) return refuse('an admin has already ended that card');
       if (untakenPlays.has(play)) return refuse(DID_NOT_TAKE);
-      /* A play that is over for another reason says so (reverse_card, 0404): a card that cut it names itself, any other (a spent Cheap Shot) is over. */
+      /* A play that is over for another reason says so (reverse_card, 0405): a card that cut it names itself, any other (a spent Cheap Shot) is over. */
       const cutter = cutBy(play);
       if (cutter !== undefined) return refuse(`a ${instance.cards.find((c) => c.key === cutter.payload.card)?.name ?? String(cutter.payload.card)} already ended that card; end that card to bring this one back`);
       if (spentPierces.has(play)) return refuse('that card is already over');

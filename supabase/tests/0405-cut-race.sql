@@ -1,4 +1,4 @@
--- The concurrent case of a card that cuts (supabase/migrations/0404_cut.sql; docs/plans/2026-11-21-buzzkill-plan.md, Task 2, "The lock").
+-- The concurrent case of a card that cuts (supabase/migrations/0405_cut.sql; docs/plans/2026-11-21-buzzkill-plan.md, Task 2, "The lock").
 -- A cut of a Cheap Shot on a character and that Cheap Shot's spending cast, at once: place_cast locks the caster's live pierce rows, and a cut the named play's row too, in ONE statement in play order, so the two go one
 -- after the other and neither deadlocks. Exactly one wins, and the other sees it: the cut landed and the cast carries no pierce, or the cast spent the pierce and the cut is refused for want of a Gimmick. Eight rounds,
 -- each of fresh characters, committed (tests.commit), since a racer is a session of its own. Every name is this file's (bkr...).

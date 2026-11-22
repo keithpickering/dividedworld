@@ -1,4 +1,4 @@
--- A card that cuts, a Move that ends a Gimmick early (supabase/migrations/0404_cut.sql; docs/plans/2026-11-21-buzzkill-plan.md, Task 2; design docs/plans/2026-11-21-buzzkill-design.md, sections 3.1 to 3.3), for Buzzkill.
+-- A card that cuts, a Move that ends a Gimmick early (supabase/migrations/0405_cut.sql; docs/plans/2026-11-21-buzzkill-plan.md, Task 2; design docs/plans/2026-11-21-buzzkill-design.md, sections 3.1 to 3.3), for Buzzkill.
 --   * The catalog: card_kinds_problem refuses each bad `cuts` in the engine's words (engine/rules/instance.ts, cutsProblems) and takes the good one; card_reach_problem takes it with no time up; a back of it is refused by
 --     face_down_never_writes in the words decideSet gives; the table takes the column and its reach with no `lasts`.
 --   * The cast: on a post with a live Gimmick the card lands instant (an `instant` and a `cut` naming the play and its card, no layer), the Gimmick is over (card_ended, card_cut_at), a second cut of the card lands (no stack

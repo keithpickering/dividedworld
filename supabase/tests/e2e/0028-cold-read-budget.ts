@@ -209,8 +209,8 @@ export const BUDGETS: Record<string, Budget> = {
   boot: budget(() => 'public.boot()', player, 9.1),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
   index_page: budget(() => 'public.index_page()', player, 7.2),
-  // 16.1: the workflow measured 15.769 on d7661f6 (the Buzzkill branch merged with main), so 15.8 + 0.3. The Buzzkill migration (0404) is not the cause: on Postgres 16, after the files before this one, log_page kept 15.642 MB with 0404
-  // and 15.637 without it (+0.005 MB), so the growth over the old 15.7 is not 0404's, and where it came from was not traced (main merged into the branch at d7661f6).
+  // 16.1: the workflow measured 15.769 on d7661f6 (the Buzzkill branch merged with main), so 15.8 + 0.3. The Buzzkill migration (0405) is not the cause: on Postgres 16, after the files before this one, log_page kept 15.642 MB with 0405
+  // and 15.637 without it (+0.005 MB), so the growth over the old 15.7 is not 0405's, and where it came from was not traced (main merged into the branch at d7661f6).
   log_page: budget(() => 'public.log_page(null)', player, 16.1),
   my_characters_page: budget(() => 'public.my_characters_page()', player, 4.8),
   profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.6),

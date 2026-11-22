@@ -1,6 +1,6 @@
 /**
  * End to end: a Kick Me cut by a Buzzkill pays only the votes before the cut (the Buzzkill plan, Task 2, "Settlement"): the settlement's input sends the play's
- * `ends` as the cut's time (supabase/migrations/0404_cut.sql), and engine/rules/settle.ts pays a flat earn only inside [at, ends). A Kick Me used at t0, a negative vote at t1, the
+ * `ends` as the cut's time (supabase/migrations/0405_cut.sql), and engine/rules/settle.ts pays a flat earn only inside [at, ends). A Kick Me used at t0, a negative vote at t1, the
  * cut at t2 and a negative vote at t3, in one window: the settled result pays the t1 vote's boost and not t3's. With the cut reversed by an admin before the window settles, both are paid.
  * The live estimate (estimate_input, estimateForOwner) agrees in both. Run by tools/test-sql.mjs.
  */

@@ -4,7 +4,7 @@
 -- Each object here is copied whole from its latest version on main, with only the change named.
 --
 --   1. card_kinds               gains `cuts jsonb`. card_kinds_beyond_lasts (0361) also lets a card that cuts reach a character with no time up (the plan's Task 2 does not name it; the table refuses a Buzzkill without it).
---   2. seed_instance            copied whole from 0403_departed_personas.sql: `cuts` joins the card insert's columns, values and on-conflict update.
+--   2. seed_instance            copied whole from 0404_card_retirement.sql: `cuts` joins the card insert's columns, values and on-conflict update.
 --   3. card_kinds_problem       copied whole from 0402_thread_lockout.sql (the plan named 0400; #936's lockout is in 0402): the cuts sentences in the engine's words (instance.ts, cutsProblems), beside the pierce's.
 --   4. card_reach_problem       copied whole from 0361_discipline_cards.sql: a card that cuts is passed by the "reaches beyond a post with no time up" case, as a relief and an unban are.
 --   5. face_down_never_writes   copied whole from 0361_discipline_cards.sql: a card that cuts is refused a back in the words decideSet gives a faceUpOnly card ("<name> is cast face up and never set face down").
@@ -42,7 +42,7 @@ alter table card_kinds add constraint card_kinds_beyond_lasts check (reaches = '
 
 -- ---- 2. seed_instance ----
 
--- seed_instance (0403_departed_personas), `cuts` joins the card insert's columns, values and on-conflict update, beside `refunds`. Everything else as 0403_departed_personas wrote it.
+-- seed_instance (0404_card_retirement), `cuts` joins the card insert's columns, values and on-conflict update, beside `refunds`. Everything else as 0404_card_retirement wrote it.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -65,6 +65,11 @@ declare
   boss_was text;
   handed text;
   mods_were bigint;
+  retiring boolean := payload ? 'formerly' or payload ? 'withdrawn';
+  moving record;
+  copies bigint;
+  renamed jsonb := '[]'::jsonb;
+  withdrawn_out jsonb := '[]'::jsonb;
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
@@ -120,9 +125,47 @@ begin
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
+  -- The three ways a card leaves (0404). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
+  -- a key in more than one, a renaming into a card the seed does not list (or into itself; a name already gone may point at a withdrawn card, and needs no entry when the card its chain ends in is listed), a refund that is not a positive whole number, and a card that left listed as a card again (a card that comes back takes a new key).
+  -- The refusal does not depend on who holds what. Nothing is written before it.
+  if retiring then
+    select string_agg(k.key, ', ' order by k.key) into unknown from card_kinds k
+    where k.from_seed and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e where e ->> 'key' = k.key)
+      and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e where e ->> 'key' = k.key)
+      and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e where e ->> 'key' = k.key)
+      -- A renamed card is listed by name, under the card that carries it, so history never says "a card". The one name that needs no entry is a card that was renamed and whose chain then ended in a withdrawal that the payload lists:
+      -- no card can carry that name, so there is no shape the instance could write for it.
+      and not (k.gone_at is not null and exists (
+        select 1 from card_now(k.key) n join jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w on w ->> 'key' = n.key where n.refund is not null));
+    if unknown is not null then
+      raise exception 'the seed lists % as no card, no former name and no withdrawn card: a card the database holds is listed as one of the three, never left out', unknown using errcode = '22023';
+    end if;
+    select string_agg(d.key, ', ' order by d.key) into unknown
+    from (select x.key from (select e ->> 'key' as key from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e
+                             union all select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e
+                             union all select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e) x group by x.key having count(*) > 1) d;
+    if unknown is not null then raise exception 'the seed lists % in more than one of its cards, former names and withdrawn cards: a card is in one', unknown using errcode = '22023'; end if;
+    select string_agg(f.e ->> 'key' || ' (renamed to ' || coalesce(f.e ->> 'became', 'nothing') || ')', ', ' order by f.e ->> 'key') into unknown
+    from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) f(e)
+    where f.e ->> 'became' is null or f.e ->> 'became' = f.e ->> 'key'
+       or not (exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) c where c ->> 'key' = f.e ->> 'became')
+               -- a name already gone may point at a card the payload withdraws (its copies were that card's when it was refunded)
+               or (exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w where w ->> 'key' = f.e ->> 'became')
+                   and exists (select 1 from card_kinds g where g.key = f.e ->> 'key' and g.gone_at is not null)));
+    if unknown is not null then raise exception 'a card is renamed to another card the seed lists as a card, never to itself or to nothing: %', unknown using errcode = '22023'; end if;
+    select string_agg(w.e ->> 'key', ', ' order by w.e ->> 'key') into unknown
+    from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w(e)
+    where jsonb_typeof(w.e -> 'refund') is distinct from 'number' or (w.e ->> 'refund') !~ '^[1-9][0-9]{0,8}$';
+    if unknown is not null then raise exception 'a withdrawn card is refunded a positive whole number of hundredths: %', unknown using errcode = '22023'; end if;
+    select string_agg(k.key, ', ' order by k.key) into unknown from card_kinds k
+    where k.gone_at is not null and exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e where e ->> 'key' = k.key);
+    if unknown is not null then
+      raise exception '% already left the game and cannot be listed as a card again: a card that comes back takes a new key', unknown using errcode = '22023';
+    end if;
+  end if;
   -- A card's stack, whether it is seeded and the economy numbers its rules read are the code's, as its name is; so
   -- are its rarity, its play, its trap (with its match), its gimmick, its discipline, how long a Use of it is up, where it reaches, whether it pins, whether it writes, whether it replies, whether it keeps, its skim, whether it scores as a class, what it draws, its drive and the words it refuses a blank message with.
-  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, refunds, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface, cuts)
+  insert into card_kinds (key, name, alignment, stack, seeded, reads, rarity, play, trap, gimmick, refunds, discipline, lasts, reaches, pins, writes, replies, keeps, skim, scores_as, draws, drive, needs_message, veil, adds_reaction, surface, from_seed, cuts)
   select e ->> 'key', e ->> 'name', e ->> 'alignment', coalesce((e ->> 'stack')::integer, 1), coalesce((e ->> 'seeded')::boolean, false),
     coalesce(array(select jsonb_array_elements_text(e -> 'reads')), '{}'),
     e ->> 'rarity', coalesce(e ->> 'play', 'cast'), nullif(e -> 'trap', 'null'), nullif(e -> 'gimmick', 'null'), nullif(e -> 'refunds', 'null'), nullif(e -> 'discipline', 'null'), span_interval(e -> 'lasts'),
@@ -130,13 +173,30 @@ begin
     coalesce((e ->> 'replies')::boolean, false), coalesce((e ->> 'keeps')::boolean, false),
     nullif(e -> 'skim', 'null'), coalesce((e ->> 'scoresAs')::boolean, false),
     case when jsonb_typeof(e -> 'draws') = 'array' then array(select jsonb_array_elements_text(e -> 'draws')) end, nullif(e -> 'drive', 'null'), nullif(e ->> 'needsMessage', ''),
-    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false), nullif(e -> 'cuts', 'null')
+    nullif(e ->> 'veil', ''), coalesce((e ->> 'addsReaction')::boolean, false), coalesce((e ->> 'surface')::boolean, false), true, nullif(e -> 'cuts', 'null')
   from jsonb_array_elements(payload -> 'cards') e
   on conflict (key) do update set name = excluded.name, alignment = excluded.alignment,
     stack = excluded.stack, seeded = excluded.seeded, reads = excluded.reads,
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, refunds = excluded.refunds, discipline = excluded.discipline, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
-    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, cuts = excluded.cuts;
+    draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, from_seed = true, cuts = excluded.cuts;
+  -- Out of print (0404): the flag sets retired_at, kept while it stays and cleared when it goes.
+  update card_kinds k set retired_at = case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end
+  from jsonb_array_elements(payload -> 'cards') e(c)
+  where k.key = e.c ->> 'key' and k.retired_at is distinct from case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end;
+  -- Renamed and withdrawn (0404): each key not yet gone is moved by card_leaves, once ever, and its copies are counted for the answer.
+  if retiring then
+    for moving in
+      select f.e ->> 'key' as old, f.e ->> 'became' as became, null::integer as refund from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) f(e) join card_kinds k on k.key = f.e ->> 'key' where k.gone_at is null
+      union all
+      select w.e ->> 'key', null, (w.e ->> 'refund')::integer from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w(e) join card_kinds k on k.key = w.e ->> 'key' where k.gone_at is null
+      order by 1
+    loop
+      copies := card_leaves(moving.old, moving.became, moving.refund);
+      if moving.became is not null then renamed := renamed || jsonb_build_object('from', moving.old, 'to', moving.became, 'copies', copies);
+      else withdrawn_out := withdrawn_out || jsonb_build_object('key', moving.old, 'copies', copies, 'refunded', copies * moving.refund); end if;
+    end loop;
+  end if;
   -- The packs the instance sells (replaced each seed: their pulls are its code), then the slots it names that the database does not hold yet,
   -- at the end of the grid in the instance's order. A slot already holding the item is never touched: its place, availability and price are an
   -- admin's (0139). A pack or card a slot names must exist, and a missing one is a foreign key's refusal.
@@ -146,6 +206,13 @@ begin
          case when jsonb_typeof(e -> 'contents') = 'array' then array(select jsonb_array_elements_text(e -> 'contents')) end
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves, contents = excluded.contents;
+  -- A pack kind the payload does not list is out of print, one it lists is not (0404; a payload with no `packs` says nothing of pack kinds): its slot is left out of the machine, and a sealed pack of it still opens.
+  if retiring and payload ? 'packs' then
+    update pack_kinds k set retired_at = x.want
+    from (select p.key, case when l.key is null then coalesce(p.retired_at, now()) end as want
+          from pack_kinds p left join (select distinct e ->> 'key' as key from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e) l on l.key = p.key) x
+    where x.key = k.key and k.retired_at is distinct from x.want;
+  end if;
   if payload ? 'gear' then
     insert into gear_kinds (key, rarity) select e ->> 'key', e ->> 'rarity' from jsonb_array_elements(payload -> 'gear') e
     on conflict (key) do update set rarity = excluded.rarity;
@@ -439,6 +506,7 @@ begin
   perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards),
+    'retired', (select coalesce(jsonb_agg(k.key order by k.key), '[]'::jsonb) from card_kinds k where k.retired_at is not null), 'renamed', renamed, 'withdrawn', withdrawn_out,
     'departed', to_jsonb(departed), 'returned', to_jsonb(returned), 'handover', to_jsonb(handed));
 end $function$;
 
