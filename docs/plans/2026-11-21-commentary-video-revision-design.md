@@ -234,3 +234,101 @@ glass's own look (its smoke, its heading face), so the title belongs to the game
 springs a card set on the post it claims to quote is the rules' to say, and the stage follows them: if it does not,
 the chair is sprung by a real quote of Chadluminum's post by another character, and the forged quote stands beside it
 as its own beat.
+
+## 11. The owner's rewrite, on the sixth cut (2026-11-22)
+
+The owner, on the sixth cut: "one more rewrite, substantial recut but some footage should at least be reusable this
+time." The narration is new from its first line; `commentary.ts` holds it as the film says it. Sections 9 and 10
+stand as the record of the pass before; where this section differs, this one is the film.
+
+**The cast and the look.**
+
+- The Heel is no longer D-Guy but **Hotel Bro**, a character of the video's own, whose avatar is the owner's own art
+  (Mario, from "President Peach's Beautiful Border Wall").
+- **D-Guy** takes Human Josh's place and voice (the lowercase poster). Human Josh leaves the stage.
+- Reshoots use the **Fan Site** or **Hot Rod** theme, on main as it stands with the latest changes merged. The session
+  films the calm opening in Fan Site and turns to Hot Rod when the narrator loses control; footage kept from earlier
+  takes keeps its skin.
+- Serious Deer's line under the fold ("...it was created using generative AI") "is a really perfect gag but it is
+  currently being used twice. It needs to only happen once and at the perfect time. Probably immediately after/as Gabe
+  says 'Making games is hard'".
+
+**The film, beat by beat** (the owner's directions in parentheses, the narration quoted).
+
+1. (The recording opens on Snuckles's post, in silence. A commentary node sits on screen and is cautiously clicked. The
+   click is what starts the voice.)
+   "Hi, I'm Gabe. Over the last few years, people have been asking me what our company has been up to. Why haven't we
+   been making any games? Well, I'm happy to announce that the indefinite delay of Half-Life: Nuts & Bolts has not
+   been in vain. For the last nine years, we've been putting all of our resources into this: Divided World. And since
+   we'll never get any of that time back, let's dive right in."
+2. (A closer shot of the first post.)
+   "Here we see a straightforward MFGG submission with a solid 2.9 star rating trajectory. You're probably wondering
+   how something so earnest and innocuous could possibly end up starting a vicious fight: and that's exactly the kind
+   of game design problem we set out to solve."
+3. (The cursor moves down; a cut to Chadluminum's post with the cursor entering it. Then a slow scroll through the
+   kind posts under it: rainbows, positive reactions, Sweet cards.)
+   "See, one of the first things we found in playtesting is that human beings enjoy being Liked. Among a population of
+   well-adjusted adults, this tends to result in a positive nurturing environment."
+   The kind posts: "Good job! Looks cool" / "not too shabby" / "I'll use it in my game!" / "The walk looks like it was
+   hard to make 💪"
+4. "So to fix that, we gave every character an anonymous class: And some of the classes get points for being
+   DISliked."
+5. (The scroll arrives at Hotel Bro's post, the insult. A close-up on the Aura bar rising.)
+   "Take this guy: he's a Heel. He made this piece-of-shit post, and the crowd threw tomatoes at him. Normally this
+   would be a bad thing, but for a Heel, it gives him Aura. The flip side is that if you agree with him politely, he
+   actually LOSES Aura. We tried that out and he lost his MIND, heh, check this out:"
+   (The angry typing.) "Problem solved."
+6. (The carousel of classes in the character creator.)
+   "These are the six classes: Face, Heel, Jabroni, Technician, Tweener, and Lurker. You get six characters, so you
+   can try all of them if you want."
+7. (The Aura bar, going up.)
+   "They all share the same aura, so you can farm reactions as one class to power up another class."
+8. (The Vending Machine, a booster pack, a card chosen and played, a quick run of post effects.)
+   "The aura gets spent on cards at the vending machine, and the characters play those to earn even more reactions.
+   In the biz we call that a 'gameplay loop'."
+9. (The footage gets "progressively more frantic, Gabe is not the one controlling the screen, we suppose perhaps he
+   never was. He is trying to keep up with the images he is seeing, explaining them in vain to the viewer. It becomes
+   a rapid fire effect montage, impossible to keep up with. Gabe needs to speak more loudly as the music rises in
+   intensity to match the quick cuts, tight close-ups, fast camera tracking with realistic motion blur, and intense
+   motion of the action packed forum and lens footage - try not to hold on any shot for too long".)
+   "Okay, this is, uh...yeah, we call this a training arc. A card can be face down on any post, the poster can set
+   conditions for it to spring, so other players learn to uh, to not trust anybody, basically. Sometimes the player
+   plays a card and then it turns out the player you played the card on actually WANTED you to play that card, so you
+   really should've played a different card, or just not played any card at all. And uh, you get some really
+   interesting conversations, at the end of the day. It's a positive experience. We tested this. The testers...okay,
+   I'll level with you, this is the first time we've really tested it. And you know, what do you know, anyway?!"
+   (For a couple of moments, the droning You Were Saying? text typing on; then back to the rapid fire.)
+   "You sit there on your gaming chair and you expect everything handed to you on a silver platter. Making games is
+   hard! Being Gabe, is hard! I don't have to give my "commentary" to you! This is a good idea! THIS IS A GOOD IDEA!
+   THIS IS A GOOD IDEA!!!"
+10. (Rapid fire: the characters submitting their leaving posts, the page scrolling down to follow each, as the music
+    reaches its crescendo.)
+    Snuckles: "That's it! I'll kindly take my Wigglers elsewhere!!!" / Hotel Bro: "I can't wait to fuggetabout you
+    clowns, capiche?" / Serious Deer: "I didn't do anything but ok." / D-Guy: "that's all, folks 😬" / Chadluminum:
+    "I've really tried for a long time, but I just don't think this is going to work. See you all around."
+11. (A cut to black before the final sting.) Over pure black: "*sigh* Well, at least it's better than anime."
+12. (The title, on the music's final note.) The owner: "my parentheses and misspelling joke has outstayed its welcome,
+    let's do a really cool title card with an 'invite only' and try to earn it with the coolness of the editing
+    leading up to it, not lean on it being some kind of ironic sting. In any case it should align exactly with the
+    final sting of the mountain king track. Big sting, final note, title card with the divided world logo coin +
+    courier new at the exact moment of the orchestra hitting that final beat."
+
+A note the owner marked as unimportant: the forged quote of Chadluminum "turns out to be a Line Cutter", so it sits
+right under his post; it may be faked or earlier footage reused.
+
+**What the session decided inside it.**
+
+- **The ending on the music.** The leaving posts land on the coda's chords. The picture cuts to black on the
+  second-to-last strike; the sigh sits in the gap before the last, which is 3.4 seconds on the recording; the title
+  lands on the final crash.
+- **The music still starts early.** This narration is longer than the recording allows from an early start, so the
+  recording may be lengthened as it was shortened: a pair of statements of its first block repeated, where the tempo
+  and level are constant. The edit picks, of the versions it has, the one that starts the music soonest after the
+  opening lines.
+- **The Staff** are no longer narrated; their takes are flashes in the montage.
+- **The narration's claims** were checked on this date: the six classes are named as he names them
+  (`instances/divided-world/classes/`), and `charactersPerPlayer` is 6 (`instances/divided-world/settings.ts`).
+- **The blur** is the camera's own: a fast move is filmed at four times the frame rate on the page's stepped clock
+  and blended down, so it is what a shutter would have seen.
+- **The title** is the instance's coin (`instances/divided-world/ui/icon/coin.svg`), "DIVIDED WORLD" in Courier New,
+  and "INVITE ONLY". `TITLE_NOTE` and the misspelling go.
