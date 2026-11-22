@@ -1104,16 +1104,21 @@ describe('failures', () => {
     }
   });
 
-  it('reads the cutting Acts of plays in one acts_public read, landed card Acts only, and never filters on a non-id', async () => {
-    const h = harness(() => rows([ACT_ROW]));
+  it('reads the cutting Acts of plays through cutting_acts, whose ids it then reads from acts_public, and never asks for a non-id', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/cutting_acts` ? json([A]) : rows([ACT_ROW])));
     expect(await h.api.actsCutting([A, B])).toEqual([ACT]);
+    expect(h.to('rpc/cutting_acts')[0]?.body).toEqual({ plays: [A, B] });
     expect(h.to('acts_public')).toHaveLength(1);
-    const url = h.to('acts_public')[0]!.url.searchParams;
-    expect(url.get('payload->cut->>play')).toBe(`in.(${A},${B})`);
-    expect(url.get('kind')).toBe('eq.card');
+    expect(h.to('acts_public')[0]!.url.searchParams.get('id')).toBe(`in.(${A})`);
     expect(await h.api.actsCutting(['not an id', "1),(2"])).toEqual([]);
     expect(await h.api.actsCutting([])).toEqual([]);
-    expect(h.to('acts_public')).toHaveLength(1);
+    expect(h.to('rpc/cutting_acts')).toHaveLength(1);
+  });
+
+  it('reads no Acts where cutting_acts finds none', async () => {
+    const h = harness((r) => (r.url.pathname === `${REST}/rpc/cutting_acts` ? json([]) : rows([ACT_ROW])));
+    expect(await h.api.actsCutting([A])).toEqual([]);
+    expect(h.to('acts_public')).toHaveLength(0);
   });
 
   it('reads Acts by id in one acts_public read', async () => {
@@ -2341,7 +2346,6 @@ describe('reads by many ids', () => {
 
   const reads: readonly (readonly [string, readonly string[], (api: KayfaApi) => Promise<unknown>])[] = [
     ['actsById', ['acts_public'], (api) => api.actsById(ids)],
-    ['actsCutting', ['acts_public'], (api) => api.actsCutting(ids)],
     ['effectStates', ['effect_state'], (api) => api.effectStates(ids)],
     ['characters', ['characters_public', 'character_profiles'], (api) => api.characters(ids)],
     ['spunFromMany', ['thread_list'], (api) => api.spunFromMany(ids, 20)],
