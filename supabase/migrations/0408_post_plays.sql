@@ -14,7 +14,7 @@
 --                            for the origin post; the page gains `counts` and the origin gains `counts` and loses `more`. Nothing else changes.
 --
 -- The Acts are looked up by `id = any (array(...))`, never `id in (select ...)`: with an array the plan is a probe of the primary key for each id however large acts is, where a semi join with a function's or a CTE's rows is a choice
--- of the planner's that can fall to hashing acts. The origin's reads are gated on there being an origin (`exists (select 1 from o_ids)`), a one-time filter, so a page with none runs none of them.
+-- of the planner's that can fall to hashing acts. They name the kinds a play and its riders can be (card, set, spring, take_back) as 0402's read did, which leaves acts_public's arm for secret ballots out of the plan. The origin's reads are gated on there being an origin (`exists (select 1 from o_ids)`), a one-time filter, so a page with none runs none of them.
 -- Ways out: nothing here is a state a player is in; a page's plays follow the kept rows, which follow the Acts. An older play is paged from the Lens's Who by kind_plays.
 -- Masks: every id and count comes from the kept rows, whose columns are public facts of public Acts; a back's kind is the null card and never names the card; the draw is public sums and spun threads, never who reacted. The three
 -- definers behind the reads take no account and compute nothing from who is asking; kind_plays's tallies and `mine` are read as the caller, so only the caller's own reactions are theirs alone, as in thread_page.
@@ -98,9 +98,9 @@ begin
     with ids as materialized (
       select x.post, x.play from post_play_ids(post_plays.posts) x
     ), plays as materialized (
-      select a.* from acts_public a where a.id = any (array(select i.play from ids i))
+      select a.* from acts_public a where a.kind in ('card', 'set') and a.id = any (array(select i.play from ids i))
     ), riders as materialized (
-      select a.* from acts_public a where a.id = any (array(select r from play_rider_ids(array(select i.play from ids i)) r))
+      select a.* from acts_public a where a.kind in ('spring', 'take_back') and a.id = any (array(select r from play_rider_ids(array(select i.play from ids i)) r))
     ), ends as materialized (
       select a.* from acts_public a where a.kind = 'card_end' and a.target_act_id in (select p.id from plays p union all select r.id from riders r)
     )
@@ -130,9 +130,9 @@ begin
     ), shown as materialized (
       select x.play, x.at from page x order by x.at desc, x.play desc limit lim
     ), plays as materialized (
-      select a.* from acts_public a where a.id = any (array(select s.play from shown s))
+      select a.* from acts_public a where a.kind in ('card', 'set') and a.id = any (array(select s.play from shown s))
     ), riders as materialized (
-      select a.* from acts_public a where a.id = any (array(select r from play_rider_ids(array(select s.play from shown s)) r))
+      select a.* from acts_public a where a.kind in ('spring', 'take_back') and a.id = any (array(select r from play_rider_ids(array(select s.play from shown s)) r))
     ), ends as materialized (
       select a.* from acts_public a where a.kind = 'card_end' and a.target_act_id in (select p.id from plays p union all select r.id from riders r)
     ), ids as materialized (
@@ -383,7 +383,7 @@ begin
              a.payload_hidden,
              a.payload_concealing
             FROM acts_public a
-           WHERE (a.id = ANY (ARRAY( SELECT o.id
+           WHERE (a.kind = ANY (ARRAY['card'::text, 'set'::text, 'spring'::text, 'take_back'::text])) AND (a.id = ANY (ARRAY( SELECT o.id
                     FROM on_all o)))
          ), ends_on_posts AS MATERIALIZED (
           SELECT a.id,
@@ -529,7 +529,7 @@ begin
           SELECT a.*
             FROM acts_public a
            WHERE (EXISTS ( SELECT 1
-                    FROM o_ids x)) AND (a.id = ANY (ARRAY( SELECT o.id
+                    FROM o_ids x)) AND (a.kind = ANY (ARRAY['card'::text, 'set'::text, 'spring'::text, 'take_back'::text])) AND (a.id = ANY (ARRAY( SELECT o.id
                     FROM o_all o)))
          ), o_shown AS MATERIALIZED (
           SELECT s.*

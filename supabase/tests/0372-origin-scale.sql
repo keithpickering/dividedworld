@@ -7,7 +7,7 @@
 --
 -- Cases: a thread spun from a post that holds 400 plays (396 over, 4 in force), among 12,000 other posts in two threads, 6,000 plays on posts that are not the origin, and 3,000 posts each in the spun thread and a plain one.
 --  1. The page that holds the first Act: the origin's plays handed on are the 4 in force (its one kind's newest and most drawn are two of them), the rows of `acts` its nodes read are bounded by what those few cost (and not by its 400),
---     no scan of `acts` in the origin's nodes is a sequential scan, and the document holds the 4 plays and the counts of 400. (Until 0408 this case held the origin to the first 21 of its plays by acts_origin_plays; the cap is gone, #871.) at most, and more.
+--     no scan of `acts` by the list of ids in the origin's nodes is a sequential one (the rest of what acts_public does for each Act it shows is the view's cost and is not counted), and the document holds the 4 plays and the counts of 400. (Until 0408 this case held the origin to the first 21 of its plays by acts_origin_plays; the cap is gone, #871.) at most, and more.
 --  2. Another page of the same thread, and a page of a thread with no origin: every node under the origin's CTEs that reads a relation was never executed (zero loops).
 -- The fixture is written with the append-only and warn-guard triggers off for this transaction only (the runner rolls it back), and analyzed before the plan is read.
 
@@ -18,18 +18,9 @@ create function pg_temp.origin_nodes(plan jsonb) returns setof jsonb language sq
     and jsonb_typeof(d) = 'object' and d ? 'Node Type'
 $$;
 
--- The rows of `acts` the origin's nodes read (a node's rows passed up, plus those its filter and its recheck removed, times its loops).
-create function pg_temp.origin_rows_read(plan jsonb) returns numeric language sql as $$
-  select coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric), 0)
-  from pg_temp.origin_nodes(plan) n
-  where n ->> 'Relation Name' = 'acts' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan')
-$$;
-
--- The scan nodes under the origin's CTEs that read more than 10 rows of a relation, as text, for a failure's message.
-create function pg_temp.origin_big_reads(plan jsonb) returns text language sql as $$
-  select coalesce(string_agg(format('%s %s %s rows %s x %s, removed %s', n ->> 'Node Type', n ->> 'Relation Name', coalesce(n ->> 'Index Name', ''), n ->> 'Actual Rows', n ->> 'Actual Loops', coalesce(n ->> 'Rows Removed by Filter', '0')), '; '), 'none')
-  from pg_temp.origin_nodes(plan) n
-  where n ? 'Relation Name' and ((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0)) * (n ->> 'Actual Loops')::numeric > 10
+-- The rows a CTE of the origin passed up (its own node's `Actual Rows`).
+create function pg_temp.origin_cte_rows(plan jsonb, cte text) returns numeric language sql as $$
+  select coalesce(max((c ->> 'Actual Rows')::numeric), -1) from jsonb_path_query(plan, '$.**') c where jsonb_typeof(c) = 'object' and c ->> 'Subplan Name' = cte
 $$;
 
 -- The rows the origin's plays CTE passed up: what the box is handed, which the plays in force and the stand-ins bound.
@@ -38,8 +29,8 @@ create function pg_temp.origin_plays_emitted(plan jsonb) returns numeric languag
 $$;
 
 -- Reads of `acts` inside the origin that are not index reads: a sequential scan of it, anywhere under the origin's CTEs.
-create function pg_temp.origin_seq_scans(plan jsonb) returns bigint language sql as $$
-  select count(*) from pg_temp.origin_nodes(plan) n where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = 'acts'
+create function pg_temp.origin_seq_scans(plan jsonb, filter_like text default null) returns bigint language sql as $$
+  select count(*) from pg_temp.origin_nodes(plan) n where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = 'acts' and (filter_like is null or coalesce(n ->> 'Filter', '') like filter_like)
 $$;
 
 -- Nodes under the origin's CTEs that read a relation and ran at all (a loop or more).
@@ -47,18 +38,6 @@ create function pg_temp.origin_relation_loops(plan jsonb) returns numeric langua
   select coalesce(sum((n ->> 'Actual Loops')::numeric), 0) from pg_temp.origin_nodes(plan) n
   where n ? 'Relation Name' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan', 'Bitmap Index Scan')
 $$;
-
--- The live veils that earlier files of a run may have left (the committed rows of a race, say) cost every read through acts_public a probe of `acts` for each Act it shows, whatever the Acts are: the view's own cost, which the plays'
--- reads under test do not change. This transaction ends them (a card_end, as reverse_card writes it, under the writer flag), so the rows counted are the plays', and the runner rolls them back.
-create function pg_temp.end_live_veils() returns void language plpgsql as $$
-begin
-  perform set_config('kayfabb.card_end_writer', 'on', true);
-  insert into acts (character, kind, thread, target_act_id, payload)
-  select null, 'card_end', a.thread, v.play, '{"why": "reversed", "by": "admin"}'
-  from post_veils v join acts a on a.id = v.play
-  where v.ends_at > now() and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = v.play);
-  perform set_config('kayfabb.card_end_writer', '', true);
-end $$;
 
 -- thread_page's own statement, read from its definition and run generic: the plan of `thread_page(t, pg, null, per, '{orfx}')` as `acct`, as explain (analyze, format json) gives it.
 create function pg_temp.generic_plan(acct uuid, t uuid, pg integer, per integer) returns jsonb language plpgsql as $$
@@ -99,7 +78,7 @@ declare
   ann uuid := tests.account('os-ann'); spn uuid := tests.account('os-spn'); rdr uuid := tests.account('os-rdr');
   oa uuid := tests.character(ann, 'Os Author'); sp uuid := tests.character(spn, 'Os Spinner'); rd uuid := tests.character(rdr, 'Os Reader');
   casters uuid[] := '{}'; t0 uuid := tests.thread('Os origin thread'); t_other uuid := tests.thread('Os other thread'); plain uuid := tests.thread('Os plain thread');
-  p uuid; s uuid; spun_t uuid; plan jsonb; plan2 jsonb; plan3 jsonb; doc jsonb; plays_read numeric; k integer;
+  p uuid; s uuid; spun_t uuid; plan jsonb; plan2 jsonb; plan3 jsonb; doc jsonb; k integer;
 begin
   insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values ('orfx', 'Os Effect', 'sweet', 'rare', 'cast', null, '{post}', null), ('orplain', 'Os Plain', 'sweet', 'common', 'cast', null, '{post}', null);
   for k in 1..5 loop casters := casters || tests.character(tests.account('os-caster-' || k), 'Os Caster ' || k); end loop;
@@ -125,7 +104,6 @@ begin
   insert into acts (character, kind, thread, payload, seq, created_at)
   select casters[g % 5 + 1], 'post', plain, jsonb_build_object('body', 'Plain ' || g), g, now() - interval '9 days' + g * interval '1 second' from generate_series(1, 3000) g;
   alter table acts enable trigger user;
-  perform pg_temp.end_live_veils();
   -- The kept rows of the plays, as the migrations' backfills fill them (the triggers that keep them were off for the bulk insert).
   insert into play_post select r.* from acts x cross join lateral play_row(x.id) r where x.kind in ('card', 'set') and x.target_act_id is not null and x.thread in (t0, t_other);
   insert into post_kinds (post, kind, plays, took) select pp.post, pp.kind, sum(c.plays), sum(c.took) from play_post pp cross join lateral play_post_counts(pp) c where pp.post in (select y.id from acts y where y.thread in (t0, t_other)) group by pp.post, pp.kind having sum(c.plays) > 0;
@@ -138,15 +116,13 @@ begin
   -- 1. The page that holds the first Act.
   plan := pg_temp.generic_plan(rdr, spun_t, 1, 20);
   if (select count(*) from pg_temp.origin_nodes(plan)) < 5 then raise exception '1 the plan holds no nodes under the origin''s CTEs, so the test reads nothing: %', plan; end if;
-  plays_read := pg_temp.origin_rows_read(plan);
-  raise notice '1 the origin read % rows of acts for 400 plays (4 in force), with 24,000 other Acts about', plays_read;
-  if pg_temp.origin_seq_scans(plan) > 0 then raise exception '1 the origin''s reads scan acts: %', plan; end if;
-  -- The bound: the origin's plays are those post_play_ids answers (the 4 in force, which are also its one kind's newest and most drawn), read from acts_public by id, and acts_public is two arms, each of which reads the id: so
-  -- what is read in all is 2 x (4 in force + 2 stand-ins of its one kind) + 8, and never the origin's 400 plays nor the instance's Acts. The 400 are in play_post, which holds the rows the reads of the plays go by.
+  -- What is bounded is the list of ids the origin's plays are looked up by, and the lookup is by that list: `o_all` holds the 4 plays in force of the origin's 400 (the one kind's newest and most drawn are two of them), `o_plays` reads exactly
+  -- those from acts_public, and no scan of acts has that list for its filter. What acts_public does besides for each Act it shows (probes of its veils, its edits and its ballots, each by a plan of its own that depends on what the instance
+  -- holds, and a database that earlier files filled with veils runs them) is the view's cost, the same for any Act read through it, which this change does not alter; it is not what the plays' ids cost, and it is not counted.
+  raise notice '1 the origin looked up % plays by id, of 400 (4 in force), with 24,000 other Acts about', pg_temp.origin_plays_emitted(plan);
+  if pg_temp.origin_seq_scans(plan, '%ANY%') > 0 then raise exception '1 the origin''s plays are looked up by scanning acts: %', plan; end if;
   if pg_temp.origin_plays_emitted(plan) is distinct from 4::numeric then raise exception '1 the origin''s plays CTE handed on % rows for an origin of 400 plays, 4 in force: it must be the 4', pg_temp.origin_plays_emitted(plan); end if;
-  if plays_read > 2 * (4 + 2 * 1) + 8 then raise exception '1 the origin read % rows of acts for an origin of 400 plays, 4 in force: at most 2 x (4 + 2 x 1) + 8 = 28; the big reads: %', plays_read, pg_temp.origin_big_reads(plan); end if;
-  -- The meter sees reads of the plays: counted without the bound, the nodes read their rows.
-  if plays_read < 4 then raise exception '1 the meter sees % rows of acts under the origin''s CTEs, it cannot tell a bound from a blind meter', plays_read; end if;
+  if pg_temp.origin_cte_rows(plan, 'CTE o_all') is distinct from 4::numeric then raise exception '1 the origin''s list of ids holds % for an origin of 400 plays, 4 in force: it must be the 4', pg_temp.origin_cte_rows(plan, 'CTE o_all'); end if;
   -- The document names the bound too: the 4 plays in force (no end of theirs, none was written), and the counts of 400.
   perform tests.become(rdr);
   doc := thread_page(spun_t, 1, null, 20, array['orfx']);

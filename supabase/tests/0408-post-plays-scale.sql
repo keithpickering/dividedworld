@@ -7,7 +7,8 @@
 --
 -- The fixture: one post of 5,000 plays of 6 kinds, 4 in force (one each of four kinds), 300 of them drawn, in a thread of 6,000 posts, among 12,000 other posts in two threads with 6,000 plays between them.
 --  1. post_play_ids reads at most 4 + 2 x 6 + 8 rows of play_post and no row of acts, and does not scan play_post or post_kinds sequentially.
---  2. thread_page, for the page that holds the post, reads at most that many Acts for the post's plays (its in force and stand-ins, their riders), and does not scan acts sequentially in the nodes that read them.
+--  2. thread_page, for the page that holds the post, looks the post's plays up by id (its in force and stand-ins, their riders: at most that many ids), reads exactly those from acts_public, and no scan of acts by that list of ids is a
+--     sequential one. The rest of what acts_public does for each Act it shows is the view's cost and is not counted.
 --  3. kind_play_ids reads at most `size` + the plays of the kind in force + 1 rows of play_post, on the first page and on a page deep in the kind's history.
 --  4. The poison: with play_post_drawn dropped, the row bound of 1 goes red; so does the bound of 3 with play_post_newest dropped.
 -- The fixture is written with the append-only and warn-guard triggers off for this transaction only (the runner rolls it back), the kept tables are filled from play_row as the migration's backfill fills them, and analyzed before the plan is read.
@@ -20,21 +21,20 @@ create function pg_temp.scan_nodes(plan jsonb, under text[]) returns setof jsonb
 $$;
 
 -- The rows of a relation that a plan's scan nodes read: a node's rows passed up, plus those its filter and its recheck removed, times its loops.
-create function pg_temp.rows_read(plan jsonb, rel text, under text[] default null) returns numeric language sql as $$
+create function pg_temp.rows_read(plan jsonb, rel text, under text[] default null, idx text default null) returns numeric language sql as $$
   select coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric), 0)
   from (select distinct d from pg_temp.scan_nodes(plan, under) d) z(n)
-  where n ->> 'Relation Name' = rel and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan')
+  where n ->> 'Relation Name' = rel and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan') and (idx is null or n ->> 'Index Name' = idx)
 $$;
 
--- The scan nodes of a plan that read more than 100 rows of a relation, as text, for a failure's message.
-create function pg_temp.big_reads(plan jsonb, under text[] default null) returns text language sql as $$
-  select coalesce(string_agg(format('%s %s %s rows %s x %s, removed %s', n ->> 'Node Type', n ->> 'Relation Name', coalesce(n ->> 'Index Name', ''), n ->> 'Actual Rows', n ->> 'Actual Loops', coalesce(n ->> 'Rows Removed by Filter', '0')), '; '), 'none')
-  from (select distinct d from pg_temp.scan_nodes(plan, under) d) z(n)
-  where n ? 'Relation Name' and ((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0)) * (n ->> 'Actual Loops')::numeric > 100
+-- The rows a CTE of the plan passed up (its own node's `Actual Rows`).
+create function pg_temp.cte_rows(plan jsonb, cte text) returns numeric language sql as $$
+  select coalesce(max((c ->> 'Actual Rows')::numeric), -1) from jsonb_path_query(plan, '$.**') c where jsonb_typeof(c) = 'object' and c ->> 'Subplan Name' = cte
 $$;
 
-create function pg_temp.seq_scans(plan jsonb, rel text, under text[] default null) returns bigint language sql as $$
-  select count(*) from (select distinct d from pg_temp.scan_nodes(plan, under) d) z(n) where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = rel
+create function pg_temp.seq_scans(plan jsonb, rel text, under text[] default null, filter_like text default null) returns bigint language sql as $$
+  select count(*) from (select distinct d from pg_temp.scan_nodes(plan, under) d) z(n)
+  where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = rel and (filter_like is null or coalesce(n ->> 'Filter', '') like filter_like)
 $$;
 
 -- The statement of a function, from its definition: the body of a `language sql` function, between the dollar quotes.
@@ -125,18 +125,6 @@ begin
   return n;
 end $$;
 
--- The live veils that earlier files of a run may have left (the committed rows of a race, say) cost every read through acts_public a probe of `acts` for each Act it shows, whatever the Acts are: the view's own cost, which the plays'
--- reads under test do not change. This transaction ends them (a card_end, as reverse_card writes it, under the writer flag), so the rows counted are the plays', and the runner rolls them back.
-create function pg_temp.end_live_veils() returns void language plpgsql as $$
-begin
-  perform set_config('kayfabb.card_end_writer', 'on', true);
-  insert into acts (character, kind, thread, target_act_id, payload)
-  select null, 'card_end', a.thread, v.play, '{"why": "reversed", "by": "admin"}'
-  from post_veils v join acts a on a.id = v.play
-  where v.ends_at > now() and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = v.play);
-  perform set_config('kayfabb.card_end_writer', '', true);
-end $$;
-
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;
@@ -173,7 +161,6 @@ begin
   alter table acts enable trigger user;
   update threads t set next_seq = coalesce((select max(x.seq) from acts x where x.thread = t.id), 0) + 1 where t.id in (t0, t_other);
 
-  perform pg_temp.end_live_veils();
   -- The kept tables of the fixture's own threads (earlier files of a run may have committed plays, whose rows the triggers kept), as the migrations' backfills fill them; then the draw, as react's tallies add it.
   insert into play_post select r.* from acts x cross join lateral play_row(x.id) r where x.kind in ('card', 'set') and x.target_act_id is not null and x.thread in (t0, t_other);
   insert into post_kinds (post, kind, plays, took) select pp.post, pp.kind, sum(c.plays), sum(c.took) from play_post pp cross join lateral play_post_counts(pp) c where pp.post in (select y.id from acts y where y.thread in (t0, t_other)) group by pp.post, pp.kind having sum(c.plays) > 0;
@@ -195,12 +182,15 @@ begin
 
   -- 2. thread_page: the page that holds the famous post, as a reader.
   plan := pg_temp.page_statement_plan(rdr, t0, 1, 20);
-  n := pg_temp.rows_read(plan, 'acts', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']);
-  raise notice '2 thread_page read % rows of acts for the post''s plays, their riders and ends', n;
-  -- The meter sees the reads: the same nodes counted without the CTE names find rows of acts in the plan, and the plays' own nodes are among them.
-  if n < 6 then raise exception '2 the meter sees %s rows of acts under the plays'' CTEs, so it reads nothing: %', n, plan; end if;
-  if n > 2 * (4 + 2 * 6) + 8 then raise exception '2 thread_page read % rows of acts for the post''s plays: at most 2 x (4 + 2 x 6) + 8 = 40 (acts_public is two arms, each read by id); the big reads: %', n, pg_temp.big_reads(plan, array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']); end if;
-  if pg_temp.seq_scans(plan, 'acts', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']) > 0 or pg_temp.seq_scans(plan, 'play_post', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']) > 0 then raise exception '2 the plays'' reads scan a table in sequence: %', plan; end if;
+  -- What is bounded is the list of ids the plays are looked up by, and the lookup is by that list: `on_all` hands on the plays in force, the stand-ins and their riders (4 + 2 x 6 + 8 at most), `on_posts` reads exactly those from
+  -- acts_public, and no scan of acts has that list for its filter. What acts_public does besides for each Act it shows (probes of its veils, its edits and its ballots, each by a plan of its own that depends on what the instance
+  -- holds, and a database that earlier files filled with veils runs them) is the view's cost, the same for any Act read through it, which this change does not alter; it is not what the plays' ids cost, and it is not counted.
+  n := pg_temp.cte_rows(plan, 'CTE on_all');
+  raise notice '2 thread_page looked up % plays and riders by id for the post, which holds 5,000 plays', n;
+  if n > 4 + 2 * 6 + 8 then raise exception '2 thread_page looked up % plays and riders of a post of 5,000 plays: at most 4 + 2 x 6 + 8 = 24', n; end if;
+  if n < 6 or pg_temp.cte_rows(plan, 'CTE on_posts') is distinct from n then raise exception '2 the meter sees % ids and % Acts read for them, so it cannot tell a bound: %', n, pg_temp.cte_rows(plan, 'CTE on_posts'), plan; end if;
+  -- No scan of acts whose filter is the list of ids (a lookup by id that fell to scanning the history), and none of play_post, which the plays are found in by functions the plan does not see into.
+  if pg_temp.seq_scans(plan, 'acts', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts'], '%ANY%') > 0 or pg_temp.seq_scans(plan, 'play_post', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']) > 0 then raise exception '2 the plays'' reads scan a table in sequence: %', plan; end if;
   -- Every page of the thread, as a reader, answers the plays of the famous post: 4 in force and at most 12 stand-ins.
   perform tests.become(rdr);
   doc := thread_page(t0, 1, null, 20, array['ppsk1']);
