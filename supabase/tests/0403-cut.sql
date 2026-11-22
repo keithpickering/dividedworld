@@ -581,6 +581,17 @@ begin
   if plan_text not like '%acts_cut_play%' then raise exception 'the cutting_acts read does not use acts_cut_play: %', plan_text; end if;
   if pg_get_functiondef('cutting_acts(uuid[])'::regprocedure) not like '%(a.payload -> ''cut'' ->> ''play'')%' then raise exception 'cutting_acts does not read the expression acts_cut_play holds'; end if;
 
+  -- card_ended itself, run as the page runs it (with the scans a tiny table prefers set aside) on a play no cut names: the index scan count of acts_cut_play, read inside the transaction, goes up, so card_ended's probe reaches the partial index (and finds nothing).
+  declare before bigint; after bigint;
+  begin
+    before := coalesce(pg_stat_get_xact_numscans('acts_cut_play'::regclass), 0);
+    perform set_config('enable_seqscan', 'off', true); perform set_config('enable_bitmapscan', 'off', true);
+    perform card_ended(play);
+    perform set_config('enable_seqscan', 'on', true); perform set_config('enable_bitmapscan', 'on', true);
+    after := coalesce(pg_stat_get_xact_numscans('acts_cut_play'::regclass), 0);
+    if after <= before then raise exception 'card_ended on a play no cut names did not scan acts_cut_play (% before, % after)', before, after; end if;
+    raise notice 'card_ended probed acts_cut_play: % scan(s)', after - before;
+  end;
   def := pg_get_functiondef('card_cut_at(uuid)'::regprocedure);
   if def like '%card_ended(%' then raise exception 'card_cut_at calls card_ended'; end if;
   if pg_get_functiondef('card_ended(uuid)'::regprocedure) not like '%card_cut_at(%' then raise exception 'card_ended does not ask card_cut_at'; end if;
