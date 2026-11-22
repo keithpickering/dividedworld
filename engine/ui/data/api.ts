@@ -2358,6 +2358,17 @@ export interface PlayMoment {
   readonly at: string;
 }
 
+/**
+ * A live rewind play's view (rewind_view, 0412_rewind.sql; the Time Machine design, 4.2): the post as the rewind shows it. `at` is the point the play names (an ISO time) and `version` the post
+ * with the words of the latest version saved at or before it, shaped as a moment's `version` is (a version an admin hid shows the hidden placeholder). The same answer for every reader.
+ */
+export interface Rewind {
+  readonly play: Id;
+  readonly post: Id;
+  readonly at: string;
+  readonly version: Act;
+}
+
 /* ------------------------------------------------------------- one call per screen ---- */
 
 /*
@@ -2556,6 +2567,8 @@ export interface ThreadPage {
   readonly unread: number;
   /** The origin of a spun thread, on the page that holds its first Act; null on any other page and on a thread that was not spun (`PageOrigin`). */
   readonly origin: PageOrigin | null;
+  /** Each live rewind on the page's posts, a reply drawn under one, and the origin post (`rewind_view`, ordered by post then play); empty where none, and none once it ends. */
+  readonly rewinds: readonly Rewind[];
   /** The polls on the page's posts (`PollParts`), and the characters its voters name, with their profiles (as `people` is for authors). */
   readonly polls: readonly Poll[];
   readonly voters: readonly PollVoter[];
@@ -2924,6 +2937,8 @@ export interface KayfaApi {
   tails(posts: readonly Id[]): Promise<readonly Tail[]>;
   /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
   playMoment(play: Id): Promise<PlayMoment | null>;
+  /** A rewind play's view (`Rewind`), read once when asked for; null for an id that is no rewind play on a post. Any signed-in reader may read it. */
+  rewindView(play: Id): Promise<Rewind | null>;
   /** A spin's moment (`PlayMoment`, 0351), read once when asked for; null for an id that is no spin, or a spin that names no post. Any signed-in reader may read it. */
   spinMoment(spin: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */
