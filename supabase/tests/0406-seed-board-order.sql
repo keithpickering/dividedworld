@@ -18,6 +18,9 @@ begin
   select jsonb_agg(e ->> 'slug' order by o) into got
     from jsonb_array_elements(index_page() -> 'boards') with ordinality x(e, o) where e ->> 'slug' = any (array['zz-last-made-first', 'aa-second', 'mm-third']);
   if got is distinct from want then raise exception 'index_page should list the boards in the payload''s order, got %', got; end if;
+  -- now() is fixed for the whole block, so a reseed that rewrote created_at would write the same times back. Move the boards an hour into
+  -- the past first: a reseed that touched created_at now shows as a change.
+  update boards set created_at = created_at - interval '1 hour' where slug = any (array['zz-last-made-first', 'aa-second', 'mm-third']);
   select jsonb_object_agg(slug, created_at) into stamps from boards where slug = any (array['zz-last-made-first', 'aa-second', 'mm-third']);
 
   perform seed_instance(payload);
