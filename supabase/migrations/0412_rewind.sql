@@ -848,6 +848,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
   select case
     when p.id is null or v.id is null or not (v.id = p.id or (v.kind = 'edit' and v.target_act_id = p.id)) then 'pick a point from this post''s History'
     when v.id <> p.id and v.created_at <= p.created_at + g.grace then 'that version was saved in the edit grace window, so it is part of the post as first posted'
+    -- `at <= now()` is redundant by construction (an Act is never written in the future, so nothing can be after a point still to come); it is kept as the guard that a point still to come is never offered.
     when not (at <= now() and (exists (select 1 from acts e where e.kind = 'edit' and e.target_act_id = p.id and e.created_at > at)
                                or exists (select 1 from play_post pp
                                           where pp.post = p.id and pp.over_at is null and (pp.ends_at is null or pp.ends_at > now()) and pp.kind <> '' and pp.reach = 'post' and pp.played_at > at)))
@@ -979,13 +980,13 @@ $function$;
 -- ---- 12. post_rewind_plays ----
 
 -- The live rewind plays of each of `posts`, set-based, for the page to read in one statement: the same plays live_rewind lists for one post (play_post's in-force test, two probes of play_post_up as post_play_ids makes them: no end, and an end ahead).
--- live_rewind is for the database's own functions and granted to no API role; thread_page reads as the caller, so it reads this, granted as post_play_ids is. The estimate of rows steers its callers to probe by post.
-create function post_rewind_plays(posts uuid[]) returns table (post uuid, play uuid)
+-- live_rewind is for the database's own functions and granted to no API role; thread_page reads as the caller, so it reads this, granted as post_play_ids is. The estimate of rows steers its callers to probe by post. `played_at` is the play's time, for the page to give the latest played first (design, section 3).
+create function post_rewind_plays(posts uuid[]) returns table (post uuid, play uuid, played_at timestamptz)
 language sql stable security definer set search_path = public, pg_temp rows 4 as $$
-  select p.post, p.play from play_post p join card_kinds ck on ck.key = p.kind and ck.rewind is not null
+  select p.post, p.play, p.played_at from play_post p join card_kinds ck on ck.key = p.kind and ck.rewind is not null
   where p.post = any (post_rewind_plays.posts) and p.over_at is null and p.ends_at is null and p.reach = 'post'
   union all
-  select p.post, p.play from play_post p join card_kinds ck on ck.key = p.kind and ck.rewind is not null
+  select p.post, p.play, p.played_at from play_post p join card_kinds ck on ck.key = p.kind and ck.rewind is not null
   where p.post = any (post_rewind_plays.posts) and p.over_at is null and p.ends_at > now() and p.reach = 'post'
 $$;
 revoke execute on function post_rewind_plays(uuid[]) from public, anon;
@@ -1159,6 +1160,7 @@ begin
     if kind_of.play = 'cast' then
       warded := ward_refusal('post', target, kind_of, shot_up_to);
       if warded is not null then raise exception '%', warded using hint = 'kayfabb.refusal', errcode = '42501'; end if;
+      -- The freeze guards a play whose reach is the post, as the wards do and as the engine does (cards.ts, frozenRefusal): a card played from a rewound post at a character, a thread or a board is not on the post and is not turned away.
       -- A live rewind on the post turns away every card up to its rarity, in the same words for everyone (cards.ts's rewindWords), and a pierce passes a rewind whose card is no rarer than it. It sits right after the Ward and before
       -- the stack, the effects limit (post_room_words) and everything written: the post's row is held (above), as the limit is read under that same lock, so a rewind played at the same moment is seen by the card behind it. A rewind is face up,
       -- so the refusal reads public facts alone (the incoming card's rarity, the rewind's card and its time).
@@ -2294,6 +2296,7 @@ begin
           -- The live rewind plays of the page's posts (and the replies drawn under them) and of the ORIGIN post, from one set-based read (post_rewind_plays), as `on_ids` reads post_play_ids.
           SELECT r.post,
              r.play,
+             r.played_at,
              rewind_view(r.play) AS view
             FROM post_rewind_plays(ARRAY( SELECT x.id
                     FROM ( SELECT p.id
@@ -2390,7 +2393,7 @@ begin
               LIMIT 1), 'board', ( SELECT jsonb_build_object('id', b.id, 'slug', b.slug, 'name', b.name, 'description', b.description, 'is_system', b.is_system, 'move_act', b.move_act) AS jsonb_build_object
                 FROM boards_now b
                WHERE (b.id = ( SELECT rng.board
-                        FROM rng))), 'following', following_thread(in_thread), 'presence', presence_box('thread'::text, in_thread), 'unread', my_alerts_unread(), 'rewinds', ( SELECT COALESCE(jsonb_agg(w.view ORDER BY w.post, w.play), '[]'::jsonb) AS "coalesce"
+                        FROM rng))), 'following', following_thread(in_thread), 'presence', presence_box('thread'::text, in_thread), 'unread', my_alerts_unread(), 'rewinds', ( SELECT COALESCE(jsonb_agg(w.view ORDER BY w.played_at DESC, w.play DESC), '[]'::jsonb) AS "coalesce"
                 FROM rw w
                WHERE (w.view IS NOT NULL))) ||
              CASE

@@ -68,6 +68,16 @@ begin
   perform pg_temp.expect(got like '%card "rwgood" has a rewind, and a card with a rewind reaches a post alone%', format('a rewind reaching a thread: %s', got));
   got := card_kinds_problem(jsonb_build_array(jsonb_set(good, '{reaches}', '["thread"]')));
   perform pg_temp.expect(got like '%card "rwgood" has a rewind, and a card with a rewind reaches a post alone%', format('a rewind reaching a thread alone: %s', got));
+  -- Each effect a rewind card does not carry, one poisoned card each, in the engine's words (the eight, in order).
+  declare k text; said text; n integer := 0;
+  begin
+    for k, said in select * from (values ('gimmick', 'gimmick'), ('veil', 'veil'), ('addsReaction', 'reaction'), ('writes', 'writes'), ('replies', 'replies'), ('draws', 'draws'), ('drive', 'drive'), ('surface', 'surface')) v(a, b) loop
+      got := card_kinds_problem(jsonb_build_array(good || jsonb_build_object(k, case k when 'gimmick' then '{"kind": "ward", "upTo": "common"}'::jsonb when 'veil' then '"author"'::jsonb when 'draws' then '["x"]'::jsonb when 'drive' then '{"lasts": {"unit": "day", "count": 1}}'::jsonb else 'true'::jsonb end)));
+      perform pg_temp.expect(got like format('%%card "rwgood" has a rewind, and a card with a rewind has no %s%%', said), format('a rewind with %s: %s', k, got));
+      n := n + 1;
+    end loop;
+    perform pg_temp.expect(n = 8, 'not every carried effect was driven');
+  end;
   -- A card with no rewind (none, or a JSON null) is not read as one.
   got := card_kinds_problem(jsonb_build_array((good - 'rewind') || '{"rewind": null}'::jsonb));
   perform pg_temp.expect(got is null, format('a null rewind was read as a rewind: %s', got));
@@ -111,7 +121,7 @@ declare
   e_edge uuid := tests.act(a, 'edit', t, '{"body": "Exactly at the grace."}', p, base + interval '2 minutes');
   e_out uuid := tests.act(a, 'edit', t, '{"body": "Past the grace."}', p, base + interval '10 minutes');
   q_out uuid := tests.act(a, 'edit', t, '{"body": "The other post, edited."}', q, base + interval '10 minutes');
-  tally uuid;
+  tally uuid; played uuid := tests.act(a, 'card', t, '{"card": "rwrare", "reach": "post"}', p, base + interval '10 minutes');
 begin
   insert into rw_fix values ('p', p), ('q', q), ('e_in', e_in), ('e_edge', e_edge), ('e_out', e_out), ('q_out', q_out);
   perform pg_temp.expect(rewind_point_at(p, p) = base + interval '2 minutes', format('the post''s point is its time plus the grace: %s', rewind_point_at(p, p)));
@@ -120,6 +130,7 @@ begin
   perform pg_temp.expect(rewind_point_at(p, e_out) = base + interval '10 minutes', format('an edit past the grace gives its own time: %s', rewind_point_at(p, e_out)));
   perform pg_temp.expect(rewind_point_at(p, q_out) is null, 'another post''s edit named a point');
   perform pg_temp.expect(rewind_point_at(p, q) is null, 'another post named a point');
+  perform pg_temp.expect(rewind_point_at(p, played) is null, 'a card Act on the post, past the grace, named a point (only an edit is a version)');
   perform pg_temp.expect(rewind_point_at(p, null) is null, 'no version named a point');
   perform pg_temp.expect(rewind_point_at(p, gen_random_uuid()) is null, 'a version that is no Act named a point');
   perform pg_temp.expect(rewind_point_at(null, p) is null, 'no post named a point');
@@ -180,6 +191,27 @@ begin
   got := rewind_point_problem(playd, play_e);
   perform pg_temp.expect(got = 'this post shows the same at that point as it does now', format('a play an admin ended still made the point offered: %s', got));
 
+  -- An edit saved exactly at the end of the grace is inside it (inclusive, as rewind_point_at and shown_edited_at read it).
+  got := rewind_point_problem(p, pg_temp.fix('e_edge'));
+  perform pg_temp.expect(got = 'that version was saved in the edit grace window, so it is part of the post as first posted', format('an edit exactly at the end of the grace: %s', got));
+  -- A play exactly at the point shows at that point already: it makes nothing later to show. One a second after does.
+  declare exact uuid := tests.post(a, t, 'A play at the point.', base); exact_pl uuid;
+  begin
+    exact_pl := tests.act(a, 'card', t, jsonb_build_object('card', 'rwrare', 'reach', 'post', 'ends', now() + interval '1 day'), exact, base + interval '2 minutes');
+    got := rewind_point_problem(exact, exact);
+    perform pg_temp.expect(got = 'this post shows the same at that point as it does now', format('a play exactly at the point made it offered: %s', got));
+    perform tests.act(a, 'card', t, jsonb_build_object('card', 'rwrare', 'reach', 'post', 'ends', now() + interval '1 day'), exact, base + interval '2 minutes 1 second');
+    perform pg_temp.expect(rewind_point_problem(exact, exact) is null, 'a play a second after the point did not make it offered');
+  end;
+  -- A card played at a thread, from a post, is not on the post and shows nothing there: it makes no point offered.
+  declare spoke_t uuid := tests.thread('Rw thread-reach'); spoke uuid := tests.post(a, spoke_t, 'The opening post.', base);
+  begin
+    insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack) values ('rwmulti', 'Rw Multi', 'salty', 'common', 'cast', '{post,character,thread}', interval '1 day', 3);
+    perform tests.act(a, 'card', spoke_t, jsonb_build_object('card', 'rwmulti', 'reach', 'thread', 'thread', spoke_t, 'ends', now() + interval '1 day'), spoke, base + interval '30 minutes');
+    got := rewind_point_problem(spoke, spoke);
+    perform pg_temp.expect(got = 'this post shows the same at that point as it does now', format('a thread-reach play made a point offered: %s', got));
+  end;
+
   -- A play whose time is up is not showing.
   perform tests.act(a, 'card', t, jsonb_build_object('card', 'rwrare', 'reach', 'post', 'ends', now() - interval '5 minutes'), quiet, base + interval '20 minutes');
   got := rewind_point_problem(quiet, quiet_e);
@@ -210,7 +242,7 @@ declare
   p uuid := tests.post(a, t, 'Under a rewind.', base);
   other uuid := tests.post(a, t, 'Not under one.', base);
   common_k card_kinds; uncommon_k card_kinds; rare_k card_kinds; legend_k card_kinds;
-  r1 uuid; r2 uuid; ends1 timestamptz := date_trunc('minute', now() + interval '2 days'); words text; n integer; rec record;
+  r1 uuid; r2 uuid; gone uuid; ends1 timestamptz := date_trunc('minute', now() + interval '2 days'); words text; n integer; rec record;
 begin
   select * into common_k from card_kinds where key = 'rwcommon';
   select * into uncommon_k from card_kinds where key = 'rwuncommon';
@@ -251,7 +283,9 @@ begin
   perform pg_temp.expect((select count(*) from live_rewind(p)) = 1 and (select play from live_rewind(p)) = r1, 'an ended rewind was still live');
   perform tests.become(admin); perform reverse_card(r1); perform tests.unbecome();
   perform pg_temp.expect((select count(*) from live_rewind(p)) = 0 and rewind_refusal(p, common_k) is null, 'a rewind an admin ended still froze the post');
-  perform pg_temp.expect(pg_temp.rewind_play(a, t, other, 'rwtime', base, now() - interval '1 minute', now() - interval '2 days') is not null and (select count(*) from live_rewind(other)) = 0 and rewind_refusal(other, common_k) is null,
+  -- Written in one statement and read in the next: a STABLE function in the statement that inserts reads the snapshot from before the insert.
+  gone := pg_temp.rewind_play(a, t, other, 'rwtime', base, now() - interval '1 minute', now() - interval '2 days');
+  perform pg_temp.expect(gone is not null and (select count(*) from live_rewind(other)) = 0 and rewind_refusal(other, common_k) is null,
     'a rewind whose time was up still froze the post');
   -- A caught play never landed.
   perform tests.act(a, 'card', t, jsonb_build_object('card', 'rwtime', 'reach', 'post', 'ends', now() + interval '1 day', 'rewind_at', base, 'caught', 'x'), other, now());
@@ -304,23 +338,39 @@ declare
   r_first uuid := pg_temp.rewind_play(a, t, p, 'rwtime', rewind_point_at(p, p), now() + interval '2 days', base + interval '30 minutes');
   r_e1 uuid := pg_temp.rewind_play(a, t, p, 'rwtime', rewind_point_at(p, e1), now() + interval '2 days', base + interval '31 minutes');
   m uuid := tests.act(a, 'card', t, jsonb_build_object('card', 'rwrare', 'reach', 'post', 'ends', now() + interval '1 day'), p, base + interval '32 minutes');
-  v jsonb;
+  r_e2 uuid := pg_temp.rewind_play(a, t, p, 'rwtime', rewind_point_at(p, e2), now() + interval '2 days', base + interval '33 minutes');
+  caught uuid; v jsonb;
 begin
   v := rewind_view(r_first);
   perform pg_temp.expect(v ->> 'play' = r_first::text and v ->> 'post' = p::text and (v ->> 'at')::timestamptz = at_first, format('the view names the play, the post and the point: %s', v));
   perform pg_temp.expect(v -> 'version' -> 'current_payload' ->> 'body' = 'As first posted.', format('the first point shows the post as first posted: %s', v -> 'version' -> 'current_payload'));
   perform pg_temp.expect(v -> 'version' ->> 'id' = p::text, format('the version is the post''s projection: %s', v -> 'version' ->> 'id'));
+  -- With an edit before it: the latest version at or before the point, not the first.
+  v := rewind_view(r_e2);
+  perform pg_temp.expect(v -> 'version' -> 'current_payload' ->> 'body' = 'Second edit.' and (v -> 'version' ->> 'edited_at')::timestamptz = base + interval '20 minutes', format('the second edit''s point shows an earlier version: %s', v -> 'version' -> 'current_payload'));
   v := rewind_view(r_e1);
   perform pg_temp.expect(v -> 'version' -> 'current_payload' ->> 'body' = 'First edit.', format('the edit''s point shows that edit and not the later one: %s', v -> 'version' -> 'current_payload'));
   perform pg_temp.expect((v -> 'version' ->> 'edited_at')::timestamptz = base + interval '10 minutes' and (v -> 'version' ->> 'shown_edited_at')::timestamptz = base + interval '10 minutes', format('last edited reads as of the version: %s', v -> 'version'));
   perform pg_temp.expect(card_target(p) -> 'body' = to_jsonb('Second edit.'::text), 'the post''s current words are not the latest edit (an edit during a rewind lands)');
 
+  -- The shown version's edit falls inside the grace window: the post's own point (its time plus the grace) shows the latest edit saved by then, and that edit is part of the post as first posted, so it shows no "edited" time.
+  declare
+    pp uuid := tests.post(a, t, 'Posted.', base); g1 uuid := tests.act(a, 'edit', t, '{"body": "Edited inside the grace."}', pp, base + interval '1 minute');
+    g2 uuid := tests.act(a, 'edit', t, '{"body": "Edited exactly at the grace."}', pp, base + interval '2 minutes');
+    gr uuid; gv jsonb;
+  begin
+    gr := pg_temp.rewind_play(a, t, pp, 'rwtime', rewind_point_at(pp, pp), now() + interval '2 days', base + interval '34 minutes');
+    gv := rewind_view(gr);
+    perform pg_temp.expect(gv -> 'version' -> 'current_payload' ->> 'body' = 'Edited exactly at the grace.' and (gv -> 'version' ->> 'edited_at')::timestamptz = base + interval '2 minutes'
+      and gv -> 'version' -> 'shown_edited_at' = 'null'::jsonb, format('an edit inside the grace was shown as an edit in the rewind: %s', gv -> 'version'));
+  end;
   -- Not a rewind: a play of another card, a post, an Act that is not there, null.
   perform pg_temp.expect(rewind_view(m) is null, 'the view of a play that is no rewind was not null');
   perform pg_temp.expect(rewind_view(p) is null, 'the view of a post was not null');
   perform pg_temp.expect(rewind_view(gen_random_uuid()) is null and rewind_view(null) is null, 'the view of nothing was not null');
   -- A rewind that was caught never took.
-  perform pg_temp.expect(rewind_view(tests.act(a, 'card', t, jsonb_build_object('card', 'rwtime', 'reach', 'post', 'rewind_at', base, 'caught', 'x'), p, now())) is null, 'a caught rewind had a view');
+  caught := tests.act(a, 'card', t, jsonb_build_object('card', 'rwtime', 'reach', 'post', 'rewind_at', base, 'caught', 'x'), p, now());
+  perform pg_temp.expect(caught is not null and rewind_view(caught) is null, 'a caught rewind had a view');
 
   -- An admin hides the version the point shows: the view gives the hidden placeholder, as History does.
   perform tests.become(admin);
@@ -655,6 +705,88 @@ begin
     plan := plan || line || E'\n';
   end loop;
   perform pg_temp.expect(plan like '%play_post_up%', format('the rewind lookup does not use play_post_up: %s', plan));
+  perform pg_temp.expect(plan like '%Index Cond: (%post = ANY%', format('the rewind lookup''s index is not read by post: %s', plan));
   perform pg_temp.expect(plan not like '%Seq Scan on play_post%' and plan not like '%Seq Scan on acts%', format('the rewind lookup scans: %s', plan));
   raise notice 'the rewind lookup for 25 posts of 4,000: %', replace(plan, E'\n', ' | ');
+end $$;
+
+-- ---- A pierce passes the freeze when its card is no rarer than the pierce's upTo ----
+-- Two characters, each with a pierce: an uncommon one (the rewind's card is rare, so it is not passed) and a rare one (it is).
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); t uuid := pg_temp.fix('t'); bob uuid := pg_temp.fix('bob'); b uuid := pg_temp.fix('b');
+  cat uuid := tests.account('rw-cat'); c uuid := tests.character(cat, 'Rw Cat');
+  bp uuid := tests.post(b, t, 'Bob''s post.'); cp uuid := tests.post(c, t, 'Cat''s post.');
+  p uuid := pg_temp.edited(a, t, 'Under a rare rewind.'); weak uuid; strong uuid; r record; lands uuid;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, gimmick) values
+    ('rwpierceu', 'Rw Pierce Uncommon', 'pepperoni', 'uncommon', 'use', '{character}', interval '3 days', 1, '{"kind": "pierce", "upTo": "uncommon"}'),
+    ('rwpiercer', 'Rw Pierce Rare', 'pepperoni', 'rare', 'use', '{character}', interval '3 days', 1, '{"kind": "pierce", "upTo": "rare"}');
+  perform pg_temp.hand(bob, 'rwtime', 'rwcommon', 'rwpierceu'); perform pg_temp.hand(cat, 'rwcommon', 'rwpiercer');
+  perform pg_temp.expect((pg_temp.play(bob, 'rwtime', b, p, jsonb_build_object('to', p))).said is null, 'the rewind was refused');
+  perform tests.become_service();
+  weak := (play_card(bob, 'rwpierceu', b, b, '{}', 0, '', 'character', bp) ->> 'id')::uuid;
+  strong := (play_card(cat, 'rwpiercer', c, c, '{}', 0, '', 'character', cp) ->> 'id')::uuid;
+  perform tests.unbecome();
+  -- An uncommon pierce does not pass a rare rewind: the common Move is turned away as before, and the pierce is not spent.
+  r := pg_temp.play(bob, 'rwcommon', b, p);
+  perform pg_temp.expect(r.said like '42501 this post''s Rw Time turns away cards up to rare until %', format('an uncommon pierce passed a rare rewind: %s', r.said));
+  perform pg_temp.expect(not card_ended(weak), 'a refused cast spent the pierce');
+  -- A rare pierce passes it: the common Move lands, names the pierce, and spends it.
+  r := pg_temp.play(cat, 'rwcommon', c, p);
+  perform pg_temp.expect(r.said is null, format('a rare pierce did not pass a rare rewind: %s', r.said));
+  lands := r.id;
+  perform pg_temp.expect((select a2.payload #>> '{pierce,by}' from acts a2 where a2.id = lands) = strong::text and card_ended(strong), 'the Move that passed the freeze does not name and spend the pierce');
+end $$;
+
+-- ---- The freeze guards a play whose reach is the post: a card played from a rewound post at a character or a thread lands, and springs nothing ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); t uuid := pg_temp.fix('t'); bob uuid := pg_temp.fix('bob'); b uuid := pg_temp.fix('b');
+  p uuid := pg_temp.edited(b, t, 'Bob''s rewound post.'); back uuid; said text;
+begin
+  perform pg_temp.hand(ann, 'rwtime', 'rwmulti'); perform pg_temp.hand(bob, 'rwrev', 'rwmulti');
+  back := (pg_temp.back(bob, 'rwrev', b, p, 'rwmulti')).id;
+  perform pg_temp.expect(back is not null, 'the back was not set');
+  perform pg_temp.expect((pg_temp.play(ann, 'rwtime', a, p, jsonb_build_object('to', p))).said is null, 'the rewind was refused');
+  perform pg_temp.expect((pg_temp.play(ann, 'rwmulti', a, p)).said like '42501 %', 'the card at the post itself was not turned away');
+  perform tests.become_service();
+  begin
+    said := null; perform play_card(bob, 'rwmulti', b, b, '{}', 0, '', 'character', p);
+  exception when others then said := sqlstate || ' ' || sqlerrm;
+  end;
+  perform tests.unbecome();
+  perform pg_temp.expect(said is null, format('a card at a character, from a rewound post, was refused: %s', said));
+  perform tests.become_service();
+  begin
+    said := null; perform play_card(bob, 'rwmulti', b, t, '{}', 0, '', 'thread');
+  exception when others then said := sqlstate || ' ' || sqlerrm;
+  end;
+  perform tests.unbecome();
+  perform pg_temp.expect(said is null, format('a card at a thread, from a rewound post, was refused: %s', said));
+  perform pg_temp.expect(pg_temp.still_down(back) and not exists (select 1 from acts s where s.kind = 'spring' and s.target_act_id = p), 'a back sprang for a card that was not played on the post');
+end $$;
+
+-- ---- thread_page gives each post's rewinds latest played first: a rewind that turns away more, played over a lesser one ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); t uuid := tests.thread('Rw order');
+  p uuid; lesser uuid; greater uuid; page jsonb; wrong integer := 0; k integer; pos_lesser integer; pos_greater integer;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, rewind) values ('rwtimel', 'Rw Time Legendary', 'salty', 'legendary', 'cast', '{post}', interval '3 days', 3, 'legendary');
+  -- Eight posts, so a page that ordered by uuid would get one of them right only by luck (one in 256 for all eight).
+  for k in 1..8 loop
+    p := pg_temp.edited(a, t, 'Post ' || k);
+    lesser := pg_temp.rewind_play(a, t, p, 'rwtime', rewind_point_at(p, p), now() + interval '2 days', now() - interval '10 minutes');
+    greater := pg_temp.rewind_play(a, t, p, 'rwtimel', rewind_point_at(p, p), now() + interval '2 days', now() - interval '5 minutes');
+    perform tests.become(ann); page := thread_page(t, 1, null, 25, '{}'); perform tests.unbecome();
+    select min(o.n) filter (where o.v ->> 'play' = lesser::text), min(o.n) filter (where o.v ->> 'play' = greater::text) into pos_lesser, pos_greater from jsonb_array_elements(page -> 'rewinds') with ordinality o(v, n);
+    perform pg_temp.expect(pos_lesser is not null and pos_greater is not null, format('the page lacks one of the two rewinds: %s', page -> 'rewinds'));
+    -- The page grows by one post each round: the new post's pair is read as it stands.
+    if pos_greater > pos_lesser then wrong := wrong + 1; end if;
+  end loop;
+  perform pg_temp.expect(wrong = 0, format('the page put a lesser rewind before the later played one on %s of 8 posts', wrong));
 end $$;
