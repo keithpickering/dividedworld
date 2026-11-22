@@ -84,6 +84,9 @@
 .kb-queue-move[data-kb-state='waiting'] { border-left-color: var(--kb-glass-ready); }
 .kb-queue-move[data-kb-state='ended'] { border-left-color: var(--kb-glass-text-2); grid-template-columns: minmax(0, 1fr); }
 
+/* A board's row is its words at the full width and Replace description under them: the three columns would set a description in a column of 130px, a tall row for each of a busy instance's boards. */
+.kb-queue-move[data-kb-board] { grid-template-columns: minmax(0, 1fr); align-items: start; gap: 10px; }
+
 .kb-queue-bundle {
   margin: 0 0 12px;
   padding: 0 0 0 14px;
