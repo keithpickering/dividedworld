@@ -1265,7 +1265,7 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     const kick = ui('kick-me');
     expect([kick.art.color, kick.art.ink]).toEqual([ui('whoopee-cushion').art.color, ui('whoopee-cushion').art.ink]);
     expect(kick.art.tagline).toBe('Earn more when your post bombs.');
-    expect(kick.summary).toBe("Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty Moves played on it go back to their players' hands.");
+    expect(kick.summary).toBe("Used on your post. For 3 days, negative reactions pay 1 vote more, and the first 3 landed Salty Moves go back to their players.");
     expect(kick.status).toBe('Wearing a Kick Me sign');
     expect(kick.Effect).toBeDefined();
     expect(kick.ConfigForm).toBeUndefined();
