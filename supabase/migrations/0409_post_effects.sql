@@ -1709,8 +1709,10 @@ begin
   f.warded := ward_refusal('post', by_act, k) is not null;
   -- 4c. What the card's landing refuses on the Act (land_refusal): the same reads, from public facts, for every back whatever it holds. A Move that is refused here does not land and its back stays set.
   f.land_why := land_refusal(k, by_act, fd.config);
-  -- 4d. Whether the Act has room for the card's effect: a card that draws takes a slot there, as place_cast asks of any play (post_room_words). A card that draws nothing always has room.
-  f.room := not coalesce(k.draws_effect, false) or post_room_words(by_act) is null;
+  -- 4d. Whether the Act has room for the card's effect: a card that draws takes a slot there, as place_cast asks of any play (post_room_words). A card that draws nothing always has room. The Act's room is read
+  -- for every back whatever it holds, first and on its own, so that whether the probe runs (and how long the read takes) never turns on whether the hidden card draws; only the answer does, as the design accepts.
+  f.room := post_room_words(by_act) is null;
+  f.room := f.room or not coalesce(k.draws_effect, false);
   -- 5. A board's live card, whatever the card's reach.
   select max(r.ends_at) into f.live_board from play_reach r where r.board = f.by_board and r.ends_at > now() and not card_ended(r.play);
   -- 6. The named catch (a back with none reads its own card's row, so the read finds one row either way: a null key would be a read of nothing), compared with the incoming card.
