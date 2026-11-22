@@ -230,6 +230,18 @@ begin
   if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
 end $$;
 
+-- The kept rows of a post's plays (0406) are no API role's, and the check that holds them to the Acts is the service role's alone: not in `callable`, since no client calls it.
+do $$
+begin
+  if not exists (select 1 from pg_class c where c.relname = 'play_post' and c.relnamespace = 'public'::regnamespace and c.relrowsecurity) then raise exception 'play_post has no row-level security'; end if;
+  if has_table_privilege('anon', 'play_post', 'select,insert,update,delete') or has_table_privilege('authenticated', 'play_post', 'select,insert,update,delete') or has_table_privilege('service_role', 'play_post', 'select,insert,update,delete') then
+    raise exception 'an API role can reach play_post';
+  end if;
+  if has_function_privilege('anon', 'play_post_drift()', 'execute') or has_function_privilege('authenticated', 'play_post_drift()', 'execute') or not has_function_privilege('service_role', 'play_post_drift()', 'execute') then
+    raise exception 'play_post_drift is not the service role''s alone';
+  end if;
+end $$;
+
 -- Replica mode, as a restore with triggers disabled runs, still cannot change an Act.
 do $$
 declare
