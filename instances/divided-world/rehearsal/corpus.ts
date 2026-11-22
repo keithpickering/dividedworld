@@ -75,6 +75,46 @@ const openers: RehearsalCorpus['openers'] = {
     { title: 'Rate my sprite, be kind', body: 'Sixteen by sixteen, four colors, took all evening. The hat is the hard part.' },
     { title: 'Remember when everyone had a custom avatar?', body: 'Now it is all the same circle. Show me your oldest avatar and I will show you mine.' },
   ],
+  'video-games': [
+    { title: 'What are you playing this weekend?', body: 'I am replaying an old platformer I have beaten ten times. Tell me what is on your screen right now.' },
+    { title: 'Best game you finished in one sitting', body: 'Mine was a short puzzle game, three hours start to end, and I did not look up once. Yours?' },
+    { title: 'Which console had the best game library?', body: 'I know the answer is whichever one you had as a kid. Prove me wrong anyway.' },
+    { title: 'A sequel that was better than the original', body: 'They are rare, but I can think of three. Name yours and defend it.' },
+    { title: 'Games you keep meaning to start', body: 'My backlog is a tower of cases. Which one should I play first? Pick for me.' },
+    { title: 'Hardest boss you ever beat', body: 'I mean the one you threw the controller over. Bonus points if you beat it with one heart.' },
+  ],
+  'movies-tv': [
+    { title: 'What are you watching right now?', body: 'I started a show last night and I am already three episodes deep. Recommend me something next.' },
+    { title: 'A movie everyone loves that you just do not get', body: 'I tried twice. It is fine. It is just fine. Tell me what I am missing.' },
+    { title: 'Best cartoon from when you were a kid', body: 'I can still hum the theme song. Post yours and let us see who is oldest.' },
+    { title: 'Rewatching old favorites: comfort or trap?', body: 'I have seen the same movie six times this year. Is that sad or is that taste?' },
+    { title: 'Worst movie you enjoyed anyway', body: 'It was awful. The acting, the plot, all of it. I laughed the whole way through.' },
+    { title: 'Movie adaptations of games: any good ones?', body: 'I keep hoping one will be good. Tell me I am not just setting myself up again.' },
+  ],
+  'arts-crafts': [
+    { title: 'Post your work in progress', body: 'Sprites, sketches, a half-finished song, anything. I will start: a tileset that is only grass so far.' },
+    { title: 'What do you use to draw your pixel art?', body: 'I have been using the same tiny program for years and I wonder if I am missing out. What is your tool?' },
+    { title: 'Drawing a character in under an hour', body: 'I set a timer and tried it. The face came out wrong but the hat is great. Who else wants to try?' },
+    { title: 'Share a tune you wrote', body: 'It does not have to be good. Mine is eight bars long and loops forever. Let me hear yours.' },
+    { title: 'Writing a short story set in a game world', body: 'I have a plot about a plumber who just wants a quiet afternoon. Anyone want to read a draft?' },
+    { title: 'Show me your messy desk', body: 'Pencils, a half-eaten snack, and three tablets. Where do you make your art?' },
+  ],
+  help: [
+    { title: 'How do I start making a fangame?', body: 'I have a few sprites and a lot of ideas, but no idea what to open first. Where should a beginner begin?' },
+    { title: 'My emulator runs too fast, what setting is it?', body: 'The game plays at double speed and I cannot find the option. I checked the video menu twice.' },
+    { title: 'Best free tool for making sprites?', body: 'I need something simple with a color palette and layers. What do you use and why?' },
+    { title: 'My level will not load after I added a pipe', body: 'It worked until the last pipe I placed. Now it shows a black screen. Did I break something?' },
+    { title: 'How do I get sound working in my game?', body: 'The music plays but the jump sound never does. I am sure I did everything the tutorial said.' },
+    { title: 'What size should my tiles be?', body: 'I drew sixteen by sixteen but my friend says thirty-two. Does it matter this early?' },
+  ],
+  'pointless-post-palace': [
+    { title: 'hello', body: 'That is it. That is the post.' },
+    { title: 'I have a sandwich', body: 'I thought you should know. It is a good one.' },
+    { title: 'Today I looked at a wall', body: 'It was beige. I do not have anything else to add.' },
+    { title: 'Does anyone else hear that humming', body: 'It might be the fridge. It might be nothing. Anyway, hello.' },
+    { title: 'A very important announcement', body: 'There is no announcement. Thank you for coming.' },
+    { title: 'My sock is a different sock now', body: 'It was a sock. It is still a sock. Something feels off, though.' },
+  ],
 };
 
 const replies: readonly string[] = [
