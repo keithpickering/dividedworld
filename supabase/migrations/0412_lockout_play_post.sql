@@ -1,9 +1,9 @@
 -- A back that sprang into a lockout is in force while that lockout is (docs/plans/2026-11-22-lockout-in-force-design.md, decision 6; plan Task 4, #991).
--- Post plays kept such a back over at its spring and held it up only through `lock_until`, as a stand-in or a probe of play_post_lock. The kept row now agrees with the screen: a back that sprang into a lockout (its spring's `did` is `lockedOut`, the earliest such
--- spring where more than one names it) takes the spring's `until` as its `ends_at`, and an admin's `card_end` of that spring as its `over_at` (null where none); `sprung` stays true. Any other back is as post plays left it. `lock_until` is untouched and now redundant with `ends_at` for
+-- Post plays kept such a back over at its spring and held it up only through `lock_until`, as a stand-in or a probe of play_post_lock. The kept row now agrees with the screen: a back that sprang into a lockout (its spring's `did` is `lockedOut`; a back has one
+-- spring at most, by acts_one_spring in 0054, and the probe's `limit 1` only guards that) takes the spring's `until` as its `ends_at`, and an admin's `card_end` of that spring as its `over_at` (null where none); `sprung` stays true. Any other back is as post plays left it. `lock_until` is untouched and now redundant with `ends_at` for
 -- a live lockout (it still names the lockout an admin did not end).
 --
---   1. play_row              0408's, whole, with the set arms of `ends_at` and `over_at` changed for a back with a lockedOut spring (a lateral probe of that spring by `set`, the same index probe lock_until makes). Nothing else changes.
+--   1. play_row              0408's, whole, with the set arms of `ends_at` and `over_at` changed for a back with a lockedOut spring (a lateral probe of its one spring by `set`, the same index probe lock_until makes). Nothing else changes.
 --   2. play_post_on_act      unchanged, not redefined: 0408 already refreshes the back a spring's `card_end` names (its `card_end` branch), which is the trigger line this change needs.
 --   3. post_effects_up       0411's, whole, with one change: a back that sprang (`sprung`) is no slot. It is a live back (kind '') only while face down; a sprung back's kind is '' and draws no effect, and now that a live lockout back is in force the count would take it for one.
 --   4. the backfill          refresh_play_post for each back with a lockedOut spring, and only those.
