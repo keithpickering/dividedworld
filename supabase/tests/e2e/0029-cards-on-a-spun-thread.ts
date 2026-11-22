@@ -204,6 +204,8 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
       update acts set created_at = created_at + d, payload = case when payload ? 'ends' then jsonb_set(payload, '{ends}', to_jsonb(to_char(((payload ->> 'ends')::timestamptz + d) at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.US"Z"'))) else payload end where thread in ('${S}', '${originThread}');
       update reactions set created_at = created_at + d where act in (${mine});
       update threads set created_at = created_at + d where id in ('${S}', '${originThread}');
+      -- Replica mode skipped play_post's triggers too, so each play's kept row still holds the unmoved time (play_post_drift names it, and the import's drift check refuses). This is the one writer that moves an Act's time; the rows follow it.
+      perform refresh_play_post(a.id) from acts a where a.kind in ('card', 'set') and a.target_act_id is not null and a.thread in ('${S}', '${originThread}');
     end $$;
     alter table acts enable always trigger acts_no_update;
     commit;`);
