@@ -180,3 +180,19 @@ begin
   -- took beyond plays is refused by the table.
   if pg_temp.coded(format('update post_kinds set took = 3 where post = %L', p)) is null then raise exception 'took beyond plays was allowed'; end if;
 end $$;
+
+-- ---- The backfill: its statement rebuilds exactly the rows the triggers kept ----
+select tests.unbecome();
+create temp table pk_kept as select * from post_kinds;
+truncate post_kinds;
+insert into post_kinds (post, kind, plays, took)
+select p.post, p.kind, sum(c.plays), sum(c.took) from play_post p cross join lateral play_post_counts(p) c group by p.post, p.kind having sum(c.plays) > 0;
+do $$
+declare lost integer; extra integer; kept integer;
+begin
+  select count(*) into kept from pk_kept;
+  select count(*) into lost from (select * from pk_kept except select * from post_kinds) x;
+  select count(*) into extra from (select * from post_kinds except select * from pk_kept) x;
+  if kept = 0 or lost <> 0 or extra <> 0 then raise exception 'the backfill lost % and added % of the % rows the triggers kept', lost, extra, kept; end if;
+  perform pg_temp.nodrift('the backfill');
+end $$;
