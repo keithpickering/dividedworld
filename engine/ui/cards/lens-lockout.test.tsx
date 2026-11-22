@@ -37,7 +37,7 @@ class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { ret
 beforeEach(() => { vi.stubGlobal('IntersectionObserver', Observer); Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
-async function lens(admin: boolean, ended = false) {
+async function lens(admin: boolean, ended = false, later = 0) {
   const w = lockoutWorld(admin);
   const sprung = await lockOut(w);
   if (ended) {
@@ -45,6 +45,8 @@ async function lens(admin: boolean, ended = false) {
     if (!answer.ok) throw new Error(answer.error);
     /* No help for the page: it carries the spring's card_end as the real thread page does (the fake's `withEnds`). */
   }
+  /* The page opened this long after the spring (a lockout's end is the card's own span from it). */
+  if (later > 0) w.fake.clock.advance(later);
   renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
   await screen.findByRole('article', { name: /^Post 1 /u });
   const mark = await within(document.getElementById('post-1')!).findByRole('button', { name: /Lk Back/u });
@@ -58,9 +60,18 @@ describe('the Lens on a lockout back', () => {
   test('an admin can end it, and the End sends the spring\'s id', async () => {
     const { w, sprung, dialog } = await lens(true);
     const reverse = vi.spyOn(w.fake, 'reverseCard');
+    /* A sprung lockout still live is up now (the owner, #984: Set, then Up now, then Ended): a full row, End in reach, no Ended group. */
+    expect(dialog.querySelector('button.kb-lens-compact')).toBeNull();
+    expect(dialog).not.toHaveTextContent(/Ended · /u);
     await userEvent.click(await within(dialog).findByRole('button', { name: 'End this card' }));
     await userEvent.click(screen.getByRole('button', { name: 'End it' }));
     await waitFor(() => expect(reverse).toHaveBeenCalledWith(sprung.spring.id));
+  });
+
+  test('once its lockout is past, the sprung back is an ended row', async () => {
+    const { dialog } = await lens(false, false, 400 * 86_400_000);
+    expect(dialog).toHaveTextContent(/Ended · 1/u);
+    expect(dialog.querySelector('button.kb-lens-compact')).not.toBeNull();
   });
 
   test('a reader who is no admin is not offered it', async () => {

@@ -160,6 +160,22 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
 }
 
 /**
+ * Whether a play is up now: what the Lens's Who groups by and the kinds grid's sign reads. Face up, it is in force unless an admin ended it (`reversed`),
+ * a cutting card cut it (`cut`), it did not take (`untaken`), a trap caught it (`caught`), it was over when it landed (`instant`), a filing spent it (`spent`),
+ * or its time has passed and its card does not keep (`keeps`: its level stays until an admin ends it). A play whose `starts` is ahead is in force: it is
+ * set, and waits. A face-down back is in force, unless an admin ended it or a trap caught it, until it sprang (`revealed`), its setter took it back (`takenBack`) or its stored end has passed (`backOver`); a back that sprang into a lockout stays in force until the lockout's end (`revealed.until`).
+ * It agrees with `endable` (`engine/ui/cards/Lens.tsx`) on every face-up play that is neither `instant` nor `spent`, which `endable` does not read.
+ */
+export function inForce(play: CardPlay, now: number, keeps: boolean): boolean {
+  if (play.reversed || play.caught !== undefined) return false;
+  /* A sprung back is over, unless its spring locked someone out and that lockout is still live (the owner, #984: Set, then Up now, then Ended). */
+  if (play.faceDown && play.revealed) return play.revealed.until !== undefined && Date.parse(play.revealed.until) > now;
+  if (play.faceDown) return play.takenBack === undefined && !backOver(play, now);
+  if (play.cut || play.untaken || play.instant || play.spent) return false;
+  return keeps || play.ends === undefined || Date.parse(play.ends) > now;
+}
+
+/**
  * Whether a play is over (spent-marks design, section 1): caught, ended by an admin, didn't take, instant, spent by a filing, a back that sprang, or its
  * time is up and its card does not keep. In a moment (`then`), a play named there is judged as it stood: its timed end does not count.
  */
@@ -285,9 +301,10 @@ export function nextEnd(plays: readonly CardPlay[], now: number): number | null 
 }
 
 /** What a spring Act reveals: the set it ends and the card that was face down. */
-function springOf(act: Act): { readonly set: Id; readonly card: string; readonly spring: Id; readonly at: string; readonly quadrant?: string } | null {
+function springOf(act: Act): { readonly set: Id; readonly card: string; readonly spring: Id; readonly at: string; readonly quadrant?: string; readonly until?: string } | null {
   if (act.kind !== 'spring' || typeof act.payload.set !== 'string' || typeof act.payload.card !== 'string') return null;
-  return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt, ...(typeof act.payload.quadrant === 'string' ? { quadrant: act.payload.quadrant } : {}) };
+  const until = act.payload.did === 'lockedOut' && typeof act.payload.until === 'string' ? act.payload.until : undefined;
+  return { set: act.payload.set, card: act.payload.card, spring: act.id, at: act.createdAt, ...(typeof act.payload.quadrant === 'string' ? { quadrant: act.payload.quadrant } : {}), ...(until !== undefined ? { until } : {}) };
 }
 
 /** The back a `take_back` Act ends, and when, or null for any other Act. */
@@ -495,7 +512,7 @@ export function createPlays(): Plays {
           const own = post === undefined ? undefined : byPost.get(post);
           const back = own?.get(sprung.set);
           if (own && back && !back.revealed) {
-            own.set(back.id, { ...back, ...(ended.has(sprung.spring) ? { reversed: true as const } : {}), card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}) } });
+            own.set(back.id, { ...back, ...(ended.has(sprung.spring) ? { reversed: true as const } : {}), card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}), ...(sprung.until !== undefined ? { until: sprung.until } : {}) } });
             touched.add(homeOf(back));
           }
           continue;
@@ -541,7 +558,7 @@ export function createPlays(): Plays {
           if (mine && was && !was.spent) { mine.set(spends, { ...was, spent: true }); touched.add(at!); }
         }
         const early = found.faceDown ? springs.get(found.id) : undefined;
-        const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}) } } : found;
+        const withSpring = early ? { ...found, card: sprungKind(early.spring), revealed: { card: early.card, spring: early.spring, at: early.at, ...(early.quadrant !== undefined ? { quadrant: early.quadrant } : {}), ...(early.until !== undefined ? { until: early.until } : {}) } } : found;
         const takenAt = found.faceDown ? takenBacks.get(found.id) : undefined;
         const withTaken = takenAt ? { ...withSpring, takenBack: { at: takenAt } } : withSpring;
         /* A cutting play ends the Gimmick it names in place: marked now, or held for when that play arrives. One an admin already ended cuts nothing. */

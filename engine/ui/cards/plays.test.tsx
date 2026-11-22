@@ -8,8 +8,9 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
+import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, inForce, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
+import { endable } from './Lens.tsx';
 
 const POST = '11111111-0000-4000-8000-000000000001';
 const OTHER = '11111111-0000-4000-8000-000000000002';
@@ -1039,5 +1040,49 @@ describe('a Gimmick a cutting card ended', () => {
     const far = { ...base, reach: 'character' as const, on: 'ch', ends: '2099-01-01T00:00:00Z' } as CardPlay;
     expect(markedPlays([far], Date.now())).toEqual([]);
     expect(markedPlays([base as CardPlay], Date.now())).toHaveLength(1);
+  });
+});
+
+describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', () => {
+  const now = Date.parse('2026-11-20T00:00:00.000Z');
+  const PAST = '2026-11-10T00:00:00.000Z';
+  const AHEAD = '2026-11-30T00:00:00.000Z';
+  const up = { id: 'k1', card: 'plain', layer: 1, caster: null, message: '', config: {}, playedAt: '2026-11-01T00:00:00.000Z', post: POST } as CardPlay;
+  const back = { ...up, card: CARD_BACK, faceDown: true as const, endsAt: AHEAD } as CardPlay;
+  const faceUp: Record<string, CardPlay> = {
+    plain: up, 'no ends': up, 'ends ahead': { ...up, ends: AHEAD }, 'ends passed': { ...up, ends: PAST }, 'starts ahead': { ...up, starts: AHEAD },
+    reversed: { ...up, reversed: true }, cut: { ...up, cut: { by: 'x', card: 'buzzkill' } }, untaken: { ...up, untaken: true }, caught: { ...up, caught: 'trap' },
+  };
+
+  test('an admin-ended play is not in force', () => expect(inForce(faceUp.reversed!, now, false)).toBe(false));
+  test('an untaken play is not in force', () => expect(inForce(faceUp.untaken!, now, false)).toBe(false));
+  test('a caught play is not in force', () => expect(inForce(faceUp.caught!, now, false)).toBe(false));
+  test('an instant play is not in force', () => expect(inForce({ ...up, instant: true } as CardPlay, now, false)).toBe(false));
+  test('a spent fall is not in force', () => expect(inForce({ ...up, spent: true } as CardPlay, now, false)).toBe(false));
+  test('a play past its ends is not in force', () => expect(inForce(faceUp['ends passed']!, now, false)).toBe(false));
+  test('the same play with keeps is in force', () => expect(inForce(faceUp['ends passed']!, now, true)).toBe(true));
+  test('a play with no ends is in force', () => expect(inForce(up, now, false)).toBe(true));
+  test('a play whose ends is ahead is in force', () => expect(inForce(faceUp['ends ahead']!, now, false)).toBe(true));
+  test('a play whose starts is ahead is in force', () => expect(inForce(faceUp['starts ahead']!, now, false)).toBe(true));
+  test('a live face-down back is in force', () => expect(inForce(back, now, false)).toBe(true));
+  test('a sprung back\'s revealed play is not in force', () => {
+    expect(inForce({ ...back, revealed: { card: 'trap', spring: 's1', at: '2026-11-15T00:00:00.000Z' } } as CardPlay, now, false)).toBe(false);
+  });
+  test('a sprung back whose lockout is still live is in force, and over once the lockout ends (the owner, #984)', () => {
+    const sprung = { ...back, revealed: { card: 'trap', spring: 's1', at: '2026-11-15T00:00:00.000Z', until: AHEAD } } as CardPlay;
+    expect(inForce(sprung, now, false)).toBe(true);
+    expect(inForce({ ...sprung, revealed: { ...sprung.revealed!, until: PAST } } as CardPlay, now, false)).toBe(false);
+    expect(inForce({ ...sprung, reversed: true } as CardPlay, now, false)).toBe(false);
+  });
+  test('a taken-back back is not in force', () => expect(inForce({ ...back, takenBack: { at: PAST } } as CardPlay, now, false)).toBe(false));
+  test('a back an admin ended, or a trap caught, is not in force', () => {
+    expect(inForce({ ...back, reversed: true } as CardPlay, now, false)).toBe(false);
+    expect(inForce({ ...back, caught: 'trap' } as CardPlay, now, false)).toBe(false);
+  });
+  test('a play whose ends is this instant is over', () => expect(inForce({ ...up, ends: new Date(now).toISOString() } as CardPlay, now, false)).toBe(false));
+  test('a back past its endsAt is not in force', () => expect(inForce({ ...back, endsAt: PAST } as CardPlay, now, false)).toBe(false));
+
+  test('agrees with endable on every face-up play, for both values of keeps', () => {
+    for (const [name, p] of Object.entries(faceUp)) for (const keeps of [false, true]) expect(inForce(p, now, keeps), `${name}, keeps ${keeps}`).toBe(endable(p, now, keeps));
   });
 });

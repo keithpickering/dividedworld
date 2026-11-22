@@ -160,6 +160,14 @@
 }
 
 /*
+ * The Report link ends the body, and a body scrolled in steps leaves it standing low in the clip, where the bottom left cut's triangle
+ * (the page showing through the frame's corner) lies under its first letters. It starts one cut-in in, so its words are never over the triangle.
+ */
+.kb-lens-body .kb-report-foot {
+  padding-left: calc(var(--kb-cut-in) - var(--kb-border));
+}
+
+/*
  * The fade at the panel's foot, where the body's scroll edge is, only while more lies below (the panel's `data-kb-more`, set as the
  * body scrolls); it takes no pointer. It is cut as the frame's panel is, one border in, so it never dims the bottom left cut's border.
  */
@@ -626,3 +634,240 @@
 }
 .kb-lens-tab-swatch { box-sizing: border-box; border: 2px solid var(--kb-glass-text-hi); }
 @media (forced-colors: active) { .kb-lens-tab-icon { filter: none; } }
+
+/*
+ * Who's groups (Lens.tsx `Who`): "Up now" and "Ended · N", each a heading over its own rows. The heading is the glass's label step in its display
+ * face, in capitals, muted, with a 1px rule under it in the line's color; it stands in the same side room a row keeps. The rows list inside a group
+ * takes the group's gap and no top margin of its own, so the heading sits one breath over its first row.
+ */
+.kb-lens-group {
+  list-style: none;
+}
+
+.kb-lens-group + .kb-lens-group {
+  margin-top: 14px;
+}
+
+.kb-lens-group-head {
+  margin: 0 0 8px;
+  padding: 0 14px 4px;
+  border-bottom: 1px solid color-mix(in srgb, var(--kb-glass-text) 30%, transparent);
+  color: var(--kb-glass-text-2);
+  font-family: var(--kb-glass-font-display);
+  font-size: var(--kb-glass-size-label);
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+}
+
+.kb-lens-group > .kb-lens-rows {
+  margin: 0;
+}
+
+/* An ended row keeps its ink bar and takes about half the padding: its compact button is the row until it is opened. */
+.kb-lens-row[data-kb-ended] {
+  padding: 4px 14px 5px;
+}
+
+/* The compact button is the whole row's face: full width, unstyled, no skew, its text at the left; two grid rows, the head and the line. */
+.kb-lens-compact {
+  display: grid;
+  gap: 2px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: start;
+  transform: none;
+  cursor: pointer;
+}
+
+.kb-lens-compact-head {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  gap: 0.5rem;
+  align-items: center;
+}
+
+/* The face is a step smaller than a full row's, so two lines stay under 64px. */
+.kb-lens-compact .kb-lens-row-avatar {
+  width: 1.75rem;
+  height: 1.75rem;
+}
+
+.kb-lens-compact-head .kb-lens-who {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-lens-compact-when {
+  color: var(--kb-glass-text-2);
+  white-space: nowrap;
+}
+
+.kb-lens-compact .kb-lens-fold-sign {
+  margin-inline-end: 6px;
+}
+
+.kb-lens-compact[aria-expanded="true"] .kb-lens-fold-sign {
+  transform: translateY(-4px) rotate(45deg);
+}
+
+.kb-lens-compact-line {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.6rem;
+  min-width: 0;
+  color: var(--kb-glass-text-2);
+  font-family: var(--kb-glass-font-body);
+  font-size: var(--kb-glass-size-label);
+  line-height: 1.2;
+}
+
+.kb-lens-compact-words {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kb-lens-compact-chips {
+  display: inline-flex;
+  flex: none;
+  gap: 0.6rem;
+  margin-inline-start: auto;
+  white-space: nowrap;
+}
+
+.kb-lens-compact-chip {
+  white-space: nowrap;
+}
+
+/*
+ * The All button is a tab's skew and outline, never filled; open, it takes the ink's cyan (the sweet token) on its edge and words, so it reads as lit
+ * and still not as the selected tab.
+ */
+.kb-lens-all {
+  flex: none;
+  /* The bar's own height: the close button is 52px (glass/shell.css), and a row of the bar's items agrees on one height. */
+  box-sizing: border-box;
+  min-height: 52px;
+  margin: 0 0 0 8px;
+  padding: 0 14px;
+  border: 1px solid color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
+  background: transparent;
+  color: var(--kb-glass-text);
+  font: inherit;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.kb-lens-all:hover {
+  border-color: var(--kb-glass-text-hi);
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-lens-all[aria-expanded="true"] {
+  border-color: var(--kb-glass-sweet);
+  color: var(--kb-glass-sweet);
+}
+
+/* Every kind of card: two columns at the dock's width, one under 40em; each an outlined chamfer in the neutral line an unselected tab has (ink is the selected tab's and the rows'), its count at the right. */
+.kb-lens-kinds {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+@media (max-width: 40em) {
+  .kb-lens-kinds { grid-template-columns: minmax(0, 1fr); }
+}
+
+.kb-lens-kinds > li {
+  display: block;
+  min-width: 0;
+}
+
+.kb-lens-kind {
+  --kb-cut: 12px;
+  --kb-border: 1px;
+  --kb-cut-in: calc(var(--kb-cut) - var(--kb-border) * 0.5858);
+  position: relative;
+  isolation: isolate;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 44px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  background: color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
+  color: var(--kb-glass-text);
+  font: inherit;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  line-height: 1.1;
+  letter-spacing: 1.5px;
+  text-transform: uppercase;
+  text-align: start;
+  cursor: pointer;
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut)) 0, 100% var(--kb-cut), 100% 100%, 0 100%);
+}
+
+.kb-lens-kind::before {
+  content: '';
+  position: absolute;
+  z-index: -1;
+  inset: var(--kb-border);
+  background: var(--kb-glass-field-2);
+  clip-path: polygon(0 0, calc(100% - var(--kb-cut-in)) 0, 100% var(--kb-cut-in), 100% 100%, 0 100%);
+}
+
+.kb-lens-kind:hover {
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-lens-kind-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.kb-lens-kind-count {
+  flex: none;
+  margin-inline-start: auto;
+  color: var(--kb-glass-text-2);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Up now: a small filled square in "ready and earned" gold, never a round dot, beside the count. */
+.kb-lens-kind-up {
+  flex: none;
+  width: 10px;
+  height: 10px;
+  background: var(--kb-glass-ready);
+}
+
+@media (forced-colors: active) {
+  .kb-lens-kind-up { background: Highlight; forced-color-adjust: none; }
+  /* The entry's outline and field are backgrounds, which forced colors drop: a real border keeps each a visible button. */
+  .kb-lens-kind { border: 1px solid ButtonText; }
+}

@@ -39,11 +39,11 @@ import { CloseCross, DialogBar } from '../glass/Frame.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
-import { Reactions } from '../reactions/Reactions.tsx';
+import { Reactions, useReactionChips } from '../reactions/Reactions.tsx';
 import type { Mine } from '../reactions/mine.ts';
 import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
-import { when } from '../thread/lines.tsx';
+import { day, when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, momentParts, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
@@ -51,7 +51,7 @@ import { Kit } from './Kit.tsx';
 import { CUT_STATE, cutByWords, cutWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
-import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
 import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -379,7 +379,7 @@ interface RowProps {
   readonly tallies: Tallies;
   readonly mine: Mine;
   readonly compare: boolean;
-  /** The post the play landed on, where Go to post leads; none where it cannot be found. */
+  /** The post the play landed on, where Go to post leads; null where it cannot be found, or where the Lens is on the page the post is on (the thread page's strips), so it would lead nowhere new. */
   readonly to: string | null;
   readonly onSpin: (play: CardPlay, name: string) => void;
   /** The store the play is kept in: an admin's end is added to it at once, so the layer comes off without waiting for the broadcast. */
@@ -546,7 +546,7 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
 }
 
 /**
- * Whether a play can be ended by an admin. A face-up play: not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on
+ * Whether a play can be ended by an admin; it agrees with `inForce` (plays.ts) on every face-up play that is neither `instant` nor `spent`, which this does not read. A face-up play: not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on
  * posts until an admin ends the play, which takes it off every post. A card back stays unendable, but for one that sprang into a lockout (`lockout`, the spring's `until`, read by `useLockoutOf`)
  * while that lockout is live: the lockout is what an admin ends, and it is not ended, past or caught.
  */
@@ -574,17 +574,33 @@ function useLockoutOf(play: CardPlay, admin: boolean): { readonly until: string 
   return spring !== undefined && read?.spring === spring && read.until !== null ? { until: read.until } : null;
 }
 
-function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now, then }: RowProps) {
+/** The note a row carries: a caught play says where its card went once the spring that caught it is read (the view's note, which claims nothing of the card, stands until then); else the view's. */
+function useRowNote(play: CardPlay, view: CardView, store: Plays): string | undefined {
+  const { instance } = useKayfa();
+  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
+  const fate = useCaughtFate(springOfCatch);
+  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
+  return fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
+}
+
+/** A row's head: the caster's face, the caster and when the play was played. A full row draws it between its notes and its words. */
+function PlayHead({ play, caster, face }: { readonly play: CardPlay; readonly caster: string; readonly face: string | null }) {
+  return (
+    <div className="kb-lens-row-head">
+      <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
+      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+    </div>
+  );
+}
+
+/** Everything of a row under its head: the words, the notes, the reactions with React, the action tiles and the threads spun. An up-now row draws it always; an ended row, once it is opened. */
+function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now, then, head }: Omit<RowProps, 'face' | 'ink'> & { readonly head?: ReactNode }) {
   const past = then?.has(play.id) === true;
   const { characters } = usePlayer();
   const { instance } = useKayfa();
   const name = playName(caster, card);
   const nameOfCard = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
-  /* A caught play says where its card went, once the spring that caught it is read: the view's note, which claims nothing of the card, stands until then. */
-  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
-  const fate = useCaughtFate(springOfCatch);
-  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
-  const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
+  const note = useRowNote(play, view, store);
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
   const lockout = useLockoutOf(play, admin);
@@ -615,20 +631,17 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
     return () => changed.disconnect();
   }, []);
   return (
-    <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+    <>
       {sprung && <p className="kb-lens-note">{sprung}</p>}
       {note && <p className="kb-lens-note">{note}</p>}
-      <div className="kb-lens-row-head">
-        <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
-        <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
-      </div>
+      {head}
       {play.cuts && !play.reversed && <p className="kb-lens-note">{cutWords(nameOfCard(play.cuts.card))}</p>}
       {play.pierce && <p className="kb-lens-note">{pierceWords(nameOfCard(play.pierce.card), play.pierce.ward === undefined ? undefined : nameOfCard(play.pierce.ward))}</p>}
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
       {!past && yours && <p className="kb-lens-yours">Your play</p>}
       <div ref={foot} className="kb-lens-row-foot">
-        {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />}
+        {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} plays={store} pickerAt="button" />}
         <div className="kb-lens-actions">
           {past || staged ? null : hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
@@ -640,11 +653,88 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
         </div>
       </div>
       {!staged && !past && <Spun play={play.id} />}
+    </>
+  );
+}
+
+const inkStyle = (ink: string | undefined): CSSProperties | undefined => (ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined);
+
+function PlayRow(props: RowProps) {
+  const { play, caster, face, ink } = props;
+  return (
+    <li className="kb-lens-row" data-kb-play={play.id} style={inkStyle(ink)}>
+      <PlayDetail {...props} head={<PlayHead play={play} caster={caster} face={face} />} />
+    </li>
+  );
+}
+
+/** What an ended play's compact row says on its second line: a play that did not simply run its time says its fate (the row's note), else the caster's words. */
+const fateOf = (play: CardPlay, note: string | undefined): string | undefined => (play.reversed || play.untaken || play.caught || play.cut || play.instant || play.spent ? note : undefined);
+
+/**
+ * An ended play, folded: one disclosure button of one or two lines (the caster and the day, then the play's fate or message with its reaction totals as text), and opened, the full row under it. `Who` opens one at a
+ * time. The chips are the row's own (`useReactionChips`), so a total hidden from a reader on a full row is hidden here.
+ */
+function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: boolean; readonly onToggle: () => void }) {
+  const { play, caster, face, ink, view, store, tallies, mine } = props;
+  const id = useId();
+  const note = useRowNote(play, view, store);
+  const { shown } = useReactionChips(play.id, play.caster, tallies, mine, store);
+  const { instance } = useKayfa();
+  /* A cutting play (a Buzzkill) is over when it lands; its fate is what it ended, which the full row says above its words. */
+  const cutting = play.cuts && !play.reversed ? cutWords(instance.cards.find((c) => c.key === play.cuts!.card)?.name ?? play.cuts.card) : undefined;
+  const words = cutting ?? fateOf(play, note) ?? play.message;
+  /* Opened, the body says the words (the note and the message), so line 2 keeps only its chips. */
+  const shownWords = open ? undefined : words;
+  const line = Boolean(shownWords) || shown.length > 0;
+  return (
+    <li className="kb-lens-row" data-kb-play={play.id} data-kb-ended="" style={inkStyle(ink)}>
+      <button type="button" className="kb-lens-compact" aria-expanded={open} aria-controls={id} onClick={onToggle}>
+        <span className="kb-lens-compact-head">
+          <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
+          <span className="kb-lens-who kb-glass-display">{caster}</span>
+          <span className="kb-lens-compact-when">{play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{day(play.playedAt)}</time></span>
+          <span className="kb-lens-fold-sign" aria-hidden="true" />
+        </span>
+        {line && (
+          <span className="kb-lens-compact-line">
+            {shownWords && <span className="kb-lens-compact-words">{shownWords}</span>}
+            {shown.length > 0 && <span className="kb-lens-compact-chips">{shown.map((c) => <span key={c.key} className="kb-lens-compact-chip">{c.emoji}{c.count === null ? '' : ` ${c.count}`}</span>)}</span>}
+          </span>
+        )}
+      </button>
+      <div id={id} hidden={!open}>{open && <PlayDetail {...props} />}</div>
     </li>
   );
 }
 
 const NAMES_SHOWN = 3;
+
+/**
+ * Every kind the Lens holds, in the tabs' order, for a tab row too long to show them all (the All button). Each entry is a button with the kind's name, its count of plays and, where any play of it is
+ * up now (`inForce`), a sign that is no more than a sign: its words for a screen reader are "N up now". The visit's tab, where there is one, is first and has no count. The grid is a way to the tabs; the tabs stay.
+ */
+function KindsGrid({ kinds, labelOf, billed, now, keeping, onChoose }: {
+  readonly kinds: readonly string[]; readonly labelOf: (kind: string) => string; readonly billed: readonly CardPlay[]; readonly now: number; readonly keeping: ReadonlySet<string>; readonly onChoose: (kind: string) => void;
+}) {
+  return (
+    <ul className="kb-lens-kinds" aria-label="Every kind of card">
+      {kinds.map((kind) => {
+        const ofKind = kind === VISIT_KIND ? [] : billed.filter((p) => p.card === kind);
+        const up = ofKind.filter((p) => inForce(p, now, keeping.has(p.card))).length;
+        return (
+          <li key={kind}>
+            <button type="button" className="kb-lens-kind" data-kb-card={kind} onClick={() => onChoose(kind)}>
+              <span className="kb-lens-kind-name">{labelOf(kind)}</span>
+              {kind !== VISIT_KIND && <><span className="kb-lens-kind-count" aria-hidden="true">{ofKind.length}</span><span className="kb-visually-hidden">{playsPhrase(ofKind.length)}</span></>}
+              {up > 0 && <><span className="kb-lens-kind-up" aria-hidden="true" /><span className="kb-visually-hidden">{up} up now</span></>}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
 
 /** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
 function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'face' | 'ink'> & {
@@ -658,6 +748,16 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   const names = [...new Set(plays.map((p) => nameOf(p.caster)))];
   const shown = names.slice(0, NAMES_SHOWN).join(', ');
   const rest = names.length - NAMES_SHOWN;
+  const { instance } = useKayfa();
+  /* Up now and Ended, by `inForce`. A play a moment holds (`then`, an ORIGIN box) is judged as it stood, up then; so a moment's rows draw no heading, as today. */
+  const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const upNow = (p: CardPlay) => row.then?.has(p.id) === true || inForce(p, row.now, keeping.has(p.card));
+  /* Partitioned only while Who is unfolded: folded, it draws no row. */
+  const up = unfolded ? plays.filter(upNow) : [];
+  const ended = (unfolded ? plays.filter((p) => !upNow(p)) : []).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  /* One ended row is open at a time; Who is keyed by its kind (the Lens), so another tab starts every row folded. */
+  const [openRow, setOpenRow] = useState<Id | null>(null);
+  const rowOf = (p: CardPlay) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />;
   return (
     <div className="kb-lens-section kb-lens-who-section">
       <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
@@ -675,7 +775,23 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
         <span className="kb-lens-fold-words">{playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
-        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />)}
+        {unfolded && (
+          <>
+            {up.length > 0 && (
+              <li className="kb-lens-group">
+                {ended.length > 0 && <h3 className="kb-lens-group-head">Up now</h3>}
+                <ul className="kb-lens-rows">{up.map(rowOf)}</ul>
+              </li>
+            )}
+            {ended.length > 0 && (
+              <li className="kb-lens-group">
+                <h3 className="kb-lens-group-head">Ended · {ended.length}</h3>
+                <ul className="kb-lens-rows">{ended.map((p) => <EndedRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} open={openRow === p.id} onToggle={() => setOpenRow((o) => (o === p.id ? null : p.id))} />)}</ul>
+                {/* The pager for a long Ended group (#871) stands here; nothing is drawn until it is built. */}
+              </li>
+            )}
+          </>
+        )}
       </ul>
     </div>
   );
@@ -791,7 +907,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keepingKeys(instance.cards), postAt);
+  const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const billed = markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keeping, postAt);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
@@ -817,11 +934,16 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     onForm ? (kind === form.kind ? formP : null) : kind === VISIT_KIND && visit ? visitP : null;
   /* The latest press on a tab: a read that lands after another tab was pressed does not take the reader back. */
   const pressed = useRef(0);
-  const choose = (kind: string) => {
+  /** Resolves true once the tab is the selected one (at once where nothing is read first), false where the press did not take. */
+  const choose = (kind: string): Promise<boolean> => {
     const mine = ++pressed.current;
     const read = readOf(kind);
-    if (read === null || read.data !== null) { store.select(kind); return; }
-    void read.open().then((landed) => { if (landed !== null && !onForm && pressed.current === mine) store.select(kind); });
+    if (read === null || read.data !== null) { store.select(kind); return Promise.resolve(true); }
+    return read.open().then((landed) => {
+      const took = landed !== null && !onForm && pressed.current === mine;
+      if (took) store.select(kind);
+      return took;
+    });
   };
   const waiting = onForm ? formP : onVisit ? visitP : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
@@ -868,11 +990,17 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   /* The strip of tabs is one row that scrolls, with the current tab kept in view, and a fade at the edge where more wait. */
   const tabRow = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState<TabFade>('none');
+  /* The tabs do not all fit: the bar offers All, a grid of every kind. A form's one tab never needs it. */
+  const [overflows, setOverflows] = useState(false);
+  const [grid, setGrid] = useState(false);
+  const allButton = useRef<HTMLButtonElement>(null);
+  const showAll = overflows && !onForm;
+  const gridOn = grid && showAll;
   useLayoutEffect(() => { tabs.current.get(card ?? '')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }); }, [card]);
   useEffect(() => {
     const el = tabRow.current;
     if (!el) return undefined;
-    const read = () => setFade(fadeOf(el));
+    const read = () => { setFade(fadeOf(el)); setOverflows(el.scrollWidth > el.clientWidth); };
     read();
     el.addEventListener('scroll', read, { passive: true });
     const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
@@ -898,7 +1026,9 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     const changed = typeof MutationObserver === 'function' ? new MutationObserver(() => { watch(); read(); }) : null;
     changed?.observe(el, { childList: true, subtree: true });
     return () => { el.removeEventListener('scroll', read); resized?.disconnect(); changed?.disconnect(); };
-  }, [card, unfolded, narrow]);
+  }, [card, unfolded, narrow, grid]);
+  /* A grid whose All button has left (the tabs fit again, a form opened) is closed with it. */
+  useEffect(() => { if (grid && !showAll) setGrid(false); }, [grid, showAll]);
   if (card === null) return null;
 
   const rules = instance.cards.find((c) => c.key === card);
@@ -910,6 +1040,21 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
   const panelId = `${ids}-panel`;
+  const allId = `${ids}-all`;
+  const labelOf = (kind: string) => kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
+  /* Esc closes the grid and not the Lens (the float asks `onClose`), and the All button that opened it has focus again. */
+  const closeGrid = () => { setGrid(false); allButton.current?.focus(); };
+  const pick = (kind: string) => {
+    setGrid(false);
+    /* Once the select has landed: the tab is brought into view (it may be the one already open, which the tab-row effect would not move) and takes focus. */
+    void choose(kind).then((took) => {
+      /* A press that did not take (a read that failed, or a newer press) leaves the open tab open: focus goes back to it, never to the page. */
+      if (!took) { (tabs.current.get(card) ?? allButton.current)?.focus(); return; }
+      const el = tabs.current.get(kind);
+      el?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+      el?.focus({ preventScroll: true });
+    });
+  };
   /* A discipline card's plays say what each did, in the engine's words: a play an admin ended, one that did not take and one a trap caught are said as any is (the view's notes win). */
   const effect = rules?.discipline;
   const said = effect === undefined ? null : Object.fromEntries(ofKind.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).flatMap((p): [Id, string][] => {
@@ -926,7 +1071,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     if (to_ < 0) return;
     e.preventDefault();
     const next = kinds[to_]!;
-    choose(next);
+    void choose(next);
     tabs.current.get(next)?.focus();
   };
 
@@ -962,7 +1107,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   return (
     <Float
       label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} keep={keep} sheet={narrow} low={replaying} host={host}
-      returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
+      returnFocusTo={() => anchor.current} onClose={gridOn ? closeGrid : dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined, 'kb-more': more ? 'true' : 'false', 'kb-above': above ? 'true' : 'false' }}
@@ -976,18 +1121,25 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             return (
               <PreparedTab
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
-                id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => choose(kind)}
+                id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => { void choose(kind); }}
               ><TabIcon art={tabArtOf(kind)} />{label}</PreparedTab>
             );
           })}
         </div>
         </div>
+        {showAll && (
+          <button ref={allButton} type="button" id={allId} className="kb-lens-all kb-glass-skew" aria-expanded={gridOn} aria-controls={panelId} onClick={() => (gridOn ? closeGrid() : setGrid(true))}>
+            <span className="kb-glass-upright">All {kinds.length}</span>
+          </button>
+        )}
       </DialogBar>
       {/* Before the body: the body is the dialog's last child, which the frame's own checks lay their probes in. */}
       <div className="kb-lens-fade" aria-hidden="true" />
-      <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
+      <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={gridOn ? allId : tabId(card)}>
         {/* The fade at the body's top: it sticks to the scroll edge under the bar, and shows once the body is scrolled off its top. */}
         <div className="kb-lens-fade-top" aria-hidden="true" />
+        {/* The grid is the whole body while it shows: the Report foot link goes with the tab's sections, and is back with them. */}
+        {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} now={now} keeping={keeping} onChoose={pick} /> : <>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
@@ -1006,13 +1158,14 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
+          key={card} plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
         {reportTo && <p className="kb-report-foot"><ReportLink post={reportTo.post} version={reportTo.version} kicker={reportTo.kicker} className="kb-report-link" /></p>}
         {!onVisit && !onForm && rules?.surface !== undefined && rowPlays[0] !== undefined && (
           <SurfaceRows play={rowPlays[0].id} live={here.surfaces[rowPlays[0].id]?.live.join(',') ?? ''} nameOf={nameOf} faceOf={faceOf} card={card} />
         )}
+        </>}
       </div>
     </Float>
   );

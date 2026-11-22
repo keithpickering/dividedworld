@@ -45,7 +45,7 @@ export interface CardPlay {
    */
   readonly endsAt?: string | null;
   /** A card back that sprang: the card it was and its spring, public from then. The back keeps its place among the marks. */
-  readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string; /** The quadrant a ride back named, public once it has sprung (the spring's `quadrant`). */ readonly quadrant?: string };
+  readonly revealed?: { readonly card: string; readonly spring: Id; readonly at: string; /** The quadrant a ride back named, public once it has sprung (the spring's `quadrant`). */ readonly quadrant?: string; /** Where the spring locked a character out, when that lockout ends (the spring's `until`): the play is in force until then (`inForce`). */ readonly until?: string };
   /** A card back its setter took back into their hand (a `take_back` Act): ended then, and it names no card. */
   readonly takenBack?: { readonly at: string };
   /** A play a back laid when it sprang (a Move landing on a quote), by the spring that laid it: the Lens says who set it and what set it off. */
