@@ -98,10 +98,10 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       veil: c.veil, addsReaction: c.reaction === true,
       // Whether its play is a surface any character may add to (0317): the SQL knows only this flag, never which card.
       surface: c.surface !== undefined,
-      // Whether the card is out of print (0403): the seed stamps card_kinds.retired_at the first time it sees the flag and clears it when the flag goes. The SQL knows only this flag, never which card.
+      // Whether the card is out of print (0404): the seed stamps card_kinds.retired_at the first time it sees the flag and clears it when the flag goes. The SQL knows only this flag, never which card.
       retired: c.retired === true,
     })),
-    // The ways a card has left (0403). Every card_kinds key must be listed by the payload as a card, a `formerly` entry or a `withdrawn` entry, or the seed is refused naming it.
+    // The ways a card has left (0404). Every card_kinds key must be listed by the payload as a card, a `formerly` entry or a `withdrawn` entry, or the seed is refused naming it.
     // `formerly`: each card's old names as {key, name, became}, `became` the card that carries them now; seed_instance moves every copy of the old key to the new one, once. `withdrawn`: {key, name, refund} in
     // hundredths; seed_instance refunds every copy once. The names stay in the instance: the SQL's own words for a gone card come from card_kinds.
     formerly: instance.cards.flatMap((c) => (c.formerly ?? []).map((f) => ({ key: f.key, name: f.name, became: c.key }))),

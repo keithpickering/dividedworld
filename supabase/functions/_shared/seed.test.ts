@@ -252,7 +252,7 @@ test('the seed carries the instance\'s Random Event lines, each with its key, ou
   assert.ok(['line', 'gear', 'card'].every((o) => eventLines.some((l) => l.outcome === o)), 'every outcome has a line to say');
 });
 
-test('the seed carries a card\'s retired flag, the cards\' former names as {key, name, became} and the withdrawn cards (0403)', () => {
+test('the seed carries a card\'s retired flag, the cards\' former names as {key, name, became} and the withdrawn cards (0404)', () => {
   const seed = instanceSeed(instance, conduct);
   assert.deepEqual(seed.cards.filter((c) => c.retired).map((c) => c.key), instance.cards.filter((c) => c.retired === true).map((c) => c.key), 'the SQL knows which cards are out of print by this flag alone');
   assert.ok(seed.cards.every((c) => typeof c.retired === 'boolean'), 'every card says whether it is out of print, so the seed can clear a flag that went');

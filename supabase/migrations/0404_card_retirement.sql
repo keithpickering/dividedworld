@@ -20,7 +20,7 @@
 --                               refunds in one wallet_move ('withdrawal'), and answers its contents with the new keys and `refunds: [{index, refund}]` (0-based, hundredths).
 --   8. spring_facts, take_back  spring_facts (0393's): a back whose card has gone_at is read as a card with no play and no trap, so it matches nothing. take_back (0317's): a back whose card is gone is refused after the setter check, in
 --                               plain words naming the date the card left and the date the back's end (a name renamed more than once says what the card is now, with no date of its own), hint kayfabb.refusal.
---   9. seed_instance            (0397's): the guard and steps below, run for a payload that carries `formerly` or `withdrawn` (the engine's always does; a seed built with neither is a partial one, as the suite's older tests send):
+--   9. seed_instance            (0403_departed_personas's): the guard and steps below, run for a payload that carries `formerly` or `withdrawn` (the engine's always does; a seed built with neither is a partial one, as the suite's older tests send):
 --                                 a. a card_kinds key the payload lists in none of cards, formerly and withdrawn, a key in two of them, a formerly entry that became a card the payload does not list (or itself; a name already gone may point at a card the payload withdraws), a gone name left out of formerly whose chain ends in a listed card (one whose chain ends in a withdrawal the payload lists needs no entry), and a key with gone_at
 --                                    listed as a card are each refused, naming the keys, before anything is written;
 --                                 b. every card's `retired` sets retired_at (kept while the flag stays, cleared when it goes);
@@ -483,7 +483,7 @@ grant execute on function take_back(uuid, uuid, uuid) to service_role;
 
 -- ---- 9. card_leaves, seed_instance ----
 
--- A card leaves the game (0403): marks `old` gone, as renamed to `became` or as withdrawn with `refund` hundredths, and moves every copy an account holds, once. Every account that holds the key or a live back of it is locked first,
+-- A card leaves the game (0404): marks `old` gone, as renamed to `became` or as withdrawn with `refund` hundredths, and moves every copy an account holds, once. Every account that holds the key or a live back of it is locked first,
 -- `for no key update` in id order: the row play_card and take_back take, so no copy is played or taken back between the count and the write. A live back is a face-down card still up and not sprung or taken back; a held copy is as
 -- card_held counts it (an ended back that never sprang included). One statement counts them by account and writes every row: the held copies' rows (naming no Act), the live backs' rows (naming the back's play, since that play
 -- already took the copy out of the hand) and, for a rename, the new key's rows. A withdrawal then credits each account once, refund times copies, through wallet_move as every credit goes (the wallet's cap overflows as it does for
@@ -571,7 +571,7 @@ end $$;
 revoke execute on function card_ledger_gone_card() from public, anon, authenticated;
 create constraint trigger card_ledger_gone_card after insert on card_ledger deferrable initially deferred for each row execute function card_ledger_gone_card();
 
--- seed_instance (0397's), with the three ways a card leaves (see the header, 9): the guard before the cards are written, the steps after them and after the packs, and the answer's three lists. Everything else as 0397 wrote it.
+-- seed_instance (0403_departed_personas's), with the three ways a card leaves (see the header, 9): the guard before the cards are written, the steps after them and after the packs, and the answer's three lists. Everything else as 0397 wrote it.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -585,6 +585,15 @@ declare
   sys uuid;
   opened uuid;
   was text := current_setting('kayfabb.seeding', true);
+  listed text[];
+  first_staff text[];
+  departing text[];
+  departed text[] := '{}';
+  returned text[] := '{}';
+  open_id bigint;
+  boss_was text;
+  handed text;
+  mods_were bigint;
   retiring boolean := payload ? 'formerly' or payload ? 'withdrawn';
   moving record;
   copies bigint;
@@ -594,6 +603,9 @@ begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
   perform pg_advisory_xact_lock(hashtext('kayfabb.seed_instance'));
+  -- And then the offices lock, before any persona row is written: set_office and a handover take it first and then row-lock a persona, so a seed that took it after its persona upserts would wait on a row an admin
+  -- holds while the admin waits on this lock. One order everywhere: seed lock, offices lock, rows.
+  perform pg_advisory_xact_lock(hashtext('kayfabb.offices'));
   -- The settings trigger (settings_tuned) marks a row tuned for any write but a seed's: this transaction is the seed's, so its writes leave no mark.
   perform set_config('kayfabb.seeding', 'on', true);
   select count(*), min(e ->> 'slug') into flags, flagged
@@ -642,7 +654,7 @@ begin
   -- naming the card. The reaches are read against reachRarity and reachLasts as the settings above have just written them.
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
-  -- The three ways a card leaves (0403). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
+  -- The three ways a card leaves (0404). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
   -- a key in more than one, a renaming into a card the seed does not list (or into itself; a name already gone may point at a withdrawn card, and needs no entry when the card its chain ends in is listed), a refund that is not a positive whole number, and a card that left listed as a card again (a card that comes back takes a new key).
   -- The refusal does not depend on who holds what. Nothing is written before it.
   if retiring then
@@ -697,11 +709,11 @@ begin
     rarity = excluded.rarity, play = excluded.play, trap = excluded.trap, gimmick = excluded.gimmick, refunds = excluded.refunds, discipline = excluded.discipline, lasts = excluded.lasts,
     reaches = excluded.reaches, pins = excluded.pins, writes = excluded.writes, replies = excluded.replies, keeps = excluded.keeps, skim = excluded.skim, scores_as = excluded.scores_as,
     draws = excluded.draws, drive = excluded.drive, needs_message = excluded.needs_message, veil = excluded.veil, adds_reaction = excluded.adds_reaction, surface = excluded.surface, from_seed = true;
-  -- Out of print (0403): the flag sets retired_at, kept while it stays and cleared when it goes.
+  -- Out of print (0404): the flag sets retired_at, kept while it stays and cleared when it goes.
   update card_kinds k set retired_at = case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end
   from jsonb_array_elements(payload -> 'cards') e(c)
   where k.key = e.c ->> 'key' and k.retired_at is distinct from case when coalesce((e.c ->> 'retired')::boolean, false) then coalesce(k.retired_at, now()) end;
-  -- Renamed and withdrawn (0403): each key not yet gone is moved by card_leaves, once ever, and its copies are counted for the answer.
+  -- Renamed and withdrawn (0404): each key not yet gone is moved by card_leaves, once ever, and its copies are counted for the answer.
   if retiring then
     for moving in
       select f.e ->> 'key' as old, f.e ->> 'became' as became, null::integer as refund from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) f(e) join card_kinds k on k.key = f.e ->> 'key' where k.gone_at is null
@@ -723,7 +735,7 @@ begin
          case when jsonb_typeof(e -> 'contents') = 'array' then array(select jsonb_array_elements_text(e -> 'contents')) end
   from jsonb_array_elements(coalesce(payload -> 'packs', '[]')) e
   on conflict (key) do update set pulls = excluded.pulls, leaves = excluded.leaves, contents = excluded.contents;
-  -- A pack kind the payload does not list is out of print, one it lists is not (0403; a payload with no `packs` says nothing of pack kinds): its slot is left out of the machine, and a sealed pack of it still opens.
+  -- A pack kind the payload does not list is out of print, one it lists is not (0404; a payload with no `packs` says nothing of pack kinds): its slot is left out of the machine, and a sealed pack of it still opens.
   if retiring and payload ? 'packs' then
     update pack_kinds k set retired_at = x.want
     from (select p.key, case when l.key is null then coalesce(p.retired_at, now()) end as want
@@ -970,10 +982,59 @@ begin
       perform seed_setting('anonymousAvatar', to_jsonb(payload -> 'anonymous' ->> 'avatar'));
     end if;
   end if;
+  -- The seed's roster is the whole staff (docs/plans/2026-11-21-departed-personas-design.md, sections 2 and 3). A persona the roster does not list, and that the seed has not already benched, is departing. This block runs last,
+  -- after the persona files, the roster setting, the season and its first Boss and the announcements thread are in place, so a departing Boss's handover reads the roster this seed wrote and says its farewell in the thread.
+  -- It runs after (and not inside) the `firstStaff` hire above, which hires only a persona with no office row: a persona the seed benched has one, so it is brought back here and only by a roster that lists it. A seed that
+  -- lists no persona (a partial seed) is not a roster and benches nobody, as it leaves `bossRoster` as it was.
+  listed := array(select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e where e ->> 'key' is not null);
+  first_staff := array(select k from jsonb_array_elements_text(coalesce(payload -> 'system' -> 'firstStaff', '[]')) k);
+  if cardinality(listed) > 0 then
+    -- The offices lock is held since the top of this function, so what stands is what is read.
+    select s.id, s.boss into open_id, boss_was from seasons s where s.ends_at is null;
+    mods_were := (select count(*) from staff_office_now o join characters c on c.staff = o.staff where o.office = 'mod' and c.retired_at is null);
+    -- A persona listed again after a seed benched it comes back first, so a Boss that is leaving can hand the chair to it: a Mod where firstStaff names it, else a member. A member row debuts nothing; a Mod row debuts it,
+    -- as the firstStaff hire does.
+    returned := array(
+      select k from unnest(listed) k
+      where exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona' and c.retired_at is null)
+        and (select o.office = 'benched' and o.cause = 'seed' from staff_offices o where o.staff = k order by o.id desc limit 1));
+    insert into staff_offices (staff, office, cause) select k, case when k = any (first_staff) then 'mod' else 'member' end, 'seed' from unnest(returned) k;
+    update characters c set debuted_at = now() where c.debuted_at is null and c.staff_kind = 'persona' and c.staff = any (returned) and c.staff = any (first_staff);
+    departing := array(
+      select c.staff from characters c
+      where c.staff_kind = 'persona' and c.retired_at is null and c.staff <> all (listed)
+        and not coalesce((select o.office = 'benched' and o.cause = 'seed' from staff_offices o where o.staff = c.staff order by o.id desc limit 1), false)
+      order by c.staff);
+    -- The other departing personas first, so neither the rotation nor a standing nomination can seat one.
+    insert into staff_offices (staff, office, cause) select k, 'benched', 'seed' from unnest(departing) k where k is distinct from boss_was;
+    departed := array(select k from unnest(departing) k where k is distinct from boss_was);
+    if boss_was is not null and boss_was = any (departing) then
+      -- The early handover, in the open season: it refuses (and the seed with it, nothing written) where no one else can sit in the chair. Its farewell is posted before the bench below, since a benched persona writes nothing.
+      perform hand_over(open_id, boss_was, now(), true);
+      insert into staff_offices (staff, office, cause) values (boss_was, 'benched', 'seed');
+      departed := departed || boss_was;
+      select s.boss into handed from seasons s where s.id = open_id;
+    end if;
+    -- The staff is never empty: where a Mod stood before this seed and none stands now (it benched the last one, or the Boss's handover did), each listed firstStaff persona that is not the Boss is hired. If that still leaves none,
+    -- the seed is refused. A staff that had no Mod before this seed is not this seed's doing, so it is left as it was (the firstStaff hire above is how a first seed gets its Mod).
+    if mods_were > 0
+       and not exists (select 1 from staff_office_now o join characters c on c.staff = o.staff where o.office = 'mod' and c.retired_at is null) then
+      insert into staff_offices (staff, office, cause)
+      select k, 'mod', 'seed' from unnest(first_staff) k
+      where k = any (listed) and k is distinct from (select s.boss from seasons s where s.id = open_id)
+        and exists (select 1 from characters c where c.staff = k and c.staff_kind = 'persona' and c.retired_at is null);
+      update characters c set debuted_at = now() where c.debuted_at is null and c.staff_kind = 'persona' and c.staff = any (first_staff)
+        and exists (select 1 from staff_offices x where x.staff = c.staff and x.cause = 'seed' and x.office = 'mod' and x.id = (select max(y.id) from staff_offices y where y.staff = c.staff));
+      if not exists (select 1 from staff_office_now o join characters c on c.staff = o.staff where o.office = 'mod' and c.retired_at is null) then
+        raise exception 'the seed leaves no Mod Bot on staff: name one in firstStaff' using hint = 'kayfabb.refusal', errcode = '55000';
+      end if;
+    end if;
+  end if;
   -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's. The flag goes back to the value this found. A custom
   -- setting cannot be truly unset inside a transaction, so one that was unset (null) or empty goes back to 'off', which the trigger reads the same.
   perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards),
-    'retired', (select coalesce(jsonb_agg(k.key order by k.key), '[]'::jsonb) from card_kinds k where k.retired_at is not null), 'renamed', renamed, 'withdrawn', withdrawn_out);
+    'retired', (select coalesce(jsonb_agg(k.key order by k.key), '[]'::jsonb) from card_kinds k where k.retired_at is not null), 'renamed', renamed, 'withdrawn', withdrawn_out,
+    'departed', to_jsonb(departed), 'returned', to_jsonb(returned), 'handover', to_jsonb(handed));
 end $function$;

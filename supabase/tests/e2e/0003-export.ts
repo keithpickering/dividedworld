@@ -416,7 +416,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into pool_spends (day, staff, trigger, post_act, record) select '2030-01-07', 'exp-boss', 'named', id, '{"trims": []}' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
       -- A handover's to-do an admin dismissed (0090): the handover is a Boss changing, the season it opened.
       insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) where cause = 'rollover' do nothing;
-      -- A departure in the same season (0403): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
+      -- A departure in the same season (0404): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
       insert into season_handovers (season, outgoing, boss, how, cause) select (select id from seasons where ends_at is null), 'exp-bot', 'exp-boss', 'rotation', 'departure';
       insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
@@ -573,7 +573,7 @@ test('an instance exported and imported into a fresh database is the same instan
         perform tests.act(b, 'ballot', t, '{"picks": [0]}', secret, now() - interval '150 minutes');
         perform tests.act(a, 'ballot', t, '{"picks": [1]}', secret, now() - interval '2 hours');
       end;
-      -- Card retirement (0403): an out-of-print card, a card renamed to another key and a card withdrawn for a refund, each left as the seed leaves it (card_leaves writes the
+      -- Card retirement (0404): an out-of-print card, a card renamed to another key and a card withdrawn for a refund, each left as the seed leaves it (card_leaves writes the
       -- holders' rows, the new key's, and the withdrawal's wallet event), and an out-of-print pack kind. Each is named by its key in e2e's assertions.
       insert into card_kinds (key, name, alignment, rarity, play, retired_at) values ('expretired', 'Exported Retired', 'sweet', 'common', 'cast', now());
       insert into card_kinds (key, name, alignment, rarity, play) values ('expold', 'Exported Old Name', 'sweet', 'common', 'cast'), ('expnew', 'Exported New Name', 'sweet', 'common', 'cast'), ('expgone', 'Exported Gone', 'sweet', 'common', 'cast');
@@ -628,7 +628,7 @@ test('an instance exported and imported into a fresh database is the same instan
   const part3Held = 'author:false,author:true,totals:false,totals:true|expblind:totals:false,expreact:-:true,expveil:author:false|1|x-1f480:💀:excitedNegative:1:1';
   assert.equal(part3(from), part3Held, 'the fixture holds a live and an ended veil of each kind, a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind');
   assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
-  // Card retirement (0403), each row named by its key: an out-of-print card (retired_at), a card renamed to another key (gone_at and became, with the holder's renamedOut row and the new key's renamedIn),
+  // Card retirement (0404), each row named by its key: an out-of-print card (retired_at), a card renamed to another key (gone_at and became, with the holder's renamedOut row and the new key's renamedIn),
   // a card withdrawn for a refund (gone_at and refund, with the holder's withdrawn row and the withdrawal's wallet event), and an out-of-print pack kind (pack_kinds.retired_at).
   const retirement = (url: string) => psqlOn(url, `select
     (select string_agg(key || ':' || (retired_at is not null)::text || ':' || (gone_at is not null)::text || ':' || coalesce(became, '-') || ':' || coalesce(refund::text, '-'), ',' order by key) from card_kinds where key in ('expretired', 'expold', 'expnew', 'expgone')) || '|' ||
