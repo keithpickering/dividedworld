@@ -290,7 +290,7 @@ begin
   perform pg_temp.hand(ann, 'pacut');
   perform tests.become_service();
   why := pg_temp.coded(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'pacut', a, p, '{}'));
-  if why is distinct from '22023 Pa Cut carries a reply, so it is cast face up and never set face down' then raise exception 'a card that replies was set face down, or refused in other words: %', why; end if;
+  if why is distinct from '22023 Pa Cut carries a reply, so it is played face up and never set face down' then raise exception 'a card that replies was set face down, or refused in other words: %', why; end if;
   -- The trigger on face_down holds where set_card is skipped.
   why := pg_temp.coded(format('insert into face_down (play, account, card, config, post, thread, round, ends_at) values (gen_random_uuid(), %L, %L, ''{}'', %L, %L, 1, now() + interval ''1 day'')', ann, 'pacut', p, t));
   if why is null or why not like '22023 Pa Cut carries a reply%' then raise exception 'a direct back of a card that replies: %', why; end if;

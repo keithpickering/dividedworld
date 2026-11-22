@@ -633,7 +633,7 @@ test('Line Cutter lands on a post, once, never under a reply that cut in, and co
   assert.equal(cutter.playPrice(settings, post(10), {}), 0);
   assert.equal(castOnPost(cutter), true, 'Card Collector may name it');
   assert.equal(staffOffers(cutter), false, 'a persona has no reply to carry');
-  assert.deepEqual(decideSet(cutter, settings, post(10), [], {}, cards), { ok: false, why: 'Line Cutter carries a reply, so it is cast face up and never set face down' });
+  assert.deepEqual(decideSet(cutter, settings, post(10), [], {}, cards), { ok: false, why: 'Line Cutter carries a reply, so it is played face up and never set face down' });
 });
 
 test("a Sugar Coat on the post turns a Line Cutter away, and a Force Field does not", () => {
@@ -679,7 +679,7 @@ test('no one of the five is ever set face down, a persona never plays one, and o
   for (const k of FIVE) {
     const card = maybe(k);
     const target: CardTarget = card?.reaches?.[0] === 'character' ? { reach: 'character', character: 'c1' } : post(10);
-    assert.deepEqual(card && decideSet(card, settings, target, [], {}, cards), { ok: false, why: `${card?.name} acts the moment it lands, so it is cast face up and never set face down` }, k);
+    assert.deepEqual(card && decideSet(card, settings, target, [], {}, cards), { ok: false, why: `${card?.name} acts the moment it lands, so it is played face up and never set face down` }, k);
     assert.equal(card !== undefined && staffOffers(card), false, `${k}: a persona does not play on its own office's rulings`);
   }
   assert.deepEqual(FIVE.map((k) => maybe(k) !== undefined && castOnPost(maybe(k)!)), [false, false, false, true, false]);

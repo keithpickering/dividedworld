@@ -782,11 +782,11 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   if (play !== 'cast' && play !== 'set') return wrongPlay(rules);
   if (withheld(rules, settings)) return refuse(OLD_VOICE_OFF);
   // A card that writes is cast face up and never set face down: its tail is bought at the cast, on the post the caster chose.
-  if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is cast face up and never set face down`);
+  if (rules.writes !== undefined) return refuse(`${rules.name} writes, so it is played face up and never set face down`);
   // So is a card that replies: its reply is written with the play, under the post the caster chose.
-  if (rules.replies !== undefined) return refuse(`${rules.name} carries a reply, so it is cast face up and never set face down`);
+  if (rules.replies !== undefined) return refuse(`${rules.name} carries a reply, so it is played face up and never set face down`);
   // So is a card that acts on the staff's discipline: it is refused or takes hold the moment it lands, on the target its caster chose.
-  if (rules.discipline !== undefined) return refuse(`${rules.name} acts the moment it lands, so it is cast face up and never set face down`);
+  if (rules.discipline !== undefined) return refuse(`${rules.name} acts the moment it lands, so it is played face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is played face up and never set face down`);
   if (target.reach !== 'post' || !isPost(target.kind)) return refuse('a card is set face down on a post');

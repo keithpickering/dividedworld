@@ -390,7 +390,7 @@ test('a card that writes is refused in plain words where the instance runs no ol
   assert.equal(decidePlay(writer, {} as Settings, post, [], {}, '').ok, true, 'settings that say nothing about the old voice do not withhold');
   assert.deepEqual(decideSet(writer, { oldVoice: false } as Settings, post, [], {}, [writer]), { ok: false, why: sentence });
   // Where the old voice runs, it is still never set face down: a card that writes is cast face up.
-  assert.deepEqual(decideSet(writer, { oldVoice: true } as Settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  assert.deepEqual(decideSet(writer, { oldVoice: true } as Settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is played face up and never set face down` });
   const user: CardRules = { ...writer, key: 'user', play: 'use', lasts: { unit: 'day', count: 1 } };
   assert.deepEqual(decideUse(user, { oldVoice: false } as Settings, post, [], {}, ''), { ok: false, why: sentence });
 });
@@ -562,7 +562,7 @@ test('a Move that writes, needs a message, draws or runs a drive is cast face up
   assert.equal(faceUpOnly(plain), false);
   assert.equal(faceUpOnly(cutter), true, 'a card that replies is face up only, so the play form offers it no Set face down switch');
   for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is played face up and never set face down` });
-  assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is played face up and never set face down` });
   assert.equal(decideSet(plain, settings, post, [], {}, [plain]).ok, true);
 });
 
@@ -791,7 +791,7 @@ test('a post target reads a forged quote as the poster\'s own words, and a real 
 test('a card that carries a reply is cast face up and never set face down, and no staff persona is offered it', () => {
   const set = decideSet(cutter, settings, post, [], {}, [cutter]);
   assert.equal(set.ok, false);
-  assert.equal(set.ok ? '' : set.why, 'Test cutter carries a reply, so it is cast face up and never set face down');
+  assert.equal(set.ok ? '' : set.why, 'Test cutter carries a reply, so it is played face up and never set face down');
   assert.equal(staffOffers(cutter), false);
   assert.equal(staffOffers(plain), true);
   assert.equal(castOnPost(cutter), true);
@@ -862,7 +862,7 @@ test('a watch refuses nothing of its own', () => {
 
 test('decideSet refuses each discipline kind face down, in words that say why', () => {
   for (const card of [relief, unban, fall, watch]) {
-    assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} acts the moment it lands, so it is cast face up and never set face down` }, card.key);
+    assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} acts the moment it lands, so it is played face up and never set face down` }, card.key);
     assert.equal(faceUpOnly(card), true, `${card.key} is face up only, so the play form offers it no Set face down switch`);
   }
 });

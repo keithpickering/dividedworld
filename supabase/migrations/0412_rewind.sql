@@ -14,9 +14,10 @@
 --  11. card_target                copied whole from 0411_post_effects.sql: a post's effect carries `rewind: { upTo }` where its card has one.
 --  12. post_rewind_plays          new: the live rewind plays of each of a list of posts, set-based, granted as post_play_ids is (live_rewind is granted to no API role, and thread_page reads as the caller).
 --   9. place_cast                 copied whole from 0411_post_effects.sql (the lockout, the cut, the pierce and the effects limit as they stand): a rewind card's point is asked of rewind_point_problem (a missing or malformed `to` gives the "pick a
---                                 point" words) and written as `rewind_at` beside `ends`; rewind_refusal is asked right after the Ward for a Move (with the pierce's passing) and in the same place for a Use, before the stack and the limit, under the post's lock.
+--                                 point" words) and written as `rewind_at` beside `ends`; a rewind's own play meets no back (spring_traps is not called for it); rewind_refusal is asked right after the Ward for a Move (with the pierce's passing) and in the same place for a Use, before the stack and the limit, under the post's lock.
 --  10. place_set                  copied whole from 0411_post_effects.sql: a rewind card is refused ("<name> is played face up and never set face down"); rewind_refusal is asked before anything is written.
 --  13. spring_traps               copied whole from 0411_post_effects.sql: a post under a live rewind springs nothing on any trigger (the plan's place_cast-only skip would have let a quote, a staff quote or a visit spring a back on a rewound post); the back stays set.
+--  15. face_down_never_writes, face_down_never_replies  copied whole from 0405_cut.sql and 0348_post_under.sql: "cast face up" becomes "played face up", the engine's words.
 --  14. thread_page                copied whole from 0410_post_plays.sql: a top-level `rewinds` key, rewind_view of each live rewind play of the page's posts and of the ORIGIN post (the `rw` CTE over post_rewind_plays); empty when none.
 --
 -- Ways out: a rewind ends at its time (`lasts`), or by an admin (reverse_card), as any play on a post does; the freeze ends with it. Masks: every fact read is public (a post's versions, its plays and their times, the incoming card's rarity); the refusal and the view
@@ -1234,7 +1235,11 @@ begin
     if kind_of.play = 'cast' then
       -- A cast on a post meets that post's back: a Trap Card that names this very card catches it, whatever its rarity, and takes it; a ride back lets it land and is paid by its votes (`did` is
       -- rode). Nothing pays out here, so spring_traps is given the card's key and neither a price nor a caster; the paying account goes only as the one who is not told of their own back.
-      sprung := spring_traps('cast', target, written, card, actor => payer, passing => shot_up_to, locking => caster);
+      -- A rewind's own play lands frozen (design 2.6 and 4.3): it names a point of the post and takes hold at once, so no back already face down there catches or springs on it (the back stays set, and springs later where a trigger meets
+      -- it once the rewind is over). The next play on the post meets the back as it always did, but under the rewind spring_traps springs nothing.
+      if kind_of.rewind is null then
+        sprung := spring_traps('cast', target, written, card, actor => payer, passing => shot_up_to, locking => caster);
+      end if;
       -- A back the pierce passed answers `passed` and wrote nothing: the cast met no back.
       if sprung ->> 'passed' = 'true' then passed_back := true; sprung := null; end if;
       rode := sprung is not null and sprung -> 'payload' ->> 'did' = 'rode';
@@ -2451,4 +2456,43 @@ begin
   );
 end
 $function$;
+
+-- ---- 15. face_down_never_writes, face_down_never_replies ----
+
+-- The server's words agree with the engine's (engine/rules/cards.ts, decideSet): a card that can only be played face up is refused a back with "played", the copy rule's verb. face_down_never_writes is copied whole from 0405_cut.sql
+-- and face_down_never_replies from 0348_post_under.sql (each the latest definition), with that one word changed. Their triggers and grants are as they were (replaced in place).
+create or replace function public.face_down_never_writes()
+ RETURNS trigger
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare k card_kinds;
+begin
+  select * into k from card_kinds c where c.key = new.card;
+  if k.writes then
+    raise exception '% writes, so it is played face up and never set face down', k.name
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  elsif k.discipline is not null then
+    raise exception '% acts the moment it lands, so it is played face up and never set face down', k.name
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  elsif k.cuts is not null then
+    raise exception '% is played face up and never set face down', k.name
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  elsif k.draws is not null or k.drive is not null or k.needs_message is not null or k.surface then
+    raise exception '% is played face up and never set face down', k.name
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  return new;
+end $function$;
+
+create or replace function face_down_never_replies() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if exists (select 1 from card_kinds k where k.key = new.card and k.replies) then
+    raise exception '% carries a reply, so it is played face up and never set face down', (select k.name from card_kinds k where k.key = new.card)
+      using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  return new;
+end $$;
 

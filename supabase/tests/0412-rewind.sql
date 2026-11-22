@@ -481,6 +481,23 @@ begin
   insert into rw_fix values ('bob', bob), ('b', b), ('p1', p1), ('rw1', rw), ('back1', back);
 end $$;
 
+-- ---- The rewind's own play lands frozen: a back that names the rewind card does not catch or spring on it ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); t uuid := pg_temp.fix('t'); bob uuid := pg_temp.fix('bob'); b uuid := pg_temp.fix('b');
+  p uuid := pg_temp.edited(a, t, 'A back waits here.'); back uuid; r record;
+begin
+  perform pg_temp.hand(ann, 'rwrev'); perform pg_temp.hand(bob, 'rwtime');
+  back := (pg_temp.back(ann, 'rwrev', a, p, 'rwtime')).id;
+  perform pg_temp.expect(back is not null, 'the back that names the rewind card was not set');
+  r := pg_temp.play(bob, 'rwtime', b, p, jsonb_build_object('to', p));
+  perform pg_temp.expect(r.said is null, format('the rewind was refused or caught by a back: %s', r.said));
+  perform pg_temp.expect(not (select payload ? 'caught' from acts where id = r.id) and (select count(*) from live_rewind(p) where play = r.id) = 1, 'the rewind did not land');
+  perform pg_temp.expect(pg_temp.still_down(back), 'a back sprang on the rewind''s own play');
+  perform pg_temp.expect(not exists (select 1 from acts s where s.kind = 'spring' and s.target_act_id = p), 'a spring Act was written for the rewind''s own play');
+end $$;
+
 -- ---- No back springs under a rewind: a quote, a staff quote and a visit, each with its control ----
 select tests.unbecome();
 do $$
