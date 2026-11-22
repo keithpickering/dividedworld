@@ -2,7 +2,15 @@
  * The post's limit on drawn effects, as the screens hold it (post-plays design, section 4): a full post is offered no card that draws
  * and is still offered a card that only marks, and a play its card says is cleared frees its slot, as `card_target` gives it on the server.
  */
-import { describe, expect, test } from 'vitest';
+import { act, screen, waitFor, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
+import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
+import type { Instance } from '../../rules/types.ts';
+import { Frame } from '../frame/Frame.tsx';
+import { hudKey } from '../player.tsx';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
+import { LoadedThread } from '../loaded.tsx';
+import type { CardUi } from './types.ts';
 import { landsOn, postFullWords, type CardRules } from '../../rules/cards.ts';
 import type { Act, EffectState } from '../data/api.ts';
 import { plainRefusal } from './faces.ts';
@@ -67,5 +75,73 @@ describe('a cleared play, as the server gives it', () => {
     const own = { ...play('filler', 4), reach: 'post' } as unknown as CardPlay;
     expect(effectsOf([own], cards)[0]!.drawing).toBe(true);
     expect(targetOf(post).reach).toBe('post');
+  });
+});
+
+/* The screens in a world: the ghost mark and the play form hold the limit as the rules do (post-plays Task 11). */
+describe('the limit on the screen', () => {
+  const economy = { 'whoops.price': 100, 'whoops.perLength': 25, 'whoops.lengthStep': 500, 'stick.price': 100 };
+  const drawing: CardRules = { ...whoops, name: 'Whoops!', stack: 9, canApply: (t, e, _c, now) => landsOn({ key: 'whoops', stack: 9 }, t, e, now) };
+  const marking: CardRules = { ...mark, key: 'stick-around', name: 'Stick Around', alignment: 'sweet', canApply: (t, e, _c, now) => landsOn({ key: 'stick-around' }, t, e, now) };
+  const instance: Instance = { ...testInstance, cards: [drawing, marking], settings: { ...testInstance.settings, economy, postEffects: FULL } };
+  const ui: CardUi[] = [
+    { key: 'whoops', art: { color: '#ff3d7f', ink: '#14030a', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Splats a post.' },
+    { key: 'stick-around', art: { color: '#2ee6ff', ink: '#03141a', canvas: '', mark: '', credit: 'Test' }, describe: () => 'Holds a reader.' },
+  ];
+  class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
+  function world() {
+    const fake = buildWorld({ postMaxLength: 1000 }, instance);
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    const gloomba = fake.seed.character(other, 'Gloomba', 'heel');
+    const { thread, act: p1 } = fake.seed.thread('general', gloomba, 'who keeps splatting', 'the first post');
+    const p2 = fake.seed.post(thread, gloomba, 'short');
+    const p3 = fake.seed.post(thread, gloomba, 'full of effects');
+    fake.seed.cards(me, { whoops: 2, 'stick-around': 1 });
+    fake.seed.wallet(me, 462);
+    fake.signInAs(me);
+    localStorage.setItem(hudKey(me), pipe);
+    const w = { fake, thread, ids: [p1, p2, p3], gloomba };
+    fill(w, 3, false);
+    return w;
+  }
+  const fill = (w: { fake: ReturnType<typeof buildWorld>; ids: string[]; gloomba: string }, seq: number, live: boolean) => {
+    for (const layer of [1, 2, 3]) w.fake.seed.card(w.gloomba, w.ids[seq - 1]!, 'whoops', { message: `layer ${layer}`, layer, config: {}, live });
+  };
+  const open = async (w: ReturnType<typeof world>) => {
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /></Frame>, { path: `/t/${w.thread}`, instance, cards: ui, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    await screen.findByRole('article', { name: /^Post 3 /u });
+    await screen.findByRole('button', { name: /^Hand, 3 postcards/u });
+  };
+  const arm = async (user: ReturnType<typeof userEvent.setup>, name: string) => {
+    await user.click(screen.getByRole('button', { name: /^Hand, \d postcards?/u }));
+    await user.click(within(screen.getByRole('dialog', { name: 'Your hand' })).getByRole('button', { name }));
+  };
+  const post = (seq: number) => document.getElementById(`post-${seq}`)!;
+  beforeEach(() => { vi.stubGlobal('IntersectionObserver', Observer); Element.prototype.scrollIntoView = vi.fn(); localStorage.clear(); window.history.replaceState(null, '', '/'); });
+  afterEach(() => { vi.unstubAllGlobals(); vi.restoreAllMocks(); });
+
+  test('a post holding all it takes shows no ghost mark for a card that draws, and still one for a card that only marks', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user, 'Whoops!, Salty, Cast, common postcard, 2 in hand');
+    expect(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' })).toBeInTheDocument();
+    expect(within(post(3)).queryByRole('button', { name: 'Play Whoops! on post 3' })).toBeNull();
+    await user.keyboard('{Escape}');
+    await arm(user, 'Stick Around, Sweet, Cast, common postcard');
+    expect(await within(post(3)).findByRole('button', { name: 'Play Stick Around on post 3' })).toBeInTheDocument();
+  });
+
+  test('a form open on a card that draws says the post is full when it fills', async () => {
+    const user = userEvent.setup();
+    const w = world();
+    await open(w);
+    await arm(user, 'Whoops!, Salty, Cast, common postcard, 2 in hand');
+    await user.click(await within(post(2)).findByRole('button', { name: 'Play Whoops! on post 2' }));
+    const form = await screen.findByRole('dialog', { name: 'Whoops!' });
+    await act(async () => { fill(w, 2, true); });
+    await waitFor(() => expect(within(form).getByRole('status', { name: 'Cost' })).toHaveTextContent(plainRefusal(postFullWords(FULL))));
   });
 });

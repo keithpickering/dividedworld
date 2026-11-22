@@ -25,12 +25,14 @@ export function targetOf(post: Act, under?: string): PostTarget {
   return postTarget(post.id, post.kind as PostTarget['kind'], post.currentPayload.body, undefined, under, undefined, forgedList(post.currentPayload));
 }
 
-/** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */
+/** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed.
+ * `room` is the saved states and the post's version, which say which drawing plays are cleared. Without it every play is uncleared and none is judged by version: a caller that only reads what a play stops (Post.tsx's `quoteStop`) may omit it; every caller that asks whether a card lands passes it. */
 export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity' | 'drawsEffect'>[], room?: { readonly states: Readonly<Record<Id, EffectState>>; readonly version: Id | null }): CardEffect[] {
   return plays.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).map((p): CardEffect => {
     if (p.faceDown) { const ends = p.revealed?.at ?? p.takenBack?.at ?? p.endsAt; return { card: null, act: p.id, faceDown: true, ...(ends ? { ends } : {}) }; }
     const ward = cards.find((c) => c.key === p.card);
     /* What card_target gives: a play of a card that draws counts toward the post's limit unless the card says its saved state clears it (true, or `{ version }` where that is the post's version now). */
+    /* `BeyondPost` has no 'post', but a play on the post itself may carry reach 'post' (effectsUp counts it), so it is compared as a string. */
     const drawing = ward?.drawsEffect !== undefined && (p.reach === undefined || (p.reach as string | undefined) === 'post');
     const saved = room?.states[p.id];
     const answer = drawing && saved !== undefined ? ward.drawsEffect?.cleared?.(saved.state) : undefined;
