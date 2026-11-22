@@ -26,3 +26,13 @@ function InPage() {
 
 export const Admin: Story = { render: () => <InPage />, parameters: { world: admin, path: '/admin/queue' } };
 export const AsAPlayer: Story = { render: () => <InPage />, parameters: { world: player, path: '/admin/queue' } };
+
+/** A departure's to-do (the departed personas design, section 4): the Boss left the instance's roster mid-season, the next in the rotation took over, and the glass says so plainly. */
+const departure: World = (fake, instance) => {
+  seedMoves(fake, instance, { signIn: 'admin' });
+  fake.seed.staff('old-boss', 'Old Boss', 'boss');
+  fake.seed.staff('comptroller', 'Comptroller', 'mod');
+  fake.seed.handover({ outgoing: 'old-boss', boss: 'comptroller', at: START - 3_600_000, how: 'rotation', bossWas: 'mod', outgoingOffice: 'benched', cause: 'departure' });
+};
+
+export const DepartureTodo: Story = { render: () => <InPage />, parameters: { world: departure, path: '/admin/queue' } };

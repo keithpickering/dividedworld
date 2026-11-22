@@ -38,6 +38,16 @@ test('a seed_instance refusal is a 422 with its message, and the settings are ne
   assert.deepEqual(calls, ['seed_instance']);
 });
 
+test('a departing Boss no one can replace is a 422 with the refusal\'s words, and the settings are never read (departed personas, 2026-11-21)', async () => {
+  // seed_instance raises this (errcode 55000, hint kayfabb.refusal, a 400 from PostgREST) where a Boss that left the roster has no one to hand the chair to: the seed's release goes red until the content names a Boss.
+  const reason = 'the open season\'s Boss a has left the roster, and no Boss in it can take the chair';
+  const { db, calls } = fake(() => { throw new DatabaseError(`seed_instance: ${reason}`, '55000', 400, reason, 'kayfabb.refusal'); });
+  const r = await runSeed(db, instance);
+  assert.equal(r.status, 422);
+  assert.deepEqual(r.body, { error: reason });
+  assert.deepEqual(calls, ['seed_instance']);
+});
+
 test('a transport failure is rethrown, never a 422: a fetch that never answered, and a 5xx from PostgREST', async () => {
   await assert.rejects(runSeed(fake(() => { throw new TransportError('seed_instance: no answer after 4 attempt(s)'); }).db, instance), TransportError);
   await assert.rejects(runSeed(fake(() => { throw new DatabaseError('seed_instance: HTTP 500', '', 500); }).db, instance), DatabaseError);

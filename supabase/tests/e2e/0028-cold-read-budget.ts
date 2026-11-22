@@ -165,6 +165,24 @@ export function kept(call: string, as: string): number {
   return bytes;
 }
 
+/**
+ * What a cold read keeps, by memory context: the same call as `kept`, then the connection's largest contexts, one line each (its name, the start of its ident, which
+ * for a cached plan is its query, and its kilobytes), then the tables with the largest column statistics. A function over its budget names these in the failure, so
+ * the message says whether a plan grew or the catalog cache did: planning reads each planned table's statistics into CacheMemoryContext, so the rows the files before
+ * this one committed move the figure with no change to any plan.
+ */
+export function contexts(call: string, as: string, most = 12): string {
+  requireRecorded();
+  return sql(`
+    begin;
+    do $cold$ begin perform tests.become('${as}'); perform ${call}; perform tests.unbecome(); end $cold$;
+    commit;
+    select name || coalesce(': ' || left(regexp_replace(ident, '\\s+', ' ', 'g'), 140), '') || ' (' || round(total_bytes / 1024.0) || ' kB)'
+    from pg_backend_memory_contexts order by total_bytes desc limit ${most};
+    select 'statistics of ' || starelid::regclass || ': ' || round(sum(pg_column_size(s.*)) / 1024.0) || ' kB, ' || c.reltuples::bigint || ' rows'
+    from pg_statistic s join pg_class c on c.oid = s.starelid where c.relnamespace = 'public'::regnamespace group by starelid, c.reltuples order by sum(pg_column_size(s.*)) desc limit ${most};`);
+}
+
 /** One screen function's call, the account that makes it, and its budget in megabytes to one decimal. */
 interface Budget { call: (f: Fixture) => string; as: (f: Fixture) => string; mb: number; }
 const player = (f: Fixture) => f.player;
@@ -178,10 +196,15 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  * Re-recorded on the workflow's Postgres 17 for the polls migration (0395 redefines acts_public with a third select, so planning keeps more): board_page 9.789, boot 8.770,
  * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged. thread_page again for 0396's
  * poll_latest_ballots reads (poll_counts, poll_voter_acts and my_latest_ballots in its poll block): 21.198 MB, so 21.5.
+ * board_page again for 0403_departed_personas.sql: 11.820 MB, so 12.2. The plans it keeps are the same size as before (its WITH plan 1039 kB, the pinned threads'
+ * play_reach plan 1024 kB). What moved is one block of CacheMemoryContext. AllocSet blocks double, so the catalog cache's next block is 2 MB, and on main it sat about
+ * 90 kB under that step. 0403 gives season_handovers, which board_page plans through season_boss_changes, a primary key on an identity column and a partial unique index
+ * (one roll-over a season) beside its key on (season, id). Their relcache entries, with the planner statistics for the rows the files before this one commit, take the
+ * cache past the step: 4283 kB in the workflow's run, where a fresh database's first call holds 2227. Issue #968 asks how the budget should treat that step.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 10.1),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 12.2),
   boot: budget(() => 'public.boot()', player, 9.1),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
   index_page: budget(() => 'public.index_page()', player, 7.2),
@@ -248,7 +271,9 @@ test('every screen function keeps within its budget on a cold read, and no budge
   const table = names.map((n) => `${n}: ${n in measured ? measured[n]!.toFixed(3) : 'not measured'} MB`).join('\n');
   const budgets = Object.fromEntries(Object.entries(BUDGETS).map(([n, b]) => [n, b.mb]));
   const faults = budgetFaults(names, budgets, measured);
-  assert.deepEqual(faults, [], `${faults.join('\n')}\nmeasured:\n${table}`);
+  const over = names.filter((n) => n in measured && measured[n]! > budgets[n]!);
+  const where = over.map((n) => `\n${n}, its largest contexts on a cold read:\n${contexts(BUDGETS[n]!.call(f), BUDGETS[n]!.as(f))}`).join('');
+  assert.deepEqual(faults, [], `${faults.join('\n')}\nmeasured:\n${table}${where}`);
   console.log(`measured (MB kept by a fresh connection after the first call):\n${table}`);
 });
 
