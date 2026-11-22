@@ -14,11 +14,14 @@
  *   g-hand      v09, 3 s: the hand fanned open, the pointer crossing it, a card lifted.
  *   g-play      v09, 5 s: a card chosen in the hand, armed, a post pressed, the form, Play, and the card landing on the post.
  *   g-fx-*      2 s each: a post effect landing on a post's body (Fan Site).
+ *   g-fx-graffiti   2.5 s: a reader drawing one quick tag on the Graffiti wall of post 11.
  *
  * Nothing waits on the wall clock once a film starts: every wait is a count of frames of the page's virtual clock, or a condition. Each take writes
  * .runs/hype/<take>.mp4 and <take>.json ({ landed: [{ what, frame }] }, frames at 60 a second), and throws if the page does not show what the film claims.
  */
 import { writeFileSync } from 'node:fs';
+import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { openFilm } from './camera.mjs';
 import { reach } from './pointer.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
@@ -203,7 +206,8 @@ async function vending() {
     await t.holds(`${HUD}.aura === ${auraBefore - 100}`, `the orbs ${auraBefore / 100} down to ${(auraBefore - 100) / 100}`, 2);
     t.mark('paid');
     console.log(`g-vending: aura ${auraBefore} -> ${(await cam.evaluate(HUD)).aura}, hand ${cardsBefore} -> ${await cam.evaluate(HAND)}`);
-    await t.end(3.5);
+    /* The machine and the orbs together (a share of the frame: x, y, w), for the edit to crop to: the Buy button at its top, the orbs at its foot, so the price leaves the orbs in frame. */
+    await t.end(3.5, { move: { from: { x: 0.19, y: 0.1, w: 0.78, roll: 0 }, to: { x: 0.19, y: 0.1, w: 0.78, roll: 0 }, ease: 'linear' } });
   } finally { await cam.close(); }
 }
 
@@ -456,12 +460,14 @@ const fxChair = () => effect('g-fx-chair', {
 const fxInk = () => effect('g-fx-ink', {
   post: 'kind3',
   casts: [{ at: 0.2, by: 'Hotel Bro', card: 'whoops', config: { color: '#ff2bd6', seed: 101 }, message: 'classy', name: 'Whoops!', mark: 'splat' }],
-  async hand(t, seq) { await t.go(centerOf(bodyBox(seq), 0.5, 0.5), 0.6, { seed: 93 }); },
+  /* The pointer comes to the splat, then flinches back a little from the ink. */
+  async hand(t, seq) { await t.go(centerOf(bodyBox(seq), 0.5, 0.5), 0.6, { seed: 93 }); await t.go(centerOf(bodyBox(seq), 0.4, 0.62), 0.3, { seed: 197, settle: false }); },
 });
 const fxTape = () => effect('g-fx-tape', {
   post: 'kind4', css: { width: 360, height: 203 }, top: 40,
   casts: [{ at: 0.2, by: 'Front Row', card: 'autocorrect', config: { phrase: 'hard to make', replacement: 'easy to fake' }, name: 'Autocorrect', mark: 'tape' }],
-  async hand(t, seq) { await t.go(centerOf(`document.querySelector('#post-${seq} .kb-act-main')`, 0.55, 0.12), 0.6, { seed: 94 }); },
+  /* The pointer goes to the tape, then drifts along it as a reader's does over a line that has changed. */
+  async hand(t, seq) { await t.go(centerOf(`document.querySelector('#post-${seq} .kb-act-main')`, 0.55, 0.12), 0.6, { seed: 94 }); await t.go(centerOf(`document.querySelector('#post-${seq} .kb-act-main')`, 0.7, 0.16), 0.35, { seed: 194, settle: false }); },
 });
 const fxSmoke = () => effect('g-fx-smoke', {
   post: 'chad',
@@ -474,11 +480,59 @@ const fxGlitter = () => effect('g-fx-glitter', {
   post: 'chad',
   casts: [],
   run: [{ at: 0.2, js: GLITTER_ON_CHAD, mark: 'glitter' }],
-  async hand(t, seq) { await t.go(centerOf(bodyBox(seq), 0.5, 0.5), 0.6, { seed: 96 }); },
+  /* The pointer comes to the post, then a small flinch away from the sparkle. */
+  async hand(t, seq) { await t.go(centerOf(bodyBox(seq), 0.5, 0.5), 0.6, { seed: 96 }); await t.go(centerOf(bodyBox(seq), 0.58, 0.4), 0.3, { seed: 196, settle: false }); },
   async check(cam, seq) { console.log('g-fx-glitter: sparkle elements', await cam.evaluate(`document.querySelectorAll('#post-${seq} [class*="glitter"], #post-${seq} [data-kb-glitter]').length`)); },
 });
 
-const TAKES = { 'g-classes': classes, 'g-aura': aura, 'g-vending': vending, 'g-pack': pack, 'g-hand': hand, 'g-play': play, 'g-fx-rainbow': fxRainbow, 'g-fx-chair': fxChair, 'g-fx-ink': fxInk, 'g-fx-tape': fxTape, 'g-fx-smoke': fxSmoke, 'g-fx-glitter': fxGlitter };
+/** A tag drawn live on the stage's Graffiti wall (post 11, already inked): the dock is opened first by the real pointer, unfilmed, so the film is the tag. */
+async function fxGraffiti() {
+  const css = { width: 960, height: 540 };
+  const cam = await openStage({ skin: 'fan-site', css, scale: 3, port, quiet: ['toasts', 'host', 'hud'] });
+  try {
+    const { word } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/graffiti-shapes.ts')).href);
+    await cam.evaluate(`(() => { const p = document.querySelector('#post-11'); p.scrollIntoView({ block: 'start' }); scrollBy(0, -70); })()`);
+    await settle(cam, 60);
+    const tile = await cam.evaluate(centerOf(`[...document.querySelectorAll('#post-11 button')].find((e) => e.textContent.trim() === 'Draw')`));
+    if (!tile) fail("g-fx-graffiti: the wall's Draw tile");
+    await cam.move(tile.x, tile.y);
+    await cam.press(); await cam.release();
+    await cam.until(`Boolean(document.querySelector('.kb-graffiti-dock')) && Boolean(document.querySelector('#post-11 [data-kb-draw-surface]'))`, { label: 'the drawing dock open' });
+    await settle(cam, 30);
+    await cam.drawPointer();
+    const SURFACE = `document.querySelector('#post-11 [data-kb-draw-surface]')`;
+    const strokesOf = `Number(${SURFACE}.getAttribute('data-kb-strokes'))`;
+    const before = await cam.evaluate(strokesOf);
+    const box = await cam.evaluate(centerOf(SURFACE));
+    const t = await begin(cam, 'g-fx-graffiti', { from: { x: css.width * 0.9, y: css.height * 0.85 } });
+    const left = box.x - box.w / 2, top = box.y - box.h / 2, aspect = box.w / box.h;
+    const shape = word('LOL', 0.3, 0.5, 0.4, 'red', aspect);
+    let first = true;
+    for (const s of shape.strokes) {
+      const pts = s.points.map(([x, y]) => ({ x: left + x * box.w, y: top + y * box.h }));
+      await t.go(pts[0], first ? 0.45 : 0.08, { seed: 111, settle: false });
+      if (first) { t.mark('tag'); first = false; }
+      await cam.press();
+      const lens = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), total = lens.reduce((a, b) => a + b, 0), n = Math.max(6, Math.round(Math.max(0.1, total / 1800) * FPS));
+      for (let k = 1; k <= n; k++) {
+        let want = (k / n) * total, i = 0;
+        while (i < lens.length - 1 && want > lens[i]) { want -= lens[i]; i++; }
+        const u = lens[i] > 0 ? Math.min(1, want / lens[i]) : 1;
+        await cam.move(pts[i].x + (pts[i + 1].x - pts[i].x) * u, pts[i].y + (pts[i + 1].y - pts[i].y) * u);
+        await t.step();
+      }
+      await cam.release();
+      await t.shoot(0.03);
+    }
+    const after = await cam.evaluate(strokesOf);
+    if (!(after > before)) fail(`g-fx-graffiti: no strokes were added to the wall (${before} then ${after})`);
+    t.mark('drawn');
+    console.log(`g-fx-graffiti: ${before} -> ${after} strokes`);
+    await t.end(2.5);
+  } finally { await cam.close(); }
+}
+
+const TAKES = { 'g-classes': classes, 'g-aura': aura, 'g-vending': vending, 'g-pack': pack, 'g-hand': hand, 'g-play': play, 'g-fx-rainbow': fxRainbow, 'g-fx-chair': fxChair, 'g-fx-ink': fxInk, 'g-fx-tape': fxTape, 'g-fx-smoke': fxSmoke, 'g-fx-glitter': fxGlitter, 'g-fx-graffiti': fxGraffiti };
 for (const [name, run] of Object.entries(TAKES)) {
   if (only && only !== name) continue;
   await run();
