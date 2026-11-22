@@ -1447,6 +1447,16 @@ describe('buying and playing a card', () => {
     expect((await h.api.machine()).map((s) => s.id)).toEqual([A]);
   });
 
+  it('maps the retirement marks of an admin slot: retired, the card it became, withdrawn; a pack\'s retired; absent means none', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/admin_machine') ? json([
+      { slot: A, position: 1, card: 'trap-card', pack: null, rarity: 'common', availability: 'onSale', price: 100, move: null, retired: true, became: 'collector', withdrawn: false },
+      { slot: B, position: 2, card: 'bluff', pack: null, rarity: 'common', availability: 'onSale', price: 100, move: null, retired: true, became: null, withdrawn: true },
+      { slot: C, position: 3, card: null, pack: 'old', rarity: null, availability: 'onSale', price: 100, move: null, retired: true },
+      { slot: T, position: 4, card: 'whoops', pack: null, rarity: 'common', availability: 'onSale', price: 100, move: null },
+    ]) : json({}, 404)));
+    expect((await h.api.adminMachine()).map((s) => [s.retired, s.became, s.withdrawn])).toEqual([[true, 'collector', false], [true, null, true], [true, null, false], [false, null, false]]);
+  });
+
   it('reads the machine as an admin (hidden slots too, the admin\'s price, the move in force) and saves and moves a slot through the admin functions', async () => {
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_machine')) return json([
@@ -1495,8 +1505,8 @@ describe('buying and playing a card', () => {
   });
 
   it('opens a pack through the open_pack function, and says the cards it gave and no balance; a refusal is the server\'s words', async () => {
-    const h = harness((r) => (r.url.pathname.endsWith('/rpc/open_pack') ? json({ pack: PACK, kind: 'starter', contents: ['whoops', 'dud'] }) : json({}, 404)));
-    expect(await h.api.openPack(PACK)).toEqual({ ok: true, value: { pack: PACK, kind: 'starter', contents: ['whoops', 'dud'] } });
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/open_pack') ? json({ pack: PACK, kind: 'starter', contents: ['whoops', 'dud'], refunds: [{ index: 1, refund: 100 }, { index: 'x' }] }) : json({}, 404)));
+    expect(await h.api.openPack(PACK)).toEqual({ ok: true, value: { pack: PACK, kind: 'starter', contents: ['whoops', 'dud'], refunds: [{ index: 1, refund: 100 }] } });
     expect(h.to('rpc/open_pack')[0]?.body).toEqual({ pack: PACK });
     const refused = harness((r) => (r.url.pathname.endsWith('/rpc/open_pack') ? json({ code: 'P0002', message: 'there is no such pack', hint: 'kayfabb.refusal' }, 400) : json({}, 404)));
     expect(await refused.api.openPack(PACK)).toMatchObject({ ok: false, error: 'there is no such pack' });

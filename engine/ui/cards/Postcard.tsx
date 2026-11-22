@@ -59,8 +59,9 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
   return (
     <As
       {...rest}
-      className={`kb-postcard${className ? ` ${className}` : ''}`}
+      className={`kb-postcard${face.unknown ? ' kb-postcard-back' : ''}${className ? ` ${className}` : ''}`}
       style={vars}
+      data-kb-pictured={face.unknown && canvas ? '' : undefined}
       data-size={size}
       data-lines={twoLines ? '2' : undefined}
       data-kb-card={face.key}
@@ -74,6 +75,8 @@ export function Postcard({ face, size, price = null, as: As = 'span', armed = fa
       {/* The canvas: the card's ground, a glow in its color and its art, clipped to the canvas's corners. Nothing in it is a word. */}
       <span className="kb-postcard-canvas" aria-hidden="true">
         {canvas ? <img className="kb-postcard-art" src={canvas} alt="" aria-hidden="true" draggable={false} decoding="async" /> : null}
+        {/* A card the instance no longer has is its card back: with no picture, the instance's mark is its emblem, as on every back. */}
+        {face.unknown && !canvas && face.art.mark ? <span className="kb-postcard-emblem"><img src={face.art.mark} alt="" aria-hidden="true" draggable={false} /></span> : null}
       </span>
       {/*
         * WCAG 2.5.3 (Label in Name): a button's visible words must appear, in order and together, in its

@@ -24,7 +24,7 @@ const quiet: ClassRules = {
 
 const instance: Instance = {
   key: 'test-world',
-  system: testSystem,
+  system: testSystem, withdrawn: [],
   name: 'Test World',
   classes: [fan, quiet],
   cards: [{ key: 'splat', name: 'Splat', alignment: 'salty', rarity: 'common', playPrice: () => 0, canApply: () => ({ ok: true, value: undefined }), validateConfig: (c) => ({ ok: true, value: c }) }],

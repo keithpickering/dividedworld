@@ -20,6 +20,7 @@
  */
 import { ENGINE_DEFAULT_PRONOUNS, words as pronounWords } from '../../rules/pronouns.ts';
 import { matchWords, playOf as playKindOf, reachesOf } from '../../rules/cards.ts';
+import { cardNameOf } from '../../rules/card-names.ts';
 import { rankIndex } from '../../rules/ranks.ts';
 import type { Instance, Quadrant } from '../../rules/types.ts';
 import type { Act, CardEvent, ConductLogRow, LogCosmetic, LogPlace, MyBan, SurfaceLogRow, Estimate, EstimateLine, Id, Log, LogLine, LogSettlement, MyCharacter, ScoredAs, Season, TurnAnnounced, WalletEvent } from '../data/api.ts';
@@ -34,7 +35,7 @@ import { quotedWords, shortQuote, springConditions, surfaceShare, surfaceWords, 
 /** A piece of a line's words: plain text, or a link to an Act or a thread. */
 export type Segment = string | { readonly text: string; readonly href: string };
 
-export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'returned' | 'onMine' | 'saved' | 'written'
+export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 'pack' | 'played' | 'returned' | 'retired' | 'onMine' | 'saved' | 'written'
   /* The card mechanic's (docs/plans/2026-11-01-card-mechanic-design.md, section 10). */
   | 'set' | 'sprung' | 'payout' | 'setEnded' | 'caught' | 'struck' | 'gimmickEnded'
   /* The bot-card-options design, section 3: an admin ended a card play. */
@@ -129,6 +130,10 @@ export const NO_SHARES = 'Scored over the whole window, not post by post.';
 export const signed = (hundredths: number) => (hundredths > 0 ? '+' : hundredths < 0 ? MINUS : '') + (Math.abs(hundredths) / 100).toFixed(2);
 /** Aura without a sign: "4.72". */
 export const plain = (hundredths: number) => (hundredths / 100).toFixed(2);
+/** An amount of orbs as a sentence says it: "1.00 orb", "2.00 orbs". */
+const orbs = (hundredths: number) => `${plain(hundredths)} ${hundredths === 100 ? 'orb' : 'orbs'}`;
+/** The sentence a withdrawal's wallet event gains when the wallet's cap held some of the refunds back. */
+const capSaid = (paid: WalletEvent | undefined) => (paid && paid.overflow > 0 ? ` The wallet's cap held back ${orbs(paid.overflow)} of the refunds paid with it.` : '');
 
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 /** "Oct 29": a day in UTC, as the log's times are. */
@@ -176,11 +181,11 @@ export function actLink(act: Act | undefined, data: Pick<LogData, 'acts' | 'name
   if (act.kind === 'card') {
     const place = placeOf(act, data);
     if (place !== null) {
-      const card = words.instance.cards.find((c) => c.key === act.payload.card)?.name ?? 'card';
+      const card = cardNameOf(words.instance, String(act.payload.card)) ?? 'card';
       return `${data.mine.some((c) => c.id === act.character) ? 'your' : 'a'} ${card} on ${place}`;
     }
     const post = act.targetActId ? data.acts.get(act.targetActId) : undefined;
-    const card = words.instance.cards.find((c) => c.key === act.payload.card)?.name ?? 'card';
+    const card = cardNameOf(words.instance, String(act.payload.card)) ?? 'card';
     const target = post && post.seq !== null ? postWords(post, data, own) : 'a post';
     const mine = data.mine.some((c) => c.id === act.character);
     const href = post && post.seq !== null ? threadHref(post.thread, pageOf(post.seq, words.postsPerPage), post.seq) : null;
@@ -222,7 +227,7 @@ export function setWaits(e: Pick<CardEvent, 'card' | 'springs' | 'catches' | 'ph
   const on = rules.trap?.trigger.on as string | undefined;
   if (on === 'visit') return 'for a Mod Bot\'s visit';
   if (on === 'cast') {
-    const named = e.catches ? words.instance.cards.find((c) => c.key === e.catches)?.name : undefined;
+    const named = e.catches ? cardNameOf(words.instance, e.catches) : undefined;
     if (named) return `for ${withArticle(named)}`;
     return !e.catches && rules.trap?.match ? `for ${matchWords(rules.trap.match, rules.rarity)}` : 'for the card it names';
   }
@@ -410,14 +415,14 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...pollRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4, ballot: 4, pollClose: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, retired: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4, ballot: 4, pollClose: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
 
 /** The sentence a settlement's row gains for a character a card scored as a named class (an Off Day): what named it, for whom and that nothing outlasted the window. */
 function scoredAsWords(r: ScoredAs, name: string, words: Words): string {
-  const card = words.instance.cards.find((c) => c.key === r.card)?.name ?? 'A card';
+  const card = cardNameOf(words.instance, r.card) ?? 'A card';
   return `${card} named ${withArticle(className(words.instance, r.classKey))} for ${name} in this window, so it was scored as one whatever its own class. That ended with this settlement, and its own class never changed.`;
 }
 
@@ -430,7 +435,7 @@ function scoredAsRows(data: LogData, words: Words): LogRow[] {
   const rows: LogRow[] = [];
   for (const r of data.log.scoredAs ?? []) {
     if (data.log.settlements.find((s) => s.id === r.settlement)?.lines.some((l) => l.character === r.character)) continue;
-    const card = words.instance.cards.find((c) => c.key === r.card)?.name ?? 'A card';
+    const card = cardNameOf(words.instance, r.card) ?? 'A card';
     rows.push({
       key: `scoredAs:${r.settlement}:${r.character}:${r.play}`, kind: 'gimmickEnded', at: r.endsAt, what: `${card} on ${nameOf(r.character)} ended`,
       details: [`${nameOf(r.character)} was to be scored as ${withArticle(className(words.instance, r.classKey))} for ${utcDay(r.startsAt)}, and nothing was scored for it in that window. Its own class never changed.`],
@@ -522,7 +527,8 @@ function cosmeticRows(data: LogData, words: Words): LogRow[] {
         found = g ? `you found ${aOrAn(g.name)} (${g.rarity} gear)` : 'you found a piece of gear';
       } else if (e.outcome === 'card') {
         const c = instance.cards.find((x) => x.key === e.item);
-        found = c ? `you found ${aOrAn(c.name)} (${c.rarity} card)` : 'you found a card';
+        const gone = c ? undefined : cardNameOf(instance, String(e.item));
+        found = c ? `you found ${aOrAn(c.name)} (${c.rarity} card)` : gone ? `you found ${aOrAn(gone)}` : 'you found a card';
       } else found = (e.text ?? 'something odd').replace(/[.!?]$/u, '');
       rows.push(row(`found:${e.id}`, 'found', `Something happened to ${who}`, `Something happened to ${who}: ${found}.`, mine));
     } else if (e.kind === 'granted') {
@@ -712,7 +718,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
       : `The ban ${over ? 'ended by itself' : 'ends by itself'} ${utcWhen(b.until)} UTC.`;
     /* An Unban ended it (`my_bans.lifted_at`, 0361): said by the card that did, in place of "ended by itself". A live lift is always the ban's first end, so an appeal ruled after it changes nothing here. */
     const lifted = b.liftedAt != null;
-    const how = lifted ? `The ban ended ${utcWhen(b.liftedAt!)} UTC, when ${words.instance.cards.find((c) => c.key === b.liftedCard)?.name ?? 'a card'} was played on ${nameOf(b.character)}.` : ends;
+    const how = lifted ? `The ban ended ${utcWhen(b.liftedAt!)} UTC, when ${(b.liftedCard ? cardNameOf(words.instance, b.liftedCard) : undefined) ?? 'a card'} was played on ${nameOf(b.character)}.` : ends;
     rows.push({
       key: `ban:${b.ban}`, kind: 'ban', at: b.at, what: `${nameOf(b.character)} was banned`,
       details: [`${nameOf(b.character)}'s warn bar filled${b.rule ? ` with ${b.rule}` : ''}, so ${pronounsOf(b.character).they} ${pronounsOf(b.character).was} banned for ${plural(b.days, 'day', 'days')} and the bar was emptied. ${pronounsOf(b.character).They} can read but not post, react or play cards. ${how} The ban is on ${nameOf(b.character)} only; each character has its own warn bar.`],
@@ -837,7 +843,7 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     return typeof ward === 'string' ? [` Your ${cardName(card)} got it past ${withArticle(cardName(ward))} that would have turned it away.`] : [];
   };
   /* A card the instance no longer has, or a play the log could not read, is said plainly: never a key, never "undefined". */
-  const cardName = (key: unknown) => instance.cards.find((c) => c.key === key)?.name ?? 'a card';
+  const cardName = (key: unknown) => (typeof key === 'string' ? cardNameOf(instance, key) : undefined) ?? 'a card';
   /* A cutting card's player says what it ended; the Gimmick's player says what ended it, and when. Both from the Act's public `cut` alone. */
   const cutSaid = (play: Act | undefined): string[] => { const cut = cutOf(play); return cut ? [` It ended the ${cardName(cut.card)} there.`] : []; };
   const cutOnMine = (play: Act | undefined, when: string): string[] => { const cut = cutOf(play); return cut ? [` It ended your ${cardName(cut.card)} early, at ${utcWhen(when)} UTC.`] : []; };
@@ -869,6 +875,39 @@ function cardRows(data: LogData, words: Words): LogRow[] {
   data.log.cards.forEach((e, i) => {
     /* A card an Event found is the Event's line (`cosmeticRows`), once. */
     if (e.kind === 'found') return;
+    /* A seed's rows (the card retirement design, section 4): a renamed copy's `renamedIn` is the `renamedOut`'s line's, and a withdrawn copy in a pack is its opening's. */
+    if (e.kind === 'renamedIn') return;
+    const sameSeed = (x: CardEvent) => x.kind === e.kind && x.card === e.card && x.pack === undefined && micros(x.at) === at(e.at);
+    if (e.kind === 'withdrawn' && e.pack === undefined) {
+      const group = data.log.cards.filter(sameSeed);
+      if (group[0] !== e) return;
+      const total = group.reduce((sum, x) => sum + x.price, 0);
+      /* The seed's one wallet event for this account (every card's refunds together), so a cap that held some back is said. */
+      const paid = data.log.wallet.find((w) => w.kind === 'withdrawal' && at(w.at) === at(e.at));
+      const held = capSaid(paid);
+      rows.push({
+        key: `withdrawn:${e.card}:${e.at}`, kind: 'retired', at: e.at, what: `${cardName(e.card)} was withdrawn from the game`,
+        details: [`${group.length === 1 ? 'Your copy was' : `Your ${group.length} copies were`} refunded ${orbs(total)}.${held}`], aura: total, wallet: paid?.balanceAfter ?? null, characters: [],
+      });
+      return;
+    }
+    if (e.kind === 'renamedOut') {
+      const group = data.log.cards.filter(sameSeed);
+      if (group[0] !== e) return;
+      const became = words.instance.cards.find((c) => c.formerly?.some((f) => f.key === e.card))
+        ?? (() => {
+          /* Only when one card took copies at this seed; two candidates would be a guess. */
+          const into = words.instance.cards.filter((c) => data.log.cards.some((x) => x.kind === 'renamedIn' && x.card === c.key && micros(x.at) === at(e.at)));
+          return into.length === 1 ? into[0] : undefined;
+        })();
+      const now = became?.name ?? 'another card';
+      const n = group.length;
+      rows.push({
+        key: `renamed:${e.card}:${e.at}`, kind: 'retired', at: e.at, what: `${cardName(e.card)} is now ${now}`,
+        details: [n === 1 ? `Your copy is ${aOrAn(now)} now.` : `Your ${n} copies are ${pluralName(now)} now.`], aura: 0, wallet: null, characters: [],
+      });
+      return;
+    }
     if (e.kind === 'bought') {
       const spent = take((w) => w.kind === 'purchase' && at(w.at) === at(e.at) && w.change === -e.price);
       rows.push({
@@ -892,22 +931,26 @@ function cardRows(data: LogData, words: Words): LogRow[] {
       });
       return;
     }
-    if (e.kind === 'pulled') {
+    if (e.kind === 'pulled' || e.kind === 'withdrawn') {
       if (!e.pack || packsDone.has(e.pack)) return;
       packsDone.add(e.pack);
       const bought = data.log.packs.find((p) => p.pack === e.pack);
       /* Pull order is the pack row's when it is on this page; the pulled rows only say which pack, since they are read at one instant in no order of their own. */
-      const names = (bought?.contents.length ? bought.contents : data.log.cards.filter((c) => c.kind === 'pulled' && c.pack === e.pack).map((c) => c.card)).map(cardName);
+      const names = (bought?.contents.length ? bought.contents : data.log.cards.filter((c) => (c.kind === 'pulled' || c.kind === 'withdrawn') && c.pack === e.pack).map((c) => c.card)).map(cardName);
       const list = andList(names);
+      /* A card in it that was withdrawn is refunded at opening (open_pack): a line of the opening's own, plain and true. */
+      const gone = data.log.cards.filter((c) => c.kind === 'withdrawn' && c.pack === e.pack);
+      const refunded = gone.reduce((sum, c) => sum + c.price, 0);
+      const goneSaid = gone.length === 0 ? '' : ` ${gone.length === 1 ? '1 card in it was' : `${gone.length} cards in it were`} withdrawn and refunded ${orbs(refunded)}.${capSaid(data.log.wallet.find((w) => w.kind === 'withdrawal' && at(w.at) === at(e.at)))}`;
       if ((bought?.source ?? e.packSource) === 'welcome') {
-        rows.push({ key: `pack:opened:${e.pack}`, kind: 'pack', at: e.at, what: `You opened your ${ui.packs[bought?.kind ?? e.packKind ?? '']?.name ?? 'pack'}`, details: [`${list}.`], aura: 0, wallet: null, characters: [] });
+        rows.push({ key: `pack:opened:${e.pack}`, kind: 'pack', at: e.at, what: `You opened your ${ui.packs[bought?.kind ?? e.packKind ?? '']?.name ?? 'pack'}`, details: [`${list}.${goneSaid}`], aura: refunded, wallet: null, characters: [] });
         return;
       }
       const spent = bought ? take((w) => w.kind === 'purchase' && at(w.at) === at(bought.at) && w.change === -bought.price) : undefined;
       rows.push({
         key: `pack:${e.pack}`, kind: 'pack', at: e.at, what: `You bought ${withArticle(ui.packs[bought?.kind ?? '']?.name ?? 'pack')}`,
-        details: [`${list}. From the ${ui.copy.shopName}${bought ? `, for ${plain(bought.price)}` : ''}.${bossSaid(bought?.repriced)}`],
-        aura: bought ? -bought.price : 0, wallet: spent?.balanceAfter ?? null, characters: [],
+        details: [`${list}. From the ${ui.copy.shopName}${bought ? `, for ${plain(bought.price)}` : ''}.${bossSaid(bought?.repriced)}${goneSaid}`],
+        aura: (bought ? -bought.price : 0) + refunded, wallet: spent?.balanceAfter ?? null, characters: [],
       });
       return;
     }
@@ -1178,7 +1221,7 @@ function cutOf(play: Act | undefined): { readonly play: Id; readonly card: strin
  * a post that could not be read is still named.
  */
 function endedRows(data: LogData, words: Words): LogRow[] {
-  const cardName = (key: unknown) => words.instance.cards.find((c) => c.key === key)?.name ?? 'a card';
+  const cardName = (key: unknown) => (typeof key === 'string' ? cardNameOf(words.instance, key) : undefined) ?? 'a card';
   const cuts = cuttingIndex(data);
   /* An admin's end of a lockout has its words in the lockout's own lines ("An admin ended it at {time}.", from the card_end this entry names), so it adds none. */
   return data.log.ended.filter((e) => data.acts.get(e.play)?.kind !== 'spring').map((e): LogRow => {

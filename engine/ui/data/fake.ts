@@ -176,6 +176,12 @@ export interface Seed {
   /** The contact an admin set (`set_admin_contact`, 0081), past its admin check and held to its rules: a seed is the database's own hand. Refused in the server's words. */
   contact(links: readonly ContactLink[]): void;
   cards(account: Id, held: Readonly<Record<string, number>>): void;
+  /**
+   * The seed that applies the instance's card retirement (`apply_instance`, the card retirement design section 3): every copy of a card the instance no longer lists, held or face down and live, is moved once.
+   * A card a listed card's `formerly` names is a `renamedOut` row and a `renamedIn` row under the new key, per copy; a card in `Instance.withdrawn` is a `withdrawn` row per copy, its refund (hundredths) the row's price, and
+   * one `withdrawal` wallet event per account. A held copy's out row has no Act; a live back's is the back's set play, and that back shows no `returned` row when it ends.
+   */
+  retireCards(options?: { at?: number }): void;
   /** Copies of gear the account holds (`gear_ledger`), added to any it holds. */
   gear(account: Id, held: Readonly<Record<string, number>>): void;
   /** A standing award of a trophy kind (the instance's or an admin's) for a character, dated `at` (else now), by the season unless `by` says; returns its id. A belt's holder is the latest. */
@@ -2089,6 +2095,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   let rolls = 0x9e3779b9;
   const random = (): number => { rolls = (rolls + 0x6d2b79f5) | 0; let t = Math.imul(rolls ^ (rolls >>> 15), 1 | rolls); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
   const rarityOf = (item: Slot['item']): Slot['rarity'] => ('card' in item ? instance.cards.find((c) => c.key === item.card)?.rarity ?? null : null);
+  /** What admin_machine says of a slot's item: a card the instance no longer lists is out of print, and says which card it became or that it was withdrawn; a pack kind it no longer lists is out of print. */
+  const slotRetirement = (item: Slot['item']): Pick<AdminSlot, 'retired' | 'became' | 'withdrawn'> => {
+    if ('card' in item) {
+      const listed = instance.cards.find((c) => c.key === item.card);
+      const went = wentTo(item.card);
+      return { retired: listed?.retired === true || went !== null, became: went && 'became' in went ? went.became : null, withdrawn: went !== null && 'refund' in went };
+    }
+    return { retired: !instance.packs.some((p) => p.key === item.pack), became: null, withdrawn: false };
+  };
   const machine = (): Slot[] => slotRecs.filter((r) => r.availability !== 'hidden').sort((x, y) => x.position - y.position).map((r): Slot => ({
     id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: r.availability as Slot['availability'], price: r.price, move: r.move,
   }));
@@ -2269,10 +2284,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!held) return refuse('this pack is already open');
     const at = stamp ?? now();
     sealed.delete(pack);
-    for (const card of held.contents) account.cards[card] = (account.cards[card] ?? 0) + 1;
-    for (const card of held.contents) recordCard(account.id, at, { card, kind: 'pulled', act: null, pack, packKind: entry.event.kind, packSource: entry.event.source, price: 0 });
-    entry.event = { ...entry.event, contents: held.contents, openedAt: iso(at) };
-    return ok({ pack, kind: entry.event.kind, contents: held.contents });
+    /* As open_pack: a renamed card is pulled under its new key; a withdrawn one is a `withdrawn` row with its refund and no copy, and the answer says which index it was. */
+    const contents: string[] = [];
+    const refunds: { index: number; refund: number }[] = [];
+    let refunded = 0;
+    held.contents.forEach((card, index) => {
+      const went = wentTo(card);
+      if (went && 'refund' in went) {
+        contents.push(card);
+        refunds.push({ index, refund: went.refund });
+        refunded += went.refund;
+        recordCard(account.id, at, { card, kind: 'withdrawn', act: null, pack, packKind: entry.event.kind, packSource: entry.event.source, price: went.refund });
+        return;
+      }
+      const key = went ? went.became : card;
+      contents.push(key);
+      account.cards[key] = (account.cards[key] ?? 0) + 1;
+      recordCard(account.id, at, { card: key, kind: 'pulled', act: null, pack, packKind: entry.event.kind, packSource: entry.event.source, price: 0 });
+    });
+    withdrawal(account, refunded, at);
+    entry.event = { ...entry.event, contents, openedAt: iso(at) };
+    return ok({ pack, kind: entry.event.kind, contents, refunds });
   }
 
   /** `welcome_pack_kind` and the grant in `create_character` (0377): one sealed pack per account, of the fixed pack `startingPack` names; none for null. The SQL seed's backfill is not mirrored by `seed.character`, which bypasses `createCharacter`: a screen that wants a sealed pack makes its character with `createCharacter`. */
@@ -2532,6 +2564,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const open = [...new Set(drivePlays(post, rules.key, at).map((p) => p.drive))].find((d) => (driveCloses(rules, post, d, at) ?? 0) > at);
     return open ?? own;
   }
+  /** A withdrawn card's refund (`withdrawal`): the wallet and its event, capped as wallet_move caps; the overflow is the event's own. */
+  function withdrawal(account: AccountRec, amount: number, at: number): void {
+    if (amount <= 0) return;
+    const raw = account.wallet + amount;
+    const after = Math.min(settings.walletCap, raw);
+    recordWallet(account.id, at, { settlement: null, kind: 'withdrawal', change: after - account.wallet, overflow: Math.max(0, raw - settings.walletCap), floored: 0, balanceAfter: after, ref: null });
+    account.wallet = after;
+  }
+  /** Where a key the instance no longer lists went: the card whose `formerly` names it, or its `withdrawn` entry's refund; null for a key nothing holds. */
+  const wentTo = (key: string): { readonly became: string } | { readonly refund: number } | null => {
+    if (instance.cards.some((c) => c.key === key)) return null;
+    const now_ = instance.cards.find((c) => c.formerly?.some((f) => f.key === key));
+    if (now_) return { became: now_.key };
+    const gone = instance.withdrawn.find((w) => w.key === key);
+    return gone ? { refund: gone.refund } : null;
+  };
   /** One move of an account's wallet, as wallet_move clamps and records it: the cap's overflow is the event's own, and nobody else's response holds it. */
   function moveWallet(account: AccountRec, delta: number, kind: 'gift_out' | 'gift_in', ref: Id): void {
     const raw = account.wallet + delta;
@@ -2591,17 +2639,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * (supabase/tests/0135-face-down-moves.sql); a test that needs one writes the spring with `seed.spring`.
    */
   /** The back of each card set face down: `catches` is the card a catching set card names and `phrase` the words a Move waits for, both from the card's own rules (decideSet), as set_card stores them. */
-  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; takenBack?: Id; catches?: string; quadrant?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean; refunded?: true }>();
+  const faceDown = new Map<Id, { account: Id; card: string; post: Id; endsAt: number; sprung: Id | null; takenBack?: Id; catches?: string; quadrant?: string; phrase?: string; passage?: string; who?: readonly Id[]; whoExcept?: boolean; refunded?: true; moved?: true }>();
   function liveBack(post: Id): { set: Id; card: string } | null {
     for (const [set, f] of faceDown) if (f.post === post && f.sprung === null && f.takenBack === undefined && f.endsAt > now()) return { set, card: f.card };
     return null;
   }
   /** The account's backs whose time passed unsprung and not taken back: their cards are in the hand again (card_held, 0148), read and never written. */
-  const endedBacks = (account: Id) => [...faceDown.values()].filter((f) => f.account === account && f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.refunded !== true);
+  const endedBacks = (account: Id) => [...faceDown.values()].filter((f) => f.account === account && f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.refunded !== true && f.moved !== true);
   /** What the account holds of a card: bought, pulled, caught and returned, less played, and the backs whose time passed. */
   const heldOf = (account: AccountRec, card: string): number => (account.cards[card] ?? 0) + endedBacks(account.id).filter((f) => f.card === card).length;
   /** A back whose time passed unsprung and not taken back shows as a `returned` line at its end, with no Act and no price (my_card_ledger, 0148). */
-  const endedLedger = () => [...faceDown.values()].filter((f) => f.sprung === null && f.takenBack === undefined && f.endsAt <= now())
+  const endedLedger = () => [...faceDown.values()].filter((f) => f.sprung === null && f.takenBack === undefined && f.endsAt <= now() && f.moved !== true)
     .map((f) => ({ account: f.account, order: 0, ms: f.endsAt, event: { card: f.card, kind: 'returned' as const, act: null, price: 0, at: iso(f.endsAt) } satisfies CardEvent }));
   /** Before a card is spent: each back whose time passed becomes a card in the hand, once. */
   const settleBacks = (account: AccountRec): void => { for (const f of endedBacks(account.id)) { account.cards[f.card] = (account.cards[f.card] ?? 0) + 1; f.refunded = true; } };
@@ -4310,6 +4358,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return [...slotRecs].sort((x, y) => x.position - y.position).map((r): AdminSlot => ({
         id: r.id, position: r.position, item: r.item, rarity: rarityOf(r.item), availability: adminAvailability(r),
         price: adminPrice(r), move: r.move ? { kind: r.move.kind, act: r.move.act, ends: r.move.ends, percent: r.move.percent, hours: r.move.hours } : null,
+        ...slotRetirement(r.item),
       }));
     },
     setSlot(slot, availability, price) {
@@ -5528,6 +5577,39 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!wrote.ok) throw new Error(`a seeded contact is refused: ${wrote.error}`);
     },
     cards(account, held) { seeded(account).cards = { ...held }; },
+    retireCards(o) {
+      const at = o?.at ?? stamp ?? now();
+      for (const account of accounts.values()) {
+        /* A back whose time passed unsprung is held (card_held), so it is a held copy here: settled into the hand before the count. */
+        settleBacks(account);
+        const took = (key: string, act: Id | null) => {
+          const went = wentTo(key);
+          if (!went) return null;
+          return { went, act };
+        };
+        let refunded = 0;
+        const move = (key: string, act: Id | null): void => {
+          const t = took(key, act);
+          if (!t) return;
+          if ('refund' in t.went) { recordCard(account.id, at, { card: key, kind: 'withdrawn', act, price: t.went.refund }); refunded += t.went.refund; return; }
+          recordCard(account.id, at, { card: key, kind: 'renamedOut', act, price: 0 });
+          recordCard(account.id, at, { card: t.went.became, kind: 'renamedIn', act: null, price: 0 });
+          account.cards[t.went.became] = (account.cards[t.went.became] ?? 0) + 1;
+        };
+        for (const key of Object.keys(account.cards)) {
+          if (!wentTo(key)) continue;
+          for (let n = account.cards[key]!; n > 0; n--) move(key, null);
+          delete account.cards[key];
+        }
+        for (const [set, f] of faceDown) {
+          if (f.account !== account.id || f.sprung !== null || f.takenBack !== undefined || f.endsAt <= at || f.moved === true || !wentTo(f.card)) continue;
+          const was = f.card;
+          move(was, set);
+          f.moved = true;
+        }
+        withdrawal(account, refunded, at);
+      }
+    },
     wallet(account, balance) { setWallet(account, balance); },
     invite(account, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);

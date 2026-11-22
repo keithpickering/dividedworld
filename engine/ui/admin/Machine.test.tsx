@@ -48,6 +48,31 @@ describe('the machine\'s admin page', () => {
     expect(screen.getByRole('textbox', { name: 'Booster: price' })).toHaveValue('3.00');
   });
 
+  test('marks a retired slot plainly (out of print, renamed to the card it became, withdrawn; a pack out of print) and shows its availability as not in use', async () => {
+    const fake = buildWorld(undefined, instance);
+    fake.signInAs(fake.seed.account('machine-admin', { admin: true }));
+    const real = fake.adminMachine.bind(fake);
+    vi.spyOn(fake, 'adminMachine').mockImplementation(async () => (await real()).map((s, i) => (
+      i === 0 ? { ...s, retired: true }
+        : i === 1 ? { ...s, retired: true }
+          : i === 2 ? { ...s, retired: true, became: 'main' }
+            : i === 3 ? { ...s, retired: true, withdrawn: true } : s)));
+    renderIn(fake, <MachineScreen />, { path: '/admin/machine', instance, packs });
+    const r = await rows();
+    expect(within(r[0]!).getByText('Out of print')).toBeInTheDocument();
+    expect(within(r[1]!).getByText('Out of print')).toBeInTheDocument();
+    expect(within(r[2]!).getByText('Renamed to Main Event')).toBeInTheDocument();
+    expect(within(r[3]!).getByText('Withdrawn')).toBeInTheDocument();
+    expect(within(r[4]!).queryByText(/Out of print|Renamed|Withdrawn/u)).toBeNull();
+    const control = (n: string) => screen.getByRole('combobox', { name: `${n}: availability` });
+    expect(control('Booster')).toBeDisabled();
+    expect(control('Booster')).toHaveAccessibleDescription('Not in use: this pack is out of print.');
+    expect(control('Whoops!')).toHaveAccessibleDescription('Not in use: this card is out of print.');
+    expect(control('Dud')).toHaveAccessibleDescription('Not in use: this card was renamed to Main Event.');
+    expect(control('Card Collector')).toHaveAccessibleDescription('Not in use: this card was withdrawn from the game.');
+    expect(control('Main Event')).toBeEnabled();
+  });
+
   test('shares the admin pages\' strip with the queue: Moves, and The machine as the current page', async () => {
     open();
     const strip = await screen.findByRole('navigation', { name: 'Admin pages' });

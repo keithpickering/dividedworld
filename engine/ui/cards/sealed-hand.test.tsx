@@ -131,6 +131,23 @@ describe('a sealed pack in the hand', () => {
     expect(screen.getByRole('heading', { name: /^Hand/u })).toHaveTextContent('· 6');
   });
 
+  test('a card of the pack that was withdrawn is shown as the instance\'s back with the refund said plainly, claiming no rarity or alignment', async () => {
+    const fake = await world();
+    const real = fake.openPack.bind(fake);
+    fake.openPack = async (id) => { const a = await real(id); return a.ok ? { ok: true as const, value: { ...a.value, refunds: [{ index: 2, refund: 100 }, { index: 4, refund: 250 }] } } : a; };
+    renderIn(fake, <Live />, { instance, packs: packs as never, cardBack: { mark: '/coin.svg' } });
+    fireEvent.click(await packButton());
+    const dialog = await screen.findByRole('dialog', { name: 'Opening a Starter Pack' });
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Turn all' }));
+    const row = within(within(dialog).getByRole('list', { name: 'The pack, in the order it was pulled' })).getAllByRole('listitem');
+    expect(row[2]).toHaveAccessibleName(/^Card 3: Withdrawn: refunded 1\.00 orb\.(, the card shown)?$/u);
+    expect(row[4]).toHaveAccessibleName(/^Card 5: Withdrawn: refunded 2\.50 orbs\.(, the card shown)?$/u);
+    expect(row[2]!.querySelector('.kb-postcard-gem, .kb-postcard-tag, .kb-postcard-play')).toBeNull();
+    expect(row[2]!.querySelector('.kb-postcard')).not.toHaveAttribute('data-kb-alignment');
+    expect(row[2]!.querySelector('.kb-postcard-back')).not.toBeNull();
+    expect(row[1]).toHaveAccessibleName(/^Card 2: Card [a-f], Sweet Cast, common/u);
+  });
+
   test('a refused open says why and reads the rows again, so a pack opened elsewhere goes with its message', async () => {
     const fake = await world();
     renderIn(fake, <Given />, { instance, packs: packs as never });

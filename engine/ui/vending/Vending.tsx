@@ -46,7 +46,7 @@ import { animate, motion } from 'motion/react';
 import { isFixed, packHit, type PackRules } from '../../rules/packs.ts';
 import { motionReduced } from '../appearance.ts';
 import { Postcard, PostcardBack, cardLabel } from '../cards/Postcard.tsx';
-import { facesOf, orbs, plainRefusal, withCardEconomy, type CardFace } from '../cards/faces.ts';
+import { facesOf, orbs, plainRefusal, unknownFace, withCardEconomy, type CardFace } from '../cards/faces.ts';
 import { useMachine } from '../cards/machine.ts';
 import type { PackArtLook } from '../cards/types.ts';
 import { signInHref } from '../account/next.ts';
@@ -124,12 +124,6 @@ interface Outcome {
   readonly tone: 'refusal' | 'done';
   readonly text: string;
 }
-
-/** A card the pack gave that this instance does not know (the log says "a card" too): shown plainly, on the plain face (no gem, tag or play word: it claims no rarity or alignment, and is said as its name alone), and counted. */
-const unknownFace = (key: string, like: CardFace | undefined): CardFace => ({
-  key, name: 'A card this machine no longer has', alignment: 'sweet', tag: '', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
-  art: like?.art ?? { color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' }, rarity: 'common', play: like?.play ?? 'set', kind: '', unknown: true,
-});
 
 /** A card bought on its own, on its way to the hand: its place in the order bought and its card. */
 interface Fly {
@@ -649,7 +643,7 @@ export function Vending() {
         <PackOpening
           handLink={() => handLinkEl.current}
           hit={opening.hit} name={opening.name} {...(opening.art ? { art: opening.art } : {})} note={opening.note}
-          cards={opening.cards.map((k) => cardFaces.find((f) => f.key === k) ?? unknownFace(k, cardFaces[0]))}
+          cards={opening.cards.map((k) => cardFaces.find((f) => f.key === k) ?? unknownFace(k, ui.cardBack))}
           onClose={() => change(account, () => ({ opening: null }))}
           returnFocusTo={() => slotButtons.current.get(opening.slot) ?? null}
         />

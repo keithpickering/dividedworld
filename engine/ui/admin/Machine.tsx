@@ -23,6 +23,7 @@
 import { useCallback, useEffect, useId, useRef, useState, type FormEvent } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { AdminSlot } from '../data/api.ts';
+import { cardNameOf } from '../../rules/card-names.ts';
 import { isFixed } from '../../rules/packs.ts';
 import { orbs } from '../cards/faces.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -116,12 +117,21 @@ export function MachineScreen() {
   const nameOf = (s: AdminSlot): { readonly name: string; readonly kind: string } => {
     if ('card' in s.item) {
       const key = s.item.card;
-      return { name: instance.cards.find((c) => c.key === key)?.name ?? key, kind: s.rarity ?? 'card' };
+      return { name: cardNameOf(instance, key) ?? key, kind: s.rarity ?? 'card' };
     }
     const key = s.item.pack;
     const found = instance.packs.find((p) => p.key === key);
     const cards = found === undefined ? undefined : isFixed(found) ? found.contents.length : found.pulls.length;
     return { name: ui.packs[key]?.name ?? key, kind: cards === undefined ? 'pack' : `pack · ${cards} cards` };
+  };
+
+  /* What a retired slot is, in plain words: the mark beside its name, and why its availability is not in use. A slot still in print has neither. */
+  const retiredOf = (s: AdminSlot): { readonly mark: string; readonly why: string } | null => {
+    if (!s.retired) return null;
+    if (!('card' in s.item)) return { mark: 'Out of print', why: 'this pack is out of print' };
+    if (s.became !== null) { const to = cardNameOf(instance, s.became) ?? s.became; return { mark: `Renamed to ${to}`, why: `this card was renamed to ${to}` }; }
+    if (s.withdrawn) return { mark: 'Withdrawn', why: 'this card was withdrawn from the game' };
+    return { mark: 'Out of print', why: 'this card is out of print' };
   };
 
   /* The rows as the admin has them now: the saved slots in the order moved on the page. */
@@ -213,6 +223,7 @@ export function MachineScreen() {
                   const place = places.get(s.id);
                   const badAvailability = problem?.slot === s.id && problem.field === 'availability';
                   const badPrice = problem?.slot === s.id && problem.field === 'price';
+                  const gone = retiredOf(s);
                   return (
                     <tr key={s.id} data-kb-slot={s.id}>
                       <td className="kb-machine-code">{place === undefined ? '–' : codeOf(place)}</td>
@@ -220,12 +231,13 @@ export function MachineScreen() {
                         <GlassButton size="s" aria-label={`${name}: move up`} disabled={i === 0 || busy} data-kb-slot={s.id} data-kb-move="up" onClick={() => move(s, 'up')}>↑</GlassButton>
                         <GlassButton size="s" aria-label={`${name}: move down`} disabled={i === last || busy} data-kb-slot={s.id} data-kb-move="down" onClick={() => move(s, 'down')}>↓</GlassButton>
                       </td>
-                      <th scope="row" className="kb-machine-item">{name}<span className="kb-machine-kind">{kind}</span></th>
+                      <th scope="row" className="kb-machine-item">{name}<span className="kb-machine-kind">{kind}</span>{gone && <span className="kb-machine-retired" data-kb-retired="">{gone.mark}</span>}</th>
                       <td>
-                        <select className="kb-machine-field" aria-label={`${name}: availability`} value={now.availability} aria-invalid={badAvailability || undefined}
-                          aria-describedby={badAvailability ? `${id}-problem` : undefined} onChange={(e) => edit(s, { availability: e.target.value as Availability })}>
+                        <select className="kb-machine-field" aria-label={`${name}: availability`} value={now.availability} aria-invalid={badAvailability || undefined} disabled={gone !== null || undefined}
+                          aria-describedby={[badAvailability ? `${id}-problem` : '', gone ? `${id}-gone-${s.id}` : ''].filter(Boolean).join(' ') || undefined} onChange={(e) => edit(s, { availability: e.target.value as Availability })}>
                           {AVAILABILITY.map((a) => <option key={a.value} value={a.value}>{a.label}</option>)}
                         </select>
+                        {gone && <span id={`${id}-gone-${s.id}`} hidden>{`Not in use: ${gone.why}.`}</span>}
                       </td>
                       <td>
                         <input className="kb-machine-field kb-machine-price" inputMode="decimal" autoComplete="off" aria-label={`${name}: price`} value={now.price}

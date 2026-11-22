@@ -75,3 +75,13 @@ test('packHit says a pull pack has a hit card and a fixed pack has none', () => 
   assert.equal(packHit(pack), true);
   assert.equal(packHit(fixed), false);
 });
+
+test('a card that is out of print is never eligible: not in the odds, never rolled, and a rarity of only such cards is not rolled', () => {
+  const kept = [{ ...card('a', 'common'), retired: true }, card('b', 'common'), { ...card('c', 'uncommon'), retired: true }, { ...card('d', 'uncommon'), retired: true }, card('f', 'rare')] as unknown as CardRules[];
+  const odds = packOdds(pack, kept, on);
+  assert.deepEqual(odds[0]!.map((r) => r.rarity), ['common']);
+  assert.deepEqual(odds.flat().flatMap((r) => r.cards.map((c) => c.card)).sort(), ['b', 'f']);
+  let seed = 7;
+  const random = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
+  for (let i = 0; i < 300; i++) for (const k of rollPack(pack, kept, on, random)) assert.ok(k === 'b' || k === 'f', `rolled ${k}`);
+});
