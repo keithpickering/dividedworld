@@ -55,12 +55,11 @@ insert into characters (name, staff, staff_kind, debuted_at) values ('Sys Boss',
 do $$
 declare
   ann uuid := (select id from threads where title = 'Announcements');
-  written uuid;
 begin
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into acts (character, kind, thread, payload)
   values ((select id from characters where staff = 'st-boss'), 'move', ann,
-          jsonb_build_object('kind', 'moveThread', 'params', jsonb_build_object('thread', ann, 'board', pg_temp.board('sta')), 'body', 'landed')) returning id into written;
+          jsonb_build_object('kind', 'moveThread', 'params', jsonb_build_object('thread', ann, 'board', pg_temp.board('sta')), 'body', 'landed'));
   perform set_config('kayfabb.staff_writer', '', true);
   if thread_place(ann) is distinct from system_board() or system_board() is distinct from pg_temp.board('stb') then raise exception 'a landed moveThread moved the announcements thread: %', thread_place(ann); end if;
   if (select c.place from thread_places_computed() c where c.thread = ann) is distinct from system_board() then raise exception 'thread_places_computed let a moveThread move the announcements thread'; end if;

@@ -23,7 +23,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 revoke execute on function system_threads() from public, anon, authenticated, service_role;
 
--- thread_place (0323), a thread in system_threads() is on the system board before the origin, the moves and the merges are read. Everything else as 0323 wrote it.
+-- thread_place (0323): a thread in system_threads() is on the system board before the origin, the moves and the merges are read. Everything else as 0323 wrote it.
 create or replace function thread_place(in_thread uuid) returns uuid
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -59,7 +59,7 @@ begin
   return here;
 end $$;
 
--- thread_places_computed (0323), the final select places a thread in system_threads() on the system board. Everything else as 0323 wrote it.
+-- thread_places_computed (0323): the final select places a thread in system_threads() on the system board. Everything else as 0323 wrote it.
 create or replace function thread_places_computed() returns table (thread uuid, place uuid)
 language sql stable security definer set search_path = public, pg_temp as $$
   with recursive
@@ -104,7 +104,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     left join system_threads() st(id) on st.id = t.id cross join (select system_board() as id) sb
 $$;
 
--- lasting_move_problem (0320), a moveThread naming a thread in system_threads() is refused. Everything else as 0320 wrote it.
+-- lasting_move_problem (0320): a moveThread naming a thread in system_threads() is refused. Everything else as 0320 wrote it.
 create or replace function lasting_move_problem(in_kind text, params jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
