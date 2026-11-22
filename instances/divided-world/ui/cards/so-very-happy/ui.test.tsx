@@ -12,7 +12,7 @@ describe('So Very Happy', () => {
   test('its tagline, summary and status are the glass\'s plain words', () => {
     expect(ui.key).toBe('so-very-happy');
     expect(ui.art.tagline).toBe('Play it Sweet or get locked out');
-    expect(ui.summary).toBe('Set face down on your post. The first Move played there that isn\'t Sweet, up to rare, lands, and whoever played it is locked out of the thread for 24 hours.');
+    expect(ui.summary).toBe('Set face down on your post. The first non-Sweet Move up to rare lands, and its player is locked out of the thread for 24 hours.');
     expect(ui.status).toBe('Set, face down to everyone else');
   });
 
@@ -43,13 +43,13 @@ describe('So Very Happy', () => {
     try {
       trap.match = { flavors: ['salty'], upTo: 'uncommon' };
       trap.outcome = { kind: 'lockout', hours: 1 };
-      expect(ui.summary).toBe('Set face down on your post. The first Move played there that isn\'t Sweet or Pepperoni, up to uncommon, lands, and whoever played it is locked out of the thread for 1 hour.');
+      expect(ui.summary).toBe('Set face down on your post. The first Move up to uncommon that isn\'t Sweet or Pepperoni lands, and its player is locked out of the thread for 1 hour.');
       expect(ui.describe!(instance.settings)).toContain('The first Move played on that post that isn\'t Sweet or Pepperoni, up to uncommon, springs it');
       expect(ui.describe!(instance.settings)).toContain('locked out of that post\'s thread for 1 hour.');
     } finally {
       trap.match = held.match;
       trap.outcome = held.outcome;
     }
-    expect(ui.summary).toContain('isn\'t Sweet, up to rare');
+    expect(ui.summary).toContain('non-Sweet Move up to rare');
   });
 });

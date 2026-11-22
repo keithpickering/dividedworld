@@ -12,7 +12,7 @@ import { classWords, setMoveWords } from '../words.ts';
 export const ui: CardUi = {
   key: 'off-day',
   art: { color: '#ff3d7f', ink: '#14030a', canvas: offDayCanvas, mark: offDayMark, credit: offDayArt.credit, tagline: 'Give a character somebody else\'s day.' },
-  summary: 'Cast on a character, naming a class. For the one settlement window after the next settlement, that character scores as that class.',
+  summary: 'Cast on a character, naming a class. From the next settlement to the one after, that character scores as that class.',
   /* The window in force now, if one is; else the next one named. A play is checked with no record, so it never assumes a class or a time. */
   status: (plays) => {
     const now = Date.now();
