@@ -208,7 +208,7 @@ function Opener({ open }: { readonly open: Open }) {
         if (fold.getAttribute('aria-expanded') === 'false') { fold.click(); return; }
         if (open === 'older') {
           /* The page holds only some of a kind's ended plays; the button reads the rest. */
-          const older = document.querySelector<HTMLElement>('.kb-lens-older button');
+          const older = document.querySelector<HTMLElement>('.kb-lens-pager button');
           if (!older) return;
           older.click();
         }

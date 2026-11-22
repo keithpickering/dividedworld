@@ -83,6 +83,8 @@ export function useOlder({ post, card, store, tallies, mine, held, heldEnded, on
     /* The server counts from the newest ended play, which the page already holds (as it may hold a few more ended plays), so the first read asks for that many more than a page and still brings about a page of new rows.
        The server clamps a page at 50, so with more than 30 ended rows held a read is a page of fewer new rows; the cursor it returns carries the next read on, so a press always makes progress. */
     const size = cursor === null ? Math.min(OLDER_MOST, OLDER_PAGE + heldEnded) : OLDER_PAGE;
+    /* On a back tab `heldEnded` counts this tab's ended rows alone, so the first page is smaller than a page of new rows; the cursor carries the next read on, so progress is safe.
+       A page that lands after the kind was switched or the Lens closed writes the plays it read into the store, under the post and kind it was asked for, and is otherwise dropped: the rows state it would set is gone with its Who. */
     void api.kindPlays(post, card, cursor, size).then((page) => {
       const taken = takeInOlder(api, page, post, { store, tallies, mine, onCast });
       const have = new Set([...held, ...ids]);
@@ -94,7 +96,7 @@ export function useOlder({ post, card, store, tallies, mine, held, heldEnded, on
       const at = page.next === null ? fresh.at(-1) ?? null : fresh[0];
       /* The button goes with the last page: with no new row to take focus, it falls to the last row of Ended and never to the page. */
       if (at !== undefined) setFocus({ id: at });
-    }, () => { setFailed(true); }).finally(() => { out.current = false; setBusy(false); });
+    }).catch(() => { setFailed(true); }).finally(() => { out.current = false; setBusy(false); });
   }, [api, post, card, cursor, heldEnded, store, tallies, mine, onCast, held, ids]);
   return { ids, busy, failed, done, focus, press };
 }
@@ -102,7 +104,7 @@ export function useOlder({ post, card, store, tallies, mine, held, heldEnded, on
 /** The foot of the Ended group: one button, which is busy while a read is out and says so when one failed. */
 export function OlderButton({ more, busy, failed, onPress }: { readonly more: number; readonly busy: boolean; readonly failed: boolean; readonly onPress: () => void }) {
   return (
-    <div className="kb-lens-older">
+    <div className="kb-lens-pager">
       <GlassButton size="s" busy={busy} onClick={onPress}>{failed ? OLDER_FAILED : olderButton(more)}</GlassButton>
     </div>
   );

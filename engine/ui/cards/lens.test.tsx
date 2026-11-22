@@ -3714,6 +3714,24 @@ describe('older plays (docs/plans/2026-11-21-post-plays-design.md, section 3)', 
     await waitFor(() => expect(within(row).getByRole('button', { name: /^Tea, 1/u })).toBeInTheDocument());
   });
 
+  test('two presses in one tick read once', async () => {
+    const { w } = await unfolded();
+    const read = vi.spyOn(w.fake, 'kindPlays');
+    const button = older()!;
+    act(() => { fireEvent.click(button); fireEvent.click(button); });
+    await waitFor(() => expect(endedIds()).toHaveLength(21));
+    expect(read).toHaveBeenCalledTimes(1);
+  });
+
+  test('a page that cannot be taken in is a failed read: the failure words, the rows kept', async () => {
+    const { w, ids } = await unfolded();
+    vi.spyOn(w.fake, 'kindPlays').mockResolvedValueOnce({ plays: null, tallies: {}, mine: [], spun: [], cast: [], next: null } as never);
+    await userEvent.click(older()!);
+    const failed = await within(lens()).findByRole('button', { name: 'Couldn\u2019t load older plays. Try again' });
+    expect(failed).not.toHaveAttribute('aria-busy');
+    expect(endedIds()).toEqual([ids[44]]);
+  });
+
   const emptyPage = (next: { at: string; id: Id } | null) => ({ plays: [], tallies: {}, mine: [], spun: [], cast: [], next });
 
   test('a press that brings no new row and leaves none: the button goes and focus falls to the last row of Ended, never the page', async () => {

@@ -116,7 +116,8 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   /* What the mark counts: the plays that took, of every play the post has had (the server's count, which the store keeps, since a page holds only some of an old kind's plays). A play that did not take (`untaken`) is over, so it is no layer on the post; where none took, the mark counts them all, since it still says what became of each.
      A back's kinds are counted by the store as one (every back that sprang), which is no one mark's, so a back's mark counts its own plays. */
   /* Read as a number, so a mark is drawn again only when its own kind's count moves, never for another kind's play. */
-  const kept = useSyncExternalStore((l) => store.subscribe(post, l), () => { const c = back ? undefined : store.get(post).counts.get(kind); return c ? c.took || c.all : 0; });
+  const subscribe = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
+  const kept = useSyncExternalStore(subscribe, () => { const c = back ? undefined : store.get(post).counts.get(kind); return c ? c.took || c.all : 0; });
   const counted = kept > 0 ? kept : plays.filter((p) => !p.untaken).length || plays.length;
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);

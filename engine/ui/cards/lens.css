@@ -675,8 +675,8 @@
   margin: 0;
 }
 
-/* The foot of the Ended group (Older.tsx): one glass button, in the side room a row keeps, one breath under the last row. */
-.kb-lens-older {
+/* The foot of the Ended group (Older.tsx, `.kb-lens-pager`): one glass button, in the side room a row keeps, one breath under the last row. */
+.kb-lens-pager {
   margin: 10px 0 0;
   padding: 0 14px;
 }
