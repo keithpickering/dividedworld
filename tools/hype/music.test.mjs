@@ -28,7 +28,7 @@ test('the committed map has eighteen statements of sixteen beats, six to a block
 });
 
 test('every version removes statements from block 1 only, and its map keeps the rest, ascending and contiguous', () => {
-  assert.deepEqual(VERSIONS, ['full', 'mk-a', 'mk-b']);
+  assert.deepEqual(VERSIONS, ['full', 'mk-a', 'mk-b', 'mk-plus1', 'mk-plus2', 'mk-plus3']);
   for (const name of VERSIONS) {
     const v = versionMap(map, name);
     const ns = v.statements.map((/** @type {{ n: number }} */ s) => s.n);
@@ -65,7 +65,7 @@ test('a version is shifted by what its join removes: its length, its coda and it
 });
 
 test('beats: sixteen to a statement, evenly within it, ascending', () => {
-  for (const [name, kept] of /** @type {[string, number][]} */ ([['full', 18], ['mk-a', 16], ['mk-b', 14]])) {
+  for (const [name, kept] of /** @type {[string, number][]} */ ([['full', 18], ['mk-a', 16], ['mk-b', 14], ['mk-plus1', 20], ['mk-plus3', 24]])) {
     const bs = beats(map, name);
     assert.equal(bs.length, 16 * kept, name);
     for (let i = 1; i < bs.length; i++) assert.ok(bs[i] > bs[i - 1], `${name}: beat ${i} after ${i - 1}`);
@@ -97,4 +97,37 @@ test('the title`s strikes: the coda`s last two chords, and the first chord; a co
 
 test('the committed map`s coda has the title`s two strikes after its first chord, in every version', () => {
   for (const name of VERSIONS) { const t = titleStrikes(versionMap(map, name)); assert.ok(t.first < t.title && t.title < t.final && t.final < t.end, name); }
+});
+
+test('a LENGTHENED version repeats a pair of block 1: statements 2 and 3 again, after 3, `times` times, every later time later by what is added', () => {
+  const r = map.versions['mk-plus2'], loop = r.join.out - r.join.in;
+  assert.deepEqual(r.repeat, [2, 3]);
+  assert.equal(r.times, 2);
+  near(loop, map.statements[3].start - map.statements[1].start, 0.002, 'a loop is statements 2 and 3');
+  for (const [name, times] of /** @type {[string, number][]} */ ([['mk-plus1', 1], ['mk-plus2', 2], ['mk-plus3', 3]])) {
+    const v = versionMap(map, name), added = times * loop;
+    assert.deepEqual(v.statements.map((/** @type {{ n: number }} */ s) => s.n).slice(0, 4 + 2 * times), [1, ...Array.from({ length: times + 1 }).flatMap(() => [2, 3]), 4], name);
+    assert.equal(v.statements.length, 18 + 2 * times, name);
+    near(v.seconds, map.seconds + added, 1e-9, `${name}: length`);
+    assert.equal(expectedSeconds(map, name), v.seconds);
+    near(v.coda.chords[0].t, map.coda.chords[0].t + added, 1e-9, `${name}: first chord`);
+    near(v.statements.find((/** @type {{ n: number }} */ s) => s.n === 7).start, map.statements[6].start + added, 1e-9, `${name}: statement 7`);
+    const copies = v.statements.filter((/** @type {{ n: number }} */ s) => s.n === 2);
+    assert.deepEqual(copies.map((/** @type {{ copy?: number }} */ s) => s.copy), Array.from({ length: times + 1 }, (_, k) => k), 'copy 0 is the original');
+    near(copies[1].start, map.statements[1].start + loop, 1e-9, `${name}: the repeat of statement 2`);
+    v.statements.forEach((/** @type {any} */ s, /** @type {number} */ i) => { if (i) near(v.statements[i - 1].start + v.statements[i - 1].length, s.start, 0.002, `${name}: ${s.n} follows`); });
+    assert.equal(v.joins.length, times, `${name}: a join for each repeat`);
+    near(v.joins[0].t, r.join.out, 1e-9);
+    near(v.joins.at(-1).t, r.join.out + (times - 1) * loop, 1e-9);
+  }
+});
+
+test('a repeat that begins in block 2, repeats nothing, or starts at statement 1 is refused', () => {
+  const bad = structuredClone(map);
+  bad.versions['mk-x'] = { repeat: [7, 8], times: 1, join: { out: 74, in: 58 }, crossfadeMs: 40 };
+  assert.throws(() => versionMap(bad, 'mk-x'), /block 1/);
+  bad.versions['mk-x'] = { repeat: [2, 3], times: 0, join: { out: 31, in: 13 }, crossfadeMs: 40 };
+  assert.throws(() => versionMap(bad, 'mk-x'), /times/);
+  bad.versions['mk-x'] = { repeat: [1, 3], times: 1, join: { out: 31, in: 4 }, crossfadeMs: 40 };
+  assert.throws(() => versionMap(bad, 'mk-x'), /first|statement 1/);
 });

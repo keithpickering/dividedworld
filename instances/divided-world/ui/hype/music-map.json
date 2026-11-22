@@ -218,6 +218,45 @@
       },
       "crossfadeMs": 40,
       "note": "1:58.4; as mk-a but entering before statement 6's downbeat (tempo step 1.007, level -0.6 dB); the best join of the set, and the one the owner chose by ear."
+    },
+    "mk-plus1": {
+      "repeat": [
+        2,
+        3
+      ],
+      "times": 1,
+      "join": {
+        "out": 31.134667,
+        "in": 13.420667
+      },
+      "crossfadeMs": 40,
+      "note": "171.8 s; statements 2 and 3 played 2 times in all. After statement 3 the recording jumps back, by a 40 ms equal-power crossfade, to just before statement 2's downbeat: the out point (31.134667 s) is mk-a's own, 34.333 ms before statement 4's start, and the in point is statement 2's start less the same 34.333 ms, so each repeated downbeat lands on the grid."
+    },
+    "mk-plus2": {
+      "repeat": [
+        2,
+        3
+      ],
+      "times": 2,
+      "join": {
+        "out": 31.134667,
+        "in": 13.420667
+      },
+      "crossfadeMs": 40,
+      "note": "189.5 s; statements 2 and 3 played 3 times in all. After statement 3 the recording jumps back, by a 40 ms equal-power crossfade, to just before statement 2's downbeat: the out point (31.134667 s) is mk-a's own, 34.333 ms before statement 4's start, and the in point is statement 2's start less the same 34.333 ms, so each repeated downbeat lands on the grid."
+    },
+    "mk-plus3": {
+      "repeat": [
+        2,
+        3
+      ],
+      "times": 3,
+      "join": {
+        "out": 31.134667,
+        "in": 13.420667
+      },
+      "crossfadeMs": 40,
+      "note": "207.2 s; statements 2 and 3 played 4 times in all. After statement 3 the recording jumps back, by a 40 ms equal-power crossfade, to just before statement 2's downbeat: the out point (31.134667 s) is mk-a's own, 34.333 ms before statement 4's start, and the in point is statement 2's start less the same 34.333 ms, so each repeated downbeat lands on the grid."
     }
   }
 }

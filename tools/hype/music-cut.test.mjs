@@ -22,3 +22,18 @@ test('a file whose length is not the recipe`s to 5 ms is refused, naming both', 
   assert.throws(() => checkLength(118.402, 118.395, 'mk-b'), (/** @type {Error} */ e) => /mk-b/.test(e.message) && /118\.402/.test(e.message) && /118\.395/.test(e.message));
   assert.throws(() => checkLength(118.389, 118.395), /118\.389/);
 });
+
+const again = { repeat: [2, 3], times: 2, join: { out: 31.134667, in: 13.420667 }, crossfadeMs: 40 };
+
+test('a repeat recipe plays to the out point, crossfades back to the in point (a crossfade before it), `times` times, and on to the end', () => {
+  const f = cutFilter(again, 48000);
+  assert.doesNotMatch(f, /asplit/, 'one input of the recording for each part: one asplit of it stalls on parts this far apart');
+  assert.match(f, /\[2:a\]atrim/, 'the first part, the repeat and the rest: three inputs');
+  assert.match(f, /atrim=start_sample=0:end_sample=1494464\b/, 'the first part ends at the out point, 31.134667 s');
+  assert.match(f, /atrim=start_sample=642272:end_sample=1494464\b/, 'the repeated part runs from a crossfade before 13.420667 s to the out point');
+  assert.match(f, /atrim=start_sample=642272,asetpts/, 'and the last part from the same point to the end');
+  assert.equal((f.match(/acrossfade/gu) ?? []).length, 2, 'a join for each repeat');
+  assert.match(f, /acrossfade=d=0\.04[0-9]*:c1=qsin:c2=qsin/);
+  assert.doesNotMatch(f, /atempo|rubberband|volume|afade/);
+  assert.doesNotMatch(cutFilter({ ...again, times: 1 }, 48000), /\[2:a\]/);
+});
