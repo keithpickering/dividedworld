@@ -29,7 +29,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
 import { isPost } from '../../rules/types.ts';
 import { casterMessage, castOnPost, cuttable, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id } from '../data/api.ts';
+import type { Act, Id, PostPlaysRead } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { Editor } from '../composer/Editor.tsx';
@@ -281,12 +281,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   };
   /* No answer came back: read what the play would have changed before offering it again. */
   const read = async () => {
-    const [, acts] = await Promise.all([player.refresh(), beyond
-      ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a) => a.map((p) => p.act))
-      : api.postPlays([post!.id]).then((read) => read.plays)]);
+    const [, got] = await Promise.all([player.refresh(), beyond
+      ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a): PostPlaysRead => ({ plays: a.map((p) => p.act), counts: [] }))
+      : api.postPlays([post!.id])]);
+    const acts = got.plays;
     /* The read carries the plays' ends too (an admin's reversal): they join the store, but name no caster. */
     await target.know(acts.filter((a) => a.kind !== 'card_end').map((a) => a.character));
     target.plays.add(acts);
+    target.plays.setCounts(got.counts);
     await readEffects(api, target.plays, acts, effectCards(ui));
   };
   const verb = setting ? 'Set' : how === 'use' ? 'Use' : 'Play';

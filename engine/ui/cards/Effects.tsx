@@ -104,7 +104,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       && (() => { const own = tailRows.filter((r) => r.play === p.id); return own.length > 0 && own.every((r) => r.failed && r.text === null && !r.waiting); })());
     if (over.length === 0) return;
     for (const p of over) reread.current.add(p.id);
-    void api.postPlays([post.id]).then((read) => { tries.current = 0; plays.add(read.plays); }, () => {
+    void api.postPlays([post.id]).then((read) => { tries.current = 0; plays.add(read.plays); plays.setCounts(read.counts); }, () => {
       for (const p of over) reread.current.delete(p.id);
       const attempt = tries.current++;
       if (attempt + 1 >= REPEAT_TRIES) { tries.current = 0; return; }

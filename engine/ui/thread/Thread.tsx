@@ -301,7 +301,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     /* The plays a thread-reach card keeps on this page's posts after its time came with it, as the plays above them do. */
     const played = [...page.plays, ...page.above.map((x) => x.act), ...page.kept.map((x) => x.act)];
-    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? []);
+    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? [], page.counts);
     /* The origin of a spun thread, on the page that holds its first Act: the newer read's is kept (an answer asked before the one held is not taken, as for `above`), and a page without one leaves what is held.
        Its plays' saved states and releases are in the page's own lists; the box's store is given those of its plays. */
     let tookOrigin: PageOrigin | null = null;

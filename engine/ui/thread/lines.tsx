@@ -103,10 +103,11 @@ function useTailsOf(post: Id, wanted: boolean, known: Plays | null): { readonly 
       api.tails([post]).then((rows) => { if (live) setRead({ plays, rows }); }, fail);
     };
     if (known) { tailed(writers(known.get(post).plays)); return () => { live = false; }; }
-    api.postPlays([post]).then(({ plays: acts }) => {
+    api.postPlays([post]).then(({ plays: acts, counts }) => {
       if (!live) return;
       const store = createPlays();
       store.add(acts);
+      store.setCounts(counts);
       tailed(writers(store.get(post).plays));
     }, fail);
     return () => { live = false; };

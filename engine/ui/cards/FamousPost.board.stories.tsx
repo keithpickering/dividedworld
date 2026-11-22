@@ -3,7 +3,7 @@
  * people have come back to for three years, with 85 plays of sixteen kinds on it. Most have long since run their time; the same
  * cards were played again and again as each ran out; an admin ended two; a handful are up now; the post's first three Whoops!
  * drew the board's reactions and so top its billing. It asks how the strip, the "+N", the Lens's tabs and its Who rows read when
- * a post has far more plays than the eight a page reads for it (`PLAYS_PER_POST`, engine/ui/cards/plays.ts).
+ * a post has far more plays than a page draws in full (docs/plans/2026-11-21-post-plays-design.md).
  *
  * What it reads is not what a deployed instance would read. The fake reads eight plays times the page's posts, oldest first
  * across the whole page, so this thread's fourteen quiet replies leave the famous post room for every play; the database reads

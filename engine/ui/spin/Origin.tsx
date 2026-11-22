@@ -65,6 +65,7 @@ export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: 
   /* A thread spun from a poll or a ballot: the poll, its voters and the caller's ballots go to the box's store of polls (where the box is drawn without one, `useOrigin` takes them in). */
   if (polls !== undefined) takeInPolls(origin, polls, ticket);
   plays.add([...origin.plays, ...(origin.act ? [origin.act] : [])]);
+  plays.setCounts(origin.counts);
   billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
 }
 

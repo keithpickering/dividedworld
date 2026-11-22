@@ -147,10 +147,16 @@ describe('a card_text event reads that one post again', () => {
     const shown = () => plays.get(w.p1).plays.filter((p) => !p.untaken).length;
     expect(shown()).toBe(1);
     const tails = vi.spyOn(w.fake, 'tails');
-    const read = vi.spyOn(w.fake, 'postPlays');
+    const real = w.fake.postPlays.bind(w.fake);
+    /* The re-read's counts go into the store with its plays: the server says forty plays of the card. */
+    const read = vi.spyOn(w.fake, 'postPlays').mockImplementation(async (posts) => {
+      const got = await real(posts);
+      return { ...got, counts: got.counts.map((c) => ({ ...c, all: 40 })) };
+    });
     act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
     await waitFor(() => expect(plays.get(w.p1).plays[0]?.untaken).toBe(true));
     expect(shown()).toBe(0);
+    expect(plays.get(w.p1).counts.get('wrote')?.all).toBe(40);
     expect(tails).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(1);
     expect(read.mock.calls[0]![0]).toEqual([w.p1]);
