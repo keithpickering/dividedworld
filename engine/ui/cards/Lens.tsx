@@ -48,10 +48,10 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, momentParts, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { CUT_STATE, cutByWords, cutWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
+import { CUT_STATE, PRESENT_TILE, cutByWords, cutWords, hiddenWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
-import { CARD_BACK, asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { CARD_BACK, asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, useRewound, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
 import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -92,6 +92,13 @@ export interface LensStore {
   moment(): Id | null;
   /** Show this play's moment in its post's body, in place of another's; null shows the post as it is now (Back to now). */
   showMoment(play: Id | null): void;
+  /**
+   * The rewind play whose post the page shows as it is now (Return to present, Time Machine design, 4.5), or null. It shares the one shown view with the moment: showing one clears the other, and `moment()`
+   * is null while the present shows.
+   */
+  present(): Id | null;
+  /** Show this rewind play's post as the present, in place of a moment or the rewind; null goes back to the rewind. */
+  showPresent(play: Id | null): void;
   /** A moment read for the page, by play (undefined while it is not read): read once, since a moment never changes. */
   kept(play: Id): PlayMoment | null | undefined;
   /**
@@ -113,6 +120,8 @@ export interface LensStore {
 function createLensStore(): LensStore {
   let open: LensOpen | null = null;
   let shown: Id | null = null;
+  /* The shown view is the present of the rewind play `shown`, and no moment. */
+  let presenting = false;
   const moments = new Map<Id, PlayMoment | null>();
   const reading = new Map<Id, Promise<void>>();
   const runs = new Map<Id, number>();
@@ -121,7 +130,7 @@ function createLensStore(): LensStore {
   const set = (next: LensOpen | null) => {
     if (next === open) return;
     /* Another strip's Lens, or none: the moment goes with the Lens it was shown from. A tab of the same Lens keeps it. */
-    if (next === null || next.owner !== open?.owner) shown = null;
+    if (next === null || next.owner !== open?.owner) { shown = null; presenting = false; }
     open = next;
     wake();
   };
@@ -131,8 +140,13 @@ function createLensStore(): LensStore {
     toggle(next) { set(open?.owner === next.owner && open.card === next.card ? null : next); },
     select(card) { if (open && open.card !== card) set({ ...open, card }); },
     close() { set(null); },
-    moment: () => shown,
-    showMoment(play) { if (play !== shown) { shown = play; wake(); } },
+    moment: () => (presenting ? null : shown),
+    showMoment(play) { if (play !== shown || presenting) { shown = play; presenting = false; wake(); } },
+    present: () => (presenting ? shown : null),
+    showPresent(play) {
+      if (play === null) { if (presenting) { shown = null; presenting = false; wake(); } return; }
+      if (!presenting || shown !== play) { shown = play; presenting = true; wake(); }
+    },
     kept: (play) => moments.get(play),
     seedMoment(key, moment) { if (!moments.has(key)) moments.set(key, moment); },
     run: (key) => runs.get(key) ?? 0,
@@ -407,6 +421,31 @@ interface RowProps {
  * (decided on the reader's screen from their own characters, as the post's reactions decide it).
  */
 /**
+ * Return to present (Time Machine design, 4.5): a live rewind's tile that shows the post's newest version with every shown play and without the rewind's own effect, framed "The present". Pressed again it goes back
+ * to the rewind. It takes the Lens store's one shown view, as As it landed does, and needs no read: the page holds the present.
+ */
+function ReturnToPresent({ play }: { readonly play: Id }) {
+  const store = useLensStore();
+  const pressed = useSyncExternalStore(store.subscribe, () => store.present() === play, () => false);
+  return (
+    <button type="button" className="kb-kit-tile kb-lens-action" aria-pressed={pressed} onClick={() => store.showPresent(pressed ? null : play)}>
+      <span className="kb-kit-tile-label">{PRESENT_TILE}</span>
+    </button>
+  );
+}
+
+/** The line under a live rewind's row that counts the cards it hides, from the plays the store holds on the post (`rewoundOf`'s hidden), in force and still showing. Nothing where none is hidden. */
+function HiddenCount({ play, store }: { readonly play: CardPlay; readonly store: Plays }) {
+  const { instance, api } = useKayfa();
+  const rewound = useRewound(store, play.post);
+  if (rewound === null || rewound.rewind.play !== play.id) return null;
+  const now = api.now();
+  const keeps = new Set(instance.cards.filter((c) => c.keeps === true).map((c) => c.key));
+  const n = shownPlays(rewound.hidden, now).filter((p) => !playOver(p, now, keeps)).length;
+  return n === 0 ? null : <p className="kb-lens-note">{hiddenWords(n)}</p>;
+}
+
+/**
  * As it landed: shows the play's moment in its post's body, in place of the live body, and pressed again shows the post as it is now
  * (docs/plans/2026-11-03-effect-history-design.md, section 4). One moment shows on the page, and it goes with this Lens.
  */
@@ -609,6 +648,9 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
   const lockout = useLockoutOf(play, admin);
+  /* A rewind play's row is shown a tile for the present and its count of hidden cards, once the rewind is the post's live one. */
+  const rewoundHere = useRewound(store, play.post);
+  const rewinds = instance.cards.find((c) => c.key === play.card)?.rewind !== undefined && !play.faceDown && rewoundHere?.rewind.play === play.id;
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* The setter's own back, still face down: not sprung, not taken back, not past its time (the same end every Set has). */
@@ -627,6 +669,7 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
       {!past && yours && <p className="kb-lens-yours">Your play</p>}
+      {!past && rewinds && <HiddenCount play={play} store={store} />}
       <div className="kb-lens-row-foot">
         {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} plays={store} pickerAt="button" />}
         <div className="kb-lens-actions">
@@ -634,6 +677,7 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {!past && moments && !play.reach && <AsItLanded play={play.id} />}
+          {!past && moments && !play.reach && rewinds && <ReturnToPresent play={play.id} />}
           {!past && backTakeable && <TakeBack play={play} store={store} />}
           {!past && admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true, lockout) && <EndCard play={play.id} end={lockout ? play.revealed!.spring : play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
