@@ -53,6 +53,8 @@ row shows about three of the sixteen kinds at a time. Once #871 pages Who, a row
      line; and at its right the play's reaction totals, each reaction's glyph and count, from the tallies the post already
      reads (owner's choice over the one-line row and the two-line row without totals: a reader can spot which old plays
      landed).
+     *Amended 2026-11-22, the owner's answer to #978:* the fate is shown for a play that did not simply run its time (ended
+     by an admin, cut, did not take, caught, instant, spent, or a cutting play), not only the three named above.
    - Pressed, the row unfolds into today's full row under its line 1, which stays as the row's head: the note, the whole
      message, its reactions with React, Spin thread, As it landed, the admin's End where it applies, and the threads spun.
      Pressed again it folds. One ended row is open at a time: opening another folds the first. Changing tab folds it.
