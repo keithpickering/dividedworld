@@ -181,7 +181,8 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 10.1),
+  // 12.2: its larger plan, which the workflow measured at 11.821 on 1201d38, so 11.9 + 0.3 (see KNIFE_EDGE_GAP_MB: a smaller plan, 9.8 MB, is as likely).
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 12.2),
   boot: budget(() => 'public.boot()', player, 9.1),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
   index_page: budget(() => 'public.index_page()', player, 7.2),
@@ -205,6 +206,12 @@ export const BUDGETS: Record<string, Budget> = {
 const ROOM_MB = 0.3;
 /** The least gap that asks for a budget to be lowered: twice the room, so a budget set by the rule is never asked to be lowered at once. */
 const FLOOR_MB = 2 * ROOM_MB;
+/**
+ * Functions whose kept plan is one of two by what the last analyze left, the same code and rows: a gap under the budget this wide is not far under it. board_page keeps 9.8 MB or 11.8 MB (9.777 and 11.289 on
+ * Postgres 16 before and after one `analyze` of the scratch database, and the next analyze can put it back; the workflow measured 9.822 on d7661f6 and 11.821 on 1201d38 with no SQL changed between them, whether
+ * autovacuum's analyze ran in the file deciding it), so its budget holds the larger plan and its gap the difference.
+ */
+const KNIFE_EDGE_GAP_MB: Record<string, number> = { board_page: 2.5 };
 
 /**
  * One line for each fault: a screen function with no budget; a budget for a name that is no screen function; a measurement over its budget; a measurement under its
@@ -222,7 +229,7 @@ export function budgetFaults(names: string[], budgets: Record<string, number>, m
     if (m === undefined) continue;
     const b = budgets[n]!;
     if (m > b) out.push(`${n}: it kept ${m.toFixed(3)} MB, over its budget of ${b.toFixed(3)} MB`);
-    else if (b - m > Math.max(b / 10, FLOOR_MB)) out.push(`${n}: it kept ${m.toFixed(3)} MB, far under its budget of ${b.toFixed(3)} MB; lower the budget`);
+    else if (b - m > Math.max(b / 10, FLOOR_MB, KNIFE_EDGE_GAP_MB[n] ?? 0)) out.push(`${n}: it kept ${m.toFixed(3)} MB, far under its budget of ${b.toFixed(3)} MB; lower the budget`);
   }
   return out;
 }
@@ -322,6 +329,16 @@ test('budgetFaults names a function with no budget, a budget with no function an
   assert.deepEqual(budgetFaults(['a_page'], { a_page: 10 }, { a_page: 10 }), [], 'at the budget is allowed');
   assert.equal(budgetFaults(['a_page'], { a_page: 10 }, { a_page: 10.1 }).length, 1, 'over by a tenth of a megabyte is a fault');
   assert.match(budgetFaults(['a_page'], { a_page: 10 }, { a_page: 10.1234 })[0]!, /kept 10.123 MB, over its budget of 10.000 MB/, 'a fault prints three decimals');
+});
+
+test('a function on a statistics knife-edge has the wider gap its two plans need, and no other does', () => {
+  // board_page keeps one of two plans by what the last analyze left (9.8 or 11.8 MB, the same code and rows), so its budget is the larger and the gap under it the difference.
+  const wide = (m: number) => budgetFaults(['board_page'], { board_page: 12.2 }, { board_page: m });
+  assert.deepEqual(wide(11.8), [], 'the larger plan is inside its budget');
+  assert.deepEqual(wide(9.8), [], 'the smaller plan is not far under it');
+  assert.equal(wide(9.4).length, 1, 'a figure under both plans is far under');
+  assert.equal(wide(12.3).length, 1, 'over the budget is a fault');
+  assert.equal(budgetFaults(['a_page'], { a_page: 12.2 }, { a_page: 9.8 }).length, 1, 'another function gets no wide gap');
 });
 
 test('the far-under gap is the larger of a tenth of the budget and 0.6 MB', () => {
