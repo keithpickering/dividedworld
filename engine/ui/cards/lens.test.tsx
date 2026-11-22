@@ -459,6 +459,98 @@ describe('what the Lens says and offers', () => {
     expect(rows()).toEqual([three, two, one]);
   });
 
+  describe('Who in two groups', () => {
+    const HOUR = 3_600_000;
+    const heads = () => [...lens().querySelectorAll('.kb-lens-group-head')].map((h) => h.textContent);
+    /** The group each row sits in, by its heading ('' where it sits in no group). */
+    const groupOf = (id: Id) => lens().querySelector(`[data-kb-play="${id}"]`)!.closest('.kb-lens-group')?.querySelector('.kb-lens-group-head')?.textContent ?? '';
+
+    test('one in force and two ended unfold to Up now, then Ended with the newest played first', async () => {
+      width(false);
+      const w = world();
+      w.fake.seed.admin(w.me);
+      w.fake.clock.advance(2 * HOUR);
+      const timed = w.fake.seed.card(w.spritey, w.second, 'k2', { message: 'timed', ends: new Date(w.fake.clock.now() - HOUR).toISOString() });
+      w.fake.clock.advance(60_000);
+      const adminEnded = w.play('k2', w.gloomba);
+      expect((await w.fake.reverseCard(adminEnded)).ok).toBe(true);
+      const up = w.play('k2', w.pipe);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      expect(heads()).toEqual(['Up now', 'Ended · 2']);
+      expect(rows()).toEqual([up, adminEnded, timed]);
+      expect(groupOf(up)).toBe('Up now');
+      expect(groupOf(adminEnded)).toBe('Ended · 2');
+      expect(groupOf(timed)).toBe('Ended · 2');
+    });
+
+    test('a kind with every play in force draws no heading', async () => {
+      width(false);
+      const w = world();
+      const a = w.play('k2');
+      const b = w.play('k2', w.gloomba);
+      w.fake.seed.react(w.me, w.pipe, a, 'fire');
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      expect(rows()).toEqual([a, b]);
+      expect(heads()).toEqual([]);
+    });
+
+    test('a kind with every play ended draws Ended and no Up now', async () => {
+      width(false);
+      const w = world();
+      w.fake.seed.admin(w.me);
+      const a = w.play('k2');
+      const b = w.play('k2', w.gloomba);
+      expect((await w.fake.reverseCard(a)).ok).toBe(true);
+      expect((await w.fake.reverseCard(b)).ok).toBe(true);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      expect(heads()).toEqual(['Ended · 2']);
+      expect(rows()).toEqual([b, a]);
+    });
+
+    test('a stacking card keeps its up-now rows in layer order, top first, with an ended layer in Ended', async () => {
+      width(false);
+      const w = world();
+      w.fake.seed.admin(w.me);
+      const one = w.play('k1', w.spritey, w.second, 1);
+      const two = w.play('k1', w.gloomba, w.second, 2);
+      const three = w.play('k1', w.pipe, w.second, 3);
+      expect((await w.fake.reverseCard(two)).ok).toBe(true);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 1'));
+      await userEvent.click(whoButton());
+      expect(heads()).toEqual(['Up now', 'Ended · 1']);
+      expect(rows()).toEqual([three, one, two]);
+      expect(groupOf(two)).toBe('Ended · 1');
+    });
+
+    test('an ORIGIN box moment, where then holds the kind\'s plays, draws no heading', async () => {
+      width(false);
+      const w = world();
+      w.fake.clock.advance(2 * HOUR);
+      const plays = createPlays();
+      const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+      const gone = { card: 'k2', ends: new Date(w.fake.clock.now() - HOUR).toISOString() };
+      const held = { card: 'k2', ends: new Date(w.fake.clock.now() + HOUR).toISOString() };
+      plays.add([
+        { ...base, id: 'moment-a', kind: 'card', payload: gone, currentPayload: gone },
+        { ...base, id: 'moment-b', kind: 'card', payload: held, currentPayload: held },
+        { ...base, id: 'moment-a-undone', kind: 'card_end', targetActId: 'moment-a', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+      ]);
+      plays.setBilling(w.second, ['moment-a', 'moment-b']);
+      renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} then={new Set(['moment-a', 'moment-b'])} /></LensProvider>, { path: '/', instance, cards });
+      await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 2 plays/u }));
+      await userEvent.click(whoButton());
+      expect(rows()).toHaveLength(2);
+      expect(heads()).toEqual([]);
+    });
+  });
+
   test('a row says who played it in capitals, when, the message, the card\'s note and the threads spun', async () => {
     width(false);
     const w = world();

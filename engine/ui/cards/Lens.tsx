@@ -51,7 +51,7 @@ import { Kit } from './Kit.tsx';
 import { CUT_STATE, cutByWords, cutWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
-import { asThen, backOver, defaultView, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
 import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -658,6 +658,13 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   const names = [...new Set(plays.map((p) => nameOf(p.caster)))];
   const shown = names.slice(0, NAMES_SHOWN).join(', ');
   const rest = names.length - NAMES_SHOWN;
+  const { instance } = useKayfa();
+  /* Up now and Ended, by `inForce`; the rows of a moment (`then` holds every play of the kind) are one list, as they stood. */
+  const grouped = !plays.every((p) => row.then?.has(p.id));
+  const keepsOf = (p: CardPlay) => instance.cards.find((c) => c.key === p.card)?.keeps === true;
+  const up = plays.filter((p) => inForce(p, row.now, keepsOf(p)));
+  const ended = plays.filter((p) => !inForce(p, row.now, keepsOf(p))).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const rowOf = (p: CardPlay) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />;
   return (
     <div className="kb-lens-section kb-lens-who-section">
       <button type="button" className="kb-lens-fold" aria-expanded={unfolded} aria-controls={id} onClick={onToggle}>
@@ -675,7 +682,23 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
         <span className="kb-lens-fold-words">{playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
-        {unfolded && plays.map((p) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />)}
+        {unfolded && (grouped ? (
+          <>
+            {up.length > 0 && (
+              <li className="kb-lens-group">
+                {ended.length > 0 && <h3 className="kb-lens-group-head">Up now</h3>}
+                <ul className="kb-lens-rows">{up.map(rowOf)}</ul>
+              </li>
+            )}
+            {ended.length > 0 && (
+              <li className="kb-lens-group">
+                <h3 className="kb-lens-group-head">Ended · {ended.length}</h3>
+                <ul className="kb-lens-rows">{ended.map(rowOf)}</ul>
+                {/* The pager for a long Ended group (#871) stands here; nothing is drawn until it is built. */}
+              </li>
+            )}
+          </>
+        ) : plays.map(rowOf))}
       </ul>
     </div>
   );
