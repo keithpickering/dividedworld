@@ -62,7 +62,10 @@ function Taped({ id, at, met, moment, still, children }: EffectProps & { id: str
     const el = host.current!, lay = layer.current!;
     const fit = (): void => {
       const area = bodyOf(el);
-      placeLayer(lay, bodyBox(el, area));
+      const box = bodyBox(el, area);
+      placeLayer(lay, box);
+      /* The streaks travel the area's whole width (time-machine.css). */
+      lay.style.setProperty('--dw-tm-w', `${box.w}px`);
     };
     fit();
     const size = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
@@ -82,7 +85,7 @@ function Taped({ id, at, met, moment, still, children }: EffectProps & { id: str
         {fresh && !reduced && (
           <div className="dw-tm-streaks">
             {Array.from({ length: STREAKS }, (_, i) => (
-              <div key={i} className="dw-tm-streak" data-tm-streak="" style={{ top: `${6 + i * 13}%`, width: `${35 + ((i * 37) % 50)}%`, animationDelay: `${(i * 23) % 120}ms` }} />
+              <div key={i} className="dw-tm-streak" data-tm-streak="" style={{ top: `${6 + i * 13}%`, width: `${35 + ((i * 37) % 50)}%`, animationDelay: `${(i * 23) % 120}ms`, animationDuration: `${STREAK_MS - ((i * 23) % 120)}ms` }} />
             ))}
           </div>
         )}

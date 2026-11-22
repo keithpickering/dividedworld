@@ -100,6 +100,13 @@ describe('the rewind', () => {
     expect(streaks().length, 'once per play per page load').toBe(0);
   });
 
+  test('every streak crosses the whole area and is done within the 600 ms the rewind is held', () => {
+    render(<TimeMachineEffect {...props([play()])} />);
+    expect(layer().style.getPropertyValue('--dw-tm-w'), 'the area\'s width, which the streaks travel').toBe('280px');
+    expect(sheet).toMatch(/translateX\(calc\(-1 \* \(var\(--dw-tm-w[^)]*\) \+ 100%\)\)\)/u);
+    for (const s of streaks() as NodeListOf<HTMLElement>) expect(parseFloat(s.style.animationDelay) + parseFloat(s.style.animationDuration), 'delay plus duration').toBeLessThanOrEqual(STREAK_MS);
+  });
+
   test('under reduced motion there is no streak, and the tracking line is held still', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     render(<TimeMachineEffect {...props([play()])} />);
@@ -180,15 +187,20 @@ describe('the card\'s screen entry', () => {
     expect(ui.Effect).toBeDefined();
   });
 
-  test('describe reads its numbers from the rules and never restates them', () => {
-    const text = ui.describe({} as never);
-    expect(text).toContain(`${timeMachine.lasts!.count} days`);
-    expect(text).toContain(timeMachine.rewind!.upTo);
-    expect(text).not.toMatch(/\bcast\b/iu);
+  test('describe is the summary\'s words with its numbers read from the rules: a changed lasts or upTo changes them', () => {
+    const words = (lasts: string, upTo: string) => `Played on a post. For ${lasts} it shows as it was at an earlier point you pick, and no card up to ${upTo} can be played on it.`;
+    expect(ui.describe({} as never)).toBe(words('3 days', 'rare'));
+    expect(ui.describe({} as never)).toBe(ui.summary);
+    const was = { lasts: timeMachine.lasts, rewind: timeMachine.rewind };
+    try {
+      (timeMachine as { lasts: unknown }).lasts = { unit: 'day', count: 5 };
+      (timeMachine as { rewind: unknown }).rewind = { upTo: 'legendary' };
+      expect(ui.describe({} as never)).toBe(words('5 days', 'legendary'));
+    } finally { Object.assign(timeMachine, was); }
   });
 
   test('its log line names the date from what the play recorded, or says nothing without it', () => {
-    expect(ui.logPlay!({ to: 'v1' }, { rewindsTo: POINT })).toBe(`That post shows as it was on ${expected(POINT)} until it ends.`);
+    expect(ui.logPlay!({ to: 'v1' }, { rewindsTo: POINT })).toBe(`That post shows as it was on ${new Date(POINT).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })} until it ends.`);
     expect(ui.logPlay!({ to: 'v1' }, {})).toBeUndefined();
   });
 });
