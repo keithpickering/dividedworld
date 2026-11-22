@@ -330,7 +330,7 @@ end $$;
 -- ------------------------------------------------------------------------------------------------- the sessions ----
 
 -- The day's sessions, `rows` being [{staff, start, end}] with `start` and `end` in minutes from 00:00 UTC of `on_day` (what drawSessions draws, engine/system/sessions.ts). A row already there is left as it is, so a rerun of the
--- day's first round writes nothing twice; answers how many sessions the day holds. A staff key that is not a posting persona (a persona, not the developer or the stand-in) is refused, and so is a span outside the day.
+-- day's first round writes nothing twice; answers how many sessions the day holds. A staff key that is not a posting persona (a persona in a posting office: not the developer or the stand-in, not benched, not waiting) is refused, and so is a span outside the day.
 create function write_sessions(on_day date, rows jsonb) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare bad text;
@@ -341,6 +341,10 @@ begin
   select x.staff into bad from jsonb_to_recordset(rows) as x(staff text, "start" integer, "end" integer)
   where not exists (select 1 from characters c where c.staff = x.staff and c.staff_kind = 'persona') limit 1;
   if found then raise exception '"%" is not a persona that posts', bad using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- A posting persona is one in a posting office: not benched, not waiting (the office write_staff_act refuses).
+  select x.staff into bad from jsonb_to_recordset(rows) as x(staff text, "start" integer, "end" integer)
+  where exists (select 1 from staff_office_now o where o.staff = x.staff and o.office in ('waiting', 'benched')) limit 1;
+  if found then raise exception '"%" is benched or waiting and keeps no sessions', bad using hint = 'kayfabb.refusal', errcode = '55000'; end if;
   if exists (select 1 from jsonb_to_recordset(rows) as x(staff text, "start" integer, "end" integer)
              where x."start" is null or x."end" is null or x."start" < 0 or x."end" > 1440 or x."end" <= x."start") then
     raise exception 'a session starts and ends inside the day, and ends after it starts' using hint = 'kayfabb.refusal', errcode = '22023';
@@ -392,7 +396,7 @@ $$;
 
 -- The replies waiting on a persona: public posts (kind post, not under an author veil) made at or after `since` by a character that is not staff, whose target is a public post of that persona from `since` less the pool's
 -- priorityDays, answered by no turn (no pool_answered row), in a thread the persona is not locked out of (locked_out_until, 0402_thread_lockout.sql). One row for each reply: (staff, thread, act, author, at).
--- (The pool setting is read from the settings table, so a database that has none yet reads the defaults, 28 days.) It reads through the persona's own recent posts (acts_character) and, for each, the replies found by the target index (acts_target), never a scan of the window's posts (the newest 200 replies to a post are read, which also keeps the planner to one index probe for each of the persona's posts, as a join by merge would read every reply there is). A plain invoker SQL function, so the planner
+-- (The pool setting is read from the settings table, so a database that has none yet reads the defaults, 28 days.) It reads through the persona's own recent posts (acts_character) and, for each, the replies found by the target index (acts_target), never a scan of the window's posts (the newest 200 waiting replies to a post are read, every filter applied before that cap, which also keeps the planner to one index probe for each of the persona's posts, as a join by merge would read every reply there is). A plain invoker SQL function, so the planner
 -- inlines it: the query is the plan the test explains, and pool_waiting and the presence view read it as one.
 create function pool_waiting_rows(staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
 language sql stable as $$
@@ -404,20 +408,77 @@ language sql stable as $$
       and p.created_at >= pool_waiting_rows.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
   ) mine
   cross join lateral (
+    -- Every filter that makes a reply waiting is inside, before the cap, so the cap is the newest 200 waiting replies to a post.
     select x.id, x.thread, x.character, x.created_at from acts x
-    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_rows.since and x.character is not null
+    join characters w on w.id = x.character and w.staff is null
+    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_rows.since
+      and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = x.id)
+      and not exists (select 1 from pool_answered a where a.reply = x.id)
+      and locked_out_until(c.id, x.thread) is null
     order by x.created_at desc, x.id desc limit 200
   ) r
-  join characters w on w.id = r.character and w.staff is null
   where c.staff = any (pool_waiting_rows.staff_keys) and c.staff_kind = 'persona'
-    -- Public: neither post is under a live author veil, which shows its post as the stand-in's (acts_public's cover condition, read by the two posts' ids once a reply is found); a veiled reply's author is not named here.
+    -- Public: the persona's post is not under a live author veil (a veiled reply was left out above, and is named nowhere).
     and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = mine.id)
-    and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = r.id)
-    and not exists (select 1 from pool_answered a where a.reply = r.id)
-    and locked_out_until(c.id, r.thread) is null
 $$;
 revoke execute on function pool_waiting_rows(text[], timestamptz) from public, anon, authenticated;
 grant execute on function pool_waiting_rows(text[], timestamptz) to service_role;
+
+-- The same read keyed by a thread, for a thread's presence box: it starts from the persona's own posts in that thread (acts_thread_posts) and probes the target index from them, so it touches nothing outside the thread.
+create function pool_waiting_in_thread(in_thread uuid, staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
+language sql stable as $$
+  select c.staff, r.thread, r.id, r.character, r.created_at
+  from characters c
+  cross join lateral (
+    select p.id from acts p
+    where p.character = c.id and p.kind = 'post'
+      and p.thread = pool_waiting_in_thread.in_thread
+      and p.created_at >= pool_waiting_in_thread.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+  ) mine
+  cross join lateral (
+    -- Every filter that makes a reply waiting is inside, before the cap, so the cap is the newest 200 waiting replies to a post.
+    select x.id, x.thread, x.character, x.created_at from acts x
+    join characters w on w.id = x.character and w.staff is null
+    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_in_thread.since
+      and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = x.id)
+      and not exists (select 1 from pool_answered a where a.reply = x.id)
+      and locked_out_until(c.id, x.thread) is null
+    order by x.created_at desc, x.id desc limit 200
+  ) r
+  where c.staff = any (pool_waiting_in_thread.staff_keys) and c.staff_kind = 'persona'
+    -- Public: the persona's post is not under a live author veil (a veiled reply was left out above, and is named nowhere).
+    and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = mine.id)
+$$;
+revoke execute on function pool_waiting_in_thread(uuid, text[], timestamptz) from public, anon, authenticated;
+grant execute on function pool_waiting_in_thread(uuid, text[], timestamptz) to service_role;
+
+-- The same read keyed by a board, for a board's presence box: the persona's own posts in the board's threads only.
+create function pool_waiting_in_board(in_board uuid, staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
+language sql stable as $$
+  select c.staff, r.thread, r.id, r.character, r.created_at
+  from characters c
+  cross join lateral (
+    select p.id from acts p
+    join threads pt on pt.id = p.thread and pt.board = pool_waiting_in_board.in_board
+    where p.character = c.id and p.kind = 'post'
+      and p.created_at >= pool_waiting_in_board.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+  ) mine
+  cross join lateral (
+    -- Every filter that makes a reply waiting is inside, before the cap, so the cap is the newest 200 waiting replies to a post.
+    select x.id, x.thread, x.character, x.created_at from acts x
+    join characters w on w.id = x.character and w.staff is null
+    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_in_board.since
+      and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = x.id)
+      and not exists (select 1 from pool_answered a where a.reply = x.id)
+      and locked_out_until(c.id, x.thread) is null
+    order by x.created_at desc, x.id desc limit 200
+  ) r
+  where c.staff = any (pool_waiting_in_board.staff_keys) and c.staff_kind = 'persona'
+    -- Public: the persona's post is not under a live author veil (a veiled reply was left out above, and is named nowhere).
+    and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = mine.id)
+$$;
+revoke execute on function pool_waiting_in_board(uuid, text[], timestamptz) from public, anon, authenticated;
+grant execute on function pool_waiting_in_board(uuid, text[], timestamptz) to service_role;
 
 -- For each persona of `staff_keys`, its threads with waiting replies: [{staff, thread, heat, replies: [{act, author, at}]}], the replies newest last. `heat` is the public reaction total on the persona's turns in that
 -- thread, read as pool_signals reads its tallies (reaction_tallies_open, 0358_blind_totals.sql): the totals the crowd sees, never who reacted.
@@ -542,48 +603,18 @@ grant execute on function claim_pool_round(timestamptz, interval), write_session
 
 -- ------------------------------------------------------------------------------------------------- presence ----
 
--- presence_listed (0357_post_veils.sql), with a third branch and a column: a persona's character on each thread it posted in since a session of its began or has a reply waiting in (pool_waiting_rows, limited to that persona), for
--- each session open now, `place_since` the session's start and `seen_at` now, marked `in_session`. A persona out of session is listed only by its own posts, as the branch above lists it. The new column is last, so the
--- view's others read as they did. Everything else as 0357_post_veils.sql wrote it.
-create or replace view presence_listed as
-  select c.id, c.name, p.place_kind, p.place, p.board, p.place_since, p.online_since, p.seen_at, false as staff, false as in_session
-  from presence p join characters c on c.id = p.character
-  where c.debuted_at is not null and c.retired_at is null
-    and not exists (select 1 from presence_hidden h where h.character = p.character)
-  union all
-  select c.id, c.name, 'thread'::text, a.thread, t.board, a.last_at, a.last_at, a.last_at, true, false
-  from characters c
-  cross join lateral (
-    select x.thread, max(x.created_at) as last_at
-    from acts_public x
-    where x.character = c.id and x.kind = 'post'
-      and x.created_at >= now() - coalesce(span_interval((select s.value from settings s where s.key = 'presenceWindow')), interval '0')
-    group by x.thread
-  ) a
-  join threads t on t.id = a.thread
-  where c.staff is not null and c.staff_kind not in ('developer', 'anonymous') and c.debuted_at is not null and c.retired_at is null
-  union all
-  select c.id, c.name, 'thread'::text, w.thread, t.board, s.starts_at, s.starts_at, now(), true, true
-  from staff_sessions s
-  join characters c on c.staff = s.staff and c.staff_kind = 'persona' and c.debuted_at is not null and c.retired_at is null
-  cross join lateral (
-    select x.thread from acts_public x where x.character = c.id and x.kind = 'post' and x.created_at >= s.starts_at group by x.thread
-    union
-    select r.thread from pool_waiting_rows(array[s.staff], now() - coalesce(((select g.value from settings g where g.key = 'pool') -> 'turns' ->> 'waitHours')::integer, 48) * interval '1 hour') r
-  ) w
-  join threads t on t.id = w.thread
-  where s.starts_at <= now() and now() < s.ends_at;
+-- presence_listed (0357_post_veils.sql) is not redefined: a persona in session is read by presence_box itself, from the persona's own sessions and posts in the place asked about, so a read of one thread or board touches nothing outside it
+-- (a third branch of the view would have run the persona's waiting-reply read for every open session on every read, the place filter never reaching it).
 
-revoke all on presence_listed from anon, authenticated;
-
--- presence_box (0128_groups.sql; the plan cache and jit settings 0368_client_reads_plan_once.sql gave it kept), with the index's box listing a staff persona while it is in session, once however many threads it is on, as a
--- staff name. The count behind "others" keeps counting characters that are not staff only, so a player sees the same total as before; a thread's box and a board's box read the view as they did. Everything else as
--- 0128_groups.sql wrote it.
+-- presence_box (0128_groups.sql; the plan cache and jit settings 0368_client_reads_plan_once.sql gave it kept), listing a staff persona that is in session (a session open now, the persona in a posting office): in a thread's
+-- box when it posted there since the session began or has a reply waiting there (pool_waiting_in_thread), in a board's box likewise (pool_waiting_in_board), and in the index's box by the session alone, with no waiting read. The index
+-- adds the personas in session to the players' names rather than counting them among the capped ones, so "others" is what the players alone make it. Everything else as 0128_groups.sql wrote it.
 create or replace function presence_box(in_kind text, in_place uuid) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
 declare
   win interval := span_interval(setting('presenceWindow'));
   cap integer := (setting('presenceNames') #>> '{}')::integer;
+  wait interval := coalesce(((select g.value from settings g where g.key = 'pool') -> 'turns' ->> 'waitHours')::integer, 48) * interval '1 hour';
   at_board uuid;
   shown jsonb;
   total integer;
@@ -610,7 +641,14 @@ begin
       join visits_open o on o.visit_act = v.id
       join acts p on p.id = o.post
       join characters m on m.id = v.character
-      where v.kind = 'visit' and v.thread = in_place and m.staff is not null and m.staff_kind is distinct from 'developer' and m.debuted_at is not null and m.retired_at is null),
+      where v.kind = 'visit' and v.thread = in_place and m.staff is not null and m.staff_kind is distinct from 'developer' and m.debuted_at is not null and m.retired_at is null
+      union all
+      select c.id, c.name, true, s.starts_at, null::integer
+      from staff_sessions s
+      join characters c on c.staff = s.staff and c.staff_kind = 'persona' and c.debuted_at is not null and c.retired_at is null
+      where s.starts_at <= now() and now() < s.ends_at and not exists (select 1 from staff_office_now o where o.staff = s.staff and o.office in ('waiting', 'benched'))
+        and (exists (select 1 from acts_public x where x.thread = in_place and x.character = c.id and x.kind = 'post' and x.created_at >= s.starts_at)
+             or exists (select 1 from pool_waiting_in_thread(in_place, array[s.staff], now() - wait) w))),
     one as (
       select s.id, s.name, bool_or(s.staff) as staff, min(s.place_since) as place_since, min(s.visit_post) as visit_post from seen s group by s.id, s.name),
     f as (select * from one order by one.place_since, one.id limit cap)
@@ -620,21 +658,35 @@ begin
            (select count(*) from one)
       into shown, total;
   elsif in_kind = 'board' then
-    with b as (
+    with b0 as (
       select l.id, l.name, l.staff, min(l.place_since) as place_since from presence_listed l
-      where l.board = in_place and l.seen_at >= now() - win group by l.id, l.name, l.staff),
+      where l.board = in_place and l.seen_at >= now() - win group by l.id, l.name, l.staff
+      union all
+      select c.id, c.name, true, s.starts_at
+      from staff_sessions s
+      join characters c on c.staff = s.staff and c.staff_kind = 'persona' and c.debuted_at is not null and c.retired_at is null
+      where s.starts_at <= now() and now() < s.ends_at and not exists (select 1 from staff_office_now o where o.staff = s.staff and o.office in ('waiting', 'benched'))
+        and (exists (select 1 from acts_public x join threads xt on xt.id = x.thread where xt.board = in_place and x.character = c.id and x.kind = 'post' and x.created_at >= s.starts_at)
+             or exists (select 1 from pool_waiting_in_board(in_place, array[s.staff], now() - wait) w))),
+    b as (select x.id, x.name, bool_or(x.staff) as staff, min(x.place_since) as place_since from b0 x group by x.id, x.name),
     f as (select * from b order by b.place_since, b.id limit cap)
     select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'staff', f.staff, 'banned_until', banned_until(f.id), 'group', group_now(f.id)) order by f.place_since, f.id), '[]'::jsonb) from f),
            (select count(*) from b)
       into shown, total;
   else
-    -- Everyone who is not staff, and a persona in session; a persona's rows (one for each thread it is on) are one name. `total` is the characters that are not staff, plus the staff names shown, so that "others"
-    -- is what a player's box has always counted.
+    -- The players, capped; and every persona in session beside them, outside the cap, once however many threads it is on. `total` is the players plus the personas shown, so "others" counts players alone.
     with f as (
-      select l.id, l.name, bool_or(l.staff) as staff, min(l.online_since) as online_since from presence_listed l
-      where l.seen_at >= now() - win and (not l.staff or l.in_session) group by l.id, l.name order by min(l.online_since), l.id limit cap)
-    select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'staff', f.staff, 'banned_until', banned_until(f.id), 'group', group_now(f.id)) order by f.online_since, f.id), '[]'::jsonb) from f),
-           (select count(*) from presence_listed l where not l.staff and l.seen_at >= now() - win) + (select count(*) from f where f.staff)
+      select l.id, l.name, false as staff, l.online_since from presence_listed l
+      where not l.staff and l.seen_at >= now() - win order by l.online_since, l.id limit cap),
+    g as (
+      select c.id, c.name, true as staff, min(s.starts_at) as online_since
+      from staff_sessions s
+      join characters c on c.staff = s.staff and c.staff_kind = 'persona' and c.debuted_at is not null and c.retired_at is null
+      where s.starts_at <= now() and now() < s.ends_at and not exists (select 1 from staff_office_now o where o.staff = s.staff and o.office in ('waiting', 'benched'))
+      group by c.id, c.name),
+    u as (select * from f union all select * from g)
+    select (select coalesce(jsonb_agg(jsonb_build_object('id', u.id, 'name', u.name, 'staff', u.staff, 'banned_until', banned_until(u.id), 'group', group_now(u.id)) order by u.online_since, u.id), '[]'::jsonb) from u),
+           (select count(*) from presence_listed l where not l.staff and l.seen_at >= now() - win) + (select count(*) from g)
       into shown, total;
   end if;
   return jsonb_build_object('names', shown, 'others', greatest(0, total - jsonb_array_length(shown)));

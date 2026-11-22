@@ -19,10 +19,14 @@ begin
       'staff', jsonb_build_array(
         jsonb_build_object('key', 'cs-boss', 'name', 'Cs Boss', 'title', 'Boss', 'signature', 'a'),
         jsonb_build_object('key', 'cs-mod', 'name', 'Cs Mod', 'title', 'Mod', 'signature', 'b'),
-        jsonb_build_object('key', 'cs-late', 'name', 'Cs Late', 'title', 'Mod', 'signature', 'c')),
+        jsonb_build_object('key', 'cs-late', 'name', 'Cs Late', 'title', 'Mod', 'signature', 'c'),
+        jsonb_build_object('key', 'cs-bench', 'name', 'Cs Bench', 'title', 'Bench', 'signature', 'd'),
+        jsonb_build_object('key', 'cs-wait', 'name', 'Cs Wait', 'title', 'Waiting', 'signature', 'e')),
       'firstStaff', jsonb_build_array('cs-mod', 'cs-late'),
       'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
+  update characters set debuted_at = now() where staff = 'cs-bench';
+  insert into staff_offices (staff, office, cause) values ('cs-bench', 'benched', 'admin');
 end $$;
 
 create function pg_temp.refused(stmt text) returns text language plpgsql as $$
@@ -148,6 +152,12 @@ begin
   if said is null or said !~ '^22023' then raise exception 'an empty session was written: %', said; end if;
   said := pg_temp.refused('select write_sessions(''2030-01-08'', ''{"staff": "cs-boss"}'')');
   if said is null or said !~ '^22023' then raise exception 'sessions that are no list were written: %', said; end if;
+  if (select count(*) from staff_sessions where day = '2030-01-08') is distinct from 0 then raise exception 'a refused day left rows behind'; end if;
+  -- A benched persona and one that has not debuted post nothing, so they keep no sessions.
+  said := pg_temp.refused('select write_sessions(''2030-01-08'', ''[{"staff": "cs-bench", "start": 0, "end": 15}]'')');
+  if said is null or said !~ '^55000' then raise exception 'a session for a benched persona was written: %', said; end if;
+  said := pg_temp.refused('select write_sessions(''2030-01-08'', ''[{"staff": "cs-wait", "start": 0, "end": 15}]'')');
+  if said is null or said !~ '^55000' then raise exception 'a session for a waiting persona was written: %', said; end if;
   if (select count(*) from staff_sessions where day = '2030-01-08') is distinct from 0 then raise exception 'a refused day left rows behind'; end if;
   -- The developer is no persona that posts.
   said := pg_temp.refused(format('select write_sessions(''2030-01-08'', %L)', jsonb_build_array(jsonb_build_object('staff', (select staff from characters where staff_kind = 'developer'), 'start', 0, 'end', 15))));
@@ -443,15 +453,47 @@ begin
   if (select count(*) from jsonb_array_elements(box -> 'names') e where e ->> 'name' = 'Cs Late' and (e ->> 'staff')::boolean) is distinct from 1 then raise exception 'the index lists a persona in session once, as staff: %', box; end if;
   if not exists (select 1 from jsonb_array_elements(box -> 'names') e where e ->> 'name' = 'Cs P Ann' and not (e ->> 'staff')::boolean) then raise exception 'the index lost its player: %', box; end if;
   if (box ->> 'others')::integer is distinct from others_before then raise exception 'the index''s count moved for a persona in session: % to %', others_before, box ->> 'others'; end if;
+  -- A persona benched now is listed nowhere, though its session was written while it posted and it posted in t_post.
+  insert into staff_offices (staff, office, cause) values ('cs-late', 'benched', 'admin');
+  if exists (select 1 from jsonb_array_elements(presence_box('index', null) -> 'names') e where e ->> 'name' = 'Cs Late') then raise exception 'a benched persona is in the index'; end if;
+  if exists (select 1 from jsonb_array_elements(presence_box('thread', t_wait) -> 'names') e where e ->> 'name' = 'Cs Late') then raise exception 'a benched persona is on a thread it has a reply waiting in'; end if;
+  insert into staff_offices (staff, office, cause) values ('cs-late', 'mod', 'admin');
   perform tests.unbecome();
   -- A session that has ended lists nothing of its own: its trigger is put aside for the moment (a restore does it) so the row can be moved into the past.
   alter table staff_sessions disable trigger staff_sessions_no_update;
   update staff_sessions set starts_at = now() - interval '2 hours', ends_at = now() - interval '1 hour' where id = sid;
   alter table staff_sessions enable always trigger staff_sessions_no_update;
   perform tests.become_service();
-  if exists (select 1 from presence_listed where in_session and id = late) then raise exception 'a session that ended still lists its persona in session'; end if;
   if exists (select 1 from jsonb_array_elements(presence_box('index', null) -> 'names') e where e ->> 'name' = 'Cs Late') then raise exception 'a persona whose session ended is in the index'; end if;
   if exists (select 1 from jsonb_array_elements(presence_box('thread', t_wait) -> 'names') e where e ->> 'name' = 'Cs Late') then raise exception 'a persona whose session ended is on a thread it has a reply waiting in'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- The index's names are capped for players alone: a persona in session takes no player's slot ----
+do $$
+declare
+  t uuid := tests.thread('Capped');
+  late uuid := (select id from characters where staff = 'cs-late');
+  before_others integer; after_others integer; box jsonb; who uuid;
+begin
+  update settings set value = '2' where key = 'presenceNames';
+  for i in 1 .. 5 loop
+    who := tests.character(tests.account('cs-cap-' || i), 'Cs Cap ' || i);
+    insert into presence (character, place_kind, place, board, place_since, online_since, seen_at)
+    values (who, 'thread', t, (select board from threads where id = t), now(), now() - i * interval '1 minute', now());
+  end loop;
+  perform tests.become_service();
+  box := presence_box('index', null);
+  before_others := (box ->> 'others')::integer;
+  if (select count(*) from jsonb_array_elements(box -> 'names') e where not (e ->> 'staff')::boolean) is distinct from 2 or exists (select 1 from jsonb_array_elements(box -> 'names') e where e ->> 'name' = 'Cs Late') then
+    raise exception 'the cap binds on players with no persona in session: %', box;
+  end if;
+  perform write_sessions(pg_temp.today(), '[{"staff": "cs-late", "start": 0, "end": 1440}]');
+  box := presence_box('index', null);
+  after_others := (box ->> 'others')::integer;
+  if not exists (select 1 from jsonb_array_elements(box -> 'names') e where e ->> 'name' = 'Cs Late' and (e ->> 'staff')::boolean) then raise exception 'the persona in session is not in the index: %', box; end if;
+  if (select count(*) from jsonb_array_elements(box -> 'names') e where not (e ->> 'staff')::boolean) is distinct from 2 then raise exception 'the persona took a player''s name slot: %', box; end if;
+  if after_others is distinct from before_others then raise exception 'the players'' others moved for a persona in session: % to %', before_others, after_others; end if;
   perform tests.unbecome();
 end $$;
 
@@ -462,7 +504,7 @@ end $$;
 do $$
 declare
   boss uuid := (select id from characters where staff = 'cs-boss');
-  th uuid[]; chars uuid[]; plan text; ln record; hits integer;
+  th uuid[]; chars uuid[]; plan text; ln record; hits integer; capped uuid;
 begin
   select array_agg(tests.thread('Big ' || i)) into th from generate_series(1, 80) i;
   select array_agg(tests.character(tests.account('cs-big-' || i), 'Cs Big ' || i)) into chars from generate_series(1, 400) i;
@@ -474,6 +516,12 @@ begin
   insert into acts (character, kind, thread, payload, target_act_id, seq, created_at)
   select chars[1 + (row_number() over ())::int % 400], 'post', p.thread, '{"body": "A reply."}', p.id, 200000 + row_number() over (), now() - interval '10 minutes'
   from (select id, thread from acts where character = boss and kind = 'post' and thread = any (th) order by created_at desc limit 20) p;
+  -- The cap is exact: 210 newer replies by staff to one post do not crowd out the three older player replies, since staff replies are not waiting and are left out before the cap.
+  select p.id into capped from acts p where p.character = boss and p.kind = 'post' and p.thread = any (th) and not exists (select 1 from acts r where r.target_act_id = p.id) order by p.created_at limit 1;
+  insert into acts (character, kind, thread, payload, target_act_id, seq, created_at)
+  select (select id from characters where staff = 'cs-mod'), 'post', (select thread from acts where id = capped), '{"body": "A colleague."}', capped, 300000 + i, now() - interval '1 minute' from generate_series(1, 210) i;
+  insert into acts (character, kind, thread, payload, target_act_id, seq, created_at)
+  select chars[i], 'post', (select thread from acts where id = capped), '{"body": "An older player reply."}', capped, 400000 + i, now() - interval '1 hour' from generate_series(1, 3) i;
   set local session_replication_role = origin;
   analyze acts;
   analyze characters;
@@ -481,7 +529,22 @@ begin
   for ln in execute format('explain select * from pool_waiting_rows(array[%L], now() - interval ''2 days'')', 'cs-boss') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
   if plan not like '%acts_target%' or plan not like '%Index Cond: (target_act_id = p.id)%' then raise exception 'the waiting replies are not probed by the target index, once for each post of the persona: %', plan; end if;
   if plan ~ 'Seq Scan on acts\M' or plan ~ 'Merge Join' then raise exception 'the waiting replies scan or merge the posts: %', plan; end if;
+  -- A thread's presence read starts from the persona's own posts in that thread and probes the target index from them; a board's, from its posts in that board's threads. Neither reads other places.
+  plan := '';
+  for ln in execute format('explain select * from pool_waiting_in_thread(%L, array[%L], now() - interval ''2 days'')', th[1], 'cs-boss') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan !~ format('Index Cond:[^\n]*thread = ''%s''', th[1]) or plan !~ 'target_act_id = p.id' or plan ~ 'Seq Scan on acts p\M' or plan ~ 'acts_created' or plan ~ 'Merge Join' then
+    raise exception 'a thread''s presence read does not probe that thread alone: %', plan;
+  end if;
+  plan := '';
+  for ln in execute format('explain select * from pool_waiting_in_board(%L, array[%L], now() - interval ''2 days'')', (select board from threads where id = th[1]), 'cs-boss') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan !~ 'target_act_id = p.id' or plan ~ 'Seq Scan on acts p\M' or plan ~ 'acts_created' or plan ~ 'Merge Join' then
+    raise exception 'a board''s presence read does not probe its own posts: %', plan;
+  end if;
   select count(*) into hits from pool_waiting_rows(array['cs-boss'], now() - interval '2 days') w where w.thread = any (th);
+  if (select count(*) from pool_waiting_rows(array['cs-boss'], now() - interval '2 days') w where w.act in (select id from acts where target_act_id = capped and created_at < now() - interval '30 minutes')) is distinct from 3 then
+    raise exception 'staff replies crowded the waiting replies out of the cap';
+  end if;
+  hits := hits - 3;
   if hits is distinct from 20 then raise exception 'the 20 seeded replies are not all found: %', hits; end if;
   if jsonb_array_length(pool_waiting(array['cs-boss'], now() - interval '2 days')) < 1 then raise exception 'the aggregate finds none'; end if;
 end $$;
