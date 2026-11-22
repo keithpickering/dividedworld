@@ -40,6 +40,9 @@ row shows about three of the sixteen kinds at a time. Once #871 pages Who, a row
    (face down, not sprung, not taken back, not over) is up now; a back gone by its own end is already dropped by
    `shownPlays`. A play whose `starts` is ahead is up now (it is set and waiting, and its note says so). One engine
    predicate says this (`inForce`, plan Task 1), beside `endable`, which it agrees with on every face-up play.
+   *Amended 2026-11-22, the owner's answer to #984:* a card whose effect is still in force is up now, even after its trap
+   has sprung: a sprung back whose lockout is still live is up now, and is ended when the lockout ends. The owner sees a
+   trap's life as Set, then Up now, then Ended; for now the face-down and the sprung-and-live phases both stand under Up now.
 3. **Up-now rows stay full.** They are today's row: ink bar, avatar, caster in capitals, when, the message, the card's note,
    "More reactions than the post", "Your play", the reactions with React, the action tiles, and the threads spun. There are
    few of them at once (a stack is bounded by its card's rules), and they are the rows a reader acts on.

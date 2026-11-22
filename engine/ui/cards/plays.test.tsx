@@ -1068,6 +1068,12 @@ describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', (
   test('a sprung back\'s revealed play is not in force', () => {
     expect(inForce({ ...back, revealed: { card: 'trap', spring: 's1', at: '2026-11-15T00:00:00.000Z' } } as CardPlay, now, false)).toBe(false);
   });
+  test('a sprung back whose lockout is still live is in force, and over once the lockout ends (the owner, #984)', () => {
+    const sprung = { ...back, revealed: { card: 'trap', spring: 's1', at: '2026-11-15T00:00:00.000Z', until: AHEAD } } as CardPlay;
+    expect(inForce(sprung, now, false)).toBe(true);
+    expect(inForce({ ...sprung, revealed: { ...sprung.revealed!, until: PAST } } as CardPlay, now, false)).toBe(false);
+    expect(inForce({ ...sprung, reversed: true } as CardPlay, now, false)).toBe(false);
+  });
   test('a taken-back back is not in force', () => expect(inForce({ ...back, takenBack: { at: PAST } } as CardPlay, now, false)).toBe(false));
   test('a back an admin ended, or a trap caught, is not in force', () => {
     expect(inForce({ ...back, reversed: true } as CardPlay, now, false)).toBe(false);
