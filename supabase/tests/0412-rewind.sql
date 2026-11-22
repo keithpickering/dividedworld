@@ -6,7 +6,8 @@
 --   * live_rewind and rewind_refusal: the live plays, latest first, the exact words (the engine's rewindWords), the rarity cut-off, `passing`, the end by time and by an admin;
 --   * card_target carries `rewind: { upTo }` on a live rewind's effect;
 --   * rewind_view: the version at the point, and the hidden placeholder where an admin hid that version; null for a play that is no rewind.
--- place_cast, place_set, thread_page and spring_traps, and the tests of them, are the second half of this file.
+-- The second half (the end of this file) holds place_cast (the point, the freeze, `rewind_at`), place_set (a rewind is never set, the freeze), spring_traps (no back springs under a rewind), edits during a rewind,
+-- thread_page's `rewinds` (the page's posts and the ORIGIN post) and the lookup's plan.
 -- The cards are this file's own (rw...). The edit grace is the fixtures' (two minutes).
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
@@ -336,3 +337,307 @@ begin
 end $$;
 
 -- ---- The second half (Task 2, items 9, 10 and 12, and spring_traps) ----
+-- Plays go through the real play_card and set_card as the service role acts for a player; a refusal comes back as `sqlstate message`, with its hint.
+
+create function pg_temp.hand(who uuid, variadic keys text[]) returns void language sql as $$
+  insert into card_ledger (account, card, kind, price) select who, k, 'bought', 0 from unnest(keys) k, generate_series(1, 12)
+$$;
+
+create function pg_temp.play(who uuid, card text, through uuid, target uuid, config jsonb default '{}', out id uuid, out said text, out hint text) language plpgsql as $$
+begin
+  perform tests.become_service();
+  begin
+    id := (play_card(who, card, through, target, config, 0, '') ->> 'id')::uuid;
+  exception when others then
+    get stacked diagnostics hint = pg_exception_hint;
+    said := sqlstate || ' ' || sqlerrm;
+  end;
+  perform tests.unbecome();
+end $$;
+
+create function pg_temp.back(who uuid, card text, through uuid, target uuid, catches text default null, out id uuid, out said text) language plpgsql as $$
+begin
+  perform tests.become_service();
+  begin
+    id := (set_card(who, card, through, target, '{}', 0, catches) ->> 'id')::uuid;
+  exception when others then
+    said := sqlstate || ' ' || sqlerrm;
+  end;
+  perform tests.unbecome();
+end $$;
+
+-- A post `by` wrote an hour ago and edited once past the grace: its first point is offered.
+create function pg_temp.edited(by_character uuid, in_thread uuid, body text default 'As first posted.') returns uuid language plpgsql as $$
+declare p uuid := tests.post(by_character, in_thread, body, now() - interval '1 hour');
+begin
+  perform tests.act(by_character, 'edit', in_thread, jsonb_build_object('body', body || ' Edited.'), p, now() - interval '50 minutes');
+  return p;
+end $$;
+
+-- A back on the post is still face down: set, with no spring and no take-back written for it.
+create function pg_temp.still_down(back uuid) returns boolean language sql as $$
+  select exists (select 1 from face_down f where f.play = back and f.ends_at > now())
+     and not exists (select 1 from acts s where s.kind in ('spring', 'take_back') and (s.payload ->> 'set') = back::text)
+$$;
+
+select tests.unbecome();
+do $$
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, gimmick) values ('rwuse', 'Rw Use', 'sweet', 'uncommon', 'use', '{post}', interval '1 day', 1, '{"kind": "ward", "upTo": "common"}');
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts, stack) values
+    ('rwsetr', 'Rw Set Rare', 'salty', 'rare', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, 1),
+    ('rwrev', 'Rw Reversal', 'salty', 'legendary', 'set', '{"trigger": {"on": "cast"}}', '{post}', null, 1),
+    ('rwidle', 'Rw Idle', 'pepperoni', 'common', 'set', '{"trigger": {"on": "visit"}}', '{post}', null, 1);
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Rw Staff', 'rw-staff', 'persona', now());
+end $$;
+
+-- ---- place_cast: the point, the freeze, and the end of the freeze ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); t uuid := pg_temp.fix('t'); admin uuid := pg_temp.fix('admin');
+  bob uuid := tests.account('rw-bob'); b uuid := tests.character(bob, 'Rw Bob');
+  p0 uuid := tests.post(a, t, 'Never edited.', now() - interval '1 hour');
+  p1 uuid := pg_temp.edited(a, t); p1c uuid := pg_temp.edited(a, t, 'The control.'); p2 uuid := pg_temp.edited(a, t, 'To run out.');
+  r record; rev uuid; control_back uuid; back uuid; rw uuid; rw2 uuid; pl jsonb; frozen constant text := 'this post''s Rw Time turns away cards up to rare until %';
+begin
+  perform pg_temp.hand(bob, 'rwtime', 'rwcommon', 'rwuncommon', 'rwlegend');
+  perform pg_temp.hand(ann, 'rwuse', 'rwsetr', 'rwrev', 'rwtime', 'rwcommon');
+  -- The point's words, in the engine's words, and refused as a configuration refusal: no point, a post that shows the same, a version in the grace, another post's version.
+  r := pg_temp.play(bob, 'rwtime', b, p0, jsonb_build_object('to', p0));
+  perform pg_temp.expect(r.said = '22023 this post shows the same at that point as it does now' and r.hint = 'kayfabb.refusal', format('a rewind of a post never edited, with no plays: %s / %s', r.said, r.hint));
+  r := pg_temp.play(bob, 'rwtime', b, p1, '{}');
+  perform pg_temp.expect(r.said = '22023 pick a point from this post''s History' and r.hint = 'kayfabb.refusal', format('a rewind with no point: %s / %s', r.said, r.hint));
+  r := pg_temp.play(bob, 'rwtime', b, p1, '{"to": "not a uuid"}');
+  perform pg_temp.expect(r.said = '22023 pick a point from this post''s History' and r.hint = 'kayfabb.refusal', format('a rewind with a point that is no uuid: %s / %s', r.said, r.hint));
+  r := pg_temp.play(bob, 'rwtime', b, p1, '{"to": 7}');
+  perform pg_temp.expect(r.said = '22023 pick a point from this post''s History', format('a rewind with a point that is a number: %s', r.said));
+  r := pg_temp.play(bob, 'rwtime', b, p1, jsonb_build_object('to', p0));
+  perform pg_temp.expect(r.said = '22023 pick a point from this post''s History', format('a rewind to another post''s version: %s', r.said));
+  r := pg_temp.play(bob, 'rwtime', b, pg_temp.fix('p'), jsonb_build_object('to', pg_temp.fix('e_in')));
+  perform pg_temp.expect(r.said = '22023 that version was saved in the edit grace window, so it is part of the post as first posted', format('a rewind to a version inside the grace: %s', r.said));
+  perform pg_temp.expect(not exists (select 1 from acts k where k.kind = 'card' and k.payload ->> 'card' = 'rwtime' and k.target_act_id in (p0, p1, pg_temp.fix('p'))), 'a refused rewind wrote a card Act');
+
+  -- Backs set before the rewind: a Reversal that catches a legendary Move, on the post to be frozen and on a control post.
+  back := (pg_temp.back(ann, 'rwrev', a, p1, 'rwlegend')).id;
+  control_back := (pg_temp.back(ann, 'rwrev', a, p1c, 'rwlegend')).id;
+  perform pg_temp.expect(back is not null and control_back is not null, 'the backs were not set');
+  -- The control: with no rewind on the post, the same legendary Move meets its back.
+  r := pg_temp.play(bob, 'rwlegend', b, p1c);
+  perform pg_temp.expect(r.said is null and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = control_back::text), format('the control: a legendary Move did not spring the back (no rewind): %s', r.said));
+
+  -- The rewind lands, naming the point.
+  r := pg_temp.play(bob, 'rwtime', b, p1, jsonb_build_object('to', p1));
+  perform pg_temp.expect(r.said is null, format('the rewind was refused on a post edited past the grace: %s', r.said));
+  rw := r.id;
+  perform pg_temp.expect((select (k.payload ->> 'rewind_at')::timestamptz from acts k where k.id = rw) = rewind_point_at(p1, p1)
+    and (select k.payload ->> 'ends' from acts k where k.id = rw) is not null and (select count(*) from live_rewind(p1) where play = rw and at = rewind_point_at(p1, p1)) = 1,
+    format('the rewind''s Act does not carry rewind_at and ends: %s', (select payload from acts where id = rw)));
+
+  -- A second rewind card (rare) on the post is refused with the freeze's words, and so is every card up to rare.
+  r := pg_temp.play(bob, 'rwtime', b, p1, jsonb_build_object('to', p1));
+  perform pg_temp.expect(r.said like '42501 ' || frozen and r.hint = 'kayfabb.refusal', format('a second rewind card was not refused in the freeze''s words: %s / %s', r.said, r.hint));
+  r := pg_temp.play(bob, 'rwcommon', b, p1);
+  perform pg_temp.expect(r.said like '42501 ' || frozen and r.hint = 'kayfabb.refusal', format('a common Move was not refused in the freeze''s words: %s', r.said));
+  r := pg_temp.play(bob, 'rwuncommon', b, p1);
+  perform pg_temp.expect(r.said like '42501 ' || frozen, format('an uncommon Move was not refused in the freeze''s words: %s', r.said));
+  -- The author's own Use (uncommon): refused, and the words are the same as a Move's and as another character's would be.
+  r := pg_temp.play(ann, 'rwuse', a, p1);
+  perform pg_temp.expect(r.said like '42501 ' || frozen, format('an uncommon Use on the author''s own post was not refused in the freeze''s words: %s', r.said));
+  perform pg_temp.expect(r.said = (pg_temp.play(bob, 'rwcommon', b, p1)).said, 'the freeze said different words to a Use and to a Move');
+  -- A rare Set is refused, in the same words, before anything is written; the rewind card itself is never set (face up).
+  r := pg_temp.back(ann, 'rwsetr', a, p1, 'rwcommon');
+  perform pg_temp.expect(r.said like '42501 ' || frozen, format('a rare Set on a rewound post was not refused in the freeze''s words: %s', r.said));
+  r := pg_temp.back(ann, 'rwtime', a, p1);
+  perform pg_temp.expect(r.said = '22023 Rw Time is played face up and never set face down', format('a rewind card set face down: %s', r.said));
+  r := pg_temp.back(ann, 'rwtime', a, p0);
+  perform pg_temp.expect(r.said = '22023 Rw Time is played face up and never set face down', format('a rewind card set face down on a post with no rewind: %s', r.said));
+  perform pg_temp.expect(not exists (select 1 from acts s where s.kind = 'set' and s.target_act_id = p1 and s.id <> back), 'a refused Set wrote an Act');
+
+  -- A legendary Move lands, and the back already face down there does not spring: it is still face down after, with no spring Act.
+  r := pg_temp.play(bob, 'rwlegend', b, p1);
+  perform pg_temp.expect(r.said is null and r.id is not null, format('a legendary Move was refused under a rare rewind: %s', r.said));
+  perform pg_temp.expect(pg_temp.still_down(back), 'a back sprang under a rewind');
+  perform pg_temp.expect(not exists (select 1 from acts s where s.kind = 'spring' and s.target_act_id = p1), 'a spring Act was written on a rewound post');
+  perform pg_temp.expect((select a2.payload ? 'caught' from acts a2 where a2.id = r.id) = false, 'the Move that met no back was caught');
+
+  -- It ends by an admin: the same common Move lands. The back is still set.
+  perform tests.become(admin); perform reverse_card(rw); perform tests.unbecome();
+  r := pg_temp.play(bob, 'rwcommon', b, p1);
+  perform pg_temp.expect(r.said is null, format('a common Move was refused after an admin ended the rewind: %s', r.said));
+
+  -- It ends by its time: played, then its `ends` passes (written into the past by the test, as the append-only trigger is held off for this statement alone).
+  r := pg_temp.play(bob, 'rwtime', b, p2, jsonb_build_object('to', p2));
+  perform pg_temp.expect(r.said is null, format('the rewind on the second post was refused: %s', r.said));
+  rw2 := r.id;
+  perform pg_temp.expect((pg_temp.play(bob, 'rwcommon', b, p2)).said like '42501 %', 'the second post was not frozen');
+  alter table acts disable trigger user;
+  update acts set payload = jsonb_set(payload, '{ends}', to_jsonb(now() - interval '1 minute')) where id = rw2;
+  alter table acts enable trigger user;
+  update play_post set ends_at = now() - interval '1 minute' where play = rw2;
+  perform pg_temp.expect((select count(*) from live_rewind(p2)) = 0, 'a rewind whose time passed was live');
+  r := pg_temp.play(bob, 'rwcommon', b, p2);
+  perform pg_temp.expect(r.said is null, format('a common Move was refused after the rewind''s time passed: %s', r.said));
+  insert into rw_fix values ('bob', bob), ('b', b), ('p1', p1), ('rw1', rw), ('back1', back);
+end $$;
+
+-- ---- No back springs under a rewind: a quote, a staff quote and a visit, each with its control ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); t uuid := pg_temp.fix('t'); bob uuid := pg_temp.fix('bob'); b uuid := pg_temp.fix('b'); admin uuid := pg_temp.fix('admin');
+  staff uuid := (select id from characters where staff = 'rw-staff');
+  q uuid; qr uuid; mv uuid; idle uuid; mv_r uuid; idle_r uuid; v uuid; made jsonb; rw uuid; sprung jsonb;
+begin
+  perform pg_temp.hand(ann, 'rwcommon', 'rwidle'); perform pg_temp.hand(bob, 'rwtime');
+  -- A Move back and an Idle back on a post with no rewind (the control) and on a post under one (the other).
+  q := pg_temp.edited(a, t, 'Control, no rewind.'); qr := pg_temp.edited(a, t, 'Under a rewind.');
+  mv := (pg_temp.back(ann, 'rwcommon', a, q)).id;
+  mv_r := (pg_temp.back(ann, 'rwcommon', a, qr)).id;
+  perform pg_temp.expect(mv is not null and mv_r is not null, 'the Move backs were not set');
+  rw := (pg_temp.play(bob, 'rwtime', b, qr, jsonb_build_object('to', qr))).id;
+  perform pg_temp.expect(rw is not null, 'the rewind was not played');
+
+  -- A quote through post(): springs on the control, and on the rewound post nothing, and the back stays down.
+  perform tests.become(bob);
+  made := post(t, b, 'Quoting the control.', q);
+  perform tests.unbecome();
+  perform pg_temp.expect(made ? 'sprung' and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = mv::text), format('the control: a quote did not spring the Move: %s', made));
+  perform tests.become(bob);
+  made := post(t, b, 'Quoting the rewound post.', qr);
+  perform tests.unbecome();
+  perform pg_temp.expect(not made ? 'sprung' and pg_temp.still_down(mv_r), format('a quote sprang a back under a rewind: %s', made));
+  -- A staff quote: the control is a post of its own, since the quote above spent the first back.
+  q := pg_temp.edited(a, t, 'Control for staff.');
+  mv := (pg_temp.back(ann, 'rwcommon', a, q)).id;
+  made := write_staff_act('rw-staff', 'post', t, q, jsonb_build_object('body', 'Staff quotes the control.'));
+  perform pg_temp.expect(made ? 'sprung' and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = mv::text), format('the control: a staff quote did not spring the Move: %s', made));
+  made := write_staff_act('rw-staff', 'post', t, qr, jsonb_build_object('body', 'Staff quotes the rewound post.'));
+  perform pg_temp.expect(not made ? 'sprung' and pg_temp.still_down(mv_r), format('a staff quote sprang a back under a rewind: %s', made));
+  -- A visit that starts on the post: the Idle back's trigger.
+  -- A post holds one back at a time, so each visit gets a post of its own.
+  q := pg_temp.edited(a, t, 'Control for visits.');
+  idle := (pg_temp.back(ann, 'rwidle', a, q)).id;
+  perform pg_temp.expect(idle is not null, 'the Idle back was not set');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  v := tests.act(staff, 'visit', t, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', q::text)),
+    'ends_at', now() + interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'), q);
+  perform set_config('kayfabb.staff_writer', '', true);
+  sprung := spring_traps('visit', q, v);
+  perform pg_temp.expect(sprung is not null and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = idle::text), 'the control: a visit did not spring the Idle');
+  -- Now the Idle on a post, then a rewind, then a visit.
+  qr := pg_temp.edited(a, t, 'Idle under a rewind.');
+  idle_r := (pg_temp.back(ann, 'rwidle', a, qr)).id;
+  rw := (pg_temp.play(bob, 'rwtime', b, qr, jsonb_build_object('to', qr))).id;
+  perform pg_temp.expect(rw is not null, 'the rewind over the Idle was refused');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  v := tests.act(staff, 'visit', t, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', 1, 'board', (select board from threads where id = t), 'band', 'minor', 'cause', 'patrol', 'about_act', qr::text)),
+    'ends_at', now() + interval '1 hour', 'challenge', jsonb_build_object('kind', 'distraction'), 'line', 'Looking.'), qr);
+  perform set_config('kayfabb.staff_writer', '', true);
+  sprung := spring_traps('visit', qr, v);
+  perform pg_temp.expect(sprung is null and pg_temp.still_down(idle_r), format('a visit sprang a back under a rewind: %s', sprung));
+  -- A cast trigger as spring_traps meets it, and a trigger with no kind of its own, the same: nothing.
+  perform pg_temp.expect(spring_traps('cast', qr, v, 'rwlegend') is null and spring_traps('quote', qr, v) is null, 'a cast or a quote sprang a back under a rewind');
+  -- The rewind ends: the Idle springs again on the next visit.
+  perform tests.become(admin); perform reverse_card(rw); perform tests.unbecome();
+  sprung := spring_traps('visit', qr, v);
+  perform pg_temp.expect(sprung is not null and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = idle_r::text), 'a back stayed down after the rewind ended');
+end $$;
+
+-- ---- An edit during a rewind lands: the post's current words are the new ones, and the rewind's view still gives the old ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); p1 uuid := pg_temp.fix('p1'); rw uuid := pg_temp.fix('rw1'); t uuid := pg_temp.fix('t');
+  p uuid := pg_temp.edited(a, t, 'Words as first posted.'); r record; played uuid; v jsonb;
+begin
+  r := pg_temp.play(pg_temp.fix('bob'), 'rwtime', pg_temp.fix('b'), p, jsonb_build_object('to', p));
+  perform pg_temp.expect(r.said is null, format('the rewind was refused: %s', r.said));
+  played := r.id;
+  perform tests.become(ann);
+  perform edit_post(p, a, 'Words written during the rewind.');
+  perform tests.unbecome();
+  perform pg_temp.expect((select a2.current_payload ->> 'body' from acts_public a2 where a2.id = p) = 'Words written during the rewind.', format('the edit during a rewind did not land: %s', (select a2.current_payload from acts_public a2 where a2.id = p)));
+  v := rewind_view(played);
+  perform pg_temp.expect(v -> 'version' -> 'current_payload' ->> 'body' = 'Words as first posted.', format('the rewind''s view changed with the edit: %s', v -> 'version' -> 'current_payload'));
+end $$;
+
+-- ---- thread_page carries the rewind in `rewinds`: for a post of the page, for the ORIGIN post of a spun thread, and nothing once it is ended ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := pg_temp.fix('ann'); a uuid := pg_temp.fix('a'); admin uuid := pg_temp.fix('admin'); bob uuid := pg_temp.fix('bob'); b uuid := pg_temp.fix('b');
+  t uuid := tests.thread('Rw page'); post_on uuid; plain uuid; r record; rw uuid; origin_post uuid; made jsonb; s uuid; page jsonb; spun_page jsonb; rewound text;
+begin
+  post_on := pg_temp.edited(a, t, 'A post on the page, rewound.');
+  plain := tests.post(a, t, 'A post on the page, not rewound.');
+  perform tests.become(ann); page := thread_page(t, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(page -> 'rewinds' = '[]'::jsonb, format('a page with no rewind has rewinds: %s', page -> 'rewinds'));
+  r := pg_temp.play(bob, 'rwtime', b, post_on, jsonb_build_object('to', post_on));
+  perform pg_temp.expect(r.said is null, format('the rewind was refused: %s', r.said)); rw := r.id;
+  perform tests.become(ann); page := thread_page(t, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(jsonb_array_length(page -> 'rewinds') = 1 and page -> 'rewinds' -> 0 ->> 'play' = rw::text and page -> 'rewinds' -> 0 ->> 'post' = post_on::text
+    and page -> 'rewinds' -> 0 -> 'version' -> 'current_payload' ->> 'body' = 'A post on the page, rewound.', format('the page does not carry the rewind: %s', page -> 'rewinds'));
+  perform pg_temp.expect(page -> 'rewinds' -> 0 = rewind_view(rw), 'the page''s rewind is not rewind_view''s answer');
+  -- Another player's page is the same: nothing in it depends on who reads.
+  perform tests.become(bob); page := thread_page(t, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(jsonb_array_length(page -> 'rewinds') = 1, 'another player''s page does not carry the rewind');
+  -- A rewind a caught play never was: nothing.
+  perform tests.act(a, 'card', t, jsonb_build_object('card', 'rwtime', 'reach', 'post', 'ends', now() + interval '1 day', 'rewind_at', now() - interval '1 hour', 'caught', 'x'), plain);
+  perform tests.become(ann); page := thread_page(t, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(jsonb_array_length(page -> 'rewinds') = 1, 'a caught rewind is on the page');
+  -- It ends: nothing.
+  perform tests.become(admin); perform reverse_card(rw); perform tests.unbecome();
+  perform tests.become(ann); page := thread_page(t, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(page -> 'rewinds' = '[]'::jsonb, format('an ended rewind is on the page: %s', page -> 'rewinds'));
+
+  -- The ORIGIN post of a spun thread: a rewind on the post the thread was spun from shows on the spun thread's page, and on the origin's own thread.
+  origin_post := pg_temp.edited(pg_temp.fix('a'), t, 'The post that is spun.');
+  r := pg_temp.play(bob, 'rwtime', b, origin_post, jsonb_build_object('to', origin_post));
+  perform pg_temp.expect(r.said is null, format('the rewind on the origin post was refused: %s', r.said)); rw := r.id;
+  perform tests.become(bob);
+  made := spin(origin => origin_post, through => b, title => 'Rw spun thread', body => 'The opening post.', at_post => null);
+  perform tests.unbecome();
+  s := (select thread from acts where id = (made -> 'act' ->> 'id')::uuid);
+  perform tests.become(ann); spun_page := thread_page(s, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(spun_page -> 'origin' ->> 'act' is not null or spun_page ? 'origin', format('the spun thread has no origin: %s', left(spun_page::text, 300)));
+  perform pg_temp.expect(jsonb_array_length(spun_page -> 'rewinds') = 1 and spun_page -> 'rewinds' -> 0 ->> 'play' = rw::text and spun_page -> 'rewinds' -> 0 ->> 'post' = origin_post::text,
+    format('the spun thread''s page does not carry the origin post''s rewind: %s', spun_page -> 'rewinds'));
+  perform tests.become(admin); perform reverse_card(rw); perform tests.unbecome();
+  perform tests.become(ann); spun_page := thread_page(s, 1, null, 25, '{}'); perform tests.unbecome();
+  perform pg_temp.expect(spun_page -> 'rewinds' = '[]'::jsonb, format('an ended rewind is on the spun thread''s page: %s', spun_page -> 'rewinds'));
+  -- Its grants are as they were: a signed-in player reads the page; the set-based read is granted as post_play_ids is and the one-post helpers still are not.
+  perform pg_temp.expect(has_function_privilege('authenticated', 'post_rewind_plays(uuid[])', 'execute') and has_function_privilege('service_role', 'post_rewind_plays(uuid[])', 'execute')
+    and not has_function_privilege('anon', 'post_rewind_plays(uuid[])', 'execute'), 'post_rewind_plays is not granted as post_play_ids is');
+  perform pg_temp.expect((select count(*) from post_rewind_plays(array[post_on, origin_post, plain])) = 0, 'post_rewind_plays read an ended rewind');
+end $$;
+
+-- ---- The lookup's plan: the page's rewind lookup is a probe of play_post_up by post, never a scan of play_post or acts ----
+-- 4,000 posts with a play each (a quarter of them rewinds, in force), the kept rows written as the migrations' backfills write them, then analyzed; the statement is post_rewind_plays' own, for the 25 posts of a page.
+select tests.unbecome();
+do $$
+declare
+  a uuid := pg_temp.fix('a'); t uuid := tests.thread('Rw scale'); plan text := ''; line text; ids uuid[]; n integer;
+begin
+  alter table acts disable trigger user;
+  insert into acts (character, kind, thread, payload, seq, created_at)
+  select a, 'post', t, jsonb_build_object('body', 'Post ' || g), 100 + g, now() - interval '30 days' + g * interval '1 second' from generate_series(1, 4000) g;
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select a, 'card', t, x.id, jsonb_build_object('card', case when x.seq % 4 = 0 then 'rwtime' else 'rwrare' end, 'reach', 'post', 'rewind_at', x.created_at, 'ends', now() + interval '1 day', 'layer', 1), x.created_at + interval '1 minute'
+  from acts x where x.thread = t and x.kind = 'post';
+  alter table acts enable trigger user;
+  insert into play_post select r.* from acts x cross join lateral play_row(x.id) r where x.kind = 'card' and x.thread = t;
+  analyze acts; analyze play_post;
+  select array_agg(x.id) into ids from (select id from acts where thread = t and kind = 'post' and seq % 4 = 0 order by seq limit 25) x;
+  select count(*) into n from post_rewind_plays(ids);
+  perform pg_temp.expect(n = 25, format('post_rewind_plays answered %s plays for 25 rewound posts', n));
+  perform pg_temp.expect((select count(*) from post_rewind_plays((select array_agg(x.id) from (select id from acts where thread = t and kind = 'post' and seq % 4 = 1 order by seq limit 25) x))) = 0, 'post_rewind_plays answered plays that are no rewind');
+  perform pg_temp.expect((select count(*) from live_rewind(ids[1])) = 1, 'live_rewind and post_rewind_plays disagree');
+  for line in execute format($q$explain (costs off) select p.post, p.play from play_post p join card_kinds ck on ck.key = p.kind and ck.rewind is not null
+      where p.post = any (%L::uuid[]) and p.over_at is null and p.ends_at > now() and p.reach = 'post'$q$, ids) loop
+    plan := plan || line || E'\n';
+  end loop;
+  perform pg_temp.expect(plan like '%play_post_up%', format('the rewind lookup does not use play_post_up: %s', plan));
+  perform pg_temp.expect(plan not like '%Seq Scan on play_post%' and plan not like '%Seq Scan on acts%', format('the rewind lookup scans: %s', plan));
+  raise notice 'the rewind lookup for 25 posts of 4,000: %', replace(plan, E'\n', ' | ');
+end $$;

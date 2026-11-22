@@ -561,7 +561,7 @@ test('a Move that writes, needs a message, draws or runs a drive is cast face up
   for (const card of [writer, needy, dealer, driver]) assert.equal(faceUpOnly(card), true, `${card.key} is face up only`);
   assert.equal(faceUpOnly(plain), false);
   assert.equal(faceUpOnly(cutter), true, 'a card that replies is face up only, so the play form offers it no Set face down switch');
-  for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is cast face up and never set face down` });
+  for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is played face up and never set face down` });
   assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
   assert.equal(decideSet(plain, settings, post, [], {}, [plain]).ok, true);
 });
@@ -697,7 +697,7 @@ test('a surface card is played with its first draw, and refused without it; othe
 
 test('a surface card is cast face up only: decideSet refuses it in the sentence the other face-up cards get', () => {
   assert.equal(faceUpOnly(wall), true);
-  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: `${wall.name} is cast face up and never set face down` });
+  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: `${wall.name} is played face up and never set face down` });
 });
 
 test('a second play of a surface card is refused as a wall, in the words the database uses; other cards keep the stack\'s words', () => {
@@ -1055,7 +1055,7 @@ test('a live rewind refuses a Use and a Set on the post likewise', () => {
 
 test('a rewind card is face up only and is never offered to a staff persona', () => {
   assert.equal(faceUpOnly(clock), true);
-  assert.deepEqual(decideSet(clock, settings, post, [], {}, [clock]), { ok: false, why: `${clock.name} is cast face up and never set face down` });
+  assert.deepEqual(decideSet(clock, settings, post, [], {}, [clock]), { ok: false, why: `${clock.name} is played face up and never set face down` });
   assert.equal(staffOffers(clock), false);
   const { rewind: _gone, ...bare } = clock;
   assert.equal(staffOffers(bare as CardRules), true, 'the same card without the rewind');

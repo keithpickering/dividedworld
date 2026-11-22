@@ -563,7 +563,7 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
 
 test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a message, so it is cast now and face up (issue #446)', () => {
   const j = jimmy();
-  assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is cast face up and never set face down' });
+  assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is played face up and never set face down' });
 });
 
 /* ---- Laugh Track (docs/plans/2026-11-11-laugh-track-plan.md, Task 9) ---- */

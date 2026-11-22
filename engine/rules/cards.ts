@@ -788,7 +788,7 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   // So is a card that acts on the staff's discipline: it is refused or takes hold the moment it lands, on the target its caster chose.
   if (rules.discipline !== undefined) return refuse(`${rules.name} acts the moment it lands, so it is cast face up and never set face down`);
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
-  if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
+  if (faceUpOnly(rules)) return refuse(`${rules.name} is played face up and never set face down`);
   if (target.reach !== 'post' || !isPost(target.kind)) return refuse('a card is set face down on a post');
   const frozenBy = frozenRefusal(rules, target, effects, now, (k) => cards.find((c) => c.key === k)?.name);
   if (frozenBy) return frozenBy;
