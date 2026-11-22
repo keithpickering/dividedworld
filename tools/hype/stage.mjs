@@ -28,11 +28,11 @@ export const BUILT = `(() => {
  * `hud` (the glass along the foot, for a shot tight on a post) and `selection` (the post's words cannot be selected: a drag that outlives
  * its stroke, because the coat it was washing came clean under it, selects the words it passes over, and opens the quote button).
  *
- * @param {{ skin?: string, as?: string | null, view?: string | null, css?: { width: number, height: number }, scale?: number, quiet?: string[], port?: number }} [options]
+ * @param {{ skin?: string, as?: string | null, view?: string | null, css?: { width: number, height: number }, scale?: number, fps?: number, quiet?: string[], port?: number }} [options]
  */
-export async function openStage({ skin = 'default', as = null, view = null, css, scale = 2, quiet = ['toasts', 'host'], port = Number(flag('port', 4319)) } = {}) {
+export async function openStage({ skin = 'default', as = null, view = null, css, scale = 2, fps = 60, quiet = ['toasts', 'host'], port = Number(flag('port', 4319)) } = {}) {
   mkdirSync(OUT, { recursive: true });
-  const cam = await openCamera({ url: `http://localhost:${port}/?fixture=boards&story=boards-hype-stage--main&sheet=1&skin=${skin}${as ? `&as=${encodeURIComponent(as)}` : ''}${view ? `&view=${encodeURIComponent(view)}` : ''}`, css, scale, serve: SERVE });
+  const cam = await openCamera({ url: `http://localhost:${port}/?fixture=boards&story=boards-hype-stage--main&sheet=1&skin=${skin}${as ? `&as=${encodeURIComponent(as)}` : ''}${view ? `&view=${encodeURIComponent(view)}` : ''}`, css, scale, fps, serve: SERVE });
   await cam.until(view && !view.startsWith('thread') ? `Boolean(window.__kbStage && document.querySelector('main h1, main table, main article'))` : `Boolean(window.__kbStage && document.querySelector('article.kb-act'))`, { label: 'the stage drawn' });
   /* Hidden through the CSSOM (the page's CSP takes no style sheet), by a rule of its own so what comes later is hidden too. */
   await cam.evaluate(`(() => {
