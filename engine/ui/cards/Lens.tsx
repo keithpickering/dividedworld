@@ -546,7 +546,7 @@ function TakeBack({ play, store }: { readonly play: CardPlay; readonly store: Pl
 }
 
 /**
- * Whether a play can be ended by an admin; for a face-up play it is `inForce` (plays.ts) but for `instant` and `spent`, which this does not read. A face-up play: not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on
+ * Whether a play can be ended by an admin; it agrees with `inForce` (plays.ts) on every face-up play that is neither `instant` nor `spent`, which this does not read. A face-up play: not caught, not ended by an admin, not over because it did not take, not worn off, unless its card keeps (`keeps`): the level it left stays on
  * posts until an admin ends the play, which takes it off every post. A card back stays unendable, but for one that sprang into a lockout (`lockout`, the spring's `until`, read by `useLockoutOf`)
  * while that lockout is live: the lockout is what an admin ends, and it is not ended, past or caught.
  */
