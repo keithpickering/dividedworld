@@ -35,6 +35,10 @@ const sprungKind = (spring: Id) => `${CARD_BACK}:${spring}`;
 /** Whether a back's time has passed, at the end the server stored: a back with none is over only when it springs or is taken back. */
 export const backOver = (back: CardPlay, now: number): boolean => back.endsAt != null && Date.parse(back.endsAt) <= now;
 
+/** Whether a sprung back's lockout is still live: its spring locked someone out (`revealed.until`), that end is ahead, and no admin ended it (`reversed`). The one rule `inForce` and `playOver` read. */
+export const lockoutLive = (play: CardPlay, now: number): boolean =>
+  play.revealed?.until !== undefined && Date.parse(play.revealed.until) > now && !play.reversed;
+
 /**
  * The plays a post shows: all but a card back whose time has passed with nothing springing it, or that its setter took back, which is gone, as the server drops it
  * (card_target). Its end is the one the server stored when it was set (`endsAt`).
@@ -166,7 +170,7 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
 export function inForce(play: CardPlay, now: number, keeps: boolean): boolean {
   if (play.reversed || play.caught !== undefined) return false;
   /* A sprung back is over, unless its spring locked someone out and that lockout is still live (the owner, #984: Set, then Up now, then Ended). */
-  if (play.faceDown && play.revealed) return play.revealed.until !== undefined && Date.parse(play.revealed.until) > now;
+  if (play.faceDown && play.revealed) return lockoutLive(play, now);
   if (play.faceDown) return play.takenBack === undefined && !backOver(play, now);
   if (play.cut || play.untaken || play.instant || play.spent) return false;
   return keeps || play.ends === undefined || Date.parse(play.ends) > now;
@@ -174,10 +178,13 @@ export function inForce(play: CardPlay, now: number, keeps: boolean): boolean {
 
 /**
  * Whether a play is over (spent-marks design, section 1): caught, ended by an admin, didn't take, instant, spent by a filing, a back that sprang, or its
- * time is up and its card does not keep. In a moment (`then`), a play named there is judged as it stood: its timed end does not count.
+ * time is up and its card does not keep. A back that sprang into a lockout is not over while the lockout is live (`lockoutLive`), and in a moment (`then`)
+ * it is not over when its spring locked someone out at all (judged as it stood, its lockout's end does not count); a sprung back with no lockout is over.
+ * In a moment, a play named there is judged as it stood: its timed end does not count.
  */
 export function playOver(p: CardPlay, now: number, keeps: ReadonlySet<string>, then?: ReadonlySet<Id>): boolean {
-  if (p.caught || p.reversed || p.cut || p.untaken || p.instant || p.spent || p.revealed) return true;
+  if (p.caught || p.reversed || p.cut || p.untaken || p.instant || p.spent) return true;
+  if (p.revealed && !((then?.has(p.id) && p.revealed.until !== undefined) || lockoutLive(p, now))) return true;
   if (then?.has(p.id)) return false;
   return p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card);
 }
@@ -286,13 +293,18 @@ export function blindPlaysOf(plays: readonly CardPlay[], cards: readonly Pick<Ca
     .map((p) => ({ play: p.id, caster: p.caster, ends: p.ends! }));
 }
 
-/** The soonest end still ahead among plays that have one (a play beyond a post, or a ward on a post), as an epoch, or null: when what is drawn, or what a mark says, changes next by itself. */
+/**
+ * The soonest end still ahead among plays that have one (a play beyond a post, or a ward on a post, a face-down back's `endsAt`, a sprung back's lockout `revealed.until`), as an epoch,
+ * or null: when what is drawn, or what a mark says, changes next by itself. It is what wakes the Lens, the marks and the board at a back's or a lockout's end.
+ */
 export function nextEnd(plays: readonly CardPlay[], now: number): number | null {
   let soonest: number | null = null;
   for (const p of plays) {
-    if (p.ends === undefined) continue;
-    const at = Date.parse(p.ends);
-    if (at > now && (soonest === null || at < soonest)) soonest = at;
+    for (const end of [p.ends, p.faceDown && !p.revealed && p.takenBack === undefined ? p.endsAt : undefined, p.revealed?.until]) {
+      if (end === undefined) continue;
+      const at = Date.parse(end);
+      if (at > now && (soonest === null || at < soonest)) soonest = at;
+    }
   }
   return soonest;
 }
