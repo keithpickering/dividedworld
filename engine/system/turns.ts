@@ -10,7 +10,7 @@
  * the same. Portable by construction: no vendor client is imported, and the engine knows no instance.
  */
 import type { PoolSettings } from '../rules/types.ts';
-import { seededRng } from './pool.ts';
+import { byUnit, seededRng } from './pool.ts';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 
@@ -55,9 +55,10 @@ export function roundShare(spentToday: number, perDay: number, slot: number, cro
   return Math.ceil(left / rounds);
 }
 
-/** Code-unit order, never the locale's: two platforms must sort the same keys the same way, or one slot's seed plans two rounds. */
-const byUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
-
+/**
+ * The round's turns: personas in session only, ranked by heat, then by how many replies wait, then by the oldest wait,
+ * then a tie-break seeded from the slot; one turn per persona per thread, inside `perThread`, `perSession` and `share`.
+ */
 export function planTurns(
   open: readonly OpenThread[],
   sessions: readonly AwakeSession[],
@@ -92,7 +93,7 @@ export function planTurns(
       x.spent + (spentNow.get(x.session) ?? 0) < turns.perSession && (x.spentByThread[o.thread] ?? 0) < turns.perThread);
     if (!s) continue;
     spentNow.set(s.session, (spentNow.get(s.session) ?? 0) + 1);
-    planned.push({ staff: o.staff, session: s.session, thread: o.thread, quoting: o.replies[o.replies.length - 1].act, answers: o.replies.map((r) => r.act) });
+    planned.push({ staff: o.staff, session: s.session, thread: o.thread, quoting: o.replies.at(-1)!.act, answers: o.replies.map((r) => r.act) });
   }
   return planned;
 }

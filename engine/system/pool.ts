@@ -300,7 +300,7 @@ export interface Picked {
 
 const key = (s: string | null) => s ?? '';
 /** Code-unit order, never the locale's: two platforms must sort the same keys the same way, or one day's seed picks two winners. */
-const byUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+export const byUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 export function pick(
   cands: readonly Candidate[],
