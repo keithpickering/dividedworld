@@ -8,7 +8,7 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, inForce, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
+import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, inForce, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, nextEnd, lockoutLive, shownPlays, withHandedOut } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
 import { endable } from './Lens.tsx';
 
@@ -929,6 +929,107 @@ describe('kindSpent', () => {
 
   test('is true for two plays that are both over', () => {
     expect(kindSpent([play({ caught: POST }), play({ instant: true })], NOW_MS, NO_KEEPS)).toBe(true);
+  });
+});
+
+/* A back that sprang into a lockout (docs/plans/2026-11-22-lockout-in-force-design.md): one rule, read by inForce, playOver and nextEnd. */
+describe('a sprung back with a lockout', () => {
+  const at = (ms: number): string => new Date(ms).toISOString();
+  const sprung = (until: string | undefined, over: Partial<CardPlay> = {}): CardPlay =>
+    play({ faceDown: true, card: `${CARD_BACK}:sp`, revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS - 1000), ...(until !== undefined ? { until } : {}) }, ...over });
+
+  test('a live lockout is not over; past its until it is; reversed it is; with no until it is', () => {
+    expect(playOver(sprung(at(NOW_MS + 1)), NOW_MS, NO_KEEPS)).toBe(false);
+    expect(playOver(sprung(at(NOW_MS)), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(sprung(at(NOW_MS - 1)), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(sprung(at(NOW_MS + 1), { reversed: true }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(sprung(undefined), NOW_MS, NO_KEEPS)).toBe(true);
+  });
+
+  test('kindSpent holds while a lockout is live, and falls when it runs out', () => {
+    expect(kindSpent([sprung(at(NOW_MS + 1))], NOW_MS, NO_KEEPS)).toBe(false);
+    expect(kindSpent([sprung(at(NOW_MS + 1))], NOW_MS + 1, NO_KEEPS)).toBe(true);
+  });
+
+  test('in a moment, a lockout past its until is not over, a sprung back with no until is, and a reversed one is', () => {
+    const ran = sprung(at(NOW_MS - 1));
+    expect(playOver(ran, NOW_MS, NO_KEEPS, new Set([ran.id]))).toBe(false);
+    const none = sprung(undefined);
+    expect(playOver(none, NOW_MS, NO_KEEPS, new Set([none.id]))).toBe(true);
+    const ended = sprung(at(NOW_MS - 1), { reversed: true });
+    expect(playOver(ended, NOW_MS, NO_KEEPS, new Set([ended.id]))).toBe(true);
+  });
+
+  test('lockoutLive is true only with an until ahead and no admin end', () => {
+    expect(lockoutLive(sprung(at(NOW_MS + 1)), NOW_MS)).toBe(true);
+    expect(lockoutLive(sprung(at(NOW_MS)), NOW_MS)).toBe(false);
+    expect(lockoutLive(sprung(undefined), NOW_MS)).toBe(false);
+    expect(lockoutLive(sprung(at(NOW_MS + 1), { reversed: true }), NOW_MS)).toBe(false);
+    expect(lockoutLive(play(), NOW_MS)).toBe(false);
+  });
+
+  test('playOver is the opposite of inForce for every sprung back', () => {
+    for (const until of [undefined, at(NOW_MS - 5), at(NOW_MS), at(NOW_MS + 5)]) {
+      for (const over of [{}, { reversed: true as const }, { caught: POST }]) {
+        for (const now of [NOW_MS - 10, NOW_MS, NOW_MS + 10]) {
+          const p = sprung(until, over);
+          expect(playOver(p, now, NO_KEEPS)).toBe(!inForce(p, now, false));
+        }
+      }
+    }
+  });
+});
+
+describe('nextEnd wakes at a back\'s or a lockout\'s end', () => {
+  const at = (ms: number): string => new Date(ms).toISOString();
+  const back = (over: Partial<CardPlay> = {}): CardPlay => play({ faceDown: true, card: CARD_BACK, ...over });
+  const sprungTo = (until: string): CardPlay => back({ card: `${CARD_BACK}:sp`, revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS - 1000), until } });
+
+  test('a face-down back\'s endsAt', () => {
+    expect(nextEnd([back({ endsAt: at(NOW_MS + 500) })], NOW_MS)).toBe(NOW_MS + 500);
+  });
+  test('a sprung back\'s until', () => {
+    expect(nextEnd([sprungTo(at(NOW_MS + 700))], NOW_MS)).toBe(NOW_MS + 700);
+  });
+  test('neither of a back taken back, nor a sprung back\'s endsAt, nor a lockout already run out', () => {
+    expect(nextEnd([back({ endsAt: at(NOW_MS + 500), takenBack: { at: at(NOW_MS) } })], NOW_MS)).toBeNull();
+    expect(nextEnd([back({ endsAt: at(NOW_MS + 500), revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS) } })], NOW_MS)).toBeNull();
+    expect(nextEnd([sprungTo(at(NOW_MS - 1))], NOW_MS)).toBeNull();
+  });
+
+  test('a back with no endsAt, or one that does not parse, schedules no wake', () => {
+    expect(nextEnd([back({ endsAt: null })], NOW_MS)).toBeNull();
+    expect(nextEnd([back({ endsAt: 'not a time' })], NOW_MS)).toBeNull();
+  });
+  test('the soonest of a mix', () => {
+    expect(nextEnd([play({ ends: at(NOW_MS + 900) }), back({ endsAt: at(NOW_MS + 300) }), sprungTo(at(NOW_MS + 600))], NOW_MS)).toBe(NOW_MS + 300);
+    expect(nextEnd([play({ ends: at(NOW_MS + 900) }), back({ endsAt: at(NOW_MS + 800) }), sprungTo(at(NOW_MS + 600))], NOW_MS)).toBe(NOW_MS + 600);
+  });
+});
+
+describe('a spring into a lockout that arrives before its back', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const base = (id: string, kind: Act['kind'], payload: Record<string, unknown>, target: string | null = 'p1'): Act =>
+    ({ id, kind, character: kind === 'card_end' ? null : 'c1', thread: 't', targetActId: target, seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+  const until = new Date(Date.now() + 86_400_000).toISOString();
+  const spring = { card: 'snare', trigger: 'cast', did: 'lockedOut', until, set: 's1', by: 'k2' };
+
+  test('keeps the lockout, and the back is in force', () => {
+    const plays = createPlays();
+    plays.add([base('sp', 'spring', spring)]);
+    plays.add([base('s1', 'set', {})]);
+    const got = plays.get('p1').plays[0]!;
+    expect(got.revealed?.until).toBe(until);
+    expect(inForce(got, Date.now(), false)).toBe(true);
+  });
+
+  test('an admin end of the spring read before the back marks it reversed', () => {
+    const plays = createPlays();
+    plays.add([base('sp', 'spring', spring), base('end-sp', 'card_end', { why: 'reversed', by: 'admin' }, 'sp')]);
+    plays.add([base('s1', 'set', {})]);
+    const got = plays.get('p1').plays[0]!;
+    expect(got.reversed).toBe(true);
+    expect(inForce(got, Date.now(), false)).toBe(false);
   });
 });
 
