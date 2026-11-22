@@ -305,6 +305,30 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- 4b. A page boundary between plays played at the same moment ----
+-- The cursor is the pair (time, id): a cursor on the time alone drops the plays of the same moment that sort after the boundary one. 22 ended plays of one kind at one created_at, pages of 10.
+select tests.unbecome();
+do $$
+declare
+  a uuid := tests.character(tests.account('ppl-4b-ann'), 'Ppl Four B Ann'); caster uuid := tests.character(tests.account('ppl-4b-caster'), 'Ppl Four B Caster');
+  t uuid := tests.thread('Ppl ties'); p uuid := tests.post(a, t, 'A post.', now() - interval '10 days');
+  tied uuid[] := '{}'; i integer; r jsonb; got uuid[] := '{}'; b_at timestamptz; b_id uuid; pages integer := 0;
+begin
+  perform pg_temp.cards();
+  for i in 1..22 loop tied := tied || pg_temp.play(caster, t, p, 'pplk', now() - interval '5 days', now() - interval '4 days'); end loop;
+  perform tests.become(a);
+  loop
+    r := kind_plays(p, 'pplk', b_at, b_id, 10);
+    got := got || pg_temp.play_ids(r -> 'plays'); pages := pages + 1;
+    exit when r -> 'next' = 'null'::jsonb or pages > 5;
+    b_at := (r -> 'next' ->> 'at')::timestamptz; b_id := (r -> 'next' ->> 'id')::uuid;
+  end loop;
+  perform tests.unbecome();
+  if pages is distinct from 3 or cardinality(got) is distinct from 22 or pg_temp.sorted(got) is distinct from pg_temp.sorted(tied) then
+    raise exception '4b the pages of 10 over 22 plays of one moment are not disjoint and whole: % pages, % plays, % distinct', pages, cardinality(got), (select count(distinct g) from unnest(got) g);
+  end if;
+end $$;
+
 -- ---- 5. An admin's end of the newest play: not in force, the stand-in, its card_end rides, kind_plays pages it ----
 select tests.unbecome();
 do $$
