@@ -231,6 +231,16 @@ begin
   insert into face_down (play, account, card, post, thread, round, ends_at) values (back, pg_temp.fix('ann'), 'rwback', quiet, t, 1, now() + interval '1 day');
   got := rewind_point_problem(quiet, quiet_e);
   perform pg_temp.expect(got = 'this post shows the same at that point as it does now', format('a face-down set made a point offered: %s', got));
+  -- A back that sprang into a lockout is in force while the lockout is (0412_lockout_play_post): it shows on the post, so a point before it is offered, with nothing else after the point.
+  declare lk uuid := tests.post(a, t, 'A lockout back sits here.', base); lk_back uuid; lk_spring uuid; other_c uuid := tests.character(tests.account('rw-locked'), 'Rw Locked');
+  begin
+    lk_back := tests.act(a, 'set', t, '{}', lk, base + interval '40 minutes');
+    insert into face_down (play, account, card, post, thread, round, ends_at) values (lk_back, pg_temp.fix('ann'), 'rwback', lk, t, 1, now() + interval '30 days');
+    lk_spring := tests.act(a, 'spring', t, jsonb_build_object('set', lk_back::text, 'card', 'rwback', 'trigger', 'cast', 'did', 'lockedOut', 'locks', other_c::text, 'until', (now() + interval '1 day')::text), lk, base + interval '41 minutes');
+    perform pg_temp.expect(exists (select 1 from play_post pp where pp.play = lk_back and pp.sprung and pp.over_at is null and pp.ends_at > now()), 'the lockout back is not in force in play_post');
+    got := rewind_point_problem(lk, lk);
+    perform pg_temp.expect(got is null, format('a sprung lockout back, showing after the point, did not make it offered: %s', got));
+  end;
 end $$;
 
 -- ---- live_rewind and rewind_refusal: the live plays, latest first, the engine's words, the cut-off, `passing`, the ends ----

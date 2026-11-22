@@ -841,7 +841,7 @@ revoke execute on function rewind_point_at(uuid, uuid) from public, anon, authen
 
 -- Why a version is no point to rewind a post to, in the engine's words and this order (engine/rules/rewind.ts, pointAt and rewindPoints), or null where it is offered. A point is offered when showing it would change the post: an edit was saved after the
 -- point's time, or a play on the post, played after it, is still showing. A point later than now is not offered. "Still showing" is read from play_post: the play is in force (not over, its time not up), and it is a face-up play at the post's reach.
--- A face-down set (play_post.kind is the empty string, a back never naming its card) shows nothing, so it never makes a point worth offering; a back that sprang is over, and the card it played is its own play. A play beyond a post (a character,
+-- A face-down set (play_post.kind is the empty string, a back never naming its card) shows nothing, so it never makes a point worth offering; a back that sprang is over, and the card it played is its own play, except a back that sprang into a lockout (0412_lockout_play_post): it is in force while the lockout is, shows on the post, and is read here (`pp.sprung`). A play beyond a post (a character,
 -- thread or board reach) is not on the post and is not read.
 create function rewind_point_problem(post uuid, version uuid) returns text
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -851,7 +851,7 @@ language sql stable security definer set search_path = public, pg_temp as $$
     -- `at <= now()` is redundant by construction (an Act is never written in the future, so nothing can be after a point still to come); it is kept as the guard that a point still to come is never offered.
     when not (at <= now() and (exists (select 1 from acts e where e.kind = 'edit' and e.target_act_id = p.id and e.created_at > at)
                                or exists (select 1 from play_post pp
-                                          where pp.post = p.id and pp.over_at is null and (pp.ends_at is null or pp.ends_at > now()) and pp.kind <> '' and pp.reach = 'post' and pp.played_at > at)))
+                                          where pp.post = p.id and pp.over_at is null and (pp.ends_at is null or pp.ends_at > now()) and (pp.kind <> '' or pp.sprung) and pp.reach = 'post' and pp.played_at > at)))
       then 'this post shows the same at that point as it does now'
   end
   from (select 1) one
