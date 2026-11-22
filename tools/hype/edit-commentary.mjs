@@ -23,7 +23,7 @@
  * THE FILM, beat by beat. It OPENS IN SILENCE on the first take: `--lead` seconds (4.5) before the first node's voice, the first node's shot owning
  * them. The calm nodes follow, then the frantic ones, the LAST frantic node ending 0.2 s before the coda's first chord. The coda is the mountain
  * king's last strikes: the picture is cut on each (`list.coda` directs the cuts, cutlist.mjs `directCoda`) until the strike the BLACK begins on: the
- * latest strike at or before the end line's start less 0.3 s, so the line sits wholly in full-range black and any strike inside it plays over
+ * latest strike at or before the end line's start less 0.05 s, so the line sits wholly in full-range black and any strike inside it plays over
  * black. The end line ENDS 0.25 s before the final strike; at the final strike the take `c-title` starts at its frame 0 and runs to the film's end
  * (the final chord's end + 1.2 s), fading to black over the last 0.8 s; a missing one is a slate with the instance's `TITLE` and `TITLE_TAG`.
  *
@@ -89,7 +89,7 @@ export const LEAD = 4.5;
 export const AFTER_FIRST = 1;
 /** The end line ends this long before the final strike, and the black begins at the latest strike at least this long before the line starts. */
 export const LINE_BEFORE_FINAL = 0.25;
-export const BLACK_BEFORE_LINE = 0.3;
+export const BLACK_BEFORE_LINE = 0.05;
 export const WPM = 150;
 export const TAIL = 1.2;
 export const FADE = 0.8;
@@ -176,7 +176,7 @@ export function chooseVersion(starts, threshold) {
  * The film opens in silence (`lead` s), then the narration runs node after node, a breath (or the node's `after`) between; the first node's shot owns
  * the lead. The last frantic node ends 0.2 s before the coda's first chord, and the music is laid from its END so that its first chord falls there; the
  * version is `chooseVersion`'s. A start before the film's first frame is trimmed: `music.start` is then 0 and `music.from` the seconds of the recording
- * skipped. The coda is cut on its strikes to the one the black begins on (the latest strike at or before the end line's start less 0.3 s); the end line
+ * skipped. The coda is cut on its strikes to the one the black begins on (the latest strike at or before the end line's start less 0.05 s); the end line
  * is placed to end 0.25 s before the final strike, refused when it would have to start before the coda's first chord; the title begins at the final
  * strike and the film ends at the final chord's end plus `TAIL` s, the picture fading over the last `FADE` s.
  *

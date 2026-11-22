@@ -70,7 +70,7 @@ test('v11 says the sigh and does not caption it; captions drop any *stage direct
   assert.ok(v11);
   assert.equal(v11.lines.join(' '), "*sigh* This is a bad idea.");
   assert.deepEqual(captionLines(v11), ["This is a bad idea."]);
-  assert.deepEqual(captionLines({ id: 'x', part: 1, lines: ['*cough* Hello.', '*pause*'] }), ['Hello.']);
+  assert.deepEqual(captionLines({ id: 'x', part: 1, role: 'calm', lines: ['*cough* Hello.', '*pause*'] }), ['Hello.']);
   for (const n of commentary.filter((x) => x.id !== 'v11')) assert.deepEqual(captionLines(n), n.lines);
 });
 

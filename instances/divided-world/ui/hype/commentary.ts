@@ -10,6 +10,8 @@ export interface Node {
   readonly id: string;
   /** 1 is the calm opening (v01 to v09), 2 the frantic part (v10a to v10d), 3 the end (v11). */
   readonly part: 1 | 2 | 3;
+  /** What the edit does with the node: the calm narration, the frantic stretch whose last node ends at the coda, or the one line over black. */
+  readonly role: 'calm' | 'frantic' | 'end';
   /** What is spoken, one caption row-pair to a line. */
   readonly lines: readonly string[];
   /** Seconds of silence before the node, where it is not the usual breath (v01: the recording's opening silence; v06: the angry typing). */
@@ -28,6 +30,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v01',
     part: 1,
+    role: 'calm',
     after: 0,
     lines: [
       "Hi, I'm Gabe.",
@@ -44,6 +47,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v02',
     part: 1,
+    role: 'calm',
     lines: [
       'Here we see a straightforward MFGG submission with a solid 2.9 star rating trajectory.',
       "You're probably wondering how something so earnest and innocuous",
@@ -54,6 +58,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v03',
     part: 1,
+    role: 'calm',
     lines: [
       'See, one of the first things we found in playtesting',
       'is that human beings enjoy being Liked.',
@@ -64,6 +69,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v04',
     part: 1,
+    role: 'calm',
     lines: [
       'So to fix that, we gave every character an anonymous class:',
       'And some of the classes get points for being DISliked.',
@@ -72,6 +78,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v05',
     part: 1,
+    role: 'calm',
     lines: [
       "Take this guy: he's a Heel.",
       'He made this piece-of-shit post, and the crowd threw tomatoes at him.',
@@ -84,12 +91,14 @@ export const commentary: readonly Node[] = [
   {
     id: 'v06',
     part: 1,
+    role: 'calm',
     after: 4.5,
     lines: ['Problem solved.'],
   },
   {
     id: 'v07',
     part: 1,
+    role: 'calm',
     lines: [
       'These are the six classes:',
       'Face, Heel, Jabroni, Technician, Tweener, and Lurker.',
@@ -100,6 +109,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v08',
     part: 1,
+    role: 'calm',
     lines: [
       'They all share the same aura,',
       'so you can farm reactions as one class to power up another class.',
@@ -108,6 +118,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v09',
     part: 1,
+    role: 'calm',
     lines: [
       'The aura gets spent on cards at the vending machine,',
       'and the characters play those to earn even more reactions.',
@@ -117,6 +128,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v10a',
     part: 2,
+    role: 'frantic',
     lines: [
       'Okay, this is, uh...yeah, we call this a training arc.',
       'A card can be face down on any post,',
@@ -127,6 +139,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v10b',
     part: 2,
+    role: 'frantic',
     lines: [
       'Sometimes the player plays a card and then it turns out',
       'the player you played the card on actually WANTED you to play that card,',
@@ -143,6 +156,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v10c',
     part: 2,
+    role: 'frantic',
     lines: [
       'And you know, what do you know, anyway?!',
       'You sit there on your gaming chair',
@@ -152,6 +166,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v10d',
     part: 2,
+    role: 'frantic',
     lines: [
       'Making games is hard!',
       'Being Gabe, is hard!',
@@ -164,6 +179,7 @@ export const commentary: readonly Node[] = [
   {
     id: 'v11',
     part: 3,
+    role: 'end',
     lines: ['*sigh* This is a bad idea.'],
     caption: ['This is a bad idea.'],
   },

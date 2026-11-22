@@ -140,7 +140,7 @@ test('where the second block and the full orchestra fall in the speech: the node
   assert.equal(t.music.third.node, 'v05');
 });
 
-test('the ending: the line ends 0.25 s before the final strike, and the picture is black from the latest strike at or before the line`s start less 0.3 s', () => {
+test('the ending: the line ends 0.25 s before the final strike, and the picture is black from the latest strike at or before the line`s start less 0.05 s', () => {
   /* mk-b: the music starts at 17.1, so its chords are at 107.1, 109.1, 117.1, 118.1 and the final strike at 127.1; its end at 132.1 (+ 1.2). */
   const run = (/** @type {number} */ line) => timeline({ ...clips, z: line }, map, { nodes, recording: 'mk-b' });
   const short = run(4.4);
@@ -149,14 +149,14 @@ test('the ending: the line ends 0.25 s before the final strike, and the picture 
   assert.equal(short.ending.blackStrike, 4, 'the second-to-last of the five strikes: its index counts from 1 here');
   near(short.out.blackStart, 118.1, 'black on the second-to-last strike');
   near(short.ending.gap, 9, 'the gap between the black and the final strike');
-  assert.ok(at(short, 'z').voice[0].start >= short.out.blackStart + 0.3 - 1e-9, 'the line sits wholly in the black, 0.3 s in at least');
+  assert.ok(at(short, 'z').voice[0].start >= short.out.blackStart + 0.05 - 1e-9, 'the line sits wholly in the black, 0.05 s in at least');
   /* a longer line starts earlier, and the black one strike earlier: a strike inside the black plays over black */
-  const longer1 = run(8.7);
+  const longer1 = run(8.9);
   near(longer1.out.blackStart, 117.1, 'black one strike earlier');
   assert.equal(longer1.ending.blackStrike, 3);
-  assert.equal(run(19.4).ending.blackStrike, 1, 'a line that starts 0.3 s after the first chord leaves the black on the first');
+  assert.equal(run(19.4).ending.blackStrike, 1, 'a line that starts just after the first chord leaves the black on the first');
   /* a line that would start before the first chord is refused, naming the overrun */
-  assert.throws(() => run(20), (/** @type {Error} */ e) => /z/.test(e.message) && /first chord/.test(e.message) && /0\.55 s/.test(e.message));
+  assert.throws(() => run(20), (/** @type {Error} */ e) => /z/.test(e.message) && /first chord/.test(e.message) && /0\.30 s/.test(e.message));
   /* the film: the title from the final strike to 1.2 s after the final chord's end, fading over the last 0.8 s */
   near(short.out.end, 17.1 + 115 + 1.2);
   near(short.out.fadeStart, short.out.end - 0.8);
@@ -587,7 +587,7 @@ test('the sheet names the lead, every node, the version, each strike of the coda
   assert.match(text, /strike 1 of 5 at 107\.10 s: a cut/);
   assert.match(text, /strike 4 of 5 at 118\.10 s: the picture cuts to black/);
   assert.match(text, /strike 5 of 5 at 127\.10 s: the final strike: the title/);
-  assert.match(ec.sheetText(timeline({ ...clips, z: 8.7 }, map, { nodes, recording: 'mk-b' })), /strike 4 of 5 at 118\.10 s: plays over black/);
+  assert.match(ec.sheetText(timeline({ ...clips, z: 8.9 }, map, { nodes, recording: 'mk-b' })), /strike 4 of 5 at 118\.10 s: plays over black/);
 });
 
 test('the blur chain holds each frame for four sub-frames, reads the camera at each, averages four and keeps the last of each frame', () => {
