@@ -680,7 +680,10 @@ function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: bool
   const id = useId();
   const note = useRowNote(play, view, store);
   const { shown } = useReactionChips(play.id, play.caster, tallies, mine, store);
-  const words = fateOf(play, note) ?? play.message;
+  const { instance } = useKayfa();
+  /* A cutting play (a Buzzkill) is over when it lands; its fate is what it ended, which the full row says above its words. */
+  const cutting = play.cuts && !play.reversed ? cutWords(instance.cards.find((c) => c.key === play.cuts!.card)?.name ?? play.cuts.card) : undefined;
+  const words = cutting ?? fateOf(play, note) ?? play.message;
   /* Opened, the body says the words (the note and the message), so line 2 keeps only its chips. */
   const shownWords = open ? undefined : words;
   const line = Boolean(shownWords) || shown.length > 0;

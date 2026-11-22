@@ -3220,6 +3220,14 @@ describe('a Gimmick a cutting card ended', () => {
     expect(await rowLines(/^Card 3, 1 play/u)).toContain('Ended the Card 2 here early');
   });
 
+  test("the cutting play's folded row says which card it ended on line 2, before it is opened", async () => {
+    width(false);
+    strip();
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 3, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(lens().querySelector('[data-kb-play="cutting"] .kb-lens-compact-line')?.textContent).toContain('Ended the Card 2 here early');
+  });
+
   test("a cut play's folded row says its fate on line 2", async () => {
     width(false);
     strip();
