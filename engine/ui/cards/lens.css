@@ -740,7 +740,7 @@
 }
 
 .kb-lens-compact-chip {
-  font-size: var(--kb-glass-size-label);
+  white-space: nowrap;
 }
 
 /*
@@ -775,7 +775,7 @@
   color: var(--kb-glass-sweet);
 }
 
-/* Every kind of card: two columns at the dock's width, one under 40em; each an outlined chamfer in the kind's ink, as an unselected tab is, its count at the right. */
+/* Every kind of card: two columns at the dock's width, one under 40em; each an outlined chamfer in the neutral line an unselected tab has (ink is the selected tab's and the rows'), its count at the right. */
 .kb-lens-kinds {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -809,7 +809,7 @@
   margin: 0;
   padding: 0 14px;
   border: 0;
-  background: var(--kb-kind-ink, color-mix(in srgb, var(--kb-glass-text) 50%, transparent));
+  background: color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
   color: var(--kb-glass-text);
   font: inherit;
   font-size: var(--kb-glass-size-label);
@@ -858,4 +858,6 @@
 
 @media (forced-colors: active) {
   .kb-lens-kind-up { background: Highlight; forced-color-adjust: none; }
+  /* The entry's outline and field are backgrounds, which forced colors drop: a real border keeps each a visible button. */
+  .kb-lens-kind { border: 1px solid ButtonText; }
 }
