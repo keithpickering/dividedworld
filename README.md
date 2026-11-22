@@ -388,6 +388,9 @@ The release (step 9) pushes the schema, deploys the functions and **seeds** whic
 environment's secrets (`SUPABASE_PROJECT_REF`, `SUPABASE_DB_URL` and `KAYFABB_JOBS_KEY`) name, every night, and the
 seed opens season 1. **Those secrets keep naming the test project until step 4.** If they named the new project
 earlier, the next night's release would seed it and open season 1 before the invitations go out.
+Do steps 2 to 5 in one sitting, between two nightly releases (05:13 UTC): a release that runs after step 2 pauses the
+test project and before step 4 repoints the secrets fails against the paused project, and one that runs between step 4
+and step 5 releases the site while it still points at the test project.
 
 1. **Before invite day: build the new project.** Do steps 2 to 5 of the first deploy on a new project: the project and
    its keys, the schema, Auth and email, the Edge Functions and their secrets, with `KAYFABB_PROFILE` left unset. Do
