@@ -166,11 +166,11 @@ describe('Pipewrench through the season', () => {
     expect(await fake.nextSettlementAt()).toBe(iso(30, 8, 17));
   });
 
-  it('is on cooldown after the settlement until the month ends, and the Turn is announced with its old class', async () => {
+  it('is on cooldown for the 21 days after the settlement, and the Turn is announced with its old class', async () => {
     const { fake } = await load('10-roster');
     const me = must((await fake.myCharacters()).find((c) => c.name === 'Pipewrench'));
     expect(me.classSince).toBe(iso(30, 8, 17));
-    expect(me.turnOpensAt).toBe(iso(30, 8, 17).replace('2026-10-30', '2026-11-29'));
+    expect(me.turnOpensAt).toBe(iso(30, 8, 17).replace('2026-10-30', '2026-11-20'));
     const turned = await fake.turnsAnnounced([me.id]);
     expect(turned).toEqual([expect.objectContaining({ character: me.id, was: 'heel', at: iso(30, 8, 17) })]);
   });
