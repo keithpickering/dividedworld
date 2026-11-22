@@ -749,7 +749,9 @@
  */
 .kb-lens-all {
   flex: none;
-  min-height: 44px;
+  /* The bar's own height: the close button is 52px (glass/shell.css), and a row of the bar's items agrees on one height. */
+  box-sizing: border-box;
+  min-height: 52px;
   margin: 0 0 0 8px;
   padding: 0 14px;
   border: 1px solid color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
