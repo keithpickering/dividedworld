@@ -176,9 +176,9 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
   return opened.thread;
 }
 
-type Open = 'none' | 'first' | 'busiest' | 'more' | 'who' | 'kinds';
+type Open = 'none' | 'first' | 'busiest' | 'older' | 'more' | 'who' | 'kinds';
 
-/** Opens the famous post's Lens as a reader would: from its first mark, from its busiest kind's tab, or from its "+N"; then unfolds Who. `who` is the busiest kind with one ended row expanded, and `kinds` the first kind with the All button pressed. */
+/** Opens the famous post's Lens as a reader would: from its first mark, from its busiest kind's tab, or from its "+N"; then unfolds Who. `older` is the busiest kind with Show older plays pressed once, `who` the busiest kind with one ended row expanded, and `kinds` the first kind with the All button pressed. */
 function Opener({ open }: { readonly open: Open }) {
   useEffect(() => {
     if (open === 'none') return;
@@ -191,7 +191,7 @@ function Opener({ open }: { readonly open: Open }) {
         mark.click();
         step = 1;
       } else if (step === 1) {
-        if (open === 'busiest' || open === 'who') {
+        if (open === 'busiest' || open === 'older' || open === 'who') {
           const tab = [...document.querySelectorAll<HTMLElement>('.kb-lens [role="tab"]')].find((t) => /Sugar Coat/u.test(t.getAttribute('aria-label') ?? t.textContent ?? ''));
           if (!tab) return;
           tab.click();
@@ -206,6 +206,12 @@ function Opener({ open }: { readonly open: Open }) {
         const fold = document.querySelector<HTMLElement>('.kb-lens-fold');
         if (!fold) return;
         if (fold.getAttribute('aria-expanded') === 'false') { fold.click(); return; }
+        if (open === 'older') {
+          /* The page holds only some of a kind's ended plays; the button reads the rest. */
+          const older = document.querySelector<HTMLElement>('.kb-lens-older button');
+          if (!older) return;
+          older.click();
+        }
         if (open === 'who') {
           const row = document.querySelectorAll<HTMLElement>('.kb-lens-row[data-kb-ended] .kb-lens-compact')[1];
           if (!row) return;
@@ -261,11 +267,14 @@ export const Strip: Story = { args: { open: 'none' } };
 export const LensFirst: Story = { args: { open: 'first' } };
 /** Its Lens on its busiest kind (Sugar Coat, fourteen plays over three years), Who unfolded. */
 export const LensBusiest: Story = { args: { open: 'busiest' } };
+/** Its Lens on Sugar Coat with Who unfolded and "Show older plays" pressed once: the ended plays the page did not hold, after the ones it did, newest first. */
+export const LensBusiestOlder: Story = { args: { open: 'older' } };
 /** Its Lens from "+N": the first kind the strip has no room for, the tab row scrolled to it. */
 export const LensFromMore: Story = { args: { open: 'more' } };
 export const StripPhone: Story = { args: { open: 'none' }, ...phone };
 export const LensFirstPhone: Story = { args: { open: 'first' }, ...phone };
 export const LensBusiestPhone: Story = { args: { open: 'busiest' }, ...phone };
+export const LensBusiestOlderPhone: Story = { args: { open: 'older' }, ...phone };
 export const LensFromMorePhone: Story = { args: { open: 'more' }, ...phone };
 /** Its Lens on Sugar Coat with Who unfolded and one ended row expanded under its compact siblings. */
 export const UnfoldedWho: Story = { args: { open: 'who' } };
