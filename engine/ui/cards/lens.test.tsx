@@ -104,7 +104,7 @@ const rows = () => [...lens().querySelectorAll<HTMLElement>('[data-kb-play]')].m
  * A post's Lens off the thread page, where Go to post leads somewhere (a spun thread's ORIGIN box, the board index): the strip with a `to`, over a store of
  * one Card 2 play in force. On the thread page the Lens is drawn with `to={null}` (the reader is on the post's page), so Go to post is read here.
  */
-const offPage = (to: string) => {
+const offPage = (to: string | null) => {
   const w = world();
   const plays = createPlays();
   const payload = { card: 'k2', message: 'off the page' };
@@ -113,7 +113,7 @@ const offPage = (to: string) => {
   renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to={to} nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
   return w;
 };
-const offPageLens = async (to = `/t/elsewhere?page=1#post-2`) => {
+const offPageLens = async (to: string | null = `/t/elsewhere?page=1#post-2`) => {
   offPage(to);
   await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
   await userEvent.click(whoButton());
@@ -731,6 +731,10 @@ describe('what the Lens says and offers', () => {
     width(false);
     await offPageLens('/t/elsewhere?page=1#post-2');
     expect(within(lens()).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', '/t/elsewhere?page=1#post-2');
+    cleanup();
+    await offPageLens(null);
+    expect(within(lens()).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(lens()).queryByRole('link', { name: 'Go to post' })).toBeNull();
   });
 
   test('every control in a row is the kit\'s skewed tile, as Hold to scrub is: React, Spin thread and Go to post speak one shape', async () => {
