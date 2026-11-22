@@ -11,7 +11,7 @@
 --   6. live_rewind                new: the post's rewind plays in force (play_post's in-force test), latest played first, with the point each names. One probe of play_post_up.
 --   7. rewind_refusal             new: the freeze's words (the engine's rewindWords) for the first live rewind that turns the incoming card away, or null; `passing` passes a rewind whose card is no rarer than it, as ward_refusal does.
 --   8. rewind_view                new: { play, post, at, version } for a rewind play, the version built as play_moment (0375_spun_thread_reads.sql) builds its own, through public_payload and so shown_payload, so a hidden version shows the hidden placeholder.
---  11. card_target                copied whole from 0411_post_effects.sql: a post's effect carries `rewind: { upTo }` where its card has one.
+--  11. card_target                copied whole from 0411_post_effects.sql: a post's effect carries `rewind: { upTo }` and the play's `at` where its card has one.
 --  12. post_rewind_plays          new: the live rewind plays of each of a list of posts, set-based, granted as post_play_ids is (live_rewind is granted to no API role, and thread_page reads as the caller).
 --   9. place_cast                 copied whole from 0411_post_effects.sql (the lockout, the cut, the pierce and the effects limit as they stand): a rewind card's point is asked of rewind_point_problem (a missing or malformed `to` gives the "pick a
 --                                 point" words) and written as `rewind_at` beside `ends`; a rewind's own play meets no back (spring_traps is not called for it); rewind_refusal is asked right after the Ward for a Move (with the pierce's passing) and in the same place for a Use, before the stack and the limit, under the post's lock.
@@ -930,7 +930,7 @@ grant execute on function rewind_view(uuid) to authenticated, service_role;
 
 -- ---- 11. card_target ----
 
--- card_target (0411_post_effects), a post's effect carries `rewind: { upTo }` where its card has a rewind, as the engine's CardEffect.rewind reads it. Everything else as 0411_post_effects wrote it. Its grants are as they were (replaced in place).
+-- card_target (0411_post_effects), a post's effect carries `rewind: { upTo }` and when it was played (`at`) where its card has a rewind, as the engine's CardEffect.rewind reads it. Everything else as 0411_post_effects wrote it. Its grants are as they were (replaced in place).
 create or replace function public.card_target(target uuid)
  returns jsonb
  language plpgsql
@@ -956,7 +956,9 @@ begin
           'covered', case when ck.surface then (select bit_count(sf.cover) from surfaces sf where sf.play = k.id) end, 'closes', to_jsonb(dp.closes),
           'quadrant', case when ck.skim is not null then k.payload #>> '{config,quadrant}' end,
           -- A live rewind's rarity: the effect carries what the freeze turns away, the same for every caster (the engine's CardEffect.rewind).
-          'rewind', case when ck.rewind is not null then jsonb_build_object('upTo', ck.rewind) end)) as effect
+          'rewind', case when ck.rewind is not null then jsonb_build_object('upTo', ck.rewind) end,
+          -- And when it was played, so the engine's freeze names the latest-played of two live rewinds as live_rewind does (CardEffect.at).
+          'at', case when ck.rewind is not null then k.created_at end)) as effect
         from acts k left join card_kinds ck on ck.key = k.payload ->> 'card'
         -- One grouped read of the post's drive plays: each play's drive, and that drive's close (its latest play plus the card's `lasts`).
         left join (select d.id, d.drive, max(d.created_at) over (partition by d.card, d.drive) + span_interval(dk.drive -> 'lasts') as closes

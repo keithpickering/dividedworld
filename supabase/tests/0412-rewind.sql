@@ -321,8 +321,10 @@ begin
   target := card_target(p);
   eff := (select e from jsonb_array_elements(target -> 'effects') e where e ->> 'act' = r::text);
   perform pg_temp.expect(eff -> 'rewind' = '{"upTo": "rare"}'::jsonb, format('the rewind''s effect does not carry rewind {upTo: rare}: %s', eff));
+  -- It carries when it was played, so the engine's freeze names the latest-played rewind whatever order the effects come in (frozenRefusal).
+  perform pg_temp.expect((eff ->> 'at')::timestamptz = (select created_at from acts where id = r), format('the rewind''s effect does not carry when it was played: %s', eff));
   eff := (select e from jsonb_array_elements(target -> 'effects') e where e ->> 'act' = m::text);
-  perform pg_temp.expect(eff is not null and not eff ? 'rewind', format('an effect that is no rewind carries a rewind key: %s', eff));
+  perform pg_temp.expect(eff is not null and not eff ? 'rewind' and not eff ? 'at', format('an effect that is no rewind carries a rewind key or its time: %s', eff));
 end $$;
 
 -- ---- rewind_view: the version at the point, the hidden placeholder, and null for what is no rewind ----
