@@ -190,6 +190,7 @@ declare
   left_boards uuid[];
   placed integer := 0;
   counting record;
+  on_list bigint;
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
@@ -638,8 +639,9 @@ begin
       for counting in
         select b as board from unnest(left_boards) b order by b
       loop
-        update board_thread_counts c set threads = case when c.shard = 0 then (select count(*) from thread_list l where l.board = c.board) else 0 end
-        where c.board = counting.board and c.threads is distinct from case when c.shard = 0 then (select count(*) from thread_list l where l.board = c.board) else 0 end;
+        select count(*) into on_list from thread_list l where l.board = counting.board;
+        update board_thread_counts c set threads = case when c.shard = 0 then on_list else 0 end
+        where c.board = counting.board and c.threads is distinct from case when c.shard = 0 then on_list else 0 end;
       end loop;
     end if;
   end if;

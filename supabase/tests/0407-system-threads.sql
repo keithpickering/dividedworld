@@ -124,6 +124,8 @@ create function pg_temp.staff_threads_on(slug text) returns bigint language sql 
   select count(*) from threads t where t.id in (select system_threads()) and t.board = pg_temp.board(slug)
 $$;
 
+-- A thread on sta that no list shows (0063's unlisted_threads), counted by 0030's insert trigger: a recount by anything but thread_list leaves sta's count one too high.
+insert into unlisted_threads (thread) values (pg_temp.mk('Unlisted', 'sta'));
 -- A post of the staff's in the announcements thread, so there is a search row to follow the thread.
 do $$
 declare ann uuid := (select id from threads where title = 'Announcements');
