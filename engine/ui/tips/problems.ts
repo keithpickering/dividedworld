@@ -6,6 +6,7 @@
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
 import type { Instance } from '../../rules/types.ts';
+import type { CardRules } from '../../rules/cards.ts';
 import { MAP, type ClassMarks, type InstanceUi } from '../types.ts';
 import type { CardPlay, CardUi } from '../cards/types.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
@@ -86,7 +87,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   /* The Lens's heading for a card with no live view: a short status, never a sentence (cards/lens-words.ts). */
   for (const card of ui.cards ?? []) {
     for (const sound of card.sounds ?? []) if (!slotKeys.has(sound)) out.push(`the card "${card.key}" names the sound "${sound}", which the instance's sounds do not have`);
-    out.push(...drawnByProblems(card, ui.cards ?? []), ...foldsRowProblems(card));
+    out.push(...drawnByProblems(card, ui.cards ?? []), ...foldsRowProblems(card), ...drawsEffectProblems(card, instance.cards?.find((c) => c.key === card.key)));
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
   }
@@ -107,6 +108,21 @@ function drawnByProblems(card: CardUi, cards: readonly CardUi[]): string[] {
   else if (named.drawnBy !== undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which is itself drawn by "${named.drawnBy}"; a chain is refused`);
   else if (named.Effect === undefined) out.push(`${who} is drawnBy "${card.drawnBy}", which has no Effect to draw it`);
   return out;
+}
+
+/**
+ * A card that reaches a post counts toward the post's limit of drawn effects exactly when its rules declare `drawsEffect`, and it draws exactly when it has an `Effect` or is
+ * `drawnBy` a card that has one, so the rules and the screens are one list: a card that draws and does not declare is never counted; one that declares and draws nothing fills
+ * a slot with nothing. A card with no rules entry, or one that reaches no post, is not held to it.
+ */
+function drawsEffectProblems(card: CardUi, rules: Pick<CardRules, 'drawsEffect' | 'reaches'> | undefined): string[] {
+  if (rules === undefined || !(rules.reaches === undefined || rules.reaches.includes('post'))) return [];
+  const draws = card.Effect !== undefined || card.drawnBy !== undefined;
+  const declares = rules.drawsEffect !== undefined;
+  const who = `the card "${card.key}"`;
+  if (draws && !declares) return [`${who} draws an effect and its rules do not declare drawsEffect, so the post limit would not count it`];
+  if (declares && !draws) return [`${who} declares drawsEffect and draws no effect, so the post limit would count a play that draws nothing`];
+  return [];
 }
 
 /** A card that folds the row (`CardUi.foldsRow`) draws the fold where a post has no row, so it has an `Effect`, and is no takeover, which lifts the post out of the row the fold hides. */

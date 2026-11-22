@@ -8,6 +8,8 @@ import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const feelinFab: CardRules<Record<string, never>> = {
   key: 'feelin-fab',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: "Feelin' Fab",
   alignment: 'sweet',
   rarity: 'common',

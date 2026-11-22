@@ -10,6 +10,8 @@ import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const kickMe: CardRules<Record<string, never>> = {
   key: 'kick-me',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Kick Me',
   alignment: 'pepperoni',
   rarity: 'common',

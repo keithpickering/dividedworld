@@ -20,6 +20,8 @@ const STACK = 3;
 
 export const jimmyWails: CardRules<Record<string, never>> = {
   key: 'jimmy-wails',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Jimmy Wails',
   alignment: 'sweet',
   rarity: 'uncommon',

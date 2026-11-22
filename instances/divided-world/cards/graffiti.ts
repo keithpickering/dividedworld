@@ -121,6 +121,8 @@ export type GraffitiConfig = { readonly stencil?: never } | { readonly stencil: 
 
 export const graffiti: CardRules<GraffitiConfig> = {
   key: 'graffiti',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Graffiti',
   alignment: 'pepperoni',
   rarity: 'rare',

@@ -9,6 +9,8 @@ import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const whodunnit: CardRules<Record<string, never>> = {
   key: 'whodunnit',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Whodunnit?',
   alignment: 'pepperoni',
   rarity: 'rare',

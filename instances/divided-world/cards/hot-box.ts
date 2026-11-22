@@ -12,6 +12,8 @@ export const HOT_BOX_LASTS = { unit: 'day', count: 3 } as const;
 
 export const hotBox: CardRules<{ color: string }> = {
   key: 'hot-box',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Hot Box',
   alignment: 'salty',
   rarity: 'common',

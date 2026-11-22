@@ -147,6 +147,18 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { ...lent, drawnBy: 'fab', Effect }]), rules), ['the card "glam" has both drawnBy and an Effect; a card is drawn by another or draws itself, never both']);
     assert.deepEqual(instanceUiProblems(withCards([{ key: 'fab', status: 'Rainbowed', Effect }, { key: 'mid', status: 'Handing on', drawnBy: 'fab' }, { ...lent, drawnBy: 'mid' }]), rules), ['the card "glam" is drawnBy "mid", which is itself drawn by "fab"; a chain is refused']);
   });
+  test('holds a card\'s Effect and its drawsEffect declaration to each other, for a card that reaches a post (drawsEffectProblems)', () => {
+    const Effect = () => null;
+    const run = (list: unknown[], ruled: unknown[]) => instanceUiProblems({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] }, { ...(rules as object), cards: ruled } as never);
+    const stat = { status: 'Marked' };
+    assert.deepEqual(run([{ key: 'ink', ...stat, Effect }], [{ key: 'ink', stack: 1, drawsEffect: {} }]), [], 'an Effect and a declaration');
+    assert.deepEqual(run([{ key: 'ink', ...stat, Effect }], [{ key: 'ink', stack: 1 }]), ['the card "ink" draws an effect and its rules do not declare drawsEffect, so the post limit would not count it']);
+    assert.deepEqual(run([{ key: 'ink', ...stat }], [{ key: 'ink', stack: 1, drawsEffect: {} }]), ['the card "ink" declares drawsEffect and draws no effect, so the post limit would count a play that draws nothing']);
+    assert.deepEqual(run([{ key: 'mark', ...stat }], [{ key: 'mark', stack: 1 }]), [], 'a post card with neither');
+    assert.deepEqual(run([{ key: 'fab', ...stat, Effect }, { key: 'glam', ...stat, drawnBy: 'fab' }], [{ key: 'fab', drawsEffect: {} }, { key: 'glam', drawsEffect: {} }]), [], 'a drawnBy card draws');
+    assert.deepEqual(run([{ key: 'fab', ...stat, Effect }, { key: 'glam', ...stat, drawnBy: 'fab' }], [{ key: 'fab', drawsEffect: {} }, { key: 'glam' }]), ['the card "glam" draws an effect and its rules do not declare drawsEffect, so the post limit would not count it']);
+    assert.deepEqual(run([{ key: 'mark', ...stat, Effect }], [{ key: 'mark', reaches: ['character'] }]), [], 'a card that reaches no post is not held to it');
+  });
   test('refuses a card that names a sound the instance\'s sounds do not have, naming both (CardUi.sounds)', () => {
     const withSounds = (sounds: readonly string[]) => ({
       ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, { key: 'feelin-fab', status: 'Rainbowed', sounds }] as unknown as readonly CardUi[],

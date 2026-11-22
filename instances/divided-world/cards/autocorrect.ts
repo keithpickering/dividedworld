@@ -97,6 +97,8 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
   },
   stateHeldUntil: (settings, landed) => holdEnds(economyOf(settings, 'autocorrect.holdHours'), landed),
   stateHeldWords: (until) => `This tape is stuck on until ${until}. It can be peeled after that.`,
+  /** Its effect is drawn on the post and counts toward the post's limit of drawn effects (`postEffects`); tape washed clean fades for everyone and stops counting. */
+  drawsEffect: { cleared: (state) => typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true },
   validateState: (state) => {
     const { peeled, clean, stuck, drops } = typeof state === 'object' && state !== null ? (state as { peeled?: unknown; clean?: unknown; stuck?: unknown; drops?: unknown }) : {};
     if (!Array.isArray(peeled)) return refuse('peeled is a list of places');

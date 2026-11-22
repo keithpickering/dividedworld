@@ -50,6 +50,8 @@ function repairWords(config: unknown): { readonly config: unknown; readonly trim
 
 export const thisCard: CardRules<ThisConfig> = {
   key: 'this',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'THIS',
   alignment: 'pepperoni',
   rarity: 'common',

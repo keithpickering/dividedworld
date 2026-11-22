@@ -12,6 +12,8 @@ export const STEEL_CHAIR_LASTS: Span = { unit: 'day', count: 3 };
 
 export const steelChair: CardRules<Record<string, never>> = {
   key: 'steel-chair',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Steel Chair',
   alignment: 'salty',
   rarity: 'common',

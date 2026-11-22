@@ -60,6 +60,8 @@ export const whoops: CardRules<{ color: string }> = {
     const ink = color(typeof config === 'object' && config !== null ? (config as { color?: unknown }).color : undefined);
     return ink ? ok({ color: ink }) : refuse('the ink is a color: a named one, or #rgb or #rrggbb');
   },
+  /** Its effect is drawn on the post and counts toward the post's limit of drawn effects (`postEffects`); a layer washed clean fades for everyone and stops counting. */
+  drawsEffect: { cleared: (state) => typeof state === 'object' && state !== null && (state as { clean?: unknown }).clean === true },
   validateState: (state) => {
     const { strokes, clean } = typeof state === 'object' && state !== null ? (state as { strokes?: unknown; clean?: unknown }) : { strokes: undefined, clean: undefined };
     if (!Array.isArray(strokes)) return refuse('strokes are a list');

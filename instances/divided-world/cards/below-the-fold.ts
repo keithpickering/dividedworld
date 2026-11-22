@@ -11,6 +11,8 @@ import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const belowTheFold: CardRules<Record<string, never>> = {
   key: 'below-the-fold',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Below the Fold',
   alignment: 'salty',
   rarity: 'common',

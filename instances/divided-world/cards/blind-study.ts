@@ -9,6 +9,8 @@ import type { Hundredths } from '../../../engine/rules/types.ts';
 
 export const blindStudy: CardRules<Record<string, never>> = {
   key: 'blind-study',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Blind Study',
   alignment: 'pepperoni',
   rarity: 'uncommon',
