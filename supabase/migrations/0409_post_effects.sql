@@ -11,7 +11,7 @@
 --   4. card_kinds_problem        copied whole from 0405_cut.sql: a `drawsEffect` that is no boolean is named, where given.
 --   5. settings_held             copied whole from 0395_polls.sql: `postEffects` is a whole number, 1 to 16, in the words of the engine's SETTINGS bound (instance.ts).
 --   6. effect_cleared,           new: whether a play is cleared for a version of its post (the one test); how many effects a post draws in force (the post's play_post rows at post reach, one probe of play_post_up);
---      post_effects_up,          the refusal's words, or null where there is room. The words are held here once, as postFullWords holds them in the engine, and a test compares the two. None is granted to an API role.
+--      post_effects_up,          the refusal's words, or null where there is room. The words are held here once, as postFullWords holds them in the engine, and a test compares the two. Only post_effects_up is granted, to service_role (the chatter function offers no drawing cast on a full post); no client role has any.
 --      post_room_words
 --   7. save_effect_state         the old signature dropped and a new one made from 0149_card_writes.sql's body: `cleared boolean default false` and `cleared_for uuid default null` as its last arguments, written in the insert and the
 --                                conflict update. The defaults keep every four-argument caller; a save that says nothing clears nothing. Grants as 0038 gave them (service role only).
@@ -950,7 +950,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
     and (p.kind = '' or exists (select 1 from card_kinds k where k.key = p.kind and k.draws_effect))
     and not effect_cleared(p.play, post_version(p.post))
 $$;
-revoke execute on function post_effects_up(uuid) from public, anon, authenticated, service_role;
+revoke execute on function post_effects_up(uuid) from public, anon, authenticated;
+grant execute on function post_effects_up(uuid) to service_role;
 
 -- The refusal a post at its limit gives a play that would take a slot, or null where there is room. The words are engine/rules/cards.ts's postFullWords, with the instance's number for `%`; engine/rules/cards.test.ts holds the two equal.
 -- Called after the post's row is locked, in a statement of its own, so a play that waited on the lock reads the play it waited for.

@@ -242,6 +242,17 @@ begin
   end if;
 end $$;
 
+-- How many effects a post draws (0409) is the service role's alone: the chatter function reads it to offer no drawing cast on a full post. The helpers under it are no role's.
+do $$
+begin
+  if has_function_privilege('anon', 'post_effects_up(uuid)', 'execute') or has_function_privilege('authenticated', 'post_effects_up(uuid)', 'execute') or not has_function_privilege('service_role', 'post_effects_up(uuid)', 'execute') then
+    raise exception 'post_effects_up is not the service role''s alone';
+  end if;
+  if has_function_privilege('service_role', 'effect_cleared(uuid, uuid)', 'execute') or has_function_privilege('service_role', 'post_room_words(uuid)', 'execute') then
+    raise exception 'a helper under post_effects_up is callable';
+  end if;
+end $$;
+
 -- The kept counts of a post's plays by kind (0407) are no API role's either.
 do $$
 begin
