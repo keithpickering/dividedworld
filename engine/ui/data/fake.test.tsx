@@ -7442,8 +7442,9 @@ describe('a rewind: a card that shows a post as it was and freezes it (0413_rewi
   const timeTrap = { ...snare, key: 'timetrap', name: 'Time Trap', catches: () => 'clock' };
   const lure = { ...base, key: 'lure', name: 'Lure', alignment: 'salty' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
   const lesser = { ...base, key: 'lesser', name: 'Lesser', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 2 }, rewind: { upTo: 'common' as const }, drawsEffect: {}, canApply: () => ok(undefined) };
+  const lkback = { ...base, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
   const clock = { ...base, key: 'clock', name: 'Clock', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 1 }, rewind: { upTo: 'rare' as const }, drawsEffect: {}, canApply: () => ok(undefined) };
-  const world: Instance = { ...instance, cards: [blot, big, tonic, snare, timeTrap, lure, clock, lesser], machine: [] };
+  const world: Instance = { ...instance, cards: [blot, big, tonic, snare, timeTrap, lure, clock, lesser, lkback], machine: [] };
   const frozen = (ends: string) => `this post's Clock turns away cards up to rare until ${refusalTime(ends)}`;
   const PICK = 'pick a point from this post\'s History';
   /** Ana's post, edited past the grace so its first version is a point; Bo plays the cards. */
@@ -7455,7 +7456,7 @@ describe('a rewind: a card that shows a post as it was and freezes it (0413_rewi
     const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
     const boFace = fake.seed.character(bo, 'Bo Face', 'face');
     const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'The first words.');
-    fake.seed.cards(ana, { snare: 2, timetrap: 1, lure: 1, tonic: 2 });
+    fake.seed.cards(ana, { snare: 2, timetrap: 1, lure: 1, lkback: 1, tonic: 2 });
     fake.seed.cards(bo, { blot: 3, big: 2, clock: 3, lesser: 2 });
     const posted = Date.parse((await fake.act(opener))!.createdAt);
     fake.clock.advance(3 * MINUTE);
@@ -7624,6 +7625,26 @@ describe('a rewind: a card that shows a post as it was and freezes it (0413_rewi
     must(await s.fake.reverseCard(second.id));
     s.fake.signInAs(s.bo);
     expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(`this post's Lesser turns away cards up to common until ${refusalTime(String(first.payload.ends))}`, 'config'));
+  });
+
+  test('a back sprung into a live lockout after the point shows, so it makes the point offered (play_post: sprung and in force)', async () => {
+    const s = await setup();
+    const { fake, ana, bo, boss, anaFace, boFace, thread } = s;
+    const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
+    fake.signInAs(ana);
+    const plain = must(await fake.post(thread, anaFace, 'Plain.', null)).id;
+    fake.clock.advance(3 * MINUTE);
+    fake.signInAs(bo);
+    expect(await fake.playCard('clock', boFace, plain, { to: plain }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    fake.signInAs(ana);
+    const back = must(await fake.setCard('lkback', anaFace, plain, {}));
+    fake.signInAs(bo);
+    const move = must(await fake.playCard('blot', boFace, plain, {}, ''));
+    fake.signInAs(boss);
+    must(await fake.reverseCard(move.id));
+    fake.signInAs(bo);
+    expect(back.id).toBeDefined();
+    must(await fake.playCard('clock', boHeel, plain, { to: plain }, ''));
   });
 });
 

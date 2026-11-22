@@ -307,6 +307,36 @@ describe('RewindPoints on its own', () => {
     expect(screen.queryByRole('radio')).toBeNull();
   });
 
+  test('a back sprung into a live lockout after the point makes the point offered, though the move that sprang it is ended', async () => {
+    const lkback = { ...base, key: 'lkback', name: 'Lk Back', alignment: 'sweet', rarity: 'rare', play: 'set', trap: { trigger: { on: 'cast' }, match: { flavors: ['salty'], upTo: 'rare' }, outcome: { kind: 'lockout', hours: 24 } }, canApply: () => ok(undefined) } as unknown as CardRules;
+    const lk: Instance = { ...instance, cards: [...instance.cards, lkback] };
+    const fake = createFake({ instance: lk });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const boss = fake.seed.account('boss', { admin: true });
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'Post 1');
+    fake.seed.cards(ana, { lkback: 1 });
+    fake.seed.cards(bo, { early: 1 });
+    fake.clock.advance(3 * MINUTE);
+    fake.signInAs(ana);
+    const back = await fake.setCard('lkback', anaFace, opener, {});
+    if (!back.ok) throw new Error(back.error);
+    fake.signInAs(bo);
+    const move = await fake.playCard('early', boFace, opener, {}, '');
+    if (!move.ok) throw new Error(move.error);
+    fake.signInAs(boss);
+    await fake.reverseCard(move.value.id);
+    fake.signInAs(bo);
+    const [post] = await fake.history(opener);
+    const read = await fake.postPlays([opener]);
+    const store = createPlays();
+    store.add(read.plays);
+    renderIn(fake, <RewindPoints post={post!} plays={store} id="t" config={undefined} onChange={() => {}} />, { path: '/', instance: lk, cards });
+    expect(await screen.findAllByRole('radio')).toHaveLength(1);
+  });
+
   test('a point is let go when it stops being offered: the pick is cleared and nothing is sent', async () => {
     const w = await world(false, false, ['late']);
     const held = await prior(w);

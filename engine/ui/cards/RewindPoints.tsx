@@ -41,8 +41,8 @@ export function RewindPoints({ post, plays, config, onChange, id }: {
     const [first, ...edits] = versions as readonly Act[];
     const now = api.now();
     const keeps = new Set(instance.cards.filter((c) => c.keeps === true).map((c) => c.key));
-    /* A play shows when it is a face-up play on the post (not beyond it) that is not over, as the server reads play_post. */
-    const showing = new Set(shownPlays(home.plays, now).filter((p) => !p.faceDown && !p.reach && !playOver(p, now, keeps)).map((p) => p.id));
+    /* A play shows when it is a face-up play on the post (not beyond it) that is not over, or a back that sprang into a lockout still live (playOver says so), as the server reads play_post. */
+    const showing = new Set(shownPlays(home.plays, now).filter((p) => (!p.faceDown || p.revealed !== undefined) && !p.reach && !playOver(p, now, keeps)).map((p) => p.id));
     const played = home.plays.map((p) => ({ id: p.id, at: p.playedAt }));
     return rewindPoints({ id: first!.id, at: first!.createdAt }, edits.map((e) => ({ id: e.id, at: e.createdAt })), played, settings.editGrace, new Date(now), (p) => showing.has(p.id));
   }, [versions, home.plays, api, instance.cards, settings.editGrace]);

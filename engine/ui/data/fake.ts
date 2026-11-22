@@ -1901,12 +1901,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { play: k.id, post: post.id, at: iso(point), version: shownVersion(post, edits(post).filter((e) => e.at <= point).at(-1) ?? post) };
   }
   /**
-   * The point a rewind's configuration names on a post, in ms, or why it is none (`rewindPointProblem`, the server's words and order). A play shows when it is a face-up play in force on the post, as
+   * The point a rewind's configuration names on a post, in ms, or why it is none (`rewindPointProblem`, the server's words and order). A play shows when it is a face-up play in force on the post, or a back that sprang into a lockout still live, as
    * rewind_point_problem reads play_post.
    */
   function rewindPointOf(post: ActRec, config: unknown): string | { at: number } {
     const to = rewindConfig(config);
-    const showing = playRows(new Set([post.id])).filter((r) => r.kind !== '' && onPost(r.act) && holdsPlace(r, now())).map((r) => ({ id: r.act.id, at: iso(r.act.at) }));
+    const showing = playRows(new Set([post.id])).filter((r) => (r.kind !== '' || r.sprung) && onPost(r.act) && (holdsPlace(r, now()) || (r.lockUntil !== null && r.lockUntil > now()))).map((r) => ({ id: r.act.id, at: iso(r.act.at) }));
     const why = rewindPointProblem(to.ok ? to.value.to : undefined, { id: post.id, at: iso(post.at) }, edits(post).map((e) => ({ id: e.id, at: iso(e.at) })), showing, settings.editGrace, new Date(now()), () => true);
     if (why !== null) return why;
     const version = acts.get((to as { value: { to: string } }).value.to)!;
