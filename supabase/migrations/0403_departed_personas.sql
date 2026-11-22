@@ -21,9 +21,10 @@
 alter table season_handovers drop constraint season_handovers_pkey cascade;
 alter table season_handovers add column id bigint generated always as identity;
 alter table season_handovers add primary key (id);
-alter table season_handovers add unique (id, season);
 alter table season_handovers add column cause text not null default 'rollover' check (cause in ('rollover', 'departure'));
-create index season_handovers_by_season on season_handovers (season, id);
+-- One key serves a season's handovers in order and the dismissals' key on (season, handover); a second index on the same two columns would cost every cold read that
+-- plans this table its relcache entry (board_page's, through season_boss_changes) and buy nothing.
+alter table season_handovers add unique (season, id);
 create unique index season_handovers_one_rollover on season_handovers (season) where cause = 'rollover';
 
 -- The digest role's columns (0088), `cause` added: a handover's public facts are who left, who came, how, why and when.
@@ -37,7 +38,7 @@ alter table handover_dismissals enable always trigger handover_dismissals_no_upd
 alter table handover_dismissals alter column handover set not null;
 alter table handover_dismissals drop constraint handover_dismissals_pkey;
 alter table handover_dismissals add primary key (handover);
-alter table handover_dismissals add foreign key (handover, season) references season_handovers (id, season);
+alter table handover_dismissals add foreign key (season, handover) references season_handovers (season, id);
 -- table part: end
 
 -- A Boss changed at a handover: the Boss it ended with is not the one it began with, by nomination or rotation. One row per such handover, with its id and cause.
