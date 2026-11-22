@@ -705,7 +705,7 @@ begin
     plan := plan || line || E'\n';
   end loop;
   perform pg_temp.expect(plan like '%play_post_up%', format('the rewind lookup does not use play_post_up: %s', plan));
-  perform pg_temp.expect(plan like '%Index Cond: (%post = ANY%', format('the rewind lookup''s index is not read by post: %s', plan));
+  perform pg_temp.expect(plan ~ 'Index Cond: \(\(?post = ANY', format('the rewind lookup''s index is not read by post: %s', plan));
   perform pg_temp.expect(plan not like '%Seq Scan on play_post%' and plan not like '%Seq Scan on acts%', format('the rewind lookup scans: %s', plan));
   raise notice 'the rewind lookup for 25 posts of 4,000: %', replace(plan, E'\n', ' | ');
 end $$;
