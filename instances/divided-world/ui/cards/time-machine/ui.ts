@@ -9,7 +9,7 @@ import { spanWords } from '../words.ts';
 import { dayAndTime } from '../../../../../engine/ui/characters/format.ts';
 
 /* Loaded the first time a post wears it, as every card's effect is (engine/ui/cards/Effects.tsx draws it inside a Suspense). */
-const TimeMachineEffect = lazy(() => import('./Effect.tsx').then((m) => ({ default: m.TimeMachineEffect })));
+const TimeMachineEffect = lazy(() => import('../../time-machine/Effect.tsx').then((m) => ({ default: m.TimeMachineEffect })));
 
 /*
  * Time Machine (docs/plans/2026-11-21-time-machine-design.md): Pepperoni's color. The post shows as it was at an earlier point its player picked

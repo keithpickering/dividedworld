@@ -3,7 +3,7 @@
  * History, and no card up to rare can be played on it (docs/plans/2026-11-21-time-machine-design.md, section 1). The rules are the
  * engine's rewind (engine/rules/rewind.ts: `rewindConfig` takes `{ to }`, the version it names; SQL checks that it is a point of the post);
  * what is here is the card's facts. It is played face up only (`faceUpOnly`: its point is picked when it is played) and never staffed, and
- * it draws an effect on the post (ui/cards/time-machine/Effect.tsx), so each play counts toward the post's limit of drawn effects.
+ * it draws an effect on the post (ui/time-machine/Effect.tsx), so each play counts toward the post's limit of drawn effects.
  */
 import { landsOn, type CardRules } from '../../../engine/rules/cards.ts';
 import { rewindConfig } from '../../../engine/rules/rewind.ts';

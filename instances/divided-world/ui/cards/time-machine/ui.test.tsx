@@ -12,13 +12,13 @@ import { ratio } from '../../../../../engine/ui/contrast.ts';
 import { NO_INK } from '../../../../../engine/ui/cards/claims.ts';
 import type { CardPlay, EffectProps } from '../../../../../engine/ui/cards/types.ts';
 import type { Act } from '../../../../../engine/ui/data/api.ts';
-import { TimeMachineEffect, STREAK_MS } from './Effect.tsx';
-import { readOut } from './readout.ts';
+import { TimeMachineEffect, STREAK_MS } from '../../time-machine/Effect.tsx';
+import { readOut } from '../../time-machine/readout.ts';
 import { ui } from './ui.ts';
 import { timeMachine } from '../../../cards/time-machine.ts';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const sheet = readFileSync(path.resolve(here, 'time-machine.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+const sheet = readFileSync(path.resolve(here, '../../time-machine/time-machine.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
 const rule = (selector: string): string => new RegExp(`${selector.replace(/[.[\]]/gu, '\\$&')}\\s*\\{([^}]*)\\}`, 'u').exec(sheet)?.[1] ?? '';
 
 const post = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-14T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null } as unknown as Act;
@@ -54,6 +54,15 @@ beforeEach(() => {
 afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); document.documentElement.removeAttribute('data-kb-motion'); });
 
 describe('the effect', () => {
+  test('in the pinned zone (America/Los_Angeles) the words are literal', () => {
+    expect(process.env.TZ ?? Intl.DateTimeFormat().resolvedOptions().timeZone).toBe('America/Los_Angeles');
+    expect(readOut(POINT)).toBe('NOV 14 1:02PM');
+    render(<TimeMachineEffect {...props([play()])} />);
+    expect(document.querySelector('.dw-tm-readout')!.textContent).toBe('◀◀ PLAY NOV 14 1:02PM');
+    expect(document.querySelector('.kb-visually-hidden')!.textContent).toBe('Showing this post as it was on NOV 14 1:02PM');
+    expect(ui.logPlay!({ to: 'v1' }, { rewindsTo: POINT })).toBe('That post shows as it was on Nov 14, 1:02 PM until it ends.');
+  });
+
   test('it draws the post\'s words, the read-out with the point\'s date, and the hidden label', () => {
     render(<TimeMachineEffect {...props([play()])} />);
     expect(host().textContent).toContain('Old words.');
@@ -107,6 +116,15 @@ describe('the rewind', () => {
     for (const s of streaks() as NodeListOf<HTMLElement>) expect(parseFloat(s.style.animationDelay) + parseFloat(s.style.animationDuration), 'delay plus duration').toBeLessThanOrEqual(STREAK_MS);
   });
 
+  test('a newer rewind becoming the latest play streaks on its own first draw', () => {
+    const first = play(), newer = play();
+    const { rerender } = render(<TimeMachineEffect {...props([first])} />);
+    act(() => { vi.advanceTimersByTime(STREAK_MS + 1); });
+    expect(streaks().length).toBe(0);
+    rerender(<TimeMachineEffect {...props([first, newer])} />);
+    expect(streaks().length).toBeGreaterThan(0);
+  });
+
   test('under reduced motion there is no streak, and the tracking line is held still', () => {
     document.documentElement.setAttribute('data-kb-motion', 'reduce');
     render(<TimeMachineEffect {...props([play()])} />);
@@ -141,6 +159,20 @@ describe('where it is drawn', () => {
       expect(host().getAttribute('style') ?? '', 'the effect\'s own box adds no margin or padding').not.toMatch(/margin|padding/u);
       unmount();
     }
+  });
+
+  test('when the area resizes the layer and the streaks\' travel are placed again', () => {
+    let fire: () => void = () => {};
+    const seen: Element[] = [];
+    vi.stubGlobal('ResizeObserver', class { constructor(cb: () => void) { fire = cb; } observe(el: Element) { seen.push(el); } unobserve() {} disconnect() {} });
+    render(<div className="kb-act-main" data-kb-content-area><TimeMachineEffect {...props([play()])} /></div>);
+    expect(seen.some((e) => e.hasAttribute('data-kb-content-area')), 'the area is watched').toBe(true);
+    expect(layer().style.height).toBe('140px');
+    vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-kb-content-area') ? 220 : 0; });
+    vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-kb-content-area') ? 410 : 0; });
+    act(() => { fire(); });
+    expect([layer().style.height, layer().style.width, layer().style.getPropertyValue('--dw-tm-w')]).toEqual(['220px', '410px', '410px']);
+    vi.unstubAllGlobals();
   });
 
   test('with no content area above it the layer is the effect\'s own box, from its top-left', () => {

@@ -16,9 +16,9 @@
  * A play's moment and a History version row draw the tape but never the streak: nothing in them arrives.
  */
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
-import { useMotionReduced } from '../../../../../engine/ui/appearance.ts';
-import { bodyBox, bodyOf, placeLayer } from '../../../../../engine/ui/cards/body.ts';
-import type { EffectProps } from '../../../../../engine/ui/cards/types.ts';
+import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
+import { bodyBox, bodyOf, placeLayer } from '../../../../engine/ui/cards/body.ts';
+import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { readOut } from './readout.ts';
 import './time-machine.css';
 
@@ -31,7 +31,7 @@ const rewound = new Set<string>();
 
 export function TimeMachineEffect(props: EffectProps) {
   const latest = props.plays.at(-1);
-  return latest ? <Taped {...props} id={latest.id} at={latest.rewindAt}>{props.children}</Taped> : <>{props.children}</>;
+  return latest ? <Taped key={latest.id} {...props} id={latest.id} at={latest.rewindAt}>{props.children}</Taped> : <>{props.children}</>;
 }
 
 function Taped({ id, at, met, moment, still, children }: EffectProps & { id: string; at: string | undefined }) {
@@ -60,18 +60,23 @@ function Taped({ id, at, met, moment, still, children }: EffectProps & { id: str
   /* The layer is the content area's box, placed again whenever the area's size changes. */
   useLayoutEffect(() => {
     const el = host.current!, lay = layer.current!;
-    const fit = (): void => {
+    /* The area is found afresh each time (a takeover may move it), and watched while it is the one found. */
+    let watched: HTMLElement | null = null;
+    const size = typeof ResizeObserver === 'function' ? new ResizeObserver(() => fit()) : null;
+    function fit(): void {
       const area = bodyOf(el);
+      if (area !== watched) {
+        if (watched) size?.unobserve(watched);
+        if (area) size?.observe(area);
+        watched = area;
+      }
       const box = bodyBox(el, area);
       placeLayer(lay, box);
       /* The streaks travel the area's whole width (time-machine.css). */
       lay.style.setProperty('--dw-tm-w', `${box.w}px`);
-    };
-    fit();
-    const size = typeof ResizeObserver === 'function' ? new ResizeObserver(fit) : null;
-    const area = bodyOf(el);
-    if (area) size?.observe(area);
+    }
     size?.observe(el);
+    fit();
     return () => size?.disconnect();
   }, []);
 
