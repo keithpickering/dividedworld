@@ -53,13 +53,18 @@ begin
 end $$;
 revoke execute on function play_post_move(play_post, play_post) from public, anon, authenticated, service_role;
 
--- Adds signed counts to a (post, kind). A difference of zero writes nothing. A row is made only by an addition, never by a fall.
+-- Adds signed counts to a (post, kind). A difference of zero writes nothing. A row is made only by a rise (a play counted), never by a fall; a row that reaches zero plays is deleted, so no row says zero.
 create function play_post_add(p uuid, k text, dplays integer, dtook integer) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
   if p is null or (dplays = 0 and dtook = 0) then return; end if;
-  insert into post_kinds (post, kind, plays, took) values (p, k, greatest(dplays, 0), greatest(dtook, 0))
-  on conflict (post, kind) do update set plays = post_kinds.plays + dplays, took = post_kinds.took + dtook;
+  if dplays > 0 then
+    insert into post_kinds (post, kind, plays, took) values (p, k, dplays, greatest(dtook, 0))
+    on conflict (post, kind) do update set plays = post_kinds.plays + dplays, took = post_kinds.took + dtook;
+  else
+    update post_kinds set plays = plays + dplays, took = took + dtook where post = p and kind = k;
+  end if;
+  delete from post_kinds where post = p and kind = k and plays = 0 and took = 0;
 end $$;
 revoke execute on function play_post_add(uuid, text, integer, integer) from public, anon, authenticated, service_role;
 
@@ -89,6 +94,7 @@ begin
     over_at = excluded.over_at, took = excluded.took, sprung = excluded.sprung, drawn = excluded.drawn;
   perform play_post_move(was, r);
   if mates and r.reach = 'post' and exists (select 1 from card_kinds ck where ck.key = r.kind and ck.drive is not null) then
+    -- Locks on the mates are taken one play at a time, each in its own refresh; place_cast's card insert serializes the plays of one drive, so two refreshes of a drive do not meet in opposite orders.
     for mate in
       select k.id from acts k
       where k.kind = 'card' and k.target_act_id = r.post and k.payload ->> 'card' = r.kind and k.id <> r.play and not (k.payload ? 'caught')
@@ -109,7 +115,11 @@ language plpgsql security definer set search_path = public, pg_temp as $$
 declare d integer;
 begin
   if tg_op = 'INSERT' then d := new.count; else d := new.count - old.count; end if;
-  if d <> 0 then update play_post set drawn = drawn + d where play = new.act; end if;
+  -- The lock refresh_play_post holds while it reads play_row and writes `drawn`: a reaction that committed between its read and its write would be lost.
+  if d <> 0 then
+    perform pg_advisory_xact_lock(hashtextextended('play_post:' || new.act::text, 0));
+    update play_post set drawn = drawn + d where play = new.act;
+  end if;
   return null;
 end $$;
 revoke execute on function play_post_draw_tally() from public, anon, authenticated, service_role;
@@ -120,8 +130,15 @@ create trigger play_post_draw_tally_update after update of count on reaction_tal
 create function play_post_draw_thread() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
 begin
-  if tg_op = 'UPDATE' and old.origin_act_id is not null then update play_post set drawn = drawn - 1 where play = old.origin_act_id; end if;
-  if new.origin_act_id is not null then update play_post set drawn = drawn + 1 where play = new.origin_act_id; end if;
+  -- The same lock as the tally's (refresh_play_post holds it).
+  if tg_op = 'UPDATE' and old.origin_act_id is not null then
+    perform pg_advisory_xact_lock(hashtextextended('play_post:' || old.origin_act_id::text, 0));
+    update play_post set drawn = drawn - 1 where play = old.origin_act_id;
+  end if;
+  if new.origin_act_id is not null then
+    perform pg_advisory_xact_lock(hashtextextended('play_post:' || new.origin_act_id::text, 0));
+    update play_post set drawn = drawn + 1 where play = new.origin_act_id;
+  end if;
   return null;
 end $$;
 revoke execute on function play_post_draw_thread() from public, anon, authenticated, service_role;
@@ -135,7 +152,7 @@ select p.post, p.kind, sum(c.plays), sum(c.took) from play_post p cross join lat
 
 -- ---- 6. play_post_drift, with the counts ----
 
--- Every play whose kept row differs from play_row, every play on a post with no row, every row whose Act is no play; and every post_kinds row that differs from the count of play_post (a (post, kind) with no row counts as zero, and a row of no play as zero too), named by its post.
+-- Every play whose kept row differs from play_row, every play on a post with no row, every row whose Act is no play; and every post_kinds row that differs from the count of play_post (a kind with no plays counted has no row, so a row of zero is named too), named by its post.
 -- Empty when the triggers hold. The service role's alone: no client calls it.
 create or replace function play_post_drift() returns table (play uuid, why text)
 language sql stable security definer set search_path = public, pg_temp as $$
@@ -146,9 +163,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
   from acts a where a.kind in ('card', 'set') and a.target_act_id is not null and not exists (select 1 from play_post p where p.play = a.id)
   union all
   select coalesce(w.post, k.post), format('the counts of kind "%s" on this post are plays %s, took %s and should be plays %s, took %s', coalesce(w.kind, k.kind), coalesce(k.plays, 0), coalesce(k.took, 0), coalesce(w.plays, 0), coalesce(w.took, 0))
-  from (select p.post, p.kind, sum(c.plays)::integer as plays, sum(c.took)::integer as took from play_post p cross join lateral play_post_counts(p) c group by p.post, p.kind) w
+  from (select p.post, p.kind, sum(c.plays)::integer as plays, sum(c.took)::integer as took from play_post p cross join lateral play_post_counts(p) c group by p.post, p.kind having sum(c.plays) > 0) w
   full join post_kinds k on k.post = w.post and k.kind = w.kind
-  where coalesce(w.plays, 0) is distinct from coalesce(k.plays, 0) or coalesce(w.took, 0) is distinct from coalesce(k.took, 0)
+  where w.post is null or k.post is null or w.plays is distinct from k.plays or w.took is distinct from k.took
 $$;
 revoke execute on function play_post_drift() from public, anon, authenticated;
 grant execute on function play_post_drift() to service_role;

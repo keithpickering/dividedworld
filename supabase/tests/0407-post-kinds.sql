@@ -127,7 +127,7 @@ begin
   insert into threads (board, title, origin_act_id) select bo.id, 'Pk spun from a post', p from boards bo where bo.slug = 'general';
   -- A reaction to the post itself moves no play's row.
   insert into reaction_tallies (act, kind, count) values (p, 'up', 4);
-  select count(*) into n from play_post where drawn <> 0 and play <> pl;
+  select count(*) into n from play_post where drawn <> 0 and play <> pl and post = p;
   if n <> 0 or (select drawn from play_post where play = pl) is distinct from 5 then raise exception 'a post''s own tally or thread moved a play''s draw'; end if;
   perform pg_temp.nodrift('a reaction to the post');
   -- An origin set after the thread's insert is drawn too (0096's test does so).
@@ -179,6 +179,28 @@ begin
   delete from post_kinds where kind = 'pkghost';
   -- took beyond plays is refused by the table.
   if pg_temp.coded(format('update post_kinds set took = 3 where post = %L', p)) is null then raise exception 'took beyond plays was allowed'; end if;
+end $$;
+
+-- ---- A fall makes no row, and a row that reaches zero is deleted; drift names a zero row ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('pk-z-ann'); a uuid := tests.character(ann, 'Pk Z Ann');
+  t uuid := tests.thread('Pk zero'); p uuid := tests.post(a, t, 'A post.');
+begin
+  perform play_post_add(p, 'pkz', -1, -1);
+  if exists (select 1 from post_kinds where post = p) then raise exception 'a fall made a row: %', (select jsonb_agg(to_jsonb(x)) from post_kinds x where x.post = p); end if;
+  perform play_post_add(p, 'pkz', 1, 1);
+  perform play_post_add(p, 'pkz', 1, 0);
+  perform play_post_add(p, 'pkz', -1, -1);
+  if (pg_temp.pk(p, 'pkz')).plays is distinct from 1 or (pg_temp.pk(p, 'pkz')).took is distinct from 0 then raise exception 'the falls did not leave plays 1, took 0: %', to_jsonb(pg_temp.pk(p, 'pkz')); end if;
+  perform play_post_add(p, 'pkz', -1, 0);
+  if exists (select 1 from post_kinds where post = p) then raise exception 'a row that reached zero stayed: %', (select jsonb_agg(to_jsonb(x)) from post_kinds x where x.post = p); end if;
+  -- A zero row written by hand is named: no play makes it.
+  insert into post_kinds (post, kind, plays, took) values (p, 'pkz', 0, 0);
+  if not exists (select 1 from play_post_drift() d where d.play = p and d.why like '%pkz%') then raise exception 'a zero row is not named by play_post_drift'; end if;
+  delete from post_kinds where post = p;
+  perform pg_temp.nodrift('the zero row removed');
 end $$;
 
 -- ---- The backfill: its statement rebuilds exactly the rows the triggers kept ----
