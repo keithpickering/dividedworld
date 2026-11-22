@@ -403,6 +403,37 @@ begin
   if why is distinct from '55000 there''s no Gimmick up on this character for Bk Buzzkill to end' then raise exception 'cutting the cut Cheap Shot again: %', why; end if;
 end $$;
 
+-- ---- A caster who cuts their own Cheap Shot spends no pierce on it; reversing the Buzzkill brings the Cheap Shot back ----
+select tests.unbecome();
+do $$
+declare
+  admin_acc uuid := tests.account('bk-o-admin');
+  bob uuid := tests.account('bk-o-bob');
+  b uuid := tests.character(bob, 'Bk O Bob');
+  t uuid := tests.thread('Bk own cut');
+  pb uuid := tests.post(b, t, 'Bob''s own post.');
+  shot uuid; c jsonb; cp jsonb; moved jsonb;
+begin
+  insert into admins (account) values (admin_acc);
+  perform pg_temp.cards();
+  perform pg_temp.hand(bob, 'bkcut', 'bkpierce', 'bkmove');
+  perform tests.become_service();
+  shot := (play_card(bob, 'bkpierce', b, b, '{}', 0, '', 'character', pb) ->> 'id')::uuid;
+  c := pg_temp.cut(bob, b, b, shot, 'character', pb);
+  cp := pg_temp.payload(c);
+  if cp ? 'pierce' then raise exception 'a cut spent the pierce it cuts: %', cp; end if;
+  if cp -> 'cut' is distinct from jsonb_build_object('play', shot::text, 'card', 'bkpierce') then raise exception 'the cut of one''s own Cheap Shot did not land: %', cp; end if;
+  perform tests.unbecome();
+  if not card_ended(shot) or card_cut_at(shot) is null then raise exception 'the Cheap Shot is not cut'; end if;
+  perform tests.become(admin_acc);
+  perform reverse_card((c ->> 'id')::uuid);
+  perform tests.unbecome();
+  if card_ended(shot) or card_cut_at(shot) is not null then raise exception 'reversing the Buzzkill did not bring the own Cheap Shot back'; end if;
+  perform tests.become_service();
+  moved := play_card(bob, 'bkmove', b, pb, '{}', 0, '');
+  if pg_temp.payload(moved) #>> '{pierce,by}' is distinct from shot::text then raise exception 'the restored Cheap Shot did not pierce: %', pg_temp.payload(moved); end if;
+end $$;
+
 -- ---- A staff caster is refused, plainly ----
 select tests.unbecome();
 do $$

@@ -939,7 +939,7 @@ begin
     -- One global order over play_reach rows: every cast takes the caster's live pierce rows up front, in ONE statement ordered by play id (a cut of a Gimmick on a character adds the named play's row to that same
     -- statement), before the loop below chooses which pierce to spend. The loop keeps its own choosing order (oldest first) but then takes no row it does not already hold, so no two casts can hold rows in opposite
     -- orders: a cut of a Cheap Shot and that Cheap Shot's spending cast, or two casts of one character, wait on one another's rows one way round only. cut_refusal is asked after the lock, so a play spent or
-    -- ended while this waited is read as it now stands. (A pierce played after this statement by the same caster in another session is a row this one never holds.)
+    -- ended while this waited is read as it now stands. The pierce loop never chooses the play a cut names: a cut spends no pierce on the Gimmick it ends (else reversing the cut would leave it ended by the pierce clause). (A pierce played after this statement by the same caster in another session is a row this one never holds.)
     if kind_of.play = 'cast' and not staff_caster then
       perform 1 from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
       where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce'
@@ -953,7 +953,7 @@ begin
       for shot_try in 1..3 loop
         select r.play, ck.gimmick ->> 'upTo', k.payload ->> 'card' into shot_play, shot_up_to, shot_card
         from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
-        where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play) and r.play <> all (shot_tried)
+        where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play) and r.play <> all (shot_tried) and r.play is distinct from cut_play
         order by k.created_at, k.id limit 1 for update of r;
         -- Asked again in a statement of its own, after the lock: a cast that held the row first may have spent it.
         exit when shot_play is null or not card_ended(shot_play);
@@ -1126,7 +1126,7 @@ begin
       for shot_try in 1..3 loop
         select r.play, ck.gimmick ->> 'upTo', k.payload ->> 'card' into shot_play, shot_up_to, shot_card
         from play_reach r join acts k on k.id = r.play join card_kinds ck on ck.key = k.payload ->> 'card'
-        where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play) and r.play <> all (shot_tried)
+        where r.character = caster and r.ends_at > now() and ck.gimmick ->> 'kind' = 'pierce' and not card_ended(r.play) and r.play <> all (shot_tried) and r.play is distinct from cut_play
         order by k.created_at, k.id limit 1 for update of r;
         -- Asked again in a statement of its own, after the lock: a cast that held the row first may have spent it.
         exit when shot_play is null or not card_ended(shot_play);
