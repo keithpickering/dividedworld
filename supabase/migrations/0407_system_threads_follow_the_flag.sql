@@ -4,8 +4,9 @@
 -- They were placed like any thread, by the board they were started on, so an instance whose system flag moved to another board left them behind on the old one. A thread the instance
 -- itself makes is now on system_board() wherever it was started, whatever a move or a merge says: moving the flag moves them, and a move cannot take them off it.
 --
--- system_threads() is the set, written once: setting_thread('systemAnnouncements'), setting_thread('updatesThread') and every season's turns_thread, without nulls or duplicates. It is
--- security definer with execute revoked from every API role, as setting_thread is; its callers are security definer.
+-- system_threads() is the set, written once: the thread systemAnnouncements names, the thread updatesThread names and every season's turns_thread, without nulls or duplicates. It is read through
+-- system_thread_rows(), which answers each with its stored board from one keyed probe of threads (the seed needs the board and must not read the thread twice). Both are
+-- security definer with execute revoked from every API role, as setting_thread is; their callers are security definer.
 --
 -- thread_place and thread_places_computed are written whole from 0323 and agree for every thread (0180 holds them equal; thread_places_drift reads the computed set and needs no change).
 -- The set is small (two threads and one a season), so the computed set reads it once, as a left join.
@@ -13,13 +14,21 @@
 -- The meeting's moveThread (0403's offer and repair, and its landing, all read lasting_move_problem, as every lasting move has since 0320) is refused for a thread of the staff's by that
 -- one function: its moveThread branch turned away only a thread whose stored board or origin was the system board, which a thread left behind by a moved flag is not.
 
+create function system_thread_rows() returns table (id uuid, board uuid)
+language sql stable security definer set search_path = public, pg_temp as $$
+  -- The ids first, as an array, so each thread is one probe of threads_pkey: a semi join on the settings' and seasons' rows could read a whole index of threads. A setting counts as setting_thread
+  -- counts it: a canonical uuid that names a thread that exists.
+  select t.id, t.board from threads t
+  where t.id = any (array(
+    select case when s.value #>> '{}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (s.value #>> '{}')::uuid end
+    from settings s where s.key in ('systemAnnouncements', 'updatesThread')
+    union select x.turns_thread from seasons x where x.turns_thread is not null))
+$$;
+revoke execute on function system_thread_rows() from public, anon, authenticated, service_role;
+
 create function system_threads() returns setof uuid
 language sql stable security definer set search_path = public, pg_temp as $$
-  select x from (
-    select setting_thread('systemAnnouncements') as x
-    union select setting_thread('updatesThread')
-    union select s.turns_thread from seasons s
-  ) u where x is not null
+  select r.id from system_thread_rows() r
 $$;
 revoke execute on function system_threads() from public, anon, authenticated, service_role;
 
@@ -630,8 +639,9 @@ begin
   -- the threads in thread_list on the board, in shard 0, the other shards zero. The recount, and not a delta, because a board that held threads from before 0339's rule, or the Updates thread netted
   -- by hand, is not one rebuild_thread_places' deltas can be trusted to leave right, and the system board's arrivals are the ones it never counts.
   if system_board() is not null then
-    select array_agg(t.id), array_agg(distinct t.board) into strays, left_boards
-    from threads t where t.id in (select system_threads()) and t.board is distinct from system_board();
+    -- One keyed probe for each of the staff's threads (system_thread_rows), and no second read of threads for its board: a reseed reads what the staff's threads are, not how many threads there are.
+    select array_agg(r.id), array_agg(distinct r.board) into strays, left_boards
+    from system_thread_rows() r where r.board is distinct from system_board();
     if strays is not null then
       placed := rebuild_thread_places(strays);
       left_boards := (select array_agg(x order by x) from (select unnest(left_boards) union select system_board()) u(x));

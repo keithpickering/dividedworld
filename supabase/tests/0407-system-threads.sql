@@ -10,9 +10,13 @@ create function pg_temp.board(slug text) returns uuid language sql as $$ select 
 create function pg_temp.mk(title text, on_slug text) returns uuid language sql as $$
   insert into threads (board, title) values (pg_temp.board(on_slug), title) returning id
 $$;
+-- Settings are upserted and the seasons made exact: an earlier file's committed state (a race test's announcements thread, a season's Turns thread) may already be there, and the set is
+-- then exactly these three.
 insert into settings (key, value) values
   ('systemAnnouncements', to_jsonb(pg_temp.mk('Announcements', 'sta')::text)),
-  ('updatesThread', to_jsonb(pg_temp.mk('Updates', 'sta')::text));
+  ('updatesThread', to_jsonb(pg_temp.mk('Updates', 'sta')::text))
+on conflict (key) do update set value = excluded.value;
+update seasons set turns_thread = null;
 update seasons set turns_thread = pg_temp.mk('Turns', 'sta') where number = 1;
 select pg_temp.mk('Ordinary', 'sta');
 
