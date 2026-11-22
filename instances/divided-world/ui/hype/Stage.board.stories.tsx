@@ -16,19 +16,22 @@
  * The page is drawn inside the camera (Camera.tsx), plain at rest and turned in space when a shot turns it, with the commentary's nodes over it (Nodes.tsx; none until a shot hangs one).
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { applyAppearance } from '../../../../engine/ui/appearance.ts';
 import { useKayfa } from '../../../../engine/ui/context.tsx';
+import { usePlayer } from '../../../../engine/ui/player.tsx';
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
-import { LoadedIndex, LoadedProfile, LoadedThread } from '../../../../engine/ui/loaded.tsx';
+import { LoadedCharacters, LoadedIndex, LoadedProfile, LoadedThread } from '../../../../engine/ui/loaded.tsx';
+import { Page } from '../../../../engine/ui/glass/Page.tsx';
+import { Vending } from '../../../../engine/ui/vending/Vending.tsx';
 import type { World } from '../../../../engine/ui/story.tsx';
 import { packStroke } from '../../cards/whoops/points.ts';
 import { BRUSH_PX, brushOf } from '../../cards/whoops/scrub.ts';
 import { Camera, levelBoard, turnBoard } from './Camera.tsx';
 import { Nodes, nodes } from './Nodes.tsx';
 import { playbook, type Playbook } from './stage-play.ts';
-import { buildStage, type Made } from './stage-world.ts';
+import { buildStage, GLASS_PATHS, type Made } from './stage-world.ts';
 
 interface Stage extends Made {
   readonly fake: Fake;
@@ -43,13 +46,15 @@ interface Stage extends Made {
   readonly show: (view: string) => void;
   /** Puts another skin on the page in place, as the player's own preference (`skin('midnight')`), for a stretch of a take that reads better in it. */
   readonly skin: (key: string) => Promise<void>;
+  /** Reads the player's wallet, hand and characters again, as the app does after an action: where this device last saw a different wallet (`kb-wallet-seen:<account>`), the HUD's orbs run the settlement's cascade from it. */
+  readonly refreshPlayer: () => Promise<boolean>;
 }
 declare global { interface Window { __kbStage?: Stage } }
 
 let made: Made | null = null;
 
 const ASKED = new URLSearchParams(globalThis.location?.search ?? '');
-/** Which screen the stage shows: `thread` (the sprite sheet thread), `thread:<key>` (another of its threads), `index`, or `profile:<a staff key or a character's name>`. */
+/** Which screen the stage shows: `thread` (the sprite sheet thread), `thread:<key>` (another of its threads), `index`, `profile:<a staff key or a character's name>`, or `glass:<characters|new-character|vending>`, one of the game's out-of-character screens. */
 const VIEW = ASKED.get('view') ?? 'thread';
 
 const world: World = (fake, instance) => {
@@ -67,6 +72,10 @@ const world: World = (fake, instance) => {
 
 function Staged() {
   const { api, ui, instance } = useKayfa();
+  /* Held in a ref: a cross-player call swaps the account, which makes a new `refresh`, and the stage's parts must not be made again for it. */
+  const { refresh } = usePlayer();
+  const refreshed = useRef(refresh);
+  refreshed.current = refresh;
   const [ready, setReady] = useState(false);
   const [shown, setShown] = useState<{ readonly view: string; readonly epoch: number }>({ view: VIEW, epoch: 0 });
   useEffect(() => {
@@ -90,7 +99,7 @@ function Staged() {
   }, [api, ui, ready]);
   useEffect(() => {
     if (!made || !ready) return;
-    window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard }, show: (view) => { setShown((s) => ({ view, epoch: s.epoch + 1 })); }, skin: async (key) => { await api.setPreferences({ theme: key }); applyAppearance(document, await api.preferences(), ui.themes, ui.glass); const sheet = document.querySelector('link#kb-theme'); if (sheet) document.head.append(sheet); } };
+    window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard }, refreshPlayer: () => refreshed.current(), show: (view) => { const [v, k = ''] = view.split(':'); if (v === 'glass') { if (!(k in GLASS_PATHS)) throw new Error(`the stage has no glass screen "${k}"`); globalThis.history.replaceState(null, '', GLASS_PATHS[k]); } setShown((s) => ({ view, epoch: s.epoch + 1 })); }, skin: async (key) => { await api.setPreferences({ theme: key }); applyAppearance(document, await api.preferences(), ui.themes, ui.glass); const sheet = document.querySelector('link#kb-theme'); if (sheet) document.head.append(sheet); } };
     return () => { delete window.__kbStage; nodes.clear(); };
   }, [api, instance, ready]);
   if (!made || !ready) return <Frame><div aria-busy="true" /></Frame>;
@@ -98,7 +107,7 @@ function Staged() {
   return (
     <Camera>
       <Frame key={shown.epoch}>
-        {view === 'index' ? <LoadedIndex /> : view === 'profile' ? <LoadedProfile id={made.staff[of] ?? made.cast[of] ?? ''} /> : <LoadedThread thread={made.threads[of || 'main'] ?? made.thread} />}
+        {view === 'index' ? <LoadedIndex /> : view === 'glass' ? (of === 'vending' ? <Page surface="vending"><Vending /></Page> : <Page surface="characters"><LoadedCharacters /></Page>) : view === 'profile' ? <LoadedProfile id={made.staff[of] ?? made.cast[of] ?? ''} /> : <LoadedThread thread={made.threads[of || 'main'] ?? made.thread} />}
       </Frame>
       <Nodes />
     </Camera>

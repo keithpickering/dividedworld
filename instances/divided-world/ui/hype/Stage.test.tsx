@@ -83,6 +83,16 @@ describe('the seats', () => {
     const fake = createFake({ instance });
     expect(() => buildStage(fake, instance, { skin: 'default', as: 'Nobody', view: 'thread', sheet: false })).toThrow(/no character named "Nobody"[\s\S]*Hotel Bro/);
   });
+
+  test('the glass screens open at their own addresses, and a screen the stage has not is refused, naming the ones it has', async () => {
+    for (const [key, address] of [['characters', '/characters'], ['new-character', '/characters/new'], ['vending', '/vending']] as const) {
+      const fake = createFake({ instance });
+      buildStage(fake, instance, { skin: 'default', as: null, view: `glass:${key}`, sheet: false });
+      expect(globalThis.location.pathname).toBe(address);
+    }
+    const fake = createFake({ instance });
+    expect(() => buildStage(fake, instance, { skin: 'default', as: null, view: 'glass:nowhere', sheet: false })).toThrow(/no glass screen "nowhere"[\s\S]*vending/);
+  });
 });
 
 describe('the thread', () => {
