@@ -1157,8 +1157,8 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     }
     expect(ui('mooch').summary).toBe('Names one kind of reaction on a post. For a week, each new vote the post draws there pays you a little, and costs its author nothing.');
     expect(ui('toll').summary).toBe('Used on your post. For a week, every reaction to a Move another player casts there pays you too.');
-    expect(ui('4d-chess').summary).toBe('Set face down on your post, naming a Move up to uncommon and one kind of reaction. When that Move is cast there it lands as usual, and its reactions of that kind pay you.');
-    expect(ui('off-day').summary).toBe('Cast on a character, naming a class. For the one settlement window after the next settlement, that character scores as that class.');
+    expect(ui('4d-chess').summary).toBe('Set face down on your post, naming a Move up to uncommon and a reaction. If that Move lands there, those reactions pay you.');
+    expect(ui('off-day').summary).toBe('Cast on a character, naming a class. From the next settlement to the one after, that character scores as that class.');
   });
 
   test('every status is within the Lens\'s word rules, for one play and for as many as the card stacks', () => {

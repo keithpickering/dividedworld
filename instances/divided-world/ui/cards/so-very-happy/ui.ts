@@ -18,6 +18,11 @@ import soVeryHappyArt from './art.json';
 const match = () => soVeryHappy.trap!.match!;
 /** The alignments the match leaves out, as the words say them ("Sweet"): the Move that springs it is not one of these. */
 const notWords = () => ALIGNMENTS.filter((a) => !match().flavors!.includes(a)).map(alignmentTag).join(' or ');
+/** The Move that springs it, short enough for the card's face: "non-Sweet Move up to rare"; with more than one flavor left out, "Move up to uncommon that isn't Sweet or Pepperoni". */
+const springsOn = () => {
+  const left = ALIGNMENTS.filter((a) => !match().flavors!.includes(a));
+  return left.length === 1 ? `non-${alignmentTag(left[0]!)} Move up to ${match().upTo}` : `Move up to ${match().upTo} that isn't ${notWords()}`;
+};
 /** How long the lockout lasts, in the rules' hours ("24 hours"). */
 const lockedFor = (): string => {
   const outcome = soVeryHappy.trap?.outcome;
@@ -29,7 +34,7 @@ export const ui: CardUi = {
   art: { color: '#ff3d7f', ink: '#14030a', canvas: soVeryHappyCanvas, mark: soVeryHappyMark, credit: soVeryHappyArt.credit, tagline: 'Play it Sweet or get locked out' },
   /* A getter, so the words are read from the rules when they are said, not when this module loads. */
   get summary() {
-    return `Set face down on your post. The first Move played there that isn't ${notWords()}, up to ${match().upTo}, lands, and whoever played it is locked out of the thread for ${lockedFor()}.`;
+    return `Set face down on your post. The first ${springsOn()} lands, and its player is locked out of the thread for ${lockedFor()}.`;
   },
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
