@@ -231,9 +231,9 @@ describe('review fixes', () => {
   test('the real card is offered on a bare post, and says so on a wall (what the ghost mark is drawn from)', () => {
     const post = { ...POST, payload: { body: 'hi' }, currentPayload: { body: 'hi' } } as Act;
     const cards = instance.cards;
-    expect(landing(graffiti, post, [], { cards })).toEqual({ ok: true, value: undefined });
+    expect(landing(graffiti, post, [], { postEffects: 8, cards })).toEqual({ ok: true, value: undefined });
     const wall = { id: 'g1', card: 'graffiti', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T21:16:00Z', post: post.id };
-    expect(landing(graffiti, post, [wall], { cards })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
+    expect(landing(graffiti, post, [wall], { postEffects: 8, cards })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
   });
 
   /* The composer's box is the post body's (`.kb-act-main`), the box the wall paints in, not the words' element, which on a one-line post is a strip (found in a browser: a Fat stroke read 84%). */

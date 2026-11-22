@@ -78,21 +78,21 @@ describe('a post whose fall a filing spent', () => {
   const now = Date.parse('2026-10-30T00:00:00Z');
 
   test('takes no second fall, and says why in the stack\'s words', () => {
-    expect(landing(cards[0]!, post('hi'), stackPlays([spent], now), { cards })).toEqual({ ok: false, why: 'this post already carries that card' });
+    expect(landing(cards[0]!, post('hi'), stackPlays([spent], now), { postEffects: 8, cards })).toEqual({ ok: false, why: 'this post already carries that card' });
     /* The live plays leave it out, which is what draws it: not what counts it. */
-    expect(landing(cards[0]!, post('hi'), livePlays([spent], now), { cards }).ok).toBe(true);
+    expect(landing(cards[0]!, post('hi'), livePlays([spent], now), { postEffects: 8, cards }).ok).toBe(true);
   });
 
   test('an admin-ended fall or an instant play holds no place', () => {
-    expect(landing(cards[0]!, post('hi'), stackPlays([{ ...spent, reversed: true }], now), { cards }).ok).toBe(true);
-    expect(landing(cards[0]!, post('hi'), stackPlays([{ ...play('fall', 1), instant: true }], now), { cards }).ok).toBe(true);
+    expect(landing(cards[0]!, post('hi'), stackPlays([{ ...spent, reversed: true }], now), { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(cards[0]!, post('hi'), stackPlays([{ ...play('fall', 1), instant: true }], now), { postEffects: 8, cards }).ok).toBe(true);
   });
 
   /* waysOn is the one answer the post's mark and the play form read: given the post's plays raw, or already as the stack holds them, it says no second fall. */
   test('waysOn offers no second fall, whether it is handed the raw plays or the stack', () => {
-    expect(waysOn(cards[0]!, post('hi'), [spent], { cards, own: false, now })).toEqual({ cast: false, set: false });
-    expect(waysOn(cards[0]!, post('hi'), stackPlays([spent], now), { cards, own: false, now })).toEqual({ cast: false, set: false });
-    expect(waysOn(cards[0]!, post('hi'), [{ ...spent, reversed: true }], { cards, own: false, now }).cast).toBe(true);
+    expect(waysOn(cards[0]!, post('hi'), [spent], { postEffects: 8, cards, own: false, now })).toEqual({ cast: false, set: false });
+    expect(waysOn(cards[0]!, post('hi'), stackPlays([spent], now), { postEffects: 8, cards, own: false, now })).toEqual({ cast: false, set: false });
+    expect(waysOn(cards[0]!, post('hi'), [{ ...spent, reversed: true }], { postEffects: 8, cards, own: false, now }).cast).toBe(true);
   });
 });
 
@@ -116,53 +116,53 @@ describe('wards, backs and catches, as a screen offers a card', () => {
   const ward = (ends: string): CardPlay => ({ ...play('shield', 1), ends });
 
   test('a Set is offered where no card back is live, and a sprung or ended back is none', () => {
-    expect(landing(snare, post('hi'), [], { cards }).ok).toBe(true);
-    expect(landing(snare, post('hi'), [back()], { cards })).toEqual({ ok: false, why: 'this post already holds a card face down' });
-    expect(landing(snare, post('hi'), [back({ revealed: { card: 'snare', spring: 's', at } })], { cards }).ok).toBe(true);
-    expect(landing(snare, post('hi'), [back({ playedAt: '2020-01-01T00:00:00Z', endsAt: '2020-01-08T00:00:00Z' })], { cards }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [back()], { postEffects: 8, cards })).toEqual({ ok: false, why: 'this post already holds a card face down' });
+    expect(landing(snare, post('hi'), [back({ revealed: { card: 'snare', spring: 's', at } })], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [back({ playedAt: '2020-01-01T00:00:00Z', endsAt: '2020-01-08T00:00:00Z' })], { postEffects: 8, cards }).ok).toBe(true);
   });
 
   test('a back ends at the end the server stored, whatever the setting says', () => {
     const day = 86_400_000;
     const long = back({ playedAt: new Date(Date.now() - 10 * day).toISOString(), endsAt: new Date(Date.now() + 20 * day).toISOString() });
-    expect(landing(snare, post('hi'), [long], { cards })).toEqual({ ok: false, why: 'this post already holds a card face down' });
+    expect(landing(snare, post('hi'), [long], { postEffects: 8, cards })).toEqual({ ok: false, why: 'this post already holds a card face down' });
     expect(effectsOf([long], cards)[0]!.ends).toBe(long.endsAt);
   });
 
   test('a back its setter took back is no longer live, and its end is when it was taken', () => {
     const taken = back({ takenBack: { at } });
-    expect(landing(snare, post('hi'), [taken], { cards }).ok).toBe(true);
+    expect(landing(snare, post('hi'), [taken], { postEffects: 8, cards }).ok).toBe(true);
     expect(effectsOf([taken], cards)[0]!.ends).toBe(at);
   });
 
   test('a cast is not offered where a live ward turns it away, and is where the ward has ended', () => {
-    expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { cards })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
-    expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
+    expect(landing(blot, post('hi'), [ward('2999-01-01T00:00:00Z')], { postEffects: 8, cards })).toEqual({ ok: false, why: 'this post\'s Shield turns away cards up to uncommon' });
+    expect(landing(blot, post('hi'), [ward('2020-01-01T00:00:00Z')], { postEffects: 8, cards }).ok).toBe(true);
   });
 
   test('a cast on a post under a live uncommon ward is offered with a pierce up to uncommon, and not without it', () => {
     const live = [ward('2999-01-01T00:00:00Z')];
-    const ctx = { cards, own: false, now: Date.now() };
+    const ctx = { postEffects: 8, cards, own: false, now: Date.now() };
     expect(waysOn(blot, post('hi'), live, ctx).cast).toBe(false);
     expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'common' }).cast).toBe(false);
     expect(waysOn(blot, post('hi'), live, { ...ctx, pierce: 'uncommon' }).cast).toBe(true);
-    expect(landing(blot, post('hi'), live, { cards, pierce: 'uncommon' }).ok).toBe(true);
+    expect(landing(blot, post('hi'), live, { postEffects: 8, cards, pierce: 'uncommon' }).ok).toBe(true);
   });
 
   test('a card that writes lands on a post, as a screen offers it: the screens hold no settings, so the old voice does not withhold it', () => {
     const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: () => 40, frame: () => ({ prompt: '', stop: [] }) } };
-    expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
-    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { cards: [...cards, writer] }).ok).toBe(true);
+    expect(landing(writer, post('hi'), [], { postEffects: 8, cards: [...cards, writer] }).ok).toBe(true);
+    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { postEffects: 8, cards: [...cards, writer] }).ok).toBe(true);
   });
 
   test('a card whose length is read from the economy lands on a post too: the screens hold no settings, so where it lands never asks what it buys', () => {
     const writer: CardRules = { ...blot, key: 'writer', name: 'Writer', writes: { sampling: { temperature: 0.9, topP: 0.95 }, tokens: (_config, settings) => economyOf(settings, 'writer.tokens'), frame: () => ({ prompt: '', stop: [] }) } };
-    expect(landing(writer, post('hi'), [], { cards: [...cards, writer] }).ok).toBe(true);
-    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { cards: [...cards, writer] }).ok).toBe(true);
+    expect(landing(writer, post('hi'), [], { postEffects: 8, cards: [...cards, writer] }).ok).toBe(true);
+    expect(landingOn(writer, { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] }, [], { postEffects: 8, cards: [...cards, writer] }).ok).toBe(true);
   });
 
   test('a caught play holds no place in its card\'s stack', () => {
-    expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { cards }).ok).toBe(true);
+    expect(landing(blot, post('hi'), [{ ...play('blot', 1), caught: 'back' }], { postEffects: 8, cards }).ok).toBe(true);
   });
 });
 
@@ -181,15 +181,15 @@ describe('where a card beyond a post is offered', () => {
   const on = (card: string, ends: string): CardPlay => ({ ...play(card, 1), ends });
 
   test('a character card on a character, never on a post', () => {
-    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [], { cards }).ok).toBe(true);
-    expect(landing(sparkle, post('hi'), [], { cards })).toEqual({ ok: false, why: 'this card lands on a character' });
-    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', soon)], { cards })).toEqual({ ok: false, why: 'this character already carries that card' });
-    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', '2020-01-01T00:00:00Z')], { cards }).ok).toBe(true);
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(sparkle, post('hi'), [], { postEffects: 8, cards })).toEqual({ ok: false, why: 'this card lands on a character' });
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', soon)], { postEffects: 8, cards })).toEqual({ ok: false, why: 'this character already carries that card' });
+    expect(landingOn(sparkle, { reach: 'character', character: 'c1' }, [on('sparkle', '2020-01-01T00:00:00Z')], { postEffects: 8, cards }).ok).toBe(true);
   });
 
   test('a board card where no board card is live', () => {
-    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { cards })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
-    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { cards }).ok).toBe(true);
+    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [on('other', '2099-03-04T05:06:07Z')], { postEffects: 8, cards })).toEqual({ ok: false, why: 'this board already carries a board card until 2099-03-04 05:06 UTC' });
+    expect(landingOn(quake, { reach: 'board', board: 'b1' }, [], { postEffects: 8, cards }).ok).toBe(true);
   });
 });
 
@@ -204,14 +204,14 @@ describe('a card that names a quadrant or a class, as a screen offers it', () =>
   const cards = [skim, scores, ride];
 
   test('a skim card lands on a post, a scored-as card on a character, a ride back on a post, each with nothing named yet', () => {
-    expect(landing(skim, post('hi'), [], { cards }).ok).toBe(true);
-    expect(landingOn(scores, { reach: 'character', character: 'c1' }, [], { cards }).ok).toBe(true);
-    expect(landing(ride, post('hi'), [], { cards }).ok).toBe(true);
-    expect(landing(ride, post('hi'), [], { cards, faceDown: true }).ok).toBe(true);
+    expect(landing(skim, post('hi'), [], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landingOn(scores, { reach: 'character', character: 'c1' }, [], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(ride, post('hi'), [], { postEffects: 8, cards, faceDown: true }).ok).toBe(true);
   });
 
   test('a skim card is still offered on a post that carries one of its own, for the quadrants left', () => {
-    expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { cards }).ok).toBe(true);
+    expect(landing(skim, post('hi'), [{ ...play('skim', 1), ends: '2999-01-01T00:00:00Z', config: { quadrant: 'excitedNegative' } }], { postEffects: 8, cards }).ok).toBe(true);
   });
 });
 
@@ -227,8 +227,8 @@ describe('a card whose canApply reads its configuration, as a screen offers it',
     },
   };
   test('arming it neither throws nor applies the placeholder quadrant\'s check', () => {
-    expect(() => landing(reading, post('hi'), [], { cards: [reading] })).not.toThrow();
-    expect(landing(reading, post('hi'), [], { cards: [reading] }).ok).toBe(true);
+    expect(() => landing(reading, post('hi'), [], { postEffects: 8, cards: [reading] })).not.toThrow();
+    expect(landing(reading, post('hi'), [], { postEffects: 8, cards: [reading] }).ok).toBe(true);
   });
 });
 
@@ -241,9 +241,9 @@ describe('a surface card, as a screen offers it', () => {
     canApply: (t, e, _c, now) => landsOn({ key: 'wall', surface: {} }, t, e, now),
   };
   test('it is offered on a post with no draw made yet, face up and face down, and not where a wall already is', () => {
-    expect(landing(wall, post('hi'), [], { cards: [wall] })).toEqual({ ok: true, value: undefined });
-    expect(landing(wall, post('hi'), [], { cards: [wall], faceDown: true }).ok).toBe(true);
-    expect(landing(wall, post('hi'), [play('wall', 1)], { cards: [wall] })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
+    expect(landing(wall, post('hi'), [], { postEffects: 8, cards: [wall] })).toEqual({ ok: true, value: undefined });
+    expect(landing(wall, post('hi'), [], { postEffects: 8, cards: [wall], faceDown: true }).ok).toBe(true);
+    expect(landing(wall, post('hi'), [play('wall', 1)], { postEffects: 8, cards: [wall] })).toEqual({ ok: false, why: 'This post is already a wall. Draw on it instead.' });
   });
 });
 
@@ -274,32 +274,32 @@ describe('the ways a card lands on a post', () => {
   const cards = [blot, spark, scribe, plea];
 
   test('a card that reaches a post lands both ways on one\'s own post, and only cast on another\'s', () => {
-    expect(waysOn(blot, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: true });
-    expect(waysOn(blot, post('hi'), [], { cards, own: false, now: 0 })).toEqual({ cast: true, set: false });
+    expect(waysOn(blot, post('hi'), [], { postEffects: 8, cards, own: true, now: 0 })).toEqual({ cast: true, set: true });
+    expect(waysOn(blot, post('hi'), [], { postEffects: 8, cards, own: false, now: 0 })).toEqual({ cast: true, set: false });
   });
 
   test('a card that reaches a character lands only set, on one\'s own post, and nowhere on another\'s', () => {
-    expect(waysOn(spark, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: false, set: true });
-    expect(waysOn(spark, post('hi'), [], { cards, own: false, now: 0 })).toEqual({ cast: false, set: false });
+    expect(waysOn(spark, post('hi'), [], { postEffects: 8, cards, own: true, now: 0 })).toEqual({ cast: false, set: true });
+    expect(waysOn(spark, post('hi'), [], { postEffects: 8, cards, own: false, now: 0 })).toEqual({ cast: false, set: false });
   });
 
   test('a card that is only cast face up lands only cast, even on one\'s own post', () => {
-    expect(waysOn(scribe, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
+    expect(waysOn(scribe, post('hi'), [], { postEffects: 8, cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
   });
 
   test('a card that needs a message lands only cast, though landing\'s lenient reading sets the message aside', () => {
-    expect(waysOn(plea, post('hi'), [], { cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
+    expect(waysOn(plea, post('hi'), [], { postEffects: 8, cards, own: true, now: 0 })).toEqual({ cast: true, set: false });
   });
 
   test('a card that is drawn on lands only cast too, though landing\'s lenient reading would set it', () => {
     const wall: CardRules = { ...base, key: 'wall', name: 'Wall', surface: { limitKey: 'wall.limit', mostLive: 48, validateDraw: () => ({ ok: false, why: 'unused' }), validateWash: () => ({ ok: false, why: 'unused' }) } };
-    expect(waysOn(wall, post('hi'), [], { cards: [wall], own: true, now: 0 })).toEqual({ cast: true, set: false });
+    expect(waysOn(wall, post('hi'), [], { postEffects: 8, cards: [wall], own: true, now: 0 })).toEqual({ cast: true, set: false });
   });
 
   test('a play beyond a post whose end has passed holds no place: waysOn keeps only the live plays', () => {
     const once: CardRules = { ...base, key: 'once', name: 'Once', stack: 1, canApply: (t, e, _config, now) => landsOn({ key: 'once', stack: 1 }, t, e, now) };
     const beyond = (ends: string): CardPlay => ({ ...play('once', 1), reach: 'character', ends });
-    const ways = (ends: string, now: Date) => waysOn(once, post('hi'), [beyond(ends)], { cards: [once], own: true, now: now.getTime() });
+    const ways = (ends: string, now: Date) => waysOn(once, post('hi'), [beyond(ends)], { postEffects: 8, cards: [once], own: true, now: now.getTime() });
     /* It ends at 2999-01-01: before that it holds the card's one place, at it and after that it does not. */
     expect(ways('2999-01-01T00:00:00.000Z', new Date('2998-12-31T00:00:00.000Z'))).toEqual({ cast: false, set: false });
     expect(ways('2999-01-01T00:00:00.000Z', new Date('2999-01-01T00:00:00.000Z'))).toEqual({ cast: true, set: true });
@@ -311,11 +311,11 @@ describe('a card that replies, on a reply drawn under a post', () => {
   const cutter: CardRules = { key: 'cutter', name: 'Cutter', alignment: 'pepperoni', rarity: 'rare', replies: true, playPrice: () => 0, validateConfig: (c) => ({ ok: true, value: c }), canApply: (t, e, _c, now) => landsOn(cutter, t, e, now) };
   const cards = [cutter, { ...cutter, key: 'plain', name: 'Plain', replies: undefined, alignment: 'salty' } as CardRules];
   test('is offered on a post, and not on the reply drawn under one, in the rules\' words', () => {
-    expect(landing(cutter, post('hi'), [], { cards }).ok).toBe(true);
-    expect(landing(cutter, post('hi'), [], { cards, under: 'p0' })).toEqual({ ok: false, why: 'a reply drawn under a post takes no reply under it' });
+    expect(landing(cutter, post('hi'), [], { postEffects: 8, cards }).ok).toBe(true);
+    expect(landing(cutter, post('hi'), [], { postEffects: 8, cards, under: 'p0' })).toEqual({ ok: false, why: 'a reply drawn under a post takes no reply under it' });
   });
   test('any other card is offered there as on any post', () => {
-    expect(landing(cards[1]!, post('hi'), [], { cards, under: 'p0' }).ok).toBe(true);
+    expect(landing(cards[1]!, post('hi'), [], { postEffects: 8, cards, under: 'p0' }).ok).toBe(true);
   });
   test('the post as the rules see it names the post it is under', () => {
     expect(targetOf(post('hi'), 'p0')).toMatchObject({ reach: 'post', act: 'p1', under: 'p0' });
@@ -334,14 +334,14 @@ describe('a card that cuts, as a screen offers it', () => {
   const gimmick = { ...rules('jimmy'), name: 'Jimmy', rarity: 'rare', play: 'use', reaches: ['post'], gimmick: 'jimmy' } as unknown as CardRules;
   const cards = [buzz, gimmick];
   test('waysOn offers it on a post with a live rare Use-card play, not on one with none, nor with a cut one', () => {
-    expect(waysOn(buzz, post('hi'), [play('jimmy', 1)], { cards, own: false, now }).cast).toBe(true);
-    expect(waysOn(buzz, post('hi'), [], { cards, own: false, now }).cast).toBe(false);
-    expect(waysOn(buzz, post('hi'), [{ ...play('jimmy', 1), cut: { by: 'b', card: 'buzzkill' } }], { cards, own: false, now }).cast).toBe(false);
+    expect(waysOn(buzz, post('hi'), [play('jimmy', 1)], { postEffects: 8, cards, own: false, now }).cast).toBe(true);
+    expect(waysOn(buzz, post('hi'), [], { postEffects: 8, cards, own: false, now }).cast).toBe(false);
+    expect(waysOn(buzz, post('hi'), [{ ...play('jimmy', 1), cut: { by: 'b', card: 'buzzkill' } }], { postEffects: 8, cards, own: false, now }).cast).toBe(false);
   });
   test('whether the Gimmick is still up is read on the page\'s clock, not the wall\'s', () => {
     /* Up a day past the page's now, and long over by any wall clock this test runs under. */
     const timed = { ...play('jimmy', 1), ends: '2026-10-31T00:00:00Z' };
-    expect(waysOn(buzz, post('hi'), [timed], { cards, own: false, now }).cast).toBe(true);
-    expect(waysOn(buzz, post('hi'), [timed], { cards, own: false, now: Date.parse('2026-11-01T00:00:00Z') }).cast).toBe(false);
+    expect(waysOn(buzz, post('hi'), [timed], { postEffects: 8, cards, own: false, now }).cast).toBe(true);
+    expect(waysOn(buzz, post('hi'), [timed], { postEffects: 8, cards, own: false, now: Date.parse('2026-11-01T00:00:00Z') }).cast).toBe(false);
   });
 });

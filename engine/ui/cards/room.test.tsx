@@ -64,6 +64,8 @@ describe('a cleared play, as the server gives it', () => {
   test('effectsOf gives drawing from the card and cleared from its answer', () => {
     const effects = effectsOf([play('mark', 1), play('whoops', 2), play('saying', 3)], cards, { states: { 'whoops-2': state({ clean: true }), 'saying-3': state({ cleared: 'v1' }) }, version: 'v2' });
     expect(effects.map((e) => [e.drawing === true, e.cleared === true])).toEqual([[false, false], [true, true], [true, false]]);
+    const own = { ...play('filler', 4), reach: 'post' } as unknown as CardPlay;
+    expect(effectsOf([own], cards)[0]!.drawing).toBe(true);
     expect(targetOf(post).reach).toBe('post');
   });
 });

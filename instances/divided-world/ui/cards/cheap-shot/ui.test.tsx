@@ -63,8 +63,8 @@ describe('Cheap Shot gets the next Move past a ward and a catching back', () => 
     if (cheapShot.gimmick?.kind !== 'pierce') throw new Error('Cheap Shot is a pierce');
     const upTo = cheapShot.gimmick.upTo;
     expect(plays.map((p) => p.id)).toContain(ward.id);
-    expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now }).cast).toBe(false);
-    expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now, pierce: upTo }).cast).toBe(true);
+    expect(waysOn(whoops, post, plays, { postEffects: 8, cards: instance.cards, own: false, now }).cast).toBe(false);
+    expect(waysOn(whoops, post, plays, { postEffects: 8, cards: instance.cards, own: false, now, pierce: upTo }).cast).toBe(true);
     const landed = must(await fake.playCard('whoops', anaFace, fielded, { color: 'red' }, ''));
     expect(landed.payload.caught).toBeUndefined();
     expect(landed.payload.pierce).toEqual({ by: first.id, card: 'cheap-shot', ward: 'force-field' });

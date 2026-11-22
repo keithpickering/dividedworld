@@ -57,7 +57,7 @@ const playsOn = async (fake: World['fake'], post: string) => (await fake.cardsOn
 /** Whether the ghost mark offers Buzzkill on a post, as the page asks the rules (`waysOn`), from the plays the post holds. */
 const offered = async (w: World, post: string) => {
   const act = (await w.fake.actsById([post]))[0]!;
-  return waysOn(rulesOf('buzzkill'), act, await playsOn(w.fake, post), { cards: instance.cards, own: false, now: w.fake.now() }).cast;
+  return waysOn(rulesOf('buzzkill'), act, await playsOn(w.fake, post), { postEffects: 8, cards: instance.cards, own: false, now: w.fake.now() }).cast;
 };
 const logOf = async (w: World, who: string) => {
   w.fake.signInAs(who);

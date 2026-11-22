@@ -31,7 +31,7 @@ export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardR
     if (p.faceDown) { const ends = p.revealed?.at ?? p.takenBack?.at ?? p.endsAt; return { card: null, act: p.id, faceDown: true, ...(ends ? { ends } : {}) }; }
     const ward = cards.find((c) => c.key === p.card);
     /* What card_target gives: a play of a card that draws counts toward the post's limit unless the card says its saved state clears it (true, or `{ version }` where that is the post's version now). */
-    const drawing = ward?.drawsEffect !== undefined && p.reach === undefined;
+    const drawing = ward?.drawsEffect !== undefined && (p.reach === undefined || (p.reach as string | undefined) === 'post');
     const saved = room?.states[p.id];
     const answer = drawing && saved !== undefined ? ward.drawsEffect?.cleared?.(saved.state) : undefined;
     const cleared = answer === true || (typeof answer === 'object' && room?.version != null && answer.version === room.version);
@@ -54,8 +54,8 @@ export interface LandingContext {
   readonly pierce?: Rarity;
   /** The page's clock (`api.now()`), against which a play's end is read: a card that cuts is offered only where a Gimmick is still up. */
   readonly now?: number;
-  /** The instance's limit on the effects one post shows (`Settings.postEffects`), which every screen passes; a caller that gives none reads no limit: what a card that draws is refused by once the post is full (`roomOnPost`). */
-  readonly postEffects?: number;
+  /** The instance's limit on the effects one post shows (`Settings.postEffects`), which every caller gives: what a card that draws is refused by once the post is full (`roomOnPost`). */
+  readonly postEffects: number;
   /** What each play's effect has saved (`PostPlays.states`) and the version the post is at now: what says a play is cleared, so it takes no slot. */
   readonly states?: Readonly<Record<Id, EffectState>>;
   readonly version?: Id | null;
@@ -81,9 +81,9 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
  * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a
  * needed message aside, so decideSet would not refuse it here.
  */
-export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity; readonly postEffects?: number; readonly states?: Readonly<Record<Id, EffectState>>; readonly version?: Id | null }): { readonly cast: boolean; readonly set: boolean } {
+export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity; readonly postEffects: number; readonly states?: Readonly<Record<Id, EffectState>>; readonly version?: Id | null }): { readonly cast: boolean; readonly set: boolean } {
   const live = stackPlays(plays, context.now);
-  const room = { ...(context.postEffects === undefined ? {} : { postEffects: context.postEffects }), ...(context.states ? { states: context.states } : {}), ...(context.version !== undefined ? { version: context.version } : {}) };
+  const room = { postEffects: context.postEffects, ...(context.states ? { states: context.states } : {}), ...(context.version !== undefined ? { version: context.version } : {}) };
   const cast = landing(rules, post, live, context).ok;
   const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, now: context.now, ...room, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
   return { cast, set };
@@ -96,7 +96,7 @@ export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], 
  */
 export function landingOn(rules: CardRules, target: CardTarget, plays: readonly CardPlay[], context: LandingContext): Verdict {
   const effects = effectsOnTarget(target, effectsOf(plays, context.cards, { states: context.states ?? {}, version: context.version ?? null }), context.above ?? {});
-  const settings = (context.postEffects === undefined ? {} : { postEffects: context.postEffects }) as never;
+  const settings = { postEffects: context.postEffects } as never;
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
   /*
    * Only where the card lands is asked here: its settings and its message are the form's, so the card's own refusal of none is set aside. A
