@@ -1252,6 +1252,15 @@ describe('a rewind in the store', () => {
     expect(rewoundOf(plays.get(POST), NOW, new Set())!.rewind.play).toBe(greater.id);
   });
 
+  test('readRewinds does not read a view the page already delivered, when its play arrives live', async () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    hydrate(plays, [r], {}, [], {}, {}, [], [], [viewOf(r)]);
+    const rewindView = vi.fn(async () => viewOf(r));
+    await readRewinds({ rewindView } as unknown as KayfaApi, plays, [r], new Set(['time-machine']));
+    expect(rewindView).not.toHaveBeenCalled();
+  });
+
   test('readRewinds reads a rewind card\'s play once, and keeps its view', async () => {
     const plays = createPlays();
     const r = rewindPlay();

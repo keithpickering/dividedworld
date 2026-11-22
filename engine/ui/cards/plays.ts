@@ -465,7 +465,7 @@ export interface Plays {
    * view that outlives its play changes nothing. True when any was new or changed.
    */
   setRewinds(rewinds: readonly Rewind[]): boolean;
-  /** Say a rewind play's view is wanted (read once, `readRewinds`): true the first time. */
+  /** Say a rewind play's view is wanted (read once, `readRewinds`): true the first time, and never for a view already kept (the page's, delivered by `hydrate`). */
   wantRewind(play: Id): boolean;
   /** Take the want back, where the read failed, so the next ask reads again. */
   unwantRewind(play: Id): void;
@@ -494,8 +494,13 @@ export function createPlays(): Plays {
   /* The server's count of each kind on a post, kept current by the plays heard since (`bump`). A kind with none is counted from the plays held (`get`). */
   const counts = new Map<Id, Map<string, KindTally>>();
   const wanted = new Set<Id>();
-  /* Each rewind play's view, by the play, in the order kept. */
+  /*
+   * Each rewind play's view, by the play, and the same views by post in the order kept (`get` reads the latter, so it never scans every view). Their lifetime is the store's: one for a thread
+   * screen (its posts, and its ORIGIN box's store for the origin post), dropped with it. They are bounded by the rewinds that screen's pages carry or its live plays bring, a few per post
+   * (a rewind card has a stack of one and only a rarer rewind lies over a lesser), and a view whose play is over is kept but draws nothing (`rewoundOf`).
+   */
   const rewinds = new Map<Id, Rewind>();
+  const rewindsByPost = new Map<Id, Rewind[]>();
   const wantedRewinds = new Set<Id>();
   const issued = new Map<Id, number>();
   const taken = new Map<Id, number>();
@@ -552,7 +557,7 @@ export function createPlays(): Plays {
   return {
     get(post) {
       const own = byPost.get(post);
-      if (!own && !counts.has(post) && ![...rewinds.values()].some((r) => r.post === post)) return NONE;
+      if (!own && !counts.has(post) && !rewindsByPost.has(post)) return NONE;
       let snap = snapshots.get(post);
       if (!snap) {
         const plays = [...(own?.values() ?? [])].sort(inPlayOrder);
@@ -572,7 +577,7 @@ export function createPlays(): Plays {
           read: reads.get(post) ?? 0,
           faces: Object.fromEntries(plays.filter((p) => faces.has(p.id)).map((p) => [p.id, faces.get(p.id)!])),
           surfaces: Object.fromEntries(plays.filter((p) => surfaces.has(p.id)).map((p) => [p.id, surfaces.get(p.id)!])),
-          rewinds: [...rewinds.values()].filter((r) => r.post === post),
+          rewinds: rewindsByPost.get(post) ?? [],
         };
         snapshots.set(post, snap);
       }
@@ -793,12 +798,15 @@ export function createPlays(): Plays {
         const was = rewinds.get(r.play);
         if (was && was.post === r.post && was.at === r.at && JSON.stringify(was.version) === JSON.stringify(r.version)) continue;
         rewinds.set(r.play, r);
+        const mine = (rewindsByPost.get(r.post) ?? []).filter((v) => v.play !== r.play);
+        rewindsByPost.set(r.post, [...mine, r]);
+        if (was && was.post !== r.post) rewindsByPost.set(was.post, (rewindsByPost.get(was.post) ?? []).filter((v) => v.play !== r.play));
         touched.add(r.post);
       }
       changed(touched);
       return touched.size > 0;
     },
-    wantRewind(play) { if (wantedRewinds.has(play)) return false; wantedRewinds.add(play); return true; },
+    wantRewind(play) { if (wantedRewinds.has(play) || rewinds.has(play)) return false; wantedRewinds.add(play); return true; },
     unwantRewind(play) { wantedRewinds.delete(play); },
     wantSurface(play) { if (wanted.has(play)) return false; wanted.add(play); return true; },
     wantsSurface: (play) => wanted.has(play),

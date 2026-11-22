@@ -140,13 +140,20 @@ describe('a rewind that lands while the reader is on the page', () => {
     await waitFor(() => expect(wraps(post)).toContain('clock'));
     expect(post).toHaveTextContent('The second words.');
     expect(post).not.toHaveTextContent('The first words.');
+    /* Every record, not the state after a batch: words drawn and gone again between two commits of one task are caught too. */
     const seen: string[] = [];
-    const watch = new MutationObserver(() => seen.push(post.textContent ?? ''));
+    const watch = new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'characterData') seen.push(r.target.textContent ?? '');
+        for (const n of r.addedNodes) seen.push(n.textContent ?? '');
+      }
+    });
     watch.observe(post, { childList: true, subtree: true, characterData: true });
     deliver((await real((played as { value: { id: string } }).value.id)));
     await waitFor(() => expect(post).toHaveTextContent('The first words.'));
     watch.disconnect();
     expect(post).not.toHaveTextContent('The second words.');
+    expect(seen.length).toBeGreaterThan(0);
     expect(seen.filter((t) => t.includes('The second words.'))).toEqual([]);
     expect(spy).toHaveBeenCalledTimes(1);
   });
