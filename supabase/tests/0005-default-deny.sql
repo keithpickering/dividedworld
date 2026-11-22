@@ -242,6 +242,15 @@ begin
   end if;
 end $$;
 
+-- The kept counts of a post's plays by kind (0407) are no API role's either.
+do $$
+begin
+  if not exists (select 1 from pg_class c where c.relname = 'post_kinds' and c.relnamespace = 'public'::regnamespace and c.relrowsecurity) then raise exception 'post_kinds has no row-level security'; end if;
+  if has_table_privilege('anon', 'post_kinds', 'select,insert,update,delete') or has_table_privilege('authenticated', 'post_kinds', 'select,insert,update,delete') or has_table_privilege('service_role', 'post_kinds', 'select,insert,update,delete') then
+    raise exception 'an API role can reach post_kinds';
+  end if;
+end $$;
+
 -- Replica mode, as a restore with triggers disabled runs, still cannot change an Act.
 do $$
 declare
