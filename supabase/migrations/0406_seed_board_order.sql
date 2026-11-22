@@ -2,6 +2,7 @@
 -- index_page() orders boards by created_at, then id, and a seed made every board in one statement, so they shared one created_at and the index followed their ids.
 -- Each board the seed makes is now created one microsecond after the one before it, in the order the instance names them, so the index shows the instance's order.
 -- A conflict still updates is_system alone, so a reseed never moves an existing board's time.
+-- So the order holds for the boards a seed makes: a board that already exists keeps its time, and a board new to a reseed follows every board made before it.
 -- seed_instance, copied whole from 0405_cut.sql, with only the boards insert changed. Everything else as 0405_cut wrote it. `create or replace` keeps its owner and grants.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb

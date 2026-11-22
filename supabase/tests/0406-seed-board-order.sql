@@ -14,6 +14,12 @@ declare
   stamps_again jsonb;
 begin
   perform seed_instance(payload);
+  -- The times themselves, so the red does not rest on how three random ids happen to sort.
+  if not (select (select created_at from boards where slug = 'zz-last-made-first') < (select created_at from boards where slug = 'aa-second')
+             and (select created_at from boards where slug = 'aa-second') < (select created_at from boards where slug = 'mm-third')) then
+    raise exception 'each board should be made after the one before it in the payload: %',
+      (select jsonb_object_agg(slug, created_at) from boards where slug = any (array['zz-last-made-first', 'aa-second', 'mm-third']));
+  end if;
   perform set_config('request.jwt.claims', jsonb_build_object('sub', reader, 'role', 'authenticated')::text, true);
   select jsonb_agg(e ->> 'slug' order by o) into got
     from jsonb_array_elements(index_page() -> 'boards') with ordinality x(e, o) where e ->> 'slug' = any (array['zz-last-made-first', 'aa-second', 'mm-third']);
