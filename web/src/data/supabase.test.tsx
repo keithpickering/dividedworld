@@ -2732,6 +2732,13 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(h.to('characters_public')[0]?.url.searchParams.get('select')).toBe('id,name,joined,staff,office,group');
   });
 
+  it('maps a to-do with no cause to a roll-over', async () => {
+    const queue = { cap: 100, waiting: [], inForce: [], ended: [], staffCards: [], more: {}, roster: [], todos: [{ handover: 8, season: 3, boss: 'the-clerk', bossName: 'The Clerk', outgoing: null, outgoingName: null, outgoingOffice: null, how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }] };
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/admin_queue') ? json(queue) : json({}, 404)));
+    const q = await h.api.adminQueue();
+    expect(q.todos[0]?.cause).toBe('rollover');
+  });
+
   it('reads the admin queue in its three groups, and holds and reverses through the admin functions', async () => {
     const queue = {
       cap: 100,
@@ -2741,17 +2748,21 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
       staffCards: [{ play: A, card: 'whoops', cardName: 'Whoops!', staff: 'hall-monitor', persona: 'Hall Monitor', targetName: 'Ana Face', thread: B, threadTitle: 'A thread', at: '2026-11-01T10:00:00+00:00' }],
       more: { waiting: false, inForce: false, staffCards: false, ended: true },
       roster: [{ staff: 'the-clerk', name: 'The Clerk', pronouns: PRONOUN_PRESETS.he }, { staff: 7, name: 'bad' }],
-      todos: [{ season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
+      todos: [{ handover: 7, cause: 'departure', season: 3, boss: 'the-clerk', bossName: 'The Clerk', bossPronouns: PRONOUN_PRESETS.he, bossWas: 'mod', outgoing: 'director', outgoingName: 'The Director', outgoingPronouns: null, outgoingOffice: 'member', how: 'rotation', landedAt: '2026-11-01T00:00:00+00:00' }],
     };
     /* A part of a bundle says its bundle, role and the bundle's name (0329); a move that is none says null for each. */
     queue.waiting[0] = { ...queue.waiting[0]!, bundle: C, role: 'minus', bundleName: 'The Split', waitsFor: [{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }, 'junk'] } as (typeof queue.waiting)[0];
     const h = harness((r) => {
       if (r.url.pathname.endsWith('/rpc/admin_queue')) return json(queue);
+      if (r.url.pathname.endsWith('/rpc/dismiss_handover_todo')) return json({ handover: 7, season: 3 });
       if (r.url.pathname.endsWith('/rpc/hold_move')) return json({ id: 4, heldAt: '2026-10-31T15:00:00+00:00', heldAlso: [5, 6] });
       if (r.url.pathname.endsWith('/rpc/reverse_move')) return json({ act: A, endedBy: B, alsoEnded: [C], heldAlso: [7] });
       return json({}, 404);
     });
     const q = await h.api.adminQueue();
+    expect(q.todos[0]).toMatchObject({ handover: 7, cause: 'departure', season: 3 });
+    expect(await h.api.dismissHandoverTodo(7)).toEqual({ ok: true, value: { handover: 7, season: 3 } });
+    expect(h.to('rpc/dismiss_handover_todo')[0]?.body).toEqual({ handover: 7 });
     expect(q.waiting[0]).toMatchObject({ id: 4, boss: 'The Director', boardName: 'General', failure: 'it did not land', failedAt: '2026-10-31T14:11:00+00:00', demand: { kind: 'postsOnBoard' } });
     expect(q.waiting[0]).toMatchObject({ bundle: C, role: 'minus', bundleName: 'The Split' });
     expect(q.waiting[0]?.waitsFor).toEqual([{ id: 3, role: 'minus', kind: 'createBoard', name: 'World -1' }]);

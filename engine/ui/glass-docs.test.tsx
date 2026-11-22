@@ -181,21 +181,22 @@ describe('the alerts, updates, queue and log keys', () => {
     expect(logKey()).toBe('/log');
   });
 
-  test('updates are keyed by the open update, the writer asked for and its season; an address that asks the same thing keys the same', () => {
+  test('updates are keyed by the open update, the writer asked for and its handover; an address that asks the same thing keys the same', () => {
     expect(updatesKey(q(''))).toBe(updatesKey(q('foo=bar')));
     expect(updatesKey(q('update=a'))).not.toBe(updatesKey(q('')));
     expect(updatesKey(q('update=a'))).not.toBe(updatesKey(q('update=b')));
-    expect(updatesKey(q('write=handover&season=2'))).not.toBe(updatesKey(q('write=handover&season=3')));
-    expect(updatesKey(q('write=handover&season=2'))).not.toBe(updatesKey(q('')));
+    expect(updatesKey(q('write=handover&handover=2'))).not.toBe(updatesKey(q('write=handover&handover=3')));
+    expect(updatesKey(q('write=handover&handover=2'))).not.toBe(updatesKey(q('')));
   });
 
-  test('a handover season is asked only with the writer, and only a whole number from 1', () => {
-    expect(updatesAsked(q('update=a'))).toEqual({ update: 'a', write: null, season: null });
-    expect(updatesAsked(q('season=2'))).toEqual({ update: null, write: null, season: null });
-    expect(updatesAsked(q('write=handover&season=2'))).toEqual({ update: null, write: 'handover', season: 2 });
-    expect(updatesAsked(q('write=handover&season=0')).season).toBeNull();
-    expect(updatesAsked(q('write=handover&season=3.5')).season).toBeNull();
-    expect(updatesAsked(q('write=handover&season=abc')).season).toBeNull();
+  test('a handover is asked only with the writer, and only a whole number from 1', () => {
+    expect(updatesAsked(q('update=a'))).toEqual({ update: 'a', write: null, handover: null });
+    expect(updatesAsked(q('write=handover&season=2')).handover).toBeNull();
+    expect(updatesAsked(q('handover=2'))).toEqual({ update: null, write: null, handover: null });
+    expect(updatesAsked(q('write=handover&handover=2'))).toEqual({ update: null, write: 'handover', handover: 2 });
+    expect(updatesAsked(q('write=handover&handover=0')).handover).toBeNull();
+    expect(updatesAsked(q('write=handover&handover=3.5')).handover).toBeNull();
+    expect(updatesAsked(q('write=handover&handover=abc')).handover).toBeNull();
   });
 });
 
@@ -220,9 +221,9 @@ describe('the alerts, updates, queue and log loaders', () => {
     const env = { api: apiOf({ alertsPage, updatesPage }), signedIn: signed(true) };
     await loadAlerts(env, chunk);
     expect(alertsPage).toHaveBeenCalledWith(null);
-    await loadUpdates(env, q('update=a&write=handover&season=2'), chunk);
+    await loadUpdates(env, q('update=a&write=handover&handover=2'), chunk);
     expect(updatesPage).toHaveBeenLastCalledWith('a', null, 2);
-    await loadUpdates(env, q('update=a&season=2'), chunk);
+    await loadUpdates(env, q('update=a&write=handover&season=2'), chunk);
     expect(updatesPage).toHaveBeenLastCalledWith('a', null, null);
   });
 

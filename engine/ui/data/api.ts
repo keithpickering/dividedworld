@@ -1230,6 +1230,10 @@ export interface StaffCardPlay {
  * (`boss`, `mod`, `member`, `benched`, `waiting`); `bossWas` is the new Boss's office before it took the seat, null where it held none.
  */
 export interface HandoverTodo {
+  /** The `season_handovers` row this to-do is for: what a dismissal names, since a roll-over and a departure can share a season. */
+  readonly handover: number;
+  /** What changed the Boss: `rollover` (a season opened) or `departure` (the outgoing Boss left the instance's roster, and was benched). */
+  readonly cause: 'rollover' | 'departure';
   readonly season: number;
   readonly boss: string;
   readonly bossName: string;
@@ -2740,8 +2744,8 @@ export interface KayfaApi {
    * a label over 80 or more than 30 changes is refused naming which. An admin's alone, and written by no model.
    */
   postUpdate(title: string, body: string, changes: readonly UpdateChange[]): Promise<Answer<Update>>;
-  /** Puts a handover's to-do away without an update (`dismiss_handover_todo`). An admin's alone; a season with no to-do is refused, and one already dismissed is answered. */
-  dismissHandoverTodo(season: number): Promise<Answer<{ readonly season: number }>>;
+  /** Puts a handover's to-do away without an update (`dismiss_handover_todo`). An admin's alone; a handover that did not change the Boss is refused, and one already dismissed is answered. */
+  dismissHandoverTodo(handover: number): Promise<Answer<{ readonly handover: number; readonly season: number }>>;
   /**
    * How players reach the admins (`admin_contact`): the links an admin set, or none. Public, and the same for every caller, signed in or
    * not, because the player who most needs a person may be the one who cannot sign in. Rejects when it cannot be read.
@@ -3013,8 +3017,8 @@ export interface KayfaApi {
   seasonPage(tab: string | null, season: number | null, character: Id | null, page: number | null): Promise<SeasonPage | null>;
   /** The Alerts page in one read, the rows at or before `before`. */
   alertsPage(before: string | null): Promise<AlertsPage>;
-  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover season asks an admin's queue as well. */
-  updatesPage(update: Id | null, before: string | null, handoverSeason: number | null): Promise<UpdatesPage>;
+  /** The Updates page in one read: a page of Updates at or before `before`, `update` open (the newest when null); a handover (its `season_handovers` id) asks an admin's queue as well. */
+  updatesPage(update: Id | null, before: string | null, handover: number | null): Promise<UpdatesPage>;
   /** The admin queue page in one read; null for a caller who is not an admin. */
   queuePage(): Promise<QueuePage | null>;
   /** The reports screen in one read; null for a caller who is not an admin. */
