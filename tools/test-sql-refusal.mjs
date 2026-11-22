@@ -145,6 +145,8 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '', drift = '') {
     new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+did not finish within 1\\.5s and was killed`).test(r.out), r.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
   check('and the files after it still run', /PASS  0001-/.test(r.out), r.out.slice(0, 400));
 }
+/** A pass of the suite whose stand-in psql answers nothing to the drift query: the statistics block below keeps it, and the drift block reads it. */
+let cleanPass;
 /* ---- the statistics state ---- */
 /* Every file starts from the same statistics state: `vacuum (analyze)` on the scratch database. An assertion file's
    vacuum travels in the file's own psql call, ahead of its transaction (`vacuum (analyze); begin;`, on one line so the
@@ -160,6 +162,7 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '', drift = '') {
   /* An assertion file's call: wrapped in begin; … rollback; (a migration may say `begin;` too, and is not one). */
   const isFile = (c) => /^(vacuum \(analyze\); )?begin;\n/.test(body(c)) && body(c).trimEnd().endsWith('\nrollback;');
   const r = boundedSuite(false);
+  cleanPass = r;
   const fileAt = r.records.map((c, i) => (isFile(c) ? i : -1)).filter((i) => i >= 0);
   const e2eCount = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).length;
   const startsWithIt = (c) => body(c).startsWith(VACUUM);
@@ -187,10 +190,10 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '', drift = '') {
 /* ---- the drift check ---- */
 /* After the end-to-end files, one step runs play_post_drift() on the scratch database, and a row it answers fails the run, naming the row.
    The poison here is the stand-in psql answering a row, since the suite itself is outside the build; the real one (a refund written with its
-   trigger disabled, in a step before the check) was shown red against Postgres by hand when this step was added: play_post_on_refund disabled, a refund written, play_post_drift() named the play. */
+   trigger disabled, in a step before the check) is tools/test-sql-drift.mjs, which needs the Postgres the build has not got. */
 {
   const e2eFiles = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f));
-  const clean = boundedSuite(false);
+  const clean = cleanPass;
   const drifted = boundedSuite(false, '1500', '', '00000000-0000-4000-8000-0000000000d1|a play with no row');
   const driftCall = (r) => r.records.findIndex((c) => c.split('\n').slice(1).join('\n').trim() === runner.driftSql);
   const lastVacuumOnly = (r) => r.records.map((c, i) => (c.split('\n').slice(1).join('\n').trim() === runner.VACUUM_STATEMENT ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;

@@ -237,6 +237,16 @@ export function driftFailure(rows) {
 }
 
 /**
+ * The drift check on one database: why it failed (the rows play_post_drift() names, or the error that stopped the query), or null.
+ * tools/test-sql-drift.mjs drives it red against a real database whose trigger was disabled.
+ * @param {string} url
+ */
+export function driftCheck(url) {
+  const drifted = psqlRows(url, driftSql);
+  return drifted.error ? `could not run play_post_drift():\n${drifted.error}` : driftFailure(drifted.rows);
+}
+
+/**
  * What runs on the scratch database before each assertion file (the start of the file's own psql call) and each end-to-end
  * file (a psql call of its own), outside any transaction (see the header). Exported so tools/test-sql-refusal.mjs reads the text sent.
  */
@@ -344,8 +354,7 @@ function main() {
     }
     /* The kept rows hold what the Acts say, after every file has written what it wrote (a rolled-back file left none; an end-to-end file's commits stay). */
     console.log('\nsql: drift');
-    const drifted = psqlRows(target, driftSql);
-    step('drift', drifted.error ? `could not run play_post_drift():\n${drifted.error}` : driftFailure(drifted.rows));
+    step('drift', driftCheck(target));
     /* A client read no test calls is one whose broken reference nothing would find: a plpgsql body is checked only when
        it runs. Every connection before this one has ended, so their counts are flushed. */
     console.log('\nsql: coverage');

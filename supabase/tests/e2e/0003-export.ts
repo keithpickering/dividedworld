@@ -821,7 +821,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.match((await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url])).stderr, /names a file/);
     // An export made at another release of the name folds is refused: its characters' name keys
     // are that release's (supabase/migrations/0010_name_folds.sql). The folds themselves are the
-    // migrations', not the instance's, and are not playPostLines.
+    // migrations', not the instance's, and are not carried.
     manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = 'public.accounts.jsonl';
     assert.ok(manifest.nameFolds?.confusables, 'the export names its release of the name folds');
     assert.ok(!manifest.tables.some((t: { name: string }) => t.name === 'public.name_maps' || t.name === 'public.unicode_data'), 'the name folds are not exported');
