@@ -659,11 +659,11 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   const shown = names.slice(0, NAMES_SHOWN).join(', ');
   const rest = names.length - NAMES_SHOWN;
   const { instance } = useKayfa();
-  /* Up now and Ended, by `inForce`; the rows of a moment (`then` holds every play of the kind) are one list, as they stood. */
-  const grouped = !plays.every((p) => row.then?.has(p.id));
+  /* Up now and Ended, by `inForce`. A play a moment holds (`then`, an ORIGIN box) is judged as it stood, up then; so a moment's rows draw no heading, as today. */
   const keepsOf = (p: CardPlay) => instance.cards.find((c) => c.key === p.card)?.keeps === true;
-  const up = plays.filter((p) => inForce(p, row.now, keepsOf(p)));
-  const ended = plays.filter((p) => !inForce(p, row.now, keepsOf(p))).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const upNow = (p: CardPlay) => row.then?.has(p.id) === true || inForce(p, row.now, keepsOf(p));
+  const up = plays.filter(upNow);
+  const ended = plays.filter((p) => !upNow(p)).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const rowOf = (p: CardPlay) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />;
   return (
     <div className="kb-lens-section kb-lens-who-section">
@@ -682,7 +682,7 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
         <span className="kb-lens-fold-words">{playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
-        {unfolded && (grouped ? (
+        {unfolded && (
           <>
             {up.length > 0 && (
               <li className="kb-lens-group">
@@ -698,7 +698,7 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
               </li>
             )}
           </>
-        ) : plays.map(rowOf))}
+        )}
       </ul>
     </div>
   );

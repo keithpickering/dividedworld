@@ -549,6 +549,27 @@ describe('what the Lens says and offers', () => {
       expect(rows()).toHaveLength(2);
       expect(heads()).toEqual([]);
     });
+
+    test('a play the moment holds is judged as it stood, so the box\'s other play of its kind draws no Ended beside it', async () => {
+      width(false);
+      const w = world();
+      w.fake.clock.advance(2 * HOUR);
+      const plays = createPlays();
+      const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+      const gone = { card: 'k2', ends: new Date(w.fake.clock.now() - HOUR).toISOString() };
+      const held = { card: 'k2', ends: new Date(w.fake.clock.now() + HOUR).toISOString() };
+      plays.add([
+        { ...base, id: 'moment-a', kind: 'card', payload: gone, currentPayload: gone },
+        { ...base, id: 'moment-b', kind: 'card', payload: held, currentPayload: held },
+        { ...base, id: 'moment-a-undone', kind: 'card_end', targetActId: 'moment-a', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+      ]);
+      plays.setBilling(w.second, ['moment-a', 'moment-b']);
+      renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} then={new Set(['moment-a'])} /></LensProvider>, { path: '/', instance, cards });
+      await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 2 plays/u }));
+      await userEvent.click(whoButton());
+      expect(rows()).toHaveLength(2);
+      expect(heads()).toEqual([]);
+    });
   });
 
   test('a row says who played it in capitals, when, the message, the card\'s note and the threads spun', async () => {
