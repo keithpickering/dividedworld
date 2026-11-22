@@ -14,6 +14,7 @@ test('meet: a good request runs the meeting on the database deps.db made, with m
       case 'fail_meeting': return { status: 'closed' };
       case 'meeting_context': return { season: { startsAt: Date.now() - 1e9, endsAt: Date.now() + 1e10 }, boss: dividedWorld.system.firstBoss, lastSlot: null, boards: [], successors: [] };
       case 'system_digest': return { since: SLOT, until: SLOT, threads: [], boards: [], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: [] };
+      case 'pool_context': return { offices: {} };
       case 'staff_memory_latest': return null;
       case 'staff_career': return { led: [], offices: [] };
       case 'staff_notes_recent': return [];

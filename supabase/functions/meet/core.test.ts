@@ -95,6 +95,8 @@ interface World {
   handoffFacts?: unknown | null;
   /** What meeting_context() hands a new Boss (0337): its predecessor's note and facts. Absent or null: none. */
   predecessor?: unknown | null;
+  /** The offices pool_context() lists, by persona key (boss, mod, member, waiting, benched); absent: none listed. */
+  offices?: Record<string, string>;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -113,6 +115,7 @@ function fakeDb(w: World = {}) {
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}), ...(w.nomination !== undefined ? { nomination: w.nomination } : {}) } as T;
+        case 'pool_context': return { season: null, boss: w.boss ?? BOSS, predecessor: null, offices: w.offices ?? {}, characters: {}, boards: {}, lockouts: [] } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
@@ -1209,4 +1212,40 @@ test('in the farewell window the repair is given the season\'s end, so a structu
   await run(older.db, om.models, quiet, SLOT, clock, noFeeds);
   assert.doesNotMatch(om.chats[0]!.system, /never lands/);
   assert.equal(older.state.applied[0]!.payload.moves.length, 1);
+});
+
+/* ------------------------------------------------------------------ the talking points (chattier staff plan, Task 5) ---- */
+
+const ROSTER = dividedWorld.system.roster;
+const MEMBER_A = ROSTER.find((b) => b.key !== BOSS && b.key !== MOD_A && b.key !== MOD_B)!.key;
+const OFFICES = { [BOSS]: 'boss', [MOD_A]: 'mod', [MEMBER_A]: 'member', [MOD_B]: 'benched', 'not-on-the-roster': 'member' };
+
+test('the meeting names every persona in a posting office, the Boss included, asks the staff part for points, and keeps the repaired ones', async () => {
+  const d = fakeDb({ offices: OFFICES });
+  const whole = answer([], { points: [
+    { staff: MOD_A, line: 'Needle the new Boss about the toast rule.' }, { staff: MEMBER_A, line: 'Defend the Pineapple thread.' },
+    { staff: MOD_B, line: 'Benched, so no.' }, { staff: MOD_A, line: 'A second line for one key.' }, { staff: BOSS, line: '   ' }, { staff: 'nobody', line: 'Not a persona.' } ] });
+  const m = fakeModels(perPart(whole));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const system = m.chats[0]!.system;
+  for (const key of [BOSS, MOD_A, MEMBER_A]) assert.ok(system.includes(`- ${key}: ${ROSTER.find((b) => b.key === key)!.name}`), `${key} is named in the prompt`);
+  assert.ok(!system.includes(`- ${MOD_B}:`) && !system.includes('not-on-the-roster'), 'a benched persona and a key off the roster are not asked for');
+  assert.ok(m.chats.filter((r) => partOf(r) === 'staff').length === 1);
+  const payload = d.state.applied[0]!.payload;
+  assert.deepEqual(payload.points, [{ staff: MOD_A, line: 'Needle the new Boss about the toast rule.' }, { staff: MEMBER_A, line: 'Defend the Pineapple thread.' }]);
+  for (const [path, predicate] of [['points[2].staff', 'postingPersona'], ['points[3].staff', 'uniqueStaff'], ['points[4].line', 'nonBlank'], ['points[5].staff', 'postingPersona']]) {
+    assert.ok(out.trims.some((t: any) => t.path === path && t.predicate === predicate), `${path} ${predicate}: ${JSON.stringify(out.trims)}`);
+  }
+});
+
+test('a meeting with no Mods on staff still asks the staff part for points and sends them', async () => {
+  const d = fakeDb({ offices: OFFICES });
+  const m = fakeModels(perPart(answer([], { points: [{ staff: MEMBER_A, line: 'Hold the line.' }] })));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.ok(m.chats.some((r) => partOf(r) === 'staff'), 'the staff part is asked for');
+  assert.ok(m.chats[0]!.system.includes('Do not answer with orders or patrols.'));
+  assert.deepEqual(d.state.applied[0]!.payload.points, [{ staff: MEMBER_A, line: 'Hold the line.' }]);
+  assert.deepEqual(d.state.applied[0]!.payload.orders, []);
 });

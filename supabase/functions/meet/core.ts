@@ -54,7 +54,9 @@ import {
   type MachineSlotFacts,
   type ModFacts,
   type PlannedMove,
+  type PostingFacts,
 } from '../../../engine/system/meeting.ts';
+import { POSTING_OFFICES } from '../../../engine/system/pool.ts';
 import type { TrophyFacts } from '../../../engine/system/moves.ts';
 import type { RuleInForce } from '../../../engine/rules/predicates.ts';
 import type { Models } from '../../../engine/system/model.ts';
@@ -273,6 +275,13 @@ export async function runMeeting(
       });
     }
 
+    // The personas that post, for the talking points: each persona of the roster in a posting office (the Boss, each Mod, each member), from pool_context's offices. A key the roster does not hold, a benched persona and a
+    // waiting one are not in a posting office and are not asked for. Public facts only: nothing here reads who owns a character, a class or who reacted.
+    const offices = (await db.rpc<{ readonly offices?: Readonly<Record<string, string>> }>('pool_context', {})).offices ?? {};
+    const posting: PostingFacts[] = tuned.system.roster
+      .filter((p) => (POSTING_OFFICES as readonly string[]).includes(offices[p.key] ?? ''))
+      .map((p) => ({ key: p.key, name: p.name, pronouns: personaSet(p.pronouns), office: offices[p.key]!, temperament: p.temperament }));
+
     const { titles, skipped } = await readFeeds(tuned.system.feeds, fetchFeed);
 
     // Only the beats the database calls unlocked and unplayed reach the prompt, found in the Boss's own file; the kinds it holds back are listed nowhere.
@@ -294,6 +303,7 @@ export async function runMeeting(
       phase,
       bank,
       mods,
+      posting,
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
       characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
@@ -397,6 +407,7 @@ export async function runMeeting(
       phase,
       bank,
       mods: new Set(mods.map((m) => m.key)),
+      posting: new Set(posting.map((p) => p.key)),
       rules: context.rules ?? [],
       groups: {
         conferred: new Map((context.groups?.conferred ?? []).map((g) => [g.key, g.tone])),
@@ -480,6 +491,8 @@ export async function runMeeting(
         ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
         ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
+        // The talking points: one line for each persona that posts, kept by the database beside the orders, in the same transaction.
+        points: repaired.points.map((p) => ({ staff: p.staff, line: p.line })),
         orders: repaired.orders.map((o) => ({ mod: o.mod, boards: o.boards, order: o.order, allowance: o.allowance, ...(o.memory ? { memory: o.memory } : {}) })),
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
         weekly_moves: phase.numbers.weeklyMoves,
