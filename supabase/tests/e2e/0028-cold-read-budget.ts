@@ -165,6 +165,24 @@ export function kept(call: string, as: string): number {
   return bytes;
 }
 
+/**
+ * What a cold read keeps, by memory context: the same call as `kept`, then the connection's largest contexts, one line each (its name, the start of its ident, which
+ * for a cached plan is its query, and its kilobytes), then the tables with the largest column statistics. A function over its budget names these in the failure, so
+ * the message says whether a plan grew or the catalog cache did: planning reads each planned table's statistics into CacheMemoryContext, so the rows the files before
+ * this one committed move the figure with no change to any plan.
+ */
+export function contexts(call: string, as: string, most = 12): string {
+  requireRecorded();
+  return sql(`
+    begin;
+    do $cold$ begin perform tests.become('${as}'); perform ${call}; perform tests.unbecome(); end $cold$;
+    commit;
+    select name || coalesce(': ' || left(regexp_replace(ident, '\\s+', ' ', 'g'), 140), '') || ' (' || round(total_bytes / 1024.0) || ' kB)'
+    from pg_backend_memory_contexts order by total_bytes desc limit ${most};
+    select 'statistics of ' || starelid::regclass || ': ' || round(sum(pg_column_size(s.*)) / 1024.0) || ' kB, ' || c.reltuples::bigint || ' rows'
+    from pg_statistic s join pg_class c on c.oid = s.starelid where c.relnamespace = 'public'::regnamespace group by starelid, c.reltuples order by sum(pg_column_size(s.*)) desc limit ${most};`);
+}
+
 /** One screen function's call, the account that makes it, and its budget in megabytes to one decimal. */
 interface Budget { call: (f: Fixture) => string; as: (f: Fixture) => string; mb: number; }
 const player = (f: Fixture) => f.player;
@@ -248,7 +266,9 @@ test('every screen function keeps within its budget on a cold read, and no budge
   const table = names.map((n) => `${n}: ${n in measured ? measured[n]!.toFixed(3) : 'not measured'} MB`).join('\n');
   const budgets = Object.fromEntries(Object.entries(BUDGETS).map(([n, b]) => [n, b.mb]));
   const faults = budgetFaults(names, budgets, measured);
-  assert.deepEqual(faults, [], `${faults.join('\n')}\nmeasured:\n${table}`);
+  const over = names.filter((n) => n in measured && measured[n]! > budgets[n]!);
+  const where = over.map((n) => `\n${n}, its largest contexts on a cold read:\n${contexts(BUDGETS[n]!.call(f), BUDGETS[n]!.as(f))}`).join('');
+  assert.deepEqual(faults, [], `${faults.join('\n')}\nmeasured:\n${table}${where}`);
   console.log(`measured (MB kept by a fresh connection after the first call):\n${table}`);
 });
 
