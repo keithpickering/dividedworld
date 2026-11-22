@@ -48,7 +48,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { PageHead } from '../glass/PageHead.tsx';
 import { shortDate } from '../postbit/dates.ts';
-import { todoFacts, todoHandoff, todoSentence } from './handover-words.ts';
+import { todoFacts, todoHandoff, todoSentence, todoTitle } from './handover-words.ts';
 import { AdminContact } from './AdminContact.tsx';
 import { AdminPages } from './AdminPages.tsx';
 import './queue.css';
@@ -350,12 +350,12 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
   const { api, ui } = useKayfa();
   const [busy, setBusy] = useState<number | null>(null);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const dismiss = async (season: number) => {
+  const dismiss = async (handover: number) => {
     if (busy !== null) return;
-    setBusy(season);
+    setBusy(handover);
     setRefusal(null);
     try {
-      const answer = await api.dismissHandoverTodo(season);
+      const answer = await api.dismissHandoverTodo(handover);
       if (!answer.ok) setRefusal(answer.error);
       await onDismissed();
       document.getElementById('queue-todo')?.focus();
@@ -365,13 +365,16 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
       setBusy(null);
     }
   };
+  /** What a to-do is called to a screen reader. A season holds one roll-over but may hold several departures, even two that seat the same Boss, so a departure is called by its title, which names both Bosses. */
+  const dismissName = (t: HandoverTodo) => (t.cause === 'departure' ? `Dismiss the to-do: ${todoTitle(t)}` : `Dismiss the season ${t.season} to-do`);
+  const writeName = (t: HandoverTodo) => (t.cause === 'departure' ? `Write the announcement: ${todoTitle(t)}` : `Write the announcement for season ${t.season}`);
   return (
     <CalmRegion as="section" className="kb-queue-group" aria-labelledby="queue-todo" data-kb-group="todo">
       <GroupHead id="queue-todo" title="To do" count={rows.length} more={false} />
       {rows.length === 0 && <p className="kb-queue-empty">Nothing to do.</p>}
       {refusal && <p role="alert" className="kb-queue-failure">{refusal}</p>}
       {rows.map((t) => (
-        <article key={t.season} className="kb-queue-move" data-kb-state="todo">
+        <article key={t.handover} className="kb-queue-move" data-kb-state="todo">
           <div className="kb-queue-when">
             <p className="kb-queue-countdown">SINCE {shortDate(t.landedAt).toUpperCase()}</p>
           </div>
@@ -383,8 +386,8 @@ function Todos({ rows, onDismissed }: { readonly rows: readonly HandoverTodo[]; 
           </div>
           <div className="kb-queue-act">
             <ButtonRow>
-              <GlassButton to={`/updates?write=handover&season=${t.season}`} aria-label={`Write the announcement for season ${t.season}`}>Write the announcement</GlassButton>
-              <GlassButton busy={busy === t.season} disabled={busy !== null && busy !== t.season} aria-label={`Dismiss the season ${t.season} to-do`} onClick={() => void dismiss(t.season)}>DISMISS</GlassButton>
+              <GlassButton to={`/updates?write=handover&handover=${t.handover}`} aria-label={writeName(t)}>Write the announcement</GlassButton>
+              <GlassButton busy={busy === t.handover} disabled={busy !== null && busy !== t.handover} aria-label={dismissName(t)} onClick={() => void dismiss(t.handover)}>DISMISS</GlassButton>
             </ButtonRow>
           </div>
         </article>

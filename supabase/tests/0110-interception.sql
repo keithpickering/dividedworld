@@ -171,12 +171,15 @@ begin
   if not (select c.relrowsecurity from pg_class c where c.oid = 'staff_quiz_questions'::regclass) then raise exception 'staff_quiz_questions has no row security'; end if;
   if has_table_privilege('authenticated', 'staff_quiz_questions', 'select') or has_table_privilege('anon', 'staff_quiz_questions', 'select') then raise exception 'a client can read the quiz''s answers'; end if;
   -- A reseed replaces the quiz, once.
+  -- (It lists the whole roster, the others by key and name alone, which leave their traits as they were: a persona a reseed leaves out is benched.)
   seed := (select jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb, 'system', jsonb_build_object(
+    'firstBoss', 'ic-boss', 'firstStaff', jsonb_build_array('ic-m1', 'ic-m2', 'ic-m3'),
     'staff', jsonb_build_array(jsonb_build_object('key', 'ic-m1', 'name', 'Intercept Mod One', 'title', 'Mod', 'signature', 'Hi', 'beats', '[]'::jsonb,
       'visitHours', jsonb_build_object('least', 3, 'most', 5), 'challenge', jsonb_build_object('kind', 'quiz', 'questions', 2),
       'quiz', jsonb_build_array(
         jsonb_build_object('question', 'Which is the oldest?', 'choices', jsonb_build_array('Moss', 'Stone', 'Dust'), 'answer', 'Stone'),
-        jsonb_build_object('question', 'Which is the loudest?', 'choices', jsonb_build_array('Drum', 'Mouse'), 'answer', 'Drum')))))));
+        jsonb_build_object('question', 'Which is the loudest?', 'choices', jsonb_build_array('Drum', 'Mouse'), 'answer', 'Drum'))),
+      jsonb_build_object('key', 'ic-boss', 'name', 'Intercept Boss'), jsonb_build_object('key', 'ic-m2', 'name', 'Intercept Mod Two'), jsonb_build_object('key', 'ic-m3', 'name', 'Intercept Mod Three')))));
   perform seed_instance(seed);
   if (select count(*) from staff_quiz_questions where staff = 'ic-m1') is distinct from 2::bigint then raise exception 'a reseed doubled the quiz'; end if;
   -- Refused: the answer is not a choice; too few questions; no quiz for a quiz persona; a quiz for a bribe persona; a choice twice; a single choice.

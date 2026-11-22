@@ -136,27 +136,27 @@ export function loadAlerts(env: GlassEnv, preload: Preload): Promise<ScreenDoc<A
   return beside(preload, async () => ((await env.signedIn()) ? env.api.alertsPage(null) : SIGNED_OUT_DOC));
 }
 
-/** What `/updates`'s address asks: the open update, whether the handover writer is asked for, and its season (only with the writer). */
+/** What `/updates`'s address asks: the open update, whether the handover writer is asked for, and the handover it is for (the `season_handovers` row id, only with the writer). */
 export interface UpdatesAsked {
   readonly update: Id | null;
   readonly write: string | null;
-  readonly season: number | null;
+  readonly handover: number | null;
 }
 
 export function updatesAsked(query: Query): UpdatesAsked {
   const write = query.get('write');
-  const season = Number(query.get('season'));
-  return { update: query.get('update'), write, season: write === 'handover' && Number.isInteger(season) && season > 0 ? season : null };
+  const handover = Number(query.get('handover'));
+  return { update: query.get('update'), write, handover: write === 'handover' && Number.isInteger(handover) && handover > 0 ? handover : null };
 }
 
 export const updatesKey = (query: Query): string => {
   const a = updatesAsked(query);
-  return `${a.update ?? ''}|${a.write ?? ''}|${a.season ?? ''}`;
+  return `${a.update ?? ''}|${a.write ?? ''}|${a.handover ?? ''}`;
 };
 
 export function loadUpdates(env: GlassEnv, query: Query, preload: Preload): Promise<ScreenDoc<UpdatesPage>> {
   const a = updatesAsked(query);
-  return beside(preload, async () => ((await env.signedIn()) ? env.api.updatesPage(a.update, null, a.season) : SIGNED_OUT_DOC));
+  return beside(preload, async () => ((await env.signedIn()) ? env.api.updatesPage(a.update, null, a.handover) : SIGNED_OUT_DOC));
 }
 
 /** What the queue's loader answers a caller who is not an admin: the address exists, so the screen says the queue is for admins (not "can't be found"). */

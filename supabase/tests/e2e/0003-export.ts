@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -415,8 +415,10 @@ test('an instance exported and imported into a fresh database is the same instan
       -- The day it posted, in the pool's ledger (0089).
       insert into pool_spends (day, staff, trigger, post_act, record) select '2030-01-07', 'exp-boss', 'named', id, '{"trims": []}' from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
       -- A handover's to-do an admin dismissed (0090): the handover is a Boss changing, the season it opened.
-      insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) do nothing;
-      insert into handover_dismissals (season, admin) select season, ann from season_handovers order by season limit 1;
+      insert into season_handovers (season, outgoing, boss, how) select (select id from seasons where ends_at is null), 'exp-boss', 'exp-bot', 'rotation' on conflict (season) where cause = 'rollover' do nothing;
+      -- A departure in the same season (0403): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
+      insert into season_handovers (season, outgoing, boss, how, cause) select (select id from seasons where ends_at is null), 'exp-bot', 'exp-boss', 'rotation', 'departure';
+      insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),

@@ -46,13 +46,22 @@ export function openSeasonAhead(): () => void {
  * reactions use (0091). So the kinds the database already holds are seeded beside the instance's own, as
  * they stood before. Where a held kind shares a key or an emoji with one of the instance's, the instance's
  * wins and the held one is left out.
+ *
+ * The same for personas: the seed's roster is the whole staff, and a persona it does not list is benched (0403), with the Boss handed over first. The files here are not about
+ * a roster leaving, and each seeds the roster its own world needs (the placeholder Bosses, FanGaME), so the personas the database already holds are listed beside the instance's own,
+ * by key and name alone (which leaves what an earlier seed wrote as it was), and no file's seed benches what an earlier file left.
  */
 export function scratchSeed(instance: Instance): ReturnType<typeof instanceSeed> {
   const seed = instanceSeed(instance, conduct);
+  const heldStaff = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object('key', staff, 'name', name) order by staff), '[]') from characters where staff_kind = 'persona'`)) as { key: string; name: string }[];
+  // Listing every held persona also re-lists any that an earlier e2e file left benched by a seed (a seed that omitted it), which brings it back, so no e2e file sees departure residue.
+  const listed = new Set(seed.system.staff.map((p) => p.key));
+  // The seed's persona type is the full file; seed_instance reads only the keys a persona has, so the held ones are key and name alone.
+  const system = { ...seed.system, staff: [...seed.system.staff, ...heldStaff.filter((p) => !listed.has(p.key))] as unknown as typeof seed.system.staff };
   const held = JSON.parse(sql(`select coalesce(jsonb_agg(jsonb_build_object('key', key, 'emoji', emoji, 'quadrant', quadrant) order by key), '[]') from reaction_kinds`)) as typeof seed.reactions;
   const keys = new Set(seed.reactions.map((r) => r.key));
   const emoji = new Set(seed.reactions.map((r) => r.emoji));
-  return { ...seed, reactions: [...seed.reactions, ...held.filter((r) => !keys.has(r.key) && !emoji.has(r.emoji))] };
+  return { ...seed, system, reactions: [...seed.reactions, ...held.filter((r) => !keys.has(r.key) && !emoji.has(r.emoji))] };
 }
 
 /** As the service role, or, given an account, as that player, as their session would be. */

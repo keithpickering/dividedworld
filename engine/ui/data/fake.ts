@@ -141,13 +141,13 @@ export interface Seed {
    */
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
   /**
-   * A change of Boss at a season's roll-over (a `season_handovers` row, 0051): the outgoing Boss (null at the first) and the arriving one, by staff key,
+   * A change of Boss at a season's roll-over, or (`cause: 'departure'`) when the outgoing Boss left the instance's roster mid-season (a `season_handovers` row, 0051; 0403 adds its id and cause, ids from 1 in the order seeded): the outgoing Boss (null at the first) and the arriving one, by staff key,
    * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
    * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
    * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0337). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
-  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts> }): void;
+  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts>; cause?: 'rollover' | 'departure' }): void;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -1233,9 +1233,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
   /* ------------------------------------------------------------------ season news ---- */
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
-  const handovers: { readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
-  /** The seasons whose to-do an admin dismissed (`handover_dismissals`). */
+  const handovers: { readonly id: number; readonly cause: 'rollover' | 'departure'; readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
+  /** The handovers whose to-do an admin dismissed (`handover_dismissals`), by the handover's id. */
   const dismissedTodos = new Set<number>();
+  /** The season a handover belongs to: a roll-over opens the one after the roll-overs before it, a departure happens in the one open then (the first season is the seed's). */
+  const seasonOfHandover = (i: number): number => 1 + handovers.slice(0, i + 1).filter((x) => x.cause === 'rollover').length;
   /* The conduct screen's world (0340-0342): open reports, decisions, the re-review list, mail that failed and mail waiting for an address. */
   interface ReportRec { readonly id: number; readonly version: Id; readonly section: string; readonly note: string | null; readonly at: number; readonly reporter?: Id }
   interface DecisionRec { readonly id: number; readonly report: number | null; readonly version: Id | null; readonly account: Id | null; readonly outcome: string; readonly until: number | null; readonly note: string; readonly at: number }
@@ -1267,10 +1269,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function handoverTodos(): HandoverTodo[] {
     const latest = updateActs()[0]?.at ?? -Infinity;
     return handovers.flatMap((h, i): HandoverTodo[] => {
-      const season = i + 2;
-      if (h.outgoing === h.boss || latest > h.at || dismissedTodos.has(season)) return [];
+      const season = seasonOfHandover(i);
+      if (h.outgoing === h.boss || latest > h.at || dismissedTodos.has(h.id)) return [];
       return [{
-        season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossPronouns: staffByKey(h.boss)?.pronouns ?? settings.pronouns, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
+        handover: h.id, cause: h.cause, season, boss: h.boss, bossName: staffByKey(h.boss)?.name ?? h.boss, bossPronouns: staffByKey(h.boss)?.pronouns ?? settings.pronouns, bossWas: h.bossWas, outgoing: h.outgoing, outgoingName: h.outgoing === null ? null : staffByKey(h.outgoing)?.name ?? h.outgoing,
         outgoingPronouns: (h.outgoing === null ? undefined : staffByKey(h.outgoing)?.pronouns) ?? settings.pronouns,
         outgoingOffice: h.outgoing === null ? null : h.outgoingOffice, how: h.how, landedAt: iso(h.at), note: h.note, facts: h.facts,
       }];
@@ -1336,7 +1338,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       out.push({ ...base, kind: 'bossArrived', act: arrived?.id ?? null, thread: arrived?.thread ?? null, seq: arrived?.seq ?? null, at: iso(h.at), season: number, name: staffByKey(h.boss)?.name ?? h.boss, quote: arrived ? String(arrived.payload['body'] ?? '') : null });
       if (h.outgoing !== null) {
         const left = bossPost(h.outgoing, h.at);
-        out.push({ ...base, kind: 'bossLeft', act: left?.id ?? null, thread: left?.thread ?? null, seq: left?.seq ?? null, at: iso(h.at), season: number - 1, name: staffByKey(h.outgoing)?.name ?? h.outgoing, quote: left ? String(left.payload['body'] ?? '') : null });
+        out.push({ ...base, kind: 'bossLeft', act: left?.id ?? null, thread: left?.thread ?? null, seq: left?.seq ?? null, at: iso(h.at), season: h.cause === 'departure' ? number : number - 1, name: staffByKey(h.outgoing)?.name ?? h.outgoing, quote: left ? String(left.payload['body'] ?? '') : null });
       }
     }
     return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || String(a.act ?? '').localeCompare(String(b.act ?? '')));
@@ -3859,11 +3861,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return { cap: 100, waiting, inForce: live, staffCards: staffCards.slice(0, 100), ended, todos: handoverTodos(), more: { waiting: false, inForce: false, staffCards: staffCards.length > 100, ended: false },
         roster: [...characters.values()].filter((c) => c.staff && c.staff.office !== 'developer' && c.staff.office !== 'benched' && c.retiredAt === null).map((c) => ({ staff: c.staff!.key, name: c.name, pronouns: c.pronouns })) } satisfies AdminQueue;
     },
-    dismissHandoverTodo(season) {
+    dismissHandoverTodo(handover) {
       if (!me()?.admin) return refuse('only an admin dismisses a to-do');
-      if (!handovers.some((h, i) => i + 2 === season && h.outgoing !== h.boss)) return refuse(`there is no to-do for season ${season}: its handover did not change the Boss`);
-      dismissedTodos.add(season);
-      return ok({ season });
+      const i = handovers.findIndex((h) => h.id === handover);
+      if (i < 0 || handovers[i]!.outgoing === handovers[i]!.boss) return refuse(`there is no to-do for handover ${handover}: it did not change the Boss`);
+      dismissedTodos.add(handover);
+      return ok({ handover, season: seasonOfHandover(i) });
     },
     holdMove(id) {
       if (!me()?.admin) return refuse('only an admin holds a move');
@@ -4793,12 +4796,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         people: core.characters([...new Set([...acts.values()].flatMap((a) => (a.character === null ? [] : [a.character])))]), openings: core.openingActs(threads), reading: core.reading(threads),
       };
     },
-    updatesPage(update, before, handoverSeason): UpdatesPage {
+    updatesPage(update, before, handover): UpdatesPage {
       const updates = core.updates(before);
       const open = update !== null && updates.some((u) => u.act === update) ? update : updates[0]?.act ?? null;
       return {
         updates, tallies: core.tallies(open === null ? [] : [open]), mine: core.myReactions(open === null ? [] : [open]),
-        ...(handoverSeason !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
+        ...(handover !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
       };
     },
     reportsPage(): ReportsPage | null {
@@ -5517,7 +5520,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
-      handovers.push({ outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member',
+      handovers.push({ id: handovers.length + 1, cause: h.cause ?? 'rollover', outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member',
         note: h.note ?? null, facts: { created: [], merged: [], closed: [], beats: [], moves: [], busiest: [], quietest: [], ...h.facts } });
       /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
       const at = iso(h.at ?? now());

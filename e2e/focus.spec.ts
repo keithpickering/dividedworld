@@ -422,8 +422,9 @@ test('the check sees a focus outline the HUD\'s clip cuts', async ({ page }) => 
   await page.setViewportSize({ width: 1440, height: 900 });
   await page.goto('/b/general');
   await expect(page.getByRole('region', { name: 'Game HUD' })).toBeVisible();
-  /* The bar's clip drawn 14px short of its foot: Menu's and the hand's outlines reach 6px past their foot, 194px down. */
-  await page.addStyleTag({ content: '.kb-hud-bar { clip-path: inset(0 0 14px 0) !important; }' });
+  /* The bar's clip drawn 31px short of its foot: Menu's and the hand's outlines reach 6px past their foot, 177px down (the lower row's place since the
+     right side's restyle, PR #951; it was 194px, and the clip 14px short). */
+  await page.addStyleTag({ content: '.kb-hud-bar { clip-path: inset(0 0 31px 0) !important; }' });
   expect(await hudOutlinesCut(page)).toEqual(expect.arrayContaining([expect.stringMatching(/Menu: its focus outline is cut by \.kb-hud-bar$/u)]));
 });
 

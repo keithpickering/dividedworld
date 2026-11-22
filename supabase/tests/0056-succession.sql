@@ -455,7 +455,7 @@ begin
   -- Even the handover itself failing stops neither: the season keeps the outgoing Boss.
   update characters set retired_at = null where staff_kind = 'persona';
   before_number := (select number from seasons where ends_at is null);
-  create or replace function hand_over(new_season bigint, outgoing text, at timestamptz) returns jsonb language plpgsql as $f$
+  create or replace function hand_over(new_season bigint, outgoing text, at timestamptz, departure boolean default false) returns jsonb language plpgsql as $f$
   begin raise exception 'boom'; end $f$;
   perform pg_temp.roll();
   if (select number from seasons where ends_at is null) is distinct from before_number + 1 then raise exception 'the new season did not open when the handover raised'; end if;
@@ -483,7 +483,7 @@ end $$;
 -- ---- The handover is nobody's to call ----
 do $$
 begin
-  if has_function_privilege('authenticated', 'hand_over(bigint,text,timestamptz)', 'execute') or has_function_privilege('anon', 'hand_over(bigint,text,timestamptz)', 'execute')
+  if has_function_privilege('authenticated', 'hand_over(bigint,text,timestamptz,boolean)', 'execute') or has_function_privilege('anon', 'hand_over(bigint,text,timestamptz,boolean)', 'execute')
      or has_function_privilege('authenticated', 'inheritance_due(text,integer)', 'execute') or has_function_privilege('authenticated', 'rotation_boss(text)', 'execute')
      or has_function_privilege('authenticated', 'nominated_boss(text)', 'execute') or has_function_privilege('authenticated', 'move_owner(uuid)', 'execute') then
     raise exception 'a client can call the handover''s internals';
