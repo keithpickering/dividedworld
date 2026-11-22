@@ -176,7 +176,7 @@ export function resolveList(list, { tl, cues, takes }) {
  * `ending.blackStrike`; a strike inside the black plays over black, and the title is the final strike's); `list.coda` (an array, one entry a cut, in
  * order, `null` or absent for the cut's own take) names a take and where in it for the cut: `{ "take": "b-scrub-3", "from": 2.4, "move": ..., "punch": ... }`.
  * The strike's own punch stays unless the entry gives one. Refused: more entries than cuts (an entry at or after the strike the black begins on), a
- * take that is not on disk, a shot past its take's end.
+ * take that is not on disk, a shot past its take's end unless the entry says `"hold": true` (the take is then held on its last frame, as a row's `hold` is).
  * @param {any[]} cuts the coda's cuts (the timeline's coda node) @param {(any | null)[] | undefined} coda @param {Record<string, TakeInfo>} takes
  */
 export function directCoda(cuts, coda, takes) {
@@ -188,7 +188,8 @@ export function directCoda(cuts, coda, takes) {
     const info = takes[r.take];
     if (!info) throw new Error(`coda cut ${k + 1} names ${r.take}, which is not a take on disk`);
     const from = r.from ?? 0, end = from + cut.frames / F;
-    if (end > info.seconds + 0.5 / F) throw new Error(`coda cut ${k + 1} runs to ${end.toFixed(2)} s of ${r.take}, which is ${info.seconds.toFixed(2)} s`);
+    if (r.hold === true && from >= info.seconds) throw new Error(`coda cut ${k + 1} starts after the end of ${r.take}, which is ${info.seconds.toFixed(2)} s: there is no last frame to hold`);
+    if (r.hold !== true && end > info.seconds + 0.5 / F) throw new Error(`coda cut ${k + 1} runs to ${end.toFixed(2)} s of ${r.take}, which is ${info.seconds.toFixed(2)} s`);
     const out = { ...cut, take: r.take, from };
     delete out.move; delete out.punches;
     if (r.move) out.move = r.move;

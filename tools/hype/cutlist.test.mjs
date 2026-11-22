@@ -170,6 +170,45 @@ test('the committed list is well formed: a take and a place for every row, only 
   assert.ok(list.coda === undefined || Array.isArray(list.coda));
 });
 
+test('the committed list is cut for the v4 script: its nodes are the script`s, it uses only sharp takes, f-fold is cut once, on "Making games is hard!", and the coda is the five leaving posts then all five', async () => {
+  const list = JSON.parse(readFileSync(new URL('../../instances/divided-world/ui/hype/cutlist.json', import.meta.url), 'utf8'));
+  const { commentary: script } = await import(new URL('../../instances/divided-world/ui/hype/commentary.ts', import.meta.url).href);
+  const ids = script.filter((n) => n.role !== 'end').map((n) => n.id);
+  for (const r of list.rows.filter((x) => x.node !== undefined)) assert.ok(ids.includes(r.node), `${r.node} is not a node of the script (${ids.join(', ')}): ${JSON.stringify(r)}`);
+  /* The half-density takes (c-n*, b-*, s-*) are soft; only the o-, g-, f- takes and c-title are sharp. */
+  for (const r of [...list.rows, ...(list.coda ?? [])]) assert.match(r.take, /^(o|g|f)-[a-z0-9-]+$/u, `${r.take} is not one of the sharp takes`);
+  const fold = list.rows.filter((r) => r.take === 'f-fold');
+  assert.equal(fold.length, 1, 'f-fold is cut once in the whole film');
+  assert.equal(fold[0].statement, 16, 'the fold is in the statement that holds "Making games is hard!"');
+  assert.equal(fold[0].sync, 'open', 'the fold`s landing is pinned to the word');
+  assert.equal(typeof fold[0].lead, 'number');
+  assert.ok(!(list.coda ?? []).some((r) => r.take === 'f-fold'));
+  for (const r of list.rows.filter((x) => x.sync !== undefined)) assert.equal(typeof r.expect, 'number', `a pinned landing names the frame it was written for: ${JSON.stringify(r)}`);
+  const first = list.rows[0];
+  assert.deepEqual([first.node, first.take, first.sync], ['v01', 'o-open', 'node-click'], 'the film opens on the click that starts the voice');
+  const gpt2 = list.rows.find((r) => r.take === 'f-gpt2');
+  assert.ok(gpt2 && gpt2.statement !== undefined && gpt2.statement >= 15, 'the You Were Saying? take is late in the montage');
+  /* every statement the list cuts is cut whole */
+  const beats = {};
+  for (const r of list.rows.filter((x) => x.statement !== undefined)) beats[r.statement] = (beats[r.statement] ?? 0) + r.beats;
+  for (const [n, sum] of Object.entries(beats)) assert.equal(sum, 16, `statement ${n} is cut in ${sum} beats`);
+  assert.deepEqual(list.coda.map((r) => r.take), ['f-leave-1', 'f-leave-2', 'f-leave-3', 'f-leave-4', 'f-leave-5', 'f-leave-all']);
+  /* the montage is the frantic half: it ends on the heap, and every whip is one the reader knows */
+  const lastShot = list.rows.filter((r) => r.statement !== undefined).at(-1);
+  assert.match(lastShot.take, /^f-heap-/u, 'the montage ends on the heap');
+  for (const r of list.rows.filter((x) => x.cut !== undefined)) assert.match(r.cut, /^whip-(left|right|up|down)$/u);
+});
+
+test('a coda entry may say "hold": true, and then a take shorter than its chord gap is held on its last frame instead of refused', () => {
+  const cuts = [{ start: 168.62, frames: 178, from: 0, take: 'c-n11' }];
+  const short = { 'f-leave-2': { seconds: 1.8 } };
+  assert.throws(() => directCoda(cuts, [{ take: 'f-leave-2', from: 0 }], short), /coda cut 1.*f-leave-2/);
+  const out = directCoda(cuts, [{ take: 'f-leave-2', from: 0, hold: true }], short);
+  assert.equal(out[0].take, 'f-leave-2');
+  assert.equal(out[0].frames, 178);
+  assert.throws(() => directCoda(cuts, [{ take: 'f-leave-2', from: 1.9, hold: true }], short), /coda cut 1.*starts after/);
+});
+
 test('part one is locked off: a row there with a move is refused, and a take`s own camera is not applied to a shot there', () => {
   const move = { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.25, y: 0.25, w: 0.5, roll: 0 }, ease: 'inOut' };
   const withMove = { ...takes, 'c-n05': { seconds: 1000, landed: [], move, punch: 8 }, 'c-n01': { seconds: 120, landed: [], move, punch: 8, punches: [{ frame: 0, percent: 5 }] } };
