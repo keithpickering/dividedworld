@@ -332,3 +332,6 @@ right under his post; it may be faked or earlier footage reused.
   and blended down, so it is what a shutter would have seen.
 - **The title** is the instance's coin (`instances/divided-world/ui/icon/coin.svg`), "DIVIDED WORLD" in Courier New,
   and "INVITE ONLY". `TITLE_NOTE` and the misspelling go.
+
+**The last line, changed the same day.** The owner replaced the line over black with "a clean punchline": "*sigh* This
+is a bad idea." It answers the rant's last words, "THIS IS A GOOD IDEA!!!"

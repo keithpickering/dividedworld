@@ -164,8 +164,8 @@ export const commentary: readonly Node[] = [
   {
     id: 'v11',
     part: 3,
-    lines: ['*sigh* Well, at least it\'s better than anime.'],
-    caption: ["Well, at least it's better than anime."],
+    lines: ['*sigh* This is a bad idea.'],
+    caption: ['This is a bad idea.'],
   },
 ];
 

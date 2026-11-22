@@ -21,7 +21,7 @@ const SCRIPT: readonly { id: string; part: number; text: string; firstSix: strin
   { id: 'v10b', part: 2, firstSix: 'Sometimes the player plays a card', text: "Sometimes the player plays a card and then it turns out the player you played the card on actually WANTED you to play that card, so you really should've played a different card, or just not played any card at all. And uh, you get some really interesting conversations, at the end of the day. It's a positive experience. We tested this. The testers...okay, I'll level with you, this is the first time we've really tested it." },
   { id: 'v10c', part: 2, firstSix: 'And you know, what do you', text: 'And you know, what do you know, anyway?! You sit there on your gaming chair and you expect everything handed to you on a silver platter.' },
   { id: 'v10d', part: 2, firstSix: 'Making games is hard! Being Gabe,', text: 'Making games is hard! Being Gabe, is hard! I don\'t have to give my "commentary" to you! This is a good idea! THIS IS A GOOD IDEA! THIS IS A GOOD IDEA!!!' },
-  { id: 'v11', part: 3, firstSix: "*sigh* Well, at least it's better", text: "*sigh* Well, at least it's better than anime." },
+  { id: 'v11', part: 3, firstSix: "*sigh* This is a bad idea.", text: "*sigh* This is a bad idea." },
 ];
 
 test('the script is v01 to v09, v10a to v10d, v11, in order, in the calm, frantic and end parts', () => {
@@ -68,8 +68,8 @@ test('the only pauses are v01 (the opening silence, 0) and v06 (4.5 s of angry t
 test('v11 says the sigh and does not caption it; captions drop any *stage direction* elsewhere too', () => {
   const v11 = commentary.find((n) => n.id === 'v11');
   assert.ok(v11);
-  assert.equal(v11.lines.join(' '), "*sigh* Well, at least it's better than anime.");
-  assert.deepEqual(captionLines(v11), ["Well, at least it's better than anime."]);
+  assert.equal(v11.lines.join(' '), "*sigh* This is a bad idea.");
+  assert.deepEqual(captionLines(v11), ["This is a bad idea."]);
   assert.deepEqual(captionLines({ id: 'x', part: 1, lines: ['*cough* Hello.', '*pause*'] }), ['Hello.']);
   for (const n of commentary.filter((x) => x.id !== 'v11')) assert.deepEqual(captionLines(n), n.lines);
 });
