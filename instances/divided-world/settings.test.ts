@@ -39,7 +39,7 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.crowdPayMost, 10);
   assert.equal(defaults.charactersPerPlayer, 6);
   assert.deepEqual(defaults.seasonLength, { unit: 'month', count: 3 });
-  assert.deepEqual(defaults.turnCooldown, { unit: 'day', count: 30 });
+  assert.deepEqual(defaults.turnCooldown, { unit: 'day', count: 21 });
   assert.equal(defaults.registrationMode, 'invite');
   assert.equal(defaults.postMaxLength, 20_000);
   assert.equal(defaults.titleMaxLength, 120);
@@ -49,6 +49,13 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.equal(defaults.presenceNames, 15);
   assert.equal(defaults.presencePollSeconds, 30);
   assert.match(defaults.settlementCron, /^\d+ \d+ \* \* \*$/, 'daily');
+});
+
+test('the clock is the launch design\'s (section 5): settlement at 10:00 UTC, the meeting an hour later, three-month seasons, a Turn every 21 days', () => {
+  assert.equal(defaults.settlementCron, '0 10 * * *');
+  assert.equal(defaults.meetingCron, '0 11 * * *');
+  assert.deepEqual(defaults.seasonLength, { unit: 'month', count: 3 });
+  assert.deepEqual(defaults.turnCooldown, { unit: 'day', count: 21 });
 });
 
 test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
@@ -77,7 +84,7 @@ test('every card set face down stays set a week if nothing springs it', () => {
 test('the playtest overrides are separate values, not edits of the defaults', () => {
   assert.deepEqual(playtestOverrides, { seasonLength: { unit: 'week', count: 3 }, turnCooldown: { unit: 'day', count: 7 } });
   assert.deepEqual(defaults.seasonLength, { unit: 'month', count: 3 });
-  assert.deepEqual(defaults.turnCooldown, { unit: 'day', count: 30 });
+  assert.deepEqual(defaults.turnCooldown, { unit: 'day', count: 21 });
   assert.deepEqual(playtest.seasonLength, { unit: 'week', count: 3 });
   assert.deepEqual(playtest.turnCooldown, { unit: 'day', count: 7 });
   assert.notEqual(playtest, defaults);
@@ -98,8 +105,8 @@ test('every reaction key is unique, plain, and has a quadrant', () => {
   }
 });
 
-test('the system settings are the plan\'s numbers, and the System ships switched off', () => {
-  assert.equal(defaults.systemEnabled, false);
+test('the system settings are the plan\'s numbers, and the System is switched on', () => {
+  assert.equal(defaults.systemEnabled, true);
   assert.match(defaults.meetingCron, /^\d+ \d+ \* \* \*$/, 'daily');
   assert.notEqual(defaults.meetingCron, defaults.settlementCron);
   assert.deepEqual(defaults.phases.honeymoon, { days: 14, weeklyMoves: 2, bankCap: 4, moveExpiryMostDays: 7 });
