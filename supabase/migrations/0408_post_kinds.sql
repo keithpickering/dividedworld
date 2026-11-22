@@ -4,11 +4,11 @@
 --
 --   1. post_kinds            the table: (post, kind) with plays and took, took <= plays. Row-level security on, nothing granted to an API role.
 --   2. play_post_move        moves a kind's counts by the difference between a play's old row and its new one. A second identical refresh moves nothing, in any order of refund, end and spring.
---   3. refresh_play_post     0406's, whole, with the counts (play_post_move) after its upsert and after a row's delete.
+--   3. refresh_play_post     0407's, whole, with the counts (play_post_move) after its upsert and after a row's delete.
 --   4. the draw              a trigger on reaction_tallies adds a tally's change to its play's `drawn`, and one on threads adds a spun thread; an Act that is no play updates nothing; neither reads `reactions` (who reacted stays private).
 --                            react is the one writer of reaction_tallies and only adds, and threads are only inserted with their origin (spin); the triggers also take a count that falls and an origin set later by update, as a signed difference.
 --   5. the backfill
---   6. play_post_drift       0406's, whole, with the two cases for the counts.
+--   6. play_post_drift       0407's, whole, with the two cases for the counts.
 --
 -- Ways out: nothing here is a state a player is in; the counts follow play_post, which follows the Acts.
 -- Masks: a count of plays by kind and by took is a public fact of public Acts; `drawn` sums public tallies and spun threads, never who reacted.

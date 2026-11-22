@@ -4,13 +4,16 @@
  * PPP name style. It reaches the engine as `Instance.system`; the engine never names anything here
  * ("KayfaBB never knows which instance it runs"). The numbers are settings (../settings.ts).
  *
- * The roster holds FanGaME, the first Boss (the FanGaME design), and the placeholder Mod Bot until the Mod roster is
- * written. The three placeholder Bosses are test fixtures (`instances/divided-world/system/fixtures/`), never in the roster.
+ * The roster holds FanGaME, the first Boss (the FanGaME design), then ONTOPIC 5.0 and QC-1000, the first staff. Its
+ * order is the succession's: seed_instance keeps it as `bossRoster` (docs/plans/2026-11-13-launch-design.md, section 4).
+ * The placeholder Bosses and the placeholder Mod Bot are test fixtures (`instances/divided-world/system/fixtures/`),
+ * never in the roster.
  */
 import type { SystemContent } from '../../../engine/rules/types.ts';
 import { deepFreeze } from '../../../engine/rules/instance.ts';
 import { fangame } from './personas/fangame.ts';
-import { placeholderMonitor } from './personas/placeholder-monitor.ts';
+import { ontopic } from './personas/ontopic.ts';
+import { qualityControl } from './personas/quality-control.ts';
 import { feeds } from './feeds.ts';
 import { stockLines } from './lines.ts';
 import { nameStyle, nameStyleBrief } from './name-style.ts';
@@ -20,11 +23,11 @@ import { scrubWords } from './scrub-words.ts';
 import { wheelhouse } from './wheelhouse.ts';
 
 export const system: SystemContent = Object.freeze({
-  roster: deepFreeze([fangame, placeholderMonitor]),
+  roster: deepFreeze([fangame, ontopic, qualityControl]),
   firstBoss: fangame.key,
   offices,
   announcementsTitle: 'Official Announcements',
-  firstStaff: Object.freeze([placeholderMonitor.key]),
+  firstStaff: Object.freeze([ontopic.key, qualityControl.key]),
   // The Boss's own duties stay the season's Boss's; a visit's filing, a report's verdict and a patrol's finding are the Mod on the board's beat, and an appeal is
   // the Mod that filed (the Mod Bots plan, Task 7).
   duties: Object.freeze({ meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'filer', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'filer' } as const),

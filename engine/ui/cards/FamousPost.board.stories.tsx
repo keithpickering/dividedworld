@@ -176,9 +176,9 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
   return opened.thread;
 }
 
-type Open = 'none' | 'first' | 'busiest' | 'more';
+type Open = 'none' | 'first' | 'busiest' | 'more' | 'who' | 'kinds';
 
-/** Opens the famous post's Lens as a reader would: from its first mark, from its busiest kind's tab, or from its "+N"; then unfolds Who. */
+/** Opens the famous post's Lens as a reader would: from its first mark, from its busiest kind's tab, or from its "+N"; then unfolds Who. `who` is the busiest kind with one ended row expanded, and `kinds` the first kind with the All button pressed. */
 function Opener({ open }: { readonly open: Open }) {
   useEffect(() => {
     if (open === 'none') return;
@@ -191,17 +191,27 @@ function Opener({ open }: { readonly open: Open }) {
         mark.click();
         step = 1;
       } else if (step === 1) {
-        if (open === 'busiest') {
+        if (open === 'busiest' || open === 'who') {
           const tab = [...document.querySelectorAll<HTMLElement>('.kb-lens [role="tab"]')].find((t) => /Sugar Coat/u.test(t.getAttribute('aria-label') ?? t.textContent ?? ''));
           if (!tab) return;
           tab.click();
         }
         step = 2;
+      } else if (open === 'kinds') {
+        const all = document.querySelector<HTMLElement>('.kb-lens-all');
+        if (!all) return;
+        clearInterval(timer);
+        if (all.getAttribute('aria-expanded') === 'false') all.click();
       } else {
         const fold = document.querySelector<HTMLElement>('.kb-lens-fold');
         if (!fold) return;
+        if (fold.getAttribute('aria-expanded') === 'false') { fold.click(); return; }
+        if (open === 'who') {
+          const row = document.querySelectorAll<HTMLElement>('.kb-lens-row[data-kb-ended] .kb-lens-compact')[1];
+          if (!row) return;
+          if (row.getAttribute('aria-expanded') === 'false') row.click();
+        }
         clearInterval(timer);
-        if (fold.getAttribute('aria-expanded') === 'false') fold.click();
       }
     }, 100);
     return () => clearInterval(timer);
@@ -257,3 +267,9 @@ export const StripPhone: Story = { args: { open: 'none' }, ...phone };
 export const LensFirstPhone: Story = { args: { open: 'first' }, ...phone };
 export const LensBusiestPhone: Story = { args: { open: 'busiest' }, ...phone };
 export const LensFromMorePhone: Story = { args: { open: 'more' }, ...phone };
+/** Its Lens on Sugar Coat with Who unfolded and one ended row expanded under its compact siblings. */
+export const UnfoldedWho: Story = { args: { open: 'who' } };
+export const UnfoldedWhoPhone: Story = { args: { open: 'who' }, ...phone };
+/** Its Lens with the All button pressed: every kind of card in a grid. */
+export const AllKinds: Story = { args: { open: 'kinds' } };
+export const AllKindsPhone: Story = { args: { open: 'kinds' }, ...phone };

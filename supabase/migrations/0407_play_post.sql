@@ -41,7 +41,7 @@ create index play_post_up on play_post (post, ends_at) where over_at is null;
 
 -- A play's row, computed from the Acts and the rows beside them, or null for an Act that is not a `card` or `set` with a target.
 --
--- Every way a play ends, and the predicate it mirrors. A new ender's author adds its line here, its trigger line below and its case to supabase/tests/0406-play-post.sql, or play_post_drift() names the play.
+-- Every way a play ends, and the predicate it mirrors. A new ender's author adds its line here, its trigger line below and its case to supabase/tests/0407-play-post.sql, or play_post_drift() names the play.
 --   by time          a card's `ends` (payload), or play_reach.ends_at for a card reaching beyond a post, which writes no `ends`; a back's face_down.ends_at; a drive play's drive close (below).   -> ends_at
 --   caught           a card Act with `caught` in its payload never landed (place_cast; the stack's count leaves it out).                                                                   -> over_at = played_at
 --   instant          a card Act with `instant` in its payload is over as it lands (a relief, an unban, a card that cuts; the stack's count leaves it out).                                             -> over_at = played_at

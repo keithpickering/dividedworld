@@ -17,7 +17,19 @@ test('Divided World\'s System content raises no problem', () => {
   assert.deepEqual(instanceProblems(instance).filter((p) => /Boss|bot|Bot|duty|stock|firstStaff|system/.test(p)), []);
 });
 
-const staff = system.roster.filter((p) => system.firstStaff.includes(p.key));
+test('the roster is FanGaME, ONTOPIC 5.0 and QC-1000, in that order', () => {
+  assert.deepEqual(system.roster.map((p) => p.key), ['fangame', 'ontopic', 'quality-control']);
+});
+
+test('the first staff are ONTOPIC 5.0 and QC-1000, and FanGaME is the first Boss', () => {
+  assert.deepEqual(system.firstStaff, ['ontopic', 'quality-control']);
+  assert.equal(system.firstBoss, 'fangame');
+});
+
+test('every beat names a board of the instance', () => {
+  const slugs = instance.boards.map((b) => b.slug);
+  for (const p of system.roster) for (const b of p.beats) assert.ok(slugs.includes(b), `${p.key}: beat ${b}`);
+});
 
 test('the roster\'s only Boss is FanGaME, and he is the first Boss', () => {
   const bosses = system.roster.filter((p) => !system.firstStaff.includes(p.key));
@@ -47,12 +59,8 @@ test('FanGaME\'s pet rules are keys in the predicate catalog', async () => {
   for (const k of fangame.petRules) assert.ok(predicate(k) !== undefined, k);
 });
 
-test('no persona\'s name, key or title says "placeholder" except the first staff, placeholder-monitor', () => {
-  for (const p of system.roster) {
-    const says = [p.name, p.key, p.title].some((t) => /placeholder/i.test(t));
-    assert.equal(says, staff.some((s) => s.key === p.key), p.key);
-  }
-  assert.deepEqual(staff.map((s) => s.key), ['placeholder-monitor']);
+test('no persona on the roster says placeholder', () => {
+  for (const p of system.roster) assert.ok(![p.name, p.key, p.title].some((t) => /placeholder/i.test(t)), p.key);
 });
 
 test('no key in placeholderBosses is in the roster', () => {
@@ -117,13 +125,6 @@ test('the sentence-start guard is red on planted lines', () => {
 
 test('both premises tell the persona to use the pronouns written beside each character\'s name', () => {
   for (const premise of [BOSS_PREMISE, MOD_BOT_PREMISE]) assert.ok(premise.includes('Each character\'s pronouns are written beside its name; use them.'));
-});
-
-test('one placeholder Mod Bot is on staff at the start', () => {
-  const bots = system.roster.filter((p) => system.firstStaff.includes(p.key));
-  assert.equal(bots.length, 1);
-  assert.match(bots[0]!.name, /placeholder/i);
-  assert.deepEqual(system.firstStaff, [bots[0]!.key]);
 });
 
 test('every standing order has a stock line', () => {
@@ -313,10 +314,6 @@ test('the instance passes instanceProblems with the arc in', () => {
   assert.deepEqual(instanceProblems(instance), []);
 });
 
-// The launch's Task 1 adds these boards; until then they are not in `instance.boards`. The launch's Task 4's beat test
-// then holds every beat to `instance.boards`, and the launch's build removes this constant.
-const LAUNCH_SLUGS = ['video-games', 'arts-crafts', 'pointless-post-palace'];
-
 for (const [label, bot] of [['QC-1000', qualityControl], ['ONTOPIC 5.0', ontopic]] as const) {
   test(`${label}'s key, title, signature, pet rules, quiz answers and beats fit the engine`, async () => {
     const { predicate } = await import('../../../engine/rules/predicates.ts');
@@ -326,7 +323,7 @@ for (const [label, bot] of [['QC-1000', qualityControl], ['ONTOPIC 5.0', ontopic
     for (const k of bot.petRules) assert.ok(predicate(k) !== undefined, `${bot.key}: ${k}`);
     assert.equal(bot.weakness.kind, 'quiz');
     if (bot.weakness.kind === 'quiz') for (const q of bot.weakness.questions) assert.ok(q.choices.includes(q.answer), q.question);
-    const slugs = [...instance.boards.map((b) => b.slug), ...LAUNCH_SLUGS];
+    const slugs = instance.boards.map((b) => b.slug);
     assert.ok(bot.beats.length >= 1, `${bot.key}: a Mod Bot with no beats never patrols`);
     for (const b of bot.beats) assert.ok(slugs.includes(b), `${bot.key}: beat ${b}`);
   });

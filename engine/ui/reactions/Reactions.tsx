@@ -84,7 +84,7 @@ const secondsLeft = (p: Pending): number => Math.max(1, Math.ceil((p.due - Date.
 const REACT_STOP = ' react'; /* a space: no reaction key has one */
 
 /** One chip of the row: the kind's key, its words, its emoji, its quadrant, its count (none where the totals are hidden from the reader), and whether a press can still count. */
-interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean; readonly pending: Pending | null }
+export interface Chip { readonly key: string; readonly name: string; readonly emoji: string; readonly quadrant: Quadrant | null; readonly count: number | null; readonly open: boolean; readonly pending: Pending | null }
 
 /** The shards a stamp throws, one every 360/SHARDS degrees (reactions.css lays each by its index). */
 const SHARDS = 8;
@@ -97,26 +97,16 @@ const STAMP_MS = 1400;
 /** The kind that just landed on this screen, and whether it waits for the picker to leave first. */
 interface Landed { readonly key: string; readonly after: boolean }
 
-export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row', plays = NO_PLAYS }: Props) {
-  const { instance, ui, settings } = useKayfa();
+/**
+ * What a post's reactions row draws as chips, and the one line it says under them where a card hides the totals: the tally, the reader's own and pending kinds, and the blind plays' hiding. `Reactions` draws these
+ * as buttons; the Lens's compact ended row draws the same chips as plain text, so whatever hides a total from a reader on the row hides it there too. `author` is the Act's author, for who the reader is to the card.
+ */
+export function useReactionChips(act: Id, author: Id | null, tallies: Tallies, mine: Mine, plays: Plays = NO_PLAYS) {
+  const { instance, ui } = useKayfa();
   const player = usePlayer();
   const tally = useTally(tallies, act);
   const own = useMine(mine, act);
   const waiting = usePending(mine, act);
-  const [open, setOpen] = useState(false);
-  /* The server's words for a reaction refused at its send: under the row until the next press on it. */
-  const [rowRefusal, setRowRefusal] = useState<string | null>(null);
-  const [said, setSaid] = useState('');
-  /* The row's one tab stop: the last tile focused, else React where there is one, else the first tile. */
-  const [stop, setStop] = useState<string | null>(null);
-  const button = useRef<HTMLButtonElement>(null);
-  /* The tooltip of an own sent tile (one open at a time): the kind it stands on, the tile it stands by, and a count that restarts its 3 seconds. */
-  const [tipKind, setTipKind] = useState<string | null>(null);
-  const [tipOpen, setTipOpen] = useState(false);
-  const [tipRestart, setTipRestart] = useState(0);
-  const tipAt = useRef<HTMLElement | null>(null);
-  const row = useRef<HTMLDivElement>(null);
-  const staged = useStaged();
   const theirs = author !== null && player.characters.some((c) => c.id === author);
   /* The cards on this post that change its row (card notes, Part 3): the kinds a card added, and the totals a card hides until a time. */
   const here = usePlays(plays, act).plays;
@@ -151,6 +141,28 @@ export function Reactions({ act, author, authorName = 'this character', tallies,
   const line = blindUntil === null ? null : sees
     ? `Only you${isAuthor && caster ? '' : ` and the ${isAuthor ? 'caster' : 'author'}`} can see these until ${dayAndTime(blindUntil)}.`
     : `Reaction totals are hidden on this post until ${dayAndTime(blindUntil)}.`;
+  return { shown, line, kinds0, own, waiting } as const;
+}
+
+export function Reactions({ act, author, authorName = 'this character', tallies, mine, subject, pickerAt = 'row', plays = NO_PLAYS }: Props) {
+  const { ui, settings } = useKayfa();
+  const player = usePlayer();
+  const { shown, line, kinds0, own, waiting } = useReactionChips(act, author, tallies, mine, plays);
+  const [open, setOpen] = useState(false);
+  /* The server's words for a reaction refused at its send: under the row until the next press on it. */
+  const [rowRefusal, setRowRefusal] = useState<string | null>(null);
+  const [said, setSaid] = useState('');
+  /* The row's one tab stop: the last tile focused, else React where there is one, else the first tile. */
+  const [stop, setStop] = useState<string | null>(null);
+  const button = useRef<HTMLButtonElement>(null);
+  /* The tooltip of an own sent tile (one open at a time): the kind it stands on, the tile it stands by, and a count that restarts its 3 seconds. */
+  const [tipKind, setTipKind] = useState<string | null>(null);
+  const [tipOpen, setTipOpen] = useState(false);
+  const [tipRestart, setTipRestart] = useState(0);
+  const tipAt = useRef<HTMLElement | null>(null);
+  const row = useRef<HTMLDivElement>(null);
+  const staged = useStaged();
+  const theirs = author !== null && player.characters.some((c) => c.id === author);
   const as = staged ? null : player.hudCharacter;
   const canReact = !theirs && (staged || as !== null);
   /* One send for the row and its picker: one queue for the Act (send.ts). A staged page's is its own, below, and sends nothing. */

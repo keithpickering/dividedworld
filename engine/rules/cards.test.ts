@@ -959,8 +959,8 @@ const back = (act: string): CardEffect => ({ card: null, act, faceDown: true, en
 const full = [drawing('a'), drawing('b')];
 const said = postFullWords(2);
 
-test('the database raises the words the rules do (0409_post_effects.sql)', () => {
-  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0409_post_effects.sql'), 'utf8');
+test('the database raises the words the rules do (0410_post_effects.sql)', () => {
+  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0410_post_effects.sql'), 'utf8');
   const raised = /replace\('(this post already shows % effects[^']*)', '%', /.exec(sql);
   assert.ok(raised, 'the migration holds the refusal once, with % for the number');
   for (const n of [1, 2, 8, 16]) assert.equal(raised![1]!.replace('%', String(n)), postFullWords(n), `at ${n}`);

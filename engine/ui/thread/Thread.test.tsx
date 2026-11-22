@@ -587,6 +587,17 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     for (const play of [w.first, w.second, w.third, w.ids[1]]) expect(doc.tallies).toHaveProperty(play!);
   });
 
+  test('a post\'s Lens on the thread page draws no Go to post: the reader is on the page it would lead to', async () => {
+    const w = played();
+    open(w);
+    await waitFor(() => expect(billed(2)).toHaveLength(2));
+    await userEvent.click(within(post(2)).getByRole('button', { name: /^Whoops!, 2 plays\b/u }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /^\d+ plays? · /u }));
+    expect(within(dialog).getAllByRole('button', { name: 'Spin thread' }).length).toBeGreaterThan(0);
+    expect(within(dialog).queryByRole('link', { name: 'Go to post' })).toBeNull();
+  });
+
   test('the play that has drawn the most is billed first; with no draws the newest is', async () => {
     const w = played();
     open(w);

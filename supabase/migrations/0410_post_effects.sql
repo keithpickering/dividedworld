@@ -7,7 +7,7 @@
 --   1. card_kinds.draws_effect   boolean not null default false, as adds_reaction is (0357).
 --   2. effect_state.cleared,     cleared boolean not null default false, cleared_for uuid (null: cleared for every version of the post). The column grant 0357 narrowed to authenticated is kept: the two
 --      cleared_for               new columns are granted beside the three it names (a column added later is granted by the migration that adds it).
---   3. seed_instance             copied whole from 0405_cut.sql: `draws_effect` joins the card insert's columns, values and on-conflict update, from the seed's `drawsEffect`.
+--   3. seed_instance             copied whole from 0406_seed_board_order.sql (its boards take their order from the seed): `draws_effect` joins the card insert's columns, values and on-conflict update, from the seed's `drawsEffect`.
 --   4. card_kinds_problem        copied whole from 0405_cut.sql: a `drawsEffect` that is no boolean is named, where given.
 --   5. settings_held             copied whole from 0395_polls.sql: `postEffects` is a whole number, 1 to 16, in the words of the engine's SETTINGS bound (instance.ts).
 --   6. effect_cleared,           new: whether a play is cleared for a version of its post (the one test); how many effects a post draws in force (the post's play_post rows at post reach, one probe of play_post_up);
@@ -43,7 +43,7 @@ grant select (cleared, cleared_for) on effect_state to authenticated;
 
 -- ---- 3. seed_instance ----
 
--- seed_instance (0405_cut), `draws_effect` joins the card insert's columns, values and on-conflict update, beside `cuts`. Everything else as 0405_cut wrote it.
+-- seed_instance (0406_seed_board_order), `draws_effect` joins the card insert's columns, values and on-conflict update, beside `cuts`. Everything else as 0406_seed_board_order wrote it.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -265,8 +265,10 @@ begin
   -- A seed naming one slug twice is refused by the upsert ("cannot affect row a second time"),
   -- where 0004 took its first; an instance never holds one (instanceProblems).
   if flagged is not null then update boards set is_system = false where is_system and slug <> flagged; end if;
-  insert into boards (slug, name, description, is_system)
-  select e ->> 'slug', e ->> 'name', coalesce(e ->> 'description', ''), coalesce(e ->> 'slug' = flagged, false) from jsonb_array_elements(payload -> 'boards') e
+  insert into boards (slug, name, description, is_system, created_at)
+  select b.e ->> 'slug', b.e ->> 'name', coalesce(b.e ->> 'description', ''), coalesce(b.e ->> 'slug' = flagged, false),
+         now() + make_interval(secs => b.i / 1000000.0)
+  from jsonb_array_elements(payload -> 'boards') with ordinality b(e, i)
   on conflict (slug) do update set is_system = true where excluded.is_system and not boards.is_system;
   -- A pip style is added or renamed, never removed: a profile may name it.
   insert into pip_styles (key, name, full_image, empty_image)
@@ -1259,7 +1261,7 @@ begin
       if kind_of.stack = 1 then raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
       raise exception 'this post already carries % of that card, the most it takes', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
     end if;
-    -- A play that draws an effect takes a slot on the post, and the post's row is held, so two plays racing for the last slot land one at a time (post_room_words, 0409).
+    -- A play that draws an effect takes a slot on the post, and the post's row is held, so two plays racing for the last slot land one at a time (post_room_words, 0410).
     if kind_of.draws_effect then
       full_words := post_room_words(target);
       if full_words is not null then raise exception '%', full_words using hint = 'kayfabb.refusal', errcode = '23505'; end if;
@@ -1617,7 +1619,7 @@ begin
              and not exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = f.play::text)) then
     raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
   end if;
-  -- A back holds a slot like a drawing effect, so a post at its limit takes none; the post's row is held above, so a play racing for the last slot lands one at a time (post_room_words, 0409).
+  -- A back holds a slot like a drawing effect, so a post at its limit takes none; the post's row is held above, so a play racing for the last slot lands one at a time (post_room_words, 0410).
   full_words := post_room_words(target);
   if full_words is not null then raise exception '%', full_words using hint = 'kayfabb.refusal', errcode = '23505'; end if;
   -- A post that holds a live No quote takes no back until it ends (public: the play is a face-up card on the post). The refusal names the card and its end, the same for every setter.

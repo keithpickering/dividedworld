@@ -144,7 +144,7 @@ test('strokes are checked by the card that was played, and saved by the service'
   assert.equal(stateless.status, 400, 'Stick Around keeps no state');
 });
 
-test('a save says whether it clears the effect, and for which version of the post (0409)', async () => {
+test('a save says whether it clears the effect, and for which version of the post (0410)', async () => {
   const saved = (calls: string[]) => JSON.parse(calls.filter((c) => c.startsWith('service:save_effect_state:')).at(-1)!.slice('service:save_effect_state:'.length)) as Record<string, unknown>;
   const clean = pair({ whoami, card_of_play: 'whoops', save_effect_state: { play: target } });
   await runAction(clean.dbs, instance, { action: 'saveEffect', play: target, character: id, state: { strokes: [], clean: true } });

@@ -1,4 +1,4 @@
--- A reaction or a spun thread never loses its draw to a refresh of the same play (supabase/migrations/0407_post_kinds.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 2).
+-- A reaction or a spun thread never loses its draw to a refresh of the same play (supabase/migrations/0408_post_kinds.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 2).
 -- refresh_play_post writes `drawn` from play_row's read, and the two draw triggers add to it, so a trigger that ran between the refresh's read and its write would be lost. Both take the per-play advisory lock the refresh holds.
 -- Staged without a barrier: one session holds the play's lock open, a second writes a tally (and then a spun thread) in autocommit and must wait on it; then the holder commits and the draw must be there. The rows are committed, in the scratch database the run drops.
 create function pg_temp.waits_on(lockname text, conn text) returns void language plpgsql as $$

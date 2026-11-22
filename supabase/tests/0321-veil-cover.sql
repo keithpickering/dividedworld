@@ -178,7 +178,7 @@ begin
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
     insert into threads (id, board, title) select %7$L, b.id, 'Vc race' from boards b where b.slug = 'general';
     insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('vcrace', 'Vc Race Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1);
-    -- Race (c)'s other character plays a card of its own kind: plays of one kind on one post share their count's row (post_kinds, 0407), which place_cast's lock on the post already serializes; the race is about the veil's lock, not that row.
+    -- Race (c)'s other character plays a card of its own kind: plays of one kind on one post share their count's row (post_kinds, 0408), which place_cast's lock on the post already serializes; the race is about the veil's lock, not that row.
     insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack) values ('vcother', 'Vc Race Other Card', 'salty', 'common', 'cast', '{post}', interval '3 days', 3);
     insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "A post a veil lands on first."}'), (%9$L, %4$L, 'post', %7$L, '{"body": "A post an edit lands on first."}'),
       (%10$L, %4$L, 'post', %7$L, '{"body": "A post another character acts on."}'), (%11$L, %4$L, 'post', %7$L, '{"body": "A post a back springs on while a veil lands."}');

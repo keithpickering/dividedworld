@@ -291,7 +291,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   /* The strip is drawn on the date row, and again by a card that lifts the post out of its thread (Stick Around): the same node, each with its own Lens owner. */
   const marks = isPost(act.kind)
     ? <PostMarks
-        post={act.id} ghost={act} plays={plays} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
+        post={act.id} ghost={act} plays={plays} to={null} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine} onSpin={(play, name, opener) => setSpinOrigin({ id: play.id, label: name, opener })}
         visit={visit} modPronouns={visit ? pronounsOf(visit.mod) : undefined} author={act.character} thread={thread} onSpinAct={(id, label, opener) => setSpinOrigin({ id, label, opener })} ask={ask}
         {...(reportTo ? { reportTo } : {})}
       />
@@ -303,7 +303,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   const shown = useReachShown(plays, isPost(act.kind) && !standIn ? act.character : null, 'character');
   const characterMarks = useMemo(() => (shown && isPost(act.kind) && act.character !== null
     ? <PostMarks
-        post={act.character} postAt={act.createdAt} plays={plays} compare={false} to={href} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
+        post={act.character} postAt={act.createdAt} plays={plays} compare={false} to={null} nameOf={casterName} faceOf={faceOf} tallies={tallies} mine={mine}
         reachAt={{ reach: 'character', target: act.character, name, ...(person ? { pronouns: person.character.pronouns } : {}), fromPost: act, thread, board: summary.board, title: summary.title, to: href, plays, know: know ?? (async () => {}), focusBack: () => document.getElementById(`post-${seq}`) }}
         onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener, at: act.id })}
       />
@@ -368,7 +368,7 @@ export function ThreadHead({ pager }: { readonly pager: ReactNode }) {
         <h1 ref={title} tabIndex={-1} className="kb-heading kb-thread-title">{summary.title}</h1>
         {shown && <span className="kb-thread-head-marks">
           <PostMarks
-            post={thread} plays={plays} compare={false} to={to} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
+            post={thread} plays={plays} compare={false} to={null} nameOf={nameOf} faceOf={faceOf} tallies={tallies} mine={mine}
             reachAt={{ reach: 'thread', target: thread, name: `“${summary.title}”`, fromPost: null, thread: null, board: summary.board, starter: summary.firstCharacter, title: summary.title, to, plays, know: know ?? (async () => {}), focusBack: () => title.current }}
             onSpin={(play, label, opener) => setSpinOrigin({ id: play.id, label, opener })}
           />

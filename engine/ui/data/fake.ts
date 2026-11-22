@@ -560,8 +560,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const now = () => base() + offset;
   const span = (s: Span) => s.count * (s.unit === 'minute' ? MINUTE : s.unit === 'hour' ? 60 * MINUTE : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 
-  let counter = 0;
+  /** Begins at 2, where the first instance's two boards left it, so every id the content was given before boards had a sequence of their own is still the one a pinned seed was chosen on. */
+  let counter = 2;
   const uuid = () => `00000000-0000-4000-8000-${(++counter).toString(16).padStart(12, '0')}`;
+  /** A board's id, from a sequence of its own (the variant nibble 8001): an instance with more boards moves no id of the content made after them, so a story that pins a seed (a dent's shape is a hash of its play's id) draws the same whatever the instance holds. */
+  let boardCounter = 0;
+  const boardUuid = () => `00000000-0000-4000-8001-${(++boardCounter).toString(16).padStart(12, '0')}`;
 
   /* ---------------------------------------------------------------------- state ---- */
   const accounts = new Map<Id, AccountRec>();
@@ -603,7 +607,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const seasons: Season[] = [{ id: 1, number: 1, startsAt: iso(START), endsAt: null, turnsThread: null, revealAct: null }];
   let lastSettled: number | null = null;
   let nextSettlement: number | null = null;
-  const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
+  const boards: Board[] = options.instance.boards.map((b) => ({ id: boardUuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
@@ -1922,7 +1926,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0149), and no card named. */
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /**
-   * A play as the kept row of it reads (play_post, 0406; post_kinds, 0407): its kind (a card's key, '' for a back, which never names its card), the moment an event or its time ends it, whether it took, whether a back sprang, and how much it
+   * A play as the kept row of it reads (play_post, 0407; post_kinds, 0408): its kind (a card's key, '' for a back, which never names its card), the moment an event or its time ends it, whether it took, whether a back sprang, and how much it
    * has drawn (public reaction sums and the threads spun from it). In force while no event has ended it and its time is unset or ahead.
    */
   interface PlayRow { readonly act: ActRec; readonly kind: string; readonly over: boolean; readonly ends: number | null; readonly took: boolean; readonly sprung: boolean; readonly drawn: number }
@@ -1969,7 +1973,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { riders, ends };
   };
   /**
-   * post_plays (0408), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
+   * post_plays (0409), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
    * not, the springs and take-backs of the backs, the `card_end` of each, each once in the order of their dates; and a count for each kind. A back is one kind, '' to the rows and a null card to the reader, counted once sprung.
    */
   function postPlaysOf(posts: readonly Id[], at: number): PostPlaysRead {
@@ -1997,7 +2001,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((k) => ({ post: k.post, card: k.card, all: k.all, took: k.took }));
     return { plays: [...plays, ...riders, ...ends].sort(byDate).map(publicAct), counts };
   }
-  /** kind_plays (0408): a post's plays of a kind (null for backs) that are not in force, newest first, strictly before the cursor, at most `size` clamped to 1..50, with what a row of the Lens's Who reads. */
+  /** kind_plays (0409): a post's plays of a kind (null for backs) that are not in force, newest first, strictly before the cursor, at most `size` clamped to 1..50, with what a row of the Lens's Who reads. */
   function kindPage(post: Id, card: string | null, before: { readonly at: string; readonly id: Id } | null, size: number): KindPage {
     const lim = Number.isFinite(size) ? Math.max(1, Math.min(50, Math.trunc(size))) : 20;
     const at = now();
@@ -5856,7 +5860,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     board(slug, name, description = `About ${name}`) {
       if (boards.some((x) => x.slug === slug)) throw new Error(`there is a board ${slug} already`);
-      boards.push({ id: uuid(), slug, name, description, isSystem: false, moveAct: null });
+      boards.push({ id: boardUuid(), slug, name, description, isSystem: false, moveAct: null });
     },
     moveThread(thread, slug, o) {
       const t = threads.get(thread);

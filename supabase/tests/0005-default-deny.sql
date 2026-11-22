@@ -163,15 +163,15 @@ declare
                            'post_kind(text)',
                            -- The ids of the Acts that cut a given list of plays (0405), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.
                            'cutting_acts(uuid[])',
-                           -- The plays on a post (0408). The three definers behind the reads read the kept rows (play_post, post_kinds), which no API role does, and answer ids and counts alone, for any list of posts and the same for every caller:
+                           -- The plays on a post (0409). The three definers behind the reads read the kept rows (play_post, post_kinds), which no API role does, and answer ids and counts alone, for any list of posts and the same for every caller:
                            -- a post's plays in force and each kind's two stand-ins (the ids), a post's counts by kind, and the springs and take-backs of a list of backs (the ids). They are granted because thread_page, a security invoker, calls them
                            -- as the signed-in player, and the Acts themselves are read through acts_public as the caller.
                            'post_play_ids(uuid[])', 'post_kind_counts(uuid[])', 'play_rider_ids(uuid[])',
-                           -- A page of a kind's plays that are over on a post (0408): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
+                           -- A page of a kind's plays that are over on a post (0409): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
                            'kind_play_ids(uuid,text,timestampwithtimezone,uuid,integer)',
-                           -- A post's plays and counts in one read (0408): the plays of up to 200 posts, in force and each kind's stand-ins, with their riders, through acts_public. An invoker for a signed-in player, writing nothing, the same for every caller.
+                           -- A post's plays and counts in one read (0409): the plays of up to 200 posts, in force and each kind's stand-ins, with their riders, through acts_public. An invoker for a signed-in player, writing nothing, the same for every caller.
                            'post_plays(uuid[])',
-                           -- A kind's older plays on a post, a page at a time (0408): an invoker for a signed-in player, writing nothing; the page is the same for every caller but for the caller's own reactions (`mine`), read through my_reactions.
+                           -- A kind's older plays on a post, a page at a time (0409): an invoker for a signed-in player, writing nothing; the page is the same for every caller but for the caller's own reactions (`mine`), read through my_reactions.
                            'kind_plays(uuid,text,timestampwithtimezone,uuid,integer)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
@@ -240,7 +240,7 @@ begin
   if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
 end $$;
 
--- The kept rows of a post's plays (0406) are no API role's, and the check that holds them to the Acts is the service role's alone: not in `callable`, since no client calls it.
+-- The kept rows of a post's plays (0407) are no API role's, and the check that holds them to the Acts is the service role's alone: not in `callable`, since no client calls it.
 do $$
 begin
   if not exists (select 1 from pg_class c where c.relname = 'play_post' and c.relnamespace = 'public'::regnamespace and c.relrowsecurity) then raise exception 'play_post has no row-level security'; end if;
@@ -252,7 +252,7 @@ begin
   end if;
 end $$;
 
--- How many effects a post draws (0409) is the service role's alone: the chatter function reads it to offer no drawing cast on a full post. The helpers under it are no role's.
+-- How many effects a post draws (0410) is the service role's alone: the chatter function reads it to offer no drawing cast on a full post. The helpers under it are no role's.
 do $$
 begin
   if has_function_privilege('anon', 'post_effects_up(uuid)', 'execute') or has_function_privilege('authenticated', 'post_effects_up(uuid)', 'execute') or not has_function_privilege('service_role', 'post_effects_up(uuid)', 'execute') then
@@ -263,7 +263,7 @@ begin
   end if;
 end $$;
 
--- The kept counts of a post's plays by kind (0407) are no API role's either.
+-- The kept counts of a post's plays by kind (0408) are no API role's either.
 do $$
 begin
   if not exists (select 1 from pg_class c where c.relname = 'post_kinds' and c.relnamespace = 'public'::regnamespace and c.relrowsecurity) then raise exception 'post_kinds has no row-level security'; end if;

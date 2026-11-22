@@ -273,7 +273,9 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
  * the one and is redrawn for its own opening and closing alone.
  */
 export function PostMarks({ post, plays, to, nameOf, faceOf, tallies, mine, ghost, reachAt, where = reachAt?.reach ?? 'post', postAt, compare = true, moments = true, then, onSpin, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, author = null, thread, onSpinAct, ask = null, reportTo }: {
-  readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly postAt?: string; readonly compare?: boolean; readonly plays: Plays; readonly to: string | null; readonly nameOf: (character: Id | null) => string;
+  readonly post: Id; readonly ghost?: Act; readonly reachAt?: ReachAt; readonly where?: string; readonly postAt?: string; readonly compare?: boolean; readonly plays: Plays;
+  /** Where the Lens's Go to post leads: null where the Lens is on the page the post is on (a thread page's post, postbit and head), so none is drawn. */
+  readonly to: string | null; readonly nameOf: (character: Id | null) => string;
   /** A character's picture URL, or null for none: the Lens draws it by the name. */
   readonly faceOf: (character: Id | null) => string | null;
   /** Whether a play's Lens row offers As it landed: not in an ORIGIN box that already draws the play's moment. */

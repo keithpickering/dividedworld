@@ -5,6 +5,7 @@
  * draws them. The HUD is drawn for place only and is 01-main's.
  *
  * Departures, each a decision:
+ *  - The build's bar and table are Divided World's own seven boards (instances/divided-world/index.ts, the launch design), where the board draws two: the staff board's link stands 638.05px further right, and the table five rows (63.17px each) taller, 315.87px, with Staff Announcements' row and everything under the table that far lower again. That is the content the instance holds, not a place the drawing moved.
  *  - The build's nav is named Main (its aria-label), the board's Boards.
  *  - The board's host, "dw.gripe", stands at the banner's right with the meter; the build's tagline of that name stands beside the name and
  *    the build's own address (the page's host) is what stands at the right, so the tagline is compared by its type alone.
@@ -29,22 +30,22 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'position' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav', box: 'position' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 638.05 } },
     { id: 'title', role: 'heading', name: 'Index' },
-    { id: 'boards', role: 'table', name: 'Boards', type: false, buildShift: { height: 25.63 } },
+    { id: 'boards', role: 'table', name: 'Boards', type: false, buildShift: { height: 341.5 } },
     { id: 'head-board', role: 'columnheader', name: 'Board', within: 'boards' },
     { id: 'head-threads', role: 'columnheader', name: 'Threads', within: 'boards' },
     { id: 'head-last', role: 'columnheader', name: 'Last post', within: 'boards' },
     { id: 'general', role: 'link', name: 'General', within: 'boards' },
     { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', within: 'boards', box: 'position' },
-    { id: 'system', role: 'link', name: 'Staff Announcements', within: 'boards', box: 'height', type: false, buildShift: { y: 21.81 } },
+    { id: 'system', role: 'link', name: 'Staff Announcements', within: 'boards', box: 'height', type: false, buildShift: { y: 337.69 } },
     { id: 'system-tag', role: 'text', name: 'Staff post here; you react and spin', within: 'boards', box: 'none', type: false },
     { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', within: 'boards', box: 'position', buildShift: { x: -22.77, y: 18.38 } },
     { id: 'last-time', role: 'link', name: 'Oct 6, 2026', buildName: 'Oct 6, 2026 — latest post in General', within: 'boards', box: 'position', buildShift: { y: 19.63 } },
     { id: 'none-yet', role: 'text', name: 'None yet', within: 'boards', box: 'none' },
-    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 21.05 } },
-    { id: 'online-note', role: 'text', name: 'Characters active in the past 5 minutes', box: 'position', buildShift: { y: 26.33 } },
-    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 26.39 } },
+    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 336.92 } },
+    { id: 'online-note', role: 'text', name: 'Characters active in the past 5 minutes', box: 'position', buildShift: { y: 342.2 } },
+    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 342.27 } },
   ],
 };
 

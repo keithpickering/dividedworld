@@ -96,8 +96,28 @@ const lensProblems = (dialog: HTMLElement) => {
   return viewProblems({ progress: null, state: dialog.querySelector('.kb-lens-line')!.textContent!, ends: dialog.querySelector('.kb-lens-ends')?.textContent ?? 'never', yours: false, controls: [], notes }, { holds: false, covers: false });
 };
 const tab = (name: string) => within(lens()).getByRole('tab', { name });
+/** Unfolds an ended play's compact row (an ended play is one button until it is pressed). */
+const unfold = (id: Id) => userEvent.click(lens().querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
 const whoButton = () => within(lens()).getByRole('button', { name: /^\d+ plays? · / });
 const rows = () => [...lens().querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play')!);
+/**
+ * A post's Lens off the thread page, where Go to post leads somewhere (a spun thread's ORIGIN box, the board index): the strip with a `to`, over a store of
+ * one Card 2 play in force. On the thread page the Lens is drawn with `to={null}` (the reader is on the post's page), so Go to post is read here.
+ */
+const offPage = (to: string | null) => {
+  const w = world();
+  const plays = createPlays();
+  const payload = { card: 'k2', message: 'off the page' };
+  plays.add([{ character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null, id: 'off-page', kind: 'card', payload, currentPayload: payload }]);
+  plays.setBilling(w.second, ['off-page']);
+  renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to={to} nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
+  return w;
+};
+const offPageLens = async (to: string | null = `/t/elsewhere?page=1#post-2`) => {
+  offPage(to);
+  await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+  await userEvent.click(whoButton());
+};
 
 describe('opening and closing', () => {
   test('a mark opens the Lens on its tab, and the mark says it is open', async () => {
@@ -459,6 +479,119 @@ describe('what the Lens says and offers', () => {
     expect(rows()).toEqual([three, two, one]);
   });
 
+  describe('Who in two groups', () => {
+    const HOUR = 3_600_000;
+    const heads = () => [...lens().querySelectorAll('.kb-lens-group-head')].map((h) => h.textContent);
+    /** The group each row sits in, by its heading ('' where it sits in no group). */
+    const groupOf = (id: Id) => lens().querySelector(`[data-kb-play="${id}"]`)!.closest('.kb-lens-group')?.querySelector('.kb-lens-group-head')?.textContent ?? '';
+
+    test('one in force and two ended unfold to Up now, then Ended with the newest played first', async () => {
+      width(false);
+      const w = world();
+      w.fake.seed.admin(w.me);
+      w.fake.clock.advance(2 * HOUR);
+      const timed = w.fake.seed.card(w.spritey, w.second, 'k2', { message: 'timed', ends: new Date(w.fake.clock.now() - HOUR).toISOString() });
+      w.fake.clock.advance(60_000);
+      const adminEnded = w.play('k2', w.gloomba);
+      expect((await w.fake.reverseCard(adminEnded)).ok).toBe(true);
+      const up = w.play('k2', w.pipe);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      expect(heads()).toEqual(['Up now', 'Ended · 2']);
+      expect(rows()).toEqual([up, adminEnded, timed]);
+      expect(groupOf(up)).toBe('Up now');
+      expect(groupOf(adminEnded)).toBe('Ended · 2');
+      expect(groupOf(timed)).toBe('Ended · 2');
+    });
+
+    test('a kind with every play in force draws no heading', async () => {
+      width(false);
+      const w = world();
+      const a = w.play('k2');
+      const b = w.play('k2', w.gloomba);
+      w.fake.seed.react(w.me, w.pipe, a, 'fire');
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      expect(rows()).toEqual([a, b]);
+      expect(heads()).toEqual([]);
+    });
+
+    test('a kind with every play ended draws Ended and no Up now', async () => {
+      width(false);
+      const w = world();
+      w.fake.seed.admin(w.me);
+      const a = w.play('k2');
+      const b = w.play('k2', w.gloomba);
+      expect((await w.fake.reverseCard(a)).ok).toBe(true);
+      expect((await w.fake.reverseCard(b)).ok).toBe(true);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 2'));
+      await userEvent.click(whoButton());
+      expect(heads()).toEqual(['Ended · 2']);
+      expect(rows()).toEqual([b, a]);
+    });
+
+    test('a stacking card keeps its up-now rows in layer order, top first, with an ended layer in Ended', async () => {
+      width(false);
+      const w = world();
+      w.fake.seed.admin(w.me);
+      const one = w.play('k1', w.spritey, w.second, 1);
+      const two = w.play('k1', w.gloomba, w.second, 2);
+      const three = w.play('k1', w.pipe, w.second, 3);
+      expect((await w.fake.reverseCard(two)).ok).toBe(true);
+      open(w);
+      await userEvent.click(await markOf(2, 'Card 1'));
+      await userEvent.click(whoButton());
+      expect(heads()).toEqual(['Up now', 'Ended · 1']);
+      expect(rows()).toEqual([three, one, two]);
+      expect(groupOf(two)).toBe('Ended · 1');
+    });
+
+    test('an ORIGIN box moment, where then holds the kind\'s plays, draws no heading', async () => {
+      width(false);
+      const w = world();
+      w.fake.clock.advance(2 * HOUR);
+      const plays = createPlays();
+      const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+      const gone = { card: 'k2', ends: new Date(w.fake.clock.now() - HOUR).toISOString() };
+      const held = { card: 'k2', ends: new Date(w.fake.clock.now() + HOUR).toISOString() };
+      plays.add([
+        { ...base, id: 'moment-a', kind: 'card', payload: gone, currentPayload: gone },
+        { ...base, id: 'moment-b', kind: 'card', payload: held, currentPayload: held },
+        { ...base, id: 'moment-a-undone', kind: 'card_end', targetActId: 'moment-a', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+      ]);
+      plays.setBilling(w.second, ['moment-a', 'moment-b']);
+      renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} then={new Set(['moment-a', 'moment-b'])} /></LensProvider>, { path: '/', instance, cards });
+      await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 2 plays/u }));
+      await userEvent.click(whoButton());
+      expect(rows()).toHaveLength(2);
+      expect(heads()).toEqual([]);
+    });
+
+    test('a play the moment holds is judged as it stood, so the box\'s other play of its kind draws no Ended beside it', async () => {
+      width(false);
+      const w = world();
+      w.fake.clock.advance(2 * HOUR);
+      const plays = createPlays();
+      const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+      const gone = { card: 'k2', ends: new Date(w.fake.clock.now() - HOUR).toISOString() };
+      const held = { card: 'k2', ends: new Date(w.fake.clock.now() + HOUR).toISOString() };
+      plays.add([
+        { ...base, id: 'moment-a', kind: 'card', payload: gone, currentPayload: gone },
+        { ...base, id: 'moment-b', kind: 'card', payload: held, currentPayload: held },
+        { ...base, id: 'moment-a-undone', kind: 'card_end', targetActId: 'moment-a', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+      ]);
+      plays.setBilling(w.second, ['moment-a', 'moment-b']);
+      renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} then={new Set(['moment-a'])} /></LensProvider>, { path: '/', instance, cards });
+      await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 2 plays/u }));
+      await userEvent.click(whoButton());
+      expect(rows()).toHaveLength(2);
+      expect(heads()).toEqual([]);
+    });
+  });
+
   test('a row says who played it in capitals, when, the message, the card\'s note and the threads spun', async () => {
     width(false);
     const w = world();
@@ -475,7 +608,8 @@ describe('what the Lens says and offers', () => {
     expect(row.querySelector('.kb-lens-note')).toHaveTextContent('Layer 1 of 3, on top');
     expect(await within(row).findByText('1 thread spun from this play')).toBeInTheDocument();
     expect(within(row).getByRole('link', { name: 'All about the ink' })).toHaveAttribute('href', expect.stringMatching(/^\/t\//u));
-    expect(within(row).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+    /* The reader is on the post's page: Go to post would lead nowhere new, so the thread page's Lens draws none. */
+    expect(within(row).queryByRole('link', { name: 'Go to post' })).toBeNull();
   });
 
   test('an ink too dark for the glass is drawn lifted, on the open tab and the row, so their words and edges read', async () => {
@@ -581,7 +715,7 @@ describe('what the Lens says and offers', () => {
     expect(within(other).getByRole('button', { name: 'React' })).toBeInTheDocument();
   });
 
-  test('every play of a kind is reachable by Spin thread and Go to post from its row', async () => {
+  test('every play of a kind is reachable by Spin thread from its row, and the thread page draws no Go to post', async () => {
     width(false);
     const w = world();
     w.play('k2', w.spritey); w.play('k2', w.gloomba); w.play('k2', w.pipe);
@@ -590,16 +724,22 @@ describe('what the Lens says and offers', () => {
     await userEvent.click(whoButton());
     expect(rows()).toHaveLength(3);
     expect(within(lens()).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(3);
-    expect(within(lens()).getAllByRole('link', { name: 'Go to post' })).toHaveLength(3);
+    expect(within(lens()).queryAllByRole('link', { name: 'Go to post' })).toHaveLength(0);
+  });
+
+  test('a Lens given a post to lead to draws Go to post on its row; one given none draws no Go to post', async () => {
+    width(false);
+    await offPageLens('/t/elsewhere?page=1#post-2');
+    expect(within(lens()).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', '/t/elsewhere?page=1#post-2');
+    cleanup();
+    await offPageLens(null);
+    expect(within(lens()).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(lens()).queryByRole('link', { name: 'Go to post' })).toBeNull();
   });
 
   test('every control in a row is the kit\'s skewed tile, as Hold to scrub is: React, Spin thread and Go to post speak one shape', async () => {
     width(false);
-    const w = world();
-    w.play('k2', w.spritey); w.play('k2', w.gloomba);
-    open(w);
-    await userEvent.click(await markOf(2, 'Card 2'));
-    await userEvent.click(whoButton());
+    await offPageLens();
     const controls = [...lens().querySelectorAll<HTMLElement>('.kb-lens-row :is(button, a)')];
     expect(controls.map((c) => c.textContent)).toEqual(expect.arrayContaining(['+ React', 'Spin thread', 'Go to post']));
     for (const c of controls) {
@@ -976,6 +1116,7 @@ describe('As it landed', () => {
     await userEvent.click(whoButton());
     expect(within(lens()).queryByText('live view')).toBeNull();
     expect(within(lens()).queryByRole('button', { name: 'live press' })).toBeNull();
+    await unfold(k1);
     await userEvent.click(landedButton(k1));
     await frame();
     /* The moment draws the play as it stood, so it is not over there: its view, its control. */
@@ -1441,6 +1582,25 @@ describe('a visit\'s tab', () => {
     return w.fake.seed.infraction(w.visit, { points: 2 });
   };
 
+  test('the kinds grid lists the visit\'s tab first, with no count, ahead of the cards', async () => {
+    const w = visited();
+    w.play('k1');
+    openVisit(w);
+    await userEvent.click(await visitMark(w.seq));
+    const l = screen.getByRole('dialog', { name: /^Visit and cards/u });
+    const row = within(l).getByRole('tablist');
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 700 });
+    fireEvent.scroll(row);
+    await userEvent.click(await within(l).findByRole('button', { name: 'All 2' }));
+    const items = [...l.querySelectorAll<HTMLElement>('.kb-lens-kinds li')];
+    expect(items).toHaveLength(2);
+    expect(items[0]!.querySelector('.kb-lens-kind-name')!.textContent).toMatch(/^On a visit/u);
+    expect(items[0]!.querySelector('.kb-lens-kind-count')).toBeNull();
+    expect(items[1]!.querySelector('.kb-lens-kind-name')!.textContent).toBe('Card 1');
+    expect(items[1]!.querySelector('.kb-lens-kind-count')!.textContent).toBe('1');
+  });
+
   test('the visit\'s tab is busy while the story is read, and its panel then enters whole: no aria-busy block, no "Reading"', async () => {
     const w = visited();
     openVisit(w);
@@ -1479,6 +1639,22 @@ describe('a visit\'s tab', () => {
     await userEvent.click(within(l).getByRole('tab', { name: 'On a visit' }));
     await waitFor(() => expect(within(l).getByRole('tab', { name: 'On a visit' })).toHaveAttribute('aria-selected', 'true'));
     expect(within(l).queryByText('That didn\u2019t load. Try again.')).toBeNull();
+  });
+
+  test('a kind chosen from the grid whose read fails leaves the open tab open, with focus on it, never on the page', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    vi.spyOn(w.fake, 'visitStory').mockRejectedValueOnce(new Error('offline'));
+    const row = within(l).getByRole('tablist');
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 700 });
+    fireEvent.scroll(row);
+    await userEvent.click(await within(l).findByRole('button', { name: 'All 2' }));
+    await userEvent.click(within(l).getByRole('button', { name: /^On a visit/u }));
+    expect(await within(l).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
+    const open = within(l).getByRole('tab', { name: 'Card 1' });
+    expect(open).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(open).toHaveFocus());
   });
 
   test('pressing another tab while the visit is read does not take the reader back when it lands', async () => {
@@ -2131,24 +2307,21 @@ describe('the buttons, odd and even', () => {
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
     const tiles = () => [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
     const spans = () => tiles().filter((t) => t.hasAttribute('data-kb-span'));
-    expect(tiles()).toHaveLength(4);
-    expect(spans()).toHaveLength(0);
-    /* One tile gone (a card with no moment to look at): three are left, and the last stands across the row. */
-    await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
+    /* On the thread page: React, Spin thread and As it landed (no Go to post), and the last stands across the row. */
     expect(tiles()).toHaveLength(3);
     await waitFor(() => expect(spans()).toEqual([tiles()[2]]));
     expect(ruleOf(".kb-lens-row-foot [data-kb-span]")).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
+    /* One tile gone (a card with no moment to look at): two are left, and none spans. */
+    await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
+    expect(tiles()).toHaveLength(2);
+    await waitFor(() => expect(spans()).toHaveLength(0));
   });
 });
 
 describe('the buttons', () => {
-  test('a play\'s four actions are one grid of two by two, React, Spin thread, As it landed, Go to post, every one a tile', async () => {
+  test('a play\'s four actions off the thread page are one grid of two by two, React, Spin thread, As it landed, Go to post, every one a tile', async () => {
     width(false);
-    const w = world();
-    w.play('k2', w.spritey);
-    open(w);
-    await userEvent.click(await markOf(2, 'Card 2'));
-    await userEvent.click(whoButton());
+    await offPageLens();
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
     const tiles = [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
     expect(tiles.map((t) => t.textContent?.trim())).toEqual(['+ React', 'Spin thread', 'As it landed', 'Go to post']);
@@ -2194,7 +2367,9 @@ describe('a play that did not take', () => {
     w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
     drawn(w);
     await openW();
+    /* The folded row says it on its second line; opened, the full row carries the reactions and no End. */
     expect(within(row(lost)).getByText("Didn't take. Its text never arrived, so it is not in effect on this post.")).toBeInTheDocument();
+    await unfold(lost);
     expect(within(row(lost)).queryByRole('button', { name: 'End this card' })).toBeNull();
     expect(within(row(live)).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
     expect(within(row(live)).queryByText(/Didn't take/u)).toBeNull();
@@ -2496,8 +2671,13 @@ describe('the discipline cards\' Lens', () => {
     expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
     expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
     /* It is a play like any: reacted to and spun from, and it names the caster. */
-    expect(within(l).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(2);
-    expect(l).toHaveTextContent('Gloomba · played');
+    /* A spent play says what it did on line 2, folded. */
+    expect(l.querySelector(`[data-kb-play="${two.id}"] .kb-lens-compact-line`)!.textContent).toContain('Took 2 warn points');
+    for (const id of [two.id, one.id]) {
+      await userEvent.click(l.querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
+      expect(within(l.querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(1);
+    }
+    expect(l).toHaveTextContent(/Gloomba\s*played/u);
   });
 
   test('a Super Happy Heart says all it took, and an Unban says it ended the ban and when', async () => {
@@ -2885,6 +3065,7 @@ describe('a spent kind', () => {
     await openMark();
     await userEvent.click(whoButton());
     expect(heading()).toBe('Smoke over the words');
+    await unfold('gone');
     expect(within(rowOf('gone')).getByText(`Ended ${dayAndTime(at.past)}.`)).toBeInTheDocument();
     expect(within(rowOf('live')).queryByText(/^Ended /u)).toBeNull();
     expect(problems()).toEqual([]);
@@ -3026,9 +3207,13 @@ describe('a Gimmick a cutting card ended', () => {
     renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
     return plays;
   }
-  const rowLines = async (name: RegExp) => {
+  const rowLines = async (name: RegExp, compact = true) => {
     await userEvent.click(await screen.findByRole('button', { name }));
     await userEvent.click(whoButton());
+    /* The one play of this tab is an ended row: compact, and it fails here if it is not. */
+    const folded = lens().querySelector<HTMLElement>('button.kb-lens-compact');
+    expect(folded !== null).toBe(compact);
+    if (folded) await userEvent.click(folded);
     return lens().textContent ?? '';
   };
 
@@ -3036,6 +3221,22 @@ describe('a Gimmick a cutting card ended', () => {
     width(false);
     strip();
     expect(await rowLines(/^Card 3, 1 play/u)).toContain('Ended the Card 2 here early');
+  });
+
+  test("the cutting play's folded row says which card it ended on line 2, before it is opened", async () => {
+    width(false);
+    strip();
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 3, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(lens().querySelector('[data-kb-play="cutting"] .kb-lens-compact-line')?.textContent).toContain('Ended the Card 2 here early');
+  });
+
+  test("a cut play's folded row says its fate on line 2", async () => {
+    width(false);
+    strip();
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(lens().querySelector('[data-kb-play="gimmick"] .kb-lens-compact-line')!.textContent).toContain('Ended early by a Card 3');
   });
 
   test("the cut play's row says what ended it early, where an admin's end would read Ended by an admin", async () => {
@@ -3050,7 +3251,7 @@ describe('a Gimmick a cutting card ended', () => {
     width(false);
     const plays = strip();
     act(() => { plays.setEnded(['cutting']); });
-    const text = await rowLines(/^Card 2, 1 play/u);
+    const text = await rowLines(/^Card 2, 1 play/u, false);
     expect(text).not.toContain('Ended early by');
     expect(text).not.toContain('Ended by an admin');
     /* The cutting play's own row no longer says it ended anything. */
@@ -3063,5 +3264,323 @@ describe('a Gimmick a cutting card ended', () => {
     strip();
     await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
     expect(lens().querySelector('.kb-lens-line')!.textContent).toBe('Ended early');
+  });
+});
+
+describe('ended rows', () => {
+  /* The compact row (docs/plans/2026-11-20-lens-who-rows-design.md, decision 4): an ended play is one disclosure button until it is pressed. */
+  const day = (ms: number) => new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const rowOf = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+  const buttonOf = (id: Id) => rowOf(id).querySelector<HTMLButtonElement>('button.kb-lens-compact')!;
+  const lineOf = (id: Id) => rowOf(id).querySelector('.kb-lens-compact-line');
+  const fireEmoji = instance.reactions.find((r) => r.key === 'fire')!.emoji;
+  /** A kind whose plays an admin ended: Who is opened, and each id is a row. */
+  async function ended(count: number, before: (w: World, ids: readonly Id[]) => void = () => {}) {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const ids: Id[] = [];
+    const by = [w.spritey, w.gloomba, w.pipe];
+    for (let i = 0; i < count; i++) ids.push(w.play('k2', by[i]!));
+    const playedAt = w.fake.clock.now();
+    before(w, ids);
+    for (const id of ids) expect((await w.fake.reverseCard(id)).ok).toBe(true);
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    return { w, ids, playedAt };
+  }
+
+  test('is one button, folded, with the caster, the date without a time and the message, and no control of a full row', async () => {
+    const { ids, playedAt } = await ended(1);
+    const id = ids[0]!;
+    expect(rowOf(id).querySelectorAll('button')).toHaveLength(1);
+    expect(buttonOf(id)).not.toBeNull();
+    const b = buttonOf(id);
+    expect(b).toHaveAttribute('aria-expanded', 'false');
+    expect(b).toHaveAttribute('aria-controls');
+    expect(b.textContent).toContain('Spritey');
+    expect(b.textContent).toContain(day(playedAt));
+    expect(b.textContent).not.toMatch(/\d:\d\d/u);
+    expect(within(rowOf(id)).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+    expect(within(rowOf(id)).queryByRole('button', { name: /As it landed/u })).toBeNull();
+    expect(within(rowOf(id)).queryByRole('button', { name: /^React/u })).toBeNull();
+  });
+
+  test('the head says how the play was made, with the day: played, or set face down', async () => {
+    const { ids, playedAt } = await ended(1);
+    expect(buttonOf(ids[0]!).querySelector('.kb-lens-compact-head')!.textContent).toContain(`played ${day(playedAt)}`);
+  });
+
+  test('a count hidden from this reader is the emoji alone on line 2', async () => {
+    width(false);
+    const hiding = { ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'kb', name: 'Card B', veil: 'totals' as const, lasts: { unit: 'day' as const, count: 3 } }] };
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const store = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const gone = { card: 'k2', message: 'old' };
+    const veil = { card: 'kb', ends: new Date(w.fake.clock.now() + 86_400_000).toISOString() };
+    /* A play on the ended play, whose caster is neither the reader nor the author, hides the totals from the reader on that play's row. */
+    store.add([
+      { ...base, id: 'old', kind: 'card' as const, payload: gone, currentPayload: gone },
+      { ...base, id: 'old-end', kind: 'card_end' as const, targetActId: 'old', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+      { ...base, id: 'veil', kind: 'card' as const, character: w.gloomba, targetActId: 'old', payload: veil, currentPayload: veil },
+    ]);
+    store.setBilling(w.second, ['old']);
+    const tallies = createTallies();
+    const mine = createMine();
+    tallies.merge('old', { fire: 3 });
+    mine.add({ act: 'old', kind: 'fire', character: w.pipe });
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={store} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={tallies} mine={mine} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance: hiding, cards });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u }));
+    await userEvent.click(whoButton());
+    expect(rowOf('old').querySelector('.kb-lens-compact-chips')!.textContent).toBe(fireEmoji);
+    /* Opened, the full row's reactions hide the same total: what line 2 hid is never read below it. */
+    await userEvent.click(within(rowOf('old')).getByRole('button', { expanded: false }));
+    const full = rowOf('old').querySelector<HTMLElement>('.kb-reactions')!;
+    expect(full).not.toBeNull();
+    expect(full.textContent).not.toMatch(new RegExp(`${fireEmoji}\\s*3`, 'u'));
+    expect(full).toHaveTextContent('Reaction totals are hidden');
+  });
+
+  test('an open row says its note once: line 2 keeps its chips and gives up its words', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    expect(lineOf(id)!.textContent).toContain('Ended by an admin');
+    await userEvent.click(buttonOf(id));
+    expect(within(rowOf(id)).getAllByText('Ended by an admin')).toHaveLength(1);
+  });
+
+  test('a play an admin ended says so on line 2 in place of its message', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    expect(lineOf(id)!.textContent).toContain('Ended by an admin');
+    expect(buttonOf(id).textContent).not.toContain('k2 by');
+  });
+
+  test('a message with nothing else to say is line 2, and a play with neither draws no line 2', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(2 * 3_600_000);
+    const past = new Date(w.fake.clock.now() - 3_600_000).toISOString();
+    const said = w.fake.seed.card(w.spritey, w.second, 'k2', { message: 'said so', ends: past });
+    w.fake.clock.advance(60_000);
+    const mute = w.fake.seed.card(w.gloomba, w.second, 'k2', { ends: past });
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    expect(lineOf(said)!.textContent).toContain('said so');
+    expect(buttonOf(mute).querySelector('.kb-lens-compact-line')).toBeNull();
+  });
+
+  test('a play that did not take says its note on line 2', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const store = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const payload = { card: 'k2', message: 'quiet words' };
+    store.add([{ ...base, id: 'never', kind: 'card' as const, payload, currentPayload: payload, untaken: true }]);
+    store.setBilling(w.second, ['never']);
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={store} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u }));
+    await userEvent.click(whoButton());
+    expect(lineOf('never')!.textContent).toContain(UNTAKEN_STATE);
+    expect(lineOf('never')!.textContent).not.toContain('quiet words');
+  });
+
+  test('reactions are each kind\'s emoji and its count on line 2, as text; none draws no chips', async () => {
+    const { ids } = await ended(2, (w, [first]) => {
+      w.fake.seed.react(w.me, w.pipe, first!, 'fire');
+      w.fake.seed.react(w.thirdAccount, w.gloomba, first!, 'fire');
+    });
+    const reacted = ids[0]!;
+    const withChips = lineOf(reacted)!;
+    expect(withChips.textContent).toContain(`${fireEmoji} 2`);
+    expect(withChips.querySelector('button, a')).toBeNull();
+    const bare = ids.find((i) => i !== reacted)!;
+    expect(rowOf(bare).querySelector('.kb-lens-compact-line')?.textContent ?? '').not.toContain(fireEmoji);
+  });
+
+  test('pressing it opens the full row under its head, with React, Spin thread and As it landed; pressing again folds it', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    await userEvent.click(buttonOf(id));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+    const body = document.getElementById(buttonOf(id).getAttribute('aria-controls')!)!;
+    expect(within(body).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(body).getByRole('button', { name: /^React/u })).toBeInTheDocument();
+    expect(within(body).getByRole('button', { name: /As it landed/u })).toBeInTheDocument();
+    expect(buttonOf(id)).toHaveFocus();
+    await userEvent.click(buttonOf(id));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'false');
+    expect(within(rowOf(id)).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+  });
+
+  test('opening a second ended row folds the first', async () => {
+    const { ids } = await ended(2);
+    const [a, b] = ids as [Id, Id];
+    await userEvent.click(buttonOf(a));
+    await userEvent.click(buttonOf(b));
+    expect(buttonOf(a)).toHaveAttribute('aria-expanded', 'false');
+    expect(buttonOf(b)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('changing tab and coming back shows every ended row folded', async () => {
+    const { ids } = await ended(1, (w) => { w.play('k3'); });
+    const id = ids[0]!;
+    await userEvent.click(buttonOf(id));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(tab('Card 3'));
+    await userEvent.click(tab('Card 2'));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('Enter and Space on the focused row expand it', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    buttonOf(id).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.keyboard('{Enter}');
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.keyboard(' ');
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+  });
+});
+
+describe('the kinds grid', () => {
+  /* Twelve kinds, so the tab row can outrun the Lens; k5 has a play that has run its time, k2 has two plays in force. */
+  const TWELVE = Array.from({ length: 12 }, (_, i) => `c${i + 1}`);
+  const many = { ...testInstance, cards: TWELVE.map((key, i) => ({ ...testInstance.cards[0]!, key, name: `Card ${i + 1}` })) };
+  const manyUi = TWELVE.map((k) => cardUi(k));
+  const crowded = () => {
+    const w = (() => {
+      const fake = buildWorld(undefined, many);
+      const me = fake.seed.account('me');
+      const other = fake.seed.account('other');
+      const spritey = fake.seed.character(other, 'Spritey', 'face');
+      fake.seed.character(me, 'Pipewrench', 'heel');
+      const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+      const second = fake.seed.post(thread, spritey, 'post 2');
+      fake.signInAs(me);
+      return { fake, spritey, thread, second };
+    })();
+    for (const k of TWELVE) {
+      w.fake.clock.advance(60_000);
+      const ended = k === 'c5' ? { ends: new Date(w.fake.clock.now() - HOUR_MS).toISOString() } : {};
+      w.fake.seed.card(w.spritey, w.second, k, { message: `${k} by ${w.spritey}`, ...ended });
+      if (k === 'c2') { w.fake.clock.advance(60_000); w.fake.seed.card(w.spritey, w.second, k, { message: 'again' }); }
+    }
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: many, cards: manyUi });
+    return w;
+  };
+  const HOUR_MS = 3_600_000;
+  /** The tab row, laid out by hand (jsdom lays nothing out): wider than its box, so the tabs overflow. */
+  const overflow = (el: HTMLElement, wide: boolean) => {
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: wide ? 700 : 330 });
+    fireEvent.scroll(el);
+  };
+  const opened = async () => {
+    width(false);
+    crowded();
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^\+\d+ more cards/u }));
+    return within(lens()).getByRole('tablist');
+  };
+  const allButton = () => within(lens()).queryByRole('button', { name: /^All \d+$/u });
+  const entries = () => [...lens().querySelectorAll<HTMLElement>('.kb-lens-kinds li')];
+
+  test('no All button while the tabs fit; "All 12" when they do not', async () => {
+    const row = await opened();
+    overflow(row, false);
+    expect(allButton()).toBeNull();
+    overflow(row, true);
+    const all = await within(lens()).findByRole('button', { name: 'All 12' });
+    expect(all).toHaveAttribute('aria-expanded', 'false');
+    expect(all).toHaveAttribute('aria-controls', lens().querySelector('[role="tabpanel"]')!.id);
+    expect(all.compareDocumentPosition(within(lens()).getByRole('button', { name: 'Close' })) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(all.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).not.toBe(0);
+  });
+
+  test('pressing it shows every kind in the tabs\' order, each with its count and an up-now sign where a play is in force', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const tabsOrder = within(row).getAllByRole('tab').map((t) => t.textContent!);
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    expect(within(lens()).getByRole('button', { name: 'All 12' })).toHaveAttribute('aria-expanded', 'true');
+    expect(entries()).toHaveLength(12);
+    expect(entries().map((li) => li.querySelector('.kb-lens-kind-name')!.textContent)).toEqual(tabsOrder);
+    const of = (name: string) => entries().find((li) => li.querySelector('.kb-lens-kind-name')!.textContent === name)!;
+    expect(of('Card 2').querySelector('.kb-lens-kind-count')!.textContent).toBe('2');
+    expect(of('Card 2').textContent).toContain('2 up now');
+    expect(of('Card 7').querySelector('.kb-lens-kind-count')!.textContent).toBe('1');
+    expect(of('Card 7').textContent).toContain('1 up now');
+    expect(of('Card 7').querySelector('.kb-lens-kind-up')).toHaveAttribute('aria-hidden', 'true');
+    /* A kind whose one play has run its time shows its count and no sign. */
+    expect(of('Card 5').querySelector('.kb-lens-kind-count')!.textContent).toBe('1');
+    expect(of('Card 5').querySelector('.kb-lens-kind-up')).toBeNull();
+    expect(of('Card 5').textContent).not.toContain('up now');
+    /* The tabs stay: the selected one stays selected and the panel is named by All. */
+    expect(within(row).getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true')).toHaveLength(1);
+    expect(lens().querySelector('[role="tabpanel"]')).toHaveAttribute('aria-labelledby', within(lens()).getByRole('button', { name: 'All 12' }).id);
+    expect(within(lens()).queryByRole('button', { name: /plays? · / })).toBeNull();
+  });
+
+  test('choosing an entry opens its tab, hides the grid and puts focus on the tab', async () => {
+    const row = await opened();
+    overflow(row, true);
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    await userEvent.click(within(entries().find((li) => li.querySelector('.kb-lens-kind-name')!.textContent === 'Card 7')!).getByRole('button'));
+    expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
+    expect(tab('Card 7')).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(tab('Card 7')).toHaveFocus());
+    expect(within(lens()).getByRole('button', { name: 'All 12' })).toHaveAttribute('aria-expanded', 'false');
+    expect(lens().querySelector('[role="tabpanel"]')).toHaveAttribute('aria-labelledby', tab('Card 7').id);
+  });
+
+  test('Esc closes the grid and leaves the Lens open with focus on All; Esc again closes the Lens; All again closes the grid', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const all = await within(lens()).findByRole('button', { name: 'All 12' });
+    await userEvent.click(all);
+    expect(entries()).toHaveLength(12);
+    await userEvent.keyboard('{Escape}');
+    expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
+    expect(lens()).toBeInTheDocument();
+    expect(all).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^\+\d+ more cards/u }));
+    overflow(within(lens()).getByRole('tablist'), true);
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    await userEvent.click(within(lens()).getByRole('button', { name: 'All 12' }));
+    expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
+    expect(lens()).toBeInTheDocument();
+  });
+
+  test('choosing the tab already open still scrolls it into view and focuses it, once the select has landed', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const selected = within(row).getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')!;
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    const into = vi.mocked(Element.prototype.scrollIntoView);
+    into.mockClear();
+    await userEvent.click(within(entries().find((li) => li.querySelector('.kb-lens-kind-name')!.textContent === selected.textContent)!).getByRole('button'));
+    await waitFor(() => expect(selected).toHaveFocus());
+    expect(into.mock.instances).toContain(selected);
+    expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
+  });
+
+  test('a Lens on a form draws no All button', async () => {
+    width(false);
+    const w = world();
+    open(w);
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: 'Report' }));
+    const panel = await screen.findByRole('dialog', { name: 'Report this post' });
+    overflow(within(panel).getByRole('tablist'), true);
+    expect(within(panel).queryByRole('button', { name: /^All \d+$/u })).toBeNull();
   });
 });

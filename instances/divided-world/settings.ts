@@ -26,14 +26,15 @@ export const defaults: Settings = deepFreeze<Settings>({
   /** At most 0.20 orb a day, about a common card a week from reacting alone. */
   crowdPayMost: 10,
   charactersPerPlayer: 6,
-  /** Daily, at 08:17 UTC: the small hours across the Americas, when the board is quietest. */
-  settlementCron: '17 8 * * *',
+  /** Daily, at 10:00 UTC: overnight across the Americas and mid-morning in Europe, so Aura is waiting when players wake (the launch design, section 5). */
+  settlementCron: '0 10 * * *',
   /** Hourly, at a minute of its own, so the count never lands with the settlement's. */
   viewCountCron: '41 * * * *',
   /** One day a window, matching the daily settlement. */
   settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 },
-  turnCooldown: { unit: 'day', count: 30 },
+  /** About four Turns a season. */
+  turnCooldown: { unit: 'day', count: 21 },
   registrationMode: 'invite',
   /** Three open invites a player, each open for a week; an admin any number (the screens' design, section 12). */
   invitesPerPlayer: 3,
@@ -57,8 +58,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   searchLanguage: 'english',
   /** A relevance search ranks the newest 5,000 matches: a common word fills that at once, so a busy instance pays for 5,000 rows, never for millions. */
   searchRankPool: 5000,
-  /** Switched off: The System holds no meeting and lands no move until Task 13 of its plan turns it on, after the screens that show a move's way out exist. */
-  systemEnabled: false,
+  /** On: the System plan's Task 13, at launch (the launch design, section 5). */
+  systemEnabled: true,
   /** The instance runs a completion endpoint, so a card that writes in the old voice is sold and played. */
   oldVoice: true,
   startingPack: 'starter',
@@ -76,8 +77,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   cardWriteTopUps: 3,
   /** A character a player makes starts with it/its, as every character did before pronouns; its player changes it on the character's page. */
   pronouns: PRONOUN_PRESETS.it,
-  /** Daily, at 09:23 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
-  meetingCron: '23 9 * * *',
+  /** Daily, at 11:00 UTC, an hour after the settlement, so the Boss's digest holds the newest standings. */
+  meetingCron: '0 11 * * *',
   /**
    * The ramp of a season: a gentle two-week honeymoon, a long reign, a three-week meltdown. Starting points
    * the season review replaces with what the cast does. A move's longest run grows with the phase: a week in

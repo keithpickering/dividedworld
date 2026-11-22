@@ -82,7 +82,7 @@ const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
 const ID_CHUNK = 100;
 /** The most posts one `post_tails` call takes (0149). */
 const TAILS_CALL = 200;
-/** The most posts one `post_plays` call takes (0408); a longer list is read in calls of this many, run together. */
+/** The most posts one `post_plays` call takes (0409); a longer list is read in calls of this many, run together. */
 const POST_PLAYS_CALL = 200;
 const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
 /**
@@ -1574,7 +1574,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return wanted.length === 0 ? [] : (await endsByTarget(wanted)).map(toAct);
     },
     async postPlays(posts) {
-      /* post_plays (0408) holds a call to 200 posts, which a page's posts always are: a longer list is read in calls of that many, run together. The calls hold disjoint posts, and every play and rider belongs to one post, so no play comes twice. Each call's plays arrive as the server orders them, by date and id, so the merge keeps that order; one call's failure fails the whole read. */
+      /* post_plays (0409) holds a call to 200 posts, which a page's posts always are: a longer list is read in calls of that many, run together. The calls hold disjoint posts, and every play and rider belongs to one post, so no play comes twice. Each call's plays arrive as the server orders them, by date and id, so the merge keeps that order; one call's failure fails the whole read. */
       const wanted = [...new Set(posts)].filter(idOk);
       if (wanted.length === 0) return { plays: [], counts: [] };
       const parts = Array.from({ length: Math.ceil(wanted.length / POST_PLAYS_CALL) }, (_, i) => wanted.slice(i * POST_PLAYS_CALL, (i + 1) * POST_PLAYS_CALL));

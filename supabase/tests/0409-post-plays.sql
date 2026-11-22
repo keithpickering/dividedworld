@@ -1,4 +1,4 @@
--- post_plays, kind_plays, and thread_page through them (supabase/migrations/0408_post_plays.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 3; design docs/plans/2026-11-21-post-plays-design.md, sections 1, 2, 5 and 6).
+-- post_plays, kind_plays, and thread_page through them (supabase/migrations/0409_post_plays.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 3; design docs/plans/2026-11-21-post-plays-design.md, sections 1, 2, 5 and 6).
 --   * A cast with no end, played after 30 ended Uses, is on the thread page (the cap of eight plays is gone). Red against 0402's thread_page, which keeps the oldest eight.
 --   * A post with several kinds: the plays in force exactly, each kind's two stand-ins (the newest play, and the most drawn, a tie to the newer), the counts; a heart and a character card; an ended one only as a stand-in.
 --   * An admin-ended play is not in force, is the stand-in when newest, and its card_end rides.
@@ -8,7 +8,7 @@
 --     backs page with `card` null; `spun` and `cast` come with a page.
 --   * thread_page's plays for a post equal post_plays's, and its origin's likewise; its `counts` and the origin's are the counts.
 --   * The kept tables are no signed-in player's, and an anonymous visitor reaches none of the reads.
--- The cards are this file's own (ppl...). The row bounds of the reads are in 0408-post-plays-scale.sql.
+-- The cards are this file's own (ppl...). The row bounds of the reads are in 0409-post-plays-scale.sql.
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin

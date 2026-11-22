@@ -1,4 +1,4 @@
--- The database holds the limit on a post's drawn effects (supabase/migrations/0409_post_effects.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 10; design docs/plans/2026-11-21-post-plays-design.md, section 4).
+-- The database holds the limit on a post's drawn effects (supabase/migrations/0410_post_effects.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 10; design docs/plans/2026-11-21-post-plays-design.md, section 4).
 -- At postEffects 2:
 --   * card_kinds.draws_effect and effect_state.cleared and cleared_for exist; card_kinds_problem names a drawsEffect that is no boolean; postEffects is held by the settings.
 --   * Two drawing casts land and a third is refused in the words; a mark-only cast lands on the full post.
@@ -7,7 +7,7 @@
 --   * reverse_card frees a slot; so does a play whose `ends` passes.
 --   * A Move whose quoting post is full does not spring and its back stays set; with room, it springs.
 --   * card_target shows `drawing` and `cleared`.
--- The cards are this file's own (pe...). The race for the last slot is 0409-post-effects-race.sql.
+-- The cards are this file's own (pe...). The race for the last slot is 0410-post-effects-race.sql.
 
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin

@@ -1,4 +1,4 @@
--- play_post: a row for each play on a post, from one definition (supabase/migrations/0406_play_post.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 1; design docs/plans/2026-11-21-post-plays-design.md, sections 1 and 2).
+-- play_post: a row for each play on a post, from one definition (supabase/migrations/0407_play_post.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 1; design docs/plans/2026-11-21-post-plays-design.md, sections 1 and 2).
 --   * Each way a play ends gives the row its `over_at` or `ends_at`, and play_post_drift() is empty after each: time; a caught cast; an instant; reverse_card; refund_card_write; a pierce play spent by its caster's next cast;
 --     a set sprung (by a cast and by a quote); take_back; a back whose time passes; a drive a second play joins (both plays' ends_at move to the new close); a cut (Buzzkill), and the cutting play's reversal brings the cut play back.
 --   * A character card's row is on the post it was played from, with its reach; a thread card's is on its first post; a back's row has `kind = ''` and holds no card.

@@ -753,7 +753,7 @@ begin
     if exists (select 1 from acts_public x where x.id in (pl_good, pl_ended, p) and x.untaken) then raise exception 'a play that took, or one an admin ended, or a post, reads as untaken'; end if;
     perform tests.unbecome();
   end loop;
-  -- The thread page's plays carry it. The page carries a post's plays in force and each kind's newest and most drawn (0408; before it, the post's oldest eight whatever their state), and a play that did not take is over,
+  -- The thread page's plays carry it. The page carries a post's plays in force and each kind's newest and most drawn (0409; before it, the post's oldest eight whatever their state), and a play that did not take is over,
   -- so the refunded play is on the page as its kind's most drawn: a reaction to it makes it so, and the test then reads the flag off a play the page carries.
   insert into reaction_tallies (act, kind, count) values (pl_bad, 'up', 1);
   perform tests.become(cat);
