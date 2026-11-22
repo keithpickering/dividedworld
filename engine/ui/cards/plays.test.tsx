@@ -996,6 +996,11 @@ describe('nextEnd wakes at a back\'s or a lockout\'s end', () => {
     expect(nextEnd([back({ endsAt: at(NOW_MS + 500), revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS) } })], NOW_MS)).toBeNull();
     expect(nextEnd([sprungTo(at(NOW_MS - 1))], NOW_MS)).toBeNull();
   });
+
+  test('a back with no endsAt, or one that does not parse, schedules no wake', () => {
+    expect(nextEnd([back({ endsAt: null })], NOW_MS)).toBeNull();
+    expect(nextEnd([back({ endsAt: 'not a time' })], NOW_MS)).toBeNull();
+  });
   test('the soonest of a mix', () => {
     expect(nextEnd([play({ ends: at(NOW_MS + 900) }), back({ endsAt: at(NOW_MS + 300) }), sprungTo(at(NOW_MS + 600))], NOW_MS)).toBe(NOW_MS + 300);
     expect(nextEnd([play({ ends: at(NOW_MS + 900) }), back({ endsAt: at(NOW_MS + 800) }), sprungTo(at(NOW_MS + 600))], NOW_MS)).toBe(NOW_MS + 600);
