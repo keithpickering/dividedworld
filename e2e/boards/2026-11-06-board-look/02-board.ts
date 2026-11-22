@@ -6,6 +6,7 @@
  * them. The HUD is drawn for place only and is 01-main's.
  *
  * Departures, each a decision:
+ *  - The build's bar is Divided World's own seven boards (instances/divided-world/index.ts, the launch design), so the staff board's link stands after the five boards the drawing never held: 638.05px further right than the board draws it at 305.06px. That is the content the instance holds, not a place the drawing moved.
  *  - The build's nav is named Main (its aria-label), the board's Boards.
  *  - The board's host and tagline are as in 01-index, and are not repeated here.
  *  - The story's backend clock stands at Oct 29, so a thread is hot on replies this week only if it has them within it: the threads are dated a
@@ -36,7 +37,7 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 638.05 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8 } },
     { id: 'title', role: 'heading', name: 'General', box: 'position', buildShift: { y: 44 } },
     { id: 'about', role: 'text', name: 'Anything and everything. The staff are watching.', box: 'position', buildShift: { y: 47 } },

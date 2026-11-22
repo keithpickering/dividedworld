@@ -181,7 +181,7 @@ which key to make; `settle`, `meet` and `seed` with no `kayfabb_jobs` key answer
 rest as secrets, under **Edge Functions > Secrets** or with the CLI:
 
 - `ANTHROPIC_API_KEY`: the model provider's key for The System. It is read only while the instance's `systemEnabled`
-  setting is on, which Divided World ships off (issue #73 turns it on); setting the key now does no harm.
+  setting is on, which Divided World ships on (the launch design, `docs/plans/2026-11-13-launch-design.md`, section 5).
 - `KAYFABB_PROFILE`: `playtest` for the playtest's three-week season and seven-day Turn cooldown; leave it unset for
   the full game's numbers. Any other value is refused (`supabase/functions/_shared/instance.ts`).
 - `SYSTEM_COMPLETIONS_URL`: the base address of the old voice's server (below), such as `https://old-voice.example.org`,
@@ -380,6 +380,76 @@ the first account is opened with registration briefly open.
   The export holds who plays every character, so keep it as private as the database.
 - The ledger of model calls (`model_calls`) is to be reconciled against Anthropic's bill monthly ("Cost is a column,
   not a report").
+
+### Relaunching on a new project
+
+To move Divided World onto a new Supabase project on invite day, leaving the test project behind, run these in order.
+The release (step 9) pushes the schema, deploys the functions and **seeds** whichever project the `production`
+environment's secrets (`SUPABASE_PROJECT_REF`, `SUPABASE_DB_URL` and `KAYFABB_JOBS_KEY`) name, every night, and the
+seed opens season 1. **Those secrets keep naming the test project until step 4.** If they named the new project
+earlier, the next night's release would seed it and open season 1 before the invitations go out.
+Do steps 2 to 5 in one sitting, between two nightly releases (05:13 UTC): a release that runs after step 2 has paused the
+test project, and before step 4 repoints the secrets, fails against the paused project, and one that runs between step 4
+and step 5 releases the site while it still points at the test project.
+
+1. **Before invite day: build the new project.** Do steps 2 to 5 of the first deploy on a new project: the project and
+   its keys, the schema, Auth and email, the Edge Functions and their secrets, with `KAYFABB_PROFILE` left unset. Do
+   not seed (step 6.1): the seed opens season 1. Leave the `production` environment's secrets as they are.
+2. **On invite day: keep the test project's record.** Export it as "Keep an export" in step 9 says, into a new
+   directory kept as private as the database. Give the tool the test project's session-pooler connection string and
+   its `default` secret key without typing either into a file or the shell's history:
+
+   ```bash
+   read -rs TEST_DB_URL
+   ```
+
+   ```bash
+   read -rs KAYFABB_STORAGE_KEY && export KAYFABB_STORAGE_KEY
+   ```
+
+   ```bash
+   node tools/export-instance.mjs --from "$TEST_DB_URL" --to <new directory> --storage https://<test ref>.supabase.co
+   ```
+
+   Then clear the test project's connection string and key from the shell, so the shell that seeds the new project
+   never holds them:
+
+   ```bash
+   unset TEST_DB_URL KAYFABB_STORAGE_KEY
+   ```
+
+   Then, in the Supabase dashboard, pause the test project. Its scheduled jobs stop with it.
+3. **Try the new project from a branch deploy.** In Netlify, under **Site configuration > Environment variables**, set
+   `VITE_SUPABASE_URL` to `https://<new ref>.supabase.co` and `VITE_SUPABASE_PUBLISHABLE_KEY` to the new project's
+   `default` publishable key, for the **branch deploy** context only, and look the site over on a branch deploy.
+   Nothing is seeded, so it shows an empty forum; a full look waits for step 4.
+4. **On invite day: bring the new project current, then seed.** Main has moved since the project was built.
+   1. In GitHub, under **Settings > Environments > production**, change `SUPABASE_PROJECT_REF`, `SUPABASE_DB_URL` and
+      `KAYFABB_JOBS_KEY` to the new project's, so the nightly release carries on there. (`SUPABASE_ACCESS_TOKEN` is
+      the account's and stays.)
+   2. From the repository's root, link the CLI to the new project and bring its schema and functions up to date:
+
+      ```bash
+      supabase link --project-ref <new ref>
+      ```
+
+      ```bash
+      supabase db push
+      ```
+
+      ```bash
+      supabase functions deploy --use-api
+      ```
+
+   3. Do step 6 of the first deploy against the new project: seed it, add its two Vault secrets, and check the
+      schedules. Season 1 opens at the seed. The list should show `kayfabb-meet` at `0 11 * * *` and `kayfabb-settle`
+      at `0 10 * * *`, with `kayfabb-system-tick` and `kayfabb-view-counts`.
+5. **Point the site at it.** In Netlify, set the **production** context's `VITE_SUPABASE_URL` and
+   `VITE_SUPABASE_PUBLISHABLE_KEY` to the new project's, then redeploy production under **Deploys > Trigger deploy**
+   (the variables are read at build time). Then remove the branch-deploy overrides from step 3.
+6. **The first admin and the invites.** Step 8 of the first deploy, on the new project.
+7. **After launch.** Delete the test project only once you no longer want it running; the export is the record either
+   way. Run the checks in step 9 against the new project.
 
 ### Known problems before the first deploy
 

@@ -28,6 +28,10 @@
  * Turns are the fixture's, not the board's (the board's Mrs. Hooligan is a Jabroni in her cooldown;
  * the fixture's is a Face who has never Turned), so only Pipewrench's card and Spritey's Turn line
  * are compared.
+ *
+ * The cooldown is the instance's, not the board's: Divided World's launch design sets it to 21 days (instances/divided-world/settings.ts,
+ * `turnCooldown`) where the board draws 30, so the Turn that opened Nov 29 after the Oct 30 settlement opens Nov 20, and the cooldown's line says 21 days;
+ * both are held by their words (`buildName`).
  */
 import type { BoardManifest } from '../board-match.ts';
 
@@ -72,7 +76,7 @@ const manifest: BoardManifest = {
     { id: 'card-name', role: 'text', name: 'Pipewrench', within: 'roster', origin: 'roster' },
     { id: 'card-class', role: 'text', name: 'Face', within: 'roster', origin: 'roster' },
     { id: 'card-rank', role: 'text', name: 'Midcarder', within: 'roster', origin: 'roster' },
-    { id: 'card-turn', role: 'text', name: 'Next Turn opens Nov 29', within: 'roster', origin: 'roster' },
+    { id: 'card-turn', role: 'text', name: 'Next Turn opens Nov 29', buildName: 'Next Turn opens Nov 20', within: 'roster', origin: 'roster' },
     /*
      * Spritey's Turn, ready: the third card on both sides, in the order they joined. The fixture's
      * Mrs. Hooligan has never Turned, so the build's first "Turn ready" is hers and Spritey's the second.
@@ -100,7 +104,7 @@ const manifest: BoardManifest = {
     { id: 'panel-pip', role: 'combobox', name: 'Pip style', within: 'panel', origin: 'panel', box: 'height' },
     /* The Turn that opens later, in the neon's text on a dashed edge; its name is the screen's own. */
     { id: 'panel-turn', role: 'button', name: 'TURN · OPENS NOV 29', buildName: 'Turn Pipewrench', within: 'panel', box: 'none' },
-    { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel', box: 'none' },
+    { id: 'panel-cooldown', role: 'text', name: 'A character can Turn once every 30 days. Pipewrench last Turned at the Oct 30 settlement.', buildName: 'A character can Turn once every 21 days. Pipewrench last Turned at the Oct 30 settlement.', within: 'panel', box: 'none' },
     /* Two GlassButtons (48px; the board's are 56px), compared across. */
     { id: 'panel-avatar', role: 'link', name: 'Change avatar', buildName: 'Edit profile', within: 'panel', box: 'none' },
     { id: 'panel-log', role: 'link', name: 'Pipewrench\'s log', within: 'panel', box: 'none' },

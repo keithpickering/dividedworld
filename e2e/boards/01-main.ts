@@ -64,7 +64,8 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Main', box: 'height', type: false, buildShift: { y: 33, height: 9.4 } },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'height', type: false, buildShift: { y: 36, height: 7 } },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 34.4 } },
-    { id: 'nav-system', role: 'link', name: 'The System', buildName: 'Staff Announcements', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 72.2 } },
+    /* The bar is Divided World's own seven boards (instances/divided-world/index.ts: the launch design), so Staff Announcements, the staff board, stands after the five boards the drawing never held: 715.45px from Index where the board draws the staff board's link at 94.66px, which is the content the instance holds, not a place the drawing moved. */
+    { id: 'nav-system', role: 'link', name: 'The System', buildName: 'Staff Announcements', within: 'nav', origin: 'nav-index', box: 'position', type: false, buildShift: { x: 715.45 } },
 
     /*
      * The thread's own landmarks (the crumb, the title and its pager, and each post's author, rank, post line, permalink and actions) are

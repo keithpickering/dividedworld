@@ -561,8 +561,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const now = () => base() + offset;
   const span = (s: Span) => s.count * (s.unit === 'minute' ? MINUTE : s.unit === 'hour' ? 60 * MINUTE : s.unit === 'day' ? DAY : s.unit === 'week' ? 7 * DAY : 30 * DAY);
 
-  let counter = 0;
+  /** Begins at 2, where the first instance's two boards left it, so every id the content was given before boards had a sequence of their own is still the one a pinned seed was chosen on. */
+  let counter = 2;
   const uuid = () => `00000000-0000-4000-8000-${(++counter).toString(16).padStart(12, '0')}`;
+  /** A board's id, from a sequence of its own (the variant nibble 8001): an instance with more boards moves no id of the content made after them, so a story that pins a seed (a dent's shape is a hash of its play's id) draws the same whatever the instance holds. */
+  let boardCounter = 0;
+  const boardUuid = () => `00000000-0000-4000-8001-${(++boardCounter).toString(16).padStart(12, '0')}`;
 
   /* ---------------------------------------------------------------------- state ---- */
   const accounts = new Map<Id, AccountRec>();
@@ -604,7 +608,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const seasons: Season[] = [{ id: 1, number: 1, startsAt: iso(START), endsAt: null, turnsThread: null, revealAct: null }];
   let lastSettled: number | null = null;
   let nextSettlement: number | null = null;
-  const boards: Board[] = options.instance.boards.map((b) => ({ id: uuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
+  const boards: Board[] = options.instance.boards.map((b) => ({ id: boardUuid(), slug: b.slug, name: b.name, description: b.description, isSystem: b.system === true, moveAct: null }));
   /* Moves: how each landed move ended, the staff profiles (versions, newest read), and the admin queue's own rows. */
   /** An admin's descriptions in the order given (`describe` Acts): the board, the rename each names (or none), the words. */
   const describes: { board: Id; moveAct: Id | null; text: string }[] = [];
@@ -5773,7 +5777,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     board(slug, name, description = `About ${name}`) {
       if (boards.some((x) => x.slug === slug)) throw new Error(`there is a board ${slug} already`);
-      boards.push({ id: uuid(), slug, name, description, isSystem: false, moveAct: null });
+      boards.push({ id: boardUuid(), slug, name, description, isSystem: false, moveAct: null });
     },
     moveThread(thread, slug, o) {
       const t = threads.get(thread);

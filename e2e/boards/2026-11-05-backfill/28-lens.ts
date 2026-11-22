@@ -32,6 +32,9 @@
  *  - The bar stands clear of the frame's top right cut (the owner, 2026-11-17: Close and the corners' words keep about 14px off the chamfer, glass/shell.css
  *    `--kb-dialog-chamfer-clear`). The board draws Close 18px under the top and 20px in, its corner on the 40px cut; the bar's top is 40px where it was 16, so the
  *    tabs, Close and the words under them stand `CHAMFER_CLEAR` lower (the 24px, less what the bar's middle line gives back), here and on board 29.
+ *  - A play's row on the thread page draws no Go to post (docs/plans/2026-11-20-lens-who-rows-design.md, decision 5: the Lens is opened from the post it would
+ *    link to), so the board's GO TO POST is not compared. Its three tiles left are React and Spin thread side by side and As it landed under them across the
+ *    row, which stands where the board draws it.
  */
 import type { BoardManifest, Landmark } from '../../board-match.ts';
 
@@ -71,7 +74,6 @@ const manifest: BoardManifest = {
     part('react', 'button', '+ REACT', { buildName: 'React', ...under('message'), box: 'position', buildShift: { y: -6 } }),
     part('spin', 'button', 'SPIN THREAD', { ...under('message'), box: 'position', buildShift: { y: -6 } }),
     part('landed', 'button', 'AS IT LANDED', { ...under('message'), box: 'position', buildShift: { y: -14 } }),
-    part('go', 'button', 'GO TO POST', { buildRole: 'link', ...under('message'), box: 'position', buildShift: { y: -14 } }),
   ],
 };
 

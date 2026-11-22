@@ -4,6 +4,7 @@
  * at 390, so its first screen stands at the window's left, and that is the one compared here: the index, as the story `Boards/01 Index` draws it.
  *
  * Departures, each a decision:
+ *  - The build's index lists Divided World's own seven boards (instances/divided-world/index.ts, the launch design) where the board draws two, so each of the five extra rows (121.17px) stands above Who is online and the footer: they stand 605.86px lower again (+652.42, +656.77). That is the content the instance holds, not a place the drawing moved.
  *  - The build's banner stands 13px lower (its top margin, the board look's Task 3) and its Boards button, a 44px target (the phone's menu button) where
  *    the board draws 30px, is centered in that banner (2px from where the board draws it), and everything under the banner is held at +13 and the button's growth (title +16.8, the board's row +15.8).
  *  - A board's last post holds its name link and time link each at the 24px target (WCAG 2.5.8), so the row stands 12px lower than the board's line draws
@@ -36,8 +37,8 @@ const manifest: BoardManifest = {
     { id: 'general-about', role: 'text', name: 'Anything and everything. The staff are watching.', box: 'position', buildShift: { y: 14.8 } },
     { id: 'last-who', role: 'link', name: 'Mrs. Hooligan', nth: 0, box: 'position', buildShift: { x: 16.14, y: 30.58 } },
     { id: 'last-time', role: 'link', name: 'Oct 6', buildName: 'Oct 6 — latest post in General', box: 'position', buildShift: { x: 38.91, y: 28.19 } },
-    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 46.56 } },
-    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 50.91 } },
+    { id: 'online', role: 'heading', name: 'Who is online', buildShift: { y: 652.42 } },
+    { id: 'footer', role: 'contentinfo', name: '', box: 'position', type: false, buildShift: { y: 656.77 } },
   ],
   /* The second screen, a board's thread list, stands 414px to the right on the board page (the screens 24px apart): the build is the story `Boards/02 Board`, held at that offset. */
   also: [{

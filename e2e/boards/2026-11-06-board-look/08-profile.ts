@@ -5,6 +5,7 @@
  * `Boards/08 Profile` (engine/ui/profile/Profile.board.stories.tsx) draws them.
  *
  * Departures, each a decision:
+ *  - The build's bar is Divided World's own seven boards (instances/divided-world/index.ts, the launch design), so the staff board's link stands after the five boards the drawing never held: 638.05px further right than the board draws it at 305.06px. That is the content the instance holds, not a place the drawing moved.
  *  - The cosmetics are the cosmetics plan's (docs/plans/2026-11-04-cosmetics-plan.md, its Task 10, which takes this board's look for the Wearing row,
  *    the trophy case and the belt's lineage): the board's portrait dressed in a cap, a mustache and a button is the build's initial, the Wearing row
  *    is not drawn, and the trophy case and the lineage tables between the About table and the record are not drawn, so the record stands higher
@@ -33,7 +34,7 @@ const manifest: BoardManifest = {
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav' },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 638.05 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'Spritey', buildShift: { y: 35.6 } },
     { id: 'about', role: 'table', name: 'About Spritey', type: false, buildShift: { y: 38.6, height: 4.9 + GROUP_ROW } },

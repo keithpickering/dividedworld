@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { placeholderBosses } from './index.ts';
 import { fangame } from '../personas/fangame.ts';
-import { placeholderMonitor } from '../personas/placeholder-monitor.ts';
+import { placeholderMonitor } from './placeholder-monitor.ts';
 import { instance } from '../../index.ts';
 import { instanceProblems } from '../../../../engine/rules/instance.ts';
 import { PHASE_CAPS } from '../../../../engine/system/phases.ts';
@@ -25,7 +25,7 @@ test('one placeholder Boss overrides its phases inside the caps, and none inheri
 
 test('the fixtures and FanGaME together pass instanceProblems when set as a roster', () => {
   const roster = [fangame, ...placeholderBosses, placeholderMonitor];
-  assert.deepEqual(instanceProblems({ ...instance, system: { ...instance.system, roster } }), []);
+  assert.deepEqual(instanceProblems({ ...instance, system: { ...instance.system, roster, firstStaff: [placeholderMonitor.key] } }), []);
 });
 
 test('the fixtures keep their temperament sentences about confidence', () => {

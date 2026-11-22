@@ -12,7 +12,7 @@
  *  - The crumb and the title stand 8.1px and 35.6px lower than the board draws them, and the About table 38.6px lower and 7.4px shorter, as in 08-profile; the log's
  *    table is named by the build's words (the board's caption reads "The Director's moves, newest first") and is held by its place.
  *  - The log stands 26.2px lower than the board's (the card's rows are taller by their 24px targets and its gap is the profile's); the build's nav reads the renamed
- *    board's name (Pointless Toast Palace) where the board draws General, so the staff board's link stands 95.1px to the right.
+ *    board's name (Pointless Toast Palace) where the board draws General, so the staff board's link stands 95.1px to the right, and 638.06px further for the launch design's seven boards (instances/divided-world/index.ts: five more links before it than the drawing held), 733.16px in all.
  *  - The avatar is decoration and is not compared; the badges' chips are held by their words.
  *  - The Group row (docs/plans/2026-11-06-member-groups-design.md, the member groups plan's Task 12) stands after Title, which the board, drawn before it,
  *    does not hold: the About table is that much taller, and every fact under Title and the log stand GROUP_ROW lower.
@@ -32,7 +32,7 @@ const manifest: BoardManifest = {
   landmarks: [
     { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World' },
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
-    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 95.1 } },
+    { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 733.16 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'The Director', box: 'position', buildShift: { y: 35.6 } },
     { id: 'about', role: 'table', name: 'About The Director', type: false, buildShift: { y: 38.6, height: 31.8 + GROUP_ROW } },

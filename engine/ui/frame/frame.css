@@ -127,6 +127,9 @@
   display: flex;
 }
 
+/* A link is drawn at the board's own height, shorter than WCAG 2.2's 24px target size, so what keeps it a target is the room
+   around it: once a cast's boards wrap the bar onto a second row, the rows' gap puts a link's center 24px or more from the
+   one above, and a reader's finger lands on the right board. A bar on one row has no row gap to show. */
 .kb-nav a {
   display: inline-flex;
   align-items: center;
@@ -145,7 +148,7 @@
 .kb-nav ul {
   display: flex;
   flex-wrap: wrap;
-  gap: 0 18px;
+  gap: 8px 18px;
   list-style: none;
   margin: 0;
   padding: 0;
@@ -1945,7 +1948,7 @@ button.kb-hud-secret:focus-visible {
 
   .kb-nav ul {
     flex-direction: column;
-    gap: 0.3em;
+    gap: 8px;
   }
 
   .kb-nav li.kb-nav-search {

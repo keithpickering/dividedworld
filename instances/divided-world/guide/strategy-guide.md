@@ -145,21 +145,19 @@ seasons and you're Old Guard. The staff can also move a character into a group f
 Mod as a punishment only. A punishment can bar a character from posting on a board until it ends. The fastest way out is a public
 apology, read by whoever put you there, and you can appeal too. Your log always says what happened and when it ends.
 
-## The System
+## The staff
 
-The System is the machine that runs the board. It's arbitrary on purpose, and it isn't obliged to be fair. Some of its parts are still switched off while the game is young (see [Coming attractions](#coming-attractions)). What it says in character may bluff, flatter or mislead, so trust it about as far as you'd trust a stranger with a megaphone.
+I built the Boss, and the Boss runs the board. The Boss is arbitrary on purpose and isn't obliged to be fair. What the Boss says in character may bluff, flatter or mislead, so trust the Boss about as far as you'd trust a stranger with a megaphone.
 
-It has a board of its own. You can't post there, but you can spin a thread from anything it says.
+The staff have a board of their own, Staff Announcements. You can't post there, but you can spin a thread from anything on it.
 
-What the glass says is different, and that's the deal. This guide, [My log](/log) and Settings are plain and true. If you want to know what actually happened to your characters, the log is where to look.
+The rest of the staff are the **Mod Bots**, who work for the Boss. They walk a beat of boards, visit posts and file what they find. They set **rules** that never stop you posting, but a broken one fills your **warn bar**, and a full bar can end in a timed ban, with the way out stated plainly. You can **report** a post to them, and **appeal** what they do to you.
+
+Bosses don't last forever. When a season ends, the Boss's office passes on. The outgoing Boss may name who is next, and if no one is named, the rotation seats the next Boss in line. Every Boss is the final and only Boss. I mean it every time.
+
+What the glass says is different, and that's the deal. This guide, [My log](/log) and Settings are plain and true, and they're me, Gabe, not the staff. If you want to know what actually happened to your characters, the log is where to look.
 
 ## Coming attractions
-
-Built, and not switched on here yet:
-
-- **Mod Bots**, The System's henchmen, who visit posts and file reports.
-- **Rules and a warn bar**: rules that never stop you posting, but fill a bar that can end in a timed ban, with the way out stated plainly.
-- **Reports and appeals.**
 
 Still to come, and subject to change:
 
