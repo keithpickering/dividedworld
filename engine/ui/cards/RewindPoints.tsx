@@ -52,9 +52,9 @@ export function RewindPoints({ post, plays, config, onChange, id }: {
   if (points.length === 0) return <p className="kb-play-fine" role="status">{REWIND_NOTHING}</p>;
   const byId = new Map<Id, Act>(versions.map((v) => [v.id, v]));
   return (
-    <fieldset className="kb-play-choice kb-play-points">
+    <fieldset role="radiogroup" className="kb-play-choice kb-play-points">
       <legend className="kb-play-label">{REWIND_LEGEND}</legend>
-      <div role="radiogroup" aria-label={REWIND_LEGEND} className="kb-play-points-list">
+      <div className="kb-play-points-list">
         {points.map((p) => (
           <label key={p.version} className="kb-play-point">
             <input type="radio" name={`${id}-point`} checked={chosen === p.version} onChange={() => onChange({ to: p.version })} />

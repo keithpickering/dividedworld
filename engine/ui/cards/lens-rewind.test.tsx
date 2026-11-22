@@ -20,9 +20,10 @@ const MINUTE = 60_000;
 const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
 const plain = (key: string, name: string): CardRules => ({ ...base, key, name, alignment: 'salty', rarity: 'common', reaches: ['post'], canApply: (t, e, _config, now) => landsOn({ key, reaches: ['post'] }, t, e, now) });
 const clock: CardRules = { ...plain('clock', 'Clock'), alignment: 'sweet', rarity: 'rare', lasts: { unit: 'day', count: 1 }, rewind: { upTo: 'rare' }, validateConfig: rewindConfig } as CardRules;
-const instance: Instance = { ...testInstance, cards: [plain('early', 'Early'), plain('late', 'Late'), clock] };
+const wide: CardRules = { ...plain('wide', 'Wide'), reaches: ['thread'], lasts: { unit: 'day', count: 1 }, canApply: (t, e, _config, now) => landsOn({ key: 'wide', reaches: ['thread'] }, t, e, now) } as CardRules;
+const instance: Instance = { ...testInstance, cards: [plain('early', 'Early'), plain('late', 'Late'), clock, wide] };
 const art = { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' };
-const cards: CardUi[] = ['early', 'late', 'clock'].map((key) => ({ key, art, describe: () => `${key}.`, summary: `${key}.`, Effect: ({ children }) => <div data-kb-wrap={key}>{children}</div> }));
+const cards: CardUi[] = ['early', 'late', 'clock', 'wide'].map((key) => ({ key, art, describe: () => `${key}.`, summary: `${key}.`, Effect: ({ children }) => <div data-kb-wrap={key}>{children}</div> }));
 
 class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
 beforeEach(() => {
@@ -34,7 +35,7 @@ beforeEach(() => {
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); });
 
 /** Ana's post, edited after the grace, with `early` before the point, `late` and a second `early` after it; Bo plays the Clock at the first words when `rewound`. */
-async function world(rewound = true, edited = true, after: readonly string[] = ['late', 'early']) {
+async function world(rewound = true, edited = true, after: readonly string[] = ['late', 'early'], thread_ = false) {
   const fake = createFake({ instance });
   const ana = fake.seed.account('ana');
   const bo = fake.seed.account('bo');
@@ -51,6 +52,7 @@ async function world(rewound = true, edited = true, after: readonly string[] = [
   if (edited) await fake.edit(opener, anaFace, 'The second words.');
   fake.clock.advance(MINUTE);
   for (const key of after) fake.seed.card(boFace, opener, key, { message: '' });
+  if (thread_) fake.seed.reach(boFace, 'thread', thread, 'wide', { ends: fake.clock.now() + 86_400_000, message: '' });
   fake.clock.advance(MINUTE);
   fake.signInAs(bo);
   const rewind = rewound ? await fake.playCard('clock', boFace, opener, { to: opener }, '') : null;
@@ -128,6 +130,13 @@ describe('the Lens of a rewind play', () => {
     open(w, w.thread);
     await clockLens();
     expect(await within(lens()).findByText('1 later card hidden until it ends')).toBeInTheDocument();
+  });
+
+  test('counts a thread play the rewind hides too: one on the post and one on the thread are two', async () => {
+    const w = await world(true, true, ['late'], true);
+    open(w, w.thread);
+    await clockLens();
+    expect(await within(lens()).findByText('2 later cards hidden until it ends')).toBeInTheDocument();
   });
 
   test('no line where nothing is hidden', async () => {

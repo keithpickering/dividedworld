@@ -51,7 +51,7 @@ import { Kit } from './Kit.tsx';
 import { CUT_STATE, PRESENT_TILE, cutByWords, cutWords, hiddenWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
-import { CARD_BACK, asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, useRewound, type Plays } from './plays.ts';
+import { CARD_BACK, asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, playsFallingOn, shownPlays, useCardView, usePlays, useRewound, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
 import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
@@ -438,10 +438,17 @@ function ReturnToPresent({ play }: { readonly play: Id }) {
 function HiddenCount({ play, store }: { readonly play: CardPlay; readonly store: Plays }) {
   const { instance, api } = useKayfa();
   const rewound = useRewound(store, play.post);
-  if (rewound === null || rewound.rewind.play !== play.id) return null;
+  /* The post's thread and author layers, as the post draws them (Effects.tsx): a thread's or a character's play that falls on the post and the rewind hides is hidden here too. The view's version is the post's own Act. */
+  const post = rewound?.rewind.version;
+  const onThread = usePlays(store, post?.thread ?? '');
+  const onAuthor = usePlays(store, post?.character ?? '');
+  if (rewound === null || rewound.rewind.play !== play.id || post === undefined) return null;
   const now = api.now();
   const keeps = new Set(instance.cards.filter((c) => c.keeps === true).map((c) => c.key));
-  const n = shownPlays(rewound.hidden, now).filter((p) => !playOver(p, now, keeps)).length;
+  const own = shownPlays(rewound.hidden, now).filter((p) => !playOver(p, now, keeps));
+  const above = [...playsFallingOn(onThread.plays.filter((p) => p.reach === 'thread'), post, keeps, now), ...playsFallingOn(onAuthor.plays.filter((p) => p.reach === 'character'), post, keeps, now)]
+    .filter((p) => !rewound.shows(p));
+  const n = own.length + above.length;
   return n === 0 ? null : <p className="kb-lens-note">{hiddenWords(n)}</p>;
 }
 
