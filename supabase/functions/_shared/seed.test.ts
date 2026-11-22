@@ -153,7 +153,7 @@ test('the seed carries the rule predicates, each with its parameter kind, its bo
 
 test('the deployed instance is chosen by profile: the playtest\'s shorter season, or the defaults', () => {
   assert.deepEqual(chooseInstance('playtest').settings.turnCooldown, { unit: 'day', count: 7 });
-  assert.deepEqual(chooseInstance(undefined).settings.turnCooldown, { unit: 'day', count: 30 });
+  assert.deepEqual(chooseInstance(undefined).settings.turnCooldown, { unit: 'day', count: 21 });
   assert.throws(() => chooseInstance('staging'), /profile/);
 });
 
