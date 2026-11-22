@@ -841,7 +841,11 @@ test('an instance exported and imported into a fresh database is the same instan
       const at = local(rows);
       assert.ok(at >= 0, `${file} holds the post-local kind's row`);
       const reacted = new Set(rows.map((r) => JSON.parse(r).act));
-      const elsewhere = kindRows('public.acts.jsonl').map((r) => JSON.parse(r)).find((a) => a.kind === 'post' && !reacted.has(a.id))!.id;
+      // A post that holds the kind of its own (a post_reaction_kinds row, as a committed leftover of another file can leave in the
+      // suite's one database) is no poison: the import rightly keeps a reaction there. The export orders acts by their random ids, so
+      // without this the pick lands on such a post now and then.
+      const holders = new Set(kindRows('public.post_reaction_kinds.jsonl').map((r) => JSON.parse(r).post));
+      const elsewhere = kindRows('public.acts.jsonl').map((r) => JSON.parse(r)).find((a) => a.kind === 'post' && !reacted.has(a.id) && !holders.has(a.id))!.id;
       for (const [why, poison] of [['a kind nowhere', { kind: 'x-dead' }], ['a local kind on another post', { act: elsewhere }]] as const) {
         const forged = rows.map((r, i) => (i === at ? JSON.stringify({ ...JSON.parse(r), ...poison }) : r));
         fs.writeFileSync(path.join(short, file), forged.join('\n') + '\n');
