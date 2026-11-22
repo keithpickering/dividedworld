@@ -1,85 +1,116 @@
 /**
  * The commentary video's edit (docs/plans/2026-11-21-commentary-video-plan.md, tasks 8 and 8a; the design, sections 5, 5a and 6; revised by
- * docs/plans/2026-11-21-commentary-video-revision-plan.md, Tasks R1 to R3): the takes, the voice clips and the music assembled into one film, with captions.
+ * docs/plans/2026-11-21-commentary-video-revision-plan.md and the revision design's section 11, the owner's rewrite): the takes, the voice clips and
+ * the music assembled into one film, with captions.
  *
  *   node tools/hype/edit-commentary.mjs [--takes .runs/hype] [--voice .runs/hype/voice] [--music <recording>]
- *       [--out .runs/hype/commentary.mp4] [--part one|two|three|out] [--captions top|foot|off] [--clean] [--sheet] [--moves moves.json]
- *       [--recording full|mk-a|mk-b] [--cutlist <file>|none] [--preset veryfast] [--any-recording]
+ *       [--out .runs/hype/commentary.mp4] [--part calm|frantic|coda] [--captions top|foot|off] [--clean] [--sheet] [--moves moves.json]
+ *       [--recording full|mk-a|mk-b|mk-plus1|mk-plus2|mk-plus3] [--lead 4.5] [--cutlist <file>|none] [--preset veryfast] [--any-recording]
  *
  * This file is run with plain `node`: Node 22.18 and later strips the types of the instance's `commentary.ts` as it imports it (as
- * tools/check-guide.mjs reads the instance's `.ts`), so no flag is needed. The pure parts (`timeline`, `captions`, `srt`) are exported
- * for the tests; `moves.mjs` holds the camera's arithmetic; nothing runs ffmpeg unless this file is the command.
+ * tools/check-guide.mjs reads the instance's `.ts`), so no flag is needed. The pure parts (`timeline`, `captions`, `srt`, `chooseVersion`,
+ * `franticCurve`) are exported for the tests; `moves.mjs` holds the camera's arithmetic; nothing runs ffmpeg unless this file is the command.
+ *
+ * THE NODES are whatever `commentary.ts` says, in its order: nothing here knows an id. What the timeline reads from each is
+ *   `role`   `calm` (the opening, in the narrator's control), `frantic` (the picture takes over and the music rises) or `end` (the one line over
+ *            black, last). The old `part` is mapped when there is no role: 1 and 2 calm, 3 frantic, and the node `n11` the end.
+ *   `after`  seconds of silence before the node (the clip before it owns them); absent, a breath of 0.35 s. The first node's pause is `--lead`.
+ *   `locked` (optional; the old part 1 is locked) the camera is locked off there: no move, punch or landing punch.
+ *   `caption` (optional, a string or lines) is shown in place of the node's `lines` on the screen (the voice says the lines).
+ * and its clip is `<voice folder>/<id>.<ext>`.
+ *
+ * THE FILM, beat by beat. It OPENS IN SILENCE on the first take: `--lead` seconds (4.5) before the first node's voice, the first node's shot owning
+ * them. The calm nodes follow, then the frantic ones, the LAST frantic node ending 0.2 s before the coda's first chord. The coda is the mountain
+ * king's last strikes: the picture is cut on each (`list.coda` directs the cuts, cutlist.mjs `directCoda`) until the strike the BLACK begins on: the
+ * latest strike at or before the end line's start less 0.3 s, so the line sits wholly in full-range black and any strike inside it plays over
+ * black. The end line ENDS 0.25 s before the final strike; at the final strike the take `c-title` starts at its frame 0 and runs to the film's end
+ * (the final chord's end + 1.2 s), fading to black over the last 0.8 s; a missing one is a slate with the instance's `TITLE` and `TITLE_TAG`.
+ *
+ * THE MUSIC is laid from its END (`timeline`): the coda's first chord falls where the last frantic node ends + 0.2 s. Which VERSION of the recording
+ * (the full one, `mk-a` and `mk-b` shortened and `mk-plus1` to `mk-plus3` lengthened; music-cut.mjs makes them) is the rule `chooseVersion`: the music
+ * starts as soon as possible AFTER the first node ends: the version with the smallest start that is at least 1 s after the first node's voice ends
+ * (the opening lines are in silence, then the music sneaks in under the calm narration); `--recording` fixes it. The run prints the version, the
+ * start, where in the speech the second block and the full orchestra fall, and the ending.
+ *
+ * THE VOICE AGAINST THE MUSIC: through the frantic nodes the music's duck lessens (10 dB down at the first, 4 at the last) while the voice is
+ * lifted (up to +4 dB at the last; `franticCurve`), and the voice goes through a gentle limiter so a scream does not clip.
  *
  * THE CUT LIST (`--cutlist`, default `instances/divided-world/ui/hype/cutlist.json`; cutlist.mjs says what a row is) gives every shot of the picture
- * from the first frame to the coda, each naming a take (a file under `--takes`, without `.mp4`: `c-n06`, `b-scrub-2`) and where in it the shot starts, on a beat
- * of the music or on a word of the narration. The run prints the shots and their median length for part one and each block of the music. A take's own
- * notes (below) apply to its shots, a row's `move` over them; `--moves` then names takes, not nodes. `--cutlist none` cuts one take a node. The list's
- * optional `coda` array directs the coda's cuts (one to a chord; cutlist.mjs `directCoda`): a take and a place in it for each, or null for node 11's own.
+ * from the first frame to the coda. A take's own notes (`<take>.json`: landings, a move, punches) apply to its shots, a row's `move` over them. A shot
+ * with a move or punch in a frantic node is rendered with MOTION BLUR by default (`"blur": false` to refuse it): the camera's own, at 4x temporal
+ * resolution, four sub-frame positions across a 180 degree shutter averaged (moves.mjs `blurRects`); `"blur": true` asks for it anywhere. A row may begin
+ * with a WHIP: `"cut": "whip-left"` (or right, up, down), `"cutFrames": 6`: the outgoing shot's last frames slide off and the incoming one's slide in,
+ * both blurred. `--cutlist none` cuts one take a node.
  *
- * TAKES are `c-n01` to `c-n11`, `c-title-1` and `c-title-2`, as `.mp4` under `--takes`, 60 frames a second, 1920 x 1080 or larger (3840 x 2160 gives the
- * moves twice the room). A take that is not there is replaced by a generated slate (a dark frame, the node and its first caption line),
- * so the whole film can be assembled before it is filmed. Node 9 may have three framings, `c-n09-wide`, `c-n09-tight` and `c-n09-turned`,
- * filmed on one clock (until the cut list names them, node 9 shows the first). Node 11 is ONE take, `c-n11`, whose clock runs through
- * the coda; the edit cuts it at every chord up to the title's strike. THE TITLE (the owner, 2026-11-21): on the coda's last two strikes of the
- * mountain king, `c-title-1` (from its frame 0) from the title's strike (the second-to-last chord) to the final strike, and `c-title-2` (from
- * its frame 0) from the final strike to the film's end; the instance's `TITLE` and `TITLE_NOTE` are what a slate for a missing one says. A take is held on its last frame, or trimmed, to its node's length.
+ * TAKES are `c-<id>` per node (or the names a cut list gives), `.mp4` under `--takes`, 60 frames a second, 1920 x 1080 or larger (3840 x 2160 gives the
+ * moves twice the room), and `c-title`. A take that is not there is replaced by a generated slate. A take is held on its last frame, or trimmed, to its cut.
  *
  * A TAKE'S NOTES are an optional `c-nXX.json` beside it: either an array of landings, or an object with any of:
  *   { "landed": [{ "what": "steel-chair", "frame": 150 }],       frames of the take (60 a second) where something lands
  *     "move": { "from": R, "to": R, "ease": "inOut" },          R is { "x", "y", "w", "roll" }: the top-left corner and width as
  *     "punch": 12,                                               shares of the frame, and a roll in degrees
  *     "punches": [{ "frame": 40, "percent": 8 }] }
-
- * THE NARRATION AND THE MUSIC (`timeline`): the voice runs node after node from the first frame, and the music is laid under it from its end, so
- * the coda's first chord falls just after node 10's last word. The version of the recording is the longest of the full one, `mk-a` and `mk-b`
- * (music-cut.mjs makes the last two, beside the recording) whose start is at least 5 s into the film; `--recording` fixes it. The run prints
- * the version, the start and where in the speech the second block and the full orchestra fall.
- * A landing plays its game sound (`steel-chair` or `hit` the chair's hit, its impact on the landing's frame, `filing` a boo; any other kind none) at its frame of the node, and in
- * part three is a punch-in. `move`, `punch` and `punches` are the camera's: they apply to every cut of the node, are refused in part
- * one (locked off), and `--moves` takes the same fields by node id in one file, over the take's own.
+ * A landing plays its game sound (`steel-chair` or `hit` the chair's hit, its impact on the landing's frame, `filing` a boo, `send` the send; any other kind
+ * none) at its frame, and in a frantic node is a punch-in.
  *
  * MOVES (moves.mjs): for every output frame at 60 fps `perspective` samples the rectangle (turned by its roll) out of the take at a
  * fractional position (`zoompan` and `crop` step by whole pixels, which shows as judder); a push past twice the take's pixels is refused naming the cut.
  *
  * `--music` must be the recording the map was measured on: its length is checked against `music-map.json`'s `seconds` (0.05 s) and its sha1
- * against `sha1` (`--any-recording` waives the sha1 only); a shortened version is checked against its recipe's length. The run prints a NOTE for every stand-in (no voice, no music, a slate, a missing
- * title take, a node 9 with only some of its framings) and HELD for a take shorter than its cut.
+ * against `sha1` (`--any-recording` waives the sha1 only); a version is checked against its recipe's length. The run prints a NOTE for every stand-in (no
+ * voice, no music, a slate, no title take) and HELD for a take shorter than its cut.
  *
- * SOUND: the voice at full level; the music 10 dB down under each clip, 150 ms to go down and 400 ms to come
- * back, and never ducked from the coda's first chord; the game's sounds on their landings. The film ends 1.2 s after the final chord's end, the picture fading to
- * black over its last 0.8 s and the music's own decay left as recorded: no held black, no end card.
+ * SOUND: the voice, lifted through the frantic nodes; the music 10 dB down under each clip (less in the frantic nodes), 150 ms to go down and 400 ms to
+ * come back, and never ducked from the coda's first chord; the game's sounds on their landings.
  *
  * CAPTIONS: `<film>.srt` beside the film, and burned in (white on a translucent band, Verdana, else DejaVu Sans). `--captions top` (the
  * default) puts the band at the TOP of the frame, since the game's HUD (the class tag, the forecast) is at the foot; `foot` is the old place; `off`
- * burns nothing, and `--clean` is an alias of it. The band is as tall as its words need, one row or two. WITHOUT a voice folder each clip is silence of 150 words a minute and every frame says PLACEHOLDER SOUND; a slate's frames
- * say PLACEHOLDER PICTURE. `--sheet` prints the timing sheet (node 11's lines, the title's two strikes and the film's end) and stops; `--part` assembles one part for a quick look.
+ * burns nothing, and `--clean` is an alias of it. The band is as tall as its words need, one row or two. WITHOUT a voice folder each clip is silence of
+ * 150 words a minute and every frame says PLACEHOLDER SOUND; a slate's frames say PLACEHOLDER PICTURE. `--sheet` prints the timing sheet (the lead,
+ * every node's time, the version and the music's start, the block boundaries in the speech, each strike of the coda, the black and the line in it,
+ * the title's strike and the film's end) and stops; `--part` assembles one part for a quick look.
  */
 import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import path from 'node:path';
 import { pathToFileURL, fileURLToPath } from 'node:url';
-import { versionMap, titleStrikes, expectedSeconds, beats, VERSIONS } from './music.mjs';
-import { refusePush, corners } from './moves.mjs';
+import { versionMap, expectedSeconds, beats, VERSIONS } from './music.mjs';
+import { refusePush, corners, expressions, subframes, parseWhip, whipExpressions, SUBFRAMES } from './moves.mjs';
 import { run, duration, videoInfo, fontFile, flag } from './cutting.mjs';
 import { resolveList, directCoda, codaHits } from './cutlist.mjs';
 
 export const F = 60;
 export const BREATH = 0.35;
 export const CODA_AFTER = 0.2;
-export const MUSIC_FROM = 5;
+/** The film opens in silence: seconds before the first node's voice. */
+export const LEAD = 4.5;
+/** The music starts at least this long after the first node's voice ends. */
+export const AFTER_FIRST = 1;
+/** The end line ends this long before the final strike, and the black begins at the latest strike at least this long before the line starts. */
+export const LINE_BEFORE_FINAL = 0.25;
+export const BLACK_BEFORE_LINE = 0.3;
 export const WPM = 150;
 export const TAIL = 1.2;
 export const FADE = 0.8;
-export const PART_ONE = ['n01', 'n02', 'n03', 'n04'];
-/** The spoken nodes as the timeline took them before the data gave their order: n01 to n10, a breath between. */
-const DEFAULT_NODES = ['n01', 'n02', 'n03', 'n04', 'n05', 'n06', 'n07', 'n08', 'n09', 'n10'].map((id, i) => ({ id, part: /** @type {1 | 2 | 3} */ (i < 4 ? 1 : i < 8 ? 2 : 3), after: undefined }));
+const CHORD_PUNCH = 10, LANDING_PUNCH = 5;
+
+/** The voice's lift and the music's duck through the frantic nodes: from nothing and 10 dB at the first to +4 dB and 4 dB at the last. */
+export const MAX_VOICE_DB = 4, DUCK_DB = -10, DUCK_LAST_DB = -4;
 
 /**
- * The spoken nodes (every node but the coda's n11) in the data's order, each with its part and the pause before it (`after`, seconds; absent: the usual breath).
- * @param {{ id: string, part: 1 | 2 | 3, after?: number }[]} commentary
+ * The mix of the `index`th of `count` frantic nodes (from 0): the voice's gain and the music's duck depth in dB, both linear from the first to the last,
+ * a single frantic node being the last. The orchestra is felt more and the voice louder as the film goes on. Pure.
+ * @param {number} index @param {number} count
  */
-export const speechNodes = (commentary) => commentary.filter((n) => n.id !== 'n11').map((n) => ({ id: n.id, part: n.part, after: n.after }));
-const CHORD_PUNCH = 10, LANDING_PUNCH = 5;
+export function franticCurve(index, count) {
+  const p = count > 1 ? Math.min(1, Math.max(0, index / (count - 1))) : 1;
+  return { voiceDb: MAX_VOICE_DB * p, duckDb: DUCK_DB + (DUCK_LAST_DB - DUCK_DB) * p };
+}
+
+/** ffmpeg's volume filter for a node's lift. @param {number} db */
+export const voiceGain = (db) => (db === 0 ? 'volume=0dB' : `volume=${db.toFixed(2)}dB`);
+/** A gentle limiter on the voice bus: a scream that was lifted does not clip (5 ms attack, 60 ms release, the ceiling just under full scale; no auto level). */
+export const VOICE_LIMITER = 'alimiter=limit=0.89:attack=5:release=60:level=0';
 
 /** The frames between two times of the film. @param {number} a @param {number} b */
 export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
@@ -87,159 +118,223 @@ export const framesBetween = (a, b) => Math.round(b * F) - Math.round(a * F);
 /**
  * @typedef {import('./moves.mjs').Move} Move
  * @typedef {{ take: string, at: number, start: number, length: number, startFrame: number, frames: number, from: number, speed?: number, move?: Move, punch?: number, punches?: { frame: number, percent: number }[] }} Cut
- * @typedef {{ start: number, length: number, line?: number, cut?: number }} Voice
- * @typedef {{ id: string, part: 1 | 2 | 3, start: number, end: number, length: number, frames: number, voice: Voice[], cuts: Cut[], hits: { what: string, at: number }[] }} NodeCut
+ * @typedef {{ start: number, length: number }} Voice
+ * @typedef {{ voiceDb: number, duckDb: number }} Mix
+ * @typedef {{ id: string, role: 'calm' | 'frantic' | 'coda' | 'end', locked: boolean, start: number, end: number, length: number, frames: number, voice: Voice[], cuts: Cut[], hits: { what: string, at: number }[], mix: Mix }} NodeCut
  * @typedef {{ move?: Move, punch?: number, punches?: { frame: number, percent: number }[] }} Camera
+ * @typedef {{ id: string, role?: string, part?: number, after?: number, locked?: boolean }} NodeSpec
  */
+
+/**
+ * The nodes as the timeline takes them: each with its role (the data's `role`, else the old `part` mapped, `n11` the end), its lock and its pause.
+ * Refuses a role that is not `calm`, `frantic` or `end`, an order that is not calm, frantic, end, and anything but one end node, last.
+ * @param {NodeSpec[]} specs
+ * @returns {{ id: string, role: 'calm' | 'frantic' | 'end', locked: boolean, after?: number }[]}
+ */
+export function roles(specs) {
+  /* The old data's lock-off was part 1 less its last node (the camera first moved in node 4). */
+  const lastOne = specs.filter((n) => n.part === 1 && n.role === undefined).at(-1);
+  const out = specs.map((n) => {
+    const role = n.role ?? (n.id === 'n11' ? 'end' : n.part === 3 ? 'frantic' : 'calm');
+    if (role !== 'calm' && role !== 'frantic' && role !== 'end') throw new Error(`${n.id} has the role ${JSON.stringify(role)}: a node is calm, frantic or end`);
+    return { id: n.id, role: /** @type {'calm' | 'frantic' | 'end'} */ (role), locked: n.locked ?? (n.part === 1 && n !== lastOne), after: n.after };
+  });
+  const ends = out.filter((n) => n.role === 'end');
+  if (ends.length === 0) throw new Error('no node has the role end: the film needs one line over black, last');
+  if (ends.length > 1) throw new Error(`${ends.map((n) => n.id).join(' and ')} are both end nodes: the film has one end node`);
+  if (out.at(-1)?.role !== 'end') throw new Error(`the end node ${ends[0].id} is not last: the line over black is the last node`);
+  let rank = 0;
+  for (const n of out.slice(0, -1)) {
+    const r = n.role === 'calm' ? 0 : 1;
+    if (r < rank) throw new Error(`${n.id} is calm after a frantic node: the roles run calm, then frantic`);
+    rank = r;
+  }
+  if (out.length < 2) throw new Error('the film needs a spoken node before the end node');
+  return out;
+}
+
+/** The nodes of `commentary.ts` as `timeline` takes them. @param {NodeSpec[]} commentary */
+export const speechNodes = (commentary) => commentary.map((n) => ({ id: n.id, role: n.role, part: n.part, after: n.after, locked: n.locked }));
+
+/**
+ * The version of the recording the music is laid from: the smallest start that is at or after `threshold` (the first node ends, plus a second);
+ * when none is, the one that starts latest, which is the shortest, and `met` is false. Ties go to the earlier in the object. Pure.
+ * @param {Record<string, number>} starts the film second each version's own second 0 would be at
+ * @param {number} threshold
+ * @returns {{ version: string, met: boolean }}
+ */
+export function chooseVersion(starts, threshold) {
+  const names = Object.keys(starts), ok = names.filter((n) => starts[n] >= threshold - 1e-9);
+  if (ok.length) return { version: ok.reduce((a, b) => (starts[b] < starts[a] ? b : a)), met: true };
+  return { version: names.reduce((a, b) => (starts[b] > starts[a] ? b : a)), met: false };
+}
 
 /**
  * The whole film's time, in seconds from its first frame, as a pure function of the clips' lengths and the music's map.
  *
- * The narration leads (design, section 1): node after node, a breath between, from the first frame. The music is laid under it from its
- * END: the first chord of the coda falls `CODA_AFTER` s after node 10's last word, so the recording's own second 0 is at the film
- * second `music.start = that - the version's first chord`. The version is the longest of `full`, `mk-a` and `mk-b` whose start is at least
- * `MUSIC_FROM` s into the film (so the music begins as early as the speech allows); `recording` fixes it; when none reaches that the
- * shortest is used and `music.notes` says so. A start before the film's first frame is trimmed: `music.start` is then 0 and `music.from`
- * the seconds of the recording skipped. Node 11's lines are laid in order from the coda's first chord to the TITLE's strike (the coda's
- * second-to-last chord), each at full length, with equal gaps before the first, between them and after the last; lines that do not fit are
- * refused naming the overrun. The title is shown on the coda's last two strikes: `c-title-1` from the title's strike to the final strike,
- * `c-title-2` from the final strike to the film's end, which is the final chord's end plus `TAIL` s, the picture fading to black over the
- * last `FADE` s and the music's own decay left as recorded.
+ * The film opens in silence (`lead` s), then the narration runs node after node, a breath (or the node's `after`) between; the first node's shot owns
+ * the lead. The last frantic node ends 0.2 s before the coda's first chord, and the music is laid from its END so that its first chord falls there; the
+ * version is `chooseVersion`'s. A start before the film's first frame is trimmed: `music.start` is then 0 and `music.from` the seconds of the recording
+ * skipped. The coda is cut on its strikes to the one the black begins on (the latest strike at or before the end line's start less 0.3 s); the end line
+ * is placed to end 0.25 s before the final strike, refused when it would have to start before the coda's first chord; the title begins at the final
+ * strike and the film ends at the final chord's end plus `TAIL` s, the picture fading over the last `FADE` s.
  *
- * The spoken nodes are taken in the data's order (`nodes`: id, part, and `after`, the pause before a node, default `breath`); a node that follows a
- * pause (n02b, three seconds after "politely.") starts that long after the clip before it ends, and the clip before it owns the silence.
- *
- * Until the cut list gives them (cutlist.mjs) a node is one cut of its take; the coda is cut on its chords.
- *
- * @param {Record<string, number | number[]>} clips seconds a node (node 11: one a line)
+ * @param {Record<string, number>} clips seconds a node, the end node's line included
  * @param {any} map the committed music map (music-map.json)
- * @param {{ nodes?: { id: string, part: 1 | 2 | 3, after?: number }[], recording?: string, breath?: number, moves?: Record<string, Camera>, framings?: Record<string, string[]>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]> }} [options]
- *   `recording`: `full`, `mk-a` or `mk-b` to fix the version; `moves`: the camera's moves by node; `framings`: the framings of a node with several (node 9's
- *   cut uses the first); `sizes`: each node's take's width in pixels (default 1920); `landed`: what lands in each node, and at which frame of its take.
+ * @param {{ nodes: NodeSpec[], lead?: number, recording?: string, breath?: number, moves?: Record<string, Camera>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]> }} options
+ *   `moves`: the camera's moves by node; `sizes`: each node's take's width in pixels (default 1920); `landed`: what lands in each node, and at which frame of its take.
  */
-export function timeline(clips, map, { nodes: order = DEFAULT_NODES, recording, breath = BREATH, moves = {}, framings = {}, sizes = {}, landed = {} } = {}) {
-  const speech = order.map((n) => n.id);
-  for (const id of [...speech, 'n11']) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
-  for (const id of order.filter((n) => n.part === 1).map((n) => n.id)) if (moves[id] && Object.values(moves[id]).some((v) => v !== undefined)) throw new Error(`${id}: part one is locked off (the design, section 5a), so it carries no move, punch or landing punch`);
-  const n11 = clips.n11;
-  if (!Array.isArray(n11)) throw new Error('n11 needs one length a line (an array)');
-  for (const [k, v] of Object.entries(clips)) for (const seconds of Array.isArray(v) ? v : [v]) if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`${k} has a clip length of ${JSON.stringify(seconds)}: a clip is a number of seconds, zero or more`);
+export function timeline(clips, map, { nodes: given, lead = LEAD, recording, breath = BREATH, moves = {}, sizes = {}, landed = {} } = /** @type {any} */ ({})) {
+  if (!given) throw new Error('timeline needs the nodes (commentary.ts): their roles and pauses decide the film');
+  if (typeof lead !== 'number' || !Number.isFinite(lead) || lead < 0) throw new Error(`the lead is a number of seconds, zero or more, not ${JSON.stringify(lead)}`);
+  const order = roles(given), endNode = /** @type {typeof order[number]} */ (order.at(-1)), spoken = order.slice(0, -1);
+  for (const { id } of order) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
+  for (const [k, seconds] of Object.entries(clips)) if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`${k} has a clip length of ${JSON.stringify(seconds)}: a clip is a number of seconds, zero or more`);
+  for (const n of order.filter((x) => x.locked)) if (moves[n.id] && Object.values(moves[n.id]).some((v) => v !== undefined)) throw new Error(`${n.id}: the camera is locked off here (the design, section 5a), so it carries no move, punch or landing punch`);
 
-  /* The narration, node after node. */
+  /* The narration, node after node, from the lead. The first node's picture owns the lead. */
   /** @type {Record<string, number>} */
-  const starts = {};
-  let t = 0;
-  order.forEach((n, i) => { if (i > 0) t += n.after ?? breath; starts[n.id] = t; t += /** @type {number} */ (clips[n.id]); });
-  const last = speech[speech.length - 1];
-  const codaStart = starts[last] + /** @type {number} */ (clips[last]) + CODA_AFTER;
+  const starts = {}, voiceStarts = {};
+  let t = lead;
+  spoken.forEach((n, i) => { if (i > 0) t += n.after ?? breath; voiceStarts[n.id] = t; starts[n.id] = i === 0 ? 0 : t; t += clips[n.id]; });
+  const codaStart = t + CODA_AFTER;
+  const firstEnd = voiceStarts[spoken[0].id] + clips[spoken[0].id];
 
-  /* The music, laid from its end. */
-  const notes = [];
+  /* The music, laid from its end: the version whose start is the smallest at or after the first node's end plus a second. */
+  const names = ['full', ...Object.keys(map.versions ?? {})];
   const startOf = (/** @type {string} */ name) => codaStart - versionMap(map, name).coda.chords[0].t;
+  const threshold = firstEnd + AFTER_FIRST;
+  /** @type {Record<string, number>} */
+  const allStarts = Object.fromEntries(names.map((n) => [n, startOf(n)]));
+  const notes = [];
   let version = recording;
   if (version === undefined) {
-    version = VERSIONS.find((name) => startOf(name) >= MUSIC_FROM);
-    if (version === undefined) {
-      version = /** @type {string} */ (VERSIONS.at(-1));
-      notes.push(`no version of the recording lets the music start ${MUSIC_FROM} s into the film: ${version}, the shortest, starts at ${startOf(version).toFixed(2)} s, before the speech allows`);
-    }
-  }
+    const pick = chooseVersion(allStarts, threshold);
+    version = pick.version;
+    if (!pick.met) notes.push(`no version of the recording lets the music start ${AFTER_FIRST} s after the opening lines (the first node ends at ${firstEnd.toFixed(2)} s): ${version}, the shortest, starts at ${allStarts[version].toFixed(2)} s, before the speech allows`);
+  } else if (!names.includes(version)) throw new Error(`there is no version ${JSON.stringify(version)}: the map's are ${names.join(', ')}`);
   const v = versionMap(map, version), musicStart = startOf(version);
   const at = (/** @type {number} */ musicTime) => musicStart + musicTime;
-  const strikes = titleStrikes(v);
-  const lengths = /** @type {number[]} */ (n11), spoken11 = lengths.reduce((a, b) => a + b, 0), span = strikes.title - strikes.first;
-  if (spoken11 > span + 1e-9) throw new Error(`n11's ${lengths.length} lines come to ${spoken11.toFixed(2)} s but only ${span.toFixed(2)} s lie between the coda's first chord and the title's strike: ${(spoken11 - span).toFixed(2)} s too long (the overrun)`);
-  const gap = (span - spoken11) / (lengths.length + 1);
+
+  /* The ending: the end line, the black, the title. */
+  const strikes = v.coda.chords.map((c) => at(c.t));
+  if (strikes.length < 2) throw new Error(`the coda has ${strikes.length} chord: the film needs a first chord and a final strike`);
+  const finalStart = strikes[strikes.length - 1], lineEnd = finalStart - LINE_BEFORE_FINAL, line = clips[endNode.id], lineStart = lineEnd - line;
+  const latest = lineStart - BLACK_BEFORE_LINE;
+  let blackIndex = -1;
+  strikes.slice(0, -1).forEach((s, i) => { if (s <= latest + 1e-9) blackIndex = i; });
+  if (blackIndex < 0) throw new Error(`${endNode.id}'s line is ${line.toFixed(2)} s and would have to start ${(strikes[0] - latest).toFixed(2)} s before the coda's first chord (the black begins on a strike at least ${BLACK_BEFORE_LINE} s before the line, the line ends ${LINE_BEFORE_FINAL} s before the final strike): too long by ${(strikes[0] - latest).toFixed(2)} s`);
+  const blackStart = strikes[blackIndex], end = at(v.coda.end.t) + TAIL;
 
   /** @type {NodeCut[]} */
-  const nodes = [];
-  /** @param {string} id @param {1 | 2 | 3} part @param {number} start @param {number} end @param {Voice[]} voice @param {{ at: number }[]} bounds cut points inside the node */
-  const add = (id, part, start, end, voice, bounds) => {
-    const times = [0, ...bounds.map((b) => b.at), end - start];
+  const cutNodes = [];
+  const franticIds = order.filter((n) => n.role === 'frantic').map((n) => n.id);
+  /** @param {string} id @returns {Mix} */
+  const mixOf = (id) => {
+    const i = franticIds.indexOf(id);
+    if (i >= 0) return franticCurve(i, franticIds.length);
+    if (id === endNode.id && franticIds.length) return franticCurve(franticIds.length - 1, franticIds.length);
+    return { voiceDb: 0, duckDb: DUCK_DB };
+  };
+  /** @param {string} id @param {NodeCut['role']} role @param {boolean} locked @param {number} start @param {number} stop @param {Voice[]} voice @param {{ at: number }[] | null} bounds cut points inside the node; null: the node is not a take's */
+  const add = (id, role, locked, start, stop, voice, bounds) => {
     const camera = moves[id] ?? {};
     const plays = landed[id] ?? [];
     const hits = plays.map((h) => ({ ...h, t: h.frame / F }));
+    const times = bounds ? [0, ...bounds.map((b) => b.at), stop - start] : [];
     /** @type {Cut[]} */
-    const cuts = times.slice(0, -1).map((cutAt, k) => {
+    const cuts = !bounds || stop - start <= 0 ? [] : times.slice(0, -1).map((cutAt, k) => {
       const length = times[k + 1] - cutAt;
-      const startFrame = Math.round((start + cutAt) * F), endFrame = k === times.length - 2 ? Math.round(end * F) : Math.round((start + times[k + 1]) * F);
+      const startFrame = Math.round((start + cutAt) * F), endFrame = k === times.length - 2 ? Math.round(stop * F) : Math.round((start + times[k + 1]) * F);
       /** @type {Cut} */
-      const cut = { take: framings[id] ? `c-${id}-${framings[id][0]}` : `c-${id}`, at: cutAt, start: start + cutAt, length, startFrame, frames: endFrame - startFrame, from: cutAt };
+      const cut = { take: `c-${id}`, at: cutAt, start: start + cutAt, length, startFrame, frames: endFrame - startFrame, from: cutAt };
       if (camera.move) cut.move = camera.move;
-      const punch = camera.punch ?? (id === 'n11' ? CHORD_PUNCH : undefined);
+      const punch = camera.punch ?? (role === 'coda' ? CHORD_PUNCH : undefined);
       if (punch) cut.punch = punch;
       /** @type {{ frame: number, percent: number }[]} */
       const punches = [...(camera.punches ?? [])];
       /* A play on the cut's own first frame, in a cut that already punches on its entry, is that punch. */
-      if (part === 3) for (const h of hits) if (h.t >= cutAt - 1e-9 && h.t < cutAt + length - 1e-9 && !(cut.punch && h.t - cutAt < 1.5 / F)) punches.push({ frame: Math.round((h.t - cutAt) * F), percent: LANDING_PUNCH });
+      if (role === 'frantic') for (const h of hits) if (h.t >= cutAt - 1e-9 && h.t < cutAt + length - 1e-9 && !(cut.punch && h.t - cutAt < 1.5 / F)) punches.push({ frame: Math.round((h.t - cutAt) * F), percent: LANDING_PUNCH });
       if (punches.length) cut.punches = punches;
       if (cut.move || cut.punch || cut.punches) refusePush(`${id} cut ${k + 1}`, cut, sizes[id] ?? 1920);
       return cut;
     });
-    nodes.push({ id, part, start, end, length: end - start, frames: Math.round(end * F) - Math.round(start * F), voice, cuts, hits: hits.map((h) => ({ what: h.what, at: h.t })) });
+    cutNodes.push({ id, role, locked, start, end: stop, length: stop - start, frames: Math.round(stop * F) - Math.round(start * F), voice, cuts, hits: hits.map((h) => ({ what: h.what, at: h.t })), mix: mixOf(id) });
   };
 
-  speech.forEach((id, i) => {
-    const start = starts[id], end = i + 1 < speech.length ? starts[speech[i + 1]] : codaStart;
-    add(id, order[i].part, start, end, [{ start, length: /** @type {number} */ (clips[id]) }], []);
+  spoken.forEach((n, i) => {
+    const stop = i + 1 < spoken.length ? voiceStarts[spoken[i + 1].id] : codaStart;
+    add(n.id, n.role, n.locked, starts[n.id], stop, [{ start: voiceStarts[n.id], length: clips[n.id] }], []);
   });
-  const chords = v.coda.chords.map((c) => c.t);
-  let lineAt = strikes.first + gap;
-  const lines = lengths.map((length, i) => { const line = { start: at(lineAt), length, line: i }; lineAt += length + gap; return line; });
-  const titleStart = at(strikes.title), finalStart = at(strikes.final), end = at(strikes.end) + TAIL;
-  add('n11', 3, codaStart, titleStart, lines, chords.slice(1).filter((c) => c < strikes.title - 1e-9).map((c) => ({ at: c - chords[0] })));
+  add('coda', 'coda', false, codaStart, blackStart, [], strikes.slice(1, blackIndex).map((s) => ({ at: s - codaStart })));
+  add(endNode.id, 'end', false, blackStart, finalStart, [{ start: lineStart, length: line }], null);
 
   /* Where the theme's second block and the full orchestra fall in the speech. */
   const place = (/** @type {number} */ musicTime) => {
-    const film = at(musicTime), node = nodes.find((n) => n.id !== 'n11' && film >= n.start - 1e-9 && film < n.end - 1e-9);
-    return { at: film, node: node?.id ?? 'n11', into: node ? film - node.voice[0].start : film - codaStart };
+    const film = at(musicTime), node = cutNodes.find((n) => n.role !== 'end' && n.role !== 'coda' && film >= n.start - 1e-9 && film < n.end - 1e-9);
+    return { at: film, node: node?.id ?? 'coda', into: node ? film - node.voice[0].start : film - codaStart };
   };
   const firstOf = (/** @type {number} */ block) => /** @type {{ start: number }} */ (v.statements.find((s) => s.block === block)).start;
 
-  const nine = /** @type {NodeCut} */ (nodes.find((n) => n.id === 'n09'));
-  const hits = nodes.flatMap((n) => n.hits.filter((h) => h.at < n.length).map((h) => ({ id: n.id, what: h.what, at: n.start + h.at }))).sort((a, b) => a.at - b.at);
+  const hits = cutNodes.flatMap((n) => n.hits.filter((h) => h.at < n.length).map((h) => ({ id: n.id, what: h.what, at: n.start + h.at }))).sort((a, b) => a.at - b.at);
+  const firstFrantic = cutNodes.find((n) => n.role === 'frantic');
   return {
-    nodes,
+    lead,
+    nodes: cutNodes,
     hits,
-    music: { version, start: Math.max(0, musicStart), from: Math.max(0, -musicStart), until: strikes.end + TAIL, untilFilm: end, codaStart, notes, second: place(firstOf(2)), third: place(firstOf(3)), statements: v.statements.map((s) => ({ n: s.n, start: at(s.start), length: s.length })), beats: beats(map, version).map(at) },
-    part: { one: [0, starts.n05], two: [starts.n05, nine.start], three: [nine.start, titleStart], out: [titleStart, end] },
-    out: { titleStart, finalStart, fadeStart: end - FADE, end },
+    codaStart,
+    music: { version, start: Math.max(0, musicStart), from: Math.max(0, -musicStart), until: v.coda.end.t + TAIL, untilFilm: end, codaStart, notes, choice: { threshold, firstEnd, starts: allStarts }, second: place(firstOf(2)), third: place(firstOf(3)), statements: v.statements.map((s) => ({ n: s.n, copy: s.copy ?? 0, start: at(s.start), length: s.length })), beats: beats(map, version).map(at), strikes },
+    part: { calm: [0, firstFrantic?.start ?? codaStart], frantic: [firstFrantic?.start ?? codaStart, codaStart], coda: [codaStart, end] },
+    ending: { line: endNode.id, lineStart, lineEnd, blackStrike: blackIndex + 1, strikes: strikes.length, blackStart, finalStart, gap: finalStart - blackStart },
+    out: { blackStart, finalStart, fadeStart: end - FADE, end },
     total: end,
   };
-}
-
-/**
- * What a run says about the music's place: the version, where it starts, and where in the speech the second block and the full orchestra fall.
- * @param {Timeline} tl
- */
-export function placementText(tl) {
-  const m = tl.music, where = (/** @type {{ at: number, node: string, into: number }} */ p) => `${p.at.toFixed(2)} s, in ${p.node}, ${p.into.toFixed(2)} s in`;
-  return [
-    `music: ${m.version}, starts ${m.start.toFixed(2)} s into the film${m.from > 0 ? ` (the first ${m.from.toFixed(2)} s of the recording are left out)` : ''}; the first chord of the coda is at ${m.codaStart.toFixed(2)} s, the film ends at ${m.untilFilm.toFixed(2)} s, ${TAIL} s after the final chord ends`,
-    `block 2 (the violins) at ${where(m.second)}`,
-    `full orchestra at ${where(m.third)}`,
-    ...m.notes.map((n) => `NOTE ${n}`),
-  ].join('\n');
 }
 
 /** @typedef {ReturnType<typeof timeline>} Timeline */
 
 /**
- * The captions: each line of a node shown for its share of the node's clip, by its share of the node's characters. A node whose voice
- * is a clip a line (node 11) shows each line for as long as its clip plays. Nothing is captioned during the title.
- * @param {{ id: string, lines: readonly string[] }[]} commentary
+ * What a run says about the ending: where the black begins, the line in it, the title and the film's end.
+ * @param {Timeline} tl
+ */
+export function endingText(tl) {
+  const e = tl.ending, s = (/** @type {number} */ x) => x.toFixed(2);
+  return [
+    `ending: the coda's first chord is at ${s(tl.codaStart)} s and the final strike at ${s(e.finalStart)} s; black from strike ${e.blackStrike} of ${e.strikes} at ${s(e.blackStart)} s (a strike inside the black plays over black); the line ${e.line} plays ${s(e.lineStart)} to ${s(e.lineEnd)} s, ${LINE_BEFORE_FINAL} s before the final strike; black gap ${s(e.gap)} s`,
+    `title: c-title from frame 0 at the final strike, ${s(e.finalStart)} s; the picture fades from ${s(tl.out.fadeStart)} s; the film ends at ${s(tl.out.end)} s, ${TAIL} s after the final chord ends`,
+  ].join('\n');
+}
+
+/**
+ * What a run says about the music's place: the version and why, where it starts, where in the speech the second block and the full orchestra fall, and the ending.
+ * @param {Timeline} tl
+ */
+export function placementText(tl) {
+  const m = tl.music, where = (/** @type {{ at: number, node: string, into: number }} */ p) => `${p.at.toFixed(2)} s, in ${p.node}, ${p.into.toFixed(2)} s in`;
+  const starts = Object.entries(m.choice.starts).map(([k, x]) => `${k} ${x.toFixed(1)}`).join(', ');
+  return [
+    `music: ${m.version}, starts ${m.start.toFixed(2)} s into the film${m.from > 0 ? ` (the first ${m.from.toFixed(2)} s of the recording are left out)` : ''}; the first chord of the coda is at ${m.codaStart.toFixed(2)} s`,
+    `  the rule: the smallest start at or after ${m.choice.threshold.toFixed(2)} s (the first node ends at ${m.choice.firstEnd.toFixed(2)} s, and a second more); the starts of the versions: ${starts}`,
+    `block 2 (the violins) at ${where(m.second)}`,
+    `full orchestra at ${where(m.third)}`,
+    endingText(tl),
+    ...m.notes.map((n) => `NOTE ${n}`),
+  ].join('\n');
+}
+
+/**
+ * The captions: each line of a node shown for its share of the node's clip, by its share of the node's characters; a node's `caption` is shown in place
+ * of its `lines`. The coda has none, the end node's line is shown over its black, and nothing is captioned during the title.
+ * @param {{ id: string, lines: readonly string[], caption?: string | readonly string[] }[]} commentary
  * @param {Timeline} tl
  * @returns {{ node: string, start: number, end: number, text: string }[]}
  */
 export function captions(commentary, tl) {
   const cues = [];
   for (const node of tl.nodes) {
-    const lines = commentary.find((c) => c.id === node.id)?.lines;
-    if (!lines) continue;
-    if (node.voice.length > 1 || node.voice[0]?.line !== undefined) {
-      node.voice.forEach((v, i) => { if (lines[v.line ?? i] !== undefined) cues.push({ node: node.id, start: v.start, end: v.start + v.length, text: lines[v.line ?? i] }); });
-      continue;
-    }
+    const item = commentary.find((c) => c.id === node.id);
+    const lines = item?.caption !== undefined ? [item.caption].flat() : item?.lines;
+    if (!lines || !node.voice.length) continue;
     const v = node.voice[0], total = lines.reduce((s, l) => s + l.length, 0);
     let from = v.start;
     for (const text of lines) {
@@ -314,34 +409,32 @@ export function wrap(text, width) {
 export const spoken = (text) => (text.split(/\s+/u).filter(Boolean).length * 60) / WPM;
 
 /**
- * The title's words from the instance's `commentary.ts`: `TITLE` and `TITLE_NOTE` when it has them, else its deprecated `END_CARD` split at the
- * first parenthesis (the title, then the parenthetical).
- * @param {{ TITLE?: string, TITLE_NOTE?: string, END_CARD?: string }} mod
- * @returns {{ title: string, note: string }}
+ * The title's words from the instance's `commentary.ts`: `TITLE` and `TITLE_TAG` (the line under it, "INVITE ONLY") when it has them; until the data has
+ * TITLE_TAG, what is there: `TITLE_NOTE`, else the deprecated `END_CARD` split at the first parenthesis (the title, then the parenthetical).
+ * @param {{ TITLE?: string, TITLE_TAG?: string, TITLE_NOTE?: string, END_CARD?: string }} mod
+ * @returns {{ title: string, tag: string }}
  */
 export function titleWords(mod) {
-  if (mod.TITLE !== undefined) return { title: mod.TITLE, note: mod.TITLE_NOTE ?? '' };
+  if (mod.TITLE !== undefined) return { title: mod.TITLE, tag: mod.TITLE_TAG ?? mod.TITLE_NOTE ?? '' };
   const m = mod.END_CARD?.match(/^(.*?)\s*(\(.*)$/su);
-  if (m) return { title: m[1], note: m[2] };
-  if (mod.END_CARD) return { title: mod.END_CARD, note: '' };
+  if (m) return { title: m[1], tag: m[2] };
+  if (mod.END_CARD) return { title: mod.END_CARD, tag: '' };
   throw new Error('the instance`s commentary.ts exports no TITLE (and no deprecated END_CARD): the film has no title to show');
 }
 
 /* ---- what the film is made of: the guards against one that looks finished and is not ---- */
 
 /**
- * Which voice clips, takes and framings a run uses, and what it refuses or must say (pure: it is given the folders' listings).
+ * Which voice clips and takes a run uses, and what it refuses or must say (pure: it is given the folders' listings).
  *
  * - `voiceFiles` is the voice folder's file names, or null when there is no folder. No folder: every clip is silence the length of
- *   its words and `placeholderSound` is set. A folder that is missing any one clip (`n01` to `n10`, `n11-1` to `n11-N`, whatever
- *   extension) is refused naming that clip: a re-voice replaces the whole folder, and one clip silent in a film of voice is a film
- *   that looks finished and is not.
+ *   its words and `placeholderSound` is set. A folder that is missing any one node's clip (`<id>`, whatever extension) is refused naming that
+ *   clip: a re-voice replaces the whole folder, and one clip silent in a film of voice is a film that looks finished and is not.
  * - `haveMusic` false also sets `placeholderSound`.
- * - `takeFiles` is the takes folder's file names. A node with no `c-<id>.mp4` is a slate (`slates`); node 9 is not if it has any
- *   of its framings (`c-n09-wide`, `-tight`, `-turned`), and has only some of them is reported in `notes`, naming the missing;
- *   `c-title-1` or `c-title-2` missing is a slate too (`titleSlates`), reported.
- * @param {{ commentary: { id: string, lines: readonly string[] }[], voiceFiles: string[] | null, takeFiles: string[], haveMusic: boolean }} input
- * @returns {{ voice: Record<string, string | null | (string | null)[]>, placeholderSound: boolean, framings: Record<string, string[]>, slates: string[], titleSlates: string[], notes: string[] }}
+ * - `takeFiles` is the takes folder's file names. A node with no `c-<id>.mp4` is a slate (`slates`; the end node, which is over black, needs no take);
+ *   `c-title.mp4` missing is a slate too (`titleSlate`), reported.
+ * @param {{ commentary: { id: string, role?: string, part?: number, lines: readonly string[] }[], voiceFiles: string[] | null, takeFiles: string[], haveMusic: boolean }} input
+ * @returns {{ voice: Record<string, string | null>, placeholderSound: boolean, slates: string[], titleSlate: boolean, notes: string[] }}
  */
 export function resolveInputs({ commentary, voiceFiles, takeFiles, haveMusic }) {
   /** @type {string[]} */
@@ -352,24 +445,18 @@ export function resolveInputs({ commentary, voiceFiles, takeFiles, haveMusic }) 
     if (!hit) throw new Error(`the voice folder has no clip named ${stem}: a re-voice replaces the whole folder`);
     return hit;
   };
-  /** @type {Record<string, string | null | (string | null)[]>} */
+  /** @type {Record<string, string | null>} */
   const voice = {};
-  for (const node of commentary) voice[node.id] = node.id === 'n11' ? node.lines.map((_, i) => clipFile(`n11-${i + 1}`)) : clipFile(node.id);
+  for (const node of commentary) voice[node.id] = clipFile(node.id);
   const placeholderSound = !voiceFiles || !haveMusic;
   if (!voiceFiles) notes.push('no voice folder: every clip is silence the length of its words, and every frame says PLACEHOLDER SOUND');
   else if (!haveMusic) notes.push('no music: every frame says PLACEHOLDER SOUND');
 
-  const has = (/** @type {string} */ name) => takeFiles.includes(`c-${name}.mp4`);
-  /** @type {Record<string, string[]>} */
-  const framings = {};
-  const all = ['wide', 'tight', 'turned'], have = all.filter((f) => has(`n09-${f}`));
-  if (have.length) framings.n09 = have;
-  if (have.length && have.length < all.length) notes.push(`node 9 has only ${have.join(', ')} of its three framings (missing ${all.filter((f) => !have.includes(f)).join(', ')}): its cuts rotate through those alone`);
-  const slates = commentary.map((n) => n.id).filter((id) => (id === 'n09' ? !have.length && !has('n09') : id === 'n02b' ? false : !has(id)));
+  const slates = roles(speechNodes(commentary)).filter((n) => n.role !== 'end' && !takeFiles.includes(`c-${n.id}.mp4`)).map((n) => n.id);
   for (const id of slates) notes.push(`${id} has no take: a slate stands in for it, marked PLACEHOLDER PICTURE`);
-  const titleSlates = ['c-title-1', 'c-title-2'].filter((t) => !takeFiles.includes(`${t}.mp4`));
-  for (const t of titleSlates) notes.push(`${t} has no take: a slate stands in for it, marked PLACEHOLDER PICTURE`);
-  return { voice, placeholderSound, framings, slates, titleSlates, notes };
+  const titleSlate = !takeFiles.includes('c-title.mp4');
+  if (titleSlate) notes.push('c-title has no take: a slate stands in for it, marked PLACEHOLDER PICTURE');
+  return { voice, placeholderSound, slates, titleSlate, notes };
 }
 
 /**
@@ -423,20 +510,20 @@ const MUSIC_LEVEL = 0.8;
  * the music's first frame, so the first 150 ms ramp down rather than starting low. (The other choice, delaying the voice, would
  * move a clip inside a window that is already fitted to its length.) And a clip whose release would run into the coda releases
  * fully before it: its duck ends `release` s before `until`, so the music is back to full level when the coda's first chord sounds.
- * @param {{ start: number, length: number }[]} spans
+ * @param {{ start: number, length: number, db?: number }[]} spans each may carry its own depth `db` (the frantic nodes duck less)
  * @param {{ db: number, attack: number, release: number }} duck
  * @param {number} until
  * @param {number} [from] the film second the music begins
  */
 export function duckExpression(spans, { db, attack, release }, until, from = -Infinity) {
-  const dip = 1 - 10 ** (db / 20);
   const ramps = spans.filter((s) => s.start < until).map((s) => {
+    const dip = 1 - 10 ** ((s.db ?? db) / 20);
     const down = Math.max(s.start - attack, from), end = Math.min(s.start + s.length, until - release);
-    return `min(clip((t-${down.toFixed(4)})/${attack},0,1),clip((${(end + release).toFixed(4)}-t)/${release},0,1))`;
+    return `${dip.toFixed(6)}*min(clip((t-${down.toFixed(4)})/${attack},0,1),clip((${(end + release).toFixed(4)}-t)/${release},0,1))`;
   });
   if (!ramps.length) return '1';
   const deep = ramps.reduce((a, b) => `max(${a},${b})`);
-  return `1-${dip.toFixed(6)}*(${deep})*lt(t,${until.toFixed(4)})`;
+  return `1-(${deep})*lt(t,${until.toFixed(4)})`;
 }
 
 /** @param {string} p an ffmpeg filter argument's path */
@@ -677,3 +764,4 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
+
