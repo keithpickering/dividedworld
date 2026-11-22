@@ -163,12 +163,13 @@ export function livePlays(plays: readonly CardPlay[], now: number): readonly Car
  * Whether a play is up now: what the Lens's Who groups by and the kinds grid's sign reads. Face up, it is in force unless an admin ended it (`reversed`),
  * a cutting card cut it (`cut`), it did not take (`untaken`), a trap caught it (`caught`), it was over when it landed (`instant`), a filing spent it (`spent`),
  * or its time has passed and its card does not keep (`keeps`: its level stays until an admin ends it). A play whose `starts` is ahead is in force: it is
- * set, and waits. A face-down back is in force until it sprang (`revealed`), its setter took it back (`takenBack`) or its stored end has passed (`backOver`).
+ * set, and waits. A face-down back is in force, unless an admin ended it or a trap caught it, until it sprang (`revealed`), its setter took it back (`takenBack`) or its stored end has passed (`backOver`).
  * It agrees with `endable` (`engine/ui/cards/Lens.tsx`) on every face-up play that is neither `instant` nor `spent`, which `endable` does not read.
  */
 export function inForce(play: CardPlay, now: number, keeps: boolean): boolean {
+  if (play.reversed || play.caught !== undefined) return false;
   if (play.faceDown) return play.revealed === undefined && play.takenBack === undefined && !backOver(play, now);
-  if (play.reversed || play.cut || play.untaken || play.caught !== undefined || play.instant || play.spent) return false;
+  if (play.cut || play.untaken || play.instant || play.spent) return false;
   return keeps || play.ends === undefined || Date.parse(play.ends) > now;
 }
 

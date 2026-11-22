@@ -1069,6 +1069,11 @@ describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', (
     expect(inForce({ ...back, revealed: { card: 'trap', spring: 's1', at: '2026-11-15T00:00:00.000Z' } } as CardPlay, now, false)).toBe(false);
   });
   test('a taken-back back is not in force', () => expect(inForce({ ...back, takenBack: { at: PAST } } as CardPlay, now, false)).toBe(false));
+  test('a back an admin ended, or a trap caught, is not in force', () => {
+    expect(inForce({ ...back, reversed: true } as CardPlay, now, false)).toBe(false);
+    expect(inForce({ ...back, caught: 'trap' } as CardPlay, now, false)).toBe(false);
+  });
+  test('a play whose ends is this instant is over', () => expect(inForce({ ...up, ends: new Date(now).toISOString() } as CardPlay, now, false)).toBe(false));
   test('a back past its endsAt is not in force', () => expect(inForce({ ...back, endsAt: PAST } as CardPlay, now, false)).toBe(false));
 
   test('agrees with endable on every face-up play, for both values of keeps', () => {
