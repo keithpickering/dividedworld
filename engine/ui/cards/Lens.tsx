@@ -930,11 +930,16 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     onForm ? (kind === form.kind ? formP : null) : kind === VISIT_KIND && visit ? visitP : null;
   /* The latest press on a tab: a read that lands after another tab was pressed does not take the reader back. */
   const pressed = useRef(0);
-  const choose = (kind: string) => {
+  /** Resolves true once the tab is the selected one (at once where nothing is read first), false where the press did not take. */
+  const choose = (kind: string): Promise<boolean> => {
     const mine = ++pressed.current;
     const read = readOf(kind);
-    if (read === null || read.data !== null) { store.select(kind); return; }
-    void read.open().then((landed) => { if (landed !== null && !onForm && pressed.current === mine) store.select(kind); });
+    if (read === null || read.data !== null) { store.select(kind); return Promise.resolve(true); }
+    return read.open().then((landed) => {
+      const took = landed !== null && !onForm && pressed.current === mine;
+      if (took) store.select(kind);
+      return took;
+    });
   };
   const waiting = onForm ? formP : onVisit ? visitP : null;
   /* The kind's plays are gone (a read of the page moved them): there is nothing to show. */
@@ -1036,7 +1041,16 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const labelOf = (kind: string) => kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
   /* Esc closes the grid and not the Lens (the float asks `onClose`), and the All button that opened it has focus again. */
   const closeGrid = () => { setGrid(false); allButton.current?.focus(); };
-  const pick = (kind: string) => { setGrid(false); choose(kind); tabs.current.get(kind)?.focus(); };
+  const pick = (kind: string) => {
+    setGrid(false);
+    /* Once the select has landed: the tab is brought into view (it may be the one already open, which the tab-row effect would not move) and takes focus. */
+    void choose(kind).then((took) => {
+      if (!took) return;
+      const el = tabs.current.get(kind);
+      el?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
+      el?.focus({ preventScroll: true });
+    });
+  };
   /* A discipline card's plays say what each did, in the engine's words: a play an admin ended, one that did not take and one a trap caught are said as any is (the view's notes win). */
   const effect = rules?.discipline;
   const said = effect === undefined ? null : Object.fromEntries(ofKind.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).flatMap((p): [Id, string][] => {
@@ -1120,6 +1134,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
       <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={gridOn ? allId : tabId(card)}>
         {/* The fade at the body's top: it sticks to the scroll edge under the bar, and shows once the body is scrolled off its top. */}
         <div className="kb-lens-fade-top" aria-hidden="true" />
+        {/* The grid is the whole body while it shows: the Report foot link goes with the tab's sections, and is back with them. */}
         {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} now={now} keeping={keeping} onChoose={pick} /> : <>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}

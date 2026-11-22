@@ -1582,6 +1582,25 @@ describe('a visit\'s tab', () => {
     return w.fake.seed.infraction(w.visit, { points: 2 });
   };
 
+  test('the kinds grid lists the visit\'s tab first, with no count, ahead of the cards', async () => {
+    const w = visited();
+    w.play('k1');
+    openVisit(w);
+    await userEvent.click(await visitMark(w.seq));
+    const l = screen.getByRole('dialog', { name: /^Visit and cards/u });
+    const row = within(l).getByRole('tablist');
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 700 });
+    fireEvent.scroll(row);
+    await userEvent.click(await within(l).findByRole('button', { name: 'All 2' }));
+    const items = [...l.querySelectorAll<HTMLElement>('.kb-lens-kinds li')];
+    expect(items).toHaveLength(2);
+    expect(items[0]!.querySelector('.kb-lens-kind-name')!.textContent).toMatch(/^On a visit/u);
+    expect(items[0]!.querySelector('.kb-lens-kind-count')).toBeNull();
+    expect(items[1]!.querySelector('.kb-lens-kind-name')!.textContent).toBe('Card 1');
+    expect(items[1]!.querySelector('.kb-lens-kind-count')!.textContent).toBe('1');
+  });
+
   test('the visit\'s tab is busy while the story is read, and its panel then enters whole: no aria-busy block, no "Reading"', async () => {
     const w = visited();
     openVisit(w);
@@ -3513,6 +3532,19 @@ describe('the kinds grid', () => {
     await userEvent.click(within(lens()).getByRole('button', { name: 'All 12' }));
     expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
     expect(lens()).toBeInTheDocument();
+  });
+
+  test('choosing the tab already open still scrolls it into view and focuses it, once the select has landed', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const selected = within(row).getAllByRole('tab').find((t) => t.getAttribute('aria-selected') === 'true')!;
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    const into = vi.mocked(Element.prototype.scrollIntoView);
+    into.mockClear();
+    await userEvent.click(within(entries().find((li) => li.querySelector('.kb-lens-kind-name')!.textContent === selected.textContent)!).getByRole('button'));
+    await waitFor(() => expect(selected).toHaveFocus());
+    expect(into.mock.instances).toContain(selected);
+    expect(into).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'center' });
   });
 
   test('a Lens on a form draws no All button', async () => {
