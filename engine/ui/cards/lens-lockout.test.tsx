@@ -43,7 +43,7 @@ async function lens(admin: boolean, ended = false) {
   if (ended) {
     const answer = await w.fake.reverseCard(sprung.spring.id);
     if (!answer.ok) throw new Error(answer.error);
-    /* No help for the page: it carries the spring's card_end as the real thread page does (the fake's `withEnds`). */
+    /* No help for the page: it carries the spring's card_end as the real thread page does (the fake's `postPlaysOf` and its riders). */
   }
   renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
   await screen.findByRole('article', { name: /^Post 1 /u });

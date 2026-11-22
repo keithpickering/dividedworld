@@ -1574,13 +1574,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return wanted.length === 0 ? [] : (await endsByTarget(wanted)).map(toAct);
     },
     async postPlays(posts) {
-      /* post_plays (0408) holds a call to 200 posts, which a page's posts always are: a longer list is cut at that and the calls run together. Each call's plays arrive as the server orders them, by date and id, so the merge keeps that order; one call's failure fails the whole read. */
+      /* post_plays (0408) holds a call to 200 posts, which a page's posts always are: a longer list is read in calls of that many, run together. The calls hold disjoint posts, and every play and rider belongs to one post, so no play comes twice. Each call's plays arrive as the server orders them, by date and id, so the merge keeps that order; one call's failure fails the whole read. */
       const wanted = [...new Set(posts)].filter(idOk);
       if (wanted.length === 0) return { plays: [], counts: [] };
       const parts = Array.from({ length: Math.ceil(wanted.length / POST_PLAYS_CALL) }, (_, i) => wanted.slice(i * POST_PLAYS_CALL, (i + 1) * POST_PLAYS_CALL));
       const answers = await Promise.all(parts.map(async (part) => (await read(() => client.rpc('post_plays', { posts: part }))).data as Row | null));
-      const seen = new Set<unknown>();
-      const rows = answers.flatMap((d) => (isObject(d) ? rowsOf(d['plays']) : [])).filter((r) => !seen.has(r['id']) && seen.add(r['id']));
+      const rows = answers.flatMap((d) => (isObject(d) ? rowsOf(d['plays']) : []));
       return { plays: merged(rows, 'created_at', 'id').map(toAct), counts: answers.flatMap((d) => (isObject(d) ? rowsOf(d['counts']).map(toCount) : [])) };
     },
     async kindPlays(post, card, before, size) {
