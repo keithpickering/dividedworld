@@ -160,6 +160,14 @@
 }
 
 /*
+ * The Report link ends the body, and a body scrolled in steps leaves it standing low in the clip, where the bottom left cut's triangle
+ * (the page showing through the frame's corner) lies under its first letters. It starts one cut-in in, so its words are never over the triangle.
+ */
+.kb-lens-body .kb-report-foot {
+  padding-left: calc(var(--kb-cut-in) - var(--kb-border));
+}
+
+/*
  * The fade at the panel's foot, where the body's scroll edge is, only while more lies below (the panel's `data-kb-more`, set as the
  * body scrolls); it takes no pointer. It is cut as the frame's panel is, one border in, so it never dims the bottom left cut's border.
  */
