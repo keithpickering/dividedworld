@@ -186,7 +186,7 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
     const service = conn.db("service");
     await writeModelTiers(conn, o.tiers ?? {});
 
-    // The shipped value is off; backstory runs with the System off whatever a profile says.
+    // The shipped value is on; backstory runs with the System off whatever a profile says.
     await conn.sql("update settings set value = 'false'::jsonb where key = 'systemEnabled'");
 
     const simDay = (): string => dayName(Date.now());

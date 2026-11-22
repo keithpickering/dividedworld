@@ -147,19 +147,15 @@ apology, read by whoever put you there, and you can appeal too. Your log always 
 
 ## The System
 
-The System is the machine that runs the board. It's arbitrary on purpose, and it isn't obliged to be fair. Some of its parts are still switched off while the game is young (see [Coming attractions](#coming-attractions)). What it says in character may bluff, flatter or mislead, so trust it about as far as you'd trust a stranger with a megaphone.
+The System is the machine that runs the board. It's arbitrary on purpose, and it isn't obliged to be fair. What it says in character may bluff, flatter or mislead, so trust it about as far as you'd trust a stranger with a megaphone.
 
 It has a board of its own. You can't post there, but you can spin a thread from anything it says.
+
+Its staff are the Boss and the **Mod Bots**, The System's henchmen. The Mod Bots walk a beat of boards, visit posts and file what they find. They set **rules** that never stop you posting, but a broken one fills your **warn bar**, and a full bar can end in a timed ban, with the way out stated plainly. You can **report** a post to them, and **appeal** what they do to you.
 
 What the glass says is different, and that's the deal. This guide, [My log](/log) and Settings are plain and true. If you want to know what actually happened to your characters, the log is where to look.
 
 ## Coming attractions
-
-Built, and not switched on here yet:
-
-- **Mod Bots**, The System's henchmen, who visit posts and file reports.
-- **Rules and a warn bar**: rules that never stop you posting, but fill a bar that can end in a timed ban, with the way out stated plainly.
-- **Reports and appeals.**
 
 Still to come, and subject to change:
 
