@@ -97,6 +97,8 @@ export interface CardEffect {
   readonly drawing?: true;
   /** A drawing play whose card says it is cleared, for the post as it is now; it counts none. */
   readonly cleared?: true;
+  /** A play of a rewind card (`CardRules.rewind`): while it is up, no card up to `upTo` lands on the post. Carried by card_target for a live play, so a refusal is the same for every caster. */
+  readonly rewind?: { readonly upTo: Rarity };
 }
 
 /**
@@ -199,6 +201,20 @@ export function roomOnPost(rules: Pick<CardRules, 'drawsEffect'>, settings: Pick
   if (target.reach !== 'post' || !isPost(target.kind)) return ok(undefined);
   if (!set && rules.drawsEffect === undefined) return ok(undefined);
   return effectsUp(target, effects, now) >= settings.postEffects ? refuse(postFullWords(settings.postEffects)) : ok(undefined);
+}
+
+/**
+ * A rewind's refusal, the same for every caster, since the rewind is face up: the post turns away every card up to `upTo` until its play ends.
+ * play_card says it in the same words.
+ */
+export function rewindWords(name: string, upTo: Rarity, ends: string | undefined): string {
+  return `this post's ${name} turns away cards up to ${upTo} until ${ends ? refusalTime(ends) : 'it ends'}`;
+}
+
+/** The live rewind on a post target that turns a card of `rarity` away, as long as one is up; none on any other target. */
+function frozen(rules: Pick<CardRules, 'rarity'>, target: CardTarget, effects: readonly CardEffect[], now: Date): CardEffect | undefined {
+  if (target.reach !== 'post' || !isPost(target.kind)) return undefined;
+  return effects.find((e) => e.rewind !== undefined && (e.reach ?? 'post') === 'post' && isLive(e, now) && atOrBelow(rules.rarity, e.rewind.upTo));
 }
 
 const capital = (s: string): string => s.charAt(0).toUpperCase() + s.slice(1);
@@ -339,6 +355,13 @@ export interface CardRules<Config = unknown> {
    * cast passes over it. A lockout lets the cast land and locks its character out of the post's thread for `hours`. Any may sit beside a `match` or a `catches`.
    */
   readonly trap?: { readonly trigger: Trigger; readonly match?: Match; readonly outcome?: RideOutcome | { readonly kind: 'refund' } | LockoutOutcome };
+  /**
+   * A cast card on a post alone, with a `lasts`, face up only, whose checked configuration is `{ to }`, a version of the post (rewind.ts). While it is
+   * up the post shows as of that point, and no play of a card no rarer than `upTo` lands on the post (`rewindWords`). It draws an effect
+   * (`drawsEffect`), but has no Gimmick, veil, reaction, writes, replies, draws, drive or surface (`instanceProblems`), and is never offered to a staff persona
+   * (`staffOffers`), which has no point to pick.
+   */
+  readonly rewind?: { readonly upTo: Rarity };
   /** A use card on a post alone with a time up: while it is up, the first `count` casts on its post whose printed flavor is one of `flavors`, landing and not handed back by a card set face down, each go back to their caster's hand. A staff cast passes over it. */
   readonly refunds?: { readonly flavors: readonly Alignment[]; readonly count: number };
   /** A cast trap's catch: the card it waits for, by key, from its checked configuration (a ride trap may name its card here too). Only a set card that springs on a cast and has no `match` has it. */
@@ -672,6 +695,9 @@ export function decidePlay(rules: CardRules, settings: Settings, target: CardTar
   };
   const ward = effects.find((e) => e.gimmick?.kind === 'ward' && (e.reach ?? 'post') === target.reach && isLive(e, now) && wardTurnsAway(e.gimmick, rules) && !pierced(e));
   if (ward) return refuse(wardWords(ward.card === null ? 'ward' : (context.nameOf?.(ward.card) ?? ward.card), ward.gimmick as WardEffect, rules, target.reach));
+  // A rewind's freeze is a ward by rarity, passed by a pierce as a ward is, and said before anything the card's own rules say.
+  const frozenBy = frozen(rules, target, effects.filter((e) => !pierced(e)), now);
+  if (frozenBy?.rewind) return refuse(rewindWords(frozenBy.card === null ? 'rewind' : (context.nameOf?.(frozenBy.card) ?? frozenBy.card), frozenBy.rewind.upTo, frozenBy.ends));
   // A card that cuts is refused where its target holds no Gimmick it may end, so the ghost marks offer it only where it could land; the named play is checked in `decided`.
   // The old voice's refusal is said before it, as `decided` says it first.
   if (rules.cuts !== undefined && context.rulesOf !== undefined && !withheld(rules, settings) && cuttable(rules, effects, target, now, context.rulesOf).length === 0) return refuse(`there's no Gimmick up on this ${target.reach} for ${rules.name} to end`);
@@ -701,9 +727,11 @@ function disciplineRefusal(rules: CardRules, target: CardTarget, context: PlayCo
  * A Use card played on a target. That the target is the player's own post is SQL's to hold, since
  * only SQL reads who wrote it; a ward does not refuse a Use, and a price effect adds nothing to one.
  */
-export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now'> = {}): Verdict<Decided> {
+export function decideUse(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, message: unknown, context: Pick<PlayContext, 'now' | 'nameOf'> = {}): Verdict<Decided> {
   if (playOf(rules) !== 'use') return wrongPlay(rules);
   const now = context.now ?? new Date();
+  const frozenBy = frozen(rules, target, effects, now);
+  if (frozenBy?.rewind) return refuse(rewindWords(frozenBy.card === null ? 'rewind' : (context.nameOf?.(frozenBy.card) ?? frozenBy.card), frozenBy.rewind.upTo, frozenBy.ends));
   // A back springs on a quote and a no-quote stops one, so the two never share a post; each says how it is undone.
   if (rules.gimmick?.kind === 'noQuote' && effects.some((e) => e.faceDown && isLive(e, now))) return refuse(`${rules.name} stops quotes, and this post holds a card face down; take that card back first`);
   return decided(rules, settings, target, effects, config, message, now);
@@ -741,8 +769,8 @@ const hasWord = (s: string): boolean => /[\p{L}\p{N}]/u.test(s);
  * its first tag is drawn on the post the caster chose, and a back would carry it blind to a quoting post's box nobody drew for. decideSet refuses such a card, the play form leaves out its Set face down switch, and the
  * server holds the same on face_down (supabase/migrations/0153_drives.sql, face_down_never_writes).
  */
-export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline' | 'cuts'>): boolean =>
-  rules.discipline !== undefined || rules.cuts !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
+export const faceUpOnly = (rules: Pick<CardRules, 'writes' | 'needsMessage' | 'draws' | 'drive' | 'surface' | 'replies' | 'discipline' | 'cuts' | 'rewind'>): boolean =>
+  rules.rewind !== undefined || rules.discipline !== undefined || rules.cuts !== undefined || rules.writes !== undefined || rules.needsMessage !== undefined || rules.draws !== undefined || rules.drive !== undefined || rules.surface !== undefined || rules.replies !== undefined;
 
 export function decideSet(rules: CardRules, settings: Settings, target: CardTarget, effects: readonly CardEffect[], config: unknown, cards: readonly CardRules[], conditions: SetConditions = {}, now: Date = new Date()): Verdict<{ price: Hundredths; config: unknown; catches?: string; phrase?: string; passage?: string; who?: { except: boolean; characters: readonly string[] } }> {
   const play = playOf(rules);
@@ -757,6 +785,8 @@ export function decideSet(rules: CardRules, settings: Settings, target: CardTarg
   // So is one that needs a message, draws, runs a drive or is drawn on (a surface card): faceUpOnly says which, and one sentence covers them.
   if (faceUpOnly(rules)) return refuse(`${rules.name} is cast face up and never set face down`);
   if (target.reach !== 'post' || !isPost(target.kind)) return refuse('a card is set face down on a post');
+  const frozenBy = frozen(rules, target, effects, now);
+  if (frozenBy?.rewind) return refuse(rewindWords(frozenBy.card === null ? 'rewind' : (cards.find((c) => c.key === frozenBy.card)?.name ?? frozenBy.card), frozenBy.rewind.upTo, frozenBy.ends));
   if (effects.some((e) => e.faceDown && isLive(e, now))) return refuse('this post already holds a card face down');
   const stop = quoteStop(effects, now);
   if (stop) return refuse(`this post's ${cards.find((c) => c.key === stop.card)?.name ?? stop.card} stops quotes until ${stop.ends ? refusalTime(stop.ends) : 'it ends'}, so no card is set face down here until then`);
@@ -977,6 +1007,8 @@ export function staffOffers(card: CardRules): boolean {
   if (card.trap?.outcome?.kind === 'ride') return false;
   // A staff character's Acts are not settled, so an earn a persona cast would never be paid.
   if (card.gimmick !== undefined && (card.play ?? 'cast') === 'cast') return false;
+  // A rewind names a point of the post's history, which a persona's play has no way to pick.
+  if (card.rewind !== undefined) return false;
   // A card that cuts names a Gimmick by its play, which a persona does not choose (the Buzzkill design, section 2.5).
   if (card.cuts !== undefined) return false;
   // A persona plays a card with no caster message, so a card that needs one could never land.

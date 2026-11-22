@@ -1696,3 +1696,18 @@ test('a formerly or withdrawn entry has a name, and the instance has a withdrawn
   assert.match(said(leftWith({ withdrawn: [{ key: 'gone', name: '', refund: 100 }] })), /withdrawn "gone" has no name/);
   assert.match(said(leftWith({ withdrawn: undefined as never })), /the instance has no withdrawn list/);
 });
+
+test('a rewind is a cast card on a post alone, with a time up, and none of what a rewind cannot carry', () => {
+  const week = { unit: 'day', count: 3 };
+  const rewind = { upTo: 'rare' };
+  const ok = { rarity: 'legendary', reaches: ['post'], lasts: week, rewind, drawsEffect: {} };
+  const bad = (more: Record<string, unknown>) => instanceProblems(withCards({ ...ok, ...more })).join('\n');
+  assert.deepEqual(instanceProblems(withCards(ok)), [], 'a well-formed rewind card, which draws an effect');
+  assert.match(bad({ play: 'use', gimmick: { kind: 'ward', upTo: 'common' } }), /card "splat" has a rewind, and only a cast card does/);
+  assert.match(bad({ reaches: ['post', 'thread'] }), /card "splat" has a rewind, and a card with a rewind reaches a post alone/);
+  assert.match(bad({ lasts: undefined }), /card "splat" has a rewind, and a card with a rewind has a time up \(lasts\)/);
+  assert.match(bad({ rewind: { upTo: 'mythic' } }), /card "splat" has a rewind, and its upTo is one of common, uncommon, rare or legendary/);
+  for (const [name, value] of [['gimmick', { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 }], ['veil', 'author'], ['reaction', true], ['writes', {}], ['replies', true], ['draws', ['a']], ['drive', {}], ['surface', {}]] as const) {
+    assert.match(bad({ [name]: value }), new RegExp(`card "splat" has a rewind, and a card with a rewind has no ${name}`), name);
+  }
+});

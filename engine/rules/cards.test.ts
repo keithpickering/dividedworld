@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, rewindWords, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -1002,4 +1002,53 @@ test('a target that is not a post is never refused by the count', () => {
 test('the card\'s own stack refusal comes first', () => {
   const one: CardRules = { ...drawer, canApply: () => refuse('the card says no') };
   assert.deepEqual(decidePlay(one, limit, post, full, {}, ''), { ok: false, why: 'the card says no' });
+});
+
+// A rewind card: its play carries `rewind` on the post's effect, and the post turns away cards up to `upTo` until it ends.
+const clock: CardRules = { ...cast('clock', 'legendary'), reaches: ['post'], lasts: { unit: 'day', count: 1 }, rewind: { upTo: 'rare' }, drawsEffect: {} };
+const rewound = (over: Partial<CardEffect> = {}): CardEffect => ({ card: 'clock', act: 'r', rewind: { upTo: 'rare' }, ends: soon, ...over });
+const rareMove = cast('raremove', 'rare');
+const rareUse: CardRules = { ...base, key: 'rareuse', name: 'Test Rare Use', rarity: 'rare', play: 'use', gimmick: { kind: 'ward', upTo: 'common' }, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'rareuse' }, t, e, now) };
+const rareSet: CardRules = { ...cast('rareset', 'rare'), setPhrase: () => 'x' };
+const rewindRefusal = (ends: string) => `this post's Test clock turns away cards up to rare until ${refusalTime(ends)}`;
+
+test('rewindWords says what the freeze turns away and until when', () => {
+  assert.equal(rewindWords('Test clock', 'rare', soon), `this post's Test clock turns away cards up to rare until ${refusalTime(soon)}`);
+});
+
+test('a live rewind refuses a Move up to its rarity on the post, and a rarer one passes', () => {
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k) };
+  assert.deepEqual(decidePlay(rareMove, settings, post, [rewound()], {}, '', ctx), { ok: false, why: rewindRefusal(soon) });
+  assert.deepEqual(decidePlay(plain, settings, post, [rewound()], {}, '', ctx), { ok: false, why: rewindRefusal(soon) }, 'a common card too');
+  assert.equal(decidePlay(grand, settings, post, [rewound()], {}, '', ctx).ok, true, 'a legendary Move passes');
+  assert.equal(decidePlay(rareMove, settings, post, [rewound({ ends: gone })], {}, '', ctx).ok, true, 'an ended rewind refuses nothing');
+});
+
+test('the freeze is said after a ward and before discipline', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon };
+  const r = decidePlay(plain, settings, post, [rewound(), ward], {}, '', { nameOf: names });
+  assert.equal(r.ok, false);
+  assert.match(r.ok ? '' : r.why, /Test Shield turns away/, 'the ward speaks first');
+});
+
+test('a pierce no weaker than the rewind\'s card gets a Move past it, as a ward', () => {
+  const ctx = { nameOf: names, rarityOf: (k: string) => (k === 'clock' ? ('rare' as const) : undefined) };
+  assert.equal(decidePlay(rareMove, settings, post, [rewound()], {}, '', { ...ctx, pierce: 'rare' }).ok, true, 'a pierce up to rare passes');
+  assert.equal(decidePlay(rareMove, settings, post, [rewound()], {}, '', { ...ctx, pierce: 'uncommon' }).ok, false, 'a pierce up to uncommon does not');
+});
+
+test('a live rewind refuses a Use and a Set on the post likewise', () => {
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k) };
+  assert.deepEqual(decideUse(rareUse, settings, post, [rewound()], {}, '', ctx), { ok: false, why: rewindRefusal(soon) });
+  assert.equal(decideUse(rareUse, settings, post, [rewound({ ends: gone })], {}, '', ctx).ok, true, 'an ended rewind refuses nothing');
+  assert.deepEqual(decideSet(rareSet, settings, post, [rewound()], {}, [rareSet, clock]), { ok: false, why: rewindRefusal(soon) });
+  assert.equal(decideSet(rareSet, settings, post, [rewound({ ends: gone })], {}, [rareSet, clock]).ok, true, 'an ended rewind refuses nothing');
+});
+
+test('a rewind card is face up only and is never offered to a staff persona', () => {
+  assert.equal(faceUpOnly(clock), true);
+  assert.deepEqual(decideSet(clock, settings, post, [], {}, [clock]), { ok: false, why: `${clock.name} is cast face up and never set face down` });
+  assert.equal(staffOffers(clock), false);
+  const { rewind: _gone, ...bare } = clock;
+  assert.equal(staffOffers(bare as CardRules), true, 'the same card without the rewind');
 });
