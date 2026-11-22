@@ -726,4 +726,12 @@ describe('the words under the paint', () => {
     const css = readFileSync('instances/divided-world/cards/graffiti/graffiti.css', 'utf8');
     expect(/\.kb-graffiti-ink,\s*\.kb-graffiti-suds\s*\{[^}]*pointer-events:\s*none/u.test(css)).toBe(true);
   });
+
+  /* The ORIGIN box breaks its words anywhere (spin.css), and the tile, absolute at the area's right edge, shrinks to its narrowest: a letter a row. */
+  test('the Draw tile keeps its word on one line wherever it is drawn', () => {
+    const css = readFileSync('instances/divided-world/cards/graffiti/graffiti.css', 'utf8').replace(/\/\*[\s\S]*?\*\//gu, '');
+    const rule = /\.kb-graffiti-draw\.kb-graffiti-draw\s*\{([^}]*)\}/u.exec(css)?.[1] ?? '';
+    expect(rule, 'the tile does not wrap').toMatch(/white-space:\s*nowrap/u);
+    expect(rule, "the tile does not take the box's break-anywhere").toMatch(/overflow-wrap:\s*normal/u);
+  });
 });
