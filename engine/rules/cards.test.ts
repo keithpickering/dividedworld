@@ -1,5 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
@@ -956,6 +958,13 @@ const drawing = (act: string, extra: Partial<CardEffect> = {}): CardEffect => ({
 const back = (act: string): CardEffect => ({ card: null, act, faceDown: true, ends: soon });
 const full = [drawing('a'), drawing('b')];
 const said = postFullWords(2);
+
+test('the database raises the words the rules do (0409_post_effects.sql)', () => {
+  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0409_post_effects.sql'), 'utf8');
+  const raised = /replace\('(this post already shows % effects[^']*)', '%', /.exec(sql);
+  assert.ok(raised, 'the migration holds the refusal once, with % for the number');
+  for (const n of [1, 2, 8, 16]) assert.equal(raised![1]!.replace('%', String(n)), postFullWords(n), `at ${n}`);
+});
 
 test('a full post refuses a drawing cast, a drawing use and any set, in the words', () => {
   assert.equal(said, 'this post already shows 2 effects, the most it takes. A slot opens when one ends, is ended by an admin, or its author clears it');

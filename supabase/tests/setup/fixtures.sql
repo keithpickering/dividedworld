@@ -12,6 +12,7 @@ select set_config('kayfabb.seeding', 'on', false);
 insert into settings (key, value) values
   ('charactersPerPlayer', '6'),
   ('reactionCap', '3'),
+  ('postEffects', '8'),
   ('crowdPayEach', '2'),
   ('crowdPayMost', '10'),
   ('walletCap', '600'),

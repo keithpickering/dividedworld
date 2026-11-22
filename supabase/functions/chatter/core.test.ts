@@ -821,7 +821,7 @@ test('Laugh Track cues none of which are in the post are refused in the card\'s 
 test('a persona\'s Laugh Track set on its own post keeps its cues though they are not in that post', async () => {
   // The real Laugh Track is a cast card, which a persona lands on a reply only; so this offers its rules (its validation and its repair) as a set (play `set`, a trap that springs on a cast and names a catch, and no set phrase, which only a cast card has).
   const { setPhrase: _waits, ...rules } = laughTrackRules;
-  const settable = { ...rules, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
+  const settable = { ...rules, play: 'set' as const, drawsEffect: undefined, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
   const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'laugh-track' ? settable : c)) };
   const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
   const m = fakeModels((r) => ({ words: 'Pizza time, everyone.', card: { key: 'laugh-track', on: 'own', config: { 'laugh-track': { cues: [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'pizza', sound: 'cheer' }] } } }, note: `Replied, ${r.staff}.` }));
@@ -868,7 +868,7 @@ test('a Set with options reads its own new post as the target, after it is writt
   // The only Divided World set card with options is Card Collector, whose option is the card it names; so the instance here carries a set card on a cast
   // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
-  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
+  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, drawsEffect: undefined, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
   const tuned: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, snare] };
   const d = fakeDb(oneReply);
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'snare', on: 'own', config: { snare: { color: '#12ab34' } } } }));
