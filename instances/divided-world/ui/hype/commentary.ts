@@ -1,21 +1,34 @@
 /**
- * The commentary video's script as data, the words of docs/plans/2026-11-21-commentary-video-design.md (section 4, as the owner reworded it in section 9),
- * to the letter. Each node is a list of captions; each caption fits two rows (at most 90 characters) and is split only
- * at a comma, a dash or a full stop. Joined with single spaces, a node's captions are its full text.
+ * The commentary video's script as data: the narration of docs/plans/2026-11-21-commentary-video-revision-design.md
+ * (section 11, the owner's rewrite on the sixth cut), to the letter. Each node is a list of lines; each line fits two
+ * caption rows (at most 90 characters) and is split only at a comma, a dash, a colon or a full stop. Joined with single
+ * spaces, a node's lines are its full spoken text. A `*stage direction*` in the spoken text is performed and not
+ * captioned: `captionLines` drops it, or a node's own `caption` replaces its lines on screen.
  */
 
 export interface Node {
   readonly id: string;
+  /** 1 is the calm opening (v01 to v09), 2 the frantic part (v10a to v10d), 3 the end (v11). */
   readonly part: 1 | 2 | 3;
+  /** What is spoken, one caption row-pair to a line. */
   readonly lines: readonly string[];
-  /** Seconds of silence before the node, where it is not the usual breath (n02b: D-Guy types for three seconds before it is said). */
+  /** Seconds of silence before the node, where it is not the usual breath (v01: the recording's opening silence; v06: the angry typing). */
   readonly after?: number;
+  /** What the screen shows where it differs from what is said (v11 omits the sigh). */
+  readonly caption?: readonly string[];
+}
+
+/** The lines a viewer reads: the node's `caption` if it has one, else its spoken lines without any `*stage direction*`. */
+export function captionLines(node: Node): readonly string[] {
+  if (node.caption) return node.caption;
+  return node.lines.map((l) => l.replace(/\*[^*]*\*\s*/g, '').trim()).filter((l) => l.length > 0);
 }
 
 export const commentary: readonly Node[] = [
   {
-    id: 'n01',
+    id: 'v01',
     part: 1,
+    after: 0,
     lines: [
       "Hi, I'm Gabe.",
       'Over the last few years, people have been asking me what our company has been up to.',
@@ -24,138 +37,144 @@ export const commentary: readonly Node[] = [
       'has not been in vain.',
       "For the last nine years, we've been putting all of our resources into this:",
       'Divided World.',
-      'And nobody can ever get that time back.',
-      'To listen to a commentary node,',
-      'put your cursor over the floating commentary symbol and click.',
-      'To stop one, click it again.',
-      'Some commentary nodes may take temporary control over the forum',
-      'in order to show you something.',
-      "It's best to just let those ones happen.",
+      "And since we'll never get any of that time back,",
+      "let's dive right in.",
     ],
   },
   {
-    id: 'n02',
+    id: 'v02',
     part: 1,
     lines: [
-      'Early playtests showed us that people posting on a forum want to be liked.',
-      'We found this resulted in a positive, nurturing environment -',
-      'So instead, every character has a secret class,',
-      'and some classes are paid for being disliked.',
-      'This one is a Heel.',
-      'Playtesters threw tomatoes at him and he made money.',
-      'We then found they could hurt him by agreeing with him, politely.',
+      'Here we see a straightforward MFGG submission with a solid 2.9 star rating trajectory.',
+      "You're probably wondering how something so earnest and innocuous",
+      "could possibly end up starting a vicious fight:",
+      "and that's exactly the kind of game design problem we set out to solve.",
     ],
   },
   {
-    id: 'n02b',
-    part: 1,
-    after: 3,
-    lines: ['And that REALLY got him going!'],
-  },
-  {
-    id: 'n03',
+    id: 'v03',
     part: 1,
     lines: [
-      'Sometimes we need to stop a player from doing something.',
-      'In our other games we use what we call a gate.',
-      'Here, the gate is another player.',
-      "Every card back looks the same, so you can't know what's waiting on a post.",
-      'Playtesters described this as unfair.',
+      'See, one of the first things we found in playtesting',
+      'is that human beings enjoy being Liked.',
+      'Among a population of well-adjusted adults,',
+      'this tends to result in a positive nurturing environment.',
     ],
   },
   {
-    id: 'n04',
+    id: 'v04',
     part: 1,
     lines: [
-      'I understand there may be some concerns that vibe coding was used on this project.',
-      'I want to assure you that all vibes were completely negative,',
-      // Split by the word, not by punctuation: the design's sentence has no comma between "human suffering" and
-      // "achieved", and the clause alone is 92 characters.
-      'and that the requisite amount of human suffering for a project',
-      'to count as art was achieved.',
-      'In fact, it was exceeded, and I personally saw to it that that was the case.',
+      'So to fix that, we gave every character an anonymous class:',
+      'And some of the classes get points for being DISliked.',
     ],
   },
   {
-    id: 'n05',
+    id: 'v05',
+    part: 1,
+    lines: [
+      "Take this guy: he's a Heel.",
+      'He made this piece-of-shit post, and the crowd threw tomatoes at him.',
+      'Normally this would be a bad thing, but for a Heel, it gives him Aura.',
+      'The flip side is that if you agree with him politely, he actually LOSES Aura.',
+      'We tried that out and he lost his MIND, heh,',
+      'check this out:',
+    ],
+  },
+  {
+    id: 'v06',
+    part: 1,
+    after: 4.5,
+    lines: ['Problem solved.'],
+  },
+  {
+    id: 'v07',
+    part: 1,
+    lines: [
+      'These are the six classes:',
+      'Face, Heel, Jabroni, Technician, Tweener, and Lurker.',
+      'You get six characters,',
+      'so you can try all of them if you want.',
+    ],
+  },
+  {
+    id: 'v08',
+    part: 1,
+    lines: [
+      'They all share the same aura,',
+      'so you can farm reactions as one class to power up another class.',
+    ],
+  },
+  {
+    id: 'v09',
+    part: 1,
+    lines: [
+      'The aura gets spent on cards at the vending machine,',
+      'and the characters play those to earn even more reactions.',
+      'In the biz we call that a "gameplay loop".',
+    ],
+  },
+  {
+    id: 'v10a',
     part: 2,
     lines: [
-      'This is a training arc.',
-      'The player learns that a card can be caught,',
-      'and then learns that being caught can be the plan.',
-      'We found 1 in 5 players understood this.',
-      'He took the other four for everything they had,',
-      'and none of them ever logged in again.',
+      'Okay, this is, uh...yeah, we call this a training arc.',
+      'A card can be face down on any post,',
+      'the poster can set conditions for it to spring,',
+      'so other players learn to uh, to not trust anybody, basically.',
     ],
   },
   {
-    id: 'n06',
+    id: 'v10b',
     part: 2,
     lines: [
-      'A card can be set to go off when somebody says a particular phrase.',
-      'This trains players to choose their words carefully,',
-      'which, on a forum, we think is new.',
+      'Sometimes the player plays a card and then it turns out',
+      'the player you played the card on actually WANTED you to play that card,',
+      "so you really should've played a different card,",
+      'or just not played any card at all.',
+      'And uh, you get some really interesting conversations,',
+      'at the end of the day.',
+      "It's a positive experience.",
+      'We tested this.',
+      "The testers...okay, I'll level with you,",
+      "this is the first time we've really tested it.",
     ],
   },
   {
-    id: 'n07',
+    id: 'v10c',
     part: 2,
     lines: [
-      'Each player has several characters, and no other player can see which are theirs.',
-      'So the argument you\'ve been watching is, I think, mostly, one person.',
-      "That's, um.",
-      'There seem to be more nodes than we shipped.',
+      'And you know, what do you know, anyway?!',
+      'You sit there on your gaming chair',
+      'and you expect everything handed to you on a silver platter.',
     ],
   },
   {
-    id: 'n08',
+    id: 'v10d',
     part: 2,
     lines: [
-      'Some commentary nodes may take control of the forum in order to show something to you.',
-      'In these cases, simply click again to stop the—',
-      "I'm clicking it.",
+      'Making games is hard!',
+      'Being Gabe, is hard!',
+      'I don\'t have to give my "commentary" to you!',
+      'This is a good idea!',
+      'THIS IS A GOOD IDEA!',
+      'THIS IS A GOOD IDEA!!!',
     ],
   },
   {
-    id: 'n09',
+    id: 'v11',
     part: 3,
-    lines: [
-      'So the, the way we think about this is,',
-      "any time you do something new there's a normal distribution of pain,",
-      "and this is— that's a chair.",
-      'This is not in the middle of the curve. Okay.',
-      "This is... somebody's post continuing itself?",
-      'I guess?',
-      "Okay, I'm hoping at one point one of the, uh...",
-    ],
-  },
-  {
-    id: 'n10',
-    part: 3,
-    lines: [
-      "Okay good, here's a Moderator.",
-      "He's a personality core we pulled out of a pile,",
-      'he should be able to clean some of this up, aaand....',
-      "he's merging all the boards together.",
-    ],
-  },
-  {
-    id: 'n11',
-    part: 3,
-    lines: [
-      'Please let me know...',
-      'what you think....',
-      "after you've had a chance....",
-      'to figure this stupid thing out!',
-    ],
+    lines: ['*sigh* Well, at least it\'s better than anime.'],
+    caption: ["Well, at least it's better than anime."],
   },
 ];
 
-export const TITLE = 'DIVIDED WROLD';
-export const TITLE_NOTE = "(misspelled) (put the misspelled word 'world' in there for real)";
+export const TITLE = 'DIVIDED WORLD';
+export const TITLE_TAG = 'INVITE ONLY';
 
 /**
- * @deprecated Read TITLE and TITLE_NOTE. The last reader is tools/hype/edit-commentary.mjs (and its test); the agent
- * that owns that file removes it, and this export goes with it.
+ * @deprecated The title card has no note any more; read TITLE and TITLE_TAG. Kept as '' only because
+ * tools/hype/shot-commentary-end.mjs and tools/hype/edit-commentary.mjs (files this module's author does not own)
+ * still import it; their owners remove it, and this export goes with them.
  */
-export const END_CARD = TITLE + ' ' + TITLE_NOTE;
+export const TITLE_NOTE = '';
