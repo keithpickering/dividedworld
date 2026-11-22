@@ -4,9 +4,10 @@
  * PPP name style. It reaches the engine as `Instance.system`; the engine never names anything here
  * ("KayfaBB never knows which instance it runs"). The numbers are settings (../settings.ts).
  *
- * The roster holds FanGaME, the first Boss (the FanGaME design), then ONTOPIC 5.0 and QC-1000, the first staff. Its order
- * is the succession's: seed_instance keeps it as `bossRoster` (docs/plans/2026-11-13-launch-design.md, section 4).
- * The placeholder Bosses and the placeholder Mod Bot are test fixtures (`instances/divided-world/system/fixtures/`), never in the roster.
+ * The roster holds FanGaME, the first Boss (the FanGaME design), then ONTOPIC 5.0 and QC-1000, the first staff. Its
+ * order is the succession's: seed_instance keeps it as `bossRoster` (docs/plans/2026-11-13-launch-design.md, section 4).
+ * The placeholder Bosses and the placeholder Mod Bot are test fixtures (`instances/divided-world/system/fixtures/`),
+ * never in the roster.
  */
 import type { SystemContent } from '../../../engine/rules/types.ts';
 import { deepFreeze } from '../../../engine/rules/instance.ts';
