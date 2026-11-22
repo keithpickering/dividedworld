@@ -22,8 +22,10 @@ const time = (iso: string): number => Date.parse(iso);
  */
 export function pointAt(post: Version, version: Version, grace: Span): string | null {
   const first = time(post.at) + spanMs(grace);
+  if (Number.isNaN(first)) return null;
   if (version.id === post.id) return new Date(first).toISOString();
-  return time(version.at) > first ? version.at : null;
+  const saved = time(version.at);
+  return !Number.isNaN(saved) && saved > first ? version.at : null;
 }
 
 /**

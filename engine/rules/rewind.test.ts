@@ -32,6 +32,7 @@ test('rewindPoints: a point is offered only where showing it would change the po
   assert.deepEqual(rewindPoints(post, [edit('e1', 10 * MIN)], [playOf('w', 20 * MIN)], grace, now, () => false), [{ version: 'post', at: at(2 * MIN), first: true }], 'the same play ended offers nothing from it');
   assert.deepEqual(rewindPoints(post, [], [playOf('w', 20 * MIN)], grace, now, all), [{ version: 'post', at: at(2 * MIN), first: true }], 'a play still showing on an unedited post offers the first point');
   assert.deepEqual(rewindPoints(post, [], [playOf('w', 20 * MIN)], grace, now, () => false), [], 'the same play ended, on an unedited post');
+  assert.deepEqual(rewindPoints(post, [], [playOf('w', 2 * MIN)], grace, now, all), [], 'a play at exactly the point is not later than it');
   assert.deepEqual(rewindPoints(post, [], [playOf('w', MIN)], grace, now, all), [], 'a play inside the grace is part of the first point');
 });
 
@@ -43,4 +44,10 @@ test('rewindPoints: edits are taken in time order whatever order they come in, a
 test('rewindConfig: a non-empty string `to`, in the card\'s own words otherwise', () => {
   assert.deepEqual(rewindConfig({ to: 'abc' }), { ok: true, value: { to: 'abc' } });
   for (const v of [undefined, null, {}, { to: '' }, { to: 3 }, 'abc', []]) assert.deepEqual(rewindConfig(v), { ok: false, why: "pick a point from this post's History" });
+});
+
+test('pointAt: an unparsable time gives no point, for the post and for an edit', () => {
+  assert.equal(pointAt({ id: 'post', at: 'garbage' }, { id: 'post', at: 'garbage' }, grace), null);
+  assert.equal(pointAt(post, edit('e', 0), grace) === null, true);
+  assert.equal(pointAt(post, { id: 'e', at: 'garbage' }, grace), null);
 });

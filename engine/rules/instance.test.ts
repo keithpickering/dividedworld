@@ -1706,6 +1706,8 @@ test('a rewind is a cast card on a post alone, with a time up, and none of what 
   assert.match(bad({ play: 'use', gimmick: { kind: 'ward', upTo: 'common' } }), /card "splat" has a rewind, and only a cast card does/);
   assert.match(bad({ reaches: ['post', 'thread'] }), /card "splat" has a rewind, and a card with a rewind reaches a post alone/);
   assert.match(bad({ lasts: undefined }), /card "splat" has a rewind, and a card with a rewind has a time up \(lasts\)/);
+  assert.match(bad({ rewind: null }), /card "splat" has a rewind, and its upTo is one of/, 'a null rewind is a problem, not a crash');
+  assert.match(bad({ rewind: ['rare'] }), /card "splat" has a rewind, and its upTo is one of/);
   assert.match(bad({ rewind: { upTo: 'mythic' } }), /card "splat" has a rewind, and its upTo is one of common, uncommon, rare or legendary/);
   for (const [name, value] of [['gimmick', { kind: 'earn', quadrants: ['calmPositive'], by: 0.1 }], ['veil', 'author'], ['reaction', true], ['writes', {}], ['replies', true], ['draws', ['a']], ['drive', {}], ['surface', {}]] as const) {
     assert.match(bad({ [name]: value }), new RegExp(`card "splat" has a rewind, and a card with a rewind has no ${name}`), name);

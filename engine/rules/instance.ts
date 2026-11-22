@@ -930,7 +930,7 @@ function rewindProblems(c: CardRules, who: string, play: string): string[] {
   if (play !== 'cast') out.push(`${has} only a cast card does`);
   if (!(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${has} a card with a rewind reaches a post alone`);
   if (c.lasts === undefined) out.push(`${has} a card with a rewind has a time up (lasts); a rewind ends at its time`);
-  if (typeof c.rewind !== 'object' || !RARITIES.includes((c.rewind as { upTo: Rarity }).upTo)) out.push(`${has} its upTo is one of ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  if (typeof c.rewind !== 'object' || c.rewind === null || Array.isArray(c.rewind) || !RARITIES.includes((c.rewind as { upTo: Rarity }).upTo)) out.push(`${has} its upTo is one of ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
   const carried = [['gimmick', c.gimmick], ['veil', c.veil], ['reaction', c.reaction], ['writes', c.writes], ['replies', c.replies], ['draws', c.draws], ['drive', c.drive], ['surface', c.surface]] as const;
   for (const [name, value] of carried) if (value !== undefined) out.push(`${has} a card with a rewind has no ${name}`);
   return out;

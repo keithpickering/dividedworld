@@ -1031,6 +1031,14 @@ test('the freeze is said after a ward and before discipline', () => {
   assert.match(r.ok ? '' : r.why, /Test Shield turns away/, 'the ward speaks first');
 });
 
+test('the freeze speaks before discipline\'s own refusal', () => {
+  const own = { ...post, author: 'me' };
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k), caster: 'me' };
+  const said = (effects: CardEffect[]) => decidePlay(fall, settings, own, effects, {}, '', ctx);
+  assert.deepEqual(said([]), { ok: false, why: `${fall.name} is played on another character's post` }, 'without the rewind, discipline speaks');
+  assert.deepEqual(said([rewound()]), { ok: false, why: rewindRefusal(soon) }, 'with a live rewind, the freeze speaks first');
+});
+
 test('a pierce no weaker than the rewind\'s card gets a Move past it, as a ward', () => {
   const ctx = { nameOf: names, rarityOf: (k: string) => (k === 'clock' ? ('rare' as const) : undefined) };
   assert.equal(decidePlay(rareMove, settings, post, [rewound()], {}, '', { ...ctx, pierce: 'rare' }).ok, true, 'a pierce up to rare passes');
