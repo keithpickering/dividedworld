@@ -138,7 +138,11 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
     if (virtual) {
       const done = cdp.once('Emulation.virtualTimeBudgetExpired', sessionId);
       await S('Emulation.setVirtualTimePolicy', { policy: 'advance', budget: dt });
-      await done;
+      /* The expiry is sometimes never announced when the machine is loaded (seen as a take that hangs for good): after 8 s the frame goes on, the page's time having been advanced all the same. */
+      let timer;
+      const late = await Promise.race([done.then(() => false), new Promise((r) => { timer = setTimeout(() => r(true), 8_000); })]);
+      clearTimeout(timer);
+      if (late) console.error('camera: the virtual time budget was never announced; going on');
     }
     /* Before the film starts the frame clock keeps the wall clock's pace, so it is never behind a frame time the browser has taken. */
     ticks = virtual ? ticks + dt : Math.max(ticks + dt, base + (Date.now() - wall));
