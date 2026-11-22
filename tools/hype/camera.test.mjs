@@ -7,7 +7,7 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findHeadlessShell, browserRoots } from './camera.mjs';
+import { findHeadlessShell, browserRoots, jpegSize, checkFrameSize } from './camera.mjs';
 
 const make = (...parts) => {
   const dir = mkdtempSync(join(tmpdir(), 'kb-camera-test-'));
@@ -68,4 +68,18 @@ test('the roots, in order: PLAYWRIGHT_BROWSERS_PATH, /opt/pw-browsers, LOCALAPPD
   const roots = browserRoots({ PLAYWRIGHT_BROWSERS_PATH: '/p', LOCALAPPDATA: '/l' }, '/h');
   assert.deepEqual(roots, ['/p', '/opt/pw-browsers', join('/l', 'ms-playwright'), join('/h', '.cache', 'ms-playwright')]);
   assert.deepEqual(browserRoots({}, '/h'), ['/opt/pw-browsers', join('/h', '.cache', 'ms-playwright')]);
+});
+
+/* A JPEG's size is in its first start-of-frame segment: FF C0..CF (but C4, C8, CC), then length, precision, height, width. */
+const jpeg = (/** @type {number} */ w, /** @type {number} */ h) => Buffer.from([0xff, 0xd8, 0xff, 0xe0, 0x00, 0x04, 0x00, 0x00, 0xff, 0xc0, 0x00, 0x11, 0x08, h >> 8, h & 255, w >> 8, w & 255, 0x03]);
+
+test('a frame`s size is read from the picture itself', () => {
+  assert.deepEqual(jpegSize(jpeg(2880, 1620)), { width: 2880, height: 1620 });
+  assert.deepEqual(jpegSize(jpeg(1440, 810)), { width: 1440, height: 810 });
+  assert.equal(jpegSize(Buffer.from([1, 2, 3])), null);
+});
+
+test('a frame that is not css x scale is refused: a film at double density must not be a picture blown up', () => {
+  assert.doesNotThrow(() => checkFrameSize(jpeg(2880, 1620), { width: 1440, height: 810 }, 2));
+  assert.throws(() => checkFrameSize(jpeg(1440, 810), { width: 1440, height: 810 }, 2), /1440 x 810.*2880 x 1620/);
 });

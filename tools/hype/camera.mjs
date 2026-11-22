@@ -76,6 +76,22 @@ class Cdp {
   }
 }
 
+/** The size of a JPEG, from its first start-of-frame segment; null where the bytes hold none. */
+export function jpegSize(buf) {
+  for (let i = 2; i + 8 < buf.length && buf[i] === 0xff; ) {
+    const marker = buf[i + 1], length = buf.readUInt16BE(i + 2);
+    if (marker >= 0xc0 && marker <= 0xcf && marker !== 0xc4 && marker !== 0xc8 && marker !== 0xcc) return { width: buf.readUInt16BE(i + 7), height: buf.readUInt16BE(i + 5) };
+    i += 2 + length;
+  }
+  return null;
+}
+
+/** Refuses a frame whose picture is not `css` x `scale`: the frames a film is made of are the compositor's, and its size is what the browser was started with. */
+export function checkFrameSize(buf, css, scale) {
+  const got = jpegSize(buf), want = { width: Math.round(css.width * scale), height: Math.round(css.height * scale) };
+  if (got && (got.width !== want.width || got.height !== want.height)) throw new Error(`the camera's frames are ${got.width} x ${got.height}, not the ${want.width} x ${want.height} that ${css.width} x ${css.height} at density ${scale} is: the film would be a smaller picture blown up`);
+}
+
 /**
  * Opens the camera on a page. `css` is the page's size in CSS px, `scale` its device pixel ratio: the frames are css × scale.
  * `serve` is files the camera answers for itself, by address ({ 'https://…': { file, type } }): a post shows a picture only from an
@@ -85,6 +101,9 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
   const profile = mkdtempSync(join(tmpdir(), 'kb-hype-'));
   const chrome = spawn(headlessShell(), [
     '--remote-debugging-port=0', `--user-data-dir=${profile}`,
+    /* The picture a frame hands back is the compositor's own surface, which the emulated device pixel ratio alone does not enlarge:
+       without this the frames are `css` px however large `scale` is, and a film "at double density" is that picture blown up. */
+    `--force-device-scale-factor=${scale}`,
     /* A container runs as root, which Chromium refuses to sandbox. */
     ...(process.getuid?.() === 0 ? ['--no-sandbox'] : []),
     '--enable-begin-frame-control', '--run-all-compositor-stages-before-draw', '--disable-new-content-rendering-timeout',
@@ -131,6 +150,7 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
   let ticks = base;
   let virtual = false;
   let last = null;         // the last picture, kept for a frame with no damage
+  let sized = false;
   let pointer = { x: -100, y: -100, down: false };
 
   /** One frame: a frame's worth of the page's time, then the draw; with `shoot`, the picture too. */
@@ -155,7 +175,7 @@ export async function openCamera({ url, css = { width: 1440, height: 810 }, scal
       await S('Runtime.evaluate', { expression: `(() => { let m = document.getElementById('kb-hype-mark'); if (!m) { m = document.createElement('div'); m.id = 'kb-hype-mark'; Object.assign(m.style, { position: 'fixed', right: '0', bottom: '0', width: '2px', height: '2px', pointerEvents: 'none', zIndex: '2147483646' }); document.documentElement.append(m); } m.style.background = m.dataset.on ? 'rgba(0,0,0,0.004)' : 'rgba(0,0,0,0.008)'; if (m.dataset.on) delete m.dataset.on; else m.dataset.on = '1'; })()` });
     }
     const r = await S('HeadlessExperimental.beginFrame', { frameTimeTicks: ticks, interval: dt, noDisplayUpdates: false, ...(shoot ? { screenshot: { format: 'jpeg', quality: 96 } } : {}) });
-    if (shoot && r.screenshotData) last = Buffer.from(r.screenshotData, 'base64');
+    if (shoot && r.screenshotData) { last = Buffer.from(r.screenshotData, 'base64'); if (!sized) { checkFrameSize(last, css, scale); sized = true; } }
     return last;
   }
 
