@@ -66,6 +66,8 @@ back kept on the page (the read grows with every spring).
 **The ORIGIN box** reads the same set. Its `more` flag and its "More than 20 cards" note go: the counts say more than they
 did.
 
+**Amended 2026-11-22 (the owner's answer to #993).** A sprung back that #984 keeps up now while its lockout is live is carried too: `play_post.lock_until` holds the lockout's end, and the page reads a post's sprung backs whose lockout is ahead. The back stays over for the stack, the limit and the counts.
+
 Weighed, from the two designs: everything with no cap (a page costs the history of every famous post on it); the newest N
 (a Whoops! of three years ago that is still inked falls out); post-effects' in force plus the newest 8 ended (the marks
 miscount, a kind leaves the post, and the most-drawn play of a kind is lost, so billing changes as plays end).

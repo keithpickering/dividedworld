@@ -24,6 +24,7 @@ import { playOf, reachesOf, type BeyondPost, type CardRules, type CardTarget, ty
 import { useRest } from '../glass/prepared.ts';
 import { usePlay, type PlayTarget } from './play.tsx';
 import { livePlays, stackPlays, usePlays, type Plays } from './plays.ts';
+import { usePostVersion } from './tails.ts';
 import { usePierce } from './pierce.ts';
 import type { Id } from '../data/api.ts';
 import { lowerFirst } from '../copy-words.ts';
@@ -47,6 +48,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   const { api, instance, settings, ui } = useKayfa();
   const { plays, underOf } = useThread();
   const here = usePlays(plays, act.id);
+  const version = usePostVersion(act.id);
   /* The acting character's live pierce, read once for the page and shared by every post's mark. */
   const pierce = usePierce(hudCharacter?.id ?? null, plays, play?.armed != null)?.upTo;
   const target = useTarget(act);
@@ -63,7 +65,7 @@ export function GhostMark({ act }: { readonly act: Act }) {
   /* A reply drawn under a post takes no card that replies: asked of the rules with the post it is under, so no ghost mark is drawn for one. */
   const under = underOf?.(act.id);
   /* A Move on one's own post may also be set face down (a ward never blocks that): the mark is offered where either lands, and named for the choice the form keeps. The play form reads the same answer (waysOn). */
-  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now(), ...(under === undefined ? {} : { under }), ...(pierce === undefined ? {} : { pierce }) });
+  const { cast: casts, set: sets } = waysOn(rules, act, here.plays, { cards: instance.cards, own, now: api.now(), postEffects: instance.settings.postEffects, states: here.states, version, ...(under === undefined ? {} : { under }), ...(pierce === undefined ? {} : { pierce }) });
   if (!casts && !sets) return null;
   const down = sets && (play.faceDown || !casts);
   const cardUi = ui.cards.find((c) => c.key === rules.key);
@@ -161,7 +163,8 @@ export function ReachGhost({ at }: { readonly at: ReachAt }) {
     ...(at.board ? { board: livePlays(onBoard.plays, api.now()).filter((p) => p.reach === 'board').map(effect) } : {}),
   };
   const goal = { reach: at.reach, [at.reach]: at.target } as unknown as CardTarget;
-  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above, now: api.now(), ...(pierce === undefined ? {} : { pierce }) }).ok) return null;
+  /* No version is passed: the limit is asked only of a post target (`roomOnPost`), so a play beyond a post never compares one. */
+  if (!landingOn(rules, goal, stackPlays(here.plays, api.now()), { cards: instance.cards, above, now: api.now(), postEffects: instance.settings.postEffects, states: here.states, ...(pierce === undefined ? {} : { pierce }) }).ok) return null;
   const face = faceOf(rules, ui.cards.find((c) => c.key === rules.key), withCardEconomy(instance.settings, settings.cardEconomy), ui.copy.cardKinds);
   const target: PlayTarget = { post: at.fromPost, reach: { reach: at.reach, target: at.target, name: at.name, ...(at.pronouns ? { pronouns: at.pronouns } : {}), above }, title: at.title, author: at.name, to: at.to, plays: at.plays, know: at.know, focusBack: at.focusBack };
   return (

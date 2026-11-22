@@ -178,6 +178,8 @@ begin
     insert into class_history (character, class_key, started_at) values (%4$L, 'alpha', now()), (%5$L, 'alpha', now()), (%6$L, 'alpha', now());
     insert into threads (id, board, title) select %7$L, b.id, 'Vc race' from boards b where b.slug = 'general';
     insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('vcrace', 'Vc Race Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1);
+    -- Race (c)'s other character plays a card of its own kind: plays of one kind on one post share their count's row (post_kinds, 0409), which place_cast's lock on the post already serializes; the race is about the veil's lock, not that row.
+    insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack) values ('vcother', 'Vc Race Other Card', 'salty', 'common', 'cast', '{post}', interval '3 days', 3);
     insert into acts (id, character, kind, thread, payload) values (%8$L, %4$L, 'post', %7$L, '{"body": "A post a veil lands on first."}'), (%9$L, %4$L, 'post', %7$L, '{"body": "A post an edit lands on first."}'),
       (%10$L, %4$L, 'post', %7$L, '{"body": "A post another character acts on."}'), (%11$L, %4$L, 'post', %7$L, '{"body": "A post a back springs on while a veil lands."}');
     insert into acts (id, character, kind, thread, target_act_id, payload) values (%12$L, %6$L, 'post', %7$L, %11$L, '{"body": "A quote of it."}'),
@@ -233,7 +235,7 @@ begin
   perform extensions.dblink_exec('vc_v', 'set local lock_timeout = ''1500ms''');
   begin
     perform extensions.dblink_exec('vc_v', format($x$ insert into acts (character, kind, thread, target_act_id, payload) values
-      (%1$L, 'card', %2$L, %3$L, '{"card": "vcrace", "message": "", "config": {}, "layer": 41}'), (%1$L, 'card', %2$L, %3$L, '{"card": "vcrace", "message": "", "config": {}, "layer": 42}') $x$, o, t, p3));
+      (%1$L, 'card', %2$L, %3$L, '{"card": "vcother", "message": "", "config": {}, "layer": 41}'), (%1$L, 'card', %2$L, %3$L, '{"card": "vcother", "message": "", "config": {}, "layer": 42}') $x$, o, t, p3));
     got := null;
   exception when others then got := sqlstate || ' ' || sqlerrm; end;
   perform extensions.dblink_exec('vc_v', 'commit');
@@ -279,7 +281,7 @@ begin
     delete from character_profiles where character in (select k.id from characters k where k.staff_kind = 'anonymous');
     delete from characters where staff_kind = 'anonymous';
   $sql$);
-  perform tests.commit($sql$ delete from card_kinds where key = 'vcrace' $sql$);
+  perform tests.commit($sql$ delete from card_kinds where key in ('vcrace', 'vcother') $sql$);
 end $$;
 
 -- ---- 1. The eight cases, each made twice: every Act before the veil lands, and every Act after it (while it is up) ----

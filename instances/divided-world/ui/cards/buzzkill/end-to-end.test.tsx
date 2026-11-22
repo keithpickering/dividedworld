@@ -53,11 +53,11 @@ function setup() {
 }
 type World = ReturnType<typeof setup>;
 
-const playsOn = async (fake: World['fake'], post: string) => (await fake.cardsOn(post, 8)).flatMap((a: Act) => playOf(a) ?? []);
+const playsOn = async (fake: World['fake'], post: string) => (await fake.postPlays([post])).plays.flatMap((a: Act) => playOf(a) ?? []);
 /** Whether the ghost mark offers Buzzkill on a post, as the page asks the rules (`waysOn`), from the plays the post holds. */
 const offered = async (w: World, post: string) => {
   const act = (await w.fake.actsById([post]))[0]!;
-  return waysOn(rulesOf('buzzkill'), act, await playsOn(w.fake, post), { cards: instance.cards, own: false, now: w.fake.now() }).cast;
+  return waysOn(rulesOf('buzzkill'), act, await playsOn(w.fake, post), { postEffects: 8, cards: instance.cards, own: false, now: w.fake.now() }).cast;
 };
 const logOf = async (w: World, who: string) => {
   w.fake.signInAs(who);
@@ -118,9 +118,9 @@ describe('a Buzzkill ends a Gimmick early, and an admin can bring it back', () =
     await user.click(picks[0]!);
     fake.clock.advance(3_600_000);
     await user.click(within(dialog).getByRole('button', { name: /^Play\b/u }));
-    await waitFor(async () => expect((await fake.cardsOn(kicked, 8)).some((a) => a.payload.card === 'buzzkill')).toBe(true));
+    await waitFor(async () => expect((await fake.postPlays([kicked])).plays.some((a) => a.payload.card === 'buzzkill')).toBe(true));
     cleanup();
-    const buzz = (await fake.cardsOn(kicked, 8)).find((a) => a.payload.card === 'buzzkill')!;
+    const buzz = (await fake.postPlays([kicked])).plays.find((a) => a.payload.card === 'buzzkill')!;
     expect(buzz.payload).toMatchObject({ card: 'buzzkill', instant: true, cut: { play: kick.id, card: 'kick-me' } });
 
     // The sign is gone; the Lens rows say what ended what.

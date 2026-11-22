@@ -281,6 +281,11 @@ export async function rehearse(o: RehearseOptions): Promise<RawRun> {
       systemOnAt, notes: setup.notes,
     };
     await o.onFinish?.(ctx);
+    // The run ends with its database still here, so the kept rows a day of play wrote (play_post and post_kinds, which triggers keep)
+    // are held to what the Acts say, as tools/test-sql.mjs and the import hold them: a run whose play the triggers missed is not a
+    // rehearsal of the game it reports on. After onFinish, so what a hook wrote is held too.
+    const drift = await conn.sql("select play, why from play_post_drift() order by play, why limit 5");
+    if (drift.length) throw new Error(`the run ended with play_post or post_kinds differing from the Acts (play_post_drift() names): ${drift.map((d) => `${String(d.play)} (${String(d.why)})`).join("; ")}`);
     // Task 9: the collector reads the run back; the report and the JSON go to rehearsals/<scenario>/<run>/ (the cassette is beside it).
     const log = await collect(ctx);
     const runDir = join(o.runsDir ?? join("rehearsals", scenario.key), `${startedReal.replace(/[:.]/g, "-")}-${mode}`);

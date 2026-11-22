@@ -378,3 +378,11 @@ test('the pattern finds a header run in a line and not ordinary words', () => {
   assert.doesNotMatch('Posted by my friend', HEADER_IN_LINE);
   assert.equal(frame().stopPattern, HEADER_IN_LINE);
 });
+
+test('it draws an effect, and the version in its state is the one it is cleared for', () => {
+  const cleared = youWereSaying.drawsEffect?.cleared;
+  assert.ok(youWereSaying.drawsEffect, 'it declares drawsEffect');
+  assert.ok(cleared, 'and says when it is cleared');
+  assert.deepEqual(cleared({ cleared: 'v1' }), { version: 'v1' });
+  for (const odd of [{ cleared: '' }, { cleared: 1 }, {}, null, 'v1', undefined, []]) assert.equal(cleared(odd), false, JSON.stringify(odd));
+});

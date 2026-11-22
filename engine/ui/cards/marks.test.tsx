@@ -359,7 +359,7 @@ describe('a strip that compares nothing listens to nothing', () => {
     for (const compare of [false, true]) {
       const tallies = createTallies();
       const plays = createPlays();
-      plays.add([ (await w.fake.cardsOn(on!.id, 5))[0]! ]);
+      plays.add([ (await w.fake.postPlays([on!.id])).plays[0]! ]);
       plays.setBilling(on!.id, [play]);
       const view = renderIn(w.fake, <MarkStrip post={on!.id} plays={plays} tallies={tallies} onOpen={() => {}} compare={compare} />, { instance, cards });
       await waitFor(() => expect(view.container.querySelectorAll('.kb-mark')).toHaveLength(1));

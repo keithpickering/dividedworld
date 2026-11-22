@@ -36,7 +36,7 @@ declare
   p_ uuid;
   r jsonb;
   r2 jsonb;
-  capped uuid[] := '{}';
+  layers uuid[] := '{}';
   above_play uuid;
   reveal uuid;
 begin
@@ -51,10 +51,11 @@ begin
   setter := (set_card(ann, 'tp-idle', a1, posts[25], '{}', 0) ->> 'id')::uuid;
   spin := tests.thread('Spun from 27');
   update threads set origin_act_id = posts[27] where id = spin;
-  -- Ten layers on seq 30, oldest first: only the first eight are a post's plays. And a live play on the whole thread, which sits above every post.
+  -- Ten layers on seq 30, oldest first: every one is a post's play while it is in force (these have no end), and the page carries all ten. Until 0410 only the oldest eight a post were kept, and this block pinned that; the cap
+  -- is gone (#871, docs/plans/2026-11-21-post-plays-design.md, section 1), so the page holds the ten and the test says so. And a live play on the whole thread, which sits above every post.
   for i in 1..10 loop
     p_ := tests.act(a2, 'card', t, '{"card": "splat", "config": {"color": "blue"}}', posts[30], now() - interval '1 day' + i * interval '1 minute');
-    if i <= 8 then capped := capped || p_; end if;
+    layers := layers || p_;
   end loop;
   above_play := tests.act(a2, 'card', t, jsonb_build_object('card', 'splat', 'reach', 'thread', 'thread', t, 'ends', now() + interval '1 day'), posts[1]);
   insert into play_reach (play, reach, thread, ends_at) values (above_play, 'thread', t, now() + interval '1 day');
@@ -77,7 +78,7 @@ begin
   -- Each piece against the direct read.
   if (r -> 'acts') is distinct from (select jsonb_agg(to_jsonb(a) order by a.seq) from acts_public a where a.thread = t and a.seq between 21 and 40 and a.kind not in ('edit', 'card')) then
     raise exception 'acts differ from acts_public'; end if;
-  if (r -> 'plays') is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id) from acts_public a where a.id = any (array[splat_play, setter] || capped)) or jsonb_array_length(r -> 'plays') is distinct from 10 then
+  if (r -> 'plays') is distinct from (select jsonb_agg(to_jsonb(a) order by a.created_at, a.id) from acts_public a where a.id = any (array[splat_play, setter] || layers)) or jsonb_array_length(r -> 'plays') is distinct from 12 then
     raise exception 'plays differ from acts_public: %', r -> 'plays'; end if;
   if jsonb_array_length(r -> 'above') is distinct from 1 or (r -> 'above' -> 0 ->> 'play')::uuid is distinct from above_play then raise exception 'above: %', r -> 'above'; end if;
   if (r -> 'above') is distinct from (select coalesce(jsonb_agg(jsonb_build_object('play', x.play, 'reach', x.reach, 'target', x.target, 'ends_at', x.ends_at, 'act', x.act)), '[]'::jsonb)
@@ -85,7 +86,7 @@ begin
     raise exception 'above differs from effects_above'; end if;
   if (select jsonb_agg(x order by x ->> 'act', x ->> 'kind') from jsonb_array_elements(r -> 'tallies') x)
      is distinct from (select jsonb_agg(jsonb_build_object('act', x.act, 'kind', x.kind, 'count', x.count) order by x.act::text, x.kind) from reaction_tallies x
-                       where x.act in (select (a ->> 'id')::uuid from jsonb_array_elements(r -> 'acts') a) or x.act = any (array[splat_play, setter] || capped || above_play)) then
+                       where x.act in (select (a ->> 'id')::uuid from jsonb_array_elements(r -> 'acts') a) or x.act = any (array[splat_play, setter] || layers || above_play)) then
     raise exception 'tallies: %', r -> 'tallies'; end if;
   if (select (x ->> 'count')::integer from jsonb_array_elements(r -> 'tallies') x where (x ->> 'act')::uuid = posts[22]) is distinct from 1 then raise exception 'the tally of seq 22'; end if;
   -- mine: only Ann's two.
@@ -155,7 +156,9 @@ end $$;
 
 -- An admin's end of a play on a post (0092's card_end) comes with the page's plays, as cardsOnMany answers it: the client marks a play
 -- reversed only from its card_end (engine/ui/cards/plays.ts), so a page without it draws an ended splat over the post's words for every
--- reader. The plays are the page's layers (at most 8 a post) and the card_end of each, and nothing else.
+-- reader. The plays are the post's plays that the page carries (in force, and each kind's newest and most drawn, whether over or not: 0410) and the card_end of each, and nothing else.
+-- The ended play is the newer of the two, so it is on the page as the kind's newest stand-in (until 0410 the page held the post's oldest eight whatever their state; the play that is over and
+-- neither newest nor most drawn is no longer carried, and the ones that are, are carried with their end).
 do $$
 declare
   admin_acc uuid := tests.account('tp-admin');
@@ -163,9 +166,9 @@ declare
   author uuid := tests.character(tests.account('tp-author'), 'Page Author');
   caster uuid := tests.character(tests.account('tp-caster'), 'Page Caster');
   t uuid := tests.thread('Ended on a post');
-  p uuid := tests.post(author, t, 'Words under an ended splat.');
-  ended uuid := tests.act(caster, 'card', t, '{"card": "splat"}', p);
-  live uuid := tests.act(caster, 'card', t, '{"card": "splat"}', p);
+  p uuid := tests.post(author, t, 'Words under an ended splat.', now() - interval '1 day');
+  live uuid := tests.act(caster, 'card', t, '{"card": "splat"}', p, now() - interval '2 hours');
+  ended uuid := tests.act(caster, 'card', t, '{"card": "splat"}', p, now() - interval '1 hour');
   r jsonb;
 begin
   insert into admins (account) values (admin_acc);

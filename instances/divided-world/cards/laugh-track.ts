@@ -133,6 +133,8 @@ function repairCues(config: unknown, target: PostTarget, play: 'cast' | 'set'): 
 
 export const laughTrack: CardRules<LaughTrackConfig> = {
   key: 'laugh-track',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Laugh Track',
   alignment: 'pepperoni',
   rarity: 'uncommon',

@@ -16,6 +16,8 @@ const MOST = 200;
 
 export const stickAround: CardRules<{ sentence: string }> = {
   key: 'stick-around',
+  /** Its effect is drawn on the post, so each play counts toward the post's limit of drawn effects (`postEffects`). */
+  drawsEffect: {},
   name: 'Stick Around',
   alignment: 'sweet',
   rarity: 'common',

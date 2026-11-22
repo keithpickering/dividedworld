@@ -144,6 +144,21 @@ test('strokes are checked by the card that was played, and saved by the service'
   assert.equal(stateless.status, 400, 'Stick Around keeps no state');
 });
 
+test('a save says whether it clears the effect, and for which version of the post (0411)', async () => {
+  const saved = (calls: string[]) => JSON.parse(calls.filter((c) => c.startsWith('service:save_effect_state:')).at(-1)!.slice('service:save_effect_state:'.length)) as Record<string, unknown>;
+  const clean = pair({ whoami, card_of_play: 'whoops', save_effect_state: { play: target } });
+  await runAction(clean.dbs, instance, { action: 'saveEffect', play: target, character: id, state: { strokes: [], clean: true } });
+  assert.equal(saved(clean.calls).cleared, true, 'a washed Whoops! is cleared');
+  assert.ok(!('cleared_for' in saved(clean.calls)), 'and for no version in particular');
+  const dirty = pair({ whoami, card_of_play: 'whoops', save_effect_state: { play: target } });
+  await runAction(dirty.dbs, instance, { action: 'saveEffect', play: target, character: id, state: { strokes: [] } });
+  assert.equal(saved(dirty.calls).cleared, false, 'a Whoops! not washed clean is not');
+  const version = '66666666-6666-4666-8666-666666666666';
+  const erased = pair({ whoami, card_of_play: 'you-were-saying', save_effect_state: { play: target } });
+  await runAction(erased.dbs, instance, { action: 'saveEffect', play: target, character: id, state: { cleared: version } });
+  assert.deepEqual([saved(erased.calls).cleared, saved(erased.calls).cleared_for], [true, version], 'a You Were Saying save passes the version it was erased for');
+});
+
 test('an autocorrect save is refused while its play is held, and saves once the hold has passed', async () => {
   const state = { peeled: [] };
   const hoursAgo = (h: number) => new Date(Date.now() - h * 3_600_000).toISOString();
@@ -526,7 +541,7 @@ test('a spring, and a strike\'s card, go out live as Acts of their own', async (
 
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3): the engine's test card, beside the instance's.
 const sparkle = { ...instance.cards.find((c) => c.key === 'stick-around')!, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, play: 'cast' as const,
-  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 },
+  reaches: ['character' as const], lasts: { unit: 'day' as const, count: 7 }, drawsEffect: undefined,
   canApply: (t: Parameters<typeof landsOn>[1], e: Parameters<typeof landsOn>[2]) => landsOn({ key: 'sparkle', reaches: ['character'] }, t, e) };
 const reaching = { ...instance, cards: [...instance.cards, sparkle] };
 

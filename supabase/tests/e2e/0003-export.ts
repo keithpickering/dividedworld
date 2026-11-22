@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -798,6 +798,23 @@ test('an instance exported and imported into a fresh database is the same instan
     const orphaned = await run('import-instance.mjs', ['--from', short, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.notEqual(orphaned.status, 0);
     assert.match(orphaned.stderr, /references a row the export does not hold/);
+    // play_post and post_kinds are kept by triggers a replica's write skips, so they are exported and imported as every table is and then held to the Acts (play_post_drift()): a play_post file with one row
+    // removed, its manifest count made to agree, is refused by the drift check and names the play, and the refused import leaves nothing behind.
+    const drifting = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-drift-'));
+    fs.cpSync(dir, drifting, { recursive: true });
+    const playPostLines = fs.readFileSync(path.join(dir, 'public.play_post.jsonl'), 'utf8').split('\n').filter(Boolean);
+    assert.ok(playPostLines.length > 0, 'the fixture holds a play_post row');
+    const removed = (JSON.parse(playPostLines[0]!) as { play: string }).play;
+    fs.writeFileSync(path.join(drifting, 'public.play_post.jsonl'), playPostLines.slice(1).join('\n') + (playPostLines.length > 1 ? '\n' : ''));
+    const driftManifest = JSON.parse(fs.readFileSync(path.join(drifting, 'manifest.json'), 'utf8'));
+    driftManifest.tables.find((t: { name: string }) => t.name === 'public.play_post').rows -= 1;
+    fs.writeFileSync(path.join(drifting, 'manifest.json'), JSON.stringify(driftManifest));
+    const drifted = await run('import-instance.mjs', ['--from', drifting, '--to', fresh.toString(), '--storage', newStore.url]);
+    assert.notEqual(drifted.status, 0, 'an export whose play_post lacks a row is refused');
+    assert.match(drifted.stderr, /play_post or post_kinds differs from the Acts/);
+    assert.ok(drifted.stderr.includes(removed), `the refusal names the play ${removed}: ${drifted.stderr}`);
+    assert.equal(psqlOn(fresh.toString(), 'select count(*) from public.play_post'), '0', 'a drifting import left rows behind');
+    fs.rmSync(drifting, { recursive: true, force: true });
     // A file the manifest names outside the export is refused.
     manifest.tables.find((t: { name: string }) => t.name === 'public.accounts').file = '../elsewhere.jsonl';
     fs.writeFileSync(path.join(short, 'manifest.json'), JSON.stringify(manifest));

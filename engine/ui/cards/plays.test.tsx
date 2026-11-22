@@ -1043,6 +1043,93 @@ describe('a Gimmick a cutting card ended', () => {
   });
 });
 
+describe('the count of each kind on a post (post plays, section 1)', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const act = (id: string, over: Partial<Act> = {}, payload: Record<string, unknown> = { card: 'whoops' }): Act =>
+    ({ id, kind: 'card', character: 'c1', thread: 't', targetActId: 'p1', seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null, ...over });
+  const set = (id: string): Act => act(id, { kind: 'set' }, {});
+  const spring = (id: string, of: string): Act => act(id, { kind: 'spring' }, { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: of });
+
+  test('setCounts holds each kind\'s count on its post, the back kind under CARD_BACK, and wakes the post', () => {
+    const plays = createPlays();
+    const woke = vi.fn();
+    plays.subscribe('p1', woke);
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 45, took: 44 }, { post: 'p1', card: null, all: 3, took: 3 }]);
+    expect(woke).toHaveBeenCalledTimes(1);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 45, took: 44 });
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 3, took: 3 });
+    expect(plays.get('p2').counts.size).toBe(0);
+  });
+
+  test('a kind with no count from the server counts its held plays', () => {
+    const plays = createPlays();
+    plays.add([act('k1'), act('k2', { untaken: true }), act('k3', {}, { card: 'stick-around' })]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 2, took: 1 });
+    expect(plays.get('p1').counts.get('stick-around')).toEqual({ all: 1, took: 1 });
+  });
+
+  test('a new live play raises its kind\'s count once; the same play again does not', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 30, took: 30 }]);
+    plays.add([act('k1')]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 31, took: 31 });
+    plays.add([act('k1')]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 31, took: 31 });
+  });
+
+  test('a new live play that did not take raises all and not took; a late untaken for a held play lowers took', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 5, took: 5 }]);
+    plays.add([act('k1', { untaken: true }), act('k2')]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 7, took: 6 });
+    plays.add([act('k2', { untaken: true })]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 7, took: 5 });
+    plays.add([act('k2', { untaken: true })]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 7, took: 5 });
+  });
+
+  test('a set counts under the back kind only when its spring arrives, once', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: null, all: 2, took: 2 }]);
+    plays.add([set('s1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 2, took: 2 });
+    plays.add([spring('sp', 's1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 3, took: 3 });
+    plays.add([spring('sp', 's1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 3, took: 3 });
+  });
+
+  test('a set whose spring came first counts once, when it arrives', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: null, all: 0, took: 0 }]);
+    plays.add([spring('sp', 's1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 0, took: 0 });
+    plays.add([set('s1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 1, took: 1 });
+  });
+
+  test('a set never sprung counts for no kind among held plays', () => {
+    const plays = createPlays();
+    plays.add([set('s1')]);
+    expect(plays.get('p1').counts.has(CARD_BACK)).toBe(false);
+  });
+
+  test('a count older than the plays the store holds is no lower than they are (a play heard while a read was out)', () => {
+    const plays = createPlays();
+    plays.add([act('k1'), act('k2'), act('k3', { untaken: true }), act('k4')]);
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 3, took: 2 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 4, took: 3 });
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 45, took: 44 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 45, took: 44 });
+  });
+
+  test('hydrate takes the counts, after the plays', () => {
+    const plays = createPlays();
+    hydrate(plays, [act('k1')], {}, [], {}, {}, [], [{ post: 'p1', card: 'whoops', all: 9, took: 9 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 9, took: 9 });
+  });
+});
+
 describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', () => {
   const now = Date.parse('2026-11-20T00:00:00.000Z');
   const PAST = '2026-11-10T00:00:00.000Z';

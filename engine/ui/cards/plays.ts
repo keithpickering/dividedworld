@@ -10,7 +10,7 @@
  * that arrives live is added to the post it names whichever page that post is on.
  */
 import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { Act, ActKind, EffectState, Id, KayfaApi, SurfaceAct, SurfaceNow } from '../data/api.ts';
+import type { Act, ActKind, EffectState, Id, KayfaApi, KindCount, PostPlaysRead, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
 import { useKayfa } from '../context.tsx';
 import { BEYOND_POST, fallsOn, type BeyondPost, type CardRules } from '../../rules/cards.ts';
@@ -19,9 +19,6 @@ import { QUADRANTS, type Quadrant, type Settings, type Span } from '../../rules/
 import type { CardPlay, CardUi, CardView, KitControl } from './types.ts';
 import { endsWords, keptEndedWords } from './marks.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-
-/** More than any card stacks on one post; a page of posts asks for this many plays per post at most. */
-export const PLAYS_PER_POST = 8;
 
 /**
  * The kind every card set face down is drawn as: one back, the same for every card, so two cards set face down look alike to everyone
@@ -332,11 +329,21 @@ export interface PostPlays {
   readonly faces: Readonly<Record<Id, string>>;
   /** Each of the post's surface plays (0317): the cells it covers, its live Acts' ids, and the live Acts themselves (null until read, where a wall is near). */
   readonly surfaces: Readonly<Record<Id, Surface>>;
+  /**
+   * How many plays each kind has had on the post, and how many took, by kind (the back kind under `CARD_BACK`): the server's count (`setCounts`) kept current by plays heard since, and for a kind
+   * the server sent none for, the plays held. A back counts once it has sprung.
+   */
+  readonly counts: ReadonlyMap<string, KindTally>;
 }
+/** How many plays a kind has had on a post, and how many took. */
+export interface KindTally { readonly all: number; readonly took: number }
 /** A surface play as the store holds it. */
 export interface Surface extends SurfaceNow { readonly acts: readonly SurfaceAct[] | null }
 
-const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}), surfaces: Object.freeze({}) });
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}), surfaces: Object.freeze({}), counts: new Map<string, KindTally>() });
+
+/** The kind a play is counted under: its card, the back kind for a back, and none for a back not sprung (it is not counted until its spring arrives). */
+const countedKind = (p: Pick<CardPlay, 'card' | 'revealed'>): string | null => (isBack(p.card) ? (p.revealed || p.card !== CARD_BACK ? CARD_BACK : null) : p.card);
 
 const viewKey = (post: Id, card: string): string => `${post}\u0000${card}`;
 
@@ -386,8 +393,9 @@ export function defaultView(rules: Pick<CardRules, 'name' | 'keeps'>, ui: Pick<C
 
 export interface Plays {
   get(post: Id): PostPlays;
-  /** Take in card Acts, and the `card_end` of a play (it marks its play reversed, or is held for when the play arrives); anything else is ignored. True when a play was new or ended. A play is its Act's id: the same again is the same play. */
-  add(acts: readonly Act[]): boolean;
+  /** Take in card Acts, and the `card_end` of a play (it marks its play reversed, or is held for when the play arrives); anything else is ignored. True when a play was new or ended. A play is its Act's id: the same again is the same play.
+   * `older`: plays a kind's page read (`kindPlays`), which the server's count already holds and the billing never named: they are kept, and neither move a kind's count nor take a place in the billing, so a paged back is no mark of its own. */
+  add(acts: readonly Act[], options?: { readonly older?: true }): boolean;
   /** Keep each play's newest saved state, by when it was saved; true when any was newer. A state for a play not here is kept for when it is. */
   setStates(states: Readonly<Record<Id, EffectState>>): boolean;
   /** Mark each of these plays reversed in place, as its `card_end` would (one not held yet is remembered, as an early `card_end` is); true when a play was marked or newly remembered. */
@@ -412,6 +420,8 @@ export interface Plays {
   wantsSurface(play: Id): boolean;
   /** Take the want back, where a read failed, so the next ask reads again. */
   unwantSurface(play: Id): void;
+  /** Keep the server's count of each kind (`postPlays`' `counts`, a page's), by post: a post named has exactly the kinds given, and is woken when any changed. */
+  setCounts(counts: readonly KindCount[]): void;
   /** The post's plays in billing order: as last set, then each play added since, in the order it arrived. */
   billing(post: Id): readonly Id[];
   /** Set the post's billing, when its page is read (a new read, even in the same order); a play it leaves out keeps its place after the ones it names. */
@@ -434,6 +444,8 @@ export function createPlays(): Plays {
   const released = new Set<Id>();
   const faces = new Map<Id, string>();
   const surfaces = new Map<Id, Surface>();
+  /* The server's count of each kind on a post, kept current by the plays heard since (`bump`). A kind with none is counted from the plays held (`get`). */
+  const counts = new Map<Id, Map<string, KindTally>>();
   const wanted = new Set<Id>();
   const issued = new Map<Id, number>();
   const taken = new Map<Id, number>();
@@ -479,17 +491,32 @@ export function createPlays(): Plays {
     else { const { cut: _cut, ...back } = was; mine.set(gimmick, back); }
     touched.add(at!);
   };
+  /* A play heard that the held count does not include moves its kind's count, where the server sent one. */
+  const bump = (home: Id, kind: string | null, all: number, took: number, touched: Set<Id>) => {
+    const was = kind === null ? undefined : counts.get(home)?.get(kind);
+    if (!was) return;
+    counts.get(home)!.set(kind!, { all: was.all + all, took: was.took + took });
+    touched.add(home);
+  };
   const newer = (a: EffectState, b: EffectState) => Date.parse(a.savedAt) > Date.parse(b.savedAt);
   return {
     get(post) {
       const own = byPost.get(post);
-      if (!own) return NONE;
+      if (!own && !counts.has(post)) return NONE;
       let snap = snapshots.get(post);
       if (!snap) {
-        const plays = [...own.values()].sort(inPlayOrder);
+        const plays = [...(own?.values() ?? [])].sort(inPlayOrder);
+        const kinds = new Map<string, KindTally>();
+        for (const p of plays) {
+          const kind = countedKind(p);
+          if (kind !== null) kinds.set(kind, { all: (kinds.get(kind)?.all ?? 0) + 1, took: (kinds.get(kind)?.took ?? 0) + (p.untaken ? 0 : 1) });
+        }
+        /* The server's count may be older than a play heard while its read was out: never lower than the plays held. */
+        for (const [kind, count] of counts.get(post) ?? []) { const held = kinds.get(kind); kinds.set(kind, held ? { all: Math.max(count.all, held.all), took: Math.max(count.took, held.took) } : count); }
         snap = {
+          counts: kinds,
           plays,
-          billed: (order.get(post) ?? []).map((id) => own.get(id)!),
+          billed: (order.get(post) ?? []).map((id) => own!.get(id)!),
           states: Object.fromEntries(plays.filter((p) => states.has(p.id)).map((p) => [p.id, states.get(p.id)!])),
           released: new Set(plays.filter((p) => released.has(p.id)).map((p) => p.id)),
           read: reads.get(post) ?? 0,
@@ -500,7 +527,8 @@ export function createPlays(): Plays {
       }
       return snap;
     },
-    add(acts) {
+    add(acts, options) {
+      const older = options?.older === true;
       const touched = new Set<Id>();
       for (const act of acts) {
         /* A spring reveals its back in place: the same play, keeping its place in the billing, so no mark moves. */
@@ -514,6 +542,7 @@ export function createPlays(): Plays {
           if (own && back && !back.revealed) {
             own.set(back.id, { ...back, ...(ended.has(sprung.spring) ? { reversed: true as const } : {}), card: sprungKind(sprung.spring), revealed: { card: sprung.card, spring: sprung.spring, at: sprung.at, ...(sprung.quadrant !== undefined ? { quadrant: sprung.quadrant } : {}), ...(sprung.until !== undefined ? { until: sprung.until } : {}) } });
             touched.add(homeOf(back));
+            if (!older) bump(homeOf(back), CARD_BACK, 1, back.untaken ? 0 : 1, touched);
           }
           continue;
         }
@@ -582,12 +611,13 @@ export function createPlays(): Plays {
         /* A play already held is the same play, with one change it can learn: that it did not take (`untaken`, 0149), set in place so its place in the billing stays. */
         const held = own.get(play.id);
         if (held) {
-          if (play.untaken && !held.untaken) { own.set(play.id, { ...held, untaken: true as const }); touched.add(home); }
+          if (play.untaken && !held.untaken) { own.set(play.id, { ...held, untaken: true as const }); touched.add(home); bump(home, countedKind(held), 0, -1, touched); }
           continue;
         }
         own.set(play.id, play);
+        if (!older) bump(home, countedKind(play), 1, play.untaken ? 0 : 1, touched);
         byPost.set(home, own);
-        order.set(home, [...(order.get(home) ?? []), play.id]);
+        if (!older) order.set(home, [...(order.get(home) ?? []), play.id]);
         postOf.set(play.id, home);
         touched.add(home);
       }
@@ -622,6 +652,22 @@ export function createPlays(): Plays {
       }
       changed(touched);
       return remembered || touched.size > 0;
+    },
+    setCounts(next) {
+      const touched = new Set<Id>();
+      const given = new Map<Id, Map<string, KindTally>>();
+      for (const c of next) {
+        const kinds = given.get(c.post) ?? new Map<string, KindTally>();
+        kinds.set(c.card ?? CARD_BACK, { all: c.all, took: c.took });
+        given.set(c.post, kinds);
+      }
+      for (const [post, kinds] of given) {
+        const was = counts.get(post);
+        if (was && was.size === kinds.size && [...kinds].every(([k, v]) => was.get(k)?.all === v.all && was.get(k)?.took === v.took)) continue;
+        counts.set(post, kinds);
+        touched.add(post);
+      }
+      changed(touched);
     },
     setSpent(next) {
       const touched = new Set<Id>();
@@ -746,13 +792,15 @@ export async function readEffects(api: KayfaApi, plays: Plays, acts: readonly Ac
 /**
  * Read every play on these posts, with what their effects keep, in the reads a page costs: one for
  * the plays, one for their states and one for the reader's releases, whatever the page holds. A
- * result as long as the limit may be cut (`KayfaApi.cardsOnMany`). A failed read leaves the posts
+ * result is the one `KayfaApi.postPlays` answers. A failed read leaves the posts
  * as they are drawn without it: a tag is missing, never a post.
  */
 export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[], cards: ReadonlySet<string>): Promise<readonly Act[]> {
   if (posts.length === 0) return [];
-  const acts = await api.cardsOnMany(posts, posts.length * PLAYS_PER_POST).catch((): readonly Act[] => []);
+  const read = await api.postPlays(posts).then((r) => r, (): PostPlaysRead => ({ plays: [], counts: [] }));
+  const acts = read.plays;
   plays.add(acts);
+  plays.setCounts(read.counts);
   await readEffects(api, plays, acts, cards);
   /* The plays' ends ride in the read for the store; they are no plays, so no tally, reaction or caster is read for one. */
   return acts.filter((a) => a.kind !== 'card_end');
@@ -763,8 +811,9 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
  * Task 13): the document holds what `readPlays`, `readAbove` and `readEffects` would have asked for. `faces` are the reader's own card
  * backs' cards, by set; `spent` the Take the Fall plays a filing has spent. The states and releases are the document's for the cards the instance draws an effect for.
  */
-export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}, spent: readonly Id[] = []): void {
+export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}, spent: readonly Id[] = [], counts: readonly KindCount[] = []): void {
   plays.add(acts);
+  plays.setCounts(counts);
   plays.setSpent(spent);
   plays.setStates(states);
   plays.setReleased(releases);

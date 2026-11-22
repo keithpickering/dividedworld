@@ -217,3 +217,13 @@ test('autocorrect.holdHours is a whole number of hours from 0 to 168', () => {
   }
   assert.deepEqual(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'autocorrect.holdHours': 168 } }) }), []);
 });
+
+test('it draws an effect, and tape washed clean (the state\'s clean is true) stops counting toward the post\'s limit', () => {
+  const cleared = autocorrect.drawsEffect?.cleared;
+  assert.ok(autocorrect.drawsEffect, 'it declares drawsEffect');
+  assert.ok(cleared, 'and says when it is cleared');
+  assert.equal(cleared({ peeled: [], clean: true }), true);
+  assert.equal(cleared({ peeled: [], clean: false }), false);
+  assert.equal(cleared({ peeled: [] }), false);
+  for (const odd of [{}, null, 'clean', undefined, [], 1]) assert.equal(cleared(odd), false, JSON.stringify(odd));
+});

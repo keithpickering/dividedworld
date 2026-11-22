@@ -53,11 +53,8 @@ import { SpinForm, useSpinDrafts } from './SpinForm.tsx';
 import { forgedList } from '../../bbcode/quoted.ts';
 import './spin.css';
 
-/** Card plays listed under the origin; the page carries at most this many, and says there are more. */
-const CARDS_SHOWN = 20;
-
 /** What the box draws where the thread screen holds no origin for it (no page read has carried one): the Act is not there. */
-const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [], voters: [], votersMore: [], myBallots: [] };
+const NOT_THERE: PageOrigin = { act: null, plays: [], counts: [], moment: null, at: null, cast: [], polls: [], voters: [], votersMore: [], myBallots: [] };
 
 /**
  * Take a page's origin into the box's store of plays: the shown plays and their ends (and the Act, when it is a card play: the box's one mark; the store ignores any other Act), then the billing,
@@ -67,9 +64,8 @@ const NOT_THERE: PageOrigin = { act: null, plays: [], more: false, moment: null,
 export function takeInOrigin(origin: PageOrigin, id: Id, plays: Plays, tallies: Tallies, spun: ReadonlyMap<Id, Spun>, over?: BillOver, polls?: Polls, ticket = 0): void {
   /* A thread spun from a poll or a ballot: the poll, its voters and the caller's ballots go to the box's store of polls (where the box is drawn without one, `useOrigin` takes them in). */
   if (polls !== undefined) takeInPolls(origin, polls, ticket);
-  const shown = origin.plays.filter((a) => a.kind !== 'card_end').slice(0, CARDS_SHOWN);
-  const ends = origin.plays.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId));
-  plays.add([...shown, ...ends, ...(origin.act ? [origin.act] : [])]);
+  plays.add([...origin.plays, ...(origin.act ? [origin.act] : [])]);
+  plays.setCounts(origin.counts);
   billPost(plays, id, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
 }
 
@@ -84,22 +80,20 @@ function takeInPolls(origin: PageOrigin, polls: Polls, ticket: number): void {
 /**
  * The origin Act and the card plays on it, kept current: the plays are in a store of the box's own (the thread screen's `originPlays`, engine/ui/cards/plays.ts), the one the thread keeps for its posts
  * in kind, so the post's effects draw here as they do there. The page's origin is taken in as it arrives (`takeIn`, before the box's first frame and again for each page read); a play, an edit, a saved
- * state and a tally are heard on the origin thread's channel. `more` says there were more plays than the box lists.
+ * state and a tally are heard on the origin thread's channel.
  */
-function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls): { readonly act: Act | null; readonly more: boolean } {
+function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls): { readonly act: Act | null } {
   const { api, ui } = useKayfa();
   /* The player's own characters: a ballot of theirs heard here is their own ballot on the poll. */
   const { characters } = usePlayer();
   const own = useRef<ReadonlySet<Id>>(new Set());
   own.current = new Set(characters.map((c) => c.id));
   const [act, setAct] = useState<Act | null>(from.act);
-  const [more, setMore] = useState(from.more);
   /* A page read again brings the origin again: the newer of the Act held and the Act read (an edit heard since is never undone), and what the page says of the rest. */
   const [seen, setSeen] = useState(from);
   if (seen !== from) {
     setSeen(from);
     setAct((was) => (was && from.act ? newer(was, from.act) : from.act ?? was));
-    setMore(from.more);
   }
   /* The thread screen takes the page's origin into its store of the box's plays as it takes a page in (`takeInOrigin`,
      called by `absorb`), so the box's first frame has its tags. A box drawn without that store (a story) takes its own
@@ -126,7 +120,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
       onPoll(e) { polls.counts(e); },
     });
   }, [api, ui, origin, thread, plays, tallies, polls]);
-  return { act, more };
+  return { act };
 }
 
 /**
@@ -228,7 +222,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const plays = originPlays ?? own;
   const ownPolls = useMemo(() => createPolls(), []);
   const polls = originPolls ?? ownPolls;
-  const { act, more } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls);
+  const { act } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
@@ -379,7 +373,6 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   })();
   /* The area keeps a post's room where it shows a post's words, live or as a moment, so an effect on a short post has room to play (spin.css). */
   const roomy = act !== null && content !== null && (act.kind === 'card' || isPostLike(act.kind));
-  const note = act !== null && act.kind !== 'card' && more;
   return (
     <>
       <div ref={box} className="kb-origin" role="group" aria-label="Origin" tabIndex={-1} data-kb-over-ink>
@@ -393,10 +386,9 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
           {marks}{postMarks}
         </p>
         {byline}
-        {(content !== null || note) && (
+        {content !== null && (
           <div className="kb-origin-area" data-kb-content-area data-kb-room={roomy ? '' : undefined}>
             {content}
-            {note && <p className="kb-small kb-muted kb-origin-note" data-kb-over-ink>More than {CARDS_SHOWN} cards were played on this Act; the rest are in {link}.</p>}
           </div>
         )}
         {momentKey !== null && <div ref={setFoot} className="kb-origin-foot" data-kb-over-ink />}

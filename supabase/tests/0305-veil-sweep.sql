@@ -217,6 +217,12 @@ select 'function', n, m, w from (values
   ('boot', 'swept', 'the app''s first read: the caller''s own characters and public settings'),
   ('boss_roster_names', 'no author', 'staff names'),
   ('cutting_acts', 'no author', 'the ids of the card Acts that cut a given list of plays (0405): ids alone, of Acts whose cut acts_public already shows; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_play_ids', 'no author', 'the ids of the plays in force on a list of posts and each kind''s newest and most drawn (0410): ids alone, from the kept rows of public Acts; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_kind_counts', 'no author', 'how many plays a post has had of each kind, and how many took (0410): counts of public plays by their public kind, a back counted as a back'),
+  ('play_rider_ids', 'no author', 'the ids of the springs and take-backs of a list of backs (0410): ids alone; the Acts are read through acts_public by id, which applies every veil'),
+  ('kind_play_ids', 'no author', 'the ids of a page of a kind''s plays that are over on a post (0410): ids alone, from the kept rows; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_plays', 'swept', 'the plays of a list of posts (0410): the Acts through acts_public, so the veil is applied as in thread_page'),
+  ('kind_plays', 'swept', 'a page of a kind''s older plays on a post (0410): the Acts through acts_public and the casters'' heads through characters_public, so the veil is applied as in thread_page'),
   ('card_ended', 'no author', 'whether a play has ended'),
   ('card_held', 'no author', 'the count of a card in the caller''s own hand'),
   ('card_of_play', 'no author', 'the card a play is of'),
@@ -679,6 +685,10 @@ begin
   -- A report on P by R (real moderation: the filer's account and the version, never a character): an admin reads it with the author's account, and no probe below may find the character in it.
   perform tests.become(ray); perform report_post(p, 'mask', 'Whose words are these?'); perform tests.unbecome();
 
+  -- A play of A's on P that is over (0410): kind_plays pages the over plays of a kind, so with one the probe of kind_plays has the author to find before the cast and to miss after it.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select a, 'card', t, p, jsonb_build_object('card', u.payload ->> 'card', 'ends', now() - interval '1 day'), now() - interval '2 days' from acts u where u.id = used;
+
   perform set_config('sweep.wall', wall::text, true);
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
@@ -697,6 +707,8 @@ begin
   create temp table probes (name text primary key, kind text not null, stmt text not null, fires boolean not null default true, pending boolean not null default false, as_admin boolean not null default false);
   insert into probes (name, kind, stmt, fires, pending) values
     ('thread_page', 'id', 'select thread_page(current_setting(''sweep.t'')::uuid, 1, null, null, null)::text', true, false),
+    ('post_plays', 'id', 'select post_plays(array[current_setting(''sweep.p'')::uuid])::text', true, false),
+    ('kind_plays', 'id', 'select kind_plays(current_setting(''sweep.p'')::uuid, (select u.payload ->> ''card'' from acts_public u where u.id = current_setting(''sweep.used'')::uuid), null, null, 50)::text', true, false),
     ('acts_public by id', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from acts_public x where x.id = current_setting(''sweep.p'')::uuid', true, false),
     ('acts_public by thread', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from acts_public x where x.thread = current_setting(''sweep.t'')::uuid', true, false),
     ('acts_public by character A', 'absent', 'select coalesce(jsonb_agg(x.id), ''[]'')::text from acts_public x where x.character = current_setting(''sweep.a'')::uuid and x.thread = current_setting(''sweep.t'')::uuid', true, false),

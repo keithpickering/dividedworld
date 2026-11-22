@@ -1,6 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -944,4 +946,60 @@ test('a card that cuts: the refusals on a character, the old voice and a ward co
   const ward = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'legendary' }, ends: soon } as CardEffect;
   const why = (v: unknown) => (v as { why: string }).why;
   assert.match(why(decidePlay(buzzer, settings, post, [ward], { play: 'a' }, '', { ...ctx, nameOf: names })), /Test Shield/, 'a ward turns the card away before the cuts refusal');
+});
+
+// The limit on a post's effects (post-plays design section 4).
+const drawer: CardRules = { ...cast('drawer', 'common'), drawsEffect: {}, stack: 3 };
+const clearable: CardRules = { ...cast('clearable', 'common'), drawsEffect: { cleared: (s) => (s as { clean?: boolean } | null)?.clean === true } };
+const marker: CardRules = { ...cast('marker', 'common') };
+const drawerUse: CardRules = { ...base, key: 'drawerUse', name: 'Test DrawerUse', rarity: 'common', play: 'use', gimmick: { kind: 'ward', upTo: 'common' }, lasts: { unit: 'day', count: 1 }, drawsEffect: {}, canApply: () => ok(undefined) };
+const limit = { postEffects: 2 } as Settings;
+const drawing = (act: string, extra: Partial<CardEffect> = {}): CardEffect => ({ card: 'x', act, drawing: true, ...extra });
+const back = (act: string): CardEffect => ({ card: null, act, faceDown: true, ends: soon });
+const full = [drawing('a'), drawing('b')];
+const said = postFullWords(2);
+
+test('the database raises the words the rules do (0411_post_effects.sql)', () => {
+  const sql = fs.readFileSync(path.join(import.meta.dirname, '../../supabase/migrations/0411_post_effects.sql'), 'utf8');
+  const raised = /replace\('(this post already shows % effects[^']*)', '%', /.exec(sql);
+  assert.ok(raised, 'the migration holds the refusal once, with % for the number');
+  for (const n of [1, 2, 8, 16]) assert.equal(raised![1]!.replace('%', String(n)), postFullWords(n), `at ${n}`);
+});
+
+test('a full post refuses a drawing cast, a drawing use and any set, in the words', () => {
+  assert.equal(said, 'this post already shows 2 effects, the most it takes. A slot opens when one ends, is ended by an admin, or its author clears it');
+  assert.deepEqual(decidePlay(drawer, limit, post, full, {}, ''), { ok: false, why: said });
+  assert.deepEqual(decideUse(drawerUse, limit, post, full, {}, ''), { ok: false, why: said });
+  assert.deepEqual(decideSet(glue, limit, post, full, { phrase: 'x' }, [glue]), { ok: false, why: said });
+  assert.deepEqual(decideSet(snare, limit, post, [drawing('a'), drawing('c')], { card: 'plain' }, [snare, plain]), { ok: false, why: said });
+});
+
+test('a post below the limit takes each, and a mark-only card lands on a full post', () => {
+  const one = [drawing('a')];
+  assert.equal(decidePlay(drawer, limit, post, one, {}, '').ok, true);
+  assert.equal(decideUse(drawerUse, limit, post, one, {}, '').ok, true);
+  assert.equal(decideSet(glue, limit, post, one, { phrase: 'x' }, [glue]).ok, true);
+  assert.equal(decidePlay(marker, limit, post, full, {}, '').ok, true, 'a mark-only card counts none');
+});
+
+test('a cleared play, an ended one and an effect from above count none; a live back counts one', () => {
+  const now = new Date();
+  assert.equal(effectsUp(post, [drawing('a', { cleared: true }), drawing('b', { ends: gone }), drawing('c', { reach: 'thread' }), drawing('d', { reach: 'character' }), drawing('e', { reach: 'board' })], now), 0);
+  assert.equal(effectsUp(post, [back('a')], now), 1);
+  assert.equal(effectsUp(post, [{ card: null, act: 'a', faceDown: true, ends: gone }], now), 0);
+  assert.equal(effectsUp(post, [{ card: 'm', act: 'm' }], now), 0, 'a mark-only effect');
+  assert.equal(effectsUp(post, [drawing('a', { reach: 'post' }), drawing('b')], now), 2);
+  assert.equal(decidePlay(drawer, limit, post, [drawing('a', { cleared: true }), drawing('b', { cleared: true }), drawing('c')], {}, '').ok, true);
+  assert.deepEqual(decidePlay(drawer, limit, post, [back('a'), drawing('b')], {}, ''), { ok: false, why: said });
+});
+
+test('a target that is not a post is never refused by the count', () => {
+  const character = { reach: 'character', act: 'c', kind: 'character' } as unknown as CardTarget;
+  assert.equal(effectsUp(character, full, new Date()), 0);
+  assert.equal(roomOnPost(drawer, limit, character, full, new Date()).ok, true);
+});
+
+test('the card\'s own stack refusal comes first', () => {
+  const one: CardRules = { ...drawer, canApply: () => refuse('the card says no') };
+  assert.deepEqual(decidePlay(one, limit, post, full, {}, ''), { ok: false, why: 'the card says no' });
 });

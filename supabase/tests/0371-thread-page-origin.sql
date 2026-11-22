@@ -5,8 +5,8 @@
 -- Orplain is not, Orglint reaches a character, Ormarq a thread, Orquake a board, Orveil is an author veil.
 --
 --  1. A thread spun from a post with 3 plays (one ended by an admin, one a card with a saved state and a release of the caller's), a reaction of the caller's and of another character's on the post and on a play,
---     and a thread spun from a play: the origin's act, plays, more, moment, at, cast, and the document's tallies, mine, spun, states and releases; `people` holds no caster who wrote nothing on the page.
---  2. An origin with 21 plays: 20 and their ends, more true.
+--     and a thread spun from a play: the origin's act, plays, counts, moment, at, cast, and the document's tallies, mine, spun, states and releases; `people` holds no caster who wrote nothing on the page.
+--  2. An origin with 21 plays: the plays in force, and the newest one that an admin ended with its end; the counts say 21 (0410: the cap of 20 and `more` are gone, #871).
 --  3. Page 2 of the spun thread, a thread with no origin: no `origin` key.
 --  4. An origin that is not there: act null, no plays, the page answered.
 --  5. A play on a post: moment is play_moment's, at is the post's thread and seq.
@@ -132,8 +132,10 @@ begin
   perform pg_temp.cards();
   p := tests.post(oa, t0, 'The origin post.', now() - interval '1 day');
   pl1 := tests.act(ca, 'card', t0, '{"card": "orfx", "message": "", "config": {}, "layer": 1}', p, now() - interval '5 hours');
-  pl2 := tests.act(cb, 'card', t0, '{"card": "orplain", "message": "", "config": {}, "layer": 1}', p, now() - interval '4 hours');
-  pl3 := tests.act(ca, 'card', t0, '{"card": "orplain", "message": "", "config": {}, "layer": 2}', p, now() - interval '3 hours');
+  -- The play an admin ends is the newer of the two Orplains (and the older, in force, is the most drawn): since 0410 the box carries a post's plays in force and each kind's newest and most drawn, so an ended play is
+  -- there as its kind's newest, with its end, as before it was there as one of the first twenty.
+  pl2 := tests.act(cb, 'card', t0, '{"card": "orplain", "message": "", "config": {}, "layer": 1}', p, now() - interval '3 hours');
+  pl3 := tests.act(ca, 'card', t0, '{"card": "orplain", "message": "", "config": {}, "layer": 2}', p, now() - interval '4 hours');
   end2 := pg_temp.end_play(pl2, t0, now() - interval '2 hours');
   perform save_effect_state(ann, oa, pl1, saved);
   perform tests.post(cb, t_cb, 'The second caster, writing elsewhere.');
@@ -153,10 +155,12 @@ begin
   doc := pg_temp.page(rdr, spun_t);
   if not (doc ? 'origin') then raise exception '1 the page that holds the first Act carries an origin: %', (select array_agg(k) from jsonb_object_keys(doc) k); end if;
   o := doc -> 'origin';
-  if (select array_agg(k order by k) from jsonb_object_keys(o) k) is distinct from array['act', 'at', 'cast', 'moment', 'more', 'plays'] then raise exception '1 origin''s keys: %', (select array_agg(k) from jsonb_object_keys(o) k); end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(o) k) is distinct from array['act', 'at', 'cast', 'counts', 'moment', 'plays'] then raise exception '1 origin''s keys: %', (select array_agg(k) from jsonb_object_keys(o) k); end if;
   if o -> 'act' is distinct from (select to_jsonb(a) from acts_public a where a.id = p) then raise exception '1 origin.act is the acts_public row: %', o -> 'act'; end if;
-  if pg_temp.ids_of(o -> 'plays') is distinct from array[pl1, pl2, pl3, end2] then raise exception '1 origin.plays are the 3 plays oldest first, then the card_end: %', pg_temp.ids_of(o -> 'plays'); end if;
-  if o -> 'more' is distinct from 'false'::jsonb then raise exception '1 origin.more is false with 3 plays: %', o -> 'more'; end if;
+  if pg_temp.ids_of(o -> 'plays') is distinct from array[pl1, pl3, pl2, end2] then raise exception '1 origin.plays are the 3 plays oldest first, then the card_end: %', pg_temp.ids_of(o -> 'plays'); end if;
+  -- The counts replace `more`: each kind of the post, every play it has had and those that took.
+  if o ? 'more' then raise exception '1 origin.more is gone with the cap'; end if;
+  if o -> 'counts' is distinct from jsonb_build_array(jsonb_build_object('post', p, 'card', 'orfx', 'all', 1, 'took', 1), jsonb_build_object('post', p, 'card', 'orplain', 'all', 2, 'took', 2)) then raise exception '1 origin.counts: %', o -> 'counts'; end if;
   if jsonb_typeof(o -> 'moment') is distinct from 'null' or jsonb_typeof(o -> 'at') is distinct from 'null' then raise exception '1 a post has no moment and no place: % %', o -> 'moment', o -> 'at'; end if;
   if pg_temp.cast_ids(o) is distinct from pg_temp.ids(oa, ca, cb) then raise exception '1 cast is the author and each caster: %', pg_temp.cast_ids(o); end if;
   if (select array_agg(k order by k) from jsonb_object_keys(o -> 'cast' -> 0) k) is distinct from array['character', 'profile'] then raise exception '1 a cast entry is a character and a profile: %', o -> 'cast' -> 0; end if;
@@ -206,7 +210,7 @@ begin
   if doc_ann -> 'tallies' is distinct from doc -> 'tallies' or doc_ann -> 'spun' is distinct from doc -> 'spun' or doc_ann -> 'states' is distinct from doc -> 'states' then raise exception '9 tallies, spun and states are the same for every caller'; end if;
 end $$;
 
--- ---- 2: an origin with 21 plays holds 20 and their ends ----
+-- ---- 2: an origin with 21 plays holds those in force, the newest ended one with its end, and counts 21 ----
 do $$
 declare
   ann uuid := tests.account('or2-ann'); spn uuid := tests.account('or2-spn'); rdr uuid := tests.account('or2-rdr');
@@ -224,8 +228,10 @@ begin
   s := pg_temp.spun_at(spn, sp, p, null);
   doc := pg_temp.page(rdr, (select thread from acts where id = s));
   o := doc -> 'origin';
-  if pg_temp.ids_of(o -> 'plays') is distinct from plays[1:20] || end2 then raise exception '2 the box lists 20 plays oldest first and the end of the 2nd (21 entries), not the 21st play nor its end: % entries', jsonb_array_length(o -> 'plays'); end if;
-  if o -> 'more' is distinct from 'true'::jsonb then raise exception '2 more is true when a 21st play exists: %', o -> 'more'; end if;
+  -- Until 0410 the box held the first 20 plays and said there were more. Now it holds every play in force (the 2nd, ended by an admin, is neither in force nor the newest, so it is not there, and nor is its end),
+  -- and the 21st, ended and the newest of its kind, with its end; the counts say 21 (and 21 took).
+  if pg_temp.ids_of(o -> 'plays') is distinct from plays[1:1] || plays[3:21] || end21 then raise exception '2 the box lists the plays in force oldest first, the newest with its end (21 entries): % entries', jsonb_array_length(o -> 'plays'); end if;
+  if o ? 'more' or o -> 'counts' is distinct from jsonb_build_array(jsonb_build_object('post', p, 'card', 'orplain', 'all', 21, 'took', 21)) then raise exception '2 the counts say 21 plays of the card: %', o -> 'counts'; end if;
 end $$;
 
 -- ---- 4: an origin that is not there ----
@@ -243,7 +249,7 @@ begin
   if doc is null or jsonb_array_length(doc -> 'acts') is distinct from 1 then raise exception '4 the page is answered: %', doc; end if;
   o := doc -> 'origin';
   if o is null or jsonb_typeof(o -> 'act') is distinct from 'null' then raise exception '4 origin.act is null where the Act is not there: %', o; end if;
-  if o -> 'plays' is distinct from '[]'::jsonb or o -> 'more' is distinct from 'false'::jsonb or jsonb_typeof(o -> 'moment') is distinct from 'null' or o -> 'cast' is distinct from '[]'::jsonb then
+  if o -> 'plays' is distinct from '[]'::jsonb or o -> 'counts' is distinct from '[]'::jsonb or jsonb_typeof(o -> 'moment') is distinct from 'null' or o -> 'cast' is distinct from '[]'::jsonb then
     raise exception '4 nothing else of it: %', o; end if;
 end $$;
 

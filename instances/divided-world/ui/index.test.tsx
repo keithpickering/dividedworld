@@ -1451,10 +1451,10 @@ describe('where each card lands, as the screens ask it', () => {
   test('every card is asked on a post, face up and face down, without reading settings the screens do not hold', () => {
     const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] } as const;
     for (const rules of instance.cards) {
-      expect(() => landingOn(rules, target, [], { cards: instance.cards }), rules.key).not.toThrow();
-      expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { postEffects: 8, cards: instance.cards }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { postEffects: 8, cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
     }
-    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { cards: instance.cards }).ok).toBe(true);
+    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { postEffects: 8, cards: instance.cards }).ok).toBe(true);
   });
 });
 

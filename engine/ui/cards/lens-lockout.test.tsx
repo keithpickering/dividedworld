@@ -43,7 +43,7 @@ async function lens(admin: boolean, ended = false, later = 0) {
   if (ended) {
     const answer = await w.fake.reverseCard(sprung.spring.id);
     if (!answer.ok) throw new Error(answer.error);
-    /* No help for the page: it carries the spring's card_end as the real thread page does (the fake's `withEnds`). */
+    /* No help for the page: it carries the spring's card_end as the real thread page does (the fake's `postPlaysOf` and its riders). */
   }
   /* The page opened this long after the spring (a lockout's end is the card's own span from it). */
   if (later > 0) w.fake.clock.advance(later);

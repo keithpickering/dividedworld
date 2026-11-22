@@ -32,6 +32,13 @@ vi.mock('../player.tsx', async (original) => {
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
 });
 
+/* The stores of plays the screens make, so a test can read one directly. */
+const stores = vi.hoisted(() => ({ made: [] as import('../cards/plays.ts').Plays[] }));
+vi.mock('../cards/plays.ts', async (original) => {
+  const m = await original<typeof import('../cards/plays.ts')>();
+  return { ...m, createPlays: () => { const made = m.createPlays(); stores.made.push(made); return made; } };
+});
+
 /* Glitter's landing places: the real ones, counted, so a test can ask what is registered and what has been let go. */
 const landing = vi.hoisted(() => ({ posts: new Set<HTMLElement>(), pages: 0, pageCalls: 0 }));
 vi.mock('../shine/landing.ts', async (original) => {
@@ -217,7 +224,7 @@ describe('pages and permalinks', () => {
   test('a page is one threadPage read, and none of the reads it replaces: the Acts, characters, stats, standings, reveals, turns, tallies, board, preferences or reading', async () => {
     const w = world(20);
     const page = vi.spyOn(w.fake, 'threadPage');
-    const names = ['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
+    const names = ['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'postPlays', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
     const spies = names.map((m) => [m, vi.spyOn(w.fake, m)] as const);
     /* The page is read twice: once for the document, and once more by the catch-up when the channels are joined. The summary is no longer read. */
     const summary = vi.spyOn(w.fake, 'thread');
@@ -424,14 +431,28 @@ describe('Acts that are not posts', () => {
     expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
   });
 
+  test('the page\'s counts are in the store: a post with more ended plays than the page holds counts the server\'s number', async () => {
+    const w = world(4);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'first' });
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      return got && { ...got, counts: got.counts.map((c) => (c.card === 'whoops' ? { ...c, all: 45 } : c)) };
+    });
+    stores.made.length = 0;
+    open(w);
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' });
+    const counted = stores.made.map((m) => m.get(w.ids[1]!).counts.get('whoops')?.all);
+    expect(counted).toContain(45);
+  });
+
   test('a play already on a post is its mark when the page opens, read for the whole page in one request, and the posts keep their numbers', async () => {
     const w = world(4);
     w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'first' });
     const next = w.fake.seed.post(w.thread, w.spritey, 'after the card');
     w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'second' });
     const page = vi.spyOn(w.fake, 'threadPage');
-    const many = vi.spyOn(w.fake, 'cardsOnMany');
-    const one = vi.spyOn(w.fake, 'cardsOn');
+    const plays = vi.spyOn(w.fake, 'postPlays');
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     expect(post(5)).toHaveTextContent('after the card');
@@ -443,8 +464,7 @@ describe('Acts that are not posts', () => {
     await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
     await act(async () => { await pause(20); });
     expect(page).toHaveBeenCalledTimes(2);
-    expect(many).not.toHaveBeenCalled();
-    expect(one).not.toHaveBeenCalled();
+    expect(plays).not.toHaveBeenCalled();
   });
 
   test('plays of several cards on one post are several marks, in billing order: with nothing drawn yet, the newest first', async () => {
@@ -508,7 +528,7 @@ describe('Acts that are not posts', () => {
     const w = world(3);
     const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
     if (!spun.ok) throw new Error(spun.error);
-    const reads = [vi.spyOn(w.fake, 'act'), vi.spyOn(w.fake, 'cardsOn'), vi.spyOn(w.fake, 'characters'), vi.spyOn(w.fake, 'effectStates')];
+    const reads = [vi.spyOn(w.fake, 'act'), vi.spyOn(w.fake, 'postPlays'), vi.spyOn(w.fake, 'characters'), vi.spyOn(w.fake, 'effectStates')];
     renderIn(w.fake, <LoadedThread thread={spun.value.thread.id} />, { path: `/t/${spun.value.thread.id}` });
     const origin = await screen.findByRole('group', { name: 'Origin' });
     expect(origin).toHaveTextContent('post 2');
@@ -624,7 +644,7 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     w.fake.seed.card(w.spritey, w.ids[3]!, 'whoops', { message: 'on four' });
     await w.fake.spin(w.second, w.pipe, 'From the second play', '');
     const page = vi.spyOn(w.fake, 'threadPage');
-    const many = vi.spyOn(w.fake, 'cardsOnMany');
+    const many = vi.spyOn(w.fake, 'postPlays');
     const spins = vi.spyOn(w.fake, 'spunFromMany');
     const one = vi.spyOn(w.fake, 'spunFrom');
     open(w);

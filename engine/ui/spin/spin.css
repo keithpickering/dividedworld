@@ -106,8 +106,7 @@
   width: auto;
 }
 
-.kb-origin-lift > :not(:empty),
-.kb-origin-note {
+.kb-origin-lift > :not(:empty) {
   background: var(--kb-post-bg);
 }
 

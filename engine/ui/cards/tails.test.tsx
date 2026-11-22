@@ -54,7 +54,7 @@ type World = ReturnType<typeof seeded>;
 /** A page of posts: each drawn in a PostEffects over the plays the fake holds for them, as the thread reads them. */
 async function page(w: World, posts: readonly Id[]) {
   const plays = createPlays();
-  plays.add(await w.fake.cardsOnMany(posts, 40));
+  plays.add((await w.fake.postPlays(posts)).plays);
   const acts = await Promise.all(posts.map((p) => w.fake.act(p)));
   const view = renderIn(w.fake, (
     <>{acts.map((a) => (
@@ -147,10 +147,16 @@ describe('a card_text event reads that one post again', () => {
     const shown = () => plays.get(w.p1).plays.filter((p) => !p.untaken).length;
     expect(shown()).toBe(1);
     const tails = vi.spyOn(w.fake, 'tails');
-    const read = vi.spyOn(w.fake, 'cardsOnMany');
+    const real = w.fake.postPlays.bind(w.fake);
+    /* The re-read's counts go into the store with its plays: the server says forty plays of the card. */
+    const read = vi.spyOn(w.fake, 'postPlays').mockImplementation(async (posts) => {
+      const got = await real(posts);
+      return { ...got, counts: got.counts.map((c) => ({ ...c, all: 40 })) };
+    });
     act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
     await waitFor(() => expect(plays.get(w.p1).plays[0]?.untaken).toBe(true));
     expect(shown()).toBe(0);
+    expect(plays.get(w.p1).counts.get('wrote')?.all).toBe(40);
     expect(tails).toHaveBeenCalledTimes(1);
     expect(read).toHaveBeenCalledTimes(1);
     expect(read.mock.calls[0]![0]).toEqual([w.p1]);
@@ -167,8 +173,8 @@ describe('a card_text event reads that one post again', () => {
     const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
     const { plays } = await page(w, [w.p1]);
     await waitFor(() => expect(screen.getAllByText('...')).toHaveLength(1));
-    const real = w.fake.cardsOnMany.bind(w.fake);
-    const read = vi.spyOn(w.fake, 'cardsOnMany').mockRejectedValueOnce(new Error('offline')).mockImplementation(real);
+    const real = w.fake.postPlays.bind(w.fake);
+    const read = vi.spyOn(w.fake, 'postPlays').mockRejectedValueOnce(new Error('offline')).mockImplementation(real);
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
@@ -189,7 +195,7 @@ describe('a card_text event reads that one post again', () => {
     const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
     await page(w, [w.p1]);
     await waitFor(() => expect(screen.getAllByText('...')).toHaveLength(1));
-    const read = vi.spyOn(w.fake, 'cardsOnMany').mockRejectedValue(new Error('offline'));
+    const read = vi.spyOn(w.fake, 'postPlays').mockRejectedValue(new Error('offline'));
     vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
     try {
       act(() => { w.fake.seed.text(a, w.p1, { failed: true }); });
@@ -211,7 +217,7 @@ describe('a card_text event reads that one post again', () => {
     await screen.findByText('kept tail');
     const edited = await w.fake.edit(w.p1, w.mask, 'edited words');
     expect(edited.ok).toBe(true);
-    const read = vi.spyOn(w.fake, 'cardsOnMany');
+    const read = vi.spyOn(w.fake, 'postPlays');
     act(() => { w.fake.seed.text(a, (edited as { value: Act }).value.id, { failed: true }); });
     await nextTick();
     expect(read).not.toHaveBeenCalled();
@@ -237,7 +243,7 @@ describe('a card_text event reads that one post again', () => {
     const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
     w.fake.seed.text(a, w.p1, { text: 'old tail' }, { quiet: true });
     const plays = createPlays();
-    plays.add(await w.fake.cardsOnMany([w.p1], 8));
+    plays.add((await w.fake.postPlays([w.p1])).plays);
     let show!: (post: Act) => void;
     function Post({ first }: { readonly first: Act }) {
       const [post, set] = useState(first);
@@ -261,7 +267,7 @@ describe('the body is a block a tail follows inline', () => {
     const a = w.fake.seed.card(w.mask, w.p1, 'wrote');
     w.fake.seed.text(a, w.p1, { text: ' and on it went' }, { quiet: true });
     const plays = createPlays();
-    plays.add(await w.fake.cardsOnMany([w.p1], 8));
+    plays.add((await w.fake.postPlays([w.p1])).plays);
     const post = (await w.fake.act(w.p1))!;
     renderIn(w.fake, <div className="kb-act-main" data-kb-content-area><PostEffects plays={plays} post={post} place="thread" nameOf={() => ''}><BbCode text="the last line" /></PostEffects></div>, { cards: [tailing], instance });
     const tail = await screen.findByText('and on it went');
@@ -514,9 +520,9 @@ describe('History reads only where the post has a writing play', () => {
     w.fake.clock.advance(60_000);
     expect((await w.fake.edit(w.p1, w.mask, 'second version')).ok).toBe(true);
     const plays = createPlays();
-    plays.add(await w.fake.cardsOnMany([w.p1], 8));
+    plays.add((await w.fake.postPlays([w.p1])).plays);
     const tails = vi.spyOn(w.fake, 'tails');
-    const on = vi.spyOn(w.fake, 'cardsOn');
+    const on = vi.spyOn(w.fake, 'postPlays');
     await open({ ...w, play: '', e1: '', e2: '' }, plays);
     expect(tails).not.toHaveBeenCalled();
     expect(on).not.toHaveBeenCalled();
@@ -528,7 +534,7 @@ describe('History reads only where the post has a writing play', () => {
     w.fake.clock.advance(60_000);
     expect((await w.fake.edit(w.p1, w.mask, 'second version')).ok).toBe(true);
     const tails = vi.spyOn(w.fake, 'tails');
-    const on = vi.spyOn(w.fake, 'cardsOn');
+    const on = vi.spyOn(w.fake, 'postPlays');
     await open({ ...w, play: '', e1: '', e2: '' });
     expect(on).toHaveBeenCalledTimes(1);
     expect(tails).not.toHaveBeenCalled();
@@ -538,9 +544,9 @@ describe('History reads only where the post has a writing play', () => {
     const w = await edited();
     w.fake.seed.text(w.play, w.p1, { text: 'first tail' }, { quiet: true });
     const plays = createPlays();
-    plays.add(await w.fake.cardsOnMany([w.p1], 8));
+    plays.add((await w.fake.postPlays([w.p1])).plays);
     const tails = vi.spyOn(w.fake, 'tails');
-    const on = vi.spyOn(w.fake, 'cardsOn');
+    const on = vi.spyOn(w.fake, 'postPlays');
     await open(w, plays);
     expect(await screen.findByText('first tail')).toHaveAttribute('data-still', 'true');
     expect(tails).toHaveBeenCalledTimes(1);

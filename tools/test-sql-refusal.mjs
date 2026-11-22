@@ -98,6 +98,8 @@ fs.writeFileSync(hanger, `import fs from 'node:fs';
 fs.appendFileSync(${JSON.stringify(starts)}, Date.now() + '\\n');
 const sql = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
+/* The drift check's query: answered with the rows DRIFT names (one \`play|why\` line each, as psql -A -t -F '|' prints them), or with none. */
+if (process.env.DRIFT && /^select play, why from play_post_drift\\(\\)/.test(sql)) process.stdout.write(process.env.DRIFT + '\\n');
 if (process.env.VACUUM_FAILS && sql.startsWith(process.env.VACUUM_FAILS)) { process.stderr.write('ERROR:  vacuum refused by the test'); process.exit(1); }
 /* Past the vacuum, where a real psql with ON_ERROR_STOP would go on to run the rest. A call that failed above is never listed. */
 fs.appendFileSync(${JSON.stringify(ran)}, (/^(vacuum \\(analyze\\); )?begin;\\n/.test(sql) ? 'file' : 'other') + '\\n');
@@ -106,12 +108,12 @@ if (/^(vacuum \\(analyze\\); )?begin;/.test(sql) && process.env.HANG && !fs.exis
   setTimeout(() => {}, 60_000);
 }
 `);
-function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
+function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '', drift = '') {
   fs.rmSync(calls, { force: true });
   fs.rmSync(hung, { force: true });
   fs.rmSync(starts, { force: true });
   fs.rmSync(ran, { force: true });
-  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', VACUUM_FAILS: vacuumFails };
+  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', VACUUM_FAILS: vacuumFails, DRIFT: drift };
   /* The suite's own end-to-end files would try the scratch database this psql never made; a bound keeps a slip here from hanging the
      build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
   const r = spawnSync(process.execPath, ['tools/test-sql.mjs'], { env, encoding: 'utf8', timeout: 600_000 });
@@ -143,6 +145,8 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
     new RegExp(`FAIL  ${first?.replace('.', '\\.')}\\s+did not finish within 1\\.5s and was killed`).test(r.out), r.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
   check('and the files after it still run', /PASS  0001-/.test(r.out), r.out.slice(0, 400));
 }
+/** A pass of the suite whose stand-in psql answers nothing to the drift query: the statistics block below keeps it, and the drift block reads it. */
+let cleanPass;
 /* ---- the statistics state ---- */
 /* Every file starts from the same statistics state: `vacuum (analyze)` on the scratch database. An assertion file's
    vacuum travels in the file's own psql call, ahead of its transaction (`vacuum (analyze); begin;`, on one line so the
@@ -158,6 +162,7 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
   /* An assertion file's call: wrapped in begin; … rollback; (a migration may say `begin;` too, and is not one). */
   const isFile = (c) => /^(vacuum \(analyze\); )?begin;\n/.test(body(c)) && body(c).trimEnd().endsWith('\nrollback;');
   const r = boundedSuite(false);
+  cleanPass = r;
   const fileAt = r.records.map((c, i) => (isFile(c) ? i : -1)).filter((i) => i >= 0);
   const e2eCount = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).length;
   const startsWithIt = (c) => body(c).startsWith(VACUUM);
@@ -181,6 +186,23 @@ function boundedSuite(hang, timeoutMs = '1500', vacuumFails = '') {
   /* The shim lists a call only once it is past the vacuum, as a real psql with ON_ERROR_STOP stops at the failing first statement. */
   check('and the file itself is not run', !bad.proceeded.includes('file'), `${bad.proceeded.filter((x) => x === 'file').length} files went on past the vacuum`);
   check('the same for an end-to-end file', !e2eFirst || new RegExp(`FAIL  e2e/${e2eFirst.replace('.', '\\.')}\\s+vacuum \\(analyze\\); failed, so the file was not run:\\s+ERROR:  vacuum refused by the test`).test(bad.out), bad.out.split('\n').filter((l) => /e2e/.test(l)).slice(0, 2).join(' | '));
+}
+/* ---- the drift check ---- */
+/* After the end-to-end files, one step runs play_post_drift() on the scratch database, and a row it answers fails the run, naming the row.
+   The poison here is the stand-in psql answering a row, since the suite itself is outside the build; the real one (a refund written with its
+   trigger disabled, in a step before the check) is tools/test-sql-drift.mjs, which needs the Postgres the build has not got. */
+{
+  const e2eFiles = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f));
+  const clean = cleanPass;
+  const drifted = boundedSuite(false, '1500', '', '00000000-0000-4000-8000-0000000000d1|a play with no row');
+  const driftCall = (r) => r.records.findIndex((c) => c.split('\n').slice(1).join('\n').trim() === runner.driftSql);
+  const lastVacuumOnly = (r) => r.records.map((c, i) => (c.split('\n').slice(1).join('\n').trim() === runner.VACUUM_STATEMENT ? i : -1)).filter((i) => i >= 0).at(-1) ?? -1;
+  check('the suite runs play_post_drift() on the scratch database', driftCall(clean) >= 0 && /\/kayfabb_scratch_\w+ /.test(clean.records[driftCall(clean)]?.split('\n')[0] ?? ''));
+  check('after the last end-to-end file\'s vacuum, so after every file has written what it wrote', e2eFiles.length > 0 && driftCall(clean) > lastVacuumOnly(clean), `drift at ${driftCall(clean)}, last e2e vacuum at ${lastVacuumOnly(clean)}`);
+  check('no row from it: the drift step passes and the suite is as green as the stand-in lets it be', /PASS  drift/.test(clean.out), clean.out.split('\n').filter((l) => /drift/.test(l)).join(' | '));
+  check('a row from it fails the suite', drifted.status === 1, `status ${drifted.status}`);
+  check('and the failing step is named drift and names the row', /FAIL  drift\s+play_post or post_kinds differs from the Acts[^\n]*\s+00000000-0000-4000-8000-0000000000d1  a play with no row/.test(drifted.out), drifted.out.split('\n').filter((l) => /drift|00000000/.test(l)).join(' | '));
+  check('driftFailure is null for no rows and names every row it is given', runner.driftFailure([]) === null && /a  b\nc  d/.test(runner.driftFailure([{ name: 'a', calls: 'b' }, { name: 'c', calls: 'd' }]) ?? ''));
 }
 fs.rmSync(bounded, { recursive: true, force: true });
 

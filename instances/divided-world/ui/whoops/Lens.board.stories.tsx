@@ -76,7 +76,7 @@ function useSeeded(thread: string | null, viewer: Viewer, post: number, stickAro
       const pipewrench = by(43);
       const gloomba = by(45) ?? by(38);
       if (!target || !pipewrench || !gloomba) throw new Error('the boards fixture has no post to play on, or no #43, and no #45 or #38');
-      const played = (await api.cardsOn(target.id, 8)).filter((a) => a.currentPayload.card === whoops);
+      const played = (await api.postPlays([target.id])).plays.filter((a) => a.currentPayload.card === whoops);
       let bottom = played[0]?.id ?? null;
       const kinds = instance.reactions.map((r) => r.key);
       let fans = 0;

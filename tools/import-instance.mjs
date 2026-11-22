@@ -24,7 +24,9 @@
  * refused by name: a lost line never imports quietly. Then each identity's next value is set past
  * its rows, and the settlement's job is scheduled from the imported settings, as the trigger the
  * replica skipped would have scheduled it (supabase/migrations/0004_schedule.sql), and so is the
- * view count's (0018_reading.sql). Any failure rolls all of it back.
+ * view count's (0018_reading.sql). Last of the checks, with the role back to origin: play_post and post_kinds, which triggers
+ * keep and a replica skipped (supabase/migrations/0408_play_post.sql, 0409_post_kinds.sql), are held to the Acts by
+ * play_post_drift(), and a row it names refuses the import. Any failure rolls all of it back.
  */
 import fs from 'node:fs';
 import path from 'node:path';
@@ -142,6 +144,12 @@ async function load(db, dir, manifest) {
     end loop;
   end $$;
   set local session_replication_role = origin;
+  do $$ declare n bigint; named text; begin
+    -- play_post and post_kinds are kept by triggers a replica's write skipped, so the rows carried are held to what the Acts now say
+    -- (0408, 0409): a file edited or shortened is refused by name, never imported as a board that counts wrong.
+    select count(*), string_agg(play::text || ' (' || why || ')', '; ') into n, named from (select * from public.play_post_drift() order by play, why limit 5) d;
+    if n > 0 then raise exception 'play_post or post_kinds differs from the Acts (play_post_drift() names): %: the export was edited after it was made', named; end if;
+  end $$;
   select schedule_settlement() where exists (select 1 from settings where key = 'settlementCron');
   select schedule_view_counts() where exists (select 1 from settings where key = 'viewCountCron');
   select schedule_meeting() where exists (select 1 from settings where key = 'meetingCron');

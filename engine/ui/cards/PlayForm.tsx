@@ -29,7 +29,7 @@ import { ENGINE_DEFAULT_PRONOUNS, words } from '../../rules/pronouns.ts';
 import { isPost } from '../../rules/types.ts';
 import { casterMessage, castOnPost, cuttable, decideSet, MESSAGE_MOST, playOf, withheld, type CardEffect, type CardTarget } from '../../rules/cards.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id } from '../data/api.ts';
+import type { Act, Id, PostPlaysRead } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { Editor } from '../composer/Editor.tsx';
@@ -45,7 +45,8 @@ import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf, waysOn } from './land.ts';
 import type { CardPlay, ConfigFormProps } from './types.ts';
 import { usePierce } from './pierce.ts';
-import { effectCards, livePlays, PLAYS_PER_POST, readEffects, stackPlays, usePlays } from './plays.ts';
+import { effectCards, livePlays, readEffects, stackPlays, usePlays } from './plays.ts';
+import { usePostVersion } from './tails.ts';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
 import './play.css';
@@ -145,7 +146,9 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   /* How the card is played (the card mechanic's design, section 1; the face-down Moves design, section 8). */
   const how = rules ? playOf(rules) : 'cast';
   /* Read on every render: a play landing on the post meanwhile (live) changes what it can take. The plays that hold a place in the stack, as the server counts it: a spent fall holds its place, though it draws no layer. */
-  const carried = stackPlays(usePlays(target.plays, home).plays, api.now());
+  const homePlays = usePlays(target.plays, home);
+  const version = usePostVersion(home);
+  const carried = stackPlays(homePlays.plays, api.now());
   /*
    * The post is one of the player's own characters'. `waysOn` says which ways a cast card lands there, the same answer the post's mark
    * reads. It is asked without the card's settings, so the choice never comes or goes as the player types.
@@ -159,7 +162,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const ownPost = !beyond && post !== null && player.actingCharacters.some((c) => c.id === post.character);
   /* A card that replies writes its reply with the play, face up (`faceUpOnly`): its form holds the editor and offers no face-down choice, and waysOn never says it sets. */
   const replying = rules?.replies === true;
-  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost, now: api.now(), ...(pierce === undefined ? {} : { pierce }) }) : { cast: false, set: false };
+  const ways = rules && post && !beyond && how === 'cast' ? waysOn(rules, post, carried, { cards: instance.cards, own: ownPost, now: api.now(), postEffects: instance.settings.postEffects, states: homePlays.states, version, ...(pierce === undefined ? {} : { pierce }) }) : { cast: false, set: false };
   const choosing = how === 'cast' && ownPost && ways.cast && ways.set;
   const setting = how === 'set' || (how === 'cast' && ownPost && ways.set && (!ways.cast || down));
   /* A Set is the post author's own: the character that wrote it sets it, which is the HUD's unless the post is another mask's. */
@@ -172,7 +175,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const lockThread = beyond?.reach === 'board' ? null : beyond?.reach === 'thread' ? beyond.target : postThread;
   const lockedUntil = useLockedOutUntil(setting ? setter : hud, lockThread);
 
-  const context = { cards: instance.cards, now: api.now(), ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
+  const context = { cards: instance.cards, now: api.now(), postEffects: instance.settings.postEffects, states: homePlays.states, version, ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   /* The live price effects above the target, from the plays the page holds on its thread, board and author (a post's) or the ones the reach was read with: each says which card adds what, where. */
@@ -278,12 +281,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   };
   /* No answer came back: read what the play would have changed before offering it again. */
   const read = async () => {
-    const [, acts] = await Promise.all([player.refresh(), beyond
-      ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a) => a.map((p) => p.act))
-      : api.cardsOn(post!.id, PLAYS_PER_POST)]);
+    const [, got] = await Promise.all([player.refresh(), beyond
+      ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a): PostPlaysRead => ({ plays: a.map((p) => p.act), counts: [] }))
+      : api.postPlays([post!.id])]);
+    const acts = got.plays;
     /* The read carries the plays' ends too (an admin's reversal): they join the store, but name no caster. */
     await target.know(acts.filter((a) => a.kind !== 'card_end').map((a) => a.character));
     target.plays.add(acts);
+    target.plays.setCounts(got.counts);
     await readEffects(api, target.plays, acts, effectCards(ui));
   };
   const verb = setting ? 'Set' : how === 'use' ? 'Use' : 'Play';

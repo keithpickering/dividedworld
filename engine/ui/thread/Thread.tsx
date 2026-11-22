@@ -40,7 +40,7 @@ import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Comp
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { isPost } from '../../rules/types.ts';
-import type { Act, EffectState, Id, PageOrigin, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
+import type { Act, Character, EffectState, Id, PageOrigin, ThreadListener, ThreadPage, ThreadSummary, Visit } from '../data/api.ts';
 import { pageList, useIsAdmin } from '../mini.tsx';
 import { useBoot } from '../boot.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
@@ -212,6 +212,17 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     await Promise.all(wanted.map((id) => asked.current.get(id)));
   }, [api]);
 
+  /* The casters of a page of older plays the Lens read (`kindPlays`' `cast`): people the thread knows by name and face from now on. One the thread already holds is left as its page read it, with its counts. */
+  const takeCast = useCallback((cast: readonly Character[]) => {
+    let moved = false;
+    for (const c of cast) {
+      if (people.current.has(c.id)) continue;
+      people.current.set(c.id, { character: c, posts: 0, standing: null, revealed: null, turnedAt: null });
+      moved = true;
+    }
+    if (moved) bump((n) => n + 1);
+  }, []);
+
   /* Each post's latest visit as the pages read so far carried it (Visit.tsx); a visit that changed on a page read again redraws the posts. */
   const visitsHeld = useRef(new Map<Id, Visit>());
   const [visitTick, setVisitTick] = useState(0);
@@ -301,7 +312,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     /* The plays a thread-reach card keeps on this page's posts after its time came with it, as the plays above them do. */
     const played = [...page.plays, ...page.above.map((x) => x.act), ...page.kept.map((x) => x.act)];
-    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? []);
+    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? [], page.counts);
     /* The origin of a spun thread, on the page that holds its first Act: the newer read's is kept (an answer asked before the one held is not taken, as for `above`), and a page without one leaves what is held.
        Its plays' saved states and releases are in the page's own lists; the box's store is given those of its plays. */
     let tookOrigin: PageOrigin | null = null;
@@ -1070,7 +1081,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       <ActIndex.Provider value={index}>
         <ThreadCtx.Provider value={context}>
           <CalloutProvider met={player.session.signedIn ? cardsMet : null}>
-          <LensProvider admin={admin}>
+          <LensProvider admin={admin} onCast={takeCast}>
             <ThreadHead pager={pager('top')} />
             <div className="kb-acts">
               {/* The 2003 table's column head, over side-by-side posts; each article names its own author for a screen reader. */}

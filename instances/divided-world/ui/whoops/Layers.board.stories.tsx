@@ -74,7 +74,7 @@ function useSeeded(thread: string | null, layers: Layers, washed: Washed, tall: 
       const acts = await api.acts(thread, 41, 46);
       const by = (seq: number) => acts.find((a) => a.seq === seq)?.character ?? null;
       const target = acts.find((a) => a.seq === 41);
-      const [bottom] = target ? await api.cardsOn(target.id, 1) : [];
+      const [bottom] = target ? (await api.postPlays([target.id])).plays : [];
       const spritey = target?.character ?? null;
       const gloomba = by(45);
       if (!target || !bottom || !spritey || !gloomba) throw new Error('the boards fixture has no #41 with its play, or no #45');

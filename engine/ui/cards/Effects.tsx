@@ -42,7 +42,7 @@ import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, PLAYS_PER_POST, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, withHandedOut, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
@@ -89,7 +89,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /*
    * A play whose first generation failed for good is over, which the page holds only from the plays' read (`untaken`). A page showing it learns
    * it from its tails: every row of a play the page counts failed, none waiting, none a text (a failure a newer job waits behind shows that job
-   * waiting, and a failed regeneration after a text has the text). Then that one post's plays are read again (`cardsOnMany` for the one post, once
+   * waiting, and a failed regeneration after a text has the text). Then that one post's plays are read again (`postPlays` for the one post, once
    * for each play), so the mark's count, the Lens and the effect catch up without a reload. A read that fails is tried again after the wait the
    * tails' own timer keeps (`backoff`), at most `REPEAT_TRIES` times, and then waits for the next change of the post's tails, so a server that
    * keeps failing is asked a handful of times and never in a loop.
@@ -104,7 +104,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
       && (() => { const own = tailRows.filter((r) => r.play === p.id); return own.length > 0 && own.every((r) => r.failed && r.text === null && !r.waiting); })());
     if (over.length === 0) return;
     for (const p of over) reread.current.add(p.id);
-    void api.cardsOnMany([post.id], PLAYS_PER_POST).then((acts) => { tries.current = 0; plays.add(acts); }, () => {
+    void api.postPlays([post.id]).then((read) => { tries.current = 0; plays.add(read.plays); plays.setCounts(read.counts); }, () => {
       for (const p of over) reread.current.delete(p.id);
       const attempt = tries.current++;
       if (attempt + 1 >= REPEAT_TRIES) { tries.current = 0; return; }
