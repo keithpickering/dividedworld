@@ -494,10 +494,12 @@
   display: contents;
 }
 
-/* The play's reaction tiles (meta tiles, 36px) stand over the grid on a line of their own. */
+/* The play's reaction tiles (meta tiles, 36px) stand over the grid on a line of their own. The grid's gaps keep a pending tile's ring clear here, so
+   the list takes none of the room the thread's row keeps for it (reactions.css, `--kb-grace-reach`). */
 .kb-lens-row-foot .kb-reaction-list {
   grid-column: 1 / -1;
   margin: 0;
+  padding: 0;
 }
 
 /* The React tile is one of the grid's four: it fills its cell and stands as tall as the kit tiles beside it, so the tiles stay equal. */

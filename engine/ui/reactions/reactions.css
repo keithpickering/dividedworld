@@ -1,9 +1,14 @@
 /* Reactions under a post: meta tiles (glass/meta-tile.css; the chips below are MoveNotice's and the front door's), and the picker, the glass's. */
+/* How far a pending tile's grace ring stands out from the tile (below): the row keeps that much clear around each tile, so the ring never meets a neighbor. */
+:root {
+  --kb-grace-reach: 6px;
+}
+
 .kb-reactions {
   position: relative;
   display: flex;
   flex-wrap: wrap;
-  gap: 0.4em;
+  gap: 0.4em calc(2 * var(--kb-grace-reach));
   align-items: center;
   margin: 0.6em 0 0;
 }
@@ -45,10 +50,11 @@
 .kb-reaction-list {
   display: flex;
   flex-wrap: wrap;
-  gap: 0.3em;
+  /* Two pending tiles side by side, or a wrapped line under one, keep their rings apart; the block padding keeps the ring off the post's edge. */
+  gap: calc(2 * var(--kb-grace-reach));
   list-style: none;
   margin: 0;
-  padding: 0;
+  padding: var(--kb-grace-reach) 0;
 }
 
 /* A reaction's tile: the line is a calm, with no glow; the emoji take the system's emoji faces before the body face. */
@@ -296,9 +302,9 @@ button.kb-reaction:active:not([aria-disabled='true']) {
 .kb-reaction[data-kb-pending]::after {
   content: '';
   position: absolute;
-  inset: -6px;
+  inset: calc(-1 * var(--kb-grace-reach));
   box-sizing: border-box;
-  padding: 3px;
+  padding: calc(var(--kb-grace-reach) / 2);
   pointer-events: none;
   background: conic-gradient(var(--kb-reaction-hue, var(--kb-glass-ready)) var(--kb-grace-sweep), transparent 0);
   /* A mask reads only alpha: currentColor is any opaque stop, as characters.css's fade does. */
