@@ -172,7 +172,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const lockThread = beyond?.reach === 'board' ? null : beyond?.reach === 'thread' ? beyond.target : postThread;
   const lockedUntil = useLockedOutUntil(setting ? setter : hud, lockThread);
 
-  const context = { cards: instance.cards, ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
+  const context = { cards: instance.cards, now: api.now(), ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
   const lands = !rules || !goal ? { ok: false as const, why: 'there is no such card' }
     : beyond ? landingOn(rules, goal, carried, context) : landing(rules, post!, carried, context);
   /* The live price effects above the target, from the plays the page holds on its thread, board and author (a post's) or the ones the reach was read with: each says which card adds what, where. */

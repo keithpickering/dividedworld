@@ -592,11 +592,13 @@ export interface PlayContext {
  * The live Gimmicks on `target` that a card that cuts may end: its effects, on the target's own reach, that are up, whose card is a Use card (`rulesOf`) no rarer than `rules.cuts.upTo`.
  * Empty for a card that does not cut.
  */
-export function cuttable(rules: Pick<CardRules, 'cuts'>, effects: readonly CardEffect[], target: Pick<CardTarget, 'reach'>, now: Date, rulesOf: NonNullable<PlayContext['rulesOf']>): readonly CardEffect[] {
+export function cuttable(rules: Pick<CardRules, 'cuts'>, effects: readonly CardEffect[], target: Pick<CardTarget, 'reach'>, now: Date | undefined, rulesOf: NonNullable<PlayContext['rulesOf']>): readonly CardEffect[] {
   const cuts = rules.cuts;
   if (cuts === undefined) return [];
+  /* As decidePlay's own `now`: a caller that holds the page's clock passes it. */
+  const at = now ?? new Date();
   return effects.filter((e) => {
-    if ((e.reach ?? 'post') !== target.reach || !isLive(e, now) || e.card === null) return false;
+    if ((e.reach ?? 'post') !== target.reach || !isLive(e, at) || e.card === null) return false;
     const card = rulesOf(e.card);
     return card !== undefined && playOf(card) === 'use' && atOrBelow(card.rarity, cuts.upTo);
   });

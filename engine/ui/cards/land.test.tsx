@@ -338,4 +338,10 @@ describe('a card that cuts, as a screen offers it', () => {
     expect(waysOn(buzz, post('hi'), [], { cards, own: false, now }).cast).toBe(false);
     expect(waysOn(buzz, post('hi'), [{ ...play('jimmy', 1), cut: { by: 'b', card: 'buzzkill' } }], { cards, own: false, now }).cast).toBe(false);
   });
+  test('whether the Gimmick is still up is read on the page\'s clock, not the wall\'s', () => {
+    /* Up a day past the page's now, and long over by any wall clock this test runs under. */
+    const timed = { ...play('jimmy', 1), ends: '2026-10-31T00:00:00Z' };
+    expect(waysOn(buzz, post('hi'), [timed], { cards, own: false, now }).cast).toBe(true);
+    expect(waysOn(buzz, post('hi'), [timed], { cards, own: false, now: Date.parse('2026-11-01T00:00:00Z') }).cast).toBe(false);
+  });
 });

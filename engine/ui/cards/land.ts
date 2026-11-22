@@ -47,6 +47,8 @@ export interface LandingContext {
   readonly under?: string;
   /** The caster's live pierce (a Cheap Shot's `upTo`): a ward whose card is at or below it does not turn the cast away (`decidePlay`). */
   readonly pierce?: Rarity;
+  /** The page's clock (`api.now()`), against which a play's end is read: a card that cuts is offered only where a Gimmick is still up. */
+  readonly now?: number;
 }
 
 /**
@@ -72,7 +74,7 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
 export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity }): { readonly cast: boolean; readonly set: boolean } {
   const live = stackPlays(plays, context.now);
   const cast = landing(rules, post, live, context).ok;
-  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
+  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, now: context.now, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
   return { cast, set };
 }
 
@@ -94,7 +96,8 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
    */
   /* A card that cuts names the Gimmick it ends, which is the form's choice: here it names one it may end if the target holds any (decidePlay refuses a target holding none first, in words of its own). */
   const rulesOf = (key: string) => context.cards.find((c) => c.key === key);
-  const names = rules.cuts === undefined ? undefined : cuttable(rules, effects, target, new Date(), rulesOf)[0]?.act;
+  const at = context.now === undefined ? undefined : new Date(context.now);
+  const names = rules.cuts === undefined ? undefined : cuttable(rules, effects, target, at, rulesOf)[0]?.act;
   const lenient: CardRules = {
     /* A surface card's first draw is the composer's, made after the mark is pressed: the decision here is only where the card lands, so it is asked as a card with no surface (its own `canApply` still holds the wall it is). */
     ...rules, surface: undefined, validateConfig: (c) => ({ ok: true, value: { ...(c as object), quadrant: QUADRANTS[0], class: 'any', ...(names === undefined ? {} : { play: names }) } }), playPrice: () => 0,
@@ -104,7 +107,7 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
   const play = context.faceDown ? 'set' : playOfRules(rules);
   const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
     : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
-    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, rulesOf, ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
+    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, rulesOf, ...(at === undefined ? {} : { now: at }), ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
   return decided.ok ? { ok: true, value: undefined } : decided;
 }
 
