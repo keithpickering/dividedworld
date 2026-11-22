@@ -617,24 +617,6 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
   const hosted = useLensHost() !== document.body;
   /* A staged page's play is made up: no thread is spun from it, and none can be (staged.ts). */
   const staged = useStaged();
-  /* The foot is a grid of two columns whose wrappers take no box (lens.css), so how many tiles it holds (the React meta tile among the kit tiles) is read from the page: an odd last one spans both. */
-  const foot = useRef<HTMLDivElement>(null);
-  useLayoutEffect(() => {
-    const el = foot.current;
-    if (!el) return undefined;
-    const count = () => {
-      const tiles = [...el.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
-      tiles.forEach((t, i) => {
-        const span = tiles.length % 2 === 1 && i === tiles.length - 1;
-        if (span !== t.hasAttribute('data-kb-span')) { if (span) t.setAttribute('data-kb-span', ''); else t.removeAttribute('data-kb-span'); }
-      });
-    };
-    count();
-    if (typeof MutationObserver !== 'function') return undefined;
-    const changed = new MutationObserver(count);
-    changed.observe(el, { childList: true, subtree: true });
-    return () => changed.disconnect();
-  }, []);
   return (
     <>
       {sprung && <p className="kb-lens-note">{sprung}</p>}
@@ -645,7 +627,7 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
       {!past && yours && <p className="kb-lens-yours">Your play</p>}
-      <div ref={foot} className="kb-lens-row-foot">
+      <div className="kb-lens-row-foot">
         {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} plays={store} pickerAt="button" />}
         <div className="kb-lens-actions">
           {past || staged ? null : hosted
@@ -699,11 +681,11 @@ function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: bool
   return (
     <li className="kb-lens-row" data-kb-play={play.id} data-kb-ended="" style={inkStyle(ink)}>
       <button type="button" className="kb-lens-compact" aria-expanded={open} aria-controls={id} onClick={onToggle}>
+        <span className="kb-lens-fold-sign" aria-hidden="true" />
         <span className="kb-lens-compact-head">
           <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
           <span className="kb-lens-who kb-glass-display">{caster}</span>
           <span className="kb-lens-compact-when">{play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{day(play.playedAt)}</time></span>
-          <span className="kb-lens-fold-sign" aria-hidden="true" />
         </span>
         {line && (
           <span className="kb-lens-compact-line">

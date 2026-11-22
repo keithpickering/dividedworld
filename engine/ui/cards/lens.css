@@ -24,6 +24,8 @@
   /* The glass's smallest step (label, 20px: 18px of ink in its face, the floor): a Lens never out-shouts the post's own 12px words. */
   font-size: var(--kb-glass-size-label);
   line-height: 1.25;
+  /* Every word set in capitals in a Lens (its tabs, All, the kinds, its tiles, a kit's name) is tracked the same: 1.5px at the label step. */
+  --kb-lens-caps: 0.075em;
 }
 
 .kb-glass-dialog.kb-lens[data-kb-alignment="salty"] {
@@ -47,7 +49,23 @@
  * (`data-kb-fade`, Lens.tsx), and the open tab scrolled into view. A scroller clips whatever leaves its box, so the row keeps room at
  * every edge for a skewed tab's slant (about 4px at 44px tall) and its focus ring, and gives that room back in its margins: the tabs
  * stand where they did, and the first tab's left edge is never cut.
+ *
+ * The fade is a mask on the scroller itself, so it starts at the scroller's own edge (which stands 6px past the strip's, the room above)
+ * and lets the frame's smoke show through: a band painted in the ground's color stood in from the edge, a tab's sliver showing past it,
+ * and read as a dark box over the smoke. Its two widths are registered so they ease in and out.
  */
+@property --kb-lens-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
+@property --kb-lens-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+
 .kb-lens-tabstrip {
   position: relative;
   flex: 1 1 auto;
@@ -55,6 +73,8 @@
 }
 
 .kb-lens-tabs {
+  --kb-lens-fade-start: 0px;
+  --kb-lens-fade-end: 0px;
   display: flex;
   gap: 8px;
   min-width: 0;
@@ -62,47 +82,27 @@
   padding: 6px 12px;
   overflow-x: auto;
   scrollbar-width: none;
+  mask-image: linear-gradient(to right, transparent, currentColor var(--kb-lens-fade-start), currentColor calc(100% - var(--kb-lens-fade-end)), transparent);
+  transition: --kb-lens-fade-start 0.15s ease-out, --kb-lens-fade-end 0.15s ease-out;
 }
 
 .kb-lens-tabs::-webkit-scrollbar {
   display: none;
 }
 
-.kb-lens-tabstrip::before,
-.kb-lens-tabstrip::after {
-  content: '';
-  position: absolute;
-  z-index: 1;
-  top: 0;
-  bottom: 0;
-  width: 56px;
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.15s ease-out;
+.kb-lens-tabstrip:is([data-kb-fade='start'], [data-kb-fade='both']) > .kb-lens-tabs {
+  --kb-lens-fade-start: 40px;
 }
 
-.kb-lens-tabstrip::before {
-  left: 0;
-  background: linear-gradient(to left, transparent, var(--kb-glass-ground) 80%);
-}
-
-.kb-lens-tabstrip::after {
-  right: 0;
-  background: linear-gradient(to right, transparent, var(--kb-glass-ground) 80%);
-}
-
-.kb-lens-tabstrip:is([data-kb-fade='start'], [data-kb-fade='both'])::before,
-.kb-lens-tabstrip:is([data-kb-fade='end'], [data-kb-fade='both'])::after {
-  opacity: 1;
+.kb-lens-tabstrip:is([data-kb-fade='end'], [data-kb-fade='both']) > .kb-lens-tabs {
+  --kb-lens-fade-end: 40px;
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .kb-lens-tabstrip::before,
-  .kb-lens-tabstrip::after { transition: none; }
+  .kb-lens-tabs { transition: none; }
 }
 
-:root[data-kb-motion='reduce'] .kb-lens-tabstrip::before,
-:root[data-kb-motion='reduce'] .kb-lens-tabstrip::after { transition: none; }
+:root[data-kb-motion='reduce'] .kb-lens-tabs { transition: none; }
 
 /* A tab is a skewed outline; the open one is filled in the card's ink, as every other glass tab strip fills its current one. */
 .kb-lens-tab {
@@ -117,7 +117,7 @@
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   line-height: 1.1;
-  letter-spacing: 1.5px;
+  letter-spacing: var(--kb-lens-caps);
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
@@ -265,10 +265,13 @@
   font-weight: 700;
 }
 
-/* Who: a disclosure; its rows are the old panel's content, one to a play. */
+/*
+ * Who: a disclosure; its rows are the old panel's content, one to a play. Its chevron and faces stand on its words' first line however
+ * many lines a long cast wraps to.
+ */
 .kb-lens-fold {
   display: flex;
-  align-items: baseline;
+  align-items: flex-start;
   gap: 0.5rem;
   width: 100%;
   min-height: 40px;
@@ -292,7 +295,8 @@
   flex: none;
   width: 8px;
   height: 8px;
-  margin: 0 4px 0 2px;
+  /* Its box centered on a 25px first line, before the turn's lift. */
+  margin: 10px 4px 0 2px;
   border-right: 2px solid currentColor;
   border-bottom: 2px solid currentColor;
   transform: translateY(-2px) rotate(-45deg);
@@ -360,6 +364,8 @@
 }
 
 .kb-lens-row-head {
+  /* A long name wraps short of the ink's corner. */
+  margin-inline-end: 12px;
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   gap: 0.6rem;
@@ -433,7 +439,6 @@
 .kb-lens-faces {
   display: inline-flex;
   flex: none;
-  align-self: center;
 }
 
 .kb-lens-face-ink {
@@ -482,11 +487,6 @@
   font-weight: 700;
 }
 
-/* A play's note stands above its caster, as the mockup's `.play .note` does. */
-.kb-lens-note {
-  letter-spacing: 0.06em;
-}
-
 /*
  * A play's actions, React, Spin thread, As it landed and Go to post: a two-by-two grid of equal tiles (board 28), the play's reaction tiles
  * over it on a line of their own. The reactions' box and the actions' wrapper take no box of their own, so every tile is the grid's.
@@ -510,10 +510,16 @@
   padding: 0;
 }
 
-/* The React tile is one of the grid's four: it fills its cell and stands as tall as the kit tiles beside it, so the tiles stay equal. */
+/*
+ * The React tile is one of the grid's tiles: it fills its cell, stands as tall as the kit tiles beside it, and sets its word as they do (capitals,
+ * the Lens's tracking), so the tiles stay equal. Its sweet fill stays: React is the play's first action.
+ */
 .kb-lens-row-foot .kb-react-button {
   height: auto;
   min-height: 44px;
+  font-weight: 800;
+  letter-spacing: var(--kb-lens-caps);
+  text-transform: uppercase;
 }
 
 .kb-lens-actions {
@@ -523,11 +529,6 @@
 .kb-lens-row-foot .kb-kit-tile {
   justify-content: center;
   min-height: 44px;
-}
-
-/* An odd number of tiles leaves the last alone in its row: it spans both columns (Lens.tsx marks it). */
-.kb-lens-row-foot [data-kb-span] {
-  grid-column: 1 / -1;
 }
 
 /* Where a hosted Lens says when spinning is possible, the sentence takes a line of its own. */
@@ -569,9 +570,9 @@
   }
 
   .kb-lens-fade,
-  .kb-lens-fade-top,
-  .kb-lens-tabstrip::before,
-  .kb-lens-tabstrip::after { display: none; }
+  .kb-lens-fade-top { display: none; }
+
+  .kb-lens-tabs { mask-image: none; }
 }
 
 /*
@@ -582,12 +583,16 @@
 .kb-lens .kb-kit-tile {
   min-height: 36px;
   padding: 0.1rem 0.8rem;
+  letter-spacing: var(--kb-lens-caps);
 }
 
-/* A row's tiles are its own: a step quieter, so the card's controls above them stay the Lens's first. */
+.kb-lens .kb-kit-label {
+  letter-spacing: var(--kb-lens-caps);
+}
+
+/* A row's tiles are its own: a step narrower, so the card's controls above them stay the Lens's first. */
 .kb-lens-row .kb-kit-tile {
   padding: 0.1rem 0.7rem;
-  letter-spacing: 0.06em;
 }
 
 /* A named kit's label (Whoops!'s "Your tools, as the author") stands under the state's lines, over its one row. */
@@ -645,7 +650,7 @@
 }
 
 .kb-lens-group + .kb-lens-group {
-  margin-top: 14px;
+  margin-top: 18px;
 }
 
 .kb-lens-group-head {
@@ -657,8 +662,13 @@
   font-size: var(--kb-glass-size-label);
   font-weight: 400;
   line-height: 1.2;
-  letter-spacing: 1.5px;
+  letter-spacing: var(--kb-lens-caps);
   text-transform: uppercase;
+}
+
+/* A first group with a heading stands a breath under the fold that opened it, more room over its heading than under it. */
+.kb-lens-group:first-child:has(> .kb-lens-group-head) {
+  margin-top: 10px;
 }
 
 .kb-lens-group > .kb-lens-rows {
@@ -671,15 +681,30 @@
   padding: 0 14px;
 }
 
-/* An ended row keeps its ink bar and takes about half the padding: its compact button is the row until it is opened. */
+/*
+ * An ended row keeps its ink and takes about half the padding: its compact button is the row until it is opened. Its cut and ink corner are a
+ * step smaller (the kinds grid's cut), so its date runs to the row's padding without meeting the corner.
+ */
 .kb-lens-row[data-kb-ended] {
+  --kb-cut: 12px;
   padding: 4px 14px 5px;
 }
 
-/* The compact button is the whole row's face: full width, unstyled, no skew, its text at the left; two grid rows, the head and the line. */
+.kb-lens-row[data-kb-ended]::before {
+  width: calc(var(--kb-cut) + 6px);
+  height: calc(var(--kb-cut) + 6px);
+}
+
+/*
+ * The compact button is the whole row's face: full width, unstyled, no skew, its text at the left. Its chevron leads, as the Who fold's does,
+ * clear of the ink's corner; the head and the line stand in the column beside it.
+ */
 .kb-lens-compact {
   display: grid;
-  gap: 2px;
+  grid-template-columns: auto minmax(0, 1fr);
+  column-gap: 8px;
+  row-gap: 2px;
+  align-items: center;
   width: 100%;
   margin: 0;
   padding: 0;
@@ -692,9 +717,19 @@
   cursor: pointer;
 }
 
+.kb-lens-compact > .kb-lens-fold-sign {
+  grid-row: 1;
+  margin: 0 4px 0 4px;
+}
+
+.kb-lens-compact-head,
+.kb-lens-compact-line {
+  grid-column: 2;
+}
+
 .kb-lens-compact-head {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto auto;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   gap: 0.5rem;
   align-items: center;
 }
@@ -715,10 +750,6 @@
 .kb-lens-compact-when {
   color: var(--kb-glass-text-2);
   white-space: nowrap;
-}
-
-.kb-lens-compact .kb-lens-fold-sign {
-  margin-inline-end: 6px;
 }
 
 .kb-lens-compact[aria-expanded="true"] .kb-lens-fold-sign {
@@ -775,7 +806,7 @@
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   line-height: 1.1;
-  letter-spacing: 1.5px;
+  letter-spacing: var(--kb-lens-caps);
   text-transform: uppercase;
   white-space: nowrap;
   cursor: pointer;
@@ -823,7 +854,8 @@
   width: 100%;
   min-height: 44px;
   margin: 0;
-  padding: 0 14px;
+  /* A name that wraps to two lines keeps room from the border, and its count clears the cut corner. */
+  padding: 8px calc(var(--kb-cut) + 6px) 8px 14px;
   border: 0;
   background: color-mix(in srgb, var(--kb-glass-text) 50%, transparent);
   color: var(--kb-glass-text);
@@ -831,7 +863,7 @@
   font-size: var(--kb-glass-size-label);
   font-weight: 800;
   line-height: 1.1;
-  letter-spacing: 1.5px;
+  letter-spacing: var(--kb-lens-caps);
   text-transform: uppercase;
   text-align: start;
   cursor: pointer;
