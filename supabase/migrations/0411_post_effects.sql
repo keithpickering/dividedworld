@@ -7,7 +7,7 @@
 --   1. card_kinds.draws_effect   boolean not null default false, as adds_reaction is (0357).
 --   2. effect_state.cleared,     cleared boolean not null default false, cleared_for uuid (null: cleared for every version of the post). The column grant 0357 narrowed to authenticated is kept: the two
 --      cleared_for               new columns are granted beside the three it names (a column added later is granted by the migration that adds it).
---   3. seed_instance             copied whole from 0406_seed_board_order.sql (its boards take their order from the seed): `draws_effect` joins the card insert's columns, values and on-conflict update, from the seed's `drawsEffect`.
+--   3. seed_instance             copied whole from 0407_system_threads_follow_the_flag.sql (the staff's threads follow the flag; 0406's board order kept): `draws_effect` joins the card insert's columns, values and on-conflict update, from the seed's `drawsEffect`.
 --   4. card_kinds_problem        copied whole from 0405_cut.sql: a `drawsEffect` that is no boolean is named, where given.
 --   5. settings_held             copied whole from 0395_polls.sql: `postEffects` is a whole number, 1 to 16, in the words of the engine's SETTINGS bound (instance.ts).
 --   6. effect_cleared,           new: whether a play is cleared for a version of its post (the one test); how many effects a post draws in force (the post's play_post rows at post reach, one probe of play_post_up);
@@ -43,7 +43,7 @@ grant select (cleared, cleared_for) on effect_state to authenticated;
 
 -- ---- 3. seed_instance ----
 
--- seed_instance (0406_seed_board_order), `draws_effect` joins the card insert's columns, values and on-conflict update, beside `cuts`. Everything else as 0406_seed_board_order wrote it.
+-- seed_instance (0407_system_threads_follow_the_flag), `draws_effect` joins the card insert's columns, values and on-conflict update, beside `cuts`. Everything else as 0407_system_threads_follow_the_flag wrote it.
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -71,6 +71,11 @@ declare
   copies bigint;
   renamed jsonb := '[]'::jsonb;
   withdrawn_out jsonb := '[]'::jsonb;
+  strays uuid[];
+  left_boards uuid[];
+  placed integer := 0;
+  counting record;
+  on_list bigint;
 begin
   -- Two seeds at once would each find no office row and both write one into the append-only office log. An advisory
   -- transaction lock serializes seeds without locking any table a player reads, and lets go at commit.
@@ -504,13 +509,35 @@ begin
       end if;
     end if;
   end if;
+  -- The staff's threads follow the flag (0407). Every thread of system_threads() is stored on system_board(); one that is not is a stray, left behind by a flag a seed moved, in this run or in an older
+  -- one, so the strays are looked for on every seed and not only when the flag moves in this one. With none, nothing is written. Otherwise they are placed by rebuild_thread_places (its own lock and
+  -- its refusal of a thread another writer moved), and then the counts of every board a stray left and of the system board are recounted by the rule thread_list lists by (backfill_board_counts, 0063):
+  -- the threads in thread_list on the board, in shard 0, the other shards zero. The recount, and not a delta, because a board that held threads from before 0339's rule, or the Updates thread netted
+  -- by hand, is not one rebuild_thread_places' deltas can be trusted to leave right, and the system board's arrivals are the ones it never counts.
+  if system_board() is not null then
+    -- One keyed probe for each of the staff's threads (system_thread_rows), and no second read of threads for its board: a reseed reads what the staff's threads are, not how many threads there are.
+    select array_agg(r.id), array_agg(distinct r.board) into strays, left_boards
+    from system_thread_rows() r where r.board is distinct from system_board();
+    if strays is not null then
+      placed := rebuild_thread_places(strays);
+      left_boards := (select array_agg(x order by x) from (select unnest(left_boards) union select system_board()) u(x));
+      perform 1 from board_thread_counts c where c.board = any (left_boards) order by c.board, c.shard for update;
+      for counting in
+        select b as board from unnest(left_boards) b order by b
+      loop
+        select count(*) into on_list from thread_list l where l.board = counting.board;
+        update board_thread_counts c set threads = case when c.shard = 0 then on_list else 0 end
+        where c.board = counting.board and c.threads is distinct from case when c.shard = 0 then on_list else 0 end;
+      end loop;
+    end if;
+  end if;
   -- Seeding ends here: a write later in a transaction that called this (a test file's, one session's) is not the seed's. The flag goes back to the value this found. A custom
   -- setting cannot be truly unset inside a transaction, so one that was unset (null) or empty goes back to 'off', which the trigger reads the same.
   perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
   return jsonb_build_object('settings', (select count(*) from settings), 'classes', (select count(*) from class_kinds),
     'reactions', (select count(*) from reaction_kinds), 'groups', (select count(*) from group_kinds), 'cards', (select count(*) from card_kinds), 'boards', (select count(*) from boards),
     'retired', (select coalesce(jsonb_agg(k.key order by k.key), '[]'::jsonb) from card_kinds k where k.retired_at is not null), 'renamed', renamed, 'withdrawn', withdrawn_out,
-    'departed', to_jsonb(departed), 'returned', to_jsonb(returned), 'handover', to_jsonb(handed));
+    'departed', to_jsonb(departed), 'returned', to_jsonb(returned), 'handover', to_jsonb(handed), 'placed', placed);
 end $function$;
 
 -- ---- 4. card_kinds_problem ----
@@ -1261,7 +1288,7 @@ begin
       if kind_of.stack = 1 then raise exception 'this post already carries that card' using hint = 'kayfabb.refusal', errcode = '23505'; end if;
       raise exception 'this post already carries % of that card, the most it takes', kind_of.stack using hint = 'kayfabb.refusal', errcode = '23505';
     end if;
-    -- A play that draws an effect takes a slot on the post, and the post's row is held, so two plays racing for the last slot land one at a time (post_room_words, 0410).
+    -- A play that draws an effect takes a slot on the post, and the post's row is held, so two plays racing for the last slot land one at a time (post_room_words, 0411).
     if kind_of.draws_effect then
       full_words := post_room_words(target);
       if full_words is not null then raise exception '%', full_words using hint = 'kayfabb.refusal', errcode = '23505'; end if;
@@ -1619,7 +1646,7 @@ begin
              and not exists (select 1 from acts s where s.kind = 'take_back' and (s.payload ->> 'set') = f.play::text)) then
     raise exception 'this post already holds a card face down' using hint = 'kayfabb.refusal', errcode = '23505';
   end if;
-  -- A back holds a slot like a drawing effect, so a post at its limit takes none; the post's row is held above, so a play racing for the last slot lands one at a time (post_room_words, 0410).
+  -- A back holds a slot like a drawing effect, so a post at its limit takes none; the post's row is held above, so a play racing for the last slot lands one at a time (post_room_words, 0411).
   full_words := post_room_words(target);
   if full_words is not null then raise exception '%', full_words using hint = 'kayfabb.refusal', errcode = '23505'; end if;
   -- A post that holds a live No quote takes no back until it ends (public: the play is a face-up card on the post). The refusal names the card and its end, the same for every setter.

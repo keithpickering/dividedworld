@@ -98,7 +98,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       veil: c.veil, addsReaction: c.reaction === true,
       // Whether its play is a surface any character may add to (0317): the SQL knows only this flag, never which card.
       surface: c.surface !== undefined,
-      // Whether its play draws an effect on the post and counts toward the post's limit (0410): the SQL knows only this flag, never which card.
+      // Whether its play draws an effect on the post and counts toward the post's limit (0411): the SQL knows only this flag, never which card.
       drawsEffect: c.drawsEffect !== undefined,
       // Whether the card is out of print (0404): the seed stamps card_kinds.retired_at the first time it sees the flag and clears it when the flag goes. The SQL knows only this flag, never which card.
       retired: c.retired === true,

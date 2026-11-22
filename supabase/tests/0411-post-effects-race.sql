@@ -1,4 +1,4 @@
--- Two casts raced for a post's last slot (supabase/migrations/0410_post_effects.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 10, "Where it is held").
+-- Two casts raced for a post's last slot (supabase/migrations/0411_post_effects.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 10, "Where it is held").
 -- place_cast reads post_effects_up after taking the post's row, and a play's own row (play_post) is written by the trigger inside the cast's transaction, so the second cast, which waited on the row, reads the first's play
 -- and is refused. A post holds one drawing play of two; two drawing casts of two characters at once: exactly one lands, the other is refused in the words, and the post holds two. Eight rounds, each of fresh characters,
 -- committed (tests.commit), since a racer is a session of its own. Every name is this file's (pex...).

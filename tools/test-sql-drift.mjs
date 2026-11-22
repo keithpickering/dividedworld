@@ -3,7 +3,7 @@
  *
  *   DATABASE_URL=postgres://postgres:pg@localhost:5432/postgres node tools/test-sql-drift.mjs
  *
- * tools/test-sql.mjs ends with `driftCheck`, which runs play_post_drift() (supabase/migrations/0407_play_post.sql) on the scratch
+ * tools/test-sql.mjs ends with `driftCheck`, which runs play_post_drift() (supabase/migrations/0408_play_post.sql) on the scratch
  * database. A check that has only ever passed proves that it runs, not that it detects ("A guard that has never been red is not known
  * to work"), and tools/test-sql-refusal.mjs can only stand a psql in for the database. So this builds a real one from the migrations
  * and the fixtures, as the suite does, plays a card on a post, and writes the refund the play's own trigger (play_post_on_refund) would

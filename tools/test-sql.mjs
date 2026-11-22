@@ -223,7 +223,7 @@ group by p.proname order by p.proname;`;
 
 /**
  * The drift check, run on the scratch database after the last end-to-end file: every row the kept tables `play_post` and `post_kinds` hold that
- * the Acts do not say, and every Act they miss (supabase/migrations/0407_play_post.sql and 0408_post_kinds.sql). A trigger that does not
+ * the Acts do not say, and every Act they miss (supabase/migrations/0408_play_post.sql and 0409_post_kinds.sql). A trigger that does not
  * run, a write that goes around one and an end nobody added to the table's mirror all show here, whichever file did it. The first rows
  * only: a run that drifts says so, and the full list is one `select * from play_post_drift()` away.
  */

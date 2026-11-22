@@ -95,7 +95,7 @@ begin
   update boards set created_at = (select created_at from boards where slug = 'general') where slug = 'the-system';
 end $$;
 
--- ---- An instance seeded before the flag: its threads stay where they are ----
+-- ---- An instance seeded before the flag: its players' threads stay where they are; the staff's own Turns thread follows the flag (0407) ----
 do $$
 declare
   ann uuid := tests.account('sys-old');
@@ -103,6 +103,7 @@ declare
   general uuid := (select id from boards where slug = 'general');
   old_turns uuid;
   old_post uuid;
+  old_plain uuid;
   settled jsonb;
   why text;
 begin
@@ -114,7 +115,8 @@ begin
   settled := pg_temp.settle_day_with_debut(ann, 'Sys Old Debut');
   old_turns := (select thread from acts where id = (settled ->> 'tally')::uuid);
   if (select board from threads where id = old_turns) is distinct from general then raise exception 'the old instance''s announcement opened on its first board'; end if;
-  -- Players still post on its first board.
+  -- Players still post on its first board, and an ordinary thread of theirs is there.
+  old_plain := tests.thread('Old plain');
   perform tests.become(ann);
   old_post := (post(old_turns, a, 'Before the flag.') ->> 'id')::uuid;
   perform tests.unbecome();
@@ -126,7 +128,8 @@ begin
                                 jsonb_build_object('slug', 'the-system', 'name', 'The System', 'description', '', 'system', true))));
   perform tests.unbecome();
   if system_board() is distinct from (select id from boards where slug = 'the-system') then raise exception 'seeding the flag made the board The System''s'; end if;
-  if (select board from threads where id = old_turns) is distinct from general then raise exception 'seeding moved an old thread'; end if;
+  if (select board from threads where id = old_plain) is distinct from general then raise exception 'seeding moved an old thread'; end if;
+  if (select board from threads where id = old_turns) is distinct from system_board() then raise exception 'seeding the flag left the staff''s Turns thread behind'; end if;
   if (select thread from acts where id = old_post) is distinct from old_turns then raise exception 'seeding moved an old post'; end if;
 
   -- A seed that flags no board leaves the flag where it is.

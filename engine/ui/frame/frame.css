@@ -7,8 +7,16 @@
  * is the glass's and spans the window. On a phone the links fold behind Boards, a 44px control, as
  * the Phone board draws it.
  */
+/*
+ * The frame clips sideways at the window's edge, as the glass's column does (glass/shell.css), so nothing on a board page widens the
+ * window, however far it runs past it: a game effect that leaves its post (a peek's flap folded back past a strip at the window's
+ * right edge) is cut where the screen ends. Without it, a phone widens its layout viewport to hold the overflow, and the HUD, fixed
+ * to that viewport's sides, widens with it. `clip` makes no scroll container, so the sticky and fixed things inside the frame keep
+ * the window as theirs.
+ */
 .kb-frame {
   --kb-hud-height: 3.4em;
+  overflow-x: clip;
 }
 
 .kb-banner {

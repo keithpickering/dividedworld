@@ -1,4 +1,4 @@
--- What the plays on a post cost to read at a busy instance's scale (supabase/migrations/0409_post_plays.sql, Task 3 of docs/plans/2026-11-21-post-plays-plan.md; design docs/plans/2026-11-21-post-plays-design.md, section 2, "At a busy instance's scale").
+-- What the plays on a post cost to read at a busy instance's scale (supabase/migrations/0410_post_plays.sql, Task 3 of docs/plans/2026-11-21-post-plays-plan.md; design docs/plans/2026-11-21-post-plays-design.md, section 2, "At a busy instance's scale").
 --
 -- A page reads, for each post, one probe for the plays in force and two for each kind the post has had: bounded by the instance's stacks and its number of cards, at any age of the post. This is read from the plan, in 0372-origin-scale.sql's form:
 -- the statement of each read is lifted out of its own definition, prepared with its arguments as parameters (the plan is then the generic one, made without their values, which is the plan the reads keep: plan_cache_mode = force_generic_plan),

@@ -1,6 +1,6 @@
 -- The plays on a post, read through the kept rows (docs/plans/2026-11-21-post-plays-plan.md, Task 3; design docs/plans/2026-11-21-post-plays-design.md, sections 1, 2, 5 and 6).
 -- A page reads, for each post it shows, the plays that hold a place (in force), two stand-ins for each kind the post has had (its newest play and its most drawn, each whether over or not), and a count for each kind. The plays are found in
--- play_post and post_kinds (0407, 0408), which no API role reads, by a few definer functions that answer ids and counts alone; the Acts themselves are read through acts_public as the caller, so concealment holds as it did in thread_page.
+-- play_post and post_kinds (0408, 0409), which no API role reads, by a few definer functions that answer ids and counts alone; the Acts themselves are read through acts_public as the caller, so concealment holds as it did in thread_page.
 -- The cap goes: thread_page's "oldest 8" a post and the origin box's "oldest 20" and its `more` flag. The read is bounded by the instance's stacks and its number of cards, at any age of the post.
 --
 --   1. the indexes           play_post_newest and play_post_drawn, on the rows a stand-in can be (a card, or a back that sprang): the two ways a kind's history is read.
@@ -19,7 +19,7 @@
 -- Masks: every id and count comes from the kept rows, whose columns are public facts of public Acts; a back's kind is the null card and never names the card; the draw is public sums and spun threads, never who reacted. The four
 -- definers behind the reads take no account and compute nothing from who is asking; kind_plays's tallies and `mine` are read as the caller, so only the caller's own reactions are theirs alone, as in thread_page.
 -- Cost at a busy instance's scale: a page reads, for each post, one probe of play_post_up for the plays in force, one of play_post_lock for the sprung backs whose lockout is live (a handful of rows, none on most posts) and, for each kind the post has had, one row of each stand-in index; a page of a kind's history reads the page and the
--- plays in force it skips, by one index in order. Both are held to a row bound on a post of 5,000 plays by supabase/tests/0409-post-plays-scale.sql, which goes red with an index withheld.
+-- plays in force it skips, by one index in order. Both are held to a row bound on a post of 5,000 plays by supabase/tests/0410-post-plays-scale.sql, which goes red with an index withheld.
 
 -- ---- 1. the indexes ----
 

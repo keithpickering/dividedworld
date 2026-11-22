@@ -1,4 +1,4 @@
--- post_kinds: how many plays a post has had of each kind, and how many took, kept from play_post, and the draw kept on it (supabase/migrations/0408_post_kinds.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 2; design docs/plans/2026-11-21-post-plays-design.md, section 2).
+-- post_kinds: how many plays a post has had of each kind, and how many took, kept from play_post, and the draw kept on it (supabase/migrations/0409_post_kinds.sql; docs/plans/2026-11-21-post-plays-plan.md, Task 2; design docs/plans/2026-11-21-post-plays-design.md, section 2).
 --   * Twelve plays of one kind, one refunded: plays 12, took 11. A back that sprang counts one under the empty kind; one taken back and one that ran out count none.
 --   * A second, identical refresh of a play moves no count; a refund after an admin's end moves took once; took never passes plays.
 --   * Three reactions of two kinds to a play and two threads spun from it: drawn 5. A reaction to the post itself moves no row. Drift is empty after each.

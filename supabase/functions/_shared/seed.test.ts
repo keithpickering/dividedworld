@@ -33,7 +33,7 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   })));
   assert.deepEqual(seed.cards.filter((c) => c.surface).map((c) => c.key), instance.cards.filter((c) => c.surface !== undefined).map((c) => c.key), 'the SQL knows which cards hold a wall by this flag alone');
   assert.ok(seed.cards.some((c) => c.surface), 'a surface card is flagged');
-  assert.deepEqual(seed.cards.filter((c) => c.drawsEffect).map((c) => c.key), instance.cards.filter((c) => c.drawsEffect !== undefined).map((c) => c.key), 'the SQL knows which cards draw an effect by this flag alone (0410)');
+  assert.deepEqual(seed.cards.filter((c) => c.drawsEffect).map((c) => c.key), instance.cards.filter((c) => c.drawsEffect !== undefined).map((c) => c.key), 'the SQL knows which cards draw an effect by this flag alone (0411)');
   assert.ok(seed.cards.some((c) => c.drawsEffect) && seed.cards.some((c) => !c.drawsEffect), 'a card that draws is flagged, and a card that does not is not');
   assert.deepEqual(seed.cards.find((c) => c.key === 'whoops'), {
     key: 'whoops', name: 'Whoops!', alignment: 'salty', stack: 3, seeded: true, reads: ['whoops.perLength', 'whoops.lengthStep', 'whoops.mostAdded'],

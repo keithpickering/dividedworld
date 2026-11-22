@@ -230,3 +230,26 @@ test('the vignette is the board\'s: a glass page draws none', async ({ page }) =
   await expect(page.locator('.kb-glass-page, .kb-glass-content').first()).toBeVisible();
   await expect(page.locator('.kb-vignette')).toHaveCount(0);
 });
+
+/*
+ * Nothing on a board page widens the window, however far it runs past it (a peek's flap folded back past a strip at the window's
+ * right edge did, and a phone widened its layout viewport to hold it, the HUD with it). On a phone's viewport (isMobile, so the
+ * layout viewport grows as a phone's does), an element planted in the page past the window's right edge leaves no sideways scroll,
+ * and the HUD keeps the window's width.
+ */
+test.describe('a phone, with something in the page past the window', () => {
+  test.use({ viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true });
+
+  test('the page does not scroll sideways and the HUD keeps the window\'s width', async ({ page }) => {
+    await openThread(page);
+    await page.evaluate(() => {
+      const past = document.createElement('div');
+      past.style.cssText = 'margin-left: 300px; width: 400px; height: 20px;';
+      document.querySelector('.kb-acts')!.append(past);
+    });
+    await page.waitForTimeout(100);
+    expect(await overflow(page)).toBe(0);
+    expect(await page.evaluate(() => window.innerWidth)).toBe(390);
+    expect((await box(page, '.kb-hud')).width).toBe(390);
+  });
+});

@@ -51,7 +51,7 @@ begin
   setter := (set_card(ann, 'tp-idle', a1, posts[25], '{}', 0) ->> 'id')::uuid;
   spin := tests.thread('Spun from 27');
   update threads set origin_act_id = posts[27] where id = spin;
-  -- Ten layers on seq 30, oldest first: every one is a post's play while it is in force (these have no end), and the page carries all ten. Until 0409 only the oldest eight a post were kept, and this block pinned that; the cap
+  -- Ten layers on seq 30, oldest first: every one is a post's play while it is in force (these have no end), and the page carries all ten. Until 0410 only the oldest eight a post were kept, and this block pinned that; the cap
   -- is gone (#871, docs/plans/2026-11-21-post-plays-design.md, section 1), so the page holds the ten and the test says so. And a live play on the whole thread, which sits above every post.
   for i in 1..10 loop
     p_ := tests.act(a2, 'card', t, '{"card": "splat", "config": {"color": "blue"}}', posts[30], now() - interval '1 day' + i * interval '1 minute');
@@ -156,8 +156,8 @@ end $$;
 
 -- An admin's end of a play on a post (0092's card_end) comes with the page's plays, as cardsOnMany answers it: the client marks a play
 -- reversed only from its card_end (engine/ui/cards/plays.ts), so a page without it draws an ended splat over the post's words for every
--- reader. The plays are the post's plays that the page carries (in force, and each kind's newest and most drawn, whether over or not: 0409) and the card_end of each, and nothing else.
--- The ended play is the newer of the two, so it is on the page as the kind's newest stand-in (until 0409 the page held the post's oldest eight whatever their state; the play that is over and
+-- reader. The plays are the post's plays that the page carries (in force, and each kind's newest and most drawn, whether over or not: 0410) and the card_end of each, and nothing else.
+-- The ended play is the newer of the two, so it is on the page as the kind's newest stand-in (until 0410 the page held the post's oldest eight whatever their state; the play that is over and
 -- neither newest nor most drawn is no longer carried, and the ones that are, are carried with their end).
 do $$
 declare

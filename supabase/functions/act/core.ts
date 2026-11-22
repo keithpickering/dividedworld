@@ -266,7 +266,7 @@ export async function runAction(dbs: { player: Db; service: Db }, instance: Inst
           return refused('play', rules.stateHeldWords?.(when) ?? `This card's effect can't be changed by its post's author until ${when}.`);
         }
       }
-      // Whether the card says this state clears the effect it draws, and for which version of the post if it says one (0410): the database counts the effect against the post's limit from these two.
+      // Whether the card says this state clears the effect it draws, and for which version of the post if it says one (0411): the database counts the effect against the post's limit from these two.
       const cleared = rules.drawsEffect?.cleared?.(state.value) ?? false;
       args = { ...args, state: state.value, cleared: cleared !== false, ...(typeof cleared === 'object' ? { cleared_for: cleared.version } : {}) };
     }

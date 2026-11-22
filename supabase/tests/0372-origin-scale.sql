@@ -1,13 +1,13 @@
 -- What the origin of a spun thread's page reads at a busy instance's scale (supabase/migrations/0372_origin_in_page.sql, Task 3 of docs/plans/2026-11-14-origin-in-page-plan.md; design docs/plans/2026-11-14-origin-in-page-design.md, section 6).
 --
 -- thread_page now carries an `origin` key on the page that holds a spun thread's first Act. The reads behind it (o_on, o_act, o_ids, o_all, o_plays, o_shown, o_ends, o_cast) must cost what the origin's plays in force and
--- stand-ins cost (0409: the plays of post_play_ids, no longer the oldest 21), never what the origin's history or the instance's Acts cost, and a page that has no origin must execute none of them. This is read from the plan, not from a count of timings: the body of thread_page is lifted out of its own definition, prepared with its five
+-- stand-ins cost (0410: the plays of post_play_ids, no longer the oldest 21), never what the origin's history or the instance's Acts cost, and a page that has no origin must execute none of them. This is read from the plan, not from a count of timings: the body of thread_page is lifted out of its own definition, prepared with its five
 -- arguments as parameters (so the plan is the generic one, made without their values, which is the plan thread_page keeps: plan_cache_mode = force_generic_plan), and run under `explain (analyze, format json)` as
 -- the caller. The nodes under the origin's own CTEs are then counted: the rows of `acts` they read (each scan node's rows, plus those its filter and its recheck removed, times its loops, as 0146-card-writes-at-scale.sql counts them).
 --
 -- Cases: a thread spun from a post that holds 400 plays (396 over, 4 in force), among 12,000 other posts in two threads, 6,000 plays on posts that are not the origin, and 3,000 posts each in the spun thread and a plain one.
 --  1. The page that holds the first Act: the origin's plays handed on are the 4 in force (its one kind's newest and most drawn are two of them), the rows of `acts` its nodes read are bounded by what those few cost (and not by its 400),
---     no scan of `acts` by the list of ids in the origin's nodes is a sequential one (the rest of what acts_public does for each Act it shows is the view's cost and is not counted), and the document holds the 4 plays and the counts of 400. (Until 0409 this case held the origin to the first 21 of its plays by acts_origin_plays; the cap is gone, #871.) at most, and more.
+--     no scan of `acts` by the list of ids in the origin's nodes is a sequential one (the rest of what acts_public does for each Act it shows is the view's cost and is not counted), and the document holds the 4 plays and the counts of 400. (Until 0410 this case held the origin to the first 21 of its plays by acts_origin_plays; the cap is gone, #871.) at most, and more.
 --  2. Another page of the same thread, and a page of a thread with no origin: every node under the origin's CTEs that reads a relation was never executed (zero loops).
 -- The fixture is written with the append-only and warn-guard triggers off for this transaction only (the runner rolls it back), and analyzed before the plan is read.
 

@@ -1926,7 +1926,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0149), and no card named. */
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /**
-   * A play as the kept row of it reads (play_post, 0407; post_kinds, 0408): its kind (a card's key, '' for a back, which never names its card), the moment an event or its time ends it, whether it took, whether a back sprang, and how much it
+   * A play as the kept row of it reads (play_post, 0408; post_kinds, 0409): its kind (a card's key, '' for a back, which never names its card), the moment an event or its time ends it, whether it took, whether a back sprang, and how much it
    * has drawn (public reaction sums and the threads spun from it). In force while no event has ended it and its time is unset or ahead. `lockUntil` is when the lockout a back's spring started ends (play_post.lock_until, the owner's answer to #993): a back that
    * sprang into one stays up on the page until then, and stays over for the stack, the limit and the counts.
    */
@@ -1975,7 +1975,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { riders, ends };
   };
   /**
-   * post_plays (0409), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, every back whose spring's lockout is still ahead, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
+   * post_plays (0410), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, every back whose spring's lockout is still ahead, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
    * not, the springs and take-backs of the backs, the `card_end` of each, each once in the order of their dates; and a count for each kind. A back is one kind, '' to the rows and a null card to the reader, counted once sprung.
    */
   function postPlaysOf(posts: readonly Id[], at: number): PostPlaysRead {
@@ -2003,7 +2003,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((k) => ({ post: k.post, card: k.card, all: k.all, took: k.took }));
     return { plays: [...plays, ...riders, ...ends].sort(byDate).map(publicAct), counts };
   }
-  /** kind_plays (0409): a post's plays of a kind (null for backs) that are not in force, newest first, strictly before the cursor, at most `size` clamped to 1..50, with what a row of the Lens's Who reads. */
+  /** kind_plays (0410): a post's plays of a kind (null for backs) that are not in force, newest first, strictly before the cursor, at most `size` clamped to 1..50, with what a row of the Lens's Who reads. */
   function kindPage(post: Id, card: string | null, before: { readonly at: string; readonly id: Id } | null, size: number): KindPage {
     const lim = Number.isFinite(size) ? Math.max(1, Math.min(50, Math.trunc(size))) : 20;
     const at = now();

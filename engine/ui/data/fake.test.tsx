@@ -7216,7 +7216,7 @@ describe('the card retirement seed', () => {
   });
 });
 
-/* postPlays and kindPlays (docs/plans/2026-11-21-post-plays-design.md, sections 1 and 3): the fake's answers, case for case with the database's post_plays and kind_plays (supabase/tests/0409-post-plays.sql). */
+/* postPlays and kindPlays (docs/plans/2026-11-21-post-plays-design.md, sections 1 and 3): the fake's answers, case for case with the database's post_plays and kind_plays (supabase/tests/0410-post-plays.sql). */
 describe('postPlays reads what a page holds for a post: the plays in force, each kind\'s two stand-ins, and the counts', () => {
   const cards = (plays: readonly Act[]) => plays.filter((a) => a.kind === 'card').map((a) => a.id);
   const iso = (fake: { clock: { now(): number } }, ms: number) => new Date(fake.clock.now() + ms).toISOString();

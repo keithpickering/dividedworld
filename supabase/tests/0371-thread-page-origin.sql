@@ -6,7 +6,7 @@
 --
 --  1. A thread spun from a post with 3 plays (one ended by an admin, one a card with a saved state and a release of the caller's), a reaction of the caller's and of another character's on the post and on a play,
 --     and a thread spun from a play: the origin's act, plays, counts, moment, at, cast, and the document's tallies, mine, spun, states and releases; `people` holds no caster who wrote nothing on the page.
---  2. An origin with 21 plays: the plays in force, and the newest one that an admin ended with its end; the counts say 21 (0409: the cap of 20 and `more` are gone, #871).
+--  2. An origin with 21 plays: the plays in force, and the newest one that an admin ended with its end; the counts say 21 (0410: the cap of 20 and `more` are gone, #871).
 --  3. Page 2 of the spun thread, a thread with no origin: no `origin` key.
 --  4. An origin that is not there: act null, no plays, the page answered.
 --  5. A play on a post: moment is play_moment's, at is the post's thread and seq.
@@ -132,7 +132,7 @@ begin
   perform pg_temp.cards();
   p := tests.post(oa, t0, 'The origin post.', now() - interval '1 day');
   pl1 := tests.act(ca, 'card', t0, '{"card": "orfx", "message": "", "config": {}, "layer": 1}', p, now() - interval '5 hours');
-  -- The play an admin ends is the newer of the two Orplains (and the older, in force, is the most drawn): since 0409 the box carries a post's plays in force and each kind's newest and most drawn, so an ended play is
+  -- The play an admin ends is the newer of the two Orplains (and the older, in force, is the most drawn): since 0410 the box carries a post's plays in force and each kind's newest and most drawn, so an ended play is
   -- there as its kind's newest, with its end, as before it was there as one of the first twenty.
   pl2 := tests.act(cb, 'card', t0, '{"card": "orplain", "message": "", "config": {}, "layer": 1}', p, now() - interval '3 hours');
   pl3 := tests.act(ca, 'card', t0, '{"card": "orplain", "message": "", "config": {}, "layer": 2}', p, now() - interval '4 hours');
@@ -228,7 +228,7 @@ begin
   s := pg_temp.spun_at(spn, sp, p, null);
   doc := pg_temp.page(rdr, (select thread from acts where id = s));
   o := doc -> 'origin';
-  -- Until 0409 the box held the first 20 plays and said there were more. Now it holds every play in force (the 2nd, ended by an admin, is neither in force nor the newest, so it is not there, and nor is its end),
+  -- Until 0410 the box held the first 20 plays and said there were more. Now it holds every play in force (the 2nd, ended by an admin, is neither in force nor the newest, so it is not there, and nor is its end),
   -- and the 21st, ended and the newest of its kind, with its end; the counts say 21 (and 21 took).
   if pg_temp.ids_of(o -> 'plays') is distinct from plays[1:1] || plays[3:21] || end21 then raise exception '2 the box lists the plays in force oldest first, the newest with its end (21 entries): % entries', jsonb_array_length(o -> 'plays'); end if;
   if o ? 'more' or o -> 'counts' is distinct from jsonb_build_array(jsonb_build_object('post', p, 'card', 'orplain', 'all', 21, 'took', 21)) then raise exception '2 the counts say 21 plays of the card: %', o -> 'counts'; end if;

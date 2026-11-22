@@ -191,3 +191,33 @@ test('the author on a play inside its hold lifts the tape under a held key and n
   await page.waitForTimeout(500);
   expect(await pieces(page)).toBe(before);
 });
+
+/*
+ * A peek near the window's right edge never widens the page (the owner's report, 2026-11-22): on `wider` at a phone's width, the
+ * second strip peeked from its left end folds its flap back past the strip's right end and past the window's. The flap is cut by the
+ * window's edge, and the page, the layout viewport and the HUD keep the window's width.
+ */
+test.describe('a peek at the window\'s right edge', () => {
+  test.use({ isMobile: true, hasTouch: true });
+
+  test('does not widen the page or the HUD', async ({ page }) => {
+    await open(page, 'wider-phone', { width: 390, height: 844 });
+    const hit = page.locator('.dw-ac-hit').nth(1);
+    await hit.scrollIntoViewIfNeeded();
+    const b = (await hit.boundingBox())!;
+    const y = b.y + b.height / 2;
+    await page.mouse.move(b.x + 4, y);
+    await page.mouse.down();
+    for (let s = 1; s <= 10; s++) { await page.mouse.move(b.x + 4 + s * 30, y); await page.waitForTimeout(16); }
+    const flap = (await page.locator('.dw-ac-flap').boundingBox())!;
+    /* The case is the one reported: the flap runs past the window. */
+    expect(flap.x + flap.width).toBeGreaterThan(390);
+    const seen = await page.evaluate(() => ({
+      overflow: document.documentElement.scrollWidth - document.documentElement.clientWidth,
+      inner: window.innerWidth,
+      hud: document.querySelector('.kb-hud')!.getBoundingClientRect().width,
+    }));
+    await page.mouse.up();
+    expect(seen).toEqual({ overflow: 0, inner: 390, hud: 390 });
+  });
+});
