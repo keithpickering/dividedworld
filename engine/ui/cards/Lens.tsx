@@ -436,14 +436,15 @@ function ReturnToPresent({ play }: { readonly play: Id }) {
 
 /** The line under a live rewind's row that counts the cards it hides, from the plays the store holds on the post (`rewoundOf`'s hidden), in force and still showing. Nothing where none is hidden. */
 function HiddenCount({ play, store }: { readonly play: CardPlay; readonly store: Plays }) {
-  const { instance, api } = useKayfa();
+  const { instance } = useKayfa();
   const rewound = useRewound(store, play.post);
   /* The post's thread and author layers, as the post draws them (Effects.tsx): a thread's or a character's play that falls on the post and the rewind hides is hidden here too. The view's version is the post's own Act. */
   const post = rewound?.rewind.version;
   const onThread = usePlays(store, post?.thread ?? '');
   const onAuthor = usePlays(store, post?.character ?? '');
+  /* Woken when a play that may be hidden ends by its time (useUntil), so the count drops with no reopening. */
+  const now = useUntil([...(rewound?.hidden ?? []), ...onThread.plays, ...onAuthor.plays]);
   if (rewound === null || rewound.rewind.play !== play.id || post === undefined) return null;
-  const now = api.now();
   const keeps = new Set(instance.cards.filter((c) => c.keeps === true).map((c) => c.key));
   const own = shownPlays(rewound.hidden, now).filter((p) => !playOver(p, now, keeps));
   const above = [...playsFallingOn(onThread.plays.filter((p) => p.reach === 'thread'), post, keeps, now), ...playsFallingOn(onAuthor.plays.filter((p) => p.reach === 'character'), post, keeps, now)]

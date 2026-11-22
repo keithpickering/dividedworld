@@ -31,6 +31,8 @@ export function RewindPoints({ post, plays, config, onChange, id }: {
   /* The History is read once for the post, and again when the post is edited (its edited time changes) while the form is open. */
   useEffect(() => {
     let live = true;
+    /* The points of the version this post had are no points of the one it has: none is offered until the new read lands. */
+    setVersions(null);
     api.history(post.id).then((v) => { if (live) setVersions(v); }, () => { if (live) setVersions('failed'); });
     return () => { live = false; };
   }, [api, post.id, post.editedAt]);
@@ -56,11 +58,11 @@ export function RewindPoints({ post, plays, config, onChange, id }: {
       <legend className="kb-play-label">{REWIND_LEGEND}</legend>
       <div className="kb-play-points-list">
         {points.map((p) => (
-          <label key={p.version} className="kb-play-point">
-            <input type="radio" name={`${id}-point`} checked={chosen === p.version} onChange={() => onChange({ to: p.version })} />
-            <span className="kb-play-point-name">{pointWords(p.first, dayAndTime(p.at))}</span>
-            {preview(byId.get(p.version)) !== '' && <span className="kb-play-fine kb-play-point-words">{preview(byId.get(p.version))}</span>}
-          </label>
+          <div key={p.version} className="kb-play-point">
+            <input type="radio" id={`${id}-point-${p.version}`} name={`${id}-point`} checked={chosen === p.version} onChange={() => onChange({ to: p.version })} {...(preview(byId.get(p.version)) !== '' ? { 'aria-describedby': `${id}-point-${p.version}-words` } : {})} />
+            <label htmlFor={`${id}-point-${p.version}`} className="kb-play-point-name">{pointWords(p.first, dayAndTime(p.at))}</label>
+            {preview(byId.get(p.version)) !== '' && <span id={`${id}-point-${p.version}-words`} className="kb-play-fine kb-play-point-words">{preview(byId.get(p.version))}</span>}
+          </div>
         ))}
       </div>
     </fieldset>

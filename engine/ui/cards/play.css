@@ -663,6 +663,7 @@
 /* A rewind card's point picker (RewindPoints.tsx): each point is a labeled radio, its version's first words beneath. */
 .kb-play-points { border: 0; margin: 0; padding: 0; }
 .kb-play-points-list { display: grid; gap: 0.5rem; }
-.kb-play-point { display: grid; grid-template-columns: auto 1fr; column-gap: 0.5rem; align-items: start; cursor: pointer; }
+.kb-play-point { display: grid; grid-template-columns: auto 1fr; column-gap: 0.5rem; align-items: start; }
+.kb-play-point-name { cursor: pointer; }
 .kb-play-point input { margin-top: 0.25rem; }
 .kb-play-point-words { grid-column: 2; overflow-wrap: anywhere; }
