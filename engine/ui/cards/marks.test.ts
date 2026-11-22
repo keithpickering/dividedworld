@@ -73,6 +73,8 @@ describe('a card back, a ward and a caught play, in words', () => {
 
     const ended = backWords(sprung(), 'PIPEWRENCH', card, AFTER);
     assert.equal(ended.ends, `It sprang, and its lockout ended ${dayAndTime(LOCK)}.`);
+    /* At its `until` to the millisecond the lockout has ended, as `lockoutLive` and `backOver` read it. */
+    assert.equal(backWords(sprung(), 'PIPEWRENCH', card, Date.parse(LOCK)).ends, `It sprang, and its lockout ended ${dayAndTime(LOCK)}.`);
 
     for (const words of [reversed, ongoing, ended]) {
       assert.equal(words.name, plain.name, 'the name is unchanged');
