@@ -45,8 +45,26 @@ export function rewindPoints(post: Version, edits: readonly Version[], plays: re
   return out;
 }
 
+/** The words a rewind's point is refused in. SQL (rewind_point_problem) says the same three, in this order, after the first (`rewindConfig`'s). */
+export const REWIND_PICK = "pick a point from this post's History";
+export const REWIND_IN_GRACE = 'that version was saved in the edit grace window, so it is part of the post as first posted';
+export const REWIND_SAME = 'this post shows the same at that point as it does now';
+
 /** What a rewind card's configuration is: the version it names (`{ to }`), checked here as a string; SQL checks it is a point of the post. */
 export function rewindConfig(value: unknown): Verdict<{ to: string }> {
   const to = typeof value === 'object' && value !== null ? (value as { to?: unknown }).to : undefined;
-  return typeof to === 'string' && to !== '' ? ok({ to }) : refuse("pick a point from this post's History");
+  return typeof to === 'string' && to !== '' ? ok({ to }) : refuse(REWIND_PICK);
+}
+
+/**
+ * Why `to` is no point to rewind the post to, in the server's words and order (rewind_point_problem), or null where it is offered: it names no version of this post; it is an edit saved inside the
+ * grace (part of the post as first posted); or showing it would change nothing (`rewindPoints` does not offer it).
+ */
+export function rewindPointProblem(to: unknown, post: Version, edits: readonly Version[], plays: readonly Play[], grace: Span, now: Date, shown: (play: Play) => boolean): string | null {
+  const given = rewindConfig({ to });
+  if (!given.ok) return given.why;
+  const version = [post, ...edits].find((v) => v.id === given.value.to);
+  if (version === undefined) return REWIND_PICK;
+  if (pointAt(post, version, grace) === null) return REWIND_IN_GRACE;
+  return rewindPoints(post, edits, plays, grace, now, shown).some((p) => p.version === version.id) ? null : REWIND_SAME;
 }

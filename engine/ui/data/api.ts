@@ -2567,7 +2567,7 @@ export interface ThreadPage {
   readonly unread: number;
   /** The origin of a spun thread, on the page that holds its first Act; null on any other page and on a thread that was not spun (`PageOrigin`). */
   readonly origin: PageOrigin | null;
-  /** Each live rewind on the page's posts, a reply drawn under one, and the origin post (`rewind_view`, ordered by post then play); empty where none, and none once it ends. */
+  /** Each live rewind on the page's posts, a reply drawn under one, and the origin post (`rewind_view`, latest played first); empty where none, and none once it ends. */
   readonly rewinds: readonly Rewind[];
   /** The polls on the page's posts (`PollParts`), and the characters its voters name, with their profiles (as `people` is for authors). */
   readonly polls: readonly Poll[];

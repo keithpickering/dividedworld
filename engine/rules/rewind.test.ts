@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pointAt, rewindConfig, rewindPoints, type Version } from './rewind.ts';
+import { pointAt, rewindConfig, rewindPoints, rewindPointProblem, REWIND_PICK, REWIND_IN_GRACE, REWIND_SAME, type Version } from './rewind.ts';
 
 const MIN = 60_000;
 const T0 = Date.parse('2026-11-21T12:00:00.000Z');
@@ -50,4 +50,30 @@ test('pointAt: an unparsable time gives no point, for the post and for an edit',
   assert.equal(pointAt({ id: 'post', at: 'garbage' }, { id: 'post', at: 'garbage' }, grace), null);
   assert.equal(pointAt(post, edit('e', 0), grace) === null, true);
   assert.equal(pointAt(post, { id: 'e', at: 'garbage' }, grace), null);
+});
+
+test('the three point sentences, in the words the server says them in', () => {
+  assert.equal(REWIND_PICK, "pick a point from this post's History");
+  assert.equal(REWIND_IN_GRACE, 'that version was saved in the edit grace window, so it is part of the post as first posted');
+  assert.equal(REWIND_SAME, 'this post shows the same at that point as it does now');
+  const none = rewindConfig({});
+  assert.deepEqual(none, { ok: false, why: REWIND_PICK }, 'rewindConfig says the first');
+});
+
+test('rewindPointProblem: no point, a version that is not the post\'s, a version in the grace, a point that shows the same, and null for an offered one, in that order', () => {
+  const all = () => true;
+  const edits = [edit('e1', 10 * MIN)];
+  const problem = (to: unknown, e = edits, plays: { id: string; at: string }[] = [], t = now) => rewindPointProblem(to, post, e, plays, grace, t, all);
+  assert.equal(problem(undefined), REWIND_PICK);
+  assert.equal(problem(7), REWIND_PICK);
+  assert.equal(problem(''), REWIND_PICK);
+  assert.equal(problem('someone-else'), REWIND_PICK, 'a version of another post');
+  assert.equal(problem('e0', [edit('e0', MIN)]), REWIND_IN_GRACE, 'an edit saved inside the grace');
+  assert.equal(problem('e1', edits), REWIND_SAME, 'the newest version, with no play after it');
+  assert.equal(problem('post', []), REWIND_SAME, 'a post never edited');
+  assert.equal(problem('post'), null, 'the first version of an edited post');
+  assert.equal(problem('e1', edits, [playOf('w', 20 * MIN)]), null, 'a play after the point still showing');
+  assert.equal(rewindPointProblem('e1', post, edits, [playOf('w', 20 * MIN)], grace, now, () => false), REWIND_SAME, 'a play that no longer shows');
+  assert.equal(problem('post', edits, [], new Date(T0 + MIN)), REWIND_SAME, 'a point that has not come yet');
+  assert.equal(problem('e0', [edit('e0', MIN), edit('e1', 10 * MIN)]), REWIND_IN_GRACE, 'the grace is said before the same');
 });

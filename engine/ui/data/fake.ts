@@ -28,7 +28,7 @@ import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } 
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
-import { pointAt, rewindConfig, rewindPoints } from '../../rules/rewind.ts';
+import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -1900,24 +1900,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const point = Date.parse(k.payload.rewind_at);
     return { play: k.id, post: post.id, at: iso(point), version: shownVersion(post, edits(post).filter((e) => e.at <= point).at(-1) ?? post) };
   }
-  /** The words a rewind's point is refused in (place_cast, rewind_point_problem; the first is the engine's `rewindConfig`). */
-  const REWIND_PICK = ((): string => { const none = rewindConfig({}); return none.ok ? '' : none.why; })();
-  const REWIND_IN_GRACE = 'that version was saved in the edit grace window, so it is part of the post as first posted';
-  const REWIND_SAME = 'this post shows the same at that point as it does now';
   /**
-   * The point a rewind's configuration names on a post, in ms, or why it is none: no version of this post, an edit saved inside the edit grace (part of the post as first posted), or a version that shows
-   * the same as now (no later edit, no play shown that was played after it). A play shows when it is a face-up play in force on the post, as rewind_point_problem reads play_post.
+   * The point a rewind's configuration names on a post, in ms, or why it is none (`rewindPointProblem`, the server's words and order). A play shows when it is a face-up play in force on the post, as
+   * rewind_point_problem reads play_post.
    */
   function rewindPointOf(post: ActRec, config: unknown): string | { at: number } {
-    const given = rewindConfig(config);
-    if (!given.ok) return given.why;
-    const version = acts.get(given.value.to);
-    if (!version || !(version.id === post.id || (version.kind === 'edit' && version.target === post.id))) return REWIND_PICK;
-    const at = pointAt({ id: post.id, at: iso(post.at) }, { id: version.id, at: iso(version.at) }, settings.editGrace);
-    if (at === null) return REWIND_IN_GRACE;
+    const to = rewindConfig(config);
     const showing = playRows(new Set([post.id])).filter((r) => r.kind !== '' && onPost(r.act) && holdsPlace(r, now())).map((r) => ({ id: r.act.id, at: iso(r.act.at) }));
-    const offered = rewindPoints({ id: post.id, at: iso(post.at) }, edits(post).map((e) => ({ id: e.id, at: iso(e.at) })), showing, settings.editGrace, new Date(now()), () => true);
-    return offered.some((o) => o.version === version.id) ? { at: Date.parse(at) } : REWIND_SAME;
+    const why = rewindPointProblem(to.ok ? to.value.to : undefined, { id: post.id, at: iso(post.at) }, edits(post).map((e) => ({ id: e.id, at: iso(e.at) })), showing, settings.editGrace, new Date(now()), () => true);
+    if (why !== null) return why;
+    const version = acts.get((to as { value: { to: string } }).value.to)!;
+    return { at: Date.parse(pointAt({ id: post.id, at: iso(post.at) }, { id: version.id, at: iso(version.at) }, settings.editGrace)!) };
   }
   /** play_moment (0072, 0352): the moment's version as the post shows it then, the play and its layers, and the plays above live then. A play on a character is on its cast-from post. */
   function playMoment(id: Id): PlayMoment | null {
@@ -1936,10 +1929,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (!spin || spin.kind !== 'spin' || !m || spin.target === null) return null;
     return momentOf(acts.get(spin.target)!, acts.get(spin.payload.at as Id)!, acts.get(m.version)!, m.layers, spin.at, true);
   }
-  /** The live rewind plays on each of these posts, as their views, ordered by post then play (thread_page's `rewinds`, post_rewind_plays). */
+  /** The live rewind plays on each of these posts, as their views, latest played first, then by play id descending (thread_page's `rewinds`). */
   function rewindsOf(posts: readonly Id[]): Rewind[] {
     return playRows(new Set(posts)).filter((r) => r.kind !== '' && instance.cards.find((c) => c.key === r.kind)?.rewind !== undefined && onPost(r.act) && holdsPlace(r, now()))
-      .sort((a, b) => (a.act.target! < b.act.target! ? -1 : a.act.target! > b.act.target! ? 1 : a.act.id < b.act.id ? -1 : 1))
+      .sort((a, b) => b.act.at - a.act.at || (a.act.id < b.act.id ? 1 : a.act.id > b.act.id ? -1 : 0))
       .flatMap((r) => rewindView(r.act.id) ?? []);
   }
   /** The plays an account has released itself from, as "account play". */
@@ -2803,7 +2796,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const r = instance.cards.find((c) => c.key === a.payload.card);
         /* A skim play carries the quadrant it names, so its card's rules can refuse a second for the same one (card_target, 0151). */
         const named = r?.skim ? (a.payload.config as { quadrant?: unknown } | undefined)?.quadrant : undefined;
-        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(r?.rewind ? { rewind: r.rewind } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
+        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(r?.rewind ? { rewind: r.rewind, at: iso(a.at) } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
       } else if (a.kind === 'set') {
         const f = faceDown.get(a.id);
         out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.takenBack ? acts.get(f.takenBack)!.at : f?.endsAt ?? a.at) });

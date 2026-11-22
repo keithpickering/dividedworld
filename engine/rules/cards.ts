@@ -99,6 +99,8 @@ export interface CardEffect {
   readonly cleared?: true;
   /** A play of a rewind card (`CardRules.rewind`): while it is up, no card up to `upTo` lands on the post. Carried by card_target for a live play, so a refusal is the same for every caster. */
   readonly rewind?: { readonly upTo: Rarity };
+  /** When the play was played, an ISO time. Where it is given, the latest live rewind is the one a refusal names; without it the list's order stands for time (card_target lists oldest first). */
+  readonly at?: string;
 }
 
 /**
@@ -217,7 +219,10 @@ export function rewindWords(name: string, upTo: Rarity, ends: string | undefined
  */
 function frozenRefusal(rules: Pick<CardRules, 'rarity'>, target: CardTarget, effects: readonly CardEffect[], now: Date, nameOf: (key: string) => string | undefined): Verdict<never> | null {
   if (target.reach !== 'post' || !isPost(target.kind)) return null;
-  const by = effects.find((e) => e.rewind !== undefined && (e.reach ?? 'post') === 'post' && isLive(e, now) && atOrBelow(rules.rarity, e.rewind.upTo));
+  /* Two live rewinds can cover the card (a rarer over a lesser): the refusal names the latest played, as live_rewind orders them: by its time where the effects carry one, else the later in the list (oldest first). */
+  const covering = effects.filter((e) => e.rewind !== undefined && (e.reach ?? 'post') === 'post' && isLive(e, now) && atOrBelow(rules.rarity, e.rewind.upTo));
+  const time = (e: CardEffect): number => (e.at === undefined ? Number.NaN : Date.parse(e.at));
+  const by = covering.reduce<CardEffect | undefined>((best, e) => (best === undefined || !(time(e) < time(best)) ? e : best), undefined);
   if (by?.rewind === undefined) return null;
   return refuse(rewindWords(by.card === null ? 'rewind' : (nameOf(by.card) ?? by.card), by.rewind.upTo, by.ends));
 }

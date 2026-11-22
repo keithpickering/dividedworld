@@ -1024,6 +1024,21 @@ test('a live rewind refuses a Move up to its rarity on the post, and a rarer one
   assert.equal(decidePlay(rareMove, settings, post, [rewound({ ends: gone })], {}, '', ctx).ok, true, 'an ended rewind refuses nothing');
 });
 
+test('two live rewinds that both cover the card: the refusal names the latest played, whatever order the effects come in', () => {
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k) };
+  const t1 = new Date(Date.parse(soon) - 3600_000).toISOString();
+  const t2 = new Date(Date.parse(soon) - 1800_000).toISOString();
+  const lesser = rewound({ act: 'lesser', rewind: { upTo: 'common' }, at: t1, ends: soon });
+  const rarer = rewound({ act: 'rarer', rewind: { upTo: 'rare' }, at: t2, ends: new Date(Date.parse(soon) + 60_000).toISOString() });
+  const said = (effects: CardEffect[]) => decidePlay(plain, settings, post, effects, {}, '', ctx);
+  const rarerWords = { ok: false, why: `this post's Test clock turns away cards up to rare until ${refusalTime(rarer.ends!)}` };
+  assert.deepEqual(said([lesser, rarer]), rarerWords, 'oldest first');
+  assert.deepEqual(said([rarer, lesser]), rarerWords, 'newest first: the time decides, not the order');
+  const newerLesser = { ...lesser, at: new Date(Date.parse(t2) + 1000).toISOString() };
+  assert.deepEqual(said([newerLesser, rarer]), { ok: false, why: `this post's Test clock turns away cards up to common until ${refusalTime(soon)}` }, 'a lesser rewind played later is the one named');
+  assert.deepEqual(said([{ ...lesser, at: undefined }, { ...rarer, at: undefined }].map((e) => { const { at: _a, ...rest } = e; return rest; })), rarerWords, 'with no time, the later in the list (card_target lists oldest first)');
+});
+
 test('the freeze is said after a ward and before discipline', () => {
   const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon };
   const r = decidePlay(plain, settings, post, [rewound(), ward], {}, '', { nameOf: names });
