@@ -660,10 +660,11 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   const rest = names.length - NAMES_SHOWN;
   const { instance } = useKayfa();
   /* Up now and Ended, by `inForce`. A play a moment holds (`then`, an ORIGIN box) is judged as it stood, up then; so a moment's rows draw no heading, as today. */
-  const keepsOf = (p: CardPlay) => instance.cards.find((c) => c.key === p.card)?.keeps === true;
-  const upNow = (p: CardPlay) => row.then?.has(p.id) === true || inForce(p, row.now, keepsOf(p));
-  const up = plays.filter(upNow);
-  const ended = plays.filter((p) => !upNow(p)).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const upNow = (p: CardPlay) => row.then?.has(p.id) === true || inForce(p, row.now, keeping.has(p.card));
+  /* Partitioned only while Who is unfolded: folded, it draws no row. */
+  const up = unfolded ? plays.filter(upNow) : [];
+  const ended = (unfolded ? plays.filter((p) => !upNow(p)) : []).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
   const rowOf = (p: CardPlay) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />;
   return (
     <div className="kb-lens-section kb-lens-who-section">
