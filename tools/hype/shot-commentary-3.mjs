@@ -1,49 +1,43 @@
 /**
- * The commentary video's part three, nodes 9 to 11 (docs/plans/2026-11-21-commentary-video-plan.md, Tasks 7 and 8a; the design, sections 4 and
- * 5a): the full orchestra and the camera's loss of control. Every take is filmed at the camera's native double density (1440 x 810 CSS px at
+ * The commentary video's part three, node 9 (docs/plans/2026-11-21-commentary-video-plan.md, Task 7; the design, sections 4, 5a and 10): the full
+ * orchestra and the camera's loss of control. Every take is filmed at the camera's native double density (1440 x 810 CSS px at
  * 2x) and written at 2880 x 1620, so the edit's pushes and punches have room.
  *
- *   node tools/hype/shot-commentary-3.mjs [--only c-n09-wide|c-n09-tight|c-n09-turned|c-n10|c-n11] [--port 4319]
+ *   node tools/hype/shot-commentary-3.mjs [--only c-n09-wide|c-n09-tight|c-n09-turned] [--port 4319]
  *
- *   c-n09-wide    "Everything, on one post": the plays of `pile` land on Snuckles's sprite sheet, a play about every 1.4 s, then Stick
- *   c-n09-tight   Around lands and the reader tries to wheel away twice and is held. One script, three framings: wide (the whole post
- *   c-n09-turned  and the glass, level), tight (the post's body fills the frame), and turned (the board a plane in space, turned further
- *                 with each landing and in a full slow spin from 15.8 s to 20.8 s). The three run the SAME script on the SAME
- *                 virtual clock, so frame N is the same moment of the page in all three; every landing's frame is written to c-n09.json.
- *   c-n10         "The Staff arrive": three beats of about 4.5 s, cut inside the take: FanGaME's memo, the merge (the index, then the
- *                 Staff Announcements thread, where the move's notice carries his reason), a Mod's filing of Snuckles's sprite post. The board turns a little in each.
- *   c-n11         "The chords": one take of five stretches of 3.5 s with a hard cut between them: three steel chairs tumbling in and denting (in the Midnight skin, for that stretch alone)
- *                 the body of post 1, filmed tight, the ink-covered
- *                 review, the Boss's post, the heap on post 1, and the settlement summary opening (the story "Boards/12 Log").
+ *   c-n09-wide    "Everything, on one post": the plays of `pile` land on Snuckles's sprite sheet, a play about every 1.1 s (so something lands in
+ *   c-n09-tight   nearly every second), then Stick Around lands and the reader tries to wheel away twice and is held. One script, three framings:
+ *   c-n09-turned  wide (the whole post and the glass, level), tight (the post's body fills the frame), and turned (the board a plane in space,
+ *                 swung further with each landing and, from 9 s to 10.6 s, a fast partial spin that returns: no axis passes about 70 degrees,
+ *                 so the board never shows its back or goes edge-on). The three run the SAME script on the SAME virtual clock, so frame N is
+ *                 the same moment of the page in all three; every landing's frame is written to c-n09.json.
+ *   (c-n10, "The Staff arrive", is retired: the Staff's takes are tools/hype/shot-staff-2.mjs's, each with a real line of the rehearsal's.
+ *    c-n11, "The chords", is retired too: the coda is now cut from other takes and ends on a title, so its function is removed.)
  *
  * Nothing waits on the wall clock: every wait is a count of frames of the page's own virtual clock, or a condition. A take ends with two seconds
  * of a still page. The turned take never reads an element's place or aims the pointer: its plays all go through `pile`, and the per-frame step
  * reads only layout (offsets), which a transform does not change.
  */
-import { readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { openFilm } from './camera.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
 
 const SIZE = { width: 2880, height: 1620 };
 const FPS = 60;
 const only = flag('only', null);
-/* The skin node 11's first stretch (the chairs) is filmed in: the chairs are pale gray on the default skin's white, so Midnight (dark) is used for that stretch alone (judged on stills: the dents and chairs read on it and not on the white; `--chairs-skin default` films the old way). */
-const CHAIRS_SKIN = flag('chairs-skin', 'midnight');
 
-/** The Boss's reason for the merge, as the Staff's lines hold it (the words after the board's tidiness): read, not copied. */
-const MERGED = JSON.parse(readFileSync('instances/divided-world/ui/hype/staff-lines.json', 'utf8')).merged.text;
-const REASON = MERGED.slice(MERGED.indexOf('Nobody posted on my board anyway'));
 /* The pile's steps are landed in the order the stage names (stage-play.ts's FILM_ORDER, which Stage.test.tsx holds to the rules: every play of it is one a real cast is allowed); a take reads it from the page. */
 /** The Rope Break set face down on post 1 catches the first Salty common cast there (as node 3 showed it do): the film springs it before the clock starts, with a real cast, so the plays that follow land as the rules let them. */
 const SPRING_ROPE = `window.__shot.cast('D-Guy', 1, 'whoops', { color: '#3d77ff' }).then((c) => { if (!c.caught) throw new Error('the Rope Break did not catch the first Whoops!'); })`;
-const LEAD = 60, GAP = 84; // a second of lead-in, then a play every 1.4 s
-/* Stick Around lands six seconds after Hot Box, once the smoke has thinned and the board has turned its last: the page holds the reader on a screen of its own about 1.5 s after it lands, and that screen is the game's, so what the camera has to show of the heap comes first. */
-const STICK = 21 * FPS;
-const N9 = Math.round(28.5 * FPS); // the node 9 takes: 28.5 s, the last two of them a still page
-/* The turned take's full slow spin, in frames: the five seconds before Stick Around lands, since once it holds the page its screen is the game's own and does not turn. */
-const SPIN = [Math.round(15.8 * FPS), Math.round(20.8 * FPS)];
-const TRIES = [Math.round(23.4 * FPS), Math.round(24.9 * FPS)]; // the frames of the reader's two tries at wheeling away
-const easeInOut = (u) => 0.5 - 0.5 * Math.cos(Math.PI * Math.min(1, Math.max(0, u)));
+const LEAD = 45, GAP = 66; // three quarters of a second of lead-in, then a play every 1.1 s (the earlier cut's 1.4 s left a static ink blob between landings)
+/* Stick Around lands three seconds after Hot Box (the last of the eleven, at 12 s): the page holds the reader on a screen of its own about 1.5 s after it lands, and that screen is the game's, so what the camera has to show of the heap comes first. */
+const STICK = 15 * FPS;
+const N9 = Math.round(24 * FPS); // the node 9 takes: 24 s, with the hold screen on for the last of them
+/* The turned take's fast partial spin, in frames: it leaves level, swings to about 46 degrees about the vertical and comes back, 1.6 s in all, well before Stick Around lands (once it holds the page its screen is the game's own and does not turn). */
+const SPIN = [Math.round(9 * FPS), Math.round(10.6 * FPS)];
+const TRIES = [Math.round(17.4 * FPS), Math.round(18.9 * FPS)]; // the frames of the reader's two tries at wheeling away
+/** 0 outside [0, 1], and inside a smooth bump up to 1 and back to 0: the partial spin that returns. */
+const bump = (u) => (u <= 0 || u >= 1 ? 0 : Math.sin(Math.PI * u) ** 2);
 
 /** In the page: the per-frame step of node 9, the same arithmetic for all three framings. */
 const FILM_JS = `(() => {
@@ -66,13 +60,15 @@ const FILM_JS = `(() => {
         window.__shot.turn({ scale: s, x: -s * (cx - innerWidth / 2), y: -s * (cy - innerHeight / 2) });
         return L;
       }
-      /* turned: a few degrees off to begin with, further with each landing, and one full slow spin at the end. */
+      /* turned: a few degrees off to begin with, swung further with each landing, and one fast partial spin that returns (spin is 0 to 1 and back). Each axis is clamped well short of edge-on and of the board's back. */
       amp += (landings / 12 - amp) * 0.06;
-      const t = Math.min(f, ${SPIN[1]}) / 60;
+      const t = f / 60;
       const tau = Math.PI * 2;
-      const ry = (5 + 20 * amp) * Math.sin(tau * t / 4.3 + 0.9) + 360 * spin;
-      const rx = 3 + 12 * amp * Math.sin(tau * t / 6.1 + 0.3);
-      const rz = 1 + 4 * amp + 7 * amp * Math.sin(tau * t / 9);
+      const lim = (v, m) => Math.max(-m, Math.min(m, v));
+      const ry = lim((5 + 18 * amp) * Math.sin(tau * t / 4.3 + 0.9) + 46 * spin, 66);
+      const rx = lim(3 + 10 * amp * Math.sin(tau * t / 6.1 + 0.3), 15);
+      const rz = lim(1 + 4 * amp + 6 * amp * Math.sin(tau * t / 9), 12);
+      window.__film.worst = Math.max(window.__film.worst ?? 0, Math.abs(rx), Math.abs(ry), Math.abs(rz));
       window.__shot.turn({ rx, ry, rz, scale: 0.8 });
       return L;
     },
@@ -113,13 +109,18 @@ async function n09(framing) {
         landed.push({ what: kind(step), frame: f });
       }
       for (const w of wheels) if (w.at === f) await cam.wheel(w.dy);
-      const spin = framing === 'turned' ? easeInOut((f - SPIN[0]) / (SPIN[1] - SPIN[0])) : 0;
+      const spin = framing === 'turned' ? bump((f - SPIN[0]) / (SPIN[1] - SPIN[0])) : 0;
       await cam.evaluate(`window.__film.step(${JSON.stringify(framing)}, ${f}, ${landed.length}, ${f < STICK + 30}, ${spin})`);
       await film.write(await cam.frame(true));
     }
     /* The take claims the reader was held: after the wheel's two tries the hold screen (Stick Around's, with its Break free bar) is on the page. */
     const held = await cam.evaluate(`Boolean(document.querySelector('.kb-hold-foot [role="progressbar"][aria-label="Break free"]'))`);
     if (!held) throw new Error(`${name}: the reader was not held by Stick Around: no hold screen is on the page after the wheel's tries`);
+    if (framing === 'turned') {
+      const worst = await cam.evaluate(`window.__film.worst`);
+      if (!(worst <= 70)) throw new Error(`${name}: the board turned ${worst} degrees on one axis, past about 70: it would show its back or go edge-on`);
+      console.log(`${name}: the board's largest turn on any axis was ${worst.toFixed(1)} degrees`);
+    }
     await film.end();
     const out = { landed, tries: TRIES, spin: SPIN };
     writeFileSync(`${OUT}/c-n09.json`, JSON.stringify(out, null, 2));
@@ -129,204 +130,10 @@ async function n09(framing) {
   }
 }
 
-/* ---- node 10 and node 11 ---- */
-
-/** The take's film and its frame count, with `each` run before every frame (the camera's drift, the scroll). */
-function reel(cam, name) {
-  const film = openFilm({ path: `${OUT}/${name}.mp4`, fps: cam.fps, out: SIZE });
-  const r = {
-    f: 0,
-    async frames(n, before) {
-      for (let i = 0; i < n; i++, r.f++) {
-        if (before) await before(i, n);
-        await film.write(await cam.frame(true));
-      }
-    },
-    end: () => film.end(),
-  };
-  return r;
-}
-
-/** In the page: where something stands on the page by layout (offsets), the foot of the page, and a scroll set at once. */
-const LAYOUT_JS = `(() => {
-  const abs = (e) => { let y = 0; for (; e; e = e.offsetParent) y += e.offsetTop; return y; };
-  window.__lay = {
-    top: (sel) => abs(document.querySelector(sel)),
-    last: () => { const a = [...document.querySelectorAll('article.kb-act')].pop(); return { top: abs(a), height: a.offsetHeight, name: a.querySelector('.kb-postbit-name')?.textContent.trim() }; },
-    textTop: (text) => { const e = [...document.querySelectorAll('main *')].filter((x) => x.textContent.includes(text) && ![...x.children].some((c) => c.textContent.includes(text))).pop(); return e ? abs(e) : null; },
-    foot: () => document.documentElement.scrollHeight - innerHeight,
-    scroll: (y) => { document.scrollingElement.scrollTop = Math.max(0, Math.min(y, document.documentElement.scrollHeight - innerHeight)); },
-  };
-})()`;
-
-/** A slow drift of the turned board: degrees about each axis, a function of the seconds into a beat. */
-const drift = (t, seed) => ({
-  rx: 2.5 * Math.sin(t * 1.1 + seed),
-  ry: 7 * Math.sin(t * 0.9 + seed * 1.7),
-  rz: 1.5 * Math.sin(t * 0.7 + seed * 2.3),
-  scale: 0.94,
-});
-
-async function n10() {
-  const cam = await openStage({ quiet: ['toasts', 'host', 'selection'] });
-  try {
-    await cam.evaluate(LAYOUT_JS);
-    await cam.evaluate('window.__lay.scroll(1e9)');
-    await settle(cam, 40);
-    await cam.drawPointer();
-    const reelOf = reel(cam, 'c-n10');
-    console.log(`c-n10: the clocks are ${(await cam.freeze()).toFixed(2)}ms apart`);
-    await cam.move(cam.css.width + 40, cam.css.height * 0.4);
-    await cam.evaluate('window.__shot.zero()');
-    const landed = [];
-    const turn = (y, t, seed) => cam.evaluate(`(() => { window.__lay.scroll(${y}); window.__shot.turn(${JSON.stringify(drift(t, seed))}); })()`);
-    const BEAT = 270; // 4.5 s
-
-    /* Beat 1: the Boss's memo appears at the foot of the thread, and the view settles on his post. */
-    landed.push({ what: 'memo', frame: reelOf.f });
-    let y = await cam.evaluate('window.__lay.foot()');
-    await reelOf.frames(36, (i) => turn(y, i / FPS, 1));
-    await cam.evaluate(`window.__shot.staff('memo')`);
-    const memo = await cam.evaluate('window.__lay.last()');
-    if (memo.name !== 'FanGaME') throw new Error(`the last post of the thread is ${memo.name}'s, not FanGaME's: the memo did not land`);
-    const memoText = await cam.evaluate(`document.querySelector('article.kb-act:last-of-type, article.kb-act:last-child')?.innerText ?? ''`);
-    if (!memoText.includes('writing per my own initiative')) throw new Error(`the memo's words are not on the page: ${memoText.slice(0, 120)}`);
-    const from = y;
-    await reelOf.frames(BEAT - 36, async (i) => {
-      const goal = Math.max(0, memo.top - 70);
-      const u = easeInOut(i / 45);
-      await turn(from + (Math.min(goal, await cam.evaluate('window.__lay.foot()')) - from) * u, (i + 36) / FPS, 1);
-    });
-
-    /* Beat 2: the merge. The index, then the Staff Announcements thread, where the move's notice carries his reason. */
-    landed.push({ what: 'merge', frame: reelOf.f });
-    await cam.evaluate(`window.__shot.staff('merge')`);
-    await cam.evaluate(`window.__shot.show('index')`);
-    await cam.evaluate('window.__lay.scroll(0)');
-    await reelOf.frames(120, (i) => turn(0, i / FPS, 2));
-    await cam.evaluate(`window.__shot.show('thread:announcements')`);
-    await reelOf.frames(3, (i) => turn(0, (120 + i) / FPS, 2));
-    const reasonTop = await cam.evaluate(`window.__lay.textTop(${JSON.stringify(REASON)})`);
-    if (reasonTop === null) throw new Error(`the Staff Announcements thread does not show his reason: ${REASON}`);
-    await reelOf.frames(BEAT - 123, (i) => turn(Math.max(0, reasonTop - 200) * easeInOut(i / 30), (123 + i) / FPS, 2));
-    const merged = await cam.evaluate(`document.body.innerText.includes(${JSON.stringify(REASON)})`);
-    if (!merged) throw new Error('the reason is not legible on the page');
-
-    /* Beat 3: a Mod files Snuckles's sprite post: the visit's Filed mark and its finding on the post and the warn bar ticking up. */
-    landed.push({ what: 'filing', frame: reelOf.f });
-    await cam.evaluate(`window.__shot.show('thread')`);
-    await reelOf.frames(2, (i) => cam.evaluate('window.__lay.scroll(0)'));
-    const post1 = await cam.evaluate(`window.__lay.top('#post-1')`);
-    const warn = () => cam.evaluate(`document.querySelector('#post-1 .kb-postbit-warn')?.innerText.replace(/\\s+/g, ' ') ?? null`);
-    const before = await warn();
-    await reelOf.frames(36, (i) => turn(post1 - 12, (i + 2) / FPS, 3));
-    await cam.evaluate(`window.__shot.staff('file', 1)`);
-    await reelOf.frames(BEAT - 38, (i) => turn(post1 - 12 + 0.25 * i, (i + 38) / FPS, 3));
-    const after = await warn();
-    const text = await cam.evaluate(`document.querySelector('#post-1').innerText`);
-    console.log('c-n10: warn bar', before, '->', after);
-    if (before === after) throw new Error(`Snuckles's warn bar did not move: ${before}`);
-    if (!text.includes('Filed') || !text.includes('found in violation')) throw new Error(`the Mod's filing is not on the post: ${text.slice(0, 200)}`);
-
-    /* The take ends on a still page. */
-    await reelOf.frames(2 * FPS, (i) => turn(post1 - 12 + 0.25 * (BEAT - 38), (BEAT + i) / FPS, 3));
-    await reelOf.end();
-    writeFileSync(`${OUT}/c-n10.json`, JSON.stringify({ landed }, null, 2));
-    console.log(`c-n10: ${reelOf.f} frames; landed`, landed.map((l) => `${l.what}@${l.frame}`).join(' '), '; errors:', cam.errors);
-  } finally {
-    await cam.close();
-  }
-}
-
-async function n11() {
-  const cam = await openStage({ quiet: ['toasts', 'host', 'selection'] });
-  try {
-    await cam.evaluate(LAYOUT_JS);
-    /* Before the film: the Boss's memo is posted, so his post is on the page. */
-    await cam.evaluate('window.__lay.scroll(1e9)');
-    await settle(cam, 20);
-    await cam.evaluate(`window.__shot.staff('memo')`);
-    await settle(cam, 30);
-    const boss = await cam.evaluate('window.__lay.last()');
-    if (boss.name !== 'FanGaME') throw new Error('the Boss\'s post is not on the page');
-    const steps = await cam.evaluate('window.__shot.pileSteps');
-    const { chairs, heap } = (await cam.evaluate('window.__shot.pileOrder')).n11;
-    const at = (s) => steps.indexOf(s);
-    await cam.evaluate(SPRING_ROPE);
-    await cam.drawPointer();
-    const r = reel(cam, 'c-n11');
-    console.log(`c-n11: the clocks are ${(await cam.freeze()).toFixed(2)}ms apart`);
-    await cam.move(cam.css.width + 40, cam.css.height * 0.4);
-    await cam.evaluate('window.__shot.zero()');
-    const landed = [];
-    const STRETCH = 210; // 3.5 s
-    /**
-     * A stretch: a hard cut onto `y`, the board turned as given, `play` at its frame, and a slow push in the turn through the stretch.
-     * `lead` frames run on the page's clock BEFORE the cut, unfilmed, so the plays are already in the air on the cut's first frame (a play's `at` is
-     * then counted from the start of the lead); `tight` is a body's share to hold in the middle of the frame (`fx`, `fy` of the body `lay`) and the scale.
-     */
-    const stretch = async (y, pose, plays, { lead = 0, tight = null } = {}) => {
-      const set = (i, u) => cam.evaluate(`(() => {
-        window.__lay.scroll(${y});
-        const hud = document.querySelector('.kb-hud-glass'); if (hud) hud.style.display = ${tight ? "'none'" : "''"};
-        const k = ${tight ? tight.scale + 0.05 * u : 1.1 + 0.04 * u};
-        const aim = ${tight ? `{ x: ${tight.lay.bx + tight.lay.bw * tight.fx}, y: ${tight.lay.by + tight.lay.bh * tight.fy} - scrollY }` : 'null'};
-        window.__shot.turn({ scale: k, ...(aim ? { x: -k * (aim.x - innerWidth / 2), y: -k * (aim.y - innerHeight / 2) } : {}), rx: ${pose.rx * (1 + 0.3 * u)}, ry: ${pose.ry * (1 + 0.3 * u)}, rz: ${pose.rz * (1 + 0.3 * u)} });
-      })()`);
-      for (let i = -lead; i < 0; i++) {
-        for (const p of plays) if (p.at === i + lead) await p.run();
-        await set(i, 0);
-        await cam.frame(false);
-      }
-      landed.push({ what: 'cut', frame: r.f });
-      await r.frames(STRETCH, async (i) => {
-        for (const p of plays) if (p.at - lead === i && p.at >= lead) await p.run();
-        await set(i, i / STRETCH);
-      });
-    };
-    const pile = (s) => cam.evaluate(`window.__shot.pile(${at(s)})`);
-
-    /* 1: three steel chairs, a few frames apart, tight on the body of Snuckles's first post (Brighter Effects is on, in the stage's costume): the throw, the dent and the chairs' fall. A chair takes about 1.2 s from its play to be seen, so the page runs 65 frames before the cut, unfilmed, and the first filmed frame has the first chair arriving; its dents then have the rest of the 3.5 s. */
-    if (CHAIRS_SKIN !== 'default') { await cam.evaluate(`window.__shot.skin(${JSON.stringify(CHAIRS_SKIN)})`); await settle(cam, 20); }
-    const post1 = await cam.evaluate(`window.__lay.top('#post-1')`);
-    const lay1 = await cam.evaluate(`(() => { const b = document.querySelector('#post-1 .kb-act-main'); const abs = (e) => { let x = 0, y = 0; for (; e; e = e.offsetParent) { x += e.offsetLeft; y += e.offsetTop; } return { x, y }; }; const q = abs(b); return { bx: q.x, by: q.y, bw: b.offsetWidth, bh: b.offsetHeight }; })()`);
-    await stretch(lay1.by - 140, { rx: 4, ry: -9, rz: 1 }, chairs.map((s, k) => ({ at: 7 * k, run: () => pile(s) })), { lead: 65, tight: { lay: lay1, fx: 0.6, fy: 0.45, scale: 1.7 } });
-    if (CHAIRS_SKIN !== 'default') { await cam.evaluate(`window.__shot.skin('default')`); await settle(cam, 20); }
-    /* 2: the ink-covered review: Whoops! lands on D-Guy's review, and rides in on 4D Chess's face-down move. */
-    const review = await cam.evaluate(`window.__lay.top('#post-14')`);
-    await stretch(review - 14, { rx: -3, ry: 6, rz: -4 }, [{ at: 6, run: () => cam.evaluate(`window.__shot.cast('Serious Deer', 14, 'whoops', { color: '#ff2bd6', seed: 77 })`) }]);
-    /* 3: the Boss's post. */
-    await stretch(boss.top - 40, { rx: 3, ry: 4, rz: 5 }, []);
-    /* 4: the heap on post 1, built in a rush. */
-    await stretch((await cam.evaluate(`window.__lay.top('#post-1')`)) - 14, { rx: -5, ry: -6, rz: -2 }, heap.map((s, k) => ({ at: 4 + 17 * k, run: () => pile(s) })));
-    /* 5: the settlement summary, opening on the glass (the story "Boards/12 Log", whose row is closed and opened again): a page of its own, so the stage is left. */
-    landed.push({ what: 'cut', frame: r.f });
-    await cam.evaluate(`location.href = ${JSON.stringify(`http://localhost:${flag('port', 4319)}/?fixture=boards&story=boards-12-log--open`)}`);
-    await cam.until(`Boolean(document.querySelector('.kb-log'))`, { label: 'the log story drawn' });
-    /* The row's breakdown is closed and opened again, so the summary is seen opening. */
-    /* A button that is not there is a take that does not show what the film claims: it throws. */
-    const press = async (re) => {
-      const found = await cam.evaluate(`(() => { const b = [...document.querySelectorAll('button')].find((x) => ${re}.test(x.textContent)); if (!b) return false; b.click(); return true; })()`);
-      if (!found) throw new Error(`the log has no button matching ${re}: its buttons are ${await cam.evaluate(`[...document.querySelectorAll('button')].map((b) => b.textContent.trim()).join(' | ')`)}`);
-    };
-    await r.frames(STRETCH + 2 * FPS, async (i) => {
-      if (i === 6) await press('/hide posts/i');
-      if (i === 40) await press('/show posts/i');
-    });
-    await r.end();
-    writeFileSync(`${OUT}/c-n11.json`, JSON.stringify({ landed }, null, 2));
-    console.log(`c-n11: ${r.f} frames; landed`, landed.map((l) => `${l.what}@${l.frame}`).join(' '), '; errors:', cam.errors);
-  } finally {
-    await cam.close();
-  }
-}
-
 const TAKES = {
   'c-n09-wide': () => n09('wide'),
   'c-n09-tight': () => n09('tight'),
   'c-n09-turned': () => n09('turned'),
-  'c-n10': n10,
-  'c-n11': n11,
 };
 if (only !== null && !TAKES[only]) throw new Error(`there is no take "${only}": the takes are ${Object.keys(TAKES).join(', ')}`);
 for (const [name, take] of Object.entries(TAKES)) if (only === null || only === name) await take();

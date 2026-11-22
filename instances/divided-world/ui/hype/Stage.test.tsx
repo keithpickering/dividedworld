@@ -5,6 +5,8 @@
  */
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { readFileSync, readdirSync } from 'node:fs';
+import { gunzipSync } from 'node:zlib';
 import { afterEach, describe, expect, test } from 'vitest';
 import { createFake, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../index.ts';
@@ -14,6 +16,14 @@ import { pendingOf } from './forecast.ts';
 import { FILM_ORDER, PILE, playbook } from './stage-play.ts';
 import { postTarget, type CardEffect, type CardTarget } from '../../../../engine/rules/cards.ts';
 import { buildStage } from './stage-world.ts';
+import { frontDoor } from '../front-door.ts';
+import { tags } from './graffiti-shapes.ts';
+import LINES from './staff-lines.json';
+import tailFile from './gpt2-tail.txt?raw';
+import nodesCss from './hype.css?raw';
+import worldSource from './stage-world.ts?raw';
+import playSource from './stage-play.ts?raw';
+import storySource from './Stage.board.stories.tsx?raw';
 
 /** The stage, seeded and ready, with the film's player signed in as `as` (Snuckles's player when none). */
 async function stage(as: string | null = null) {
@@ -36,24 +46,35 @@ async function held(fake: Fake, account: string, card: string) {
 }
 
 describe('the seats', () => {
-  test('D-Guy and Chadluminum are one player\'s masks, a Heel and a Face; Snuckles and Human Josh the film\'s first player\'s; Serious Deer a third\'s', async () => {
+  test('Snuckles and D-Guy are the film\'s first player\'s masks, Chadluminum the second\'s, Serious Deer a third\'s and Hotel Bro (a Heel) a fourth\'s; Human Josh is gone', async () => {
     const { fake, made } = await stage();
     const o = made.owners;
-    expect(o['D-Guy']).toBe(o['Chadluminum']);
-    expect(o['Snuckles']).toBe(o['Human Josh']);
-    expect(o['Serious Deer']).not.toBe(o['Snuckles']);
-    expect(o['Serious Deer']).not.toBe(o['D-Guy']);
-    expect(o['Snuckles']).not.toBe(o['D-Guy']);
-    expect(await classesOf(fake, o['D-Guy']!)).toEqual({ 'D-Guy': 'heel', Chadluminum: 'face' });
-    expect((await classesOf(fake, o['Snuckles']!))['Snuckles']).toBe('jabroni');
+    expect(o['Snuckles']).toBe(o['D-Guy']);
+    const players = ['Snuckles', 'Chadluminum', 'Serious Deer', 'Hotel Bro'].map((n) => o[n]);
+    expect(new Set(players).size, 'four players, one each').toBe(4);
+    expect(Object.keys(o)).not.toContain('Human Josh');
+    expect(Object.keys(made.cast)).not.toContain('Human Josh');
+    expect(await classesOf(fake, o['Hotel Bro']!)).toEqual({ 'Hotel Bro': 'heel' });
+    expect(await classesOf(fake, o['Chadluminum']!)).toEqual({ Chadluminum: 'face' });
+    expect(await classesOf(fake, o['Snuckles']!)).toEqual({ Snuckles: 'jabroni', 'D-Guy': 'tweener' });
+  });
+
+  test('Hotel Bro is a character of the stage\'s own, with the owner\'s Mario art as both avatars, and a hand with a Whoops! in it', async () => {
+    const { fake, made } = await stage();
+    expect(frontDoor.cast.map((c) => c.name)).not.toContain('Hotel Bro');
+    const [bro, dguy] = await fake.characters([made.cast['Hotel Bro']!, made.cast['D-Guy']!]);
+    expect(bro!.avatarSquare).toMatch(/hotel-bro\.png/);
+    expect(bro!.avatarPortrait).toMatch(/hotel-bro-portrait\.png/);
+    expect(await held(fake, made.owners['Hotel Bro']!, 'whoops')).toBeGreaterThanOrEqual(1);
+    expect(dguy!.avatarSquare, 'D-Guy keeps his own face').toMatch(/dguy_square/);
   });
 
   test('`as=` signs in that character\'s player and makes that character the one the HUD plays', async () => {
     localStorage.clear();
-    const { made } = await stage('D-Guy');
-    expect(made.viewer).toBe(made.owners['D-Guy']);
-    expect(made.played).toBe('D-Guy');
-    expect(localStorage.getItem(`kb-hud:${made.viewer}`)).toBe(made.cast['D-Guy']);
+    const { made } = await stage('Hotel Bro');
+    expect(made.viewer).toBe(made.owners['Hotel Bro']);
+    expect(made.played).toBe('Hotel Bro');
+    expect(localStorage.getItem(`kb-hud:${made.viewer}`)).toBe(made.cast['Hotel Bro']);
     const plain = await stage();
     expect(plain.made.viewer).toBe(plain.made.owners['Snuckles']);
     expect(plain.made.played).toBe('Snuckles');
@@ -61,33 +82,111 @@ describe('the seats', () => {
 
   test('a name the cast has not is refused, naming the cast', async () => {
     const fake = createFake({ instance });
-    expect(() => buildStage(fake, instance, { skin: 'default', as: 'Nobody', view: 'thread', sheet: false })).toThrow(/no character named "Nobody"[\s\S]*D-Guy/);
+    expect(() => buildStage(fake, instance, { skin: 'default', as: 'Nobody', view: 'thread', sheet: false })).toThrow(/no character named "Nobody"[\s\S]*Hotel Bro/);
+  });
+
+  test('the glass screens open at their own addresses, and a screen the stage has not is refused, naming the ones it has', async () => {
+    for (const [key, address] of [['characters', '/characters'], ['new-character', '/characters/new'], ['vending', '/vending']] as const) {
+      const fake = createFake({ instance });
+      buildStage(fake, instance, { skin: 'default', as: null, view: `glass:${key}`, sheet: false });
+      expect(globalThis.location.pathname).toBe(address);
+    }
+    const fake = createFake({ instance });
+    expect(() => buildStage(fake, instance, { skin: 'default', as: null, view: 'glass:nowhere', sheet: false })).toThrow(/no glass screen "nowhere"[\s\S]*vending/);
   });
 });
 
 describe('the thread', () => {
-  test('the words the shots wait on are in it: the review, the kind post, "walk cycle" in Snuckles\'s first post, and the dressed posts at the foot', async () => {
+  test('the thread reads in the order the film scrolls it: the sheet, Chadluminum, four kind posts, Hotel Bro\'s insult, then the dressed posts', async () => {
     const { fake, made } = await stage();
-    const body = async (seq: number) => ((await fake.acts(made.thread, seq, seq))[0]!.currentPayload as { body: string }).body;
-    expect(await body(made.posts['first']!)).toContain('walk cycle');
-    expect(await body(made.posts['review']!)).toContain('2/10');
-    expect(await body(made.posts['review']!)).toContain('twelve frames and none of them are walking');
-    expect(await body(made.posts['kind']!)).toContain('wonderful');
-    const authors = new Map((await fake.acts(made.thread, 1, 30)).map((a) => [a.seq, a.character]));
-    expect(authors.get(made.posts['review']!)).toBe(made.cast['D-Guy']);
-    expect(authors.get(made.posts['kind']!)).toBe(made.cast['Chadluminum']);
-    /* Round 1's posts are where its shots left them. */
-    expect(made.scenes).toEqual({ kind: 7, recount: 8, review: 9, joke: 10, appeal: 11, filed: 12, friends: 13 });
-    for (const key of ['hotBox', 'glitter', 'fab', 'graffiti', 'autocorrect']) expect(made.posts[key]).toBeGreaterThan(made.posts['review']!);
+    const all = await fake.acts(made.thread, 1, 60);
+    const body = (a: { currentPayload: unknown }) => (a.currentPayload as { body: string }).body;
+    const bySeq = new Map(all.map((a) => [a.seq, a]));
+    const at = (key: string) => bySeq.get(made.posts[key]!)!;
+    expect(made.posts).toMatchObject({ first: 1, chad: 2, kind1: 3, kind2: 4, kind3: 5, kind4: 6, heel: 7, hotBox: 8, glitter: 9, fab: 10, graffiti: 11, autocorrect: 12, gpt2: 13, fold: 14 });
+    expect(body(at('first'))).toBe("Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\nWhen he walks his legs move.");
+    expect(body(at('chad'))).toBe('Some go their whole lives wondering. Only a few among us truly achieve the greatness of making a Sprite Sheet');
+    expect(['kind1', 'kind2', 'kind3', 'kind4'].map((k) => body(at(k)))).toEqual(['Good job! Looks cool', 'not too shabby', "I'll use it in my game!", 'The walk looks like it was hard to make \u{1F4AA}']);
+    expect(body(at('heel'))).toBe('OF COURSE YOUR SPRITES LOOK LIKE THIS WITH THOSE STEAMBOAT WILLIE ASS FINGERS');
+    expect(body(at('hotBox'))).toBe('ok i am just going to say it: this wiggler is making me wiggle in all kinds of ways \u{1F440}');
+    expect(body(at('fold'))).toBe("I've analyzed this sprite sheet's pixels and come to the unfortunate conclusion that it was created using generative AI.");
+    expect(at('first').character).toBe(made.cast['Snuckles']);
+    expect(at('chad').character).toBe(made.cast['Chadluminum']);
+    expect(at('heel').character).toBe(made.cast['Hotel Bro']);
+    expect(at('fold').character).toBe(made.cast['Serious Deer']);
+    /* The four kind words are the crowd's, each a different character, none of the cast. */
+    const kindBy = ['kind1', 'kind2', 'kind3', 'kind4'].map((k) => at(k).character);
+    expect(new Set(kindBy).size).toBe(4);
+    for (const c of kindBy) expect(made.crowd.map((n) => made.cast[n])).toContain(c);
+    /* Everything keeps its place on the first page (20 a page): the film's slow scroll and the montage's posts are there. */
+    for (const n of Object.values(made.posts)) expect(n).toBeLessThanOrEqual(20);
+    for (const n of Object.values(made.scenes)) expect(n).toBeGreaterThan(made.posts['heel']!);
+    expect(all).toHaveLength(25);
+    expect(all.map((a) => a.seq)).toEqual(Array.from({ length: 25 }, (_, i) => i + 1));
   });
 
-  test('each of the five dressed posts wears its one live effect', async () => {
+  test('the kind stretch is dressed: Feelin\' Fab on two of the four posts (one stacked twice), a positive reaction on each from a different character, and a Sweet card that reads', async () => {
+    const { fake, made } = await stage();
+    const cardsOn = async (key: string) => (await fake.cardsOn(made.acts[key]!, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string; layer?: number }));
+    const kinds = ['kind1', 'kind2', 'kind3', 'kind4'];
+    const fabs = await Promise.all(kinds.map(async (k) => (await cardsOn(k)).filter((c) => c.card === 'feelin-fab').length));
+    expect(fabs.filter((n) => n > 0)).toHaveLength(2);
+    expect(Math.max(...fabs)).toBe(2);
+    const sweet = new Set(instance.cards.filter((c) => c.alignment === 'sweet').map((c) => c.key));
+    const sweets = (await Promise.all(kinds.map(async (k) => (await cardsOn(k)).filter((c) => sweet.has(c.card) && c.card !== 'feelin-fab')))).flat();
+    expect(sweets.length, 'a Sweet card beyond the fab').toBeGreaterThanOrEqual(1);
+    const tallies = await fake.tallies(kinds.map((k) => made.acts[k]!));
+    for (const k of kinds) {
+      const t = tallies[made.acts[k]!] ?? {};
+      const total = Object.values(t).reduce((n, v) => n + v, 0);
+      expect(total, `${k} has reactions`).toBeGreaterThanOrEqual(2);
+      const positive = (r: string) => ['excitedPositive', 'calmPositive'].includes(instance.reactions.find((x) => x.key === r)?.quadrant ?? '');
+      expect(Object.keys(t).every(positive), `${k}: ${JSON.stringify(t)}`).toBe(true);
+    }
+    const kinds1 = Object.values(tallies).flatMap((t) => Object.keys(t));
+    for (const want of ['heart', 'fire', 'hundred-points', 'thumbs-up', 'light-bulb']) expect(kinds1, want).toContain(want);
+  });
+
+  test('each card on the kind posts is one the rules let land there, in the order it was played', async () => {
+    const { fake, made } = await stage();
+    const now = new Date(Date.now() + 1000);
+    for (const k of ['kind1', 'kind2', 'kind3', 'kind4']) {
+      const [post] = await fake.acts(made.thread, made.posts[k]!, made.posts[k]!);
+      const body = (post!.currentPayload as { body: string }).body;
+      const plays = (await fake.cardsOn(made.acts[k]!, 30)).filter((a) => a.kind === 'card');
+      const on: CardEffect[] = [];
+      for (const p of plays) {
+        const card = (p.payload as { card: string }).card;
+        const rules = instance.cards.find((c) => c.key === card)!;
+        const verdict = rules.canApply(postTarget(made.acts[k]!, 'post', body, undefined, undefined, post!.character!), on, {}, now);
+        expect(verdict.ok, `${k}: ${card}${verdict.ok ? '' : ' ' + verdict.why}`).toBe(true);
+        on.push({ card, act: p.id, ...(rules.lasts !== undefined ? { ends: new Date(now.getTime() + 5 * 86_400_000).toISOString() } : {}) });
+      }
+    }
+  });
+
+  test('Chadluminum is his own player\'s mask again: no post of his and a mask of another player\'s share a player', async () => {
+    const { made } = await stage();
+    const mine = Object.entries(made.owners).filter(([, a]) => a === made.owners['Chadluminum']).map(([n]) => n);
+    expect(mine).toEqual(['Chadluminum']);
+  });
+
+  test('the sheet stands between the first post\'s two paragraphs when it shows', async () => {
+    const fake: Fake = createFake({ instance });
+    const made = buildStage(fake, instance, { skin: 'default', as: null, view: 'thread', sheet: true });
+    const body = ((await fake.acts(made.thread, 1, 1))[0]!.currentPayload as { body: string }).body;
+    expect(body).toBe("Hi divided world, it's ya boy Snuckles here with my first ever sprite sheet. He's an original character I invented after I saw him in a Mario game.\n\n[img]https://dw.gripe/hype/wiggler-sheet.gif[/img]\n\nWhen he walks his legs move.");
+    await made.ready;
+  });
+
+  test('each of the six dressed posts wears its one live effect', async () => {
     const { fake, made } = await stage();
     const on = async (key: string) => (await fake.cardsOn(made.acts[key]!, 20)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card);
     expect(await on('hotBox')).toEqual(['hot-box']);
     expect(await on('fab')).toEqual(['feelin-fab']);
     expect(await on('graffiti')).toEqual(['graffiti']);
     expect(await on('autocorrect')).toEqual(['autocorrect']);
+    expect(await on('fold')).toEqual(['below-the-fold']);
     /* Glitter Bomb sits on its author, and shows on the author's post. */
     const reach = await fake.effectsAbove([made.cast['Nosebleeds']!], made.thread, null);
     expect(reach.map((r) => (r.act.payload as { card: string }).card)).toEqual(['glitter-bomb']);
@@ -95,17 +194,17 @@ describe('the thread', () => {
 });
 
 describe('what is face down before the camera runs', () => {
-  test('Rope Break on Snuckles\'s first post, 4D Chess on D-Guy\'s review, a Steel Chair on Chadluminum\'s kind post, each its setter\'s alone to read', async () => {
+  test('Rope Break on Snuckles\'s first post, 4D Chess on Hotel Bro\'s review, a Steel Chair on Chadluminum\'s kind post, each its setter\'s alone to read', async () => {
     const { fake, made } = await stage();
     const back = async (account: string, set: string) => (await (fake.signInAs(account), fake.myFaceDown([set])))[set];
     const targetOf = async (post: string, set: string) => (await fake.cardsOn(post, 30)).some((a) => a.id === set && a.kind === 'set');
     const o = made.owners;
     expect(await back(o['Snuckles']!, made.sets['ropeBreak']!)).toBe('rope-break');
-    expect(await back(o['D-Guy']!, made.sets['fourDChess']!)).toBe('4d-chess');
+    expect(await back(o['Hotel Bro']!, made.sets['fourDChess']!)).toBe('4d-chess');
     expect(await back(o['Chadluminum']!, made.sets['steelChair']!)).toBe('steel-chair');
     expect(await targetOf(made.acts['first']!, made.sets['ropeBreak']!)).toBe(true);
-    expect(await targetOf(made.acts['review']!, made.sets['fourDChess']!)).toBe(true);
-    expect(await targetOf(made.acts['kind']!, made.sets['steelChair']!)).toBe(true);
+    expect(await targetOf(made.acts['heel']!, made.sets['fourDChess']!)).toBe(true);
+    expect(await targetOf(made.acts['chad']!, made.sets['steelChair']!)).toBe(true);
     /* Every back looks the same: another player is told none of the three. */
     expect(await back(o['Serious Deer']!, made.sets['ropeBreak']!)).toBeUndefined();
   });
@@ -119,16 +218,17 @@ describe('what is face down before the camera runs', () => {
 });
 
 describe('a real cast', () => {
-  test('D-Guy\'s Whoops! on Snuckles\'s first post is caught by the Rope Break, and Snuckles\'s player then holds the Whoops!', async () => {
-    const { fake, made, play } = await stage('D-Guy');
+  test('Hotel Bro\'s Whoops! on Snuckles\'s first post is caught by the Rope Break, and Snuckles\'s player then holds the Whoops!', async () => {
+    const { fake, made, play } = await stage('Hotel Bro');
     const before = await held(fake, made.owners['Snuckles']!, 'whoops');
+    const had = await held(fake, made.owners['Hotel Bro']!, 'whoops');
     fake.signInAs(made.viewer);
-    const cast = await play.cast('D-Guy', made.posts['first']!, 'whoops', { color: '#3d77ff' });
+    const cast = await play.cast('Hotel Bro', made.posts['first']!, 'whoops', { color: '#3d77ff' });
     expect(cast.caught).toBe(true);
     expect(cast.rode).toBe(false);
     expect(await held(fake, made.owners['Snuckles']!, 'whoops')).toBe(before + 1);
-    /* The cast was D-Guy's player's own whoops: it is gone from their hand, and no ink landed on the post. */
-    expect(await held(fake, made.owners['D-Guy']!, 'whoops')).toBe(0);
+    /* The cast was Hotel Bro's player's own whoops: it is gone from their hand, and no ink landed on the post. */
+    expect(await held(fake, made.owners['Hotel Bro']!, 'whoops')).toBe(had - 1);
     const plays = (await fake.cardsOn(made.acts['first']!, 30)).filter((a) => a.kind === 'card');
     expect(plays.every((a) => (a.payload as { caught?: unknown }).caught !== undefined)).toBe(true);
     /* The page is signed in as it was. */
@@ -136,20 +236,20 @@ describe('a real cast', () => {
   });
 
   test('told() writes the caster the trapStruck alert the backend writes for a caught cast, and says nothing where none was caught', async () => {
-    const { fake, made, play } = await stage('D-Guy');
-    await expect(play.told('D-Guy', made.posts['first']!)).rejects.toThrow(/no caught cast/);
-    await play.cast('D-Guy', made.posts['first']!, 'whoops', { color: '#3d77ff' });
+    const { fake, made, play } = await stage('Hotel Bro');
+    await expect(play.told('Hotel Bro', made.posts['first']!)).rejects.toThrow(/no caught cast/);
+    await play.cast('Hotel Bro', made.posts['first']!, 'whoops', { color: '#3d77ff' });
     expect((await fake.alertsPage(null)).alerts.some((a) => a.kind === 'trapStruck')).toBe(false);
-    await play.told('D-Guy', made.posts['first']!);
+    await play.told('Hotel Bro', made.posts['first']!);
     expect((await fake.alertsPage(null)).alerts.some((a) => a.kind === 'trapStruck')).toBe(true);
   });
 
-  test('Snuckles\'s Whoops! on D-Guy\'s review lands (an ink play is on it), and the spring there says it rode, naming the quadrant', async () => {
+  test('Snuckles\'s Whoops! on Hotel Bro\'s review lands (an ink play is on it), and the spring there says it rode, naming the quadrant', async () => {
     const { fake, made, play } = await stage();
-    const cast = await play.cast('Snuckles', made.posts['review']!, 'whoops', { color: '#ff2bd6' });
+    const cast = await play.cast('Snuckles', made.posts['heel']!, 'whoops', { color: '#ff2bd6' });
     expect(cast.rode).toBe(true);
     expect(cast.caught).toBe(false);
-    const there = await fake.cardsOn(made.acts['review']!, 30);
+    const there = await fake.cardsOn(made.acts['heel']!, 30);
     const ink = there.filter((a) => a.kind === 'card' && (a.payload as { card?: string }).card === 'whoops');
     expect(ink).toHaveLength(1);
     expect((ink[0]!.payload as { caught?: unknown }).caught).toBeUndefined();
@@ -159,19 +259,19 @@ describe('a real cast', () => {
 
   test('a spring on a quote lands the chair on the quoting post, and says so', async () => {
     const { fake, made, play } = await stage();
-    const quoted = await play.quoteSprings('Human Josh', made.posts['kind']!, 'to be fair, it is a good walk cycle.');
+    const quoted = await play.quoteSprings('D-Guy', made.posts['chad']!, 'to be fair, it is a good sprite sheet.');
     const on = await fake.cardsOn(quoted.post, 30);
     expect(on.filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
-    expect((await fake.cardsOn(made.acts['kind']!, 30)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+    expect((await fake.cardsOn(made.acts['chad']!, 30)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
   });
 });
 
 describe('a call that throws', () => {
   test('a part\'s call that throws leaves the film\'s player signed in, not the other player the call was made as', async () => {
-    const { fake, made, play } = await stage('D-Guy');
+    const { fake, made, play } = await stage('Hotel Bro');
     const original = fake.react.bind(fake);
     fake.react = (() => { throw new Error('the backend threw'); }) as typeof fake.react;
-    await expect(play.react('Snuckles', made.posts['review']!, 'tomato')).rejects.toThrow(/the backend threw/);
+    await expect(play.react('Snuckles', made.posts['heel']!, 'tomato')).rejects.toThrow(/the backend threw/);
     expect((await fake.session()).account, 'the page is the film\'s player again').toBe(made.viewer);
     fake.react = original;
   });
@@ -198,14 +298,71 @@ describe('a call that throws', () => {
 
 describe('a spring on a post written another way', () => {
   test('a quoting post the composer wrote gets the chair and the spring, as one `quoteSprings` writes', async () => {
-    const { fake, made, play } = await stage('Human Josh');
-    const quoted = (await fake.acts(made.thread, made.posts['kind']!, made.posts['kind']!))[0]!;
+    const { fake, made, play } = await stage('D-Guy');
+    const quoted = (await fake.acts(made.thread, made.posts['chad']!, made.posts['chad']!))[0]!;
     fake.signInAs(made.viewer);
-    const wrote = await fake.post(made.thread, made.cast['Human Josh']!, 'to be fair, it is a good walk cycle.', quoted.id);
+    const wrote = await fake.post(made.thread, made.cast['D-Guy']!, 'to be fair, it is a good sprite sheet.', quoted.id);
     if (!wrote.ok) throw new Error(wrote.error);
-    const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
+    const sprang = await play.springsOn(made.posts['chad']!, wrote.value.id);
     expect((await fake.cardsOn(wrote.value.id, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
-    expect((await fake.cardsOn(made.acts['kind']!, 30)).find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+    expect((await fake.cardsOn(made.acts['chad']!, 30)).find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+  });
+});
+
+const FORGED = 'Some go their whole lives wondering. Only a few among us are Wiggler Freaks enough to do something about it';
+
+describe('a forged quote and a real one of Chadluminum\'s post', () => {
+  test('D-Guy\'s forged quote is stored as the rules store one: a quote tag of words the post does not hold, the post named in its verdict, and no target', async () => {
+    const { fake, made, play } = await stage('D-Guy');
+    const quoted = (await fake.acts(made.thread, made.posts['chad']!, made.posts['chad']!))[0]!;
+    const wrote = await play.forgedQuote('D-Guy', made.posts['chad']!, FORGED, 'what did he mean by this');
+    const act = (await fake.acts(made.thread, wrote.seq, wrote.seq))[0]!;
+    expect(act.character).toBe(made.cast['D-Guy']);
+    expect((act.payload as { body: string }).body).toBe(`[quote=${quoted.id}]${FORGED}[/quote]\nwhat did he mean by this`);
+    expect((act.payload as { forged?: string[] }).forged).toEqual([quoted.id]);
+    expect(act.targetActId, 'a forged quote is no reply: the rules write it with no target').toBeNull();
+    expect(wrote.forged).toEqual([quoted.id]);
+  });
+
+  test('a forged quote springs nothing: the chair stays face down, and the helper that springs it refuses the forged post', async () => {
+    const { fake, made, play } = await stage('D-Guy');
+    const wrote = await play.forgedQuote('D-Guy', made.posts['chad']!, FORGED, 'what did he mean by this, to be fair');
+    expect((await fake.cardsOn(made.acts['chad']!, 30)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.cardsOn(wrote.post, 30)).filter((a) => a.kind === 'card')).toEqual([]);
+    await expect(play.springsOn(made.posts['chad']!, wrote.post)).rejects.toThrow(/forged|quotes no post|no target/i);
+    expect((await fake.cardsOn(made.acts['chad']!, 30)).some((a) => a.kind === 'spring')).toBe(false);
+  });
+
+  test('words that stand in the post are no forgery: `forgedQuote` refuses them, naming the real quote', async () => {
+    const { made, play } = await stage('D-Guy');
+    await expect(play.forgedQuote('D-Guy', made.posts['chad']!, 'Only a few among us truly achieve the greatness of making a Sprite Sheet', 'x')).rejects.toThrow(/stands in post/);
+  });
+
+  test('Ringside\'s real quote of the post, saying "to be fair", springs the chair: a target, no verdict, the chair on his post', async () => {
+    const { fake, made, play } = await stage();
+    const quoted = (await fake.acts(made.thread, made.posts['chad']!, made.posts['chad']!))[0]!;
+    const sprang = await play.quoteSprings('Ringside', made.posts['chad']!, 'to be fair he probably did mean that');
+    const act = (await fake.acts(made.thread, 1, 40)).find((a) => a.id === sprang.post)!;
+    expect(act.targetActId).toBe(quoted.id);
+    expect((act.payload as { forged?: unknown }).forged).toBeUndefined();
+    expect((act.payload as { body: string }).body).toMatch(/^\[quote=[0-9a-f-]+\]Some go their whole lives wondering\. Only a few among us truly achieve the greatness of making a Sprite Sheet\[\/quote\]\n/);
+    expect((act.payload as { body: string }).body).toMatch(/\nto be fair he probably did mean that$/);
+    expect((await fake.cardsOn(sprang.post, 30)).filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
+  });
+
+  test('a quote that does not say the phrase springs no chair', async () => {
+    const { made, play } = await stage();
+    await expect(play.quoteSprings('Ringside', made.posts['chad']!, 'he meant something else entirely')).rejects.toThrow(/to be fair/);
+  });
+});
+
+describe('the laugh track\'s cue', () => {
+  test('is on "his legs move", words that are in Snuckles\'s first post', async () => {
+    const step = PILE.find((p) => p.what === 'laugh-track')!;
+    expect(step.config).toMatchObject({ cues: [{ phrase: 'his legs move', sound: 'laugh' }] });
+    const { fake, made } = await stage();
+    const body = ((await fake.acts(made.thread, 1, 1))[0]!.currentPayload as { body: string }).body;
+    expect(body).toContain('his legs move');
   });
 });
 
@@ -251,8 +408,8 @@ describe('the heap', () => {
   });
 
   test('the Rope Break face down on post 1 would catch the heap\'s first Salty cast, so the film springs it before the heap: a real cast is caught once, and the next lands', async () => {
-    const { fake, made, play } = await stage('D-Guy');
-    const caught = await play.cast('D-Guy', made.posts['first']!, 'whoops', { color: '#3d77ff' });
+    const { fake, made, play } = await stage('Hotel Bro');
+    const caught = await play.cast('Hotel Bro', made.posts['first']!, 'whoops', { color: '#3d77ff' });
     expect(caught.caught).toBe(true);
     const lands = await play.cast('Serious Deer', made.posts['first']!, 'whoops', { color: '#19e3ff', seed: 202 });
     expect(lands.caught).toBe(false);
@@ -279,7 +436,7 @@ describe('the Staff\'s beats', () => {
     const announced = (await fake.acts((await fake.boardPage('announcements', 1, []))!.threads[0]!.id, 1, 60)).find((a) => a.id === move)!;
     expect(announced.kind).toBe('move');
     expect(made.threads['announcements']).toBe((await fake.boardPage('announcements', 1, []))!.threads[0]!.id);
-    expect(JSON.stringify(announced.payload)).toContain('Nobody posted on my board anyway');
+    expect(JSON.stringify(announced.payload)).toContain('Per the consolidation plan, the Palace joins World -1');
   });
 
   test('a Mod files Snuckles\'s first post: its visit ends filed, and a warning lands on him', async () => {
@@ -294,8 +451,8 @@ describe('the Staff\'s beats', () => {
 
 describe('the forecast', () => {
   test('excited-negative reactions raise a Heel\'s forecast, one by one, and a calm-positive one lowers it', async () => {
-    const { fake, made, play } = await stage('D-Guy');
-    const review = made.posts['review']!;
+    const { fake, made, play } = await stage('Hotel Bro');
+    const review = made.posts['heel']!;
     const forecast = async () => pendingOf(await fake.estimate());
     let last = await forecast();
     expect(last).toBe(0);
@@ -319,7 +476,7 @@ describe('the forecast', () => {
   test('the same tomato on the Face\'s post moves nothing: the pay is by class, and a Face is not paid by heat', async () => {
     const { fake, made, play } = await stage('Chadluminum');
     const before = pendingOf(await fake.estimate());
-    await play.react('Snuckles', made.posts['kind']!, 'tomato');
+    await play.react('Snuckles', made.posts['chad']!, 'tomato');
     expect(pendingOf(await fake.estimate())).toBe(before);
   });
 });
@@ -369,5 +526,365 @@ describe('the camera', () => {
     expect(plane.hasAttribute('data-kb-turned')).toBe(false);
     expect(document.body.style.background).toContain('rgb(10, 20, 30)');
     document.body.style.background = '';
+  });
+});
+
+/** The tail as the file holds it: after its `#` header line, every character, the leading space and the blank lines kept. */
+const tailOf = (file: string) => file.slice(file.indexOf('\n') + 1);
+const LOGS = 'docs/research/2026-11-13-season-rehearsal-run-2/logs';
+
+describe('R4: the nodes, half again as large', () => {
+  test('a node is 84 px across (56 px was the first build\'s), centered on its point', () => {
+    const rule = /\.dw-hype-node \{([^}]*)\}/u.exec(nodesCss)?.[1] ?? '';
+    expect(rule).toMatch(/width:\s*84px/u);
+    expect(rule).toMatch(/height:\s*84px/u);
+    expect(rule).toMatch(/margin:\s*-42px 0 0 -42px/u);
+  });
+});
+
+describe('R6: the author of the Autocorrect post may peel it', () => {
+  test('the strip on post 19 was played longer ago than its hold, so its author is out of the hold', async () => {
+    const { fake, made } = await stage();
+    const play = (await fake.cardsOn(made.acts['autocorrect']!, 60)).find((a) => a.kind === 'card')!;
+    const hours = instance.settings.economy['autocorrect.holdHours']!;
+    expect(hours).toBeGreaterThan(0);
+    expect(fake.clock.now() - new Date(play.createdAt).getTime()).toBeGreaterThan(hours * 3_600_000);
+  });
+});
+
+describe('R4: the graffiti shapes', () => {
+  test('the stage\'s tags are at least five kinds of shape, and no two strokes are the same polyline', () => {
+    const shapes = tags();
+    expect(new Set(shapes.map((s) => s.kind)).size).toBeGreaterThanOrEqual(5);
+    const polylines = shapes.flatMap((s) => s.strokes).map((st) => JSON.stringify(st.points));
+    expect(new Set(polylines).size).toBe(polylines.length);
+    for (const st of shapes.flatMap((s) => s.strokes)) expect(st.points.length).toBeGreaterThan(1);
+  });
+
+  test('the graffiti post\'s wall holds a draw for each shape, and the card accepted them all', async () => {
+    const { fake, made } = await stage();
+    const play = (await fake.cardsOn(made.acts['graffiti']!, 60)).find((a) => a.kind === 'card')!;
+    const draws = (await fake.surfaceActs(play.id))!.acts;
+    expect(draws.length).toBeGreaterThanOrEqual(5);
+    const strokes = draws.map((d) => JSON.stringify((d.payload as { strokes?: unknown }).strokes ?? []));
+    expect(new Set(strokes).size).toBe(strokes.length);
+  });
+});
+
+describe('R4: the Staff\'s lines are the rehearsal\'s', () => {
+  const logs = new Map<string, string>();
+  const text = (arc: string) => {
+    if (!logs.has(arc)) logs.set(arc, JSON.stringify(JSON.parse(gunzipSync(readFileSync(`${LOGS}/${arc}.json.gz`)).toString('utf8'))));
+    return logs.get(arc)!;
+  };
+  const found = (arc: string, said: string) => text(arc).includes(JSON.stringify(said).slice(1, -1));
+
+  test('every `said` (and every filing\'s aimed-at post\'s) is found, character for character, in the log it names', () => {
+    expect(readdirSync(LOGS).length).toBeGreaterThanOrEqual(5);
+    const entries = Object.entries(LINES) as [string, { said: string; arc: string; post?: { said: string } | null }][];
+    expect(entries.length).toBeGreaterThanOrEqual(27);
+    for (const [key, line] of entries) {
+      expect(found(line.arc, line.said), `${key}: "${line.said.slice(0, 60)}" is in ${line.arc}`).toBe(true);
+      if (line.post) expect(found(line.arc, line.post.said), `${key}'s aimed-at post is in ${line.arc}`).toBe(true);
+    }
+  });
+
+  test('the check is not vacuous: a line with one word changed is not found', () => {
+    expect(found(LINES.openerQcHelp.arc, LINES.openerQcHelp.said.replace('clipboard', 'clipboards'))).toBe(false);
+  });
+
+  test('the wanted lines are there by key: two openers each, three filings each, the moves, memos, two reviews, the handover', () => {
+    for (const key of ['openerQcHelp', 'openerQcArts', 'openerOtBreathing', 'openerOtLooking', 'filingQcHelp', 'filingQcGames', 'filingQcGotcha', 'filingOtThematic', 'filingOtPatience', 'filingOtPalace',
+      'created', 'moved', 'merged', 'mergeFailed', 'memo', 'orderNoAllowance', 'orderHoneymoon', 'stars', 'fiveStars', 'successor', 'farewell', 'handoff', 'posted', 'arrival', 'followup']) {
+      expect((LINES as Record<string, unknown>)[key], key).toBeDefined();
+    }
+    expect(LINES.filingQcHelp.post!.text).toBe('respectfully, no.');
+    expect(LINES.mergeFailed).toMatchObject({ failure: 'that move cannot land: that board is already closed' });
+    expect(LINES.farewell.text).toContain('Robots in the Draw event do not cry');
+  });
+
+  test('the recast keeps the words: no rehearsal poster\'s name is left in `text`', () => {
+    for (const [key, line] of Object.entries(LINES) as [string, { text: string }][]) {
+      for (const name of ['Ironpudding', 'Cobaltpretzel', 'Barnacle Jim', 'Waffleknight', 'Plumber Wick', 'Sodapop Rex', 'Quillfern', 'Gravelbyte', 'Zephyrgoat', 'Mothwire', 'Dingleberry Ox', 'Crumpetmoon', 'Marmaladedrift', 'Bolthole', 'Lanternfish 97', 'Tanukibrine']) {
+        expect(line.text, `${key} still names ${name}`).not.toContain(name);
+      }
+    }
+  });
+
+  test('the two round-1 lines that are in no log are gone from the stage\'s sources', () => {
+    for (const gone of ['A question about boards, asked on a board. I will allow that this is efficient.', 'Two stars. Filed.']) {
+      expect(worldSource.includes(gone), `stage-world.ts still has "${gone}"`).toBe(false);
+      expect(playSource.includes(gone), `stage-play.ts still has "${gone}"`).toBe(false);
+    }
+  });
+
+  test('the world\'s filed post carries a real opener, and the boards the lines name are on the stage', async () => {
+    const { fake, made } = await stage();
+    const visits = (await fake.threadPage(made.thread, { page: 1 }, 50, []))!.visits;
+    expect(visits.map((v) => v.line)).toEqual([LINES.openerOtLooking.text]);
+    expect(Object.keys(made.lineBoards)).toEqual(expect.arrayContaining(['Help', 'Movies & TV', 'Video Games', 'Arts & Crafts', 'Pointless Post Palace']));
+    for (const slug of Object.values(made.lineBoards)) expect(await fake.boardPage(slug, 1, []), slug).not.toBeNull();
+  });
+});
+
+describe('R4: the GPT-2 text', () => {
+  test('the file has a `#` header, then the instance\'s real tail, 1373 characters with its leading space and blank lines', () => {
+    expect(tailFile.startsWith('# Real output of the You Were Saying? card: card_texts id 14')).toBe(true);
+    expect(tailFile).toContain('2026-11-21');
+    const tail = tailOf(tailFile);
+    expect(tail.length).toBe(1373);
+    expect(tail.startsWith(' coming up. All those people')).toBe(true);
+  });
+
+  test('the post is exactly the instance\'s post, by D-Guy, in the main thread after the dressed posts', async () => {
+    const { fake, made } = await stage();
+    expect(made.posts['gpt2']).toBeGreaterThan(made.posts['autocorrect']!);
+    const [act] = await fake.acts(made.thread, made.posts['gpt2']!, made.posts['gpt2']!);
+    expect((act!.currentPayload as { body: string }).body).toBe('Seriously what the fuck is a video game');
+    expect(act!.character).toBe(made.cast['D-Guy']);
+    expect(act!.id).toBe(made.acts['gpt2']);
+    expect(tailFile.split('\n')[0]).toContain('"Seriously what the fuck is a video game"');
+  });
+
+  test('gpt2() types exactly the file\'s tail under that post, as the card\'s own tail', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.gpt2).toBe('function');
+    const card = await play.gpt2();
+    const tails = await fake.tails([made.acts['gpt2']!]);
+    expect(tails.map((t) => t.play)).toEqual([card]);
+    expect(tails[0]!.text).toBe(tailOf(tailFile));
+  });
+
+  test('the pile\'s You Were Saying? on post 1 types the first 300 characters of the same tail', async () => {
+    const { fake, made, play } = await stage();
+    for (let i = 0; i < play.steps.length; i++) if (play.steps[i] === 'you-were-saying') await play.pile(i);
+    const tails = await fake.tails([made.acts['first']!]);
+    expect(tails).toHaveLength(1);
+    expect(tails[0]!.text).toBe(tailOf(tailFile).slice(0, 300));
+  });
+});
+
+describe('R4: the Staff\'s helpers', () => {
+  test('visit() opens a Mod\'s visit with a real opener on a post of the board the line names, and a quiz when asked', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.visit).toBe('function');
+    const v = await play.staff.visit('qc', null, { quiz: true });
+    expect(v.line).toBe(LINES.openerQcHelp.text);
+    const page = await fake.boardPage(made.lineBoards['Help']!, 1, []);
+    expect(page?.threads.map((t) => t.id)).toContain(v.thread);
+    const story = await fake.visitStory(v.thread, v.visit, v.post);
+    expect(story.end).toBeNull();
+    const seen = (await fake.threadPage(v.thread, { page: 1 }, 50, []))!.visits.find((x) => x.id === v.visit)!;
+    expect(seen.line).toBe(LINES.openerQcHelp.text);
+    expect(seen.charges[0]!.rule).toBe('the premise of Help');
+    expect(seen.challenge).toMatchObject({ kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'] });
+    expect(JSON.stringify(seen.challenge)).not.toContain('answer');
+    expect((await fake.visitStory(v.thread, v.visit, v.post)).attempts).toHaveLength(0);
+  });
+
+  test('visit() on a post of the main thread, with ONTOPIC 5.0 and no quiz, is the distraction', async () => {
+    const { fake, made, play } = await stage();
+    const v = await play.staff.visit('ontopic', 4, { line: 'openerOtBreathing' });
+    expect(v.thread).toBe(made.thread);
+    expect(v.line).toBe(LINES.openerOtBreathing.text);
+    const seen = (await fake.threadPage(made.thread, { page: 1 }, 50, []))!.visits.find((x) => x.id === v.visit)!;
+    expect(seen.challenge.kind).toBe('distraction');
+  });
+
+  test('hallPass() has the post\'s author set a real Hall Pass, then a visit that it traps and ends', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.hallPass).toBe('function');
+    const h = await play.staff.hallPass(null);
+    const story = await fake.visitStory(h.thread, h.visit, h.post);
+    expect(story.end?.outcome).toBe('trapped');
+    expect(story.infraction).toBeNull();
+    const on = await fake.cardsOn(h.post, 30);
+    expect(on.find((a) => a.kind === 'set')?.id).toBe(h.set);
+    expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'hall-pass', trigger: 'visit', did: 'ended' });
+    fake.signInAs(made.owners['Snuckles']!);
+    expect((await fake.myFaceDown([h.set]))[h.set]).toBe('hall-pass');
+    fake.signInAs(made.viewer);
+  });
+
+  test('hallPass() with hold leaves the visit open and the pass face down, and springPass() then traps and ends it', async () => {
+    const { fake, play } = await stage();
+    const h = await play.staff.hallPass(null, { hold: true });
+    expect((await fake.visitStory(h.thread, h.visit, h.post)).end).toBeNull();
+    expect((await fake.cardsOn(h.post, 30)).some((a) => a.kind === 'spring')).toBe(false);
+    await play.staff.springPass(h.set, h.visit);
+    expect((await fake.visitStory(h.thread, h.visit, h.post)).end?.outcome).toBe('trapped');
+    expect((await fake.cardsOn(h.post, 30)).some((a) => a.kind === 'spring')).toBe(true);
+  });
+
+  test('filing() with hold writes the post and opens the visit, and endFiling() then files it', async () => {
+    const { fake, play } = await stage();
+    const f = await play.staff.filing('qc', null, 'filingQcHelp', { hold: true });
+    expect((await fake.visitStory(f.thread, f.visit, f.post)).end).toBeNull();
+    await play.staff.endFiling('filingQcHelp', f.visit);
+    expect((await fake.visitStory(f.thread, f.visit, f.post)).end).toMatchObject({ outcome: 'filed', line: LINES.filingQcHelp.text });
+  });
+
+  test('filing() writes the post the filing was aimed at, with the log\'s own words, and files it: the line, the points and the warn bar', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.filing).toBe('function');
+    const f = await play.staff.filing('qc', null, 'filingQcHelp');
+    const page = await fake.boardPage(made.lineBoards['Help']!, 1, []);
+    expect(page?.threads.map((t) => t.id)).toContain(f.thread);
+    const [aimed] = await fake.acts(f.thread, f.seq, f.seq);
+    expect((aimed!.currentPayload as { body: string }).body).toBe('respectfully, no.');
+    expect(aimed!.character).toBe(made.cast['Hotel Bro']);
+    const story = await fake.visitStory(f.thread, f.visit, f.post);
+    expect(story.end).toMatchObject({ outcome: 'filed', line: LINES.filingQcHelp.text });
+    expect(story.infraction?.points).toBe(2);
+    expect(story.warnPoints).toBe(2);
+  });
+
+  test('filing() with `by` writes the aimed post as the named character, so the film\'s own bar can rise', async () => {
+    const { fake, made, play } = await stage();
+    const f = await play.staff.filing('ontopic', null, 'filingOtPalace', { by: 'Snuckles' });
+    const [aimed] = await fake.acts(f.thread, f.seq, f.seq);
+    expect(aimed!.character).toBe(made.cast['Snuckles']);
+    expect((aimed!.currentPayload as { body: string }).body).toBe(LINES.filingOtPalace.post!.text);
+    /* Snuckles's bar already holds the 6 points of the world's own filed post. */
+    expect((await fake.visitStory(f.thread, f.visit, f.post)).warnPoints).toBe(8);
+  });
+
+  test('report() puts the page where the real Report button is on another character\'s post, and says what to press', async () => {
+    const { made, play } = await stage('Snuckles');
+    expect(typeof play.staff.report).toBe('function');
+    const r = await play.staff.report('Snuckles', made.posts['heel']!);
+    expect(r.press[0]).toContain(`#post-${made.posts['heel']} button "Report"`);
+    await expect(play.staff.report('Snuckles', made.posts['first']!)).rejects.toThrow(/own post/);
+    await expect(play.staff.report('Hotel Bro', made.posts['heel']!)).rejects.toThrow(/as=Hotel Bro/);
+  });
+
+  test('appeal() writes a filing against the named character\'s own post, with the appeal still to make', async () => {
+    const { fake, made, play } = await stage('Serious Deer');
+    expect(typeof play.staff.appeal).toBe('function');
+    const a = await play.staff.appeal('Serious Deer');
+    const story = await fake.visitStory(a.thread, a.visit, a.post);
+    expect(story.end?.outcome).toBe('filed');
+    expect(story.appeal).toBeNull();
+    expect(story.infraction?.points).toBe(2);
+    expect(a.press.join(' ')).toMatch(/Appeal/);
+    await expect(play.staff.appeal('Snuckles')).rejects.toThrow(/as=Snuckles/);
+    expect(made.played).toBe('Serious Deer');
+  });
+
+  test('review() posts a star review in a thread: the one-star on the thread titled "a", and a five-star', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.review).toBe('function');
+    const one = await play.staff.review('stars');
+    const review = (await fake.acts(one.thread, 1, 20)).find((p) => p.id === one.post)!;
+    expect(review.character).toBe(made.staff['ontopic']);
+    expect((review.currentPayload as { body: string }).body).toBe(LINES.stars.text);
+    const opener = (await fake.acts(one.thread, 1, 1))[0]!;
+    expect((opener.currentPayload as { title?: string; body: string }).body).toBeDefined();
+    const five = await play.staff.review('fiveStars');
+    expect(((await fake.acts(five.thread, 1, 20)).find((p) => p.id === five.post)!.currentPayload as { body: string }).body).toBe(LINES.fiveStars.text);
+    await expect(play.staff.review('nope')).rejects.toThrow(/review/);
+  });
+
+  test('memo() posts the Boss\'s memos to his Mods in a thread, each a real one', async () => {
+    const { fake, made, play } = await stage();
+    const id = await play.staff.memo('main', 'orderNoAllowance');
+    const memo = (await fake.acts(made.thread, 1, 60)).find((a) => a.id === id)!;
+    expect((memo.currentPayload as { body: string }).body).toBe(LINES.orderNoAllowance.text);
+  });
+
+  test('created() and moved() are the Boss\'s notices with his reasons: a board made, a thread moved to World -1', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.created).toBe('function');
+    const board = await play.staff.created();
+    const moved = await play.staff.moved();
+    const announcements = (await fake.boardPage('announcements', 1, []))!.threads[0]!.id;
+    const acts = await fake.acts(announcements, 1, 80);
+    expect(JSON.stringify(acts.find((a) => a.id === board)!.payload)).toContain('The board is arguing whether a fangame is a video game.');
+    expect(JSON.stringify(acts.find((a) => a.id === moved.move)!.payload)).toContain('a monster movie is a boss fight with no controller');
+    const page = await fake.boardPage(made.boards.minus, 1, []);
+    expect(page?.threads.map((t) => t.id)).toContain(moved.thread);
+  });
+
+  test('the Boss\'s reason for a board made is on the announcements once, when created() posts it: the world does not seed it twice before it', async () => {
+    const { fake, play } = await stage();
+    const announcements = (await fake.boardPage('announcements', 1, []))!.threads[0]!.id;
+    const said = async () => (await fake.acts(announcements, 1, 80)).filter((a) => JSON.stringify(a.payload).includes(LINES.created.text)).length;
+    expect(await said()).toBe(0);
+    await play.staff.created();
+    expect(await said()).toBe(1);
+  });
+
+  test('say() posts a line of the rehearsal\'s as a member of the Staff in a thread now, and review(hold) leaves the review for it', async () => {
+    const { fake, play } = await stage();
+    const held = await play.staff.review('stars', { hold: true });
+    const says = async () => (await fake.acts(held.thread, 1, 60)).filter((a) => JSON.stringify(a.currentPayload ?? a.payload).includes(LINES.stars.text.slice(0, 11)));
+    expect(held.post).toBe('');
+    expect(await says()).toHaveLength(0);
+    const id = await play.staff.say('ontopic', held.key, 'stars');
+    const acts = await says();
+    expect(acts.map((a) => a.id)).toEqual([id]);
+    await expect(play.staff.say('nobody', held.key, 'stars')).rejects.toThrow(/staff member/);
+    await expect(play.staff.say('ontopic', 'nowhere', 'stars')).rejects.toThrow(/no thread/);
+  });
+
+  test('handover() names the new Boss and posts the farewell and the arrival where the season news reads them', async () => {
+    const { fake, made, play } = await stage();
+    expect(typeof play.staff.handover).toBe('function');
+    const h = await play.staff.handover();
+    const announcements = (await fake.boardPage('announcements', 1, []))!.threads[0]!.id;
+    const posts = await fake.acts(announcements, 1, 80);
+    expect((posts.find((p) => p.id === h.farewell)!.currentPayload as { body: string }).body).toBe(LINES.farewell.text);
+    expect((posts.find((p) => p.id === h.arrival)!.currentPayload as { body: string }).body).toBe(LINES.arrival.text);
+    expect(posts.find((p) => p.id === h.farewell)!.character).toBe(made.staff['fangame']);
+    expect(posts.find((p) => p.id === h.arrival)!.character).toBe(made.staff['qc']);
+    expect(h.note).toBe(LINES.handoff.text);
+  });
+});
+
+describe('the leaving posts', () => {
+  const WORDS: Readonly<Record<string, string>> = {
+    Snuckles: "That's it! I'll kindly take my Wigglers elsewhere!!!",
+    'Hotel Bro': "I can't wait to fuggetabout you clowns, capiche?",
+    'Serious Deer': "I didn't do anything but ok.",
+    'D-Guy': "that's all, folks \u{1F62C}",
+    Chadluminum: "I've really tried for a long time, but I just don't think this is going to work. See you all around.",
+  };
+
+  test('`leaving` is the five, in the film\'s order, and each `leave` posts that character\'s words at the thread\'s foot, as that character', async () => {
+    const { fake, made, play } = await stage();
+    expect(play.leaving).toEqual(['Snuckles', 'Hotel Bro', 'Serious Deer', 'D-Guy', 'Chadluminum']);
+    const before = (await fake.acts(made.thread, 1, 200)).length;
+    const seqs: number[] = [];
+    for (const name of play.leaving) {
+      const left = await play.leave(name, { wait: 0 });
+      seqs.push(left.seq);
+      const [act] = await fake.acts(made.thread, left.seq, left.seq);
+      expect((act!.currentPayload as { body: string }).body).toBe(WORDS[name]);
+      expect(act!.character).toBe(made.cast[name]);
+      expect(act!.id).toBe(left.post);
+      expect(typeof left.shown).toBe('boolean');
+    }
+    expect(seqs).toEqual([before + 1, before + 2, before + 3, before + 4, before + 5]);
+    expect((await fake.session()).account, 'the page is signed in as it was').toBe(made.viewer);
+  });
+
+  test('a post is heard live by the page as any other is, and `leave` refuses a name that has no words', async () => {
+    const { fake, made, play } = await stage();
+    const heard: number[] = [];
+    const off = fake.subscribeThread(made.thread, { onAct: () => { heard.push(1); } });
+    fake.broadcast.rejoin();
+    await play.leave("Snuckles", { wait: 0 });
+    off();
+    expect(heard.length).toBeGreaterThan(0);
+    await expect(play.leave('Ringside')).rejects.toThrow(/no leaving words/);
+  });
+});
+
+describe('the skin is on the page before the board mounts', () => {
+  test('the stage holds the board back until the skin\'s sheet has loaded, so no effect first reads a page without tokens', () => {
+    /* The board's render gate and the sheet's load wait, as the story writes them (a story has no shell to test through). */
+    expect(storySource, 'the gate on the skin').toMatch(/if \(!made \|\| !ready \|\| !skinned\) return <Frame><div aria-busy="true" \/><\/Frame>/);
+    expect(storySource, 'waits for the sheet to load').toMatch(/sheet\.addEventListener\('load'/);
+    expect(storySource, 'the stage\'s hooks wait for it too').toMatch(/if \(!made \|\| !ready \|\| !skinned\) return;/);
   });
 });

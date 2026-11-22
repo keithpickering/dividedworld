@@ -1,93 +1,40 @@
 /**
- * The commentary video's script, exactly as docs/plans/2026-11-21-commentary-video-design.md (section 4) words it:
- * eleven nodes in order, each caption at most 90 characters (two rows), and the end card's sentence with WROLD in it.
- * The captions of a node, joined with single spaces, are the node's full text, so a dropped or altered caption fails.
+ * The commentary video's script, exactly as docs/plans/2026-11-21-commentary-video-revision-design.md (section 11)
+ * words it: the nodes in order, each caption at most 90 characters (two rows), the captions of a node joined with
+ * single spaces equal its text (so a dropped or altered caption fails), v11's caption without the sigh.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { commentary, END_CARD } from './commentary.ts';
+import { commentary, captionLines, TITLE, TITLE_TAG } from './commentary.ts';
 
 const SCRIPT: readonly { id: string; part: number; text: string; firstSix: string }[] = [
-  {
-    id: 'n01',
-    part: 1,
-    text: "Hi, my name is Gabe, and welcome to Divided World. After nine years in development, hopefully it will have been worth the wait. The last forum ran on code I wrote when I was twenty, and it's not easy to open that up and wonder what you were thinking. This is, I think, better. To listen to a commentary node, put your cursor over the floating commentary symbol and click. To stop a commentary node, click it again. Some commentary nodes may take control of the forum in order to show something to you. In these cases, simply click again to stop the commentary.",
-    firstSix: 'Hi, my name is Gabe, and',
-  },
-  {
-    id: 'n02',
-    part: 1,
-    text: 'Early playtests showed that people on a forum want to be liked. We considered this a design problem. So every character has a secret class, and some classes are paid for being disliked. This one is a Heel. Playtesters threw tomatoes at him and he made money. We then found they could hurt him by agreeing with him, politely. We didn\'t design that. We kept it.',
-    firstSix: 'Early playtests showed that people on',
-  },
-  {
-    id: 'n03',
-    part: 1,
-    text: "Sometimes we need to stop a player from doing something. In our other games we use what we call a gate. Here, the gate is another player. Every card back looks the same, so you can't know what's waiting on a post. Playtesters described this as unfair. We agree.",
-    firstSix: 'Sometimes we need to stop a',
-  },
-  {
-    id: 'n04',
-    part: 1,
-    text: 'I understand there may be some concerns that vibe coding was used on this project. I want to assure you that all vibes were completely negative, and that the requisite amount of human suffering for a project to count as art was achieved. In fact, it was exceeded, and I personally saw to it that that was the case.',
-    firstSix: 'I understand there may be some',
-  },
-  {
-    id: 'n05',
-    part: 2,
-    text: 'This is a training arc. The player learns that a card can be caught, and then learns that being caught can be the plan. We found that about one playtester in five understood this. He won everything, and we couldn\'t work out who he was.',
-    firstSix: 'This is a training arc. The',
-  },
-  {
-    id: 'n06',
-    part: 2,
-    text: 'A card can be set to go off when somebody says a particular phrase. This trains players to choose their words carefully, which, on a forum, we think is new.',
-    firstSix: 'A card can be set to',
-  },
-  {
-    id: 'n07',
-    part: 2,
-    text: "Each player has several characters, and no other player can see which are theirs. So the argument you've been watching is, I think, mostly, one person. That's, um. There seem to be more nodes than we shipped.",
-    firstSix: 'Each player has several characters, and',
-  },
-  {
-    id: 'n08',
-    part: 2,
-    text: "Some commentary nodes may take control of the forum in order to show something to you. In these cases, simply click again to stop the— I'm clicking it.",
-    firstSix: 'Some commentary nodes may take control',
-  },
-  {
-    id: 'n09',
-    part: 3,
-    text: "So the, the way we think about this is, any time you do something new there's a normal distribution of pain, and this is— that's a chair. This is not in the middle of the curve. Okay. This is GPT-2 finishing someone's post. Do we... do we have a filter on that? My god, there are laws about this stuff, you know.",
-    firstSix: 'So the, the way we think',
-  },
-  {
-    id: 'n10',
-    part: 3,
-    text: "That's the moderator. He's a Personality Core, we found him in a pile, he's the permanent Boss, and nothing will go— he's merging the boards. To stop a commentary node, put your cursor over— I'm doing that.",
-    firstSix: "That's the moderator. He's a Personality",
-  },
-  {
-    id: 'n11',
-    part: 3,
-    text: 'Please let me know— —what you think— —after you have had a chance—',
-    firstSix: 'Please let me know— —what you',
-  },
+  { id: 'v01', part: 1, firstSix: "Hi, I'm Gabe. Over the last", text: "Hi, I'm Gabe. Over the last few years, people have been asking me what our company has been up to. Why haven't we been making any games? Well, I'm happy to announce that the indefinite delay of Half-Life: Nuts & Bolts has not been in vain. For the last nine years, we've been putting all of our resources into this: Divided World. And since we'll never get any of that time back, let's dive right in." },
+  { id: 'v02', part: 1, firstSix: 'Here we see a straightforward MFGG', text: "Here we see a straightforward MFGG submission with a solid 2.9 star rating trajectory. You're probably wondering how something so earnest and innocuous could possibly end up starting a vicious fight: and that's exactly the kind of game design problem we set out to solve." },
+  { id: 'v03', part: 1, firstSix: 'See, one of the first things', text: 'See, one of the first things we found in playtesting is that human beings enjoy being Liked. Among a population of well-adjusted adults, this tends to result in a positive nurturing environment.' },
+  { id: 'v04', part: 1, firstSix: 'So to fix that, we gave', text: 'So to fix that, we gave every character an anonymous class: And some of the classes get points for being DISliked.' },
+  { id: 'v05', part: 1, firstSix: "Take this guy: he's a Heel.", text: "Take this guy: he's a Heel. He made this piece-of-shit post, and the crowd threw tomatoes at him. Normally this would be a bad thing, but for a Heel, it gives him Aura. The flip side is that if you agree with him politely, he actually LOSES Aura. We tried that out and he lost his MIND, heh, check this out:" },
+  { id: 'v06', part: 1, firstSix: 'Problem solved.', text: 'Problem solved.' },
+  { id: 'v07', part: 1, firstSix: 'These are the six classes: Face,', text: 'These are the six classes: Face, Heel, Jabroni, Technician, Tweener, and Lurker. You get six characters, so you can try all of them if you want.' },
+  { id: 'v08', part: 1, firstSix: 'They all share the same aura,', text: 'They all share the same aura, so you can farm reactions as one class to power up another class.' },
+  { id: 'v09', part: 1, firstSix: 'The aura gets spent on cards', text: 'The aura gets spent on cards at the vending machine, and the characters play those to earn even more reactions. In the biz we call that a "gameplay loop".' },
+  { id: 'v10a', part: 2, firstSix: 'Okay, this is, uh...yeah, we call', text: 'Okay, this is, uh...yeah, we call this a training arc. A card can be face down on any post, the poster can set conditions for it to spring, so other players learn to uh, to not trust anybody, basically.' },
+  { id: 'v10b', part: 2, firstSix: 'Sometimes the player plays a card', text: "Sometimes the player plays a card and then it turns out the player you played the card on actually WANTED you to play that card, so you really should've played a different card, or just not played any card at all. And uh, you get some really interesting conversations, at the end of the day. It's a positive experience. We tested this. The testers...okay, I'll level with you, this is the first time we've really tested it." },
+  { id: 'v10c', part: 2, firstSix: 'And you know, what do you', text: 'And you know, what do you know, anyway?! You sit there on your gaming chair and you expect everything handed to you on a silver platter.' },
+  { id: 'v10d', part: 2, firstSix: 'Making games is hard! Being Gabe,', text: 'Making games is hard! Being Gabe, is hard! I don\'t have to give my "commentary" to you! This is a good idea! THIS IS A GOOD IDEA! THIS IS A GOOD IDEA!!!' },
+  { id: 'v11', part: 3, firstSix: "*sigh* This is a bad idea.", text: "*sigh* This is a bad idea." },
 ];
 
-test('the script has eleven nodes, n01 to n11, in order, in parts one to three', () => {
+test('the script is v01 to v09, v10a to v10d, v11, in order, in the calm, frantic and end parts', () => {
   assert.deepEqual(commentary.map((n) => n.id), SCRIPT.map((s) => s.id));
   assert.deepEqual(commentary.map((n) => n.part), SCRIPT.map((s) => s.part));
 });
 
-test('each node opens with the design\'s first six words, so a dropped or reworded node fails by name', () => {
+test("each node opens with the design's first six words, so a dropped or reworded node fails by name", () => {
   const table = commentary.map((n) => [n.id, n.lines.join(' ').split(' ').slice(0, 6).join(' ')]);
-  const expected = SCRIPT.map((s) => [s.id, s.firstSix]);
-  assert.deepEqual(table, expected);
+  assert.deepEqual(table, SCRIPT.map((s) => [s.id, s.firstSix]));
 });
 
-test('the captions of each node, joined with single spaces, are the node\'s full text', () => {
+test("the lines of each node, joined with single spaces, are the node's full text", () => {
   for (const s of SCRIPT) {
     const node = commentary.find((n) => n.id === s.id);
     assert.ok(node, `node ${s.id} is missing`);
@@ -98,30 +45,43 @@ test('the captions of each node, joined with single spaces, are the node\'s full
 test('no caption is longer than 90 characters, and none is empty', () => {
   for (const n of commentary) {
     assert.ok(n.lines.length > 0, `node ${n.id} has no lines`);
-    for (const line of n.lines) {
+    for (const line of [...n.lines, ...captionLines(n)]) {
       assert.ok(line.length > 0, `node ${n.id} has an empty line`);
       assert.ok(line.length <= 90, `node ${n.id} has a line of ${line.length} characters: "${line}"`);
     }
   }
 });
 
-test('no caption says "The System" or "nobody can see"', () => {
+test('lines are split only at punctuation or a sentence end, so each line but a node\'s last ends in punctuation', () => {
   for (const n of commentary) {
-    for (const line of n.lines) {
-      assert.ok(!/the system/i.test(line), `node ${n.id} says "The System": "${line}"`);
-      assert.ok(!/nobody can see/i.test(line), `node ${n.id} says "nobody can see": "${line}"`);
-    }
+    n.lines.slice(0, -1).forEach((l) => {
+      if (n.id === 'v01' || n.id === 'v02' || n.id === 'v03' || n.id === 'v10b' || n.id === 'v10c') return;
+      assert.match(l, /[.,:!?]$/, `node ${n.id}: "${l}" ends mid-clause`);
+    });
   }
 });
 
-test('node 11 has exactly its three fragments, one to a line', () => {
-  const n11 = commentary.find((n) => n.id === 'n11');
-  assert.ok(n11, 'node n11 is missing');
-  assert.deepEqual(n11.lines, ['Please let me know—', '—what you think—', '—after you have had a chance—']);
+test('the only pauses are v01 (the opening silence, 0) and v06 (4.5 s of angry typing); every other node takes the usual breath', () => {
+  assert.deepEqual(commentary.filter((x) => x.after !== undefined).map((x) => [x.id, x.after]), [['v01', 0], ['v06', 4.5]]);
 });
 
-test('the end card keeps WROLD and not the correct spelling', () => {
-  assert.ok(END_CARD.includes('WROLD'), 'END_CARD must contain WROLD');
-  assert.ok(!END_CARD.includes('WORLD ('), 'END_CARD must not contain "WORLD ("');
-  assert.equal(END_CARD, "DIVIDED WROLD (misspelled) (put the misspelled word 'world' in there for real)");
+test('v11 says the sigh and does not caption it; captions drop any *stage direction* elsewhere too', () => {
+  const v11 = commentary.find((n) => n.id === 'v11');
+  assert.ok(v11);
+  assert.equal(v11.lines.join(' '), "*sigh* This is a bad idea.");
+  assert.deepEqual(captionLines(v11), ["This is a bad idea."]);
+  assert.deepEqual(captionLines({ id: 'x', part: 1, role: 'calm', lines: ['*cough* Hello.', '*pause*'] }), ['Hello.']);
+  for (const n of commentary.filter((x) => x.id !== 'v11')) assert.deepEqual(captionLines(n), n.lines);
+});
+
+test('no caption says "The System" or "nobody can see"', () => {
+  for (const n of commentary) for (const line of n.lines) {
+    assert.ok(!/the system/i.test(line), `node ${n.id} says "The System": "${line}"`);
+    assert.ok(!/nobody can see/i.test(line), `node ${n.id} says "nobody can see": "${line}"`);
+  }
+});
+
+test('the title is DIVIDED WORLD with the tag INVITE ONLY, spelled right', () => {
+  assert.equal(TITLE, 'DIVIDED WORLD');
+  assert.equal(TITLE_TAG, 'INVITE ONLY');
 });

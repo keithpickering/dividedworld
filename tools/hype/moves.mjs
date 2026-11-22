@@ -100,15 +100,18 @@ const mixExpr = (/** @type {number} */ a, /** @type {number} */ b, /** @type {st
  * ffmpeg expressions for a cut, each evaluated per output frame (variable `on`): `w`, the rectangle's width as a share of the frame;
  * `cx` and `cy`, its centre as shares of the frame, kept inside it; and `roll` in radians. Each is the arithmetic of `cutRect`.
  * @param {Parameters<typeof cutRect>[0]} cut
+ * @param {'frame' | 'sub'} [mode]
  */
-export function expressions(cut) {
+export function expressions(cut, mode = 'frame') {
   const last = Math.max(1, cut.frames - 1);
   const m = cut.move;
-  const e = m ? easeExpr(m.ease ?? 'linear', `min(1,on/${last})`) : '0';
+  /* `sub`: the stream runs at SUBFRAMES times the frame rate and `on` counts its frames, so the camera is read at the fractional frame `v` (see `subframes`). */
+  const v = mode === 'sub' ? subframeExpr('on') : 'on';
+  const e = m ? easeExpr(m.ease ?? 'linear', mode === 'sub' ? `max(0,min(1,${v}/${last}))` : `min(1,on/${last})`) : '0';
   const wB = m ? mixExpr(m.from.w, m.to.w, e) : '1';
   const cxB = m ? mixExpr(m.from.x + m.from.w / 2, m.to.x + m.to.w / 2, e) : '0.5';
   const cyB = m ? mixExpr(m.from.y + m.from.w / 2, m.to.y + m.to.w / 2, e) : '0.5';
-  const terms = punchesOf(cut).map((q) => `if(gte(on,${q.frame})*lt(on,${q.frame + PUNCH_FRAMES}),1+${n6(q.percent / 100)}*(1-${easeExpr('inOut', `min(1,(on-${q.frame})/${PUNCH_FRAMES})`)}),1)`);
+  const terms = punchesOf(cut).map((q) => `if(gte(${v},${q.frame})*lt(${v},${q.frame + PUNCH_FRAMES}),1+${n6(q.percent / 100)}*(1-${easeExpr('inOut', `min(1,(${v}-${q.frame})/${PUNCH_FRAMES})`)}),1)`);
   const w = `(${wB}/(${terms.length ? terms.join('*') : '1'}))`;
   const centre = (/** @type {string} */ c) => `max(${w}/2,min(1-${w}/2,${c}))`;
   return { w, cx: centre(cxB), cy: centre(cyB), roll: m ? `${mixExpr(m.from.roll ?? 0, m.to.roll ?? 0, e)}*PI/180` : '0' };
@@ -122,9 +125,10 @@ export function expressions(cut) {
  * @param {Parameters<typeof cutRect>[0]} cut
  * @param {number} width
  * @param {number} height
+ * @param {'frame' | 'sub'} [mode] `sub` for the blurred stream at SUBFRAMES times the frame rate
  */
-export function corners(cut, width, height) {
-  const e = expressions(cut);
+export function corners(cut, width, height, mode = 'frame') {
+  const e = expressions(cut, mode);
   const set = `st(0,${e.w});st(1,${e.cx});st(2,${e.cy});st(3,cos(${e.roll}));st(4,sin(${e.roll}))`;
   const hw = `ld(0)*${width}/2`, hh = `ld(0)*${height}/2`;
   /** @param {number} sx @param {number} sy the corner's side of the centre: -1 or 1 */
@@ -138,3 +142,77 @@ export function corners(cut, width, height) {
 
 /** True when the cut turns the view at all. @param {{ move?: Move }} cut */
 export const rolls = (cut) => Boolean(cut.move && ((cut.move.from.roll ?? 0) !== 0 || (cut.move.to.roll ?? 0) !== 0));
+
+/* ---- motion blur: the camera's own ---- */
+
+/** Sub-frame camera positions to an output frame, and the shutter they are spread across (180 degrees: half the frame interval). */
+export const SUBFRAMES = 4;
+export const SHUTTER = 0.5;
+
+/**
+ * The fractional frames at which the camera is read for output frame `i`: `n` positions spread evenly over the shutter, centered on the frame, so
+ * their average is where the sharp frame has the camera.
+ * @param {number} i @param {number} [n] @param {number} [shutter] a share of the frame interval
+ */
+export const subframes = (i, n = SUBFRAMES, shutter = SHUTTER) => Array.from({ length: n }, (_, s) => i + shutter * ((s + 0.5) / n - 0.5));
+
+/** The expression for the fractional frame of a stream at SUBFRAMES times the frame rate, in its frame counter `counter`. @param {string} counter */
+const subframeExpr = (counter, clamp = true) => `${clamp ? 'max(0,' : '('}floor(${counter}/${SUBFRAMES})+${n6(SHUTTER)}*((mod(${counter},${SUBFRAMES})+0.5)/${SUBFRAMES}-0.5))`;
+
+/**
+ * The rectangles of output frame `i`'s sub-frames: the cut's own arithmetic (`cutRect`, which takes fractional frames) at each. Averaged, they are the
+ * blurred frame. There is no camera before a cut's first frame, so its sub-frames are not read before it (a punch on the first frame is a whole punch).
+ * @param {Parameters<typeof cutRect>[0]} cut @param {number} i
+ */
+export const blurRects = (cut, i) => subframes(i).map((t) => cutRect(cut, Math.max(0, t)));
+
+/** True when the camera is still across the frame's shutter (to a millionth of the frame): the blur of it is the frame itself. @param {Parameters<typeof cutRect>[0]} cut @param {number} i */
+export function blurStatic(cut, i) {
+  const [a, ...rest] = blurRects(cut, i);
+  return rest.every((r) => Math.abs(r.x - a.x) < 1e-6 && Math.abs(r.y - a.y) < 1e-6 && Math.abs(r.w - a.w) < 1e-6 && Math.abs(r.roll - a.roll) < 1e-4);
+}
+
+/* ---- the whip: a fast pan out of one shot and into the next ---- */
+
+export const WHIP_FRAMES = 6;
+/** The way the PICTURE slides, as the camera turns: `whip-left` turns the camera left, so the outgoing shot goes off to the right and the incoming one comes in from the left. */
+export const whipDirections = /** @type {Record<string, [number, number]>} */ ({ left: [1, 0], right: [-1, 0], up: [0, 1], down: [0, -1] });
+
+/**
+ * A cut's declaration: `whip-left`, `whip-right`, `whip-up` or `whip-down`, and its length in frames (even: half of it leaves the outgoing shot
+ * and half enters the incoming one, and at least 4 so there is a motion to blur); null for any other cut.
+ * @param {string | undefined} cut @param {number} [frames]
+ * @returns {{ dir: string, frames: number } | null}
+ */
+export function parseWhip(cut, frames = WHIP_FRAMES) {
+  if (cut === undefined || cut === 'cut') return null;
+  const m = /^whip-(.*)$/u.exec(cut);
+  if (!m) throw new Error(`a cut is "cut" or "whip-left", "whip-right", "whip-up" or "whip-down", not ${JSON.stringify(cut)}`);
+  if (!(m[1] in whipDirections)) throw new Error(`${cut}: a whip is left, right, up or down`);
+  if (!Number.isInteger(frames) || frames % 2) throw new Error(`${cut} is ${frames} frames: a whip is an even number of frames, half leaving the outgoing shot and half entering the incoming one`);
+  if (frames < 4) throw new Error(`${cut} is ${frames} frames: a whip needs at least 4 frames to have a motion to blur`);
+  return { dir: m[1], frames };
+}
+
+/** How far through the pan the whip is at fractional frame `t` of its `frames` (0 before it, 1 after; eased in and out): the frame's own centre is half a frame in. @param {number} t @param {number} frames */
+export function whipProgress(t, frames) {
+  const p = Math.min(1, Math.max(0, (t + 0.5) / frames));
+  return p * p * (3 - 2 * p);
+}
+
+/** Where the outgoing shot `a` and the incoming `b` have their top-left corners at progress `s`, for a `w` by `h` frame. @param {string} dir @param {number} s @param {number} w @param {number} h */
+export function whipPositions(dir, s, w, h) {
+  const [dx, dy] = whipDirections[dir];
+  return { a: { x: dx * w * s + 0, y: dy * h * s + 0 }, b: { x: dx * w * (s - 1) + 0, y: dy * h * (s - 1) + 0 } };
+}
+
+/**
+ * The four expressions `overlay` evaluates (frame counter `n`, a stream at SUBFRAMES times the frame rate) for the whip: where the outgoing shot's
+ * and the incoming shot's corners are, at the sub-frame of each, so averaging four of them is the blur.
+ * @param {string} dir @param {number} frames @param {number} w @param {number} h
+ */
+export function whipExpressions(dir, frames, w, h) {
+  const [dx, dy] = whipDirections[dir];
+  const p = `min(1,max(0,(${subframeExpr('n', false)}+0.5)/${frames}))`, s = `(${p}*${p}*(3-2*${p}))`;
+  return { ax: `(${dx * w}*${s})+0`, ay: `(${dy * h}*${s})+0`, bx: `(${dx * w}*(${s}-1))+0`, by: `(${dy * h}*(${s}-1))+0` };
+}

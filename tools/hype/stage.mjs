@@ -28,11 +28,11 @@ export const BUILT = `(() => {
  * `hud` (the glass along the foot, for a shot tight on a post) and `selection` (the post's words cannot be selected: a drag that outlives
  * its stroke, because the coat it was washing came clean under it, selects the words it passes over, and opens the quote button).
  *
- * @param {{ skin?: string, as?: string | null, view?: string | null, css?: { width: number, height: number }, scale?: number, quiet?: string[], port?: number }} [options]
+ * @param {{ skin?: string, as?: string | null, view?: string | null, css?: { width: number, height: number }, scale?: number, fps?: number, quiet?: string[], port?: number }} [options]
  */
-export async function openStage({ skin = 'default', as = null, view = null, css, scale = 2, quiet = ['toasts', 'host'], port = Number(flag('port', 4319)) } = {}) {
+export async function openStage({ skin = 'default', as = null, view = null, css, scale = 2, fps = 60, quiet = ['toasts', 'host'], port = Number(flag('port', 4319)) } = {}) {
   mkdirSync(OUT, { recursive: true });
-  const cam = await openCamera({ url: `http://localhost:${port}/?fixture=boards&story=boards-hype-stage--main&sheet=1&skin=${skin}${as ? `&as=${encodeURIComponent(as)}` : ''}${view ? `&view=${encodeURIComponent(view)}` : ''}`, css, scale, serve: SERVE });
+  const cam = await openCamera({ url: `http://localhost:${port}/?fixture=boards&story=boards-hype-stage--main&sheet=1&skin=${skin}${as ? `&as=${encodeURIComponent(as)}` : ''}${view ? `&view=${encodeURIComponent(view)}` : ''}`, css, scale, fps, serve: SERVE });
   await cam.until(view && !view.startsWith('thread') ? `Boolean(window.__kbStage && document.querySelector('main h1, main table, main article'))` : `Boolean(window.__kbStage && document.querySelector('article.kb-act'))`, { label: 'the stage drawn' });
   /* Hidden through the CSSOM (the page's CSP takes no style sheet), by a rule of its own so what comes later is hidden too. */
   await cam.evaluate(`(() => {
@@ -52,7 +52,7 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
   /* The parts the other players play, and what the rounds before a shot left on the post. */
   await cam.evaluate(`(() => {
     const { fake, target, cast, whoops, play, nodes, camera } = window.__kbStage;
-    const post = '#post-' + target.seq;
+    let post = '#post-' + target.seq, targetAct = target.act;
     /* The commentary video's parts hold on any screen of the stage: the Staff's beats are filmed on a board's index and a profile, which have no post. */
     const parts = {
       /*
@@ -64,19 +64,49 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       react: (name, postSeq, key) => play.react(name, postSeq, key),
       /** A card cast on a post through the backend's own play path, so a back there catches it or lets it ride: returns \`{ play, caught, rode }\`. */
       cast: (name, postSeq, card, config = {}, message = '') => play.cast(name, postSeq, card, config, message),
-      /** The alert a caught cast writes its caster (the in-memory backend writes none): \`told('D-Guy', 1)\`, after the cast. Returns the caught play's id. */
+      /** The alert a caught cast writes its caster (the in-memory backend writes none): \`told('Hotel Bro', 1)\`, after the cast. Returns the caught play's id. */
       told: (name, postSeq) => play.told(name, postSeq),
-      /** A quote of the post that holds \`words\`, written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
+      /** A REAL quote of the post (the whole post in a quote tag, then \`words\`, which must say "to be fair"), written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
       quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
-      /** The spring and landed Move for a quoting post written some other way (the real composer): \`springsOn(2, actId)\` springs the Steel Chair set on post 2 onto that post. Returns \`{ spring, play }\`. */
+      /**
+       * A FORGED quote of a post, as the composer writes it: \`forgedQuote('D-Guy', 2, forgedWords, comment)\`. It springs nothing (the rules write a post whose quote is forged with no target, so no back springs):
+       * the chair on post 2 stays face down. Refuses words that stand in the post. Returns \`{ post, seq, forged }\`. A shot films it through the real composer instead (see shot notes in the design, section 9):
+       * the Quote button on the post, ArrowLeft nine times (the newline and \`[/quote]\`), Backspace over the words after "Only a few among us ", the forged words, ArrowRight nine times, the comment, Send.
+       */
+      forgedQuote: (name, postSeq, forgedWords, comment) => play.forgedQuote(name, postSeq, forgedWords, comment),
+      /** The spring and landed Move for a quoting post written some other way (the real composer): \`springsOn(2, actId)\` springs the Steel Chair set on post 2 onto that post, only where it quotes post 2 for real (a target) and says "to be fair" outside the quote; a forged quote is refused. Returns \`{ spring, play }\`. */
       springsOn: (quoted, quoting) => play.springsOn(quoted, quoting),
-      /** The Staff's beats: \`staff('memo', where?)\` (FanGaME's memo, in the main thread), \`staff('merge')\` (the Boss merges the Palace into World -1, with his reason), \`staff('file', postSeq?)\` (a Mod files a post, Snuckles's first by default). */
+      /**
+       * The Staff's beats (stage-play.ts, every word a line of the rehearsal's, staff-lines.json): call them as \`staff('merge')\` or \`staff.merge()\`. A thread a beat makes is named in its result
+       * (\`key\`), to be shown with \`show('thread:' + key)\`. A Mod is \`'qc'\` (QC-1000) or \`'ontopic'\` (ONTOPIC 5.0); a post is named by its number in the thread.
+       *   memo(where = 'main', key = 'memo')            the Boss's memo: key memo, orderNoAllowance, orderHoneymoon or orderQuote
+       *   merge() / created(name?) / moved()            the Boss's move notices, each with his reason; moved() returns { move, thread }
+       *   file(postSeq = 1)                             a Mod files a post of the main thread (round 1's beat, now with real words)
+       *   visit(mod, postSeq | null, { quiz, line, by })  a visit opens: with null, on a post of a thread of the board the opener names; quiz asks the fixture's quiz. Returns { thread, key, post, seq, visit, line, board }
+       *   hallPass(postSeq | null, { mod, by, hold })   the author sets a real Hall Pass; a visit begins and it springs. Returns that plus { set, spring }; with hold the spring waits for springPass(set, visit)
+       *   filing(mod, postSeq | null, key, { by, hold })  (hold: the visit stays open until endFiling(key, visit) files it)  the filing's aimed-at post is written (null) and filed; key is filingQcHelp, filingQcGames, filingQcGotcha, filingOtThematic, filingOtPatience or filingOtPalace. Adds { infraction }
+       *   report(name, postSeq)                         names what to press for a report; the film's player must be name (\`as=name\`), and not the post's author. Returns { seq, press }
+       *   appeal(name, key = 'filingQcHelp')            a filing against name's own post, appeal still to make; the film's player must be name (\`as=name\`). Returns the filing's and { press }
+       *   review(key)                                   ONTOPIC 5.0's review: stars or fiveStars. Returns { thread, post, key }; { hold: true } leaves the review out, for say()
+       *   say(who, where, key)                          a Staff line (staff-lines.json) posted live as fangame, qc or ontopic in a thread (a key of the stage's threads, or review's key). Returns the Act
+       *   handover()                                    FanGaME leaves, QC-1000 takes the seat: the farewell and the arrival in the announcements. Returns { farewell, arrival, note, thread }
+       */
       staff: Object.assign((key, ...args) => { if (!play.staff[key]) throw new Error('there is no staff beat "' + key + '": the beats are ' + Object.keys(play.staff).join(', ')); return play.staff[key](...args); }, play.staff),
       /** One step of node 9's pile on Snuckles's first post, in order (\`pileSteps\` names them): the first call is step 0. Returns the step's name. */
       pile: (step) => play.pile(step),
       pileSteps: play.steps,
       /** The order the film lands the pile in (stage-play.ts's FILM_ORDER): { n09: [...], n11: { chairs, heap } }. */
       pileOrder: play.order,
+      /** You Were Saying? lands on the stage's post that is the true pair of the card's real tail (\`posts.gpt2\`, or \`postSeq\`), and the tail (gpt2-tail.txt, 1373 characters) types in under it. Returns the play's Act. */
+      gpt2: (postSeq) => play.gpt2(postSeq),
+      /**
+       * One character's leaving post (the owner's words, 2026-11-22), live at the thread's foot, as that character: \`leave('Snuckles')\`. \`leaving\` is the five in the film's order: Snuckles, Hotel Bro,
+       * Serious Deer, D-Guy, Chadluminum. Returns \`{ post, seq, page, shown, held }\`: the post's Act, its number (the first is 26) and page (20 posts a page, so page 2), whether the page SHOWED it (waits up to \`wait\` ms, 1000 by default)
+       * and whether the "N new posts" bar (\`.kb-new-bar\`) is up. A live post is shown only to a reader on the thread's LAST page and at its foot: before the first call, move to page 2 (click "Jump to latest" in the pager, or
+       * \`history.replaceState(null, '', '/t/' + thread + '?page=2')\` then \`show('thread')\`), scroll to the foot, and scroll to the foot again after each call (the post slides in below the reader). Where \`shown\` is false the post waits behind the bar.
+       */
+      leave: (name, options) => play.leave(name, options),
+      leaving: play.leaving,
       /** The pending Aura the orbs' ghost shows now for the film's player, in signed hundredths: what a take reads to prove the forecast moved. */
       forecast: () => play.forecast(),
       /** A commentary node hung at a point of the window as it is now (it stays at that place of the page, and scrolls with it); returns its id. */
@@ -104,7 +134,7 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       /** A Whoops! on the post by the named character, on top of what is there. Returns the play. */
       splat(layer, name, color, seed, message, live = true) {
         fake.clock.advance(60000);
-        return fake.seed.card(cast[name], target.act, 'whoops', { layer, config: { color, seed }, message, live });
+        return fake.seed.card(cast[name], targetAct, 'whoops', { layer, config: { color, seed }, message, live });
       },
       /** A coat washed clean, as its author saves one. */
       clean: (play) => saved(play, { strokes: [], clean: true }),
@@ -130,6 +160,8 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
         return { layers: el?.getAttribute('data-kb-layers') ?? null, pictures: el?.getAttribute('data-kb-pictures') ?? null, inks: document.querySelectorAll(post + ' canvas.kb-whoops-ink').length };
       },
       body,
+      /** Aims the ink helpers (splat, ink, inkAt, place, body, state) at another post than the round 1 target: aim(1, __kbStage.acts.first). */
+      aim(seq, act) { post = '#post-' + seq; targetAct = act; },
       /**
        * Where the ink is, as a hand's eye sees it: the body cut into cells \`cols\` across, and for each the coat on top there (its layer,
        * or -1 where the words show) and how thick it lies (0 to 1). Each coat's canvases are read at their own place and scale.

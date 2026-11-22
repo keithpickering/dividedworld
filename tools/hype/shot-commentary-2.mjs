@@ -1,40 +1,51 @@
 /**
- * The commentary video's part two (docs/plans/2026-11-21-commentary-video-design.md, sections 4 and 5a; the plan's Task 6): nodes 5 to 8,
- * where the music has come in, the camera starts to move and the narrator starts to slip.
+ * The commentary video's part two, the reshoot (docs/plans/2026-11-21-commentary-video-revision-design.md, sections 9 and 10): nodes 5 to 8 on the
+ * owner's new posts, where the music has come in, the camera starts to move and the narrator starts to slip. Takes are for an edit that cuts fast, so
+ * each is front-loaded, and most are a stated length (not a voice clip's).
  *
- *   node tools/hype/shot-commentary-2.mjs [--only c-n05|c-n06|c-n07|c-n08] [--port 4319]
+ *   node tools/hype/shot-commentary-2.mjs [--only c-n05|c-n06a|c-n06|c-n07|c-n08] [--port 4319] [--skin midnight]
  *
- *   c-n05  The read.      Snuckles arms the Whoops! the Rope Break caught and presses D-Guy's review, by the real pointer: the ink fills the
- *                         post's body, the back on the post turns over (4D Chess), and the film ends on its Lens, open.
- *   c-n06  The phrase trap. Human Josh quotes Chadluminum's post and types "to be fair" with real key events, and sends it; the Steel Chair
- *                         waiting on that phrase springs and dents the post, and its Lens shows the phrase. A node appears, unclicked.
- *   c-n07  The mask.      D-Guy's HUD, large in frame: the pointer switches the mask to Chadluminum (HEEL to FACE). Three nodes drift in.
- *   c-n08  The node takes control. The page scrolls itself, at a steady pace on every filmed frame (the clicks' frames too), from D-Guy's
- *                         review past the five dressed posts, and rests with post 19 (the taped-over words) in frame for the last two seconds;
- *                         the pointer clicks a node twice on the way and nothing changes.
+ *   c-n05   The read, 12 s. Snuckles's caught Whoops! is armed before the film (hand opened, card pressed, by the real pointer, unfilmed), so the film
+ *           starts on the armed card; the pointer presses D-Guy's post 14, the play form and Play: the ink fills the post's body and the back on the
+ *           post turns over (4D Chess) within the first 3 s; then the Lens of the 4D Chess.
+ *   c-n06a  The forged quote, 9 s. Snuckles's player in Human Josh's mask quotes Chadluminum's post 2 in the real composer, from just after Quote: the
+ *           arrows and Backspace cut "truly achieve the greatness of making a Sprite Sheet", the forged words are typed with real keys, the comment
+ *           "what did he mean by this", Send. It ends on the posted counterfeit quote (wobbly border, no post link); the stored quote is asserted forged.
+ *   c-n06   The phrase trap, 10 s, in the Midnight skin (the chair's dent reads poorly on the light skin: `--skin default` films it there).
+ *           Ringside really quotes post 2 through the composer and types "to be fair he probably did mean that", Send; the frame goes ON the new
+ *           post, centered with room around it, and only then the Steel Chair springs on it (`springsOn`): the chair is thrown, dents, bounces and
+ *           comes to rest on the post's floor (every chair `data-rest`). A node appears, unclicked.
+ *   c-n07   The mask. D-Guy's HUD: the keyboard on the focused select switches the mask to Chadluminum (HEEL to FACE). Three nodes drift in.
+ *   c-n08   The node takes control, 14 s. The page scrolls itself, at a steady pace on every filmed frame (the clicks' frames too), from D-Guy's
+ *           post 14 past the dressed posts 15 to 19 and the GPT-2 post 20 (its tail typing in), the pointer clicks a node twice on the way and nothing
+ *           changes. Post 21, the folded post, is the first of page 2 of the thread and is not on the page this scroll crosses.
+ *   (c-n11 is retired: the coda is now cut from other takes and ends on a title, so its take is gone from shot-commentary-3.mjs.)
  *
- * Every take is filmed at the camera's native double density (1440 x 810 at 2x) and written at 2880 x 1620, so the edit can push in
- * without softening, 60 frames a second, with the page's own clock virtual. Each is at least its window of the music (the design's
- * section 2, measured: windows.mjs) and two seconds, and its action is in the first half of its voice clip, so the take then breathes.
- * Beside each take is `c-nNN.json`: the frames beats landed on, and the camera's moves (`move`, `punches`) for the edit to make.
- * Every "asserts" below reads the page and throws when the picture is not the rule.
+ * Every take is filmed at the camera's native double density (1440 x 810 at 2x, the desktop layout) and written at 2880 x 1620, so the edit can push in
+ * without softening, 60 frames a second, with the page's own clock virtual. Beside each take is `c-nNN.json`: the frames beats landed on, and the
+ * camera's moves (`move`, `punches`) for the edit to make. Every "asserts" below reads the page and throws when the picture is not the rule.
  */
-import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, writeFileSync } from 'node:fs';
 import { openFilm } from './camera.mjs';
 import { glide } from './pointer.mjs';
 import { OUT, flag, openStage, settle } from './stage.mjs';
-import { windows } from './windows.mjs';
 import { duration } from './cutting.mjs';
+
+const BREATH = 0.35;
 
 const only = flag('only', null);
 const port = Number(flag('port', 4319));
 const SIZE = { width: 2880, height: 1620 };
-/* Seconds each node has in the film: the music's windows (music-map.json, split by the voice clips' lengths where the voice folder is there, else by the default shares), and the take's extra still. */
+/* Seconds each node has in the film: its voice clip (20 s where the voice folder is not there) and a breath, and the take's extra still. */
 const VOICE = flag('voice', '.runs/hype/voice');
 const clipLength = (stem) => { const hit = existsSync(VOICE) ? ['.mp3', '.wav', '.m4a', '.flac'].map((e) => `${VOICE}/${stem}${e}`).find(existsSync) : undefined; return hit ? duration(hit) : undefined; };
 const heard = Object.fromEntries(['n05', 'n06', 'n07', 'n08', 'n09', 'n10'].flatMap((id) => { const t = clipLength(id); return t === undefined ? [] : [[id, t]]; }));
-const WINDOWS = Object.fromEntries(windows(JSON.parse(readFileSync('instances/divided-world/ui/hype/music-map.json', 'utf8')), { clips: heard }).filter((w) => /^n0[5-8]$/u.test(w.id)).map((w) => [`c-${w.id}`, w.length]));
+const WINDOWS = Object.fromEntries(['n05', 'n06', 'n07', 'n08'].map((id) => [`c-${id}`, (heard[id] ?? 20) + BREATH]));
 const STILL = 2.5;
+/* The skin the chair take is filmed in (Midnight where the dent reads poorly on the light skin). */
+const SKIN = flag('skin', 'midnight');
+/* The reshoot's takes are cut fast, so most are a stated length (seconds) and not a voice clip's; c-n07 keeps the clip and a still. */
+const LENGTH = { 'c-n05': 12, 'c-n06a': 9, 'c-n06': 10, 'c-n08': 14 };
 
 /** Throws with `what` when `ok` is not so: the picture is the rule, not a staging of it. @param {unknown} ok @param {string} what */
 function assert(ok, what) { if (!ok) throw new Error(`the page does not show: ${what}`); }
@@ -43,19 +54,20 @@ function assert(ok, what) { if (!ok) throw new Error(`the page does not show: ${
  * Opens the stage for a take, and hands over what every take does: a film written at 2880 x 1620, the pointer's moves, waits and the
  * take's notes. `body(d)` is the take; it runs on the film's clock, and the take is held still to its length afterward.
  * @param {string} id
- * @param {{ as: string, prep: (cam: any) => Promise<void>, body: (d: any) => Promise<void>, camera: (frames: number, landed: { what: string, frame: number }[]) => object }} spec
+ * `prep` may return where the pointer starts; `lead` is the seconds filmed before the body; `quiet`, `css` and `scale` are the stage's.
+ * @param {{ as: string, prep: (cam: any) => Promise<{ x: number, y: number } | void>, body: (d: any) => Promise<void>, camera: (frames: number, landed: { what: string, frame: number }[]) => object, lead?: number, quiet?: string[], css?: { width: number, height: number }, scale?: number }} spec
  */
-async function take(id, { as, prep, body, camera }) {
-  const cam = await openStage({ as, port, quiet: ['toasts', 'host'] });
+async function take(id, { as, prep, body, camera, lead = 0.5, quiet = ['toasts', 'host'], css, scale }) {
+  const cam = await openStage({ as, port, quiet, css, scale });
   try {
-    await prep(cam);
+    const start = await prep(cam);
     await cam.drawPointer();
     await settle(cam, 60);
     const F = cam.fps;
     const film = openFilm({ path: `${OUT}/${id}.mp4`, fps: F, out: SIZE, preset: 'veryfast' });
     console.log(`${id}: the clocks are ${(await cam.freeze()).toFixed(2)}ms apart`);
     await cam.evaluate('window.__shot.zero()');
-    let frame = 0, at = { x: 720, y: 405 };
+    let frame = 0, at = start ?? { x: 720, y: 405 };
     /** @type {{ what: string, frame: number }[]} */
     const landed = [];
     const d = {
@@ -90,12 +102,18 @@ async function take(id, { as, prep, body, camera }) {
       /** One real key (see camera.mjs), then a frame or so. */
       async key(/** @type {string} */ k, seconds = 0.06) { cam.key(k); await d.shoot(seconds); },
       async wheel(/** @type {number} */ dy, frames = 4) { await cam.wheel(dy); await d.shoot(frames / F); },
+      /** A smooth scroll of the page to `y` (a number, or a page expression) over `seconds`, a frame at a time. */
+      async scrollTo(/** @type {number | string} */ y, seconds = 0.5) {
+        const y0 = await cam.evaluate('scrollY'), y1 = typeof y === 'number' ? y : await cam.evaluate(y);
+        const n = Math.max(1, Math.round(seconds * F));
+        for (let i = 1; i <= n; i++) { const u = 0.5 - 0.5 * Math.cos(Math.PI * i / n); await cam.evaluate(`document.scrollingElement.scrollTop = ${y0 + (y1 - y0) * u}`); await d.shoot(1 / F); }
+      },
     };
-    await d.shoot(0.5);
+    await d.shoot(lead);
     await body(d);
     /* The take is held still to its window and the two seconds the edit holds its last frame in. */
-    const total = Math.ceil((WINDOWS[/** @type {keyof typeof WINDOWS} */ (id)] + STILL) * F);
-    if (frame > total - 2 * F) throw new Error(`${id}: the action ends at frame ${frame}, past ${total - 2 * F}: no still page is left at its foot`);
+    const total = Math.ceil((LENGTH[/** @type {keyof typeof LENGTH} */ (id)] ?? WINDOWS[/** @type {keyof typeof WINDOWS} */ (id)] + STILL) * F);
+    if (frame > total - (LENGTH[id] ? 0.5 : 2) * F) throw new Error(`${id}: the action ends at frame ${frame}, past ${total - (LENGTH[id] ? 0.5 : 2) * F}: no page is left at its foot`);
     await d.shoot((total - frame) / F);
     await film.end();
     writeFileSync(`${OUT}/${id}.json`, `${JSON.stringify({ landed, ...camera(total, landed) }, null, 2)}\n`);
@@ -126,138 +144,194 @@ const placePost = (seq, top) => `(() => { const p = document.querySelector('#pos
 
 /* ---------------------------------------------------------------------------------------------------------------------------------- */
 
-/** n05: the read. */
+/** A press by the real pointer with nothing filmed (before the film starts): it moves to `to` over a few frames, presses and releases. @param {any} cam @param {{ x: number, y: number }} to */
+async function hidden(cam, to) {
+  await cam.move(to.x, to.y);
+  for (let i = 0; i < 6; i++) await cam.frame(false);
+  await cam.press(); await cam.frame(false); await cam.release();
+  for (let i = 0; i < 12; i++) await cam.frame(false);
+}
+
+/** n05: the read, front-loaded: the film starts on the armed card and the press that throws it back. */
 const n05 = () => take('c-n05', {
   as: 'Snuckles',
+  lead: 0.2,
   async prep(cam) {
-    /* Before the camera runs, D-Guy's Whoops! has been caught by Snuckles's Rope Break: it is in Snuckles's hand. */
+    /* Before the camera runs, D-Guy's Whoops! has been caught by Snuckles's Rope Break: it is in Snuckles's hand. The hand is opened and the card armed here, by the real pointer, unfilmed, so the film starts on the armed card. */
     const cast = await cam.evaluate(`window.__shot.cast('D-Guy', 1, 'whoops', { color: '#3d77ff' })`);
     assert(cast.caught && !cast.rode, "D-Guy's Whoops! caught by the Rope Break on post 1");
     await cam.evaluate(placePost(14, 90));
+    await settle(cam, 20);
+    await hidden(cam, await cam.evaluate(`(() => { const r = document.querySelector('.kb-hud-hand').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`));
+    await cam.until(`document.querySelectorAll('button.kb-postcard').length > 10`, { label: 'the hand open' });
+    await hidden(cam, await cam.evaluate(cardSpot('Whoops!')));
+    await cam.until(`Boolean(document.querySelector('#post-14 .kb-ghost-mark'))`, { label: 'the armed Whoops! pressable on post 14' });
+    return cam.evaluate(`(() => { const r = document.querySelector('#post-14 .kb-ghost-mark').getBoundingClientRect(); return { x: r.left + r.width / 2 + 160, y: r.top + r.height / 2 + 120 }; })()`);
   },
   async body(d) {
-    const handButton = () => d.mid(`document.querySelector('.kb-hud-hand')`);
-    await d.go(await handButton(), 1.0, 11);
-    await d.tap();
-    await d.until(`document.querySelectorAll('button.kb-postcard').length > 10`, 4, 'the hand open');
-    await d.shoot(1.0);
-    const spot = await d.page(cardSpot('Whoops!'));
-    assert(spot, 'a Whoops! in the open hand');
-    await d.go(spot, 0.9, 12);
-    await d.shoot(0.5);
-    await d.tap();
-    /* Armed: the post says so, and a button stands on D-Guy's review. */
-    await d.until(`Boolean(document.querySelector('#post-14 .kb-ghost-mark'))`, 4, 'the armed Whoops! pressable on post 14');
     d.mark('armed');
-    await d.go(() => d.mid(`document.querySelector('#post-14 .kb-ghost-mark')`), 0.9, 13);
-    await d.shoot(0.3);
+    await d.go(() => d.mid(`document.querySelector('#post-14 .kb-ghost-mark')`), 0.5, 13);
+    await d.shoot(0.1);
     await d.tap();
     /* The play form: the wheel scrolls it to its button, as a player at this window's height would. */
     await d.until(`Boolean([...document.querySelectorAll('button')].find((b) => /^Play as/.test(b.textContent)))`, 4, 'the play form');
-    await d.go({ x: 1190, y: 430 }, 0.6, 14);
-    await d.shoot(0.4);
-    for (let i = 0; i < 10; i++) await d.wheel(80, 4);
-    await d.shoot(0.3);
+    await d.go({ x: 1190, y: 430 }, 0.35, 14);
+    for (let i = 0; i < 10; i++) await d.wheel(80, 3);
     const play = () => d.mid(`[...document.querySelectorAll('button')].find((b) => /^Play as/.test(b.textContent))`);
-    await d.go(await play(), 0.8, 15);
-    await d.shoot(0.3);
+    await d.go(await play(), 0.45, 15);
     await d.tap();
+    d.mark('thrown');
     /* The ink lands, and fills the post's body border to border. */
     await d.until(`document.querySelectorAll('#post-14 canvas.kb-whoops-ink').length > 0`, 6, 'ink on post 14');
     d.mark('whoops');
     const ink = await d.page(`(() => { const body = document.querySelector('#post-14 .kb-act-main').getBoundingClientRect(); const c = [...document.querySelectorAll('#post-14 canvas.kb-whoops-ink')].map((e) => e.getBoundingClientRect()); return { body: [body.left, body.top, body.right, body.bottom], ink: [Math.min(...c.map((r) => r.left)), Math.min(...c.map((r) => r.top)), Math.max(...c.map((r) => r.right)), Math.max(...c.map((r) => r.bottom))] }; })()`);
     assert(ink.ink[0] <= ink.body[0] + 2 && ink.ink[2] >= ink.body[2] - 2 && ink.ink[1] <= ink.body[1] + 2 && ink.ink[3] >= ink.body[3] - 2, `the ink canvas covering post 14's body, border to border (left, top, right and bottom) ${JSON.stringify(ink)}`);
     /* The result: the card rode. The spring on D-Guy's review says so. */
-    const rode = await d.page(`(async () => { const { fake, acts } = window.__kbStage; const on = await fake.cardsOn(acts.review, 30); return on.find((a) => a.kind === 'spring')?.payload ?? null; })()`);
+    const rode = await d.page(`(async () => { const { fake, acts } = window.__kbStage; const on = await fake.cardsOn(acts.heel, 30); return on.find((a) => a.kind === 'spring')?.payload ?? null; })()`);
     assert(rode?.did === 'rode' && rode?.card === '4d-chess', `the 4D Chess on post 14 says the Whoops! rode: ${JSON.stringify(rode)}`);
     d.mark('rode');
-    await d.shoot(1.4);
-    /* The back on the review has turned over: 4D Chess. Open its Lens. */
+    /* The back on the review has turned over: 4D Chess. */
     await d.until(`/^4D Chess/.test(document.querySelector('#post-14 .kb-mark')?.getAttribute('aria-label') ?? '')`, 4, 'the back on post 14 turned over: 4D Chess');
     d.mark('turned');
-    await d.go(() => d.mid(`document.querySelector('#post-14 .kb-mark')`), 0.9, 16);
-    await d.shoot(0.2);
+    if (d.frame > 5.6 * d.F) throw new Error(`c-n05: the back turned at ${(d.frame / d.F).toFixed(1)} s, later than about 5 s`);
+    await d.go(() => d.mid(`document.querySelector('#post-14 .kb-mark')`), 0.6, 16);
     await d.tap();
     await d.until(`Boolean(document.querySelector('.kb-lens'))`, 4, 'the Lens');
     d.mark('lens');
-    await d.shoot(0.8);
-    await d.go(() => d.mid(`document.querySelector('.kb-lens .kb-lens-fold')`), 0.7, 17);
-    await d.tap();
     await d.shoot(0.5);
+    await d.go(() => d.mid(`document.querySelector('.kb-lens .kb-lens-fold')`), 0.6, 17);
+    await d.tap();
+    await d.shoot(0.4);
     const lens = await d.page(`document.querySelector('.kb-lens').textContent`);
     assert(/4D Chess/.test(lens) && /Sprang/.test(lens) && /set face down by D-Guy/.test(lens), `the Lens of the 4D Chess, open: ${lens}`);
-    await d.go({ x: 760, y: 560 }, 0.8, 18);
+    await d.go({ x: 760, y: 560 }, 0.6, 18);
   },
   camera: (_total, landed) => ({
-    /* A slow push on the post, as he explains; it ends on the post and the Lens. */
     move: { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.25, y: 0.03, w: 0.74, roll: 0 }, ease: 'inOut' },
     punches: [...punch(landed, 'whoops', 9), ...punch(landed, 'lens', 6)],
   }),
 });
 
-/** n06: the phrase trap. */
-const n06 = () => take('c-n06', {
-  as: 'Human Josh',
+/** n06a: the forged quote, by the real composer. Human Josh's mask, worn by Snuckles's player. */
+const n06a = () => take('c-n06a', {
+  as: 'Snuckles',
+  lead: 0.15,
   async prep(cam) {
-    /* The thread's foot first, so the live post is shown and not held behind a pill; then Chadluminum's post, with its Quote button clear of the HUD. */
+    /* The mask is Human Josh's: the HUD's select, by the keys a player gives it, before the film. */
+    await cam.evaluate(`document.querySelector('.kb-hud select').focus()`);
+    for (let i = 0; i < 6 && !/Human Josh/i.test(await cam.evaluate(`document.querySelector('.kb-hud select').selectedOptions[0].textContent`)); i++) { cam.key('ArrowUp'); for (let k = 0; k < 6; k++) await cam.frame(false); }
+    await cam.until(`/Human Josh/i.test(document.querySelector('.kb-hud select').selectedOptions[0].textContent)`, { label: 'the mask Human Josh' });
+    await cam.evaluate(`document.activeElement.blur()`);
+    /* The thread's foot first, so the live post is shown and not held behind a pill; then Chadluminum's post, with its Quote button clear of the HUD. Quote is pressed before the film: it starts with the quote in the box. */
     await cam.evaluate(`scrollTo(0, document.documentElement.scrollHeight)`);
     await settle(cam, 20);
     await cam.evaluate(placePost(2, 40));
+    await settle(cam, 20);
+    await hidden(cam, await cam.evaluate(`(() => { const r = [...document.querySelectorAll('#post-2 button')].find((b) => b.textContent.trim() === 'Quote').getBoundingClientRect(); return { x: r.left + r.width / 2, y: r.top + r.height / 2 }; })()`));
+    await cam.until(`document.activeElement?.getAttribute('aria-label') === 'Your reply' && document.activeElement.value.startsWith('[quote=')`, { label: 'the reply box holding the quote, focused' });
+    return { x: 900, y: 300 };
+  },
+  async body(d) {
+    d.mark('quoted');
+    const box = () => d.page(`document.activeElement.value`);
+    const FORGED = 'are Wiggler Freaks enough to do something about it';
+    const before = await box();
+    assert(/truly achieve the greatness of making a Sprite Sheet\[\/quote\]\n$/.test(before), `the box holding the quote with the caret at its foot: ${JSON.stringify(before)}`);
+    for (let i = 0; i < 9; i++) await d.key('ArrowLeft', 0.04);
+    d.mark('caret');
+    for (let i = 0; i < 52; i++) await d.key('Backspace', 0.017);
+    d.mark('erased');
+    assert(/Only a few among us \[\/quote\]\n$/.test(await box()), `the quote cut back to "Only a few among us ": ${JSON.stringify(await box())}`);
+    for (const ch of FORGED) await d.key(ch, ch === ' ' ? 0.06 : 0.04);
+    d.mark('typed');
+    for (let i = 0; i < 9; i++) await d.key('ArrowRight', 0.04);
+    for (const ch of 'what did he mean by this') await d.key(ch, ch === ' ' ? 0.06 : 0.04);
+    assert((await box()).endsWith(`${FORGED}[/quote]\nwhat did he mean by this`), `the box holding the forged quote and the comment: ${JSON.stringify(await box())}`);
+    /* The thread's foot, so the composer's Send is clear of the HUD and the live post is shown, not held behind a pill. */
+    await d.scrollTo('document.documentElement.scrollHeight - innerHeight', 0.4);
+    const send = () => d.mid(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Send')`);
+    await d.go(await send(), 0.5, 41);
+    const lastId = () => d.page(`[...document.querySelectorAll('article.kb-act')].at(-1).id`);
+    const was = await lastId();
+    await d.tap();
+    await d.until(`[...document.querySelectorAll('article.kb-act')].at(-1).id !== '${was}'`, 4, 'the reply posted');
+    d.mark('sent');
+    const seq = await d.page(`Number([...document.querySelectorAll('article.kb-act')].at(-1).id.replace('post-', ''))`);
+    assert(await d.page(`/Human Josh/i.test(document.querySelector('#post-${seq} .kb-postbit-name')?.textContent ?? '')`), 'the new post is Human Josh\'s');
+    /* The stored quote is forged, as the rules store it: its verdict names post 2, and it has no target. */
+    const stored = await d.page(`(async () => { const { fake, thread, acts } = window.__kbStage; const [a] = await fake.acts(thread, ${seq}, ${seq}); return { forged: a.payload.forged ?? [], target: a.targetActId, quoted: acts.kind, author: a.character }; })()`);
+    assert(stored.forged.includes(stored.quoted) && stored.target === null, `the stored quote forged, with no target: ${JSON.stringify(stored)}`);
+    /* The counterfeit is in view: the new post, centered. */
+    await d.scrollTo(`(() => { const r = document.querySelector('#post-${seq}').getBoundingClientRect(); return scrollY + r.top + r.height / 2 - innerHeight / 2 + 20; })()`, 0.5);
+    await d.until(`Boolean(document.querySelector('#post-${seq} .kb-quote[data-kb-counterfeit]'))`, 3, 'the counterfeit quote drawn on the new post');
+    const look = await d.page(`(() => { const q = document.querySelector('#post-${seq} .kb-quote[data-kb-counterfeit]'); return { cls: q.className, link: Boolean(q.querySelector('a[href]')), text: q.textContent }; })()`);
+    assert(!look.link && /Wiggler Freaks/.test(look.text), `the counterfeit quote without a post link: ${JSON.stringify(look)}`);
+    d.mark('posted');
+    await d.go({ x: 1000, y: 260 }, 0.6, 42);
+    await d.shoot(0.6);
+  },
+  camera: (_total, landed) => ({
+    move: { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.12, y: 0.1, w: 0.7, roll: 0 }, ease: 'inOut' },
+    punches: punch(landed, 'sent', 6),
+  }),
+});
+
+/** n06: the phrase trap, and the chair thrown. */
+const n06 = () => take('c-n06', {
+  as: 'Ringside',
+  lead: 0.15,
+  async prep(cam) {
+    if (SKIN !== 'default') { await cam.evaluate(`window.__shot.skin(${JSON.stringify(SKIN)})`); await settle(cam, 20); }
+    await cam.evaluate(`scrollTo(0, document.documentElement.scrollHeight)`);
+    await settle(cam, 20);
+    await cam.evaluate(placePost(2, 40));
+    await settle(cam, 20);
   },
   async body(d) {
     const quote = () => d.mid(`[...document.querySelectorAll('#post-2 button')].find((b) => b.textContent.trim() === 'Quote')`);
-    await d.go(await quote(), 1.0, 21);
-    await d.shoot(0.3);
+    await d.go(await quote(), 0.7, 21);
     await d.tap();
-    /* The quote is in the reply box, which has the focus. */
     await d.until(`document.activeElement?.getAttribute('aria-label') === 'Your reply' && document.activeElement.value.startsWith('[quote=')`, 4, 'the reply box holding the quote, focused');
     d.mark('quoted');
-    await d.shoot(0.5);
-    const words = 'to be fair, it is a good walk cycle.';
-    for (const ch of words) await d.key(ch, ch === ' ' ? 0.09 : 0.055);
+    const words = 'to be fair he probably did mean that';
+    for (const ch of words) await d.key(ch, ch === ' ' ? 0.06 : 0.04);
     const typed = await d.page(`document.activeElement.value`);
-    assert(typed.includes('to be fair'), `the reply box holding "to be fair": ${typed}`);
+    assert(typed.endsWith(`[/quote]\n${words}`), `the reply box holding the real quote and "${words}": ${JSON.stringify(typed)}`);
     d.mark('typed');
-    await d.shoot(0.4);
+    await d.scrollTo('document.documentElement.scrollHeight - innerHeight', 0.4);
     const send = () => d.mid(`[...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Send')`);
-    await d.go(await send(), 0.8, 22);
-    await d.shoot(0.2);
-    const count = await d.page(`document.querySelectorAll('article.kb-act').length`);
+    await d.go(await send(), 0.5, 22);
+    const lastId = () => d.page(`[...document.querySelectorAll('article.kb-act')].at(-1).id`);
+    const was = await lastId();
     await d.tap();
-    await d.until(`document.querySelectorAll('article.kb-act').length > ${count}`, 4, 'the reply posted');
-    d.mark('posted');
-    await d.shoot(0.7);
-    /* The Steel Chair waiting on the phrase springs on the new post. */
+    await d.until(`[...document.querySelectorAll('article.kb-act')].at(-1).id !== '${was}'`, 4, 'the reply posted');
+    d.mark('sent');
     const seq = await d.page(`Number([...document.querySelectorAll('article.kb-act')].at(-1).id.replace('post-', ''))`);
+    /* The frame goes ON the new post, centered with room around it, BEFORE the chair is thrown: a short smooth scroll, the pointer parked clear of the body. The post has to stay in the middle of the view for the effect to arm (0.3 s). */
+    await d.scrollTo(`(() => { const r = document.querySelector('#post-${seq}').getBoundingClientRect(); return scrollY + r.top + r.height / 2 - innerHeight / 2 + 20; })()`, 0.5);
+    await d.go({ x: 1300, y: 120 }, 0.4, 23);
+    assert(await d.page(`document.querySelectorAll('#post-${seq} .dw-chair-group').length`) === 0, 'no chair on the new post before the spring');
+    const rect = await d.page(`(() => { const r = document.querySelector('#post-${seq} .kb-act-main').getBoundingClientRect(); return { top: r.top, bottom: r.bottom, h: innerHeight }; })()`);
+    assert(rect.top > 60 && rect.bottom < rect.h - 160, `the new post's body framed with room around it: ${JSON.stringify(rect)}`);
+    await d.shoot(0.35);
     await d.page(`(async () => { const { fake, thread } = window.__kbStage; const [a] = await fake.acts(thread, ${seq}, ${seq}); return window.__shot.springsOn(2, a.id); })()`);
-    await d.until(`Boolean(document.querySelector('#post-${seq} .kb-mark'))`, 4, 'the chair on the new post');
+    await d.until(`document.querySelectorAll('#post-${seq} .dw-chair-group').length > 0`, 4, 'the chair on the new post');
     d.mark('steel-chair');
-    await d.shoot(1.6);
-    const chairMark = () => d.mid(`[...document.querySelectorAll('#post-${seq} .kb-mark')].find((m) => /Steel Chair/.test(m.getAttribute('aria-label') ?? ''))`);
-    assert(await chairMark(), 'a Steel Chair mark on the new post');
-    await d.go(async () => (await chairMark()), 0.9, 23);
-    await d.shoot(0.2);
-    await d.tap();
-    await d.until(`Boolean(document.querySelector('.kb-lens'))`, 4, 'the Lens');
-    d.mark('lens');
-    await d.shoot(0.6);
-    /* The Lens opens on the chair: what it did, and (its play unfolded) that it sprang when a post quoted it. It does not print the phrase for a reader who is not the card's setter, so the phrase is asserted where it is on the page: in the post the chair dented. */
-    await d.go(() => d.mid(`document.querySelector('.kb-lens .kb-lens-fold')`), 0.7, 25);
-    await d.tap();
-    await d.shoot(0.5);
-    const lens = await d.page(`document.querySelector('.kb-lens').textContent`);
-    assert(/Dented by a chair/.test(lens) && /sprang when a post quoted it/.test(lens), `the Lens of the landed chair: ${lens}`);
+    await d.until(`document.querySelectorAll('#post-${seq} .dw-chair-dent').length > 0`, 4, 'the chair has hit and dented the post');
+    d.mark('dent');
+    await d.until(`(() => { const g = [...document.querySelectorAll('#post-${seq} .dw-chair-group')]; return g.length > 0 && g.every((x) => x.hasAttribute('data-rest')); })()`, 8, 'the chair at rest on the post\'s floor');
+    d.mark('rest');
+    const chairMark = await d.page(`[...document.querySelectorAll('#post-${seq} .kb-mark')].some((m) => /Steel Chair/.test(m.getAttribute('aria-label') ?? ''))`);
+    assert(chairMark, 'a Steel Chair mark on the new post');
     const dented = await d.page(`document.querySelector('#post-${seq}').textContent`);
-    assert(dented.includes('to be fair'), `"to be fair" in the post the chair landed on`);
-    await d.go({ x: 700, y: 330 }, 0.8, 24);
-    /* Late in the take, a node at the page's margin that nobody clicked. */
-    await d.shoot(4);
+    assert(dented.includes('to be fair'), '"to be fair" in the post the chair landed on');
+    await d.shoot(0.8);
     await d.page(`window.__shot.node(64, 330)`);
     d.mark('node');
   },
   camera: (_total, landed) => ({
-    move: { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.1, y: 0.08, w: 0.72, roll: 0 }, ease: 'inOut' },
-    punches: [...punch(landed, 'steel-chair', 9), ...punch(landed, 'lens', 6)],
+    move: { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.12, y: 0.12, w: 0.7, roll: 0 }, ease: 'inOut' },
+    punches: punch(landed, 'dent', 9),
   }),
 });
 
@@ -302,17 +376,19 @@ const n07 = () => take('c-n07', {
 const n08 = () => take('c-n08', {
   as: 'Snuckles',
   async prep(cam) {
+    /* The GPT-2 post wears its card (You Were Saying?), as the film says. */
+    await cam.evaluate(`window.__shot.gpt2()`);
     await cam.evaluate(placePost(14, 60));
     /* Several nodes over the page, at page places along the way down. */
     await cam.evaluate(`(() => {
       const { nodes } = window.__kbStage;
       const top = (seq) => document.querySelector('#post-' + seq).getBoundingClientRect().top + scrollY;
-      nodes.add(1330, top(14) + 120); nodes.add(70, top(15) + 90); nodes.add(1260, top(16) + 150); nodes.add(980, top(17) + 60); nodes.add(120, top(18) + 140); nodes.add(1250, top(19) + 100);
+      nodes.add(1330, top(14) + 120); nodes.add(70, top(15) + 90); nodes.add(1260, top(16) + 150); nodes.add(980, top(17) + 60); nodes.add(120, top(18) + 140); nodes.add(1250, top(19) + 100); nodes.add(80, top(20) + 160);
     })()`);
   },
   async body(d) {
     /* Where each dressed post's effect is, so each can be seen to have drawn: the take throws for any of the five that did not (the film says they are dressed). */
-    const EFFECTS = { 15: ['Hot Box', '.dw-hotbox-smoke'], 16: ['Glitter Bomb', '.dw-glitter-over'], 17: ["Feelin' Fab", '.dw-fab-foil'], 18: ['Graffiti', '.kb-graffiti-frame'], 19: ['Autocorrect', '.dw-ac-tape'] };
+    const EFFECTS = { 15: ['Hot Box', '.dw-hotbox-smoke'], 16: ['Glitter Bomb', '.dw-glitter-over'], 17: ["Feelin' Fab", '.dw-fab-foil'], 18: ['Graffiti', '.kb-graffiti-frame'], 19: ['Autocorrect', '.dw-ac-tape'], 20: ['You Were Saying?', '.dw-ywst'] };
     /* An effect is drawn while its post is near the viewport (the smoke is not kept for a post long scrolled past), so each is looked for while the page passes it: the posts in view now that wear theirs. */
     const seenDrawn = {};
     const sample = async () => {
@@ -321,11 +397,11 @@ const n08 = () => take('c-n08', {
     };
     const y0 = await d.page(`scrollY`);
     const foot = await d.page(`document.documentElement.scrollHeight - innerHeight`);
-    /* The scroll ends with post 19 (the taped-over words, the last dressed post) in frame, not on the empty reply box at the thread's foot: its top 100 px down the view, or the foot if that is nearer. */
-    const top19 = await d.page(`document.querySelector('#post-19').getBoundingClientRect().top + scrollY`);
-    const yEnd = Math.min(foot, top19 - 100);
-    /* The take is 16.4 s: half a second of lead, the scroll, and at least two seconds of the page at rest with post 19 in frame. The scroll is a function of the film's own frame, so it advances on every filmed frame, the frames in which the pointer presses among them. */
-    const seconds = 13;
+    /* The scroll ends with post 20 (the GPT-2 post, the page's last) in frame, its top 100 px down the view, not on the reply box at the page's foot. Post 21, the folded post, is the first of page 2 and is not on this page. */
+    const top20 = await d.page(`document.querySelector('#post-20').getBoundingClientRect().top + scrollY`);
+    const yEnd = Math.min(foot, top20 - 100);
+    /* The take is 14 s: half a second of lead, the scroll, and the page at rest with post 20 in frame. The scroll is a function of the film's own frame, so it advances on every filmed frame, the frames in which the pointer presses among them. */
+    const seconds = 10;
     const n = Math.round(seconds * d.F), CLICK_FRAMES = 12, f0 = d.frame, span = n + CLICK_FRAMES;
     const scrollTo = () => d.page(`document.scrollingElement.scrollTop = ${y0 + (yEnd - y0) * Math.min(1, (d.frame - f0) / span)}`);
     /** One filmed frame, the page scrolled first. */
@@ -360,12 +436,12 @@ const n08 = () => take('c-n08', {
     assert(clicks === 2, 'the node clicked twice');
     assert(started[0] === true && started[1] === false, `the node started and stopped by the two clicks: ${JSON.stringify(started)}`);
     const y1 = await d.page(`scrollY`);
-    assert(Math.abs(y1 - yEnd) < 3, `the page scrolled itself to post 19 (${y1} of ${yEnd})`);
+    assert(Math.abs(y1 - yEnd) < 3, `the page scrolled itself to post 20 (${y1} of ${yEnd})`);
     await sample();
     console.log('c-n08: effects seen drawn on their posts as the page passed them', JSON.stringify(seenDrawn));
     for (const [seq, [name]] of Object.entries(EFFECTS)) assert(seenDrawn[seq] === true, `post ${seq} drew its ${name} while in view: ${JSON.stringify(seenDrawn)}`);
-    const seen = await d.page(`(() => { const r = document.querySelector('#post-19').getBoundingClientRect(); return Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / r.height; })()`);
-    assert(seen > 0.5, `post 19 is in frame at the end of the scroll (${(seen * 100).toFixed(0)}% of it)`);
+    const seen = await d.page(`(() => { const r = document.querySelector('#post-20').getBoundingClientRect(); return Math.max(0, Math.min(r.bottom, innerHeight) - Math.max(r.top, 0)) / r.height; })()`);
+    assert(seen > 0.5, `post 20 is in frame at the end of the scroll (${(seen * 100).toFixed(0)}% of it)`);
     await d.shoot(0.5);
   },
   camera: () => ({
@@ -375,7 +451,7 @@ const n08 = () => take('c-n08', {
   }),
 });
 
-const TAKES = { 'c-n05': n05, 'c-n06': n06, 'c-n07': n07, 'c-n08': n08 };
+const TAKES = { 'c-n05': n05, 'c-n06a': n06a, 'c-n06': n06, 'c-n07': n07, 'c-n08': n08 };
 for (const [id, run] of Object.entries(TAKES)) {
   if (only && only !== id) continue;
   await run();
