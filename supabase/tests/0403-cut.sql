@@ -623,6 +623,7 @@ begin
     if after <= before then raise exception 'card_ended on a play no cut names did not scan acts_cut_play (% before, % after)', before, after; end if;
     raise notice 'card_ended probed acts_cut_play: % scan(s)', after - before;
   end;
+  if not coalesce((select p.proconfig @> array['plan_cache_mode=force_generic_plan', 'jit=off'] from pg_proc p where p.oid = 'cutting_acts(uuid[])'::regprocedure), false) then raise exception 'cutting_acts is not a client read that plans once (0368)'; end if;
   def := pg_get_functiondef('card_cut_at(uuid)'::regprocedure);
   if def like '%card_ended(%' then raise exception 'card_cut_at calls card_ended'; end if;
   if pg_get_functiondef('card_ended(uuid)'::regprocedure) not like '%card_cut_at(%' then raise exception 'card_ended does not ask card_cut_at'; end if;

@@ -27,7 +27,9 @@ test('a cut Kick Me pays the vote before the cut and not the vote after it; reve
     h as (insert into class_history (character, class_key, started_at)
       select c.id, m.class, '${at(-48)}' from c join (values ${names.map(([, name, cls]) => `('${name}', '${cls}')`).join(', ')}) m(name, class) on m.name = c.name returning 1)
     select json_object_agg(name, id) from c`));
-  const thread = sql(`insert into threads (board, title) select id, 'Cut settlement' from boards where slug = 'general' returning id`);
+  // A board of this file's own: the shared database holds boards earlier e2e files merged away, and a thread started on one is refused.
+  sql(`insert into boards (slug, name, description) values ('cut-e2e', '000 Cut', 'Where the cut Kick Me is played.') on conflict (slug) do nothing`);
+  const thread = sql(`insert into threads (board, title) select id, 'Cut settlement' from boards where slug = 'cut-e2e' returning id`);
   const act = (who: string, hours: number, kind: string, target: string | null, payload: object) =>
     sql(`insert into acts (character, kind, thread, target_act_id, payload, created_at) values ('${c[who]}', '${kind}', '${thread}', ${target === null ? 'null' : `'${target}'`}, '${JSON.stringify(payload).replaceAll("'", "''")}', '${at(hours)}') returning id`);
   let slot = 0;

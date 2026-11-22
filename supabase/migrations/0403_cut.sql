@@ -756,6 +756,9 @@ begin
 end $f$;
 revoke execute on function cutting_acts(uuid[]) from public, anon;
 grant execute on function cutting_acts(uuid[]) to authenticated;
+-- A client read keeps one generic plan and is never compiled by JIT (0368; tests/0320-client-reads-plan-once.sql holds every client read to it).
+alter function cutting_acts(uuid[]) set plan_cache_mode = force_generic_plan;
+alter function cutting_acts(uuid[]) set jit = off;
 
 -- ---- 8. card_ended ----
 
