@@ -217,3 +217,25 @@ begin
   if pg_temp.count_problem('stb') is not null then raise exception 'dw.gripe, b: %', pg_temp.count_problem('stb'); end if;
   if exists (select 1 from board_thread_counts c where c.board in (pg_temp.board('sta'), pg_temp.board('stb')) and c.shard > 0 and c.threads <> 0) then raise exception 'dw.gripe: a count was left in a shard other than 0'; end if;
 end $$;
+
+-- ---- A past season's Turns thread is the staff's too ----
+-- Every season's turns_thread, past seasons included (the design, section 2): a season that ended before the open one keeps its Turns thread on the system board.
+do $$
+declare
+  first_start timestamptz := (select min(starts_at) from seasons);
+  past uuid := pg_temp.mk('Past Turns', (select slug from boards where not is_system and slug in ('sta', 'stb') limit 1));
+  placed_at uuid;
+begin
+  insert into seasons (number, starts_at, ends_at, turns_thread)
+    values ((select max(number) + 1 from seasons), first_start - interval '60 days', first_start - interval '30 days', past);
+  if not exists (select 1 from system_threads() s where s = past) then
+    raise exception 'system_threads should answer a past season''s Turns thread';
+  end if;
+  if thread_place(past) is distinct from system_board() then
+    raise exception 'thread_place should put a past season''s Turns thread on the system board, got %', thread_place(past);
+  end if;
+  select c.place into placed_at from thread_places_computed() c where c.thread = past;
+  if placed_at is distinct from system_board() then
+    raise exception 'thread_places_computed should put a past season''s Turns thread on the system board, got %', placed_at;
+  end if;
+end $$;
