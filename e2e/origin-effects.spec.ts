@@ -5,6 +5,7 @@ import { inflateSync } from 'node:zlib';
 import { pageViolations } from './axe.ts';
 import { settled } from './settled.ts';
 import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * Card effects in a spun thread's ORIGIN box, as a browser lays them out (docs/plans/2026-11-15-origin-box-effects-plan.md, Task 3; design, sections 2 to 7).
@@ -658,7 +659,7 @@ test.describe('9. the phone', () => {
     await page.emulateMedia({ reducedMotion: 'reduce' });
     await open(page, 'whoops-phone');
     await built(page, '.kb-origin .kb-whoops');
-    const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const wide = await sideways(page);
     expect(wide, 'the page\'s scroll width over its client width').toBeLessThanOrEqual(0);
     await fills(box(page).locator('canvas.kb-whoops-ink'), area(page), 'the ink');
   });
@@ -670,7 +671,7 @@ test.describe('9. the phone', () => {
     const marks = box(page).locator('.kb-origin-head .kb-mark');
     await expect(marks).toHaveCount(2);
     await expect(band(page).locator('.kb-origin-reset')).toBeVisible();
-    const wide = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const wide = await sideways(page);
     expect(wide, 'the page does not scroll sideways').toBeLessThanOrEqual(0);
     const own = await box(page).evaluate((el) => el.scrollWidth - el.clientWidth);
     expect(own, 'the box does not overflow itself').toBeLessThanOrEqual(0);

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 /* The index and a board's thread list at a phone's width: one column, no horizontal scroll. */
 test.use({ viewport: { width: 320, height: 640 } });
@@ -7,7 +8,7 @@ for (const path of ['/', '/b/general', '/b/announcements']) {
   test(`${path} has no horizontal scroll at 320px wide`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const overflow = await sideways(page);
     expect(overflow).toBeLessThanOrEqual(0);
   });
 }

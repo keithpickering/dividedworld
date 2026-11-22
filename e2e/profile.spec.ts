@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 test.use({ viewport: { width: 320, height: 640 } });
 
@@ -23,7 +24,7 @@ for (const path of ['/season?tab=rankings']) {
   test(`${path} has no horizontal scroll at 320px wide`, async ({ page }) => {
     await page.goto(path);
     await expect(page.getByRole('main').getByRole('heading', { level: 1 })).toBeVisible();
-    const overflow = await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+    const overflow = await sideways(page);
     expect(overflow).toBeLessThanOrEqual(0);
   });
 }
@@ -33,8 +34,8 @@ test('a profile and its record have no horizontal scroll at 320px wide', async (
   await page.getByRole('link', { name: 'Pipewrench' }).click();
   await expect(page.getByRole('heading', { level: 1, name: 'Pipewrench' })).toBeVisible();
   await expect(page.getByRole('table', { name: 'About Pipewrench' })).toContainText('Threads spun');
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
   await page.getByRole('link', { name: 'See the full record' }).click();
   await expect(page.getByRole('table')).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
 });

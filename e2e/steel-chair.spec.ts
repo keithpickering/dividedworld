@@ -3,6 +3,7 @@ import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
 import { GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * Steel Chair as a browser draws it (docs/plans/2026-11-15-steel-chair-plan.md, Task 7, as amended: the chair's world is the post's content
@@ -1013,7 +1014,6 @@ test.describe('at a phone\'s width', () => {
     const m = await measure(page);
     inside(m);
     onTheFloor(m);
-    const wide = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth }));
-    expect(wide.scroll, 'the page\'s width').toBeLessThanOrEqual(wide.client);
+    expect(await sideways(page), 'the page\'s width').toBeLessThanOrEqual(0);
   });
 });

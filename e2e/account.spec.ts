@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 /* The demo account's address, and the code the in-memory backend accepts for any address. */
 const EMAIL = 'demo-player@example.test';
@@ -79,8 +80,7 @@ test('Register and Invites fit a 320px phone with no sideways scroll', async ({ 
   for (const path of ['/register', '/invites', '/settings', '/settings?section=board', '/settings?section=account']) {
     await page.goto(path);
     await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
-    const wide = await page.evaluate(() => document.documentElement.scrollWidth > document.documentElement.clientWidth);
-    expect(wide, path).toBe(false);
+    expect(await sideways(page), path).toBeLessThanOrEqual(0);
   }
 });
 

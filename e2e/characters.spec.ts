@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { settled } from './settled.ts';
+import { sideways } from './sideways.ts';
 
 /** Tab forward until `target` has focus (a keyboard reaching a control the way a player would). */
 async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
@@ -79,10 +80,10 @@ test('a phone shows My characters without scrolling sideways', async ({ page }) 
   await expect(page.getByRole('heading', { level: 1, name: /Your characters/u })).toBeVisible();
   await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
   await expect(page.getByRole('button', { name: 'Turn Pipewrench' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
   await page.goto('/characters/new');
   await expect(page.getByRole('heading', { level: 1, name: 'New character' })).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
 });
 
 /*
@@ -321,7 +322,7 @@ test('on a phone the Turn shows one class card and a peek, a swipe snaps to the 
   await page.mouse.wheel(200, 0);
   await expect.poll(async () => (await inView(dialog)).whole).toEqual(['heel']);
   await expect(group.getByText('2–2 of 6')).toBeVisible();
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
 });
 
 test('on a phone the arrow keys carry the choice to the Tweener and the row follows it', async ({ page }) => {

@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 /* The reaction picker on a phone: a sheet above the HUD, the width of the screen, with the page not scrolling sideways. */
 test.describe('a phone', () => {
@@ -24,7 +25,7 @@ test.describe('a phone', () => {
     expect(p.y + p.height).toBeLessThanOrEqual(h.y + 1);
     expect(p.x).toBeGreaterThanOrEqual(-1);
     expect(p.x + p.width).toBeLessThanOrEqual(321);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
     /* Every kind is a button the size of a thumb, in view. */
     const kinds = picker.locator('.kb-picker-kind');
     expect(await kinds.count()).toBeGreaterThan(0);

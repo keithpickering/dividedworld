@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 /* A long thread of the demo world: 170 Acts, twenty to a page, so post 142 is on page 8. */
 async function openLongThread(page: Page): Promise<string> {
@@ -8,7 +9,7 @@ async function openLongThread(page: Page): Promise<string> {
   return new URL(page.url()).pathname;
 }
 
-const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+const overflow = sideways;
 
 test.describe('a phone', () => {
   test.use({ viewport: { width: 320, height: 640 } });

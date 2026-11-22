@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import type { Fake } from '../engine/ui/data/fake.ts';
 import type { Preferences } from '../engine/ui/data/api.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * The glass's three preferences in the real browser (the web plan's glass amendment to Task 11):
@@ -224,7 +225,7 @@ test.describe('200% text at 1280px wide', () => {
       expect(await page.evaluate(() => getComputedStyle(document.documentElement).fontSize)).toBe('32px');
       /* From 150% up the glass is the Phone board's one column, however wide the window. */
       await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      expect(await sideways(page)).toBe(0);
       expect(await clipped(page)).toEqual([]);
     });
   }
@@ -242,7 +243,7 @@ test.describe('200% text at 1280px wide', () => {
       /* Signed out no account's text size applies; it is set on the root as Settings sets it. */
       await page.evaluate(() => document.documentElement.setAttribute('data-kb-text-size', '200'));
       await expect(page.locator('html')).toHaveAttribute('data-kb-layout', 'phone');
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      expect(await sideways(page)).toBe(0);
       expect(await clipped(page)).toEqual([]);
     });
   }

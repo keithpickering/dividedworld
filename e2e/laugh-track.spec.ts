@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
 import { pageViolations } from './axe.ts';
 import type { E2eWindow } from './glass-screens.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * Laugh Track in a browser. Two ways in, because the story route has no app around it (no caption bar, no `__kbCaptions`):
@@ -125,7 +126,7 @@ test('at a phone\'s width the caption fits inside the gutters', async ({ page })
   if (!b) throw new Error('the bar has no box');
   expect(b.x).toBeGreaterThanOrEqual(16 - 0.5);
   expect(b.x + b.width).toBeLessThanOrEqual(PHONE.width - 16 + 0.5);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
 });
 
 test('with Game sounds off a click fetches no sound file', async ({ page }) => {

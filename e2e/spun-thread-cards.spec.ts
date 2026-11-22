@@ -2,6 +2,7 @@ import { readFileSync } from 'node:fs';
 import { inflateSync } from 'node:zlib';
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { settled } from './settled.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * Cards on a spun thread, in a browser (docs/plans/2026-11-16-cards-on-a-spun-thread-plan.md, Task 7; design, section 4): the opening post of a spun thread is a post
@@ -316,11 +317,10 @@ test('5. at phone width the page has no horizontal scroll with the opening post\
   expect(await strip.evaluate((s, a) => s.closest('.kb-act-meta') !== null && a!.contains(s), art), 'the opening post\'s strip is in the opening post\'s header').toBe(true);
   expect(await band.evaluate((m) => m.closest('.kb-origin-head') !== null && m.closest('.kb-origin') !== null), 'the band\'s mark is in the ORIGIN box\'s band').toBe(true);
   expect(await band.evaluate((m) => m.closest('.kb-act-meta') === null), 'and not in the opening post\'s header').toBe(true);
-  const wide = await page.evaluate(() => ({ scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth, bodyScroll: document.body.scrollWidth }));
-  expect(wide.scroll, `the page does not scroll sideways (scroll width ${wide.scroll}, window ${wide.client})`).toBeLessThanOrEqual(wide.client);
-  expect(wide.bodyScroll).toBeLessThanOrEqual(wide.client);
+  expect(await sideways(page), 'the page does not reach past the window').toBeLessThanOrEqual(0);
+  const client = await page.evaluate(() => document.documentElement.clientWidth);
   for (const m of await opening(page).locator('.kb-mark').evaluateAll((els) => els.map((e) => { const r = e.getBoundingClientRect(); return { l: r.left, r: r.right }; }))) {
     expect(m.l).toBeGreaterThanOrEqual(0);
-    expect(m.r).toBeLessThanOrEqual(wide.client);
+    expect(m.r).toBeLessThanOrEqual(client);
   }
 });

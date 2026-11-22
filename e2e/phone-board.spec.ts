@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { loadFaces } from './fonts.ts';
 import { standInFaces } from './board-snapshot.ts';
 import { START } from '../engine/ui/data/fake.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * The board look's phone (the plan's Task 8, docs/research/2026-11-06-board-look/03-phone.html): at 390 a thread row's counts fold into one line
@@ -75,7 +76,7 @@ test('a record row\'s date stacks above its words, and the six kinds fit one row
   const kinds = await page.evaluate(() => [...document.querySelectorAll('.kb-record-kind')].map((k) => Math.round(k.getBoundingClientRect().y)));
   expect(kinds).toHaveLength(6);
   expect(new Set(kinds).size).toBe(1);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
 });
 
 /** The record's six kinds are small Chrome buttons: each a 24px target (WCAG 2.5.8) on one line of words, the six on one row at 390 (two rows at 320, where they cannot fit one) and the page does not scroll sideways. */
@@ -92,7 +93,7 @@ for (const width of [320, 390]) {
       expect(k.width, 'a target at least 24px wide').toBeGreaterThanOrEqual(24);
       expect(k.right, 'inside the window').toBeLessThanOrEqual(width);
     }
-    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
   });
 }
 
@@ -153,7 +154,7 @@ test('the formatting toolbar\'s twelve buttons wrap to at most two rows, stay in
   expect(new Set(boxes.map((b) => b.y)).size, `the buttons stand at ${boxes.map((b) => b.y).join(', ')}`).toBeLessThanOrEqual(2);
   expect(Math.max(...boxes.map((b) => b.right))).toBeLessThanOrEqual(390);
   expect(boxes.every((b) => b.text <= Math.ceil(b.width))).toBe(true);
-  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  expect(await sideways(page)).toBeLessThanOrEqual(0);
 });
 
 test('the keyboard hint is dropped on a phone and still describes the box', async ({ page }) => {

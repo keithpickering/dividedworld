@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 import { pageViolations } from './axe.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * A reply cut in under its post (docs/plans/2026-11-11-card-notes-part-2-plan.md, Task 10) as a browser lays it out: the nested reply is an
@@ -76,9 +77,9 @@ for (const mode of ['light', 'dark'] as const) {
         const nested = document.querySelector('article[data-kb-under]')!;
         const r = nested.getBoundingClientRect(), W = document.documentElement.clientWidth;
         const past = Array.from(nested.querySelectorAll('*')).filter((e) => { const b = e.getBoundingClientRect(); return b.width > 0 && (b.right > W + 0.5 || b.left < -0.5); }).map((e) => `${e.tagName}.${e.className}`);
-        return { left: r.left, right: r.right, width: W, past, scroll: document.documentElement.scrollWidth };
+        return { left: r.left, right: r.right, width: W, past };
       });
-      expect(m.scroll).toBeLessThanOrEqual(m.width);
+      expect(await sideways(page)).toBeLessThanOrEqual(0);
       expect(m.left).toBeGreaterThanOrEqual(0);
       expect(m.right).toBeLessThanOrEqual(m.width);
       expect(m.past).toEqual([]);

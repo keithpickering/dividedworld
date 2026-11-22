@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 /**
  * The caption bar's stories in the browser (the Laugh Track plan, Task 7): the real bar stands above the real HUD and never covers it, and fits a phone's width
@@ -50,7 +51,7 @@ for (const [width, height, text] of [[390, 844, 'Crowd laughs'], [390, 844, LONG
     const gap = h.y - (bar.y + bar.height);
     expect(gap).toBeGreaterThanOrEqual(10 - 0.01);
     expect(gap).toBeLessThan(11);
-    expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
     expect(await page.locator('.kb-captions-bar').evaluate((el) => getComputedStyle(el).pointerEvents)).toBe('none');
   });
 }

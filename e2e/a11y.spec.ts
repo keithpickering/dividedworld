@@ -7,6 +7,7 @@ import { pageViolations } from './axe.ts';
 import { armCard } from './focus.ts';
 import { boardStoryIds, routeStoryIds } from './board-stories.ts';
 import { settled } from './settled.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * axe-core in the real browser, over the built demo world, with the color-contrast rule jsdom
@@ -133,7 +134,7 @@ for (const scheme of ['light', 'dark'] as const) {
         test(`${label} does not scroll sideways`, async ({ page }) => {
           await visit(page, path);
           await expect(ready(page, path)).toBeVisible();
-          expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+          expect(await sideways(page)).toBe(0);
         });
         if (!GLASS.has(path)) test(`${label}'s Game HUD holds all it shows inside its glass and the window`, async ({ page }) => {
           await visit(page, path);
@@ -373,7 +374,7 @@ test.describe('between the boards\' widths', () => {
       } else {
         expect(got).toMatchObject({ board, tabsUnderBack: true, key: false, backHeight: 48 });
       }
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      expect(await sideways(page)).toBe(0);
     });
   }
 
@@ -445,7 +446,7 @@ test.describe('between the boards\' widths', () => {
       await expect(page.getByRole('heading', { level: 1 })).toBeVisible();
       await page.evaluate(() => document.fonts.ready);
       expect(await page.evaluate(() => document.documentElement.dataset.kbLayout)).toBe('phone');
-      expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBe(0);
+      expect(await sideways(page)).toBe(0);
     });
   }
 

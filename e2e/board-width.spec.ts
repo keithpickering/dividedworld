@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { sideways } from './sideways.ts';
 
 /**
  * The 2003 board stands in a column at most 1200px wide, centered past it (the owner's word, the glass plan's
@@ -13,7 +14,9 @@ const box = async (page: Page, selector: string) => {
   expect(b, selector).not.toBeNull();
   return b!;
 };
-const overflow = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+const overflow = sideways;
+/* The document's own overflow, for the test that the frame's clip holds it (which `sideways` reads through). */
+const scrolls = (page: Page) => page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
 
 async function openThread(page: Page): Promise<void> {
   await page.goto('/b/general');
@@ -248,7 +251,7 @@ test.describe('a phone, with something in the page past the window', () => {
       document.querySelector('.kb-acts')!.append(past);
     });
     await page.waitForTimeout(100);
-    expect(await overflow(page)).toBe(0);
+    expect(await scrolls(page)).toBe(0);
     expect(await page.evaluate(() => window.innerWidth)).toBe(390);
     expect((await box(page, '.kb-hud')).width).toBe(390);
   });

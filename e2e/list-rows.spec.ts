@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { loadFaces } from './fonts.ts';
 import { standInFaces } from './board-snapshot.ts';
 import { START } from '../engine/ui/data/fake.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * The index's and a board's rows in a browser (docs/plans/2026-11-12-list-rows-design.md, sections 2.1 to 2.3; the plan's Task 3).
@@ -88,7 +89,7 @@ const byline = (page: Page) => page.evaluate(() => {
   const first = nameFirstLine();
   const middles = [parts[0]!, first].map((r) => r.top + r.height / 2);
   const list = document.querySelector('.kb-board-list')!;
-  return { parts: parts.length, dateTop: parts[2]!.top, nameFirstTop: first.top, room: cell.right - title.getBoundingClientRect().right, unit, spread: Math.max(...middles) - Math.min(...middles), firstTop: Math.min(...parts.map((r) => r.top)), titleBottom: tr[tr.length - 1]!.bottom, listScroll: list.scrollWidth - list.clientWidth, pageScroll: document.documentElement.scrollWidth - document.documentElement.clientWidth };
+  return { parts: parts.length, dateTop: parts[2]!.top, nameFirstTop: first.top, room: cell.right - title.getBoundingClientRect().right, unit, spread: Math.max(...middles) - Math.min(...middles), firstTop: Math.min(...parts.map((r) => r.top)), titleBottom: tr[tr.length - 1]!.bottom, listScroll: list.scrollWidth - list.clientWidth };
 });
 
 const DESK = { width: 1440, height: 1000 };
@@ -200,7 +201,7 @@ for (const size of [{ width: 390, height: 844 }, { width: 360, height: 800 }]) {
     expect(m.dateTop, 'the date no higher than the name\'s first line').toBeGreaterThanOrEqual(m.nameFirstTop - 0.5);
     expect(m.firstTop, 'the unit starts under the title\'s last line').toBeGreaterThanOrEqual(m.titleBottom - 0.5);
     expect(m.listScroll).toBeLessThanOrEqual(0);
-    expect(m.pageScroll).toBeLessThanOrEqual(0);
+    expect(await sideways(page)).toBeLessThanOrEqual(0);
   });
 }
 
@@ -298,8 +299,8 @@ const wholeFaults = (rows: LastRow[]): string[] => rows.flatMap((r) => (
 
 const scrolls = (page: Page, l: Last = THREAD_LAST) => page.evaluate((listSel) => {
   const list = document.querySelector(listSel)!;
-  return { list: list.scrollWidth - list.clientWidth, page: document.documentElement.scrollWidth - document.documentElement.clientWidth };
-}, l.list);
+  return list.scrollWidth - list.clientWidth;
+}, l.list).then(async (list) => ({ list, page: await sideways(page) }));
 
 for (const [story, label] of [[BOARD, 'the thread list'], [SPUN, 'the spun list']] as const) {
   for (const size of PHONES) {

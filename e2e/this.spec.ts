@@ -2,6 +2,7 @@ import { expect, test, type Page } from '@playwright/test';
 import { loadFaces } from './fonts.ts';
 import { settled } from './settled.ts';
 import type { E2eWindow } from './glass-screens.ts';
+import { sideways } from './sideways.ts';
 
 /**
  * THIS in a browser (docs/plans/2026-11-13-this-plan.md, Task 9): what jsdom cannot read, the note's place against the lines of the post's words.
@@ -258,10 +259,10 @@ for (const size of SIZES) {
       const over = await page.evaluate(() => {
         const host = document.querySelector<HTMLElement>('.dw-this')!.getBoundingClientRect();
         const words = document.querySelector<HTMLElement>('.dw-this-words')!.getBoundingClientRect();
-        return { hostRight: host.right, wordsRight: words.right, doc: document.documentElement.scrollWidth <= document.documentElement.clientWidth };
+        return { hostRight: host.right, wordsRight: words.right };
       });
       expect(over.wordsRight, 'the words end inside the post').toBeLessThanOrEqual(over.hostRight + 0.5);
-      expect(over.doc, 'the page does not scroll sideways').toBe(true);
+      expect(await sideways(page), 'the page does not scroll sideways').toBeLessThanOrEqual(0);
       expectPlaced(await read(page), 1, 'long word');
     });
 
