@@ -1641,6 +1641,22 @@ describe('a visit\'s tab', () => {
     expect(within(l).queryByText('That didn\u2019t load. Try again.')).toBeNull();
   });
 
+  test('a kind chosen from the grid whose read fails leaves the open tab open, with focus on it, never on the page', async () => {
+    const w = visited();
+    const l = await onCardTab(w);
+    vi.spyOn(w.fake, 'visitStory').mockRejectedValueOnce(new Error('offline'));
+    const row = within(l).getByRole('tablist');
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 700 });
+    fireEvent.scroll(row);
+    await userEvent.click(await within(l).findByRole('button', { name: 'All 2' }));
+    await userEvent.click(within(l).getByRole('button', { name: /^On a visit/u }));
+    expect(await within(l).findByText('That didn\u2019t load. Try again.')).toBeInTheDocument();
+    const open = within(l).getByRole('tab', { name: 'Card 1' });
+    expect(open).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(open).toHaveFocus());
+  });
+
   test('pressing another tab while the visit is read does not take the reader back when it lands', async () => {
     const w = visited();
     const l = await onCardTab(w);

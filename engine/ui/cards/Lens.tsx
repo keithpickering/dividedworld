@@ -723,7 +723,7 @@ function KindsGrid({ kinds, labelOf, billed, now, keeping, onChoose }: {
           <li key={kind}>
             <button type="button" className="kb-lens-kind" data-kb-card={kind} onClick={() => onChoose(kind)}>
               <span className="kb-lens-kind-name">{labelOf(kind)}</span>
-              {kind !== VISIT_KIND && <span className="kb-lens-kind-count">{ofKind.length}</span>}
+              {kind !== VISIT_KIND && <><span className="kb-lens-kind-count" aria-hidden="true">{ofKind.length}</span><span className="kb-visually-hidden">{playsPhrase(ofKind.length)}</span></>}
               {up > 0 && <><span className="kb-lens-kind-up" aria-hidden="true" /><span className="kb-visually-hidden">{up} up now</span></>}
             </button>
           </li>
@@ -904,7 +904,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const onInk = useOnInk();
   const host = useLensHost();
   const now = useUntil(here.billed);
-  const billed = markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keepingKeys(instance.cards), postAt);
+  const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const billed = markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keeping, postAt);
   const admin = useLensAdmin();
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
@@ -1037,7 +1038,6 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
   const panelId = `${ids}-panel`;
   const allId = `${ids}-all`;
-  const keeping = keepingKeys(instance.cards);
   const labelOf = (kind: string) => kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
   /* Esc closes the grid and not the Lens (the float asks `onClose`), and the All button that opened it has focus again. */
   const closeGrid = () => { setGrid(false); allButton.current?.focus(); };
@@ -1045,7 +1045,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     setGrid(false);
     /* Once the select has landed: the tab is brought into view (it may be the one already open, which the tab-row effect would not move) and takes focus. */
     void choose(kind).then((took) => {
-      if (!took) return;
+      /* A press that did not take (a read that failed, or a newer press) leaves the open tab open: focus goes back to it, never to the page. */
+      if (!took) { (tabs.current.get(card) ?? allButton.current)?.focus(); return; }
       const el = tabs.current.get(kind);
       el?.scrollIntoView?.({ block: 'nearest', inline: 'center' });
       el?.focus({ preventScroll: true });
@@ -1067,7 +1068,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     if (to_ < 0) return;
     e.preventDefault();
     const next = kinds[to_]!;
-    choose(next);
+    void choose(next);
     tabs.current.get(next)?.focus();
   };
 
@@ -1117,7 +1118,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
             return (
               <PreparedTab
                 key={kind} ref={(el) => { if (el) tabs.current.set(kind, el); else tabs.current.delete(kind); }}
-                id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => choose(kind)}
+                id={tabId(kind)} kind={kind} selected={selected} controls={selected ? panelId : undefined} read={readOf(kind)} onChoose={() => { void choose(kind); }}
               ><TabIcon art={tabArtOf(kind)} />{label}</PreparedTab>
             );
           })}
