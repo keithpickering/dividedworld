@@ -181,7 +181,7 @@ which key to make; `settle`, `meet` and `seed` with no `kayfabb_jobs` key answer
 rest as secrets, under **Edge Functions > Secrets** or with the CLI:
 
 - `ANTHROPIC_API_KEY`: the model provider's key for The System. It is read only while the instance's `systemEnabled`
-  setting is on, which Divided World ships off (issue #73 turns it on); setting the key now does no harm.
+  setting is on, which Divided World ships on (the launch design, `docs/plans/2026-11-13-launch-design.md`, section 5).
 - `KAYFABB_PROFILE`: `playtest` for the playtest's three-week season and seven-day Turn cooldown; leave it unset for
   the full game's numbers. Any other value is refused (`supabase/functions/_shared/instance.ts`).
 - `SYSTEM_COMPLETIONS_URL`: the base address of the old voice's server (below), such as `https://old-voice.example.org`,
@@ -388,8 +388,8 @@ The release (step 9) pushes the schema, deploys the functions and **seeds** whic
 environment's secrets (`SUPABASE_PROJECT_REF`, `SUPABASE_DB_URL` and `KAYFABB_JOBS_KEY`) name, every night, and the
 seed opens season 1. **Those secrets keep naming the test project until step 4.** If they named the new project
 earlier, the next night's release would seed it and open season 1 before the invitations go out.
-Do steps 2 to 5 in one sitting, between two nightly releases (05:13 UTC): a release that runs after step 2 pauses the
-test project and before step 4 repoints the secrets fails against the paused project, and one that runs between step 4
+Do steps 2 to 5 in one sitting, between two nightly releases (05:13 UTC): a release that runs after step 2 has paused the
+test project, and before step 4 repoints the secrets, fails against the paused project, and one that runs between step 4
 and step 5 releases the site while it still points at the test project.
 
 1. **Before invite day: build the new project.** Do steps 2 to 5 of the first deploy on a new project: the project and
@@ -409,6 +409,13 @@ and step 5 releases the site while it still points at the test project.
 
    ```bash
    node tools/export-instance.mjs --from "$TEST_DB_URL" --to <new directory> --storage https://<test ref>.supabase.co
+   ```
+
+   Then clear the test project's connection string and key from the shell, so the shell that seeds the new project
+   never holds them:
+
+   ```bash
+   unset TEST_DB_URL KAYFABB_STORAGE_KEY
    ```
 
    Then, in the Supabase dashboard, pause the test project. Its scheduled jobs stop with it.
