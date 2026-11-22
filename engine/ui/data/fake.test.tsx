@@ -34,7 +34,7 @@ const settings: Settings = {
 
 const earn = () => [];
 const instance: Instance = {
-  key: 'test', name: 'Test',
+  key: 'test', name: 'Test', withdrawn: [],
   copy: { announcementsThreadTitle: 'Promos {season}' },
   packs: [], machine: [], ...testCosmeticsContent,
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
@@ -6591,7 +6591,7 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
     const [sealed] = await fake.sealedPacks();
     const before = await fake.wallet();
     const opened = await fake.openPack(sealed!.pack);
-    expect(opened).toEqual({ ok: true, value: { pack: sealed!.pack, kind: 'starter', contents: ['splat', 'dud', 'splat'] } });
+    expect(opened).toEqual({ ok: true, value: { pack: sealed!.pack, kind: 'starter', contents: ['splat', 'dud', 'splat'], refunds: [] } });
     expect(await fake.wallet()).toEqual(before);
     expect(await fake.myCards()).toEqual([{ card: 'splat', held: 2 }, { card: 'dud', held: 1 }]);
     expect(await fake.sealedPacks()).toEqual([]);
@@ -6858,5 +6858,95 @@ describe('polls (0395, 0396)', () => {
     const page = (await fake.threadPage(thread, { page: 1 }, null, []))!;
     expect(page.polls[0]).toMatchObject({ counts: [0, 1, 0], endsAt: new Date(START + DAY).toISOString() });
     expect(ana).toBeDefined();
+  });
+});
+
+/**
+ * The card retirement seed (the card retirement design, sections 3 and 4), as the fake writes it: a renamed copy is a `renamedOut` and a `renamedIn` row, a withdrawn one a `withdrawn`
+ * row with its refund and one `withdrawal` wallet event; the hand counts `renamedIn` +1 and the others -1 only without an Act; and a sealed pack's withdrawn card is refunded at opening.
+ */
+describe('the card retirement seed', () => {
+  const base = instance.cards[0]!;
+  const collector = { ...base, key: 'collector', name: 'Card Collector', formerly: [{ key: 'trap-card', name: 'Trap Card' }] };
+  const kept = { ...base, key: 'kept', name: 'Kept' };
+  const retiring: Instance = {
+    ...instance, cards: [kept, collector], withdrawn: [{ key: 'bluff', name: 'Bluff', refund: 100 }],
+    settings: { ...settings, startingPack: 'starter' },
+    packs: [{ key: 'starter', contents: ['kept', 'bluff', 'trap-card'] }],
+  };
+  const world = () => {
+    const fake = createFake({ instance: retiring });
+    const ana = fake.seed.account('ana');
+    fake.seed.wallet(ana, 0);
+    fake.signInAs(ana);
+    return { fake, ana };
+  };
+
+  test('a held copy is moved once: renamed ones to the new key, withdrawn ones refunded, with the hand folded as the rows say', async () => {
+    const { fake, ana } = world();
+    fake.seed.cards(ana, { 'trap-card': 2, bluff: 2, kept: 1 });
+    fake.seed.retireCards();
+    const log = await fake.log(null);
+    const kinds = (k: string) => log.cards.filter((c) => c.kind === k);
+    expect(kinds('renamedOut')).toMatchObject([{ card: 'trap-card', act: null }, { card: 'trap-card', act: null }]);
+    expect(kinds('renamedIn')).toMatchObject([{ card: 'collector', act: null }, { card: 'collector', act: null }]);
+    expect(kinds('withdrawn')).toMatchObject([{ card: 'bluff', act: null, price: 100 }, { card: 'bluff', act: null, price: 100 }]);
+    expect([...(await fake.myCards())].sort((a, b) => a.card.localeCompare(b.card))).toEqual([{ card: 'collector', held: 2 }, { card: 'kept', held: 1 }]);
+    expect(await fake.wallet()).toEqual({ balance: 200, cap: 600 });
+    expect(log.wallet.filter((w) => w.kind === 'withdrawal')).toMatchObject([{ change: 200, balanceAfter: 200, ref: null }]);
+    fake.seed.retireCards();
+    expect((await fake.log(null)).cards).toHaveLength(log.cards.length);
+  });
+
+  test('a live face-down back is moved with its set play as the out row\'s act, and shows no returned row when it ends', async () => {
+    const { fake, ana } = world();
+    const ranked = fake.seed.character(ana, 'Ana Face', 'face');
+    const { act: post } = fake.seed.thread('general', ranked, 'Hello', 'First post');
+    const set = fake.seed.set(ranked, post, 'trap-card', {});
+    fake.seed.retireCards();
+    const log = await fake.log(null);
+    expect(log.cards.filter((c) => c.kind === 'renamedOut')).toMatchObject([{ card: 'trap-card', act: set }]);
+    expect(log.cards.filter((c) => c.kind === 'renamedIn')).toMatchObject([{ card: 'collector', act: null }]);
+    expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
+    fake.clock.advance(400 * DAY);
+    expect((await fake.log(null)).cards.filter((c) => c.kind === 'returned')).toEqual([]);
+    expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
+  });
+
+  test('a back whose time passed unsprung is a held copy: retiring moves it, and the hand never holds the gone key', async () => {
+    const { fake, ana } = world();
+    const face = fake.seed.character(ana, 'Ana Face', 'face');
+    const { act: post } = fake.seed.thread('general', face, 'Hello', 'First post');
+    fake.seed.set(face, post, 'trap-card', {});
+    fake.clock.advance(400 * DAY);
+    fake.seed.retireCards();
+    expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
+    expect((await fake.log(null)).cards.filter((c) => c.kind === 'renamedOut')).toHaveLength(1);
+    fake.clock.advance(DAY);
+    expect(await fake.myCards()).toEqual([{ card: 'collector', held: 1 }]);
+  });
+
+  test('opening a sealed pack refunds a withdrawn card with a withdrawn row and no copy, and pulls a renamed one under its new key', async () => {
+    const { fake } = world();
+    expect((await fake.createCharacter('Ana Face', 'face', 'now', 'silent')).ok).toBe(true);
+    const [sealedPack] = await fake.sealedPacks();
+    const opened = must(await fake.openPack(sealedPack!.pack));
+    expect(opened.contents).toEqual(['kept', 'bluff', 'collector']);
+    expect(opened.refunds).toEqual([{ index: 1, refund: 100 }]);
+    const log = await fake.log(null);
+    expect(log.cards.filter((c) => c.pack === sealedPack!.pack).map((c) => [c.kind, c.card, c.price]).sort()).toEqual([['pulled', 'collector', 0], ['pulled', 'kept', 0], ['withdrawn', 'bluff', 100]]);
+    expect(log.wallet.filter((w) => w.kind === 'withdrawal')).toMatchObject([{ change: 100 }]);
+    expect([...(await fake.myCards())].sort((a, b) => a.card.localeCompare(b.card))).toEqual([{ card: 'collector', held: 1 }, { card: 'kept', held: 1 }]);
+  });
+
+  test('the admin machine marks a slot for a retired card, the card it became, and a withdrawn one', async () => {
+    const own: Instance = { ...retiring, machine: [
+      { item: { card: 'kept' }, availability: 'onSale', price: 100 }, { item: { card: 'trap-card' }, availability: 'onSale', price: 100 },
+      { item: { card: 'bluff' }, availability: 'onSale', price: 100 }, { item: { pack: 'gone' }, availability: 'onSale', price: 100 },
+    ] };
+    const fake = createFake({ instance: own });
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    const slots = await fake.adminMachine();
+    expect(slots.map((s) => [s.retired, s.became, s.withdrawn])).toEqual([[false, null, false], [true, 'collector', false], [true, null, true], [true, null, false]]);
   });
 });

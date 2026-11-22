@@ -12,7 +12,7 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useMemo, useState } from 'react';
-import { facesOf } from '../cards/faces.ts';
+import { facesOf, refundedFace, unknownFace } from '../cards/faces.ts';
 import { useKayfa } from '../context.tsx';
 import { Layers } from '../glass/layer.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
@@ -161,3 +161,18 @@ function FixedReveal() {
 
 /** The reveal of a fixed pack: six cards, "6 of 6", and no hit (no gold back, tag, halo or sparks on the last). For the owner's review; no board draws it. */
 export const FixedSixNoHit: Story = { name: 'Reveal, fixed pack of six, no hit', render: () => <FixedReveal /> };
+
+/** A pack with a card the machine no longer has and a withdrawn card refunded at opening: each the instance's card back with plain words, claiming no rarity or alignment. */
+function WithdrawnReveal() {
+  const { instance, ui } = useKayfa();
+  const faces = useMemo(() => facesOf(instance.cards, ui.cards, instance.settings, ui.copy.cardKinds), [instance, ui.cards, ui.copy.cardKinds]);
+  const cards = [faces[0]!, unknownFace('gone', ui.cardBack), faces[1]!, refundedFace('bluff', ui.cardBack, 100), faces[2]!];
+  return (
+    <Page surface="vending">
+      <Layers><PackOpening hit={false} name="Starter Pack" art={lookDrawn} cards={cards} note={null} onClose={() => {}} /></Layers>
+    </Page>
+  );
+}
+
+/** The reveal with an unknown card and a refund slip among real cards. */
+export const WithdrawnAndUnknown: Story = { name: 'Reveal, unknown card and refund slip', render: () => <WithdrawnReveal /> };

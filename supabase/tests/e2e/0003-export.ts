@@ -360,7 +360,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into mail_outbox (account, template, facts, decision) select bob, 'reportRead', '{}', d.id from conduct_decisions d limit 1;
       insert into mail_attempts (outbox, kind, provider_id, error) select o.id, 'sent', 'export-prov-1', null from mail_outbox o limit 1;
       -- A quote of that post (0340): the reference the trigger records, a request for the quoting post's layer and the layer itself, so each of the four tables that conceal quotes has a row to carry across (the answer names the request and the layer).
-      perform tests.post(b, t, format('[quote=%s]Carried.[/quote] across', p), now());
+      perform tests.post(b, t, format('[quote=%s]Carried across[/quote] across', p), now());
       insert into conceal_requests (act) select r.act from quote_refs r where r.quoted = p limit 1;
       insert into quote_layers (act, hidden, body, upto) select r.act, array[p], format('[quote=%s][/quote] across', p), (select max(id) from conceal_requests) from quote_refs r where r.quoted = p limit 1;
       insert into conceal_answers (request, layer) select (select max(id) from conceal_requests), (select max(id) from quote_layers);
@@ -573,12 +573,22 @@ test('an instance exported and imported into a fresh database is the same instan
         perform tests.act(b, 'ballot', t, '{"picks": [0]}', secret, now() - interval '150 minutes');
         perform tests.act(a, 'ballot', t, '{"picks": [1]}', secret, now() - interval '2 hours');
       end;
+      -- Card retirement (0404): an out-of-print card, a card renamed to another key and a card withdrawn for a refund, each left as the seed leaves it (card_leaves writes the
+      -- holders' rows, the new key's, and the withdrawal's wallet event), and an out-of-print pack kind. Each is named by its key in e2e's assertions.
+      insert into card_kinds (key, name, alignment, rarity, play, retired_at) values ('expretired', 'Exported Retired', 'sweet', 'common', 'cast', now());
+      insert into card_kinds (key, name, alignment, rarity, play) values ('expold', 'Exported Old Name', 'sweet', 'common', 'cast'), ('expnew', 'Exported New Name', 'sweet', 'common', 'cast'), ('expgone', 'Exported Gone', 'sweet', 'common', 'cast');
+      insert into card_ledger (account, card, kind, price) values (ann, 'expold', 'bought', 0), (bob, 'expgone', 'bought', 0);
+      insert into pack_kinds (key, pulls, leaves, retired_at) values ('expretiredpack', '[{"weights": {"common": 1}}]', '{}', now());
       -- A doctored quote (Forged quotes, Task 7): Bob's mask quotes Ann's post p with words it never had, so the Act is written with its verdict (forged, the quoted post's id), no
       -- target (the verdict drops it), and its quote_sources row; the export carries all three and the import writes them as a replica.
       perform tests.become((select owner from characters where id = b));
       perform post(t, b, '[quote=' || p || ']Never said in this post.[/quote] Bob, doctored.', p);
       perform tests.unbecome();
     end $$;
+    -- Each leaving is its own transaction, as the seed makes it: the deferred trigger card_ledger_gone_card refuses a copy of a card in the transaction that inserted it, so the
+    -- copies above (bought before the card left) must commit first. The renamed card's new key and the withdrawal's refund are written by card_leaves.
+    select card_leaves('expold', 'expnew', null);
+    select card_leaves('expgone', null, 40);
     -- A table holding what the instance's own do not yet: a type whose name has a comma, an
     -- array, an astral character. Made here and in the fresh database alike.
     create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);
@@ -618,6 +628,15 @@ test('an instance exported and imported into a fresh database is the same instan
   const part3Held = 'author:false,author:true,totals:false,totals:true|expblind:totals:false,expreact:-:true,expveil:author:false|1|x-1f480:💀:excitedNegative:1:1';
   assert.equal(part3(from), part3Held, 'the fixture holds a live and an ended veil of each kind, a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind');
   assert.equal(payouts(from), '1|1|1|1', 'the fixture holds the skim ledger row, the scored-as row, the play\'s starts and the rode spring\'s quadrant');
+  // Card retirement (0404), each row named by its key: an out-of-print card (retired_at), a card renamed to another key (gone_at and became, with the holder's renamedOut row and the new key's renamedIn),
+  // a card withdrawn for a refund (gone_at and refund, with the holder's withdrawn row and the withdrawal's wallet event), and an out-of-print pack kind (pack_kinds.retired_at).
+  const retirement = (url: string) => psqlOn(url, `select
+    (select string_agg(key || ':' || (retired_at is not null)::text || ':' || (gone_at is not null)::text || ':' || coalesce(became, '-') || ':' || coalesce(refund::text, '-'), ',' order by key) from card_kinds where key in ('expretired', 'expold', 'expnew', 'expgone')) || '|' ||
+    (select string_agg(key || ':' || (retired_at is not null)::text, ',' order by key) from pack_kinds where key in ('exppack', 'expretiredpack')) || '|' ||
+    (select string_agg(card || ':' || kind || ':' || price::text, ',' order by card, kind) from card_ledger where card in ('expold', 'expnew', 'expgone')) || '|' ||
+    (select string_agg(w.kind || ':' || w.change::text || ':' || w.overflow::text, ',' order by w.kind) from wallet_events w join auth.users u on u.id = w.account and u.email = 'exp-bob@test.invalid' where w.kind = 'withdrawal')`);
+  const retirementHeld = 'expgone:false:true:-:40,expnew:false:false:-:-,expold:false:true:expnew:-,expretired:true:false:-:-|exppack:false,expretiredpack:true|expgone:bought:0,expgone:withdrawn:40,expnew:renamedIn:0,expold:bought:0,expold:renamedOut:0|withdrawal:40:0';
+  assert.equal(retirement(from), retirementHeld, 'the fixture holds an out-of-print card, a renamed pair with its ledger rows, a withdrawn card with its refund and withdrawal, and an out-of-print pack kind');
   // The cast's own set, its spring and the card it caught, by their ids, so the round trip is shown to carry a trap's rows
   // whatever else this database holds (#136 F1).
   const trapIds = sql(`select f.play || '|' || s.id || '|' || k.id from face_down f join auth.users u on u.id = f.account and u.email = 'exp-ann@test.invalid'
@@ -822,7 +841,11 @@ test('an instance exported and imported into a fresh database is the same instan
       const at = local(rows);
       assert.ok(at >= 0, `${file} holds the post-local kind's row`);
       const reacted = new Set(rows.map((r) => JSON.parse(r).act));
-      const elsewhere = kindRows('public.acts.jsonl').map((r) => JSON.parse(r)).find((a) => a.kind === 'post' && !reacted.has(a.id))!.id;
+      // A post that holds the kind of its own (a post_reaction_kinds row, as a committed leftover of another file can leave in the
+      // suite's one database) is no poison: the import rightly keeps a reaction there. The export orders acts by their random ids, so
+      // without this the pick lands on such a post now and then.
+      const holders = new Set(kindRows('public.post_reaction_kinds.jsonl').map((r) => JSON.parse(r).post));
+      const elsewhere = kindRows('public.acts.jsonl').map((r) => JSON.parse(r)).find((a) => a.kind === 'post' && !reacted.has(a.id) && !holders.has(a.id))!.id;
       for (const [why, poison] of [['a kind nowhere', { kind: 'x-dead' }], ['a local kind on another post', { act: elsewhere }]] as const) {
         const forged = rows.map((r, i) => (i === at ? JSON.stringify({ ...JSON.parse(r), ...poison }) : r));
         fs.writeFileSync(path.join(short, file), forged.join('\n') + '\n');
@@ -871,6 +894,7 @@ test('an instance exported and imported into a fresh database is the same instan
     assert.equal(narrowRows(fresh.toString()), '2|1|0|0|0|0', 'the imported marks and cuts are the rows the Acts give');
     assert.equal(part3(fresh.toString()), part3Held, 'the veils, the flagged card kinds, the stand-in and the post-local reaction are in the imported instance as they were');
     assert.equal(payouts(fresh.toString()), payouts(from), 'the payout cards\' ledger row, scored_as row, starts and rode quadrant are in the imported instance');
+    assert.equal(retirement(fresh.toString()), retirementHeld, 'the out-of-print card and pack kind, the renamed pair with its ledger rows, and the withdrawn card with its refund and withdrawal are in the imported instance as they were');
     // The post that quotes the No quote's post (Task 8) is in the imported instance: the quote was written before the No quote was played, and the import writes it as a replica.
     const quoting = `select count(*) from acts q join acts n on n.kind = 'post' and n.payload ->> 'body' = 'Under No quote, and quoted before it.'
       where q.kind = 'post' and q.payload ->> 'body' like '%Bob, quoting under No quote.%' and q.payload ->> 'body' like '%[quote=' || n.id::text || ']%'`;

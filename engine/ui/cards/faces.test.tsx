@@ -4,7 +4,7 @@ import type { CardRules } from '../../rules/cards.ts';
 import type { Settings } from '../../rules/types.ts';
 import { render } from '@testing-library/react';
 import { RARITIES } from '../../rules/cards.ts';
-import { alignmentTag, faceOf, facesOf, gemOf, orbs, priceOf, saleOf, withCardEconomy } from './faces.ts';
+import { alignmentTag, faceOf, facesOf, gemOf, orbs, priceOf, refundedFace, saleOf, unknownFace, withCardEconomy } from './faces.ts';
 import type { Slot } from '../data/api.ts';
 import { cardLabel, Postcard } from './Postcard.tsx';
 import type { CardUi } from './types.ts';
@@ -134,5 +134,32 @@ describe('a card\'s kind word', () => {
   test('is the capitalized play where the instance gave no words', () => {
     const set = { ...plain, play: 'set' as const };
     expect([faceOf(plain, undefined, settings).kind, faceOf(set, undefined, settings).kind, facesOf([plain], [], settings)[0]?.kind]).toEqual(['Cast', 'Set', 'Cast']);
+  });
+});
+
+describe('a card the machine no longer has', () => {
+  const back = { mark: '/mark.svg', canvas: '/back.webp' };
+  test('is the instance\'s card back with its words: no art borrowed from a real card, no rarity, alignment or play word', () => {
+    const f = unknownFace('ghost', back);
+    expect(f.name).toBe('A card this machine no longer has');
+    expect(f.unknown).toBe(true);
+    expect(f.art.canvas).toBe('/back.webp');
+    expect(f.art.mark).toBe('/mark.svg');
+    expect(f.kind).toBe('');
+    expect(f.tag).toBe('');
+    const { container } = render(<Postcard face={f} size="fan" />);
+    expect(container.querySelector('.kb-postcard-back')).not.toBeNull();
+    expect(container.querySelector('.kb-postcard-art')).toHaveAttribute('src', '/back.webp');
+    expect(container.querySelector('.kb-postcard-gem, .kb-postcard-tag, .kb-postcard-play')).toBeNull();
+  });
+  test('a back with no picture draws the mark as its emblem, and with no back the glass\'s plain one', () => {
+    const { container } = render(<Postcard face={unknownFace('ghost', { mark: '/mark.svg' })} size="fan" />);
+    expect(container.querySelector('.kb-postcard-emblem img')).toHaveAttribute('src', '/mark.svg');
+    expect(unknownFace('ghost', undefined).art).toEqual({ color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)' });
+  });
+  test('a refunded one says so, in the glass\'s plain voice: one orb is singular, any other amount plural', () => {
+    expect(refundedFace('bluff', back, 100).name).toBe('Withdrawn: refunded 1.00 orb.');
+    expect(refundedFace('bluff', back, 250).name).toBe('Withdrawn: refunded 2.50 orbs.');
+    expect(refundedFace('bluff', back, 50).unknown).toBe(true);
   });
 });

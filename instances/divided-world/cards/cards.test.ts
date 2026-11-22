@@ -782,3 +782,10 @@ test("Hype-Up and Publicity Tour both up on one calm vote make one boost, Hype-U
   assert.equal(boosts[0]!.amount, 10);
   assert.deepEqual(boosts[0]!.params, { card: 'hype-up', flat: 1 });
 });
+
+test('Trap Card became Card Collector and Bluff was withdrawn, and the instance still has no problem', () => {
+  const collector = cards.find((c) => c.key === 'card-collector');
+  assert.deepEqual(collector?.formerly, [{ key: 'trap-card', name: 'Trap Card' }]);
+  assert.deepEqual(instance.withdrawn, [{ key: 'bluff', name: 'Bluff', refund: 100 }]);
+  assert.deepEqual(instanceProblems(instance), []);
+});

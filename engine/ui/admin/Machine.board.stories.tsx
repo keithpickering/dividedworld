@@ -19,6 +19,17 @@ const machine: World = (fake) => {
   fake.seed.slot({ card: 'stick-around' }, { price: 225, move: move('repriceSlot', 'move-markup', '2026-11-08T12:00:00.000Z', 150, 150) });
 };
 
+/** The machine with the first four slots retired: a pack out of print, then a card out of print, one renamed and one withdrawn (the page marks each and shows its availability as not in use). */
+const retired: World = (fake, instance) => {
+  machine(fake, instance);
+  const real = fake.adminMachine.bind(fake);
+  fake.adminMachine = async () => (await real()).map((s, i) => (
+    i === 0 ? { ...s, retired: true }
+      : i === 1 ? { ...s, retired: true }
+        : i === 2 ? { ...s, retired: true, became: 'whoops' }
+          : i === 3 ? { ...s, retired: true, withdrawn: true } : s));
+};
+
 function MachineStory() {
   return <Page surface="settings"><MachineScreen /></Page>;
 }
@@ -39,3 +50,6 @@ export const AdminMachinePhone: Story = {
   name: 'Admin machine, phone 390 × 844',
   globals: { viewport: { value: 'glassPhone390', isRotated: false } },
 };
+
+/** Retired slots: "Out of print" on a pack and a card, "Renamed to ..." and "Withdrawn" on cards, each with its availability control disabled. */
+export const AdminMachineRetired: Story = { name: 'Admin machine, retired slots', parameters: { world: retired } };

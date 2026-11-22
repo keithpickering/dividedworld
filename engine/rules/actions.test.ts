@@ -8,7 +8,7 @@ const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
 const sparkle = { ...splat, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 1 } };
 const instance: Instance = {
-  key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat, sparkle],
+  key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat, sparkle], withdrawn: [],
   reactions: [{ key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }],
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],

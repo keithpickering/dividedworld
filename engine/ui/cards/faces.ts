@@ -67,6 +67,28 @@ export const playWord = (play: Play, kinds?: CardKinds): string => {
 /** Hundredths of an orb as the screens say them: 100 is "1.00". */
 export const orbs = (hundredths: number): string => (hundredths / 100).toFixed(2);
 
+/** The instance's look for a card's back (`InstanceUi.cardBack`): what a card the machine no longer has is drawn on. */
+export interface BackLook { readonly mark?: string; readonly canvas?: string }
+
+/** `art` of a face with no card of its own: the instance's back (its picture, else its mark), and the glass's neon for the rest. Never a real card's art. */
+const backArt = (back: BackLook | undefined): FaceArt => ({
+  color: 'var(--kb-glass-neon)', ink: 'var(--kb-glass-ink-neon)',
+  ...(back?.canvas ? { canvas: back.canvas } : {}), ...(back?.mark ? { mark: back.mark } : {}),
+});
+
+/** A face that is the instance's card back with `words` and nothing else: no rarity, alignment or play word is drawn or said (`unknown`). */
+const plainFace = (key: string, words: string, back: BackLook | undefined): CardFace => ({
+  key, name: words, alignment: 'sweet', tag: '', extra: 0, stack: 1, tagline: '', summary: '', describe: '',
+  art: backArt(back), rarity: 'common', play: 'set', kind: '', unknown: true,
+});
+
+/** A card a pack gave that this instance does not have, drawn on the instance's card back. It borrows no art from any card. */
+export const unknownFace = (key: string, back: BackLook | undefined): CardFace => plainFace(key, 'A card this machine no longer has', back);
+
+/** A card of an opening that was withdrawn and refunded (`refund` in hundredths): the back with the glass's plain slip, "Withdrawn: refunded 1.00 orb.". */
+export const refundedFace = (key: string, back: BackLook | undefined, refund: number): CardFace =>
+  plainFace(key, `Withdrawn: refunded ${orbs(refund)} ${refund === 100 ? 'orb' : 'orbs'}.`, back);
+
 /** The server's words for a refusal, or the screen's own, said plainly: a capital and a stop (the server already names a price as orbs). */
 export function plainRefusal(error: string): string {
   const said = error.charAt(0).toUpperCase() + error.slice(1);

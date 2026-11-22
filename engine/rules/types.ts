@@ -1013,6 +1013,11 @@ export interface Instance {
   readonly copy: Copy;
   readonly classes: readonly ClassRules[];
   readonly cards: readonly CardRules[];
+  /**
+   * Cards that have left for good, each with the name it had and the refund a holder gets for every copy (hundredths of an orb). Its key is
+   * no card's, in `cards` or in a `formerly`; the name is how an old log line still says it.
+   */
+  readonly withdrawn: readonly { readonly key: string; readonly name: string; readonly refund: Hundredths }[];
   readonly reactions: readonly ReactionKind[];
   readonly settings: Settings;
   readonly boards: readonly BoardSeed[];

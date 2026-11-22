@@ -53,7 +53,7 @@ const pipStyles = deepFreeze([
   { key: 'default', name: 'Default', full: 'pips/default-full.svg', empty: 'pips/default-empty.svg' },
 ]);
 
-export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, reactions, settings: defaults, boards, ranks, pipStyles, system, developer, anonymous, groups, packs, machine, gear, trophies, events });
+export const instance: Instance = Object.freeze({ key: 'divided-world', name: 'Divided World', copy, classes, cards, withdrawn: [{ key: 'bluff', name: 'Bluff', refund: 100 }], reactions, settings: defaults, boards, ranks, pipStyles, system, developer, anonymous, groups, packs, machine, gear, trophies, events });
 
 /** The same instance on the playtest's shorter season and Turn cooldown. */
 export const playtestInstance: Instance = Object.freeze({ ...instance, settings: playtest });

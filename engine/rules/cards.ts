@@ -291,6 +291,17 @@ export interface CardRules<Config = unknown> {
   readonly name: string;
   readonly alignment: Alignment;
   readonly rarity: Rarity;
+  /**
+   * Out of print: nothing gives out a new copy (a pack, the machine, a Random Event), while every copy already out stays fully playable.
+   * It is reversible: take the flag off and the card is in print like any other. A card that has left for good is renamed (`formerly`) or
+   * withdrawn (`Instance.withdrawn`), never retired.
+   */
+  readonly retired?: true;
+  /**
+   * The keys and names this card went by before, when it is a renamed card: the old key is gone, and every copy of it is this card's.
+   * It is one-way (a key that has been renamed away is never a card again), and a name here is how old log lines and cards still say it.
+   */
+  readonly formerly?: readonly { readonly key: string; readonly name: string }[];
   /** How it is played; a Cast unless it says. */
   readonly play?: Play;
   /**
@@ -472,6 +483,9 @@ export function economyOf(settings: Settings, key: string): number {
   if (typeof n !== 'number' || !Number.isFinite(n)) throw new Error(`economy "${key}" is not set`);
   return n;
 }
+
+/** Whether a card is in print: only its `retired` flag takes it out. Out of print, nothing gives out a new copy, and every copy already out stays playable. */
+export const inPrint = (rules: Pick<CardRules, 'retired'>): boolean => rules.retired !== true;
 
 export const ok = <T>(value: T): Verdict<T> => ({ ok: true, value });
 export const refuse = (why: string): Verdict<never> => ({ ok: false, why });
