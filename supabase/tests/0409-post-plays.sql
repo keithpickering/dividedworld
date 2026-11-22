@@ -7,6 +7,8 @@
 --   * kind_plays: three pages of 20 over 45 ended plays, newest first and disjoint, then `next` null; plays in force never appear; size 0 and 500 are clamped; a second caller sees the same plays and only their own `mine`;
 --     backs page with `card` null; `spun` and `cast` come with a page.
 --   * thread_page's plays for a post equal post_plays's, and its origin's likewise; its `counts` and the origin's are the counts.
+--   * A back that sprang into a lockout (`did: lockedOut`, the spring's `until`) stays on the page while that lockout is ahead (the owner's answer to #993, option a): `play_post.lock_until` holds the end, post_play_ids carries
+--     the back, and it stays over for post_effects_up and the counts. Two such backs, a newer sprung back with no lockout and a most-drawn Use: the page holds all of them; with the lockouts' ends past, only the stand-ins.
 --   * The kept tables are no signed-in player's, and an anonymous visitor reaches none of the reads.
 -- The cards are this file's own (ppl...). The row bounds of the reads are in 0409-post-plays-scale.sql.
 
@@ -397,4 +399,60 @@ begin
   end if;
   if o ? 'more' then raise exception '6 the origin still says whether more plays exist'; end if;
   if jsonb_array_length(o -> 'plays') < 12 then raise exception '6 the origin holds %', jsonb_array_length(o -> 'plays'); end if;
+end $$;
+
+-- ---- 7. A back that sprang into a lockout stays on the page while the lockout is ahead (#993, option a) ----
+-- Post `l` has two backs sprung into lockouts that end in an hour, a newer back sprung with no lockout and a Use that is over and the most drawn of its kind; post `g` has the same, with the lockouts' ends past. Each back is a stand-in only
+-- if it is the newest or the most drawn sprung back (the newest alone here), so the two locked-out backs are on the page only through their lockouts.
+select tests.unbecome();
+do $$
+declare
+  aacct uuid := tests.account('ppl-7-ann'); a uuid := tests.character(aacct, 'Ppl Seven Ann'); caster uuid := tests.character(tests.account('ppl-7-caster'), 'Ppl Seven Caster');
+  reader uuid := tests.account('ppl-7-reader'); rc uuid := tests.character(reader, 'Ppl Seven Reader');
+  t uuid := tests.thread('Ppl lockouts');
+  l uuid := tests.post(a, t, 'Locked.'); g uuid := tests.post(a, t, 'Gone.');
+  lb uuid[] := '{}'; gb uuid[] := '{}'; ln uuid; gn uuid; lu uuid; gu uuid; r jsonb; got uuid[]; i integer; k integer;
+  drift text;
+begin
+  perform pg_temp.cards();
+  for k in 1..2 loop
+    -- k = 1 is post l (lockouts ahead), k = 2 is post g (lockouts past).
+    for i in 1..2 loop
+      declare po uuid := case when k = 1 then l else g end; s uuid; ends timestamptz := case when k = 1 then now() + interval '1 hour' else now() - interval '1 hour' end;
+      begin
+        s := tests.act(a, 'set', t, '{}', po, now() - (10 - i) * interval '1 hour');
+        insert into face_down (play, account, card, post, thread, round, ends_at) values (s, aacct, 'pplback', po, t, i, now() + interval '1 day');
+        perform tests.act(a, 'spring', t, jsonb_build_object('set', s::text, 'card', 'pplback', 'trigger', 'cast', 'did', 'lockedOut', 'locks', caster::text, 'until', ends::text), po, now() - (10 - i) * interval '1 hour' + interval '1 minute');
+        if k = 1 then lb := lb || s; else gb := gb || s; end if;
+      end;
+    end loop;
+  end loop;
+  -- A newer back that sprang with no lockout, and a Use that is over (its end past) and the most drawn of its kind, on each post.
+  ln := pg_temp.back(a, aacct, t, l, 3, now() - interval '2 hours', now() + interval '1 day', true);
+  gn := pg_temp.back(a, aacct, t, g, 3, now() - interval '2 hours', now() + interval '1 day', true);
+  lu := pg_temp.play(caster, t, l, 'ppluse', now() - interval '5 days', now() - interval '4 days'); perform pg_temp.draw(lu, 9);
+  gu := pg_temp.play(caster, t, g, 'ppluse', now() - interval '5 days', now() - interval '4 days'); perform pg_temp.draw(gu, 9);
+  -- The kept rows: the lockout's end on the two backs that sprang into one, null on the others, and nothing drifts.
+  if (select array_agg(p.lock_until is not null order by p.play) from play_post p where p.play = any (lb)) is distinct from (select array_agg(true order by x) from unnest(lb) x) then raise exception '7 a back sprung into a lockout holds no lock_until'; end if;
+  if exists (select 1 from play_post p where p.play = any (array[ln, gn, lu, gu]) and p.lock_until is not null) then raise exception '7 a play that is no lockout holds a lock_until'; end if;
+  if (select p.lock_until from play_post p where p.play = lb[1]) is distinct from (select (s.payload ->> 'until')::timestamptz from acts s where s.kind = 'spring' and s.payload ->> 'set' = lb[1]::text) then raise exception '7 lock_until is not the spring''s until'; end if;
+  select string_agg(d.why, '; ') into drift from play_post_drift() d where d.play = any (lb || gb || array[ln, gn, lu, gu, l, g]);
+  if drift is not null then raise exception '7 the kept rows drift: %', drift; end if;
+  -- Still over for the stack, the limit and the counts: a sprung back is over at its spring, locked out or not.
+  if exists (select 1 from play_post p where p.play = any (lb || gb) and p.over_at is null) then raise exception '7 a back sprung into a lockout is not over'; end if;
+  if post_effects_up(l) <> 0 or post_effects_up(g) <> 0 then raise exception '7 a back sprung into a lockout holds a slot of the post: %, %', post_effects_up(l), post_effects_up(g); end if;
+  if (select plays from post_kinds where post = l and kind = '') is distinct from 3 or (select plays from post_kinds where post = g and kind = '') is distinct from 3 then raise exception '7 the count of backs that sprang is not 3 on each post'; end if;
+  -- The page: the lockouts ahead keep their backs up, with the newest sprung back and the Use; the lockouts past leave the stand-ins alone.
+  perform tests.become(reader);
+  r := post_plays(array[l]);
+  got := pg_temp.play_ids(r -> 'plays');
+  if got is distinct from pg_temp.sorted(lb || array[ln, lu]) then raise exception '7 the post with lockouts ahead: the page holds % and should hold the two locked-out backs, the newest sprung back and the Use: %', got, pg_temp.sorted(lb || array[ln, lu]); end if;
+  if (select array_agg(x -> 'payload' ->> 'set' order by x -> 'payload' ->> 'set') from jsonb_array_elements(r -> 'plays') x where x ->> 'kind' = 'spring') is distinct from (select array_agg(v order by v) from unnest((lb || array[ln])::text[]) v)
+    then raise exception '7 the springs of the backs do not ride: %', r -> 'plays'; end if;
+  r := post_plays(array[g]);
+  got := pg_temp.play_ids(r -> 'plays');
+  if got is distinct from pg_temp.sorted(array[gn, gu]) then raise exception '7 the post with lockouts past: the page holds % and should hold only the stand-ins %', got, pg_temp.sorted(array[gn, gu]); end if;
+  r := post_plays(array[l, g]);
+  if pg_temp.play_ids(r -> 'plays') is distinct from pg_temp.sorted(lb || array[ln, lu, gn, gu]) then raise exception '7 two posts in one call: %', pg_temp.play_ids(r -> 'plays'); end if;
+  perform tests.unbecome();
 end $$;

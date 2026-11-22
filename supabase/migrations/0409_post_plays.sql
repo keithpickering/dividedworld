@@ -4,7 +4,7 @@
 -- The cap goes: thread_page's "oldest 8" a post and the origin box's "oldest 20" and its `more` flag. The read is bounded by the instance's stacks and its number of cards, at any age of the post.
 --
 --   1. the indexes           play_post_newest and play_post_drawn, on the rows a stand-in can be (a card, or a back that sprang): the two ways a kind's history is read.
---   2. post_play_ids         definer: for each post, the plays in force and, for each of its kinds, the first row of each index. Ids only.
+--   2. post_play_ids         definer: for each post, the plays in force, the sprung backs whose lockout is live and, for each of its kinds, the first row of each index. Ids only.
 --   3. post_kind_counts      definer: the post_kinds rows of a list of posts, a back's kind as a null card.
 --   4. play_rider_ids        definer: the ids of the springs and take-backs of a list of backs (acts_public cannot use the expression indexes that find them: its payload is shown_payload(...) of acts.payload).
 --   5. kind_play_ids         definer: a page of a kind's plays that are not in force, newest first from a cursor.
@@ -18,7 +18,7 @@
 -- Ways out: nothing here is a state a player is in; a page's plays follow the kept rows, which follow the Acts. An older play is paged from the Lens's Who by kind_plays.
 -- Masks: every id and count comes from the kept rows, whose columns are public facts of public Acts; a back's kind is the null card and never names the card; the draw is public sums and spun threads, never who reacted. The four
 -- definers behind the reads take no account and compute nothing from who is asking; kind_plays's tallies and `mine` are read as the caller, so only the caller's own reactions are theirs alone, as in thread_page.
--- Cost at a busy instance's scale: a page reads, for each post, one probe of play_post_up for the plays in force and, for each kind the post has had, one row of each stand-in index; a page of a kind's history reads the page and the
+-- Cost at a busy instance's scale: a page reads, for each post, one probe of play_post_up for the plays in force, one of play_post_lock for the sprung backs whose lockout is live (a handful of rows, none on most posts) and, for each kind the post has had, one row of each stand-in index; a page of a kind's history reads the page and the
 -- plays in force it skips, by one index in order. Both are held to a row bound on a post of 5,000 plays by supabase/tests/0409-post-plays-scale.sql, which goes red with an index withheld.
 
 -- ---- 1. the indexes ----
@@ -29,13 +29,16 @@ create index play_post_drawn on play_post (post, kind, drawn desc, played_at des
 
 -- ---- 2. post_play_ids ----
 
--- For each of `posts`, distinct: the plays in force (not over by an event, and with no end or an end ahead: play_post_up, in two probes, no end and an end ahead), and, for each of the post's post_kinds rows, the first row of
+-- For each of `posts`, distinct: the plays in force (not over by an event, and with no end or an end ahead: play_post_up, in two probes, no end and an end ahead), the sprung backs whose lockout is still ahead (`lock_until > now()`, play_post_lock:
+-- the owner's answer to #993, option a, keeps a back up while the lockout its spring started is live; it is over for the stack, the limit and the counts), and, for each of the post's post_kinds rows, the first row of
 -- play_post_newest and of play_post_drawn. A kind '' is the backs that sprang. Set-based over the posts, never a loop. The estimate of rows steers the plans of its callers to probe by id.
 create function post_play_ids(posts uuid[]) returns table (post uuid, play uuid)
 language sql stable security definer set search_path = public, pg_temp rows 16 as $$
   select p.post, p.play from play_post p where p.post = any (post_play_ids.posts) and p.over_at is null and p.ends_at is null
   union
   select p.post, p.play from play_post p where p.post = any (post_play_ids.posts) and p.over_at is null and p.ends_at > now()
+  union
+  select p.post, p.play from play_post p where p.post = any (post_play_ids.posts) and p.lock_until > now()
   union
   select k.post, n.play from post_kinds k
     cross join lateral (select p.play from play_post p where p.post = k.post and p.kind = k.kind and (p.kind <> '' or p.sprung) order by p.played_at desc, p.play desc limit 1) n

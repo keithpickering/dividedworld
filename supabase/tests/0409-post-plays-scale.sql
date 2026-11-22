@@ -6,7 +6,8 @@
 -- The kept tables are no signed-in player's, so the two reads of them (post_play_ids and kind_play_ids, the definers behind post_plays, kind_plays and thread_page) are measured as the test's own role; thread_page's own statement is measured as a reader.
 --
 -- The fixture: one post of 5,000 plays of 6 kinds, 4 in force (one each of four kinds), 300 of them drawn, in a thread of 6,000 posts, among 12,000 other posts in two threads with 6,000 plays between them.
---  1. post_play_ids reads at most 4 + 2 x 6 + 8 rows of play_post and no row of acts, and does not scan play_post or post_kinds sequentially.
+--     Two backs that sprang into lockouts still ahead are on the post as well (#993, option a: play_post_lock's probe reads them, and their springs ride): over for the stack and the counts, up on the page.
+--  1. post_play_ids reads at most 4 + 2 + 2 x 6 + 8 rows of play_post (the 4 in force, the 2 locked-out backs, the stand-ins) and no row of acts, and does not scan play_post or post_kinds sequentially. It was 4 + 2 x 6 + 8 = 24 before the lockouts' probe.
 --  2. thread_page, for the page that holds the post, looks the post's plays up by id (its in force and stand-ins, their riders: at most that many ids), reads exactly those from acts_public, and no scan of acts by that list of ids is a
 --     sequential one. The rest of what acts_public does for each Act it shows is the view's cost and is not counted.
 --  3. kind_play_ids reads at most `size` + the plays of the kind in force + 1 rows of play_post, on the first page and on a page deep in the kind's history.
@@ -114,23 +115,23 @@ begin
   return plan;
 end $$;
 
--- Case 1's bound, raising when it is broken: the plays of a post read at most 4 in force + 2 stand-ins for each of 6 kinds + 8 of slack, and nothing of acts.
+-- Case 1's bound, raising when it is broken: the plays of a post read at most 4 in force + 2 backs in a lockout + 2 stand-ins for each of 6 kinds + 8 of slack, and nothing of acts.
 create function pg_temp.check_ids_bound(p uuid) returns numeric language plpgsql as $$
 declare plan jsonb := pg_temp.ids_plan(array[p]); n numeric := pg_temp.rows_read(plan, 'play_post');
 begin
-  if n > 4 + 2 * 6 + 8 then raise exception 'ROWBOUND post_play_ids read % rows of play_post for a post of 5,000 plays: at most 4 + 2 x 6 + 8 = 24', n; end if;
+  if n > 4 + 2 + 2 * 6 + 8 then raise exception 'ROWBOUND post_play_ids read % rows of play_post for a post of 5,000 plays: at most 4 + 2 + 2 x 6 + 8 = 26', n; end if;
   if pg_temp.rows_read(plan, 'acts') > 0 then raise exception 'post_play_ids reads acts: %', plan; end if;
   if pg_temp.seq_scans(plan, 'play_post') + pg_temp.seq_scans(plan, 'post_kinds') + pg_temp.seq_scans(plan, 'acts') > 0 then raise exception 'post_play_ids scans a table in sequence: %', plan; end if;
   return n;
 end $$;
 
--- Case 2's bound, raising when it is broken: thread_page, for the page that holds the post, looks up at most 4 in force + 2 stand-ins for each of 6 kinds + 8 of riders (`on_all`), reads exactly those from acts_public (two arms, each
+-- Case 2's bound, raising when it is broken: thread_page, for the page that holds the post, looks up at most 4 in force + 2 backs in a lockout + 2 stand-ins for each of 6 kinds + 8 of riders (`on_all`), reads exactly those from acts_public (two arms, each
 -- read by id: twice that, and the 8 again), and no scan of acts is filtered by the list of ids.
 create function pg_temp.check_page_lookup(acct uuid, t uuid) returns numeric language plpgsql as $$
 declare plan jsonb := pg_temp.page_statement_plan(acct, t, 1, 20); ids numeric := pg_temp.cte_rows(plan, 'CTE on_all'); n numeric := pg_temp.acts_by_id_rows(plan, array['CTE on_posts']);
 begin
-  if ids > 4 + 2 * 6 + 8 then raise exception 'ROWBOUND thread_page looked up % plays and riders of a post of 5,000 plays: at most 4 + 2 x 6 + 8 = 24', ids; end if;
-  if n > 2 * (4 + 2 * 6) + 8 then raise exception 'ROWBOUND thread_page read % rows of acts by id for the post''s plays: at most 2 x (4 + 2 x 6) + 8 = 40', n; end if;
+  if ids > 4 + 2 + 2 * 6 + 8 then raise exception 'ROWBOUND thread_page looked up % plays and riders of a post of 5,000 plays: at most 4 + 2 + 2 x 6 + 8 = 26', ids; end if;
+  if n > 2 * (4 + 2 + 2 * 6) + 8 then raise exception 'ROWBOUND thread_page read % rows of acts by id for the post''s plays: at most 2 x (4 + 2 + 2 x 6) + 8 = 44', n; end if;
   if ids < 6 or n < 6 or pg_temp.cte_rows(plan, 'CTE on_posts') is distinct from ids then raise exception 'the meter sees % ids, % rows of acts by id and % Acts, so it cannot tell a bound: %', ids, n, pg_temp.cte_rows(plan, 'CTE on_posts'), plan; end if;
   -- No scan of acts whose filter is the list of ids (a lookup by id that fell to scanning the history), and none of play_post, which the plays are found in by functions the plan does not see into.
   if pg_temp.seq_scans(plan, 'acts', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts'], '%ANY%') + pg_temp.seq_scans(plan, 'play_post', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']) > 0 then raise exception 'the plays'' reads scan a table in sequence: %', plan; end if;
@@ -196,6 +197,15 @@ begin
   end if;
   if (select count(*) from play_post where post = p and drawn > 0) < 200 then raise exception 'the fixture draws too little'; end if;
   if exists (select 1 from play_post_drift()) then raise exception 'the fixture drifts'; end if;
+  -- Two backs set by the post's author, each sprung into a lockout of the first caster that ends in a day: written with the triggers on, so the kept rows are the triggers' (the 4 in force are as they were; a back that sprang is over).
+  insert into card_kinds (key, name, alignment, rarity, play, trap, reaches, lasts) values ('ppsback', 'Pps Back', 'sweet', 'uncommon', 'set', '{"trigger": {"on": "cast"}, "match": {"flavors": ["salty"]}}', '{post}', null);
+  declare s uuid; begin
+    for k in 1..2 loop
+      s := tests.act(a, 'set', t0, '{}', p, now() - interval '30 days' + k * interval '1 minute');
+      insert into face_down (play, account, card, post, thread, round, ends_at) values (s, ann, 'ppsback', p, t0, k, now() + interval '1 day');
+      perform tests.act(a, 'spring', t0, jsonb_build_object('set', s::text, 'card', 'ppsback', 'trigger', 'cast', 'did', 'lockedOut', 'locks', casters[1]::text, 'until', (now() + interval '1 day')::text), p, now() - interval '30 days' + k * interval '1 minute' + interval '1 second');
+    end loop;
+  end;
 
   -- 1. post_play_ids.
   n := pg_temp.check_ids_bound(p);
@@ -212,7 +222,7 @@ begin
   doc := thread_page(t0, 1, null, 20, array['ppsk1']);
   perform tests.unbecome();
   if (select count(*) from jsonb_array_elements(doc -> 'plays') x where x ->> 'target_act_id' = p::text and x ->> 'kind' = 'card') not between 6 and 16 then raise exception '2 the page holds % plays of the famous post', (select count(*) from jsonb_array_elements(doc -> 'plays') x where x ->> 'target_act_id' = p::text); end if;
-  if jsonb_array_length(doc -> 'counts') is distinct from (select count(distinct (x ->> 'card')) from jsonb_array_elements(doc -> 'counts') x where x ->> 'post' = p::text) + (select count(*) from jsonb_array_elements(doc -> 'counts') x where x ->> 'post' <> p::text) then raise exception '2 counts'; end if;
+  if jsonb_array_length(doc -> 'counts') is distinct from (select count(distinct coalesce(x ->> 'card', '')) from jsonb_array_elements(doc -> 'counts') x where x ->> 'post' = p::text) + (select count(*) from jsonb_array_elements(doc -> 'counts') x where x ->> 'post' <> p::text) then raise exception '2 counts'; end if;
 
   -- 3. kind_play_ids: the first page and a page deep in the kind's history.
   n := pg_temp.check_page_bound(p, 'ppsk1', null, null, 20, 1);

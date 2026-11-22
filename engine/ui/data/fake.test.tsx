@@ -5040,6 +5040,28 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await fake.reverseCard(spring.id)).toEqual(refused('that card has already worn off'));
     });
 
+    test('postPlays keeps a back that sprang into a lockout while the lockout is ahead (#993), and only the newest sprung back once it has passed', async () => {
+      const { fake, ana, bo, anaFace, boFace, boHeel, post } = lk();
+      const first = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      fake.clock.advance(MINUTE);
+      fake.signInAs(ana);
+      const second = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boHeel, post, {}, ''));
+      const springs = (await fake.postPlays([post])).plays.filter((a) => a.kind === 'spring');
+      expect(springs.map((a) => a.payload.did)).toEqual(['lockedOut', 'lockedOut']);
+      const backs = async () => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'set').map((a) => a.id);
+      /* Both lockouts are ahead: both sprung backs are carried, though only one is the newest of its kind and neither draws more than the other. */
+      expect((await backs()).sort()).toEqual([first.id, second.id].sort());
+      /* The first one's lockout ends before the second's (a minute earlier), and then only the newest sprung back is left, as a stand-in. */
+      fake.clock.advance(24 * 60 * MINUTE);
+      expect(await backs()).toEqual([second.id]);
+      fake.clock.advance(MINUTE);
+      expect(await backs()).toEqual([second.id]);
+    });
+
     test('the Move that springs it still writes the reply it carries', async () => {
       const { fake, bo, anaFace, boFace, thread, post } = lk();
       must(await fake.setCard('lkback', anaFace, post, {}));

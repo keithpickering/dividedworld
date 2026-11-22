@@ -94,10 +94,10 @@ begin
     perform play_post_move(was, null::play_post);
     return;
   end if;
-  insert into play_post (play, post, kind, reach, played_at, ends_at, over_at, took, sprung, drawn)
-  values (r.play, r.post, r.kind, r.reach, r.played_at, r.ends_at, r.over_at, r.took, r.sprung, r.drawn)
+  insert into play_post (play, post, kind, reach, played_at, ends_at, over_at, took, sprung, drawn, lock_until)
+  values (r.play, r.post, r.kind, r.reach, r.played_at, r.ends_at, r.over_at, r.took, r.sprung, r.drawn, r.lock_until)
   on conflict on constraint play_post_pkey do update set post = excluded.post, kind = excluded.kind, reach = excluded.reach, played_at = excluded.played_at, ends_at = excluded.ends_at,
-    over_at = excluded.over_at, took = excluded.took, sprung = excluded.sprung, drawn = excluded.drawn;
+    over_at = excluded.over_at, took = excluded.took, sprung = excluded.sprung, drawn = excluded.drawn, lock_until = excluded.lock_until;
   perform play_post_move(was, r);
   if mates and r.reach = 'post' and exists (select 1 from card_kinds ck where ck.key = r.kind and ck.drive is not null) then
     -- Each mate is refreshed under the drive's lock taken above, so the per-play locks here are never waited on in two orders.

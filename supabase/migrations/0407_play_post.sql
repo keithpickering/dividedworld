@@ -1,7 +1,7 @@
 -- play_post: a row for each play on a post, kept from one definition (docs/plans/2026-11-21-post-plays-plan.md, Task 1; design docs/plans/2026-11-21-post-plays-design.md, sections 1 and 2).
 -- A play is a `card` Act, or a `set` Act (a card face down), that targets a post. The row is the play's state, not the play: no Act is touched ("Append-only"). It holds the post, the kind (the card's key, or the empty string for a back, which never
--- names the card it hides), the reach, when it was played, its end by time (`ends_at`), the moment an event ended it (`over_at`), whether it took, whether a back sprang, and how much it has drawn. A play is in force while `over_at` is null and
--- `ends_at` is null or ahead. The page's reads (Task 3) and the stack's up count are held to it by play_post_drift(), a check, never trusted.
+-- names the card it hides), the reach, when it was played, its end by time (`ends_at`), the moment an event ended it (`over_at`), whether it took, whether a back sprang, how much it has drawn, and, for a back that sprang into a lockout, when
+-- that lockout ends (`lock_until`). A play is in force while `over_at` is null and `ends_at` is null or ahead; a sprung back is over, and `lock_until` is only what the page reads to keep it up while its lockout is (it joins no stack, limit or count). The page's reads (Task 3) and the stack's up count are held to it by play_post_drift(), a check, never trusted.
 --
 --   1. play_post             the table: one row for each play. Row-level security on, nothing granted to an API role; it is read only through functions, as play_reach is.
 --   2. play_row              the one definition: a play's row, computed from the Acts and the rows beside them. Null for an Act that is no play. The list of every way a play ends is in its header, beside the predicate it mirrors.
@@ -29,17 +29,22 @@ create table play_post (
   over_at timestamptz,
   took boolean not null,
   sprung boolean not null,
-  drawn integer not null default 0 check (drawn >= 0)
+  drawn integer not null default 0 check (drawn >= 0),
+  -- A back that sprang into a lockout: the spring's `until` (the owner's answer to #993, option a: the page keeps it up while the lockout is live). Null for every other play. It is not `ends_at`: the back stays over.
+  lock_until timestamptz
 );
 alter table play_post enable row level security;
 revoke all on play_post from public, anon, authenticated, service_role;
 
 -- The plays on a post that hold a place, by their time.
 create index play_post_up on play_post (post, ends_at) where over_at is null;
+-- The sprung backs whose lockout the page keeps up while it is live: a handful of rows, read by post.
+create index play_post_lock on play_post (post, lock_until) where lock_until is not null;
 
 -- ---- 2. play_row ----
 
--- A play's row, computed from the Acts and the rows beside them, or null for an Act that is not a `card` or `set` with a target.
+-- A play's row, computed from the Acts and the rows beside them, or null for an Act that is not a `card` or `set` with a target. Its fields are play_post's columns in order, the last being `lock_until`: a back's spring's `until` when that spring
+-- is a lockout (`did: lockedOut`), else null. It ends nothing (the back is over at its spring); the page reads it to keep the back up while the lockout is live.
 --
 -- Every way a play ends, and the predicate it mirrors. A new ender's author adds its line here, its trigger line below and its case to supabase/tests/0407-play-post.sql, or play_post_drift() names the play.
 --   by time          a card's `ends` (payload), or play_reach.ends_at for a card reaching beyond a post, which writes no `ends`; a back's face_down.ends_at; a drive play's drive close (below).   -> ends_at
@@ -79,7 +84,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
                       card_cut_at(a.id)) end,
          rf.play is null,
          a.kind = 'set' and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text),
-         coalesce((select sum(t.count) from reaction_tallies t where t.act = a.id), 0)::integer + (select count(*) from threads th where th.origin_act_id = a.id)::integer
+         coalesce((select sum(t.count) from reaction_tallies t where t.act = a.id), 0)::integer + (select count(*) from threads th where th.origin_act_id = a.id)::integer,
+         case when a.kind = 'set' then (select min((s.payload ->> 'until')::timestamptz) from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text and s.payload ->> 'did' = 'lockedOut') end
   from acts a
   left join face_down f on f.play = a.id and a.kind = 'set'
   left join play_reach pr on pr.play = a.id and a.kind = 'card'
@@ -104,10 +110,10 @@ begin
     delete from play_post p where p.play = refresh_play_post.play;
     return;
   end if;
-  insert into play_post (play, post, kind, reach, played_at, ends_at, over_at, took, sprung, drawn)
-  values (r.play, r.post, r.kind, r.reach, r.played_at, r.ends_at, r.over_at, r.took, r.sprung, r.drawn)
+  insert into play_post (play, post, kind, reach, played_at, ends_at, over_at, took, sprung, drawn, lock_until)
+  values (r.play, r.post, r.kind, r.reach, r.played_at, r.ends_at, r.over_at, r.took, r.sprung, r.drawn, r.lock_until)
   on conflict on constraint play_post_pkey do update set post = excluded.post, kind = excluded.kind, reach = excluded.reach, played_at = excluded.played_at, ends_at = excluded.ends_at,
-    over_at = excluded.over_at, took = excluded.took, sprung = excluded.sprung, drawn = excluded.drawn;
+    over_at = excluded.over_at, took = excluded.took, sprung = excluded.sprung, drawn = excluded.drawn, lock_until = excluded.lock_until;
   if mates and r.reach = 'post' and exists (select 1 from card_kinds ck where ck.key = r.kind and ck.drive is not null) then
     for mate in
       select k.id from acts k

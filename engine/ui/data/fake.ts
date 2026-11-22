@@ -1927,9 +1927,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
   /**
    * A play as the kept row of it reads (play_post, 0407; post_kinds, 0408): its kind (a card's key, '' for a back, which never names its card), the moment an event or its time ends it, whether it took, whether a back sprang, and how much it
-   * has drawn (public reaction sums and the threads spun from it). In force while no event has ended it and its time is unset or ahead.
+   * has drawn (public reaction sums and the threads spun from it). In force while no event has ended it and its time is unset or ahead. `lockUntil` is when the lockout a back's spring started ends (play_post.lock_until, the owner's answer to #993): a back that
+   * sprang into one stays up on the page until then, and stays over for the stack, the limit and the counts.
    */
-  interface PlayRow { readonly act: ActRec; readonly kind: string; readonly over: boolean; readonly ends: number | null; readonly took: boolean; readonly sprung: boolean; readonly drawn: number }
+  interface PlayRow { readonly act: ActRec; readonly kind: string; readonly over: boolean; readonly ends: number | null; readonly took: boolean; readonly sprung: boolean; readonly drawn: number; readonly lockUntil: number | null }
   const playRows = (posts: ReadonlySet<Id>): PlayRow[] => {
     const drawOf = new Map<Id, number>();
     for (const r of reactions) drawOf.set(r.act, (drawOf.get(r.act) ?? 0) + 1);
@@ -1939,7 +1940,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if ((a.kind !== 'card' && a.kind !== 'set') || a.target === null || !posts.has(a.target)) continue;
       if (a.kind === 'set') {
         const f = faceDown.get(a.id);
-        if (f) rows.push({ act: a, kind: '', over: f.sprung !== null || f.takenBack !== undefined, ends: f.endsAt, took: true, sprung: f.sprung !== null, drawn: drawOf.get(a.id) ?? 0 });
+        const lock = [...acts.values()].find((s) => s.kind === 'spring' && s.payload.set === a.id && s.payload.did === 'lockedOut' && typeof s.payload.until === 'string');
+        if (f) rows.push({ act: a, kind: '', over: f.sprung !== null || f.takenBack !== undefined, ends: f.endsAt, took: true, sprung: f.sprung !== null, drawn: drawOf.get(a.id) ?? 0, lockUntil: lock === undefined ? null : Date.parse(lock.payload.until as string) });
         continue;
       }
       const p = a.payload;
@@ -1955,7 +1957,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const close = Math.max(...(open.length > 0 ? open : mates).map((m) => m.at)) + spanMs(rules.drive.lasts);
         ends = ends === null ? close : Math.min(ends, close);
       }
-      rows.push({ act: a, kind: typeof p.card === 'string' ? p.card : '', over: over(a.id) || p.caught !== undefined || p.instant === true, ends, took: !untakenPlays.has(a.id), sprung: false, drawn: drawOf.get(a.id) ?? 0 });
+      rows.push({ act: a, kind: typeof p.card === 'string' ? p.card : '', over: over(a.id) || p.caught !== undefined || p.instant === true, ends, took: !untakenPlays.has(a.id), sprung: false, drawn: drawOf.get(a.id) ?? 0, lockUntil: null });
     }
     return rows;
   };
@@ -1973,7 +1975,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return { riders, ends };
   };
   /**
-   * post_plays (0409), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
+   * post_plays (0409), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, every back whose spring's lockout is still ahead, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
    * not, the springs and take-backs of the backs, the `card_end` of each, each once in the order of their dates; and a count for each kind. A back is one kind, '' to the rows and a null card to the reader, counted once sprung.
    */
   function postPlaysOf(posts: readonly Id[], at: number): PostPlaysRead {
@@ -1982,7 +1984,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const chosen = new Set<Id>();
     const kinds = new Map<string, { post: Id; card: string | null; all: number; took: number; list: PlayRow[] }>();
     for (const r of rows) {
-      if (holdsPlace(r, at)) chosen.add(r.act.id);
+      if (holdsPlace(r, at) || (r.lockUntil !== null && r.lockUntil > at)) chosen.add(r.act.id);
       if (!counted(r)) continue;
       const key = `${r.act.target}\0${r.kind}`;
       const k = kinds.get(key) ?? { post: r.act.target!, card: r.kind === '' ? null : r.kind, all: 0, took: 0, list: [] };
