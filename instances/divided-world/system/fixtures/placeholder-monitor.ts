@@ -1,6 +1,7 @@
 /**
- * PLACEHOLDER MOD BOT. The real Mod Bots are written with the owner. This one keeps `firstStaff` valid, and the setting
- * `systemEnabled` (false) keeps it from acting. Its beats, pet rules, strictness, quiz and what persuades it are DRAFTS
+ * A TEST FIXTURE, NEVER ON THE ROSTER: the placeholder Mod Bot. The real Mod Bots are ONTOPIC 5.0 and QC-1000
+ * (`../personas/`). `placeholderWorld()` (./index.ts) puts this one on a test roster that needs a Mod Bot with a beat on
+ * `general`; no instance ever lists it. Its beats, pet rules, strictness, quiz and what persuades it are DRAFTS
  * for the owner (the Mod Bots plan, Task 14); the Boss fields are placeholders so every persona has every field.
  */
 import type { Persona } from '../../../../engine/rules/types.ts';
