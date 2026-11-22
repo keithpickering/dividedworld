@@ -77,6 +77,8 @@ function Staged() {
   const refreshed = useRef(refresh);
   refreshed.current = refresh;
   const [ready, setReady] = useState(false);
+  /** The skin's style sheet is on the page: the board mounts only then, so the first effects read the skin's tokens and not an empty page's. */
+  const [skinned, setSkinned] = useState(false);
   const [shown, setShown] = useState<{ readonly view: string; readonly epoch: number }>({ view: VIEW, epoch: 0 });
   useEffect(() => {
     let live = true;
@@ -88,21 +90,26 @@ function Staged() {
    * moved to the end of the head. A story's page carries the house theme in its own bundle (.storybook/preview.tsx imports it), which
    * lands after the theme's link, so the house theme won every token the two share: a skin showed its own extras over the house's
    * colors (Fan Site's film strip on the house's dark gray, where its page is blue). In the app the skin's sheet is the only theme.
+   * The board mounts only once that sheet has loaded (`skinned`): an effect that mounts first reads a page with no tokens ("shine band: --kb-fg
+   * is not a hex color") and has to draw again, so the first frames of a take could be a pass behind.
    */
   useEffect(() => {
     if (!ready) return;
     void api.preferences().then((p) => {
       applyAppearance(document, p, ui.themes, ui.glass);
-      const sheet = document.querySelector('link#kb-theme');
+      const sheet = document.querySelector<HTMLLinkElement>('link#kb-theme');
       if (sheet) document.head.append(sheet);
+      /* Moving a link in the head makes the browser load it again: the sheet counts as on the page when it says so (or fails, which the page then shows). */
+      if (!sheet || sheet.sheet) setSkinned(true);
+      else { const done = () => { setSkinned(true); }; sheet.addEventListener('load', done, { once: true }); sheet.addEventListener('error', done, { once: true }); }
     });
   }, [api, ui, ready]);
   useEffect(() => {
-    if (!made || !ready) return;
+    if (!made || !ready || !skinned) return;
     window.__kbStage = { ...made, fake: api as Fake, whoops: { packStroke, brushOf, BRUSH_PX }, play: playbook(api as Fake, instance, made), nodes, camera: { turn: turnBoard, level: levelBoard }, refreshPlayer: () => refreshed.current(), show: (view) => { const [v, k = ''] = view.split(':'); if (v === 'glass') { if (!(k in GLASS_PATHS)) throw new Error(`the stage has no glass screen "${k}"`); globalThis.history.replaceState(null, '', GLASS_PATHS[k]); } setShown((s) => ({ view, epoch: s.epoch + 1 })); }, skin: async (key) => { await api.setPreferences({ theme: key }); applyAppearance(document, await api.preferences(), ui.themes, ui.glass); const sheet = document.querySelector('link#kb-theme'); if (sheet) document.head.append(sheet); } };
     return () => { delete window.__kbStage; nodes.clear(); };
-  }, [api, instance, ready]);
-  if (!made || !ready) return <Frame><div aria-busy="true" /></Frame>;
+  }, [api, instance, ready, skinned]);
+  if (!made || !ready || !skinned) return <Frame><div aria-busy="true" /></Frame>;
   const [view, of = ''] = shown.view.split(':');
   return (
     <Camera>
