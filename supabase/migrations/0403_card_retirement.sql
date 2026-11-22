@@ -1,6 +1,6 @@
 -- Retiring a card (docs/plans/2026-11-20-card-retirement-plan.md, Task 2; design docs/plans/2026-11-20-card-retirement-design.md, sections 1 to 3, 5 and 8; closes #612).
 -- A card leaves the game one of three ways, each said in the instance's code and written by seed_instance: out of print (`retired_at`: nothing gives a new copy, every copy stays playable, and listing it again clears the date),
--- renamed (`became`, `gone_at`: every copy an account holds, held or face down, moves to the new key) and withdrawn (`refund`, `gone_at`: every such copy is refunded). Nothing is edited or deleted ("Append-only"): a move
+-- renamed (`became`, `gone_at`: every copy an account holds, held or face down, moves to the new key) and withdrawn (`refund`, `gone_at`: every such copy is refunded). Nothing is edited or deleted ("Append-only"), but that a later rename re-points the catalog's `became` of the earlier names (below): a move
 -- is rows beside the ones before them, in each account's own ledger and wallet, read by that account alone. A pack kind the payload stops listing is out of print too (`pack_kinds.retired_at`).
 -- Each object that is not new is copied whole from its latest version on main, with only the change named.
 --
@@ -19,12 +19,12 @@
 --   7. open_pack                (0377's) takes the account's row first (as play_card does), writes a card with `became` as `pulled` under the new key and a withdrawn one as a `withdrawn` row with its refund as price, credits the pack's
 --                               refunds in one wallet_move ('withdrawal'), and answers its contents with the new keys and `refunds: [{index, refund}]` (0-based, hundredths).
 --   8. spring_facts, take_back  spring_facts (0393's): a back whose card has gone_at is read as a card with no play and no trap, so it matches nothing. take_back (0317's): a back whose card is gone is refused after the setter check, in
---                               plain words naming the dates of gone_at and of the back's end, hint kayfabb.refusal.
+--                               plain words naming the date the card left and the date the back's end (a name renamed more than once says what the card is now, with no date of its own), hint kayfabb.refusal.
 --   9. seed_instance            (0397's): the guard and steps below, run for a payload that carries `formerly` or `withdrawn` (the engine's always does; a seed built with neither is a partial one, as the suite's older tests send):
---                                 a. a card_kinds key the payload lists in none of cards, formerly and withdrawn, a key in two of them, a formerly entry that became a card the payload does not list (or itself), and a key with gone_at
+--                                 a. a card_kinds key the payload lists in none of cards, formerly and withdrawn, a key in two of them, a formerly entry that became a card the payload does not list (or itself; a name already gone may point at a card the payload withdraws), a gone name left out of formerly whose chain ends in a listed card (one whose chain ends in a withdrawal the payload lists needs no entry), and a key with gone_at
 --                                    listed as a card are each refused, naming the keys, before anything is written;
 --                                 b. every card's `retired` sets retired_at (kept while the flag stays, cleared when it goes);
---                                 c. each formerly key not yet gone, and each withdrawn key not yet gone, is moved by card_leaves (new, below): every account holding the key or a live back of it is locked first, `for no key update`, in id
+--                                 c. each formerly key not yet gone, and each withdrawn key not yet gone, is moved by card_leaves (new, below), and a rename re-points every earlier name of the card that leaves at the new card (card_kinds.became, so a chain is one step): every account holding the key or a live back of it is locked first, `for no key update`, in id
 --                                    order (the row play_card and take_back take), then one grouped statement writes the held copies' rows, the live backs' rows and the new key's, and a withdrawal takes one wallet_move per account;
 --                                 d. a pack kind the payload does not list is retired, one it lists is not;
 --                                 e. the answer gains `retired` (keys), `renamed` [{from, to, copies}] and `withdrawn` [{key, copies, refunded}]: totals of this seed, never a row per account.
@@ -432,6 +432,7 @@ declare
   written uuid;
   nothing constant text := 'there is no face-down card to take back there';
   gone card_kinds%rowtype;
+  final card_kinds%rowtype;
   day constant text := 'FMMon FMDD, YYYY';
 begin
   perform played_by(through, take_back.who);
@@ -459,9 +460,14 @@ begin
   -- A back of a card that left: its copy moved or was refunded when the seed ran, so there is nothing to take back, and the words say what happened. Only the back's own setter reaches this.
   select k.* into gone from card_kinds k where k.key = fd.card and k.gone_at is not null;
   if found then
-    raise exception '%', case when gone.became is null
-      then format('%s was withdrawn on %s, and this copy was refunded then. Its back ends by itself on %s.', gone.name, to_char(gone.gone_at at time zone 'UTC', day), to_char(fd.ends_at at time zone 'UTC', day))
-      else format('%s was renamed to %s on %s, and this copy is in your hand as one. Its back ends by itself on %s.', gone.name, (select n.name from card_kinds n where n.key = gone.became), to_char(gone.gone_at at time zone 'UTC', day), to_char(fd.ends_at at time zone 'UTC', day)) end
+    -- Where the card ended: the card it is now, or the withdrawal its copies were refunded in (a name renamed more than once reaches the last, and its own date is not the date of that rename).
+    select k.* into final from card_kinds k join card_now(fd.card) n on n.key = k.key;
+    raise exception '%', case
+      when final.refund is not null
+        then format('%s was withdrawn on %s, and this copy was refunded then. Its back ends by itself on %s.', final.name, to_char(final.gone_at at time zone 'UTC', day), to_char(fd.ends_at at time zone 'UTC', day))
+      when exists (select 1 from card_kinds l where l.became = final.key and l.key <> gone.key and l.gone_at >= gone.gone_at)
+        then format('%s is now %s, and this copy is in your hand as one. Its back ends by itself on %s.', gone.name, final.name, to_char(fd.ends_at at time zone 'UTC', day))
+      else format('%s was renamed to %s on %s, and this copy is in your hand as one. Its back ends by itself on %s.', gone.name, final.name, to_char(gone.gone_at at time zone 'UTC', day), to_char(fd.ends_at at time zone 'UTC', day)) end
       using hint = 'kayfabb.refusal', errcode = 'P0001';
   end if;
   insert into acts (character, kind, thread, target_act_id, payload)
@@ -481,7 +487,7 @@ grant execute on function take_back(uuid, uuid, uuid) to service_role;
 -- `for no key update` in id order: the row play_card and take_back take, so no copy is played or taken back between the count and the write. A live back is a face-down card still up and not sprung or taken back; a held copy is as
 -- card_held counts it (an ended back that never sprang included). One statement counts them by account and writes every row: the held copies' rows (naming no Act), the live backs' rows (naming the back's play, since that play
 -- already took the copy out of the hand) and, for a rename, the new key's rows. A withdrawal then credits each account once, refund times copies, through wallet_move as every credit goes (the wallet's cap overflows as it does for
--- any). Answers the copies moved, and moves none for a key that is already gone. The seed's alone: no API role runs it.
+-- any). For a rename it also re-points every earlier name that became `old` at `became`, so a chain is always one step. Answers the copies moved, and moves none for a key that is already gone. The seed's alone: no API role runs it.
 create function card_leaves(old text, became text, refund integer) returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -507,7 +513,7 @@ begin
   -- After the locks, so a card that left while this waited is seen.
   update card_kinds k set gone_at = now(), became = card_leaves.became, refund = card_leaves.refund, retired_at = null where k.key = card_leaves.old and k.gone_at is null;
   if not found then return 0; end if;
-  -- A renamed card whose own earlier names pointed at it: they point at the newest card now, so a chain is never more than one link (card_now walks one) and a stored `became` is always a card in print or the withdrawn
+  -- A renamed card whose own earlier names pointed at it: they point at the newest card now, so a chain needs only one step (card_now takes one) and a stored `became` is always a card in print or the withdrawn
   -- card its copies were refunded as. One row per earlier name of the card that left (card_kinds is a catalog of a few hundred rows; a scan of it, once, when a card is renamed).
   if card_leaves.became is not null then
     update card_kinds k set became = card_leaves.became where k.became = card_leaves.old and k.gone_at is not null;
@@ -644,11 +650,10 @@ begin
     where k.from_seed and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e where e ->> 'key' = k.key)
       and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e where e ->> 'key' = k.key)
       and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e where e ->> 'key' = k.key)
-      -- A card that left, renamed or withdrawn, needs no entry of its own when what it became is listed: the key its chain ends in is a card, a name the seed renames or a withdrawn card of the payload.
+      -- A renamed card is listed by name, under the card that carries it, so history never says "a card". The one name that needs no entry is a card that was renamed and whose chain then ended in a withdrawal that the payload lists:
+      -- no card can carry that name, so there is no shape the instance could write for it.
       and not (k.gone_at is not null and exists (
-        select 1 from card_now(k.key) n, (select e ->> 'key' as key from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e
-                                          union all select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e
-                                          union all select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e) l where l.key = n.key));
+        select 1 from card_now(k.key) n join jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w on w ->> 'key' = n.key where n.refund is not null));
     if unknown is not null then
       raise exception 'the seed lists % as no card, no former name and no withdrawn card: a card the database holds is listed as one of the three, never left out', unknown using errcode = '22023';
     end if;

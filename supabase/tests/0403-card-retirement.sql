@@ -652,19 +652,21 @@ begin
 end $$;
 
 -- ---- 7c. A rename of a renamed card re-points the earlier rename: chains stay one link ----
--- A is renamed to B, then B to C. The second seed re-points A at C, so the guard accepts A whether or not the payload lists it, no copy moves twice, and the same seed again writes nothing.
-create function pg_temp.chain(a text, b text, c text, listed_a boolean) returns text language plpgsql as $$
+-- A is renamed to B, then B to C. The second seed re-points A at C, no copy moves twice, and the same seed again writes nothing.
+create function pg_temp.chain(a text, b text, c text) returns text language plpgsql as $$
 declare
-  u1 uuid := tests.account(a || '-u1'); u2 uuid := tests.account(a || '-u2'); ev jsonb; rows_before bigint; wallet_before bigint;
+  u1 uuid := tests.account(a || '-u1'); u2 uuid := tests.account(a || '-u2'); ev jsonb; rows_before bigint; wallet_before bigint; why text;
+  adm uuid := tests.account(a || '-adm'); slot_a uuid;
 begin
+  insert into admins (account) values (adm);
   perform seed_instance(pg_temp.pl(extra => jsonb_build_array(pg_temp.c(a, 'Name ' || a), pg_temp.c(b, 'Name ' || b))));
   perform pg_temp.hand(u1, a, 2); perform pg_temp.hand(u2, b, 1);
+  insert into machine_slots (position, card, availability, price) values ((select max(position) + 1 from machine_slots), a, 'onSale', 100) returning id into slot_a;
   ev := seed_instance(pg_temp.pl(rename => jsonb_build_array(jsonb_build_object('key', a, 'name', 'Name ' || a, 'became', b))));
   perform pg_temp.expect(card_held(u1, b) = 2 and card_held(u2, b) = 1 and card_held(u1, a) = 0, 'the first rename did not move the copies');
-  -- The second rename: the instance's payload lists the newest card with every old name (listed_a), or only the name it just replaced.
-  ev := seed_instance(pg_temp.pl(extra => jsonb_build_array(pg_temp.c(c, 'Name ' || c)), omit => case when listed_a then '{}' else array[a] end,
-    rename => case when listed_a then jsonb_build_array(jsonb_build_object('key', a, 'name', 'Name ' || a, 'became', c), jsonb_build_object('key', b, 'name', 'Name ' || b, 'became', c))
-                   else jsonb_build_array(jsonb_build_object('key', b, 'name', 'Name ' || b, 'became', c)) end));
+  -- The second rename: the instance's payload lists the newest card with every old name.
+  ev := seed_instance(pg_temp.pl(extra => jsonb_build_array(pg_temp.c(c, 'Name ' || c)),
+    rename => jsonb_build_array(jsonb_build_object('key', a, 'name', 'Name ' || a, 'became', c), jsonb_build_object('key', b, 'name', 'Name ' || b, 'became', c))));
   perform pg_temp.expect(ev -> 'renamed' = jsonb_build_array(jsonb_build_object('from', b, 'to', c, 'copies', 3)), format('only the card that left this seed moves, 3 copies: %s', ev -> 'renamed'));
   perform pg_temp.expect((select became from card_kinds where key = a) = c and (select became from card_kinds where key = b) = c, format('the earlier rename was not re-pointed: a became %s', (select became from card_kinds where key = a)));
   perform pg_temp.expect(card_held(u1, c) = 2 and card_held(u2, c) = 1 and card_held(u1, a) = 0 and card_held(u1, b) = 0 and card_held(u2, b) = 0, 'the copies did not land on the newest card once');
@@ -673,20 +675,24 @@ begin
   perform tests.become(u1);
   perform pg_temp.expect((select held from my_cards where card = c) = 2 and coalesce((select held from my_cards where card = a), 0) = 0 and coalesce((select held from my_cards where card = b), 0) = 0, 'my_cards disagrees with card_held');
   perform tests.unbecome();
-  perform pg_temp.expect((select n.key from card_now(a) n) = c, 'card_now walked more than one link, or not to the newest card');
+  -- What a caller sees: the admin machine's slot for the first name says what it became now (the newest card), which only the re-point makes so.
+  perform tests.become(adm);
+  perform pg_temp.expect((select e ->> 'became' from jsonb_array_elements(admin_machine()) e where e ->> 'slot' = slot_a::text) = c, 'the first name''s slot does not say it became the newest card');
+  perform tests.unbecome();
+  -- A payload that leaves out a name whose chain ends in a card it lists is refused, naming it: every old name is listed under the card that carries it, so history never says "a card".
+  why := pg_temp.coded(format($q$select seed_instance(pg_temp.pl(omit => array[%L]))$q$, a));
+  perform pg_temp.expect(why like '22023%' and why like '%' || a || '%', format('a payload that left out an old name of a listed card was not refused naming it: %s', why));
   -- The next seeds (the same payload) are accepted and write nothing.
   for i in 1..2 loop
     rows_before := (select count(*) from card_ledger); wallet_before := (select count(*) from wallet_events);
-    ev := seed_instance(case when listed_a then pg_temp.pl(rename => jsonb_build_array(jsonb_build_object('key', a, 'name', 'Name ' || a, 'became', c), jsonb_build_object('key', b, 'name', 'Name ' || b, 'became', c)))
-                             else pg_temp.pl(rename => jsonb_build_array(jsonb_build_object('key', b, 'name', 'Name ' || b, 'became', c)), omit => array[a]) end);
+    ev := seed_instance(pg_temp.pl(rename => jsonb_build_array(jsonb_build_object('key', a, 'name', 'Name ' || a, 'became', c), jsonb_build_object('key', b, 'name', 'Name ' || b, 'became', c))));
     perform pg_temp.expect(ev -> 'renamed' = '[]'::jsonb and (select count(*) from card_ledger) = rows_before and (select count(*) from wallet_events) = wallet_before, format('seed %s after the chain wrote or moved something: %s', i + 2, ev -> 'renamed'));
   end loop;
   return 'ok';
 end $$;
 
--- Listed under the newest card, as the instance's files do; and with only the name just replaced listed (accepted: a gone key whose chain ends in a listed key needs no entry of its own).
-select pg_temp.chain('crea', 'creb', 'crec', true);
-select pg_temp.chain('crfa', 'crfb', 'crfc', false);
+-- Listed under the newest card, as the instance's files do.
+select pg_temp.chain('crea', 'creb', 'crec');
 
 -- B withdrawn after A became B: A's copies were B's by then, so the refund is paid once, and the guard accepts A, which points at a withdrawn card.
 do $$
@@ -708,6 +714,34 @@ begin
   perform seed_instance(pg_temp.pl());
   perform seed_instance(pg_temp.pl(omit => array['crga'], withdraw => '[{"key": "crgb", "name": "Name crgb", "refund": 100}]'));
   perform pg_temp.expect((select count(*) from card_ledger) = rows_before and (select count(*) from wallet_events) = wallet_before, 'a seed after the withdrawal wrote rows');
+end $$;
+
+-- ---- 7d. take_back of a back that was live across two renames, or across a rename and a withdrawal, says what is true now ----
+do $$
+declare
+  u uuid := tests.account('crh-u'); ch uuid := tests.character(u, 'Crh Ch'); t uuid := tests.thread('Crh'); q1 uuid; q2 uuid; b1 uuid; b2 uuid; why text;
+  day text := to_char(now() at time zone 'UTC', 'FMMon FMDD, YYYY');
+begin
+  q1 := tests.post(ch, t, 'First post.'); q2 := tests.post(ch, t, 'Second post.');
+  perform seed_instance(pg_temp.pl(extra => jsonb_build_array(pg_temp.c('crha', 'Name crha', 'common', 'set'), pg_temp.c('crhb', 'Name crhb', 'common', 'set'), pg_temp.c('crhc', 'Name crhc', 'common', 'set'),
+    pg_temp.c('crja', 'Name crja', 'common', 'set'), pg_temp.c('crjb', 'Name crjb', 'common', 'set'))));
+  perform pg_temp.hand(u, 'crha', 1); perform pg_temp.hand(u, 'crja', 1);
+  perform tests.become_service();
+  b1 := (set_card(u, 'crha', ch, q1, '{}', 0, 'crcatch') ->> 'id')::uuid;
+  b2 := (set_card(u, 'crja', ch, q2, '{}', 0, 'crcatch') ->> 'id')::uuid;
+  perform tests.unbecome();
+  -- crha becomes crhb, then crhb becomes crhc: the first date is not the date of the rename to crhc, so the words claim no date.
+  perform seed_instance(pg_temp.pl(rename => '[{"key": "crha", "name": "Name crha", "became": "crhb"}]'));
+  perform seed_instance(pg_temp.pl(rename => '[{"key": "crha", "name": "Name crha", "became": "crhc"}, {"key": "crhb", "name": "Name crhb", "became": "crhc"}]'));
+  -- crja becomes crjb, then crjb is withdrawn: the copy was refunded, and is not in the hand.
+  perform seed_instance(pg_temp.pl(rename => '[{"key": "crja", "name": "Name crja", "became": "crjb"}]'));
+  perform seed_instance(pg_temp.pl(withdraw => '[{"key": "crjb", "name": "Name crjb", "refund": 100}]'));
+  perform tests.become_service();
+  why := pg_temp.coded(format('select take_back(%L, %L, %L)', u, ch, b1));
+  perform pg_temp.expect(why = format('P0001 kayfabb.refusal Name crha is now Name crhc, and this copy is in your hand as one. Its back ends by itself on %s.', to_char((select ends_at from face_down where play = b1) at time zone 'UTC', 'FMMon FMDD, YYYY')), format('the renamed chain refusal read: %s', why));
+  why := pg_temp.coded(format('select take_back(%L, %L, %L)', u, ch, b2));
+  perform pg_temp.expect(why = format('P0001 kayfabb.refusal Name crjb was withdrawn on %s, and this copy was refunded then. Its back ends by itself on %s.', day, to_char((select ends_at from face_down where play = b2) at time zone 'UTC', 'FMMon FMDD, YYYY')), format('the withdrawn chain refusal read: %s', why));
+  perform tests.unbecome();
 end $$;
 
 -- ---- 7b. card_now follows a rename chain to the card in print, and passes an unknown key through ----
@@ -732,10 +766,10 @@ declare
 begin
   perform pg_temp.expect((select h from before_rows where t = 'card_ledger') = (select md5(coalesce(string_agg(l::text, '|' order by l.id), '')) from card_ledger l where l.id <= (select max_ledger from before_counts)),
     'a seed edited a row of the card ledger that was there before it');
-  perform pg_temp.expect((select h from before_rows where t = 'face_down') = (select md5(coalesce(string_agg(row(f.play, f.account, f.card, f.config, f.post, f.thread, f.round, f.catches, f.phrase, f.passage, f.who)::text, '|' order by f.play), '')) from face_down f),
+  perform pg_temp.expect((select h from before_rows where t = 'face_down') = (select md5(coalesce(string_agg(row(f.play, f.account, f.card, f.config, f.post, f.thread, f.round, f.catches, f.phrase, f.passage, f.who)::text, '|' order by f.play), '')) from face_down f where f.account is distinct from (select id from auth.users where email = 'crh-u@test.invalid')),
     'a seed edited a back');
   perform pg_temp.expect((select h from before_rows where t = 'packs') = (select md5(coalesce(string_agg(p::text, '|' order by p.id), '')) from packs p), 'a seed edited a pack');
-  perform pg_temp.expect((select h from before_rows where t = 'machine_slots') = (select md5(coalesce(string_agg(s::text, '|' order by s.id), '')) from machine_slots s), 'a seed edited a machine slot');
+  perform pg_temp.expect((select h from before_rows where t = 'machine_slots') = (select md5(coalesce(string_agg(s::text, '|' order by s.id), '')) from machine_slots s where s.card is distinct from 'crea'), 'a seed edited a machine slot');
   why := pg_temp.coded($q$update card_ledger set price = price + 1$q$);
   perform pg_temp.expect(why is not null, 'card_ledger took an update');
   why := pg_temp.coded($q$delete from card_ledger$q$);
