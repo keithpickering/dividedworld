@@ -162,7 +162,17 @@ declare
                            -- Whether an Act's kind is a post for a card (0374, granted in 0375): thread_page is a security invoker and asks it as the signed-in player. It reads nothing, takes one text and says nothing about anyone.
                            'post_kind(text)',
                            -- The ids of the Acts that cut a given list of plays (0405), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.
-                           'cutting_acts(uuid[])'];
+                           'cutting_acts(uuid[])',
+                           -- The plays on a post (0408). The three definers behind the reads read the kept rows (play_post, post_kinds), which no API role does, and answer ids and counts alone, for any list of posts and the same for every caller:
+                           -- a post's plays in force and each kind's two stand-ins (the ids), a post's counts by kind, and the springs and take-backs of a list of backs (the ids). They are granted because thread_page, a security invoker, calls them
+                           -- as the signed-in player, and the Acts themselves are read through acts_public as the caller.
+                           'post_play_ids(uuid[])', 'post_kind_counts(uuid[])', 'play_rider_ids(uuid[])',
+                           -- A page of a kind's plays that are over on a post (0408): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
+                           'kind_play_ids(uuid,text,timestampwithtimezone,uuid,integer)',
+                           -- A post's plays and counts in one read (0408): the plays of up to 200 posts, in force and each kind's stand-ins, with their riders, through acts_public. An invoker for a signed-in player, writing nothing, the same for every caller.
+                           'post_plays(uuid[])',
+                           -- A kind's older plays on a post, a page at a time (0408): an invoker for a signed-in player, writing nothing; the page is the same for every caller but for the caller's own reactions (`mine`), read through my_reactions.
+                           'kind_plays(uuid,text,timestampwithtimezone,uuid,integer)'];
   -- What a visitor (anon) may execute, on purpose; each is also in the list above.
   visitor_callable text[] := array['move_progress(uuid)', 'staff_career(text)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
