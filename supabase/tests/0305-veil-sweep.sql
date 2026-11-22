@@ -216,6 +216,7 @@ select 'function', n, m, w from (values
   ('move_thread_names', 'no author', 'the titles and boards of the threads a move names'),
   ('boot', 'swept', 'the app''s first read: the caller''s own characters and public settings'),
   ('boss_roster_names', 'no author', 'staff names'),
+  ('cutting_acts', 'no author', 'the ids of the card Acts that cut a given list of plays (0403): ids alone, of Acts whose cut acts_public already shows; the Acts are read through acts_public by id, which applies every veil'),
   ('card_ended', 'no author', 'whether a play has ended'),
   ('card_held', 'no author', 'the count of a card in the caller''s own hand'),
   ('card_of_play', 'no author', 'the card a play is of'),
