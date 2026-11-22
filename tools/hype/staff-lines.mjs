@@ -69,10 +69,10 @@ export const PICKS = {
 
 /* The rehearsal's posters, and who of the video's cast stands in for each: the Front Door's five, so some stand in for more than one. */
 export const NAMES = {
-  Ironpudding: 'Snuckles', Cobaltpretzel: 'Chadluminum', 'Barnacle Jim': 'Serious Deer', Waffleknight: 'D-Guy', 'Plumber Wick': 'Human Josh',
-  'Sodapop Rex': 'Human Josh', Quillfern: 'Chadluminum', Gravelbyte: 'D-Guy', Zephyrgoat: 'Snuckles', Mothwire: 'Serious Deer',
-  'Dingleberry Ox': 'D-Guy', Crumpetmoon: 'Serious Deer', Marmaladedrift: 'Snuckles', Bolthole: 'Human Josh', Hexlantern: 'Chadluminum',
-  Stratocumulo: 'Serious Deer', 'Lanternfish 97': 'Chadluminum', Tanukibrine: 'Human Josh',
+  Ironpudding: 'Snuckles', Cobaltpretzel: 'Chadluminum', 'Barnacle Jim': 'Serious Deer', Waffleknight: 'Hotel Bro', 'Plumber Wick': 'D-Guy',
+  'Sodapop Rex': 'D-Guy', Quillfern: 'Chadluminum', Gravelbyte: 'Hotel Bro', Zephyrgoat: 'Snuckles', Mothwire: 'Serious Deer',
+  'Dingleberry Ox': 'Hotel Bro', Crumpetmoon: 'Serious Deer', Marmaladedrift: 'Snuckles', Bolthole: 'D-Guy', Hexlantern: 'Chadluminum',
+  Stratocumulo: 'Serious Deer', 'Lanternfish 97': 'Chadluminum', Tanukibrine: 'D-Guy',
 };
 const recast = (text) => Object.entries(NAMES).reduce((t, [from, to]) => t.replaceAll(from, to), text);
 

@@ -14,7 +14,7 @@ import type { Instance } from '../../../../engine/rules/types.ts';
 import LINES from './staff-lines.json';
 import { GPT2_TAIL } from './gpt2.ts';
 import { pendingOf } from './forecast.ts';
-import { CHAIR_PHRASE, type Made } from './stage-world.ts';
+import { CHAIR_PHRASE, LEAVING, type Made } from './stage-world.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -50,11 +50,11 @@ const BOARD_THREADS: Readonly<Record<string, { readonly title: string; readonly 
 /** The thread, the opening post and the post a filing was aimed at, for each filing: written for the video, around the aimed-at post's own words (from the log). */
 const FILING_OPENERS: Readonly<Record<string, readonly [string, string]>> = {
   filingQcHelp: ['Snuckles', 'My game crashes the moment the player jumps. Second jump, every time. I have no idea why.'],
-  filingQcGames: ['Human Josh', 'What is everybody playing this week? I am playing a game. As a human, I enjoy that.'],
+  filingQcGames: ['D-Guy', 'What is everybody playing this week? I am playing a game. As a human, I enjoy that.'],
   filingQcGotcha: ['Snuckles', 'Pixel art WIP, a Wiggler, twelve frames. Feedback welcome.'],
-  filingOtThematic: ['Human Josh', 'Shows you quit after one episode. Mine is all of them.'],
+  filingOtThematic: ['D-Guy', 'Shows you quit after one episode. Mine is all of them.'],
   filingOtPatience: ['Serious Deer', 'My comfort rewatch is the same movie every winter. What is yours?'],
-  filingOtPalace: ['Human Josh', '1'],
+  filingOtPalace: ['D-Guy', '1'],
 };
 
 /** What a cast came to: the play, and whether a back caught it or let it ride. */
@@ -65,19 +65,19 @@ export interface Landed { readonly what: string; readonly ms: number; readonly f
 
 /** The steps of node 9's pile, in the order they land on Snuckles's first post: who plays each, which card, and what it is called. */
 export const PILE: readonly { readonly what: string; readonly by: string; readonly card: string; readonly config?: Readonly<Record<string, unknown>>; readonly message?: string; readonly reach?: 'character'; readonly lastsMs?: number }[] = [
-  { what: 'whoops-1', by: 'D-Guy', card: 'whoops', config: { color: '#ff2bd6', seed: 101 } },
+  { what: 'whoops-1', by: 'Hotel Bro', card: 'whoops', config: { color: '#ff2bd6', seed: 101 } },
   { what: 'whoops-2', by: 'Serious Deer', card: 'whoops', config: { color: '#19e3ff', seed: 202 } },
   { what: 'whoops-3', by: 'Chadluminum', card: 'whoops', config: { color: '#ffd93d', seed: 303 } },
   { what: 'steel-chair-1', by: 'Serious Deer', card: 'steel-chair' },
-  { what: 'steel-chair-2', by: 'Human Josh', card: 'steel-chair' },
+  { what: 'steel-chair-2', by: 'D-Guy', card: 'steel-chair' },
   { what: 'steel-chair-3', by: 'Chadluminum', card: 'steel-chair' },
   /* The smoke thins as the card's days pass; the film's pile lets it last seconds, so the heap under it comes back into view. */
-  { what: 'hot-box', by: 'D-Guy', card: 'hot-box', config: { color: '#32cd32' }, lastsMs: 7000 },
+  { what: 'hot-box', by: 'Hotel Bro', card: 'hot-box', config: { color: '#32cd32' }, lastsMs: 7000 },
   { what: 'laugh-track', by: 'Serious Deer', card: 'laugh-track', config: { cues: [{ phrase: 'his legs move', sound: 'laugh' }], seed: 7 }, message: 'Laugh Track' },
   { what: 'jimmy-wails', by: 'Serious Deer', card: 'jimmy-wails', message: 'Please. He spent two weeks on twelve frames.' },
   { what: 'you-were-saying', by: 'Serious Deer', card: 'you-were-saying', config: { steps: 0 }, message: '' },
-  { what: 'off-day', by: 'D-Guy', card: 'off-day', config: { class: 'face' }, reach: 'character' },
-  { what: 'stick-around', by: 'D-Guy', card: 'stick-around', config: { sentence: 'I have read the whole walk cycle and I feel changed.' }, message: 'required reading' },
+  { what: 'off-day', by: 'Hotel Bro', card: 'off-day', config: { class: 'face' }, reach: 'character' },
+  { what: 'stick-around', by: 'Hotel Bro', card: 'stick-around', config: { sentence: 'I have read the whole walk cycle and I feel changed.' }, message: 'required reading' },
 ];
 
 /**
@@ -256,7 +256,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     if (board === undefined || made.lineBoards[board] === undefined) throw new Error(`the opening line "${line}" names no board the stage has`);
     return board;
   };
-  const OTHERS = ['Serious Deer', 'Human Josh', 'Chadluminum', 'D-Guy', 'Snuckles'];
+  const OTHERS = ['Serious Deer', 'D-Guy', 'Chadluminum', 'Hotel Bro', 'Snuckles'];
 
   /** What every helper that starts a visit returns: where it is on the stage, and the key to `show('thread:<key>')` where it is not in the main thread. */
   interface Where { readonly thread: string; readonly key: string; readonly post: string; readonly seq: number; readonly visit: string; readonly line: string; readonly board: string }
@@ -388,7 +388,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       const { minus } = made.boards;
       try { fake.seed.board(minus, 'World -1', 'Everything that is not a Mario fangame.'); } catch (e) { if (!/already/.test(String(e))) throw e; }
       const t = BOARD_THREADS['Movies & TV']!;
-      const opened = opens('Movies & TV', 'Human Josh', t.title, t.open[1]);
+      const opened = opens('Movies & TV', 'D-Guy', t.title, t.open[1]);
       fake.clock.advance(1000);
       fake.seed.moveThread(opened.thread, minus);
       const move = fake.seed.move('fangame', { board: '', name: '', body: LINES.moved.text, lasting: { kind: 'moveThread', params: { thread: opened.thread, board: minus } } });
@@ -479,10 +479,10 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     async review(key: string, options: { readonly hold?: boolean } = {}): Promise<{ readonly thread: string; readonly post: string; readonly key: string }> {
       if (key !== 'stars' && key !== 'fiveStars') throw new Error(`there is no review "${key}": the reviews are stars and fiveStars`);
       const one = key === 'stars';
-      const opened = one ? fake.seed.thread('general', characterOf('Snuckles'), 'a', 'a') : opens('Pointless Post Palace', 'Human Josh', 'Describe your day in one word', 'Describe your day in one word. (This might belong on General.)');
+      const opened = one ? fake.seed.thread('general', characterOf('Snuckles'), 'a', 'a') : opens('Pointless Post Palace', 'D-Guy', 'Describe your day in one word', 'Describe your day in one word. (This might belong on General.)');
       const replies: readonly (readonly [string, string])[] = one
-        ? [['D-Guy', 'I have receipts. I will not say for what.'], ['Serious Deer', 'hard disagree'], ['Human Josh', 'bump'], ['Snuckles', 'bookmarked']]
-        : [['Serious Deer', 'nobody asked for a point'], ['Snuckles', 'Tuesday, at least.'], ['Chadluminum', 'wrong board, wrong take'], ['D-Guy', 'worst thing I have read today']];
+        ? [['Hotel Bro', 'I have receipts. I will not say for what.'], ['Serious Deer', 'hard disagree'], ['D-Guy', 'bump'], ['Snuckles', 'bookmarked']]
+        : [['Serious Deer', 'nobody asked for a point'], ['Snuckles', 'Tuesday, at least.'], ['Chadluminum', 'wrong board, wrong take'], ['Hotel Bro', 'worst thing I have read today']];
       for (const [by, words] of replies) writes(opened.thread, by, words);
       /* `hold`: the thread and its replies are there and the review is not (`say('ontopic', result.key, key)` posts it while a film watches the thread). */
       if (options.hold === true) { fake.broadcast.rejoin(); return { thread: opened.thread, post: '', key: register(`review-${key}`, opened.thread) }; }
@@ -523,6 +523,30 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return play;
   }
 
+  /** The five who leave, in the order the film posts them (`LEAVING`, the owner's words). */
+  const leaving: readonly string[] = Object.keys(LEAVING);
+
+  /**
+   * One character's leaving post, live, at the thread's foot: submitted as that character through the backend's own post path (so it is dated now, numbered next and
+   * heard by the page as any live post is). Returns the post's Act, its number and its page, and whether the page SHOWED it (`#post-<seq>` is in the document, waited
+   * for up to `wait` ms; 0 does not wait). A live post is shown only to a reader on the thread's LAST page and at its foot; anywhere else it waits behind the
+   * "N new posts" bar (`.kb-new-bar`, `held`), and the thread pages at 20 posts, so the first leaving post is number 26, on page 2. A shot opens the thread's last page
+   * before the first call (click "Jump to latest", or open `?page=2` and `show('thread')`), scrolls to the foot, and scrolls to the foot again after each call.
+   */
+  async function leave(name: string, options: { readonly wait?: number } = {}): Promise<{ readonly post: string; readonly seq: number; readonly page: number; readonly shown: boolean; readonly held: boolean }> {
+    const words = LEAVING[name];
+    if (words === undefined) throw new Error(`${name} has no leaving words: those who leave are ${leaving.join(', ')}`);
+    fake.clock.advance(1000);
+    const wrote = await inAs(ownerOf(name), () => fake.post(made.thread, characterOf(name), words, null));
+    if (!wrote.ok) throw new Error(`${name}'s leaving post was refused: ${wrote.error}`);
+    const seq = wrote.value.seq!;
+    const deadline = performance.now() + (options.wait ?? 1000);
+    const there = () => typeof document !== 'undefined' && document.getElementById(`post-${seq}`) !== null;
+    while (!there() && performance.now() < deadline) await new Promise((r) => setTimeout(r, 40));
+    mark(`leave:${name}`);
+    return { post: wrote.value.id, seq, page: Math.ceil(seq / instance.settings.postsPerPage), shown: there(), held: typeof document !== 'undefined' && document.querySelector('.kb-new-bar') !== null };
+  }
+
   /** The names of node 9's steps, in the order `pile` lands them. */
   const steps = PILE.map((p) => p.what);
   /** The count of each card's plays so far on the pile's post: a stacking card's layers. */
@@ -555,7 +579,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     return pendingOf(await fake.estimate());
   }
 
-  return { react, cast, told, quoteSprings, springsOn, forgedQuote, staff, gpt2, pile, steps, order: FILM_ORDER, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
+  return { react, cast, told, quoteSprings, springsOn, forgedQuote, staff, gpt2, leave, leaving, pile, steps, order: FILM_ORDER, forecast, landed, zero: () => { zero = performance.now(); landed.length = 0; layers.clear(); } };
 }
 
 export type Playbook = ReturnType<typeof playbook>;

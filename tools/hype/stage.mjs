@@ -64,12 +64,12 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       react: (name, postSeq, key) => play.react(name, postSeq, key),
       /** A card cast on a post through the backend's own play path, so a back there catches it or lets it ride: returns \`{ play, caught, rode }\`. */
       cast: (name, postSeq, card, config = {}, message = '') => play.cast(name, postSeq, card, config, message),
-      /** The alert a caught cast writes its caster (the in-memory backend writes none): \`told('D-Guy', 1)\`, after the cast. Returns the caught play's id. */
+      /** The alert a caught cast writes its caster (the in-memory backend writes none): \`told('Hotel Bro', 1)\`, after the cast. Returns the caught play's id. */
       told: (name, postSeq) => play.told(name, postSeq),
       /** A REAL quote of the post (the whole post in a quote tag, then \`words\`, which must say "to be fair"), written by the named character, which springs the Steel Chair set on it: returns \`{ post, spring, play }\`. */
       quoteSprings: (name, postSeq, words) => play.quoteSprings(name, postSeq, words),
       /**
-       * A FORGED quote of a post, as the composer writes it: \`forgedQuote('Human Josh', 2, forgedWords, comment)\`. It springs nothing (the rules write a post whose quote is forged with no target, so no back springs):
+       * A FORGED quote of a post, as the composer writes it: \`forgedQuote('D-Guy', 2, forgedWords, comment)\`. It springs nothing (the rules write a post whose quote is forged with no target, so no back springs):
        * the chair on post 2 stays face down. Refuses words that stand in the post. Returns \`{ post, seq, forged }\`. A shot films it through the real composer instead (see shot notes in the design, section 9):
        * the Quote button on the post, ArrowLeft nine times (the newline and \`[/quote]\`), Backspace over the words after "Only a few among us ", the forged words, ArrowRight nine times, the comment, Send.
        */
@@ -99,6 +99,14 @@ export async function openStage({ skin = 'default', as = null, view = null, css,
       pileOrder: play.order,
       /** You Were Saying? lands on the stage's post that is the true pair of the card's real tail (\`posts.gpt2\`, or \`postSeq\`), and the tail (gpt2-tail.txt, 1373 characters) types in under it. Returns the play's Act. */
       gpt2: (postSeq) => play.gpt2(postSeq),
+      /**
+       * One character's leaving post (the owner's words, 2026-11-22), live at the thread's foot, as that character: \`leave('Snuckles')\`. \`leaving\` is the five in the film's order: Snuckles, Hotel Bro,
+       * Serious Deer, D-Guy, Chadluminum. Returns \`{ post, seq, page, shown, held }\`: the post's Act, its number (the first is 26) and page (20 posts a page, so page 2), whether the page SHOWED it (waits up to \`wait\` ms, 1000 by default)
+       * and whether the "N new posts" bar (\`.kb-new-bar\`) is up. A live post is shown only to a reader on the thread's LAST page and at its foot: before the first call, move to page 2 (click "Jump to latest" in the pager, or
+       * \`history.replaceState(null, '', '/t/' + thread + '?page=2')\` then \`show('thread')\`), scroll to the foot, and scroll to the foot again after each call (the post slides in below the reader). Where \`shown\` is false the post waits behind the bar.
+       */
+      leave: (name, options) => play.leave(name, options),
+      leaving: play.leaving,
       /** The pending Aura the orbs' ghost shows now for the film's player, in signed hundredths: what a take reads to prove the forecast moved. */
       forecast: () => play.forecast(),
       /** A commentary node hung at a point of the window as it is now (it stays at that place of the page, and scrolls with it); returns its id. */
