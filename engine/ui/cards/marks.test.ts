@@ -54,6 +54,33 @@ describe('a card back, a ward and a caught play, in words', () => {
     assert.deepEqual(wordsProblems('state', words.state), []);
   });
 
+  test('a back that sprang into a lockout says when the lockout ends, or that it ended and how; an admin-reversed one says so', () => {
+    const LOCK = '2026-11-23T21:14:00.000Z';
+    const BEFORE = Date.parse('2026-11-22T00:00:00.000Z');
+    const AFTER = Date.parse('2026-11-24T00:00:00.000Z');
+    const sprung = (over: Partial<CardPlay> = {}, withLock = true): CardPlay =>
+      back({ revealed: { card: 'card-collector', spring: 'sp', at: '2026-10-30T02:00:00.000Z', ...(withLock ? { until: LOCK } : {}) }, ...over });
+    const card = () => 'Card Collector';
+    const plain = backWords(sprung({}, false), 'PIPEWRENCH', card, BEFORE);
+    assert.equal(plain.ends, 'It has sprung, and ended.');
+
+    const reversed = backWords(sprung({ reversed: true }), 'PIPEWRENCH', card, BEFORE);
+    assert.equal(reversed.ends, 'It sprang, and an admin ended its lockout.');
+    assert.equal(backWords(sprung({ reversed: true }), 'PIPEWRENCH', card, AFTER).ends, 'It sprang, and an admin ended its lockout.');
+
+    const ongoing = backWords(sprung(), 'PIPEWRENCH', card, BEFORE);
+    assert.equal(ongoing.ends, `Its lockout ends ${dayAndTime(LOCK)}.`);
+
+    const ended = backWords(sprung(), 'PIPEWRENCH', card, AFTER);
+    assert.equal(ended.ends, `It sprang, and its lockout ended ${dayAndTime(LOCK)}.`);
+
+    for (const words of [reversed, ongoing, ended]) {
+      assert.equal(words.name, plain.name, 'the name is unchanged');
+      assert.equal(words.state, plain.state, 'the state is unchanged');
+      assert.equal(words.note, plain.note, 'the note is unchanged');
+    }
+  });
+
   test('every use card says what it does and when it ends', () => {
     const now = new Date('2026-11-01T00:00:00.000Z');
     const end = '2026-11-06T10:00:00.000Z';

@@ -73,11 +73,17 @@ const article = (name: string) => `${/^[aeiou]/iu.test(name) ? 'an' : 'a'} ${nam
  * `note`, and when it ends is its `ends`, in the reader's zone. Once it has sprung, the card is public, and its name is said.
  * The end is the one the server stored when the card was set (`back.endsAt`), the same span for every Set, so it names no card either; a back
  * with none (a read from before 0156 carried no end) says only that its end is not shown, which is true where nothing else is known. `cardName` is asked only of a back that sprang.
+ * A back that sprang into a lockout says when the lockout ends, or that it ended and how; an admin's reversal says so instead.
  */
 export function backWords(back: CardPlay, setter: string, cardName: (key: string) => string, now: number): { readonly name: string; readonly state: string; readonly note: string; readonly ends: string } {
   if (back.revealed) {
     const card = cardName(back.revealed.card);
-    return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends: 'It has sprung, and ended.' };
+    const until = back.revealed.until;
+    const ends = back.reversed && until !== undefined ? 'It sprang, and an admin ended its lockout.'
+      : until !== undefined && Date.parse(until) > now ? `Its lockout ends ${dayAndTime(until)}.`
+      : until !== undefined ? `It sprang, and its lockout ended ${dayAndTime(until)}.`
+      : 'It has sprung, and ended.';
+    return { name: `${card}, set face down by ${setter}`, state: `Sprang on ${localDate(back.revealed.at)}`, note: `${article(card).replace(/^a/u, 'A')} set face down by ${setter}.`, ends };
   }
   if (back.takenBack) return { name: `A card set face down by ${setter}`, state: `Taken back on ${localDate(back.takenBack.at)}`, note: `Set face down by ${setter} on ${localDate(back.playedAt)}, and taken back.`, ends: 'It was taken back, and ended.' };
   const ends = back.endsAt ? `${endsWords(back.endsAt, now)}, unless it springs first.` : 'Its end is not shown here.';
