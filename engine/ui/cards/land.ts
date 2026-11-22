@@ -10,7 +10,7 @@ import { decidePlay, decideSet, faceUpOnly, postTarget, decideUse, cuttable, eff
 import type { Span } from '../../rules/types.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
 import { shareWords, upperFirst } from '../copy-words.ts';
-import type { Act } from '../data/api.ts';
+import type { Act, EffectState, Id } from '../data/api.ts';
 import type { CardPlay } from './types.ts';
 import { stackPlays } from './plays.ts';
 
@@ -26,11 +26,16 @@ export function targetOf(post: Act, under?: string): PostTarget {
 }
 
 /** What the post carries as its rules see it (card_target, 0054): a play not caught, not ended by an admin and not over because it did not take (`untaken`, 0149), with a use card's gimmick and end; a card back naming no card, ended where it sprang, was taken back or its time passed. */
-export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity'>[]): CardEffect[] {
+export function effectsOf(plays: readonly CardPlay[], cards: readonly Pick<CardRules, 'key' | 'gimmick' | 'rarity' | 'drawsEffect'>[], room?: { readonly states: Readonly<Record<Id, EffectState>>; readonly version: Id | null }): CardEffect[] {
   return plays.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).map((p): CardEffect => {
     if (p.faceDown) { const ends = p.revealed?.at ?? p.takenBack?.at ?? p.endsAt; return { card: null, act: p.id, faceDown: true, ...(ends ? { ends } : {}) }; }
     const ward = cards.find((c) => c.key === p.card);
-    return { card: p.card, act: p.id, ...(ward?.gimmick ? { gimmick: ward.gimmick } : {}), ...(p.ends ? { ends: p.ends } : {}) };
+    /* What card_target gives: a play of a card that draws counts toward the post's limit unless the card says its saved state clears it (true, or `{ version }` where that is the post's version now). */
+    const drawing = ward?.drawsEffect !== undefined && p.reach === undefined;
+    const saved = room?.states[p.id];
+    const answer = drawing && saved !== undefined ? ward.drawsEffect?.cleared?.(saved.state) : undefined;
+    const cleared = answer === true || (typeof answer === 'object' && room?.version != null && answer.version === room.version);
+    return { card: p.card, act: p.id, ...(ward?.gimmick ? { gimmick: ward.gimmick } : {}), ...(p.ends ? { ends: p.ends } : {}), ...(drawing ? { drawing: true as const } : {}), ...(cleared ? { cleared: true as const } : {}) };
   });
 }
 
@@ -49,6 +54,11 @@ export interface LandingContext {
   readonly pierce?: Rarity;
   /** The page's clock (`api.now()`), against which a play's end is read: a card that cuts is offered only where a Gimmick is still up. */
   readonly now?: number;
+  /** The instance's limit on the effects one post shows (`Settings.postEffects`), which every screen passes; a caller that gives none reads no limit: what a card that draws is refused by once the post is full (`roomOnPost`). */
+  readonly postEffects?: number;
+  /** What each play's effect has saved (`PostPlays.states`) and the version the post is at now: what says a play is cleared, so it takes no slot. */
+  readonly states?: Readonly<Record<Id, EffectState>>;
+  readonly version?: Id | null;
 }
 
 /**
@@ -71,10 +81,11 @@ export function landing(rules: Pick<CardRules, 'canApply'> & Partial<CardRules>,
  * where its play is a cast, since a set card is set by its own play. A faceUpOnly card is never set: landing's lenient reading sets a
  * needed message aside, so decideSet would not refuse it here.
  */
-export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity }): { readonly cast: boolean; readonly set: boolean } {
+export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], context: { readonly cards: readonly CardRules[]; readonly own: boolean; readonly now: number; readonly under?: string; readonly pierce?: Rarity; readonly postEffects?: number; readonly states?: Readonly<Record<Id, EffectState>>; readonly version?: Id | null }): { readonly cast: boolean; readonly set: boolean } {
   const live = stackPlays(plays, context.now);
+  const room = { ...(context.postEffects === undefined ? {} : { postEffects: context.postEffects }), ...(context.states ? { states: context.states } : {}), ...(context.version !== undefined ? { version: context.version } : {}) };
   const cast = landing(rules, post, live, context).ok;
-  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, now: context.now, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
+  const set = playOfRules(rules) === 'cast' && context.own && !faceUpOnly(rules) && landing(rules, post, live, { cards: context.cards, faceDown: true, now: context.now, ...room, ...(context.under === undefined ? {} : { under: context.under }) }).ok;
   return { cast, set };
 }
 
@@ -84,7 +95,8 @@ export function waysOn(rules: CardRules, post: Act, plays: readonly CardPlay[], 
  * banner are drawn from.
  */
 export function landingOn(rules: CardRules, target: CardTarget, plays: readonly CardPlay[], context: LandingContext): Verdict {
-  const effects = effectsOnTarget(target, effectsOf(plays, context.cards), context.above ?? {});
+  const effects = effectsOnTarget(target, effectsOf(plays, context.cards, { states: context.states ?? {}, version: context.version ?? null }), context.above ?? {});
+  const settings = (context.postEffects === undefined ? {} : { postEffects: context.postEffects }) as never;
   const nameOf = (key: string) => context.cards.find((c) => c.key === key)?.name ?? key;
   /*
    * Only where the card lands is asked here: its settings and its message are the form's, so the card's own refusal of none is set aside. A
@@ -105,9 +117,9 @@ export function landingOn(rules: CardRules, target: CardTarget, plays: readonly 
     canApply: (t, e, _config, now) => rules.canApply(t, e, undefined, now), needsMessage: undefined,
   };
   const play = context.faceDown ? 'set' : playOfRules(rules);
-  const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, {} as never, target, effects, {}, context.cards)
-    : play === 'use' ? decideUse(lenient, {} as never, target, effects, {}, '')
-    : decidePlay(lenient, {} as never, target, effects, {}, '', { nameOf, rulesOf, ...(at === undefined ? {} : { now: at }), ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
+  const decided = play === 'set' ? decideSet({ ...lenient, catches: undefined, setPhrase: undefined }, settings, target, effects, {}, context.cards)
+    : play === 'use' ? decideUse(lenient, settings, target, effects, {}, '')
+    : decidePlay(lenient, settings, target, effects, {}, '', { nameOf, rulesOf, ...(at === undefined ? {} : { now: at }), ...(context.pierce === undefined ? {} : { pierce: context.pierce, rarityOf: (key: string) => context.cards.find((c) => c.key === key)?.rarity }) });
   return decided.ok ? { ok: true, value: undefined } : decided;
 }
 
