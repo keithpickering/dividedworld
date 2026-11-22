@@ -251,7 +251,7 @@ describe('the ORIGIN box', () => {
     const ended = await w.fake.reverseCard(plays[0]!);
     w.fake.signInAs(w.me);
     expect(ended.ok).toBe(true);
-    expect((await w.fake.cardsOn(w.ids[1]!, 21)).map((a) => a.kind).filter((k) => k === 'card_end')).toHaveLength(1);
+    expect((await w.fake.postPlays([w.ids[1]!])).plays.map((a) => a.kind).filter((k) => k === 'card_end')).toHaveLength(1);
     const spun = await spinFrom(w, w.ids[1]!);
     const tallies = vi.spyOn(w.fake, 'tallies');
     openSpun(w, spun);
@@ -982,7 +982,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
  * plays, their ends, the moment and the characters, so the box reads nothing after the page, is never "Loading the origin…", and takes in
  * a page read again.
  */
-const BOX_READS = ['act', 'cardsOn', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
+const BOX_READS = ['act', 'postPlays', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
 /** A spy on each read the box made before it arrived with the page, on the fake the screen is drawn from. */
 function spyOnBoxReads(fake: object) {
   const table = fake as Record<string, (...args: unknown[]) => unknown>;

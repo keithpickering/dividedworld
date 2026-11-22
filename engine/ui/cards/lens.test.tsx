@@ -2263,7 +2263,7 @@ describe('taking a back back', () => {
     const post = w.fake.seed.post(w.thread, w.pipe, 'my own post');
     /* The screen's setLasts is seven days: ten days on, a back worked out from it would be over. */
     w.fake.seed.set(w.pipe, post, 'k2', { at: w.fake.clock.now() - 10 * 86_400_000, endsAt: w.fake.clock.now() + 20 * 86_400_000 });
-    const [set] = await w.fake.cardsOn(post, 10);
+    const [set] = (await w.fake.postPlays([post])).plays;
     open(w);
     await openBack(4);
     expect(takeButton()).not.toBeNull();
@@ -2487,10 +2487,12 @@ describe('the discipline cards\' Lens', () => {
     const two = await w.play(w.third, 't-heart', w.gloomba, w.spritey);
     expect(one.payload.took).toBe(1);
     expect(two.payload.took).toBe(2);
+    /* Both hearts are over as they land, so the page holds the newest and the most drawn: the older one is drawn so it is held (older plays are paged by the Lens, Task 7). */
+    w.fake.seed.react(w.me, w.pipe, one.id, 'fire');
     openIt(w);
     const l = await lensOf(2, 'T Heart');
     expect(heading()).toBe('Took points off');
-    expect([...l.querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play'))).toEqual([two.id, one.id]);
+    expect([...l.querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play'))).toEqual([one.id, two.id]);
     expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
     expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
     /* It is a play like any: reacted to and spun from, and it names the caster. */
@@ -2867,7 +2869,8 @@ describe('a spent kind', () => {
     const w = world();
     w.fake.clock.advance(60_000);
     const ended = new Date(w.fake.clock.now() - HOUR).toISOString();
-    w.fake.seed.card(w.spritey, w.second, 'k2', { ends: ended });
+    /* The timed-out play is the older of two over plays, so it is on the page as the kind's most drawn. */
+    w.fake.seed.react(w.me, w.pipe, w.fake.seed.card(w.spritey, w.second, 'k2', { ends: ended }), 'fire');
     w.fake.seed.card(w.spritey, w.second, 'k2', { caught: w.third });
     open(w);
     await userEvent.click(await markOf(2, 'Card 2'));

@@ -729,12 +729,12 @@ export async function readEffects(api: KayfaApi, plays: Plays, acts: readonly Ac
 /**
  * Read every play on these posts, with what their effects keep, in the reads a page costs: one for
  * the plays, one for their states and one for the reader's releases, whatever the page holds. A
- * result as long as the limit may be cut (`KayfaApi.cardsOnMany`). A failed read leaves the posts
+ * result is the one `KayfaApi.postPlays` answers. A failed read leaves the posts
  * as they are drawn without it: a tag is missing, never a post.
  */
 export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[], cards: ReadonlySet<string>): Promise<readonly Act[]> {
   if (posts.length === 0) return [];
-  const acts = await api.cardsOnMany(posts, posts.length * PLAYS_PER_POST).catch((): readonly Act[] => []);
+  const acts = await api.postPlays(posts).then((read) => read.plays, (): readonly Act[] => []);
   plays.add(acts);
   await readEffects(api, plays, acts, cards);
   /* The plays' ends ride in the read for the store; they are no plays, so no tally, reaction or caster is read for one. */

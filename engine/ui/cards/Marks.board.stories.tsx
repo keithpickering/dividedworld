@@ -53,7 +53,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
         const casters = [45, 44, 43, 42, 45].map((n) => acts.find((a) => a.seq === n)?.character ?? null);
         if (!target || casters.some((c) => c === null)) throw new Error('the boards fixture has no #41, or no author for a post around it');
         /* The fixture's play is one kind; the cards named above are the next, then keys no card has. */
-        const have = new Set((await api.cardsOn(target.id, 8)).map((a) => String(a.currentPayload.card)));
+        const have = new Set((await api.postPlays([target.id])).plays.map((a) => String(a.currentPayload.card)));
         const keys = [...EXTRA_PLAYS.map((k) => cardOf(instance.cards, k).key), ...Array.from({ length: kinds }, (_, i) => `story-kind-${i + 1}`)].filter((k) => !have.has(k)).slice(0, kinds - have.size);
         keys.forEach((card, i) => {
           fake.clock.advance(MINUTE);
@@ -78,7 +78,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
         fake.seed.admin(account);
         if (ending === 'ended') {
           const target = (await api.acts(thread, 41, 41))[0];
-          const play = target && (await api.cardsOn(target.id, 8)).find((a) => a.kind === 'card');
+          const play = target && (await api.postPlays([target.id])).plays.find((a) => a.kind === 'card');
           if (!play) throw new Error('the boards fixture has no play on #41 to end');
           const answer = await api.reverseCard(play.id);
           if (!answer.ok) throw new Error(answer.error);

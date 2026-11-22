@@ -168,7 +168,7 @@ const n05 = () => take('c-n05', {
     const ink = await d.page(`(() => { const body = document.querySelector('#post-14 .kb-act-main').getBoundingClientRect(); const c = [...document.querySelectorAll('#post-14 canvas.kb-whoops-ink')].map((e) => e.getBoundingClientRect()); return { body: [body.left, body.top, body.right, body.bottom], ink: [Math.min(...c.map((r) => r.left)), Math.min(...c.map((r) => r.top)), Math.max(...c.map((r) => r.right)), Math.max(...c.map((r) => r.bottom))] }; })()`);
     assert(ink.ink[0] <= ink.body[0] + 2 && ink.ink[2] >= ink.body[2] - 2 && ink.ink[1] <= ink.body[1] + 2 && ink.ink[3] >= ink.body[3] - 2, `the ink canvas covering post 14's body, border to border (left, top, right and bottom) ${JSON.stringify(ink)}`);
     /* The result: the card rode. The spring on D-Guy's review says so. */
-    const rode = await d.page(`(async () => { const { fake, acts } = window.__kbStage; const on = await fake.cardsOn(acts.review, 30); return on.find((a) => a.kind === 'spring')?.payload ?? null; })()`);
+    const rode = await d.page(`(async () => { const { fake, acts } = window.__kbStage; const on = (await fake.postPlays([acts.review])).plays; return on.find((a) => a.kind === 'spring')?.payload ?? null; })()`);
     assert(rode?.did === 'rode' && rode?.card === '4d-chess', `the 4D Chess on post 14 says the Whoops! rode: ${JSON.stringify(rode)}`);
     d.mark('rode');
     await d.shoot(1.4);

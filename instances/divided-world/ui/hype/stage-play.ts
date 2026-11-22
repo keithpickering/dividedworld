@@ -151,7 +151,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
    */
   async function told(name: string, post: number): Promise<string> {
     const act = await actOf(post);
-    const caught = (await fake.cardsOn(act.id, 30)).filter((a) => a.kind === 'card' && a.character === characterOf(name) && (a.payload as { caught?: unknown }).caught !== undefined).at(-1);
+    const caught = (await fake.postPlays([act.id])).plays.filter((a) => a.kind === 'card' && a.character === characterOf(name) && (a.payload as { caught?: unknown }).caught !== undefined).at(-1);
     if (caught === undefined) throw new Error(`${name} has no caught cast on post ${post}: nothing was caught to tell them of`);
     fake.seed.alert(ownerOf(name), { kind: 'trapStruck', act: caught.id });
     mark(`told:${name}`);

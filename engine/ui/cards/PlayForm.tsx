@@ -45,7 +45,7 @@ import { caughtWords } from './marks.ts';
 import { endsWords, landing, landingOn, landsWords, lengthOf, springWords, targetOf, waysOn } from './land.ts';
 import type { CardPlay, ConfigFormProps } from './types.ts';
 import { usePierce } from './pierce.ts';
-import { effectCards, livePlays, PLAYS_PER_POST, readEffects, stackPlays, usePlays } from './plays.ts';
+import { effectCards, livePlays, readEffects, stackPlays, usePlays } from './plays.ts';
 import { usePostVersion } from './tails.ts';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
@@ -283,7 +283,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const read = async () => {
     const [, acts] = await Promise.all([player.refresh(), beyond
       ? api.effectsAbove(beyond.reach === 'character' ? [beyond.target] : [], beyond.reach === 'thread' ? beyond.target : null, beyond.reach === 'board' ? beyond.target : null).then((a) => a.map((p) => p.act))
-      : api.cardsOn(post!.id, PLAYS_PER_POST)]);
+      : api.postPlays([post!.id]).then((read) => read.plays)]);
     /* The read carries the plays' ends too (an admin's reversal): they join the store, but name no caster. */
     await target.know(acts.filter((a) => a.kind !== 'card_end').map((a) => a.character));
     target.plays.add(acts);

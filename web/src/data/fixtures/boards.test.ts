@@ -223,7 +223,7 @@ describe('the thread', () => {
     expect(all.map((a) => [a.seq, a.kind])).toEqual(Array.from({ length: 46 }, (_, i) => [i + 1, 'post']));
     /* The plays are Acts of their own with no number, found through their posts, in the order they were played. */
     const posts = all.map((a) => a.id);
-    const plays = await fake.cardsOnMany(posts, 50);
+    const plays = (await fake.postPlays(posts)).plays;
     expect(plays.map((a) => [a.seq, a.kind, a.createdAt, a.targetActId === posts[40] ? 41 : a.targetActId === posts[43] ? 44 : 46])).toEqual([
       [null, 'card', iso(29, 21, 16), 41], [null, 'card', iso(29, 21, 41), 44], [null, 'card', iso(29, 21, 52), 46],
     ]);
@@ -236,15 +236,15 @@ describe('the thread', () => {
   it('puts the cards on the posts the boards show: Whoops! on #41 by Mrs. Hooligan, Stick Around on #44 by Gloomba, and Pipewrench\'s Whoops! on #46 only from 21:52', async () => {
     const { fake, thread } = await load('01-main');
     const [p41, p44, p46] = (await postsOf(fake, thread)).filter((a) => [41, 44, 46].includes(a.seq!));
-    const play = async (post: string) => (await fake.cardsOn(post, 10)).map((a) => ({ card: a.payload.card, message: a.payload.message }));
+    const play = async (post: string) => (await fake.postPlays([post])).plays.map((a) => ({ card: a.payload.card, message: a.payload.message }));
     expect(await play(p41!.id)).toEqual([{ card: 'whoops', message: 'you dropped your ink' }]);
-    expect(await Promise.all((await fake.cardsOn(p41!.id, 10)).map((a) => nameOf(fake, a.character)))).toEqual(['Mrs. Hooligan']);
+    expect(await Promise.all((await fake.postPlays([p41!.id])).plays.map((a) => nameOf(fake, a.character)))).toEqual(['Mrs. Hooligan']);
     expect(await play(p44!.id)).toEqual([{ card: 'stick-around', message: 'required reading' }]);
-    expect(await Promise.all((await fake.cardsOn(p44!.id, 10)).map((a) => nameOf(fake, a.character)))).toEqual(['Gloomba']);
+    expect(await Promise.all((await fake.postPlays([p44!.id])).plays.map((a) => nameOf(fake, a.character)))).toEqual(['Gloomba']);
     expect(await play(p46!.id)).toEqual([]);
     const later = await load('06-turn');
     const on46 = (await postsOf(later.fake, later.thread))[45]!;
-    const plays = await later.fake.cardsOn(on46.id, 10);
+    const plays = (await later.fake.postPlays([on46.id])).plays;
     expect(plays.map((a) => [a.payload.card, a.payload.message, a.createdAt])).toEqual([['whoops', 'you dropped your ink', iso(29, 21, 52)]]);
     expect(await nameOf(later.fake, plays[0]!.character)).toBe('Pipewrench');
   });
@@ -300,7 +300,7 @@ describe('the reader', () => {
   it('has Gloomba\'s Stick Around on #44 to be held by, at 21:41', async () => {
     const { fake, thread } = await load('08-hold');
     const p44 = (await postsOf(fake, thread))[43]!;
-    expect((await fake.cardsOn(p44.id, 10)).map((a) => a.payload.card)).toEqual(['stick-around']);
+    expect((await fake.postPlays([p44.id])).plays.map((a) => a.payload.card)).toEqual(['stick-around']);
   });
 });
 
@@ -355,7 +355,7 @@ describe('card plays in the thread', () => {
     const perPage = (await fake.settings()).postsPerPage;
     const page3 = await fake.acts(thread, 2 * perPage + 1, 3 * perPage);
     expect(page3.map((a) => [a.seq, a.kind])).toEqual([41, 42, 43, 44, 45, 46].map((n) => [n, 'post']));
-    expect((await fake.cardsOnMany(page3.map((a) => a.id), 50)).map((a) => a.payload.card)).toEqual(['whoops', 'stick-around']);
+    expect((await fake.postPlays(page3.map((a) => a.id))).plays.map((a) => a.payload.card)).toEqual(['whoops', 'stick-around']);
   });
 });
 
@@ -372,7 +372,7 @@ describe('the log (the log shares plan, Task 4)', () => {
     const me = must((await fake.myCharacters()).find((c) => c.name === 'Pipewrench'));
     const p43 = await postNumbered(fake, thread, 43);
     const p46 = await postNumbered(fake, thread, 46);
-    const play = must((await fake.cardsOn(p46.id, 5)).find((a) => a.character === me.id));
+    const play = must((await fake.postPlays([p46.id])).plays.find((a) => a.character === me.id));
     const log = await fake.log();
     const [latest, before] = log.settlements;
     expect(latest).toEqual({
@@ -395,7 +395,7 @@ describe('the log (the log shares plan, Task 4)', () => {
   it('at 12-log, the purchase at 20:10 and the play on #46 at 21:52 are in the card ledger and the wallet\'s events, the play at the long post\'s 0.25 alone (#78)', async () => {
     const { fake, thread } = await load('12-log');
     const me = must((await fake.myCharacters()).find((c) => c.name === 'Pipewrench'));
-    const play = must((await fake.cardsOn((await postNumbered(fake, thread, 46)).id, 5)).find((a) => a.character === me.id));
+    const play = must((await fake.postPlays([(await postNumbered(fake, thread, 46)).id])).plays.find((a) => a.character === me.id));
     const log = await fake.log();
     /* The card Mrs. Hooligan plays on #41 was bought on Oct 20, so the ledger never holds a play of a card not bought. */
     expect(log.cards.filter((c) => c.kind === 'bought').length).toBeGreaterThanOrEqual(log.cards.filter((c) => c.kind === 'played').length);

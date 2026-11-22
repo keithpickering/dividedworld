@@ -221,10 +221,10 @@ describe('Kick Me hands the first three Salty cards back, end to end on the fake
       expect(await held(fake, 'whoops'), `whoops held after cast ${i + 1}`).toBe(3);
     }
     expect(handed).toEqual([1, 2, 3].map(() => ({ by: sign.id, card: 'kick-me' })));
-    const used = (await fake.cardsOn(opener, 12)).filter((a) => (a.payload.handedBack as { by?: string } | undefined)?.by === sign.id);
+    const used = (await fake.postPlays([opener])).plays.filter((a) => (a.payload.handedBack as { by?: string } | undefined)?.by === sign.id);
     expect(used).toHaveLength(3);
     /* The sign's own play, as the screens build it from the post's Acts (there is no helper that reads a post's plays off the fake), carries the count that scuffs its prints. */
-    const plays = withHandedOut((await fake.cardsOn(opener, 12)).flatMap((a) => playOf(a) ?? []));
+    const plays = withHandedOut((await fake.postPlays([opener])).plays.flatMap((a) => playOf(a) ?? []));
     expect(plays.find((p) => p.id === sign.id)?.handedOut).toBe(3);
     const fourthBefore = await balance(fake);
     const fourth = must(await fake.playCard('hot-box', boFace, opener, ink, ''));
@@ -251,7 +251,7 @@ describe('Kick Me hands the first three Salty cards back, end to end on the fake
     for (let i = 0; i < 3; i++) must(await fake.playCard('whoops', boFace, opener, ink, ''));
     must(await fake.playCard('hot-box', boFace, opener, ink, ''));
     const log = await fake.log();
-    const acts = new Map((await fake.cardsOn(opener, 12)).map((a) => [a.id, a]));
+    const acts = new Map((await fake.postPlays([opener])).plays.map((a) => [a.id, a]));
     const data: LogData = { log, mine: await fake.myCharacters(), estimate: null, standings: {}, season: null, turns: [], nextSettlement: null, acts, names: new Map(), titles: new Map(), states: new Map() };
     const words = { instance, ui: instanceUi, postsPerPage: 20, economy: {}, now: Date.now() } as Words;
     const rows = logRows(data, words, 600, null).filter((r) => r.kind === 'returned');

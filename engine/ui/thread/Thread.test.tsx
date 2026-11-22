@@ -217,7 +217,7 @@ describe('pages and permalinks', () => {
   test('a page is one threadPage read, and none of the reads it replaces: the Acts, characters, stats, standings, reveals, turns, tallies, board, preferences or reading', async () => {
     const w = world(20);
     const page = vi.spyOn(w.fake, 'threadPage');
-    const names = ['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'cardsOnMany', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
+    const names = ['acts', 'characters', 'characterStats', 'standingAmounts', 'classReveals', 'turnsAnnounced', 'tallies', 'myReactions', 'postPlays', 'effectsAbove', 'board', 'boards', 'preferences', 'reading', 'following', 'standingsPage'] as const;
     const spies = names.map((m) => [m, vi.spyOn(w.fake, m)] as const);
     /* The page is read twice: once for the document, and once more by the catch-up when the channels are joined. The summary is no longer read. */
     const summary = vi.spyOn(w.fake, 'thread');
@@ -430,8 +430,7 @@ describe('Acts that are not posts', () => {
     const next = w.fake.seed.post(w.thread, w.spritey, 'after the card');
     w.fake.seed.card(w.pipe, w.ids[2]!, 'whoops', { message: 'second' });
     const page = vi.spyOn(w.fake, 'threadPage');
-    const many = vi.spyOn(w.fake, 'cardsOnMany');
-    const one = vi.spyOn(w.fake, 'cardsOn');
+    const plays = vi.spyOn(w.fake, 'postPlays');
     open(w);
     await screen.findByRole('article', { name: /^Post 5 /u });
     expect(post(5)).toHaveTextContent('after the card');
@@ -443,8 +442,7 @@ describe('Acts that are not posts', () => {
     await waitFor(() => expect(page).toHaveBeenCalledTimes(2));
     await act(async () => { await pause(20); });
     expect(page).toHaveBeenCalledTimes(2);
-    expect(many).not.toHaveBeenCalled();
-    expect(one).not.toHaveBeenCalled();
+    expect(plays).not.toHaveBeenCalled();
   });
 
   test('plays of several cards on one post are several marks, in billing order: with nothing drawn yet, the newest first', async () => {
@@ -508,7 +506,7 @@ describe('Acts that are not posts', () => {
     const w = world(3);
     const spun = await w.fake.spin(w.ids[1]!, (await w.fake.myCharacters())[0]!.id, 'Spun off', 'Taking this elsewhere.');
     if (!spun.ok) throw new Error(spun.error);
-    const reads = [vi.spyOn(w.fake, 'act'), vi.spyOn(w.fake, 'cardsOn'), vi.spyOn(w.fake, 'characters'), vi.spyOn(w.fake, 'effectStates')];
+    const reads = [vi.spyOn(w.fake, 'act'), vi.spyOn(w.fake, 'postPlays'), vi.spyOn(w.fake, 'characters'), vi.spyOn(w.fake, 'effectStates')];
     renderIn(w.fake, <LoadedThread thread={spun.value.thread.id} />, { path: `/t/${spun.value.thread.id}` });
     const origin = await screen.findByRole('group', { name: 'Origin' });
     expect(origin).toHaveTextContent('post 2');
@@ -613,7 +611,7 @@ describe('the plays on a post: their tallies, own reactions and spins, read with
     w.fake.seed.card(w.spritey, w.ids[3]!, 'whoops', { message: 'on four' });
     await w.fake.spin(w.second, w.pipe, 'From the second play', '');
     const page = vi.spyOn(w.fake, 'threadPage');
-    const many = vi.spyOn(w.fake, 'cardsOnMany');
+    const many = vi.spyOn(w.fake, 'postPlays');
     const spins = vi.spyOn(w.fake, 'spunFromMany');
     const one = vi.spyOn(w.fake, 'spunFrom');
     open(w);

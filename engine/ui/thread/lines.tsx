@@ -9,7 +9,7 @@ import { words, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, Tail } from '../data/api.ts';
 import { VersionEffects } from '../cards/Effects.tsx';
-import { PLAYS_PER_POST, createPlays, livePlays, type Plays } from '../cards/plays.ts';
+import { createPlays, livePlays, type Plays } from '../cards/plays.ts';
 import type { CardPlay } from '../cards/types.ts';
 import { resolveWritten } from '../cards/written.ts';
 import { Debuts, RevealPost, TallyPost } from '../reveal/Reveal.tsx';
@@ -103,7 +103,7 @@ function useTailsOf(post: Id, wanted: boolean, known: Plays | null): { readonly 
       api.tails([post]).then((rows) => { if (live) setRead({ plays, rows }); }, fail);
     };
     if (known) { tailed(writers(known.get(post).plays)); return () => { live = false; }; }
-    api.cardsOn(post, PLAYS_PER_POST).then((acts) => {
+    api.postPlays([post]).then(({ plays: acts }) => {
       if (!live) return;
       const store = createPlays();
       store.add(acts);

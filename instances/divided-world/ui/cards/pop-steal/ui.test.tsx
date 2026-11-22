@@ -32,7 +32,7 @@ function setup() {
 
 const held = async (fake: ReturnType<typeof setup>['fake'], card: string) => (await fake.myCards()).find((c) => c.card === card)?.held ?? 0;
 /** The post's live layers of a card: its plays that landed. A caught play stays on the post as the record of the catch and bears no layer. */
-const layersOf = async (fake: ReturnType<typeof setup>['fake'], post: string, card: string) => (await fake.cardsOn(post, 8)).filter((a) => a.kind === 'card' && a.payload.card === card && a.payload.caught === undefined);
+const layersOf = async (fake: ReturnType<typeof setup>['fake'], post: string, card: string) => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'card' && a.payload.card === card && a.payload.caught === undefined);
 
 describe('Pop Steal catches a Sweet common cast on its post', () => {
   test('Hype-Up cast on the post is caught: the setter holds it, the caster does not, and the post bears no layer of it', async () => {
@@ -41,7 +41,7 @@ describe('Pop Steal catches a Sweet common cast on its post', () => {
     fake.signInAs(bo);
     const caught = must(await fake.playCard('hype-up', boFace, opener, {}, ''));
     expect(caught.payload.caught).toBe(set.id);
-    expect((await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ set: set.id, caught: caught.id });
+    expect((await fake.postPlays([opener])).plays.find((a) => a.kind === 'spring')?.payload).toMatchObject({ set: set.id, caught: caught.id });
     fake.signInAs(ana);
     expect(await held(fake, 'hype-up')).toBe(1);
     fake.signInAs(bo);
@@ -66,8 +66,8 @@ describe('Pop Steal catches a Sweet common cast on its post', () => {
     const landed = must(await fake.playCard('whoops', boFace, opener, { color: 'red' }, ''));
     expect(landed.payload.caught).toBeUndefined();
     expect(await layersOf(fake, opener, 'whoops')).toHaveLength(1);
-    expect((await fake.cardsOn(opener, 8)).some((a) => a.id === set.id)).toBe(true);
-    expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.postPlays([opener])).plays.some((a) => a.id === set.id)).toBe(true);
+    expect((await fake.postPlays([opener])).plays.some((a) => a.kind === 'spring')).toBe(false);
   });
 
   test('a Sweet card above common lands on the post and the back stays', async () => {
@@ -78,8 +78,8 @@ describe('Pop Steal catches a Sweet common cast on its post', () => {
     const landed = must(await fake.playCard('jimmy-wails', boFace, opener, {}, 'Please, a friend needs a hand'));
     expect(landed.payload.caught).toBeUndefined();
     expect(await layersOf(fake, opener, 'jimmy-wails')).toHaveLength(1);
-    expect((await fake.cardsOn(opener, 8)).some((a) => a.id === set.id)).toBe(true);
-    expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.postPlays([opener])).plays.some((a) => a.id === set.id)).toBe(true);
+    expect((await fake.postPlays([opener])).plays.some((a) => a.kind === 'spring')).toBe(false);
   });
 
   test('its set form says what it waits for, in the prep plan\'s words', () => {

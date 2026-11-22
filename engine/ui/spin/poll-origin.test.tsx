@@ -176,7 +176,7 @@ describe('the Ballots list of a poll', () => {
 describe('a page read again after the poll was removed from its post', () => {
   const act = (kind: 'poll' | 'ballot', target: Id): Act => ({ id: `${kind}-1`, character: 'c1', kind, thread: 't1', targetActId: target, seq: null, createdAt: '2026-11-20T10:00:00.000Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null });
   const poll = (): Poll => ({ post: 'post-1', act: { ...act('poll', 'post-1'), id: 'poll-1', payload: { question: 'Q?', options: ['A', 'B'], pick: 1, secret: false, closes_at: '2026-11-22T10:00:00.000Z' } }, counts: [0, 0], voters: 0, endsAt: '2026-11-22T10:00:00.000Z', closed: false, close: null, balloted: false });
-  const origin = (from: Act, polls: readonly Poll[]): PageOrigin => ({ act: from, plays: [], more: false, moment: null, at: null, cast: [], polls, voters: [], votersMore: [], myBallots: [] });
+  const origin = (from: Act, polls: readonly Poll[]): PageOrigin => ({ act: from, plays: [], counts: [], moment: null, at: null, cast: [], polls, voters: [], votersMore: [], myBallots: [] });
   const take = (o: PageOrigin, store: Polls) => takeInOrigin(o, 'x', createPlays(), createTallies(), new Map(), undefined, store);
 
   test.each([['poll origin', 'poll', 'post-1'], ['ballot origin', 'ballot', 'poll-1']] as const)('a %s drops the removed poll\'s view', (_, kind, target) => {

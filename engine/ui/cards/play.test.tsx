@@ -617,7 +617,7 @@ describe('the play form', () => {
     expect(here(1)).toBeNull();
     expect(screen.getByRole('status', { name: 'Playing a card' })).toHaveTextContent('Played Whoops! on Gloomba\'s post #2.');
     /* The play kept the ink the player chose. */
-    const played = (await w.fake.cardsOn(w.ids[1]!, 10)).at(-1)!;
+    const played = (await w.fake.postPlays([w.ids[1]!])).plays.at(-1)!;
     expect(played.payload).toMatchObject({ card: 'whoops', layer: 1, message: 'you dropped your ink', config: { color: '#19e3ff' } });
   });
 
@@ -680,7 +680,7 @@ describe('the play form', () => {
     await user.click(within(form).getByRole('button', { name: 'Play again anyway' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(lost).toHaveBeenCalledTimes(2);
-    expect(await w.fake.cardsOn(w.ids[1]!, 10)).toHaveLength(1);
+    expect((await w.fake.postPlays([w.ids[1]!])).plays).toHaveLength(1);
   });
 
   test('a lost answer for a play that did go through is found on the post, and the form finishes', async () => {
@@ -696,7 +696,7 @@ describe('the play form', () => {
     await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(lost).toHaveBeenCalledTimes(1);
-    expect(await w.fake.cardsOn(w.ids[1]!, 10)).toHaveLength(1);
+    expect((await w.fake.postPlays([w.ids[1]!])).plays).toHaveLength(1);
     expect(await within(post(2)).findByRole('button', { name: /^Whoops!, 1 play, .* Opens the cards on this post\.$/u })).toBeInTheDocument();
     await waitFor(() => expect(handButton()).toHaveAccessibleName('Hand, 2 postcards'));
     await act(async () => {});
@@ -769,8 +769,8 @@ describe('from the Task 3 quality review', () => {
       expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled();
       await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
       await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Whoops!' })).toBeNull());
-      /* Three plays are live now, the one that did not take among four: a fourth is refused, in the form as at the server. */
-      expect((await w.fake.cardsOn(w.ids[1]!, 10)).filter((a) => a.kind === 'card')).toHaveLength(4);
+      /* Three plays are live now (the one that did not take is over and no stand-in, so the page no longer holds it; it counts as a play that did not take): a fourth is refused, in the form as at the server. */
+      expect((await w.fake.postPlays([w.ids[1]!])).plays.filter((a) => a.kind === 'card')).toHaveLength(3);
       await waitFor(() => expect(here(2)).toBeNull());
     });
 
@@ -1561,7 +1561,7 @@ describe('the play form of a card that replies', () => {
     expect(sent.mock.calls[0]![0]).toBe('cutter');
     expect(sent.mock.calls[0]![2]).toBe(w.ids[1]);
     expect(sent.mock.calls[0]![8]).toEqual({ body: REPLY });
-    expect((await w.fake.cardsOn(w.ids[1]!, 10)).map((a) => a.payload.card)).toEqual(['cutter']);
+    expect((await w.fake.postPlays([w.ids[1]!])).plays.map((a) => a.payload.card)).toEqual(['cutter']);
   });
 
   test('the framing the editor holds goes with the words', async () => {
@@ -1748,7 +1748,7 @@ describe('cards on a spun thread: the opening post offers what any post does', (
     expect(within(form).getByRole('link', { name: /post #1/u })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
     await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Whoops!' })).toBeNull());
-    expect((await w.fake.cardsOn(w.first, 10)).map((a) => a.payload.card)).toEqual(['whoops']);
+    expect((await w.fake.postPlays([w.first])).plays.map((a) => a.payload.card)).toEqual(['whoops']);
     const strip = post(1).querySelector('.kb-act-meta .kb-marks') as HTMLElement;
     const mark = await within(strip).findByRole('button', { name: /^Whoops!, 1 play\b/u });
     await user.click(mark);

@@ -51,6 +51,6 @@ export async function lockOut(w: LockoutWorld): Promise<{ spring: Act; back: Id 
   const back = must(await w.fake.setCard('lkback', w.spritey, w.post, {}));
   w.fake.signInAs(w.me);
   must(await w.fake.playCard('lksalty', w.pipe, w.post, {}, ''));
-  const spring = (await w.fake.cardsOn(w.post, 8)).find((a) => a.kind === 'spring')!;
+  const spring = (await w.fake.postPlays([w.post])).plays.find((a) => a.kind === 'spring')!;
   return { spring, back: back.id };
 }

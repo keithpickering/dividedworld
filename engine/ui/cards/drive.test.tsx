@@ -65,7 +65,7 @@ async function page(w: World, posts: readonly Id[] = w.ids) {
   vi.useFakeTimers({ toFake: ['Date'] });
   vi.setSystemTime(w.fake.clock.now());
   const plays = createPlays();
-  plays.add(await w.fake.cardsOnMany(posts, 40));
+  plays.add((await w.fake.postPlays(posts)).plays);
   const acts = await Promise.all(posts.map((p) => w.fake.act(p)));
   return renderIn(w.fake, (
     <>{acts.map((a) => (
