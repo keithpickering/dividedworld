@@ -26,6 +26,12 @@ const cards: CardUi[] = ['early', 'late', 'clock'].map((key) => ({ key, art, des
 /* A play heard on a channel crosses the fake's realtime and a re-render of the whole frame; on a loaded runner that can take past waitFor's 1 s default. */
 const landed = { timeout: 5_000 };
 /* The reads a failed view repeats wait seconds apart; here they wait a tick, so the last one is reached. */
+/** The `failed` argument of every `readRewinds` call: what each read does when it gives up. */
+const asked: unknown[] = [];
+vi.mock('../cards/plays.ts', async (original) => {
+  const real = await original<typeof import('../cards/plays.ts')>();
+  return { ...real, readRewinds: (...args: Parameters<typeof real.readRewinds>) => { asked.push(args[4]); return real.readRewinds(...args); } };
+});
 vi.mock('../cards/tails.ts', async (original) => ({ ...(await original<typeof import('../cards/tails.ts')>()), backoff: () => 1 }));
 class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
 beforeEach(() => {
@@ -201,21 +207,20 @@ describe('a rewind whose view cannot be read', () => {
     await waitFor(() => expect(screen.getByRole('article', { name: /^Post 1 /u })).toHaveTextContent('The first words.'), landed);
   });
 
-  test('the ORIGIN box asks the same', async () => {
+  test('the ORIGIN box hands the read of the page to its retries: its play\'s read is given the thread\'s catch-up', async () => {
     const w = await world(false);
     w.fake.signInAs(w.ana);
     const made = await w.fake.spin(w.opener, w.anaFace, 'About it', 'b');
     if (!made.ok) throw new Error('the spin was refused');
-    const view = vi.spyOn(w.fake, 'rewindView').mockRejectedValue(new Error('down'));
-    const page = vi.spyOn(w.fake, 'threadPage');
+    vi.spyOn(w.fake, 'rewindView').mockRejectedValue(new Error('down'));
+    asked.length = 0;
     open(w, made.value.thread.id);
-    const box = await screen.findByRole('group', { name: 'Origin' });
-    await waitFor(() => expect(box).toHaveTextContent('The second words.'));
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Origin' })).toHaveTextContent('The second words.'));
     w.fake.signInAs(w.bo);
     await w.fake.playCard('clock', w.boFace, w.opener, { to: w.opener }, '');
-    const before = page.mock.calls.length;
-    await waitFor(() => expect(view).toHaveBeenCalledTimes(5), landed);
-    await waitFor(() => expect(page.mock.calls.length).toBeGreaterThan(before), landed);
+    await waitFor(() => expect(asked.length).toBeGreaterThan(0), landed);
+    /* Every read of a rewind's view on this screen, the box's included, is given what to do when it gives up. */
+    expect(asked.every((failed) => typeof failed === 'function')).toBe(true);
     await waitFor(() => expect(screen.getByRole('group', { name: 'Origin' })).toHaveTextContent('The first words.'), landed);
   });
 });
