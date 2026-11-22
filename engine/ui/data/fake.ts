@@ -2460,9 +2460,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       else {
         /* The post's card Acts, read once. A handed-back cast uses its kick whether or not it was later ended or reversed, as place_cast counts the card Acts naming the sign. */
         const onTarget = [...acts.values()].filter((a) => a.kind === 'card' && a.target === target);
+        /* A refunds Gimmick never hands back the card that cuts it, so the play a cast cuts is left out. */
         /* The latest live refunds play that qualifies: its flavor holds the cast's and its kicks are not used up, so an older one is not skipped for a newer that cannot serve. */
         const signs = onTarget.filter((a) => {
-          const r = onPost(a) && !over(a.id) && a.payload.caught === undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at
+          const r = onPost(a) && !over(a.id) && !(cutting && a.id === (decided.value.config as { play?: unknown } | null)?.play) && a.payload.caught === undefined && typeof a.payload.ends === 'string' && Date.parse(a.payload.ends) > at
             ? instance.cards.find((k) => k.key === a.payload.card)?.refunds : undefined;
           return r !== undefined && r.flavors.includes(rules.alignment)
             && onTarget.filter((x) => (x.payload.handedBack as { by?: unknown } | undefined)?.by === a.id).length < r.count;

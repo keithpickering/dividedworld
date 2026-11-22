@@ -2844,6 +2844,19 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await fake.actsCutting(['not-a-play'])).toEqual([]);
   });
 
+  test('a Kick Me never hands back the card that cuts it, and still hands back a cut of another Gimmick', async () => {
+    const { fake, anaFace, mine, kicked, cutAt } = cutSetup();
+    const kickMe = await kicked();
+    const cutKick = must(await cutAt(kickMe.id));
+    expect(cutKick.payload.cut).toMatchObject({ play: kickMe.id });
+    expect(cutKick.payload.handedBack).toBeUndefined();
+    const second = await kicked();
+    const wall = must(await fake.useCard('shield', anaFace, mine, {}, ''));
+    const cutWall = must(await cutAt(wall.id));
+    expect(cutWall.payload.cut).toMatchObject({ play: wall.id });
+    expect(cutWall.payload.handedBack).toMatchObject({ by: second.id });
+  });
+
   test('a second card that cuts lands on the same post for another Gimmick, and the cut one is no longer up', async () => {
     const { fake, anaFace, mine, kicked, cutAt } = cutSetup();
     const kickMe = await kicked();
