@@ -770,7 +770,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           void ensurePeople([a.character]).then(() => {
             plays.add([a]);
             /* A rewind that lands while the reader is here comes without its view: read once, kept by its play; the post shows as it was until it is in, then rewound (`readRewinds`). */
-            void readRewinds(api, plays, [a], rewinding);
+            void readRewinds(api, plays, [a], rewinding, () => askCatchUp.current());
             /* A veil on a post of this screen changes who wrote it (or what its row shows) for every reader: the page is read again, and the end is waited for. */
             const f = feedRef.current;
             if (isVeilPlay(a, veils) && a.targetActId !== null && (f.shown.has(a.targetActId) || f.held.has(a.targetActId))) { askCatchUp.current(); setVeilClock((n) => n + 1); }
@@ -977,6 +977,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (under) putNested(under.parent, under.under.play, a);
     else dispatch({ type: 'live', act: a });
   }, [nestedBy, putNested]);
+  const catchUp = useCallback(() => askCatchUp.current(), []);
   const underOf = useCallback((id: Id) => nestedBy(id)?.parent, [nestedBy]);
   const canReply = systemBoard === false;
   /* The HUD's Reveal starts on this thread, except on The System's board (and until the board is known), where a meta act is not made. It is cleared when the screen goes. */
@@ -984,8 +985,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, catchUp, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {

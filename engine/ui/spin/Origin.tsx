@@ -82,7 +82,7 @@ function takeInPolls(origin: PageOrigin, polls: Polls, ticket: number): void {
  * in kind, so the post's effects draw here as they do there. The page's origin is taken in as it arrives (`takeIn`, before the box's first frame and again for each page read); a play, an edit, a saved
  * state and a tally are heard on the origin thread's channel.
  */
-function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls): { readonly act: Act | null } {
+function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls, catchUp?: () => void): { readonly act: Act | null } {
   const { api, ui, instance } = useKayfa();
   /* The player's own characters: a ballot of theirs heard here is their own ballot on the poll. */
   const { characters } = usePlayer();
@@ -112,7 +112,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
           return;
         }
         if (a.id === origin) setAct((was) => (was ? newer(was, a) : a));
-        else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); void readRewinds(api, plays, [a], rewinding); }
+        else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); void readRewinds(api, plays, [a], rewinding, catchUp); }
       },
       onEffect(play) { void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ }); },
       /* A reaction to the origin, or to a play on it, counts on its tag here as it does in its thread. */
@@ -120,7 +120,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
       /* The origin post's poll: its counts, a replacement, a close and a ballot, as the origin's thread hears them (the same events the thread screen applies to its own polls). */
       onPoll(e) { polls.counts(e); },
     });
-  }, [api, ui, instance.cards, origin, thread, plays, tallies, polls]);
+  }, [api, ui, instance.cards, origin, thread, plays, tallies, polls, catchUp]);
   return { act };
 }
 
@@ -214,7 +214,7 @@ function PollOrigin({ act, post, polls, name }: { readonly act: Act; readonly po
 }
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
-  const { perPage, tallies, mine, origin: held, originPlays, originPolls } = useThread();
+  const { perPage, tallies, mine, origin: held, originPlays, originPolls, catchUp } = useThread();
   const { api, instance, ui } = useKayfa();
   const originId = summary.originActId!;
   const from = held ?? NOT_THERE;
@@ -223,7 +223,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const plays = originPlays ?? own;
   const ownPolls = useMemo(() => createPolls(), []);
   const polls = originPolls ?? ownPolls;
-  const { act } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls);
+  const { act } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls, catchUp);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;

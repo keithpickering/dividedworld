@@ -22,10 +22,10 @@ const rules = (key: string, extra: Partial<CardRules> = {}): CardRules => ({
   key, name: key, alignment: 'pepperoni', rarity: 'common', reaches: ['post'], playPrice: () => 0, validateConfig: (c: unknown) => ok(c),
   canApply: (t, e, _config, now) => landsOn({ key, reaches: ['post'] }, t, e, now), ...extra,
 });
-const instance: Instance = { ...testInstance, cards: [rules('early'), rules('late'), rules('clock', { rarity: 'rare', rewind: { upTo: 'rare' }, lasts: { unit: 'day', count: 1 } })] };
+const instance: Instance = { ...testInstance, cards: [rules('early'), rules('late'), rules('beacon', { reaches: ['thread'] }), rules('clock', { rarity: 'rare', rewind: { upTo: 'rare' }, lasts: { unit: 'day', count: 1 } })] };
 const wrap = (key: string) => ({ children }: EffectProps): ReactNode => <div data-kb-wrap={key}>{children}</div>;
 const ui = (key: string): CardUi => ({ key, art: { color: '#ffd23f', ink: '#1a1300', canvas: '', mark: '', credit: 'Test' }, describe: () => `${key}.`, Effect: wrap(key) });
-const cards = ['early', 'late', 'clock'].map(ui);
+const cards = ['early', 'late', 'clock', 'beacon'].map(ui);
 
 const T = (m: number) => `2026-11-14T10:${String(m).padStart(2, '0')}:00.000Z`;
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: T(0), payload: { body: 'new words' }, currentPayload: { body: 'new words' }, editedAt: T(3), shownEditedAt: T(3) };
@@ -90,5 +90,36 @@ describe('a post under a live rewind', () => {
     expect(words(container)).toBe('old words');
     store.setEnded(['r']);
     await waitFor(() => expect(words(container)).toBe('new words'));
+  });
+});
+
+describe('a play above the post (a thread\'s), under a live rewind', () => {
+  const sibling: Act = { ...post, id: 'p2', seq: 2 };
+  /** A thread-reach play, played at minute `m`, up for a minute. */
+  const beacon = (id: string, m: number): Act => ({
+    id, character: 'c9', kind: 'card', thread: 't1', targetActId: 'p0', seq: null, createdAt: T(m),
+    payload: { card: 'beacon', message: '', config: {}, layer: 1, reach: 'thread', thread: 't1', ends: ahead(60_000) }, currentPayload: {}, editedAt: null, shownEditedAt: null,
+  });
+  function both(played: readonly Act[]) {
+    const api = createFake({ instance, now: () => Date.now() });
+    const kayfa = { api, instance, ui: { cards, glass: testGlass }, settings: {} } as unknown as Kayfa;
+    const store = createPlays();
+    hydrate(store, [...played, rewindAt(ahead(60_000))], {}, [], {}, {}, [], [], [view()]);
+    const body = (version: Act) => <span data-kb-words>{String(version.currentPayload.body)}</span>;
+    const one = (act: Act) => <PostEffects plays={store} post={act} place="thread" nameOf={() => 'x'} bodyOf={body}>{body(act)}</PostEffects>;
+    return render(<KayfaProvider value={kayfa}><PlayerProvider api={api}><PlayProvider><div id="a">{one(post)}</div><div id="b">{one(sibling)}</div></PlayProvider></PlayerProvider></KayfaProvider>);
+  }
+  const at = (c: HTMLElement, id: string) => wraps(c.querySelector<HTMLElement>(`#${id}`)!);
+
+  test('a thread play between the point and the rewind is hidden on the rewound post and drawn on a sibling', () => {
+    const { container } = both([beacon('b1', 4)]);
+    expect(at(container, 'a')).toEqual(['clock']);
+    expect(at(container, 'b')).toEqual(['beacon']);
+  });
+
+  test('a thread play before the point is drawn on both', () => {
+    const { container } = both([beacon('b0', 1)]);
+    expect(at(container, 'a')).toEqual(['beacon', 'clock']);
+    expect(at(container, 'b')).toEqual(['beacon']);
   });
 });

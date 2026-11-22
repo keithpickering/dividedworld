@@ -25,6 +25,8 @@ const cards: CardUi[] = ['early', 'late', 'clock'].map((key) => ({ key, art, des
 
 /* A play heard on a channel crosses the fake's realtime and a re-render of the whole frame; on a loaded runner that can take past waitFor's 1 s default. */
 const landed = { timeout: 5_000 };
+/* The reads a failed view repeats wait seconds apart; here they wait a tick, so the last one is reached. */
+vi.mock('../cards/tails.ts', async (original) => ({ ...(await original<typeof import('../cards/tails.ts')>()), backoff: () => 1 }));
 class Observer { observe() {} unobserve() {} disconnect() {} takeRecords() { return []; } }
 beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', Observer);
@@ -182,5 +184,38 @@ describe('the ORIGIN box of a thread spun from a rewound post', () => {
     /* The box may be drawn again as a play lands: it is asked for again. */
     await waitFor(() => expect(screen.getByRole('group', { name: 'Origin' })).toHaveTextContent('The first words.'), landed);
     expect(screen.getByRole('group', { name: 'Origin' })).not.toHaveTextContent('The second words.');
+  });
+});
+
+describe('a rewind whose view cannot be read', () => {
+  test('after its retries the page is read again, and its rewinds draw the post rewound', async () => {
+    const w = await world(false);
+    const view = vi.spyOn(w.fake, 'rewindView').mockRejectedValue(new Error('down'));
+    open(w, w.thread);
+    const post = await post1();
+    expect(post).toHaveTextContent('The second words.');
+    const page = vi.spyOn(w.fake, 'threadPage');
+    await w.fake.playCard('clock', w.boFace, w.opener, { to: w.opener }, '');
+    await waitFor(() => expect(view).toHaveBeenCalledTimes(5), landed);
+    await waitFor(() => expect(page).toHaveBeenCalled(), landed);
+    await waitFor(() => expect(screen.getByRole('article', { name: /^Post 1 /u })).toHaveTextContent('The first words.'), landed);
+  });
+
+  test('the ORIGIN box asks the same', async () => {
+    const w = await world(false);
+    w.fake.signInAs(w.ana);
+    const made = await w.fake.spin(w.opener, w.anaFace, 'About it', 'b');
+    if (!made.ok) throw new Error('the spin was refused');
+    const view = vi.spyOn(w.fake, 'rewindView').mockRejectedValue(new Error('down'));
+    const page = vi.spyOn(w.fake, 'threadPage');
+    open(w, made.value.thread.id);
+    const box = await screen.findByRole('group', { name: 'Origin' });
+    await waitFor(() => expect(box).toHaveTextContent('The second words.'));
+    w.fake.signInAs(w.bo);
+    await w.fake.playCard('clock', w.boFace, w.opener, { to: w.opener }, '');
+    const before = page.mock.calls.length;
+    await waitFor(() => expect(view).toHaveBeenCalledTimes(5), landed);
+    await waitFor(() => expect(page.mock.calls.length).toBeGreaterThan(before), landed);
+    await waitFor(() => expect(screen.getByRole('group', { name: 'Origin' })).toHaveTextContent('The first words.'), landed);
   });
 });

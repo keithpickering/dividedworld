@@ -195,7 +195,11 @@ export function rewoundPlays(plays: readonly CardPlay[], rewind: Pick<Rewind, 'a
 }
 
 /** What a post shows under a live rewind: its view (the words), and its plays split into those drawn and those hidden (`rewoundPlays`). */
-export interface Rewound { readonly rewind: Rewind; readonly shown: readonly CardPlay[]; readonly hidden: readonly CardPlay[] }
+export interface Rewound {
+  readonly rewind: Rewind; readonly shown: readonly CardPlay[]; readonly hidden: readonly CardPlay[];
+  /** Whether the rewind lets a play of any reach show on this post (`rewoundPlays`' rule), for the plays above it (a thread's, a character's) that fall on it. */
+  readonly shows: (play: CardPlay) => boolean;
+}
 
 /**
  * The rewind a post is drawn under at `now`, or null. A rewind is live while its play is held and not over (`playOver`: its time is up, an admin ended it, it did not take); where more than one is live (a rarer
@@ -211,7 +215,7 @@ export function rewoundOf(here: Pick<PostPlays, 'plays' | 'rewinds'>, now: numbe
   if (best === null) return null;
   const shown = rewoundPlays(here.plays, best.rewind, best.play.playedAt);
   const kept = new Set(shown);
-  return { rewind: best.rewind, shown, hidden: here.plays.filter((p) => !kept.has(p)) };
+  return { rewind: best.rewind, shown, hidden: here.plays.filter((p) => !kept.has(p)), shows: (p) => rewoundPlays([p], best.rewind, best.play.playedAt).length === 1 };
 }
 
 /** Whether a kind is spent on a post: it has plays, and every one is over. */
@@ -897,10 +901,10 @@ export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Rec
 
 /**
  * Read the view of each rewind play among these Acts (`KayfaApi.rewindView`), once each, into the store: the plays that land while a reader is on the page, which the page's own `rewinds` did not carry.
- * The post shows as it did until the view is in, then rewound, so the present is never drawn after it. A read that fails is asked again after `backoff`, at most `REPEAT_TRIES` times in all; an Act that is no rewind play is nothing.
+ * The post shows as it did until the view is in, then rewound, so the present is never drawn after it. A read that fails is asked again after `backoff`, at most `REPEAT_TRIES` times in all, and then `failed` is called once for it (the screen reads its page again, whose `rewinds` carry the view); an Act that is no rewind play is nothing.
  * `cards` are the keys of the cards with a rewind.
  */
-export async function readRewinds(api: KayfaApi, plays: Plays, acts: readonly Act[], cards: ReadonlySet<string>, attempt = 0): Promise<void> {
+export async function readRewinds(api: KayfaApi, plays: Plays, acts: readonly Act[], cards: ReadonlySet<string>, failed?: () => void, attempt = 0): Promise<void> {
   const wanted = acts.filter((a) => a.kind === 'card' && a.targetActId !== null && typeof a.payload.card === 'string' && cards.has(a.payload.card) && a.payload.instant !== true && plays.wantRewind(a.id));
   await Promise.all(wanted.map(async (a) => {
     try {
@@ -908,7 +912,8 @@ export async function readRewinds(api: KayfaApi, plays: Plays, acts: readonly Ac
       if (view !== null) plays.setRewinds([view]);
     } catch {
       plays.unwantRewind(a.id);
-      if (attempt + 1 < REPEAT_TRIES) setTimeout(() => { void readRewinds(api, plays, [a], cards, attempt + 1); }, backoff(attempt));
+      if (attempt + 1 < REPEAT_TRIES) setTimeout(() => { void readRewinds(api, plays, [a], cards, failed, attempt + 1); }, backoff(attempt));
+      else failed?.();
     }
   }));
 }
