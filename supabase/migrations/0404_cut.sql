@@ -16,7 +16,7 @@
 --   9. cut_refusal              new: the engine's words that turn a card that cuts away (none up, none named, not up, rarer than upTo), from the target's public plays and the cards' printed rarity. Revoked from everyone, as wards_against is.
 --  10. place_cast               copied whole from 0402_thread_lockout.sql (the plan named 0400): a card that cuts is instant (also on a post: `instant`, no layer, no place in the post's stack), refused a staff caster in plain words, asked
 --                               cut_refusal after the Ward check and the landing's refusal (post) or after the Ward check (character), locks the caster's live pierce rows, and a cut's named play row, in ONE statement in play order before each pierce loop (a global order over play_reach rows),
---                               and writes `cut: {play, card}` when it lands (not when a back caught it). `is_unban` splits the unban's own work (the bans it lifts) from what every instant card shares.
+--                               and writes `cut: {play, card}` when it lands (not when a back caught it). The refunds lookup leaves out the play the cut names, so a Salty cut of a live Kick Me is not handed back by it. `is_unban` splits the unban's own work (the bans it lifts) from what every instant card shares.
 --  11. reverse_card             copied whole from 0402_thread_lockout.sql (the plan named 0349, and 0402 already asks the admin's end and a refunded write in cases of their own, not through card_ended): after those, a play a card cut
 --                               says "a <card> already ended that card; end that card to bring this one back", and any other play that is over (a pierce a cast spent) says "that card is already over".
 --  12. settlement_input,        copied whole from 0398_debates_fixes.sql: the `ends` each card Act is sent with is the least of its own and card_cut_at (`least` skips a null), so engine/rules/settle.ts, which pays an earn, a flat earn, a
@@ -1092,11 +1092,12 @@ begin
         if sprung -> 'payload' ->> 'did' = 'returned' then
           handed := jsonb_build_object('by', sprung -> 'payload' ->> 'set', 'card', sprung -> 'payload' ->> 'card');
         else
-          -- The post's live refunds Gimmick: the latest play on this post whose card has refunds, is still up, names this card's flavor and has handed back fewer casts than its count. The post's row is locked
+          -- The post's live refunds Gimmick: the latest play on this post whose card has refunds, is still up, names this card's flavor and has handed back fewer casts than its count. A card that cuts is never handed back by the Gimmick it names (the owner's answer, #965): the cutting card is consumed; a cut of another Gimmick is handed back by a refunds Gimmick still up as any Salty Move is. The post's row is locked
           -- above, so two casts are counted one after the other.
           select jsonb_build_object('by', k.id, 'card', k.payload ->> 'card') into handed
           from acts k join card_kinds rk on rk.key = k.payload ->> 'card'
           where k.kind = 'card' and k.target_act_id = target and coalesce(k.payload ->> 'reach', 'post') = 'post' and rk.refunds is not null
+            and k.id is distinct from cut_play
             and (k.payload ->> 'ends')::timestamptz > now() and not card_ended(k.id)
             and rk.refunds -> 'flavors' ? kind_of.alignment
             and (select count(*) from acts h where h.kind = 'card' and h.target_act_id = target and h.payload #>> '{handedBack,by}' = k.id::text) < (rk.refunds ->> 'count')::integer

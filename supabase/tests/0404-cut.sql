@@ -170,8 +170,8 @@ begin
   cp := pg_temp.payload(c);
   if cp -> 'cut' is distinct from jsonb_build_object('play', kick::text, 'card', 'bkkick') then raise exception 'the cut did not name the Gimmick and its card: %', cp; end if;
   if cp ->> 'instant' is distinct from 'true' or cp ? 'layer' or cp ? 'caught' or cp ? 'ends' then raise exception 'the cut is not an instant play with no layer or end: %', cp; end if;
-  -- Pinned, as the plan leaves it: the refunds check reads the Kick Me before the cut is written (the Kick Me is still live then), so a Salty cut that names a live Kick Me is itself handed back by that Kick Me.
-  if cp -> 'handedBack' is distinct from jsonb_build_object('by', kick::text, 'card', 'bkkick') then raise exception 'the cut that ended a Kick Me was not handed back by it, which place_cast does today: %', cp; end if;
+  -- The owner's answer (#965): a Kick Me never refunds the card that cuts it, so the cutting card is consumed and carries no `handedBack`.
+  if cp ? 'handedBack' then raise exception 'the cut that ended a Kick Me was handed back by it: %', cp; end if;
   perform tests.unbecome();
   at_cut := (select x.created_at from acts x where x.id = (c ->> 'id')::uuid);
   if not card_ended(kick) then raise exception 'a cut Gimmick is not over'; end if;
@@ -236,6 +236,29 @@ begin
   if why is distinct from '55000 that Gimmick isn''t up on this post' then raise exception 'naming the cut Gimmick with another up: %', why; end if;
   perform tests.unbecome();
   if card_ended(req) then raise exception 'a refused cut ended the other Gimmick'; end if;
+end $$;
+
+-- ---- A cut of another Gimmick is handed back by a Kick Me still up, as any Salty Move (it did not cut that Kick Me) ----
+select tests.unbecome();
+do $$
+declare
+  ann uuid := tests.account('bk-h-ann'); bob uuid := tests.account('bk-h-bob');
+  a uuid := tests.character(ann, 'Bk H Ann'); b uuid := tests.character(bob, 'Bk H Bob');
+  t uuid := tests.thread('Bk handed');
+  pb uuid := tests.post(b, t, 'Bob''s post.');
+  kick uuid; req uuid; cp jsonb;
+begin
+  perform pg_temp.cards();
+  perform pg_temp.hand(ann, 'bkcut');
+  perform pg_temp.hand(bob, 'bkkick', 'bkreq');
+  perform tests.become_service();
+  kick := (play_card(bob, 'bkkick', b, pb, '{}', 0, '') ->> 'id')::uuid;
+  req := (play_card(bob, 'bkreq', b, pb, '{}', 0, '') ->> 'id')::uuid;
+  cp := pg_temp.payload(pg_temp.cut(ann, a, pb, req));
+  if cp -> 'handedBack' is distinct from jsonb_build_object('by', kick::text, 'card', 'bkkick') then raise exception 'a cut of another Gimmick was not handed back by the live Kick Me: %', cp; end if;
+  if cp -> 'cut' ->> 'play' is distinct from req::text then raise exception 'the cut did not name the other Gimmick: %', cp; end if;
+  perform tests.unbecome();
+  if card_ended(kick) or not card_ended(req) then raise exception 'the cut ended the wrong Gimmick'; end if;
 end $$;
 
 -- ---- Each refusal of cut_refusal, in the same words for every caster ----
