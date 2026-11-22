@@ -707,6 +707,32 @@ function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: bool
 
 const NAMES_SHOWN = 3;
 
+/**
+ * Every kind the Lens holds, in the tabs' order, for a tab row too long to show them all (the All button). Each entry is a button with the kind's name, its count of plays and, where any play of it is
+ * up now (`inForce`), a sign that is no more than a sign: its words for a screen reader are "N up now". The visit's tab, where there is one, is first and has no count. The grid is a way to the tabs; the tabs stay.
+ */
+function KindsGrid({ kinds, labelOf, billed, now, keeping, onChoose }: {
+  readonly kinds: readonly string[]; readonly labelOf: (kind: string) => string; readonly billed: readonly CardPlay[]; readonly now: number; readonly keeping: ReadonlySet<string>; readonly onChoose: (kind: string) => void;
+}) {
+  return (
+    <ul className="kb-lens-kinds" aria-label="Every kind of card">
+      {kinds.map((kind) => {
+        const ofKind = kind === VISIT_KIND ? [] : billed.filter((p) => p.card === kind);
+        const up = ofKind.filter((p) => inForce(p, now, keeping.has(p.card))).length;
+        return (
+          <li key={kind}>
+            <button type="button" className="kb-lens-kind" data-kb-card={kind} onClick={() => onChoose(kind)}>
+              <span className="kb-lens-kind-name">{labelOf(kind)}</span>
+              {kind !== VISIT_KIND && <span className="kb-lens-kind-count">{ofKind.length}</span>}
+              {up > 0 && <><span className="kb-lens-kind-up" aria-hidden="true" /><span className="kb-visually-hidden">{up} up now</span></>}
+            </button>
+          </li>
+        );
+      })}
+    </ul>
+  );
+}
+
 /** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
 function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'face' | 'ink'> & {
   /** The ink of each play, as the marks draw it. */
@@ -955,11 +981,17 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   /* The strip of tabs is one row that scrolls, with the current tab kept in view, and a fade at the edge where more wait. */
   const tabRow = useRef<HTMLDivElement>(null);
   const [fade, setFade] = useState<TabFade>('none');
+  /* The tabs do not all fit: the bar offers All, a grid of every kind. A form's one tab never needs it. */
+  const [overflows, setOverflows] = useState(false);
+  const [grid, setGrid] = useState(false);
+  const allButton = useRef<HTMLButtonElement>(null);
+  const showAll = overflows && !onForm;
+  const gridOn = grid && showAll;
   useLayoutEffect(() => { tabs.current.get(card ?? '')?.scrollIntoView?.({ block: 'nearest', inline: 'center' }); }, [card]);
   useEffect(() => {
     const el = tabRow.current;
     if (!el) return undefined;
-    const read = () => setFade(fadeOf(el));
+    const read = () => { setFade(fadeOf(el)); setOverflows(el.scrollWidth > el.clientWidth); };
     read();
     el.addEventListener('scroll', read, { passive: true });
     const resized = typeof ResizeObserver === 'function' ? new ResizeObserver(read) : null;
@@ -985,7 +1017,9 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
     const changed = typeof MutationObserver === 'function' ? new MutationObserver(() => { watch(); read(); }) : null;
     changed?.observe(el, { childList: true, subtree: true });
     return () => { el.removeEventListener('scroll', read); resized?.disconnect(); changed?.disconnect(); };
-  }, [card, unfolded, narrow]);
+  }, [card, unfolded, narrow, grid]);
+  /* A grid whose All button has left (the tabs fit again, a form opened) is closed with it. */
+  useEffect(() => { if (grid && !showAll) setGrid(false); }, [grid, showAll]);
   if (card === null) return null;
 
   const rules = instance.cards.find((c) => c.key === card);
@@ -997,6 +1031,12 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
   const panelId = `${ids}-panel`;
+  const allId = `${ids}-all`;
+  const keeping = keepingKeys(instance.cards);
+  const labelOf = (kind: string) => kind === VISIT_KIND && visit ? tabName(visitState(visit.visit)) : kindName(instance, kind, here.plays);
+  /* Esc closes the grid and not the Lens (the float asks `onClose`), and the All button that opened it has focus again. */
+  const closeGrid = () => { setGrid(false); allButton.current?.focus(); };
+  const pick = (kind: string) => { setGrid(false); choose(kind); tabs.current.get(kind)?.focus(); };
   /* A discipline card's plays say what each did, in the engine's words: a play an admin ended, one that did not take and one a trap caught are said as any is (the view's notes win). */
   const effect = rules?.discipline;
   const said = effect === undefined ? null : Object.fromEntries(ofKind.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken).flatMap((p): [Id, string][] => {
@@ -1049,7 +1089,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   return (
     <Float
       label={onForm ? (form.kind === REPORT_KIND ? `Report this ${where}` : `Appeal on this ${where}`) : visit ? (cardKinds.length === 0 ? `Visit to this ${where}` : `Visit and cards on this ${where}`) : `Cards on this ${where}`} surface="effect" anchor={anchor} keep={keep} sheet={narrow} low={replaying} host={host}
-      returnFocusTo={() => anchor.current} onClose={dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
+      returnFocusTo={() => anchor.current} onClose={gridOn ? closeGrid : dismiss} onPlace={setPlaced} onKeyDown={leave} className="kb-lens"
       style={ink ? ({ '--kb-lens-ink': ink } as CSSProperties) : undefined}
       wrapStyle={{ '--kb-float-glow': 'var(--kb-lens-ink)' } as CSSProperties}
       data={{ 'kb-lens': placed, 'kb-card': card, 'kb-alignment': rules?.alignment, 'kb-tinted': ink ? 'true' : undefined, 'kb-more': more ? 'true' : 'false', 'kb-above': above ? 'true' : 'false' }}
@@ -1069,12 +1109,18 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           })}
         </div>
         </div>
+        {showAll && (
+          <button ref={allButton} type="button" id={allId} className="kb-lens-all kb-glass-skew" aria-expanded={gridOn} aria-controls={panelId} onClick={() => (gridOn ? closeGrid() : setGrid(true))}>
+            <span className="kb-glass-upright">All {kinds.length}</span>
+          </button>
+        )}
       </DialogBar>
       {/* Before the body: the body is the dialog's last child, which the frame's own checks lay their probes in. */}
       <div className="kb-lens-fade" aria-hidden="true" />
-      <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={tabId(card)}>
+      <div ref={body} className="kb-lens-body" role="tabpanel" id={panelId} aria-labelledby={gridOn ? allId : tabId(card)}>
         {/* The fade at the body's top: it sticks to the scroll edge under the bar, and shows once the body is scrolled off its top. */}
         <div className="kb-lens-fade-top" aria-hidden="true" />
+        {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} now={now} keeping={keeping} onChoose={pick} /> : <>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
@@ -1100,6 +1146,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         {!onVisit && !onForm && rules?.surface !== undefined && rowPlays[0] !== undefined && (
           <SurfaceRows play={rowPlays[0].id} live={here.surfaces[rowPlays[0].id]?.live.join(',') ?? ''} nameOf={nameOf} faceOf={faceOf} card={card} />
         )}
+        </>}
       </div>
     </Float>
   );

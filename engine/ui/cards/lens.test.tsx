@@ -3399,3 +3399,125 @@ describe('ended rows', () => {
     expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
   });
 });
+
+describe('the kinds grid', () => {
+  /* Twelve kinds, so the tab row can outrun the Lens; k5 has a play that has run its time, k2 has two plays in force. */
+  const TWELVE = Array.from({ length: 12 }, (_, i) => `c${i + 1}`);
+  const many = { ...testInstance, cards: TWELVE.map((key, i) => ({ ...testInstance.cards[0]!, key, name: `Card ${i + 1}` })) };
+  const manyUi = TWELVE.map((k) => cardUi(k));
+  const crowded = () => {
+    const w = (() => {
+      const fake = buildWorld(undefined, many);
+      const me = fake.seed.account('me');
+      const other = fake.seed.account('other');
+      const spritey = fake.seed.character(other, 'Spritey', 'face');
+      fake.seed.character(me, 'Pipewrench', 'heel');
+      const { thread } = fake.seed.thread('general', spritey, 'A thread', 'post 1');
+      const second = fake.seed.post(thread, spritey, 'post 2');
+      fake.signInAs(me);
+      return { fake, spritey, thread, second };
+    })();
+    for (const k of TWELVE) {
+      w.fake.clock.advance(60_000);
+      const ended = k === 'c5' ? { ends: new Date(w.fake.clock.now() - HOUR_MS).toISOString() } : {};
+      w.fake.seed.card(w.spritey, w.second, k, { message: `${k} by ${w.spritey}`, ...ended });
+      if (k === 'c2') { w.fake.clock.advance(60_000); w.fake.seed.card(w.spritey, w.second, k, { message: 'again' }); }
+    }
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: many, cards: manyUi });
+    return w;
+  };
+  const HOUR_MS = 3_600_000;
+  /** The tab row, laid out by hand (jsdom lays nothing out): wider than its box, so the tabs overflow. */
+  const overflow = (el: HTMLElement, wide: boolean) => {
+    Object.defineProperty(el, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(el, 'scrollWidth', { configurable: true, value: wide ? 700 : 330 });
+    fireEvent.scroll(el);
+  };
+  const opened = async () => {
+    width(false);
+    crowded();
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^\+\d+ more cards/u }));
+    return within(lens()).getByRole('tablist');
+  };
+  const allButton = () => within(lens()).queryByRole('button', { name: /^All \d+$/u });
+  const entries = () => [...lens().querySelectorAll<HTMLElement>('.kb-lens-kinds li')];
+
+  test('no All button while the tabs fit; "All 12" when they do not', async () => {
+    const row = await opened();
+    overflow(row, false);
+    expect(allButton()).toBeNull();
+    overflow(row, true);
+    const all = await within(lens()).findByRole('button', { name: 'All 12' });
+    expect(all).toHaveAttribute('aria-expanded', 'false');
+    expect(all).toHaveAttribute('aria-controls', lens().querySelector('[role="tabpanel"]')!.id);
+    expect(all.compareDocumentPosition(within(lens()).getByRole('button', { name: 'Close' })) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(all.compareDocumentPosition(row) & Node.DOCUMENT_POSITION_PRECEDING).not.toBe(0);
+  });
+
+  test('pressing it shows every kind in the tabs\' order, each with its count and an up-now sign where a play is in force', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const tabsOrder = within(row).getAllByRole('tab').map((t) => t.textContent!);
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    expect(within(lens()).getByRole('button', { name: 'All 12' })).toHaveAttribute('aria-expanded', 'true');
+    expect(entries()).toHaveLength(12);
+    expect(entries().map((li) => li.querySelector('.kb-lens-kind-name')!.textContent)).toEqual(tabsOrder);
+    const of = (name: string) => entries().find((li) => li.querySelector('.kb-lens-kind-name')!.textContent === name)!;
+    expect(of('Card 2').querySelector('.kb-lens-kind-count')!.textContent).toBe('2');
+    expect(of('Card 2').textContent).toContain('2 up now');
+    expect(of('Card 7').querySelector('.kb-lens-kind-count')!.textContent).toBe('1');
+    expect(of('Card 7').textContent).toContain('1 up now');
+    expect(of('Card 7').querySelector('.kb-lens-kind-up')).toHaveAttribute('aria-hidden', 'true');
+    /* A kind whose one play has run its time shows its count and no sign. */
+    expect(of('Card 5').querySelector('.kb-lens-kind-count')!.textContent).toBe('1');
+    expect(of('Card 5').querySelector('.kb-lens-kind-up')).toBeNull();
+    expect(of('Card 5').textContent).not.toContain('up now');
+    /* The tabs stay: the selected one stays selected and the panel is named by All. */
+    expect(within(row).getAllByRole('tab').filter((t) => t.getAttribute('aria-selected') === 'true')).toHaveLength(1);
+    expect(lens().querySelector('[role="tabpanel"]')).toHaveAttribute('aria-labelledby', within(lens()).getByRole('button', { name: 'All 12' }).id);
+    expect(within(lens()).queryByRole('button', { name: /plays? · / })).toBeNull();
+  });
+
+  test('choosing an entry opens its tab, hides the grid and puts focus on the tab', async () => {
+    const row = await opened();
+    overflow(row, true);
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    await userEvent.click(within(entries().find((li) => li.querySelector('.kb-lens-kind-name')!.textContent === 'Card 7')!).getByRole('button'));
+    expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
+    expect(tab('Card 7')).toHaveAttribute('aria-selected', 'true');
+    await waitFor(() => expect(tab('Card 7')).toHaveFocus());
+    expect(within(lens()).getByRole('button', { name: 'All 12' })).toHaveAttribute('aria-expanded', 'false');
+    expect(lens().querySelector('[role="tabpanel"]')).toHaveAttribute('aria-labelledby', tab('Card 7').id);
+  });
+
+  test('Esc closes the grid and leaves the Lens open with focus on All; Esc again closes the Lens; All again closes the grid', async () => {
+    const row = await opened();
+    overflow(row, true);
+    const all = await within(lens()).findByRole('button', { name: 'All 12' });
+    await userEvent.click(all);
+    expect(entries()).toHaveLength(12);
+    await userEvent.keyboard('{Escape}');
+    expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
+    expect(lens()).toBeInTheDocument();
+    expect(all).toHaveFocus();
+    await userEvent.keyboard('{Escape}');
+    expect(screen.queryByRole('dialog')).toBeNull();
+
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: /^\+\d+ more cards/u }));
+    overflow(within(lens()).getByRole('tablist'), true);
+    await userEvent.click(await within(lens()).findByRole('button', { name: 'All 12' }));
+    await userEvent.click(within(lens()).getByRole('button', { name: 'All 12' }));
+    expect(lens().querySelector('.kb-lens-kinds')).toBeNull();
+    expect(lens()).toBeInTheDocument();
+  });
+
+  test('a Lens on a form draws no All button', async () => {
+    width(false);
+    const w = world();
+    open(w);
+    await userEvent.click(await within(await article(2)).findByRole('button', { name: 'Report' }));
+    const panel = await screen.findByRole('dialog', { name: 'Report this post' });
+    overflow(within(panel).getByRole('tablist'), true);
+    expect(within(panel).queryByRole('button', { name: /^All \d+$/u })).toBeNull();
+  });
+});
