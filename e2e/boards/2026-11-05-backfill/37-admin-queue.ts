@@ -26,6 +26,9 @@
  *  - The build also draws the Boards group (each board with its description and a shut Replace description) between Ended and How players reach you, which
  *    the board does not draw; How players reach you is held from Ended's bottom with that group's height as its shift. The staff board's name,
  *    Staff Announcements (the board look's Task 11), takes one more line in its row than The System did, 31.2px of that group.
+ *  - The Boards group lists the instance's own boards, and Divided World's launch design has seven (instances/divided-world/index.ts) where the first
+ *    run held two: five more rows (the board's name and description wrapped in the narrow column, with a shut Replace description beside), which put How players
+ *    reach you 994.1px lower again (592.1 + 994.1 = 1586.2). Each row is as the design draws a row; only the count is the instance's.
  *  - The warning's color is the glass's lighter text token for it (contrast on the smoke), so the countdown's type is not compared.
  *  - The labels of the contact rows are the glass's label size, 20px, where the board draws 19px.
  *  - A button's measure is the glass's own, so a button is compared by its place and not its size.
@@ -54,7 +57,7 @@ const manifest: BoardManifest = {
     at('force-head', 'heading', 'IN FORCE 1', { buildName: 'In force 1', buildSize: 40, origin: 'hold', originEdge: 'bottom', buildShift: { y: 59.6 } }),
     at('reverse', 'button', 'REVERSE', { buildName: 'Reverse: Pointless Toast Palace', origin: 'force-head' }),
     at('ended', 'text', '· the last 30 days, with how each ended ›', { origin: 'reverse', originEdge: 'bottom', buildShift: { x: 23, y: 151.5 } }),
-    at('reach-head', 'heading', 'HOW PLAYERS REACH YOU', { buildName: 'How players reach you', buildSize: 40, origin: 'ended', originEdge: 'bottom', buildShift: { x: -17.4, y: 592.1 } }),
+    at('reach-head', 'heading', 'HOW PLAYERS REACH YOU', { buildName: 'How players reach you', buildSize: 40, origin: 'ended', originEdge: 'bottom', buildShift: { x: -17.4, y: 1586.2 } }),
     at('reach-note', 'text', 'Players read these on the Reach a person page, which they can open signed out. Up to 5 links, each a label and an address: a web address that starts with https://, or an email address.', { origin: 'reach-head', type: false }),
     at('label-1', 'text', 'LABEL', { nth: 0, origin: 'reach-note', originEdge: 'bottom', buildSize: 20 }),
     at('address-1', 'text', 'ADDRESS', { nth: 0, origin: 'reach-note', originEdge: 'bottom', buildSize: 20 }),
