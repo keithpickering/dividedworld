@@ -112,6 +112,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   bundleAuthoredMostParts: 8,
   /** A starting point: the digest quotes the eight top posts. */
   digestExcerpts: 8,
+  /** How many conversations with waiting replies the digest shows a pool persona (the chattier staff design): six. */
+  digestConversations: 6,
   /** A starting point: each quoted post is cut to 280 characters. */
   digestExcerptChars: 280,
   /** A starting point: a Boss remembers its forty strongest opinions of characters; the rest fade, which keeps its memory (read at every meeting) small. */
@@ -126,7 +128,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * The staff roster's posting pool (the staff roster design, sections 4 to 6). Starting points: twenty posts a week, a fifth of a day's held
    * back for personas with little history, one new thread a week, common cards only, a priority that reads the last four weeks of a
    * persona's posts, a Boss that reads its twelve newest notes at a meeting, a pool persona that reads the eight newest posts of the thread it writes in, the engine's strengths (the first five triggers outrank the
-   * last three), and the pick and its posts at 17:37 UTC, past the morning's meeting and settlement.
+   * last three), and a round every fifteen minutes (the chattier staff design; the daily pick and its posts came at 17:37 UTC before it).
    */
   pool: {
     weekly: 20,
@@ -137,7 +139,11 @@ export const defaults: Settings = deepFreeze<Settings>({
     notesRead: 12,
     chatterThreadPosts: 8,
     strengths: { ...DEFAULT_STRENGTHS },
-    chatterCron: '37 17 * * *',
+    // The chattier staff design: a persona visits three times a day for twenty to sixty minutes, awake from 13:00 to 05:00 UTC; a reply waits
+    // two days for a turn; a persona takes two turns in a thread and four in a visit, and the pool sixty a day; a round runs every fifteen minutes.
+    sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } },
+    turns: { waitHours: 48, perThread: 2, perSession: 4, perDay: 60 },
+    chatterCron: '*/15 * * * *',
   },
   /**
    * The Mod Bots (the Mod Bots design): a Mod holds at most three moves the Boss hands it and sets a rule for at most a week; a visit lasts two to twelve

@@ -72,12 +72,13 @@ const settings: Settings = {
   farewellWindowHours: 36,
   bundleAuthoredMostParts: 8,
   digestExcerpts: 8,
+  digestConversations: 6,
   digestExcerptChars: 280,
   memoryOpinions: 40,
   memoryGrudges: 20,
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
-  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, chatterCron: '37 17 * * *' },
+  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4, perDay: 60 }, chatterCron: '37 17 * * *' },
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
@@ -614,6 +615,59 @@ test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5,
   assert.match(bad({ strengths: { ...pool.strengths, shouting: 5 } }), /strengths.shouting/);
   assert.match(bad({ stray: 1 }), /stray/);
   assert.match(settingsProblems({ ...settings, pool: [] } as unknown as Settings).join('\n'), /setting "pool"/);
+});
+
+test('the pool\'s sessions and turns are checked at each edge (chattier staff design, Task 1)', () => {
+  const pool = settings.pool as unknown as { sessions: { perDay: number; minutes: { least: number; most: number }; waking: { from: number; to: number } }; turns: { waitHours: number; perThread: number; perSession: number; perDay: number } };
+  const run = (change: object) => settingsProblems({ ...settings, pool: { ...pool, ...change } } as unknown as Settings).join('\n');
+  const sessions = (change: object) => run({ sessions: { ...pool.sessions, ...change } });
+  const turns = (change: object) => run({ turns: { ...pool.turns, ...change } });
+  for (const v of [-1, 9, 1.5, '3', null]) assert.match(sessions({ perDay: v }), /setting "pool"/, `perDay ${String(v)}`);
+  for (const v of [0, 8]) assert.deepEqual(sessions({ perDay: v }), '', `perDay ${v}`);
+  for (const v of [9, 181, 15.5]) assert.match(sessions({ minutes: { least: v, most: 180 } }) + sessions({ minutes: { least: 10, most: v } }), /setting "pool"/, `minutes ${v}`);
+  assert.match(sessions({ minutes: { least: 60, most: 30 } }), /setting "pool"/, 'least above most');
+  assert.equal(sessions({ minutes: { least: 10, most: 10 } }), '');
+  assert.equal(sessions({ minutes: { least: 180, most: 180 } }), '');
+  for (const v of [24, -1, 1.5, null]) {
+    assert.match(sessions({ waking: { from: v, to: 5 } }), /setting "pool"/, `waking.from ${String(v)}`);
+    assert.match(sessions({ waking: { from: 13, to: v } }), /setting "pool"/, `waking.to ${String(v)}`);
+  }
+  for (const w of [{ from: 0, to: 23 }, { from: 23, to: 0 }, { from: 13, to: 5 }]) assert.equal(sessions({ waking: w }), '');
+  assert.match(run({ sessions: undefined }), /setting "pool"/);
+  assert.match(sessions({ extra: 1 }), /setting "pool"/);
+  for (const v of [0, 169, 1.5]) assert.match(turns({ waitHours: v }), /setting "pool"/, `waitHours ${v}`);
+  for (const v of [1, 168]) assert.equal(turns({ waitHours: v }), '');
+  for (const v of [0, 7]) assert.match(turns({ perThread: v, perSession: 12 }), /setting "pool"/, `perThread ${v}`);
+  assert.match(turns({ perThread: 3, perSession: 2 }), /setting "pool"/, 'perSession below perThread');
+  assert.match(turns({ perSession: 13 }), /setting "pool"/);
+  assert.equal(turns({ perThread: 6, perSession: 12 }), '');
+  assert.equal(turns({ perThread: 1, perSession: 1 }), '');
+  for (const v of [-1, 501, 1.5]) assert.match(turns({ perDay: v }), /setting "pool"/, `perDay ${v}`);
+  for (const v of [0, 500]) assert.equal(turns({ perDay: v }), '');
+  assert.match(run({ turns: undefined }), /setting "pool"/);
+  assert.match(turns({ extra: 1 }), /setting "pool"/);
+});
+
+test('digestConversations is a whole number from 0 to the digest\'s ceiling', () => {
+  const bad = (v: unknown) => settingsProblems({ ...settings, digestConversations: v } as unknown as Settings).join('\n');
+  for (const v of [-1, 1.5, '6', null, DIGEST_MOST.conversations + 1]) assert.match(bad(v), /digestConversations/, String(v));
+  for (const v of [0, DIGEST_MOST.conversations]) assert.equal(bad(v), '');
+  assert.equal(DIGEST_MOST.conversations, 12);
+});
+
+test('a persona\'s habits are held like the pool\'s sessions: an hour favored once, whole, from 0 to 23', () => {
+  const habits = (h: unknown) => said(withBot({ habits: h } as never));
+  assert.equal(habits(undefined), '');
+  assert.equal(habits({ perDay: 2, minutes: { least: 15, most: 45 }, hours: [3, 4, 22] }), '');
+  assert.equal(habits({}), '');
+  assert.match(habits({ hours: [] }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ hours: [3, 3] }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ hours: [24] }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ hours: [1.5] }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ perDay: 9 }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ minutes: { least: 9, most: 30 } }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ minutes: { least: 60, most: 30 } }), /persona "bot-a" has habits that fail/);
+  assert.match(habits({ minutes: { least: 10, most: 181 } }), /persona "bot-a" has habits that fail/);
 });
 
 test('the new settings are checked like the others', () => {

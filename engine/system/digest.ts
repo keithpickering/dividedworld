@@ -122,7 +122,7 @@ export function withPronouns(raw: RawDigest, fallback: PronounSet): Digest {
  * whatever it is handed. `feed` is the outside feed's items, which the caller caps but the renderer does not trust.
  * `metBy` is the most characters a met move credits (SQL caps its `metBy` list at the same number).
  */
-export const DIGEST_MOST = { threads: 25, boards: 30, boardDays: 365, excerpts: 20, excerptChars: 1000, feed: 30, metBy: 8 } as const;
+export const DIGEST_MOST = { threads: 25, boards: 30, boardDays: 365, excerpts: 20, conversations: 12, excerptChars: 1000, feed: 30, metBy: 8 } as const;
 
 /** The clips on strings the digest and the feed carry. Thread titles are at most 120 in SQL. */
 export const CLIPS = {
