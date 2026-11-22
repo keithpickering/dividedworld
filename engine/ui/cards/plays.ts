@@ -9,8 +9,8 @@
  * (`readPlays`), never one per post ("Weigh a design at the scale of a busy instance"), and a play
  * that arrives live is added to the post it names whichever page that post is on.
  */
-import { useEffect, useState, useSyncExternalStore } from 'react';
-import type { Act, ActKind, EffectState, Id, KayfaApi, KindCount, PostPlaysRead, SurfaceAct, SurfaceNow } from '../data/api.ts';
+import { useEffect, useMemo, useState, useSyncExternalStore } from 'react';
+import type { Act, ActKind, EffectState, Id, KayfaApi, KindCount, PostPlaysRead, Rewind, SurfaceAct, SurfaceNow } from '../data/api.ts';
 import type { InstanceUi } from '../types.ts';
 import { useKayfa } from '../context.tsx';
 import { BEYOND_POST, fallsOn, type BeyondPost, type CardRules } from '../../rules/cards.ts';
@@ -123,6 +123,7 @@ export function playOf(act: Act): CardPlay | null {
     ...(typeof act.payload.spring === 'string' ? { spring: act.payload.spring } : {}),
     ...(typeof act.payload.rode === 'string' ? { rode: act.payload.rode } : {}),
     ...(typeof act.payload.starts === 'string' ? { starts: act.payload.starts } : {}),
+    ...(typeof act.payload.rewind_at === 'string' ? { rewindAt: act.payload.rewind_at } : {}),
     ...(typeof act.payload.ends === 'string' ? { ends: act.payload.ends } : {}),
     ...(act.untaken === true ? { untaken: true as const } : {}),
     ...(typeof act.payload.drive === 'string' ? { drive: act.payload.drive } : {}),
@@ -180,6 +181,37 @@ export function playOver(p: CardPlay, now: number, keeps: ReadonlySet<string>, t
   if (p.caught || p.reversed || p.cut || p.untaken || p.instant || p.spent || p.revealed) return true;
   if (then?.has(p.id)) return false;
   return p.ends !== undefined && Date.parse(p.ends) <= now && !keeps.has(p.card);
+}
+
+/**
+ * The plays a post shows while a rewind is up (Time Machine design, 4.2): those played at or before the rewind's point, and those played at or after the rewind play itself (the rewind, and anything that
+ * got through its freeze). Every other play is hidden, not ended: it is still held, its clock runs and it shows again when the rewind ends. The same array where none is hidden.
+ */
+export function rewoundPlays(plays: readonly CardPlay[], rewind: Pick<Rewind, 'at'>, rewindPlayAt: string): readonly CardPlay[] {
+  const point = Date.parse(rewind.at);
+  const from = Date.parse(rewindPlayAt);
+  const kept = plays.filter((p) => { const t = Date.parse(p.playedAt); return t <= point || t >= from; });
+  return kept.length === plays.length ? plays : kept;
+}
+
+/** What a post shows under a live rewind: its view (the words), and its plays split into those drawn and those hidden (`rewoundPlays`). */
+export interface Rewound { readonly rewind: Rewind; readonly shown: readonly CardPlay[]; readonly hidden: readonly CardPlay[] }
+
+/**
+ * The rewind a post is drawn under at `now`, or null. A rewind is live while its play is held and not over (`playOver`: its time is up, an admin ended it, it did not take); where more than one is live (a rarer
+ * one over a lesser), the latest played is drawn (design, 4.2). A view whose play the store does not hold is not live, since it cannot be judged.
+ */
+export function rewoundOf(here: Pick<PostPlays, 'plays' | 'rewinds'>, now: number, keeps: ReadonlySet<string>): Rewound | null {
+  let best: { readonly rewind: Rewind; readonly play: CardPlay } | null = null;
+  for (const rewind of here.rewinds) {
+    const play = here.plays.find((p) => p.id === rewind.play);
+    if (!play || playOver(play, now, keeps)) continue;
+    if (best === null || inPlayOrder(best.play, play) < 0) best = { rewind, play };
+  }
+  if (best === null) return null;
+  const shown = rewoundPlays(here.plays, best.rewind, best.play.playedAt);
+  const kept = new Set(shown);
+  return { rewind: best.rewind, shown, hidden: here.plays.filter((p) => !kept.has(p)) };
 }
 
 /** Whether a kind is spent on a post: it has plays, and every one is over. */
@@ -334,13 +366,15 @@ export interface PostPlays {
    * the server sent none for, the plays held. A back counts once it has sprung.
    */
   readonly counts: ReadonlyMap<string, KindTally>;
+  /** The views of the rewind plays on the post (`Plays.setRewinds`), in the order they were kept; `rewoundOf` says which is drawn. */
+  readonly rewinds: readonly Rewind[];
 }
 /** How many plays a kind has had on a post, and how many took. */
 export interface KindTally { readonly all: number; readonly took: number }
 /** A surface play as the store holds it. */
 export interface Surface extends SurfaceNow { readonly acts: readonly SurfaceAct[] | null }
 
-const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}), surfaces: Object.freeze({}), counts: new Map<string, KindTally>() });
+const NONE: PostPlays = Object.freeze({ plays: Object.freeze([]), billed: Object.freeze([]), states: Object.freeze({}), released: new Set<Id>(), read: 0, faces: Object.freeze({}), surfaces: Object.freeze({}), counts: new Map<string, KindTally>(), rewinds: Object.freeze([]) });
 
 /** The kind a play is counted under: its card, the back kind for a back, and none for a back not sprung (it is not counted until its spring arrives). */
 const countedKind = (p: Pick<CardPlay, 'card' | 'revealed'>): string | null => (isBack(p.card) ? (p.revealed || p.card !== CARD_BACK ? CARD_BACK : null) : p.card);
@@ -422,6 +456,15 @@ export interface Plays {
   unwantSurface(play: Id): void;
   /** Keep the server's count of each kind (`postPlays`' `counts`, a page's), by post: a post named has exactly the kinds given, and is woken when any changed. */
   setCounts(counts: readonly KindCount[]): void;
+  /**
+   * Keep each rewind play's view (`Rewind`, the page's `rewinds` or `api.rewindView`), by its play: a view kept again replaces the one held. A post draws it only while its play is held and up (`rewoundOf`), so a
+   * view that outlives its play changes nothing. True when any was new or changed.
+   */
+  setRewinds(rewinds: readonly Rewind[]): boolean;
+  /** Say a rewind play's view is wanted (read once, `readRewinds`): true the first time. */
+  wantRewind(play: Id): boolean;
+  /** Take the want back, where the read failed, so the next ask reads again. */
+  unwantRewind(play: Id): void;
   /** The post's plays in billing order: as last set, then each play added since, in the order it arrived. */
   billing(post: Id): readonly Id[];
   /** Set the post's billing, when its page is read (a new read, even in the same order); a play it leaves out keeps its place after the ones it names. */
@@ -447,6 +490,9 @@ export function createPlays(): Plays {
   /* The server's count of each kind on a post, kept current by the plays heard since (`bump`). A kind with none is counted from the plays held (`get`). */
   const counts = new Map<Id, Map<string, KindTally>>();
   const wanted = new Set<Id>();
+  /* Each rewind play's view, by the play, in the order kept. */
+  const rewinds = new Map<Id, Rewind>();
+  const wantedRewinds = new Set<Id>();
   const issued = new Map<Id, number>();
   const taken = new Map<Id, number>();
   /* A spring that arrived before the back it reveals, kept for when it does. */
@@ -502,7 +548,7 @@ export function createPlays(): Plays {
   return {
     get(post) {
       const own = byPost.get(post);
-      if (!own && !counts.has(post)) return NONE;
+      if (!own && !counts.has(post) && ![...rewinds.values()].some((r) => r.post === post)) return NONE;
       let snap = snapshots.get(post);
       if (!snap) {
         const plays = [...(own?.values() ?? [])].sort(inPlayOrder);
@@ -522,6 +568,7 @@ export function createPlays(): Plays {
           read: reads.get(post) ?? 0,
           faces: Object.fromEntries(plays.filter((p) => faces.has(p.id)).map((p) => [p.id, faces.get(p.id)!])),
           surfaces: Object.fromEntries(plays.filter((p) => surfaces.has(p.id)).map((p) => [p.id, surfaces.get(p.id)!])),
+          rewinds: [...rewinds.values()].filter((r) => r.post === post),
         };
         snapshots.set(post, snap);
       }
@@ -736,6 +783,19 @@ export function createPlays(): Plays {
       if (!same) changed([post]);
       return !same;
     },
+    setRewinds(next) {
+      const touched = new Set<Id>();
+      for (const r of next) {
+        const was = rewinds.get(r.play);
+        if (was && was.post === r.post && was.at === r.at && JSON.stringify(was.version) === JSON.stringify(r.version)) continue;
+        rewinds.set(r.play, r);
+        touched.add(r.post);
+      }
+      changed(touched);
+      return touched.size > 0;
+    },
+    wantRewind(play) { if (wantedRewinds.has(play)) return false; wantedRewinds.add(play); return true; },
+    unwantRewind(play) { wantedRewinds.delete(play); },
     wantSurface(play) { if (wanted.has(play)) return false; wanted.add(play); return true; },
     wantsSurface: (play) => wanted.has(play),
     unwantSurface(play) { wanted.delete(play); },
@@ -770,6 +830,19 @@ export function createPlays(): Plays {
 
 export function usePlays(plays: Plays, post: Id): PostPlays {
   return useSyncExternalStore((l) => plays.subscribe(post, l), () => plays.get(post));
+}
+
+/**
+ * The rewind a post is drawn under, or null, redrawn when the rewind's own time passes (`useAt`), so a post draws everything again at the end of its rewind with no read. A rewind's view that has not
+ * arrived yet is no rewind: the post shows as it did until it does, and draws rewound once, never the present after it.
+ */
+export function useRewound(plays: Plays, post: Id): Rewound | null {
+  const { instance, api } = useKayfa();
+  const here = usePlays(plays, post);
+  const keeps = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const ends = here.rewinds.flatMap((r) => { const e = here.plays.find((p) => p.id === r.play)?.ends; return e === undefined ? [] : [Date.parse(e)]; });
+  const now = useAt(ends);
+  return useMemo(() => rewoundOf(here, Math.max(now, api.now()), keeps), [here, now, api, keeps]);
 }
 
 /** A card's view on a post (`Plays.view`): what reads it is drawn again when it changes, and nothing else is. */
@@ -811,8 +884,9 @@ export async function readPlays(api: KayfaApi, plays: Plays, posts: readonly Id[
  * Task 13): the document holds what `readPlays`, `readAbove` and `readEffects` would have asked for. `faces` are the reader's own card
  * backs' cards, by set; `spent` the Take the Fall plays a filing has spent. The states and releases are the document's for the cards the instance draws an effect for.
  */
-export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}, spent: readonly Id[] = [], counts: readonly KindCount[] = []): void {
+export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Record<Id, EffectState>>, releases: readonly Id[], faces: Readonly<Record<Id, string>> = {}, surfaces: Readonly<Record<Id, SurfaceNow>> = {}, spent: readonly Id[] = [], counts: readonly KindCount[] = [], rewinds: readonly Rewind[] = []): void {
   plays.add(acts);
+  plays.setRewinds(rewinds);
   plays.setCounts(counts);
   plays.setSpent(spent);
   plays.setStates(states);
@@ -820,6 +894,27 @@ export function hydrate(plays: Plays, acts: readonly Act[], states: Readonly<Rec
   plays.setFaces(faces);
   plays.setSurfaces(surfaces);
 }
+
+/**
+ * Read the view of each rewind play among these Acts (`KayfaApi.rewindView`), once each, into the store: the plays that land while a reader is on the page, which the page's own `rewinds` did not carry.
+ * The post shows as it did until the view is in, then rewound, so the present is never drawn after it. A read that fails is asked again after `backoff`, at most `REPEAT_TRIES` times in all; an Act that is no rewind play is nothing.
+ * `cards` are the keys of the cards with a rewind.
+ */
+export async function readRewinds(api: KayfaApi, plays: Plays, acts: readonly Act[], cards: ReadonlySet<string>, attempt = 0): Promise<void> {
+  const wanted = acts.filter((a) => a.kind === 'card' && a.targetActId !== null && typeof a.payload.card === 'string' && cards.has(a.payload.card) && a.payload.instant !== true && plays.wantRewind(a.id));
+  await Promise.all(wanted.map(async (a) => {
+    try {
+      const view = await api.rewindView(a.id);
+      if (view !== null) plays.setRewinds([view]);
+    } catch {
+      plays.unwantRewind(a.id);
+      if (attempt + 1 < REPEAT_TRIES) setTimeout(() => { void readRewinds(api, plays, [a], cards, attempt + 1); }, backoff(attempt));
+    }
+  }));
+}
+
+/** The keys of the cards whose rules have a rewind. */
+export const rewindCards = (cards: readonly Pick<CardRules, 'key' | 'rewind'>[]): ReadonlySet<string> => new Set(cards.filter((c) => c.rewind !== undefined).map((c) => c.key));
 
 /**
  * Read a surface play's live draws and washes (`KayfaApi.surfaceActs`) into the store. Asked where a wall is near the viewport and again when the

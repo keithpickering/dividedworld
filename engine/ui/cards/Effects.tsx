@@ -42,7 +42,7 @@ import { MomentView, useShownMoment } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, withHandedOut, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
@@ -80,6 +80,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const { actingCharacters, writingCharacters, hudCharacter, wallet, refresh } = usePlayer();
   const play = usePlay();
   const here = usePlays(plays, post.id);
+  /*
+   * A live rewind (Time Machine design, 4.2): the post's words are the version it names, and the plays drawn are those it lets show (`rewoundOf`). A hidden play is not ended, only not drawn here, so
+   * everything below that reads the post's plays for what they are (tails, drives, the count) still does. Nothing is drawn until the rewind's view is in the store.
+   */
+  const rewound = useRewound(plays, post.id);
+  const hidden = useMemo(() => new Set(rewound?.hidden.map((p) => p.id)), [rewound]);
+  const words = rewound && bodyOf ? bodyOf(rewound.rewind.version) : children;
   /*
    * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
    * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
@@ -222,7 +229,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   const layers = [
     ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach), of: here },
+    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach && !hidden.has(p.id)), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping
@@ -240,7 +247,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const slot = (inner: ReactNode) => (composing && play && Compose && bodyEl ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play} body={bodyEl}>{inner}</ComposeSlot> : inner);
   /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer but a card that writes's. */
   const plain = (inner: ReactNode) => (composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{inner}</WordsIn> : inner);
-  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(plain(children))}</>;
+  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(plain(words))}</>;
   /* Each layer's cards in the order each was first played there; `nestOrder` says the order they nest in. */
   const firsts = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key): Wrap => ({ reach: l.reach, key, mine: l.acting.filter((p) => p.card === key), of: l.of })));
   /* A card drawn by another gives its plays to that card's wrap before the wraps are ordered, so the post draws one effect of the named card (`handedOn`). */
@@ -281,14 +288,14 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   if (momentAct && bodyOf) {
     const shown = (
       <MomentView
-        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={plain(children)}
+        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={plain(words)}
         back={() => lens.showMoment(null)} onView={(card, view) => plays.setView(post.id, card, view)}
       />
     );
     return <>{slot(wrapIn(shown, takeovers, 0))}</>;
   }
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
-  const wrapped = wrapIn(wrapIn(plain(wrapIn(children, within, 0)), rest, within.length), takeovers, within.length + rest.length);
+  const wrapped = wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length);
   return <>{slot(wrapped)}</>;
 }
 

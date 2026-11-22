@@ -10,6 +10,8 @@ import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
 import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, inForce, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
+import { readRewinds, rewoundOf, rewoundPlays } from './plays.ts';
+import type { KayfaApi, Rewind } from '../data/api.ts';
 import { endable } from './Lens.tsx';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -1171,5 +1173,93 @@ describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', (
 
   test('agrees with endable on every face-up play, for both values of keeps', () => {
     for (const [name, p] of Object.entries(faceUp)) for (const keeps of [false, true]) expect(inForce(p, now, keeps), `${name}, keeps ${keeps}`).toBe(endable(p, now, keeps));
+  });
+});
+
+/* ------------------------------------------------------------------ a rewound post (Time Machine design, 4.2) ---- */
+
+describe('rewoundPlays', () => {
+  const at = (m: number) => `2026-11-14T10:${String(m).padStart(2, '0')}:00.000Z`;
+  const played = (m: number, id: string): CardPlay => ({ id, card: 'whoops', layer: 1, caster: 'c', message: '', config: {}, playedAt: at(m), post: POST });
+  const POINT = { at: at(10) };
+  const REWIND_AT = at(30);
+
+  test('keeps a play played before the point, and one played at it', () => {
+    expect(rewoundPlays([played(5, 'a'), played(10, 'b')], POINT, REWIND_AT).map((p) => p.id)).toEqual(['a', 'b']);
+  });
+  test('drops a play played after the point and before the rewind', () => {
+    expect(rewoundPlays([played(5, 'a'), played(20, 'late')], POINT, REWIND_AT).map((p) => p.id)).toEqual(['a']);
+  });
+  test('keeps the rewind itself, and a play that got through the freeze after it', () => {
+    expect(rewoundPlays([played(30, 'rewind'), played(45, 'legendary')], POINT, REWIND_AT).map((p) => p.id)).toEqual(['rewind', 'legendary']);
+  });
+  test('is the same array where nothing is dropped', () => {
+    const all = [played(5, 'a'), played(31, 'b')];
+    expect(rewoundPlays(all, POINT, REWIND_AT)).toBe(all);
+  });
+});
+
+describe('a rewind in the store', () => {
+  const NOW = Date.parse('2026-11-14T12:00:00.000Z');
+  const rewindPlay = (over: Partial<Act['payload']> = {}) => card({ createdAt: '2026-11-14T11:00:00.000Z', payload: { card: 'time-machine', ends: '2026-11-17T11:00:00.000Z', ...over } });
+  const viewOf = (play: Act, over: Partial<Rewind> = {}): Rewind => ({ play: play.id, post: POST, at: '2026-11-14T09:00:00.000Z', version: { ...card({ kind: 'post' }), id: 'v1', currentPayload: { body: 'old words' } }, ...over });
+
+  test('is empty until a view is kept, and wakes the post when one is', () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    plays.add([r]);
+    const heard = vi.fn();
+    plays.subscribe(POST, heard);
+    expect(plays.get(POST).rewinds).toEqual([]);
+    expect(plays.setRewinds([viewOf(r)])).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(plays.get(POST).rewinds.map((v) => v.play)).toEqual([r.id]);
+    expect(plays.setRewinds([viewOf(r)])).toBe(false);
+  });
+
+  test('rewoundOf is the rewind while its play is up, and the hidden plays are those after the point and before the rewind', () => {
+    const plays = createPlays();
+    const before = card({ createdAt: '2026-11-14T08:00:00.000Z' });
+    const between = card({ createdAt: '2026-11-14T10:00:00.000Z' });
+    const r = rewindPlay();
+    plays.add([before, between, r]);
+    plays.setRewinds([viewOf(r)]);
+    const got = rewoundOf(plays.get(POST), NOW, new Set())!;
+    expect(got.rewind.play).toBe(r.id);
+    expect(got.shown.map((p) => p.id)).toEqual([before.id, r.id]);
+    expect(got.hidden.map((p) => p.id)).toEqual([between.id]);
+  });
+
+  test('rewoundOf is null once the rewind\'s time has passed, when an admin ended it, and for a view whose play is not held', () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    plays.add([r]);
+    plays.setRewinds([viewOf(r)]);
+    expect(rewoundOf(plays.get(POST), Date.parse('2026-11-17T11:00:00.001Z'), new Set())).toBeNull();
+    const stray = createPlays();
+    stray.setRewinds([viewOf(r)]);
+    expect(rewoundOf(stray.get(POST), NOW, new Set())).toBeNull();
+    plays.setEnded([r.id]);
+    expect(rewoundOf(plays.get(POST), NOW, new Set())).toBeNull();
+  });
+
+  test('where two are live, the latest played is the one drawn', () => {
+    const plays = createPlays();
+    const lesser = rewindPlay();
+    const greater = card({ createdAt: '2026-11-14T11:30:00.000Z', payload: { card: 'time-machine', ends: '2026-11-17T11:30:00.000Z' } });
+    plays.add([lesser, greater]);
+    plays.setRewinds([viewOf(greater, { at: '2026-11-14T05:00:00.000Z' }), viewOf(lesser)]);
+    expect(rewoundOf(plays.get(POST), NOW, new Set())!.rewind.play).toBe(greater.id);
+  });
+
+  test('readRewinds reads a rewind card\'s play once, and keeps its view', async () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    plays.add([r]);
+    const rewindView = vi.fn(async () => viewOf(r));
+    const api = { rewindView } as unknown as KayfaApi;
+    await readRewinds(api, plays, [r, r, card()], new Set(['time-machine']));
+    expect(rewindView).toHaveBeenCalledTimes(1);
+    expect(plays.get(POST).rewinds).toHaveLength(1);
   });
 });
