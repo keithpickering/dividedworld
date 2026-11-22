@@ -72,7 +72,7 @@ export interface PoolSettings {
   /**
    * A persona's visits (the chattier staff design): the defaults a persona without `habits` takes. `perDay` visits a day (a whole number, 0 to 8), each
    * lasting a whole number of minutes from `minutes.least` to `minutes.most` (10 to 180), inside the waking span, whole UTC hours 0 to 23 that wrap
-   * past midnight when `to` is below `from`.
+   * past midnight when `to` is below `from` (`to` is exclusive; `from` equal to `to` is the whole day).
    */
   readonly sessions: {
     readonly perDay: number;

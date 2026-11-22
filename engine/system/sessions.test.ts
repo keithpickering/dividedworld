@@ -62,3 +62,10 @@ test('a session drawn to cross midnight is cut at 24:00', () => {
   assert.equal(s.length, 1);
   assert.equal(s[0]!.end, 1440);
 });
+
+test('a length is rounded up to whole rounds: 20 minutes is a 30-minute session', () => {
+  const p = persona({ perDay: 1, minutes: { least: 20, most: 20 } });
+  for (let i = 0; i < 50; i++) {
+    for (const x of draw(p, dayN(i), pool())) assert.equal(x.end - x.start, 30);
+  }
+});
