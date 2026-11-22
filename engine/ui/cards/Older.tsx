@@ -17,6 +17,8 @@ import type { Plays } from './plays.ts';
 
 /** How many older plays a press reads. */
 export const OLDER_PAGE = 20;
+/** The most the server reads in a page (`kind_plays` clamps `size` to 1..50). */
+const OLDER_MOST = 50;
 
 /** The button's words, and what it says when a read did not land. */
 export const olderButton = (more: number): string => `Show older plays (${more} more)`;
@@ -50,8 +52,8 @@ export interface Older {
   readonly failed: boolean;
   /** The last read said no more were left. */
   readonly done: boolean;
-  /** The play focus goes to now that its row is drawn (a new object for each page), or null. */
-  readonly focus: { readonly id: Id } | null;
+  /** The play focus goes to now that its row is drawn (a new object for each page); `id` null means the last row of Ended, where a page brought no new row and none are left; or null. */
+  readonly focus: { readonly id: Id | null } | null;
   readonly press: () => void;
 }
 
@@ -70,7 +72,7 @@ export function useOlder({ post, card, store, tallies, mine, held, heldEnded, on
   const [failed, setFailed] = useState(false);
   const [cursor, setCursor] = useState<{ readonly at: string; readonly id: Id } | null>(null);
   const [done, setDone] = useState(false);
-  const [focus, setFocus] = useState<{ readonly id: Id } | null>(null);
+  const [focus, setFocus] = useState<{ readonly id: Id | null } | null>(null);
   /* A second press while a read is out does nothing: a ref, since two presses can land before the state does. */
   const out = useRef(false);
   const press = useCallback(() => {
@@ -78,7 +80,9 @@ export function useOlder({ post, card, store, tallies, mine, held, heldEnded, on
     out.current = true;
     setBusy(true);
     setFailed(false);
-    const size = cursor === null ? OLDER_PAGE + heldEnded : OLDER_PAGE;
+    /* The server counts from the newest ended play, which the page already holds (as it may hold a few more ended plays), so the first read asks for that many more than a page and still brings about a page of new rows.
+       The server clamps a page at 50, so with more than 30 ended rows held a read is a page of fewer new rows; the cursor it returns carries the next read on, so a press always makes progress. */
+    const size = cursor === null ? Math.min(OLDER_MOST, OLDER_PAGE + heldEnded) : OLDER_PAGE;
     void api.kindPlays(post, card, cursor, size).then((page) => {
       const taken = takeInOlder(api, page, post, { store, tallies, mine, onCast });
       const have = new Set([...held, ...ids]);
@@ -87,7 +91,8 @@ export function useOlder({ post, card, store, tallies, mine, held, heldEnded, on
       setCursor(page.next);
       setDone(page.next === null);
       /* The first new row takes focus, or the last where the button it was pressed on is gone with nothing left. */
-      const at = page.next === null ? fresh.at(-1) : fresh[0];
+      const at = page.next === null ? fresh.at(-1) ?? null : fresh[0];
+      /* The button goes with the last page: with no new row to take focus, it falls to the last row of Ended and never to the page. */
       if (at !== undefined) setFocus({ id: at });
     }, () => { setFailed(true); }).finally(() => { out.current = false; setBusy(false); });
   }, [api, post, card, cursor, heldEnded, store, tallies, mine, onCast, held, ids]);

@@ -1,6 +1,6 @@
 /**
  * A famous post, as a stress test of the marks and the Lens (docs/plans/2026-10-31-marks-and-the-lens-design.md): one post that
- * people have come back to for three years, with 85 plays of sixteen kinds on it. Most have long since run their time; the same
+ * people have come back to for three years, with 116 plays of sixteen kinds on it. Most have long since run their time; the same
  * cards were played again and again as each ran out; an admin ended two; a handful are up now; the post's first three Whoops!
  * drew the board's reactions and so top its billing. It asks how the strip, the "+N", the Lens's tabs and its Who rows read when
  * a post has far more plays than a page draws in full (docs/plans/2026-11-21-post-plays-design.md).
@@ -42,7 +42,7 @@ const AGE = 3 * YEAR;
  */
 const PLAYED: readonly { readonly key: string; readonly times: number; readonly config?: Readonly<Record<string, unknown>>; readonly early?: boolean; readonly inks?: true }[] = [
   { key: 'whoops', times: 3, early: true, inks: true },
-  { key: 'sugar-coat', times: 14 },
+  { key: 'sugar-coat', times: 45 },
   { key: 'last-word', times: 11 },
   { key: 'force-field', times: 9 },
   { key: 'hype-up', times: 7 },
@@ -265,7 +265,7 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 export const Strip: Story = { args: { open: 'none' } };
 /** Its Lens on its first kind (Whoops!, the three that made it famous), Who unfolded. */
 export const LensFirst: Story = { args: { open: 'first' } };
-/** Its Lens on its busiest kind (Sugar Coat, fourteen plays over three years), Who unfolded. */
+/** Its Lens on its busiest kind (Sugar Coat, 45 plays over three years), Who unfolded. */
 export const LensBusiest: Story = { args: { open: 'busiest' } };
 /** Its Lens on Sugar Coat with Who unfolded and "Show older plays" pressed once: the ended plays the page did not hold, after the ones it did, newest first. */
 export const LensBusiestOlder: Story = { args: { open: 'older' } };

@@ -3718,6 +3718,33 @@ describe('older plays (docs/plans/2026-11-21-post-plays-design.md, section 3)', 
     await waitFor(() => expect(within(row).getByRole('button', { name: /^Tea, 1/u })).toBeInTheDocument());
   });
 
+  const emptyPage = (next: { at: string; id: Id } | null) => ({ plays: [], tallies: {}, mine: [], spun: [], cast: [], next });
+
+  test('a press that brings no new row and leaves none: the button goes and focus falls to the last row of Ended, never the page', async () => {
+    const { w, ids } = await unfolded();
+    vi.spyOn(w.fake, 'kindPlays').mockResolvedValueOnce(emptyPage(null));
+    await userEvent.click(older()!);
+    await waitFor(() => expect(older()).toBeNull());
+    expect(document.activeElement).not.toBe(document.body);
+    expect(compact(ids[44]!)).toHaveFocus();
+  });
+
+  test('a press that brings no new row but leaves more does not stick: the next press reads on from the cursor', async () => {
+    const { w, ids } = await unfolded();
+    const cursor = { at: new Date(w.fake.clock.now()).toISOString(), id: ids[30]! };
+    const read = vi.spyOn(w.fake, 'kindPlays').mockResolvedValueOnce(emptyPage(cursor));
+    await userEvent.click(older()!);
+    await waitFor(() => expect(older()).not.toHaveAttribute('aria-busy'));
+    expect(endedIds()).toEqual([ids[44]]);
+    expect(older()).toHaveAccessibleName('Show older plays (44 more)');
+    /* The first read asked for a page and the ended row held; the next carries on from the cursor it was given. */
+    expect(read.mock.calls[0]![3]).toBe(21);
+    await userEvent.click(older()!);
+    await waitFor(() => expect(endedIds().length).toBeGreaterThan(1));
+    expect(read.mock.calls[1]![2]).toEqual(cursor);
+    expect(read.mock.calls[1]![3]).toBe(20);
+  });
+
   describe('card backs', () => {
     /** Five backs, each set face down as another card and sprung, oldest first; the oldest has drawn a reaction, so the page holds it and the newest. */
     async function backs() {

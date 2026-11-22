@@ -786,7 +786,8 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, post,
   const endedList = useRef<HTMLUListElement>(null);
   useEffect(() => {
     if (older.focus === null) return;
-    const row_ = [...(endedList.current?.querySelectorAll<HTMLElement>('[data-kb-play]') ?? [])].find((r) => r.getAttribute('data-kb-play') === older.focus!.id);
+    const rows_ = [...(endedList.current?.querySelectorAll<HTMLElement>('[data-kb-play]') ?? [])];
+    const row_ = older.focus.id === null ? rows_.at(-1) : rows_.find((r) => r.getAttribute('data-kb-play') === older.focus!.id);
     row_?.querySelector<HTMLElement>('button.kb-lens-compact')?.focus();
   }, [older.focus]);
   const showEnded = unfolded && (ended.length > 0 || paged.length > 0 || more > 0);
