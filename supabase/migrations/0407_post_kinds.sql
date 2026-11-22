@@ -77,8 +77,14 @@ declare
   r play_post;
   was play_post;
   mate uuid;
+  dkey text;
 begin
   if play is null then return; end if;
+  -- A play of a drive first takes one lock for the whole drive (its post, card and drive id, as play_row and the mates loop key it), so every refresh of one drive is in turn and the per-play locks taken inside never cross: an admin's end of A and a refund of B reach their mates in the same order.
+  select format('play_drive:%s|%s|%s', a.target_act_id, a.payload ->> 'card', coalesce(a.payload ->> 'drive', a.id::text)) into dkey
+  from acts a join card_kinds ck on ck.key = a.payload ->> 'card'
+  where a.id = refresh_play_post.play and a.kind = 'card' and a.target_act_id is not null and ck.drive is not null and coalesce(a.payload ->> 'reach', 'post') = 'post' and not (a.payload ? 'caught');
+  if dkey is not null then perform pg_advisory_xact_lock(hashtextextended(dkey, 0)); end if;
   -- Two refreshes of one play at once would each move the counts by the same difference: one at a time.
   perform pg_advisory_xact_lock(hashtextextended('play_post:' || play::text, 0));
   select * into was from play_post p where p.play = refresh_play_post.play;
@@ -94,7 +100,7 @@ begin
     over_at = excluded.over_at, took = excluded.took, sprung = excluded.sprung, drawn = excluded.drawn;
   perform play_post_move(was, r);
   if mates and r.reach = 'post' and exists (select 1 from card_kinds ck where ck.key = r.kind and ck.drive is not null) then
-    -- Locks on the mates are taken one play at a time, each in its own refresh; place_cast's card insert serializes the plays of one drive, so two refreshes of a drive do not meet in opposite orders.
+    -- Each mate is refreshed under the drive's lock taken above, so the per-play locks here are never waited on in two orders.
     for mate in
       select k.id from acts k
       where k.kind = 'card' and k.target_act_id = r.post and k.payload ->> 'card' = r.kind and k.id <> r.play and not (k.payload ? 'caught')
