@@ -15,7 +15,7 @@ import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { usePlayer } from '../player.tsx';
 import { createTallies } from '../thread/tallies.ts';
 import { createMine, REACTION_GRACE_MS } from './mine.ts';
-import { CANT_TAKE_BACK, Reactions, readable } from './Reactions.tsx';
+import { CANT_TAKE_BACK, Reactions, readable, useReactionChips } from './Reactions.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { StagedCtx } from '../staged.ts';
 
@@ -1455,6 +1455,39 @@ describe('a post-local reaction and a blind post', () => {
       expect(screen.queryByText(/Only you and/u)).toBeNull();
       expect(screen.queryByRole('button', { name: /^Fire/u })).toBeNull();
       expect(await screen.findByRole('button', { name: 'React' })).toBeInTheDocument();
+    });
+
+    test('useReactionChips hides counts exactly where the row does, and draws every count where the row does', async () => {
+      const w = world();
+      const Probe = ({ post, author, tallies, mine, plays }: { post: Id; author: Id | null; tallies: ReturnType<typeof createTallies>; mine: ReturnType<typeof createMine>; plays: ReturnType<typeof createPlays> }) => {
+        const { shown } = useReactionChips(post, author, tallies, mine, plays);
+        return <p data-testid="chips">{shown.map((c) => `${c.key}:${c.count === null ? 'hidden' : c.count}`).join(',')}</p>;
+      };
+      const tallies = createTallies();
+      const mine = createMine();
+      const plays = createPlays();
+      const caster = w.fake.seed.character(w.fake.seed.account('caster'), 'Caster', 'face');
+      plays.add([blind(w.theirs, caster)]);
+      renderIn(w.fake, <><Probe post={w.theirs} author={w.spritey} tallies={tallies} mine={mine} plays={plays} /><Reactions act={w.theirs} author={w.spritey} authorName="Spritey" tallies={tallies} mine={mine} plays={plays} /></>, { instance: veiling });
+      act(() => { tallies.merge(w.theirs, { fire: 4, tea: 2 }); mine.add({ act: w.theirs, kind: 'tea', character: w.hooligan }); });
+      await screen.findByRole('button', { name: 'Tea, yours, can\'t be taken back' });
+      expect(screen.getByTestId('chips')).toHaveTextContent(/^tea:hidden$/u);
+      expect(screen.queryByRole('button', { name: /^Fire/u })).toBeNull();
+    });
+
+    test('useReactionChips gives every count to the author\'s player', async () => {
+      const w = world();
+      const Probe = ({ tallies, mine, plays }: { tallies: ReturnType<typeof createTallies>; mine: ReturnType<typeof createMine>; plays: ReturnType<typeof createPlays> }) => {
+        const { shown } = useReactionChips(w.sibling, w.hooligan, tallies, mine, plays);
+        return <p data-testid="chips">{shown.map((c) => `${c.key}:${c.count === null ? 'hidden' : c.count}`).join(',')}</p>;
+      };
+      const tallies = createTallies();
+      const mine = createMine();
+      const plays = createPlays();
+      plays.add([blind(w.sibling, w.spritey)]);
+      renderIn(w.fake, <Probe tallies={tallies} mine={mine} plays={plays} />, { instance: veiling });
+      act(() => { tallies.merge(w.sibling, { fire: 2, tea: 1 }); });
+      await waitFor(() => expect(screen.getByTestId('chips')).toHaveTextContent('fire:2,tea:1'));
     });
 
     test('with none of her own, the line stands alone', async () => {

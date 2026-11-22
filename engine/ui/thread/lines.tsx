@@ -31,6 +31,9 @@ export function when(iso: string, dropYear = false, nowMs = 0): string {
   return d.toLocaleString('en-US', { ...(dropYear && sameYear(d, nowMs) ? {} : { year: 'numeric' as const }), month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
+/** "Oct 29, 2026": the day alone, in the reader's zone, for a line that has no room for the time. */
+export const day = (iso: string): string => new Date(iso).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+
 export const text = (v: unknown): string => (typeof v === 'string' ? v : '');
 
 /** A typed name's face: its letter and the name as plain text. The same look as a character's unlinked byline, with no id behind it. */

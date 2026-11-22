@@ -58,6 +58,8 @@ describe('the Lens on a lockout back', () => {
   test('an admin can end it, and the End sends the spring\'s id', async () => {
     const { w, sprung, dialog } = await lens(true);
     const reverse = vi.spyOn(w.fake, 'reverseCard');
+    /* A sprung lockout is an ended row: folded until it is pressed. */
+    await userEvent.click(within(dialog).getByRole('button', { expanded: false, name: /Pipewrench|Spritey|Gloomba|Hooligan/u }));
     await userEvent.click(await within(dialog).findByRole('button', { name: 'End this card' }));
     await userEvent.click(screen.getByRole('button', { name: 'End it' }));
     await waitFor(() => expect(reverse).toHaveBeenCalledWith(sprung.spring.id));

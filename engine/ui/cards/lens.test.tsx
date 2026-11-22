@@ -96,6 +96,8 @@ const lensProblems = (dialog: HTMLElement) => {
   return viewProblems({ progress: null, state: dialog.querySelector('.kb-lens-line')!.textContent!, ends: dialog.querySelector('.kb-lens-ends')?.textContent ?? 'never', yours: false, controls: [], notes }, { holds: false, covers: false });
 };
 const tab = (name: string) => within(lens()).getByRole('tab', { name });
+/** Unfolds an ended play's compact row (an ended play is one button until it is pressed). */
+const unfold = (id: Id) => userEvent.click(lens().querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
 const whoButton = () => within(lens()).getByRole('button', { name: /^\d+ plays? · / });
 const rows = () => [...lens().querySelectorAll<HTMLElement>('[data-kb-play]')].map((r) => r.getAttribute('data-kb-play')!);
 
@@ -1089,6 +1091,7 @@ describe('As it landed', () => {
     await userEvent.click(whoButton());
     expect(within(lens()).queryByText('live view')).toBeNull();
     expect(within(lens()).queryByRole('button', { name: 'live press' })).toBeNull();
+    await unfold(k1);
     await userEvent.click(landedButton(k1));
     await frame();
     /* The moment draws the play as it stood, so it is not over there: its view, its control. */
@@ -2307,7 +2310,9 @@ describe('a play that did not take', () => {
     w.fake.seed.text(lost, w.second, { failed: true }, { quiet: true });
     drawn(w);
     await openW();
+    /* The folded row says it on its second line; opened, the full row carries the reactions and no End. */
     expect(within(row(lost)).getByText("Didn't take. Its text never arrived, so it is not in effect on this post.")).toBeInTheDocument();
+    await unfold(lost);
     expect(within(row(lost)).queryByRole('button', { name: 'End this card' })).toBeNull();
     expect(within(row(live)).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
     expect(within(row(live)).queryByText(/Didn't take/u)).toBeNull();
@@ -2607,8 +2612,11 @@ describe('the discipline cards\' Lens', () => {
     expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
     expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
     /* It is a play like any: reacted to and spun from, and it names the caster. */
-    expect(within(l).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(2);
-    expect(l).toHaveTextContent('Gloomba · played');
+    for (const id of [two.id, one.id]) {
+      await userEvent.click(l.querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
+      expect(within(l.querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(1);
+    }
+    expect(l).toHaveTextContent('Gloomba');
   });
 
   test('a Super Happy Heart says all it took, and an Unban says it ended the ban and when', async () => {
@@ -2995,6 +3003,7 @@ describe('a spent kind', () => {
     await openMark();
     await userEvent.click(whoButton());
     expect(heading()).toBe('Smoke over the words');
+    await unfold('gone');
     expect(within(rowOf('gone')).getByText(`Ended ${dayAndTime(at.past)}.`)).toBeInTheDocument();
     expect(within(rowOf('live')).queryByText(/^Ended /u)).toBeNull();
     expect(problems()).toEqual([]);
@@ -3139,6 +3148,8 @@ describe('a Gimmick a cutting card ended', () => {
   const rowLines = async (name: RegExp) => {
     await userEvent.click(await screen.findByRole('button', { name }));
     await userEvent.click(whoButton());
+    const folded = lens().querySelector<HTMLElement>('button.kb-lens-compact');
+    if (folded) await userEvent.click(folded);
     return lens().textContent ?? '';
   };
 
@@ -3173,5 +3184,143 @@ describe('a Gimmick a cutting card ended', () => {
     strip();
     await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
     expect(lens().querySelector('.kb-lens-line')!.textContent).toBe('Ended early');
+  });
+});
+
+describe('ended rows', () => {
+  /* The compact row (docs/plans/2026-11-20-lens-who-rows-design.md, decision 4): an ended play is one disclosure button until it is pressed. */
+  const day = (ms: number) => new Date(ms).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' });
+  const rowOf = (id: Id) => lens().querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!;
+  const buttonOf = (id: Id) => rowOf(id).querySelector<HTMLButtonElement>('button.kb-lens-compact')!;
+  const lineOf = (id: Id) => rowOf(id).querySelector('.kb-lens-compact-line');
+  const fireEmoji = instance.reactions.find((r) => r.key === 'fire')!.emoji;
+  /** A kind whose plays an admin ended: Who is opened, and each id is a row. */
+  async function ended(count: number, before: (w: World, ids: readonly Id[]) => void = () => {}) {
+    width(false);
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const ids: Id[] = [];
+    const by = [w.spritey, w.gloomba, w.pipe];
+    for (let i = 0; i < count; i++) ids.push(w.play('k2', by[i]!));
+    const playedAt = w.fake.clock.now();
+    before(w, ids);
+    for (const id of ids) expect((await w.fake.reverseCard(id)).ok).toBe(true);
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    return { w, ids, playedAt };
+  }
+
+  test('is one button, folded, with the caster, the date without a time and the message, and no control of a full row', async () => {
+    const { ids, playedAt } = await ended(1);
+    const id = ids[0]!;
+    expect(rowOf(id).querySelectorAll('button')).toHaveLength(1);
+    expect(buttonOf(id)).not.toBeNull();
+    const b = buttonOf(id);
+    expect(b).toHaveAttribute('aria-expanded', 'false');
+    expect(b).toHaveAttribute('aria-controls');
+    expect(b.textContent).toContain('Spritey');
+    expect(b.textContent).toContain(day(playedAt));
+    expect(b.textContent).not.toMatch(/\d:\d\d/u);
+    expect(within(rowOf(id)).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+    expect(within(rowOf(id)).queryByRole('button', { name: /As it landed/u })).toBeNull();
+    expect(within(rowOf(id)).queryByRole('button', { name: /^React/u })).toBeNull();
+  });
+
+  test('a play an admin ended says so on line 2 in place of its message', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    expect(lineOf(id)!.textContent).toContain('Ended by an admin');
+    expect(buttonOf(id).textContent).not.toContain('k2 by');
+  });
+
+  test('a message with nothing else to say is line 2, and a play with neither draws no line 2', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(2 * 3_600_000);
+    const past = new Date(w.fake.clock.now() - 3_600_000).toISOString();
+    const said = w.fake.seed.card(w.spritey, w.second, 'k2', { message: 'said so', ends: past });
+    w.fake.clock.advance(60_000);
+    const mute = w.fake.seed.card(w.gloomba, w.second, 'k2', { ends: past });
+    open(w);
+    await userEvent.click(await markOf(2, 'Card 2'));
+    await userEvent.click(whoButton());
+    expect(lineOf(said)!.textContent).toContain('said so');
+    expect(buttonOf(mute).querySelector('.kb-lens-compact-line')).toBeNull();
+  });
+
+  test('a play that did not take says its note on line 2', async () => {
+    width(false);
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const store = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const payload = { card: 'k2', message: 'quiet words' };
+    store.add([{ ...base, id: 'never', kind: 'card' as const, payload, currentPayload: payload, untaken: true }]);
+    store.setBilling(w.second, ['never']);
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={store} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u }));
+    await userEvent.click(whoButton());
+    expect(lineOf('never')!.textContent).toContain(UNTAKEN_STATE);
+    expect(lineOf('never')!.textContent).not.toContain('quiet words');
+  });
+
+  test('reactions are each kind\'s emoji and its count on line 2, as text; none draws no chips', async () => {
+    const { ids } = await ended(2, (w, [first]) => {
+      w.fake.seed.react(w.me, w.pipe, first!, 'fire');
+      w.fake.seed.react(w.thirdAccount, w.gloomba, first!, 'fire');
+    });
+    const reacted = ids[0]!;
+    const withChips = lineOf(reacted)!;
+    expect(withChips.textContent).toContain(`${fireEmoji} 2`);
+    expect(withChips.querySelector('button, a')).toBeNull();
+    const bare = ids.find((i) => i !== reacted)!;
+    expect(rowOf(bare).querySelector('.kb-lens-compact-line')?.textContent ?? '').not.toContain(fireEmoji);
+  });
+
+  test('pressing it opens the full row under its head, with React, Spin thread and As it landed; pressing again folds it', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    await userEvent.click(buttonOf(id));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+    const body = document.getElementById(buttonOf(id).getAttribute('aria-controls')!)!;
+    expect(within(body).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(body).getByRole('button', { name: /^React/u })).toBeInTheDocument();
+    expect(within(body).getByRole('button', { name: /As it landed/u })).toBeInTheDocument();
+    expect(buttonOf(id)).toHaveFocus();
+    await userEvent.click(buttonOf(id));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'false');
+    expect(within(rowOf(id)).queryByRole('button', { name: 'Spin thread' })).toBeNull();
+  });
+
+  test('opening a second ended row folds the first', async () => {
+    const { ids } = await ended(2);
+    const [a, b] = ids as [Id, Id];
+    await userEvent.click(buttonOf(a));
+    await userEvent.click(buttonOf(b));
+    expect(buttonOf(a)).toHaveAttribute('aria-expanded', 'false');
+    expect(buttonOf(b)).toHaveAttribute('aria-expanded', 'true');
+  });
+
+  test('changing tab and coming back shows every ended row folded', async () => {
+    const { ids } = await ended(1, (w) => { w.play('k3'); });
+    const id = ids[0]!;
+    await userEvent.click(buttonOf(id));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.click(tab('Card 3'));
+    await userEvent.click(tab('Card 2'));
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'false');
+  });
+
+  test('Enter and Space on the focused row expand it', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    buttonOf(id).focus();
+    await userEvent.keyboard('{Enter}');
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
+    await userEvent.keyboard('{Enter}');
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'false');
+    await userEvent.keyboard(' ');
+    expect(buttonOf(id)).toHaveAttribute('aria-expanded', 'true');
   });
 });

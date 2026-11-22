@@ -39,11 +39,11 @@ import { CloseCross, DialogBar } from '../glass/Frame.tsx';
 import { Overlay } from '../glass/Overlay.tsx';
 import { tabbables } from '../modal.tsx';
 import { usePlayer } from '../player.tsx';
-import { Reactions } from '../reactions/Reactions.tsx';
+import { Reactions, useReactionChips } from '../reactions/Reactions.tsx';
 import type { Mine } from '../reactions/mine.ts';
 import { Link } from '../router.tsx';
 import { spunCount, useSpunInto } from '../spin/spun.ts';
-import { when } from '../thread/lines.tsx';
+import { day, when } from '../thread/lines.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, momentParts, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
@@ -574,17 +574,33 @@ function useLockoutOf(play: CardPlay, admin: boolean): { readonly until: string 
   return spring !== undefined && read?.spring === spring && read.until !== null ? { until: read.until } : null;
 }
 
-function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now, then }: RowProps) {
+/** The note a row carries: a caught play says where its card went once the spring that caught it is read (the view's note, which claims nothing of the card, stands until then); else the view's. */
+function useRowNote(play: CardPlay, view: CardView, store: Plays): string | undefined {
+  const { instance } = useKayfa();
+  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
+  const fate = useCaughtFate(springOfCatch);
+  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
+  return fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
+}
+
+/** A row's head: the caster's face, the caster and when the play was played. A full row draws it between its notes and its words. */
+function PlayHead({ play, caster, face }: { readonly play: CardPlay; readonly caster: string; readonly face: string | null }) {
+  return (
+    <div className="kb-lens-row-head">
+      <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
+      <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
+    </div>
+  );
+}
+
+/** Everything of a row under its head: the words, the notes, the reactions with React, the action tiles and the threads spun. An up-now row draws it always; an ended row, once it is opened. */
+function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, moments, onSpin, store, admin, now, then, head }: Omit<RowProps, 'face' | 'ink'> & { readonly head?: ReactNode }) {
   const past = then?.has(play.id) === true;
   const { characters } = usePlayer();
   const { instance } = useKayfa();
   const name = playName(caster, card);
   const nameOfCard = (key: string) => instance.cards.find((c) => c.key === key)?.name ?? key;
-  /* A caught play says where its card went, once the spring that caught it is read: the view's note, which claims nothing of the card, stands until then. */
-  const springOfCatch = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.spring : undefined;
-  const fate = useCaughtFate(springOfCatch);
-  const trapCard = play.caught ? store.get(play.post).plays.find((p) => p.id === play.caught)?.revealed?.card : undefined;
-  const note = fate && trapCard ? caughtWords(instance.cards.find((c) => c.key === trapCard)?.name ?? trapCard, fate) : view.notes[play.id];
+  const note = useRowNote(play, view, store);
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
   const lockout = useLockoutOf(play, admin);
@@ -615,13 +631,10 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
     return () => changed.disconnect();
   }, []);
   return (
-    <li className="kb-lens-row" data-kb-play={play.id} style={ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined}>
+    <>
       {sprung && <p className="kb-lens-note">{sprung}</p>}
       {note && <p className="kb-lens-note">{note}</p>}
-      <div className="kb-lens-row-head">
-        <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
-        <p className="kb-lens-by"><span className="kb-lens-who kb-glass-display">{caster}</span> · {play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{when(play.playedAt)}</time></p>
-      </div>
+      {head}
       {play.cuts && !play.reversed && <p className="kb-lens-note">{cutWords(nameOfCard(play.cuts.card))}</p>}
       {play.pierce && <p className="kb-lens-note">{pierceWords(nameOfCard(play.pierce.card), play.pierce.ward === undefined ? undefined : nameOfCard(play.pierce.ward))}</p>}
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
@@ -640,6 +653,52 @@ function PlayRow({ play, caster, face, ink, card, view, tallies, mine, compare, 
         </div>
       </div>
       {!staged && !past && <Spun play={play.id} />}
+    </>
+  );
+}
+
+const inkStyle = (ink: string | undefined): CSSProperties | undefined => (ink ? ({ '--kb-play-ink': ink } as CSSProperties) : undefined);
+
+function PlayRow(props: RowProps) {
+  const { play, caster, face, ink } = props;
+  return (
+    <li className="kb-lens-row" data-kb-play={play.id} style={inkStyle(ink)}>
+      <PlayDetail {...props} head={<PlayHead play={play} caster={caster} face={face} />} />
+    </li>
+  );
+}
+
+/** What an ended play's compact row says on its second line: a play that did not simply run its time says its fate (the row's note), else the caster's words. */
+const fateOf = (play: CardPlay, note: string | undefined): string | undefined => (play.reversed || play.untaken || play.caught || play.cut || play.instant || play.spent ? note : undefined);
+
+/**
+ * An ended play, folded: one disclosure button of one or two lines (the caster and the day, then the play's fate or message with its reaction totals as text), and opened, the full row under it. `Who` opens one at a
+ * time. The chips are the row's own (`useReactionChips`), so a total hidden from a reader on a full row is hidden here.
+ */
+function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: boolean; readonly onToggle: () => void }) {
+  const { play, caster, face, ink, view, store, tallies, mine } = props;
+  const id = useId();
+  const note = useRowNote(play, view, store);
+  const { shown } = useReactionChips(play.id, play.caster, tallies, mine);
+  const words = fateOf(play, note) ?? play.message;
+  const line = Boolean(words) || shown.length > 0;
+  return (
+    <li className="kb-lens-row" data-kb-play={play.id} data-kb-ended="" style={inkStyle(ink)}>
+      <button type="button" className="kb-lens-compact" aria-expanded={open} aria-controls={id} onClick={onToggle}>
+        <span className="kb-lens-compact-head">
+          <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
+          <span className="kb-lens-who kb-glass-display">{caster}</span>
+          <time dateTime={play.playedAt}>{day(play.playedAt)}</time>
+          <span className="kb-lens-fold-sign" aria-hidden="true" />
+        </span>
+        {line && (
+          <span className="kb-lens-compact-line">
+            {words && <span className="kb-lens-compact-words">{words}</span>}
+            {shown.length > 0 && <span className="kb-lens-compact-chips">{shown.map((c) => <span key={c.key} className="kb-lens-compact-chip">{c.emoji}{c.count === null ? '' : ` ${c.count}`}</span>)}</span>}
+          </span>
+        )}
+      </button>
+      <div id={id} hidden={!open}>{open && <PlayDetail {...props} />}</div>
     </li>
   );
 }
@@ -665,6 +724,8 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   /* Partitioned only while Who is unfolded: folded, it draws no row. */
   const up = unfolded ? plays.filter(upNow) : [];
   const ended = (unfolded ? plays.filter((p) => !upNow(p)) : []).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  /* One ended row is open at a time; Who is keyed by its kind (the Lens), so another tab starts every row folded. */
+  const [openRow, setOpenRow] = useState<Id | null>(null);
   const rowOf = (p: CardPlay) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />;
   return (
     <div className="kb-lens-section kb-lens-who-section">
@@ -694,7 +755,7 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
             {ended.length > 0 && (
               <li className="kb-lens-group">
                 <h3 className="kb-lens-group-head">Ended · {ended.length}</h3>
-                <ul className="kb-lens-rows">{ended.map(rowOf)}</ul>
+                <ul className="kb-lens-rows">{ended.map((p) => <EndedRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} open={openRow === p.id} onToggle={() => setOpenRow((o) => (o === p.id ? null : p.id))} />)}</ul>
                 {/* The pager for a long Ended group (#871) stands here; nothing is drawn until it is built. */}
               </li>
             )}
@@ -1030,7 +1091,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
+          key={card} plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
         {reportTo && <p className="kb-report-foot"><ReportLink post={reportTo.post} version={reportTo.version} kicker={reportTo.kicker} className="kb-report-link" /></p>}
