@@ -32,6 +32,13 @@ vi.mock('../player.tsx', async (original) => {
   return { ...m, usePlayer: () => ({ ...m.usePlayer(), reactionLanded: landed }) };
 });
 
+/* The stores of plays the screens make, so a test can read one directly. */
+const stores = vi.hoisted(() => ({ made: [] as import('../cards/plays.ts').Plays[] }));
+vi.mock('../cards/plays.ts', async (original) => {
+  const m = await original<typeof import('../cards/plays.ts')>();
+  return { ...m, createPlays: () => { const made = m.createPlays(); stores.made.push(made); return made; } };
+});
+
 /* Glitter's landing places: the real ones, counted, so a test can ask what is registered and what has been let go. */
 const landing = vi.hoisted(() => ({ posts: new Set<HTMLElement>(), pages: 0, pageCalls: 0 }));
 vi.mock('../shine/landing.ts', async (original) => {
@@ -422,6 +429,21 @@ describe('Acts that are not posts', () => {
     expect(screen.getAllByRole('article')).toHaveLength(3);
     expect(post(3).querySelector('.kb-mark')).toBeNull();
     expect(screen.queryByRole('button', { name: /new posts?$/u })).toBeNull();
+  });
+
+  test('the page\'s counts are in the store: a post with more ended plays than the page holds counts the server\'s number', async () => {
+    const w = world(4);
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'whoops', { message: 'first' });
+    const real = w.fake.threadPage.bind(w.fake);
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      return got && { ...got, counts: got.counts.map((c) => (c.card === 'whoops' ? { ...c, all: 45 } : c)) };
+    });
+    stores.made.length = 0;
+    open(w);
+    await within(await screen.findByRole('article', { name: /^Post 2 /u })).findByRole('button', { name: 'Whoops!, 1 play. Opens the cards on this post.' });
+    const counted = stores.made.map((m) => m.get(w.ids[1]!).counts.get('whoops')?.all);
+    expect(counted).toContain(45);
   });
 
   test('a play already on a post is its mark when the page opens, read for the whole page in one request, and the posts keep their numbers', async () => {

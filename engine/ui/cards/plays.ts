@@ -493,7 +493,8 @@ export function createPlays(): Plays {
           const kind = countedKind(p);
           if (kind !== null) kinds.set(kind, { all: (kinds.get(kind)?.all ?? 0) + 1, took: (kinds.get(kind)?.took ?? 0) + (p.untaken ? 0 : 1) });
         }
-        for (const [kind, count] of counts.get(post) ?? []) kinds.set(kind, count);
+        /* The server's count may be older than a play heard while its read was out: never lower than the plays held. */
+        for (const [kind, count] of counts.get(post) ?? []) { const held = kinds.get(kind); kinds.set(kind, held ? { all: Math.max(count.all, held.all), took: Math.max(count.took, held.took) } : count); }
         snap = {
           counts: kinds,
           plays,

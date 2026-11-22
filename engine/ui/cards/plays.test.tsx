@@ -1113,6 +1113,15 @@ describe('the count of each kind on a post (post plays, section 1)', () => {
     expect(plays.get('p1').counts.has(CARD_BACK)).toBe(false);
   });
 
+  test('a count older than the plays the store holds is no lower than they are (a play heard while a read was out)', () => {
+    const plays = createPlays();
+    plays.add([act('k1'), act('k2'), act('k3', { untaken: true }), act('k4')]);
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 3, took: 2 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 4, took: 3 });
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 45, took: 44 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 45, took: 44 });
+  });
+
   test('hydrate takes the counts, after the plays', () => {
     const plays = createPlays();
     hydrate(plays, [act('k1')], {}, [], {}, {}, [], [{ post: 'p1', card: 'whoops', all: 9, took: 9 }]);
