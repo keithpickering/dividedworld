@@ -23,6 +23,7 @@ import tailFile from './gpt2-tail.txt?raw';
 import nodesCss from './hype.css?raw';
 import worldSource from './stage-world.ts?raw';
 import playSource from './stage-play.ts?raw';
+import storySource from './Stage.board.stories.tsx?raw';
 
 /** The stage, seeded and ready, with the film's player signed in as `as` (Snuckles's player when none). */
 async function stage(as: string | null = null) {
@@ -876,5 +877,14 @@ describe('the leaving posts', () => {
     off();
     expect(heard.length).toBeGreaterThan(0);
     await expect(play.leave('Ringside')).rejects.toThrow(/no leaving words/);
+  });
+});
+
+describe('the skin is on the page before the board mounts', () => {
+  test('the stage holds the board back until the skin\'s sheet has loaded, so no effect first reads a page without tokens', () => {
+    /* The board's render gate and the sheet's load wait, as the story writes them (a story has no shell to test through). */
+    expect(storySource, 'the gate on the skin').toMatch(/if \(!made \|\| !ready \|\| !skinned\) return <Frame><div aria-busy="true" \/><\/Frame>/);
+    expect(storySource, 'waits for the sheet to load').toMatch(/sheet\.addEventListener\('load'/);
+    expect(storySource, 'the stage\'s hooks wait for it too').toMatch(/if \(!made \|\| !ready \|\| !skinned\) return;/);
   });
 });

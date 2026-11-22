@@ -34,6 +34,8 @@ const SIZE = { width: 2880, height: 1620 };
 const DESKTOP = { width: 1440, height: 810 };
 const CLOSE = { width: 960, height: 540 };
 const WIDE = { width: 1920, height: 1080 };
+/** The leaving takes' viewport: a leaving post is about 420 CSS px tall (the post body's own minimum), so a 1080 px-high view holds barely one above the reply box; at 3200 x 1800 (still 16:9, filmed at density 0.9, which is still sharper than the old 1920-wide takes at 0.75) three earlier ones fit above Chadluminum's. */
+const PILE = { width: 3200, height: 1800 };
 
 /** Throws with `what` when `ok` is not so. @param {unknown} ok @param {string} what */
 function assert(ok, what) { if (!ok) throw new Error(`the page does not show: ${what}`); }
@@ -206,7 +208,8 @@ async function take(name, { as = null, css = DESKTOP, scale, fps = 60, quiet = [
  * The page at the thread's last page, at its foot (the live posts are shown only there), `before` leavers already in the thread above the reply box
  * (posted unfilmed, each by its own character), the reply box holding `words` typed with real keys, and the pointer on Send. Returns the pointer's place.
  */
-const LIFT = 190;
+/** The page scrolled so the reply box's Send button sits `gap` px above the very bottom of the frame: the posts above it (the earlier leavers) fill the frame, and a new post pushes the stack up. */
+const boxToBottom = (gap = 28) => `(() => { const b = ${SEND}; const r = b.getBoundingClientRect(); scrollBy(0, r.bottom - (innerHeight - ${gap})); })()`;
 async function leavePrep(cam, words, before) {
   await cam.evaluate(`[...document.querySelectorAll('a')].find((b) => /Jump to latest/.test(b.textContent)).click()`);
   await cam.until(`Boolean(document.querySelector('#post-21'))`, { label: 'the last page' });
@@ -224,8 +227,8 @@ async function leavePrep(cam, words, before) {
   for (const ch of words) { cam.key(ch); await drawn(cam, 2); }
   const typed = await cam.evaluate(`${REPLY}.value`);
   if (typed !== words) throw new Error(`the reply box holds ${JSON.stringify(typed)}, not ${JSON.stringify(words)}`);
-  /* The box is a little above the foot of the page, so the posts it follows are in frame above it, and the new post arrives there. */
-  await cam.evaluate(`scrollTo(0, ${LIFT} === 0 ? document.documentElement.scrollHeight : document.documentElement.scrollHeight - innerHeight - ${LIFT})`);
+  /* The reply box sits at the very bottom of the frame, so as many of the posts it follows as fit are in frame above it, and the new post arrives there and pushes them up. */
+  await cam.evaluate(boxToBottom());
   await drawn(cam, 12);
   const send = await midOf(cam, SEND);
   await cam.move(send.x, send.y);
@@ -249,7 +252,7 @@ function follower(secs = 0.32) {
 }
 
 const leaveTake = (n) => take(`f-leave-${n}`, {
-  as: LEAVERS[n - 1], css: WIDE, quiet: ['toasts', 'host', 'hud', 'selection'], seconds: 1.8,
+  as: LEAVERS[n - 1], css: PILE, quiet: ['toasts', 'host', 'hud', 'selection'], seconds: 1.8,
   prep: (cam) => leavePrep(cam, LEAVING[LEAVERS[n - 1]], LEAVERS.slice(0, n - 1)),
   async body(d) {
     const who = LEAVERS[n - 1], words = LEAVING[who];
@@ -271,11 +274,11 @@ const leaveTake = (n) => take(`f-leave-${n}`, {
 
 /** f-leave-all: the reader at the foot as all five arrive, 0.5 s apart, the page jerking down to follow each (240 fps, blended). */
 const leaveAll = () => take('f-leave-all', {
-  as: 'Ringside', css: WIDE, quiet: ['toasts', 'host', 'hud', 'selection'], fps: 240, seconds: 4,
+  as: 'Ringside', css: PILE, quiet: ['toasts', 'host', 'hud', 'selection'], fps: 240, seconds: 4,
   async prep(cam) {
     await cam.evaluate(`[...document.querySelectorAll('a')].find((b) => /Jump to latest/.test(b.textContent)).click()`);
     await cam.until(`Boolean(document.querySelector('#post-21'))`, { label: 'the last page' });
-    await cam.evaluate(`scrollTo(0, document.documentElement.scrollHeight - innerHeight - ${LIFT})`);
+    await cam.evaluate(boxToBottom());
     await drawn(cam, 12);
     return { x: 700, y: 300 };
   },
@@ -764,12 +767,13 @@ const track2 = () => take('f-track-2', {
     const aspect = box.w / box.h;
     const before = Number(await d.page(`document.querySelector('#post-11 [data-kb-draw-surface]').getAttribute('data-kb-strokes')`));
     d.mark('tag');
-    for (const shape of [word('LAST', 0.08, 0.5, 0.3, 'red', aspect), arrow(0.6, 0.62, 0.8, 0.3, 'red', aspect)]) {
+    /* The short word is drawn fast and marked `word` when its last stroke is done, so the edit's second after the stop holds all of LAST. */
+    for (const [shapeAt, shape] of [word('LAST', 0.08, 0.5, 0.3, 'red', aspect), arrow(0.6, 0.62, 0.8, 0.3, 'red', aspect)].entries()) {
       for (const s of shape.strokes) {
         const pts = s.points.map(([x, y]) => ({ x: box.x + x * box.w, y: box.y + y * box.h }));
-        await d.go(pts[0], 0.06, 70, false);
+        await d.go(pts[0], 0.04, 70, false);
         await d.cam.press();
-        const lens = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), total = lens.reduce((a, b) => a + b, 0), secs = Math.max(0.1, total / 2200);
+        const lens = pts.slice(1).map((p, i) => Math.hypot(p.x - pts[i].x, p.y - pts[i].y)), total = lens.reduce((a, b) => a + b, 0), secs = Math.max(0.08, total / 3600);
         const n = Math.round(secs * d.F);
         for (let k = 1; k <= n; k++) {
           let want = (k / n) * total, i = 0;
@@ -781,6 +785,7 @@ const track2 = () => take('f-track-2', {
         await d.cam.release();
         await d.shoot(0.02);
       }
+      if (shapeAt === 0) d.mark('word');
     }
     const after = Number(await d.page(`document.querySelector('#post-11 [data-kb-draw-surface]').getAttribute('data-kb-strokes')`));
     assert(after > before, `strokes drawn on the wall (${before} to ${after})`);
@@ -897,7 +902,7 @@ const smoke = () => take('f-smoke', {
 
 /** f-tag: the wall on post 11 tagged live by a reader (2.5 s): the Draw tile, strokes drawn fast, Tag it. */
 const tag = () => take('f-tag', {
-  as: 'Ringside', ...CLOSEUP(1000), seconds: 2.5, quiet: ['toasts', 'host', 'hud'],
+  as: 'Ringside', ...CLOSEUP(1008), seconds: 2.5, quiet: ['toasts', 'host', 'hud'],
   async prep(cam) { await cam.evaluate(`document.querySelector('#post-11').scrollIntoView({ block: 'start' })`); await settle(cam, 90); const tile = await midOf(cam, `[...document.querySelectorAll('#post-11 button')].find((e) => e.textContent.trim() === 'Draw')`); return { x: tile.x + 160, y: tile.y + 120 }; },
   async body(d) {
     const { heart, word } = await import(`file://${process.cwd()}/instances/divided-world/ui/hype/graffiti-shapes.ts`);
