@@ -95,7 +95,7 @@ for (const { label, width, height, place } of VIEWPORTS) {
       expect(scrolled.scrolled, 'the Lens holds more than it shows, so something in it scrolls').toBe(true);
       /* The panel places itself again as the body scrolls; the control is read until it is where it will stay. */
       await expect.poll(async () => (await lastControl(page)).cut, { message: 'nothing of the last control is cut' }).toEqual([]);
-      /* The Lens's foot holds Report to admins under its rule (the conduct plan, Task 6's confirmed brief), below the last play's Go to post. */
+      /* The Lens's foot holds Report to admins under its rule (the conduct plan, Task 6's confirmed brief), below the last play's actions. */
       expect((await lastControl(page)).name, 'the last control is the foot\'s Report to admins').toBe('Report to admins');
       await expect(lens).toBeVisible();
     });
