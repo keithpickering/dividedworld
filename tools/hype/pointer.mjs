@@ -366,6 +366,10 @@ export async function narrate(cam, cues, io) {
           await follow(reach(pos, again, 0.3, { seed: sub(), settle: false, box }));
           await cam.press(); if (cue.then) await cue.then(ctx); await hold(0.07); await cam.release();
           log(`narrate: click at ${now().toFixed(2)} s (cue ${cue.at.toFixed(2)} s)`);
+        } else if (cue.on || cue.do === 'hover') {
+          /* A chip may have moved or settled (a count that changed, a pop on arrival) while the hand travelled: read it once more and, if the hand is not on it, ease onto its center. */
+          const again = aimAt(await rectOf(cue.target, cue.guess), cue);
+          if (Math.hypot(again.x - pos.x, again.y - pos.y) > 4) await follow(reach(pos, again, 0.25, { seed: sub(), settle: false, box }));
         } else if (cue.do === 'trace') {
           const to = inBox({ x: r.left + r.w - 6, y: r.y + pick(rnd, -4, 4) }, box);
           await follow(reach(pos, to, cue.seconds ?? 1.2, { seed: sub(), box }));

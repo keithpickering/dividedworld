@@ -4,7 +4,7 @@
  * (never a tween) that is the narrator's (`narrate`, in pointer.mjs), each take's pointer starting where the take before it ended (the edit joins them;
  * the end of each is kept in `.runs/hype/o-pointer.json`, as a fraction of the frame, and each take's json says where it started and ended). The Fan
  * Site skin, the desktop layout (1440 by 810) written at 2880 by 1620, except the close-up of the first post (960 by 540 at 3 times) and the close-up of
- * the Aura orbs (the desktop layout at 4 times, cropped).
+ * the Aura orbs (the desktop layout at 3 times, a 640 by 360 crop cut at native size: 1920 by 1080 true pixels, no enlarging).
  *
  *   node tools/hype/shot-v4-open.mjs [--only o-open] [--port 4321]
  *
@@ -208,11 +208,11 @@ await take('o-kind', {
   const posts = await cam.evaluate(`window.__kbStage.posts`);
   const top = (n) => cam.evaluate(`document.querySelector('#post-${n}').getBoundingClientRect().top + scrollY`);
   const rnd = seeded(5);
-  /* The scroll's course: [seconds, scrollY] knots; the post's top is 88 px down the frame when it is through the middle (the HUD covers the foot of the frame). */
+  /* The scroll's course: [seconds, scrollY] knots; the post's top is 130 px down the frame when it is through the middle, so its words and reactions sit in the middle third of what the HUD leaves (a short post beside a tall avatar leaves empty space; the old 88 px left the words high and the blue empty). */
   const base0 = await cam.evaluate('scrollY');
-  const mid = async (n) => (await top(posts[n])) - 88;
+  const mid = async (n) => (await top(posts[n])) - 130;
   const S = [await mid('kind1'), await mid('kind2'), await mid('kind3'), await mid('kind4')];
-  const end = (await top(posts.heel)) - 158;
+  const end = (await top(posts.heel)) - 150;
   const knots = [
     [0, base0], [4.2, base0], [6.9, S[0]], [9.5, S[1]], [10.5, S[1]], [13.0, S[2]], [15.7, S[3]], [16.2, S[3]], [18.6, end - 70], [20, end],
   ];
@@ -283,9 +283,11 @@ await take('o-kind', {
   await drift(9.5, 70, 3);
   await checkKind('kind2');
   /* On its pause the pointer goes to a positive reaction on the post and hovers it, then leaves. */
+  /* The wheel's last notch is still rolling as the post arrives: wait for it to stop before reading where the chip is. */
+  await drift(9.75, 40, 8);
   const chip = await t.rect(`document.querySelector('#post-${posts.kind2} .kb-reaction')`);
   if (!chip) throw new Error('o-kind: post 4 has no reaction to hover');
-  await go({ x: chip.x, y: chip.y }, 0.6, 42);
+  await go({ x: chip.x, y: chip.y }, 0.55, 42);
   await wait(10.35, (left) => rest(pos, left, { seed: 43 }));
   const hot = await cam.evaluate(`document.querySelector('#post-${posts.kind2} .kb-reaction:hover') !== null`);
   if (!hot) throw new Error('o-kind: the pointer is not over the reaction it hovers');
@@ -307,7 +309,8 @@ await take('o-kind', {
 /* ---------------------------------------------------------------------------------------------------------------------------- the Heel */
 const HEAT = [['Snuckles', 'tomato'], ['Serious Deer', 'tomato'], ['Ringside', 'vomiting'], ['Front Row', 'tomato'], ['Nosebleeds', 'tomato']];
 const heelPost = () => 'window.__kbStage.posts.heel';
-const HEEL_TOP = 60;
+/* 140 px down: the words at about a third of the visible frame and the reactions in the middle third, the HUD taking the foot. */
+const HEEL_TOP = 140;
 const heelScroll = () => `document.querySelector('#post-' + ${heelPost()}).getBoundingClientRect().top + scrollY - ${HEEL_TOP}`;
 const tallyOf = `document.querySelector('#post-' + ${heelPost()} + ' .kb-reaction-list')`;
 const thumbsOf = `[...document.querySelectorAll('#post-' + ${heelPost()} + ' .kb-reaction')].find((e) => e.textContent.includes('\u{1F44D}'))`;
@@ -373,7 +376,7 @@ await take('o-heel', {
 });
 
 await take('o-heel-aura', {
-  as: 'Hotel Bro', seconds: 4, scale: 2, out: { width: 1920, height: 1080 }, crop: { x: 406, y: 450, w: 640, h: 360 }, scroll: heelScroll,
+  as: 'Hotel Bro', seconds: 4, scale: 3, out: { width: 1920, height: 1080 }, crop: { x: 406, y: 450, w: 640, h: 360 }, scroll: heelScroll,
   start: previousEnd('o-kind', { x: 0.6, y: 0.4 }),
 }, async (t) => {
   t.name = 'o-heel-aura';
