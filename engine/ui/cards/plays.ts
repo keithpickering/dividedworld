@@ -301,7 +301,7 @@ export function nextEnd(plays: readonly CardPlay[], now: number): number | null 
   let soonest: number | null = null;
   for (const p of plays) {
     for (const end of [p.ends, p.faceDown && !p.revealed && p.takenBack === undefined ? p.endsAt : undefined, p.revealed?.until]) {
-      if (end === undefined) continue;
+      if (end == null) continue;
       const at = Date.parse(end);
       if (at > now && (soonest === null || at < soonest)) soonest = at;
     }
