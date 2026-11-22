@@ -29,6 +29,15 @@ create function pg_temp.origin_plays_emitted(plan jsonb) returns numeric languag
 $$;
 
 -- Reads of `acts` inside the origin that are not index reads: a sequential scan of it, anywhere under the origin's CTEs.
+-- The rows of acts the origin's lookup of its plays read: the by-id scans, and not what acts_public does besides for each Act it shows (its lateral lookup of the latest edit, which a database that earlier files filled prices
+-- as a seq scan of acts for each Act shown, and its probes of the veils), the view's cost, the same in 0402's thread_page there.
+create function pg_temp.origin_by_id_rows(plan jsonb) returns numeric language sql as $$
+  select coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric), 0)
+  from pg_temp.origin_nodes(plan) n
+  where n ->> 'Relation Name' = 'acts' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan')
+    and coalesce(n ->> 'Index Name', '') not in ('acts_edits', 'acts_one_card_end') and coalesce(n ->> 'Filter', '') not like '%''edit''%'
+$$;
+
 create function pg_temp.origin_seq_scans(plan jsonb, filter_like text default null) returns bigint language sql as $$
   select count(*) from pg_temp.origin_nodes(plan) n where n ->> 'Node Type' = 'Seq Scan' and n ->> 'Relation Name' = 'acts' and (filter_like is null or coalesce(n ->> 'Filter', '') like filter_like)
 $$;
@@ -122,6 +131,7 @@ begin
   raise notice '1 the origin looked up % plays by id, of 400 (4 in force), with 24,000 other Acts about', pg_temp.origin_plays_emitted(plan);
   if pg_temp.origin_seq_scans(plan, '%ANY%') > 0 then raise exception '1 the origin''s plays are looked up by scanning acts: %', plan; end if;
   if pg_temp.origin_plays_emitted(plan) is distinct from 4::numeric then raise exception '1 the origin''s plays CTE handed on % rows for an origin of 400 plays, 4 in force: it must be the 4', pg_temp.origin_plays_emitted(plan); end if;
+  if pg_temp.origin_by_id_rows(plan) > 2 * (4 + 2 * 1) + 8 or pg_temp.origin_by_id_rows(plan) < 4 then raise exception '1 the origin read % rows of acts by id for an origin of 400 plays, 4 in force: at least the 4 and at most 2 x (4 + 2 x 1) + 8 = 28', pg_temp.origin_by_id_rows(plan); end if;
   if pg_temp.origin_cte_rows(plan, 'CTE o_all') is distinct from 4::numeric then raise exception '1 the origin''s list of ids holds % for an origin of 400 plays, 4 in force: it must be the 4', pg_temp.origin_cte_rows(plan, 'CTE o_all'); end if;
   -- The document names the bound too: the 4 plays in force (no end of theirs, none was written), and the counts of 400.
   perform tests.become(rdr);

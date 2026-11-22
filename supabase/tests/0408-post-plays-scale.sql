@@ -10,7 +10,7 @@
 --  2. thread_page, for the page that holds the post, looks the post's plays up by id (its in force and stand-ins, their riders: at most that many ids), reads exactly those from acts_public, and no scan of acts by that list of ids is a
 --     sequential one. The rest of what acts_public does for each Act it shows is the view's cost and is not counted.
 --  3. kind_play_ids reads at most `size` + the plays of the kind in force + 1 rows of play_post, on the first page and on a page deep in the kind's history.
---  4. The poison: with play_post_drawn dropped, the row bound of 1 goes red; so does the bound of 3 with play_post_newest dropped.
+--  4. The poison: with play_post_drawn dropped, the row bound of 1 goes red; so does the bound of 3 with play_post_newest dropped, and the bound of 2 with a post_play_ids that answers the post's whole history.
 -- The fixture is written with the append-only and warn-guard triggers off for this transaction only (the runner rolls it back), the kept tables are filled from play_row as the migration's backfill fills them, and analyzed before the plan is read.
 
 -- The nodes of a plan that read a relation, optionally only those under the named CTEs.
@@ -25,6 +25,16 @@ create function pg_temp.rows_read(plan jsonb, rel text, under text[] default nul
   select coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric), 0)
   from (select distinct d from pg_temp.scan_nodes(plan, under) d) z(n)
   where n ->> 'Relation Name' = rel and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan') and (idx is null or n ->> 'Index Name' = idx)
+$$;
+
+-- The rows of acts that the plays' own lookup read under a CTE: the by-id scans, and not what acts_public does besides for each Act it shows. That is the view's own cost and it is not this change's: it looks up the Act's latest edit
+-- by a lateral subquery on acts for every row (acts_edits), which the planner prices against the table, and in a database that earlier files filled it prices a seq scan of acts, once per Act shown, above the index (the partial
+-- index acts_edits had 3,832 pages for 4 live entries after the rolled-back files, against 521 pages of acts); and its probes of the veils (acts_one_card_end). The same scan is in 0402's thread_page in that database.
+create function pg_temp.acts_by_id_rows(plan jsonb, under text[]) returns numeric language sql as $$
+  select coalesce(sum(((n ->> 'Actual Rows')::numeric + coalesce((n ->> 'Rows Removed by Filter')::numeric, 0) + coalesce((n ->> 'Rows Removed by Index Recheck')::numeric, 0)) * (n ->> 'Actual Loops')::numeric), 0)
+  from (select distinct d from pg_temp.scan_nodes(plan, under) d) z(n)
+  where n ->> 'Relation Name' = 'acts' and n ->> 'Node Type' in ('Seq Scan', 'Index Scan', 'Index Only Scan', 'Bitmap Heap Scan')
+    and coalesce(n ->> 'Index Name', '') not in ('acts_edits', 'acts_one_card_end') and coalesce(n ->> 'Filter', '') not like '%''edit''%'
 $$;
 
 -- The rows a CTE of the plan passed up (its own node's `Actual Rows`).
@@ -114,6 +124,19 @@ begin
   return n;
 end $$;
 
+-- Case 2's bound, raising when it is broken: thread_page, for the page that holds the post, looks up at most 4 in force + 2 stand-ins for each of 6 kinds + 8 of riders (`on_all`), reads exactly those from acts_public (two arms, each
+-- read by id: twice that, and the 8 again), and no scan of acts is filtered by the list of ids.
+create function pg_temp.check_page_lookup(acct uuid, t uuid) returns numeric language plpgsql as $$
+declare plan jsonb := pg_temp.page_statement_plan(acct, t, 1, 20); ids numeric := pg_temp.cte_rows(plan, 'CTE on_all'); n numeric := pg_temp.acts_by_id_rows(plan, array['CTE on_posts']);
+begin
+  if ids > 4 + 2 * 6 + 8 then raise exception 'ROWBOUND thread_page looked up % plays and riders of a post of 5,000 plays: at most 4 + 2 x 6 + 8 = 24', ids; end if;
+  if n > 2 * (4 + 2 * 6) + 8 then raise exception 'ROWBOUND thread_page read % rows of acts by id for the post''s plays: at most 2 x (4 + 2 x 6) + 8 = 40', n; end if;
+  if ids < 6 or n < 6 or pg_temp.cte_rows(plan, 'CTE on_posts') is distinct from ids then raise exception 'the meter sees % ids, % rows of acts by id and % Acts, so it cannot tell a bound: %', ids, n, pg_temp.cte_rows(plan, 'CTE on_posts'), plan; end if;
+  -- No scan of acts whose filter is the list of ids (a lookup by id that fell to scanning the history), and none of play_post, which the plays are found in by functions the plan does not see into.
+  if pg_temp.seq_scans(plan, 'acts', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts'], '%ANY%') + pg_temp.seq_scans(plan, 'play_post', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']) > 0 then raise exception 'the plays'' reads scan a table in sequence: %', plan; end if;
+  return n;
+end $$;
+
 -- Case 3's bound: a page of `lim` of a kind's plays that are over reads at most lim + the kind's plays in force + 1 rows of play_post.
 create function pg_temp.check_page_bound(p uuid, k text, b_at timestamptz, b_id uuid, lim integer, in_force integer) returns numeric language plpgsql as $$
 declare plan jsonb := pg_temp.page_plan(p, k, b_at, b_id, lim + 1); n numeric := pg_temp.rows_read(plan, 'play_post');
@@ -182,15 +205,8 @@ begin
 
   -- 2. thread_page: the page that holds the famous post, as a reader.
   plan := pg_temp.page_statement_plan(rdr, t0, 1, 20);
-  -- What is bounded is the list of ids the plays are looked up by, and the lookup is by that list: `on_all` hands on the plays in force, the stand-ins and their riders (4 + 2 x 6 + 8 at most), `on_posts` reads exactly those from
-  -- acts_public, and no scan of acts has that list for its filter. What acts_public does besides for each Act it shows (probes of its veils, its edits and its ballots, each by a plan of its own that depends on what the instance
-  -- holds, and a database that earlier files filled with veils runs them) is the view's cost, the same for any Act read through it, which this change does not alter; it is not what the plays' ids cost, and it is not counted.
-  n := pg_temp.cte_rows(plan, 'CTE on_all');
-  raise notice '2 thread_page looked up % plays and riders by id for the post, which holds 5,000 plays', n;
-  if n > 4 + 2 * 6 + 8 then raise exception '2 thread_page looked up % plays and riders of a post of 5,000 plays: at most 4 + 2 x 6 + 8 = 24', n; end if;
-  if n < 6 or pg_temp.cte_rows(plan, 'CTE on_posts') is distinct from n then raise exception '2 the meter sees % ids and % Acts read for them, so it cannot tell a bound: %', n, pg_temp.cte_rows(plan, 'CTE on_posts'), plan; end if;
-  -- No scan of acts whose filter is the list of ids (a lookup by id that fell to scanning the history), and none of play_post, which the plays are found in by functions the plan does not see into.
-  if pg_temp.seq_scans(plan, 'acts', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts'], '%ANY%') > 0 or pg_temp.seq_scans(plan, 'play_post', array['CTE on_posts', 'CTE on_all', 'CTE ends_on_posts']) > 0 then raise exception '2 the plays'' reads scan a table in sequence: %', plan; end if;
+  n := pg_temp.check_page_lookup(rdr, t0);
+  raise notice '2 thread_page looked up plays and riders by id for the post, which holds 5,000 plays: % rows of acts read by id', n;
   -- Every page of the thread, as a reader, answers the plays of the famous post: 4 in force and at most 12 stand-ins.
   perform tests.become(rdr);
   doc := thread_page(t0, 1, null, 20, array['ppsk1']);
@@ -217,4 +233,11 @@ begin
   got := pg_temp.coded(format('select pg_temp.check_page_bound(%L, %L, null, null, 20, 1)', p, 'ppsk1'));
   if got is null or got not like '%ROWBOUND%' then raise exception '4 kind_play_ids''s row bound did not go red with play_post_newest dropped: %', coalesce(got, 'it passed'); end if;
   raise notice '4 without play_post_newest: %', got;
+  -- And case 2's: a post_play_ids that answers the whole history of the post (5,000 plays) takes the page's lookup past its bound.
+  create or replace function post_play_ids(posts uuid[]) returns table (post uuid, play uuid) language sql stable security definer set search_path = public, pg_temp as $f$
+    select x.post, x.play from play_post x where x.post = any (post_play_ids.posts)
+  $f$;
+  got := pg_temp.coded(format('select pg_temp.check_page_lookup(%L, %L)', rdr, t0));
+  if got is null or got not like '%ROWBOUND%' then raise exception '4 the page''s lookup bound did not go red with a post_play_ids that answers the whole history: %', coalesce(got, 'it passed'); end if;
+  raise notice '4 with the whole history answered: %', got;
 end $$;
