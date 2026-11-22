@@ -5,10 +5,8 @@
  * drew the board's reactions and so top its billing. It asks how the strip, the "+N", the Lens's tabs and its Who rows read when
  * a post has far more plays than a page draws in full (docs/plans/2026-11-21-post-plays-design.md).
  *
- * What it reads is not what a deployed instance would read. The fake reads eight plays times the page's posts, oldest first
- * across the whole page, so this thread's fourteen quiet replies leave the famous post room for every play; the database reads
- * eight for each post, oldest first (thread_page's `on_posts`), so on a deployed instance this post would show its first eight
- * plays of three years ago and none of the ones up now.
+ * The fake reads what the database reads: the plays in force, each kind's newest and most-drawn play, and its count
+ * (docs/plans/2026-11-21-post-plays-design.md, section 1).
  *
  * Left out, each because it ends nothing on its own and would hide what the story looks at: Below the Fold folds the post for
  * good, and Stick Around's takeover holds every visit to it.
@@ -108,12 +106,6 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
     [2 * YEAR, 'two years. the sign is still there.'],
     [2 * YEAR + 100 * DAY, 'I showed this to my mom'],
     [YEAR + 40 * DAY, 'bump'],
-    [YEAR + 200 * DAY, 'the sign. THE SIGN.'],
-    [2 * YEAR + 5 * DAY, 'happy two years'],
-    [2 * YEAR + 30 * DAY, 'my cousin found this post from a search engine'],
-    [2 * YEAR + 250 * DAY, 'bump for the new people'],
-    [3 * YEAR - 20 * DAY, 'it is almost time again'],
-    [3 * YEAR - 2 * DAY, 'three years tomorrow, get your cards ready'],
   ] as const;
   replies.forEach(([after, body], i) => { seed.post(opened.thread, casters[(i * 5 + 2) % casters.length]!, body, { at: born + after }); });
 
