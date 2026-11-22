@@ -110,6 +110,9 @@ export const LINE_BOARDS: Readonly<Record<string, { readonly slug: string; reado
   'Pointless Post Palace': { slug: 'pointless-post-palace', description: 'Posts with no point. Nonsense on a board that asks for nonsense.' },
 };
 
+/** The game's out-of-character screens the stage can show (`view=glass:<key>`), each with the address its router opens at: the glass is the same under every skin. */
+export const GLASS_PATHS: Readonly<Record<string, string>> = { characters: '/characters', 'new-character': '/characters/new', vending: '/vending' };
+
 /** Seeds the world on `fake`, for `instance`. */
 export function buildStage(fake: Fake, instance: Instance, options: StageOptions): Made {
   const now = Date.now();
@@ -366,6 +369,7 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   const [view, of = ''] = options.view.split(':');
   const shown = view === 'thread' ? made.threads[of || 'main'] : undefined;
   if (view === 'thread' && shown === undefined) throw new Error(`the stage has no thread "${of}": its threads are ${Object.keys(made.threads).join(', ')}`);
-  globalThis.history.replaceState(null, '', view === 'index' ? '/' : view === 'profile' ? `/c/${made.staff[of] ?? cast[of]}` : `/t/${shown}`);
+  if (view === 'glass' && !(of in GLASS_PATHS)) throw new Error(`the stage has no glass screen "${of}": its screens are ${Object.keys(GLASS_PATHS).join(', ')}`);
+  globalThis.history.replaceState(null, '', view === 'index' ? '/' : view === 'profile' ? `/c/${made.staff[of] ?? cast[of]}` : view === 'glass' ? GLASS_PATHS[of] : `/t/${shown}`);
   return made;
 }
