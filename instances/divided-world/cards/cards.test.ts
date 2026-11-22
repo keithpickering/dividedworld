@@ -75,6 +75,7 @@ test('the instance sells its cards at their prices', () => {
     ['tattle-tale', 'salty', 300],
     ['thick-skin', 'sweet', 150],
     ['this', 'pepperoni', 20],
+    ['time-machine', 'pepperoni', 300],
     ['toll', 'pepperoni', 150],
     ['ultra-happy-heart', 'sweet', 600],
     ['whodunnit', 'pepperoni', 300],
@@ -415,9 +416,9 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: twenty uncommons share the 74 (Front Row, Sweet Heat and Thick Skin, uncommons, joined them). Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event.
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
   // So Very Happy (rare, the so-very-happy plan's Task 7) joined them, so nine share the 24.
-  // Buzzkill (rare, the buzzkill plan's Task 7) joined them, so ten share the 24.
+  // Buzzkill (rare, the buzzkill plan's Task 7) joined them, so ten share the 24. Time Machine (rare, the Time Machine plan's Task 6) makes eleven.
   const rares = cards.filter((c) => c.rarity === 'rare');
-  assert.deepEqual(rares.map((c) => c.key).sort(), ['buzzkill', 'feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
+  assert.deepEqual(rares.map((c) => c.key).sort(), ['buzzkill', 'feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'time-machine', 'whodunnit']);
   for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.24 / rares.length) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
   const legendaries = cards.filter((c) => c.rarity === 'legendary');
   assert.deepEqual(legendaries.map((c) => c.key).sort(), ['off-day', 'ultra-happy-heart']);
