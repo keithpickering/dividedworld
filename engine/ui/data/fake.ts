@@ -2331,10 +2331,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The caster's live, unspent pierce (place_cast's read of play_reach): a reach play on the character whose card's gimmick is a pierce, not ended and not named by a cast's `pierce.by`,
    * the oldest first. Read only for a character of the caller's own and not a staff one, so no refusal differs with who owns it.
    */
-  function pierceOf(character: Id): { play: Id; card: string; upTo: Rarity } | null {
+  function pierceOf(character: Id, cutting?: unknown): { play: Id; card: string; upTo: Rarity } | null {
     const who = characters.get(character);
     if (!who || who.staff !== undefined || who.owner !== me()?.id) return null;
-    const live = [...reachPlays].filter(([play, r]) => r.reach === 'character' && r.target === character && r.endsAt > (stamp ?? now()) && !over(play))
+    const live = [...reachPlays].filter(([play, r]) => r.reach === 'character' && r.target === character && r.endsAt > (stamp ?? now()) && !over(play) && play !== cutting)
       .map(([play]) => ({ play, act: acts.get(play)!, gimmick: instance.cards.find((k) => k.key === acts.get(play)!.payload.card)?.gimmick }))
       .filter((p) => p.gimmick?.kind === 'pierce')
       .sort((x, y) => x.act.at - y.act.at || (x.play < y.play ? -1 : x.play > y.play ? 1 : 0));
@@ -2368,7 +2368,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const forgedNow = forgedList(publicAct(on).currentPayload);
     const effects = effectsOn(target);
     /* The caster's own live, unspent pierce (place_cast): the Ward check is given its `upTo`. */
-    const shot = pierceOf(character);
+    /* A card that cuts never spends, as its pierce, the very play it names (place_cast's pierce loop leaves the named play out). */
+    const shot = pierceOf(character, rules.cuts === undefined ? undefined : (config as { play?: unknown } | null)?.play);
     // Decided and written in one step, with no gap for an edit to land in, so the fake checks no version (play_card does, 0070).
     const decided = decidePlay(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, drawnBy(on.id)?.parent, shownAuthor(on, false) ?? undefined, forgedNow), effects, config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k, rulesOf, first, caster: character, ...(shot ? { pierce: shot.upTo, rarityOf: rarityUndef } : {}) });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
@@ -2715,7 +2716,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const effects = effectsOnTarget(goal, reachEffects(reach, target), above, new Date(at));
     const nameOf = (k: string) => instance.cards.find((c) => c.key === k)?.name ?? k;
     /* Only a cast reads the caster's pierce (place_cast); a use never does. */
-    const shot = play === 'cast' ? pierceOf(character) : null;
+    const shot = play === 'cast' ? pierceOf(character, rules.cuts === undefined ? undefined : (config as { play?: unknown } | null)?.play) : null;
     const decided = play === 'use' ? decideUse(rules, settings, goal, effects, config, message, { now: new Date(at) }) : decidePlay(rules, settings, goal, effects, config, message, { now: new Date(at), nameOf, rulesOf, caster: character, ...(shot ? { pierce: shot.upTo, rarityOf: rarityUndef } : {}) });
     if (!decided.ok) return refuse(decided.why, (message !== undefined && !casterMessage(message).ok) || decided.why === rules.needsMessage ? 'message' : 'config');
     const c = acting(character);

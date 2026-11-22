@@ -2963,6 +2963,25 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await fake.playCard('spark', boFace, anaFace, {}, '', 'character', mine)).toMatchObject({ ok: true });
   });
 
+  test('a caster who cuts their own live pierce does not spend it on that cut, and it pierces again once an admin ends the cut', async () => {
+    const { fake, ana, bo, boss, anaFace, boFace, thread, mine, lifted } = cutSetup();
+    fake.seed.cards(ana, { ctest: 2, lift: 2, blot: 3 });
+    fake.seed.cards(bo, { shield: 1 });
+    const bos = fake.seed.post(thread, boFace, 'Bo here.');
+    fake.signInAs(bo);
+    must(await fake.useCard('shield', boFace, bos, {}, ''));
+    fake.signInAs(ana);
+    const shot = await lifted();
+    const cut = must(await fake.playCard('ctest', anaFace, anaFace, { play: shot.id }, '', 'character', mine));
+    expect(cut.payload.cut).toEqual({ play: shot.id, card: 'lift' });
+    expect(cut.payload.pierce).toBeUndefined();
+    expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === shot.id)).toBe(false);
+    fake.signInAs(boss);
+    must(await fake.reverseCard(cut.id));
+    fake.signInAs(ana);
+    expect(must(await fake.playCard('blot', anaFace, bos, {}, '')).payload.pierce).toMatchObject({ by: shot.id, card: 'lift', ward: 'shield' });
+  });
+
   test('an admin who ends the card that cuts brings the Gimmick back, and reverse_card tells a cut, a spent and an ended play apart', async () => {
     const { fake, ana, boss, anaFace, bare, kicked, lifted, cutAt, cutOn, blotted } = cutSetup();
     const kickMe = await kicked();
