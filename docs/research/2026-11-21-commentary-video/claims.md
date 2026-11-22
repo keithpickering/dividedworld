@@ -299,7 +299,7 @@ staff lines come from. It adds to the record above and does not replace it.
 
 The owner relaxed the rule of 2026-11-21 that every staff line is the rehearsal's. Asked whether a rehearsal should be reworked to take a
 written thread, the owner chose generated output in its place: "real rehearsal dialogue is ideal but probably not worth reworking the
-rehearsal system". So the film's staff lines are now of three kinds, each named on screen nowhere and recorded here:
+rehearsal system". So the film's staff lines are now of three kinds. None is labeled on screen, and each is recorded here:
 
 - **REAL:** the second rehearsal's logs, as in the section above. Two lines: QC-1000's visit opener (`openerQcArts`) and its filing on
   Serious Deer (`filingQcGotcha`).
