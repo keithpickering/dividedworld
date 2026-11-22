@@ -89,3 +89,125 @@ begin
   if exists (select 1 from thread_places_drift()) then raise exception 'drift after a rebuild: %', (select count(*) from thread_places_drift()); end if;
   if (select count(*) from threads t where t.id in (select system_threads()) and t.board is distinct from system_board()) is distinct from 0::bigint then raise exception 'a system thread is stored off the system board'; end if;
 end $$;
+
+-- ================= seed_instance rebuilds and recounts the staff's threads (plan Task 2) =================
+-- The seed finds every thread of the staff's that is not stored on the system board and places it there, then recounts the boards it left and the board it arrived on
+-- by the rule thread_list lists by (backfill_board_counts, 0063): threads in thread_list on the board, in shard 0, the other shards zero.
+
+create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
+create function pg_temp.slug_of(b uuid) returns text language sql as $$ select slug from boards where id = b $$;
+create function pg_temp.seeded(system_slug text) returns jsonb language sql as $$
+  select seed_instance(jsonb_build_object('boards', jsonb_build_array(
+    jsonb_build_object('slug', 'sta', 'name', 'A', 'system', system_slug = 'sta'),
+    jsonb_build_object('slug', 'stb', 'name', 'B', 'system', system_slug = 'stb'))))
+$$;
+-- What a board's list shows and what its count says, as one line when they differ.
+create function pg_temp.count_problem(slug text) returns text language sql as $$
+  select case when listed is distinct from counted then format('%s lists %s threads and counts %s', count_problem.slug, listed, counted) end
+  from (select (select count(*) from thread_list l where l.board = b.id) as listed,
+               coalesce((select c.threads from board_counts c where c.board = b.id), 0) as counted
+        from boards b where b.slug = count_problem.slug) x
+$$;
+-- Every row of the three tables a seed could write, with where it sits in its heap: an update, even to the same values, moves it.
+create function pg_temp.snapshot() returns text language sql as $$
+  select md5(coalesce((select string_agg(t::text || t.ctid::text, ',' order by t.id) from threads t), '')
+          || coalesce((select string_agg(c::text || c.ctid::text, ',' order by c.board, c.shard) from board_thread_counts c), '')
+          || coalesce((select string_agg(p::text || p.ctid::text, ',' order by p.ctid) from post_search p), ''))
+$$;
+create function pg_temp.staff_threads_on(slug text) returns bigint language sql as $$
+  select count(*) from threads t where t.id in (select system_threads()) and t.board = pg_temp.board(slug)
+$$;
+
+-- A post of the staff's in the announcements thread, so there is a search row to follow the thread.
+do $$
+declare ann uuid := (select id from threads where title = 'Announcements');
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, payload) values ((select id from characters where staff = 'st-boss'), 'post', ann, jsonb_build_object('body', 'Announced.'));
+  perform set_config('kayfabb.staff_writer', '', true);
+  if (select count(*) from post_search p where p.thread = ann) is distinct from 1::bigint then raise exception 'the fixture post has no search row, so the seed test could not follow it'; end if;
+end $$;
+
+-- ---- 1. seed with `a` flagged, then `b`: the three follow the flag, an ordinary thread stays, the counts agree ----
+do $$
+declare
+  ann uuid := (select id from threads where title = 'Announcements');
+  ordinary uuid := (select id from threads where title = 'Ordinary');
+  owner uuid := tests.account('sst-owner');
+  ch uuid := tests.character(owner, 'Sst Player');
+  answer jsonb;
+  said text;
+begin
+  -- The flag is on `b` from the first file section and the three were rebuilt there; flag `a` through the seed.
+  answer := pg_temp.seeded('sta');
+  if pg_temp.staff_threads_on('sta') is distinct from 3::bigint then raise exception 'seeding with a flagged should put the three staff threads on a, got % on a', pg_temp.staff_threads_on('sta'); end if;
+  if (answer ->> 'placed') is distinct from '3' then raise exception 'seeding with a flagged should report placed 3, got %', answer ->> 'placed'; end if;
+  if pg_temp.count_problem('sta') is not null then raise exception 'after flagging a: %', pg_temp.count_problem('sta'); end if;
+  if pg_temp.count_problem('stb') is not null then raise exception 'after flagging a: %', pg_temp.count_problem('stb'); end if;
+
+  answer := pg_temp.seeded('stb');
+  if pg_temp.staff_threads_on('stb') is distinct from 3::bigint then raise exception 'reseeding with b flagged should put the three staff threads on b, got % on b', pg_temp.staff_threads_on('stb'); end if;
+  if (answer ->> 'placed') is distinct from '3' then raise exception 'reseeding with b flagged should report placed 3, got %', answer ->> 'placed'; end if;
+  if (select t.board from threads t where t.id = ordinary) is distinct from pg_temp.board('sta') then raise exception 'the seed moved an ordinary thread'; end if;
+  if (select count(*) from post_search p where p.thread = ann and p.board is distinct from pg_temp.board('stb')) is distinct from 0::bigint then raise exception 'the announcements thread''s search rows did not follow it to b'; end if;
+  if pg_temp.count_problem('sta') is not null then raise exception 'after flagging b: %', pg_temp.count_problem('sta'); end if;
+  if pg_temp.count_problem('stb') is not null then raise exception 'after flagging b: %', pg_temp.count_problem('stb'); end if;
+  if exists (select 1 from board_thread_counts c where c.board in (pg_temp.board('sta'), pg_temp.board('stb')) and c.shard > 0 and c.threads <> 0) then raise exception 'a count was left in a shard other than 0'; end if;
+  if exists (select 1 from thread_places_drift()) then raise exception 'drift after the seed placed the threads'; end if;
+
+  -- A player's post into the announcements thread is refused: the thread is on the system board now.
+  perform tests.become(owner);
+  said := pg_temp.refusal(format('select post(%L, %L, %L)', ann, ch, 'Let me in.'));
+  perform tests.unbecome();
+  if said is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a player''s post into the announcements thread should be refused by not_the_systems, got %', said; end if;
+end $$;
+
+-- ---- 2. a third identical reseed writes nothing ----
+do $$
+declare
+  before_snapshot text := pg_temp.snapshot();
+  answer jsonb;
+begin
+  answer := pg_temp.seeded('stb');
+  if (answer ->> 'placed') is distinct from '0' then raise exception 'a reseed with nothing astray should report placed 0, got %', answer ->> 'placed'; end if;
+  if pg_temp.snapshot() is distinct from before_snapshot then raise exception 'a reseed with nothing astray wrote to threads, board_thread_counts or post_search'; end if;
+end $$;
+
+-- ---- 3. flagging `a` again sends the three back ----
+do $$
+declare
+  answer jsonb := pg_temp.seeded('sta');
+begin
+  if pg_temp.staff_threads_on('sta') is distinct from 3::bigint then raise exception 'reseeding with a flagged again should send the three back to a, got % on a', pg_temp.staff_threads_on('sta'); end if;
+  if (answer ->> 'placed') is distinct from '3' then raise exception 'reseeding with a flagged again should report placed 3, got %', answer ->> 'placed'; end if;
+  if pg_temp.count_problem('sta') is not null then raise exception 'after flagging a again: %', pg_temp.count_problem('sta'); end if;
+  if pg_temp.count_problem('stb') is not null then raise exception 'after flagging a again: %', pg_temp.count_problem('stb'); end if;
+end $$;
+
+-- ---- 4. dw.gripe's shape: the flag was moved by an older seed and the threads left behind, with a stale count on the old board ----
+do $$
+declare
+  answer jsonb;
+begin
+  -- The older seed's statement and nothing more: the flag on b, the three still stored on a, and a's count as the old triggers left it (the staff's threads and some made before
+  -- 0339's rule counted, a stray in another shard), b's count off by what it never received.
+  update boards set is_system = false where is_system;
+  update boards set is_system = true where slug = 'stb';
+  if pg_temp.staff_threads_on('sta') is distinct from 3::bigint then raise exception 'the dw.gripe fixture should leave the three on a'; end if;
+  update board_thread_counts set threads = case shard when 0 then 9 when 1 then 2 else 0 end where board = pg_temp.board('sta');
+  update board_thread_counts set threads = case shard when 0 then 4 else 0 end where board = pg_temp.board('stb');
+  if pg_temp.count_problem('sta') is null or pg_temp.count_problem('stb') is null then raise exception 'the dw.gripe fixture should start with counts that disagree: a % b %', pg_temp.count_problem('sta'), pg_temp.count_problem('stb'); end if;
+
+  answer := pg_temp.seeded('stb');
+  if pg_temp.staff_threads_on('stb') is distinct from 3::bigint then raise exception 'the seed should find the three astray though the flag did not move in this run, got % on b', pg_temp.staff_threads_on('stb'); end if;
+  if (answer ->> 'placed') is distinct from '3' then raise exception 'the dw.gripe seed should report placed 3, got %', answer ->> 'placed'; end if;
+  if pg_temp.count_problem('sta') is not null then raise exception 'dw.gripe, a: %', pg_temp.count_problem('sta'); end if;
+  if pg_temp.count_problem('stb') is not null then raise exception 'dw.gripe, b: %', pg_temp.count_problem('stb'); end if;
+  if exists (select 1 from board_thread_counts c where c.board in (pg_temp.board('sta'), pg_temp.board('stb')) and c.shard > 0 and c.threads <> 0) then raise exception 'dw.gripe: a count was left in a shard other than 0'; end if;
+end $$;
