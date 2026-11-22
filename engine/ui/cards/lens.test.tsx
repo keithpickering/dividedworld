@@ -2612,11 +2612,13 @@ describe('the discipline cards\' Lens', () => {
     expect(l).toHaveTextContent(`Took 1 warn point off Spritey's warn bar on ${dayAndTime(one.createdAt)}.`);
     expect(l).toHaveTextContent(`Took 2 warn points off Spritey's warn bar on ${dayAndTime(two.createdAt)}.`);
     /* It is a play like any: reacted to and spun from, and it names the caster. */
+    /* A spent play says what it did on line 2, folded. */
+    expect(l.querySelector(`[data-kb-play="${two.id}"] .kb-lens-compact-line`)!.textContent).toContain('Took 2 warn points');
     for (const id of [two.id, one.id]) {
       await userEvent.click(l.querySelector<HTMLElement>(`[data-kb-play="${id}"] button.kb-lens-compact`)!);
       expect(within(l.querySelector<HTMLElement>(`[data-kb-play="${id}"]`)!).getAllByRole('button', { name: 'Spin thread' })).toHaveLength(1);
     }
-    expect(l).toHaveTextContent('Gloomba');
+    expect(l).toHaveTextContent(/Gloomba\s*played/u);
   });
 
   test('a Super Happy Heart says all it took, and an Unban says it ended the ban and when', async () => {
@@ -3145,10 +3147,12 @@ describe('a Gimmick a cutting card ended', () => {
     renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={plays} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={createTallies()} mine={createMine()} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance, cards });
     return plays;
   }
-  const rowLines = async (name: RegExp) => {
+  const rowLines = async (name: RegExp, compact = true) => {
     await userEvent.click(await screen.findByRole('button', { name }));
     await userEvent.click(whoButton());
+    /* The one play of this tab is an ended row: compact, and it fails here if it is not. */
     const folded = lens().querySelector<HTMLElement>('button.kb-lens-compact');
+    expect(folded !== null).toBe(compact);
     if (folded) await userEvent.click(folded);
     return lens().textContent ?? '';
   };
@@ -3157,6 +3161,14 @@ describe('a Gimmick a cutting card ended', () => {
     width(false);
     strip();
     expect(await rowLines(/^Card 3, 1 play/u)).toContain('Ended the Card 2 here early');
+  });
+
+  test("a cut play's folded row says its fate on line 2", async () => {
+    width(false);
+    strip();
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, 1 play/u }));
+    await userEvent.click(whoButton());
+    expect(lens().querySelector('[data-kb-play="gimmick"] .kb-lens-compact-line')!.textContent).toContain('Ended early by a Card 3');
   });
 
   test("the cut play's row says what ended it early, where an admin's end would read Ended by an admin", async () => {
@@ -3171,7 +3183,7 @@ describe('a Gimmick a cutting card ended', () => {
     width(false);
     const plays = strip();
     act(() => { plays.setEnded(['cutting']); });
-    const text = await rowLines(/^Card 2, 1 play/u);
+    const text = await rowLines(/^Card 2, 1 play/u, false);
     expect(text).not.toContain('Ended early by');
     expect(text).not.toContain('Ended by an admin');
     /* The cutting play's own row no longer says it ended anything. */
@@ -3225,6 +3237,45 @@ describe('ended rows', () => {
     expect(within(rowOf(id)).queryByRole('button', { name: 'Spin thread' })).toBeNull();
     expect(within(rowOf(id)).queryByRole('button', { name: /As it landed/u })).toBeNull();
     expect(within(rowOf(id)).queryByRole('button', { name: /^React/u })).toBeNull();
+  });
+
+  test('the head says how the play was made, with the day: played, or set face down', async () => {
+    const { ids, playedAt } = await ended(1);
+    expect(buttonOf(ids[0]!).querySelector('.kb-lens-compact-head')!.textContent).toContain(`played ${day(playedAt)}`);
+  });
+
+  test('a count hidden from this reader is the emoji alone on line 2', async () => {
+    width(false);
+    const hiding = { ...instance, cards: [...instance.cards, { ...instance.cards[0]!, key: 'kb', name: 'Card B', veil: 'totals' as const, lasts: { unit: 'day' as const, count: 3 } }] };
+    const w = world();
+    w.fake.clock.advance(60_000);
+    const store = createPlays();
+    const base = { character: w.spritey, thread: w.thread, targetActId: w.second, seq: null, createdAt: '2026-10-01T00:00:00Z', editedAt: null, shownEditedAt: null } as const;
+    const gone = { card: 'k2', message: 'old' };
+    const veil = { card: 'kb', ends: new Date(w.fake.clock.now() + 86_400_000).toISOString() };
+    /* A play on the ended play, whose caster is neither the reader nor the author, hides the totals from the reader on that play's row. */
+    store.add([
+      { ...base, id: 'old', kind: 'card' as const, payload: gone, currentPayload: gone },
+      { ...base, id: 'old-end', kind: 'card_end' as const, targetActId: 'old', payload: { why: 'reversed', by: 'admin' }, currentPayload: {} },
+      { ...base, id: 'veil', kind: 'card' as const, character: w.gloomba, targetActId: 'old', payload: veil, currentPayload: veil },
+    ]);
+    store.setBilling(w.second, ['old']);
+    const tallies = createTallies();
+    const mine = createMine();
+    tallies.merge('old', { fire: 3 });
+    mine.add({ act: 'old', kind: 'fire', character: w.pipe });
+    renderIn(w.fake, <LensProvider><PostMarks post={w.second} plays={store} to="/post" nameOf={() => 'Spritey'} faceOf={() => null} tallies={tallies} mine={mine} compare={false} moments={false} onSpin={() => {}} /></LensProvider>, { path: '/', instance: hiding, cards });
+    await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u }));
+    await userEvent.click(whoButton());
+    expect(rowOf('old').querySelector('.kb-lens-compact-chips')!.textContent).toBe(fireEmoji);
+  });
+
+  test('an open row says its note once: line 2 keeps its chips and gives up its words', async () => {
+    const { ids } = await ended(1);
+    const id = ids[0]!;
+    expect(lineOf(id)!.textContent).toContain('Ended by an admin');
+    await userEvent.click(buttonOf(id));
+    expect(within(rowOf(id)).getAllByText('Ended by an admin')).toHaveLength(1);
   });
 
   test('a play an admin ended says so on line 2 in place of its message', async () => {

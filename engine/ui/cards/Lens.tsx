@@ -679,21 +679,23 @@ function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: bool
   const { play, caster, face, ink, view, store, tallies, mine } = props;
   const id = useId();
   const note = useRowNote(play, view, store);
-  const { shown } = useReactionChips(play.id, play.caster, tallies, mine);
+  const { shown } = useReactionChips(play.id, play.caster, tallies, mine, store);
   const words = fateOf(play, note) ?? play.message;
-  const line = Boolean(words) || shown.length > 0;
+  /* Opened, the body says the words (the note and the message), so line 2 keeps only its chips. */
+  const shownWords = open ? undefined : words;
+  const line = Boolean(shownWords) || shown.length > 0;
   return (
     <li className="kb-lens-row" data-kb-play={play.id} data-kb-ended="" style={inkStyle(ink)}>
       <button type="button" className="kb-lens-compact" aria-expanded={open} aria-controls={id} onClick={onToggle}>
         <span className="kb-lens-compact-head">
           <Avatar className="kb-lens-row-avatar" src={face} name={caster} />
           <span className="kb-lens-who kb-glass-display">{caster}</span>
-          <time dateTime={play.playedAt}>{day(play.playedAt)}</time>
+          <span className="kb-lens-compact-when">{play.faceDown ? 'set face down' : 'played'} <time dateTime={play.playedAt}>{day(play.playedAt)}</time></span>
           <span className="kb-lens-fold-sign" aria-hidden="true" />
         </span>
         {line && (
           <span className="kb-lens-compact-line">
-            {words && <span className="kb-lens-compact-words">{words}</span>}
+            {shownWords && <span className="kb-lens-compact-words">{shownWords}</span>}
             {shown.length > 0 && <span className="kb-lens-compact-chips">{shown.map((c) => <span key={c.key} className="kb-lens-compact-chip">{c.emoji}{c.count === null ? '' : ` ${c.count}`}</span>)}</span>}
           </span>
         )}
