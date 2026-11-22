@@ -50,6 +50,10 @@
   font-weight: 800;
   letter-spacing: 0.08em;
   text-transform: uppercase;
+  /* Absolute at the area's right edge the tile has no room and shrinks to its narrowest; a spun thread's ORIGIN box breaks words anywhere (spin.css), which made
+     that a letter a row. The tile's word is never broken. */
+  white-space: nowrap;
+  overflow-wrap: normal;
   cursor: pointer;
 }
 

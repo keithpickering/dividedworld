@@ -768,3 +768,34 @@ describe('markOf', () => {
     expect(markOf(inBox.words, 'some-card')).toBe(inBox.box.querySelector('button.kb-mark[data-kb-card="some-card"]'));
   });
 });
+
+/* A face-down back's own end (lockout-in-force design): the strip wakes at the back's `endsAt` by itself, and the back, dropped by `shownPlays`, leaves with no read. */
+describe('a face-down back\'s mark', () => {
+  const HOUR = 3_600_000;
+  test('goes at its endsAt with no read: the clock passes it, and the mark is gone by itself', async () => {
+    const real = globalThis.setTimeout;
+    const woke: (() => void)[] = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (typeof ms === 'number' && ms > HOUR - 1000 && ms < HOUR + 1000) { woke.push(fn); return 0; }
+      return real(fn, ms, ...rest);
+    }) as unknown as typeof setTimeout);
+    const { MarkStrip } = await import('./Marks.tsx');
+    const { createTallies } = await import('../thread/tallies.ts');
+    const { createPlays } = await import('./plays.ts');
+    const w = world();
+    const [on] = await w.fake.acts(w.thread, 2, 2);
+    const plays = createPlays();
+    const endsAt = new Date(w.fake.clock.now() + HOUR).toISOString();
+    plays.add([{
+      id: 'back1', character: w.spritey, kind: 'set', thread: w.thread, targetActId: on!.id, seq: null, createdAt: new Date(w.fake.clock.now()).toISOString(),
+      payload: { card: 'k1', config: {} }, currentPayload: {}, editedAt: null, shownEditedAt: null, endsAt,
+    } as unknown as Act]);
+    plays.setBilling(on!.id, ['back1']);
+    const view = renderIn(w.fake, <MarkStrip post={on!.id} plays={plays} tallies={createTallies()} onOpen={() => {}} />, { instance, cards });
+    await waitFor(() => expect(view.container.querySelectorAll('.kb-mark')).toHaveLength(1));
+    expect(woke.length).toBeGreaterThan(0);
+    w.fake.clock.advance(HOUR + 2);
+    act(() => { for (const fn of woke) fn(); });
+    await waitFor(() => expect(view.container.querySelectorAll('.kb-mark')).toHaveLength(0));
+  });
+});

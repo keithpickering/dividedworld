@@ -1891,7 +1891,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
     };
   }
-  /** rewind_view (0412): a rewind play's post as it stood at the point the play names, the latest version saved at or before it; null for an Act that is no rewind play on a post. */
+  /** rewind_view (0413): a rewind play's post as it stood at the point the play names, the latest version saved at or before it; null for an Act that is no rewind play on a post. */
   function rewindView(id: Id): Rewind | null {
     const k = acts.get(id);
     if (!k || k.kind !== 'card' || k.target === null || k.payload.caught !== undefined || !onPost(k) || instance.cards.find((c) => c.key === k.payload.card)?.rewind === undefined || typeof k.payload.rewind_at !== 'string') return null;

@@ -1,4 +1,4 @@
--- The rewind, the first half (supabase/migrations/0412_rewind.sql; docs/plans/2026-11-21-time-machine-plan.md, Task 2; design docs/plans/2026-11-21-time-machine-design.md, sections 3, 4.1, 4.2, 6 and 7).
+-- The rewind, the first half (supabase/migrations/0413_rewind.sql; docs/plans/2026-11-21-time-machine-plan.md, Task 2; design docs/plans/2026-11-21-time-machine-design.md, sections 3, 4.1, 4.2, 6 and 7).
 -- A rewind card shows a post as of an earlier point of its history and freezes the post while it is up. This half holds:
 --   * the column card_kinds.rewind and its check; card_kinds_problem takes a good rewind and names each poison in the engine's words (engine/rules/instance.ts, rewindProblems);
 --   * rewind_point_at: the post (its time plus the edit grace), an edit inside the grace (null), an edit past it, another post's edit (null);

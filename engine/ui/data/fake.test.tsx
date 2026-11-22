@@ -7432,7 +7432,7 @@ describe('a thread page and its origin read their plays and counts as postPlays 
   });
 });
 
-describe('a rewind: a card that shows a post as it was and freezes it (0412_rewind.sql)', () => {
+describe('a rewind: a card that shows a post as it was and freezes it (0413_rewind.sql)', () => {
   const ok = <T,>(value: T) => ({ ok: true as const, value });
   const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
   const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };

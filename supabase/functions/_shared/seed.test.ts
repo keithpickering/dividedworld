@@ -199,7 +199,7 @@ test('a card\'s veil and its reaction flag travel in the seed (0357), and an abs
   assert.deepEqual(['veil' in sent[1], sent[1].addsReaction], [false, true], 'a reaction card sends the flag and no veil');
 });
 
-test('a rewind card\'s upTo travels in the seed (0412), and a card with none has none in the JSON', () => {
+test('a rewind card\'s upTo travels in the seed (0413), and a card with none has none in the JSON', () => {
   const rewind = { ...instance.cards[0]!, key: 'test-rewind', rewind: { upTo: 'rare' as const }, lasts: { unit: 'day' as const, count: 3 } };
   const plain = { ...instance.cards[0]!, key: 'test-plain' };
   const sent = JSON.parse(JSON.stringify(instanceSeed({ ...instance, cards: [rewind, plain] }, conduct).cards));

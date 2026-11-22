@@ -98,7 +98,7 @@ declare
                            'season_news(timestampwithtimezone,integer)',
                            -- A play's moment (0072): what was on a post when a play landed.
                            'play_moment(uuid)',
-                           -- A rewind's view (0412): the post as it stood at the point a rewind play names, the same bytes for every reader, as play_moment is.
+                           -- A rewind's view (0413): the post as it stood at the point a rewind play names, the same bytes for every reader, as play_moment is.
                            'rewind_view(uuid)',
                            -- Whether a post's totals are withheld from the caller's own account (0358, a totals veil): the reaction_tallies policy calls it, as the reader. It takes no account: the two-argument form, which does, is granted to no one.
                            'my_totals_withheld(uuid)',
@@ -169,7 +169,7 @@ declare
                            -- a post's plays in force and each kind's two stand-ins (the ids), a post's counts by kind, and the springs and take-backs of a list of backs (the ids). They are granted because thread_page, a security invoker, calls them
                            -- as the signed-in player, and the Acts themselves are read through acts_public as the caller.
                            'post_play_ids(uuid[])', 'post_kind_counts(uuid[])', 'play_rider_ids(uuid[])',
-                           -- The live rewind plays of a list of posts (0412): the definer behind thread_page's `rewinds`, the ids of face-up plays on public posts from the kept rows, the same for every caller; granted as post_play_ids is.
+                           -- The live rewind plays of a list of posts (0413): the definer behind thread_page's `rewinds`, the ids of face-up plays on public posts from the kept rows, the same for every caller; granted as post_play_ids is.
                            'post_rewind_plays(uuid[])',
                            -- A page of a kind's plays that are over on a post (0410): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
                            'kind_play_ids(uuid,text,timestampwithtimezone,uuid,integer)',

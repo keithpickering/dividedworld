@@ -53,7 +53,7 @@ begin
   on conflict (key) do nothing;
   -- A surface card (Graffiti's kind, 0317): a wall on a post that anyone may draw on and only the post's own character may wash.
   insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('swwall', 'Sw Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true) on conflict (key) do nothing;
-  -- A rewind card (0412): a play of it names a point of the post, and rewind_view answers with the post as the projection shows it.
+  -- A rewind card (0413): a play of it names a point of the post, and rewind_view answers with the post as the projection shows it.
   insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, rewind) values ('swrewind', 'Sw Rewind', 'salty', 'rare', 'cast', '{post}', interval '3 days', 1, 'rare') on conflict (key) do nothing;
 end $$;
 
@@ -283,7 +283,7 @@ select 'function', n, m, w from (values
   ('phrase_word_class', 'no author', 'a constant'),
   ('pinned_threads', 'no author', 'a board''s pinned threads: ids'),
   ('play_moment', 'swept', 'a play''s moment: the post as the projection shows it'),
-  ('rewind_view', 'swept', 'a rewind''s view (0412): the post as the projection shows it at the point the play names, through act_projection and acts_public as play_moment reads it'),
+  ('rewind_view', 'swept', 'a rewind''s view (0413): the post as the projection shows it at the point the play names, through act_projection and acts_public as play_moment reads it'),
   ('spin_moment', 'no author', 'a spin''s moment (0351) is of the post it was pressed at, which is never veiled: a spin is refused at a veiled post (spin_written reads the shown author) and a veil is refused on a post a spin was pressed at (land_refusal), both in 0304-post-veils.sql, section 9b; it reads its version and the plays as play_moment does, through the projection'),
   ('post', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
   ('post_tails', 'swept', 'the words written on posts: no character'),
@@ -669,7 +669,7 @@ begin
   -- A wall on P: R's card, R's drawing on it, and the author's own wash of it (only the post's own character may wash, so a wash names the post's author wherever it is read).
   insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, '{"card": "swwall", "message": "", "config": {}, "layer": 1}') returning id into wall;
   perform open_surface(wall);
-  -- A rewind on P, written as place_cast writes one (0412): the point it names is now, so the view shows P as it stands.
+  -- A rewind on P, written as place_cast writes one (0413): the point it names is now, so the view shows P as it stands.
   insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, jsonb_build_object('card', 'swrewind', 'message', '', 'config', '{}'::jsonb, 'reach', 'post', 'ends', now() + interval '1 day', 'rewind_at', now())) returning id into rwd;
   perform tests.become_service();
   perform draw_on_surface(ray, r, wall, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);

@@ -2359,7 +2359,7 @@ export interface PlayMoment {
 }
 
 /**
- * A live rewind play's view (rewind_view, 0412_rewind.sql; the Time Machine design, 4.2): the post as the rewind shows it. `at` is the point the play names (an ISO time) and `version` the post
+ * A live rewind play's view (rewind_view, 0413_rewind.sql; the Time Machine design, 4.2): the post as the rewind shows it. `at` is the point the play names (an ISO time) and `version` the post
  * with the words of the latest version saved at or before it, shaped as a moment's `version` is (a version an admin hid shows the hidden placeholder). The same answer for every reader.
  */
 export interface Rewind {

@@ -2,7 +2,7 @@
  * An admin ends a lockout from the Lens (the so-very-happy design, section 2.4): the sprung back of a lockout back, while its lockout is live, offers "End this card"; every other face-down
  * back stays unendable. The End sends the spring's id, since the spring is what the lockout is.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { lockOut, lockoutCards, lockoutInstance, lockoutWorld } from '../composer/lockout-world.tsx';
@@ -91,6 +91,88 @@ describe('the Lens on a lockout back', () => {
     renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
     await userEvent.click(await within(await screen.findByRole('article', { name: /^Post 1 /u })).findByRole('button', { name: /Lk Back/u }));
     await userEvent.click(within(await screen.findByRole('dialog')).getByRole('button', { name: /^1 play · / }));
+    expect(asked.mock.calls.filter(([ids]) => ids.includes(sprung.spring.id)).length).toBe(0);
+  });
+});
+
+/*
+ * The screens agree (lockout-in-force design): a lockout is up while its `until` is ahead, ended when it passes with the Lens left open and no read, and ended by an admin when a card_end lands;
+ * the status line, the Who groups, the kinds grid's sign and the post's mark all say the same thing.
+ */
+describe('the screens agree on a lockout, and wake at its end', () => {
+  const DAY = 86_400_000;
+  const markOf = () => within(document.getElementById('post-1')!).getByRole('button', { name: /Lk Back/u });
+  /** The Lens open on the back, the world's clock a day short of its lockout's end; the long timers the page armed are kept, to be fired by hand once the clock has moved. */
+  async function open(admin: boolean) {
+    const real = globalThis.setTimeout;
+    const woke: (() => void)[] = [];
+    vi.spyOn(globalThis, 'setTimeout').mockImplementation(((fn: () => void, ms?: number, ...rest: unknown[]) => {
+      if (typeof ms === 'number' && ms > 3_600_000 && ms <= 2 * DAY) { woke.push(fn); return 0; }
+      return real(fn, ms, ...rest);
+    }) as unknown as typeof setTimeout);
+    const l = await lens(admin);
+    return { ...l, woke };
+  }
+
+  test('while its lockout is live: the line, the Up now row with End, the grid sign, and a lit mark', async () => {
+    const { dialog } = await open(true);
+    expect(dialog).toHaveTextContent(/Its lockout ends /u);
+    expect(dialog).not.toHaveTextContent(/Ended · /u);
+    /* Up now alone draws no heading (Ended's group is what names it); the row is a full one, with End in reach, and none is compact. */
+    expect(dialog.querySelector('button.kb-lens-compact')).toBeNull();
+    expect(within(dialog).getByRole('button', { name: 'End this card' })).toBeInTheDocument();
+    expect(markOf()).not.toHaveAttribute('data-kb-spent');
+  });
+
+  test('the kinds grid\'s sign says 1 up now', async () => {
+    const w = lockoutWorld(true);
+    await lockOut(w);
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
+    await userEvent.click(await within(await screen.findByRole('article', { name: /^Post 1 /u })).findByRole('button', { name: /Lk Back/u }));
+    const dialog = await screen.findByRole('dialog');
+    /* jsdom lays nothing out: the tab row is made wider than its box, so the All button and its grid come. */
+    const row = within(dialog).getByRole('tablist');
+    Object.defineProperty(row, 'clientWidth', { configurable: true, value: 330 });
+    Object.defineProperty(row, 'scrollWidth', { configurable: true, value: 700 });
+    fireEvent.scroll(row);
+    await userEvent.click(await within(dialog).findByRole('button', { name: /^All \d+$/u }));
+    expect(dialog.querySelector('.kb-lens-kinds')).toHaveTextContent('1 up now');
+  });
+
+  test('the clock passes until with the Lens left open and no read: the row is Ended, End is gone, the line and the mark say so', async () => {
+    const { w, dialog, woke } = await open(true);
+    const asked = vi.spyOn(w.fake, 'actsById');
+    expect(woke.length).toBeGreaterThan(0);
+    w.fake.clock.advance(DAY + 60_000);
+    act(() => { for (const fn of woke) fn(); });
+    await waitFor(() => expect(dialog).toHaveTextContent(/Ended · 1/u));
+    expect(within(dialog).queryByRole('button', { name: 'End this card' })).toBeNull();
+    expect(dialog).toHaveTextContent(/It sprang, and its lockout ended /u);
+    expect(markOf()).toHaveAttribute('data-kb-spent', 'true');
+    expect(asked).not.toHaveBeenCalled();
+  });
+
+  test('the admin presses End: once the card_end lands the line says an admin ended it, and the row is Ended', async () => {
+    const { dialog } = await open(true);
+    await userEvent.click(await within(dialog).findByRole('button', { name: 'End this card' }));
+    await userEvent.click(screen.getByRole('button', { name: 'End it' }));
+    await waitFor(() => expect(dialog).toHaveTextContent(/It sprang, and an admin ended its lockout\./u));
+    expect(dialog).toHaveTextContent(/Ended · 1/u);
+    expect(within(dialog).queryByRole('button', { name: 'End this card' })).toBeNull();
+  });
+
+  test('a reader who is no admin sees the same line and groups, with no End, and reads no spring', async () => {
+    const w = lockoutWorld(false);
+    const sprung = await lockOut(w);
+    const asked = vi.spyOn(w.fake, 'actsById');
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards });
+    await userEvent.click(await within(await screen.findByRole('article', { name: /^Post 1 /u })).findByRole('button', { name: /Lk Back/u }));
+    const dialog = await screen.findByRole('dialog');
+    await userEvent.click(within(dialog).getByRole('button', { name: /^1 play · / }));
+    expect(dialog).toHaveTextContent(/Its lockout ends /u);
+    expect(dialog).not.toHaveTextContent(/Ended · /u);
+    expect(dialog.querySelector('button.kb-lens-compact')).toBeNull();
+    expect(within(dialog).queryByRole('button', { name: 'End this card' })).toBeNull();
     expect(asked.mock.calls.filter(([ids]) => ids.includes(sprung.spring.id)).length).toBe(0);
   });
 });
