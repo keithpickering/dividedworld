@@ -641,7 +641,7 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
       {!past && yours && <p className="kb-lens-yours">Your play</p>}
       <div ref={foot} className="kb-lens-row-foot">
-        {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} pickerAt="button" />}
+        {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} plays={store} pickerAt="button" />}
         <div className="kb-lens-actions">
           {past || staged ? null : hosted
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>

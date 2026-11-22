@@ -3268,6 +3268,12 @@ describe('ended rows', () => {
     await userEvent.click(await screen.findByRole('button', { name: /^Card 2, \d plays?/u }));
     await userEvent.click(whoButton());
     expect(rowOf('old').querySelector('.kb-lens-compact-chips')!.textContent).toBe(fireEmoji);
+    /* Opened, the full row's reactions hide the same total: what line 2 hid is never read below it. */
+    await userEvent.click(within(rowOf('old')).getByRole('button', { expanded: false }));
+    const full = rowOf('old').querySelector<HTMLElement>('.kb-reactions')!;
+    expect(full).not.toBeNull();
+    expect(full.textContent).not.toMatch(new RegExp(`${fireEmoji}\\s*3`, 'u'));
+    expect(full).toHaveTextContent('Reaction totals are hidden');
   });
 
   test('an open row says its note once: line 2 keeps its chips and gives up its words', async () => {
