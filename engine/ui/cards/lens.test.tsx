@@ -2297,7 +2297,7 @@ describe('the post the Lens keeps whole', () => {
 });
 
 describe('the buttons, odd and even', () => {
-  test('a foot with an odd number of tiles lets its last one span both columns, and an even one lets none', async () => {
+  test('every tile in a foot takes one cell of its two equal columns: an odd last one is not stretched across the row', async () => {
     width(false);
     const w = world();
     w.play('k2', w.spritey);
@@ -2305,16 +2305,12 @@ describe('the buttons, odd and even', () => {
     await userEvent.click(await markOf(2, 'Card 2'));
     await userEvent.click(whoButton());
     const foot = lens().querySelector<HTMLElement>('.kb-lens-row-foot')!;
-    const tiles = () => [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
-    const spans = () => tiles().filter((t) => t.hasAttribute('data-kb-span'));
-    /* On the thread page: React, Spin thread and As it landed (no Go to post), and the last stands across the row. */
-    expect(tiles()).toHaveLength(3);
-    await waitFor(() => expect(spans()).toEqual([tiles()[2]]));
-    expect(ruleOf(".kb-lens-row-foot [data-kb-span]")).toMatch(/grid-column:\s*1\s*\/\s*-1/u);
-    /* One tile gone (a card with no moment to look at): two are left, and none spans. */
-    await act(async () => { foot.querySelector('.kb-lens-actions > .kb-kit-tile:nth-child(2)')!.remove(); });
-    expect(tiles()).toHaveLength(2);
-    await waitFor(() => expect(spans()).toHaveLength(0));
+    const tiles = [...foot.querySelectorAll<HTMLElement>('.kb-react-button, .kb-kit-tile')];
+    /* On the thread page: React, Spin thread and As it landed (no Go to post). */
+    expect(tiles).toHaveLength(3);
+    expect(tiles.filter((t) => t.hasAttribute('data-kb-span'))).toHaveLength(0);
+    expect(ruleOf('.kb-lens-row-foot')).toMatch(/grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/u);
+    expect(() => ruleOf('.kb-lens-row-foot [data-kb-span]')).toThrow();
   });
 });
 

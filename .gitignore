@@ -30,3 +30,6 @@ supabase/.temp/
 
 # Worktrees a session makes for agents working in parallel; each is a checkout of this repository, never content.
 .claude/worktrees/
+
+# Per-machine Claude Code settings (an installer such as Impeccable writes hooks here); never committed.
+.claude/settings.local.json
