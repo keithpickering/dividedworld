@@ -507,6 +507,11 @@ begin
   -- After the locks, so a card that left while this waited is seen.
   update card_kinds k set gone_at = now(), became = card_leaves.became, refund = card_leaves.refund, retired_at = null where k.key = card_leaves.old and k.gone_at is null;
   if not found then return 0; end if;
+  -- A renamed card whose own earlier names pointed at it: they point at the newest card now, so a chain is never more than one link (card_now walks one) and a stored `became` is always a card in print or the withdrawn
+  -- card its copies were refunded as. One row per earlier name of the card that left (card_kinds is a catalog of a few hundred rows; a scan of it, once, when a card is renamed).
+  if card_leaves.became is not null then
+    update card_kinds k set became = card_leaves.became where k.became = card_leaves.old and k.gone_at is not null;
+  end if;
   with held as materialized (
     select a.account, sum(a.n) as n from (
       select l.account, count(*) filter (where l.kind in ('bought', 'pulled', 'caught', 'returned', 'found', 'renamedIn'))
@@ -632,13 +637,18 @@ begin
   select nullif(concat_ws('; ', card_kinds_problem(payload -> 'cards'), card_reach_problem(payload -> 'cards')), '') into unknown;
   if unknown is not null then raise exception '%', unknown using errcode = '22023'; end if;
   -- The three ways a card leaves (0403). A seed that carries `formerly` or `withdrawn` says where every card a seed wrote stands (from_seed), and is refused, naming the keys, where it does not: a key in none of cards, formerly and withdrawn,
-  -- a key in more than one, a renaming into a card the seed does not list (or into itself), a refund that is not a positive whole number, and a card that left listed as a card again (a card that comes back takes a new key).
+  -- a key in more than one, a renaming into a card the seed does not list (or into itself; a name already gone may point at a withdrawn card, and needs no entry when the card its chain ends in is listed), a refund that is not a positive whole number, and a card that left listed as a card again (a card that comes back takes a new key).
   -- The refusal does not depend on who holds what. Nothing is written before it.
   if retiring then
     select string_agg(k.key, ', ' order by k.key) into unknown from card_kinds k
     where k.from_seed and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e where e ->> 'key' = k.key)
       and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e where e ->> 'key' = k.key)
-      and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e where e ->> 'key' = k.key);
+      and not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e where e ->> 'key' = k.key)
+      -- A card that left, renamed or withdrawn, needs no entry of its own when what it became is listed: the key its chain ends in is a card, a name the seed renames or a withdrawn card of the payload.
+      and not (k.gone_at is not null and exists (
+        select 1 from card_now(k.key) n, (select e ->> 'key' as key from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) e
+                                          union all select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) e
+                                          union all select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) e) l where l.key = n.key));
     if unknown is not null then
       raise exception 'the seed lists % as no card, no former name and no withdrawn card: a card the database holds is listed as one of the three, never left out', unknown using errcode = '22023';
     end if;
@@ -649,7 +659,11 @@ begin
     if unknown is not null then raise exception 'the seed lists % in more than one of its cards, former names and withdrawn cards: a card is in one', unknown using errcode = '22023'; end if;
     select string_agg(f.e ->> 'key' || ' (renamed to ' || coalesce(f.e ->> 'became', 'nothing') || ')', ', ' order by f.e ->> 'key') into unknown
     from jsonb_array_elements(coalesce(payload -> 'formerly', '[]')) f(e)
-    where f.e ->> 'became' is null or f.e ->> 'became' = f.e ->> 'key' or not exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) c where c ->> 'key' = f.e ->> 'became');
+    where f.e ->> 'became' is null or f.e ->> 'became' = f.e ->> 'key'
+       or not (exists (select 1 from jsonb_array_elements(coalesce(payload -> 'cards', '[]')) c where c ->> 'key' = f.e ->> 'became')
+               -- a name already gone may point at a card the payload withdraws (its copies were that card's when it was refunded)
+               or (exists (select 1 from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w where w ->> 'key' = f.e ->> 'became')
+                   and exists (select 1 from card_kinds g where g.key = f.e ->> 'key' and g.gone_at is not null)));
     if unknown is not null then raise exception 'a card is renamed to another card the seed lists as a card, never to itself or to nothing: %', unknown using errcode = '22023'; end if;
     select string_agg(w.e ->> 'key', ', ' order by w.e ->> 'key') into unknown
     from jsonb_array_elements(coalesce(payload -> 'withdrawn', '[]')) w(e)
