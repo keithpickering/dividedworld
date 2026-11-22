@@ -38,6 +38,7 @@ test('an output frame is four sub-frame camera positions across the shutter, cen
 
 test('a move is blurred by the rectangles of its sub-frames: they differ along the move and agree where the camera is still', () => {
   const cut = { frames: 61, move };
+  assert.equal(blurRects({ frames: 30, punch: 10 }, 0)[0].w, cutRect({ frames: 30, punch: 10 }, 0).w, 'the camera is not read before a cut begins: a punch on the first frame is whole in every sub-frame');
   const rects = blurRects(cut, 30);
   assert.equal(rects.length, 4);
   assert.ok(rects[3].x > rects[0].x, 'the camera is moving: the first and last sub-frames differ');

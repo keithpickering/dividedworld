@@ -157,14 +157,14 @@ export const SHUTTER = 0.5;
 export const subframes = (i, n = SUBFRAMES, shutter = SHUTTER) => Array.from({ length: n }, (_, s) => i + shutter * ((s + 0.5) / n - 0.5));
 
 /** The expression for the fractional frame of a stream at SUBFRAMES times the frame rate, in its frame counter `counter`. @param {string} counter */
-const subframeExpr = (counter) => `(floor(${counter}/${SUBFRAMES})+${n6(SHUTTER)}*((mod(${counter},${SUBFRAMES})+0.5)/${SUBFRAMES}-0.5))`;
+const subframeExpr = (counter, clamp = true) => `${clamp ? 'max(0,' : '('}floor(${counter}/${SUBFRAMES})+${n6(SHUTTER)}*((mod(${counter},${SUBFRAMES})+0.5)/${SUBFRAMES}-0.5))`;
 
 /**
  * The rectangles of output frame `i`'s sub-frames: the cut's own arithmetic (`cutRect`, which takes fractional frames) at each. Averaged, they are the
- * blurred frame.
+ * blurred frame. There is no camera before a cut's first frame, so its sub-frames are not read before it (a punch on the first frame is a whole punch).
  * @param {Parameters<typeof cutRect>[0]} cut @param {number} i
  */
-export const blurRects = (cut, i) => subframes(i).map((t) => cutRect(cut, t));
+export const blurRects = (cut, i) => subframes(i).map((t) => cutRect(cut, Math.max(0, t)));
 
 /** True when the camera is still across the frame's shutter (to a millionth of the frame): the blur of it is the frame itself. @param {Parameters<typeof cutRect>[0]} cut @param {number} i */
 export function blurStatic(cut, i) {
@@ -213,6 +213,6 @@ export function whipPositions(dir, s, w, h) {
  */
 export function whipExpressions(dir, frames, w, h) {
   const [dx, dy] = whipDirections[dir];
-  const p = `min(1,max(0,(${subframeExpr('n')}+0.5)/${frames}))`, s = `(${p}*${p}*(3-2*${p}))`;
+  const p = `min(1,max(0,(${subframeExpr('n', false)}+0.5)/${frames}))`, s = `(${p}*${p}*(3-2*${p}))`;
   return { ax: `(${dx * w}*${s})+0`, ay: `(${dy * h}*${s})+0`, bx: `(${dx * w}*(${s}-1))+0`, by: `(${dy * h}*(${s}-1))+0` };
 }

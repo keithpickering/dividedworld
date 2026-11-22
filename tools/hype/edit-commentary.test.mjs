@@ -42,6 +42,7 @@ test('the film opens in silence: the first node`s voice starts `lead` seconds in
   near(timeline(clips, map, { nodes, lead: 2 }).nodes[0].voice[0].start, 2);
   near(timeline(clips, map, { nodes, lead: 0 }).nodes[0].voice[0].start, 0);
   assert.throws(() => timeline(clips, map, { nodes, lead: -1 }), /lead/);
+  near(timeline(clips, map, { nodes: [{ ...nodes[0], after: 0 }, ...nodes.slice(1)] }).nodes[0].voice[0].start, 4.5, 'the first node`s own `after` is not the lead: --lead is');
 });
 
 test('nodes are whatever the data says: roles and `after` decide, never an id; a pause follows the clip before it', () => {
@@ -573,4 +574,36 @@ test('the music carries what a cut list is cut to: the film time of every kept s
   const plus = timeline(longer(56.5), map, { nodes });
   assert.equal(plus.music.version, 'mk-plus1');
   assert.deepEqual(plus.music.statements.slice(0, 6).map((s) => [s.n, s.copy]), [[1, 0], [2, 0], [3, 0], [2, 1], [3, 1], [4, 0]]);
+});
+
+/* ---- the sheet, the blur and the whip as ffmpeg is told them ---- */
+
+test('the sheet names the lead, every node, the version, each strike of the coda and what the picture does on it, the black, the title and the end', () => {
+  const t = timeline(clips, map, { nodes, recording: 'mk-b' });
+  const text = ec.sheetText(t, commentary);
+  assert.match(text, /lead: .* 4\.50 s/);
+  for (const n of t.nodes) assert.match(text, new RegExp(`\\b${n.id}\\b`));
+  assert.match(text, /v06 .*frantic.*voice \+4\.0 dB, music duck -4\.0 dB/);
+  assert.match(text, /strike 1 of 5 at 107\.10 s: a cut/);
+  assert.match(text, /strike 4 of 5 at 118\.10 s: the picture cuts to black/);
+  assert.match(text, /strike 5 of 5 at 127\.10 s: the final strike: the title/);
+  assert.match(ec.sheetText(timeline({ ...clips, z: 8.7 }, map, { nodes, recording: 'mk-b' })), /strike 4 of 5 at 118\.10 s: plays over black/);
+});
+
+test('the blur chain holds each frame for four sub-frames, reads the camera at each, averages four and keeps the last of each frame', () => {
+  const chain = ec.blurChain({ frames: 30, move: { from: { x: 0, y: 0, w: 1, roll: 0 }, to: { x: 0.4, y: 0, w: 0.6, roll: 0 } } }, 1920, 1080);
+  assert.equal(chain[0], 'fps=240:round=down', 'frame i fills sub-frames 4i to 4i+3 (the default rounding would shift them by half a frame)');
+  assert.match(chain[1], /^perspective=.*floor\(on\/4\).*:eval=frame/, 'the camera at the sub-frame clock');
+  assert.equal(chain[2], 'tmix=frames=4');
+  assert.match(chain[3], /^select='eq\(mod\(n,4\),3\)'$/, 'the average that has all four of its frame`s sub-frames');
+  assert.equal(chain[4], 'setpts=N/60/TB');
+});
+
+test('the whip graph slides the outgoing shot (its last frame held) off and the incoming (its first held) on, over black, four sub-frames averaged', () => {
+  const g = ec.whipGraph('left', 6);
+  assert.match(g, /\[0:v\]tpad=stop=6:stop_mode=clone,fps=240:round=down,trim=end_frame=24/);
+  assert.match(g, /\[1:v\]tpad=start=3:start_mode=clone:stop=6:stop_mode=clone/, 'half of the whip is the incoming shot`s hold before it arrives');
+  assert.match(g, /overlay=x='.*':y='.*':eval=frame/);
+  assert.match(g, /tmix=frames=4.*select='eq\(mod\(n,4\),3\)'.*setpts=N\/60\/TB/);
+  assert.match(ec.whipGraph('up', 8), /trim=end_frame=32/);
 });

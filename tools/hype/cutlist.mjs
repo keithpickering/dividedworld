@@ -1,8 +1,8 @@
 /**
  * The cut list's reader (docs/plans/2026-11-21-commentary-video-revision-design.md, section 2; the plan's Task R3). Pure: it is given the
  * list, the timeline, the captions and what is known of each take, and returns the shots of the film's pictures from its first frame to
- * the coda, or refuses naming the row. The edit (edit-commentary.mjs) cuts the film from the shots; the coda is cut on its chords (up to the title's strike) by the
- * edit itself, as it was.
+ * the coda, or refuses naming the row. The edit (edit-commentary.mjs) cuts the film from the shots; the coda is cut on its strikes (up to the one the black begins on) by the
+ * edit itself.
  *
  * THE LIST (`instances/divided-world/ui/hype/cutlist.json`) is `{ "rows": [...] }`. A row is a shot, and runs to the next row's start (the
  * last to the coda). Two kinds start on different things:
@@ -20,10 +20,20 @@
  * own), `punch` (percent, on the shot's first frame), `hold` (the take may be held on its last frame) and `slate` (the take is not filmed
  * yet; a placeholder stands in and the run says so). `note` is the author's, and ignored. The rows are put in time order.
  *
+ *   `copy`       with `statement`: which repeat of a statement a LENGTHENED version plays (0, the original, by default).
+ *   `blur`       true renders the shot's camera with motion blur (the camera's own, four sub-frames across a 180 degree shutter, moves.mjs); a move or
+ *                punch of a shot in a frantic node is blurred by default and `"blur": false` refuses it.
+ *   `cut`        how the shot is entered: `"whip-left"`, `"whip-right"`, `"whip-up"` or `"whip-down"` (moves.mjs): a fast pan that slides the outgoing
+ *                shot off and this one on, both blurred, `cutFrames` frames (even, 6 by default), half in each shot. The first shot has none.
+ *   a row that syncs with no `word` and no `at` is on the node's VOICE, its `lead` defaulting to the whole lead before it: the first node's
+ *   `node-click` landing falls on the voice's first word and the shot begins on the film's first frame.
+ *
+ * The rows cut the narrated nodes (calm and frantic) only: the coda and the line over black are the edit's (`directCoda` directs the coda).
+ *
  * REFUSED: a statement whose beats do not add up to 16, or that the version has not got; a take that is neither on disk nor a slate; a shot
  * under 6 frames; a shot past its take's end without `hold`; two cuts on one frame; a first row that does not start the film; a landing named
- * that the take has not, or that has moved from `expect`; a start before the take's; a row's own move or punch before node 4 (locked off; a take's
- * own camera is simply not applied there).
+ * that the take has not, or that has moved from `expect`; a start before the take's; a row's own move or punch in a node the data locks off (a
+ * take's own camera is simply not applied there); a whip on the first shot or longer than the shots at its ends can give.
  *
  * A TAKE is `{ seconds, width?, landed?, move?, punch?, punches? }`: its notes (the edit reads them from `<take>.json`). Its own `move` and
  * `punch` apply to its shots (a row's replaces them), its `punches` where they fall in a shot, and in part three every landing is a small punch.
@@ -162,10 +172,12 @@ export function resolveList(list, { tl, cues, takes }) {
 }
 
 /**
- * The coda's shots, directed. The edit cuts node 11 on the music's chords, up to the title's strike (the last two strikes are the title's, `c-title-1` and `c-title-2`, and a list entry for them is refused); `list.coda` (an array, one entry a cut, in order, `null` or absent for
- * the take's own: node 11's) names a take and where in it for the cut: `{ "take": "b-scrub-3", "from": 2.4, "move": ..., "punch": ... }`. The
- * chord's own punch stays unless the entry gives one. Refused: more entries than cuts, a take that is not on disk, a shot past its take's end.
- * @param {any[]} cuts the coda's cuts (the timeline's node 11) @param {(any | null)[] | undefined} coda @param {Record<string, TakeInfo>} takes
+ * The coda's shots, directed. The edit cuts the coda on the music's strikes, one cut to each, up to the strike the black begins on (the timeline's
+ * `ending.blackStrike`; a strike inside the black plays over black, and the title is the final strike's); `list.coda` (an array, one entry a cut, in
+ * order, `null` or absent for the cut's own take) names a take and where in it for the cut: `{ "take": "b-scrub-3", "from": 2.4, "move": ..., "punch": ... }`.
+ * The strike's own punch stays unless the entry gives one. Refused: more entries than cuts (an entry at or after the strike the black begins on), a
+ * take that is not on disk, a shot past its take's end.
+ * @param {any[]} cuts the coda's cuts (the timeline's coda node) @param {(any | null)[] | undefined} coda @param {Record<string, TakeInfo>} takes
  */
 export function directCoda(cuts, coda, takes) {
   if (!coda) return cuts;

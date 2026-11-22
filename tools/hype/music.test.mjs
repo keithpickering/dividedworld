@@ -113,7 +113,7 @@ test('a LENGTHENED version repeats a pair of block 1: statements 2 and 3 again, 
     near(v.coda.chords[0].t, map.coda.chords[0].t + added, 1e-9, `${name}: first chord`);
     near(v.statements.find((/** @type {{ n: number }} */ s) => s.n === 7).start, map.statements[6].start + added, 1e-9, `${name}: statement 7`);
     const copies = v.statements.filter((/** @type {{ n: number }} */ s) => s.n === 2);
-    assert.deepEqual(copies.map((/** @type {{ copy: number }} */ s) => s.copy), Array.from({ length: times + 1 }, (_, k) => k), 'copy 0 is the original');
+    assert.deepEqual(copies.map((/** @type {{ copy?: number }} */ s) => s.copy), Array.from({ length: times + 1 }, (_, k) => k), 'copy 0 is the original');
     near(copies[1].start, map.statements[1].start + loop, 1e-9, `${name}: the repeat of statement 2`);
     v.statements.forEach((/** @type {any} */ s, /** @type {number} */ i) => { if (i) near(v.statements[i - 1].start + v.statements[i - 1].length, s.start, 0.002, `${name}: ${s.n} follows`); });
     assert.equal(v.joins.length, times, `${name}: a join for each repeat`);

@@ -14,7 +14,8 @@
  * THE NODES are whatever `commentary.ts` says, in its order: nothing here knows an id. What the timeline reads from each is
  *   `role`   `calm` (the opening, in the narrator's control), `frantic` (the picture takes over and the music rises) or `end` (the one line over
  *            black, last). The old `part` is mapped when there is no role: 1 and 2 calm, 3 frantic, and the node `n11` the end.
- *   `after`  seconds of silence before the node (the clip before it owns them); absent, a breath of 0.35 s. The first node's pause is `--lead`.
+ *   `after`  seconds of silence before the node (the clip before it owns them); absent, a breath of 0.35 s. The first node's is not read: the film's
+ *            opening silence is `--lead` (4.5 s).
  *   `locked` (optional; the old part 1 is locked) the camera is locked off there: no move, punch or landing punch.
  *   `caption` (optional, a string or lines) is shown in place of the node's `lines` on the screen (the voice says the lines).
  * and its clip is `<voice folder>/<id>.<ext>`.
@@ -184,10 +185,13 @@ export function chooseVersion(starts, threshold) {
  * @param {{ nodes: NodeSpec[], lead?: number, recording?: string, breath?: number, moves?: Record<string, Camera>, sizes?: Record<string, number>, landed?: Record<string, { what: string, frame: number }[]> }} options
  *   `moves`: the camera's moves by node; `sizes`: each node's take's width in pixels (default 1920); `landed`: what lands in each node, and at which frame of its take.
  */
-export function timeline(clips, map, { nodes: given, lead = LEAD, recording, breath = BREATH, moves = {}, sizes = {}, landed = {} } = /** @type {any} */ ({})) {
+export function timeline(clips, map, { nodes: given, lead: leadGiven, recording, breath = BREATH, moves = {}, sizes = {}, landed = {} } = /** @type {any} */ ({})) {
   if (!given) throw new Error('timeline needs the nodes (commentary.ts): their roles and pauses decide the film');
+  const order = roles(given);
+  /* The first node's own `after` is not read: the lead is the opening silence. */
+  const lead = leadGiven ?? LEAD;
   if (typeof lead !== 'number' || !Number.isFinite(lead) || lead < 0) throw new Error(`the lead is a number of seconds, zero or more, not ${JSON.stringify(lead)}`);
-  const order = roles(given), endNode = /** @type {typeof order[number]} */ (order.at(-1)), spoken = order.slice(0, -1);
+  const endNode = /** @type {typeof order[number]} */ (order.at(-1)), spoken = order.slice(0, -1);
   for (const { id } of order) if (clips[id] === undefined) throw new Error(`${id} has no clip: a length in seconds is needed for every node`);
   for (const [k, seconds] of Object.entries(clips)) if (typeof seconds !== 'number' || !Number.isFinite(seconds) || seconds < 0) throw new Error(`${k} has a clip length of ${JSON.stringify(seconds)}: a clip is a number of seconds, zero or more`);
   for (const n of order.filter((x) => x.locked)) if (moves[n.id] && Object.values(moves[n.id]).some((v) => v !== undefined)) throw new Error(`${n.id}: the camera is locked off here (the design, section 5a), so it carries no move, punch or landing punch`);
@@ -491,24 +495,12 @@ export function checkRecording(map, recording, anyRecording = false, version = '
   if (sha1 !== map.sha1) throw new Error(`the music's sha1 is ${sha1} but the map was measured on ${map.sha1} (--any-recording allows another recording of the same length)`);
 }
 
-/* ================================================================================================================================ */
-/* Everything below runs ffmpeg, and runs only when this file is the command. */
-
-const SOUNDS = 'instances/divided-world/ui/sounds';
-/** The game's sound for what lands; a kind not listed has none. */
-export const SOUND_FOR = { 'steel-chair': 'steel-chair-hit.mp3', hit: 'steel-chair-hit.mp3', filing: 'boo-1.mp3' };
-/** Seconds into a sound file where its impact sits (measured: the chair's hit peaks 0.07 s in), so the impact falls on the landing's frame. */
-export const SOUND_ONSET = { 'steel-chair-hit.mp3': 0.07 };
-const DUCK = { db: -10, attack: 0.15, release: 0.4 };
-const MUSIC_LEVEL = 0.8;
-
 /**
  * The music's gain over the film as one expression of `t`: down by `db` while any clip plays (a ramp of `attack` s before it, a
  * ramp of `release` s after), and never from `until` on (the coda). Pure.
  *
- * The music's first note is never already ducked: a clip that begins with the music (node 5's does) starts its `attack` ramp at `from`,
- * the music's first frame, so the first 150 ms ramp down rather than starting low. (The other choice, delaying the voice, would
- * move a clip inside a window that is already fitted to its length.) And a clip whose release would run into the coda releases
+ * The music's first note is never already ducked: a clip that begins with the music starts its `attack` ramp at `from`,
+ * the music's first frame, so the first 150 ms ramp down rather than starting low. And a clip whose release would run into the coda releases
  * fully before it: its duck ends `release` s before `until`, so the music is back to full level when the coda's first chord sounds.
  * @param {{ start: number, length: number, db?: number }[]} spans each may carry its own depth `db` (the frantic nodes duck less)
  * @param {{ db: number, attack: number, release: number }} duck
@@ -526,9 +518,74 @@ export function duckExpression(spans, { db, attack, release }, until, from = -In
   return `1-(${deep})*lt(t,${until.toFixed(4)})`;
 }
 
+/**
+ * The timing sheet (`--sheet`): the lead, each node's time, the version and the music's start, where in the speech the blocks fall, each strike of
+ * the coda and what the picture does on it, the black and the line in it, the title's strike and the film's end. Pure.
+ * @param {Timeline} tl
+ * @param {{ id: string, lines?: readonly string[], caption?: string | readonly string[] }[]} [commentary]
+ */
+export function sheetText(tl, commentary = []) {
+  const s = (/** @type {number} */ x) => x.toFixed(2), e = tl.ending, m = tl.music;
+  const lines = [`lead: the film opens in silence for ${s(tl.lead)} s on the first take`];
+  for (const n of tl.nodes) {
+    const voice = n.voice.length ? `voice ${s(n.voice[0].start)} to ${s(n.voice[0].start + n.voice[0].length)} s` : 'no voice';
+    const mix = n.role === 'frantic' || n.role === 'end' ? `, voice ${n.mix.voiceDb >= 0 ? '+' : ''}${n.mix.voiceDb.toFixed(1)} dB, music duck ${n.mix.duckDb.toFixed(1)} dB` : '';
+    lines.push(`  ${n.id.padEnd(8)} ${n.role.padEnd(8)} ${s(n.start).padStart(7)} to ${s(n.end).padStart(7)} s  ${voice}${mix}`);
+  }
+  lines.push('the coda, strike by strike:');
+  m.strikes.forEach((t, i) => {
+    const what = i + 1 === e.strikes ? `the final strike: the title (c-title from its frame 0)` : i + 1 === e.blackStrike ? 'the picture cuts to black' : i + 1 < e.blackStrike ? `a cut (cut ${i + 1} of ${e.blackStrike - 1}; list.coda directs it)` : 'plays over black';
+    lines.push(`  strike ${i + 1} of ${e.strikes} at ${s(t)} s: ${what}`);
+  });
+  void commentary;
+  return lines.join('\n');
+}
+
+/* ================================================================================================================================ */
+/* Everything below runs ffmpeg, and runs only when this file is the command. */
+
+const SOUNDS = 'instances/divided-world/ui/sounds';
+/** The game's sound for what lands; a kind not listed has none (the game has no sound for a posted reply's "send"). */
+export const SOUND_FOR = { 'steel-chair': 'steel-chair-hit.mp3', hit: 'steel-chair-hit.mp3', filing: 'boo-1.mp3' };
+/** Seconds into a sound file where its impact sits (measured: the chair's hit peaks 0.07 s in), so the impact falls on the landing's frame. */
+export const SOUND_ONSET = { 'steel-chair-hit.mp3': 0.07 };
+const DUCK = { db: DUCK_DB, attack: 0.15, release: 0.4 };
+const MUSIC_LEVEL = 0.8;
+
 /** @param {string} p an ffmpeg filter argument's path */
 const esc = (p) => p.replace(/\\/gu, '/').replace(/:/gu, '\\:').replace(/'/gu, "\\'");
 const FILM = '0x15171d';
+/** The encode of every piece: the film's range and matrix are tagged so the join can copy. @param {string} preset */
+const encodeArgs = (preset) => ['-r', String(F), '-an', '-c:v', 'libx264', '-preset', preset, '-crf', '17', '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709'];
+
+/**
+ * The filters of a motion-blurred, moved shot (after its picture is scaled to `w` by `h`): the picture held for each of four sub-frames
+ * (`fps=240:round=down`: frame i fills sub-frames 4i to 4i+3), the camera's `perspective` evaluated at each sub-frame's own time
+ * (moves.mjs `corners`, `sub`), four averaged (`tmix`), and the average taken at the last sub-frame of each frame (`select`): the camera's own blur,
+ * sharp wherever the camera is still. Pure.
+ * @param {Parameters<typeof corners>[0]} cut @param {number} w @param {number} h
+ */
+export function blurChain(cut, w, h) {
+  const c = corners(cut, w, h, 'sub');
+  return [`fps=${F * SUBFRAMES}:round=down`, `perspective=${Object.entries(c).map(([k, v]) => `${k}='${v}'`).join(':')}:interpolation=cubic:eval=frame`, `tmix=frames=${SUBFRAMES}`, `select='eq(mod(n,${SUBFRAMES}),${SUBFRAMES - 1})'`, `setpts=N/${F}/TB`];
+}
+
+/**
+ * The filter graph of a whip: the outgoing shot's last `frames / 2` frames (input 0, its last frame held for the rest) slide off and the incoming
+ * shot's first `frames / 2` (input 1, its first frame held before) slide on, over black, both averaged over four sub-frames. Pure.
+ * @param {string} dir @param {number} frames
+ */
+export function whipGraph(dir, frames) {
+  const half = frames / 2, e = whipExpressions(dir, frames, 1920, 1080), sub = F * SUBFRAMES, n = frames * SUBFRAMES;
+  const at = (/** @type {string} */ x, /** @type {string} */ y) => `x='${x}':y='${y}':eval=frame`;
+  return [
+    `[0:v]tpad=stop=${frames}:stop_mode=clone,fps=${sub}:round=down,trim=end_frame=${n},setpts=N/${sub}/TB[a]`,
+    `[1:v]tpad=start=${half}:start_mode=clone:stop=${frames}:stop_mode=clone,fps=${sub}:round=down,trim=end_frame=${n},setpts=N/${sub}/TB[b]`,
+    `color=c=black:s=1920x1080:r=${sub}:d=${frames / F}[base]`,
+    `[base][a]overlay=${at(e.ax, e.ay)}[t]`,
+    `[t][b]overlay=${at(e.bx, e.by)},tmix=frames=${SUBFRAMES},select='eq(mod(n,${SUBFRAMES}),${SUBFRAMES - 1})',setpts=N/${F}/TB,format=yuv420p,setsar=1[w]`,
+  ].join(';');
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -536,11 +593,12 @@ async function main() {
   const TAKES = flag('takes', '.runs/hype'), VOICE = flag('voice', '.runs/hype/voice');
   const MUSIC = flag('music', '.runs/hype/music/mountain-king-musopen.flac');
   const OUT = flag('out', '.runs/hype/commentary.mp4'), PART = flag('part', ''), PRESET = flag('preset', 'veryfast');
-  if (PART && !['one', 'two', 'three', 'out'].includes(PART)) throw new Error(`--part is one, two, three or out, not ${PART}`);
+  if (PART && !['calm', 'frantic', 'coda'].includes(PART)) throw new Error(`--part is calm, frantic or coda, not ${PART}`);
 
-  const { commentary, ...instance } = await import(pathToFileURL(path.resolve('instances/divided-world/ui/hype/commentary.ts')).href);
-  const { title: TITLE_WORDS, note: TITLE_NOTE_WORDS } = titleWords(instance);
-  const map = JSON.parse(readFileSync('instances/divided-world/ui/hype/music-map.json', 'utf8'));
+  const COMMENTARY = flag('commentary', 'instances/divided-world/ui/hype/commentary.ts');
+  const { commentary, ...instance } = await import(pathToFileURL(path.resolve(COMMENTARY)).href);
+  const { title: TITLE_WORDS, tag: TITLE_TAG_WORDS } = titleWords(instance);
+  const map = JSON.parse(readFileSync(flag('map', 'instances/divided-world/ui/hype/music-map.json'), 'utf8'));
   const WORK = path.join(path.dirname(OUT), 'work');
   mkdirSync(WORK, { recursive: true });
 
@@ -550,20 +608,13 @@ async function main() {
   const resolved = resolveInputs({ commentary, voiceFiles: haveVoice ? readdirSync(VOICE) : null, takeFiles, haveMusic });
   for (const note of resolved.notes) console.log(`NOTE ${note}`);
   const voiceFile = (/** @type {string | null} */ name) => (name ? path.join(VOICE, name) : null);
-  /** @type {Record<string, number | number[]>} */
+  /** @type {Record<string, number>} */
   const clips = {};
-  /** @type {Record<string, string | string[] | null>} */
+  /** @type {Record<string, string | null>} */
   const voices = {};
   for (const node of commentary) {
-    const named = resolved.voice[node.id];
-    if (node.id === 'n11') {
-      const files = /** @type {(string | null)[]} */ (named).map(voiceFile);
-      voices.n11 = /** @type {string[]} */ (files);
-      clips.n11 = node.lines.map((/** @type {string} */ l, /** @type {number} */ i) => (files[i] ? duration(files[i]) : spoken(l)));
-    } else {
-      voices[node.id] = voiceFile(/** @type {string | null} */ (named));
-      clips[node.id] = voices[node.id] ? duration(/** @type {string} */ (voices[node.id])) : spoken(node.lines.join(' '));
-    }
+    voices[node.id] = voiceFile(resolved.voice[node.id]);
+    clips[node.id] = voices[node.id] ? duration(/** @type {string} */ (voices[node.id])) : spoken(node.lines.join(' '));
   }
   /* The takes, their notes, and the camera's moves. */
   const takePath = (/** @type {string} */ stem) => path.join(TAKES, `${stem}.mp4`);
@@ -573,14 +624,11 @@ async function main() {
   const landed = {};
   /** @type {Record<string, number>} */
   const sizes = {};
-  /** @type {Record<string, string[]>} */
-  const framings = resolved.framings;
   const overrides = flag('moves', '') ? JSON.parse(readFileSync(flag('moves', ''), 'utf8')) : {};
   for (const node of commentary) {
     const id = node.id;
-    const names = framings[id] ?? [];
-    const probe = [takePath(`c-${id}`), ...names.map((f) => takePath(`c-${id}-${f}`))].find((f) => existsSync(f));
-    if (probe) sizes[id] = videoInfo(probe).width;
+    const probe = takePath(`c-${id}`);
+    if (existsSync(probe)) sizes[id] = videoInfo(probe).width;
     const notes = path.join(TAKES, `c-${id}.json`);
     const raw = existsSync(notes) ? JSON.parse(readFileSync(notes, 'utf8')) : {};
     const obj = Array.isArray(raw) ? { landed: raw } : raw;
@@ -590,8 +638,8 @@ async function main() {
   }
 
   const RECORDING = flag('recording', '');
-  if (RECORDING && !VERSIONS.includes(RECORDING)) throw new Error(`--recording is ${VERSIONS.join(', ')}, not ${RECORDING}`);
-  const tl = timeline(clips, map, { nodes: speechNodes(commentary), recording: RECORDING || undefined, moves, framings, sizes, landed });
+  if (RECORDING && !VERSIONS.includes(RECORDING) && !map.versions?.[RECORDING]) throw new Error(`--recording is ${['full', ...Object.keys(map.versions ?? {})].join(', ')}, not ${RECORDING}`);
+  const tl = timeline(clips, map, { nodes: speechNodes(commentary), lead: has('lead') ? Number(flag('lead', LEAD)) : undefined, recording: RECORDING || undefined, moves, sizes, landed });
   console.log(placementText(tl));
   /* The version's file: the recording itself, or the cut `music-cut.mjs` made of it beside it. */
   const musicFile = tl.music.version === 'full' ? MUSIC : path.join(path.dirname(MUSIC), `${tl.music.version}.flac`);
@@ -621,13 +669,12 @@ async function main() {
     }
     cutList = resolveList(list, { tl, cues: cuesAll, takes: info });
     for (const t of cutList.slates) console.log(`NOTE ${t} is a slate in the cut list: no take, a placeholder stands in, marked PLACEHOLDER PICTURE`);
-    console.log(`cut list ${LIST}: ${cutList.shots.length} shots\n${cutList.blocks.map((b) => `  ${b.name.padEnd(12)} ${String(b.count).padStart(3)} shots, median ${b.median.toFixed(2)} s`).join('\n')}`);
+    console.log(`cut list ${LIST}: ${cutList.shots.length} shots\n${cutList.blocks.map((b) => `  ${b.name.padEnd(16)} ${String(b.count).padStart(3)} shots, median ${b.median.toFixed(2)} s`).join('\n')}`);
   }
+  const codaNode = /** @type {NodeCut} */ (tl.nodes.find((n) => n.role === 'coda'));
+  const codaCuts = directCoda(codaNode.cuts, codaList, info);
   if (has('sheet')) {
-    const n11 = /** @type {typeof tl.nodes[number]} */ (tl.nodes.find((x) => x.id === 'n11'));
-    console.log(`\npart one 0 to ${tl.part.one[1].toFixed(2)} s; two to ${tl.part.two[1].toFixed(2)}; three to ${tl.part.three[1].toFixed(2)}`);
-    for (const v of n11.voice) console.log(`  n11 line ${(v.line ?? 0) + 1}: ${v.start.toFixed(2)} to ${(v.start + v.length).toFixed(2)} s`);
-    console.log(`  the title's strike (c-title-1) ${tl.out.titleStart.toFixed(2)} s; the final strike (c-title-2) ${tl.out.finalStart.toFixed(2)} s; the picture fades from ${tl.out.fadeStart.toFixed(2)} s; the film ends at ${tl.out.end.toFixed(2)} s`);
+    console.log(`\n${sheetText(tl, commentary)}`);
     return;
   }
 
@@ -639,11 +686,11 @@ async function main() {
   const soundStamp = resolved.placeholderSound ? stamp('sound', 'PLACEHOLDER SOUND', 'x=24:y=24', 'red') : null;
 
   /* Which of the film's pieces this run makes. */
-  const [from, to] = PART ? tl.part[/** @type {'one'} */ (PART)] : [0, tl.total];
+  const [from, to] = PART ? tl.part[/** @type {'calm'} */ (PART)] : [0, tl.total];
   const fromFrame = Math.round(from * F), toFrame = Math.round(to * F);
-  const inPart = (/** @type {{ startFrame: number, frames: number }} */ c) => c.startFrame >= fromFrame && c.startFrame < toFrame;
+  const inPart = (/** @type {{ startFrame: number }} */ c) => c.startFrame >= fromFrame && c.startFrame < toFrame;
 
-  /** @typedef {{ name: string, startFrame: number, frames: number, take?: string, slate?: string[], fadeAt?: number, cut?: Cut }} Piece */
+  /** @typedef {{ name: string, startFrame: number, frames: number, take?: string, slate?: string[], black?: boolean, fadeAt?: number, cut?: Cut & { blur?: boolean, whip?: { dir: string, frames: number } } }} Piece */
   /** @type {Piece[]} */
   const pieces = [];
   const firstLine = (/** @type {string} */ id) => commentary.find((/** @type {{ id: string }} */ c) => c.id === id)?.lines[0] ?? '';
@@ -651,26 +698,26 @@ async function main() {
     const real = !stampsFor(resolved, { take: s.take }, takeFiles).slate;
     pieces.push({ name: `shot ${s.row}`, startFrame: s.startFrame, frames: s.frames, take: real ? takePath(s.take) : undefined, slate: real ? undefined : [s.take, ...wrap(firstLine(s.node), 36)], cut: s });
   }
-  for (const n of tl.nodes.filter((x) => !cutList || x.id === 'n11')) {
-    const first = firstLine(n.id);
-    for (const [k, c] of (n.id === 'n11' ? directCoda(n.cuts, codaList, info) : n.cuts).entries()) {
-      const take = takePath(c.take);
-      const real = !stampsFor(resolved, { take: c.take }, takeFiles).slate;
-      pieces.push({ name: `${n.id} cut ${k + 1}`, startFrame: c.startFrame, frames: c.frames, take: real ? take : undefined, slate: real ? undefined : [c.take, ...wrap(first, 36)], cut: c });
-    }
+  if (!cutList) for (const n of tl.nodes.filter((x) => x.role === 'calm' || x.role === 'frantic')) for (const [k, c] of n.cuts.entries()) {
+    const real = !stampsFor(resolved, { take: c.take }, takeFiles).slate;
+    pieces.push({ name: `${n.id} cut ${k + 1}`, startFrame: c.startFrame, frames: c.frames, take: real ? takePath(c.take) : undefined, slate: real ? undefined : [c.take, ...wrap(firstLine(n.id), 36)], cut: c });
   }
-  /* The title: c-title-1 from the title's strike, c-title-2 from the final strike, each from its own frame 0; a missing take is a slate. */
-  for (const [k, [name, a, b, words]] of /** @type {[string, number, number, string[]][]} */ ([['c-title-1', tl.out.titleStart, tl.out.finalStart, [TITLE_WORDS]], ['c-title-2', tl.out.finalStart, tl.out.end, wrap(TITLE_NOTE_WORDS, 30)]]).entries()) {
-    const real = !resolved.titleSlates.includes(name);
-    pieces.push({ name: `title ${k + 1}`, startFrame: Math.round(a * F), frames: framesBetween(a, b), take: real ? takePath(name) : undefined, slate: real ? undefined : [name, ...words], fadeAt: k === 1 ? tl.out.fadeStart - a : undefined, cut: { take: name, at: 0, start: a, length: b - a, startFrame: Math.round(a * F), frames: framesBetween(a, b), from: 0 } });
+  /* The coda: a cut on each strike up to the one the black begins on. */
+  for (const [k, c] of codaCuts.entries()) {
+    const real = !stampsFor(resolved, { take: c.take }, takeFiles).slate;
+    pieces.push({ name: `coda cut ${k + 1}`, startFrame: c.startFrame, frames: c.frames, take: real ? takePath(c.take) : undefined, slate: real ? undefined : [c.take, ...wrap(firstLine(tl.ending.line), 36)], cut: c });
   }
-  const mine = pieces.filter(inPart);
+  /* The black: from the strike it begins on to the final strike, the end line in it. */
+  pieces.push({ name: 'black', startFrame: Math.round(tl.out.blackStart * F), frames: framesBetween(tl.out.blackStart, tl.out.finalStart), black: true });
+  /* The title: `c-title` from its frame 0 at the final strike to the film's end, fading over the last FADE s; a missing take is a slate. */
+  pieces.push({ name: 'title', startFrame: Math.round(tl.out.finalStart * F), frames: framesBetween(tl.out.finalStart, tl.out.end), take: resolved.titleSlate ? undefined : takePath('c-title'), slate: resolved.titleSlate ? ['c-title', TITLE_WORDS, ...wrap(TITLE_TAG_WORDS, 30)] : undefined, fadeAt: tl.out.fadeStart - tl.out.finalStart, cut: { take: 'c-title', at: 0, start: tl.out.finalStart, length: tl.out.end - tl.out.finalStart, startFrame: Math.round(tl.out.finalStart * F), frames: framesBetween(tl.out.finalStart, tl.out.end), from: 0 } });
+  pieces.sort((a, b) => a.startFrame - b.startFrame);
 
   const cues = cuesAll.filter((c) => c.end > from && c.start < to);
   writeFileSync(OUT.replace(/\.mp4$/u, '.srt'), srt(cues.map((c) => ({ ...c, start: Math.max(0, c.start - from), end: c.end - from }))));
 
   /* libass reads an .srt on a 288-line page, so FontSize 9 is 34 px of the 1080-line film, MarginV 4 is 15 px, and the margins 19 are 70 px. */
-  /* One cut: its picture (the take or a slate, moved), its captions and its stamps, encoded once. */
+  /* One cut: its picture (the take, a slate or black; moved, and blurred when it asks), its captions and its stamps, encoded once. */
   const encode = (/** @type {Piece} */ p, /** @type {number} */ i) => {
     const file = path.join(WORK, `cut-${String(i).padStart(3, '0')}.mp4`);
     const seconds = p.frames / F;
@@ -688,6 +735,8 @@ async function main() {
       input = ['-ss', from0.toFixed(4), '-i', p.take];
       if (p.cut?.speed !== undefined && Math.abs(p.cut.speed - 1) > 1e-9) chain.push(`setpts=PTS/${p.cut.speed.toFixed(6)}`);
       chain.push(`fps=${F}`, `tpad=stop_mode=clone:stop_duration=${Math.ceil(seconds) + 2}`);
+    } else if (p.black) {
+      input = ['-f', 'lavfi', '-i', `color=c=black:s=1920x1080:r=${F}`];
     } else {
       input = ['-f', 'lavfi', '-i', `color=c=${FILM}:s=1920x1080:r=${F}`];
       const [label, ...text] = /** @type {string[]} */ (p.slate);
@@ -703,8 +752,13 @@ async function main() {
         /* `perspective` takes the rectangle (turned by its roll) out of the picture at its own size, at fractional positions; a take larger than the film is then scaled down. */
         const w = Math.max(srcWidth, 1920), h = Math.round((w * 9) / 16);
         chain.push(`scale=${w}:${h}:flags=lanczos`);
-        const c = corners({ ...cut, frames: p.frames }, w, h);
-        chain.push(`perspective=${Object.entries(c).map(([k, v]) => `${k}='${v}'`).join(':')}:interpolation=cubic:eval=frame`);
+        if (cut.blur) {
+          /* The camera's own motion blur: four sub-frames of the move averaged (blurChain). */
+          chain.push(...blurChain({ ...cut, frames: p.frames }, w, h));
+        } else {
+          const c = corners({ ...cut, frames: p.frames }, w, h);
+          chain.push(`perspective=${Object.entries(c).map(([k, v]) => `${k}='${v}'`).join(':')}:interpolation=cubic:eval=frame`);
+        }
         if (w !== 1920) chain.push('scale=1920:1080:flags=lanczos');
       } else chain.push('scale=1920:1080:flags=lanczos');
     }
@@ -719,12 +773,35 @@ async function main() {
     }
     /* The last piece's picture goes to black over the film's last FADE s: stamps and all. */
     if (p.fadeAt !== undefined) chain.push(`fade=t=out:st=${p.fadeAt.toFixed(4)}:d=${FADE}:color=black`);
-    run([...input, '-vf', chain.join(','), '-frames:v', String(p.frames), '-r', String(F), '-an', '-c:v', 'libx264', '-preset', PRESET, '-crf', '17', '-pix_fmt', 'yuv420p', '-color_range', 'tv', '-colorspace', 'bt709', '-color_primaries', 'bt709', '-color_trc', 'bt709', file], `encode ${p.name}`);
-    console.log(`${(p.startFrame / F).toFixed(2).padStart(8)} s  ${p.name.padEnd(12)} ${p.frames} frames${p.take ? ` of ${path.basename(p.take)}` : p.slate ? ' (slate)' : ''}${p.cut?.move ? ' (move)' : ''}${p.cut?.punch || p.cut?.punches ? ' (punch)' : ''}`);
+    const t0 = Date.now();
+    run([...input, '-vf', chain.join(','), '-frames:v', String(p.frames), ...encodeArgs(PRESET), file], `encode ${p.name}`);
+    console.log(`${(p.startFrame / F).toFixed(2).padStart(8)} s  ${p.name.padEnd(12)} ${p.frames} frames${p.take ? ` of ${path.basename(p.take)}` : p.black ? ' (black)' : p.slate ? ' (slate)' : ''}${p.cut?.move ? ' (move)' : ''}${p.cut?.punch || p.cut?.punches ? ' (punch)' : ''}${p.cut?.blur ? ` (blur, ${((Date.now() - t0) / 1000).toFixed(1)} s to render)` : ''}${p.cut?.whip ? ` (${p.cut.whip.frames}-frame whip in)` : ''}`);
     return file;
   };
 
-  const files = mine.sort((a, b) => a.startFrame - b.startFrame).map(encode);
+  const mine = pieces.filter(inPart);
+  const encoded = mine.map((p, i) => ({ p, file: encode(p, i), start: p.startFrame, frames: p.frames }));
+  /** A whip on a piece's start replaces the outgoing piece's last half and the incoming piece's first half with a composite (whipGraph). @type {{ file: string, start: number }[]} */
+  const sequence = [];
+  const trim = (/** @type {string} */ file, /** @type {number} */ a, /** @type {number} */ b, /** @type {string} */ out, /** @type {string[]} */ extra = []) => run(['-i', file, '-vf', `trim=start_frame=${a}:end_frame=${b},setpts=PTS-STARTPTS`, ...encodeArgs(PRESET), ...extra, out], `trim ${path.basename(file)}`);
+  encoded.forEach((e, k) => {
+    const next = encoded[k + 1], own = e.p.cut?.whip, outgoing = next?.p.cut?.whip;
+    const head = own ? own.frames / 2 : 0, tail = outgoing ? outgoing.frames / 2 : 0;
+    if (!head && !tail) { sequence.push({ file: e.file, start: e.start }); return; }
+    const main = e.file.replace(/\.mp4$/u, '-main.mp4');
+    trim(e.file, head, e.frames - tail, main);
+    sequence.push({ file: main, start: e.start + head });
+    if (outgoing && next) {
+      const half = outgoing.frames / 2, tailFile = e.file.replace(/\.mp4$/u, '-tail.mp4'), headFile = next.file.replace(/\.mp4$/u, '-head.mp4'), whipFile = next.file.replace(/\.mp4$/u, '-whip.mp4');
+      trim(e.file, e.frames - half, e.frames, tailFile);
+      trim(next.file, 0, half, headFile);
+      const t0 = Date.now();
+      run(['-i', tailFile, '-i', headFile, '-filter_complex', whipGraph(outgoing.dir, outgoing.frames), '-map', '[w]', '-frames:v', String(outgoing.frames), ...encodeArgs(PRESET), whipFile], `whip into ${next.p.name}`);
+      console.log(`${((next.start - half) / F).toFixed(2).padStart(8)} s  whip-${outgoing.dir} ${outgoing.frames} frames (${((Date.now() - t0) / 1000).toFixed(1)} s to render)`);
+      sequence.push({ file: whipFile, start: next.start - half });
+    }
+  });
+  const files = sequence.sort((a, b) => a.start - b.start).map((x) => x.file);
   writeFileSync(path.join(WORK, 'list.txt'), files.map((f) => `file '${path.basename(f)}'`).join('\n'));
   const picture = path.join(WORK, 'picture.mp4');
   run(['-f', 'concat', '-safe', '0', '-i', path.join(WORK, 'list.txt'), '-c', 'copy', picture], 'join the cuts');
@@ -734,24 +811,26 @@ async function main() {
   const input = (/** @type {string} */ f) => { inputs.push('-i', f); return inputs.filter((x) => x === '-i').length - 1; };
   const ms = (/** @type {number} */ s) => Math.round(s * 1000);
   for (const n of tl.nodes) {
-    n.voice.forEach((v, i) => {
-      const f = n.id === 'n11' ? /** @type {string[]} */ (voices.n11)[i] : /** @type {string} */ (voices[n.id]);
+    n.voice.forEach((v) => {
+      const f = voices[n.id];
       if (!f) return;
       const k = input(f);
-      filters.push(`[${k}:a]aresample=48000,aformat=channel_layouts=stereo,adelay=${ms(v.start)}:all=1[v${voiceOut.length}]`);
+      /* Each node's voice is lifted by its place in the frantic run (franticCurve). */
+      filters.push(`[${k}:a]aresample=48000,aformat=channel_layouts=stereo,${voiceGain(n.mix.voiceDb)},adelay=${ms(v.start)}:all=1[v${voiceOut.length}]`);
       voiceOut.push(`[v${voiceOut.length}]`);
     });
   }
-  if (voiceOut.length) { filters.push(`${voiceOut.join('')}amix=inputs=${voiceOut.length}:normalize=0:duration=longest[voice]`); mix.push('[voice]'); }
+  if (voiceOut.length) { filters.push(`${voiceOut.join('')}amix=inputs=${voiceOut.length}:normalize=0:duration=longest,${VOICE_LIMITER}[voice]`); mix.push('[voice]'); }
   if (haveMusic) {
     const k = input(musicFile), m = tl.music;
-    const duck = duckExpression(tl.nodes.flatMap((n) => n.voice).filter(() => haveVoice), DUCK, m.codaStart, m.start);
+    /* The music ducks under each clip by its node's depth: less and less through the frantic nodes. */
+    const duck = duckExpression(tl.nodes.flatMap((n) => n.voice.map((v) => ({ ...v, db: n.mix.duckDb }))).filter(() => haveVoice), DUCK, m.codaStart, m.start);
     filters.push(`[${k}:a]atrim=start=${m.from}:end=${m.until},asetpts=PTS-STARTPTS,aresample=48000,aformat=channel_layouts=stereo,adelay=${ms(m.start)}:all=1,volume=${MUSIC_LEVEL}[mu]`);
     filters.push(`[mu]volume='${duck}':eval=frame[music]`);
     mix.push('[music]');
   }
-  /* The game's sounds on their landings: the shots' (a shot's take lands them at its own frames), and node 11's. */
-  const hitList = (cutList ? [...cutList.shots.flatMap((/** @type {any} */ s) => s.hits.map((/** @type {{ what: string, at: number }} */ h) => ({ id: s.node, what: h.what, at: h.at }))), ...tl.hits.filter((h) => h.id === 'n11').map((h) => ({ id: 'n11', what: h.what, at: h.at })), ...codaHits(directCoda(/** @type {any} */ (tl.nodes.find((x) => x.id === 'n11')).cuts, codaList, info), info).map((h) => ({ id: 'n11', ...h }))] : tl.hits).sort((a, b) => a.at - b.at);
+  /* The game's sounds on their landings: the shots' (a shot's take lands them at its own frames), and the coda's directed cuts'. */
+  const hitList = (cutList ? [...cutList.shots.flatMap((/** @type {any} */ s) => s.hits.map((/** @type {{ what: string, at: number }} */ h) => ({ id: s.node, what: h.what, at: h.at }))), ...codaHits(codaCuts, info).map((h) => ({ id: 'coda', ...h }))] : tl.hits).sort((a, b) => a.at - b.at);
   const sounds = hitList.filter((h) => /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]);
   sounds.forEach((h, i) => {
     const k = input(path.join(SOUNDS, /** @type {Record<string, string>} */ (SOUND_FOR)[h.what]));
@@ -764,4 +843,3 @@ async function main() {
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) await main();
-
