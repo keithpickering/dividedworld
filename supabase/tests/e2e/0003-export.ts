@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -423,6 +423,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The chattier staff's tables (0407), insert-only and no client's: a round's claim on its slot, the day's kept pick, a session of the Boss's, a turn in it with the reply it answered (the Boss's own post quoting Ann's), and the meeting's talking point.
       insert into pool_round_claims (slot) values ('2030-01-07T10:15:00Z');
+      insert into pool_round_days (day) values ('2030-01-07');
       insert into pool_kept_picks (day, staff, pick) values ('2030-01-07', 'exp-boss', '{"trigger": "named"}');
       insert into staff_sessions (day, staff, starts_at, ends_at) values ('2030-01-07', 'exp-boss', '2030-01-07T10:00:00Z', '2030-01-07T11:00:00Z');
       insert into pool_turns (day, staff, session, thread, post_act, quoting) select '2030-01-07', 'exp-boss', (select max(id) from staff_sessions), t, id, p from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;

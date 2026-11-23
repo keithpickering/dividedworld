@@ -56,7 +56,7 @@ begin
   perform tests.unbecome();
   insert into meetings (started_at, finished_at, outcome, slot) values (now() - interval '1 day', now() - interval '1 day', 'ok', now() - interval '1 day');
   insert into staff_points (meeting, staff, line) select max(id), 'cs-boss', 'A line.' from meetings;
-  foreach t in array array['staff_sessions', 'pool_kept_picks', 'pool_turns', 'pool_answered', 'staff_points', 'pool_round_claims'] loop
+  foreach t in array array['staff_sessions', 'pool_kept_picks', 'pool_turns', 'pool_answered', 'staff_points', 'pool_round_claims', 'pool_round_days'] loop
     if (select count(*) from pg_trigger g where g.tgrelid = ('public.' || t)::regclass and g.tgname in (t || '_no_update', t || '_no_truncate') and g.tgenabled = 'A') is distinct from 2 then
       raise exception '%''s append-only triggers must fire always', t;
     end if;
@@ -96,7 +96,7 @@ declare
   who text; denied boolean; fn text;
 begin
   foreach who in array array['anon', 'authenticated'] loop
-    foreach fn in array array['select claim_pool_round(now())', 'select write_sessions(''2030-02-01'', ''[]'')', 'select sessions_awake(now())', 'select sessions_day(''2030-02-01'')',
+    foreach fn in array array['select claim_pool_round(now())', 'select write_sessions(''2030-02-01'', ''[]'')', 'select sessions_awake(now())', 'select sessions_day(''2030-02-01'')', 'select pool_day_started(''2030-02-01'')',
       'select keep_pick(''2030-02-01'', ''cs-boss'', ''{}'')', 'select kept_picks(''2030-02-01'')', 'select pool_waiting(array[''cs-boss''], now())',
       'select count(*) from pool_waiting_rows(array[''cs-boss''], now())', 'select pool_turns_today(''2030-02-01'')',
       'select write_staff_turn(''cs-boss'', 1, gen_random_uuid(), gen_random_uuid(), array[gen_random_uuid()], ''x'')',
@@ -141,6 +141,17 @@ begin
   n := write_sessions('2030-01-07', '[{"staff": "cs-boss", "start": 600, "end": 660}, {"staff": "cs-mod", "start": 720, "end": 780}]');
   if n is distinct from 2 then raise exception 'writing the day twice made it hold % sessions', n; end if;
   if (select count(*) from staff_sessions where day = '2030-01-07') is distinct from 2 then raise exception 'writing the day twice wrote rows twice'; end if;
+  -- The day is marked started by the write, once however many times it is written, and a day written with no rows is marked too (a day on which no persona keeps a session).
+  if pool_day_started('2030-01-07') is not true then raise exception 'a day with its sessions written is not marked started'; end if;
+  if (select count(*) from pool_round_days where day = '2030-01-07') is distinct from 1 then raise exception 'writing the day twice marked it more than once'; end if;
+  if pool_day_started('2030-01-09') is not false then raise exception 'a day nothing was written for is marked started'; end if;
+  n := write_sessions('2030-01-09', '[]');
+  if n is distinct from 0 or pool_day_started('2030-01-09') is not true then raise exception 'a day written with no rows is not marked started (%)', n; end if;
+  n := write_sessions('2030-01-09', '[]');
+  if (select count(*) from pool_round_days where day = '2030-01-09') is distinct from 1 then raise exception 'writing the empty day twice marked it more than once'; end if;
+  -- A refused write marks nothing.
+  perform pg_temp.refused('select write_sessions(''2030-01-11'', ''[{"staff": "nobody", "start": 0, "end": 15}]'')');
+  if pool_day_started('2030-01-11') then raise exception 'a refused write marked the day'; end if;
   -- A second visit of the same persona the same day is another session.
   n := write_sessions('2030-01-07', '[{"staff": "cs-boss", "start": 900, "end": 915}]');
   if n is distinct from 3 then raise exception 'a second session of a persona was not written: %', n; end if;
@@ -618,7 +629,7 @@ $$;
 do $$
 declare
   fns regprocedure[] := array[
-    'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
+    'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'pool_day_started(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
     'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text)',
     'pool_conversation(text, uuid, integer, integer, integer)', 'pool_record(uuid, text)', 'staff_points_latest(text)', 'staff_rows_append_only()']::regprocedure[];
   found text[];

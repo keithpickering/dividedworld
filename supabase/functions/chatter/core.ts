@@ -15,9 +15,9 @@
  *
  * **Rounds (the chattier staff design; its plan, Task 7).** The schedule fires a round every `cronMinutes` (the step of the cron's minute field, else 15), and a round does, in this order:
  *   1. The System-enabled check, then `claim_pool_round(slot)`: a round that loses the claim returns `busy` having written nothing.
- *   2. The day's first round (no `staff_sessions` rows for the day): the day's claim, the adoption of orphans, the week, then the daily path above with `keep_pick` where it wrote a post,
- *      and last the sessions each posting persona keeps that day (`drawSessions`, seeded from the day and the persona, `write_sessions`). The sessions are written last on purpose: they are
- *      what says the day's first round is done, so a round that dies earlier leaves none and the next is a first round again, which keeps and draws the same (a second keep, a second
+ *   2. The day's first round (the day not marked started, `pool_day_started`): the day's claim, the adoption of orphans, the week, then the daily path above with `keep_pick` where it wrote a post,
+ *      and last the sessions each posting persona keeps that day (`drawSessions`, seeded from the day and the persona, `write_sessions`). That call is last on purpose: it also marks the day
+ *      started (even with no session), so a round that dies earlier leaves the day unmarked and the next is a first round again, which keeps and draws the same (a second keep, a second
  *      write of the same rows, is a no-op in the database) and loses no pick.
  *   3. Each kept pick whose persona has a session open now, or none left in the day, is written by `onePick`, unchanged, and spent in `pool_spends` as ever. Every round adopts the day's orphans first.
  *   4. Turns: the replies waiting on the personas in session (`pool_waiting`), `roundShare` of what is left of the day's turns, `planTurns`; each planned turn reads its conversation, thread, record,
@@ -265,12 +265,12 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   if (round === null) return { status: 'busy' };
   const day = dayOf(slotAt);
 
-  // The day's first round is the one that finds neither a session written for the day nor a pick spent. It claims the day, as the daily run always has, before anything else is read.
-  // Either is a mark that the daily path finished: the sessions are written after every pick is kept, and a pick is spent only in step 3, after they are all kept. A day that draws no
-  // sessions (perDay 0) is marked by its first spend; a crash while keeping, or before the first post, leaves neither, and the next round redoes the day whole without losing a pick.
-  let sessions = await db.rpc<DaySession[]>('sessions_day', { on_day: day });
-  const noSessions = sessions.length === 0;
-  if (noSessions) {
+  // The day's first round is the one that finds the day not marked started (`pool_day_started`). It claims the day, as the daily run always has, before anything else is read.
+  // `write_sessions` writes the mark, last: it is the first round's last call, after every pick is kept, and it marks the day in the same transaction as the sessions (a day that draws none
+  // is marked all the same). A crash before it leaves the day unmarked, so the next round redoes the day whole (a second keep and a second write of the same rows are no-ops) and loses no pick.
+  const [started, daySessions] = await Promise.all([db.rpc<boolean>('pool_day_started', { on_day: day }), db.rpc<DaySession[]>('sessions_day', { on_day: day })]);
+  let sessions = daySessions;
+  if (!started) {
     const claimed = await db.rpc<string | null>('claim_pool_run', { on_day: day, lease: CLAIM_LEASE });
     if (claimed === null) return { status: 'busy' };
   }
@@ -278,7 +278,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   if (!context.season) return { status: 'no season' };
   const adopted = await adoptOrphans(db, day);
   const week = await db.rpc<Week>('pool_week', { today: day });
-  const first = noSessions && week.today.length === 0;
+  const first = !started;
 
   // The allowance counts the week before today, so every round of the day computes the allowance the first did.
   const todays = allowance(week.spent, settings.pool.weekly, slotAt);
@@ -400,11 +400,12 @@ async function keepThePicks(k: Keeping): Promise<{ records: PickRecord[]; kept: 
 async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: string): Promise<void> {
   const rows = tuned.system.roster.filter((p) => isPosting(context.offices[p.key]))
     .flatMap((p) => drawSessions(p, day, tuned.settings.pool, sessionRng(day, p.key)).map((s) => ({ staff: p.key, start: s.start, end: s.end })));
-  if (rows.length === 0) return;
   try {
+    // One call, which also marks the day started, even with no rows.
     await db.rpc('write_sessions', { on_day: day, rows });
   } catch (e) {
     if (stopsTheRun(e) || !isRefusal(e)) throw e;
+    // Persona by persona (each call marks the day, the first of them marking it before the rest are written: a crash among them leaves a persona without its sessions that day, never a pick lost).
     for (const staff of new Set(rows.map((r) => r.staff))) {
       try {
         await db.rpc('write_sessions', { on_day: day, rows: rows.filter((r) => r.staff === staff) });
@@ -412,6 +413,7 @@ async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: s
         if (stopsTheRun(each) || !isRefusal(each)) throw each;
       }
     }
+    await db.rpc('write_sessions', { on_day: day, rows: [] });
   }
 }
 

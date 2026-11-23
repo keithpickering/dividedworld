@@ -12,8 +12,8 @@
 -- Ways out: no state is added. Masks: a setting is the instance's own number, read by no response that could show a private fact.
 --
 -- 2. the database (Task 4; plan Task 4, design sections 2, 3, 4 and 7)
---   tables      staff_sessions, pool_kept_picks, pool_turns, pool_answered, staff_points, pool_round_claims: each append-only by a trigger firing always, no client's, RLS on.
---   functions   apply_meeting (0403_departed_personas.sql) writes the meeting's talking points (section 3 below); claim_pool_round, write_sessions, sessions_awake, sessions_day, keep_pick, kept_picks, pool_waiting,
+--   tables      staff_sessions, pool_kept_picks, pool_turns, pool_answered, staff_points, pool_round_claims, pool_round_days: each append-only by a trigger firing always, no client's, RLS on.
+--   functions   apply_meeting (0403_departed_personas.sql) writes the meeting's talking points (section 3 below); claim_pool_round, write_sessions (which also marks the day started), pool_day_started, sessions_awake, sessions_day, keep_pick, kept_picks, pool_waiting,
 --               pool_turns_today, write_staff_turn, pool_conversation, pool_record, staff_points_latest: security definer, search_path pinned, the service role's only. pool_waiting_rows, pool_waiting_in_thread and
 --               pool_waiting_in_board are the one waiting-reply read in three keys (invoker SQL, so the planner inlines each); staff_rows_append_only is the tables' trigger.
 --   presence    presence_listed (0357_post_veils.sql) is not redefined; presence_box (0128_groups.sql, plan settings of 0368_client_reads_plan_once.sql) lists a persona in session itself: in a thread's or a board's box
@@ -295,6 +295,13 @@ create table pool_round_claims (
 );
 create index pool_round_claims_slot_at on pool_round_claims (slot, at desc);
 
+-- A UTC day whose first round finished: written by write_sessions, last of the first round's work and in the same transaction as the day's sessions, so the day is marked exactly when its work is done. A round that
+-- finds the day unmarked is a first round and does the day's work whole (the draw is deterministic and a second keep or a second write of the same rows is a no-op); a day with no session drawn is marked all the same.
+create table pool_round_days (
+  day date primary key,
+  at timestamptz not null default now()
+);
+
 create function staff_rows_append_only() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 begin
@@ -305,7 +312,7 @@ revoke execute on function staff_rows_append_only() from public, anon, authentic
 do $$
 declare t text;
 begin
-  foreach t in array array['staff_sessions', 'pool_kept_picks', 'pool_turns', 'pool_answered', 'staff_points', 'pool_round_claims'] loop
+  foreach t in array array['staff_sessions', 'pool_kept_picks', 'pool_turns', 'pool_answered', 'staff_points', 'pool_round_claims', 'pool_round_days'] loop
     execute format('alter table %I enable row level security', t);
     execute format('revoke all on %I from public, anon, authenticated', t);
     execute format('create trigger %I before update or delete on %I for each row execute function staff_rows_append_only()', t || '_no_update', t);
@@ -357,8 +364,16 @@ begin
   select on_day, x.staff, (on_day::timestamp at time zone 'UTC') + x."start" * interval '1 minute', (on_day::timestamp at time zone 'UTC') + x."end" * interval '1 minute'
   from jsonb_to_recordset(rows) as x(staff text, "start" integer, "end" integer)
   on conflict (day, staff, starts_at) do nothing;
+  -- The day's mark, last, in this transaction: a day written with no rows is marked as well.
+  insert into pool_round_days (day) values (on_day) on conflict (day) do nothing;
   return (select count(*)::integer from staff_sessions s where s.day = on_day);
 end $$;
+
+-- Whether the day's first round has finished (write_sessions marked it).
+create function pool_day_started(on_day date) returns boolean
+language sql stable security definer set search_path = public, pg_temp as $$
+  select exists (select 1 from pool_round_days d where d.day = on_day)
+$$;
 
 -- The sessions open at `at` (starts_at <= at < ends_at), each as {staff, session, spent, spentByThread}: the turns the persona has spent in it in all and in each thread (planTurns reads these).
 create function sessions_awake(at timestamptz) returns jsonb
@@ -612,10 +627,10 @@ language sql stable security definer set search_path = public, pg_temp as $$
   where p.staff = staff_key and p.meeting = (select m.id from meetings m where m.outcome = 'ok' order by m.slot desc limit 1)
 $$;
 
-revoke execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
+revoke execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb), pool_day_started(date), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
   pool_waiting(text[], timestamptz), pool_turns_today(date), write_staff_turn(text, bigint, uuid, uuid, uuid[], text), pool_conversation(text, uuid, integer, integer, integer),
   pool_record(uuid, text), staff_points_latest(text) from public, anon, authenticated;
-grant execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
+grant execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb), pool_day_started(date), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
   pool_waiting(text[], timestamptz), pool_turns_today(date), write_staff_turn(text, bigint, uuid, uuid, uuid[], text), pool_conversation(text, uuid, integer, integer, integer),
   pool_record(uuid, text), staff_points_latest(text) to service_role;
 

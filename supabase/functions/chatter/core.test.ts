@@ -82,6 +82,8 @@ function fakeDb(w: World = {}) {
   const sessionRows = (w.sessions ?? []).map((x, i) => ({ id: i + 1, staff: x.staff, day: '2026-11-04', startsAt: Date.parse('2026-11-04T00:00:00Z') + x.start * 60_000, endsAt: Date.parse('2026-11-04T00:00:00Z') + x.end * 60_000 }));
   const state = { sessions: sessionRows as { id: number; staff: string; day: string; startsAt: number; endsAt: number }[], kept: (w.kept ?? []).map((k) => ({ ...k })) as { staff: string; pick: any }[],
     turns: (w.spentTurns ?? []).map((t) => ({ staff: t.staff, session: sessionRows[t.session]!.id, thread: t.thread, post: 'earlier', answers: [] as string[], quoting: '', body: '' })),
+    // A day with sessions or picks given is a day whose first round has passed.
+    days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
     answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
@@ -106,7 +108,9 @@ function fakeDb(w: World = {}) {
           return 'round-0001' as T;
         }
         case 'sessions_day': return state.sessions.filter((x) => x.day === args.on_day).map((x) => ({ staff: x.staff, session: x.id, startsAt: new Date(x.startsAt).toISOString(), endsAt: new Date(x.endsAt).toISOString() })) as T;
+        case 'pool_day_started': return state.days.has(String(args.on_day)) as T;
         case 'write_sessions': {
+          state.days.add(String(args.on_day));
           for (const r of args.rows as { staff: string; start: number; end: number }[]) {
             const startsAt = Date.parse(`${args.on_day}T00:00:00Z`) + r.start * 60_000;
             if (!state.sessions.some((x) => x.day === args.on_day && x.staff === r.staff && x.startsAt === startsAt)) {
@@ -759,7 +763,7 @@ test('a run that loses the claim writes nothing and reads nothing past it', asyn
   const m = fakeModels(normal);
   const out = await run(d, m);
   assert.equal(out.status, 'busy');
-  assert.deepEqual(d.calls.map((c) => c.fn).filter((f) => f !== 'instance_settings'), ['claim_pool_round', 'sessions_day', 'claim_pool_run']);
+  assert.deepEqual(d.calls.map((c) => c.fn).filter((f) => f !== 'instance_settings'), ['claim_pool_round', 'pool_day_started', 'sessions_day', 'claim_pool_run']);
   assert.equal(d.calls.find((c) => c.fn === 'claim_pool_run')!.args.on_day, DAY);
   assert.equal(m.chats.length + m.completions.length, 0, 'and no model was paid');
   assert.equal(d.state.acts.length + d.state.spends.length + d.state.notes.length, 0);
@@ -1469,4 +1473,16 @@ test('a turn answers every waiting reply, including one to an older post of its 
   // Nothing is skipped round after round: the next round finds all three answered.
   await run(d, m, dividedWorld, at('17:52'));
   assert.equal(d.count('write_staff_turn'), 1);
+});
+
+test('a day with no session drawn and no pick to spend runs the daily path once, then is marked and left alone', async () => {
+  const d = fakeDb({ named: [] });
+  const m = fakeModels(normal);
+  for (const at of ['2026-11-04T17:37:00.000Z', '2026-11-04T17:52:00.000Z', '2026-11-04T18:07:00.000Z']) await run(d, m, dividedWorld, at);
+  assert.equal(d.count('pool_signals'), 1, 'the daily path ran once');
+  assert.equal(d.count('claim_pool_run'), 1, 'and the day was claimed once');
+  assert.equal(d.count('write_sessions'), 1, 'the day is marked by writing its (empty) sessions, last');
+  assert.deepEqual(d.of('write_sessions')[0]!.rows, []);
+  const calls = d.calls.map((c) => c.fn);
+  assert.ok(calls.lastIndexOf('pool_signals') < calls.indexOf('write_sessions'), 'the mark comes after the day\'s work');
 });
