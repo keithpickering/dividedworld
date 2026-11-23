@@ -476,7 +476,10 @@ button.kb-reaction:active:not([aria-disabled='true']) {
 .kb-picker-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(134px, auto); /* the board's quadrant, room for a row of kinds under its label and more */
+  /* The board's quadrant, room for a row of kinds under its label and more. The rows are one height, the fuller quadrant's (a 1fr row in a grid of no set
+     height is as tall as the tallest row's content): a kind a card added grows every quadrant alike, so the cross at the field's middle stays in the gap
+     between them, and a column of kinds runs straight down into the quadrant below as Picker.tsx's `cells` lays the arrow keys. */
+  grid-auto-rows: minmax(134px, 1fr);
   gap: 6px;
 }
 
@@ -589,7 +592,7 @@ button.kb-reaction:active:not([aria-disabled='true']) {
 }
 
 .kb-picker[data-kb-place='sheet'] .kb-picker-grid {
-  grid-auto-rows: auto;
+  grid-auto-rows: 1fr; /* one height still, with no floor: the sheet's kinds are two across */
 }
 
 .kb-picker[data-kb-place='sheet'] .kb-picker-kinds {

@@ -87,6 +87,42 @@ test('the picker on a post offers the kind a card added, under the quadrant it s
   await expect(hype.getByRole('button', { name: '💀, Hype, added by a card' })).toBeFocused();
 });
 
+/*
+ * A kind a card added makes its quadrant hold another row; the picker's quadrants stay one size, so the cross still runs between them and through
+ * none. On the phone's sheet Hype's fifth kind is a third row, which once made the top row taller than the bottom and laid the cross over Hype's kinds.
+ */
+for (const [board, viewport] of [...BOARDS, ['phone sheet at 412px', { width: 412, height: 915 }]] as const) {
+  test(`with a kind a card added, the picker's quadrants are one size and the cross runs between them, on the ${board}`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await open(page, VEILS('reader'), 42);
+    await page.locator('#post-42').getByRole('button', { name: 'React', exact: true }).click();
+    const picker = page.getByRole('dialog', { name: /^React to / });
+    await expect(picker.getByRole('button', { name: '💀, Hype, added by a card' })).toBeVisible();
+    await settled(page, { loops: true });
+    const geometry = await picker.evaluate((el) => {
+      const box = (q: Element) => q.getBoundingClientRect();
+      const quads = [...el.querySelectorAll('.kb-picker-quad')].map(box);
+      const across = box(el.querySelector('[data-kb-cross="across"]')!);
+      const down = box(el.querySelector('[data-kb-cross="down"]')!);
+      const kinds = [...el.querySelectorAll('.kb-picker-kind')].map(box);
+      return { quads, across: across.top + across.height / 2, down: down.left + down.width / 2, kinds: kinds.map((k) => ({ top: k.top, bottom: k.bottom, left: k.left, right: k.right })) };
+    });
+    const [tl, tr, bl, br] = geometry.quads;
+    /* One size: every quadrant as tall as the others. */
+    for (const q of [tr!, bl!, br!]) expect(Math.abs(q.height - tl!.height)).toBeLessThanOrEqual(1);
+    /* The cross across lies in the gap between the rows of quadrants, and the cross down in the gap between the columns. */
+    expect(geometry.across).toBeGreaterThanOrEqual(Math.max(tl!.bottom, tr!.bottom) - 0.5);
+    expect(geometry.across).toBeLessThanOrEqual(Math.min(bl!.top, br!.top) + 0.5);
+    expect(geometry.down).toBeGreaterThanOrEqual(Math.max(tl!.right, bl!.right) - 0.5);
+    expect(geometry.down).toBeLessThanOrEqual(Math.min(tr!.left, br!.left) + 0.5);
+    /* No kind sits on either line. */
+    for (const k of geometry.kinds) {
+      expect(geometry.across < k.top || geometry.across > k.bottom).toBe(true);
+      expect(geometry.down < k.left || geometry.down > k.right).toBe(true);
+    }
+  });
+}
+
 for (const mode of ['light', 'dark'] as const) {
   test(`once Whodunnit? has worn off, the post is under its author's name with the one line, on the ${mode} board`, async ({ page }) => {
     await open(page, STORY(`boards-22-whodunnit--wore-off-${mode}`), 43);
