@@ -1235,3 +1235,36 @@ test('the earnings the reveal perk reads are exactly the design\'s list, and eve
   }
   assert.deepEqual([...named].sort(), Object.keys(PERK_READS).sort());
 });
+
+/* ---- the crowd floor (docs/plans/2026-11-23-crowd-floor-design.md, sections 2 and 3) ---- */
+const FLOOR_KIND: Record<Quadrant, string> = { excitedPositive: 'fire', excitedNegative: 'tomato', calmPositive: 'folded-hands', boredNegative: 'facepalm' };
+/** One whole vote per board, so the quadrant is the board's: the quadrants a whole vote on the character's own post or card lands the crowd floor on, through `settle` with the instance's own classes. */
+function floorQuadrants(cls: string, on: 'post' | 'card'): Quadrant[] {
+  return (Object.keys(FLOOR_KIND) as Quadrant[]).filter((q) => {
+    const acts: SettlementInput['acts'] = on === 'post'
+      ? [{ id: 'a1', character: 'me', kind: 'post', at: 1 * H, thread: 't' }]
+      : [{ id: 'p0', character: 'ot', kind: 'post', at: 1 * H, thread: 't' }, { id: 'a1', character: 'me', kind: 'card', at: 2 * H, thread: 't', target: 'p0', card: 'whoops' }];
+    const r = settle({
+      window: { id: 'w', from: 0, to: 24 * H },
+      characters: [{ id: 'me', player: 'pm', classes: [{ class: cls, from: -1 }] }, { id: 'ot', player: 'po', classes: [{ class: 'face', from: -1 }] }, { id: 'vo', player: 'pv', classes: [{ class: 'face', from: -1 }] }],
+      acts,
+      reactions: [{ act: 'a1', player: 'pv', character: 'vo', kind: FLOOR_KIND[q], at: 3 * H }],
+    }, world);
+    return r.entries.some((e) => e.character === 'me' && e.reason === 'crowd.floor' && e.amount === 2);
+  });
+}
+test('the crowd floor lands on the quadrants a class neither pays nor charges, and not on the Lurker\'s posts or cards', () => {
+  const sorted = (q: Quadrant[]) => [...q].sort();
+  assert.deepEqual(sorted(floorQuadrants('face', 'post')), ['calmPositive', 'excitedNegative'], 'Face');
+  assert.deepEqual(sorted(floorQuadrants('jabroni', 'post')), ['calmPositive', 'excitedNegative'], 'Jabroni');
+  assert.deepEqual(sorted(floorQuadrants('heel', 'post')), ['boredNegative', 'excitedPositive'], 'Heel');
+  assert.deepEqual(sorted(floorQuadrants('technician', 'post')), ['boredNegative', 'excitedPositive'], 'Technician');
+  assert.deepEqual(sorted(floorQuadrants('tweener', 'post')), ['excitedNegative', 'excitedPositive'], 'Tweener: hype and heat');
+  assert.deepEqual(floorQuadrants('lurker', 'post'), [], 'Lurker, on a post');
+  assert.deepEqual(floorQuadrants('lurker', 'card'), [], 'Lurker, on a card: cardDrew already pays every reaction');
+  assert.deepEqual(sorted(floorQuadrants('face', 'card')), ['calmPositive', 'excitedNegative'], 'a card of another class is floored as a post is');
+});
+test('the Lurker\'s floor is narrowed to its cards, so a later change to its card rule reaches the floor', () => {
+  assert.equal(lurker.floorOn?.(got('excitedPositive', 1, 'post')), false);
+  assert.equal(lurker.floorOn?.(got('excitedPositive', 1, 'card', 'k1')), true);
+});

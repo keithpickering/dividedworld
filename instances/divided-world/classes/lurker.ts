@@ -29,6 +29,11 @@ export const lurker: ClassRules = {
   key: 'lurker',
   name: 'Lurker',
   reads: READS,
+  /* The crowd floor (docs/plans/2026-11-23-crowd-floor-design.md, section 3) is narrowed to the Lurker's cards. With no quadrant it charges, every reaction
+     to its posts would pay the floor, and a fourth post in a window drawing a crowd would outpay the over-posting charge (five fresh voters pay 10 against
+     a charge of 10; twenty pay 40), so posting past the allowance would profit. Its cards already pay every reaction (`lurker.cardDrew`), so in practice the
+     Lurker earns no floor; this is written as cards, not as nothing, so a later change to its card rule reaches the floor without a second edit. */
+  floorOn: (r) => r.actKind === 'card',
   earn: (input, settings) => {
     const [earlyPlayers, earlyMatch, crowd, spunThreadRepliers, spunThread, postsAllowed, overPosting] = READS.map((r) => economyOf(settings, keyOf(r))) as [number, number, number, number, number, number, number];
     return [

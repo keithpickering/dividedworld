@@ -47,6 +47,8 @@ Aura is the score and the money, counted in **orbs**. It comes mostly from other
 
 **Crowd pay.** Reacting pays too. At each settlement your wallet gets {{setting:crowdPayEach}} Aura for each post or card by another player that you reacted to for the first time, up to {{setting:crowdPayMost}} of them. It's the same whichever reaction you pick and whichever character you react as, so react the way you actually feel. Crowd pay goes to your wallet only: it never counts toward any character's standing, and nobody else can see it.
 
+**The crowd floor.** Being reacted to helps too. A reaction your character's class neither pays nor charges still earns it {{setting:crowdFloor}} Aura a vote at the settlement, so there's no such thing as a wasted reaction. The Lurker is the exception: reactions to its posts earn it nothing, as ever.
+
 - Your **wallet** is shared by all of your characters, and no other player can see it. It holds up to {{setting:walletCap}} orbs. Aura that would land past that is gone, so spend before you're full.
 - Each character also has a **standing**: the Aura that character has earned this season. That one is public, you can't spend it, and it's what the rank beside the character's posts is made of.
 

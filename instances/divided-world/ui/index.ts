@@ -118,6 +118,10 @@ const REASONS: Readonly<Record<string, string | ((n: Readonly<Record<string, num
     if (amount !== undefined && amount < 0) return `${name}: up to ${shareWords(flat)} taken back for each vote it named that later moved away`;
     return `${name}: up to ${shareWords(flat)} more for each vote it named, from players who first reacted while it was up`;
   },
+  /* The crowd floor (settlement's `crowd.floor`, no class): a vote the character's class neither pays nor charges. A line below zero takes a floor back, for a vote that moved to a quadrant the class pays or charges. */
+  'crowd.floor': (_n, amount) => (amount !== undefined && amount < 0
+    ? 'A crowd noticed: taken back, for a vote that moved to a quadrant the class pays or charges'
+    : 'A crowd noticed: a reaction the character\'s class neither pays nor charges'),
   /* The reveal perk (settlement's `reveal.perk`, params `{ share }`): the share is the settings' own, said as a fraction. */
   'reveal.perk': (n) => {
     const share = n['share'];
