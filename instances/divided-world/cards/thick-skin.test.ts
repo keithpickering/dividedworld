@@ -138,5 +138,6 @@ test("the estimate shows the outdrawn loss's cushion on the card's Act with no t
   assert.deepEqual(cushion.map((l) => [l.act, l.amount, 'at' in l]), [['k1', 10, false]]);
   const sum = (xs: readonly { amount: number }[]) => xs.reduce((t, x) => t + x.amount, 0);
   assert.equal(sum(e.lines), sum(e.entries));
-  assert.equal(sum(e.entries), -10);
+  // The Face's loss is -20, half given back is +10, and the tomato on its card is a neutral quadrant for a Face: the crowd floor pays 2 for it.
+  assert.equal(sum(e.entries), -8);
 });

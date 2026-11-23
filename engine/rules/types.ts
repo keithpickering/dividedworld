@@ -800,6 +800,12 @@ export interface ClassRules {
   /** The economy numbers its rules read, so an instance missing one, or holding one out of its bounds, is refused before it settles. */
   readonly reads?: readonly EconomyRead[];
   earn(input: ClassInput, settings: Settings): readonly Earning[];
+  /**
+   * Which of the character's received votes the crowd floor may pay, when the class neither paid nor charged them; every one when absent.
+   * A class's per-vote earnings (`Earning.votes`) must carry the vote's `act`, `quadrant`, `at` and `kind`, since the floor's shield matches
+   * a received vote to an earning on all four: an earning that leaves one out shields nothing, and the floor is paid on top of it.
+   */
+  floorOn?(reaction: ReceivedReaction): boolean;
 }
 
 /* ------------------------------------------------------------------- the instance ---- */

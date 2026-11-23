@@ -115,6 +115,11 @@
  *   its own stretch; a reaction belongs to the class its target held when it landed.
  * - Crowd pay (`crowdPay`, docs/plans/2026-11-20-crowd-pay-design.md) is each player's flat sum for each Act of another player's that they
  *   first reacted to in the window, up to a cap; it is a wallet's alone, in no entry, no standing and no class's total.
+ * - The crowd floor (`crowdFloor`, docs/plans/2026-11-23-crowd-floor-design.md) is `crowdFloor` of a vote for each vote a character's Act received that its class
+ *   neither paid nor charged: a received line none of the class's earnings with `votes` (of any sign) names, by act, quadrant, time and kind, and that the class's
+ *   `floorOn` accepts (absent: every one). It is `crowd.floor` with no class, so in no class's season total, and it follows the vote as any share does, halved and, where a
+ *   vote moved, taken back (a negative line) from the quadrant it left. It is held apart from the class's earnings and pushed after the boost, the reveal perk and the
+ *   cushion, so none of them reads it or is read by it; a flat earn pays on top of it. `crowdFloor` 0 pays none.
  * - Input is read in a canonical order and amounts are summed before they are rounded, so the
  *   result is the same whatever order the rows arrive in.
  */
@@ -731,6 +736,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   for (const c of characters.values()) {
     const firstOfCharacter = contributions.length;
     const sparked = debatesOf(c.id);
+    /* The crowd floor's lines, held apart from `own` and pushed after the boost, perk and cushion passes. */
+    const floor: Contribution[] = [];
     for (const stretch of stretchesOf(c)) {
       const inside = <T extends { at: number }>(xs: readonly T[] | undefined) => (xs ?? []).filter((x) => x.at >= stretch.from && x.at < stretch.to);
       const classInput: ClassInput = {
@@ -752,11 +759,24 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       const empty = !classInput.posts.length && !classInput.received.length && !classInput.given.length && !classInput.held.length
         && !classInput.cardsPlayed.length && !classInput.cardsLanded.length && !classInput.threadsSpun.length && !classInput.standings.length && !classInput.debates.length;
       if (empty) continue;
-      for (const e of classOf.get(stretch.class)!.earn(classInput, settings)) {
+      const rules = classOf.get(stretch.class)!;
+      const earned = rules.earn(classInput, settings);
+      for (const e of earned) {
         if (!Number.isFinite(e.amount)) throw new Error(`settle: class ${stretch.class} returned ${e.amount} for ${e.reason}`);
         if (e.tally && e.act === undefined) throw new Error(`settle: class ${stretch.class} tallied ${e.reason} with no act`);
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
         contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}), ...(e.fromReactions ? { fromReactions: true as const } : {}), ...(e.tally ? { tally: true as const } : {}) });
+      }
+      /* The crowd floor: a vote the class neither paid nor charged (no earning with `votes`, of any sign, has its act, quadrant, time and kind) pays
+         `crowdFloor` of a vote, as `crowd.floor` with no class. A moved vote's negative line takes its floor back as it took its pay. */
+      if (settings.crowdFloor > 0) {
+        const keyOf = (x: { act?: string; quadrant?: Quadrant; at?: number; kind?: string }) => `${x.act}|${x.quadrant}|${x.at}|${x.kind}`;
+        const shielded = new Set(earned.filter((e) => e.votes !== undefined).map(keyOf));
+        for (const r of classInput.received) {
+          if (shielded.has(keyOf(r)) || (rules.floorOn && !rules.floorOn(r))) continue;
+          const amount = tidy(settings.crowdFloor * r.votes);
+          if (amount) floor.push({ player: c.player, character: c.id, reason: 'crowd.floor', amount, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes });
+        }
       }
     }
     /* Earn by a percentage: each positive earning of the character's own Act, with a time and a quadrant, inside a gimmick's window and in what it
@@ -794,8 +814,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
        applies, as `card.cushion`. Two kinds of loss: a loss from a reaction (a time, a negative amount, positive votes), taken at the reaction's
        time, and a window's loss (`ofWindow`, a negative amount), taken as the window settles, at its end. Read from `own`, the class's earnings
        before any boost was pushed, so a boost or another card's payout is never cushioned, and the entry has no class. */
-    if (!cushionsOn.size) continue;
-    for (const e of own) {
+    for (const e of cushionsOn.size ? own : []) {
       if (!(e.amount < 0) || e.act === undefined || acts.get(e.act)?.character !== c.id) continue;
       /* The moment the loss was taken: a reaction's own time, or for a window's loss the window's end, when it is charged. */
       const when = e.votes! > 0 && e.at !== undefined ? e.at : e.ofWindow ? window.to : undefined;
@@ -810,6 +829,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
       if (!back) continue;
       contributions.push({ player: e.player, character: e.character, reason: 'card.cushion', amount: back, params: { card: best.card, share: best.share }, act: e.act, ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.at !== undefined ? { at: e.at } : {}) });
     }
+    contributions.push(...floor);
   }
 
   /* ---- card payouts: contributions with no class, for votes on a post or a cast ----
