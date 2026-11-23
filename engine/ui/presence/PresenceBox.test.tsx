@@ -108,16 +108,17 @@ describe('the presence box', () => {
 
   describe('a persona in session (the chattier staff design, section 7)', () => {
     /** The index with two players browsing and the persona Mabel in session since a minute ago; she has posted in no thread. */
-    function outOfSession() {
-      const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
-      const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
-      return { ...w, mabel };
-    }
-
     function inSession() {
       const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
       const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
       w.fake.seed.staffSession('mabel', { startsAt: w.fake.clock.now() - 60_000, endsAt: w.fake.clock.now() + 3_600_000 });
+      return { ...w, mabel };
+    }
+
+    /** The same index with Mabel out of session: she has no session today. */
+    function outOfSession() {
+      const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
+      const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
       return { ...w, mabel };
     }
 
@@ -158,8 +159,8 @@ describe('the presence box', () => {
     });
 
     /** Mabel posted in the thread before her session began (6 hours ago, or 3 hours before the reply when that is older); a player's reply to that post is `replyAgoMs` old, so always newer than the post it answers (answered: by her turn an hour after it, still before the session). */
-    function replyWaiting(replyAgoMs: number, options: { answered?: boolean; inSessionOnly?: boolean } = {}) {
-      const w = options.inSessionOnly === false ? outOfSession() : inSession();
+    function replyWaiting(replyAgoMs: number, options: { answered?: boolean; outOfSession?: true } = {}) {
+      const w = options.outOfSession ? outOfSession() : inSession();
       const { fake, seeded } = w;
       const player = fake.seed.character(fake.seed.account('replier'), 'Replier', 'face');
       const hers = fake.seed.staffPost(w.mabel, seeded.thread, 'Hello.', { at: fake.clock.now() - Math.max(6 * 3_600_000, replyAgoMs + 3 * 3_600_000) });
@@ -190,7 +191,7 @@ describe('the presence box', () => {
     });
 
     test('a persona out of session is not listed where a reply waits', async () => {
-      const { seeded, show } = replyWaiting(2 * 3_600_000, { inSessionOnly: false });
+      const { seeded, show } = replyWaiting(2 * 3_600_000, { outOfSession: true });
       show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
       const box = await screen.findByRole('region', { name: HEADING });
       await within(box).findByRole('link', { name: 'Pipewrench' });
