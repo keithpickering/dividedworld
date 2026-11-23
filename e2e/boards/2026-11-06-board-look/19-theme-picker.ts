@@ -38,13 +38,18 @@ export const rail = (current: string): Landmark[] => [
   { id: 'reach', role: 'link', name: 'Reach a person', origin: 'sections', box: 'position', buildShift: { y: 34 } },
 ];
 
-/** The section's two rows, the Theme row's miniature and tiles by their words, and the Mode row's choices. */
-export const rows = (note: { readonly name: string; readonly buildName?: string }, tileNames: readonly string[]): Landmark[] => [
+/**
+ * The section's two rows, the Theme row's miniature and tiles by their words, and the Mode row's choices. A tile renamed since the board
+ * was drawn gives the build's name beside the board's (Hot Rod is Hot Debate since 2026-11-23, the owner's word).
+ */
+type Words = { readonly name: string; readonly buildName?: string };
+export const HOT_DEBATE_TILE: Words = { name: 'HOT ROD', buildName: 'HOT DEBATE' };
+export const rows = (note: Words, tileNames: readonly (string | Words)[]): Landmark[] => [
   { id: 'board', role: 'heading', name: 'THE BOARD', box: 'across' },
   inSection('theme-label', 'heading', 'THEME'),
   inSection('preview-logo', 'text', 'DIVIDED WORLD'),
   inSection('preview-button', 'text', 'start a thread'),
-  ...tileNames.map((n, i) => inSection(`tile-${i}`, 'text', n, { nth: 0 })),
+  ...tileNames.map((n, i) => typeof n === 'string' ? inSection(`tile-${i}`, 'text', n, { nth: 0 }) : inSection(`tile-${i}`, 'text', n.name, { nth: 0, buildName: n.buildName })),
   inSection('theme-note', 'text', 'Applies to the board at once, on every device you sign in on.'),
   inSection('mode-label', 'heading', 'MODE'),
   inSection('mode-device', 'text', 'FOLLOW MY DEVICE'),
@@ -59,7 +64,7 @@ const manifest: BoardManifest = {
   build: { story: 'boards-19-theme-picker--picker' },
   landmarks: [
     ...rail('THE BOARD'),
-    ...rows({ name: 'The 2003 board stays 2003 whichever you choose. Only its look changes. The game’s own pieces (orbs, cards, reactions, marks) keep theirs.', buildName: 'The 2003 board stays 2003 whichever you choose. Only its look changes. The game\'s own pieces (orbs, cards, reactions, marks) keep theirs.' }, ['HOUSE', 'BLUE STEEL', 'MIDNIGHT', 'HOT ROD', 'FAN SITE']),
+    ...rows({ name: 'The 2003 board stays 2003 whichever you choose. Only its look changes. The game’s own pieces (orbs, cards, reactions, marks) keep theirs.', buildName: 'The 2003 board stays 2003 whichever you choose. Only its look changes. The game\'s own pieces (orbs, cards, reactions, marks) keep theirs.' }, ['HOUSE', 'BLUE STEEL', 'MIDNIGHT', HOT_DEBATE_TILE, 'FAN SITE']),
   ],
 };
 

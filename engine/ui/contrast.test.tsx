@@ -108,6 +108,8 @@ describe('the skin tokens: gradients are read stop by stop', () => {
     bad('--kb-button-primary-bg: #fff; --kb-button-primary-fg: #ddd;', /primary/u);
     bad('--kb-button-hover-bg: #fff; --kb-button-hover-fg: #ddd;', /under the pointer/u);
     bad('--kb-button-primary-hover-bg: #fff; --kb-button-primary-hover-fg: #ddd;', /primary Chrome button's label under/u);
+    /* Hot Rod's Send on an empty reply: the muted red on a dark gray face, 2.24:1, which the check did not hold before. */
+    bad('--kb-button-disabled-bg: radial-gradient(#5a5a5a, #161616); --kb-button-disabled-fg: #ff5a4a;', /disabled Chrome button/u);
     bad('--kb-input-bg: #222;', /input|text box/u);
     bad('--kb-row-2: #222;', /row/u);
   });

@@ -46,7 +46,8 @@ const manifest: BoardManifest = {
   size: { width: 390, height: 844 },
   build: { story: 'boards-19-theme-picker--picker-phone' },
   landmarks: screen(0, HOUSE, HOUSE.replace('’', '\'')),
-  also: [{ name: 'Hot Rod', build: { story: 'boards-19-theme-picker--one-mode-phone' }, landmarks: screen(1, HOT_ROD, HOT_ROD) }],
+  /* The board was drawn when the theme was Hot Rod; the build says its name since, Hot Debate. */
+  also: [{ name: 'Hot Rod', build: { story: 'boards-19-theme-picker--one-mode-phone' }, landmarks: screen(1, HOT_ROD, HOT_ROD.replace('Hot Rod', 'Hot Debate')) }],
 };
 
 export default manifest;

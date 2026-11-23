@@ -309,6 +309,8 @@ export const PAIRS: readonly (readonly [string, string, number, string])[] = [
   ['--kb-button-primary-fg', '--kb-button-primary-bg', 4.5, 'a primary Chrome button\'s label'],
   ['--kb-button-hover-fg', '--kb-button-hover-bg', 4.5, 'a Chrome button\'s label under the pointer'],
   ['--kb-button-primary-hover-fg', '--kb-button-primary-hover-bg', 4.5, 'a primary Chrome button\'s label under the pointer'],
+  /* Disabled controls are outside WCAG's floor, but Send stands disabled on every empty reply box, so its label is read and held. */
+  ['--kb-button-disabled-fg', '--kb-button-disabled-bg', 4.5, 'a disabled Chrome button\'s label'],
   ['--kb-fg', '--kb-input-bg', 4.5, 'text in a text box'],
   ['--kb-badge-a-fg', '--kb-badge-a', 3, 'the first footer badge (decorative)'],
   ['--kb-badge-b-fg', '--kb-badge-b', 3, 'the second footer badge (decorative)'],

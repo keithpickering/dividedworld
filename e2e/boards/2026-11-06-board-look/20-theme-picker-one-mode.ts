@@ -1,5 +1,5 @@
 /**
- * Board 20, Settings › The board with Hot Rod chosen (docs/research/2026-11-06-board-look/20-theme-picker-one-mode.html, 1440 by 1120): a theme that holds one mode,
+ * Board 20, Settings › The board with Hot Rod (Hot Debate since 2026-11-23) chosen (docs/research/2026-11-06-board-look/20-theme-picker-one-mode.html, 1440 by 1120): a theme that holds one mode,
  * the Mode row held to it and the others greyed, and the note that says why and names the house theme. The page is board 19's, so its parts are 19's
  * (e2e/boards/2026-11-06-board-look/19-theme-picker.ts), as the story `Boards/19 Theme picker`'s `One mode` draws it.
  *
@@ -7,7 +7,7 @@
  * tile and the note are the story's, in the same words the instance's will say.
  */
 import type { BoardManifest } from '../../board-match.ts';
-import { rail, rows } from './19-theme-picker.ts';
+import { HOT_DEBATE_TILE, rail, rows } from './19-theme-picker.ts';
 
 const manifest: BoardManifest = {
   board: '2026-11-06-board-look/20-theme-picker-one-mode',
@@ -15,7 +15,8 @@ const manifest: BoardManifest = {
   build: { story: 'boards-19-theme-picker--one-mode' },
   landmarks: [
     ...rail('THE BOARD'),
-    ...rows({ name: 'Hot Rod comes in dark only, so the board stays dark whatever your device says. Choose House for light and dark.' }, ['HOUSE', 'BLUE STEEL', 'MIDNIGHT', 'HOT ROD', 'FAN SITE']),
+    /* The board was drawn when the theme was Hot Rod; the build says its name since, Hot Debate. */
+    ...rows({ name: 'Hot Rod comes in dark only, so the board stays dark whatever your device says. Choose House for light and dark.', buildName: 'Hot Debate comes in dark only, so the board stays dark whatever your device says. Choose House for light and dark.' }, ['HOUSE', 'BLUE STEEL', 'MIDNIGHT', HOT_DEBATE_TILE, 'FAN SITE']),
   ],
 };
 

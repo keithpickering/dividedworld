@@ -29,6 +29,38 @@ export interface ThemeOption {
    * that mode.
    */
   readonly preview: { readonly light?: ThemePreview; readonly dark?: ThemePreview };
+  /** A picture tiled along the foot of the banner while this theme is on, or none (the theme's `--kb-banner-bg` alone). */
+  readonly banner?: BannerArt;
+}
+
+/**
+ * Art a theme tiles across the banner's foot (engine/ui/frame/frame.css, `.kb-banner`). A theme's stylesheet may fetch nothing
+ * (tools/check-theme.mjs: an image it loads could watch who reads a page), so a picture is the instance's own file, imported
+ * with `?url` and served from the instance's origin, and named here beside the stylesheet. It lies over `--kb-banner-bg` and
+ * under nothing: the banner's foot grows by `clear` so its words stand above the art, on the ground contrast.ts holds them on.
+ */
+export interface BannerArt {
+  /** The tile as it moves (an animated GIF), drawn at its own size and repeated across. */
+  readonly moving: string;
+  /** One frame of it, drawn instead when motion is reduced (the device's setting or the player's). */
+  readonly still: string;
+  /** The tile's height, in CSS pixels. */
+  readonly height: number;
+  /** How far the banner's foot is lowered below its words, in CSS pixels: the part of the tile that is more than ground. */
+  readonly clear: number;
+  /** Whose work it is, said in the footer while the theme is on, as its license asks. */
+  readonly credit: ArtCredit;
+}
+
+/** A credit for a work used under a license: "{work} by {author}, {license}", each linked to where it is published. */
+export interface ArtCredit {
+  readonly work: string;
+  readonly author: string;
+  /** The work's own page, where its author published it. */
+  readonly source: string;
+  /** The license's short name ("CC BY-SA 3.0") and the address of its deed. */
+  readonly license: string;
+  readonly licenseUrl: string;
 }
 
 /** A theme's tokens for one mode, resolved to literals (no `var()`), by token name: `--kb-head-bg`, `--kb-row-1` and the rest of tools/theme-preview.mjs's list. */

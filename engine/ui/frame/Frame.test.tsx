@@ -185,6 +185,30 @@ describe('the footer ends every board page', () => {
     expect(screen.getByRole('main')).not.toContainElement(foot);
     expect(screen.getByRole('main').compareDocumentPosition(foot) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
   });
+  test('while a theme with banner art is on, credits the art, linked to the work and its license; another theme credits nothing', () => {
+    const credit = { work: 'Animated fire', author: 'A. Painter', source: 'https://example.com/fire', license: 'CC BY-SA 3.0', licenseUrl: 'https://example.com/by-sa' };
+    const themes = [
+      { key: 'house', name: 'House', href: '/house.css', modes: 'both', preview: {} },
+      { key: 'flames', name: 'Flames', href: '/flames.css', modes: 'dark', preview: {}, banner: { moving: '/f.gif', still: '/f.png', height: 56, clear: 40, credit } },
+    ];
+    const copy = { siteName: 'X', siteTagline: 'x', shopName: 'S' };
+    const show = () => render(
+      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], themes, frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
+    );
+    document.documentElement.setAttribute('data-kb-theme', 'flames');
+    try {
+      show();
+      const foot = screen.getByRole('contentinfo');
+      expect(foot.querySelector('.kb-art-credit')).toHaveTextContent('Banner art: Animated fire by A. Painter, CC BY-SA 3.0');
+      expect([...foot.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Animated fire', credit.source], ['CC BY-SA 3.0', credit.licenseUrl]]);
+      cleanup();
+      document.documentElement.setAttribute('data-kb-theme', 'house');
+      show();
+      expect(screen.getByRole('contentinfo').querySelector('.kb-art-credit')).toBeNull();
+    } finally {
+      document.documentElement.removeAttribute('data-kb-theme');
+    }
+  });
   test('an instance with no badges has the credit alone', () => {
     setup();
     cleanup();

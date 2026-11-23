@@ -33,9 +33,9 @@ type Story = StoryObj<typeof PickerStory>;
 
 /** Settings › The board with the house theme chosen, at 1440 wide (board 19). */
 export const Picker: Story = {};
-/** The same with Hot Rod chosen, a theme that holds one mode: the Mode row held to dark, and says why (board 20). */
+/** The same with Hot Debate chosen (its key is still `hot-rod`), a theme that holds one mode: the Mode row held to dark, and says why (board 20). */
 export const OneMode: Story = { name: 'One mode', parameters: { world: signedIn('hot-rod') } };
 /** The Phone board's layout, at 390 by 844 (board 21's first screen). */
 export const PickerPhone: Story = { name: 'Picker, phone 390 × 844', globals: { viewport: { value: 'glassPhone390', isRotated: false } } };
-/** The phone with Hot Rod chosen (board 21's second screen). */
+/** The phone with Hot Debate chosen (board 21's second screen). */
 export const OneModePhone: Story = { name: 'One mode, phone 390 × 844', parameters: { world: signedIn('hot-rod') }, globals: { viewport: { value: 'glassPhone390', isRotated: false } } };

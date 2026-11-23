@@ -43,7 +43,7 @@
 @media (max-width: 40em) {
   .kb-frame:has(.kb-front-door) .kb-banner {
     justify-content: center;
-    padding-block: 14px;
+    padding-block: 14px calc(14px + var(--kb-banner-art-clear, 0px));
   }
 
   .kb-frame:has(.kb-front-door) .kb-banner-side {
