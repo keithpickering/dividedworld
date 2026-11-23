@@ -3,10 +3,12 @@
  * effect draws them under tape: scanlines and a tracking line over the post's content area, a read-out of the point's date at its top right, and, the first
  * time a play is drawn on a page, a 600 ms rewind of streaks. jsdom has no layout, so the content area's box is stubbed.
  */
-import { act, cleanup, render } from '@testing-library/react';
+import { act, cleanup } from '@testing-library/react';
+import { renderInWorld as render } from '../../../../../engine/ui/test-world.tsx';
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { ratio } from '../../../../../engine/ui/contrast.ts';
 import { NO_INK } from '../../../../../engine/ui/cards/claims.ts';
@@ -37,6 +39,12 @@ const expected = (iso: string): string => {
   return `${['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'][d.getMonth()]} ${d.getDate()} ${hour}:${String(d.getMinutes()).padStart(2, '0')}${d.getHours() < 12 ? 'AM' : 'PM'}`;
 };
 
+/** Mounts the effect so a test can hand it other props later (a render in the world has no rerender of its own). */
+let hand: (p: EffectProps) => void = () => {};
+function mount(first: EffectProps) {
+  function Holder() { const [p, set] = useState(first); hand = set; return <TimeMachineEffect {...p} />; }
+  return render(<Holder />);
+}
 const host = () => document.querySelector<HTMLElement>('.dw-tm')!;
 const layer = () => document.querySelector<HTMLElement>('.dw-tm-layer')!;
 const streaks = () => document.querySelectorAll('[data-tm-streak]');
@@ -94,6 +102,43 @@ describe('the effect', () => {
   });
 });
 
+describe('a play that is over', () => {
+  /* The engine's clock (the fake's `clock`), which is not Date.now: a play's end is judged by it, as the engine judges its own. */
+  const at = (fake: { clock: { now(): number } }, ms: number) => new Date(fake.clock.now() + ms).toISOString();
+  const world = () => mount(props([])).fake;
+  const draw = (fake: ReturnType<typeof world>, ...plays: CardPlay[]) => { act(() => { hand(props(plays)); }); void fake; };
+  test('one whose time is up by the engine\'s clock draws the words and no tape, no read-out and no label', () => {
+    const fake = world();
+    draw(fake, play({ ends: at(fake, -1000) }));
+    expect(document.body.textContent).toContain('Old words.');
+    expect(document.querySelector('.dw-tm-layer')).toBeNull();
+    expect(document.querySelector('.dw-tm-readout')).toBeNull();
+    expect(document.querySelector('.kb-visually-hidden')).toBeNull();
+  });
+  test('one an admin ended draws none', () => {
+    const fake = world();
+    draw(fake, play({ ends: at(fake, 60_000), reversed: true }));
+    expect(document.querySelector('.dw-tm-layer')).toBeNull();
+  });
+  test('a live one draws, and is gone when its time comes', () => {
+    const fake = world();
+    draw(fake, play({ ends: at(fake, 5000) }));
+    expect(document.querySelector('.dw-tm-layer')).not.toBeNull();
+    act(() => { fake.clock.advance(6000); vi.advanceTimersByTime(6000); });
+    expect(document.querySelector('.dw-tm-layer')).toBeNull();
+    expect(document.body.textContent).toContain('Old words.');
+  });
+  test('with two held it draws the latest played that is still up, as the engine rewinds with it', () => {
+    const fake = world();
+    const older = play({ ends: at(fake, 60_000), rewindAt: '2026-11-10T20:00:00.000Z', playedAt: at(fake, -5000) });
+    const newer = play({ ends: at(fake, 60_000), rewindAt: POINT, playedAt: at(fake, -1000) });
+    draw(fake, older, newer);
+    expect(document.querySelector('.dw-tm-readout')!.textContent).toContain(readOut(POINT));
+    draw(fake, older, { ...newer, reversed: true });
+    expect(document.querySelector('.dw-tm-readout')!.textContent).toContain(readOut('2026-11-10T20:00:00.000Z'));
+  });
+});
+
 describe('the rewind', () => {
   test('the first draw of a play streaks for 600 ms; drawn again on the same page it does not', () => {
     const p = play();
@@ -118,10 +163,10 @@ describe('the rewind', () => {
 
   test('a newer rewind becoming the latest play streaks on its own first draw', () => {
     const first = play(), newer = play();
-    const { rerender } = render(<TimeMachineEffect {...props([first])} />);
+    mount(props([first]));
     act(() => { vi.advanceTimersByTime(STREAK_MS + 1); });
     expect(streaks().length).toBe(0);
-    rerender(<TimeMachineEffect {...props([first, newer])} />);
+    act(() => { hand(props([first, newer])); });
     expect(streaks().length).toBeGreaterThan(0);
   });
 

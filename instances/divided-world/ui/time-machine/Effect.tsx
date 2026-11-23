@@ -15,9 +15,10 @@
  *
  * A play's moment and a History version row draw the tape but never the streak: nothing in them arrives.
  */
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { bodyBox, bodyOf, placeLayer } from '../../../../engine/ui/cards/body.ts';
+import { inPlayOrder, playOver, useAt } from '../../../../engine/ui/cards/plays.ts';
 import type { EffectProps } from '../../../../engine/ui/cards/types.ts';
 import { readOut } from './readout.ts';
 import './time-machine.css';
@@ -29,8 +30,17 @@ const STREAKS = 7;
 /** The plays whose first draw has had its rewind on this page load: once per play, whatever draws it again (a re-render, a post scrolled back). */
 const rewound = new Set<string>();
 
+/**
+ * The engine hands every Time Machine play it holds, over or not, and each effect judges its own end: the engine's clock and its own rule (`playOver`: time up, an admin's end,
+ * a play that did not take), re-judged when the next end comes. A moment judges by its own time. Of the plays still up the latest played is the one the post is rewound with
+ * (`rewoundOf`), so it is the one drawn; none up draws only the words.
+ */
 export function TimeMachineEffect(props: EffectProps) {
-  const latest = props.plays.at(-1);
+  const ends = useMemo(() => props.plays.flatMap((p) => (p.ends !== undefined ? [Date.parse(p.ends)] : [])), [props.plays]);
+  const clock = useAt(props.moment ? [] : ends);
+  const now = props.moment ? props.moment.at : clock;
+  const none = useMemo(() => new Set<string>(), []);
+  const latest = props.plays.filter((p) => !playOver(p, now, none)).reduce<(typeof props.plays)[number] | undefined>((best, p) => (best === undefined || inPlayOrder(best, p) < 0 ? p : best), undefined);
   return latest ? <Taped key={latest.id} {...props} id={latest.id} at={latest.rewindAt}>{props.children}</Taped> : <>{props.children}</>;
 }
 
