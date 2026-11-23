@@ -96,6 +96,8 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
       draws: c.draws, drive: c.drive, needsMessage: c.needsMessage,
       // What a cast card on a post withholds while it is up, and whether its play adds a reaction to that one post (0357): the SQL knows only these flags, never which card.
       veil: c.veil, addsReaction: c.reaction === true,
+      // What a rewind card turns away while it is up (0413): the rarity it freezes a post up to, which the SQL reads as `rewind.upTo`.
+      rewind: c.rewind === undefined ? undefined : { upTo: c.rewind.upTo },
       // Whether its play is a surface any character may add to (0317): the SQL knows only this flag, never which card.
       surface: c.surface !== undefined,
       // Whether its play draws an effect on the post and counts toward the post's limit (0411): the SQL knows only this flag, never which card.

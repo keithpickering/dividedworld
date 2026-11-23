@@ -35,7 +35,7 @@ import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { takeInOrigin } from '../spin/Origin.tsx';
-import { createPlays, effectCards, hydrate, keepingKeys, readEffects, readSurface, rereadSurfaces, TIMER_MOST, usePlays } from '../cards/plays.ts';
+import { createPlays, effectCards, hydrate, keepingKeys, readEffects, readRewinds, readSurface, rewindCards, rewoundOf, rereadSurfaces, TIMER_MOST, usePlays, useRewound } from '../cards/plays.ts';
 import { Composer, SystemBoardNote, type ComposerHandle } from '../composer/Composer.tsx';
 import { useKayfa } from '../context.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
@@ -137,6 +137,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
   const effects = useMemo(() => effectCards(ui), [ui]);
+  const rewinding = useMemo(() => rewindCards(instance.cards), [instance.cards]);
   const effectList = useMemo(() => [...effects], [effects]);
   /* The cards whose plays veil a post's author or totals: a play of one arriving, or ending, means the page is read again (feed.ts). */
   const veils = useMemo(() => veilCards(instance.cards), [instance.cards]);
@@ -312,7 +313,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     }
     /* The plays a thread-reach card keeps on this page's posts after its time came with it, as the plays above them do. */
     const played = [...page.plays, ...page.above.map((x) => x.act), ...page.kept.map((x) => x.act)];
-    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? [], page.counts);
+    hydrate(plays, played, page.states, page.releases, page.faces, page.surfaces, page.spent ?? [], page.counts, page.rewinds);
     /* The origin of a spun thread, on the page that holds its first Act: the newer read's is kept (an answer asked before the one held is not taken, as for `above`), and a page without one leaves what is held.
        Its plays' saved states and releases are in the page's own lists; the box's store is given those of its plays. */
     let tookOrigin: PageOrigin | null = null;
@@ -367,6 +368,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     for (const id of ids) { loader.seed(id, from.get(id) ?? []); spun.set(id, loader.peek(id)!); }
     const over = { now: api.now(), keeps: keepingKeys(instance.cards), billedAt: billedAt.current };
     /* The origin's plays join the box's store and are billed here, once for this read and outside any render, from the tallies and spins this page just put in the thread's stores. */
+    /* The ORIGIN post's rewind comes with the page, in the box's own store, so its first frame is already rewound. */
+    if (page.thread.originActId) originPlays.setRewinds(page.rewinds.filter((r) => r.post === page.thread.originActId));
     if (tookOrigin && page.thread.originActId) takeInOrigin(tookOrigin, page.thread.originActId, originPlays, tallies, spun, over, originPolls, ticket);
     for (const post of posts) billPost(plays, post, spun, (play) => drawnOf(tallies.get(play), spunCount(spun.get(play)!)), over);
     let moved = false;
@@ -766,6 +769,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
         if (a.kind === 'card') {
           void ensurePeople([a.character]).then(() => {
             plays.add([a]);
+            /* A rewind that lands while the reader is here comes without its view: read once, kept by its play; the post shows as it was until it is in, then rewound (`readRewinds`). */
+            void readRewinds(api, plays, [a], rewinding, () => askCatchUp.current());
             /* A veil on a post of this screen changes who wrote it (or what its row shows) for every reader: the page is read again, and the end is waited for. */
             const f = feedRef.current;
             if (isVeilPlay(a, veils) && a.targetActId !== null && (f.shown.has(a.targetActId) || f.held.has(a.targetActId))) { askCatchUp.current(); setVeilClock((n) => n + 1); }
@@ -871,7 +876,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     };
     const off = api.subscribeThread(thread, listener);
     return () => { off(); joined.current.thread = false; };
-  }, [api, thread, ensurePeople, tallies, polls, plays, effects, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard, markLocked]);
+  }, [api, thread, ensurePeople, tallies, polls, plays, effects, rewinding, veils, ui.copy.staffWord, joinedAt, nestedBy, putNested, dropNested, heard, markLocked]);
 
   /* A play beyond a post is announced on `reach`, which every signed-in page hears, since it is played from a post in some other thread
      as often as this one (a character's) and on The System's announcements thread (a board's). This page keeps the plays whose target it
@@ -955,7 +960,9 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const a = feedRef.current.shown.get(id) ?? feedRef.current.held.get(id) ?? nestedBy(id)?.under.act;
     return a && a.seq !== null ? { thread: a.thread, seq: a.seq } : undefined;
   }, [nestedBy]);
-  const quote = useCallback((a: Act) => composer.current?.quote(a.id, text(a.currentPayload.body)), []);
+  /* The words a post shows now: its rewound version's while a rewind is live (Time Machine design, 4.4: a quote is of what the reader sees), else its own. */
+  const keeps = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
+  const quote = useCallback((a: Act) => composer.current?.quote(a.id, text((rewoundOf(plays.get(a.id), api.now(), keeps)?.rewind.version ?? a).currentPayload.body)), [plays, api, keeps]);
   /* Highlight-to-quote: a selection's words go in as typed, and the post is found by the number its article carries. */
   const quoteSelected = useCallback((a: Act, words: string) => composer.current?.quote(a.id, words, true), []);
   /* The page holding a post, read again and taken in as any read is (`absorb` nests what a play in force drew under its posts): the play form's, after a play found landed on a lost answer. */
@@ -970,6 +977,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     if (under) putNested(under.parent, under.under.play, a);
     else dispatch({ type: 'live', act: a });
   }, [nestedBy, putNested]);
+  const catchUp = useCallback(() => askCatchUp.current(), []);
   const underOf = useCallback((id: Id) => nestedBy(id)?.parent, [nestedBy]);
   const canReply = systemBoard === false;
   /* The HUD's Reveal starts on this thread, except on The System's board (and until the board is known), where a meta act is not made. It is cleared when the screen goes. */
@@ -977,8 +985,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const visits = useMemo<ReadonlyMap<Id, Visit>>(() => new Map(visitsHeld.current), [visitTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const veiled = useMemo<ReadonlyMap<Id, Veiled>>(() => new Map(veiledHeld.current), [veilTick]); // eslint-disable-line react-hooks/exhaustive-deps
   const context = useMemo<ThreadContext | null>(
-    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, observer, quote: canReply ? quote : null, changed } : null),
-    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, observer, canReply, quote, changed],
+    () => (feed.summary ? { thread, perPage: P, summary: feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, know: ensurePeople, reread, catchUp, observer, quote: canReply ? quote : null, changed } : null),
+    [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
   const quotableAt = useCallback((seq: number) => {
@@ -998,9 +1006,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   }, [shown]);
   /* Drawn again when the last post's plays change, so a no-quote that lands or is reversed there takes the toolbar's Quote away or gives it back; one that merely runs out is seen at the next such draw or page read, not at its end. The server's guard decides a quote regardless. */
   const lastPlays = usePlays(plays, lastPost?.id ?? '');
+  /* The last post's words as it shows them: its rewound version's while a rewind is live, redrawn at the rewind's end. */
+  const lastRewound = useRewound(plays, lastPost?.id ?? '');
   const latest = useMemo(
-    () => (lastPost && !quoteStopped(lastPlays.plays, instance) ? { id: lastPost.id, body: text(lastPost.currentPayload.body) } : null),
-    [lastPost, lastPlays, instance],
+    () => (lastPost && !quoteStopped(lastPlays.plays, instance) ? { id: lastPost.id, body: text((lastRewound?.rewind.version ?? lastPost).currentPayload.body) } : null),
+    [lastPost, lastPlays, lastRewound, instance],
   );
 
   /* A reply the player just made: shown at once at the foot, or, when the foot is not loaded, opened at its page. Focus goes to it and the polite region says so. */

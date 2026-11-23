@@ -16,7 +16,7 @@ import { PostMarks, type FormAsk } from '../cards/Marks.tsx';
 import { AppealCtx, ViolationNotice } from '../cards/Visit.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
 import { effectsOf } from '../cards/land.ts';
-import { livePlays, usePlays } from '../cards/plays.ts';
+import { livePlays, usePlays, useRewound } from '../cards/plays.ts';
 import type { CardPlay } from '../cards/types.ts';
 import { quoteStop } from '../../rules/cards.ts';
 import { isPost, type Instance } from '../../rules/types.ts';
@@ -65,6 +65,8 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
   readonly own: MyHiddenVersion | null | undefined; readonly marks: ReactNode; readonly visit: Visit | undefined; readonly act: Act; readonly name: string; readonly spoken: string; readonly person: PostbitPerson | undefined; readonly editing: boolean; readonly onEdit: () => void; readonly onDone: () => void }) {
   const { summary, tallies, mine, changed, plays, nameOf: casterName } = useThread();
   const owner = useOwnerOf();
+  /* Under a live rewind the post's "Last edited" is that of the version it shows (the words themselves are swapped in by `PostEffects`, where the plays it draws are chosen). */
+  const rewound = useRewound(plays, act.id);
   /* A hidden post's words are never drawn from the Act: the note stands in their place. Its own player, and only that, reads their words back (Hidden.tsx, read by the article). */
   const hidden = act.hidden === true;
   switch (act.kind) {
@@ -127,7 +129,7 @@ function Body({ act, name, spoken, person, editing, own, onEdit, onDone, marks, 
               )
               : <PostEffects plays={plays} post={act} place="thread" marks={marks} nameOf={casterName} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>}
           {!editing && !hidden && act.concealing !== true && <Poll post={act.id} />}
-          <LastEdited act={act} />
+          <LastEdited act={rewound?.rewind.version ?? act} />
           <Reactions act={act.id} author={by} authorName={spoken} tallies={tallies} mine={mine} plays={plays} />
           {person && <Signature text={person.character.signature} />}
         </>

@@ -54,6 +54,8 @@ export interface CardPlay {
   readonly rode?: Id;
   /** When a play's effect starts where that is later than the play (a scored-as play's window opens at the next settlement); absent where it starts when it lands. */
   readonly starts?: string;
+  /** A rewind play's point, an ISO time: the post is shown as it was then (the play's `rewind_at`). Its effect names the date. */
+  readonly rewindAt?: string;
   /** A play a trap caught, by the set that caught it: it is spent and does nothing, so no effect is drawn for it. */
   readonly caught?: Id;
   /** An admin ended this play (a `card_end` Act names it): its layer is off for everyone, though the play and its layer number stay. */
@@ -480,7 +482,7 @@ export interface CardUi {
    * with the play and never worked out again from today's economy), for a card whose play is said with a number it recorded; `opened` (a drive card's play: true where its own id is its drive's, false where it joined one an earlier play opened; absent for a play with no drive), so a card can say which; and `starts` and `ends` (ISO times, as the server wrote them with the play) for a card whose play is said with the window it
    * names (a scored-as card's two settlements).
    */
-  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number; readonly opened?: boolean; readonly starts?: string; readonly ends?: string }) => string | undefined;
+  readonly logPlay?: (config: Readonly<Record<string, unknown>>, recorded: { readonly tokens?: number; readonly opened?: boolean; readonly starts?: string; readonly ends?: string; readonly rewindsTo?: string }) => string | undefined;
   /**
    * What a card that writes (`CardRules.writes`) did to a post of the author's, for the author's log, as the verb phrase after its subject; the
    * engine names the card and the post, and says nothing of who played it or what it cost. `continued` follows "<card> on your post #3" (the

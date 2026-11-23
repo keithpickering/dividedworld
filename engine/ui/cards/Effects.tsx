@@ -38,11 +38,12 @@ import { useMeet } from './Callout.tsx';
 import { useHoldScreen } from '../tips/Tips.tsx';
 import { useLensStore } from './Lens.tsx';
 import { useStaged } from '../staged.ts';
-import { MomentView, useShownMoment } from './Moment.tsx';
+import { PRESENT_BACK, PRESENT_LABEL } from './lens-words.ts';
+import { MomentFrame, MomentView, useShownMoment, useShownPresent } from './Moment.tsx';
 import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
-import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, withHandedOut, type Plays } from './plays.ts';
+import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
@@ -80,6 +81,17 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const { actingCharacters, writingCharacters, hudCharacter, wallet, refresh } = usePlayer();
   const play = usePlay();
   const here = usePlays(plays, post.id);
+  /*
+   * A live rewind (Time Machine design, 4.2): the post's words are the version it names, and the plays drawn are those it lets show (`rewoundOf`). A hidden play is not ended, only not drawn here, so
+   * everything below that reads the post's plays for what they are (tails, drives, the count) still does. Nothing is drawn until the rewind's view is in the store.
+   */
+  const rewound = useRewound(plays, post.id);
+  /* Return to present (design, 4.5): the Lens shows this post as it is now, the newest words and every play but the rewind's own, framed "The present". */
+  const lens = useLensStore();
+  const shownPresent = useShownPresent(lens);
+  const presenting = rewound !== null && bodyOf !== undefined && shownPresent === rewound.rewind.play;
+  const hidden = useMemo(() => new Set(presenting ? [rewound.rewind.play] : rewound?.hidden.map((p) => p.id)), [rewound, presenting]);
+  const words = rewound && bodyOf && !presenting ? bodyOf(rewound.rewind.version) : children;
   /*
    * The tails of the plays here that write, read for the page together (tails.ts): a post with none of them is never read. The version drawn
    * is the post's current one, the newest any play has a row for, and a failed regeneration keeps the tail the play had (`resolveWritten`).
@@ -124,7 +136,6 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const played = drivesOfPlays(here.plays, driving, at);
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
-  const lens = useLensStore();
   const moment = useShownMoment(lens);
   const onBoard = usePlays(plays, board ?? '');
   const onThread = usePlays(plays, post.thread);
@@ -221,8 +232,8 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* The post's plays with the sign's count (`withHandedOut`), so a refunded cast arriving live redraws the sign. Only the post layer handed to Effects reads it; the moment, tails and drives reads below use `here.plays`, which carry no count. */
   const counted = useMemo(() => withHandedOut(here.plays), [here.plays]);
   const layers = [
-    ...above.map((l) => ({ reach: l.reach as Reach, acting: l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now), of: l.of })),
-    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach), of: here },
+    ...above.map((l) => ({ reach: l.reach as Reach, acting: (l.reach === 'thread' || l.reach === 'character' ? playsFallingOn(l.drawn, post, keeping, now) : livePlays(l.drawn, now)).filter((p) => rewound === null || presenting || rewound.shows(p)), of: l.of })),
+    { reach: 'post' as Reach, acting: counted.filter((p) => !p.caught && !p.reversed && !p.cut && !p.untaken && !p.faceDown && !p.reach && !hidden.has(p.id)), of: here },
   ];
   /*
    * A play's moment shown here (As it landed): it replaces the post's words and every effect inside the takeovers, which keep wrapping
@@ -240,7 +251,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const slot = (inner: ReactNode) => (composing && play && Compose && bodyEl ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play} body={bodyEl}>{inner}</ComposeSlot> : inner);
   /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer but a card that writes's. */
   const plain = (inner: ReactNode) => (composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{inner}</WordsIn> : inner);
-  if (layers.every((l) => l.acting.length === 0) && !momentAct) return <>{slot(plain(children))}</>;
+  if (layers.every((l) => l.acting.length === 0) && !momentAct && !presenting) return <>{slot(plain(words))}</>;
   /* Each layer's cards in the order each was first played there; `nestOrder` says the order they nest in. */
   const firsts = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key): Wrap => ({ reach: l.reach, key, mine: l.acting.filter((p) => p.card === key), of: l.of })));
   /* A card drawn by another gives its plays to that card's wrap before the wraps are ordered, so the post draws one effect of the named card (`handedOn`). */
@@ -278,17 +289,26 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    * post's own store, as the live effects they replace did: those unmount in this commit and clear theirs before the moment's effects mount and say theirs (React runs a commit's
    * unmount cleanups ahead of its mounts), and Back to now is the same turned about.
    */
+  /* The present is the post itself, framed: its words and every play but the rewind's own inside the takeovers, as a moment's frame holds them, with a press back to the rewind. */
+  const rewindPlay = presenting ? here.plays.find((p) => p.id === rewound.rewind.play) : undefined;
+  if (rewindPlay) {
+    const inner = wrapIn(plain(wrapIn(words, within, 0)), rest, within.length);
+    const shown = (
+      <MomentFrame play={rewindPlay} read="read" label={PRESENT_LABEL} backLabel={PRESENT_BACK} back={() => lens.showPresent(null)} bare named={[]} unrecorded={false}>{inner}</MomentFrame>
+    );
+    return <>{slot(wrapIn(shown, takeovers, 0))}</>;
+  }
   if (momentAct && bodyOf) {
     const shown = (
       <MomentView
-        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={plain(children)}
+        play={momentAct} place={place} nameOf={nameOf} bodyOf={bodyOf} now={plain(words)}
         back={() => lens.showMoment(null)} onView={(card, view) => plays.setView(post.id, card, view)}
       />
     );
     return <>{slot(wrapIn(shown, takeovers, 0))}</>;
   }
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
-  const wrapped = wrapIn(wrapIn(plain(wrapIn(children, within, 0)), rest, within.length), takeovers, within.length + rest.length);
+  const wrapped = wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length);
   return <>{slot(wrapped)}</>;
 }
 

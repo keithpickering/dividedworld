@@ -16,7 +16,7 @@ import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
 import { pronounProblems } from './pronouns.ts';
 import { BEYOND_POST, DISCIPLINE_KINDS, GIMMICK_KINDS, INT4_MAX, PLAYS, RARITIES, REACHES, TRIGGERS, atOrBelow, inPrint, instant, spanMs, withheld } from './cards.ts';
-import type { CardRules } from './cards.ts';
+import type { CardRules, Rarity } from './cards.ts';
 import { isFixed, type Pull, type SlotSeed } from './packs.ts';
 import type { EventLine } from './cosmetics.ts';
 
@@ -730,6 +730,7 @@ function playProblems(c: CardRules, reactionKeys: ReadonlySet<string> = new Set(
   if (c.skim !== undefined) out.push(...skimProblems(c, who, play));
   if (c.refunds !== undefined) out.push(...refundsProblems(c, who, play));
   out.push(...veilProblems(c, who, play));
+  out.push(...rewindProblems(c, who, play));
   if (c.scoresAs !== undefined) {
     if (c.scoresAs !== true) out.push(`${who} has scoresAs ${JSON.stringify(c.scoresAs)}; scoresAs is true or left out`);
     else {
@@ -918,6 +919,20 @@ function veilProblems(c: CardRules, who: string, play: string): string[] {
     if (c.seeded) out.push(`${who} has a reaction and is seeded; a card with a reaction is not`);
   }
   if (c.veil !== undefined && c.reaction !== undefined) out.push(`${who} has both a veil and a reaction; a card has one of the two`);
+  return out;
+}
+
+/** A rewind (the Time Machine design, section 3): a cast card on a post alone, with a time up and a rarity to turn away, and none of what a rewind has no way to carry. It does draw an effect (`drawsEffect`), which `draws` (what the server draws) is not. */
+function rewindProblems(c: CardRules, who: string, play: string): string[] {
+  if (c.rewind === undefined) return [];
+  const out: string[] = [];
+  const has = `${who} has a rewind, and`;
+  if (play !== 'cast') out.push(`${has} only a cast card does`);
+  if (!(Array.isArray(c.reaches) && c.reaches.length === 1 && c.reaches[0] === 'post')) out.push(`${has} a card with a rewind reaches a post alone`);
+  if (c.lasts === undefined) out.push(`${has} a card with a rewind has a time up (lasts); a rewind ends at its time`);
+  if (typeof c.rewind !== 'object' || c.rewind === null || Array.isArray(c.rewind) || !RARITIES.includes((c.rewind as { upTo: Rarity }).upTo)) out.push(`${has} its upTo is one of ${RARITIES.slice(0, -1).join(', ')} or ${RARITIES.at(-1)}`);
+  const carried = [['gimmick', c.gimmick], ['veil', c.veil], ['reaction', c.reaction], ['writes', c.writes], ['replies', c.replies], ['draws', c.draws], ['drive', c.drive], ['surface', c.surface]] as const;
+  for (const [name, value] of carried) if (value !== undefined) out.push(`${has} a card with a rewind has no ${name}`);
   return out;
 }
 

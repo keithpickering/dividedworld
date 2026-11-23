@@ -136,7 +136,7 @@ begin
   perform tests.become_service();
   why := pg_temp.coded(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'bkcut', a, p, '{}'));
   perform tests.unbecome();
-  if why is distinct from '22023 Bk Buzzkill is cast face up and never set face down' then raise exception 'a card that cuts was set face down, or refused in other words: %', why; end if;
+  if why is distinct from '22023 Bk Buzzkill is played face up and never set face down' then raise exception 'a card that cuts was set face down, or refused in other words: %', why; end if;
   if exists (select 1 from face_down f where f.post = p) or exists (select 1 from acts s where s.kind = 'set' and s.target_act_id = p) or card_held(ann, 'bkcut') is distinct from 8 then
     raise exception 'a refused set of a card that cuts left something behind';
   end if;

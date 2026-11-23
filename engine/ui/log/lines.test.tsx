@@ -1387,7 +1387,7 @@ describe('the payout cards\' lines', () => {
     instance: { ...testInstance, cards: [...testInstance.cards,
       card('chess', '4D Chess', { play: 'set', trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } } }),
       card('offday', 'Off Day', { rarity: 'legendary', reaches: ['character'], scoresAs: true })] },
-    ui: { ...words.ui, cards: [{ key: 'offday', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '', logPlay: (_c, r) => `Window ${r.starts} to ${r.ends}.` }] },
+    ui: { ...words.ui, cards: [{ key: 'offday', art: { color: '#000', ink: '#fff', canvas: '', mark: '', credit: 'Test' }, describe: () => '', logPlay: (_c, r) => (r.rewindsTo === undefined ? `Window ${r.starts} to ${r.ends}.` : `Rewound to ${r.rewindsTo}.`) }] },
   };
   const posts = [act('post3', 'post', 'p', { seq: 3 }), act('post4', 'post', 's', { seq: 4 })];
   const names = new Map([['s', 'Spritey']]);
@@ -1437,6 +1437,14 @@ describe('the payout cards\' lines', () => {
   const named = act('k1', 'card', 'p', { targetActId: 'post3', payload: { card: 'offday', reach: 'character', character: 'p', config: { class: 'heel' }, starts: day0, ends: day1 } });
   const scoredRow = { settlement: 1, character: 'p', classKey: 'heel', play: 'k1', card: 'offday', startsAt: day0, endsAt: day1 };
   const OWN = 'Off Day named a Heel for Pipewrench in this window, so it was scored as one whatever its own class. That ended with this settlement, and its own class never changed.';
+
+  test('a play\'s rewind_at reaches the card\'s sentence as rewindsTo, and a play without one gives none', () => {
+    const log = { ...empty, cards: [{ card: 'offday', kind: 'played' as const, act: 'k1', price: 0, at }] };
+    const point = '2026-10-29T08:17:00.000Z';
+    const say = (a: Act) => text(logRows(data({ log, mine: [char('p', 'Pipewrench', 'face')], acts: new Map([...posts, a].map((x) => [x.id, x])), names }), w, 600, null).find((r) => r.kind === 'played')!);
+    expect(say({ ...named, payload: { ...named.payload, rewind_at: point } })).toContain(`Rewound to ${point}.`);
+    expect(say(named)).not.toContain('Rewound to');
+  });
 
   test('the target\'s and the caster\'s rows for an Off Day carry the card\'s sentence, given the window it named', () => {
     const log = { ...empty, cards: [{ card: 'offday', kind: 'played' as const, act: 'k1', price: 0, at }], playsOnMine: [{ play: 'k1', post: 'post3', at, reach: 'character' as const, targetName: 'Pipewrench', targetCharacter: 'p' }] };

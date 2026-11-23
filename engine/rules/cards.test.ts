@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, rewindWords, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -390,7 +390,7 @@ test('a card that writes is refused in plain words where the instance runs no ol
   assert.equal(decidePlay(writer, {} as Settings, post, [], {}, '').ok, true, 'settings that say nothing about the old voice do not withhold');
   assert.deepEqual(decideSet(writer, { oldVoice: false } as Settings, post, [], {}, [writer]), { ok: false, why: sentence });
   // Where the old voice runs, it is still never set face down: a card that writes is cast face up.
-  assert.deepEqual(decideSet(writer, { oldVoice: true } as Settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  assert.deepEqual(decideSet(writer, { oldVoice: true } as Settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is played face up and never set face down` });
   const user: CardRules = { ...writer, key: 'user', play: 'use', lasts: { unit: 'day', count: 1 } };
   assert.deepEqual(decideUse(user, { oldVoice: false } as Settings, post, [], {}, ''), { ok: false, why: sentence });
 });
@@ -561,8 +561,8 @@ test('a Move that writes, needs a message, draws or runs a drive is cast face up
   for (const card of [writer, needy, dealer, driver]) assert.equal(faceUpOnly(card), true, `${card.key} is face up only`);
   assert.equal(faceUpOnly(plain), false);
   assert.equal(faceUpOnly(cutter), true, 'a card that replies is face up only, so the play form offers it no Set face down switch');
-  for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is cast face up and never set face down` });
-  assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is cast face up and never set face down` });
+  for (const card of [needy, dealer, driver]) assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} is played face up and never set face down` });
+  assert.deepEqual(decideSet(writer, settings, post, [], {}, [writer]), { ok: false, why: `${writer.name} writes, so it is played face up and never set face down` });
   assert.equal(decideSet(plain, settings, post, [], {}, [plain]).ok, true);
 });
 
@@ -697,7 +697,7 @@ test('a surface card is played with its first draw, and refused without it; othe
 
 test('a surface card is cast face up only: decideSet refuses it in the sentence the other face-up cards get', () => {
   assert.equal(faceUpOnly(wall), true);
-  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: `${wall.name} is cast face up and never set face down` });
+  assert.deepEqual(decideSet(wall, walled, post, [], {}, [plain]), { ok: false, why: `${wall.name} is played face up and never set face down` });
 });
 
 test('a second play of a surface card is refused as a wall, in the words the database uses; other cards keep the stack\'s words', () => {
@@ -791,7 +791,7 @@ test('a post target reads a forged quote as the poster\'s own words, and a real 
 test('a card that carries a reply is cast face up and never set face down, and no staff persona is offered it', () => {
   const set = decideSet(cutter, settings, post, [], {}, [cutter]);
   assert.equal(set.ok, false);
-  assert.equal(set.ok ? '' : set.why, 'Test cutter carries a reply, so it is cast face up and never set face down');
+  assert.equal(set.ok ? '' : set.why, 'Test cutter carries a reply, so it is played face up and never set face down');
   assert.equal(staffOffers(cutter), false);
   assert.equal(staffOffers(plain), true);
   assert.equal(castOnPost(cutter), true);
@@ -862,7 +862,7 @@ test('a watch refuses nothing of its own', () => {
 
 test('decideSet refuses each discipline kind face down, in words that say why', () => {
   for (const card of [relief, unban, fall, watch]) {
-    assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} acts the moment it lands, so it is cast face up and never set face down` }, card.key);
+    assert.deepEqual(decideSet(card, settings, post, [], {}, [card]), { ok: false, why: `${card.name} acts the moment it lands, so it is played face up and never set face down` }, card.key);
     assert.equal(faceUpOnly(card), true, `${card.key} is face up only, so the play form offers it no Set face down switch`);
   }
 });
@@ -1002,4 +1002,76 @@ test('a target that is not a post is never refused by the count', () => {
 test('the card\'s own stack refusal comes first', () => {
   const one: CardRules = { ...drawer, canApply: () => refuse('the card says no') };
   assert.deepEqual(decidePlay(one, limit, post, full, {}, ''), { ok: false, why: 'the card says no' });
+});
+
+// A rewind card: its play carries `rewind` on the post's effect, and the post turns away cards up to `upTo` until it ends.
+const clock: CardRules = { ...cast('clock', 'legendary'), reaches: ['post'], lasts: { unit: 'day', count: 1 }, rewind: { upTo: 'rare' }, drawsEffect: {} };
+const rewound = (over: Partial<CardEffect> = {}): CardEffect => ({ card: 'clock', act: 'r', rewind: { upTo: 'rare' }, ends: soon, ...over });
+const rareMove = cast('raremove', 'rare');
+const rareUse: CardRules = { ...base, key: 'rareuse', name: 'Test Rare Use', rarity: 'rare', play: 'use', gimmick: { kind: 'ward', upTo: 'common' }, lasts: { unit: 'day', count: 7 }, canApply: (t, e, _config, now) => landsOn({ key: 'rareuse' }, t, e, now) };
+const rareSet: CardRules = { ...cast('rareset', 'rare'), setPhrase: () => 'x' };
+const rewindRefusal = (ends: string) => `this post's Test clock turns away cards up to rare until ${refusalTime(ends)}`;
+
+test('rewindWords says what the freeze turns away and until when', () => {
+  assert.equal(rewindWords('Test clock', 'rare', soon), `this post's Test clock turns away cards up to rare until ${refusalTime(soon)}`);
+});
+
+test('a live rewind refuses a Move up to its rarity on the post, and a rarer one passes', () => {
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k) };
+  assert.deepEqual(decidePlay(rareMove, settings, post, [rewound()], {}, '', ctx), { ok: false, why: rewindRefusal(soon) });
+  assert.deepEqual(decidePlay(plain, settings, post, [rewound()], {}, '', ctx), { ok: false, why: rewindRefusal(soon) }, 'a common card too');
+  assert.equal(decidePlay(grand, settings, post, [rewound()], {}, '', ctx).ok, true, 'a legendary Move passes');
+  assert.equal(decidePlay(rareMove, settings, post, [rewound({ ends: gone })], {}, '', ctx).ok, true, 'an ended rewind refuses nothing');
+});
+
+test('two live rewinds that both cover the card: the refusal names the latest played, whatever order the effects come in', () => {
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k) };
+  const t1 = new Date(Date.parse(soon) - 3600_000).toISOString();
+  const t2 = new Date(Date.parse(soon) - 1800_000).toISOString();
+  const lesser = rewound({ act: 'lesser', rewind: { upTo: 'common' }, at: t1, ends: soon });
+  const rarer = rewound({ act: 'rarer', rewind: { upTo: 'rare' }, at: t2, ends: new Date(Date.parse(soon) + 60_000).toISOString() });
+  const said = (effects: CardEffect[]) => decidePlay(plain, settings, post, effects, {}, '', ctx);
+  const rarerWords = { ok: false, why: `this post's Test clock turns away cards up to rare until ${refusalTime(rarer.ends!)}` };
+  assert.deepEqual(said([lesser, rarer]), rarerWords, 'oldest first');
+  assert.deepEqual(said([rarer, lesser]), rarerWords, 'newest first: the time decides, not the order');
+  const newerLesser = { ...lesser, at: new Date(Date.parse(t2) + 1000).toISOString() };
+  assert.deepEqual(said([newerLesser, rarer]), { ok: false, why: `this post's Test clock turns away cards up to common until ${refusalTime(soon)}` }, 'a lesser rewind played later is the one named');
+  assert.deepEqual(said([{ ...lesser, at: undefined }, { ...rarer, at: undefined }].map((e) => { const { at: _a, ...rest } = e; return rest; })), rarerWords, 'with no time, the later in the list (card_target lists oldest first)');
+});
+
+test('the freeze is said after a ward and before discipline', () => {
+  const ward: CardEffect = { card: 'shield', act: 'w', gimmick: { kind: 'ward', upTo: 'uncommon' }, ends: soon };
+  const r = decidePlay(plain, settings, post, [rewound(), ward], {}, '', { nameOf: names });
+  assert.equal(r.ok, false);
+  assert.match(r.ok ? '' : r.why, /Test Shield turns away/, 'the ward speaks first');
+});
+
+test('the freeze speaks before discipline\'s own refusal', () => {
+  const own = { ...post, author: 'me' };
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k), caster: 'me' };
+  const said = (effects: CardEffect[]) => decidePlay(fall, settings, own, effects, {}, '', ctx);
+  assert.deepEqual(said([]), { ok: false, why: `${fall.name} is played on another character's post` }, 'without the rewind, discipline speaks');
+  assert.deepEqual(said([rewound()]), { ok: false, why: rewindRefusal(soon) }, 'with a live rewind, the freeze speaks first');
+});
+
+test('a pierce no weaker than the rewind\'s card gets a Move past it, as a ward', () => {
+  const ctx = { nameOf: names, rarityOf: (k: string) => (k === 'clock' ? ('rare' as const) : undefined) };
+  assert.equal(decidePlay(rareMove, settings, post, [rewound()], {}, '', { ...ctx, pierce: 'rare' }).ok, true, 'a pierce up to rare passes');
+  assert.equal(decidePlay(rareMove, settings, post, [rewound()], {}, '', { ...ctx, pierce: 'uncommon' }).ok, false, 'a pierce up to uncommon does not');
+});
+
+test('a live rewind refuses a Use and a Set on the post likewise', () => {
+  const ctx = { nameOf: (k: string) => (k === 'clock' ? 'Test clock' : k) };
+  assert.deepEqual(decideUse(rareUse, settings, post, [rewound()], {}, '', ctx), { ok: false, why: rewindRefusal(soon) });
+  assert.equal(decideUse(rareUse, settings, post, [rewound({ ends: gone })], {}, '', ctx).ok, true, 'an ended rewind refuses nothing');
+  assert.deepEqual(decideSet(rareSet, settings, post, [rewound()], {}, [rareSet, clock]), { ok: false, why: rewindRefusal(soon) });
+  assert.equal(decideSet(rareSet, settings, post, [rewound({ ends: gone })], {}, [rareSet, clock]).ok, true, 'an ended rewind refuses nothing');
+});
+
+test('a rewind card is face up only and is never offered to a staff persona', () => {
+  assert.equal(faceUpOnly(clock), true);
+  assert.deepEqual(decideSet(clock, settings, post, [], {}, [clock]), { ok: false, why: `${clock.name} is played face up and never set face down` });
+  assert.equal(staffOffers(clock), false);
+  const { rewind: _gone, ...bare } = clock;
+  assert.equal(staffOffers(bare as CardRules), true, 'the same card without the rewind');
 });

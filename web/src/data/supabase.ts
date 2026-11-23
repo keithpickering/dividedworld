@@ -47,7 +47,7 @@ import type {
   SurfaceAct, SurfaceNow, SurfaceWritten, Ballot, Poll, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Rewind, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -851,6 +851,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     };
   }
 
+  /** A rewind as rewind_view answers it, and as a thread's page carries it in `rewinds`; null for none. */
+  function toRewind(data: unknown): Rewind | null {
+    if (!isObject(data) || !isObject(data['version']) || typeof data['play'] !== 'string' || typeof data['post'] !== 'string' || typeof data['at'] !== 'string') return null;
+    return { play: data['play'], post: data['post'], at: data['at'], version: toAct(data['version']) };
+  }
+
   /**
    * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
    * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
@@ -1638,6 +1644,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!idOk(play)) return null;
       return momentOf(() => client.rpc('play_moment', { play }));
     },
+    async rewindView(play) {
+      /* One read of the rewind's view (rewind_view, 0412); an id that is no rewind play on a post is null, or refused in words, which is null here. */
+      if (!idOk(play)) return null;
+      const r = await read(async () => {
+        const x = (await client.rpc('rewind_view', { play })) as Res;
+        return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
+      });
+      return toRewind(r.data);
+    },
     async spinMoment(spin) {
       /* One read of the moment (spin_moment, 0351); a spin that names no post is refused in words, which is null here. */
       if (!idOk(spin)) return null;
@@ -1962,7 +1977,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         spent: (Array.isArray(d['spent']) ? d['spent'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
-        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']), origin,
+        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']), origin, rewinds: rowsOf(d['rewinds']).map(toRewind).filter((x): x is Rewind => x !== null),
         ...toPollParts(d), voterCast: rowsOf(d['voterCast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
       };
     },

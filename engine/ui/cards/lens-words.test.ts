@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { viewProblems, wordsProblems, sprungWords, pierceWords, shortQuote, readCaughtFate, STATUS_MAX_WORDS } from './lens-words.ts';
+import { viewProblems, wordsProblems, sprungWords, pierceWords, shortQuote, readCaughtFate, hiddenWords, pointWords, PRESENT_BACK, PRESENT_LABEL, PRESENT_TILE, REWIND_LEGEND, REWIND_NOTHING, STATUS_MAX_WORDS } from './lens-words.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { CardView } from './types.ts';
 import { caughtWords, endsWords, keptEndedWords } from './marks.ts';
@@ -156,5 +156,20 @@ describe('pierceWords: what a play that got past a ward says', () => {
   test('names the card it was played on, and the Ward it got past where there was one', () => {
     assert.equal(pierceWords('Cheap Shot'), 'Played on a Cheap Shot');
     assert.equal(pierceWords('Cheap Shot', 'Force Field'), 'Played on a Cheap Shot, past Force Field');
+  });
+});
+
+describe('a rewind\'s words: the Lens and the point picker', () => {
+  test('the count says one card and many, in the two forms', () => {
+    assert.equal(hiddenWords(1), '1 later card hidden until it ends');
+    assert.equal(hiddenWords(3), '3 later cards hidden until it ends');
+  });
+  test('a point is named for the post as first posted or for its edit, with the date given', () => {
+    assert.equal(pointWords(true, 'Nov 14, 9:02 PM'), 'As first posted, Nov 14, 9:02 PM');
+    assert.equal(pointWords(false, 'Nov 14, 9:02 PM'), 'Edit of Nov 14, 9:02 PM');
+  });
+  test('the tile, the tag, the way back, the legend and the empty line are the plan\'s words, and say "play" where they say it at all', () => {
+    assert.deepEqual([PRESENT_TILE, PRESENT_LABEL, PRESENT_BACK, REWIND_LEGEND, REWIND_NOTHING], ['Return to present', 'The present', 'Back to the rewind', 'Rewind to', 'Nothing to rewind on this post']);
+    for (const w of [PRESENT_TILE, PRESENT_LABEL, PRESENT_BACK, REWIND_LEGEND, REWIND_NOTHING, hiddenWords(2), pointWords(false, 'x')]) assert.doesNotMatch(w, /\bcast/iu);
   });
 });

@@ -1,0 +1,76 @@
+/*
+ * Time Machine's tape (Effect.tsx, docs/plans/2026-11-21-time-machine-design.md, section 4.6): one layer over the post's content area, border to
+ * border, placed by `placeLayer` (the page allows no inline style sheet) and marked `data-kb-effect-ink`, which the engine's thread CSS lifts above the
+ * words. The layer clips what it holds, so nothing is drawn outside the area, and every part of it takes no pointer. Its 100% size is only the
+ * fallback for the moment before the first measure. Colors are literals, as the instance's CSS is not held to the engine's tokens.
+ */
+.dw-tm {
+  position: relative;
+}
+
+.dw-tm-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.dw-tm-scan {
+  position: absolute;
+  inset: 0;
+  background: repeating-linear-gradient(0deg, rgba(0, 0, 0, 0.05) 0 1px, transparent 1px 3px);
+  pointer-events: none;
+}
+
+/* The tracking line drifts from the top of the area to its bottom over 9 s and wraps; held still (a third of the way down) where motion is reduced. */
+.dw-tm-track {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 0;
+  height: 7px;
+  background: linear-gradient(90deg, transparent, rgba(0, 0, 0, 0.12), rgba(255, 255, 255, 0.7), rgba(0, 0, 0, 0.12), transparent);
+  filter: blur(1px);
+  animation: dw-tm-drift 9s linear infinite;
+  pointer-events: none;
+}
+.dw-tm-track[data-still] {
+  top: 33%;
+  animation: none;
+}
+@keyframes dw-tm-drift {
+  from { top: -7px; }
+  to { top: 100%; }
+}
+
+/* The rewind: streaks run right to left across the area once, 600 ms (Effect.tsx `STREAK_MS`). */
+.dw-tm-streaks {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.dw-tm-streak {
+  position: absolute;
+  left: 100%;
+  height: 2px;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.85), rgba(0, 0, 0, 0.25));
+  animation: dw-tm-rewind 0.6s linear both; /* the effect sets each streak's own duration, so its delay and duration end together at 600 ms */
+  pointer-events: none;
+}
+@keyframes dw-tm-rewind {
+  from { transform: translateX(0); }
+  to { transform: translateX(calc(-1 * (var(--dw-tm-w, 100vw) + 100%))); }
+}
+
+/* The read-out, top right: a picture of the status; its words are given to assistive technology by the label beside it. #0b7a5e is 5.4:1 on white. */
+.dw-tm-readout {
+  position: absolute;
+  top: 4px;
+  right: 6px;
+  font: bold 13px Courier, 'Courier New', monospace;
+  color: #0b7a5e;
+  pointer-events: none;
+}
