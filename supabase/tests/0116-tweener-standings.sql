@@ -44,12 +44,12 @@ begin
   -- (1) B reacts to p in the second window; A's earlier paid vote on p is in the input, and A's on q (untouched) is not.
   insert into reactions (act, reactor_account, reactor_character, kind, slot, created_at) values (p, bob, b, 'up', 1, w2 + interval '1 hour');
   input := settlement_input(w2, w3);
-  if input -> 'paid' is distinct from jsonb_build_array(jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole)) then
+  if input -> 'paid' is distinct from jsonb_build_array(jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole, 'floored', '{}'::jsonb)) then
     raise exception 'settlement_input should carry A''s earlier paid vote on an Act B reacted to in the window, and only that: %', input -> 'paid';
   end if;
 
   -- The poison: 0092's join, over the same fixture, loses A's row. The check above is red on it.
-  select coalesce(jsonb_agg(jsonb_build_object('player', p2.account, 'act', p2.act, 'weight', p2.weight, 'shares', p2.shares) order by p2.account, p2.act), '[]')
+  select coalesce(jsonb_agg(jsonb_build_object('player', p2.account, 'act', p2.act, 'weight', p2.weight, 'shares', p2.shares, 'floored', p2.floored) order by p2.account, p2.act), '[]')
     into old_paid
     from paid_votes p2 join (select distinct act, reactor_account from reactions where created_at >= w2 and created_at < w3) w
       on w.act = p2.act and w.reactor_account = p2.account;

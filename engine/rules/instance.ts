@@ -319,6 +319,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   reactionCap: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   postEffects: whole(1, 'effects', 16),
   crowdPayEach: (v) => (isWhole(v, 0) ? null : 'a whole number of hundredths, at least 0'),
+  crowdFloor: (v) => (isWhole(v, 0) ? null : 'a whole number of hundredths, at least 0'),
   crowdPayMost: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   charactersPerPlayer: (v) => (isWhole(v, 1) ? null : 'a whole number, at least 1'),
   settlementCron: (v) => (isCron(v) ? null : 'a five-field cron expression, each field inside its range'),

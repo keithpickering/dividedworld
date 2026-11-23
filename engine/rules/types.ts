@@ -182,6 +182,8 @@ export interface Settings {
   readonly postEffects: number;
   /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
   readonly crowdPayEach: Hundredths;
+  /** What a vote on the character's own Act pays it when its class neither pays nor charges that vote (the crowd floor), in hundredths; 0 switches it off. */
+  readonly crowdFloor: Hundredths;
   /** The most Acts one player is paid crowd pay for in one settlement window, across all their characters. */
   readonly crowdPayMost: number;
   /** The most characters one player runs. */
@@ -578,6 +580,8 @@ export interface SettlementInput {
     readonly act: string;
     readonly weight: number;
     readonly shares: Readonly<Record<Quadrant, number>>;
+    /** The net crowd floor in hundredths paid so far on the vote, by quadrant (absent: none), so a take-back is never more than was paid. */
+    readonly floored?: Readonly<Partial<Record<Quadrant, number>>>;
   }[];
 }
 
@@ -815,6 +819,12 @@ export interface ClassRules {
   /** The economy numbers its rules read, so an instance missing one, or holding one out of its bounds, is refused before it settles. */
   readonly reads?: readonly EconomyRead[];
   earn(input: ClassInput, settings: Settings): readonly Earning[];
+  /**
+   * Which of the character's received votes the crowd floor may pay, when the class neither paid nor charged them; every one when absent.
+   * A class's per-vote earnings (`Earning.votes`) must carry the vote's `act`, `quadrant`, `at` and `kind`, since the floor's shield matches
+   * a received vote to an earning on all four: an earning that leaves one out shields nothing, and the floor is paid on top of it.
+   */
+  floorOn?(reaction: ReceivedReaction): boolean;
 }
 
 /* ------------------------------------------------------------------- the instance ---- */

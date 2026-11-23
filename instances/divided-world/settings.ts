@@ -23,6 +23,8 @@ export const defaults: Settings = deepFreeze<Settings>({
   postEffects: 8,
   /** Minus World's ratio: giving a reaction paid a fifth of getting one, and a vote is 10. */
   crowdPayEach: 2,
+  /** A fifth of a vote, as crowd pay pays for giving: a reaction a class neither pays nor charges still helps the character it lands on. */
+  crowdFloor: 2,
   /** At most 0.20 orb a day, about a common card a week from reacting alone. */
   crowdPayMost: 10,
   charactersPerPlayer: 6,

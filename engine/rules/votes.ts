@@ -57,6 +57,11 @@ export interface PaidVote {
   readonly act: string;
   readonly weight: number;
   readonly shares: Readonly<Record<'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative', number>>;
+  /**
+   * The net crowd floor, in hundredths, paid so far on this vote in each quadrant (a quadrant never floored is absent; absent altogether: none paid).
+   * `payVotes` does not know it: the settlement adds it (engine/rules/settle.ts), and a take-back of a floor reads it, never the crowdFloor setting.
+   */
+  readonly floored?: Readonly<Partial<Record<'excitedPositive' | 'excitedNegative' | 'calmPositive' | 'boredNegative', number>>>;
 }
 
 const QUADRANT_KEYS = ['excitedPositive', 'excitedNegative', 'calmPositive', 'boredNegative'] as const;
