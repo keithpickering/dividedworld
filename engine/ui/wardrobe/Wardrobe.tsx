@@ -517,13 +517,21 @@ const Trophies = memo(function Trophies({ id, face, reload }: { readonly id: Id;
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [saved, setSaved] = useState('');
+  /* Whether the player has changed the checks: until then the choice is the one saved, which the trophies page carries as each award's `shown`. A face may carry no
+     shelf (the Supabase adapter's `characters` reads none: trophy_shelf is the server's), so the page is what says which boxes start checked. */
+  const touched = useRef(false);
   useEffect(() => {
     let live = true;
-    void api.trophies(id).then((p) => { if (live) setPage(p); }, () => { if (live) setPage({ awards: [], more: false }); });
+    void api.trophies(id).then((p) => {
+      if (!live) return;
+      setPage(p);
+      if (!touched.current) setChosen((was) => [...was, ...p.awards.filter((a) => a.shown && !(a.belt && a.held) && !was.includes(a.award)).map((a) => a.award)].slice(0, most));
+    }, () => { if (live) setPage({ awards: [], more: false }); });
     return () => { live = false; };
-  }, [api, id]);
+  }, [api, id, most]);
 
   const toggle = (award: Id) => {
+    touched.current = true;
     setSaved('');
     setChosen((was) => (was.includes(award) ? was.filter((a) => a !== award) : was.length < most ? [...was, award] : was));
   };
