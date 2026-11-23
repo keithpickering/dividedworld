@@ -116,6 +116,18 @@ test("a one-day stub run: a meeting, every job at its minutes, nothing undispatc
   console.log(`one-day stub run (1 backstory day + 1 day): ${Math.round(performance.now() - started)} ms`);
 });
 
+test("a run that ends with play_post or post_kinds differing from the Acts fails, naming the row", async () => {
+  const out = mkdtempSync(join(tmpdir(), "rehearsal-run-"));
+  await assert.rejects(
+    rehearse({
+      scenario: tiny, mode: "stub", cassetteDir: join(out, "cassette"), runsDir: out,
+      // The poison: a count of plays no Act holds, written after the run's own checks, as a missed trigger would leave it.
+      onFinish: async (ctx: RunContext) => { await ctx.conn.sql("insert into post_kinds (post, kind, plays, took) select id, 'poison', 1, 0 from acts where kind = 'post' limit 1"); },
+    }),
+    /ended with play_post or post_kinds differing from the Acts.*the counts of kind "poison"/,
+  );
+});
+
 test("a filler action that makes runAction answer 500 stops the run with its error", async () => {
   const out = mkdtempSync(join(tmpdir(), "rehearsal-run-"));
   await assert.rejects(

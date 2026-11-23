@@ -208,8 +208,8 @@ await take('c-n03', { as: 'D-Guy', quiet: ['host'], scroll: FIRST_POST_SCROLL, s
   await click();
   t.mark('play-pressed');
   /* The cast is caught: the play is on the post, with its catch, and no ink canvas is. */
-  await t.holds(`window.__kbStage.fake.cardsOn(window.__kbStage.acts.first, 30).then((a) => a.some((x) => x.kind === 'card' && x.payload.card === 'whoops'))`, 4);
-  const caught = await t.run(`window.__kbStage.fake.cardsOn(window.__kbStage.acts.first, 30).then((acts) => acts.filter((x) => x.kind === 'card' && x.payload.card === 'whoops').map((x) => ({ caught: x.payload.caught !== undefined, set: x.payload.caught ?? null })))`);
+  await t.holds(`window.__kbStage.fake.postPlays([window.__kbStage.acts.first]).then((read) => read.plays).then((a) => a.some((x) => x.kind === 'card' && x.payload.card === 'whoops'))`, 4);
+  const caught = await t.run(`window.__kbStage.fake.postPlays([window.__kbStage.acts.first]).then((read) => read.plays).then((acts) => acts.filter((x) => x.kind === 'card' && x.payload.card === 'whoops').map((x) => ({ caught: x.payload.caught !== undefined, set: x.payload.caught ?? null })))`);
   if (caught.length !== 1 || !caught[0].caught) throw new Error(`the cast was not caught: ${JSON.stringify(caught)}`);
   t.mark('caught');
   await wait(1.5);

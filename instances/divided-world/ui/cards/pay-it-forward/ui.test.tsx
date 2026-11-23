@@ -43,7 +43,7 @@ describe('Pay It Forward hands a Sweet common back to its caster', () => {
     expect(landed.payload.caught).toBeUndefined();
     expect(landed.payload.handedBack).toEqual({ by: set.id, card: 'pay-it-forward' });
     expect(await held(fake, 'hype-up')).toBe(3);
-    const onPost = await fake.cardsOn(opener, 8);
+    const onPost = (await fake.postPlays([opener])).plays;
     expect(onPost.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'pay-it-forward', did: 'returned', set: set.id, by: landed.id });
     expect(onPost.some((a) => a.id === landed.id)).toBe(true);
   });
@@ -70,7 +70,7 @@ describe('Pay It Forward hands a Sweet common back to its caster', () => {
     expect(landed.payload.handedBack).toBeUndefined();
     expect(landed.payload.caught).toBeUndefined();
     expect(await held(fake, 'hype-up')).toBe(2);
-    const onPost = await fake.cardsOn(opener, 8);
+    const onPost = (await fake.postPlays([opener])).plays;
     expect(onPost.some((a) => a.kind === 'spring')).toBe(false);
     expect(onPost.some((a) => a.id === set.id)).toBe(true);
   });

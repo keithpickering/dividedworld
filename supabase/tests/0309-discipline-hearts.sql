@@ -576,7 +576,7 @@ begin
     perform tests.become_service();
     why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, k, a, p, '{}'));
     perform tests.unbecome();
-    if why is distinct from '22023: ' || (select name from card_kinds where key = k) || ' acts the moment it lands, so it is cast face up and never set face down' then
+    if why is distinct from '22023: ' || (select name from card_kinds where key = k) || ' acts the moment it lands, so it is played face up and never set face down' then
       raise exception 'a discipline card % was set face down, or refused in other words: %', k, why;
     end if;
     if exists (select 1 from face_down f where f.post = p and f.card = k) or card_held(ann, k) is distinct from 1 then raise exception 'a refused set of % left something behind', k; end if;

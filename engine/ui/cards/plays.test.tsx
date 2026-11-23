@@ -8,8 +8,10 @@ import type { Act } from '../data/api.ts';
 import type { ActKind } from '../data/api.ts';
 import { localKey } from '../../rules/emoji.ts';
 import { backoff, REPEAT_TRIES } from './tails.ts';
-import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, inForce, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, shownPlays, withHandedOut } from './plays.ts';
+import { asThen, blindPlaysOf, CARD_BACK, createPlays, defaultView, effectCards, holdsEffects, hydrate, inForce, kindSpent, readSurface, rereadSurfaces, inPlayOrder, isBack, livePlays, localKindsOf, stackPlays, markedPlays, playOf, playOver, playsFallingOn, nextEnd, lockoutLive, shownPlays, withHandedOut } from './plays.ts';
 import type { CardPlay, CardView } from './types.ts';
+import { readRewinds, rewoundOf, rewoundPlays } from './plays.ts';
+import type { KayfaApi, Rewind } from '../data/api.ts';
 import { endable } from './Lens.tsx';
 
 const POST = '11111111-0000-4000-8000-000000000001';
@@ -932,6 +934,107 @@ describe('kindSpent', () => {
   });
 });
 
+/* A back that sprang into a lockout (docs/plans/2026-11-22-lockout-in-force-design.md): one rule, read by inForce, playOver and nextEnd. */
+describe('a sprung back with a lockout', () => {
+  const at = (ms: number): string => new Date(ms).toISOString();
+  const sprung = (until: string | undefined, over: Partial<CardPlay> = {}): CardPlay =>
+    play({ faceDown: true, card: `${CARD_BACK}:sp`, revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS - 1000), ...(until !== undefined ? { until } : {}) }, ...over });
+
+  test('a live lockout is not over; past its until it is; reversed it is; with no until it is', () => {
+    expect(playOver(sprung(at(NOW_MS + 1)), NOW_MS, NO_KEEPS)).toBe(false);
+    expect(playOver(sprung(at(NOW_MS)), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(sprung(at(NOW_MS - 1)), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(sprung(at(NOW_MS + 1), { reversed: true }), NOW_MS, NO_KEEPS)).toBe(true);
+    expect(playOver(sprung(undefined), NOW_MS, NO_KEEPS)).toBe(true);
+  });
+
+  test('kindSpent holds while a lockout is live, and falls when it runs out', () => {
+    expect(kindSpent([sprung(at(NOW_MS + 1))], NOW_MS, NO_KEEPS)).toBe(false);
+    expect(kindSpent([sprung(at(NOW_MS + 1))], NOW_MS + 1, NO_KEEPS)).toBe(true);
+  });
+
+  test('in a moment, a lockout past its until is not over, a sprung back with no until is, and a reversed one is', () => {
+    const ran = sprung(at(NOW_MS - 1));
+    expect(playOver(ran, NOW_MS, NO_KEEPS, new Set([ran.id]))).toBe(false);
+    const none = sprung(undefined);
+    expect(playOver(none, NOW_MS, NO_KEEPS, new Set([none.id]))).toBe(true);
+    const ended = sprung(at(NOW_MS - 1), { reversed: true });
+    expect(playOver(ended, NOW_MS, NO_KEEPS, new Set([ended.id]))).toBe(true);
+  });
+
+  test('lockoutLive is true only with an until ahead and no admin end', () => {
+    expect(lockoutLive(sprung(at(NOW_MS + 1)), NOW_MS)).toBe(true);
+    expect(lockoutLive(sprung(at(NOW_MS)), NOW_MS)).toBe(false);
+    expect(lockoutLive(sprung(undefined), NOW_MS)).toBe(false);
+    expect(lockoutLive(sprung(at(NOW_MS + 1), { reversed: true }), NOW_MS)).toBe(false);
+    expect(lockoutLive(play(), NOW_MS)).toBe(false);
+  });
+
+  test('playOver is the opposite of inForce for every sprung back', () => {
+    for (const until of [undefined, at(NOW_MS - 5), at(NOW_MS), at(NOW_MS + 5)]) {
+      for (const over of [{}, { reversed: true as const }, { caught: POST }]) {
+        for (const now of [NOW_MS - 10, NOW_MS, NOW_MS + 10]) {
+          const p = sprung(until, over);
+          expect(playOver(p, now, NO_KEEPS)).toBe(!inForce(p, now, false));
+        }
+      }
+    }
+  });
+});
+
+describe('nextEnd wakes at a back\'s or a lockout\'s end', () => {
+  const at = (ms: number): string => new Date(ms).toISOString();
+  const back = (over: Partial<CardPlay> = {}): CardPlay => play({ faceDown: true, card: CARD_BACK, ...over });
+  const sprungTo = (until: string): CardPlay => back({ card: `${CARD_BACK}:sp`, revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS - 1000), until } });
+
+  test('a face-down back\'s endsAt', () => {
+    expect(nextEnd([back({ endsAt: at(NOW_MS + 500) })], NOW_MS)).toBe(NOW_MS + 500);
+  });
+  test('a sprung back\'s until', () => {
+    expect(nextEnd([sprungTo(at(NOW_MS + 700))], NOW_MS)).toBe(NOW_MS + 700);
+  });
+  test('neither of a back taken back, nor a sprung back\'s endsAt, nor a lockout already run out', () => {
+    expect(nextEnd([back({ endsAt: at(NOW_MS + 500), takenBack: { at: at(NOW_MS) } })], NOW_MS)).toBeNull();
+    expect(nextEnd([back({ endsAt: at(NOW_MS + 500), revealed: { card: 'snare', spring: 'sp', at: at(NOW_MS) } })], NOW_MS)).toBeNull();
+    expect(nextEnd([sprungTo(at(NOW_MS - 1))], NOW_MS)).toBeNull();
+  });
+
+  test('a back with no endsAt, or one that does not parse, schedules no wake', () => {
+    expect(nextEnd([back({ endsAt: null })], NOW_MS)).toBeNull();
+    expect(nextEnd([back({ endsAt: 'not a time' })], NOW_MS)).toBeNull();
+  });
+  test('the soonest of a mix', () => {
+    expect(nextEnd([play({ ends: at(NOW_MS + 900) }), back({ endsAt: at(NOW_MS + 300) }), sprungTo(at(NOW_MS + 600))], NOW_MS)).toBe(NOW_MS + 300);
+    expect(nextEnd([play({ ends: at(NOW_MS + 900) }), back({ endsAt: at(NOW_MS + 800) }), sprungTo(at(NOW_MS + 600))], NOW_MS)).toBe(NOW_MS + 600);
+  });
+});
+
+describe('a spring into a lockout that arrives before its back', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const base = (id: string, kind: Act['kind'], payload: Record<string, unknown>, target: string | null = 'p1'): Act =>
+    ({ id, kind, character: kind === 'card_end' ? null : 'c1', thread: 't', targetActId: target, seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null });
+  const until = new Date(Date.now() + 86_400_000).toISOString();
+  const spring = { card: 'snare', trigger: 'cast', did: 'lockedOut', until, set: 's1', by: 'k2' };
+
+  test('keeps the lockout, and the back is in force', () => {
+    const plays = createPlays();
+    plays.add([base('sp', 'spring', spring)]);
+    plays.add([base('s1', 'set', {})]);
+    const got = plays.get('p1').plays[0]!;
+    expect(got.revealed?.until).toBe(until);
+    expect(inForce(got, Date.now(), false)).toBe(true);
+  });
+
+  test('an admin end of the spring read before the back marks it reversed', () => {
+    const plays = createPlays();
+    plays.add([base('sp', 'spring', spring), base('end-sp', 'card_end', { why: 'reversed', by: 'admin' }, 'sp')]);
+    plays.add([base('s1', 'set', {})]);
+    const got = plays.get('p1').plays[0]!;
+    expect(got.reversed).toBe(true);
+    expect(inForce(got, Date.now(), false)).toBe(false);
+  });
+});
+
 /* The Buzzkill (docs/plans/2026-11-21-buzzkill-design.md, section 3.4): a cutting play names the Gimmick play it ended, which the store marks cut, whichever arrives first. */
 describe('a Gimmick a cutting card ended', () => {
   const at = '2026-10-30T10:00:00.000Z';
@@ -1043,6 +1146,93 @@ describe('a Gimmick a cutting card ended', () => {
   });
 });
 
+describe('the count of each kind on a post (post plays, section 1)', () => {
+  const at = '2026-10-30T10:00:00.000Z';
+  const act = (id: string, over: Partial<Act> = {}, payload: Record<string, unknown> = { card: 'whoops' }): Act =>
+    ({ id, kind: 'card', character: 'c1', thread: 't', targetActId: 'p1', seq: null, createdAt: at, payload, currentPayload: payload, editedAt: null, shownEditedAt: null, ...over });
+  const set = (id: string): Act => act(id, { kind: 'set' }, {});
+  const spring = (id: string, of: string): Act => act(id, { kind: 'spring' }, { card: 'snare', trigger: 'cast', outcome: { do: 'payout' }, set: of });
+
+  test('setCounts holds each kind\'s count on its post, the back kind under CARD_BACK, and wakes the post', () => {
+    const plays = createPlays();
+    const woke = vi.fn();
+    plays.subscribe('p1', woke);
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 45, took: 44 }, { post: 'p1', card: null, all: 3, took: 3 }]);
+    expect(woke).toHaveBeenCalledTimes(1);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 45, took: 44 });
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 3, took: 3 });
+    expect(plays.get('p2').counts.size).toBe(0);
+  });
+
+  test('a kind with no count from the server counts its held plays', () => {
+    const plays = createPlays();
+    plays.add([act('k1'), act('k2', { untaken: true }), act('k3', {}, { card: 'stick-around' })]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 2, took: 1 });
+    expect(plays.get('p1').counts.get('stick-around')).toEqual({ all: 1, took: 1 });
+  });
+
+  test('a new live play raises its kind\'s count once; the same play again does not', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 30, took: 30 }]);
+    plays.add([act('k1')]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 31, took: 31 });
+    plays.add([act('k1')]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 31, took: 31 });
+  });
+
+  test('a new live play that did not take raises all and not took; a late untaken for a held play lowers took', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 5, took: 5 }]);
+    plays.add([act('k1', { untaken: true }), act('k2')]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 7, took: 6 });
+    plays.add([act('k2', { untaken: true })]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 7, took: 5 });
+    plays.add([act('k2', { untaken: true })]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 7, took: 5 });
+  });
+
+  test('a set counts under the back kind only when its spring arrives, once', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: null, all: 2, took: 2 }]);
+    plays.add([set('s1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 2, took: 2 });
+    plays.add([spring('sp', 's1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 3, took: 3 });
+    plays.add([spring('sp', 's1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 3, took: 3 });
+  });
+
+  test('a set whose spring came first counts once, when it arrives', () => {
+    const plays = createPlays();
+    plays.setCounts([{ post: 'p1', card: null, all: 0, took: 0 }]);
+    plays.add([spring('sp', 's1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 0, took: 0 });
+    plays.add([set('s1')]);
+    expect(plays.get('p1').counts.get(CARD_BACK)).toEqual({ all: 1, took: 1 });
+  });
+
+  test('a set never sprung counts for no kind among held plays', () => {
+    const plays = createPlays();
+    plays.add([set('s1')]);
+    expect(plays.get('p1').counts.has(CARD_BACK)).toBe(false);
+  });
+
+  test('a count older than the plays the store holds is no lower than they are (a play heard while a read was out)', () => {
+    const plays = createPlays();
+    plays.add([act('k1'), act('k2'), act('k3', { untaken: true }), act('k4')]);
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 3, took: 2 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 4, took: 3 });
+    plays.setCounts([{ post: 'p1', card: 'whoops', all: 45, took: 44 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 45, took: 44 });
+  });
+
+  test('hydrate takes the counts, after the plays', () => {
+    const plays = createPlays();
+    hydrate(plays, [act('k1')], {}, [], {}, {}, [], [{ post: 'p1', card: 'whoops', all: 9, took: 9 }]);
+    expect(plays.get('p1').counts.get('whoops')).toEqual({ all: 9, took: 9 });
+  });
+});
+
 describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', () => {
   const now = Date.parse('2026-11-20T00:00:00.000Z');
   const PAST = '2026-11-10T00:00:00.000Z';
@@ -1084,5 +1274,102 @@ describe('inForce, whether a play is up now (what the Lens\'s Who groups by)', (
 
   test('agrees with endable on every face-up play, for both values of keeps', () => {
     for (const [name, p] of Object.entries(faceUp)) for (const keeps of [false, true]) expect(inForce(p, now, keeps), `${name}, keeps ${keeps}`).toBe(endable(p, now, keeps));
+  });
+});
+
+/* ------------------------------------------------------------------ a rewound post (Time Machine design, 4.2) ---- */
+
+describe('rewoundPlays', () => {
+  const at = (m: number) => `2026-11-14T10:${String(m).padStart(2, '0')}:00.000Z`;
+  const played = (m: number, id: string): CardPlay => ({ id, card: 'whoops', layer: 1, caster: 'c', message: '', config: {}, playedAt: at(m), post: POST });
+  const POINT = { at: at(10) };
+  const REWIND_AT = at(30);
+
+  test('keeps a play played before the point, and one played at it', () => {
+    expect(rewoundPlays([played(5, 'a'), played(10, 'b')], POINT, REWIND_AT).map((p) => p.id)).toEqual(['a', 'b']);
+  });
+  test('drops a play played after the point and before the rewind', () => {
+    expect(rewoundPlays([played(5, 'a'), played(20, 'late')], POINT, REWIND_AT).map((p) => p.id)).toEqual(['a']);
+  });
+  test('keeps the rewind itself, and a play that got through the freeze after it', () => {
+    expect(rewoundPlays([played(30, 'rewind'), played(45, 'legendary')], POINT, REWIND_AT).map((p) => p.id)).toEqual(['rewind', 'legendary']);
+  });
+  test('is the same array where nothing is dropped', () => {
+    const all = [played(5, 'a'), played(31, 'b')];
+    expect(rewoundPlays(all, POINT, REWIND_AT)).toBe(all);
+  });
+});
+
+describe('a rewind in the store', () => {
+  const NOW = Date.parse('2026-11-14T12:00:00.000Z');
+  const rewindPlay = (over: Partial<Act['payload']> = {}) => card({ createdAt: '2026-11-14T11:00:00.000Z', payload: { card: 'time-machine', ends: '2026-11-17T11:00:00.000Z', ...over } });
+  const viewOf = (play: Act, over: Partial<Rewind> = {}): Rewind => ({ play: play.id, post: POST, at: '2026-11-14T09:00:00.000Z', version: { ...card({ kind: 'post' }), id: 'v1', currentPayload: { body: 'old words' } }, ...over });
+
+  test('is empty until a view is kept, and wakes the post when one is', () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    plays.add([r]);
+    const heard = vi.fn();
+    plays.subscribe(POST, heard);
+    expect(plays.get(POST).rewinds).toEqual([]);
+    expect(plays.setRewinds([viewOf(r)])).toBe(true);
+    expect(heard).toHaveBeenCalledTimes(1);
+    expect(plays.get(POST).rewinds.map((v) => v.play)).toEqual([r.id]);
+    expect(plays.setRewinds([viewOf(r)])).toBe(false);
+  });
+
+  test('rewoundOf is the rewind while its play is up, and the hidden plays are those after the point and before the rewind', () => {
+    const plays = createPlays();
+    const before = card({ createdAt: '2026-11-14T08:00:00.000Z' });
+    const between = card({ createdAt: '2026-11-14T10:00:00.000Z' });
+    const r = rewindPlay();
+    plays.add([before, between, r]);
+    plays.setRewinds([viewOf(r)]);
+    const got = rewoundOf(plays.get(POST), NOW, new Set())!;
+    expect(got.rewind.play).toBe(r.id);
+    expect(got.shown.map((p) => p.id)).toEqual([before.id, r.id]);
+    expect(got.hidden.map((p) => p.id)).toEqual([between.id]);
+  });
+
+  test('rewoundOf is null once the rewind\'s time has passed, when an admin ended it, and for a view whose play is not held', () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    plays.add([r]);
+    plays.setRewinds([viewOf(r)]);
+    expect(rewoundOf(plays.get(POST), Date.parse('2026-11-17T11:00:00.001Z'), new Set())).toBeNull();
+    const stray = createPlays();
+    stray.setRewinds([viewOf(r)]);
+    expect(rewoundOf(stray.get(POST), NOW, new Set())).toBeNull();
+    plays.setEnded([r.id]);
+    expect(rewoundOf(plays.get(POST), NOW, new Set())).toBeNull();
+  });
+
+  test('where two are live, the latest played is the one drawn', () => {
+    const plays = createPlays();
+    const lesser = rewindPlay();
+    const greater = card({ createdAt: '2026-11-14T11:30:00.000Z', payload: { card: 'time-machine', ends: '2026-11-17T11:30:00.000Z' } });
+    plays.add([lesser, greater]);
+    plays.setRewinds([viewOf(greater, { at: '2026-11-14T05:00:00.000Z' }), viewOf(lesser)]);
+    expect(rewoundOf(plays.get(POST), NOW, new Set())!.rewind.play).toBe(greater.id);
+  });
+
+  test('readRewinds does not read a view the page already delivered, when its play arrives live', async () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    hydrate(plays, [r], {}, [], {}, {}, [], [], [viewOf(r)]);
+    const rewindView = vi.fn(async () => viewOf(r));
+    await readRewinds({ rewindView } as unknown as KayfaApi, plays, [r], new Set(['time-machine']));
+    expect(rewindView).not.toHaveBeenCalled();
+  });
+
+  test('readRewinds reads a rewind card\'s play once, and keeps its view', async () => {
+    const plays = createPlays();
+    const r = rewindPlay();
+    plays.add([r]);
+    const rewindView = vi.fn(async () => viewOf(r));
+    const api = { rewindView } as unknown as KayfaApi;
+    await readRewinds(api, plays, [r, r, card()], new Set(['time-machine']));
+    expect(rewindView).toHaveBeenCalledTimes(1);
+    expect(plays.get(POST).rewinds).toHaveLength(1);
   });
 });

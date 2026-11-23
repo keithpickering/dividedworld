@@ -38,7 +38,7 @@ function setup() {
   return { fake, ana, bo, anaFace, boFace, anas, fielded, roped, shot };
 }
 
-const playsOn = async (fake: ReturnType<typeof setup>['fake'], post: string) => (await fake.cardsOn(post, 8)).flatMap((a: Act) => playOf(a) ?? []);
+const playsOn = async (fake: ReturnType<typeof setup>['fake'], post: string) => (await fake.postPlays([post])).plays.flatMap((a: Act) => playOf(a) ?? []);
 const aboveAna = async (fake: ReturnType<typeof setup>['fake'], face: string, play: string) => (await fake.effectsAbove([face], null, null)).filter((e) => e.play === play);
 
 describe('Cheap Shot gets the next Move past a ward and a catching back', () => {
@@ -63,8 +63,8 @@ describe('Cheap Shot gets the next Move past a ward and a catching back', () => 
     if (cheapShot.gimmick?.kind !== 'pierce') throw new Error('Cheap Shot is a pierce');
     const upTo = cheapShot.gimmick.upTo;
     expect(plays.map((p) => p.id)).toContain(ward.id);
-    expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now }).cast).toBe(false);
-    expect(waysOn(whoops, post, plays, { cards: instance.cards, own: false, now, pierce: upTo }).cast).toBe(true);
+    expect(waysOn(whoops, post, plays, { postEffects: 8, cards: instance.cards, own: false, now }).cast).toBe(false);
+    expect(waysOn(whoops, post, plays, { postEffects: 8, cards: instance.cards, own: false, now, pierce: upTo }).cast).toBe(true);
     const landed = must(await fake.playCard('whoops', anaFace, fielded, { color: 'red' }, ''));
     expect(landed.payload.caught).toBeUndefined();
     expect(landed.payload.pierce).toEqual({ by: first.id, card: 'cheap-shot', ward: 'force-field' });
@@ -90,7 +90,7 @@ describe('Cheap Shot gets the next Move past a ward and a catching back', () => 
     expect(passed.payload.caught).toBeUndefined();
     expect(passed.payload.pierce).toEqual({ by: second.id, card: 'cheap-shot' });
     expect(await aboveAna(fake, anaFace, second.id)).toEqual([]);
-    expect((await fake.cardsOn(roped, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.postPlays([roped])).plays.some((a) => a.kind === 'spring')).toBe(false);
     expect((await fake.alerts()).filter((a) => a.kind === 'trapStruck')).toMatchObject([{ sub: 'passed', act: passed.id }]);
     fake.signInAs(bo);
     expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'rope-break' });

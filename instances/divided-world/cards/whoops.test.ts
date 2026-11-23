@@ -123,3 +123,13 @@ test('a stroke\'s width is kept to a ten-thousandth, its aspect to three signifi
   const pieces = whoops.validateState!({ strokes: [{ tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.1, 0.1], [0.2, 0.2]]) }, { tool: 'ink', color: 'red', width: 0.1, aspect: 2, points: pack([[0.2, 0.2], [0.3, 0.3]]), continues: true, drops: 2 }] });
   assert.deepEqual(pieces.ok && (pieces.value as { strokes: { continues?: true; drops?: number }[] }).strokes.map((s) => [s.continues, s.drops]), [[undefined, undefined], [true, 2]], 'continues and drops are kept');
 });
+
+test('it draws an effect, and a layer washed clean (the state\'s clean is true) stops counting toward the post\'s limit', () => {
+  const cleared = whoops.drawsEffect?.cleared;
+  assert.ok(whoops.drawsEffect, 'it declares drawsEffect');
+  assert.ok(cleared, 'and says when it is cleared');
+  assert.equal(cleared({ strokes: [], clean: true }), true);
+  assert.equal(cleared({ strokes: [], clean: false }), false);
+  assert.equal(cleared({ strokes: [] }), false);
+  for (const odd of [{}, null, 'clean', undefined, [], 1]) assert.equal(cleared(odd), false, JSON.stringify(odd));
+});

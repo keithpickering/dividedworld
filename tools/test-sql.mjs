@@ -222,6 +222,31 @@ where p.provolatile = 's' and p.proname = any (string_to_array('${ALLOWED_RPCS.j
 group by p.proname order by p.proname;`;
 
 /**
+ * The drift check, run on the scratch database after the last end-to-end file: every row the kept tables `play_post` and `post_kinds` hold that
+ * the Acts do not say, and every Act they miss (supabase/migrations/0408_play_post.sql and 0409_post_kinds.sql). A trigger that does not
+ * run, a write that goes around one and an end nobody added to the table's mirror all show here, whichever file did it. The first rows
+ * only: a run that drifts says so, and the full list is one `select * from play_post_drift()` away.
+ */
+export const DRIFT_ROWS = 10;
+export const driftSql = `select play, why from play_post_drift() order by play, why limit ${DRIFT_ROWS};`;
+
+/** Why the drift check failed, or null: `rows` are the `{ name: play, calls: why }` pairs psqlRows read. Pure, so tools/test-sql-refusal.mjs drives it. */
+export function driftFailure(rows) {
+  if (!rows.length) return null;
+  return `play_post or post_kinds differs from the Acts (play_post_drift() names ${rows.length === DRIFT_ROWS ? `at least ${DRIFT_ROWS}` : rows.length} row(s)):\n${rows.map((r) => `${r.name}  ${r.calls}`).join('\n')}`;
+}
+
+/**
+ * The drift check on one database: why it failed (the rows play_post_drift() names, or the error that stopped the query), or null.
+ * tools/test-sql-drift.mjs drives it red against a real database whose trigger was disabled.
+ * @param {string} url
+ */
+export function driftCheck(url) {
+  const drifted = psqlRows(url, driftSql);
+  return drifted.error ? `could not run play_post_drift():\n${drifted.error}` : driftFailure(drifted.rows);
+}
+
+/**
  * What runs on the scratch database before each assertion file (the start of the file's own psql call) and each end-to-end
  * file (a psql call of its own), outside any transaction (see the header). Exported so tools/test-sql-refusal.mjs reads the text sent.
  */
@@ -327,6 +352,9 @@ function main() {
         step(`e2e/${f}`, (timedOut(err) ? `${killedWhy()}\n` : '') + String(err.stdout || '') + String(err.stderr || ''));
       }
     }
+    /* The kept rows hold what the Acts say, after every file has written what it wrote (a rolled-back file left none; an end-to-end file's commits stay). */
+    console.log('\nsql: drift');
+    step('drift', driftCheck(target));
     /* A client read no test calls is one whose broken reference nothing would find: a plpgsql body is checked only when
        it runs. Every connection before this one has ended, so their counts are flushed. */
     console.log('\nsql: coverage');

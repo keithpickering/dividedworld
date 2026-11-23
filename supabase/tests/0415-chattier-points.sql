@@ -1,4 +1,4 @@
--- The meeting's talking points (supabase/migrations/0407_chattier_staff.sql, section 3; docs/plans/2026-11-22-chattier-staff-plan.md, Task 5; the design's section 4).
+-- The meeting's talking points (supabase/migrations/0415_chattier_staff.sql, section 3; docs/plans/2026-11-22-chattier-staff-plan.md, Task 5; the design's section 4).
 -- apply_meeting writes one staff_points row for each persona in a posting office (the Boss, a Mod, a member) that the answer gave a line, in the same transaction as the orders: a refused apply writes none, a key
 -- that is benched, waiting or no persona is skipped, a second line for one key is skipped, a blank line is skipped, a line over 200 characters is cut, and a second apply of the same meeting writes none.
 

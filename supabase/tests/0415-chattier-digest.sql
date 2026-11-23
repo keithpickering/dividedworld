@@ -1,4 +1,4 @@
--- The digest's conversations (supabase/migrations/0407_chattier_staff.sql, section on system_digest; docs/plans/2026-11-22-chattier-staff-plan.md, Task 6; the design's section 5).
+-- The digest's conversations (supabase/migrations/0415_chattier_staff.sql, section on system_digest; docs/plans/2026-11-22-chattier-staff-plan.md, Task 6; the design's section 5).
 -- system_digest lists the window's conversations: a persona's turns in one thread, ranked by the public reaction total on the turns then by their number, at most `digestConversations`, none whose turns fall
 -- outside the window. Each names its thread, persona, the characters whose replies the turns answered (at most 8), the turns, the reactions, and the hottest turn with the reply it quoted, cut to
 -- `digestExcerptChars`. The characters it names join the digest's `characters`. The digest's role reads the two tables and nothing private.

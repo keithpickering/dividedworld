@@ -7,7 +7,7 @@
  * Departures, each a decision:
  *  - The build's bar and table are Divided World's own seven boards (instances/divided-world/index.ts, the launch design), where the board draws two: the staff board's link stands 638.05px further right, and the table five rows (63.17px each) taller, 315.87px, with Staff Announcements' row and everything under the table that far lower again. That is the content the instance holds, not a place the drawing moved.
  *  - The build's nav is named Main (its aria-label), the board's Boards.
- *  - The board's host, "dw.gripe", stands at the banner's right with the meter; the build's tagline of that name stands beside the name and
+ *  - The board's host, "dw.gripe", stands at the banner's right with the meter; the build's tagline of that name stands under the name and
  *    the build's own address (the page's host) is what stands at the right, so the tagline is compared by its type alone.
  *  - The kind of box the board draws around the credit is a footer, found by its role (its words hold the badges').
  *  - A board's last post holds its name link and its time link each at the 24px target (WCAG 2.5.8) without overlap, so its row stands

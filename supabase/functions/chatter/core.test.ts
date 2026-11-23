@@ -80,6 +80,8 @@ interface World {
   crashSessionCall?: number;
   /** From this `until` on, `pool_signals` names these personas instead (the signal window has shifted). */
   namedFrom?: { until: string; named: string[] };
+  /** What post_effects_up reports for the quoted post: the effects it draws in force. Unset reads 0. */
+  effectsUp?: number;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -182,6 +184,7 @@ function fakeDb(w: World = {}) {
           const named = w.namedFrom && Date.parse(String(args.until)) >= Date.parse(w.namedFrom.until) ? w.namedFrom.named : (w.named ?? [SIGH, CLERK, MON]);
           return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
         }
+        case 'post_effects_up': return (w.effectsUp ?? 0) as T;
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_career': return { led: [], offices: [] } as T;
@@ -920,7 +923,7 @@ test('Laugh Track cues none of which are in the post are refused in the card\'s 
 test('a persona\'s Laugh Track set on its own post keeps its cues though they are not in that post', async () => {
   // The real Laugh Track is a cast card, which a persona lands on a reply only; so this offers its rules (its validation and its repair) as a set (play `set`, a trap that springs on a cast and names a catch, and no set phrase, which only a cast card has).
   const { setPhrase: _waits, ...rules } = laughTrackRules;
-  const settable = { ...rules, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
+  const settable = { ...rules, play: 'set' as const, drawsEffect: undefined, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
   const tuned: Instance = { ...dividedWorld, cards: dividedWorld.cards.map((c) => (c.key === 'laugh-track' ? settable : c)) };
   const d = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
   const m = fakeModels((r) => ({ words: 'Pizza time, everyone.', card: { key: 'laugh-track', on: 'own', config: { 'laugh-track': { cues: [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'pizza', sound: 'cheer' }] } } }, note: `Replied, ${r.staff}.` }));
@@ -967,7 +970,7 @@ test('a Set with options reads its own new post as the target, after it is writt
   // The only Divided World set card with options is Card Collector, whose option is the card it names; so the instance here carries a set card on a cast
   // with Whoops!'s options and a catch of its own: the persona's ink is checked by the card's own rules, and the named catch goes to SQL.
   const whoops = dividedWorld.cards.find((c) => c.key === 'whoops')!;
-  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
+  const snare = { ...whoops, key: 'snare', name: 'Snare', play: 'set' as const, drawsEffect: undefined, trap: { trigger: { on: 'cast' as const } }, catches: () => 'whoops' };
   const tuned: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, snare] };
   const d = fakeDb(oneReply);
   const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.`, card: { key: 'snare', on: 'own', config: { snare: { color: '#12ab34' } } } }));
@@ -1005,6 +1008,24 @@ test('a persona\'s Card Collector is offered with its options and stores the car
   const d2 = fakeDb({ pool: { threadsWeekly: 0, cardRarityMost: 'uncommon' } });
   await run(d2, hallModels);
   assert.equal(d2.count('staff_set_card'), 0, 'a Hall Pass the model names is not set');
+});
+
+test('a post at its effects limit is offered no drawing cast, and a mark-only cast; a post with room is offered both', async () => {
+  const marker = { key: 'marker', name: 'Test Marker', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), staffConfigs: [{}] };
+  const world: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, marker] };
+  assert.notEqual(world.cards.find((c) => c.key === 'whoops')!.drawsEffect, undefined, 'Whoops! draws an effect');
+  const offeredWith = async (effectsUp: number) => {
+    const d = fakeDb({ pool: { threadsWeekly: 0 }, effectsUp });
+    const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
+    await run(d, m, world);
+    const asked = m.chats.map((c) => JSON.stringify(c.schema) + c.system + c.messages.map((x) => x.content).join(' '));
+    return { whoops: asked.some((a) => a.includes('whoops')), marker: asked.some((a) => a.includes('Test Marker')), reads: d.count('post_effects_up'), args: d.of('post_effects_up') };
+  };
+  const full = await offeredWith(world.settings.postEffects);
+  assert.deepEqual([full.whoops, full.marker], [false, true], 'full: no drawing card, the mark-only card');
+  assert.ok(full.reads >= 1 && full.args.every((a) => typeof a.post === 'string'), 'the quoted post was read');
+  const room = await offeredWith(world.settings.postEffects - 1);
+  assert.deepEqual([room.whoops, room.marker], [true, true], 'with room: both');
 });
 
 test('a card that writes is not offered to the pool where the instance runs no old voice, and is where it does', async () => {

@@ -178,6 +178,8 @@ export interface Settings {
   readonly revealPerk: number;
   /** The most distinct reactions one player leaves on one Act, across all their characters. */
   readonly reactionCap: number;
+  /** The most effects one post draws at once in force: plays of cards that declare `drawsEffect`, and live card backs (`roomOnPost`). Whole, 1 to 16. */
+  readonly postEffects: number;
   /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
   readonly crowdPayEach: Hundredths;
   /** The most Acts one player is paid crowd pay for in one settlement window, across all their characters. */

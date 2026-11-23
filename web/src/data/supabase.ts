@@ -47,7 +47,7 @@ import type {
   SurfaceAct, SurfaceNow, SurfaceWritten, Ballot, Poll, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
-  Alert, ContactLink, EffectState, Tail, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Refusal, ScreenSettings, Season, Session, Standing,
+  Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Rewind, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
@@ -75,8 +75,6 @@ const BARRED_HINT = 'kayfabb.barred';
 const LOST = LOST_ANSWER;
 const NOT_DONE = 'that could not be done right now; try again';
 const NOT_READ = 'that could not be read right now; try again';
-/** The Acts that are layers on a post, read through it: a card play, a card set face down, and the spring that reveals one (0054). */
-const LAYER_KINDS = ['card', 'set', 'spring'];
 /** PostgREST answers at most this many rows to one request unless told fewer; every list read here asks for fewer, ordered. */
 const ROW_CAP = 1000;
 const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
@@ -84,6 +82,8 @@ const rowLimit = (n: number) => Math.max(1, Math.min(Math.floor(n), ROW_CAP));
 const ID_CHUNK = 100;
 /** The most posts one `post_tails` call takes (0149). */
 const TAILS_CALL = 200;
+/** The most posts one `post_plays` call takes (0410); a longer list is read in calls of this many, run together. */
+const POST_PLAYS_CALL = 200;
 const chunks = <T,>(xs: readonly T[]): T[][] => Array.from({ length: Math.ceil(xs.length / ID_CHUNK) }, (_, i) => xs.slice(i * ID_CHUNK, (i + 1) * ID_CHUNK));
 /**
  * A read by many ids, one request per chunk of them, run together. Every list a read by id takes can grow on a busy
@@ -433,6 +433,8 @@ const toAdminSlot = (r: Row): AdminSlot[] => {
 const toRefunds = (v: unknown): Unsealed['refunds'] => (Array.isArray(v) ? (v as Row[]).filter((x) => isObject(x) && typeof x['index'] === 'number').map((x) => ({ index: num(x['index']), refund: num(x['refund']) })) : []);
 const toHeldCard = (r: Row): HeldCard => ({ card: r['card'], held: num(r['held']) });
 const toMyReaction = (r: Row): MyReaction => ({ act: r['act'], kind: r['kind'], character: r['character'] });
+/** A kind's count of plays on a post (post_plays, thread_page: `counts`); the back kind's card is null. */
+const toCount = (r: Row): KindCount => ({ post: r['post'], card: str(r['card']), all: num(r['all']), took: num(r['took']) });
 const toPlayAbove = (x: Row): PlayAbove => ({ play: x['play'], reach: x['reach'], target: x['target'], endsAt: x['ends_at'], act: toAct(x['act']) });
 const toPinned = (x: Row): PinnedThread => ({ thread: toThread(x['thread']), play: x['play'], endsAt: x['ends_at'], act: toAct(x['act']) });
 /** standing_place's answer; null where it is none. */
@@ -849,6 +851,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     };
   }
 
+  /** A rewind as rewind_view answers it, and as a thread's page carries it in `rewinds`; null for none. */
+  function toRewind(data: unknown): Rewind | null {
+    if (!isObject(data) || !isObject(data['version']) || typeof data['play'] !== 'string' || typeof data['post'] !== 'string' || typeof data['at'] !== 'string') return null;
+    return { play: data['play'], post: data['post'], at: data['at'], version: toAct(data['version']) };
+  }
+
   /**
    * A read whose arguments the server may refuse (the search reads, through screen_refusal): a refusal carrying the hint is thrown in the
    * server's own words, so a screen can tell a refused search from one that never reached the server (a `ReadFailure`); anything else is `read`'s.
@@ -1191,18 +1199,6 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   /* -------------------------------------------------------------------- the api ---- */
 
   const idOk = (id: string) => UUID.test(id);
-  /**
-   * The `card_end` Acts of these rows' card plays (an admin's reversal, 0092): each targets its play, so the plays-on-a-post read
-   * cannot find them and they are asked for by the plays' ids, in chunks. At most one per play (a unique index), so a chunk of
-   * plays needs no more rows than it has, and ID_CHUNK bounds each read. Returned beside the plays in the same list; the plays are unchanged.
-   */
-  const endsOf = async (plays: readonly Row[]): Promise<Row[]> => {
-    /* A card play's ends, and a lockout's: an admin ends a lockout with a card_end on its lockedOut spring (0402). */
-    const endable = (r: Row) => r['kind'] === 'card' || (r['kind'] === 'spring' && (r['payload'] as Row | null)?.['did'] === 'lockedOut');
-    const ids = plays.filter((r) => endable(r) && typeof r['id'] === 'string' && idOk(r['id'])).map((r) => r['id'] as string);
-    if (ids.length === 0) return [];
-    return endsByTarget(ids);
-  };
   const endsByTarget = async (ids: readonly string[]): Promise<Row[]> => {
     const rows = await byChunks(ids, (part) => list(() => client.from('acts_public').select('*').eq('kind', 'card_end').in('target_act_id', part).order('created_at', { ascending: true }).limit(ID_CHUNK)));
     return merged(rows, 'created_at', 'id');
@@ -1579,22 +1575,31 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const rows = await byChunks(wanted, (part) => list(() => client.from('thread_list').select('*').in('origin_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
       return merged(rows, 'created_at', 'id', rowLimit(limit)).map(toThread);
     },
-    async cardsOn(actId, limit) {
-      if (!idOk(actId)) return [];
-      /* A post's plays, its card backs and their springs (0054): each is a layer on the post, read through it. */
-      const rows = await list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).eq('target_act_id', actId).order('created_at', { ascending: true }).limit(rowLimit(limit)));
-      return [...rows, ...await endsOf(rows)].map(toAct);
-    },
     async cardEnds(targets) {
       const wanted = [...new Set(targets)].filter(idOk);
       return wanted.length === 0 ? [] : (await endsByTarget(wanted)).map(toAct);
     },
-    async cardsOnMany(actIds, limit) {
-      const wanted = [...new Set(actIds)].filter(idOk);
-      if (wanted.length === 0) return [];
-      const rows = await byChunks(wanted, (part) => list(() => client.from('acts_public').select('*').in('kind', LAYER_KINDS).in('target_act_id', part).order('created_at', { ascending: true }).limit(rowLimit(limit))));
-      const plays = merged(rows, 'created_at', 'id', rowLimit(limit));
-      return [...plays, ...await endsOf(plays)].map(toAct);
+    async postPlays(posts) {
+      /* post_plays (0410) holds a call to 200 posts, which a page's posts always are: a longer list is read in calls of that many, run together. The calls hold disjoint posts, and every play and rider belongs to one post, so no play comes twice. Each call's plays arrive as the server orders them, by date and id, so the merge keeps that order; one call's failure fails the whole read. */
+      const wanted = [...new Set(posts)].filter(idOk);
+      if (wanted.length === 0) return { plays: [], counts: [] };
+      const parts = Array.from({ length: Math.ceil(wanted.length / POST_PLAYS_CALL) }, (_, i) => wanted.slice(i * POST_PLAYS_CALL, (i + 1) * POST_PLAYS_CALL));
+      const answers = await Promise.all(parts.map(async (part) => (await read(() => client.rpc('post_plays', { posts: part }))).data as Row | null));
+      const rows = answers.flatMap((d) => (isObject(d) ? rowsOf(d['plays']) : []));
+      return { plays: merged(rows, 'created_at', 'id').map(toAct), counts: answers.flatMap((d) => (isObject(d) ? rowsOf(d['counts']).map(toCount) : [])) };
+    },
+    async kindPlays(post, card, before, size) {
+      const none: KindPage = { plays: [], tallies: {}, mine: [], spun: [], cast: [], next: null };
+      if (!idOk(post) || (before !== null && !idOk(before.id))) return none;
+      const d = (await read(() => client.rpc('kind_plays', { post, card, before_at: before?.at ?? null, before_id: before?.id ?? null, size }))).data as Row | null;
+      if (!isObject(d)) return none;
+      const plays = rowsOf(d['plays']).map(toAct);
+      const next = d['next'];
+      return {
+        plays, tallies: toTallies(plays.map((a) => a.id), rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread),
+        cast: rowsOf(d['cast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
+        next: isObject(next) && typeof next['at'] === 'string' && typeof next['id'] === 'string' ? { at: next['at'], id: next['id'] } : null,
+      };
     },
     async effectsAbove(characters, thread, board) {
       /* One request per chunk of characters, run together (effects_above holds at most 200 a call); the thread and the board are
@@ -1638,6 +1643,15 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       /* One read of the moment (play_moment, 0072); an id that is no play on a post is refused in words, which is null here. */
       if (!idOk(play)) return null;
       return momentOf(() => client.rpc('play_moment', { play }));
+    },
+    async rewindView(play) {
+      /* One read of the rewind's view (rewind_view, 0412); an id that is no rewind play on a post is null, or refused in words, which is null here. */
+      if (!idOk(play)) return null;
+      const r = await read(async () => {
+        const x = (await client.rpc('rewind_view', { play })) as Res;
+        return x.error?.hint === 'kayfabb.refusal' ? { data: null, error: null, status: 200 } : x;
+      });
+      return toRewind(r.data);
     },
     async spinMoment(spin) {
       /* One read of the moment (spin_moment, 0351); a spin that names no post is refused in words, which is null here. */
@@ -1937,7 +1951,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const o = d['origin'];
       const origin: PageOrigin | null = isObject(o)
         ? {
-            act: isObject(o['act']) ? toAct(o['act']) : null, plays: rowsOf(o['plays']).map(toAct), more: o['more'] === true, moment: toMoment(o['moment']),
+            act: isObject(o['act']) ? toAct(o['act']) : null, plays: rowsOf(o['plays']).map(toAct), counts: rowsOf(o['counts']).map(toCount), moment: toMoment(o['moment']),
             at: isObject(o['at']) && typeof o['at']['thread'] === 'string' ? { thread: o['at']['thread'], seq: num(o['at']['seq']) } : null,
             cast: rowsOf(o['cast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
             ...toPollParts(o),
@@ -1956,14 +1970,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
         })),
         visits: rowsOf(d['visits']).map(toVisit),
-        plays, surfaces: toSurfaces(d['surfaces']), above, under, cut, kept, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])),
+        plays, counts: rowsOf(d['counts']).map(toCount), surfaces: toSurfaces(d['surfaces']), above, under, cut, kept, faces: Object.fromEntries(rowsOf(d['faces']).map((f) => [f['play'], f['card']])),
         veiled: rowsOf(d['veiled']).map((v) => ({ post: v['post'] as Id, character: v['character'] as Id, play: v['play'] as Id, endsAt: String(v['ends_at']) })), states: toStates(rowsOf(d['states'])),
         releases: (Array.isArray(d['releases']) ? d['releases'] : []).filter((x): x is Id => typeof x === 'string'),
         /* The Take the Fall plays a filing has spent; a document without them reads as none. */
         spent: (Array.isArray(d['spent']) ? d['spent'] : []).filter((x): x is Id => typeof x === 'string'),
         tallies: toTallies(asked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), spun: rowsOf(d['spun']).map(toThread), reading,
         board: isObject(d['board']) ? toBoard(d['board']) : null, following: d['following'] === true,
-        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']), origin,
+        presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']), origin, rewinds: rowsOf(d['rewinds']).map(toRewind).filter((x): x is Rewind => x !== null),
         ...toPollParts(d), voterCast: rowsOf(d['voterCast']).map((p) => toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined)),
       };
     },

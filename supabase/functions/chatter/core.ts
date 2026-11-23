@@ -668,8 +668,12 @@ async function onePick(r: PickRun): Promise<PickRecord> {
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
     // when the day's allowance has a slot for a card.
+    // A post at `postEffects` takes no further drawing cast, so none is offered for it; one read of the quoted post, and only where a drawing cast would be offered.
+    // A Set lands on the persona's own new post and is offered as today. decideOptions still holds the limit if the post fills between the offer and the play.
+    const offeredCasts = r.cardRoom && persona.voice === 'chat' && quotedPost !== null && p.quoting !== null && r.cardsOnOffer.some((c) => playOf(c) === 'cast' && c.drawsEffect !== undefined);
+    const postFull = offeredCasts && (await db.rpc<number>('post_effects_up', { post: p.quoting })) >= settings.postEffects;
     const offered: OfferedCard[] = r.cardRoom && persona.voice === 'chat'
-      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? true : quotedPost !== null)).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set', ...(c.staffOptions ? { options: c.staffOptions } : {}),
+      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? true : quotedPost !== null && !(postFull && c.drawsEffect !== undefined))).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set', ...(c.staffOptions ? { options: c.staffOptions } : {}),
         ...wallsOf(c, read) }))
       : [];
 

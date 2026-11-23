@@ -1,14 +1,12 @@
 /**
  * A famous post, as a stress test of the marks and the Lens (docs/plans/2026-10-31-marks-and-the-lens-design.md): one post that
- * people have come back to for three years, with 85 plays of sixteen kinds on it. Most have long since run their time; the same
+ * people have come back to for three years, with 116 plays of sixteen kinds on it. Most have long since run their time; the same
  * cards were played again and again as each ran out; an admin ended two; a handful are up now; the post's first three Whoops!
  * drew the board's reactions and so top its billing. It asks how the strip, the "+N", the Lens's tabs and its Who rows read when
- * a post has far more plays than the eight a page reads for it (`PLAYS_PER_POST`, engine/ui/cards/plays.ts).
+ * a post has far more plays than a page draws in full (docs/plans/2026-11-21-post-plays-design.md).
  *
- * What it reads is not what a deployed instance would read. The fake reads eight plays times the page's posts, oldest first
- * across the whole page, so this thread's fourteen quiet replies leave the famous post room for every play; the database reads
- * eight for each post, oldest first (thread_page's `on_posts`), so on a deployed instance this post would show its first eight
- * plays of three years ago and none of the ones up now.
+ * The fake reads what the database reads: the plays in force, each kind's newest and most-drawn play, and its count
+ * (docs/plans/2026-11-21-post-plays-design.md, section 1).
  *
  * Left out, each because it ends nothing on its own and would hide what the story looks at: Below the Fold folds the post for
  * good, and Stick Around's takeover holds every visit to it.
@@ -44,7 +42,7 @@ const AGE = 3 * YEAR;
  */
 const PLAYED: readonly { readonly key: string; readonly times: number; readonly config?: Readonly<Record<string, unknown>>; readonly early?: boolean; readonly inks?: true }[] = [
   { key: 'whoops', times: 3, early: true, inks: true },
-  { key: 'sugar-coat', times: 14 },
+  { key: 'sugar-coat', times: 45 },
   { key: 'last-word', times: 11 },
   { key: 'force-field', times: 9 },
   { key: 'hype-up', times: 7 },
@@ -108,12 +106,6 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
     [2 * YEAR, 'two years. the sign is still there.'],
     [2 * YEAR + 100 * DAY, 'I showed this to my mom'],
     [YEAR + 40 * DAY, 'bump'],
-    [YEAR + 200 * DAY, 'the sign. THE SIGN.'],
-    [2 * YEAR + 5 * DAY, 'happy two years'],
-    [2 * YEAR + 30 * DAY, 'my cousin found this post from a search engine'],
-    [2 * YEAR + 250 * DAY, 'bump for the new people'],
-    [3 * YEAR - 20 * DAY, 'it is almost time again'],
-    [3 * YEAR - 2 * DAY, 'three years tomorrow, get your cards ready'],
   ] as const;
   replies.forEach(([after, body], i) => { seed.post(opened.thread, casters[(i * 5 + 2) % casters.length]!, body, { at: born + after }); });
 
@@ -184,9 +176,9 @@ async function seedFamous(fake: Fake, me: readonly Id[], cards: readonly { reado
   return opened.thread;
 }
 
-type Open = 'none' | 'first' | 'busiest' | 'more' | 'who' | 'kinds';
+type Open = 'none' | 'first' | 'busiest' | 'older' | 'more' | 'who' | 'kinds';
 
-/** Opens the famous post's Lens as a reader would: from its first mark, from its busiest kind's tab, or from its "+N"; then unfolds Who. `who` is the busiest kind with one ended row expanded, and `kinds` the first kind with the All button pressed. */
+/** Opens the famous post's Lens as a reader would: from its first mark, from its busiest kind's tab, or from its "+N"; then unfolds Who. `older` is the busiest kind with Show older plays pressed once, `who` the busiest kind with one ended row expanded, and `kinds` the first kind with the All button pressed. */
 function Opener({ open }: { readonly open: Open }) {
   useEffect(() => {
     if (open === 'none') return;
@@ -199,7 +191,7 @@ function Opener({ open }: { readonly open: Open }) {
         mark.click();
         step = 1;
       } else if (step === 1) {
-        if (open === 'busiest' || open === 'who') {
+        if (open === 'busiest' || open === 'older' || open === 'who') {
           const tab = [...document.querySelectorAll<HTMLElement>('.kb-lens [role="tab"]')].find((t) => /Sugar Coat/u.test(t.getAttribute('aria-label') ?? t.textContent ?? ''));
           if (!tab) return;
           tab.click();
@@ -214,6 +206,12 @@ function Opener({ open }: { readonly open: Open }) {
         const fold = document.querySelector<HTMLElement>('.kb-lens-fold');
         if (!fold) return;
         if (fold.getAttribute('aria-expanded') === 'false') { fold.click(); return; }
+        if (open === 'older') {
+          /* The page holds only some of a kind's ended plays; the button reads the rest. */
+          const older = document.querySelector<HTMLElement>('.kb-lens-pager button');
+          if (!older) return;
+          older.click();
+        }
         if (open === 'who') {
           const row = document.querySelectorAll<HTMLElement>('.kb-lens-row[data-kb-ended] .kb-lens-compact')[1];
           if (!row) return;
@@ -267,13 +265,16 @@ const phone = { parameters: { moment: '02-phone' } } as const;
 export const Strip: Story = { args: { open: 'none' } };
 /** Its Lens on its first kind (Whoops!, the three that made it famous), Who unfolded. */
 export const LensFirst: Story = { args: { open: 'first' } };
-/** Its Lens on its busiest kind (Sugar Coat, fourteen plays over three years), Who unfolded. */
+/** Its Lens on its busiest kind (Sugar Coat, 45 plays over three years), Who unfolded. */
 export const LensBusiest: Story = { args: { open: 'busiest' } };
+/** Its Lens on Sugar Coat with Who unfolded and "Show older plays" pressed once: the ended plays the page did not hold, after the ones it did, newest first. */
+export const LensBusiestOlder: Story = { args: { open: 'older' } };
 /** Its Lens from "+N": the first kind the strip has no room for, the tab row scrolled to it. */
 export const LensFromMore: Story = { args: { open: 'more' } };
 export const StripPhone: Story = { args: { open: 'none' }, ...phone };
 export const LensFirstPhone: Story = { args: { open: 'first' }, ...phone };
 export const LensBusiestPhone: Story = { args: { open: 'busiest' }, ...phone };
+export const LensBusiestOlderPhone: Story = { args: { open: 'older' }, ...phone };
 export const LensFromMorePhone: Story = { args: { open: 'more' }, ...phone };
 /** Its Lens on Sugar Coat with Who unfolded and one ended row expanded under its compact siblings. */
 export const UnfoldedWho: Story = { args: { open: 'who' } };

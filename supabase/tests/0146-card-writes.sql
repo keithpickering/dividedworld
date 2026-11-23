@@ -753,7 +753,9 @@ begin
     if exists (select 1 from acts_public x where x.id in (pl_good, pl_ended, p) and x.untaken) then raise exception 'a play that took, or one an admin ended, or a post, reads as untaken'; end if;
     perform tests.unbecome();
   end loop;
-  -- The thread page's plays carry it.
+  -- The thread page's plays carry it. The page carries a post's plays in force and each kind's newest and most drawn (0410; before it, the post's oldest eight whatever their state), and a play that did not take is over,
+  -- so the refunded play is on the page as its kind's most drawn: a reaction to it makes it so, and the test then reads the flag off a play the page carries.
+  insert into reaction_tallies (act, kind, count) values (pl_bad, 'up', 1);
   perform tests.become(cat);
   page := thread_page(t, 1, null, 20, '{}');
   if (select count(*) from jsonb_array_elements(page -> 'plays') r where r ->> 'kind' = 'card' and (r ->> 'untaken')::boolean) is distinct from 2
@@ -1001,7 +1003,7 @@ begin
   perform tests.become_service();
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'cw-scribe', a, p, '{}'));
   perform tests.unbecome();
-  if why is distinct from 'Scribe writes, so it is cast face up and never set face down' then raise exception 'a card that writes was set face down, or refused in other words: %', why; end if;
+  if why is distinct from 'Scribe writes, so it is played face up and never set face down' then raise exception 'a card that writes was set face down, or refused in other words: %', why; end if;
   if exists (select 1 from face_down f where f.post = p) or exists (select 1 from acts s where s.kind = 'set' and s.target_act_id = p) or card_held(ann, 'cw-scribe') is distinct from 1 then
     raise exception 'a refused set of a card that writes left something behind';
   end if;

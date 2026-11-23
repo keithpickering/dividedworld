@@ -5,7 +5,7 @@
  * its marks: `OnePlay` (the fixture's one play, its card met before so no callout hangs), `Callout` (the same for a reader who has
  * never met the card, so its one-line callout hangs off the mark), `SixKinds` (six kinds of card on one post: four marks and
  * "+2"), and `Armed` (Whoops! armed the way pressing its card in the hand arms it: the dashed ghost mark ends the strip of every post it
- * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card), `EndedByAnAdmin` (the same play after an admin ended it), `Spent` (a live mark, an unlit one whose time ran out, an unlit heart and the ghost, side by side) and `SpunFromAPlay` (a thread spun from a takeover card's play on #41, over its Whoops!: the play's moment in the ORIGIN box). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
+ * can land on, #41 and #42 among them), `AsItLanded` (the fixture's play's moment shown in #41's body, from its Lens's As it landed), `EndThisCard` (an admin's Lens, with its End this card), `EndedByAnAdmin` (the same play after an admin ended it), `Spent` (a live mark, an unlit one whose time ran out, an unlit heart and the ghost, side by side) and `SpunFromAPlay` (a thread spun from a takeover card's play on #41, over its Whoops!: the play's moment in the ORIGIN box), `FullPost` (eight drawing effects on #41 with the reader's form open on a drawing card, which says the post is full). No board draws these. Open each at 1440 by 1120, and its `Phone` twin at 390 by 844.
  *
  * The cards are the instance's own, each named by its key (so a card added later changes no board here), and the kinds past them are keys
  * no card has, which a mark draws as a swatch under the key's name, so six kinds are six distinct cards on the post.
@@ -13,6 +13,7 @@
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
 import { useKayfa } from '../context.tsx';
+import type { Id } from '../data/api.ts';
 import type { Fake } from '../data/fake.ts';
 import { Frame } from '../frame/Frame.tsx';
 import { usePlayer } from '../player.tsx';
@@ -53,7 +54,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
         const casters = [45, 44, 43, 42, 45].map((n) => acts.find((a) => a.seq === n)?.character ?? null);
         if (!target || casters.some((c) => c === null)) throw new Error('the boards fixture has no #41, or no author for a post around it');
         /* The fixture's play is one kind; the cards named above are the next, then keys no card has. */
-        const have = new Set((await api.cardsOn(target.id, 8)).map((a) => String(a.currentPayload.card)));
+        const have = new Set((await api.postPlays([target.id])).plays.map((a) => String(a.currentPayload.card)));
         const keys = [...EXTRA_PLAYS.map((k) => cardOf(instance.cards, k).key), ...Array.from({ length: kinds }, (_, i) => `story-kind-${i + 1}`)].filter((k) => !have.has(k)).slice(0, kinds - have.size);
         keys.forEach((card, i) => {
           fake.clock.advance(MINUTE);
@@ -78,7 +79,7 @@ function useSeeded(thread: string | null, kinds: Kinds, quiet: boolean, ending: 
         fake.seed.admin(account);
         if (ending === 'ended') {
           const target = (await api.acts(thread, 41, 41))[0];
-          const play = target && (await api.cardsOn(target.id, 8)).find((a) => a.kind === 'card');
+          const play = target && (await api.postPlays([target.id])).plays.find((a) => a.kind === 'card');
           if (!play) throw new Error('the boards fixture has no play on #41 to end');
           const answer = await api.reverseCard(play.id);
           if (!answer.ok) throw new Error(answer.error);
@@ -217,6 +218,98 @@ function SpunFromPlay() {
   );
 }
 
+/** The drawing cards #41 takes to fill it, beside the fixture's Whoops!: six kinds, one slot each, so eight slots are full. */
+const FILLING = ['graffiti', 'blind-study', 'hot-box', 'feelin-fab', 'this', 'steel-chair'] as const;
+/** The drawing card the reader's form is open on (its slot is the eighth), and the one another reader plays into the last slot while it is open. */
+const FORM = 'jimmy-wails';
+const LAST = 'whodunnit';
+
+/** #41's target and the casters the seeds are written by, from the boards fixture. */
+async function onTarget(api: Fake, thread: string): Promise<{ readonly target: Id; readonly casters: readonly Id[] }> {
+  const acts = await api.acts(thread, 41, 46);
+  const target = acts.find((a) => a.seq === 41);
+  const casters = [45, 44, 43, 42, 45, 44].map((n) => acts.find((a) => a.seq === n)?.character ?? null);
+  if (!target || casters.some((c) => c === null)) throw new Error('the boards fixture has no #41, or no author for a post around it');
+  return { target: target.id, casters: casters as Id[] };
+}
+
+/** Fills #41 to seven drawing effects (the fixture's Whoops! and six more), so its eighth slot is open and its mark shows. */
+function useSevenOnPost(thread: string | null): boolean {
+  const { api, instance } = useKayfa();
+  const [ready, setReady] = useState(false);
+  useEffect(() => {
+    if (thread === null) return;
+    let live = true;
+    void (async () => {
+      const fake = api as Fake;
+      for (const c of instance.cards) await api.meetCard(c.key);
+      const { target, casters } = await onTarget(fake, thread);
+      FILLING.forEach((key, i) => {
+        fake.clock.advance(MINUTE);
+        fake.seed.card(casters[i]!, target, cardOf(instance.cards, key).key, { layer: 2 + i, message: '' });
+      });
+      /* The reader holds a copy of the form's card, so its mark can be pressed on #41. */
+      const account = (await api.session()).account;
+      if (account === null) throw new Error('the full post story needs a signed-in reader to hold a card');
+      fake.seed.cards(account, { [cardOf(instance.cards, FORM).key]: 1 });
+      if (live) setReady(true);
+    })().catch((e: unknown) => { console.error('the full post story could not be seeded', e); });
+    return () => { live = false; };
+  }, [api, instance, thread]);
+  return ready;
+}
+
+/**
+ * A post holding eight drawing effects, with the reader's play form open on a drawing card. The form opens with one slot left, so its
+ * card's mark is on #41; then another reader's drawing card takes the eighth slot live, and the open form says the post is full.
+ * `Fill` is the part that presses, and it sits inside the Frame, which holds the play state: a story's own root reads none.
+ */
+function Fill({ thread, ready }: { readonly thread: string | null; readonly ready: boolean }) {
+  const { api, instance } = useKayfa();
+  const play = usePlay();
+  const account = usePlayer().session.account;
+  useEffect(() => {
+    if (!ready || play === null || account === null || thread === null) return;
+    const card = cardOf(instance.cards, FORM);
+    play.arm(card.key);
+    play.setHandOpen(false);
+    let step = 0;
+    const timer = setInterval(() => {
+      if (step === 0) {
+        const mark = document.querySelector<HTMLElement>('#post-41 .kb-ghost-mark');
+        if (!mark) return;
+        mark.click();
+        step = 1;
+      } else {
+        /* The form's dialog is named by its title (aria-labelledby), not by an aria-label. */
+        if (!document.querySelector('.kb-play-dialog')) return;
+        clearInterval(timer);
+        void (async () => {
+          const fake = api as Fake;
+          const { target, casters } = await onTarget(fake, thread);
+          fake.seed.card(casters[5]!, target, cardOf(instance.cards, LAST).key, { message: '', live: true });
+        })().catch((e: unknown) => { console.error('the full post story could not take its last slot', e); });
+      }
+    }, 100);
+    return () => clearInterval(timer);
+    // Armed and opened once for each account.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ready, account]);
+  return null;
+}
+
+function FullPostStory() {
+  const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
+  const ready = useSevenOnPost(thread);
+  return (
+    <Frame>
+      <Look />
+      <Fill thread={thread} ready={ready} />
+      {thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}
+    </Frame>
+  );
+}
+
 function Marked({ kinds, armed, quiet, landed = false, ending = 'none', spent = false }: { readonly kinds: Kinds; readonly armed: boolean; readonly quiet: boolean; readonly landed?: boolean; readonly ending?: Ending; readonly spent?: boolean }) {
   /* The thread the moment opens on (`/t/<thread>`). */
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
@@ -269,3 +362,6 @@ export const SpentPhone: Story = { args: { kinds: 1, armed: true, quiet: true, s
 /** A thread spun from a takeover card's play on #41: its ORIGIN box draws the play's moment, #41 as it read then. */
 export const SpunFromAPlay: Story = { render: () => <SpunFromPlay /> };
 export const SpunFromAPlayPhone: Story = { render: () => <SpunFromPlay />, ...phone };
+/** Eight drawing effects on #41, the reader's form open on a drawing card: another reader's card takes the eighth slot live, and the form says the post is full. */
+export const FullPost: Story = { render: () => <FullPostStory /> };
+export const FullPostPhone: Story = { render: () => <FullPostStory />, ...phone };

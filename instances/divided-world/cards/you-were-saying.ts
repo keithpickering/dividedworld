@@ -79,6 +79,8 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     if (steps > mostSteps(defaults)) return refuse(`the length is at most ${mostSteps(defaults)} steps`);
     return ok({ steps });
   },
+  /** Its effect is drawn on the post and counts toward the post's limit of drawn effects (`postEffects`); a play stops counting while its state names a version, until the post is edited. */
+  drawsEffect: { cleared: (state) => { const v = typeof state === 'object' && state !== null ? (state as { cleared?: unknown }).cleared : undefined; return typeof v === 'string' && v !== '' ? { version: v } : false; } },
   validateState: (state) => {
     const { cleared, ...rest } = typeof state === 'object' && state !== null && !Array.isArray(state) ? (state as { cleared?: unknown }) : { cleared: undefined, bad: true };
     if (typeof cleared !== 'string' || cleared === '' || Object.keys(rest).length) return refuse('the state is the version that was cleared');

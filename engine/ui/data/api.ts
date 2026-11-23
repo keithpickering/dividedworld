@@ -2358,6 +2358,17 @@ export interface PlayMoment {
   readonly at: string;
 }
 
+/**
+ * A live rewind play's view (rewind_view, 0413_rewind.sql; the Time Machine design, 4.2): the post as the rewind shows it. `at` is the point the play names (an ISO time) and `version` the post
+ * with the words of the latest version saved at or before it, shaped as a moment's `version` is (a version an admin hid shows the hidden placeholder). The same answer for every reader.
+ */
+export interface Rewind {
+  readonly play: Id;
+  readonly post: Id;
+  readonly at: string;
+  readonly version: Act;
+}
+
 /* ------------------------------------------------------------- one call per screen ---- */
 
 /*
@@ -2449,6 +2460,30 @@ export interface BoardPage {
   readonly unread: number;
 }
 
+/** How many plays of a kind a post has had, and how many took (a play that was refunded did not). `card` is null for the back kind, which names no card. */
+export interface KindCount {
+  readonly post: Id;
+  readonly card: string | null;
+  readonly all: number;
+  readonly took: number;
+}
+
+/** What `postPlays` answers: the plays a page draws for its posts, and the count of each kind. */
+export interface PostPlaysRead {
+  readonly plays: readonly Act[];
+  readonly counts: readonly KindCount[];
+}
+
+/** A page of a kind's older plays (`kindPlays`): the plays newest first with the Acts that end or spring them, and what each row of the Lens's Who reads. */
+export interface KindPage {
+  readonly plays: readonly Act[];
+  readonly tallies: Readonly<Record<Id, Tally>>;
+  readonly mine: readonly MyReaction[];
+  readonly spun: readonly ThreadSummary[];
+  readonly cast: readonly Character[];
+  readonly next: { readonly at: string; readonly id: Id } | null;
+}
+
 /** A character on a thread's page: what the postbit draws, from the methods the thread reads people by. */
 export interface ThreadPerson {
   readonly character: Character;
@@ -2462,17 +2497,17 @@ export interface ThreadPerson {
 
 /**
  * What the ORIGIN box draws of a spun thread, carried by the page that holds the thread's first Act (`origin` in thread_page, 0372; docs/plans/2026-11-14-origin-in-page-design.md, section 4):
- * the origin Act, its first 20 plays (card, set, spring) oldest first and then the `card_end` of each of those, as `cardsOn` answers, whether a 21st play exists, the moment of a play on a post
+ * the origin Act, the plays the page reads for it (`postPlays`: those in force, each kind's two stand-ins, and the Acts that end or spring them) and the count of each kind, the moment of a play on a post
  * or a character (the spin's own where the spin was pressed at a post, else the play's), where the post a play is on can be found, and the characters the box names. The same for every caller; a
  * reaction of the caller's, a saved state or a release is the page's own list (`tallies`, `mine`, `states`, `releases`), never a part of it.
  */
 export interface PageOrigin {
   /** The origin Act as everyone reads it; null where it is not there (a thread spun from an Act an import left behind). */
   readonly act: Act | null;
-  /** The plays on it, at most 20, oldest first, then their `card_end` Acts. */
+  /** The plays on it as `postPlays` answers for one post: those in force, each kind's newest and most-drawn play, and the springs, take-backs and `card_end` Acts beside them, in the order of their dates. */
   readonly plays: readonly Act[];
-  /** Whether a 21st play exists. */
-  readonly more: boolean;
+  /** How many plays of each kind the origin post has had, and how many took (`counts` of `postPlays`). */
+  readonly counts: readonly KindCount[];
   /** The moment of the play the origin is, or the spin it was pressed through; null for any other origin. */
   readonly moment: PlayMoment | null;
   /** The post a play is on: the pressed post of a spin at a post, else the cast-from post of a play on a character, else the post a play on a post is on; null for any other origin. */
@@ -2495,8 +2530,10 @@ export interface ThreadPage {
   readonly acts: readonly Act[];
   /** The authors and casters on the page. */
   readonly people: readonly ThreadPerson[];
-  /** The plays on the page's posts (`cardsOnMany`). */
-  readonly plays: Awaited<ReturnType<KayfaApi['cardsOnMany']>>;
+  /** The plays on the page's posts (`postPlays`): those in force, each kind's newest and most-drawn play, and the Acts that end or spring them. */
+  readonly plays: readonly Act[];
+  /** How many plays of each kind each of the page's posts has had, and how many took. */
+  readonly counts: readonly KindCount[];
   /** Each surface play among them: the cells it covers and its live Acts' ids, never a stroke (`surfaces` in thread_page, 0317). */
   readonly surfaces: Readonly<Record<Id, SurfaceNow>>;
   readonly above: Awaited<ReturnType<KayfaApi['effectsAbove']>>;
@@ -2530,6 +2567,8 @@ export interface ThreadPage {
   readonly unread: number;
   /** The origin of a spun thread, on the page that holds its first Act; null on any other page and on a thread that was not spun (`PageOrigin`). */
   readonly origin: PageOrigin | null;
+  /** Each live rewind on the page's posts, a reply drawn under one, and the origin post (`rewind_view`, latest played first); empty where none, and none once it ends. */
+  readonly rewinds: readonly Rewind[];
   /** The polls on the page's posts (`PollParts`), and the characters its voters name, with their profiles (as `people` is for authors). */
   readonly polls: readonly Poll[];
   readonly voters: readonly PollVoter[];
@@ -2866,17 +2905,16 @@ export interface KayfaApi {
    */
   spunFromMany(acts: readonly Id[], limit: number): Promise<readonly ThreadSummary[]>;
   /**
-   * The card plays on an Act, oldest first, at most `limit`: the effects an ORIGIN box lists under the Act it shows. A result as long as `limit` may be cut.
-   * The `card_end` Acts of those plays follow the plays in the same list (kind `card_end`, `targetActId` the play): a play with one was
-   * ended by an admin, and the original play is unchanged.
+   * What a page reads of the plays on these posts (at most 200 at a time), in one read: the plays that hold a place on each (a card, at any reach, that is not ended, and a back that is live), the newest and the most-drawn play of
+   * each kind whether it is over or not, and the Acts beside them that end or spring them (`card_end`, `spring`, `take_back`), each play once, in the order of their dates; and a count for each kind of a post.
+   * A back is one kind that names no card (`card` null), counted once sprung. The same for every caller.
    */
-  cardsOn(act: Id, limit: number): Promise<readonly Act[]>;
+  postPlays(posts: readonly Id[]): Promise<PostPlaysRead>;
   /**
-   * The card plays on any of these Acts, oldest first, in one read (a page of a thread asks once, never once per post), at most
-   * `limit` rows in all; each names its post in `targetActId`. A result as long as `limit` may be cut, and a post with none in it
-   * may have some. The `card_end` Acts of those plays follow them in the same list (they name their play in `targetActId`, not a post).
+   * A page of a post's older plays of a kind (`card` null for card backs): those not in force, newest first, strictly before `before` (the `next` of the page before, null for the first page), at most `size` (1 to 50), with their ends,
+   * their public tallies, the reader's own reactions, the threads spun from them and their casters. `next` is the cursor of the next page, null where none are left.
    */
-  cardsOnMany(acts: readonly Id[], limit: number): Promise<readonly Act[]>;
+  kindPlays(post: Id, card: string | null, before: { readonly at: string; readonly id: Id } | null, size: number): Promise<KindPage>;
   /**
    * The `card_end` Acts whose target is one of these Acts (a play, or a lockout's spring), read by target alone: a play's place
    * on its post, and how many plays the post holds, do not matter. Each names what it ends in `targetActId`. An empty list reads nothing.
@@ -2899,6 +2937,8 @@ export interface KayfaApi {
   tails(posts: readonly Id[]): Promise<readonly Tail[]>;
   /** A play's moment (`PlayMoment`), read once when asked for; null for an id that is no play on a post. Any signed-in reader may read it. */
   playMoment(play: Id): Promise<PlayMoment | null>;
+  /** A rewind play's view (`Rewind`), read once when asked for; null for an id that is no rewind play on a post. Any signed-in reader may read it. */
+  rewindView(play: Id): Promise<Rewind | null>;
   /** A spin's moment (`PlayMoment`, 0351), read once when asked for; null for an id that is no spin, or a spin that names no post. Any signed-in reader may read it. */
   spinMoment(spin: Id): Promise<PlayMoment | null>;
   /** Debuted characters with their profiles; an id not among them (waiting, or none) is left out. */

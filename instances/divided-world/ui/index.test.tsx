@@ -1157,8 +1157,8 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     }
     expect(ui('mooch').summary).toBe('Names one kind of reaction on a post. For a week, each new vote the post draws there pays you a little, and costs its author nothing.');
     expect(ui('toll').summary).toBe('Used on your post. For a week, every reaction to a Move another player casts there pays you too.');
-    expect(ui('4d-chess').summary).toBe('Set face down on your post, naming a Move up to uncommon and one kind of reaction. When that Move is cast there it lands as usual, and its reactions of that kind pay you.');
-    expect(ui('off-day').summary).toBe('Cast on a character, naming a class. For the one settlement window after the next settlement, that character scores as that class.');
+    expect(ui('4d-chess').summary).toBe('Set face down on your post, naming a Move up to uncommon and a reaction. If that Move lands there, those reactions pay you.');
+    expect(ui('off-day').summary).toBe('Cast on a character, naming a class. From the next settlement to the one after, that character scores as that class.');
   });
 
   test('every status is within the Lens\'s word rules, for one play and for as many as the card stacks', () => {
@@ -1265,7 +1265,7 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
     const kick = ui('kick-me');
     expect([kick.art.color, kick.art.ink]).toEqual([ui('whoopee-cushion').art.color, ui('whoopee-cushion').art.ink]);
     expect(kick.art.tagline).toBe('Earn more when your post bombs.');
-    expect(kick.summary).toBe("Used on your post. For 3 days, each negative reaction to it pays one vote more, and the first three Salty Moves played on it go back to their players' hands.");
+    expect(kick.summary).toBe("Used on your post. For 3 days, negative reactions pay 1 vote more, and the first 3 landed Salty Moves go back to their players.");
     expect(kick.status).toBe('Wearing a Kick Me sign');
     expect(kick.Effect).toBeDefined();
     expect(kick.ConfigForm).toBeUndefined();
@@ -1451,10 +1451,10 @@ describe('where each card lands, as the screens ask it', () => {
   test('every card is asked on a post, face up and face down, without reading settings the screens do not hold', () => {
     const target = { reach: 'post', act: 'p1', kind: 'post', length: 2, text: 'hi', links: [] } as const;
     for (const rules of instance.cards) {
-      expect(() => landingOn(rules, target, [], { cards: instance.cards }), rules.key).not.toThrow();
-      expect(() => landingOn(rules, target, [], { cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { postEffects: 8, cards: instance.cards }), rules.key).not.toThrow();
+      expect(() => landingOn(rules, target, [], { postEffects: 8, cards: instance.cards, faceDown: true }), rules.key).not.toThrow();
     }
-    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { cards: instance.cards }).ok).toBe(true);
+    expect(landingOn(instance.cards.find((c) => c.key === 'you-were-saying')!, target, [], { postEffects: 8, cards: instance.cards }).ok).toBe(true);
   });
 });
 

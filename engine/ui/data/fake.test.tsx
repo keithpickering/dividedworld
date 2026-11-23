@@ -24,7 +24,7 @@ import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../rules/pronouns.t
 import { localReaction } from '../../rules/emoji.ts';
 
 const settings: Settings = {
-  walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
+  walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, postEffects: 8, crowdPayEach: 2, crowdPayMost: 10, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
   invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
@@ -1108,7 +1108,7 @@ describe('what a list row shows', () => {
     expect(fromPlay.thread.origin).toEqual({ kind: 'play', card: 'whoops', on: { kind: 'update', act: update, title: 'Traps bite' }, from: null, at: null });
   });
 
-  test('spunFromMany reads the threads spun from any of several Acts at once, and cardsOn the card plays on one', async () => {
+  test('spunFromMany reads the threads spun from any of several Acts at once, and postPlays the card plays on one', async () => {
     const { fake, anaFace, boFace, thread, opener } = world();
     const second = must(await fake.post(thread, anaFace, 'second', null));
     const a = must(await fake.spin(opener, anaFace, 'From the first', ''));
@@ -1119,17 +1119,17 @@ describe('what a list row shows', () => {
     expect(await fake.spunFromMany([], 50)).toEqual([]);
     fake.seed.card(boFace, second.id, 'whoops', { message: 'oops' });
     fake.seed.card(boFace, opener, 'whoops');
-    const on = await fake.cardsOn(second.id, 50);
+    const on = (await fake.postPlays([second.id])).plays;
     expect(on.map((c) => [c.kind, c.targetActId, c.payload])).toEqual([['card', second.id, { card: 'whoops', message: 'oops' }]]);
-    expect(await fake.cardsOn(a.act.id, 50)).toEqual([]);
-    /* Each read stops at its limit, oldest first. */
+    expect((await fake.postPlays([a.act.id])).plays).toEqual([]);
+    /* The reads of spun threads stop at their limit, oldest first. */
     expect((await fake.spunFromMany([opener, second.id], 1)).map((t) => t.id)).toEqual([a.thread.id]);
     expect(await fake.spunFrom(opener, 0)).toEqual([]);
     fake.seed.card(boFace, second.id, 'whoops', { message: 'again' });
-    expect(await fake.cardsOn(second.id, 1)).toHaveLength(1);
+    expect((await fake.postPlays([second.id])).plays).toHaveLength(2);
     /* A card's own settings ride in the payload as the server keeps them (Stick Around's sentence). */
     fake.seed.card(boFace, opener, 'stick-around', { message: 'read it', config: { sentence: 'I read it.' } });
-    expect((await fake.cardsOn(opener, 50)).map((c) => c.payload).filter((p) => p.card === 'stick-around')).toEqual([{ card: 'stick-around', message: 'read it', config: { sentence: 'I read it.' } }]);
+    expect((await fake.postPlays([opener])).plays.map((c) => c.payload).filter((p) => p.card === 'stick-around')).toEqual([{ card: 'stick-around', message: 'read it', config: { sentence: 'I read it.' } }]);
   });
 
   test('a card play takes no thread number, as an edit takes none: the posts keep theirs, and the play is found through its post', async () => {
@@ -1144,26 +1144,13 @@ describe('what a list row shows', () => {
     expect((await fake.acts(thread, 1, 10)).map((a) => [a.kind, a.seq])).toEqual([['post', 1], ['post', 2], ['post', 3]]);
     const row = await fake.thread(thread);
     expect([row?.lastSeq, row?.lastAct, row?.replies]).toEqual([3, third.id, 2]);
-    expect((await fake.cardsOn(second.id, 5)).map((c) => c.seq)).toEqual([null]);
+    expect((await fake.postPlays([second.id])).plays.map((c) => c.seq)).toEqual([null]);
   });
 
   test('a card seeded with a layer and the server\'s config carries them in its payload, as a seeded card\'s play does', async () => {
     const { fake, boFace, opener } = world();
     const play = fake.seed.card(boFace, opener, 'whoops', { message: 'inked', layer: 2, config: { color: '#ff2bd6', seed: 41 } });
     expect((await fake.act(play))?.payload).toEqual({ card: 'whoops', message: 'inked', layer: 2, config: { color: '#ff2bd6', seed: 41 } });
-  });
-
-  test('cardsOnMany reads the card plays on any of several posts in one read, oldest first, at most the limit', async () => {
-    const { fake, anaFace, boFace, thread, opener } = world();
-    const second = must(await fake.post(thread, anaFace, 'second', null));
-    const third = must(await fake.post(thread, anaFace, 'third', null));
-    const a = fake.seed.card(boFace, second.id, 'whoops', { message: 'one' });
-    const b = fake.seed.card(boFace, opener, 'whoops');
-    fake.seed.card(boFace, third.id, 'whoops');
-    const many = await fake.cardsOnMany([second.id, opener], 50);
-    expect(many.map((c) => [c.id, c.targetActId])).toEqual([[a, second.id], [b, opener]]);
-    expect(await fake.cardsOnMany([], 50)).toEqual([]);
-    expect((await fake.cardsOnMany([second.id, opener, third.id], 2)).map((c) => c.id)).toEqual([a, b]);
   });
 
   test('a card seeded live is heard by the thread\'s subscribers, with no number', async () => {
@@ -2472,7 +2459,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect((await fake.setCard('snare', anaFace, bos, {})).ok).toBe(false);
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
     expect([set.kind, set.payload]).toEqual(['set', {}]);
-    expect((await fake.cardsOn(opener, 8)).map((a) => [a.kind, a.payload])).toEqual([['set', {}]]);
+    expect((await fake.postPlays([opener])).plays.map((a) => [a.kind, a.payload])).toEqual([['set', {}]]);
     expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
     fake.signInAs(bo);
     expect(await fake.myFaceDown([set.id])).toEqual({});
@@ -2506,7 +2493,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     fake.signInAs(bo);
     const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
     expect(caught.payload.caught).toBe(set.id);
-    const on = await fake.cardsOn(opener, 8);
+    const on = (await fake.postPlays([opener])).plays;
     expect(on.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'snare', trigger: 'cast', did: 'caught', set: set.id, caught: caught.id });
     expect(on.find((a) => a.kind === 'spring')?.payload).not.toHaveProperty('outcome');
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
@@ -2518,7 +2505,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
     fake.signInAs(bo);
     const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
-    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    const spring = (await fake.postPlays([opener])).plays.find((a) => a.kind === 'spring')!;
     fake.signInAs(ana);
     expect((await fake.myCards()).find((c) => c.card === 'blot')?.held).toBe(1);
     expect((await fake.log()).cards.find((e) => e.kind === 'caught')).toMatchObject({ card: 'blot', kind: 'caught', act: spring.id, price: 0 });
@@ -2530,7 +2517,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const set = must(await fake.setCard('snare', anaFace, opener, {}));
     fake.signInAs(bo);
     const caught = must(await fake.playCard('blot', boFace, opener, {}, ''));
-    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    const spring = (await fake.postPlays([opener])).plays.find((a) => a.kind === 'spring')!;
     expect((await fake.playMoment(caught.id))!.layers.map((l) => l.act.id).sort()).toEqual([caught.id, set.id, spring.id].sort());
     expect((await fake.playMoment(spring.id))!.layers.map((l) => l.act.id).sort()).toEqual([spring.id, set.id].sort());
   });
@@ -2605,7 +2592,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     expect(await fake.takeBack(anaFace, set.id)).toEqual(nothing);
     fake.signInAs(bo);
     expect(must(await fake.playCard('blot', boFace, opener, {}, '')).payload.caught).toBeUndefined();
-    expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.postPlays([opener])).plays.some((a) => a.kind === 'spring')).toBe(false);
   });
 
   /* Cheap Shot (the pierce plan's Task 3): the fake mirrors place_cast's read of the caster's pierce. */
@@ -2668,7 +2655,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const landed = must(await fake.playCard('blot', anaFace, bos, {}, ''));
     expect(landed.payload.caught).toBeUndefined();
     expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift' });
-    expect((await fake.cardsOn(bos, 8)).some((a) => a.kind === 'spring')).toBe(false);
+    expect((await fake.postPlays([bos])).plays.some((a) => a.kind === 'spring')).toBe(false);
     expect(await trapStruck(fake)).toMatchObject([{ kind: 'trapStruck', sub: 'passed', act: landed.id }]);
     fake.signInAs(bo);
     expect(await fake.myFaceDown([set.id])).toEqual({ [set.id]: 'csnare' });
@@ -2696,7 +2683,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     must(await fake.setCard('cushion', boFace, bos, {}));
     fake.signInAs(ana);
     must(await fake.playCard('blot', anaFace, bos, {}, ''));
-    expect((await fake.cardsOn(bos, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'cushion', did: 'rode' });
+    expect((await fake.postPlays([bos])).plays.find((a) => a.kind === 'spring')?.payload).toMatchObject({ card: 'cushion', did: 'rode' });
     expect(await trapStruck(fake)).toEqual([]);
   });
 
@@ -3062,7 +3049,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     const cast = must(await fake.playCard('sugar', boFace, opener, {}, ''));
     expect(cast.payload).toMatchObject({ rode: back.id });
     expect(cast.payload).not.toHaveProperty('caught');
-    const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+    const spring = (await fake.postPlays([opener])).plays.find((a) => a.kind === 'spring')!;
     expect(spring.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
     expect(spring.payload).not.toHaveProperty('quadrant');
     fake.signInAs(ana);
@@ -3212,8 +3199,8 @@ describe('an admin ends a card play (reverse_card)', () => {
     expect([end?.kind, end?.character, end?.seq, end?.thread, end?.targetActId, end?.payload]).toEqual(['card_end', null, null, thread, first.id, { why: 'reversed', by: 'admin' }]);
     expect(heard.at(-1)?.id).toBe(ended.act);
     expect((await fake.acts(thread, 1, 10)).map((a) => a.kind)).toEqual(['post']);
-    /* The layer counts every play, a reversed one too (acts_card_layers refuses a reused layer). */
-    expect((await fake.cardsOn(opener, 10)).filter((a) => a.kind === 'card').map((a) => a.payload.layer)).toEqual([1, 2]);
+    /* The layer counts every play, a reversed one too (acts_card_layers refuses a reused layer): the page holds the newest of the kind, which is layer 2, and the reversed first play is neither in force nor a stand-in. */
+    expect((await fake.postPlays([opener])).plays.filter((a) => a.kind === 'card').map((a) => a.payload.layer)).toEqual([2]);
   });
 
   test('the log and the alerts say it, as my_cards_ended and write_alert do: to the caster\'s player and the one it landed on, never to a third', async () => {
@@ -3265,13 +3252,13 @@ describe('an admin ends a card play (reverse_card)', () => {
     expect((await fake.log()).ended.map((e) => [e.play, e.side, e.character])).toEqual(expect.arrayContaining([[onChar.id, 'cast', benMask], [onThread.id, 'cast', benMask]]));
   });
 
-  test('cardsOn and cardsOnMany carry the end beside the plays, for the screen to mark a play reversed', async () => {
+  test('postPlays carries the end beside the plays, for the screen to mark a play reversed', async () => {
     const { fake, boss, anaFace, opener } = setup();
     const play = must(await fake.playCard('blot', anaFace, opener, {}, ''));
     fake.signInAs(boss);
     const ended = must(await fake.reverseCard(play.id));
-    expect((await fake.cardsOn(opener, 10)).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card', play.id, opener], ['card_end', ended.act, play.id]]);
-    expect((await fake.cardsOnMany([opener], 10)).map((a) => a.kind)).toEqual(['card', 'card_end']);
+    expect((await fake.postPlays([opener])).plays.map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card', play.id, opener], ['card_end', ended.act, play.id]]);
+    expect((await fake.postPlays([opener])).plays.map((a) => a.kind)).toEqual(['card', 'card_end']);
     expect((await fake.cardEnds([play.id, 'nope'])).map((a) => [a.kind, a.id, a.targetActId])).toEqual([['card_end', ended.act, play.id]]);
     expect(await fake.cardEnds([opener])).toEqual([]);
     expect(await fake.cardEnds([])).toEqual([]);
@@ -3990,7 +3977,7 @@ describe('a screen in one call is what the separate calls answer', () => {
   test('threadPage of a spun thread carries the origin the box used to read in pieces: page 1 only, and null for another page and for a thread that was not spun', async () => {
     const { fake, ana, anaFace, boFace, thread, opener } = world();
     for (let i = 0; i < 3; i++) fake.seed.post(thread, boFace, `reply ${i}`);
-    /* A post with 22 plays, the first of them ended by an admin: 20 are shown, with their ends, and there is more. */
+    /* A post with 22 plays, the first of them ended by an admin: the box holds the 21 in force (no cap, no more flag), the ended one is only counted, as the database's origin reads it (postPlays). */
     const plays: string[] = [];
     for (let i = 1; i <= 22; i++) { fake.clock.advance(1000); plays.push(fake.seed.card(boFace, opener, 'whoops', { layer: i })); }
     const boss = fake.seed.account('boss', { admin: true });
@@ -4001,19 +3988,20 @@ describe('a screen in one call is what the separate calls answer', () => {
     fake.seed.post(spun, anaFace, 'a second post');
     fake.seed.post(spun, anaFace, 'a third post');
     const first = (await fake.threadPage(spun, { page: 1 }, 2, []))!;
-    const read = await fake.cardsOn(opener, 21);
-    const shown = read.filter((a) => a.kind !== 'card_end').slice(0, 20);
+    const read = await fake.postPlays([opener]);
+    const shown = read.plays.filter((a) => a.kind !== 'card_end');
     expect(first.origin).toEqual({
       act: await fake.act(opener),
-      plays: [...shown, ...read.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId))],
-      more: true,
+      plays: read.plays,
+      counts: [{ post: opener, card: 'whoops', all: 22, took: 22 }],
       moment: null,
       at: null,
       cast: await fake.characters([boFace]),
       polls: [], voters: [], votersMore: [], myBallots: [],
     });
-    expect(first.origin!.plays.filter((a) => a.kind === 'card')).toHaveLength(20);
-    expect(first.origin!.plays.filter((a) => a.kind === 'card_end')).toHaveLength(1);
+    expect(first.origin!.plays.filter((a) => a.kind === 'card')).toHaveLength(21);
+    expect(first.origin!.plays.filter((a) => a.kind === 'card_end')).toHaveLength(0);
+    expect(first.origin).not.toHaveProperty('more');
     /* Its Act and the plays' arrive in the tallies, as the page's own. */
     expect(first.tallies).toEqual(await fake.tallies([...first.acts.map((a) => a.id), opener, ...shown.map((a) => a.id)]));
     /* Another page of the same thread, and a thread nobody spun, carry none. */
@@ -4234,15 +4222,17 @@ describe('a card that writes: its tails, as post_tails and the worker leave them
     const lost = fake.seed.card(face, post, 'typewriter');
     fake.seed.text(kept, post, { text: 'a' }, { quiet: true });
     fake.seed.text(lost, post, { failed: true }, { quiet: true });
-    const acts = await fake.cardsOnMany([post], 10);
+    const acts = (await fake.postPlays([post])).plays;
     expect(acts.filter((a) => a.kind === 'card').map((a) => [a.id, a.untaken])).toEqual([[kept, undefined], [lost, true]]);
+    /* A play that did not take counts as a play and not as one that took. */
+    expect((await fake.postPlays([post])).counts).toEqual([{ post, card: 'typewriter', all: 2, took: 1 }]);
     fake.clock.advance(60_000);
     expect((await fake.edit(post, face, 'Edited post')).ok).toBe(true);
     const edit = (await fake.history(post)).map((v) => v.id)[1]!;
     expect((await fake.tails([post])).map((r) => [r.play, r.version, r.failed, r.waiting])).toEqual([[kept, post, false, false], [lost, post, true, false], [kept, edit, false, true]]);
     /* A regeneration that fails, for a play that made a text, is not a refund. */
     fake.seed.text(kept, edit, { failed: true }, { quiet: true });
-    expect((await fake.cardsOn(post, 10)).find((a) => a.id === kept)?.untaken).toBeUndefined();
+    expect((await fake.postPlays([post])).plays.find((a) => a.id === kept)?.untaken).toBeUndefined();
     /* A late text for a play that is over writes nothing. */
     fake.seed.text(lost, post, { text: 'too late' }, { quiet: true });
     expect((await fake.tails([post])).some((r) => r.play === lost && r.text !== null)).toBe(false);
@@ -4750,7 +4740,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const cast = must(await fake.playCard('blot', boFace, opener, {}, ''));
       expect(cast.payload).toMatchObject({ card: 'blot', layer: 1, rode: back.id });
       expect(cast.payload).not.toHaveProperty('caught');
-      const spring = (await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')!;
+      const spring = (await fake.postPlays([opener])).plays.find((a) => a.kind === 'spring')!;
       expect(spring.payload).toEqual({ card: 'rider', trigger: 'cast', did: 'rode', quadrant: 'calmPositive', set: back.id, by: cast.id });
       expect(spring.payload).not.toHaveProperty('caught');
       /* The back has sprung: the next cast rides nothing. */
@@ -4773,10 +4763,10 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const { fake, anaFace, anaHeel, opener } = setup();
       const back = await set(fake, anaFace, opener);
       must(await fake.playCard('other', anaHeel, opener, {}, ''));
-      expect((await fake.cardsOn(opener, 8)).some((a) => a.kind === 'spring')).toBe(false);
+      expect((await fake.postPlays([opener])).plays.some((a) => a.kind === 'spring')).toBe(false);
       const cast = must(await fake.playCard('blot', anaHeel, opener, {}, ''));
       expect(cast.payload).toMatchObject({ rode: back.id });
-      expect((await fake.cardsOn(opener, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
+      expect((await fake.postPlays([opener])).plays.find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
     });
 
     test('a ride set with no quadrant is refused in the card\'s words', async () => {
@@ -4822,10 +4812,10 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const back = must(await fake.setCard('rfgift', anaFace, post, { quadrant: 'calmPositive' })); /* a refund set card never stores a quadrant, even one in its config */
       fake.signInAs(bo);
       must(await fake.playCard('rfrare', boFace, post, {}, ''));
-      expect((await fake.cardsOn(post, 8)).some((a) => a.kind === 'spring')).toBe(false);
+      expect((await fake.postPlays([post])).plays.some((a) => a.kind === 'spring')).toBe(false);
       const before = await held(fake, 'rfsweet');
       const cast = must(await fake.playCard('rfsweet', boFace, post, {}, ''));
-      const spring = (await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')!;
+      const spring = (await fake.postPlays([post])).plays.find((a) => a.kind === 'spring')!;
       expect(spring.payload).toEqual({ card: 'rfgift', trigger: 'cast', did: 'returned', set: back.id, by: cast.id });
       expect(cast.payload).toMatchObject({ card: 'rfsweet', layer: 1, handedBack: { by: back.id, card: 'rfgift' } });
       expect(cast.payload).not.toHaveProperty('caught');
@@ -4852,7 +4842,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await held(fake, 'rfsalty')).toBe(before - 1);
       expect((await returned(fake)).map((e) => e.act).sort()).toEqual(casts.slice(0, 3).map((c) => c.id).sort());
       expect((await returned(fake)).map((e) => e.price)).toEqual([0, 0, 0]);
-      expect((await fake.cardsOn(post, 8)).find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
+      expect((await fake.postPlays([post])).plays.find((a) => a.id === (casts[0]!.id))?.payload).not.toHaveProperty('caught');
       void ana;
     });
 
@@ -4885,7 +4875,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       fake.signInAs(bo);
       const cast = must(await fake.playCard('rfsalty', boFace, post, {}, ''));
       expect(cast.payload).toMatchObject({ rode: back.id, handedBack: { by: sign.id, card: 'rfsign' } });
-      expect((await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
+      expect((await fake.postPlays([post])).plays.find((a) => a.kind === 'spring')?.payload).toMatchObject({ did: 'rode', set: back.id, by: cast.id });
     });
 
     test('a back that catches the cast takes it: nothing is handed back and no kick is used', async () => {
@@ -4931,7 +4921,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       return { fake, ana, bo, root, anaFace, boFace, boHeel, thread, post, otherThread: other.thread, otherPost: other.act };
     }
     const lockedWords = (until: string) => `Bo Face is locked out of this thread until ${refusalTime(new Date(Math.ceil(Date.parse(until) / MINUTE) * MINUTE).toISOString())}; the lockout ends by itself then, and it holds only this character, not your other characters`;
-    const springOf = async (fake: ReturnType<typeof lk>['fake'], post: string) => (await fake.cardsOn(post, 8)).find((a) => a.kind === 'spring')!;
+    const springOf = async (fake: ReturnType<typeof lk>['fake'], post: string) => (await fake.postPlays([post])).plays.find((a) => a.kind === 'spring')!;
 
     test('the Move that springs it lands, and the spring says lockedOut with who it locks and until when, with no card handed anywhere', async () => {
       const { fake, bo, anaFace, boFace, post } = lk();
@@ -5050,6 +5040,46 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await fake.reverseCard(spring.id)).toEqual(refused('that card has already worn off'));
     });
 
+    test('postPlays keeps a back that sprang into a lockout while the lockout is ahead (#993), and only the newest sprung back once it has passed', async () => {
+      const { fake, ana, bo, anaFace, boFace, boHeel, post } = lk();
+      const first = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      fake.clock.advance(MINUTE);
+      fake.signInAs(ana);
+      const second = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boHeel, post, {}, ''));
+      const springs = (await fake.postPlays([post])).plays.filter((a) => a.kind === 'spring');
+      expect(springs.map((a) => a.payload.did)).toEqual(['lockedOut', 'lockedOut']);
+      const backs = async () => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'set').map((a) => a.id);
+      /* Both lockouts are ahead: both sprung backs are carried, though only one is the newest of its kind and neither draws more than the other. */
+      expect((await backs()).sort()).toEqual([first.id, second.id].sort());
+      /* The first one's lockout ends before the second's (a minute earlier), and then only the newest sprung back is left, as a stand-in. */
+      fake.clock.advance(24 * 60 * MINUTE);
+      expect(await backs()).toEqual([second.id]);
+      fake.clock.advance(MINUTE);
+      expect(await backs()).toEqual([second.id]);
+    });
+
+    test('postPlays drops a sprung back whose lockout an admin ended, and keeps the one whose lockout holds', async () => {
+      const { fake, ana, bo, root, anaFace, boFace, boHeel, post } = lk();
+      const first = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      fake.clock.advance(MINUTE);
+      fake.signInAs(ana);
+      const second = must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boHeel, post, {}, ''));
+      const backs = async () => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'set').map((a) => a.id).sort();
+      expect(await backs()).toEqual([first.id, second.id].sort());
+      const firstSpring = (await fake.postPlays([post])).plays.find((a) => a.kind === 'spring' && a.payload.set === first.id)!;
+      fake.signInAs(root);
+      must(await fake.reverseCard(firstSpring.id));
+      expect(await backs()).toEqual([second.id]);
+    });
+
     test('the Move that springs it still writes the reply it carries', async () => {
       const { fake, bo, anaFace, boFace, thread, post } = lk();
       must(await fake.setCard('lkback', anaFace, post, {}));
@@ -5140,7 +5170,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       const played = must(await play(s));
       s.fake.signInAs(s.bo);
       expect(await s.fake.myCharacters()).toEqual(before);
-      expect((await s.fake.cardsOn(s.boPost, 20)).map((a) => a.kind)).toEqual(['card']);
+      expect((await s.fake.postPlays([s.boPost])).plays.map((a) => a.kind)).toEqual(['card']);
       expect(played.payload).not.toHaveProperty('layer');
     });
   });
@@ -5229,7 +5259,7 @@ describe('a surface, as the server keeps it', () => {
       const huge = { strokes: [stroke(0.5, 0.9), stroke(0.1, 0.9)] };
       expect(await fake.playCard('slab', anaFace, post, {}, '', undefined, undefined, huge)).toMatchObject({ ok: false, field: 'first' });
       expect(await fake.myCards()).toEqual(expect.arrayContaining([{ card: 'slab', held: 2 }]));
-      expect(await fake.cardsOn(post, 10)).toHaveLength(0);
+      expect((await fake.postPlays([post])).plays).toHaveLength(0);
     });
     test('setCard on a surface card is refused: it is cast face up and never set', async () => {
       const { fake, ana, anaFace, thread } = wall();
@@ -7185,3 +7215,436 @@ describe('the card retirement seed', () => {
     expect(slots.map((s) => [s.retired, s.became, s.withdrawn])).toEqual([[false, null, false], [true, 'collector', false], [true, null, true], [true, null, false]]);
   });
 });
+
+/* postPlays and kindPlays (docs/plans/2026-11-21-post-plays-design.md, sections 1 and 3): the fake's answers, case for case with the database's post_plays and kind_plays (supabase/tests/0410-post-plays.sql). */
+describe('postPlays reads what a page holds for a post: the plays in force, each kind\'s two stand-ins, and the counts', () => {
+  const cards = (plays: readonly Act[]) => plays.filter((a) => a.kind === 'card').map((a) => a.id);
+  const iso = (fake: { clock: { now(): number } }, ms: number) => new Date(fake.clock.now() + ms).toISOString();
+  /** Players who react: each reacts once to an Act, so an Act's draw is the number of reactors given. */
+  const draw = (fake: ReturnType<typeof world>['fake'], play: string, n: number) => {
+    for (let i = 0; i < n; i++) {
+      const account = fake.seed.account(`reactor-${play}-${i}`);
+      fake.seed.react(account, fake.seed.character(account, `Reactor ${i} of ${play.slice(0, 8)}`, 'face'), play, 'fire');
+    }
+  };
+
+  test('a post with three kinds: 12 plays over time with two up, a kind wholly over: the in-force set, each kind\'s two stand-ins, the counts', async () => {
+    const { fake, boFace, opener } = world();
+    const whoops: string[] = [];
+    for (let i = 0; i < 12; i++) {
+      fake.clock.advance(60 * MINUTE);
+      whoops.push(fake.seed.card(boFace, opener, 'whoops', i < 10 ? { ends: iso(fake, 10 * MINUTE) } : {}));
+    }
+    fake.clock.advance(60 * MINUTE);
+    /* The third-oldest play drew the most, so it is the kind's second stand-in. */
+    draw(fake, whoops[2]!, 3);
+    draw(fake, whoops[5]!, 1);
+    /* A kind wholly over: three plays, the first two drawing alike; the newer of the two wins the draw, and the newest is the other stand-in. */
+    const blot: string[] = [];
+    for (let i = 0; i < 3; i++) { fake.clock.advance(MINUTE); blot.push(fake.seed.card(boFace, opener, 'blot', { ends: iso(fake, MINUTE / 2) })); }
+    fake.clock.advance(60 * MINUTE);
+    draw(fake, blot[0]!, 1);
+    draw(fake, blot[1]!, 1);
+    const read = await fake.postPlays([opener]);
+    expect(cards(read.plays)).toEqual([whoops[2]!, whoops[10]!, whoops[11]!, blot[1]!, blot[2]!]);
+    expect(read.counts).toEqual(expect.arrayContaining([{ post: opener, card: 'whoops', all: 12, took: 12 }, { post: opener, card: 'blot', all: 3, took: 3 }]));
+    expect(read.counts).toHaveLength(2);
+  });
+
+  test('a cast with no end, played before 30 ended Uses, is on the page: the page carries the plays in force however many ended after', async () => {
+    const { fake, boFace, opener } = world();
+    const cast = fake.seed.card(boFace, opener, 'cast');
+    for (let i = 0; i < 30; i++) { fake.clock.advance(MINUTE); fake.seed.card(boFace, opener, 'use', { ends: iso(fake, MINUTE / 2) }); }
+    fake.clock.advance(MINUTE);
+    const read = await fake.postPlays([opener]);
+    expect(cards(read.plays)).toContain(cast);
+    expect(read.counts.find((c) => c.card === 'use')).toEqual({ post: opener, card: 'use', all: 30, took: 30 });
+    /* The cast and the newest Use (the Uses' two stand-ins are one play, as none drew more). */
+    expect(cards(read.plays)).toHaveLength(2);
+  });
+
+  test('a heart and a character card played from the post are in its plays; an ended one is there only as a stand-in', async () => {
+    const { fake, boFace, opener } = world();
+    const heart = fake.seed.card(boFace, opener, 'heart', { instant: true });
+    fake.clock.advance(MINUTE);
+    const gone = fake.seed.reach(boFace, 'character', boFace, 'cuffs', { post: opener, ends: fake.clock.now() + MINUTE });
+    fake.clock.advance(2 * MINUTE);
+    const live = fake.seed.reach(boFace, 'character', boFace, 'cuffs', { post: opener, ends: fake.clock.now() + 60 * MINUTE });
+    const read = await fake.postPlays([opener]);
+    expect(cards(read.plays)).toEqual([heart, live]);
+    expect(cards(read.plays)).not.toContain(gone);
+    expect(read.counts).toEqual(expect.arrayContaining([{ post: opener, card: 'heart', all: 1, took: 1 }, { post: opener, card: 'cuffs', all: 2, took: 2 }]));
+  });
+
+  test('an admin-ended play is not in force, is the stand-in when newest, and its end rides', async () => {
+    const { fake, boFace, opener } = world();
+    const first = fake.seed.card(boFace, opener, 'whoops');
+    fake.clock.advance(MINUTE);
+    const second = fake.seed.card(boFace, opener, 'whoops');
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    const ended = must(await fake.reverseCard(second));
+    const read = await fake.postPlays([opener]);
+    expect(read.plays.map((a) => [a.kind, a.id])).toEqual([['card', first], ['card', second], ['card_end', ended.act]]);
+    /* An older play that is ended and is not a stand-in is absent, and so is its end. */
+    fake.clock.advance(MINUTE);
+    const third = fake.seed.card(boFace, opener, 'whoops');
+    must(await fake.reverseCard(first));
+    const later = await fake.postPlays([opener]);
+    expect(cards(later.plays)).toEqual([third]);
+    expect(later.plays.filter((a) => a.kind === 'card_end')).toEqual([]);
+    expect(later.counts).toEqual([{ post: opener, card: 'whoops', all: 3, took: 3 }]);
+  });
+
+  test('backs: a live back is in force; of four sprung backs the newest and the most drawn come with their springs; a back taken back or run out is absent; no row or count names a back\'s card', async () => {
+    const { fake, bo, boFace, opener } = world();
+    const sprung: { set: string; spring: string }[] = [];
+    for (let i = 0; i < 4; i++) {
+      fake.clock.advance(MINUTE);
+      const set = fake.seed.set(boFace, opener, 'snare');
+      fake.clock.advance(MINUTE);
+      sprung.push({ set, spring: fake.seed.spring(set) });
+    }
+    draw(fake, sprung[1]!.set, 2);
+    fake.clock.advance(MINUTE);
+    const taken = fake.seed.set(boFace, opener, 'snare');
+    fake.signInAs(bo);
+    must(await fake.takeBack(boFace, taken));
+    fake.clock.advance(MINUTE);
+    fake.seed.set(boFace, opener, 'snare', { endsAt: fake.clock.now() + 1 });
+    fake.clock.advance(MINUTE);
+    const live = fake.seed.set(boFace, opener, 'snare');
+    const read = await fake.postPlays([opener]);
+    expect(read.plays.filter((a) => a.kind === 'set').map((a) => a.id)).toEqual([sprung[1]!.set, sprung[3]!.set, live]);
+    expect(read.plays.filter((a) => a.kind === 'spring').map((a) => a.id)).toEqual([sprung[1]!.spring, sprung[3]!.spring]);
+    expect(read.counts).toEqual([{ post: opener, card: null, all: 4, took: 4 }]);
+    expect(JSON.stringify([read.counts, read.plays.filter((a) => a.kind === 'set')])).not.toContain('snare');
+  });
+
+  test('two posts in one call: each post\'s plays and counts, no cross-talk; none read for none; 201 posts are refused', async () => {
+    const { fake, anaFace, boFace, thread, opener } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    const a = fake.seed.card(boFace, opener, 'whoops');
+    const b = fake.seed.card(boFace, second.id, 'blot');
+    const both = await fake.postPlays([opener, second.id]);
+    expect(cards(both.plays)).toEqual([a, b]);
+    expect(both.counts).toEqual(expect.arrayContaining([{ post: opener, card: 'whoops', all: 1, took: 1 }, { post: second.id, card: 'blot', all: 1, took: 1 }]));
+    expect(both.counts).toHaveLength(2);
+    expect(cards((await fake.postPlays([second.id])).plays)).toEqual([b]);
+    expect(await fake.postPlays([])).toEqual({ plays: [], counts: [] });
+    await expect(fake.postPlays(Array.from({ length: 201 }, (_, i) => `post-${i}`))).rejects.toThrow('at most 200');
+  });
+
+});
+
+describe('kindPlays pages a kind\'s older plays, newest first, from a cursor', () => {
+  const cards = (plays: readonly Act[]) => plays.filter((a) => a.kind === 'card').map((a) => a.id);
+  const ended = (fake: ReturnType<typeof world>['fake'], boFace: string, post: string, n: number) => Array.from({ length: n }, () => {
+    fake.clock.advance(MINUTE);
+    return fake.seed.card(boFace, post, 'whoops', { ends: new Date(fake.clock.now() + 1).toISOString() });
+  });
+
+  test('three pages of 20 over 45 ended plays, newest first and disjoint, then next is null; plays in force never appear', async () => {
+    const { fake, boFace, opener } = world();
+    const old = ended(fake, boFace, opener, 45);
+    fake.clock.advance(MINUTE);
+    const up = [fake.seed.card(boFace, opener, 'whoops'), fake.seed.card(boFace, opener, 'whoops')];
+    const first = await fake.kindPlays(opener, 'whoops', null, 20);
+    expect(cards(first.plays)).toEqual(old.slice(25).reverse());
+    expect(first.next).toEqual({ at: expect.any(String), id: old[25]! });
+    const second = await fake.kindPlays(opener, 'whoops', first.next, 20);
+    expect(cards(second.plays)).toEqual(old.slice(5, 25).reverse());
+    const third = await fake.kindPlays(opener, 'whoops', second.next, 20);
+    expect(cards(third.plays)).toEqual(old.slice(0, 5).reverse());
+    expect(third.next).toBeNull();
+    const all = [...cards(first.plays), ...cards(second.plays), ...cards(third.plays)];
+    expect(new Set(all).size).toBe(45);
+    expect(all.some((id) => up.includes(id))).toBe(false);
+  });
+
+  test('size 0 and 500 are clamped to 1 and 50', async () => {
+    const { fake, boFace, opener } = world();
+    const old = ended(fake, boFace, opener, 55);
+    fake.clock.advance(MINUTE);
+    const one = await fake.kindPlays(opener, 'whoops', null, 0);
+    expect(cards(one.plays)).toEqual([old[54]!]);
+    expect(one.next).not.toBeNull();
+    const most = await fake.kindPlays(opener, 'whoops', null, 500);
+    expect(cards(most.plays)).toHaveLength(50);
+    expect(most.next).not.toBeNull();
+  });
+
+  test('the page carries the tallies, the threads spun from the plays, their casters, and a second caller\'s own reactions only', async () => {
+    const { fake, ana, anaFace, boFace, opener } = world();
+    const [a] = ended(fake, boFace, opener, 2) as [string, string];
+    fake.clock.advance(MINUTE);
+    const cy = fake.seed.account('cy');
+    fake.seed.react(ana, anaFace, a, 'fire');
+    fake.seed.react(cy, fake.seed.character(cy, 'Cy Face', 'face'), a, 'tea');
+    must(await fake.spin(a, anaFace, 'From the play', ''));
+    const asAna = await fake.kindPlays(opener, 'whoops', null, 20);
+    expect(asAna.tallies[a]).toEqual({ fire: 1, tea: 1 });
+    expect(asAna.mine.map((m) => [m.act, m.kind])).toEqual([[a, 'fire']]);
+    expect(asAna.spun.map((t) => t.originActId)).toEqual([a]);
+    expect(asAna.cast.map((c) => c.id)).toEqual([boFace]);
+    fake.signInAs(cy);
+    const asCy = await fake.kindPlays(opener, 'whoops', null, 20);
+    expect(cards(asCy.plays)).toEqual(cards(asAna.plays));
+    expect(asCy.mine.map((m) => [m.act, m.kind])).toEqual([[a, 'tea']]);
+  });
+
+  test('backs page with card null, as ended rows, their springs beside them', async () => {
+    const { fake, boFace, opener } = world();
+    const sprung: string[] = [];
+    for (let i = 0; i < 5; i++) {
+      fake.clock.advance(MINUTE);
+      const set = fake.seed.set(boFace, opener, 'snare');
+      fake.clock.advance(MINUTE);
+      fake.seed.spring(set);
+      sprung.push(set);
+    }
+    const page = await fake.kindPlays(opener, null, null, 3);
+    expect(page.plays.filter((a) => a.kind === 'set').map((a) => a.id)).toEqual([sprung[4]!, sprung[3]!, sprung[2]!]);
+    expect(page.plays.filter((a) => a.kind === 'spring')).toHaveLength(3);
+    expect(page.next).not.toBeNull();
+    const rest = await fake.kindPlays(opener, null, page.next, 3);
+    expect(rest.plays.filter((a) => a.kind === 'set').map((a) => a.id)).toEqual([sprung[1]!, sprung[0]!]);
+    expect(rest.next).toBeNull();
+  });
+});
+
+describe('a thread page and its origin read their plays and counts as postPlays does', () => {
+  test('the page\'s plays and counts for its posts equal postPlays\'s, and the origin\'s plays and counts too, with no more flag', async () => {
+    const { fake, ana, anaFace, boFace, thread, opener } = world();
+    const second = must(await fake.post(thread, anaFace, 'second', null));
+    for (let i = 0; i < 12; i++) { fake.clock.advance(MINUTE); fake.seed.card(boFace, opener, 'whoops', i < 10 ? { ends: new Date(fake.clock.now() + 1).toISOString() } : {}); }
+    fake.seed.card(boFace, second.id, 'blot');
+    fake.signInAs(ana);
+    const page = (await fake.threadPage(thread, { page: 1 }, 10, []))!;
+    const read = await fake.postPlays([opener, second.id]);
+    expect(page.plays).toEqual(read.plays);
+    expect(page.counts).toEqual(read.counts);
+    const spun = must(await fake.spin(opener, anaFace, 'About it', 'b')).thread.id;
+    const first = (await fake.threadPage(spun, { page: 1 }, 10, []))!;
+    const origin = await fake.postPlays([opener]);
+    expect(first.origin!.plays).toEqual(origin.plays);
+    expect(first.origin!.counts).toEqual(origin.counts);
+    expect(first.origin).not.toHaveProperty('more');
+  });
+});
+
+describe('a rewind: a card that shows a post as it was and freezes it (0413_rewind.sql)', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
+  const big = { ...base, key: 'big', name: 'Big', alignment: 'salty' as const, rarity: 'legendary' as const, canApply: () => ok(undefined) };
+  const tonic = { ...base, key: 'tonic', name: 'Tonic', alignment: 'sweet' as const, rarity: 'common' as const, play: 'use' as const, lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'legendary' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'big', canApply: () => ok(undefined) };
+  const timeTrap = { ...snare, key: 'timetrap', name: 'Time Trap', catches: () => 'clock' };
+  const lure = { ...base, key: 'lure', name: 'Lure', alignment: 'salty' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
+  const lesser = { ...base, key: 'lesser', name: 'Lesser', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 2 }, rewind: { upTo: 'common' as const }, drawsEffect: {}, canApply: () => ok(undefined) };
+  const lkback = { ...base, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
+  const clock = { ...base, key: 'clock', name: 'Clock', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 1 }, rewind: { upTo: 'rare' as const }, drawsEffect: {}, canApply: () => ok(undefined) };
+  const world: Instance = { ...instance, cards: [blot, big, tonic, snare, timeTrap, lure, clock, lesser, lkback], machine: [] };
+  const frozen = (ends: string) => `this post's Clock turns away cards up to rare until ${refusalTime(ends)}`;
+  const PICK = 'pick a point from this post\'s History';
+  /** Ana's post, edited past the grace so its first version is a point; Bo plays the cards. */
+  async function setup() {
+    const fake = createFake({ instance: world });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const boss = fake.seed.account('boss', { admin: true });
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'The first words.');
+    fake.seed.cards(ana, { snare: 2, timetrap: 1, lure: 1, lkback: 1, tonic: 2 });
+    fake.seed.cards(bo, { blot: 3, big: 2, clock: 3, lesser: 2 });
+    const posted = Date.parse((await fake.act(opener))!.createdAt);
+    fake.clock.advance(3 * MINUTE);
+    fake.signInAs(ana);
+    must(await fake.edit(opener, anaFace, 'The second words.'));
+    fake.signInAs(bo);
+    return { fake, ana, bo, boss, anaFace, boFace, thread, opener, posted };
+  }
+  type Setup = Awaited<ReturnType<typeof setup>>;
+  const played = async (s: Setup) => {
+    const rw = must(await s.fake.playCard('clock', s.boFace, s.opener, { to: s.opener }, ''));
+    return rw;
+  };
+
+  test('a rewind with no point, a point that is no version of the post or a version in the grace, or one that shows the same, is refused in the point\'s words', async () => {
+    const s = await setup();
+    const { fake, boFace, anaFace, opener, thread } = s;
+    expect(await fake.playCard('clock', boFace, opener, {}, '')).toEqual(refused(PICK, 'config'));
+    expect(await fake.playCard('clock', boFace, opener, { to: 7 }, '')).toEqual(refused(PICK, 'config'));
+    const other = fake.seed.post(thread, anaFace, 'Another post.');
+    expect(await fake.playCard('clock', boFace, opener, { to: other }, '')).toEqual(refused(PICK, 'config'));
+    expect(await fake.playCard('clock', boFace, opener, { to: 'not an id' }, '')).toEqual(refused(PICK, 'config'));
+    expect(await fake.playCard('clock', boFace, other, { to: other }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    /* An edit saved inside the grace is part of the post as first posted. */
+    const inside = fake.seed.post(thread, anaFace, 'Fresh.');
+    fake.signInAs(s.ana);
+    must(await fake.edit(inside, anaFace, 'Fresh, fixed.'));
+    fake.signInAs(s.bo);
+    expect(await fake.playCard('clock', boFace, inside, { to: inside }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    expect((await fake.myCards()).find((c) => c.card === 'clock')?.held).toBe(3);
+  });
+
+  test('it lands with rewind_at, the time its version names, and draws an effect on the post', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    expect(rw.payload.card).toBe('clock');
+    expect(rw.payload.rewind_at).toBe(new Date(s.posted + 2 * MINUTE).toISOString());
+    expect(typeof rw.payload.ends).toBe('string');
+    expect((await s.fake.postPlays([s.opener])).plays.map((a) => a.id)).toContain(rw.id);
+  });
+
+  test('a second rewind is refused with the freeze\'s words, and so is a common Move, a Use and a Set, while it is up', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    const words = frozen(String(rw.payload.ends));
+    expect(await s.fake.playCard('clock', s.boFace, s.opener, { to: s.opener }, '')).toEqual(refused(words, 'config'));
+    expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(words, 'config'));
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.useCard('tonic', s.anaFace, s.opener, {}, '')).toEqual(refused(words, 'config'));
+    expect(await s.fake.setCard('lure', s.anaFace, s.opener, {})).toEqual(refused(words, 'config'));
+    expect((await s.fake.myCards()).find((c) => c.card === 'tonic')?.held).toBe(2);
+  });
+
+  test('a rewind is never set face down, with or without a rewind on the post', async () => {
+    const s = await setup();
+    s.fake.seed.cards(s.ana, { clock: 1 });
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.setCard('clock', s.anaFace, s.opener, {})).toEqual(refused('Clock is played face up and never set face down', 'config'));
+  });
+
+  test('a legendary Move lands under a rare rewind and springs no back; the back stays set, the rewind\'s own play met none, and it springs once the rewind ends', async () => {
+    const s = await setup();
+    s.fake.signInAs(s.ana);
+    const set = must(await s.fake.setCard('snare', s.anaFace, s.opener, {}));
+    s.fake.signInAs(s.bo);
+    const rw = await played(s);
+    expect(rw.payload.caught).toBeUndefined();
+
+    const lands = must(await s.fake.playCard('big', s.boFace, s.opener, {}, ''));
+    expect(lands.payload.caught).toBeUndefined();
+    expect((await s.fake.postPlays([s.opener])).plays.filter((a) => a.kind === 'spring')).toEqual([]);
+    expect((await s.fake.myFaceDown([set.id]))).toEqual({});
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
+    s.fake.clock.advance(DAY + MINUTE);
+    s.fake.signInAs(s.bo);
+    const later = must(await s.fake.playCard('big', s.boFace, s.opener, {}, ''));
+    expect(later.payload.caught).toBe(set.id);
+  });
+
+  test('a back that names the rewind card does not catch the rewind\'s own play, and stays set', async () => {
+    const s = await setup();
+    s.fake.signInAs(s.ana);
+    const set = must(await s.fake.setCard('timetrap', s.anaFace, s.opener, {}));
+    s.fake.signInAs(s.bo);
+    const rw = await played(s);
+    expect(rw.payload.caught).toBeUndefined();
+    expect((await s.fake.postPlays([s.opener])).plays.filter((a) => a.kind === 'spring')).toEqual([]);
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.myFaceDown([set.id])).toEqual({ [set.id]: 'timetrap' });
+  });
+
+  test('after an admin ends the rewind a common Move lands', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    expect((await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).ok).toBe(false);
+    s.fake.signInAs(s.boss);
+    must(await s.fake.reverseCard(rw.id));
+    s.fake.signInAs(s.bo);
+    expect((await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).ok).toBe(true);
+  });
+
+  test('after its time ends a common Move lands', async () => {
+    const s = await setup();
+    await played(s);
+    s.fake.clock.advance(DAY + MINUTE);
+    expect((await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).ok).toBe(true);
+  });
+
+  test('an edit during the rewind lands, and rewindView still gives the version at the point', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    s.fake.clock.advance(MINUTE);
+    s.fake.signInAs(s.ana);
+    must(await s.fake.edit(s.opener, s.anaFace, 'The third words.'));
+    expect((await s.fake.act(s.opener))?.currentPayload).toEqual({ body: 'The third words.' });
+    const view = await s.fake.rewindView(rw.id);
+    expect(view).toMatchObject({ play: rw.id, post: s.opener, at: rw.payload.rewind_at, version: { id: s.opener, currentPayload: { body: 'The first words.' }, editedAt: null, shownEditedAt: null } });
+    expect(await s.fake.rewindView(s.opener)).toBeNull();
+    expect(await s.fake.rewindView('00000000-0000-4000-8000-00000000ffff')).toBeNull();
+  });
+
+  test('a rewind to an edit gives that edit\'s words, as the moment gives them', async () => {
+    const s = await setup();
+    s.fake.clock.advance(3 * MINUTE);
+    s.fake.signInAs(s.ana);
+    must(await s.fake.edit(s.opener, s.anaFace, 'The third words.'));
+    s.fake.clock.advance(MINUTE);
+    must(await s.fake.edit(s.opener, s.anaFace, 'The fourth words.'));
+    s.fake.signInAs(s.bo);
+    const third = (await s.fake.history(s.opener)).find((v) => (v.payload as { body?: string }).body === 'The third words.')!;
+    const rw = must(await s.fake.playCard('clock', s.boFace, s.opener, { to: third.id }, ''));
+    expect(rw.payload.rewind_at).toBe(new Date(Date.parse(third.createdAt)).toISOString());
+    expect((await s.fake.rewindView(rw.id))?.version.currentPayload).toEqual({ body: 'The third words.' });
+  });
+
+  test('the thread page carries rewinds, with the post\'s old words, and none once the rewind has ended', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    const page = (await s.fake.threadPage(s.thread, { page: 1 }, 10, []))!;
+    expect(page.rewinds).toEqual([await s.fake.rewindView(rw.id)]);
+    expect(page.rewinds[0]!.version.currentPayload).toEqual({ body: 'The first words.' });
+    s.fake.signInAs(s.boss);
+    must(await s.fake.reverseCard(rw.id));
+    expect((await s.fake.threadPage(s.thread, { page: 1 }, 10, []))!.rewinds).toEqual([]);
+  });
+
+  test('a spun thread\'s page carries the rewind of its ORIGIN post', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    s.fake.signInAs(s.ana);
+    const spun = must(await s.fake.spin(s.opener, s.anaFace, 'About it', 'b')).thread.id;
+    expect((await s.fake.threadPage(spun, { page: 1 }, 10, []))!.rewinds.map((r) => r.play)).toEqual([rw.id]);
+  });
+
+  test('two live rewinds on a post (a rarer over a lesser): the page lists the latest played first, and a refusal names the latest played', async () => {
+    const s = await setup();
+    const first = must(await s.fake.playCard('lesser', s.boFace, s.opener, { to: s.opener }, ''));
+    s.fake.clock.advance(MINUTE);
+    const second = must(await s.fake.playCard('clock', s.boFace, s.opener, { to: s.opener }, ''));
+    const page = (await s.fake.threadPage(s.thread, { page: 1 }, 10, []))!;
+    expect(page.rewinds.map((r) => r.play)).toEqual([second.id, first.id]);
+    expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(frozen(String(second.payload.ends)), 'config'));
+    /* The rarer one ended by an admin, the lesser alone is named. */
+    s.fake.signInAs(s.boss);
+    must(await s.fake.reverseCard(second.id));
+    s.fake.signInAs(s.bo);
+    expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(`this post's Lesser turns away cards up to common until ${refusalTime(String(first.payload.ends))}`, 'config'));
+  });
+
+  test('a back sprung into a live lockout after the point shows, so it makes the point offered (play_post: sprung and in force)', async () => {
+    const s = await setup();
+    const { fake, ana, bo, boss, anaFace, boFace, thread } = s;
+    const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
+    fake.signInAs(ana);
+    const plain = must(await fake.post(thread, anaFace, 'Plain.', null)).id;
+    fake.clock.advance(3 * MINUTE);
+    fake.signInAs(bo);
+    expect(await fake.playCard('clock', boFace, plain, { to: plain }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    fake.signInAs(ana);
+    const back = must(await fake.setCard('lkback', anaFace, plain, {}));
+    fake.signInAs(bo);
+    const move = must(await fake.playCard('blot', boFace, plain, {}, ''));
+    fake.signInAs(boss);
+    must(await fake.reverseCard(move.id));
+    fake.signInAs(bo);
+    expect(back.id).toBeDefined();
+    must(await fake.playCard('clock', boHeel, plain, { to: plain }, ''));
+  });
+});
+

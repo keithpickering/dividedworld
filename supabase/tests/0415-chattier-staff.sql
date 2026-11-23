@@ -1,4 +1,4 @@
--- Chattier staff, the database (supabase/migrations/0407_chattier_staff.sql; docs/plans/2026-11-22-chattier-staff-plan.md, Task 4; the design's sections 2, 3, 4 and 7).
+-- Chattier staff, the database (supabase/migrations/0415_chattier_staff.sql; docs/plans/2026-11-22-chattier-staff-plan.md, Task 4; the design's sections 2, 3, 4 and 7).
 -- The six tables are append-only and no client's; the day's sessions are written once and read open at [start, end); a persona's waiting replies are a player's public replies to its posts, not a staff
 -- character's, not older than `since`, not answered, not in a locked-out thread, read through the target index (an explain on a seeded large table); a turn is one transaction (the post, the turn, the answers) and refuses,
 -- writing nothing, a closed session, another persona's, a quote outside the answers and an answered reply; the conversation and the record are bounded; presence lists a persona in session on its threads and in the

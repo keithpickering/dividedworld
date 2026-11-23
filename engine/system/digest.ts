@@ -70,7 +70,7 @@ export interface DigestExcerpt {
 }
 
 /**
- * A conversation: a persona's turns in one thread over the window (supabase/migrations/0407_chattier_staff.sql, `system_digest`; the chattier-staff design, section 5).
+ * A conversation: a persona's turns in one thread over the window (supabase/migrations/0415_chattier_staff.sql, `system_digest`; the chattier-staff design, section 5).
  * Public facts only: the posts' words, the public reaction total on the turns, and the characters whose replies the turns answered.
  * `exchange` is the turn the crowd reacted to most and the reply it quoted, each already cut by SQL to `digestExcerptChars` (`cut` says it was).
  */

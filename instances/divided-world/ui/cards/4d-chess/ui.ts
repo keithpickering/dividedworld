@@ -11,7 +11,7 @@ import { rideShare, setLastsWords } from '../words.ts';
 export const ui: CardUi = {
   key: '4d-chess',
   art: { color: '#ff3d7f', ink: '#14030a', canvas: fourDChessCanvas, mark: fourDChessMark, credit: fourDChessArt.credit, tagline: 'Get paid for the Move you saw coming.' },
-  summary: `Set face down on your post, naming a Move up to ${fourDChess.rarity} and one kind of reaction. When that Move is cast there it lands as usual, and its reactions of that kind pay you.`,
+  summary: `Set face down on your post, naming a Move up to ${fourDChess.rarity} and a reaction. If that Move lands there, those reactions pay you.`,
   /* As every Reversal's: the same words, so none can be told from another. */
   status: 'Set, face down to everyone else',
   ConfigForm: FourDChessConfigForm,

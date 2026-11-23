@@ -28,6 +28,7 @@ import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } 
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
+import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
 import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
@@ -39,7 +40,6 @@ import type { HandoffFacts } from '../../system/meeting.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, type SignedIn, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
-import { PLAYS_PER_POST } from '../cards/plays.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { forgedList, forgedSet, holds, quoteHeld, quoteSource } from '../../bbcode/quoted.ts';
 import { parse } from '../../bbcode/parse.ts';
@@ -52,12 +52,12 @@ import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, PageOrigin,
+  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, Rewind, PageOrigin,
   DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
-  PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
+  KindCount, KindPage, PostPlaysRead, PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
   AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, NoVisit, ReportRefund, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
@@ -237,7 +237,7 @@ export interface Seed {
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
   staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean; pronouns?: PronounSet }): Id;
   /**
-   * A persona's chatter session (a `staff_sessions` row, 0407): `staff` is in session from `startsAt` to `endsAt` (epoch ms). Presence lists it while one is open
+   * A persona's chatter session (a `staff_sessions` row, 0415): `staff` is in session from `startsAt` to `endsAt` (epoch ms). Presence lists it while one is open
    * (the index's box beside the capped players, never in their "others" count; a thread's and a board's box once it has posted there since the session began).
    */
   staffSession(staff: string, session: { readonly startsAt: number; readonly endsAt: number }): void;
@@ -1866,17 +1866,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * and the plays above live at the time, the origin never one of them. `time` is the moment's own time.
    */
   function momentOf(first: ActRec, post: ActRec, version: ActRec, snapshot: readonly { layer: Id; saved: { state: unknown; at: number } | null }[], time: number, recorded: boolean): PlayMoment {
-    const edited = version.kind === 'edit' ? version : null;
     const byLanding = (a: ActRec, b: ActRec) => a.at - b.at || a.order - b.order;
     const board = threads.get(post.thread)!.board;
     const wanted = new Set([first.id, ...snapshot.map((l) => l.layer)]);
     /* A play an admin had ended by the moment (a card_end at or before it) was not live then; one ended later was. */
     const endedBy = (p: Id) => [...acts.values()].some((a) => a.kind === 'card_end' && a.target === p && a.at <= time);
     return {
-      version: {
-        ...publicAct(post), currentPayload: publicPayload(version.payload, hiddenVersions.has(version.id), version.id), editedAt: edited ? iso(edited.at) : null,
-        shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
-      },
+      version: shownVersion(post, version),
       layers: [
         { act: publicAct(first), state: null },
         ...snapshot.map((l) => ({ rec: acts.get(l.layer)!, saved: l.saved })).sort((a, b) => byLanding(a.rec, b.rec))
@@ -1892,6 +1888,35 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       recorded,
       at: iso(time),
     };
+  }
+  /** A post as one of its versions shows it: the version's words through the public projection (a hidden version shows its placeholder), and its edit mark. */
+  function shownVersion(post: ActRec, version: ActRec): Act {
+    const edited = version.kind === 'edit' ? version : null;
+    return {
+      ...publicAct(post), currentPayload: publicPayload(version.payload, hiddenVersions.has(version.id), version.id), editedAt: edited ? iso(edited.at) : null,
+      shownEditedAt: edited && edited.at > post.at + span(settings.editGrace) ? iso(edited.at) : null,
+    };
+  }
+  /** rewind_view (0413): a rewind play's post as it stood at the point the play names, the latest version saved at or before it; null for an Act that is no rewind play on a post. */
+  function rewindView(id: Id): Rewind | null {
+    const k = acts.get(id);
+    if (!k || k.kind !== 'card' || k.target === null || k.payload.caught !== undefined || !onPost(k) || instance.cards.find((c) => c.key === k.payload.card)?.rewind === undefined || typeof k.payload.rewind_at !== 'string') return null;
+    const post = acts.get(k.target);
+    if (!post || !isPost(post.kind)) return null;
+    const point = Date.parse(k.payload.rewind_at);
+    return { play: k.id, post: post.id, at: iso(point), version: shownVersion(post, edits(post).filter((e) => e.at <= point).at(-1) ?? post) };
+  }
+  /**
+   * The point a rewind's configuration names on a post, in ms, or why it is none (`rewindPointProblem`, the server's words and order). A play shows when it is a face-up play in force on the post, or a back that sprang into a lockout still live, as
+   * rewind_point_problem reads play_post.
+   */
+  function rewindPointOf(post: ActRec, config: unknown): string | { at: number } {
+    const to = rewindConfig(config);
+    const showing = playRows(new Set([post.id])).filter((r) => (r.kind !== '' || r.sprung) && onPost(r.act) && (holdsPlace(r, now()) || (r.lockUntil !== null && r.lockUntil > now()))).map((r) => ({ id: r.act.id, at: iso(r.act.at) }));
+    const why = rewindPointProblem(to.ok ? to.value.to : undefined, { id: post.id, at: iso(post.at) }, edits(post).map((e) => ({ id: e.id, at: iso(e.at) })), showing, settings.editGrace, new Date(now()), () => true);
+    if (why !== null) return why;
+    const version = acts.get((to as { value: { to: string } }).value.to)!;
+    return { at: Date.parse(pointAt({ id: post.id, at: iso(post.at) }, { id: version.id, at: iso(version.at) }, settings.editGrace)!) };
   }
   /** play_moment (0072, 0352): the moment's version as the post shows it then, the play and its layers, and the plays above live then. A play on a character is on its cast-from post. */
   function playMoment(id: Id): PlayMoment | null {
@@ -1909,6 +1934,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const m = spinMoments.get(id);
     if (!spin || spin.kind !== 'spin' || !m || spin.target === null) return null;
     return momentOf(acts.get(spin.target)!, acts.get(spin.payload.at as Id)!, acts.get(m.version)!, m.layers, spin.at, true);
+  }
+  /** The live rewind plays on each of these posts, as their views, latest played first, then by play id descending (thread_page's `rewinds`). */
+  function rewindsOf(posts: readonly Id[]): Rewind[] {
+    return playRows(new Set(posts)).filter((r) => r.kind !== '' && instance.cards.find((c) => c.key === r.kind)?.rewind !== undefined && onPost(r.act) && holdsPlace(r, now()))
+      .sort((a, b) => b.act.at - a.act.at || (a.act.id < b.act.id ? 1 : a.act.id > b.act.id ? -1 : 0))
+      .flatMap((r) => rewindView(r.act.id) ?? []);
   }
   /** The plays an account has released itself from, as "account play". */
   const releases = new Map<string, number>();
@@ -1932,13 +1963,102 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** What a refusal says of a play that is over because it did not take: the same plain words for every caller (0149), and no card named. */
   const DID_NOT_TAKE = 'That card didn\'t take, so there is nothing of it on this post.';
-  /** The plays cut to a limit, as public Acts, and after them the `card_end` of each that has one (cardsOn, cardsOnMany): the ends ride in the same list. */
-  const withEnds = (plays: readonly ActRec[]): Act[] => {
-    /* A lockout's spring is ended as a card play is (thread_page's on_posts takes springs), so its card_end rides too. */
-    const wanted = new Set(plays.filter((p) => p.kind === 'card' || (p.kind === 'spring' && p.payload.did === 'lockedOut')).map((p) => p.id));
-    const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order);
-    return [...plays, ...ends].map(publicAct);
+  /**
+   * A play as the kept row of it reads (play_post, 0408; post_kinds, 0409): its kind (a card's key, '' for a back, which never names its card), the moment an event or its time ends it, whether it took, whether a back sprang, and how much it
+   * has drawn (public reaction sums and the threads spun from it). In force while no event has ended it and its time is unset or ahead. `lockUntil` is when the lockout a back's spring started ends (play_post.lock_until, the owner's answer to #993): a back that
+   * sprang into one stays up on the page until then, and stays over for the stack, the limit and the counts.
+   */
+  interface PlayRow { readonly act: ActRec; readonly kind: string; readonly over: boolean; readonly ends: number | null; readonly took: boolean; readonly sprung: boolean; readonly drawn: number; readonly lockUntil: number | null }
+  const playRows = (posts: ReadonlySet<Id>): PlayRow[] => {
+    const drawOf = new Map<Id, number>();
+    for (const r of reactions) drawOf.set(r.act, (drawOf.get(r.act) ?? 0) + 1);
+    for (const t of threads.values()) if (t.origin !== null) drawOf.set(t.origin, (drawOf.get(t.origin) ?? 0) + 1);
+    const rows: PlayRow[] = [];
+    for (const a of acts.values()) {
+      if ((a.kind !== 'card' && a.kind !== 'set') || a.target === null || !posts.has(a.target)) continue;
+      if (a.kind === 'set') {
+        const f = faceDown.get(a.id);
+        const lock = [...acts.values()].find((s) => s.kind === 'spring' && s.payload.set === a.id && s.payload.did === 'lockedOut' && typeof s.payload.until === 'string' && ![...acts.values()].some((e) => e.kind === 'card_end' && e.target === s.id));
+        if (f) rows.push({ act: a, kind: '', over: f.sprung !== null || f.takenBack !== undefined, ends: f.endsAt, took: true, sprung: f.sprung !== null, drawn: drawOf.get(a.id) ?? 0, lockUntil: lock === undefined ? null : Date.parse(lock.payload.until as string) });
+        continue;
+      }
+      const p = a.payload;
+      let ends: number | null = typeof p.ends === 'string' ? Date.parse(p.ends) : null;
+      const beyond = reachPlays.get(a.id);
+      if (beyond !== undefined) ends = ends === null ? beyond.endsAt : Math.min(ends, beyond.endsAt);
+      /* A drive play is in force while its drive is open: the latest play of the drive that is not over, and the card's span after it (play_row). */
+      const rules = instance.cards.find((c) => c.key === p.card);
+      if (rules?.drive && onPost(a) && p.caught === undefined) {
+        const mates = [...acts.values()].filter((m) => m.kind === 'card' && m.target === a.target && m.payload.card === p.card && m.payload.caught === undefined && onPost(m)
+          && (typeof m.payload.drive === 'string' ? m.payload.drive : m.id) === (typeof p.drive === 'string' ? p.drive : a.id));
+        const open = mates.filter((m) => !over(m.id));
+        const close = Math.max(...(open.length > 0 ? open : mates).map((m) => m.at)) + spanMs(rules.drive.lasts);
+        ends = ends === null ? close : Math.min(ends, close);
+      }
+      rows.push({ act: a, kind: typeof p.card === 'string' ? p.card : '', over: over(a.id) || p.caught !== undefined || p.instant === true, ends, took: !untakenPlays.has(a.id), sprung: false, drawn: drawOf.get(a.id) ?? 0, lockUntil: null });
+    }
+    return rows;
   };
+  const holdsPlace = (r: PlayRow, at: number): boolean => !r.over && (r.ends === null || r.ends > at);
+  /** A play a stand-in can be and a count counts: a card, or a back that sprang (a back that ran out or was taken back unsprung is drawn and counted nowhere). */
+  const counted = (r: PlayRow): boolean => r.kind !== '' || r.sprung;
+  const newer = (a: PlayRow, b: PlayRow): number => b.act.at - a.act.at || b.act.order - a.act.order;
+  const byDate = (a: ActRec, b: ActRec): number => a.at - b.at || a.order - b.order;
+  /** The Acts beside plays: the springs and take-backs of the backs among them, then the `card_end` of each play and each spring (a lockout's spring is ended as a play is). */
+  const ridersOf = (plays: readonly ActRec[]): { riders: ActRec[]; ends: ActRec[] } => {
+    const sets = new Set(plays.filter((p) => p.kind === 'set').map((p) => p.id));
+    const riders = [...acts.values()].filter((a) => (a.kind === 'spring' || a.kind === 'take_back') && typeof a.payload.set === 'string' && sets.has(a.payload.set)).sort(byDate);
+    const named = new Set([...plays, ...riders].map((a) => a.id));
+    const ends = [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && named.has(a.target)).sort(byDate);
+    return { riders, ends };
+  };
+  /**
+   * post_plays (0410), the one read of what a page draws for its posts and for an ORIGIN box (design, section 1): every play that holds a place, every back whose spring's lockout is still ahead, each kind's newest play and its most-drawn play (ties to the newest) whether it is over or
+   * not, the springs and take-backs of the backs, the `card_end` of each, each once in the order of their dates; and a count for each kind. A back is one kind, '' to the rows and a null card to the reader, counted once sprung.
+   */
+  function postPlaysOf(posts: readonly Id[], at: number): PostPlaysRead {
+    if (posts.length > 200) throw new Error('ask for at most 200 posts at a time');
+    const rows = playRows(new Set(posts));
+    const chosen = new Set<Id>();
+    const kinds = new Map<string, { post: Id; card: string | null; all: number; took: number; list: PlayRow[] }>();
+    for (const r of rows) {
+      if (holdsPlace(r, at) || (r.lockUntil !== null && r.lockUntil > at)) chosen.add(r.act.id);
+      if (!counted(r)) continue;
+      const key = `${r.act.target}\0${r.kind}`;
+      const k = kinds.get(key) ?? { post: r.act.target!, card: r.kind === '' ? null : r.kind, all: 0, took: 0, list: [] };
+      k.all += 1;
+      if (r.took) k.took += 1;
+      k.list.push(r);
+      kinds.set(key, k);
+    }
+    for (const k of kinds.values()) {
+      chosen.add([...k.list].sort(newer)[0]!.act.id);
+      chosen.add([...k.list].sort((a, b) => b.drawn - a.drawn || newer(a, b))[0]!.act.id);
+    }
+    const plays = [...chosen].map((id) => acts.get(id)!);
+    const { riders, ends } = ridersOf(plays);
+    const counts: KindCount[] = [...kinds.values()].sort((a, b) => (a.post < b.post ? -1 : a.post > b.post ? 1 : a.card === b.card ? 0 : a.card === null ? -1 : b.card === null ? 1 : a.card < b.card ? -1 : 1))
+      .map((k) => ({ post: k.post, card: k.card, all: k.all, took: k.took }));
+    return { plays: [...plays, ...riders, ...ends].sort(byDate).map(publicAct), counts };
+  }
+  /** kind_plays (0410): a post's plays of a kind (null for backs) that are not in force, newest first, strictly before the cursor, at most `size` clamped to 1..50, with what a row of the Lens's Who reads. */
+  function kindPage(post: Id, card: string | null, before: { readonly at: string; readonly id: Id } | null, size: number): KindPage {
+    const lim = Number.isFinite(size) ? Math.max(1, Math.min(50, Math.trunc(size))) : 20;
+    const at = now();
+    const cursor = before === null ? null : acts.get(before.id);
+    const past = (r: PlayRow): boolean => before === null || (cursor != null ? r.act.at < cursor.at || (r.act.at === cursor.at && r.act.order < cursor.order) : r.act.at < Date.parse(before.at));
+    const older = playRows(new Set([post])).filter((r) => r.kind === (card ?? '') && counted(r) && !holdsPlace(r, at) && past(r)).sort(newer);
+    const shown = older.slice(0, lim);
+    const { riders, ends } = ridersOf(shown.map((r) => r.act));
+    const everyone = [...shown.map((r) => r.act), ...riders, ...ends];
+    const ids = everyone.map((a) => a.id);
+    const casters = [...new Set([...shown.map((r) => r.act), ...riders].flatMap((a) => (a.character === null ? [] : [a.character])))].sort();
+    const last = shown.at(-1);
+    return {
+      plays: everyone.map(publicAct), tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany(shown.map((r) => r.act.id), Infinity), cast: core.characters(casters),
+      next: older.length > lim && last !== undefined ? { at: iso(last.act.at), id: last.act.id } : null,
+    };
+  }
   const playOf = (id: Id) => { const a = acts.get(id); return a && a.kind === 'card' ? a : null; };
 
   /* ------------------------------------------------------------------ surfaces (0317) ---- */
@@ -2436,6 +2556,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* What the card's landing refuses on this post (land_refusal, 0357): public facts alone, the same for every caster, before anything is paid or written. */
     const landing = landRefusal(rules, on, decided.value.config);
     if (landing) return landing;
+    /* A rewind names a point of this post's History, which showing must change (place_cast, rewind_point_problem). */
+    let pointAtMs: number | null = null;
+    if (rules.rewind !== undefined) {
+      const point = rewindPointOf(on, decided.value.config);
+      if (typeof point === 'string') return refuse(point, 'config');
+      pointAtMs = point.at;
+    }
     /* play_card's order: the character is the player's, then not banned (every play meets not_banned there; the fake holds it for a card that replies), then a reply with a letter or a digit in it, and any other card is given none. */
     if (carries) {
       const banned = bannedUntilOf(character);
@@ -2468,7 +2595,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* The fake's acting() refuses a character with no owner, so a staff cast never reaches here; the guard mirrors place_cast. */
     const staffCaster = c.staff !== undefined;
     const outcome = trapRules?.trap?.outcome?.kind;
-    const wouldCatch = trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined && !(outcome === 'refund' && staffCaster);
+    /* A rewind's own play meets no back, and a post under a live rewind springs none on any trigger (spring_traps); the back stays set. */
+    const rewound = rules.rewind !== undefined || effects.some((e) => e.rewind !== undefined && (e.reach ?? 'post') === 'post' && isLive(e, new Date(now())));
+    const wouldCatch = !rewound && trap && trapRules?.trap?.trigger.on === 'cast' && (faceDown.get(trap.set)!.catches === card || matched) && ownerOf(acts.get(trap.set)!.character!) !== undefined && !(outcome === 'refund' && staffCaster);
     /* A pierce gets the cast past a catch no rarer than it: the back stays set and unsprung, and nothing is written or told to its setter. A ride or a refund springs as before (spring_traps, `passing`). */
     const passedBack = shot !== null && !!wouldCatch && outcome === undefined && atOrBelow(trapRules!.rarity, shot.upTo);
     const catches = wouldCatch && !passedBack;
@@ -2516,7 +2645,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     const drive = !lands ? undefined : driveOf(rules, target, playId);
     const wardPassed = shot === null ? undefined : passedWard(rules, effects, 'post', shot.upTo, at);
-    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : cutting ? {} : { layer }), ...(cutting && lands ? { instant: true } : {}), ...(cutting && lands ? { cut: { play: (decided.value.config as { play: string }).play, card: String(acts.get((decided.value.config as { play: string }).play)!.payload.card) } } : {}), ...(rides ? { rode: trap!.set } : {}), ...(spring && locks ? { lockedOut: spring.id } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands && !cutting ? { ends: iso(at + span(rules.lasts)) } : {}), ...(drive === undefined ? {} : { drive }) } });
+    const written = write({ id: playId, character, kind: 'card', thread: on.thread, target, payload: { card, message: decided.value.message, config: decided.value.config, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(decided.value.tokens === undefined ? {} : { tokens: decided.value.tokens }), ...(!lands ? { caught: trap!.set } : cutting ? {} : { layer }), ...(cutting && lands ? { instant: true } : {}), ...(cutting && lands ? { cut: { play: (decided.value.config as { play: string }).play, card: String(acts.get((decided.value.config as { play: string }).play)!.payload.card) } } : {}), ...(rides ? { rode: trap!.set } : {}), ...(spring && locks ? { lockedOut: spring.id } : {}), ...(handed ? { handedBack: handed } : {}), ...(replyId === undefined ? {} : { reply: replyId }), ...(rules.lasts && lands && !cutting ? { ends: iso(at + span(rules.lasts)) } : {}), ...(pointAtMs !== null && lands ? { rewind_at: iso(pointAtMs) } : {}), ...(drive === undefined ? {} : { drive }) } });
     if (shot !== null) spentPierces.add(shot.play);
     if (passedBack) seededAlerts.push({ account: account.id, kind: 'trapStruck', sub: 'passed', act: written.id, character, at: written.at });
     /* What a landed play on a post writes beside its Act (land_rows, 0357): not for a caught one. */
@@ -2673,7 +2802,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const r = instance.cards.find((c) => c.key === a.payload.card);
         /* A skim play carries the quadrant it names, so its card's rules can refuse a second for the same one (card_target, 0151). */
         const named = r?.skim ? (a.payload.config as { quadrant?: unknown } | undefined)?.quadrant : undefined;
-        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
+        out.push({ card: String(a.payload.card), act: a.id, ...(r?.gimmick ? { gimmick: r.gimmick } : {}), ...(r?.rewind ? { rewind: r.rewind, at: iso(a.at) } : {}), ...(typeof a.payload.ends === 'string' ? { ends: a.payload.ends } : {}), ...(typeof named === 'string' ? { quadrant: named as Quadrant } : {}) });
       } else if (a.kind === 'set') {
         const f = faceDown.get(a.id);
         out.push({ card: null, act: a.id, faceDown: true, ends: iso(f?.sprung ? acts.get(f.sprung)!.at : f?.takenBack ? acts.get(f.takenBack)!.at : f?.endsAt ?? a.at) });
@@ -2918,7 +3047,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const rules = instance.cards.find((c) => c.key === card)!;
     const text = (publicAct(on).currentPayload as { body?: unknown }).body;
     const forgedNow = forgedList(publicAct(on).currentPayload);
-    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, undefined, undefined, forgedNow), effectsOn(target), config, message, { now: new Date(now()) });
+    const decided = decideUse(rules, settings, postTarget(on.id, on.kind as PostTarget['kind'], text, undefined, undefined, undefined, forgedNow), effectsOn(target), config, message, { now: new Date(now()), nameOf: (k) => instance.cards.find((c) => c.key === k)?.name ?? k });
     if (!decided.ok) return refuse(decided.why, 'config');
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -3317,7 +3446,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** When the open chatter session of a staff character began, or null: none open, or it is no persona in play (not a posting office, so one waiting or benched has none). */
   const inSession = (c: CharRec): number | null => {
-    /* The posting offices (boss, mod, member) are in session; one waiting or benched is not listed (0407's staff_office_now test). */
+    /* The posting offices (boss, mod, member) are in session; one waiting or benched is not listed (0415's staff_office_now test). */
     if (c.staff?.office !== 'boss' && c.staff?.office !== 'mod' && c.staff?.office !== 'member') return null;
     const at = now();
     const open = staffSessions.filter((x) => x.staff === c.staff!.key && x.startsAt <= at && at < x.endsAt);
@@ -3349,11 +3478,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }).concat(
         /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0084), read from
            public posts, and a board lists it once however many of its threads it posted in. A persona in session is listed there by its posts since the session
-           began, from the session's start (0407's place_since); the index lists it beside the players (below). The fake leaves out the SQL's other way onto a
+           began, from the session's start (0415's place_since); the index lists it beside the players (below). The fake leaves out the SQL's other way onto a
            thread or board, a reply waiting there (pool_waiting_in_thread, pool_waiting_in_board), which it does not model. */
         where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
           if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
-          /* A persona in session is listed by its posts since the session began, not only the window's (presence_box, 0407). */
+          /* A persona in session is listed by its posts since the session began, not only the window's (presence_box, 0415). */
           const opened = inSession(c);
           const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= Math.min(at - win, opened ?? Infinity) && a.thread !== null && threads.has(a.thread)
             && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
@@ -3377,7 +3506,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return out;
       }, []).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      /* The index lists every persona in session beside the capped players, outside the cap and the "others" count (presence_box, 0407). */
+      /* The index lists every persona in session beside the capped players, outside the cap and the "others" count (presence_box, 0415). */
       const beside: Listed[] = where.kind !== 'index' ? [] : [...characters.values()].flatMap((c) => {
         const opened = inSession(c);
         return opened === null || c.debutedAt === null || c.retiredAt !== null ? [] : [{ id: c.id, name: c.name, staff: true, since: opened }];
@@ -4242,10 +4371,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const wanted = new Set(ids);
       return [...threads.values()].filter((t) => t.origin !== null && wanted.has(t.origin)).sort((a, b) => a.at - b.at).slice(0, limit).map(summary);
     },
-    cardsOnMany(ids, limit) {
-      const wanted = new Set(ids);
-      return withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit));
-    },
+    postPlays: (posts) => postPlaysOf(posts, now()),
+    kindPlays: (post, card, before, size) => kindPage(post, card, before, size),
     cardEnds(targets) {
       const wanted = new Set(targets);
       return [...acts.values()].filter((a) => a.kind === 'card_end' && a.target !== null && wanted.has(a.target)).sort((a, b) => a.at - b.at || a.order - b.order).map(publicAct);
@@ -4368,6 +4495,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }, before ?? null);
     },
     playMoment,
+    rewindView,
     spinMoment,
     myReleases: (plays) => plays.filter((play) => me() !== null && releases.has(`${me()!.id} ${play}`)),
     releaseEffect,
@@ -4468,7 +4596,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }))
         .sort((a, b) => acts.get(a.play)!.at - acts.get(b.play)!.at || acts.get(a.play)!.order - acts.get(b.play)!.order);
     },
-    cardsOn: (act, limit) => withEnds([...acts.values()].filter((a) => (a.kind === 'card' || a.kind === 'set' || a.kind === 'spring') && a.target === act).sort((a, b) => a.at - b.at || a.order - b.order).slice(0, limit)),
     characters: (ids) => ids.map(charOf).filter((c): c is CharRec => c !== undefined && c.debutedAt !== null).map(publicCharacter),
     characterCounts(id) {
       const c = charOf(id);
@@ -4724,7 +4851,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order)
         .map(([play, u]) => ({ parent: u.parent, play, act: publicAct(acts.get(u.reply)!) }));
       const posts = [...shownActs.filter((a) => isPost(a.kind)), ...under.map((u) => u.act)];
-      const plays = posts.length ? core.cardsOnMany(posts.map((a) => a.id), posts.length * PLAYS_PER_POST) : [];
+      const read = postPlaysOf(posts.map((a) => a.id), now());
+      const plays = read.plays;
       const above = core.effectsAbove([...new Set(posts.flatMap((a) => (a.character === null ? [] : [a.character])))], thread, summary.board);
       /* The plays at thread reach that wore off by time (not an admin's end) and keep their level on a post written while they were up: the page's posts' dates, nested replies' too, oldest play first, at most 100. */
       /* Plays at character reach too (docs/plans/2026-11-12-glitter-keeps-plan.md, Task 2): each held to the posts its own character wrote, never another author's in the same window. */
@@ -4740,9 +4868,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const id = summary.originActId;
         if (id === null || summary.firstAct === null || !shownActs.some((a) => a.id === summary.firstAct)) return null;
         const act = core.act(id);
-        const read = core.cardsOn(id, 21);
-        const all = read.filter((a) => a.kind !== 'card_end');
-        const shown = all.slice(0, 20);
+        const read = postPlaysOf([id], now());
+        const shown = read.plays.filter((a) => a.kind !== 'card_end');
         const place = summary.origin;
         const play = place?.kind === 'play' ? place : null;
         const pressed = play !== null && play.on?.kind === 'character' && play.at !== null;
@@ -4750,7 +4877,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const spot = play === null ? null : play.at ?? (play.on?.kind === 'post' ? play.on : play[PLAY_FROM]);
         const named = [act?.character ?? null, ...shown.map((a) => a.character), ...(act !== null && (act.kind === 'card' || act.kind === 'set' || act.kind === 'spring') && act.payload.reach === 'character' ? [String(act.payload.character)] : [])];
         return {
-          act, plays: [...shown, ...read.filter((a) => a.kind === 'card_end' && shown.some((p) => p.id === a.targetActId))], more: all.length > 20, moment,
+          act, plays: read.plays, counts: read.counts, moment,
           at: spot === null ? null : { thread: spot.thread, seq: spot.seq }, cast: core.characters([...new Set(named.filter((c): c is Id => c !== null))].sort()),
           polls: [], voters: [], votersMore: [], myBallots: [],
         };
@@ -4778,11 +4905,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           character: ((until) => (until === null ? character : { ...character, lockedUntil: iso(until) }))(lockedOutUntil(character.id, thread)), posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
         })),
-        plays, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
+        plays, counts: read.counts, surfaces: surfacesOn(plays), above, under, cut, kept, faces: core.myFaceDown(played.filter((a) => a.kind === 'set').map((a) => a.id)), veiled: myVeiled(posts.map((a) => a.id)),
         states: core.effectStates(wanted), releases: core.myReleases(wanted), spent: plays.filter((a) => spentPlays().has(a.id)).map((a) => a.id),
         visits,
         tallies: core.tallies(ids), mine: core.myReactions(ids), spun: core.spunFromMany([...ids, ...pagePolls.polls.map((x) => x.act.id)], SPUN_FROM_MAX), reading: core.reading([thread]),
-        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin: originPoll,
+        board: core.board(summary.board), following: core.following(thread), presence: presenceAt({ kind: 'thread', thread }), unread: core.alertsUnread(), origin: originPoll, rewinds: rewindsOf([...posts.map((a) => a.id), ...(originPoll?.act && isPost(originPoll.act.kind) ? [originPoll.act.id] : [])]),
         polls: pagePolls.polls, voters: pagePolls.voters, votersMore: pagePolls.votersMore, voterCast: core.characters(pagePolls.cast), myBallots: pagePolls.myBallots,
       };
     },

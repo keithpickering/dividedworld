@@ -113,6 +113,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
   const hydrated = useRef<BoardPage | null>(null);
   const hydrate1 = (d: BoardPage) => {
     const marked: readonly Act[] = [...d.banner.map((p) => p.act), ...d.pins.map((p) => p.act)];
+    /* A board page's plays are board- and thread-reach (banner, pins), which `post_kinds` never counts: no counts are passed, and the store counts the plays it holds. */
     hydrate(plays, marked, d.states, d.releases);
     for (const [id, t] of Object.entries(d.tallies)) tallies.merge(id, t);
     for (const a of marked) mine.merge(a.id, d.mine.filter((r) => r.act === a.id));

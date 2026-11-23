@@ -59,3 +59,6 @@ jobs:
       - run: npm run test:sql
         env:
           DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
+      - run: node tools/test-sql-drift.mjs
+        env:
+          DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres

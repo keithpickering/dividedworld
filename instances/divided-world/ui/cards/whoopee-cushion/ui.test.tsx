@@ -33,8 +33,8 @@ function setup() {
 
 const held = async (fake: ReturnType<typeof setup>['fake'], card: string) => (await fake.myCards()).find((c) => c.card === card)?.held ?? 0;
 /** The post's live layers of a card: its plays that landed. A ridden play lands and bears its layer. */
-const layersOf = async (fake: ReturnType<typeof setup>['fake'], post: string, card: string) => (await fake.cardsOn(post, 8)).filter((a) => a.kind === 'card' && a.payload.card === card);
-const springsOn = async (fake: ReturnType<typeof setup>['fake'], post: string) => (await fake.cardsOn(post, 8)).filter((a) => a.kind === 'spring');
+const layersOf = async (fake: ReturnType<typeof setup>['fake'], post: string, card: string) => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'card' && a.payload.card === card);
+const springsOn = async (fake: ReturnType<typeof setup>['fake'], post: string) => (await fake.postPlays([post])).plays.filter((a) => a.kind === 'spring');
 
 describe('Whoopee Cushion rides the first common card cast on its post', () => {
   test('the instance has the card, and mooch is a Salty card above common', () => {
@@ -90,7 +90,7 @@ describe('Whoopee Cushion rides the first common card cast on its post', () => {
     const landed = must(await fake.playCard('mooch', boFace, opener, { quadrant: 'excitedPositive' }, ''));
     expect(landed.payload.rode).toBeUndefined();
     expect(await layersOf(fake, opener, 'mooch')).toHaveLength(1);
-    expect((await fake.cardsOn(opener, 8)).some((a) => a.id === set.id)).toBe(true);
+    expect((await fake.postPlays([opener])).plays.some((a) => a.id === set.id)).toBe(true);
     expect(await springsOn(fake, opener)).toEqual([]);
   });
 

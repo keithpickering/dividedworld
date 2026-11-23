@@ -38,7 +38,7 @@ import type { LensForm } from './Forms.tsx';
 import { VisitMark } from './Visit.tsx';
 import { VISIT_KIND } from './visit.ts';
 import { MARKS_NARROW, MARKS_WIDE, backWords, kindsOf, markName, moreName, sumOf } from './marks.ts';
-import { asThen, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, shownPlays, usePlays, type Plays } from './plays.ts';
+import { asThen, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, shownPlays, usePlays, useRewound, type Plays } from './plays.ts';
 import type { CardPlay } from './types.ts';
 import '../glass/meta-tile.css';
 /* The back's cloud is postcard.css's, which marks.css draws over, so it loads first. */
@@ -92,9 +92,11 @@ interface MarkProps {
   readonly postAt?: string;
   /** Plays shown as they stood in a moment (`PostMarks.then`): an end since is no part of what the mark says. */
   readonly then?: ReadonlySet<Id>;
+  /** How many of this kind's plays a live rewind hides (`rewoundOf`): the mark says how many are drawn, so the server's count is lowered by them. */
+  readonly hidden: number;
 }
 
-const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt, then }: MarkProps) {
+const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, compare, expanded, lensOpen, onOpen, nameOf, where, postAt, then, hidden }: MarkProps) {
   const { api, instance, ui } = useKayfa();
   const back = isBack(kind);
   /* A card back that sprang shows the card it was, in its place: no mark moves (the card mechanic's design, section 4). */
@@ -113,8 +115,13 @@ const Mark = memo(function Mark({ post, kind, plays, store, tallies, postTotal, 
   const keeps = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
   const judged = useMomentThen(store, post, then);
   const spent = kindSpent(plays, now, keeps, judged);
-  /* What the mark counts: the plays that took. A play that did not take (`untaken`) is over, so it is no layer on the post; where none took, the mark counts them all, since it still says what became of each. */
-  const counted = plays.filter((p) => !p.untaken).length || plays.length;
+  /* What the mark counts: the plays that took, of every play the post has had (the server's count, which the store keeps, since a page holds only some of an old kind's plays). A play that did not take (`untaken`) is over, so it is no layer on the post; where none took, the mark counts them all, since it still says what became of each.
+     A back's kinds are counted by the store as one (every back that sprang), which is no one mark's, so a back's mark counts its own plays. */
+  /* Read as a number, so a mark is drawn again only when its own kind's count moves, never for another kind's play. */
+  const subscribe = useCallback((l: () => void) => store.subscribe(post, l), [store, post]);
+  const kept = useSyncExternalStore(subscribe, () => { const c = back ? undefined : store.get(post).counts.get(kind); return c ? c.took || c.all : 0; });
+  /* A play a rewind hides is neither drawn nor counted: the count says how many of the kind the post shows (it comes back with them). */
+  const counted = kept > 0 ? Math.max(1, kept - hidden) : plays.filter((p) => !p.untaken).length || plays.length;
   /* The ink is the top-billed play's, where the card chooses one for it (`CardUi.tag` is given the kind's plays in play order). */
   const ordered = useMemo(() => [...plays].sort(inPlayOrder), [plays]);
   const onInk = useOnInk();
@@ -243,7 +250,16 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
   const { api, instance } = useKayfa();
   /* A play beyond a post goes at its end, by itself: no reread (its way out). */
   const now = useUntil(here.billed);
-  const billed = useMemo(() => markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keepingKeys(instance.cards), postAt), [here.billed, now, api, instance.cards, postAt, then]);
+  /* A live rewind on the post (a moment's strip, `then`, draws the post as it stood and never rewinds): the plays it hides are left out, not ended. */
+  const rewound = useRewound(plays, post);
+  const out = then === undefined ? rewound : null;
+  const billed = useMemo(() => {
+    const marked = markedPlays(shownPlays(asThen(here.billed, then), api.now()), now, keepingKeys(instance.cards), postAt);
+    if (out === null) return marked;
+    const kept = new Set(out.shown);
+    const drawn = marked.filter((p) => kept.has(p));
+    return drawn.length === marked.length ? marked : drawn;
+  }, [here.billed, now, api, instance.cards, postAt, then, out]);
   const byKind = useKindPlays(billed);
   /* `onOpen` may be a new function every render of the post; the marks are given one that is not. */
   const latest = useRef(onOpen);
@@ -258,7 +274,7 @@ export function MarkStrip({ post, plays, tallies, onOpen, open = null, ghost, re
     <span className="kb-marks" ref={strip}>
       {visit && <VisitMark visit={visit.visit} mod={visit.mod} pronouns={visit.pronouns} expanded={open === VISIT_KIND} onOpen={press} />}
       {shown.map((kind) => (
-        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} postAt={postAt} then={then} />
+        <Mark key={kind} post={post} kind={kind} plays={byKind.get(kind)!} store={plays} tallies={tallies} postTotal={postTotal} compare={compare} expanded={open === kind} lensOpen={open !== null} onOpen={press} nameOf={nameOf} where={where} postAt={postAt} then={then} hidden={out === null || isBack(kind) ? 0 : out.hidden.filter((p) => p.card === kind && !p.untaken).length} />
       ))}
       {hidden.length > 0 && <More hidden={hidden.length} first={hidden[0]!} expanded={open !== null && hidden.includes(open)} onOpen={press} />}
       {ghost && !hosted && <GhostMark act={ghost} />}

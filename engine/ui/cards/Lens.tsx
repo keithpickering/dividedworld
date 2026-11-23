@@ -31,7 +31,7 @@ import {
 } from 'react';
 import { ENGINE_DEFAULT_PRONOUNS, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Id, PlayMoment, SurfaceActs, Visit, VisitEnd, VisitStory } from '../data/api.ts';
+import type { Act, Character, Id, PlayMoment, SurfaceActs, Visit, VisitEnd, VisitStory } from '../data/api.ts';
 import { Avatar } from '../glass/Avatar.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { Float, type FloatPlace } from '../glass/Float.tsx';
@@ -48,13 +48,14 @@ import type { Tallies } from '../thread/tallies.ts';
 import { inkOf, momentParts, useOnInk, useSheet, useUntil } from './Effects.tsx';
 import { plainRefusal, withCardEconomy } from './faces.ts';
 import { Kit } from './Kit.tsx';
-import { CUT_STATE, cutByWords, cutWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
+import { CUT_STATE, PRESENT_TILE, cutByWords, cutWords, hiddenWords, olderWords, pierceWords, surfaceShare, surfaceWords } from './lens-words.ts';
 import { backWords, CAUGHT_STATE, caughtWords, ENDED_STATE, endedWords, endsWords, gimmickWords, kindsOf, OVER_STATE, playsPhrase, sumOf, UNTAKEN_STATE, untakenWords } from './marks.ts';
 import { disciplineNote, FALL_ENDS } from './discipline.ts';
-import { asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, shownPlays, useCardView, usePlays, type Plays } from './plays.ts';
+import { CARD_BACK, asThen, backOver, defaultView, inForce, inPlayOrder, isBack, keepingKeys, kindSpent, markedPlays, playOver, playsFallingOn, shownPlays, useCardView, usePlays, useRewound, type Plays } from './plays.ts';
 import type { CardPlay, CardUi, CardView } from './types.ts';
 import { onceFor } from './once.ts';
 import { VisitPanel, readVisit } from './Visit.tsx';
+import { OlderButton, useOlder } from './Older.tsx';
 import { useCaughtFate, useSprungWords } from './sprung.ts';
 import { ReportLink, type ReportTo } from '../conduct/Report.tsx';
 import { APPEAL_KIND, AppealForm, REPORT_KIND, ReportForm, formTabName, useAppealRead, useReportRead, type LensForm } from './Forms.tsx';
@@ -91,6 +92,13 @@ export interface LensStore {
   moment(): Id | null;
   /** Show this play's moment in its post's body, in place of another's; null shows the post as it is now (Back to now). */
   showMoment(play: Id | null): void;
+  /**
+   * The rewind play whose post the page shows as it is now (Return to present, Time Machine design, 4.5), or null. It shares the one shown view with the moment: showing one clears the other, and `moment()`
+   * is null while the present shows.
+   */
+  present(): Id | null;
+  /** Show this rewind play's post as the present, in place of a moment or the rewind; null goes back to the rewind. */
+  showPresent(play: Id | null): void;
   /** A moment read for the page, by play (undefined while it is not read): read once, since a moment never changes. */
   kept(play: Id): PlayMoment | null | undefined;
   /**
@@ -112,6 +120,8 @@ export interface LensStore {
 function createLensStore(): LensStore {
   let open: LensOpen | null = null;
   let shown: Id | null = null;
+  /* The shown view is the present of the rewind play `shown`, and no moment. */
+  let presenting = false;
   const moments = new Map<Id, PlayMoment | null>();
   const reading = new Map<Id, Promise<void>>();
   const runs = new Map<Id, number>();
@@ -120,7 +130,7 @@ function createLensStore(): LensStore {
   const set = (next: LensOpen | null) => {
     if (next === open) return;
     /* Another strip's Lens, or none: the moment goes with the Lens it was shown from. A tab of the same Lens keeps it. */
-    if (next === null || next.owner !== open?.owner) shown = null;
+    if (next === null || next.owner !== open?.owner) { shown = null; presenting = false; }
     open = next;
     wake();
   };
@@ -130,8 +140,13 @@ function createLensStore(): LensStore {
     toggle(next) { set(open?.owner === next.owner && open.card === next.card ? null : next); },
     select(card) { if (open && open.card !== card) set({ ...open, card }); },
     close() { set(null); },
-    moment: () => shown,
-    showMoment(play) { if (play !== shown) { shown = play; wake(); } },
+    moment: () => (presenting ? null : shown),
+    showMoment(play) { if (play !== shown || presenting) { shown = play; presenting = false; wake(); } },
+    present: () => (presenting ? shown : null),
+    showPresent(play) {
+      if (play === null) { if (presenting) { shown = null; presenting = false; wake(); } return; }
+      if (!presenting || shown !== play) { shown = play; presenting = true; wake(); }
+    },
     kept: (play) => moments.get(play),
     seedMoment(key, moment) { if (!moments.has(key)) moments.set(key, moment); },
     run: (key) => runs.get(key) ?? 0,
@@ -166,11 +181,15 @@ export function LensHost({ host, children }: { readonly host: HTMLElement | null
 const LensAdminCtx = createContext(false);
 export const useLensAdmin = (): boolean => useContext(LensAdminCtx);
 
+/** Where the page takes in the characters an older page of plays names (`onCast`), so a paged row names its caster as every other does; none where the page has no counts to page by. */
+const LensCastCtx = createContext<((cast: readonly Character[]) => void) | null>(null);
+const useLensCast = (): ((cast: readonly Character[]) => void) | null => useContext(LensCastCtx);
+
 /** One Lens for the page below: the thread, or a thread's ORIGIN box inside it. Leaving the page closes it. `admin` is what the page knows of the reader. */
-export function LensProvider({ children, admin = false }: { readonly children: ReactNode; readonly admin?: boolean }) {
+export function LensProvider({ children, admin = false, onCast = null }: { readonly children: ReactNode; readonly admin?: boolean; readonly onCast?: ((cast: readonly Character[]) => void) | null }) {
   const store = useMemo(createLensStore, []);
   useEffect(() => () => store.close(), [store]);
-  return <LensCtx.Provider value={store}><LensAdminCtx.Provider value={admin}>{children}</LensAdminCtx.Provider></LensCtx.Provider>;
+  return <LensCtx.Provider value={store}><LensAdminCtx.Provider value={admin}><LensCastCtx.Provider value={onCast}>{children}</LensCastCtx.Provider></LensAdminCtx.Provider></LensCtx.Provider>;
 }
 
 /* Marks drawn where no page gave a provider (a story that draws a post alone) share one store: a document has one Lens in any case. */
@@ -402,6 +421,39 @@ interface RowProps {
  * (decided on the reader's screen from their own characters, as the post's reactions decide it).
  */
 /**
+ * Return to present (Time Machine design, 4.5): a live rewind's tile that shows the post's newest version with every shown play and without the rewind's own effect, framed "The present". Pressed again it goes back
+ * to the rewind. It takes the Lens store's one shown view, as As it landed does, and needs no read: the page holds the present.
+ */
+function ReturnToPresent({ play }: { readonly play: Id }) {
+  const store = useLensStore();
+  const pressed = useSyncExternalStore(store.subscribe, () => store.present() === play, () => false);
+  return (
+    <button type="button" className="kb-kit-tile kb-lens-action" aria-pressed={pressed} onClick={() => store.showPresent(pressed ? null : play)}>
+      <span className="kb-kit-tile-label">{PRESENT_TILE}</span>
+    </button>
+  );
+}
+
+/** The line under a live rewind's row that counts the cards it hides, from the plays the store holds on the post (`rewoundOf`'s hidden), in force and still showing. Nothing where none is hidden. */
+function HiddenCount({ play, store }: { readonly play: CardPlay; readonly store: Plays }) {
+  const { instance } = useKayfa();
+  const rewound = useRewound(store, play.post);
+  /* The post's thread and author layers, as the post draws them (Effects.tsx): a thread's or a character's play that falls on the post and the rewind hides is hidden here too. The view's version is the post's own Act. */
+  const post = rewound?.rewind.version;
+  const onThread = usePlays(store, post?.thread ?? '');
+  const onAuthor = usePlays(store, post?.character ?? '');
+  /* Woken when a play that may be hidden ends by its time (useUntil), so the count drops with no reopening. */
+  const now = useUntil([...(rewound?.hidden ?? []), ...onThread.plays, ...onAuthor.plays]);
+  if (rewound === null || rewound.rewind.play !== play.id || post === undefined) return null;
+  const keeps = new Set(instance.cards.filter((c) => c.keeps === true).map((c) => c.key));
+  const own = shownPlays(rewound.hidden, now).filter((p) => !playOver(p, now, keeps));
+  const above = [...playsFallingOn(onThread.plays.filter((p) => p.reach === 'thread'), post, keeps, now), ...playsFallingOn(onAuthor.plays.filter((p) => p.reach === 'character'), post, keeps, now)]
+    .filter((p) => !rewound.shows(p));
+  const n = own.length + above.length;
+  return n === 0 ? null : <p className="kb-lens-note">{hiddenWords(n)}</p>;
+}
+
+/**
  * As it landed: shows the play's moment in its post's body, in place of the live body, and pressed again shows the post as it is now
  * (docs/plans/2026-11-03-effect-history-design.md, section 4). One moment shows on the page, and it goes with this Lens.
  */
@@ -604,6 +656,9 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
   /* A card that landed from a back says who set it and what set it off, above the card's own rows. */
   const sprung = useSprungWords(play.spring);
   const lockout = useLockoutOf(play, admin);
+  /* A rewind play's row is shown a tile for the present and its count of hidden cards, once the rewind is the post's live one. */
+  const rewoundHere = useRewound(store, play.post);
+  const rewinds = instance.cards.find((c) => c.key === play.card)?.rewind !== undefined && !play.faceDown && rewoundHere?.rewind.play === play.id;
   const more = useMoreThanPost(tallies, play.id, play.post, compare);
   const yours = play.caster !== null && characters.some((c) => c.id === play.caster);
   /* The setter's own back, still face down: not sprung, not taken back, not past its time (the same end every Set has). */
@@ -622,6 +677,7 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
       {play.message && <blockquote className="kb-lens-message">“{play.message}”</blockquote>}
       {!past && more && <p className="kb-lens-more">More reactions than the post</p>}
       {!past && yours && <p className="kb-lens-yours">Your play</p>}
+      {!past && rewinds && <HiddenCount play={play} store={store} />}
       <div className="kb-lens-row-foot">
         {!past && <Reactions act={play.id} author={play.caster} authorName={caster} subject={name} tallies={tallies} mine={mine} plays={store} pickerAt="button" />}
         <div className="kb-lens-actions">
@@ -629,6 +685,7 @@ function PlayDetail({ play, caster, card, view, tallies, mine, compare, to, mome
             ? <p className="kb-lens-note">Spin a thread from this play once you are free of the hold.</p>
             : <button type="button" className="kb-kit-tile kb-lens-action" onClick={() => onSpin(play, name)}><span className="kb-kit-tile-label">Spin thread</span></button>}
           {!past && moments && !play.reach && <AsItLanded play={play.id} />}
+          {!past && moments && !play.reach && rewinds && <ReturnToPresent play={play.id} />}
           {!past && backTakeable && <TakeBack play={play} store={store} />}
           {!past && admin && endable(play, now, instance.cards.find((c) => c.key === play.card)?.keeps === true, lockout) && <EndCard play={play.id} end={lockout ? play.revealed!.spring : play.id} card={card} caster={caster} store={store} />}
           {to && <Link className="kb-kit-tile kb-lens-action" to={to}><span className="kb-kit-tile-label">Go to post</span></Link>}
@@ -651,6 +708,7 @@ function PlayRow(props: RowProps) {
 }
 
 /** What an ended play's compact row says on its second line: a play that did not simply run its time says its fate (the row's note), else the caster's words. */
+const becameWords = (card: string): string => `Became ${card}`;
 const fateOf = (play: CardPlay, note: string | undefined): string | undefined => (play.reversed || play.untaken || play.caught || play.cut || play.instant || play.spent ? note : undefined);
 
 /**
@@ -665,7 +723,10 @@ function EndedRow({ open, onToggle, ...props }: RowProps & { readonly open: bool
   const { instance } = useKayfa();
   /* A cutting play (a Buzzkill) is over when it lands; its fate is what it ended, which the full row says above its words. */
   const cutting = play.cuts && !play.reversed ? cutWords(instance.cards.find((c) => c.key === play.cuts!.card)?.name ?? play.cuts.card) : undefined;
-  const words = cutting ?? fateOf(play, note) ?? play.message;
+  /* A back that sprang is named for the card it became (its spring says), beside its fate where it has one. */
+  const became = play.revealed ? becameWords(instance.cards.find((c) => c.key === play.revealed!.card)?.name ?? play.revealed.card) : undefined;
+  const fate = cutting ?? fateOf(play, note);
+  const words = became !== undefined ? (fate ? `${became} · ${fate}` : became) : fate ?? play.message;
   /* Opened, the body says the words (the note and the message), so line 2 keeps only its chips. */
   const shownWords = open ? undefined : words;
   const line = Boolean(shownWords) || shown.length > 0;
@@ -696,19 +757,21 @@ const NAMES_SHOWN = 3;
  * Every kind the Lens holds, in the tabs' order, for a tab row too long to show them all (the All button). Each entry is a button with the kind's name, its count of plays and, where any play of it is
  * up now (`inForce`), a sign that is no more than a sign: its words for a screen reader are "N up now". The visit's tab, where there is one, is first and has no count. The grid is a way to the tabs; the tabs stay.
  */
-function KindsGrid({ kinds, labelOf, billed, now, keeping, onChoose }: {
-  readonly kinds: readonly string[]; readonly labelOf: (kind: string) => string; readonly billed: readonly CardPlay[]; readonly now: number; readonly keeping: ReadonlySet<string>; readonly onChoose: (kind: string) => void;
+function KindsGrid({ kinds, labelOf, billed, counts, now, keeping, onChoose }: {
+  readonly kinds: readonly string[]; readonly labelOf: (kind: string) => string; readonly billed: readonly CardPlay[]; readonly counts: ReadonlyMap<string, { readonly all: number }>; readonly now: number; readonly keeping: ReadonlySet<string>; readonly onChoose: (kind: string) => void;
 }) {
   return (
     <ul className="kb-lens-kinds" aria-label="Every kind of card">
       {kinds.map((kind) => {
         const ofKind = kind === VISIT_KIND ? [] : billed.filter((p) => p.card === kind);
         const up = ofKind.filter((p) => inForce(p, now, keeping.has(p.card))).length;
+        /* A kind's count is the post's whole history of it, where the store has one; a back's kinds are counted by the plays held. */
+        const total = isBack(kind) ? ofKind.length : counts.get(kind)?.all ?? ofKind.length;
         return (
           <li key={kind}>
             <button type="button" className="kb-lens-kind" data-kb-card={kind} onClick={() => onChoose(kind)}>
               <span className="kb-lens-kind-name">{labelOf(kind)}</span>
-              {kind !== VISIT_KIND && <><span className="kb-lens-kind-count" aria-hidden="true">{ofKind.length}</span><span className="kb-visually-hidden">{playsPhrase(ofKind.length)}</span></>}
+              {kind !== VISIT_KIND && <><span className="kb-lens-kind-count" aria-hidden="true">{total}</span><span className="kb-visually-hidden">{playsPhrase(total)}</span></>}
               {up > 0 && <><span className="kb-lens-kind-up" aria-hidden="true" /><span className="kb-visually-hidden">{up} up now</span></>}
             </button>
           </li>
@@ -719,17 +782,21 @@ function KindsGrid({ kinds, labelOf, billed, now, keeping, onChoose }: {
 }
 
 /** Whether Who is unfolded is the Lens's, so it stays as it is when the tab changes and starts folded with the next Lens. */
-function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...row }: Omit<RowProps, 'play' | 'caster' | 'face' | 'ink'> & {
+function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, post, stored, held, count, pageCard, ...row }: Omit<RowProps, 'play' | 'caster' | 'face' | 'ink'> & {
   /** The ink of each play, as the marks draw it. */
   readonly inkOfPlay: (play: CardPlay) => string | undefined;
+  /** The post, and every play the store holds of it (the plays paged in are in it and in no billing). */
+  readonly post: Id; readonly stored: readonly CardPlay[];
+  /** The ids of every play the page billed: a play it sent is never a paged row. */
+  readonly held: ReadonlySet<Id>;
+  /** What the kind's plays are counted as: the server's count of all it has had, and how many of them the page holds (a back's kinds are counted together). Unset where nothing counts it. */
+  readonly count: { readonly all: number; readonly held: number } | undefined;
+  /** The kind to page by (null for card backs), or unset where this tab pages nothing. */
+  readonly pageCard: string | null | undefined;
   readonly plays: readonly CardPlay[]; readonly nameOf: (character: Id | null) => string; readonly faceOf: (character: Id | null) => string | null; readonly unfolded: boolean; readonly onToggle: () => void;
 }) {
   const id = useId();
   /* Each caster once by id, with the first play of each, so two characters that share a name each get a face; the words dedupe by name. */
-  const firsts = plays.filter((p, i) => plays.findIndex((q) => q.caster === p.caster) === i);
-  const names = [...new Set(plays.map((p) => nameOf(p.caster)))];
-  const shown = names.slice(0, NAMES_SHOWN).join(', ');
-  const rest = names.length - NAMES_SHOWN;
   const { instance } = useKayfa();
   /* Up now and Ended, by `inForce`. A play a moment holds (`then`, an ORIGIN box) is judged as it stood, up then; so a moment's rows draw no heading, as today. */
   const keeping = useMemo(() => keepingKeys(instance.cards), [instance.cards]);
@@ -737,8 +804,27 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
   /* Partitioned only while Who is unfolded: folded, it draws no row. */
   const up = unfolded ? plays.filter(upNow) : [];
   const ended = (unfolded ? plays.filter((p) => !upNow(p)) : []).sort((a, b) => (a.playedAt < b.playedAt ? 1 : a.playedAt > b.playedAt ? -1 : a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+  /* The older plays paged in (Ended's foot), after the rows held and in the order they came; a moment's box (`then`) shows the plays as they stood and pages none. */
+  const paging = pageCard !== undefined && row.then === undefined && count !== undefined;
+  const older = useOlder({ post, card: pageCard ?? null, store: row.store, tallies: row.tallies, mine: row.mine, held, heldEnded: ended.length, onCast: useLensCast() });
+  const paged = paging ? older.ids.flatMap((id) => stored.find((p) => p.id === id) ?? []) : [];
+  const more = paging && !older.done ? Math.max(0, count.all - count.held - paged.length) : 0;
+  const everyone = [...plays, ...paged];
+  const firsts = everyone.filter((p, i) => everyone.findIndex((q) => q.caster === p.caster) === i);
+  const names = [...new Set(everyone.map((p) => nameOf(p.caster)))];
+  const shown = names.slice(0, NAMES_SHOWN).join(', ');
+  const rest = names.length - NAMES_SHOWN;
   /* One ended row is open at a time; Who is keyed by its kind (the Lens), so another tab starts every row folded. */
   const [openRow, setOpenRow] = useState<Id | null>(null);
+  /* A page that landed moves focus to a new row's button once it is drawn. */
+  const endedList = useRef<HTMLUListElement>(null);
+  useEffect(() => {
+    if (older.focus === null) return;
+    const rows_ = [...(endedList.current?.querySelectorAll<HTMLElement>('[data-kb-play]') ?? [])];
+    const row_ = older.focus.id === null ? rows_.at(-1) : rows_.find((r) => r.getAttribute('data-kb-play') === older.focus!.id);
+    row_?.querySelector<HTMLElement>('button.kb-lens-compact')?.focus();
+  }, [older.focus]);
+  const showEnded = unfolded && (ended.length > 0 || paged.length > 0 || more > 0);
   const rowOf = (p: CardPlay) => <PlayRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} />;
   return (
     <div className="kb-lens-section kb-lens-who-section">
@@ -754,22 +840,22 @@ function Who({ plays, nameOf, faceOf, inkOfPlay, card, unfolded, onToggle, ...ro
             );
           })}
         </span>
-        <span className="kb-lens-fold-words">{playsPhrase(plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
+        <span className="kb-lens-fold-words">{playsPhrase(paging ? plays.length + paged.length + more : plays.length)} · {shown}{rest > 0 ? ` and ${rest} more` : ''}</span>
       </button>
       <ul id={id} className="kb-lens-rows" hidden={!unfolded}>
         {unfolded && (
           <>
             {up.length > 0 && (
               <li className="kb-lens-group">
-                {ended.length > 0 && <h3 className="kb-lens-group-head">Up now</h3>}
+                {showEnded && <h3 className="kb-lens-group-head">Up now</h3>}
                 <ul className="kb-lens-rows">{up.map(rowOf)}</ul>
               </li>
             )}
-            {ended.length > 0 && (
+            {showEnded && (
               <li className="kb-lens-group">
-                <h3 className="kb-lens-group-head">Ended · {ended.length}</h3>
-                <ul className="kb-lens-rows">{ended.map((p) => <EndedRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} open={openRow === p.id} onToggle={() => setOpenRow((o) => (o === p.id ? null : p.id))} />)}</ul>
-                {/* The pager for a long Ended group (#871) stands here; nothing is drawn until it is built. */}
+                <h3 className="kb-lens-group-head">Ended · {ended.length + paged.length + more}</h3>
+                <ul ref={endedList} className="kb-lens-rows">{[...ended, ...paged].map((p) => <EndedRow key={p.id} {...row} card={card} play={p} ink={inkOfPlay(p)} caster={nameOf(p.caster)} face={faceOf(p.caster)} open={openRow === p.id} onToggle={() => setOpenRow((o) => (o === p.id ? null : p.id))} />)}</ul>
+                {more > 0 && <OlderButton more={more} busy={older.busy} failed={older.failed} onPress={older.press} />}
               </li>
             )}
           </>
@@ -1020,6 +1106,17 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const ink = onVisit || onForm ? 'var(--kb-visit-ink)' : inkOf(ui, ofKind[0]!, [...ofKind].sort(inPlayOrder), onInk) ?? cardUi?.art.color;
   /* A card whose rules stack lists its rows by layer, top first; any other in billing order. */
   const rowPlays = (rules?.stack ?? 1) > 1 ? [...ofKind].sort(inPlayOrder).reverse() : ofKind;
+  /*
+   * Older plays: a kind pages by its card. Every back that sprang is one kind to the server (null), and its older plays are paged from the tab of the newest of them the post holds, as ended rows
+   * that each name the card they became; another sprung back's tab pages nothing. The server's count is of the whole group, and `held` is how many of its plays the page billed.
+   */
+  const sprung = billed.filter((p) => p.card !== CARD_BACK && isBack(p.card));
+  const newestSprung = sprung.reduce<CardPlay | null>((a, p) => (a === null || p.playedAt > a.playedAt || (p.playedAt === a.playedAt && p.id > a.id) ? p : a), null);
+  const pageCard: string | null | undefined = isBack(card) ? (newestSprung !== null && card === newestSprung.card ? null : undefined) : card;
+  const counted = pageCard === undefined ? undefined : here.counts.get(isBack(card) ? CARD_BACK : card);
+  /* What the page billed is what it sent: the plays the store holds that no billing names were paged in, and are the Who's own while it shows them. */
+  const heldIds = new Set(here.billed.map((p) => p.id));
+  const count = counted === undefined ? undefined : { all: counted.all, held: here.plays.filter((p) => heldIds.has(p.id) && (isBack(card) ? p.card !== CARD_BACK && isBack(p.card) : p.card === card)).length };
   const tabId = (kind: string) => `${ids}-tab-${kind}`;
   const panelId = `${ids}-panel`;
   const allId = `${ids}-all`;
@@ -1121,7 +1218,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         {/* The fade at the body's top: it sticks to the scroll edge under the bar, and shows once the body is scrolled off its top. */}
         <div className="kb-lens-fade-top" aria-hidden="true" />
         {/* The grid is the whole body while it shows: the Report foot link goes with the tab's sections, and is back with them. */}
-        {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} now={now} keeping={keeping} onChoose={pick} /> : <>
+        {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} counts={here.counts} now={now} keeping={keeping} onChoose={pick} /> : <>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
         {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
         {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
@@ -1140,7 +1237,7 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
           <div className="kb-lens-section kb-lens-act"><Kit card={name} controls={view.controls} ink={ink} /></div>
         )}
         {!onVisit && !onForm && <Who
-          key={card} plays={rowPlays} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
+          key={card} plays={rowPlays} post={post} stored={here.plays} held={heldIds} count={count} pageCard={pageCard} inkOfPlay={(p) => inkOf(ui, p, [...ofKind].sort(inPlayOrder), onInk)} unfolded={unfolded} onToggle={() => setUnfolded((u) => !u)} nameOf={nameOf} faceOf={faceOf} card={name} view={shownView} tallies={tallies} mine={mine} compare={compare} to={to} moments={moments} then={then} store={plays} admin={admin} now={now}
           onSpin={(play, spinName) => { store.close(); onSpin(play, spinName, open.opener); }}
         />}
         {reportTo && <p className="kb-report-foot"><ReportLink post={reportTo.post} version={reportTo.version} kicker={reportTo.kicker} className="kb-report-link" /></p>}

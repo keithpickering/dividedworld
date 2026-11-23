@@ -225,7 +225,7 @@ describe('the ORIGIN box', () => {
     expect(within(head).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
   });
 
-  test('with no place, the head reads "an Act" and so does the sentence about the rest of the cards', async () => {
+  test('with no place, the head reads "an Act" and the box says nothing about the rest of the cards', async () => {
     const w = threadWorld(3);
     for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
     const spun = await spinFrom(w, w.ids[1]!);
@@ -240,24 +240,26 @@ describe('the ORIGIN box', () => {
     const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
     await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from an Act$/u));
     expect(within(head).queryByRole('link')).toBeNull();
-    await waitFor(() => expect(box).toHaveTextContent('the rest are in an Act.'));
+    await waitFor(() => expect(box.querySelector('.kb-mark')).not.toBeNull());
+    expect(box).not.toHaveTextContent('the rest are in');
   });
 
-  test('a reversed play\'s end rides in the read but is no play: it neither makes "more" nor is read for tallies', async () => {
+  test('a reversed play\'s end rides in the read but is no play: it is not read for tallies, and the box holds every play', async () => {
     const w = threadWorld(3);
     const plays = Array.from({ length: 20 }, (_, i) => w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` }));
     const boss = w.fake.seed.account('boss', { admin: true });
     w.fake.signInAs(boss);
-    const ended = await w.fake.reverseCard(plays[0]!);
+    const ended = await w.fake.reverseCard(plays[19]!);
     w.fake.signInAs(w.me);
     expect(ended.ok).toBe(true);
-    expect((await w.fake.cardsOn(w.ids[1]!, 21)).map((a) => a.kind).filter((k) => k === 'card_end')).toHaveLength(1);
+    expect((await w.fake.postPlays([w.ids[1]!])).plays.map((a) => a.kind).filter((k) => k === 'card_end')).toHaveLength(1);
     const spun = await spinFrom(w, w.ids[1]!);
     const tallies = vi.spyOn(w.fake, 'tallies');
     openSpun(w, spun);
     const box = await origin();
     await waitFor(() => expect(box.querySelectorAll('.kb-mark').length).toBeGreaterThan(0));
     expect(box).not.toHaveTextContent('More than 20 cards');
+    expect(box.querySelector('.kb-origin-note')).toBeNull();
     const end = ended.ok ? ended.value.act : '';
     expect(tallies.mock.calls.some(([ids]) => ids.includes(end))).toBe(false);
   });
@@ -545,19 +547,26 @@ describe('the ORIGIN box', () => {
     await waitFor(() => expect(within(lens).getByRole('link', { name: 'Go to post' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`));
   });
 
-  test('lists at most twenty card plays and says where the rest are', async () => {
+  test('takes every play the page sent, counts the box\'s mark from the origin\'s counts, and says nothing of the rest', async () => {
     const w = threadWorld(3);
-    for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
+    for (let i = 0; i < 30; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
     const spun = await spinFrom(w, w.ids[1]!);
+    const real = w.fake.threadPage.bind(w.fake);
+    let sent: readonly { readonly card: string | null; readonly all: number }[] = [];
+    let held = 0;
+    vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
+      const got = await real(id, ...rest);
+      if (id === spun && got?.origin) { sent = got.origin.counts; held = got.origin.plays.filter((a) => a.kind === 'card').length; }
+      return got;
+    });
     openSpun(w, spun);
     const box = await origin();
-    await waitFor(() => expect(box).toHaveTextContent('More than 20 cards were played'));
     await waitFor(() => expect(box.querySelector('.kb-mark')).not.toBeNull());
-    expect(Number(box.querySelector('.kb-mark')!.getAttribute('data-kb-plays'))).toBeLessThanOrEqual(20);
-    /* The rest are in the origin's place, linked as the head links it. */
-    const rest = [...box.querySelectorAll('p')].find((p) => p.textContent?.startsWith('More than 20 cards'))!;
-    expect(rest).toHaveTextContent(/the rest are in #2 in A short thread\.$/u);
-    expect(within(rest as HTMLElement).getByRole('link', { name: '#2 in A short thread' })).toHaveAttribute('href', `/t/${w.thread}?page=1#post-2`);
+    expect(held).toBe(30);
+    expect(sent.find((c) => c.card === 'whoops')?.all).toBe(30);
+    await waitFor(() => expect(Number(box.querySelector('.kb-mark')!.getAttribute('data-kb-plays'))).toBe(30));
+    expect(box).not.toHaveTextContent('More than 20 cards');
+    expect(box.querySelector('.kb-origin-note')).toBeNull();
   });
 });
 
@@ -658,7 +667,7 @@ describe('the ORIGIN box\'s content area', () => {
     const real = w.fake.threadPage.bind(w.fake);
     vi.spyOn(w.fake, 'threadPage').mockImplementation(async (id, ...rest) => {
       const got = await real(id, ...rest);
-      return id === spun && got?.origin?.act ? { ...got, origin: { ...got.origin, act: { ...got.origin.act, kind: 'wash' }, more: false } } : got;
+      return id === spun && got?.origin?.act ? { ...got, origin: { ...got.origin, act: { ...got.origin.act, kind: 'wash' } } } : got;
     });
     openSpun(w, spun);
     const washed = await origin();
@@ -699,19 +708,6 @@ describe('the ORIGIN box\'s content area', () => {
     await userEvent.click(button);
     await waitFor(() => expect(lift!.textContent).not.toBe(''));
     expect(liftedOver(lift!.firstElementChild, inside)).toBe(true);
-  });
-
-  test('the "More than 20 cards" note is inside the area and lifted', async () => {
-    const w = threadWorld(3);
-    for (let i = 0; i < 22; i++) w.fake.seed.card(w.zed, w.ids[1]!, 'whoops', { message: `play ${i}` });
-    const spun = await spinFrom(w, w.ids[1]!);
-    openSpun(w, spun);
-    const box = await origin();
-    await waitFor(() => expect(box).toHaveTextContent('More than 20 cards were played'));
-    const note = [...box.querySelectorAll('p')].find((p) => p.textContent?.startsWith('More than 20 cards'))!;
-    expect(area(box), 'the box draws an area').not.toBeNull();
-    expect(area(box)).toContainElement(note);
-    expect(note).toHaveAttribute('data-kb-over-ink');
   });
 });
 
@@ -982,7 +978,7 @@ describe('the ORIGIN box of a play-spun thread', () => {
  * plays, their ends, the moment and the characters, so the box reads nothing after the page, is never "Loading the origin…", and takes in
  * a page read again.
  */
-const BOX_READS = ['act', 'cardsOn', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
+const BOX_READS = ['act', 'postPlays', 'tallies', 'myReactions', 'spunFromMany', 'spunFrom', 'effectStates', 'myReleases', 'characters', 'actsById', 'playMoment', 'spinMoment'] as const;
 /** A spy on each read the box made before it arrived with the page, on the fake the screen is drawn from. */
 function spyOnBoxReads(fake: object) {
   const table = fake as Record<string, (...args: unknown[]) => unknown>;

@@ -22,6 +22,7 @@
 import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { Act, Id, KayfaApi, Tail } from '../data/api.ts';
+import { currentVersion } from './written.ts';
 
 /** The most posts one read asks about: what `post_tails` holds a call to. */
 export const TAILS_PER_READ = 200;
@@ -225,4 +226,14 @@ export function useTails(post: Pick<Act, 'id' | 'thread' | 'editedAt'>, plays: r
   const ids = useMemo(() => plays, [key]);
   useEffect(() => store.watch(post, ids, post.editedAt), [store, post.id, post.thread, post.editedAt, ids]);
   return useSyncExternalStore((l) => store.subscribe(post.id, l), () => store.rows(post.id));
+}
+
+/**
+ * The version a post is at now, as the tails the page holds for it say (`currentVersion`), for a screen that must tell a play cleared for one version from one cleared for
+ * another (`effectsOf`). It reads what is held and asks for nothing: a post with a play that writes is watched by its own effect, so its rows are here; null where there are none.
+ */
+export function usePostVersion(post: Id): Id | null {
+  const { api } = useKayfa();
+  const store = tailStore(api);
+  return useSyncExternalStore((l) => store.subscribe(post, l), () => currentVersion(store.rows(post)));
 }

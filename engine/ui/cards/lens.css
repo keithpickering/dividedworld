@@ -675,6 +675,12 @@
   margin: 0;
 }
 
+/* The foot of the Ended group (Older.tsx, `.kb-lens-pager`): one glass button, in the side room a row keeps, one breath under the last row. */
+.kb-lens-pager {
+  margin: 10px 0 0;
+  padding: 0 14px;
+}
+
 /*
  * An ended row keeps its ink and takes about half the padding: its compact button is the row until it is opened. Its cut and ink corner are a
  * step smaller (the kinds grid's cut), so its date runs to the row's padding without meeting the corner.

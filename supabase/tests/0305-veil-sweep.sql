@@ -53,6 +53,8 @@ begin
   on conflict (key) do nothing;
   -- A surface card (Graffiti's kind, 0317): a wall on a post that anyone may draw on and only the post's own character may wash.
   insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values ('swwall', 'Sw Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true) on conflict (key) do nothing;
+  -- A rewind card (0413): a play of it names a point of the post, and rewind_view answers with the post as the projection shows it.
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack, rewind) values ('swrewind', 'Sw Rewind', 'salty', 'rare', 'cast', '{post}', interval '3 days', 1, 'rare') on conflict (key) do nothing;
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------------------- the list ----
@@ -217,6 +219,13 @@ select 'function', n, m, w from (values
   ('boot', 'swept', 'the app''s first read: the caller''s own characters and public settings'),
   ('boss_roster_names', 'no author', 'staff names'),
   ('cutting_acts', 'no author', 'the ids of the card Acts that cut a given list of plays (0405): ids alone, of Acts whose cut acts_public already shows; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_play_ids', 'no author', 'the ids of the plays in force on a list of posts and each kind''s newest and most drawn (0410): ids alone, from the kept rows of public Acts; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_rewind_plays', 'no author', 'the live rewind plays on a list of posts (0413): play ids, posts and played times alone, from the kept rows of public Acts; each view is read through rewind_view, which reads acts_public and applies every veil'),
+  ('post_kind_counts', 'no author', 'how many plays a post has had of each kind, and how many took (0410): counts of public plays by their public kind, a back counted as a back'),
+  ('play_rider_ids', 'no author', 'the ids of the springs and take-backs of a list of backs (0410): ids alone; the Acts are read through acts_public by id, which applies every veil'),
+  ('kind_play_ids', 'no author', 'the ids of a page of a kind''s plays that are over on a post (0410): ids alone, from the kept rows; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_plays', 'swept', 'the plays of a list of posts (0410): the Acts through acts_public, so the veil is applied as in thread_page'),
+  ('kind_plays', 'swept', 'a page of a kind''s older plays on a post (0410): the Acts through acts_public and the casters'' heads through characters_public, so the veil is applied as in thread_page'),
   ('card_ended', 'no author', 'whether a play has ended'),
   ('card_held', 'no author', 'the count of a card in the caller''s own hand'),
   ('card_of_play', 'no author', 'the card a play is of'),
@@ -275,6 +284,7 @@ select 'function', n, m, w from (values
   ('phrase_word_class', 'no author', 'a constant'),
   ('pinned_threads', 'no author', 'a board''s pinned threads: ids'),
   ('play_moment', 'swept', 'a play''s moment: the post as the projection shows it'),
+  ('rewind_view', 'swept', 'a rewind''s view (0413): the post as the projection shows it at the point the play names, through act_projection and acts_public as play_moment reads it'),
   ('spin_moment', 'no author', 'a spin''s moment (0351) is of the post it was pressed at, which is never veiled: a spin is refused at a veiled post (spin_written reads the shown author) and a veil is refused on a post a spin was pressed at (land_refusal), both in 0304-post-veils.sql, section 9b; it reads its version and the plays as play_moment does, through the projection'),
   ('post', 'no author', 'a write: answers the Act it wrote through the projection, to its author'),
   ('post_tails', 'swept', 'the words written on posts: no character'),
@@ -619,7 +629,7 @@ declare
   t uuid := tests.thread('Sw sweep thread'); t3 uuid := tests.thread('Sw elsewhere');
   stand uuid;
   p uuid; p2 uuid; p4 uuid; p5 uuid; back uuid; back5 uuid; q5 uuid; q6 uuid; spring6 uuid; laid5 uuid; laid6 uuid; linked boolean; qa uuid; wall uuid; wash uuid; edit uuid; used uuid; quoted uuid; ray_card uuid; vplay uuid; spun jsonb; on_a uuid; on_p4 uuid; counts0 jsonb;
-  veiled uuid[];
+  veiled uuid[]; rwd uuid;
   probe record; res text; leaks boolean; found text[] := '{}'; missed text[] := '{}'; phase text;
 begin
   perform pg_temp.cards();
@@ -660,6 +670,9 @@ begin
   -- A wall on P: R's card, R's drawing on it, and the author's own wash of it (only the post's own character may wash, so a wash names the post's author wherever it is read).
   insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, '{"card": "swwall", "message": "", "config": {}, "layer": 1}') returning id into wall;
   perform open_surface(wall);
+  -- A rewind on P, written as place_cast writes one (0413): the point it names is now, so the view shows P as it stands. Its time is already up, so its freeze does not turn away the plays on P below; rewind_view
+  -- answers for a rewind whether or not it is still up, so the probe reads it all the same.
+  insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, jsonb_build_object('card', 'swrewind', 'message', '', 'config', '{}'::jsonb, 'reach', 'post', 'ends', now() - interval '1 second', 'rewind_at', now())) returning id into rwd;
   perform tests.become_service();
   perform draw_on_surface(ray, r, wall, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
   wash := (wash_surface(ann, a, wall, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000)) ->> 'id')::uuid;
@@ -679,7 +692,11 @@ begin
   -- A report on P by R (real moderation: the filer's account and the version, never a character): an admin reads it with the author's account, and no probe below may find the character in it.
   perform tests.become(ray); perform report_post(p, 'mask', 'Whose words are these?'); perform tests.unbecome();
 
-  perform set_config('sweep.wall', wall::text, true);
+  -- A play of A's on P that is over (0410): kind_plays pages the over plays of a kind, so with one the probe of kind_plays has the author to find before the cast and to miss after it.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  select a, 'card', t, p, jsonb_build_object('card', u.payload ->> 'card', 'ends', now() - interval '1 day'), now() - interval '2 days' from acts u where u.id = used;
+
+  perform set_config('sweep.wall', wall::text, true); perform set_config('sweep.rewind', rwd::text, true);
   perform set_config('sweep.a', a::text, true); perform set_config('sweep.stand', stand::text, true); perform set_config('sweep.t', t::text, true);
   perform set_config('sweep.p', p::text, true); perform set_config('sweep.used', used::text, true); perform set_config('sweep.general', general::text, true);
 
@@ -697,6 +714,8 @@ begin
   create temp table probes (name text primary key, kind text not null, stmt text not null, fires boolean not null default true, pending boolean not null default false, as_admin boolean not null default false);
   insert into probes (name, kind, stmt, fires, pending) values
     ('thread_page', 'id', 'select thread_page(current_setting(''sweep.t'')::uuid, 1, null, null, null)::text', true, false),
+    ('post_plays', 'id', 'select post_plays(array[current_setting(''sweep.p'')::uuid])::text', true, false),
+    ('kind_plays', 'id', 'select kind_plays(current_setting(''sweep.p'')::uuid, (select u.payload ->> ''card'' from acts_public u where u.id = current_setting(''sweep.used'')::uuid), null, null, 50)::text', true, false),
     ('acts_public by id', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from acts_public x where x.id = current_setting(''sweep.p'')::uuid', true, false),
     ('acts_public by thread', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from acts_public x where x.thread = current_setting(''sweep.t'')::uuid', true, false),
     ('acts_public by character A', 'absent', 'select coalesce(jsonb_agg(x.id), ''[]'')::text from acts_public x where x.character = current_setting(''sweep.a'')::uuid and x.thread = current_setting(''sweep.t'')::uuid', true, false),
@@ -714,6 +733,7 @@ begin
     ('my_followed_threads', 'id', 'select coalesce(jsonb_agg(to_jsonb(f)), ''[]'')::text from my_followed_threads f', false, false),
     ('my_cards_ended', 'id', 'select coalesce(jsonb_agg(to_jsonb(e)), ''[]'')::text from my_cards_ended e', true, false),
     ('play_moment', 'id', 'select play_moment(current_setting(''sweep.used'')::uuid)::text', true, false),
+    ('rewind_view', 'id', 'select rewind_view(current_setting(''sweep.rewind'')::uuid)::text', true, false),
     ('effects_above', 'id', 'select coalesce(jsonb_agg(to_jsonb(e)), ''[]'')::text from effects_above(array(select distinct x.character from acts_public x where x.thread = current_setting(''sweep.t'')::uuid and x.character is not null), current_setting(''sweep.t'')::uuid, current_setting(''sweep.general'')::uuid) e', true, false),
     ('card_target_reach', 'nonempty', 'select coalesce(card_target_reach(''post'', current_setting(''sweep.p'')::uuid) -> ''above'' -> ''character'', ''[]'')::text', true, false),
     ('post_tails', 'id', 'select coalesce(jsonb_agg(to_jsonb(x)), ''[]'')::text from post_tails(array[current_setting(''sweep.p'')::uuid]) x', false, false),

@@ -57,6 +57,8 @@ export interface ThreadContext {
   readonly know?: (characters: readonly (Id | null)[]) => Promise<void>;
   /** Read the page that holds this post again and take what it says (the replies a play drew under its posts too): what a play form asks after a play it found landed on a lost answer, so a reply the answer should have carried is drawn. */
   readonly reread?: (post: Id) => Promise<void>;
+  /** Read the thread's pages again and take what they say (a rewind's view that could not be read comes with its page's `rewinds`): the ORIGIN box asks it when its own read gave up. */
+  readonly catchUp?: () => void;
   /** Reports which posts are in view, for mark_read. */
   readonly observer: IntersectionObserver | null;
   /** Put a quote of this Act in the reply box; null where the thread has no reply box (The System's board). */

@@ -5,7 +5,7 @@
 --   setting_pool       (0085_staff_notes.sql), holding two more fields: `sessions` (perDay 0 to 8; minutes least and most, whole, 10 to 180, least not above most; waking from and to,
 --                      whole UTC hours 0 to 23) and `turns` (waitHours 1 to 168; perThread 1 to 6; perSession from perThread to 12; perDay 0 to 500). Everything else as
 --                      0085_staff_notes.sql wrote it. (`create or replace`: it has not been redefined since 0085.)
---   settings_held      (0395_polls.sql), holding `digestConversations`: a whole number from 0 to 12 (DIGEST_MOST.conversations). Everything else as 0395_polls.sql wrote it.
+--   settings_held      (0411_post_effects.sql), holding `digestConversations`: a whole number from 0 to 12 (DIGEST_MOST.conversations). Everything else as 0411_post_effects.sql wrote it.
 --   Existing rows: this writes no settings row. The release's seed fills them as it filled the fields added before (0355_settings_tuned.sql): `seed_setting` writes the code's value
 --   over an untuned `pool` row, and a tuned `pool` row gains the keys it lacks (`jsonb_fill`, nested objects included) with `tuned_at` kept; `digestConversations` is a new key, so its row
 --   is inserted. engine/rules/instance.ts (SETTINGS) holds the same rules, and supabase/tests/0079-settings-held.sql lists a poison at each edge.
@@ -50,7 +50,7 @@ begin
     return shape || '; "cardRarityMost" is not';
   end if;
   if not setting_cron(v -> 'chatterCron') then return shape || '; "chatterCron" is not'; end if;
-  -- sessions: exactly perDay, minutes and waking (0407; `sessionsHeld` in engine/rules/instance.ts).
+  -- sessions: exactly perDay, minutes and waking (0415; `sessionsHeld` in engine/rules/instance.ts).
   s := v -> 'sessions';
   if jsonb_typeof(s) is distinct from 'object' or (select count(*) from jsonb_object_keys(s)) <> 3
      or not setting_whole(s -> 'perDay', 0, 8)
@@ -61,7 +61,7 @@ begin
      or not setting_whole(s -> 'waking' -> 'from', 0, 23) or not setting_whole(s -> 'waking' -> 'to', 0, 23) then
     return shape || '; "sessions" is not';
   end if;
-  -- turns: exactly waitHours, perThread, perSession and perDay (0407; `turnsHeld` in engine/rules/instance.ts).
+  -- turns: exactly waitHours, perThread, perSession and perDay (0415; `turnsHeld` in engine/rules/instance.ts).
   t := v -> 'turns';
   if jsonb_typeof(t) is distinct from 'object' or (select count(*) from jsonb_object_keys(t)) <> 4
      or not setting_whole(t -> 'waitHours', 1, 168) or not setting_whole(t -> 'perThread', 1, 6)
@@ -78,7 +78,7 @@ begin
 end $$;
 
 
--- settings_held (0395_polls.sql), holding `digestConversations`. Everything else as 0395_polls.sql wrote it.
+-- settings_held (0411_post_effects.sql), holding `digestConversations`. Everything else as 0411_post_effects.sql wrote it.
 create or replace function public.settings_held()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -101,6 +101,7 @@ begin
     -- How many days a post's debate is followed (0391): a whole number of days, at least 1 and at most 365 (as digestBoardDays and movedStubDays are), so the `::integer` and the interval the inputs build from it cannot overflow.
     when 'debateDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'reactionCap' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
+    when 'postEffects' then case when not setting_whole(v, 1, 16) then 'a whole number of effects, at least 1 and at most 16' end
     when 'crowdPayEach' then case when not setting_whole(v, 0) then 'a whole number of hundredths, at least 0' end
     when 'crowdPayMost' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
     when 'charactersPerPlayer' then case when not setting_whole(v, 1) then 'a whole number, at least 1' end
@@ -154,7 +155,7 @@ begin
     when 'microEventDailyCalls' then case when not setting_whole(v, 0) then 'a whole number of calls, at least 0' end
     when 'digestThreads' then case when not setting_whole(v, 1, 25) then 'a whole number of threads, at least 1 and at most 25' end
     when 'digestExcerpts' then case when not setting_whole(v, 1, 20) then 'a whole number of posts, at least 1 and at most 20' end
-    -- How many conversations with waiting replies the digest shows a pool persona (0407): a whole number from 0 to 12, as DIGEST_MOST.conversations holds.
+    -- How many conversations with waiting replies the digest shows a pool persona (0415): a whole number from 0 to 12, as DIGEST_MOST.conversations holds.
     when 'digestConversations' then case when not setting_whole(v, 0, 12) then 'a whole number of conversations, at least 0 and at most 12' end
     when 'digestBoards' then case when not setting_whole(v, 1, 30) then 'a whole number of boards, at least 1 and at most 30' end
     when 'digestBoardDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
@@ -1215,7 +1216,7 @@ begin
   -- The board lines' two settings: an instance that has not set them (seeded before them) reads the defaults, as inheritance_due reads inheritanceGraceDays.
   begin board_cap := (setting('digestBoards'))::integer; exception when no_data_found then board_cap := 30; end;
   begin board_days := (setting('digestBoardDays'))::integer; exception when no_data_found then board_days := 21; end;
-  -- The conversations' setting (0407): an instance seeded before it reads the default of 6.
+  -- The conversations' setting (0415): an instance seeded before it reads the default of 6.
   begin conv_cap := (setting('digestConversations'))::integer; exception when no_data_found then conv_cap := 6; end;
   hours := greatest(extract(epoch from (until - since)) / 3600.0, 1.0 / 60);
   with
@@ -1442,7 +1443,7 @@ begin
     select x.id, x.name, x.premise, x.n, x.rn from board_all x
     where x.rn <= (board_cap + 1) / 2 or x.rn > x.total - board_cap / 2
   ),
-  -- The conversations (0407): a persona's turns in one thread over the window, from pool_turns, each turn's post read through acts_public (a removed post is not a turn the digest shows) and its reactions the public
+  -- The conversations (0415): a persona's turns in one thread over the window, from pool_turns, each turn's post read through acts_public (a removed post is not a turn the digest shows) and its reactions the public
   -- total, as an excerpt's are. Ranked by the reactions, then the turns, then the thread and persona; cut to the setting. The persona is read through characters_public, so one that never debuted is not listed.
   turn_r as (
     select t.id as turn, t.thread, t.staff, t.at, t.post_act, t.quoting,
