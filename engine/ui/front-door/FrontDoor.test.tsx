@@ -247,13 +247,14 @@ describe('the front door with an effect that loads on first use', () => {
 describe('the front door\'s pictures', () => {
   test('a root-relative picture in a staged post is drawn from the page\'s own origin', () => {
     drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img]', reactions: {} }]);
-    const img = document.querySelector('article.kb-act img');
-    expect(img?.getAttribute('src')).toBe(`${window.location.origin}/x/sheet.gif`);
+    /* Over https it is an img; over http (this test's origin) the renderer shows the same address as a link. */
+    const el = document.querySelector('article.kb-act img, article.kb-act a[href$="sheet.gif"]');
+    expect(el?.getAttribute('src') ?? el?.getAttribute('href')).toBe(`${window.location.origin}/x/sheet.gif`);
   });
 
   test('a protocol-relative picture is not rewritten, and the parser treats it as it does anywhere', () => {
     drawWith([{ by: 'ann', body: '[img]//evil.example/a.gif[/img]', reactions: {} }]);
-    const srcs = [...document.querySelectorAll('article.kb-act img')].map((i) => i.getAttribute('src'));
+    const srcs = [...document.querySelectorAll('article.kb-act img, article.kb-act a')].map((i) => i.getAttribute('src') ?? i.getAttribute('href'));
     expect(srcs.some((s) => s?.includes('evil.example'))).toBe(false);
     expect(srcs.some((s) => s?.startsWith(window.location.origin))).toBe(false);
   });
