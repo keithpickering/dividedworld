@@ -559,7 +559,7 @@ function modsText(f: PromptFacts): string {
 function pointsText(f: PromptFacts): string {
   if (f.posting.length === 0) return 'No persona posts today. Do not answer with points.';
   return [
-    `Talking points. Give each persona that posts one line on the day in "points": {staff (its key), line (at most ${POINTS_MOST} characters, in your voice: its stance, who it is needling, what it defends or resents; it is read by that persona's posts until the next meeting and never acted on)}. One line for each key; a persona you leave out has no talking points today. The personas that post:`,
+    `Talking points. Give each persona that posts one line on the day in "points": {staff (its key), line (at most ${POINTS_MOST} characters, in your voice: its stance, who it is needling, what it defends or resents; it is read by that persona's posts until the next meeting and never acted on)}. One line for each key; a persona you leave out has no talking points today. A point must never mention a move you are proposing or one still waiting on admins: points speak only of what has landed. The personas that post:`,
     ...f.posting.map((p) => `- ${p.key}: ${oneLineText(p.name, 64)} (${pronounLabel(p.pronouns)}, ${oneLineText(p.office, 20)}). Temperament: ${oneLineText(p.temperament, 200)}`),
   ].join('\n');
 }
