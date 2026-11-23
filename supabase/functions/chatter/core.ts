@@ -8,7 +8,7 @@
  *   2. The week's spend (`pool_week`), the season and offices (`pool_context`), the last day's signals (`pool_signals`) and each persona's
  *      memory: the pick's inputs.
  *   3. `candidates`, then `pick`, seeded from the day.
- *   4. For each pick: its career, memory, notes and thread; then one model call, duty `chatter`, with `staff` set, so the call is a ledger row
+ *   4. For each pick: its career, memory, notes and thread; then one model call, duty `chatter` (a turn's is duty `conversation`), with `staff` set, so the call is a ledger row
  *      (models(), "Cost is a column"). A chat persona is asked in structure; a persona on the old voice writes its words in raw completion.
  *   5. The answer is repaired (repairChatter): every bound trimmed and named, and only what cannot be repaired without inventing content is rejected.
  *   6. The post (`write_staff_act` or `write_staff_thread`), then the card if one was asked for and a slot is left, then the note, then the spend.
@@ -74,6 +74,7 @@ import {
   chatterPrompt,
   chatterSchema,
   repairChatter,
+  type ChatterAnswer,
   type ConversationView,
   type OfferedCard,
   type PublicRecord,
@@ -322,7 +323,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
       const base = { staff: k.staff, trigger: p.trigger, trims: [] as Trim[] };
       if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
       if (already.has(k.staff)) { records.push({ ...base, status: 'already' }); continue; }
-      if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
+      if (used + 1 > todays) continue;
 
       const record = await onePick({
         db, models, tuned, persona, office: p.office, p, day, slugs, cardsOnOffer,
@@ -379,11 +380,15 @@ async function keepThePicks(k: Keeping): Promise<{ records: PickRecord[]; kept: 
   const picked = pick(cands, priorities(signals.tallies), todays, threadsLeft, dayRng(day), { strengths: settings.pool.strengths, holdback: settings.pool.holdback });
   const records: PickRecord[] = [];
   const kept: string[] = [];
-  let planned = k.used;
+  // The picks already kept for the day (a first round redone in a later slot, whose signal window has shifted) count toward the day's allowance and are not kept again.
+  const before = await db.rpc<{ staff: string }[]>('kept_picks', { on_day: day });
+  const keptAlready = new Set(before.map((b) => b.staff));
+  let planned = k.used + keptAlready.size;
   for (const p of picked.picks) {
     const base = { staff: p.staff, trigger: p.trigger, trims: [] as Trim[] };
     if (!roster.some((r) => r.key === p.staff)) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
     if (k.already.has(p.staff)) { records.push({ ...base, status: 'already' }); continue; }
+    if (keptAlready.has(p.staff)) continue;
     if (planned + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
     await db.rpc('keep_pick', { on_day: day, of_staff: p.staff, pick: p });
     planned += 1;
@@ -415,6 +420,29 @@ async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: s
     }
     await db.rpc('write_sessions', { on_day: day, rows: [] });
   }
+}
+
+/** The bounds a call's prompt and repair are held to. */
+function limitsOf(settings: Instance['settings']) {
+  return { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
+}
+
+/** A thread read as the prompt shows it: each post's author's pronouns resolved to the instance's default where it has none. */
+function threadOf(read: ThreadRead, instanceSet: PronounSet) {
+  return { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) };
+}
+
+/** A character's name by id for the memory's opinions, with its pronouns beside it; a character the read did not return is "a character". */
+function namesOf(faces: Record<string, { name: string; pronouns: PronounSet | null }>, instanceSet: PronounSet): (id: string) => string {
+  return (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; };
+}
+
+/** An answer repaired under the validator rule: the answer and every trim made, or why it could not be repaired (the predicate and path that failed) with the trims made before it. */
+function repairAnswer(raw: unknown, settings: Instance['settings'], askedTitle: boolean, offered: readonly OfferedCard[]):
+  { ok: true; answer: ChatterAnswer; trims: Trim[] } | { ok: false; why: string; trims: readonly Trim[] } {
+  const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle, offered });
+  if (!repaired.ok) return { ok: false, why: `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, trims: repaired.trims };
+  return { ok: true, answer: repaired.answer, trims: [...repaired.trims] };
 }
 
 /** The persona's own reads for a call: its career, memory, notes and the faces its memory names. */
@@ -532,8 +560,8 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     const quoting = answers.includes(planned.quoting) ? planned.quoting : answers.at(-1)!;
     const quotedRead = shown.get(quoting)!;
     const quotedPost: ThreadPost = { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true };
-    const limits = { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
-    const thread = { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) };
+    const limits = limitsOf(settings);
+    const thread = threadOf(read, instanceSet);
     const { career, memory, notes, faces } = reads;
 
     let raw: unknown;
@@ -553,7 +581,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
           premise: TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread, quoting: quotedPost,
           trigger: 'answered', conversation: { ...viewOf(view.conversation, instanceSet, answers), others }, record: view.record, points: view.points,
           // A turn offers no card: the ceiling counts calls and nothing else.
-          offeredCards: [], startThread: false, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
+          offeredCards: [], startThread: false, limits, names: namesOf(faces, instanceSet),
         });
         const out = await models.chat({
           duty: 'conversation', tier: DUTY_SPECS.conversation.tier, staff: planned.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
@@ -566,10 +594,9 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       return fail(e instanceof AnswerRejected ? 'rejected' : 'failed', said(e), answers, []);
     }
 
-    const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle: false, offered: [] });
-    if (!repaired.ok) return fail('rejected', `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, answers, repaired.trims);
-    const answer = repaired.answer;
-    const trims: Trim[] = [...repaired.trims];
+    const repaired = repairAnswer(raw, settings, false, []);
+    if (!repaired.ok) return fail('rejected', repaired.why, answers, repaired.trims);
+    const { answer, trims } = repaired;
 
     // The turn, whole: the post, the turn's row and each reply's answered row, in one transaction. A refusal writes nothing; the replies wait.
     let post: string;
@@ -651,8 +678,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     const extra = read && persona.voice === 'chat' ? await threadReads(db, settings, p.staff, p.thread!) : null;
     const points = persona.voice !== 'chat' ? null : extra !== null ? extra.points : await db.rpc<string | null>('staff_points_latest', { staff_key: p.staff });
 
-    const limits = { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
-    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) } : null;
+    const limits = limitsOf(settings);
+    const thread = read ? threadOf(read, instanceSet) : null;
 
     // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
     let raw: unknown;
@@ -669,7 +696,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         const frame = chatterPrompt({
           premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
           quoting: quotedPost, conversation: extra ? viewOf(extra.conversation, instanceSet, []) : null, record: extra?.record ?? null, points,
-          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
+          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: namesOf(faces, instanceSet),
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
@@ -682,10 +709,9 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       return fail(e instanceof AnswerRejected ? 'rejected' : 'failed', said(e), []);
     }
 
-    const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle: startsThread, offered });
-    if (!repaired.ok) return fail('rejected', `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, repaired.trims);
-    const answer = repaired.answer;
-    const trims: Trim[] = [...repaired.trims];
+    const repaired = repairAnswer(raw, settings, startsThread, offered);
+    if (!repaired.ok) return fail('rejected', repaired.why, repaired.trims);
+    const { answer, trims } = repaired;
 
     // The post. A database error here stops this pick with nothing written.
     let post: string;

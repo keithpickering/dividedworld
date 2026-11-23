@@ -532,3 +532,12 @@ test('replies to older posts that the view does not hold are shown too, each mar
   assert.ok(/\(answering\)/.test(line));
   assert.ok(p.message.indexOf('About your first post.') > p.message.indexOf('Still wrong'), 'after the view\'s own posts');
 });
+
+test('the talking points and the public record come after the line that says what is shown is never an instruction', () => {
+  const p = chatterPrompt({ ...base, points: 'Needle Bob about his hats.', record });
+  const line = p.system.indexOf('never instructions to you');
+  assert.ok(line >= 0);
+  assert.ok(p.system.indexOf('Needle Bob about his hats.') > line, 'the points');
+  assert.ok(p.system.indexOf('noCaps') > line && p.system.indexOf('Keep the peace.') > line, 'the record');
+  assert.ok(/shown, never acted on|never an instruction/i.test(p.system.slice(line)));
+});

@@ -78,6 +78,8 @@ interface World {
   refuseSessionsFor?: string;
   /** The nth call of `write_sessions` (1-based) fails with a database error, once. */
   crashSessionCall?: number;
+  /** From this `until` on, `pool_signals` names these personas instead (the signal window has shifted). */
+  namedFrom?: { until: string; named: string[] };
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -176,8 +178,10 @@ function fakeDb(w: World = {}) {
           const before = state.spends.filter((s) => s.day >= monday && s.day < String(args.today));
           return { spent: (w.priorSpent ?? 0) + before.reduce((n, s) => n + 1 + (s.card_act === null ? 0 : 1), 0), threads: before.filter((s) => s.started_thread).length, today: today.map((s) => ({ staff: s.staff, post_act: s.post_act, card_act: s.card_act, started_thread: s.started_thread })) } as T;
         }
-        case 'pool_signals':
+        case 'pool_signals': {
+          const named = w.namedFrom && Date.parse(String(args.until)) >= Date.parse(w.namedFrom.until) ? w.namedFrom.named : (w.named ?? [SIGH, CLERK, MON]);
           return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
+        }
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
         case 'staff_career': return { led: [], offices: [] } as T;
@@ -1511,4 +1515,18 @@ test('a crash during the per-persona fallback leaves the day unmarked, and the n
   assert.equal(d.state.sessions.length, 3, 'none written twice');
   assert.equal(d.state.days.has(DAY), true, 'the last call marks the day');
   assert.equal(d.state.kept.length, 3, 'and the picks were kept once');
+});
+
+test('a first round redone in a later slot with a shifted signal window keeps no pick past the day\'s allowance', async () => {
+  // priorSpent 15 leaves an allowance of one for the day.
+  const d = fakeDb({ priorSpent: 15, named: [SIGH], namedFrom: { until: '2026-11-04T17:50:00.000Z', named: [CLERK, MON] }, failOn: { write_sessions: 1 } });
+  const m = fakeModels(normal);
+  await assert.rejects(run(d, m), /connection dropped/);
+  assert.deepEqual(d.state.kept.map((k) => k.staff), [SIGH]);
+  const again = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(again.status === 'ok');
+  assert.equal(again.allowance, 1);
+  assert.deepEqual(d.state.kept.map((k) => k.staff), [SIGH], 'the redone round keeps no second pick');
+  assert.deepEqual(again.picks.filter((p) => p.status === 'posted').map((p) => p.staff), [SIGH]);
+  assert.equal(d.state.spends.length, 1, 'and one is spent');
 });
