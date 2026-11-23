@@ -255,7 +255,7 @@ export interface Seed {
   trophyMove(staff: string, move: { readonly character: Id; readonly trophy: string; readonly body?: string; readonly at?: number }): Id;
   groupMove(staff: string, move: { readonly office?: 'boss' | 'mod' | null; readonly character: Id; readonly group: string; readonly board?: string; readonly body?: string; readonly at?: number; readonly expiresAt?: number | null; readonly demand?: boolean }): Id;
   /** A staff character's office changes (a handover, a reassignment): moves it made before keep the office stamped on them. */
-  setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched'): void;
+  setOffice(staff: string, office: 'boss' | 'mod' | 'member' | 'benched' | 'waiting'): void;
   /** An apology a character wrote to a move (`apologize`): the spin Act is written as the server writes it, and the row is in `state` (default `pending`) from `at`. Returns the row's apology Act. */
   apology(character: Id, move: Id, state?: 'pending' | 'accepted' | 'rejected' | 'returned', options?: { at?: number }): Id;
   /**
@@ -3315,9 +3315,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((s): Standing => ({ ...s, place: s.standing > 0 ? 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size : null }))
       .sort((a, b) => b.standing - a.standing || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
-  /** When the open chatter session of a staff character began, or null: none open, or it is not a persona in play (a benched office has none listed). */
+  /** When the open chatter session of a staff character began, or null: none open, or it is no persona in play (not the 'member' office, so a Boss, a Mod Bot and one waiting or benched have none). */
   const inSession = (c: CharRec): number | null => {
-    if (!c.staff || c.staff.office === 'benched') return null;
+    /* A persona holds the 'member' office (a Boss and a Mod Bot have their own); one waiting or benched is not listed (0407's staff_office_now test). */
+    if (c.staff?.office !== 'member') return null;
     const at = now();
     const open = staffSessions.filter((x) => x.staff === c.staff!.key && x.startsAt <= at && at < x.endsAt);
     return open.length === 0 ? null : Math.min(...open.map((x) => x.startsAt));
@@ -3347,7 +3348,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return [{ id, name: c.name, staff: false, since: where.kind === 'index' ? row.onlineSince : row.placeSince }];
       }).concat(
         /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0084), read from
-           public posts; the index never lists it, and a board lists it once however many of its threads it posted in. */
+           public posts, and a board lists it once however many of its threads it posted in. A persona in session is listed there by its posts since the session
+           began, from the session's start (0407's place_since); the index lists it beside the players (below). The fake leaves out the SQL's other way onto a
+           thread or board, a reply waiting there (pool_waiting_in_thread, pool_waiting_in_board), which it does not model. */
         where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
           if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
           /* A persona in session is listed by its posts since the session began, not only the window's (presence_box, 0407). */
@@ -3355,7 +3358,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= Math.min(at - win, opened ?? Infinity) && a.thread !== null && threads.has(a.thread)
             && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
           if (posts.length === 0) return [];
-          return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
+          return [{ id: c.id, name: c.name, staff: true, since: opened ?? Math.min(...posts.map((a) => a.at)) }];
         }),
       );
       /* A Mod with an open visit in the thread is listed in its box too, with the post's number (0111); one name, though it also posted. */

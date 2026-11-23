@@ -135,18 +135,29 @@ describe('the presence box', () => {
       await vi.waitFor(() => expect(box).toHaveTextContent(/and 3 others$/u));
     });
 
-    test('a thread lists her only once she has posted there in the session', async () => {
+    test('a thread lists her once she has posted there in the session, even when the post is older than the window', async () => {
       const { seeded, fake, mabel, show } = inSession();
       show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
       const box = await screen.findByRole('region', { name: HEADING });
       await within(box).findByRole('link', { name: 'Pipewrench' });
       expect(box).not.toHaveTextContent('Mabel');
       cleanup();
-      fake.seed.staffPost(mabel, seeded.thread, 'Hello.');
+      /* The session began 30 minutes ago and her post is 20 minutes old: past the 5-minute window, so only the session lists her. */
+      fake.seed.staffSession('mabel', { startsAt: fake.clock.now() - 30 * 60_000, endsAt: fake.clock.now() + 3_600_000 });
+      fake.seed.staffPost(mabel, seeded.thread, 'Hello.', { at: fake.clock.now() - 20 * 60_000 });
       show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
       const again = await screen.findByRole('region', { name: HEADING });
       await within(again).findByRole('link', { name: 'Mabel' });
       expect(again).toHaveTextContent('Mabel, Test Cores');
+    });
+
+    test('one whose office is waiting is not listed on the index', async () => {
+      const { fake, show } = inSession();
+      fake.seed.setOffice('mabel', 'waiting');
+      show(<PresenceBox place={{ kind: 'index' }} heading="Who is online" />);
+      const box = await screen.findByRole('region', { name: 'Who is online' });
+      await within(box).findByRole('link', { name: 'Pipewrench' });
+      expect(box).not.toHaveTextContent('Mabel');
     });
   });
 
