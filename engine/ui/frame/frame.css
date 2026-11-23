@@ -40,22 +40,31 @@
 }
 
 /*
- * The loading meter, beside the host in the banner (Loading.tsx): a 96 by 12 well, sunken, with a fill of
+ * The loading meter, beside the address in the banner (Loading.tsx): a 96 by 12 well, sunken, with a fill of
  * blocks 8px wide and 2px apart. Its colors are the game piece's own tokens (engine/ui/tokens.css).
+ *
+ * The address and the meter are one line that holds still: `Opening {host}{path}…` is longer than the host at rest, so the words
+ * stand in a slot of their own the width of the line less the meter's, on one line, cut with an ellipsis where they run past it, as a
+ * 2003 status bar cut its own. Nothing the words say widens the line, wraps it or moves the meter, so the banner and the page under it
+ * never jump on a click (e2e/load.spec.ts). The words hug the meter at a desk and start at the line's left on a phone, where the line
+ * spans the banner.
  */
 .kb-address {
-  display: inline-flex;
-  flex-wrap: wrap;
+  display: flex;
   align-items: center;
-  gap: 4px 8px;
+  gap: 8px;
   min-width: 0;
   font-size: var(--kb-size-small);
+  line-height: 1.2;
 }
 
-/* The host is never cut short: a long one (or a large text size) folds anywhere, and the meter drops under it where the two do not fit a row. */
 .kb-address-text {
+  flex: 1 1 0;
   min-width: 0;
-  overflow-wrap: anywhere;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  text-align: end;
 }
 
 .kb-meter {
@@ -93,11 +102,27 @@
 }
 
 /*
- * On a phone the Boards control stays beside the name, as the Phone board draws it, and the host with its meter takes the row under them.
+ * On a phone the Boards control stays beside the name, as the Phone board draws it, and the address with its meter takes the row under them.
  */
 @media (max-width: 40em) {
   .kb-banner > .kb-menu-button { order: 1; }
-  .kb-banner > .kb-banner-side { order: 2; flex: 1 0 100%; align-items: flex-start; }
+  .kb-banner > .kb-banner-side { order: 2; flex: 1 0 100%; max-width: none; }
+  .kb-address-text { text-align: start; }
+}
+
+/*
+ * The name, and under it the tagline in small type: the masthead, as a 2003 board set its subtitle. Under the name and not beside it, so
+ * the masthead is only as wide as the name and the right column keeps its place beside it down to a phone's width.
+ */
+.kb-masthead {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+}
+
+.kb-tagline {
+  line-height: 1.2;
 }
 
 .kb-logo {
@@ -167,33 +192,30 @@
   margin-left: auto;
 }
 
-/* The banner's right side: the host line with its meter, and under it the search box on a row of its own. */
+/*
+ * The banner's right side: the address with its meter, and under it the search box on a row of its own, both the column's width. The column
+ * takes the room beside the name, from 16rem to 20rem (rems, so it grows with the text size), and never the width of what it holds: the
+ * address changing as a page opens moves nothing.
+ */
 .kb-banner-side {
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
+  gap: 4px;
+  box-sizing: border-box;
+  flex: 1 0 min(16rem, 100%);
+  max-width: 20rem;
   min-width: 0;
   margin-left: auto;
 }
 
-.kb-banner-host {
-  line-height: 1.2;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 1.2em;
-  min-width: 0;
-}
-
 /*
- * With the box's row the right column is taller than the name, so the banner's own padding gives that height back: the name keeps its
- * place (centered) and the banner keeps the board's height.
+ * The masthead's two lines and the column's two rows are taller than the name alone, so the banner's own padding gives that height back:
+ * both stand centered and the banner keeps the board's height.
  */
 @media (min-width: 40.0625em) {
   .kb-banner:has(.kb-banner-search) {
     align-items: center;
-    padding-block: 8px;
+    padding-block: 6px;
   }
 }
 
@@ -209,10 +231,13 @@
 
 .kb-banner-search .kb-search-combo {
   position: static;
+  flex: 1 1 0;
+  min-width: 0;
 }
 
 /* The row is a 24px target (WCAG 2.5.8) so the stacked column fits the height the name gives the banner. */
 .kb-banner-search .kb-search-input {
+  width: 100%;
   min-height: 1.5rem;
   padding-block: 0.1em;
 }

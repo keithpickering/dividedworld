@@ -84,3 +84,30 @@ test('an address with a thread that does not exist shows "The thread you request
   await page.goto('/t/00000000-0000-4000-8000-000000000000?latency=300');
   await expect(page.getByRole('heading', { level: 1, name: 'The thread you requested does not exist.' })).toBeVisible();
 });
+
+/*
+ * The banner holds still while a page opens (the owner's word of 2026-11-22): `Opening {host}{path}…` is longer than the host at rest, and
+ * nothing around it may move for that, neither the banner's height nor any of its pieces, so the page under it does not jump on every click.
+ * The address is the one thing allowed to change, and only its words. Measured at a desk, between the desk and the phone, and on a phone.
+ */
+const STILL = ['.kb-banner', '.kb-logo', '.kb-tagline', '.kb-address', '.kb-meter', '.kb-banner-search', '.kb-menu-button', '.kb-nav', '.kb-frame > .kb-page'];
+for (const [label, viewport] of [['desk', { width: 1280, height: 800 }], ['mid', { width: 700, height: 800 }], ['phone', { width: 390, height: 800 }]] as const) {
+  test(`${label}: the banner and the page under it hold still while a page opens`, async ({ page }) => {
+    await page.setViewportSize(viewport);
+    await page.goto('/b/general?latency=2000');
+    await expect(rows(page).first()).toBeVisible();
+    const boxes = () => page.evaluate((selectors) => selectors.map((s) => {
+      const e = document.querySelector(s);
+      if (!e) return `${s}: none`;
+      const r = e.getBoundingClientRect();
+      return `${s}: ${Math.round(r.x)},${Math.round(r.y)} ${Math.round(r.width)}x${Math.round(r.height)}`;
+    }), STILL);
+    const rest = await boxes();
+    await rows(page).first().locator('.kb-thread-title').click();
+    await expect(banner(page)).toContainText('Opening ');
+    expect(await boxes()).toEqual(rest);
+    /* The address is one line, whatever it says. */
+    const lines = await banner(page).evaluate((e) => Math.round(e.getBoundingClientRect().height / parseFloat(getComputedStyle(e).lineHeight)));
+    expect(lines).toBe(1);
+  });
+}

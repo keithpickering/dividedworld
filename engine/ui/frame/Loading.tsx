@@ -12,7 +12,8 @@
  *
  * The text is the host at rest and `Opening {host}{path}…` while a click's load is out. A path segment
  * that is a UUID is cut to its first eight characters and an ellipsis, and the query and the fragment
- * are never shown. The status is read aloud when a load lands and is empty otherwise.
+ * are never shown. The status is read aloud when a load lands and is empty otherwise. The words stand on one line of a fixed width, cut
+ * with an ellipsis where they run long, so a click's `Opening …` moves nothing around them (frame.css, .kb-address).
  */
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigation } from '../router.tsx';
