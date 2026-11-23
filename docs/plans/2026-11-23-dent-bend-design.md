@@ -85,6 +85,16 @@ measured before Fab asks to be bent:
 
 The interface ships whatever the gate says: the words need it.
 
+### 2.4a Fab is the only layer that bends (the owner, after review)
+
+Feelin' Fab is the only effect that should be dentable for now: a foil is a surface, and a dent in a surface bends it.
+Hot Box's smoke, Glitter Bomb's glitter and Time Machine's effect would naturally lie above a dent, so none of them
+asks to be bent; each is no longer clipped by it. Time Machine blocks new effects while it is active anyway. A tiled
+layer that is ever bent would put `data-kb-bend` on the tiles' container, which fills the area.
+
+The owner named a richer interplay as out of scope here, to be taken up once this work lands: a chair clearing Hot
+Box's smoke as the cursor does, and a chair's impact sending Glitter Bomb's glitter flying.
+
 ### 2.5 The shake moves to the content area
 
 The hit's 4 px shake is set on the content area (an attribute of Steel Chair's, `data-dw-chair-shake`, beside the
@@ -107,8 +117,5 @@ transform on it traps nothing new, and the whole post shakes, foil and all.
 
 ## 4. Open
 
-- **Which other layers bend.** Glitter Bomb, Hot Box's tiles, Kick Me and Time Machine are left whole and shaded,
-  clipped no longer. Whether each asks to be bent is a look decision for its card, made with the owner when one is
-  taken up. A tiled layer would put `data-kb-bend` on the tiles' container, which fills the area.
 - **Two benders on one area.** Only Steel Chair bends. A second card that bends would need the properties to hold a
   list; the helper's single owner is where that is decided.
