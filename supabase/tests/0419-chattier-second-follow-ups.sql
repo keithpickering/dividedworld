@@ -190,9 +190,13 @@ begin
   from (select id, thread from acts where character = boss and kind = 'post' and thread = any (th) order by created_at desc limit 20) p;
   insert into pool_attempts (day, staff, session, thread, outcome, paid)
   select (now() at time zone 'UTC')::date, 'sf2-boss', sid, th[1 + (i % 80)], case i % 3 when 0 then 'refused' when 1 then 'rejected' else 'failed' end, i % 2 = 0 from generate_series(1, 60000) i;
+  -- Each attempt covers the reply of its own rank and the one 20000 ranks on: two equality joins (an `in` join would be a nested loop over both sides).
   insert into pool_attempt_replies (attempt, reply)
-  select a.id, r.id from (select id, row_number() over (order by id) n from pool_attempts) a
-  join (select id, row_number() over (order by id) n from acts where thread = any (th) and character = any (chars)) r on r.n in (a.n, a.n + 20000) and r.n <= 40000;
+  with a as (select id, row_number() over (order by id) n from pool_attempts),
+       r as (select id, row_number() over (order by id) n from acts where thread = any (th) and character = any (chars))
+  select a.id, r.id from a join r on r.n = a.n where r.n <= 40000
+  union all
+  select a.id, r.id from a join r on r.n = a.n + 20000 where r.n <= 40000;
   set local session_replication_role = origin;
   analyze pool_attempts;
   analyze pool_attempt_replies;
