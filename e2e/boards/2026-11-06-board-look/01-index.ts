@@ -17,6 +17,8 @@
  *  - A linked name is one link holding the character's avatar and the name (the avatar is the link's too, so the link's accessible name is the name alone), where the board draws the
  *    avatar beside a link of the name: the link starts at the avatar, 1.62em (the avatar, 1.27em, and the gap, 0.35em: 24.3px at this row's 15px text) left of the name, which stands where it stood; the shift holds the link to the x the board draws its name's link at.
  *  - A time is a link named by its words and where it goes ("Oct 6, 2026 — latest post in General"), the board's by the words alone.
+ *  - The build sets the tagline under the name (#1012), so the masthead is two lines, centered in a banner the board's height: the name stands 10px
+ *    higher than the board draws it (y 25, the board's 35), and nothing under the banner moves (the owner's word of 2026-11-23).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -25,7 +27,7 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1000 },
   build: { story: 'boards-01-index--index' },
   landmarks: [
-    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World' },
+    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World', buildShift: { y: -10 } },
     { id: 'tagline', role: 'text', name: 'dw.gripe', box: 'none' },
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav', box: 'position' },
