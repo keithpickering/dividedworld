@@ -339,6 +339,19 @@ describe('the page', () => {
     expect(ids).toHaveLength(4);
   });
 
+  test('shown on posts: the saved choice is checked when the page opens, from the trophies page, where the face read carries no shelf', async () => {
+    const { fake, pipe } = seeded();
+    const [p1, , p3] = ['p1', 'p2', 'p3'].map((k, i) => fake.seed.award(pipe, k, { at: Date.parse('2026-10-01T00:00:00Z') + i * 1000 }));
+    expect((await fake.showTrophies(pipe, [p1!, p3!])).ok).toBe(true);
+    /* The Supabase adapter's `characters` reads no shelf (trophy_shelf is the server's): a face carries no trophies. */
+    const read = fake.characters.bind(fake);
+    vi.spyOn(fake, 'characters').mockImplementation(async (ids) => (await read(ids)).map((c) => ({ ...c, trophies: [] })));
+    open(fake);
+    const group = await screen.findByRole('group', { name: 'Shown on posts' });
+    await waitFor(() => expect(within(group).getAllByRole('checkbox').filter((b) => (b as HTMLInputElement).checked)).toHaveLength(2));
+    expect(screen.getByText('2 of 3 checked. A belt held shows on its own, and is not a choice.')).toBeInTheDocument();
+  });
+
   test('is axe clean with pieces on the stage', async () => {
     const { container } = open(seeded().fake);
     press(await item('Headband'), 'Enter');
