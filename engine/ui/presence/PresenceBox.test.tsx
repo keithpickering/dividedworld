@@ -151,6 +151,17 @@ describe('the presence box', () => {
       expect(again).toHaveTextContent('Mabel, Test Cores');
     });
 
+    test('a Boss and a Mod in session are listed on the index too', async () => {
+      const { fake, show } = inSession();
+      fake.seed.staff('boss-a', 'Chief', 'boss');
+      fake.seed.staff('mod-a', 'Hall Monitor', 'mod');
+      for (const k of ['boss-a', 'mod-a']) fake.seed.staffSession(k, { startsAt: fake.clock.now() - 60_000, endsAt: fake.clock.now() + 3_600_000 });
+      show(<PresenceBox place={{ kind: 'index' }} heading="Who is online" />);
+      const box = await screen.findByRole('region', { name: 'Who is online' });
+      await within(box).findByRole('link', { name: 'Chief' });
+      expect(box).toHaveTextContent('Hall Monitor');
+    });
+
     test('one whose office is waiting is not listed on the index', async () => {
       const { fake, show } = inSession();
       fake.seed.setOffice('mabel', 'waiting');

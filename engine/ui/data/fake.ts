@@ -3315,10 +3315,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((s): Standing => ({ ...s, place: s.standing > 0 ? 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size : null }))
       .sort((a, b) => b.standing - a.standing || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
-  /** When the open chatter session of a staff character began, or null: none open, or it is no persona in play (not the 'member' office, so a Boss, a Mod Bot and one waiting or benched have none). */
+  /** When the open chatter session of a staff character began, or null: none open, or it is no persona in play (not a posting office, so one waiting or benched has none). */
   const inSession = (c: CharRec): number | null => {
-    /* A persona holds the 'member' office (a Boss and a Mod Bot have their own); one waiting or benched is not listed (0407's staff_office_now test). */
-    if (c.staff?.office !== 'member') return null;
+    /* The posting offices (boss, mod, member) are in session; one waiting or benched is not listed (0407's staff_office_now test). */
+    if (c.staff?.office !== 'boss' && c.staff?.office !== 'mod' && c.staff?.office !== 'member') return null;
     const at = now();
     const open = staffSessions.filter((x) => x.staff === c.staff!.key && x.startsAt <= at && at < x.endsAt);
     return open.length === 0 ? null : Math.min(...open.map((x) => x.startsAt));
