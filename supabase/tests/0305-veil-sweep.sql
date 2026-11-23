@@ -220,6 +220,7 @@ select 'function', n, m, w from (values
   ('boss_roster_names', 'no author', 'staff names'),
   ('cutting_acts', 'no author', 'the ids of the card Acts that cut a given list of plays (0405): ids alone, of Acts whose cut acts_public already shows; the Acts are read through acts_public by id, which applies every veil'),
   ('post_play_ids', 'no author', 'the ids of the plays in force on a list of posts and each kind''s newest and most drawn (0410): ids alone, from the kept rows of public Acts; the Acts are read through acts_public by id, which applies every veil'),
+  ('post_rewind_plays', 'no author', 'the live rewind plays on a list of posts (0413): play ids, posts and played times alone, from the kept rows of public Acts; each view is read through rewind_view, which reads acts_public and applies every veil'),
   ('post_kind_counts', 'no author', 'how many plays a post has had of each kind, and how many took (0410): counts of public plays by their public kind, a back counted as a back'),
   ('play_rider_ids', 'no author', 'the ids of the springs and take-backs of a list of backs (0410): ids alone; the Acts are read through acts_public by id, which applies every veil'),
   ('kind_play_ids', 'no author', 'the ids of a page of a kind''s plays that are over on a post (0410): ids alone, from the kept rows; the Acts are read through acts_public by id, which applies every veil'),
@@ -669,8 +670,9 @@ begin
   -- A wall on P: R's card, R's drawing on it, and the author's own wash of it (only the post's own character may wash, so a wash names the post's author wherever it is read).
   insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, '{"card": "swwall", "message": "", "config": {}, "layer": 1}') returning id into wall;
   perform open_surface(wall);
-  -- A rewind on P, written as place_cast writes one (0413): the point it names is now, so the view shows P as it stands.
-  insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, jsonb_build_object('card', 'swrewind', 'message', '', 'config', '{}'::jsonb, 'reach', 'post', 'ends', now() + interval '1 day', 'rewind_at', now())) returning id into rwd;
+  -- A rewind on P, written as place_cast writes one (0413): the point it names is now, so the view shows P as it stands. Its time is already up, so its freeze does not turn away the plays on P below; rewind_view
+  -- answers for a rewind whether or not it is still up, so the probe reads it all the same.
+  insert into acts (character, kind, thread, target_act_id, payload) values (r, 'card', t, p, jsonb_build_object('card', 'swrewind', 'message', '', 'config', '{}'::jsonb, 'reach', 'post', 'ends', now() - interval '1 second', 'rewind_at', now())) returning id into rwd;
   perform tests.become_service();
   perform draw_on_surface(ray, r, wall, '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}', (repeat('1', 300) || repeat('0', 9700))::bit(10000), 4000);
   wash := (wash_surface(ann, a, wall, '{"strokes": [{"width": 0.02, "points": [[0.1, 0.1]]}]}', (repeat('1', 100) || repeat('0', 9900))::bit(10000)) ->> 'id')::uuid;
