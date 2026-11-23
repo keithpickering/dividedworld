@@ -260,7 +260,7 @@ declare
   ann uuid := tests.account('cs-t-ann'); a uuid := tests.character(ann, 'Cs T Ann');
   bob uuid := tests.account('cs-t-bob'); b uuid := tests.character(bob, 'Cs T Bob');
   boss uuid := (select id from characters where staff = 'cs-boss');
-  p uuid; pm uuid; a1 uuid; a2 uuid; a3 uuid; a4 uuid; s1 uuid; l1 uuid; lp uuid; sset uuid; tpost uuid;
+  p uuid; pm uuid; a1 uuid; a2 uuid; a3 uuid; a4 uuid; s1 uuid; l1 uuid; lp uuid; sset uuid; tpost uuid; o1 uuid; v1 uuid; vplay uuid;
   w jsonb; sid bigint; msid bigint; closed bigint; made jsonb; said text; before_acts bigint; before_turns bigint; before_answers bigint; made_turn bigint; since timestamptz := now() - interval '2 days';
 begin
   p := pg_temp.staff_post('cs-boss', t, 'The boss speaks again.');
@@ -269,6 +269,11 @@ begin
   a2 := tests.act(b, 'post', t, '{"body": "Bob answers."}', p, now() - interval '1 hour');
   a3 := tests.act(b, 'post', t, '{"body": "Bob answers the mod."}', pm);
   s1 := pg_temp.staff_post('cs-mod', t, 'A colleague answers.', p);
+  -- A reply older than the wait (48 hours), and one under a live author veil: neither is waiting now, so neither is answered.
+  o1 := tests.act(a, 'post', t, '{"body": "Ann, three days ago."}', p, now() - interval '3 days');
+  v1 := tests.act(b, 'post', t, '{"body": "Bob, veiled."}', p, now() - interval '30 minutes');
+  vplay := tests.act(a, 'card', t, '{"card": "cswveil", "reach": "post"}', v1);
+  insert into post_veils (play, post, veil, author, caster_account, ends_at, post_kind) values (vplay, v1, 'author', b, bob, now() + interval '1 day', 'post');
   lp := pg_temp.staff_post('cs-boss', t2, 'A locked thread.');
   l1 := tests.act(a, 'post', t2, '{"body": "Ann in the locked thread."}', lp);
   perform set_config('kayfabb.staff_writer', 'on', true);
@@ -301,7 +306,11 @@ begin
   said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, a2, array[]::uuid[], 'No.'));
   if said is null or said !~ '^22023' then raise exception 'a turn with no answers was written: %', said; end if;
   said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t2, l1, array[l1], 'Locked.'));
-  if said is null then raise exception 'a locked-out thread took a turn'; end if;
+  if said is null or said !~ '^22023' then raise exception 'a reply in a locked-out thread was answered: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, o1, array[o1, a2], 'Old.'));
+  if said is null or said !~ '^22023' then raise exception 'a reply older than the wait was answered: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, v1, array[v1, a2], 'Veiled.'));
+  if said is null or said !~ '^22023' then raise exception 'a reply under an author veil was answered: %', said; end if;
   if (select count(*) from acts) is distinct from before_acts or (select count(*) from pool_turns) is distinct from before_turns or (select count(*) from pool_answered) is distinct from before_answers then raise exception 'a refused turn wrote something'; end if;
 
   -- A turn: the post, the turn and the answers together.
@@ -469,6 +478,55 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- pool_waiting is bounded: at most 12 threads for a persona and 20 replies in a thread, the newest ----
+do $$
+declare
+  late uuid := (select id from characters where staff = 'cs-late');
+  pl uuid := tests.character(tests.account('cs-bound'), 'Cs Bound');
+  th uuid; busy uuid; p uuid; w jsonb;
+begin
+  for i in 1 .. 14 loop
+    th := tests.thread('Bound ' || i);
+    perform set_config('kayfabb.staff_writer', 'on', true);
+    insert into acts (character, kind, thread, payload) values (late, 'post', th, '{"body": "A post."}') returning id into p;
+    perform set_config('kayfabb.staff_writer', '', true);
+    if i = 14 then busy := th; end if;
+    -- Thread i's newest reply is 15 - i minutes old, so threads 1 and 2 are the two left out; thread 14 has 25 replies.
+    perform tests.act(pl, 'post', th, '{"body": "A reply."}', p, now() - (15 - i) * interval '1 minute');
+    if i = 14 then
+      for j in 1 .. 24 loop perform tests.act(pl, 'post', th, jsonb_build_object('body', 'More ' || j), p, now() - interval '1 minute' - j * interval '1 minute'); end loop;
+    end if;
+  end loop;
+  perform tests.become_service();
+  w := pool_waiting(array['cs-late'], now() - interval '2 days');
+  if jsonb_array_length(w) is distinct from 12 then raise exception 'a persona''s threads are bounded at 12: %', jsonb_array_length(w); end if;
+  if exists (select 1 from jsonb_array_elements(w) e where e ->> 'thread' in (select id::text from threads where title in ('Bound 1', 'Bound 2'))) then raise exception 'the two threads with the oldest replies are left out, not the newest'; end if;
+  if not exists (select 1 from jsonb_array_elements(w) e where e ->> 'thread' = busy::text and jsonb_array_length(e -> 'replies') = 20) then raise exception 'a thread''s replies are bounded at 20: %', w; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- pool_conversation clamps what it is asked for: 20 posts, 10 replies, 2000 characters ----
+do $$
+declare
+  t uuid := tests.thread('Clamped');
+  pl uuid := tests.character(tests.account('cs-clamp'), 'Cs Clamp');
+  boss uuid := (select id from characters where staff = 'cs-boss');
+  p uuid; r jsonb;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  for i in 1 .. 25 loop
+    insert into acts (character, kind, thread, payload, created_at) values (boss, 'post', t, jsonb_build_object('body', case when i = 25 then repeat('x', 3000) else 'Post ' || i end), now() - (30 - i) * interval '1 minute') returning id into p;
+  end loop;
+  perform set_config('kayfabb.staff_writer', '', true);
+  for i in 1 .. 15 loop perform tests.act(pl, 'post', t, '{"body": "A reply."}', p, now() - i * interval '10 seconds'); end loop;
+  perform tests.become_service();
+  r := pool_conversation('cs-boss', t, 1000, 1000, 100000);
+  if jsonb_array_length(r -> 'posts') is distinct from 20 then raise exception 'the posts asked for are clamped at 20: %', jsonb_array_length(r -> 'posts'); end if;
+  if jsonb_array_length(r -> 'posts' -> 19 -> 'replies') is distinct from 10 then raise exception 'the replies asked for are clamped at 10'; end if;
+  if length(r -> 'posts' -> 19 ->> 'body') is distinct from 2000 or (r -> 'posts' -> 19 ->> 'cut')::boolean is distinct from true then raise exception 'the characters asked for are clamped at 2000'; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- The index's names are capped for players alone: a persona in session takes no player's slot ----
 do $$
 declare
@@ -561,7 +619,7 @@ do $$
 declare
   fns regprocedure[] := array[
     'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
-    'pool_waiting_rows(text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text)',
+    'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text)',
     'pool_conversation(text, uuid, integer, integer, integer)', 'pool_record(uuid, text)', 'staff_points_latest(text)', 'staff_rows_append_only()']::regprocedure[];
   found text[];
 begin

@@ -13,9 +13,11 @@
 --
 -- 2. the database (Task 4; plan Task 4, design sections 2, 3, 4 and 7)
 --   tables      staff_sessions, pool_kept_picks, pool_turns, pool_answered, staff_points, pool_round_claims: each append-only by a trigger firing always, no client's, RLS on.
---   functions   apply_meeting (0403_departed_personas.sql) writes the meeting's talking points (section 3 below); claim_pool_round, write_sessions, sessions_awake, sessions_day, keep_pick, kept_picks, pool_waiting_rows (invoker, one inlinable read), pool_waiting, pool_turns_today,
---               write_staff_turn, pool_conversation, pool_record, staff_points_latest: security definer, search_path pinned, the service role's only.
---   presence    presence_listed (0357_post_veils.sql) gains a persona in session on its threads; presence_box (0128_groups.sql, plan settings of 0368_client_reads_plan_once.sql) lists it in the index.
+--   functions   apply_meeting (0403_departed_personas.sql) writes the meeting's talking points (section 3 below); claim_pool_round, write_sessions, sessions_awake, sessions_day, keep_pick, kept_picks, pool_waiting,
+--               pool_turns_today, write_staff_turn, pool_conversation, pool_record, staff_points_latest: security definer, search_path pinned, the service role's only. pool_waiting_rows, pool_waiting_in_thread and
+--               pool_waiting_in_board are the one waiting-reply read in three keys (invoker SQL, so the planner inlines each); staff_rows_append_only is the tables' trigger.
+--   presence    presence_listed (0357_post_veils.sql) is not redefined; presence_box (0128_groups.sql, plan settings of 0368_client_reads_plan_once.sql) lists a persona in session itself: in a thread's or a board's box
+--               by its own posts since the session began or a reply waiting there, in the index's box by the session alone.
 -- Ways out: a session ends at its stated time by itself; a reply waits only waitHours; a kept pick is spent by the day's end; nothing here holds a player.
 -- Masks: every read below is of public posts by characters, public reaction totals, staff facts and the instance's settings; none reads who owns a character, a class or who reacted.
 
@@ -329,6 +331,8 @@ end $$;
 
 -- ------------------------------------------------------------------------------------------------- the sessions ----
 
+-- Rerunning is safe because the draw is deterministic (engine/system/sessions.ts, seeded from the day and the persona): a rerun of the day's first round proposes the same rows, which `on conflict do nothing` leaves as they are. A draw that
+-- changed between two runs of one day would add sessions beside the first; the unique key is (day, staff, starts_at), not (day, staff).
 -- The day's sessions, `rows` being [{staff, start, end}] with `start` and `end` in minutes from 00:00 UTC of `on_day` (what drawSessions draws, engine/system/sessions.ts). A row already there is left as it is, so a rerun of the
 -- day's first round writes nothing twice; answers how many sessions the day holds. A staff key that is not a posting persona (a persona in a posting office: not the developer or the stand-in, not benched, not waiting) is refused, and so is a span outside the day.
 create function write_sessions(on_day date, rows jsonb) returns integer
@@ -398,6 +402,9 @@ $$;
 -- priorityDays, answered by no turn (no pool_answered row), in a thread the persona is not locked out of (locked_out_until, 0402_thread_lockout.sql). One row for each reply: (staff, thread, act, author, at).
 -- (The pool setting is read from the settings table, so a database that has none yet reads the defaults, 28 days.) It reads through the persona's own recent posts (acts_character) and, for each, the replies found by the target index (acts_target), never a scan of the window's posts (the newest 200 waiting replies to a post are read, every filter applied before that cap, which also keeps the planner to one index probe for each of the persona's posts, as a join by merge would read every reply there is). A plain invoker SQL function, so the planner
 -- inlines it: the query is the plan the test explains, and pool_waiting and the presence view read it as one.
+-- The three functions below, pool_waiting_rows, pool_waiting_in_thread and pool_waiting_in_board, are one read and change together: a predicate that makes a reply waiting is edited in all three, and write_staff_turn
+-- asks pool_waiting_in_thread for what it may answer, so the three cannot drift apart without a test failing. They are three, not one with optional keys, because each must be a plain inlinable SQL function whose own-posts scan
+-- is keyed by a constant (a thread, a board) that the planner sees: with `in_thread is null or ...` in one body, the generic plan presence_box runs under cannot use the thread's index.
 create function pool_waiting_rows(staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
 language sql stable as $$
   select c.staff, r.thread, r.id, r.character, r.created_at
@@ -482,13 +489,21 @@ grant execute on function pool_waiting_in_board(uuid, text[], timestamptz) to se
 
 -- For each persona of `staff_keys`, its threads with waiting replies: [{staff, thread, heat, replies: [{act, author, at}]}], the replies newest last. `heat` is the public reaction total on the persona's turns in that
 -- thread, read as pool_signals reads its tallies (reaction_tallies_open, 0358_blind_totals.sql): the totals the crowd sees, never who reacted.
+-- Bounded, so a round's read is flat however many players talk: at most 12 threads for a persona (those with the newest waiting reply) and 20 replies in a thread (the newest 20; the others stay waiting for a later round, and a
+-- turn answers only what it was shown). Behind it the read is a persona's own posts of the last priorityDays and the newest 200 waiting replies to each, which a persona's few posts a day keep small.
 create function pool_waiting(staff_keys text[], since timestamptz) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(jsonb_build_object('staff', g.staff, 'thread', g.thread,
       'heat', coalesce((select sum(tt.count) from pool_turns t join reaction_tallies_open tt on tt.act = t.post_act where t.staff = g.staff and t.thread = g.thread), 0),
       'replies', g.replies) order by g.staff, g.thread), '[]'::jsonb)
-  from (select w.staff, w.thread, jsonb_agg(jsonb_build_object('act', w.act, 'author', w.author, 'at', w.at) order by w.at, w.act) as replies
-        from pool_waiting_rows(staff_keys, since) w group by w.staff, w.thread) g
+  from (
+    select t.staff, t.thread, t.replies
+    from (select r.staff, r.thread, jsonb_agg(jsonb_build_object('act', r.act, 'author', r.author, 'at', r.at) order by r.at, r.act) as replies,
+                 row_number() over (partition by r.staff order by max(r.at) desc, r.thread) as rank
+          from (select w.*, row_number() over (partition by w.staff, w.thread order by w.at desc, w.act desc) as n
+                from pool_waiting_rows(staff_keys, since) w) r
+          where r.n <= 20 group by r.staff, r.thread) t
+    where t.rank <= 12) g
 $$;
 
 -- The turns written on a UTC day, instance-wide (the ceiling counts calls and nothing else).
@@ -498,8 +513,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
 $$;
 
 -- A turn, written whole: the post (through write_staff_act, 0402_thread_lockout.sql, so a lockout, a ban or a benched persona refuses exactly as it does there), its pool_turns row and a pool_answered row for each
--- reply it answers, in one transaction. Refuses (writing nothing, hint 'kayfabb.refusal') a session that is not the persona's or not open now, a `quoting` not among `answers`, an answer that is not a player's post in the
--- thread replying to one of the persona's own, and any answer already answered. One transaction, so a turn has no orphan: a lost answer is found as answered by the next round.
+-- reply it answers, in one transaction. Refuses (writing nothing, hint 'kayfabb.refusal') a session that is not the persona's or not open now, a `quoting` not among `answers`, any answer already answered, and an answer that is not waiting now (not a player's reply to one of the persona's own posts in the thread,
+-- or older than the wait, or under an author veil, or in a thread the persona is locked out of). One transaction, so a turn has no orphan: a lost answer is found as answered by the next round.
 create function write_staff_turn(staff_key text, in_session bigint, in_thread uuid, quoting uuid, answers uuid[], body text) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -523,13 +538,16 @@ begin
   if cardinality(wanted) = 0 or write_staff_turn.quoting is null or not (write_staff_turn.quoting = any (wanted)) then
     raise exception 'a turn quotes one of the replies it answers' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
-  -- Each answer is a post in the thread by a character that is not staff (a staff post is never a waiting reply), replying to a post of this persona.
-  if (select count(*) from acts a join acts t on t.id = a.target_act_id and t.character = who and t.kind = 'post' join characters w on w.id = a.character
-      where a.id = any (wanted) and a.kind = 'post' and a.thread = in_thread and w.staff is null) is distinct from cardinality(wanted) then
-    raise exception 'a turn answers players'' posts in its thread that reply to its own' using hint = 'kayfabb.refusal', errcode = '22023';
-  end if;
+  -- A reply is answered once. Two guards: the persona's lock above serializes its turns, so the second of two racing turns finds the first's pool_answered rows here; and pool_answered's primary key (reply) refuses a
+  -- duplicate whatever got past this read, rolling the whole turn back.
   if exists (select 1 from pool_answered p where p.reply = any (wanted)) then
     raise exception 'a reply is answered once' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- Each answer is waiting now, by the very read that finds waiting replies (pool_waiting_in_thread): a public reply by a character that is not staff to a post of this persona in this thread, within the wait, not under an
+  -- author veil, not in a thread the persona is locked out of.
+  if (select count(*) from pool_waiting_in_thread(in_thread, array[staff_key], now() - coalesce(((select g.value from settings g where g.key = 'pool') -> 'turns' ->> 'waitHours')::integer, 48) * interval '1 hour') w
+      where w.act = any (wanted)) is distinct from cardinality(wanted) then
+    raise exception 'a turn answers the replies waiting on its own posts in its thread' using hint = 'kayfabb.refusal', errcode = '22023';
   end if;
   perform within('body', body, 'postMaxLength');
   written := write_staff_act(staff_key, 'post', in_thread, write_staff_turn.quoting, jsonb_build_object('body', body));
@@ -542,7 +560,7 @@ end $$;
 -- --------------------------------------------------------------------------------------------- what a turn reads ----
 
 -- The persona's conversation in a thread: its newest `most` posts there, oldest first, each with the newest `replies` replies to it (oldest first), every body cut to `chars` as pool_thread cuts (0366_excerpts_and_orders.sql)
--- with `cut` saying so, each reply's author's name and pronouns. Public play only (acts_public, characters_public). {posts: [{act, at, body, cut, replies: [{act, author, name, pronouns, at, body, cut}]}]}
+-- with `cut` saying so, each reply's author's name and pronouns. What is asked for is clamped (at most 20 posts, 10 replies to a post, 2000 characters), so the read is bounded whatever a caller passes. Public play only (acts_public, characters_public). {posts: [{act, at, body, cut, replies: [{act, author, name, pronouns, at, body, cut}]}]}
 create function pool_conversation(staff_key text, in_thread uuid, most integer, replies integer, chars integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select jsonb_build_object('posts', coalesce((
@@ -550,17 +568,17 @@ language sql stable security definer set search_path = public, pg_temp as $$
         'replies', coalesce((
           select jsonb_agg(jsonb_build_object('act', r.id, 'author', r.character, 'name', r.name, 'pronouns', r.pronouns, 'at', r.created_at, 'body', r.body, 'cut', r.cut) order by r.created_at, r.id)
           from (select x.id, x.character, x.created_at, c.name, (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
-                       left(coalesce(x.current_payload ->> 'body', ''), greatest(chars, 1)) as body,
-                       length(coalesce(x.current_payload ->> 'body', '')) > greatest(chars, 1) as cut
+                       left(coalesce(x.current_payload ->> 'body', ''), least(greatest(chars, 1), 2000)) as body,
+                       length(coalesce(x.current_payload ->> 'body', '')) > least(greatest(chars, 1), 2000) as cut
                 from acts_public x join characters_public c on c.id = x.character
                 where x.target_act_id = m.id and x.kind = 'post'
-                order by x.created_at desc, x.id desc limit greatest(replies, 0)) r), '[]'::jsonb))
+                order by x.created_at desc, x.id desc limit least(greatest(replies, 0), 10)) r), '[]'::jsonb))
       order by m.created_at, m.id)
-    from (select a.id, a.created_at, left(coalesce(a.current_payload ->> 'body', ''), greatest(chars, 1)) as body,
-                 length(coalesce(a.current_payload ->> 'body', '')) > greatest(chars, 1) as cut
+    from (select a.id, a.created_at, left(coalesce(a.current_payload ->> 'body', ''), least(greatest(chars, 1), 2000)) as body,
+                 length(coalesce(a.current_payload ->> 'body', '')) > least(greatest(chars, 1), 2000) as cut
           from acts_public a
           where a.thread = in_thread and a.kind = 'post' and a.character = (select c.id from characters c where c.staff = staff_key)
-          order by a.created_at desc, a.id desc limit greatest(most, 0)) m), '[]'::jsonb))
+          order by a.created_at desc, a.id desc limit least(greatest(most, 0), 20)) m), '[]'::jsonb))
 $$;
 
 -- Today's public record for a persona's call in a thread: {moves, rules, order}.
