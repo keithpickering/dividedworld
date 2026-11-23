@@ -1,4 +1,4 @@
--- Hot triggers name their post: the database (docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Task 1; design sections 0 to 2).
+-- Hot triggers name their post: the database (docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Tasks 1 and 4; design sections 0 to 2 and 4).
 --
 -- Task 1. pool_signals' `hot` part (0358_blind_totals.sql) named threads and their authors and no post, so a hot trigger could quote nothing. Each author of a hot thread now carries `top`: the author's most reacted post
 -- in the thread inside the window (the totals the crowd sees, reaction_tallies_open, so a post under a live totals veil counts none; a tie to the newer post), read through acts_thread_posts (thread, character,
@@ -113,3 +113,54 @@ begin
   ) into result;
   return result;
 end $$;
+
+
+-- ---- Task 4. The staff's spin (design section 4) ----
+-- write_staff_spin: a persona's thread that is a spin of a post. It is write_staff_thread (0089) with a spin's origin: the thread carries origin_act_id and its first Act is a `spin` aimed at the origin (target_act_id), as spin_written
+-- (0357_post_veils.sql, the latest) writes it for a player; the Act's payload is the marker merged under {title, body}, as a player's spin's is {title, body}.
+-- From write_staff_thread, the checks of the persona: it exists (P0002), it is a persona and not the developer (42501), its office is not waiting or benched (55000); title and body within titleMaxLength and postMaxLength, the body not
+-- empty (a spin by a player may have none; a persona's thread has words), the staff flag open for the inserts and put back after.
+-- From spin_written, the checks of the origin (spin, the latest, takes the account and the character first: acting, not_banned, not_barred, write_framed and draw_visits are all about the player's account and words, and a persona
+-- has none of them, as write_staff_thread has none):
+--   1. the origin is an Act that is not an edit (an edit is not a thing spun from), else the same refusal, P0002 "there is no such Act to spin from";
+--   2. an origin on The System's board lands the thread on players_board(), the first open board, never on a system board (a thread there is the System's own);
+--   3. the board is not closed: threads_on_open_board (0339), a trigger on every insert into threads, holds it for this insert as for any other.
+-- Bars and bans are not asked of the staff, as write_staff_thread does not ask them (write_staff_act asks only a thread lockout, of a post in that thread; a spin writes a new thread).
+-- Not carried, because they are about a post a spin is pressed AT (`at_post`, the card-on-a-post spin), which this spin never has: the card is on that post, the post's shown author (shown_author), the live play (play_reach). A veil on
+-- the origin is no check of spin's: a spin of a veiled post lands as it does for a player, and a veil's own readers (the shown author, public_payload) cover what is hidden.
+-- The Act triggers an insert of a spin meets are the ones a staff post meets: acts_well_formed (the staff flag), the counts trigger (a spin counts as a spin), the at-post moment's trigger (only for a payload with `at`, so none).
+-- Ways out: no state is added; the thread is an ordinary thread, and the spin an ordinary spin.
+-- Masks: no private fact is read or written; a persona's thread names its persona and its origin, both public.
+-- The test that drives it red is supabase/tests/0420-hot-posts.sql.
+create function write_staff_spin(staff_key text, origin uuid, title text, body text, marker jsonb default '{}')
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  whose text;
+  held text;
+  on_board uuid;
+  made uuid;
+  written uuid;
+  flag text;
+begin
+  select c.id, c.staff_kind into who, whose from characters c where c.staff = staff_key;
+  if who is null then raise exception 'there is no staff member "%"', staff_key using errcode = 'P0002'; end if;
+  if whose is distinct from 'persona' then raise exception 'only a persona spins a thread' using errcode = '42501'; end if;
+  select o.office into held from staff_office_now o where o.staff = staff_key;
+  if held in ('waiting', 'benched') then raise exception 'a % persona writes nothing', held using errcode = '55000'; end if;
+  perform within('title', title, 'titleMaxLength');
+  perform within('body', body, 'postMaxLength');
+  select case when b.is_system then players_board() else b.id end into on_board
+  from acts a join threads t on t.id = a.thread join boards b on b.id = t.board where a.id = write_staff_spin.origin and a.kind <> 'edit';
+  if on_board is null then raise exception 'there is no such Act to spin from' using errcode = 'P0002'; end if;
+  flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into threads (board, title, origin_act_id) values (on_board, title, write_staff_spin.origin) returning id into made;
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (who, 'spin', made, write_staff_spin.origin, coalesce(marker, '{}'::jsonb) || jsonb_build_object('title', title, 'body', body)) returning id into written;
+  perform set_config('kayfabb.staff_writer', flag, true);
+  return jsonb_build_object('thread', thread_projection(made), 'act', act_projection(written));
+end $$;
+revoke execute on function write_staff_spin(text, uuid, text, text, jsonb) from public, anon, authenticated;
+grant execute on function write_staff_spin(text, uuid, text, text, jsonb) to service_role;

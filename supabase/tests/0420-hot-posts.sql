@@ -1,4 +1,4 @@
--- Hot triggers name their post (supabase/migrations/0420_hot_posts.sql; docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Task 1).
+-- Hot triggers name their post (supabase/migrations/0420_hot_posts.sql; docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Tasks 1 and 4).
 -- Task 1: pool_signals' `hot` part carries, for each of a hot thread's authors, `top` (that author's most reacted post in the thread inside the window, a tie to the newer, a post under a live totals veil counting none),
 -- and for the thread `tops` (its two most reacted posts, by two different characters, each {act, character}). Each author's `top` is a probe of acts_thread_posts; `tops` is one index pass over the thread's window posts.
 
@@ -6,14 +6,22 @@ do $$
 begin
   perform seed_instance(jsonb_build_object(
     'settings', jsonb_build_object('systemEnabled', true, 'structuralHoldHours', 24, 'rosterRecentExcluded', 0, 'inheritanceGraceDays', 3,
-      'seasonLength', jsonb_build_object('unit', 'day', 'count', 1)),
+      'seasonLength', jsonb_build_object('unit', 'day', 'count', 1),
+      'systemLines', jsonb_build_object('moveLanded', jsonb_build_array('It is done: {move}.'), 'moveSuperseded', jsonb_build_array('Superseded: {move}.'), 'moveReversed', jsonb_build_array('Reversed: {move}.')),
+      'systemMoveWords', jsonb_build_object('mergeBoard', 'the merging of a board into another')),
     'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
+    'developer', jsonb_build_object('name', 'Hp Gabe', 'title', 'Made this.', 'avatar', 'gabe'),
     'system', jsonb_build_object('announcementsTitle', 'Announcements', 'firstBoss', 'hp-pat',
-      'staff', jsonb_build_array(jsonb_build_object('key', 'hp-pat', 'name', 'Hp Pat', 'title', 'Boss', 'signature', 'a')),
+      'staff', jsonb_build_array(jsonb_build_object('key', 'hp-pat', 'name', 'Hp Pat', 'title', 'Boss', 'signature', 'a'),
+        jsonb_build_object('key', 'hp-wait', 'name', 'Hp Wait', 'title', 'Waiting', 'signature', 'b'),
+        jsonb_build_object('key', 'hp-bench', 'name', 'Hp Bench', 'title', 'Bench', 'signature', 'c')),
       'firstStaff', jsonb_build_array('hp-pat'),
-      'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
+      'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true),
+        jsonb_build_object('key', 'mergeBoard', 'structural', true, 'shapesBoard', true, 'lasting', true, 'offices', jsonb_build_array('boss'))),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
   insert into settings (key, value) values ('digestThreads', '3'), ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}}, "turns": {"waitHours": 48, "perThread": 2, "perSession": 4, "perDay": 60}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
+  update characters set debuted_at = now() where staff = 'hp-bench';
+  insert into staff_offices (staff, office, cause) values ('hp-bench', 'benched', 'admin');
 end $$;
 
 -- The window is far from now: other files commit rows that a window around now would count.
@@ -189,4 +197,93 @@ begin
   execute q into got;
   reset role;
   if got is null then raise exception 'the top read of a character with posts in the window answers none'; end if;
+end $$;
+
+-- ---- Task 4: write_staff_spin ----
+-- A persona's spin of a post: a thread on the post's board with origin_act_id set and a spin Act aimed at the origin; a spin of a post on The System's board lands on the players' board; a waiting or benched persona, a
+-- non-persona, an empty body, an edit as origin and a missing origin are each refused; a client cannot call it.
+create function pg_temp.refused(stmt text) returns text language plpgsql as $$
+begin execute stmt; return null; exception when others then return sqlstate || ' ' || sqlerrm; end $$;
+
+do $$
+declare
+  ann uuid := tests.character(tests.account('hs-ann'), 'Hs Ann');
+  th uuid := tests.thread('Hs Origin');
+  post uuid := tests.post(ann, th, 'Spin me.');
+  edit uuid := tests.act(ann, 'edit', th, '{"body": "Spun."}', post);
+  sys_thread uuid := (select t.id from threads t join boards b on b.id = t.board where b.is_system limit 1);
+  sys_post uuid; gone uuid; keep uuid; gone_post uuid; q bigint; m bigint;
+  r jsonb; made uuid; said text; fl text; who text;
+begin
+  sys_post := tests.post(ann, sys_thread, 'On the system board.');
+  perform tests.become_service();
+  r := write_staff_spin('hp-pat', post, 'A spun title', 'The spinning words.', '{"pool": "2051-03-01"}');
+  made := (r -> 'act' ->> 'id')::uuid;
+  if made is null then raise exception 'the spin wrote no Act: %', r; end if;
+  if (select a.kind from acts a where a.id = made) is distinct from 'spin' then raise exception 'the Act is no spin'; end if;
+  if (select a.target_act_id from acts a where a.id = made) is distinct from post then raise exception 'the spin does not aim at its origin'; end if;
+  if (select a.character from acts a where a.id = made) is distinct from (select id from characters where staff = 'hp-pat') then raise exception 'the spin is not the persona''s'; end if;
+  if (select a.payload from acts a where a.id = made) is distinct from '{"pool": "2051-03-01", "title": "A spun title", "body": "The spinning words."}'::jsonb then raise exception 'the spin''s payload: %', (select a.payload from acts a where a.id = made); end if;
+  if (select t.origin_act_id from threads t where t.id = (select a.thread from acts a where a.id = made)) is distinct from post then raise exception 'the thread does not carry its origin'; end if;
+  if (select t.board from threads t where t.id = (select a.thread from acts a where a.id = made)) is distinct from (select t.board from threads t where t.id = th) then raise exception 'the spun thread is not on the origin''s board'; end if;
+  if r -> 'thread' is null then raise exception 'no thread in the answer: %', r; end if;
+  -- a post on The System's board: the players' board
+  r := write_staff_spin('hp-pat', sys_post, 'From the system', 'Words.');
+  if (select t.board from threads t where t.id = (select a.thread from acts a where a.id = (r -> 'act' ->> 'id')::uuid)) is distinct from players_board() then raise exception 'a spin of a post on The System''s board did not land on the players'' board'; end if;
+  if (select t.origin_act_id from threads t where t.id = (select a.thread from acts a where a.id = (r -> 'act' ->> 'id')::uuid)) is distinct from sys_post then raise exception 'that thread lost its origin'; end if;
+  -- refusals
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-wait', post, 'T', 'B'));
+  if said is null or said !~ '^55000 a waiting persona writes nothing' then raise exception 'a waiting persona spun: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-bench', post, 'T', 'B'));
+  if said is null or said !~ '^55000 a benched persona writes nothing' then raise exception 'a benched persona spun: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', (select staff from characters where staff_kind = 'developer'), post, 'T', 'B'));
+  if said is null or said !~ '^42501' then raise exception 'the developer spun: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-nobody', post, 'T', 'B'));
+  if said is null or said !~ '^P0002' then raise exception 'no one spun: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', post, 'T', E' \n '));
+  if said is null or said !~ '^22023 body is empty' then raise exception 'an empty body was spun, or refused in other words: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', post, E' ', 'B'));
+  if said is null or said !~ '^22023 title is empty' then raise exception 'a blank title was spun, or refused in other words: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', post, repeat('t', (setting('titleMaxLength'))::int + 1), 'B'));
+  if said is null or said !~ '^22001' then raise exception 'a title past titleMaxLength was spun: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', post, 'T', repeat('b', (setting('postMaxLength'))::int + 1)));
+  if said is null or said !~ '^22001' then raise exception 'a body past postMaxLength was spun: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', edit, 'T', 'B'));
+  if said is null or said !~ '^P0002' then raise exception 'an edit was spun from: %', said; end if;
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', gen_random_uuid(), 'T', 'B'));
+  if said is null or said !~ '^P0002' then raise exception 'a missing origin was spun from: %', said; end if;
+  perform tests.unbecome();
+  -- a board that is closed (merged away, landed by the tick): a spin of a post on it is refused by threads_on_open_board (0339), as every other insert into threads is
+  insert into boards (slug, name) values ('hp-gone', 'Hp Gone'), ('hp-keep', 'Hp Keep');
+  select id into gone from boards where slug = 'hp-gone'; select id into keep from boards where slug = 'hp-keep';
+  insert into threads (board, title) values (gone, 'Hs Doomed') returning id into th;
+  gone_post := tests.post(ann, th, 'On a board to be merged.');
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values (m, 'hp-pat', 'mergeBoard', jsonb_build_object('board', gone, 'into', keep), null, 'because', now() - interval '1 minute', now() - interval '1 minute', true) returning id into q;
+  perform tests.become_service();
+  perform system_tick();
+  if (select landed_act from queued_moves where id = q) is null then raise exception 'the merge did not land'; end if;
+  if board_closed_to(gone) is null then raise exception 'the board is not closed'; end if;
+  -- The merge carried the origin's thread to the board it went into, so a spin of it lands there. A spin of a post still on the closed board (a thread the merge has not carried yet) is what the guard refuses: the thread is put back on
+  -- the closed board in the replica role, as the fixtures write rows, and a spin of its post meets the trigger.
+  perform tests.unbecome();
+  set local session_replication_role = replica;
+  update threads set board = gone where id = th;
+  set local session_replication_role = origin;
+  perform tests.become_service();
+  said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', gone_post, 'T', 'B'));
+  if said is null then raise exception 'a spin of a post on a closed board was written'; end if;
+  if said !~ '^55000 .*merged' then raise exception 'a spin on a closed board is not refused as a thread on one: %', said; end if;
+  -- The refusal fired after the flag was opened (the trigger meets the insert), so the flag put back is what the error path restored.
+  fl := coalesce(current_setting('kayfabb.staff_writer', true), '');
+  if fl <> '' then raise exception 'the staff flag was left open after a refused insert: %', fl; end if;
+  perform tests.unbecome();
+  -- a client cannot call it
+  foreach who in array array['anon', 'authenticated'] loop
+    perform set_config('role', who, true);
+    said := pg_temp.refused(format('select write_staff_spin(%L, %L, %L, %L)', 'hp-pat', post, 'T', 'B'));
+    perform tests.unbecome();
+    if said is null or said !~ '^42501' then raise exception '% can call write_staff_spin: %', who, said; end if;
+  end loop;
 end $$;
