@@ -223,6 +223,26 @@ describe('the front door\'s saved states and surface draws', () => {
     expect(s.covered).toBeGreaterThan(0);
   });
 
+  test('overlapping draws each carry the cells they own, a later draw taking cells from an earlier one, and the shares sum to the cells covered', () => {
+    drawWith([wallPost([stroke(0.2), stroke(0.25), stroke(0.6)])]);
+    const s = wallSeen!.surface!;
+    const [a, b, c] = [cellsOf([stroke(0.2)]), cellsOf([stroke(0.25)]), cellsOf([stroke(0.6)])];
+    const shares = s.acts!.map((x) => (x as { share: number }).share);
+    expect(count(a) + count(b)).toBeGreaterThan(count(union(a, b)));
+    expect(shares).toEqual([count(a) - (count(a) + count(b) - count(union(a, b))), count(b), count(c)]);
+    expect(shares[0]).toBeGreaterThan(0);
+    expect(shares.reduce((x, y) => x + y, 0)).toBe(s.covered);
+  });
+
+  test('a draw a later one paints over entirely owns nothing, so the wall does not list it, as a live thread\'s would not', () => {
+    const wide: SurfaceStroke = { width: 0.4, aspect: 1, points: [[0.0, 0.2], [1.0, 0.2]] };
+    drawWith([wallPost([stroke(0.2), wide])]);
+    const s = wallSeen!.surface!;
+    expect(s.acts).toHaveLength(1);
+    expect(s.acts![0]!.character).toBe('front-door:bo');
+    expect((s.acts![0] as { share: number }).share).toBe(s.covered);
+  });
+
   test('a draw the card\'s rules refuse is not staged, and the others are', () => {
     drawWith([wallPost([stroke(0.2)], [{ by: 'bo', draw: 'not a draw' }, { by: 'bo', draw: { strokes: [stroke(0.6)] } }])]);
     const s = wallSeen!.surface!;

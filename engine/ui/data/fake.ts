@@ -29,7 +29,7 @@ import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
 import { pointAt, rewindConfig, rewindPointProblem } from '../../rules/rewind.ts';
-import { GRID, count, fromBits, minus, union, type Cells } from '../../rules/surface.ts';
+import { BYTES, GRID, count, fromBits, hasCell, minus, union, type Cells } from '../../rules/surface.ts';
 import { earnedGroup } from '../../rules/groups.ts';
 import { ALERT_KINDS, isWritten, type WrittenKind } from '../../rules/alerts.ts';
 import { ANONYMOUS_STAFF_KEY, DEFAULT_ANONYMOUS, DEFAULT_DEVELOPER } from '../../rules/instance.ts';
@@ -2065,7 +2065,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** A surface as the database's `surfaces` row holds it: the cells covered, the live draw (1-based place in `live`, 0 for none) that last inked each, and the live list. */
   interface SurfaceRec { cover: Cells; owners: Uint16Array; live: Id[]; readonly cells: Map<Id, Cells> }
   const surfaceRecs = new Map<Id, SurfaceRec>();
-  const hasCell = (c: Cells, i: number): boolean => (c[i >> 3]! & (0x80 >> (i & 7))) !== 0;
   const meets = (a: Cells, b: Cells): boolean => a.some((v, i) => (v & b[i]!) !== 0);
   const inside = (a: Cells, b: Cells): boolean => a.every((v, i) => (v & ~b[i]! & 0xff) === 0);
   /** The surface of a play of a card with one: opened with the play (open_surface), here the first time it is asked for. Null for any other Act. */
@@ -2073,7 +2072,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const p = playOf(play);
     if (!p || p.target === null || typeof p.payload.card !== 'string' || instance.cards.find((c) => c.key === p.payload.card)?.surface === undefined) return null;
     let s = surfaceRecs.get(play);
-    if (!s) { s = { cover: new Uint8Array(GRID * GRID / 8), owners: new Uint16Array(GRID * GRID), live: [], cells: new Map() }; surfaceRecs.set(play, s); }
+    if (!s) { s = { cover: new Uint8Array(BYTES), owners: new Uint16Array(GRID * GRID), live: [], cells: new Map() }; surfaceRecs.set(play, s); }
     return s;
   }
   /**

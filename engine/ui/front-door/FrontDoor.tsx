@@ -16,7 +16,7 @@
 import { useCallback, useId, useMemo } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
-import { cellsOf, count, GRID, union, type Cells } from '../../rules/surface.ts';
+import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
@@ -43,11 +43,9 @@ const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = (key: string): Id => `front-door:${key}`;
 
-const hasCell = (cells: Cells, i: number): boolean => ((cells[i >> 3]! >> (7 - (i & 7))) & 1) === 1;
-
 /**
  * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
- * (`surfaceStep` in data/fake.ts, which prunes a draw left owning nothing; a sample wall's author keeps every draw she wrote, so none is dropped).
+ * (`surfaceStep` in data/fake.ts prunes a draw left owning nothing, so a staged wall drops it too and shows what a live thread would).
  */
 function wallShares(draws: readonly Cells[]): readonly number[] {
   const owners = new Uint16Array(GRID * GRID);
@@ -155,11 +153,11 @@ export function FrontDoor() {
           if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, cells: cellsOf(verdict.value.strokes) });
         }
         const shares = wallShares(kept.map((k) => k.cells));
-        const wall: SurfaceAct[] = kept.map((k, n) => ({
+        const wall: SurfaceAct[] = kept.flatMap((k, n) => shares[n] === 0 ? [] : [{
           id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,
           payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: shares[n]!,
-        }));
-        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(GRID * GRID / 8))), wall);
+        }]);
+        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(BYTES))), wall);
       });
     });
     return { plays, tallies, mine: createMine() };
