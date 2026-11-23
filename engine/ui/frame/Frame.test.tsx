@@ -542,7 +542,7 @@ describe('signed out and new', () => {
     const sockets = (notch as HTMLElement).querySelectorAll('.kb-hud-socket');
     expect(sockets).toHaveLength(6);
     for (const socket of sockets) expect(socket.closest('[aria-hidden="true"]')).not.toBeNull();
-    expect(within(notch as HTMLElement).getByText('No mask, no Aura, no hand yet. Your first character fills them.')).toBeInTheDocument();
+    expect(within(notch as HTMLElement).getByText('Earn reactions to fill your Aura and add effects to posts.')).toBeInTheDocument();
     const row = h.querySelector('.kb-button-row') as HTMLElement;
     expect(within(row).getAllByRole('link').map((a) => [a.textContent, a.getAttribute('data-kb-kind')])).toEqual([['Sign in', 'secondary'], ['Register with an invite', 'primary']]);
     expect(h.querySelector('.kb-hud-plate--cast')).not.toBeNull();

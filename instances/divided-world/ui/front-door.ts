@@ -157,6 +157,6 @@ export const frontDoor: FrontDoorUi = Object.freeze({
   ].join('\n'),
   prompt: Object.freeze({
     title: 'Who will you play?',
-    line: 'Divided World: a kayfabe social deduction game disguised as a 2003 message board',
+    line: 'Divided World: a kayfabe forum game where everyone plays multiple characters.',
   }),
 });

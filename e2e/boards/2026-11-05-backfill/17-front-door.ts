@@ -16,8 +16,10 @@
  * height.
  *
  * Departures by the owner's copy (instances/divided-world/ui/front-door.ts, 2026-11-08): the prompt reads "Who will you play?" where the board draws "Who will you
- * play as?", and the pitch is the one line "Divided World: a kayfabe social deduction game disguised as a 2003 message board" where the board draws the mask line; each is found
- * by the build's words (`buildName`) and compared by place, as the pitch always was (the prompt's shorter words make it narrower).
+ * play as?", and the pitch is the one line "Divided World: a kayfabe forum game where everyone plays multiple characters." where the board draws the mask line; each is found
+ * by the build's words (`buildName`) and compared by place, as the pitch always was (the prompt's shorter words make it narrower). The
+ * owner's copy of 2026-11-23 rewrote the pitch to the words above and the empty notch's line to "Earn reactions to fill your Aura and add
+ * effects to posts.", found the same way.
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -29,9 +31,9 @@ const manifest: BoardManifest = {
     { id: 'hud', role: 'region', name: 'Game HUD', type: false, box: 'across' },
     { id: 'mark', role: 'text', name: '?', within: 'hud', origin: 'hud' },
     { id: 'prompt', role: 'heading', name: 'WHO WILL YOU PLAY AS?', buildName: 'WHO WILL YOU PLAY?', within: 'hud', origin: 'hud', box: 'position' },
-    { id: 'pitch', role: 'text', name: 'A message board where everyone wears a mask, and everyone is someone you know.', buildName: 'Divided World: a kayfabe social deduction game disguised as a 2003 message board', within: 'hud', origin: 'hud', box: 'position', buildSize: 20 },
+    { id: 'pitch', role: 'text', name: 'A message board where everyone wears a mask, and everyone is someone you know.', buildName: 'Divided World: a kayfabe forum game where everyone plays multiple characters.', within: 'hud', origin: 'hud', box: 'position', buildSize: 20 },
     { id: 'aura', role: 'text', name: 'AURA', within: 'hud', origin: 'hud', box: 'position', type: false },
-    { id: 'notch-line', role: 'text', name: 'No mask, no Aura, no hand yet. Your first character fills them.', within: 'hud', origin: 'hud', box: 'position' },
+    { id: 'notch-line', role: 'text', name: 'No mask, no Aura, no hand yet. Your first character fills them.', buildName: 'Earn reactions to fill your Aura and add effects to posts.', within: 'hud', origin: 'hud', box: 'position' },
     { id: 'sign-in', role: 'link', name: 'SIGN IN', within: 'hud', origin: 'hud', box: 'height', buildShift: { height: -6 } },
     { id: 'register', role: 'link', name: 'REGISTER WITH AN INVITE', within: 'hud', origin: 'hud', box: 'height', buildShift: { height: -6 } },
     { id: 'no-invite', role: 'text', name: 'No invite? Ask someone who plays.', within: 'hud', origin: 'hud', box: 'position' },
