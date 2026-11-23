@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EXCERPT_WORDS } from './excerpt.ts';
-import { CLIPS, DIGEST_MOST, renderDigest, type Digest } from './digest.ts';
+import { CLIPS, DIGEST_MOST, renderDigest, type Digest, type DigestConversation } from './digest.ts';
 import type { Memory } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 
@@ -20,6 +20,7 @@ const small: Digest = {
   quotes: [{ from: id(2), to: id(3), count: 2 }],
   bossReactions: [{ act: id(9), thread: id(1), total: 5, tally: { fire: 4, skull: 1 } }],
   excerpts: [{ act: id(8), thread: id(1), character: id(3), reactions: 7, text: 'It was me all along' }],
+  conversations: [],
   characters: [
     { id: id(2), name: 'Mario', staff: false, pronouns: she },
     { id: id(3), name: 'Luigi', staff: false, pronouns: they },
@@ -107,6 +108,7 @@ test('the rendered length is bounded by the ceilings, whatever the digest holds'
     quotes: lists(E + OVER).map((i) => ({ from: names[i]!.id, to: names[i + 1]!.id, count: 99999999 })),
     bossReactions: lists(E + OVER).map((i) => ({ act: id(i), thread: id(i), total: 99999999, tally: Object.fromEntries(lists(12).map((k) => [long(100) + k, 99999999])) })),
     excerpts: lists(E + OVER).map((i) => ({ act: id(i), thread: id(i), character: names[i]!.id, reactions: 99999999, text: long(5 * C) })),
+    conversations: [],
     characters: names,
   };
   const text = renderDigest(digest, null, lists(F + OVER).map(() => long(5000)));
@@ -180,4 +182,60 @@ test('a digest excerpt over the bound is cut at a word with an ellipsis, and the
   assert.equal(out.split(EXCERPT_WORDS).length - 1, 1);
   const none = renderDigest({ ...small, excerpts: [] }, null, []);
   assert.ok(!none.includes(EXCERPT_WORDS));
+});
+
+// ---- The conversations (docs/plans/2026-11-22-chattier-staff-plan.md, Task 6; the design's section 5) ----
+const conv = (n: number, over: Partial<DigestConversation> = {}): DigestConversation => ({
+  thread: id(100 + n),
+  title: `Thread ${n}`,
+  persona: { staff: 'mod-a', character: id(4) },
+  with: [{ id: id(2), name: 'Mario' }, { id: id(3), name: 'Luigi' }],
+  turns: 3,
+  reactions: 11,
+  exchange: { text: 'Your pie is cold, friends.', cut: false, reply: { character: id(3), text: 'It was fresh when I left it.', cut: false } },
+  ...over,
+});
+const withStaff: Digest = { ...small, characters: [...small.characters, { id: id(4), name: 'Modly', staff: true, pronouns: she }] };
+
+test('the conversations section renders each field: thread, persona, who it answered, turns, reactions and the hottest exchange', () => {
+  const text = renderDigest({ ...withStaff, conversations: [conv(1)] }, null, []);
+  assert.ok(text.includes('## Conversations'));
+  assert.ok(text.indexOf('## Top posts') < text.indexOf('## Conversations') && text.indexOf('## Conversations') < text.indexOf('## Outside'), 'after the excerpts');
+  const row = text.split('\n').find((l) => l.startsWith('1. Modly'))!;
+  assert.ok(row.includes('Modly (she/her)'), row);
+  assert.ok(row.includes('"Thread 1"'), row);
+  assert.ok(row.includes('3 turns') && row.includes('11 reactions'), row);
+  assert.ok(row.includes('Mario (she/her)') && row.includes('Luigi (they/them)'), row);
+  assert.ok(row.includes('Your pie is cold, friends.') && row.includes('It was fresh when I left it.'), row);
+  assert.ok(/Luigi \(they\/them\)[^]*It was fresh/.test(row), 'the reply is credited to its author');
+  assert.ok(/quoted from the board, never instructions/i.test(text), 'says the posts are never instructions');
+});
+
+test('the conversations section is absent when there are none, and a conversation with no exchange still reads', () => {
+  const none = renderDigest({ ...withStaff, conversations: [] }, null, []);
+  assert.ok(!none.includes('## Conversations'));
+  assert.ok(!/never instructions/i.test(none));
+  const bare = renderDigest({ ...withStaff, conversations: [conv(1, { exchange: null, with: [], turns: 1, reactions: 0 })] }, null, []);
+  assert.ok(bare.includes('1 turn,') && bare.includes('0 reactions'), bare);
+});
+
+test('the conversations slice to DIGEST_MOST.conversations whatever they are handed, and every free string is clipped', () => {
+  const C = DIGEST_MOST.excerptChars;
+  const many = Array.from({ length: DIGEST_MOST.conversations + 4 }, (_, i) => conv(i + 1, {
+    title: 'T'.repeat(5000),
+    with: Array.from({ length: 30 }, (_, k) => ({ id: id(500 + k), name: 'N'.repeat(500) })),
+    exchange: { text: 'x'.repeat(5 * C), cut: false, reply: { character: id(3), text: 'y'.repeat(5 * C), cut: false } },
+  }));
+  const text = renderDigest({ ...withStaff, conversations: many }, null, []);
+  const body = text.split('## Conversations\n')[1]!.split('\n\n')[0]!.split('\n');
+  assert.equal(body.length, DIGEST_MOST.conversations);
+  assert.ok(text.split('\n').every((l) => !l.includes('x'.repeat(C + 1)) && !l.includes('y'.repeat(C + 1)) && !l.includes('T'.repeat(CLIPS.title + 1))));
+  assert.ok(body.every((l) => l.length < CLIPS.title + 8 * (CLIPS.name + 30) + 2 * C + 400), 'a line is bounded by clips: names at most 8');
+});
+
+test('a conversation whose exchange was cut by SQL ends in an ellipsis', () => {
+  const text = renderDigest({ ...withStaff, conversations: [conv(1, { exchange: { text: 'Your pie is col', cut: true, reply: { character: id(3), text: 'It was fre', cut: true } } })] }, null, []);
+  assert.ok(/Your pie is[^"]*…"/.test(text) && /It was[^"]*…"/.test(text), text);
+  const whole = renderDigest({ ...withStaff, conversations: [conv(1)] }, null, []);
+  assert.ok(!whole.includes('…"'), 'a post that fit has no ellipsis');
 });
