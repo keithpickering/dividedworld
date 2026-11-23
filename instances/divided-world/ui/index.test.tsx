@@ -411,9 +411,9 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(said('jabroni', economy)).toContain('double');
     expect(said('lurker', economy)).toContain('Hurt by early calls that go the other way');
     expect(instanceUi.reasonWords('lurker.misread', economy)).toBe('Misread it: among the first to react to a post that then drew a crowd another way');
-    expect(instanceUi.reasonWords('crowd.floor', {}, 2)).toBe('A crowd noticed: a reaction the character\'s class neither pays nor charges');
-    expect(instanceUi.reasonWords('crowd.floor', {})).toBe('A crowd noticed: a reaction the character\'s class neither pays nor charges');
-    expect(instanceUi.reasonWords('crowd.floor', {}, -2)).toBe('A crowd noticed: taken back, for a vote that moved to a quadrant the class pays or charges');
+    expect(instanceUi.reasonWords('crowd.floor', {}, 2)).toBe('The crowd noticed: a reaction the character\'s class neither pays nor charges');
+    expect(instanceUi.reasonWords('crowd.floor', {})).toBe('The crowd noticed: a reaction the character\'s class neither pays nor charges');
+    expect(instanceUi.reasonWords('crowd.floor', {}, -2)).toBe('The crowd noticed: taken back, for a vote that moved off a quadrant where it was paid');
     expect(REASON_KEYS).toContain('crowd.floor');
     expect(instanceUi.reasonWords('reveal.perk', { share: 0.2 })).toBe('Playing it openly: a fifth more on what reactions earned while the character\'s reveal was current');
   });
