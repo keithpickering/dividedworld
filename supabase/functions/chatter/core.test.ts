@@ -1445,6 +1445,10 @@ test('a reply whose answer is rejected twice is called for twice and no more', a
   await run(e, fakeModels(() => new SchemaRefused([{ path: '', predicate: 'keyword(maxItems)' }])));
   await run(e, fakeModels(() => new PromptTooLong(9, 3)), dividedWorld, at('17:52'));
   assert.deepEqual(e.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', false], ['rejected', false]]);
+  // A request the provider turned away before answering (a 400 about the request itself) is rejected and was never answered: not paid.
+  const f = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  await run(f, fakeModels(() => new AnswerRejected('the request is malformed', 'refused:400')));
+  assert.deepEqual(f.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', false]]);
 });
 
 test('a transport failure writes an unpaid failed attempt and the reply is called for again', async () => {

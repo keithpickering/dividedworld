@@ -622,9 +622,12 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       }
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      // A refusal is the provider's answer and is paid; a schema it would refuse or a prompt too long was never sent; any other AnswerRejected (not JSON, cut off) got an answer and is paid; a transport failure that
-      // outlived its retries got none. There is no fallback to the old voice for a refusal.
-      if (e instanceof AnswerRejected) return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !(e instanceof SchemaRefused || e instanceof PromptTooLong), said(e), answers, []);
+      // A refusal is the provider's answer and is paid; a schema it would refuse or a prompt too long was never sent, and a request the provider turned away (`refused:<status>`) was never answered; any
+      // other AnswerRejected (not JSON, cut off) got an answer and is paid; a transport failure that outlived its retries got none. There is no fallback to the old voice for a refusal.
+      if (e instanceof AnswerRejected) {
+        const unanswered = e instanceof SchemaRefused || e instanceof PromptTooLong || e.predicate.startsWith('refused:');
+        return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !unanswered, said(e), answers, []);
+      }
       return fail('failed', false, said(e), answers, []);
     }
 
