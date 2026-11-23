@@ -52,7 +52,7 @@ export function roundShare(spentToday: number, perDay: number, slot: number, cro
   const step = Math.max(cronMinutes, 1) * 60 * 1000;
   const intoDay = ((slot % DAY_MS) + DAY_MS) % DAY_MS;
   const rounds = Math.ceil(DAY_MS / step);
-  const k = Math.min(Math.floor(intoDay / step), rounds - 1);
+  const k = Math.floor(intoDay / step); // below `rounds`, since intoDay < DAY_MS
   const earned = Math.floor((perDay * (k + 1)) / rounds);
   return Math.max(earned - spentToday, 0);
 }

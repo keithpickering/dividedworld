@@ -43,6 +43,14 @@ test('roundShare: a once-a-day cron gets the whole day', () => {
   assert.equal(roundShare(0, 40, DAY0, 1440), 40);
 });
 
+test('roundShare: a cron that does not divide the day, or runs less than daily, still spends the whole day and no more', () => {
+  for (const cron of [7, 25, 2000]) {
+    let spent = 0;
+    for (let at = 0; at < 24 * 60; at += cron) spent += roundShare(spent, 40, DAY0 + at * MIN, cron);
+    assert.equal(spent, 40, `cron every ${cron} minutes`);
+  }
+});
+
 test('roundShare: a spent day is zero, never below', () => {
   assert.equal(roundShare(40, 40, DAY0, 15), 0);
   assert.equal(roundShare(50, 40, DAY0 + 60 * MIN, 15), 0);
