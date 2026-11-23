@@ -104,7 +104,7 @@ begin
   if (select count(*) from ledger where settlement = sid and reason = 'crowd.floor' and amount = 3) is distinct from 1::bigint then
     raise exception 'the crowd.floor entry is one ledger row of 3, read %', (select jsonb_agg(to_jsonb(l)) from ledger l where settlement = sid);
   end if;
-  -- The log reads `crowd` and `reveal` as no class's prefix (scoredAs, engine/ui/log/lines.ts), so no class may be keyed so.
+  -- The log reads `card`, `crowd` and `reveal` as no class's prefixes (scoredAs, engine/ui/log/lines.ts), so no class may be keyed so.
   if exists (select 1 from class_kinds where key in ('card', 'crowd', 'reveal')) then
     raise exception 'a class is keyed as a prefix the log reads as no class''s: %', (select jsonb_agg(key) from class_kinds where key in ('card', 'crowd', 'reveal'));
   end if;

@@ -2953,7 +2953,7 @@ test('crowd floor: an earn boost, the reveal perk and a cushion neither add to t
   assert.equal(amountOf(flat, 'tom-1', 'crowd.floor'), 50, 'on top of the floor, which it does not change');
 });
 
-test('crowd floor: a weakness vote the class charges gets no floor and is cushioned; a moved vote\'s negative floor line is never cushioned, nor boosted', () => {
+test('crowd floor: a weakness vote the class charges gets no floor and is cushioned; a moved vote\'s negative floor line is never cushioned', () => {
   // The cushion half holds by construction (the cushion reads only a loss from a reaction, `votes > 0`, and a positive floor line is never a
   // weakness charge); it is kept as a pin. The moved vote's negative line is `crowd.floor` with no class, held apart from `own`, so no cushion reads it.
   const sting = settle(floorBoard([react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)], CROWDY, [onTom('g1', 'softCushion', FROM + 2 * H)]), floorWorld);
