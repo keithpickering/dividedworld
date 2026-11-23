@@ -82,9 +82,9 @@ export function Frame({ children }: { readonly children: ReactNode }) {
     ...(session.signedIn ? [] : [{ to: signInHref(path, here), label: 'Sign in' }]),
   ];
   /*
-   * Search (the search design, section 7, as amended by the owner): signed in, the banner's right side is a column, the host line with its
-   * loading meter on top and the search box on a row of its own under it (section 7 had the box take the host line's place; the host line
-   * now always shows). The boards bar ends in a Search link. On /search the page has its own keyword field, so the box is not drawn there.
+   * Search (the search design, section 7, as amended by the owner): signed in, the banner's right side is a column, the address with its
+   * loading meter on top and the search box on a row of its own under it (section 7 had the box take the address's place; the address
+   * now always shows). The column is a fixed width, so the address changing while a page opens moves nothing (frame.css, .kb-banner-side). The boards bar ends in a Search link. On /search the page has its own keyword field, so the box is not drawn there.
    * Signed out there is neither (a visitor reads no thread).
    */
   const onSearch = path === '/search';
@@ -97,12 +97,13 @@ export function Frame({ children }: { readonly children: ReactNode }) {
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <Wobble />
           <header className="kb-banner">
-            <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
+            {/* The name and, under it, the tagline: the masthead (frame.css, .kb-masthead). */}
+            <div className="kb-masthead">
+              <Link to="/" className="kb-logo">{ui.copy.siteName}</Link>
+              <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
+            </div>
             <div className="kb-banner-side">
-              <div className="kb-banner-host">
-                <span className="kb-tagline kb-muted kb-small">{ui.copy.siteTagline}</span>
-                <Loading />
-              </div>
+              <Loading />
               {box && <BannerSearch />}
             </div>
             <button type="button" className="kb-button kb-menu-button" aria-expanded={open} aria-controls={navId} onClick={() => setOpen((o) => !o)}>
