@@ -1,11 +1,12 @@
--- Hot triggers name their post: the database (docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Tasks 1 and 4; design sections 0 to 2 and 4).
+-- Hot triggers name their post: the database (docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Tasks 1, 4 and 6; design sections 0 to 2, 4 and 5).
 --
 -- Task 1. pool_signals' `hot` part (0358_blind_totals.sql) named threads and their authors and no post, so a hot trigger could quote nothing. Each author of a hot thread now carries `top`: the author's most reacted post
 -- in the thread inside the window (the totals the crowd sees, reaction_tallies_open, so a post under a live totals veil counts none; a tie to the newer post), read through acts_thread_posts (thread, character,
 -- created_at) one probe for each author. Each hot thread carries `tops`: its two most reacted posts by two different characters, each {act, character}, by the same order. Everything else in pool_signals as 0358 wrote it
 -- (owner and grants kept, as a replaced function keeps them).
--- Ways out: no state is added; the signal is a read.
--- Masks: only the totals the crowd sees and the public Acts' characters are read, never who reacted, an owner or a class; the digest role's own list of what it may read is not widened (reaction_tallies_open it read already).
+-- Task 4. write_staff_spin: a persona's thread that is a spin of a post. Task 6. The pool reads that mean "a persona's own posts" count its `spin` Acts beside its `post` Acts (the Task 6 section below says which and how).
+-- Ways out: no state is added; the signal and the reads are reads, and a spin is an ordinary Act in an ordinary thread.
+-- Masks (Tasks 1 and 6): only the totals the crowd sees and the public Acts' characters are read, never who reacted, an owner or a class; the digest role's own list of what it may read is not widened (reaction_tallies_open it read already).
 --
 -- The test that drives it red is supabase/tests/0420-hot-posts.sql.
 
@@ -105,7 +106,7 @@ begin
       from (
         select c.staff, count(a.id) as posts, coalesce(sum(r.n), 0)::bigint as reactions
         from characters_public c
-        left join acts_public a on a.character = c.id and a.kind = 'post' and a.created_at >= until - days * interval '1 day' and a.created_at < until
+        left join acts_public a on a.character = c.id and a.kind in ('post', 'spin') and a.created_at >= until - days * interval '1 day' and a.created_at < until
         left join lateral (select sum(tt.count) as n from reaction_tallies_open tt where tt.act = a.id) r on true
         where c.staff is not null and c.office is distinct from 'developer' and c.office is distinct from 'anonymous'
         group by c.staff
@@ -164,3 +165,201 @@ begin
 end $$;
 revoke execute on function write_staff_spin(text, uuid, text, text, jsonb) from public, anon, authenticated;
 grant execute on function write_staff_spin(text, uuid, text, text, jsonb) to service_role;
+
+
+-- ---- Task 6. A persona's spin is its writing (design section 5) ----
+-- Every pool read that means "a persona's own posts" read `kind = 'post'` only, so a staff spin (write_staff_spin, above) was invisible to them: its replies waited on no one, the conversation held no opener, presence did not show the
+-- persona in the thread it spun, an orphaned spin was posted again, its reactions earned no priority, and a persona replying in a spun thread was shown neither the opener nor what it was spun from. Each now counts a `spin` Act beside a
+-- `post` Act. Each is the latest definition of its function (0419 for the three waiting reads and pool_orphans, 0415 for pool_conversation and the two presence functions, 0418 for pool_thread's list form, this migration's own copy of
+-- pool_signals above), changed as said and no more; owners and grants are kept, as a replaced function keeps them.
+-- The own-posts scans of the waiting reads: acts_thread_posts is a partial index on `kind = 'post'`, so widening the predicate to `kind in ('post', 'spin')` would lose it. Each read adds a `union all` branch for the persona's spins (at most one
+-- a thread, its opener) beside the posts branch, which is unchanged and keeps its index. A reply targets one Act, a post or a spin, so a reply is found by one branch only and counted once. The presence functions test a spin as a second
+-- `exists`, and not by widening the predicate, for the same reason. The three waiting reads change together, as their comment in 0415 says, and stay plain inlinable SQL functions with a constant-keyed own-posts scan; pool_waiting,
+-- presence_box and write_staff_turn read them and follow unchanged.
+-- Each spin branch is keyed on `seq = 1`, because a spin is always its thread's opener (spin_written and write_staff_spin insert it as the first Act of the thread they make). A branch keyed on a thread (pool_waiting_in_thread's,
+-- pool_conversation's, presence_staff_in_thread's, and pool_thread's spin row) is one probe of acts_thread_seq_key (thread, seq) or of acts_thread_openers (character, thread) where seq = 1, whichever the planner takes with both keys given,
+-- and does not grow with the thread; without `seq = 1` the planner took acts_character with a bitmap on the thread's whole (thread, seq) range, or acts_patrol_posts over the thread's window, and presence runs per page view. A branch
+-- keyed on the persona alone (pool_waiting_rows', pool_waiting_in_board's and presence_staff_in_board's) is bounded by the persona's own openers through acts_thread_openers (character, thread), joined to threads for the board.
+-- pool_thread reads the thread's `spin` Act as its first post (its body is the spin's, read through acts_public as a post's is: veils and hidden versions as for any Act), always, beside the newest `most` posts, so the opener is shown to a
+-- persona replying in a thread whatever `most` is; `also` and `more` still name posts.
+-- Ways out: no state is added; a spin is an ordinary Act, and a reply waiting on it ages out of the wait window and is answered, refused or given up on as any reply is.
+-- Masks: only public Acts and public characters are read, as before; the spin's author is public.
+-- The test that drives it red is supabase/tests/0420-hot-posts.sql.
+
+create or replace function pool_waiting_rows(staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
+language sql stable as $$
+  select c.staff, r.thread, r.id, r.character, r.created_at
+  from characters c
+  cross join lateral (
+    select p.id from acts p
+    where p.character = c.id and p.kind = 'post'
+      and p.created_at >= pool_waiting_rows.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+    union all
+    select p.id from acts p
+    where p.character = c.id and p.kind = 'spin' and p.seq = 1
+      and p.created_at >= pool_waiting_rows.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+  ) mine
+  cross join lateral (
+    -- Every filter that makes a reply waiting is inside, before the cap, so the cap is the newest 200 waiting replies to a post.
+    select x.id, x.thread, x.character, x.created_at from acts x
+    join characters w on w.id = x.character and w.staff is null
+    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_rows.since
+      and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = x.id)
+      and not exists (select 1 from pool_answered a where a.reply = x.id)
+      -- A reply a failed turn gave up on: refused once by the provider, or rejected twice (record_turn_attempt, 0419). A failed (transport or database) attempt leaves it waiting.
+      and not exists (select 1 from pool_attempt_replies ar join pool_attempts pa on pa.id = ar.attempt where ar.reply = x.id and pa.outcome in ('refused', 'rejected')
+                      group by ar.reply having bool_or(pa.outcome = 'refused') or count(*) >= 2)
+      and locked_out_until(c.id, x.thread) is null
+    order by x.created_at desc, x.id desc limit 200
+  ) r
+  where c.staff = any (pool_waiting_rows.staff_keys) and c.staff_kind = 'persona'
+    -- Public: the persona's post is not under a live author veil (a veiled reply was left out above, and is named nowhere).
+    and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = mine.id)
+$$;
+
+create or replace function pool_waiting_in_thread(in_thread uuid, staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
+language sql stable as $$
+  select c.staff, r.thread, r.id, r.character, r.created_at
+  from characters c
+  cross join lateral (
+    select p.id from acts p
+    where p.character = c.id and p.kind = 'post'
+      and p.thread = pool_waiting_in_thread.in_thread
+      and p.created_at >= pool_waiting_in_thread.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+    union all
+    select p.id from acts p
+    where p.character = c.id and p.kind = 'spin' and p.seq = 1
+      and p.thread = pool_waiting_in_thread.in_thread
+      and p.created_at >= pool_waiting_in_thread.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+  ) mine
+  cross join lateral (
+    -- Every filter that makes a reply waiting is inside, before the cap, so the cap is the newest 200 waiting replies to a post.
+    select x.id, x.thread, x.character, x.created_at from acts x
+    join characters w on w.id = x.character and w.staff is null
+    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_in_thread.since
+      and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = x.id)
+      and not exists (select 1 from pool_answered a where a.reply = x.id)
+      -- A reply a failed turn gave up on: refused once by the provider, or rejected twice (record_turn_attempt, 0419). A failed (transport or database) attempt leaves it waiting.
+      and not exists (select 1 from pool_attempt_replies ar join pool_attempts pa on pa.id = ar.attempt where ar.reply = x.id and pa.outcome in ('refused', 'rejected')
+                      group by ar.reply having bool_or(pa.outcome = 'refused') or count(*) >= 2)
+      and locked_out_until(c.id, x.thread) is null
+    order by x.created_at desc, x.id desc limit 200
+  ) r
+  where c.staff = any (pool_waiting_in_thread.staff_keys) and c.staff_kind = 'persona'
+    -- Public: the persona's post is not under a live author veil (a veiled reply was left out above, and is named nowhere).
+    and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = mine.id)
+$$;
+
+create or replace function pool_waiting_in_board(in_board uuid, staff_keys text[], since timestamptz) returns table (staff text, thread uuid, act uuid, author uuid, at timestamptz)
+language sql stable as $$
+  select c.staff, r.thread, r.id, r.character, r.created_at
+  from characters c
+  cross join lateral (
+    select p.id from acts p
+    join threads pt on pt.id = p.thread and pt.board = pool_waiting_in_board.in_board
+    where p.character = c.id and p.kind = 'post'
+      and p.created_at >= pool_waiting_in_board.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+    union all
+    select p.id from acts p
+    join threads pt on pt.id = p.thread and pt.board = pool_waiting_in_board.in_board
+    where p.character = c.id and p.kind = 'spin' and p.seq = 1
+      and p.created_at >= pool_waiting_in_board.since - coalesce(((select g.value from settings g where g.key = 'pool') ->> 'priorityDays')::integer, 28) * interval '1 day'
+  ) mine
+  cross join lateral (
+    -- Every filter that makes a reply waiting is inside, before the cap, so the cap is the newest 200 waiting replies to a post.
+    select x.id, x.thread, x.character, x.created_at from acts x
+    join characters w on w.id = x.character and w.staff is null
+    where x.target_act_id = mine.id and x.kind = 'post' and x.created_at >= pool_waiting_in_board.since
+      and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = x.id)
+      and not exists (select 1 from pool_answered a where a.reply = x.id)
+      -- A reply a failed turn gave up on: refused once by the provider, or rejected twice (record_turn_attempt, 0419). A failed (transport or database) attempt leaves it waiting.
+      and not exists (select 1 from pool_attempt_replies ar join pool_attempts pa on pa.id = ar.attempt where ar.reply = x.id and pa.outcome in ('refused', 'rejected')
+                      group by ar.reply having bool_or(pa.outcome = 'refused') or count(*) >= 2)
+      and locked_out_until(c.id, x.thread) is null
+    order by x.created_at desc, x.id desc limit 200
+  ) r
+  where c.staff = any (pool_waiting_in_board.staff_keys) and c.staff_kind = 'persona'
+    -- Public: the persona's post is not under a live author veil (a veiled reply was left out above, and is named nowhere).
+    and not exists (select 1 from post_veil_cover cv join post_veils_live vl on vl.play = cv.play and vl.veil = 'author' where cv.act = mine.id)
+$$;
+
+create or replace function pool_conversation(staff_key text, in_thread uuid, most integer, replies integer, chars integer) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object('posts', coalesce((
+    select jsonb_agg(jsonb_build_object('act', m.id, 'at', m.created_at, 'body', m.body, 'cut', m.cut,
+        'replies', coalesce((
+          select jsonb_agg(jsonb_build_object('act', r.id, 'author', r.character, 'name', r.name, 'pronouns', r.pronouns, 'at', r.created_at, 'body', r.body, 'cut', r.cut) order by r.created_at, r.id)
+          from (select x.id, x.character, x.created_at, c.name, (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
+                       left(coalesce(x.current_payload ->> 'body', ''), least(greatest(chars, 1), 2000)) as body,
+                       length(coalesce(x.current_payload ->> 'body', '')) > least(greatest(chars, 1), 2000) as cut
+                from acts_public x join characters_public c on c.id = x.character
+                where x.target_act_id = m.id and x.kind = 'post'
+                order by x.created_at desc, x.id desc limit least(greatest(replies, 0), 10)) r), '[]'::jsonb))
+      order by m.created_at, m.id)
+    from (select o.id, o.created_at, left(coalesce(o.current_payload ->> 'body', ''), least(greatest(chars, 1), 2000)) as body,
+                 length(coalesce(o.current_payload ->> 'body', '')) > least(greatest(chars, 1), 2000) as cut
+          from (select a.id, a.created_at, a.current_payload from acts_public a
+                where a.thread = in_thread and a.kind = 'post' and a.character = (select c.id from characters c where c.staff = staff_key)
+                union all
+                select a.id, a.created_at, a.current_payload from acts_public a
+                where a.thread = in_thread and a.seq = 1 and a.kind = 'spin' and a.character = (select c.id from characters c where c.staff = staff_key)) o
+          order by o.created_at desc, o.id desc limit least(greatest(most, 0), 20)) m), '[]'::jsonb))
+$$;
+
+create or replace function presence_staff_in_thread(in_place uuid, in_character uuid, in_staff text, in_since timestamptz, in_wait interval) returns boolean
+language plpgsql stable set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
+begin
+  return exists (select 1 from acts_public x where x.thread = in_place and x.character = in_character and x.kind = 'post' and x.created_at >= in_since)
+      or exists (select 1 from acts_public x where x.thread = in_place and x.character = in_character and x.kind = 'spin' and x.seq = 1 and x.created_at >= in_since)
+      or exists (select 1 from pool_waiting_in_thread(in_place, array[in_staff], now() - in_wait) w);
+end $$;
+create or replace function presence_staff_in_board(in_place uuid, in_character uuid, in_staff text, in_since timestamptz, in_wait interval) returns boolean
+language plpgsql stable set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
+begin
+  return exists (select 1 from acts_public x join threads xt on xt.id = x.thread where xt.board = in_place and x.character = in_character and x.kind = 'post' and x.created_at >= in_since)
+      or exists (select 1 from acts_public x join threads xt on xt.id = x.thread where xt.board = in_place and x.character = in_character and x.kind = 'spin' and x.seq = 1 and x.created_at >= in_since)
+      or exists (select 1 from pool_waiting_in_board(in_place, array[in_staff], now() - in_wait) w);
+end $$;
+
+create or replace function pool_orphans(through date) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(jsonb_agg(jsonb_build_object('staff', o.staff, 'day', o.day, 'act', o.id, 'startedThread', o.seq = 1,
+    'card', (select k.id from acts k
+             where k.character = o.character
+               and ((k.kind = 'set' and k.target_act_id = o.id)
+                    or (k.kind = 'card' and k.payload ->> 'pool' = o.day and o.target_act_id is not null and k.target_act_id = o.target_act_id)
+                    or (k.kind = 'draw' and k.payload ->> 'pool' = o.day))
+               and not exists (select 1 from pool_spends s where s.card_act = k.id)
+             order by k.created_at, k.id limit 1)) order by o.day, o.staff), '[]'::jsonb)
+  from (select distinct on (c.staff, a.payload ->> 'pool') c.staff, a.payload ->> 'pool' as day, a.id, a.seq, a.character, a.target_act_id
+        from acts a join characters c on c.id = a.character
+        where c.staff is not null and a.kind in ('post', 'spin') and a.payload ->> 'pool' ~ '^\d{4}-\d{2}-\d{2}$'
+          and (a.payload ->> 'pool')::date between least(date_trunc('week', through::timestamp)::date, through - 1) and through
+          and not exists (select 1 from pool_spends s where s.post_act = a.id)
+        order by c.staff, a.payload ->> 'pool', a.created_at, a.id) o
+$$;
+
+create or replace function pool_thread(in_thread uuid, most integer, chars integer, also uuid, more uuid[]) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  with page as (
+    select a.id, a.seq, a.created_at, c.name, (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
+           left(coalesce(a.current_payload ->> 'body', ''), greatest(chars, 1)) as body,
+           length(coalesce(a.current_payload ->> 'body', '')) > greatest(chars, 1) as cut
+    from acts_public a join characters_public c on c.id = a.character
+    where a.thread = in_thread
+      and ((a.kind = 'post'
+            and (a.id = also or a.id = any (coalesce(more[1:50], '{}'::uuid[]))
+                 or a.id in (select n.id from acts_public n where n.thread = in_thread and n.kind = 'post'
+                             order by n.created_at desc, n.id desc limit greatest(most, 0))))
+           -- The thread's spin Act is its first post, always shown (the opener a reply is to), whatever `most` is; a thread nobody spun has none.
+           or (a.seq = 1 and a.kind = 'spin'))
+  )
+  select jsonb_build_object(
+    'title', coalesce((select t.title from thread_list t where t.id = in_thread), ''),
+    'posts', coalesce((select jsonb_agg(jsonb_build_object('act', p.id, 'name', p.name, 'pronouns', p.pronouns, 'body', p.body, 'cut', p.cut) order by p.created_at, p.id) from page p), '[]'::jsonb),
+    'walls', coalesce((select jsonb_agg(jsonb_build_object('play', k.id, 'card', k.payload ->> 'card',
+                                                           'about', 'a post by ' || p.name || coalesce(' (#' || p.seq || ')', '')) order by p.created_at, p.id, k.id)
+                       from page p join surfaces s on s.post = p.id join acts_public k on k.id = s.play
+                       where not exists (select 1 from acts_public e where e.kind = 'card_end' and e.target_act_id = k.id)
+                         and not exists (select 1 from card_write_refunds r where r.play = k.id)), '[]'::jsonb))
+$$;
