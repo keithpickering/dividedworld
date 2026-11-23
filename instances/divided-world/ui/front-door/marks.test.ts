@@ -6,6 +6,7 @@
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { arrow, glyphs, heart, ring, scribble, tag, washPasses, type Shape } from './marks.ts';
+import { decodePoints } from '../../cards/whoops/points.ts';
 import { graffiti } from '../../cards/graffiti.ts';
 import { whoops } from '../../cards/whoops.ts';
 
@@ -66,4 +67,21 @@ test('washPasses passes Whoops!\'s validateState, one wash stroke a band', () =>
   const v = whoops.validateState!(state);
   assert.equal(v.ok, true, String(!v.ok && v.why));
   assert.deepEqual(washPasses([{ top: 0.1, bottom: 0.3 }], { aspect: 3, width: 0.08, seed: 3 }), washPasses([{ top: 0.1, bottom: 0.3 }], { aspect: 3, width: 0.08, seed: 3 }));
+});
+
+test('two question marks are drawn by hand, not stamped: the second is not the first moved across', () => {
+  const [hook1, , hook2] = glyphs('??', [0.2, 0.2], 0.2, 1.7, 5);
+  const shift = hook2![0]![0] - hook1![0]![0];
+  const moved = hook1!.map(([x, y]) => [x + shift, y]);
+  const apart = Math.max(...hook2!.map((p, i) => Math.hypot(p[0] - moved[i]![0]!, p[1] - moved[i]![1]!)));
+  assert.ok(apart > 0.01, `the second hook is within ${apart} of the first moved across`);
+});
+
+test('a wash band with an edge and a slant stays between its edges and sinks to its right', () => {
+  const { strokes } = washPasses([{ top: 0.1, bottom: 0.2, left: 0.3, right: 0.6, slant: 0.2 }], { aspect: 2.8, width: 0.05, seed: 2 });
+  const points = decodePoints(strokes[0]!.points)!;
+  for (const [x] of points) assert.ok(x >= 0.28 && x <= 0.62, `x ${x} is outside 0.3 to 0.6`);
+  const at = (side: 'l' | 'r') => points.filter(([x]) => (side === 'l' ? x < 0.45 : x >= 0.45)).map(([, y]) => y);
+  const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
+  assert.ok(mean(at('r')) - mean(at('l')) > 0.1, 'the right end sits lower than the left');
 });

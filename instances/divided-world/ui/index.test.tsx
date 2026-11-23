@@ -81,19 +81,23 @@ describe('Divided World\'s onboarding words', () => {
     }
     expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
   });
-  test('Hotel Bro\'s wash leaves #3\'s words readable and about half the tomato ink, at a desktop box', () => {
+  test('Hotel Bro\'s wash is a couple of hurried streaks: every line of #3 is just legible at a desktop box and a phone\'s, and most of the ink stays', () => {
     const play = instanceUi.frontDoor.posts[2]!.plays![0]!;
     expect(play.card).toBe('whoops');
-    /* The post body at a 1280px window: 987 x 352.5 css px, one line of words at the top (measured on the rendered board). */
-    const box = { w: 987, h: 352.5 };
     const splat = makeSplat(Number(play.config.seed));
     const strokes = savedOf(play.state).strokes;
-    const ink = new LayerInk(splat, strokes, box);
-    const line = { top: 7 / box.h, bottom: 29.5 / box.h, text: instanceUi.frontDoor.posts[2]!.body };
-    expect(coveredLines([line], [ink]), 'no line of the words lies under ink').toEqual([false]);
-    const left = 1 - ink.washed;
-    expect(left, `ink left ${left}`).toBeGreaterThan(0.35);
-    expect(left, `ink left ${left}`).toBeLessThan(0.7);
+    const text = instanceUi.frontDoor.posts[2]!.body;
+    /* The post body at a 1280px window (one line of words) and on an iPhone 13 (three lines), measured on the rendered board, in css px. */
+    for (const { w, h, lines } of [{ w: 987, h: 352.5, lines: [[7, 29.5]] }, { w: 372.4, h: 352.5, lines: [[13, 35], [35, 57], [57, 79]] }]) {
+      const box = { w, h };
+      const ink = new LayerInk(splat, strokes, box);
+      const bare = new LayerInk(splat, [], box);
+      const at = lines.map(([top, bottom]) => ({ top: top! / h, bottom: bottom! / h, text }));
+      expect(coveredLines(at, [ink]), `at ${w}px no line of the words lies under ink`).toEqual(at.map(() => false));
+      expect(coveredLines(at, [bare]).some(Boolean), `at ${w}px the unwashed splat hides a line, so the wash is what lets it read`).toBe(true);
+      const left = 1 - ink.washed;
+      expect(left, `at ${w}px ink left ${left}`).toBeGreaterThan(0.85);
+    }
   });
   test('the letter opens as Gabe\'s welcome does', () => {
     expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);

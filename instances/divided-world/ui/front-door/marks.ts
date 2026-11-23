@@ -66,24 +66,34 @@ export function ring(center: Pt, rx: number, ry: number, seed = 1): Shape {
   return [points];
 }
 
-/** Marks written out: each `?` is a hook and a dot, `size` tall (a share of the box's height), `at` the top left of the first. Other characters are spaces. */
+/**
+ * Marks written out: each `?` is a hook and a dot, about `size` tall (a share of the box's height), `at` the top left of the
+ * first. Other characters are spaces. Each `?` is drawn as a hand draws it, not stamped: its own height, lean and curl,
+ * sitting a little off the line.
+ */
 export function glyphs(text: string, at: Pt, size: number, aspect: number, seed = 1): Shape {
   const r = mulberry32(seed);
   const out: Shape = [];
-  const w = size * 0.55, pitch = size * 0.8;
-  /* `w`, `pitch` and every across-offset are in shares of the height; `x` is the glyph's left in shares of the width. */
+  /* Every across-offset is in shares of the height; `x` is the glyph's left in shares of the width. */
   const ax = (n: number) => n / aspect;
-  [...text].forEach((ch, i) => {
-    if (ch !== '?') return;
-    const [x, y] = [at[0] + ax(i * pitch), at[1]];
-    const hook: Pt[] = [];
-    for (let k = 0; k <= 14; k++) {
-      const a = Math.PI * (1.05 - 1.75 * (k / 14));
-      hook.push(pt(x + ax(w / 2 + Math.cos(a) * w * 0.48 + jitter(r, size * 0.015)), y + w * 0.5 - Math.sin(a) * w * 0.5 + jitter(r, size * 0.015)));
+  let left = at[0];
+  [...text].forEach((ch) => {
+    const s = size * (0.85 + r() * 0.3), lean = (r() - 0.5) * 0.35, curl = 1.6 + r() * 0.35, drop = (r() - 0.5) * size * 0.12;
+    const w = s * 0.55;
+    if (ch === '?') {
+      const [x, y] = [left, at[1] + drop];
+      /* A point given as (across, down) from the glyph's top left, leaned about its middle. */
+      const at2 = (u: number, v: number): Pt => pt(x + ax(u + (v - s / 2) * lean), y + v);
+      const hook: Pt[] = [];
+      for (let k = 0; k <= 14; k++) {
+        const a = Math.PI * (1.05 - curl * (k / 14));
+        hook.push(at2(w / 2 + Math.cos(a) * w * 0.48 + jitter(r, s * 0.015), w * 0.5 - Math.sin(a) * w * 0.5 + jitter(r, s * 0.015)));
+      }
+      hook.push(at2(w / 2 + jitter(r, s * 0.03), s * 0.66));
+      const dx = w / 2 + jitter(r, s * 0.04);
+      out.push(hook, [at2(dx, s * 0.9), at2(dx + s * 0.02 + jitter(r, s * 0.01), s * 0.92)]);
     }
-    hook.push(pt(x + ax(w / 2 + jitter(r, size * 0.02)), y + size * 0.68));
-    const dot = [pt(x + ax(w / 2), y + size * 0.92), pt(x + ax(w / 2 + size * 0.02 + jitter(r, size * 0.01)), y + size * 0.93)];
-    out.push(hook, dot);
+    left += ax(s * 0.8);
   });
   return out;
 }
@@ -123,19 +133,25 @@ export function tag(can: Can, cap: Cap, aspect: number, ...shapes: Shape[]): Tag
   return { strokes };
 }
 
-export type Band = { readonly top: number; readonly bottom: number };
+/** A band to wash: from `top` to `bottom` (shares of the box's height), across `left` to `right` (shares of its width, the whole
+ * width when not given), sinking by `slant` (a share of the height) from its left end to its right, so a pass can be a messy
+ * streak rather than a tidy scrub. */
+export type Band = { readonly top: number; readonly bottom: number; readonly left?: number; readonly right?: number; readonly slant?: number };
 
-/** A Whoops! layer's saved state of washing: for each band, one wash stroke that goes back and forth across the whole width, down the band, at the brush's `width` (a share of the box's width). */
+/** A Whoops! layer's saved state of washing: for each band, one wash stroke that goes back and forth across the band (the whole width unless it says otherwise) and down it, at the brush's `width` (a share of the box's width). */
 export function washPasses(bands: readonly Band[], o: { aspect: number; width: number; seed?: number }): { strokes: SavedStroke[] } {
   const r = mulberry32(o.seed ?? 1);
   const row = Math.max(0.01, o.width * o.aspect * 0.7);
-  const strokes = bands.map(({ top, bottom }): SavedStroke => {
+  const strokes = bands.map((band): SavedStroke => {
+    const { top, bottom } = band;
     const points: Pt[] = [];
     const rows = Math.max(1, Math.ceil((bottom - top) / row));
     for (let i = 0; i <= rows; i++) {
       const y = top + ((bottom - top) * i) / rows;
-      const [a, b] = i % 2 === 0 ? [0.02, 0.98] : [0.98, 0.02];
-      points.push(pt(a + jitter(r, 0.01), y + jitter(r, row * 0.15)), pt(b + jitter(r, 0.01), y + jitter(r, row * 0.15)));
+      const l = band.left ?? 0.02, rt = band.right ?? 0.98, slant = band.slant ?? 0;
+      const [a, b] = i % 2 === 0 ? [l, rt] : [rt, l];
+      const sink = (x: number) => slant * (x - l) / Math.max(rt - l, 0.01);
+      points.push(pt(a + jitter(r, 0.01), y + sink(a) + jitter(r, row * 0.15)), pt(b + jitter(r, 0.01), y + sink(b) + jitter(r, row * 0.15)));
     }
     if (points.length > STROKES.points) throw new Error('a pass is held to Whoops!\'s points in a stroke');
     return packStroke({ tool: 'wash', width: o.width, aspect: o.aspect, points });

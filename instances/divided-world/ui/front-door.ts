@@ -19,9 +19,9 @@
  * - **Graffiti on #1**, the opener, drawn by Serious Deer, Hotel Bro and D-Guy on Snuckles's sheet: the wall is the critique, and a visitor
  *   sees a surface card before anything else.
  * - **Whoops! on #3**, thrown by Chadluminum in `#e8402a`, a custom hex near the 🍅 so the splat reads as "your post got lots of tomatoes"
- *   (seed 1, picked from a scan of seeds for one that covers most of the words). Hotel Bro, whose post it is, has washed part of it, twice over the
- *   line of words and once through the middle (about 55% of the ink is left on a desktop board): the play's saved state is his wash, so the words read at first, with heavier ink at the
- *   splat's edges and core. The Lens reports the wash truthfully, and a visitor can scrub further on their own screen.
+ *   (seed 1, picked from a scan of seeds for one that covers most of the words). Hotel Bro, whose post it is, has washed part of it in a hurry:
+ *   two messy, slanted streaks through his words, no more than leaves each line just legible at a desktop's width and a phone's (most of the
+ *   ink stays): the play's saved state is his wash. The Lens reports the wash truthfully, and a visitor can scrub further on their own screen.
  * - **Autocorrect x3 on #5** at layers 1 to 3, each a different caster's tape over Hotel Bro's rant.
  * - **Overreaction on #6**, D-Guy's skull, counted under its local key (`x-1f480`), with two Feelin' Fabs (a stack that glows) and a Steel Chair.
  * - **Feelin' Fab on #2** and **Below the Fold on #9**, the thread's small plays.
@@ -73,7 +73,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
         card: 'graffiti', by: 'deer', config: Object.freeze({}),
         draws: Object.freeze([
           { by: 'deer', draw: tag('red', 'stock', SHEET_ASPECT, ring([0.069, 0.36], 0.045, 0.05, 3), arrow([0.27, 0.435], [0.118, 0.375], SHEET_ASPECT, 4)) },
-          { by: 'hotelbro', draw: tag('black', 'stock', SHEET_ASPECT, glyphs('??', [0.175, 0.45], 0.13, SHEET_ASPECT, 5)) },
+          { by: 'hotelbro', draw: tag('black', 'stock', SHEET_ASPECT, glyphs('??', [0.17, 0.43], 0.18, SHEET_ASPECT, 5)) },
           { by: 'hotelbro', draw: tag('black', 'fat', SHEET_ASPECT, scribble({ x0: 0.032, y0: 0.64, x1: 0.168, y1: 0.66 }, 6)) },
           { by: 'dguy', draw: tag('pink', 'stock', SHEET_ASPECT, heart([0.272, 0.868], 0.07, SHEET_ASPECT, 7)) },
         ]),
@@ -91,7 +91,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
       reactions: Object.freeze({ tomato: 5, 'thumbs-up': 1 }),
       plays: Object.freeze([Object.freeze({
         card: 'whoops', by: 'chadluminum', config: Object.freeze({ color: '#e8402a', seed: 1 }),
-        state: washPasses([{ top: 0, bottom: 0.14 }, { top: 0, bottom: 0.14 }, { top: 0.3, bottom: 0.6 }], { aspect: BURN_ASPECT, width: 0.06, seed: 1 }),
+        state: washPasses([{ top: 0.04, bottom: 0.05, left: 0.06, right: 0.93, slant: 0.03 }, { top: 0.13, bottom: 0.14, left: 0.12, right: 0.8, slant: 0.07 }], { aspect: BURN_ASPECT, width: 0.022, seed: 7 }),
         reactions: Object.freeze({ laughing: 2 }),
       })]),
     }),
