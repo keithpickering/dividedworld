@@ -4,8 +4,8 @@
  * other players while the camera runs (land a Whoops! on the post, wash a coat as its author, react as a Heel's audience) the way the other board stories hand their
  * probes over. Only the end-to-end build's story route and Storybook draw it; the app exposes nothing.
  *
- * The cast is the Front Door's (instances/divided-world/ui/front-door.ts): the same five made-up names, classes and avatars a visitor
- * meets before signing in, so the video's people are the ones the door already introduced. The thread is written for the video: a sincere post about a sprite sheet, and what a
+ * The cast is the film's own (FILM_CAST in stage-world.ts): five made-up names, classes and avatars, copied from the Front Door's five
+ * (instances/divided-world/ui/front-door.ts). The film moves to Hotel Bro in #1006's build. The thread is written for the video: a sincere post about a sprite sheet, and what a
  * board does to one. The sheet is the owner's own (wiggler-sheet.gif, his first submission, from 2005), named in the post by an https
  * address the camera answers (tools/hype/stage.mjs), since a post shows a picture from nowhere else.
  *

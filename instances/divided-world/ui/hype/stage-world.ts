@@ -4,7 +4,8 @@
  * holds it to what the shots rely on. A story of its own (its address dresses it: `skin=`, `as=`, `view=`, `sheet=`) is the only thing
  * that draws it, so no screen, rule or payload of the app is added.
  *
- * The cast is the Front Door's (instances/divided-world/ui/front-door.ts): the same five made-up names a visitor meets before signing in.
+ * The cast is the film's own (FILM_CAST below): five made-up names, classes and avatars, copied from the Front Door's five
+ * (instances/divided-world/ui/front-door.ts). The film moves to Hotel Bro in #1006's build.
  * Two players are behind them. The film's first is Snuckles and Human Josh. The second is Chadluminum and D-Guy, who are one person
  * (the commentary's node 7: "so the argument you've been watching is, I think, mostly, one person"). Serious Deer is a third player's.
  * D-Guy is a Heel and Chadluminum a Face. A crowd of made-up characters, one player each, is the audience: they react, and they wrote
@@ -17,15 +18,36 @@
  */
 import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import type { Instance } from '../../../../engine/rules/types.ts';
+import type { FrontDoorCharacter } from '../../../../engine/ui/types.ts';
 import { hudKey } from '../../../../engine/ui/player.tsx';
 import { cardOf } from '../../../../engine/ui/story.tsx';
 import fangamePortrait from '../avatars/fangame-portrait.webp?url';
 import fangameSquare from '../avatars/fangame-square.webp?url';
-import { frontDoor } from '../front-door.ts';
+import snucklesPortrait from '../avatars/snuckles_portrait.png?url';
+import snucklesSquare from '../avatars/snuckles_square.png?url';
+import chadPortrait from '../avatars/robochad_portrait.jpg?url';
+import chadSquare from '../avatars/robochad_square.jpg?url';
+import deerPortrait from '../avatars/deer_portrait.jpg?url';
+import deerSquare from '../avatars/deer_square.jpg?url';
+import joshPicture from '../avatars/human.jpg?url';
+import dguyPortrait from '../avatars/dguy_portrait.jpg?url';
+import dguySquare from '../avatars/dguy_square.jpg?url';
 import LINES from './staff-lines.json';
 import { installForecast } from './forecast.ts';
 
 const HOUR = 3_600_000;
+
+/** When the film's cast revealed their classes: a fixed day, so the postbit's dated line reads the same for every visitor. */
+const REVEALED_AT = '2026-10-03T12:00:00Z';
+
+/** The film's cast: the five made-up characters the thread is written by, each with its name, rank, post count, revealed class and avatars. */
+export const FILM_CAST: readonly FrontDoorCharacter[] = Object.freeze([
+  Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }), avatarPortrait: snucklesPortrait, avatarSquare: snucklesSquare }),
+  Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: chadPortrait, avatarSquare: chadSquare }),
+  Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: deerPortrait, avatarSquare: deerSquare }),
+  Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: joshPicture, avatarSquare: joshPicture }),
+  Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }), avatarPortrait: dguyPortrait, avatarSquare: dguySquare }),
+]);
 
 /** What the world's address asks for: the skin, whose player is signed in, which screen, and whether Snuckles's post shows its sprite sheet. */
 export interface StageOptions {
@@ -40,7 +62,7 @@ export interface Made {
   readonly thread: string;
   /** The post the ink lands on in round 1: its Act, its number in the thread, and its author. */
   readonly target: { readonly act: string; readonly seq: number; readonly character: string };
-  /** The cast by the Front Door's names, and the crowd by theirs: each name's character. */
+  /** The cast by the film's names, and the crowd by theirs: each name's character. */
   readonly cast: Readonly<Record<string, string>>;
   readonly me: string;
   /** The montage's posts, by what each is for: its number in the thread. */
@@ -68,7 +90,7 @@ export interface Made {
   readonly ready: Promise<void>;
 }
 
-/** The cast's classes where the commentary changes the Front Door's. */
+/** The cast's classes where the commentary changes the film's own. */
 const CLASSES: Readonly<Record<string, string>> = { 'D-Guy': 'heel' };
 
 /** The crowd: the audience of the sprite sheet thread, and the authors of the five dressed posts at its foot. One player each. */
@@ -98,10 +120,10 @@ export function buildStage(fake: Fake, instance: Instance, options: StageOptions
   const me = fake.seed.account('hype-player', { seasoned: true });
   const second = fake.seed.account('hype-a', { seasoned: true });
   const third = fake.seed.account('hype-b', { seasoned: true });
-  /* The Front Door's cast, each with its class and its face. Snuckles and Human Josh are the film's first player's; Chadluminum and D-Guy the second's. */
+  /* The film's cast, each with its class and its face. Snuckles and Human Josh are the film's first player's; Chadluminum and D-Guy the second's. */
   const owner: Record<string, string> = { Snuckles: me, 'Human Josh': me, Chadluminum: second, 'D-Guy': second, 'Serious Deer': third };
   const cast: Record<string, string> = {};
-  frontDoor.cast.forEach((c, i) => {
+  FILM_CAST.forEach((c, i) => {
     const id = fake.seed.character(owner[c.name]!, c.name, CLASSES[c.name] ?? c.revealed?.class ?? instance.classes[0]!.key, { at: now - (29 * 24 - i) * HOUR });
     fake.seed.avatar(id, { square: c.avatarSquare, portrait: c.avatarPortrait });
     cast[c.name] = id;
