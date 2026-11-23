@@ -425,7 +425,7 @@ for (const name of ['chair', 'chair-short', 'chair-landed'] as const) {
         });
         const after = getComputedStyle(b, '::after');
         const lines: Rect[] = [];
-        const walker = document.createTreeWalker(b.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
+        const walker = document.createTreeWalker(b.querySelector('[data-kb-words-box]')!, NodeFilter.SHOW_TEXT);
         for (let n = walker.nextNode(); n; n = walker.nextNode()) {
           const range = document.createRange();
           range.selectNodeContents(n);
@@ -520,7 +520,7 @@ const stacking = (page: Page, x: number, y: number, within: string | null = null
 
 /** Five points in the box, one in each of its parts: the band's text, the mark (when a play on the box's post has one), the byline, the words and the History button. */
 async function boxPoints(page: Page) {
-  const words = await borderBox(area(page).locator(':scope > .kb-bb'));
+  const words = await borderBox(area(page).locator(':scope > [data-kb-words-box] > .kb-bb'));
   const head = await borderBox(band(page).locator('.kb-origin-head-text'));
   return {
     band: { x: head.left + 8, y: (head.top + head.bottom) / 2 },
@@ -558,7 +558,7 @@ test('8. the box stands above the opening post\'s effects, and its presses are i
     return best;
   }, [x, y, sel] as const);
   const points = await boxPoints(page);
-  const words = await borderBox(area(page).locator(':scope > .kb-bb'));
+  const words = await borderBox(area(page).locator(':scope > [data-kb-words-box] > .kb-bb'));
   /* Five points in the box, one in each of its parts: an element of the box answers at each (the mark is pressable, which is all that is read of it: its own layer puts it over the opening post's
      canvases whether or not the box is lifted, so its order and its pixel would pass either way). At the other four, what is painted is the box's and not the opening post's effects': that is read as a pixel
      twice, with every canvas of the opening post shown and then hidden, and the box over them gives the same pixel. It can only fail where an effect has ink, so each point is asserted to have some: the
@@ -727,7 +727,7 @@ test('11. under a glittered opening post the box is painted over the glitter, an
     }
   };
   expect(await page.evaluate(() => matchMedia('(hover: hover) and (pointer: fine)').matches && !matchMedia('(prefers-reduced-motion: reduce)').matches), 'a fine pointer, and motion on: reduced motion turns cling off by design').toBe(true);
-  const inBox = await borderBox(area(page).locator(':scope > .kb-bb'));
+  const inBox = await borderBox(area(page).locator(':scope > [data-kb-words-box] > .kb-bb'));
   await sweep(inBox);
   await expect(cling, 'a pointer across the box\'s words picks no glitter up').toHaveCount(0);
   /* The first pickup over the opening post's own words makes the layer. It is made in short stretches, until a few flakes are carried: a sweep across the words fills the layer to its cap (26),
