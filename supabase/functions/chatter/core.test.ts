@@ -1626,3 +1626,17 @@ test('keepThePicks counts a persona once: one whose kept pick has posted is not 
   assert.ok(out.status === 'ok');
   assert.deepEqual([...out.kept].sort(), [CLERK, MON].sort(), 'the allowance of 4 holds two spends and two new picks');
 });
+
+test('a pick carried over from yesterday counts against the week\'s allowance before it is written', async () => {
+  // Thursday 2026-11-05, a week of 20: yesterday's unwritten pick is a slot the week has already given, so today's allowance is the one a week with that slot spent gives.
+  const carriedRun = async (priorSpent: number, kept: boolean) => {
+    const d = fakeDb({ priorSpent, ...(kept ? { sessions: [SIGH_LATER], kept: [keptPick(SIGH, T1, Q1)] } : {}) });
+    const out = await run(d, fakeModels(normal), dividedWorld, nextAt('00:07'));
+    assert.ok(out.status === 'ok');
+    return out.allowance;
+  };
+  const free = await carriedRun(0, false);
+  const spent = await carriedRun(1, false);
+  assert.ok(spent < free, 'the fixture shows a slot spent changes the allowance');
+  assert.equal(await carriedRun(0, true), spent, 'the carried pick is counted as spent');
+});

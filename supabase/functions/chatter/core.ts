@@ -281,8 +281,12 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const week = await db.rpc<Week>('pool_week', { today: day });
   const first = !started;
 
+  const eve = dayOf(slotAt - DAY);
+  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
+  // Each is a slot of its own day that the week has given already, though its spend is not written until this round: counted as spent (when that day is of today's week), so the week never overdraws.
+  const carriedSpent = new Date(slotAt).getUTCDay() === 1 ? 0 : carried.length;
   // The allowance counts the week before today, so every round of the day computes the allowance the first did.
-  const todays = allowance(week.spent, settings.pool.weekly, slotAt);
+  const todays = allowance(week.spent + carriedSpent, settings.pool.weekly, slotAt);
   const startedToday = week.today.some((r) => r.started_thread);
   let threadsLeft = startedToday ? 0 : Math.max(settings.pool.threadsWeekly - week.threads, 0);
   let used = week.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0);
@@ -313,8 +317,6 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   // The picks kept on the day before and never written (the persona's session began after the last round of that day, or its call failed in the last round, or the cron runs once a day) are
   // written here and spent on their own day: `kept_picks` of a day lists only the picks with no spend row on it, so a rerun never writes one twice. They are that day's slots, so they do
   // not wait for a session (every one of that day has ended), take nothing from today's allowance, and offer no card.
-  const eve = dayOf(slotAt - DAY);
-  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
   // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
   const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...k, on: day, own: true })) : [];
   for (const k of [...carried, ...owns]) {
