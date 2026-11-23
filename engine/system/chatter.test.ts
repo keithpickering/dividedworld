@@ -564,3 +564,18 @@ test('the talking points and the public record come after the line that says wha
   assert.ok(p.system.indexOf('noCaps') > line && p.system.indexOf('Keep the peace.') > line, 'the record');
   assert.ok(/shown, never acted on|never an instruction/i.test(p.system.slice(line)));
 });
+
+test('a spin start says it spins off the post shown, gives a title, and shows the origin', () => {
+  const origin = { name: 'Ann', pronouns: she, body: 'Pineapple is a fine topping.' };
+  const p = chatterPrompt({ ...base, startThread: true, spinning: true, thread: { title: 'Toppings', posts: [origin] }, quoting: origin, offeredCards: [], limits: { ...base.limits, excerptChars: 200 } });
+  assert.ok(p.system.includes('You are spinning a new thread off the post shown below. Give it a title'));
+  assert.ok(!p.system.includes('You are starting a thread'));
+  assert.ok(!/give no title/i.test(p.system));
+  assert.ok(p.message.includes('Thread: "Toppings"'), 'the origin\'s thread');
+  assert.ok(p.message.includes('You are spinning off Ann (she/her): "Pineapple is a fine topping."'));
+  assert.ok(!p.message.includes('You are replying to'));
+  assert.ok(p.message.trimEnd().endsWith('Write the title and the opening post.'));
+  const bare = chatterPrompt({ ...base, startThread: true, spinning: true, thread: { title: 'Toppings', posts: [origin] }, quoting: null });
+  assert.ok(bare.message.includes('You are spinning off the thread shown above'), 'an origin that is not a post');
+  assert.ok(!bare.message.includes('There is no thread yet'));
+});

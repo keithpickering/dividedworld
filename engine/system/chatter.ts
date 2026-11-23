@@ -353,6 +353,8 @@ export interface ChatterInput {
   readonly offeredCards: readonly OfferedCard[];
   /** Whether this post starts a thread, and so gives a title. */
   readonly startThread: boolean;
+  /** With `startThread`: the thread is spun off the post it quotes (or, where that Act is no post, off the thread shown), not started on a board. Replies and plain starts leave it unset. */
+  readonly spinning?: boolean;
   readonly limits: ChatterLimits;
   /** A character's name by id, for the memory's opinions, with its pronouns beside it (`Gloomba (she/her)`); the id itself where unknown. */
   readonly names?: (id: string) => string;
@@ -457,7 +459,9 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
       `Why you are posting: ${reasonOf(i, names)}.`,
       'Your words are a post on the board, in your own voice, at most ' + `${Math.min(l.postMaxLength, CHATTER_WORDS_MOST)} characters.`,
       'You cannot know who is behind any character; do not guess aloud at who owns a mask.',
-      ...(i.startThread ? [`You are starting a thread. Give it a title, one line of at most ${l.titleMaxLength} characters.`] : ['This is a reply; give no title.']),
+      ...(i.startThread
+        ? [`You are ${i.spinning ? 'spinning a new thread off the post shown below' : 'starting a thread'}. Give it a title, one line of at most ${l.titleMaxLength} characters.`]
+        : ['This is a reply; give no title.']),
       `You may also leave a note to yourself, a thought for the next time you write, at most ${noteMost} characters. It is yours alone; the board never shows it.`,
     ].join('\n'),
     offer,
@@ -472,7 +476,8 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
   const message = [
     ...(conversation.length ? [conversation.join('\n')] : []),
     ...(lines.length ? [lines.join('\n')] : ['There is no thread yet; yours will be its first post.']),
-    ...(i.quoting ? [`You are replying to ${taggedName(clip(i.quoting.name, 60), i.quoting.pronouns)}: "${excerpt(i.quoting.body, l.excerptChars, i.quoting.cut === true)}"`] : []),
+    ...(i.quoting ? [`You are ${i.startThread && i.spinning ? 'spinning off' : 'replying to'} ${taggedName(clip(i.quoting.name, 60), i.quoting.pronouns)}: "${excerpt(i.quoting.body, l.excerptChars, i.quoting.cut === true)}"`]
+      : i.startThread && i.spinning ? ['You are spinning off the thread shown above.'] : []),
     i.startThread ? 'Write the title and the opening post.' : 'Write your post.',
   ].join('\n\n');
   return { system, message };

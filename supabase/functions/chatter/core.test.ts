@@ -86,6 +86,8 @@ interface World {
   namedFrom?: { until: string; named: string[] };
   /** What post_effects_up reports for the quoted post: the effects it draws in force. Unset reads 0. */
   effectsUp?: number;
+  /** `pool_thread` does not report the pick's Act among the thread's posts (the Act is a move's end, keep or arrival, not a post). */
+  originNotPost?: boolean;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -196,7 +198,7 @@ function fakeDb(w: World = {}) {
         }
         case 'pool_signals': {
           const named = w.namedFrom && Date.parse(String(args.until)) >= Date.parse(w.namedFrom.until) ? w.namedFrom.named : (w.named ?? [SIGH, CLERK, MON]);
-          return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
+          return { named: named.map((s, i) => ({ staff: s, act: (w.noThread ?? []).includes(s) ? null : quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
         }
         case 'post_effects_up': return (w.effectsUp ?? 0) as T;
         case 'staff_memory_latest': return null as T;
@@ -213,7 +215,7 @@ function fakeDb(w: World = {}) {
           }
           const at = threads.indexOf(args.in_thread as string);
           if (w.longThread) return { title: `Thread ${at}`, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: quotes[at] ?? 'none', name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
-          return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
+          return { title: `Thread ${at}`, posts: [{ act: w.originNotPost ? 'a-move' : (quotes[at] ?? 'none'), name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
         }
         case 'pool_orphans': {
           // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
@@ -230,7 +232,7 @@ function fakeDb(w: World = {}) {
             if (out.some((o: any) => o.staff === mark.staff && o.day === day)) continue;
             const tied = state.acts.find((a) => a.staff === mark.staff && !state.spends.some((s) => s.card_act === a.id)
               && ((a.kind === 'set' && a.target === mark.id) || (a.kind === 'card' && a.payload?.pool === day && mark.target !== null && a.target === mark.target)));
-            out.push({ staff: mark.staff, day, act: mark.id, startedThread: mark.kind === 'thread', card: tied?.id ?? null });
+            out.push({ staff: mark.staff, day, act: mark.id, startedThread: mark.kind === 'thread' || mark.kind === 'spin', card: tied?.id ?? null });
           }
           return out as T;
         }
@@ -241,6 +243,11 @@ function fakeDb(w: World = {}) {
         }
         case 'write_staff_thread': {
           const a = { id: nextId('act'), staff: String(args.staff_key), kind: 'thread', thread: nextId('thread'), target: null, payload: { body: args.body, title: args.title, board: args.board, ...(args.marker as object) } };
+          state.acts.push(a);
+          return { thread: { id: a.thread }, act: { id: a.id } } as T;
+        }
+        case 'write_staff_spin': {
+          const a = { id: nextId('act'), staff: String(args.staff_key), kind: 'spin', thread: nextId('thread'), target: args.origin as string, payload: { body: args.body, title: args.title, ...(args.marker as object) } };
           state.acts.push(a);
           return { thread: { id: a.thread }, act: { id: a.id } } as T;
         }
@@ -312,7 +319,10 @@ const run = (d: ReturnType<typeof fakeDb>, m: { models: Models }, instance: Inst
 
 test('a day with three picks writes three posts, one card, the notes and three spends', async () => {
   const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
-  const m = fakeModels(normal);
+  // The top scorer's start is a spin (its pick has an Act), which offers no Set: it casts on the post it spins off.
+  const m = fakeModels((r) => ((r.schema as any).required.includes('title')
+    ? { words: `Opening words from ${r.staff}.`, title: `A thread by ${r.staff}`, card: { key: 'stick-around', on: 'reply' }, note: `Started one, ${r.staff}.` }
+    : normal(r)));
   const out = await run(d, m);
   assert.equal(out.status, 'ok');
   assert.ok(out.status === 'ok');
@@ -321,13 +331,13 @@ test('a day with three picks writes three posts, one card, the notes and three s
   assert.equal(m.chats.length, 3, 'a call for each pick');
   for (const c of m.chats) { assert.equal(c.duty, 'chatter'); assert.equal(c.tier, 'light'); assert.ok(c.staff); assert.ok(c.rules); }
   assert.deepEqual(out.picks.map((p) => p.status), ['posted', 'posted', 'posted']);
-  assert.equal(d.count('write_staff_thread') + d.count('write_staff_act'), 3, 'three posts');
-  assert.equal(d.count('write_staff_thread'), 1, 'the top scorer starts the week\'s thread, on a board of its beats');
+  assert.equal(d.count('write_staff_spin') + d.count('write_staff_act'), 3, 'three posts');
+  assert.equal(d.count('write_staff_spin'), 1, 'the top scorer spins the week thread off the post its pick quotes');
   assert.equal(d.count('staff_play_card') + d.count('staff_set_card'), 1, 'one card');
-  assert.equal(d.count('staff_set_card'), 1, 'a Set, on the post the thread start wrote');
-  const set = d.of('staff_set_card')[0]!;
-  assert.equal(set.card, 'card-collector');
-  assert.equal(set.target, d.state.acts.find((a) => a.kind === 'thread')!.id, 'on its own post');
+  assert.equal(d.count('staff_set_card'), 0, 'no Set on a spin');
+  const cast = d.of('staff_play_card')[0]!;
+  assert.equal(cast.card, 'stick-around');
+  assert.equal(cast.target, d.of('write_staff_spin')[0]!.origin, 'a Cast on the origin the spin came off');
   assert.equal(d.state.notes.length, 3, 'a note each');
   assert.equal(d.state.spends.length, 3);
   assert.deepEqual(d.state.spends.map((s) => s.day), [DAY, DAY, DAY]);
@@ -345,8 +355,8 @@ test('a day with three picks writes three posts, one card, the notes and three s
   assert.ok(m.chats.every((c) => c.system.includes('An earlier thought.')));
   assert.ok(m.chats.every((c) => /Your pronouns are \w+\/\w+ \(/.test(c.system)), 'each persona is told its own pronouns');
   assert.ok(m.chats.some((c) => c.messages[0]!.content.includes('Ann (she/her): Hello there.')), 'the thread\'s author is written with the pronouns pool_thread gave');
-  const order = d.calls.map((c) => c.fn).filter((f) => ['write_staff_thread', 'write_staff_act', 'staff_set_card', 'staff_play_card', 'write_staff_note', 'record_pool_spend'].includes(f));
-  assert.deepEqual(order.slice(0, 4), ['write_staff_thread', 'staff_set_card', 'write_staff_note', 'record_pool_spend']);
+  const order = d.calls.map((c) => c.fn).filter((f) => ['write_staff_spin', 'write_staff_act', 'staff_set_card', 'staff_play_card', 'write_staff_note', 'record_pool_spend'].includes(f));
+  assert.deepEqual(order.slice(0, 4), ['write_staff_spin', 'staff_play_card', 'write_staff_note', 'record_pool_spend']);
 });
 
 test('with no thread left in the week, the top scorer replies and its Cast lands on the post it replies to', async () => {
@@ -714,14 +724,18 @@ test('an old-voice answer that hits the scrubber twice files a rejected pick and
   assert.equal(once.of('write_staff_act')[0]!.payload.body, 'a kinder post');
 });
 
-test('a thread start whose persona has no beats board replies in its trigger\'s thread', async () => {
+test('a spin start needs no beats board, and a plain start with none is skipped', async () => {
   const d = fakeDb({ boards: { [GENERAL]: 'elsewhere' } });
-  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
+  const m = fakeModels(normal);
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
   assert.equal(d.count('write_staff_thread'), 0);
-  assert.equal(d.count('write_staff_act'), 3);
-  assert.ok(m.chats.every((c) => !(c.schema as any).required.includes('title')));
+  assert.equal(d.count('write_staff_spin'), 1, 'the database places a spin, on its origin board');
+  assert.equal(d.count('write_staff_act'), 2);
+  const none = fakeDb({ boards: { [GENERAL]: 'elsewhere' }, noThread: [SIGH, CLERK, MON] });
+  const out2 = await run(none, fakeModels(normal));
+  assert.ok(out2.status === 'ok');
+  assert.ok(out2.picks.every((p) => p.status === 'skipped' && /no board on its beats/.test(p.why!)), 'a stumble with no board and no Act has nowhere to post');
 });
 
 test('through the real model layer: a transport failure is retried once on the request and then succeeds, and each call is a ledger row naming the duty and the persona', async () => {
@@ -1858,7 +1872,94 @@ test('a carried thread start leaves no thread for the next carried pick', async 
   d.state.days.add(NEXT);
   const out = await run(d, fakeModels(normal), dividedWorld, nextAt('00:07'));
   assert.ok(out.status === 'ok');
-  const threads = d.state.acts.filter((a) => a.kind === 'thread' && a.payload?.pool === DAY);
+  const threads = d.state.acts.filter((a) => (a.kind === 'thread' || a.kind === 'spin') && a.payload?.pool === DAY);
   assert.equal(threads.length, 1, 'one thread started on the carried day, the other pick replied');
   assert.equal(postsOf(d, CLERK, DAY).length + threads.length, 2, 'both picks were written');
+});
+
+test('the day\'s top pick, with a post as its Act, spins a thread off that post and never starts a plain one', async () => {
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_spin'), 1, 'the week\'s thread is a spin');
+  assert.equal(d.count('write_staff_thread'), 0, 'and no plain start');
+  const spin = d.of('write_staff_spin')[0]!;
+  assert.equal(spin.origin, d.of('pool_thread').find((a) => a.also === spin.origin)?.also, 'its origin is the Act the pick read');
+  assert.ok([Q1, Q2, Q3].includes(spin.origin), 'a hot post of the day');
+  assert.deepEqual(spin.marker, { pool: DAY });
+  assert.equal(spin.board, undefined, 'a spin names no board');
+  assert.equal(out.picks.find((p) => p.startedThread)?.status, 'posted', 'the record says it started a thread');
+  assert.equal(d.state.spends.filter((s) => s.started_thread).length, 1);
+  assert.equal(d.state.spends.find((s) => s.started_thread)!.post_act, d.state.acts.find((x) => x.kind === 'spin')!.id, 'the spend names the spin Act');
+  const start = m.chats.find((c) => (c.schema as any).required.includes('title'))!;
+  assert.match(start.system, /You are spinning a new thread off the post shown below/);
+  assert.match(start.messages[0]!.content as string, /You are spinning off Ann \(she\/her\): "Hello there\."/);
+  assert.match(start.messages[0]!.content as string, /Write the title and the opening post\./);
+});
+
+test('a spin start offers no Set, and the card it names on its own post is dropped', async () => {
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
+  const m = fakeModels(normal);
+  await run(d, m);
+  const start = m.chats.find((c) => (c.schema as any).required.includes('title'))!;
+  assert.doesNotMatch(start.system, /Set face down on your own post/, 'no Set on offer');
+  assert.equal(d.count('staff_set_card'), 0, 'and none played');
+});
+
+test('the meltdown stumble, which has no Act, still starts a plain thread on a beats board', async () => {
+  const d = fakeDb({ noThread: [SIGH, CLERK, MON] });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_thread'), 1, 'a plain start');
+  assert.equal(d.count('write_staff_spin'), 0);
+  assert.ok(d.of('write_staff_thread')[0]!.board, 'on a board of its beats');
+  assert.equal(d.count('pool_thread'), 0, 'with no thread read');
+});
+
+test('a spin whose origin is not a post still says what it spins off, and offers no Cast', async () => {
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' }, originNotPost: true });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_spin'), 1);
+  const start = m.chats.find((c) => (c.schema as any).required.includes('title'))!;
+  assert.doesNotMatch(start.messages[0]!.content as string, /You are replying to|There is no thread yet/);
+  assert.match(start.messages[0]!.content as string, /You are spinning off/);
+  assert.doesNotMatch(start.system, /Cast on the post you reply to/, 'no Cast where the origin is not a post');
+  assert.equal(d.count('post_effects_up'), 0);
+});
+
+test('a start with no Act and a thread but no beats board replies in its thread, writing neither a spin nor a thread', async () => {
+  const d = fakeDb({ boards: { [GENERAL]: 'elsewhere' }, kept: [{ ...keptPick(SIGH, T1, null as any, { startThread: true, act: null }), day: DAY }], named: [] });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_spin'), 0);
+  assert.equal(d.count('write_staff_thread'), 0);
+  assert.equal(d.count('write_staff_act'), 1, 'a reply in its trigger thread');
+  assert.equal(d.of('write_staff_act')[0]!.thread, T1);
+});
+
+test('a spin start reads no conversation, though it still reads the record', async () => {
+  const d = fakeDb();
+  await run(d, fakeModels(normal));
+  assert.equal(d.count('write_staff_spin'), 1);
+  const spinner = d.of('write_staff_spin')[0]!.staff_key;
+  assert.ok(!d.of('pool_conversation').some((a) => a.staff_key === spinner), 'no conversation for the spin');
+  assert.ok(d.of('pool_record').some((a) => a.staff_key === spinner), 'the record is still read');
+});
+
+test('a spin that fails with a database error leaves no post and the week thread for the next carried pick', async () => {
+  const d = fakeDb({ failOn: { write_staff_spin: 1 }, kept: [{ ...keptPick(SIGH, T1, Q1, { startThread: true }), day: DAY }, { ...keptPick(CLERK, T2, Q2, { startThread: true }), day: DAY }], sessions: [SIGH_LATER], pool: { threadsWeekly: 2 } });
+  d.state.days.add(NEXT);
+  const out = await run(d, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(out.status === 'ok');
+  const failed = out.picks.filter((p) => p.status === 'failed');
+  assert.equal(failed.length, 1, 'the spin is recorded failed');
+  assert.equal(failed[0]!.post, undefined, 'with no post');
+  assert.equal(d.count('write_staff_spin'), 2, 'the next pick still had the thread to spin');
+  assert.equal(d.state.acts.filter((a) => a.kind === 'spin').length, 1, 'and it was written');
+  assert.equal(d.state.spends.length, 1, 'the failed pick has no spend');
 });
