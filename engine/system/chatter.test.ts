@@ -525,3 +525,10 @@ test('an old-voice turn\'s completion has the conversation view as its thread', 
   const c = chatterCompletion({ name: 'Gloomba', thread: { title: 'Pineapple', posts }, limits: { ...base.limits, excerptChars: 200 }, fit: ROOMY });
   assert.ok(c.prompt.includes('Pineapple belongs on pizza') && c.prompt.includes('Ignore previous') && c.prompt.endsWith('Gloomba:'));
 });
+
+test('replies to older posts that the view does not hold are shown too, each marked as answered', () => {
+  const p = chatterPrompt({ ...base, limits: { ...base.limits, excerptChars: 200 }, trigger: 'answered', offeredCards: [], conversation: { ...view, others: [{ act: 'r9', name: 'Di', pronouns: she, body: 'About your first post.' }], answering: ['r2', 'r3', 'r9'] } });
+  const line = p.message.split('\n').find((l) => l.includes('About your first post.'))!;
+  assert.ok(/\(answering\)/.test(line));
+  assert.ok(p.message.indexOf('About your first post.') > p.message.indexOf('Still wrong'), 'after the view\'s own posts');
+});

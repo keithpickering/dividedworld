@@ -61,7 +61,7 @@ interface World {
   /** Picks already kept for the day. */
   kept?: { staff: string; pick: Record<string, unknown> }[];
   /** The replies waiting on each persona, by thread: `staff: true` for a reply by a staff character (the database never reports one). */
-  waiting?: { staff: string; thread: string; heat?: number; replies: { act: string; author: string; at: string; staff?: true }[] }[];
+  waiting?: { staff: string; thread: string; heat?: number; replies: { act: string; author: string; at: string; staff?: true; old?: true }[] }[];
   /** Turns already spent: (staff, session index in `sessions`, thread). */
   spentTurns?: { staff: string; session: number; thread: string }[];
   /** The turns written today before this run, instance-wide. */
@@ -139,7 +139,7 @@ function fakeDb(w: World = {}) {
         case 'pool_conversation': {
           const mine = (w.waiting ?? []).find((x) => x.staff === args.staff_key && x.thread === args.in_thread);
           return { posts: [{ act: `own-${args.in_thread}`, at: '2026-11-04T10:00:00.000Z', body: 'My earlier words.', cut: false,
-            replies: (mine?.replies ?? []).filter((r) => !r.staff).map((r) => ({ act: r.act, author: r.author, name: `Player ${r.author}`, pronouns: null, at: r.at, body: `Reply ${r.act} says hello.`, cut: false })) }] } as T;
+            replies: (mine?.replies ?? []).filter((r) => !r.staff && !r.old).map((r) => ({ act: r.act, author: r.author, name: `Player ${r.author}`, pronouns: null, at: r.at, body: `Reply ${r.act} says hello.`, cut: false })) }] } as T;
         }
         case 'pool_record': return (w.record ?? { moves: [], rules: [], order: null }) as T;
         case 'staff_points_latest': return (w.points?.[String(args.staff_key)] ?? null) as T;
@@ -172,6 +172,11 @@ function fakeDb(w: World = {}) {
         case 'staff_notes_recent': return ['An earlier thought.'] as T;
         case 'character_faces': return {} as T;
         case 'pool_thread': {
+          // A read for one post alone (`most` 0 and `also`): a waiting reply, whichever of the persona's posts it answers.
+          if (args.most === 0 && args.also) {
+            const found = (w.waiting ?? []).flatMap((x) => x.replies).find((r) => r.act === args.also);
+            return { title: 'Thread', posts: found ? [{ act: found.act, name: `Player ${found.author}`, pronouns: null, body: `Reply ${found.act} says hello.`, cut: false }] : [] } as T;
+          }
           const at = threads.indexOf(args.in_thread as string);
           if (w.longThread) return { title: `Thread ${at}`, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: quotes[at] ?? 'none', name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
           return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
@@ -508,7 +513,8 @@ test('a rerun the same day posts nothing new, even at another minute', async () 
   const calls = m.chats.length;
   const again = await run(d, m);
   assert.ok(again.status === 'ok');
-  assert.deepEqual(again.picks.map((p) => p.status), ['already', 'already', 'already']);
+  assert.deepEqual(again.picks, [], 'the day\'s first round is done: the daily path is not run again');
+  assert.equal(d.count('pool_signals'), 1, 'and the signals are read once');
   assert.equal(writes(), before, 'nothing was written');
   assert.equal(m.chats.length, calls, 'and no model was paid');
   const later = await run(d, m, dividedWorld, '2026-11-04T19:02:00.000Z');
@@ -531,7 +537,7 @@ test('a rerun after a crash between a post and its spend adopts the post and wri
   const second = await run(d, m);
   assert.ok(second.status === 'ok');
   assert.equal(second.adopted.find((p) => p.staff === orphaned)!.status, 'adopted');
-  assert.equal(second.picks.find((p) => p.staff === orphaned)!.status, 'already', 'and it is not picked again');
+  assert.deepEqual(second.picks, [], 'the day is done (two spends are there), so the daily path does not pick it again');
   assert.equal(d.state.acts.filter((a) => a.kind === 'post').length, 3, 'no second post');
   assert.equal(d.state.spends.length, 3, 'the orphan now has its row');
   assert.equal(d.state.spends.find((s) => s.staff === orphaned)!.record.adopted, true);
@@ -1431,5 +1437,36 @@ test('a second round of the same slot returns busy, having read and written noth
   const again = await run(d, m);
   assert.deepEqual(again, { status: 'busy' });
   assert.equal(d.calls.length - calls, 2, 'the settings read and the lost claim');
+  assert.equal(d.count('write_staff_turn'), 1);
+});
+
+test('a day with no sessions drawn is done once its picks are spent, and a crash while keeping them is redone whole', async () => {
+  const d = fakeDb({ failOn: { keep_pick: 1 } });
+  const m = fakeModels(normal);
+  await assert.rejects(run(d, m), /connection dropped/);
+  assert.equal(d.state.spends.length, 0);
+  const again = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(again.status === 'ok');
+  assert.deepEqual(again.picks.map((p) => p.status), ['posted', 'posted', 'posted'], 'no pick is lost');
+  await run(d, m, dividedWorld, '2026-11-04T18:07:00.000Z');
+  assert.equal(d.count('pool_signals'), 2, 'the round after the day\'s picks were spent does not run the daily path');
+  assert.equal(d.count('keep_pick'), 4);
+});
+
+test('a turn answers every waiting reply, including one to an older post of its own that the conversation view does not hold, and quotes the newest', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [{ ...reply(R1, '15:00'), old: true }, reply(R2, '16:00'), { ...reply(R3, '16:30'), old: true }] }] });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['taken']);
+  const wrote = d.of('write_staff_turn')[0]!;
+  assert.deepEqual(wrote.answers, [R1, R2, R3]);
+  assert.equal(wrote.quoting, R3, 'the newest, though the view does not hold it');
+  const message = m.chats[0]!.messages[0]!.content;
+  for (const r of [R1, R2, R3]) assert.ok(message.includes(`Reply ${r} says hello.`), `${r} is shown`);
+  assert.equal(message.split('\n').filter((l) => l.startsWith('  ') && l.includes('(answering)')).length, 3, 'each marked');
+  assert.ok(message.includes('You are replying to Player char-3'));
+  // Nothing is skipped round after round: the next round finds all three answered.
+  await run(d, m, dividedWorld, at('17:52'));
   assert.equal(d.count('write_staff_turn'), 1);
 });

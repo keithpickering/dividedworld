@@ -265,10 +265,12 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   if (round === null) return { status: 'busy' };
   const day = dayOf(slotAt);
 
-  // The day's first round is the one that finds no session written for the day. It claims the day, as the daily run always has, before anything else is read.
+  // The day's first round is the one that finds neither a session written for the day nor a pick spent. It claims the day, as the daily run always has, before anything else is read.
+  // Either is a mark that the daily path finished: the sessions are written after every pick is kept, and a pick is spent only in step 3, after they are all kept. A day that draws no
+  // sessions (perDay 0) is marked by its first spend; a crash while keeping, or before the first post, leaves neither, and the next round redoes the day whole without losing a pick.
   let sessions = await db.rpc<DaySession[]>('sessions_day', { on_day: day });
-  const first = sessions.length === 0;
-  if (first) {
+  const noSessions = sessions.length === 0;
+  if (noSessions) {
     const claimed = await db.rpc<string | null>('claim_pool_run', { on_day: day, lease: CLAIM_LEASE });
     if (claimed === null) return { status: 'busy' };
   }
@@ -276,6 +278,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   if (!context.season) return { status: 'no season' };
   const adopted = await adoptOrphans(db, day);
   const week = await db.rpc<Week>('pool_week', { today: day });
+  const first = noSessions && week.today.length === 0;
 
   // The allowance counts the week before today, so every round of the day computes the allowance the first did.
   const todays = allowance(week.spent, settings.pool.weekly, slotAt);
@@ -510,10 +513,20 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: planned.quoting }),
       personaReads(db, settings, planned.staff),
     ]);
-    // A turn answers what it was shown: the waiting replies that are in the conversation view, and it quotes the newest of them.
-    const shown = new Map(view.conversation.posts.flatMap((m) => m.replies.map((x) => [x.act, x] as const)));
+    // A turn answers every waiting reply it was handed, and is shown each: those in the conversation view, and for the rest (replies to an older post of its own) the one post
+    // read alone (`pool_thread` with `most` 0 and `also`, a bounded read of one post). A reply that cannot be read is not answered (the database would find it no longer waiting).
+    const shown = new Map<string, { name: string; pronouns: PronounSet | null; body: string; cut?: boolean }>(view.conversation.posts.flatMap((m) => m.replies.map((x) => [x.act, x] as const)));
+    const missing = planned.answers.filter((a) => !shown.has(a));
+    const fetched = await Promise.all(missing.map((act) => db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: 0, chars: settings.digestExcerptChars, also: act })));
+    const others: { act: string; name: string; pronouns: PronounSet; body: string; cut: boolean }[] = [];
+    missing.forEach((act, i) => {
+      const x = fetched[i]!.posts.find((q) => q.act === act);
+      if (!x) return;
+      shown.set(act, x);
+      others.push({ act, name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true });
+    });
     const answers = planned.answers.filter((a) => shown.has(a));
-    if (answers.length === 0) return skip('none of the waiting replies is in the conversation view');
+    if (answers.length === 0) return skip('none of the waiting replies can be read');
     const quoting = answers.includes(planned.quoting) ? planned.quoting : answers.at(-1)!;
     const quotedRead = shown.get(quoting)!;
     const quotedPost: ThreadPost = { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true };
@@ -526,7 +539,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       if (persona.voice === 'oldVoice') {
         // The conversation view is its thread: each of its posts, then the replies to it, the newest last.
         const own = pronounsOr(persona.pronouns, instanceSet);
-        const posts = view.conversation.posts.flatMap((m) => [{ name: persona.name, pronouns: own, body: m.body, cut: m.cut === true }, ...m.replies.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true }))]);
+        const posts = view.conversation.posts.flatMap((m) => [{ name: persona.name, pronouns: own, body: m.body, cut: m.cut === true }, ...m.replies.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true }))]).concat(others);
         const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
         const frame = chatterCompletion({ name: persona.name, thread: { title: read.title, posts }, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
         const out = await scrubbedComplete(models, {
@@ -536,7 +549,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       } else {
         const frame = chatterPrompt({
           premise: TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread, quoting: quotedPost,
-          trigger: 'answered', conversation: viewOf(view.conversation, instanceSet, answers), record: view.record, points: view.points,
+          trigger: 'answered', conversation: { ...viewOf(view.conversation, instanceSet, answers), others }, record: view.record, points: view.points,
           // A turn offers no card: the ceiling counts calls and nothing else.
           offeredCards: [], startThread: false, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
         });
