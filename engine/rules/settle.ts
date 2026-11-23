@@ -784,7 +784,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}), ...(e.fromReactions ? { fromReactions: true as const } : {}), ...(e.tally ? { tally: true as const } : {}) });
       }
       /* The crowd floor. A vote the class neither paid nor charged (no earning with `votes`, of any sign, has its act, quadrant, time and kind) pays
-         `crowdFloor` of a vote, as `crowd.floor` with no class, and the amount joins the net floor paid on that quadrant of the player's vote (`flooredNow`).
+         `crowdFloor` of a vote, as `crowd.floor` with no class, and the amount joins the net floor paid on that quadrant of the player's vote (its `book.floored`).
          A share lost takes back that floor times the share lost over the share held: what was paid and nothing else, so a vote paid before the floor existed
          takes back none, and a retune or a switch off and on takes back as much as was paid. A take-back reads neither the shield, `floorOn` nor `crowdFloor`. */
       const keyOf = (x: { act?: string; quadrant?: Quadrant; at?: number; kind?: string }) => `${x.act}|${x.quadrant}|${x.at}|${x.kind}`;
