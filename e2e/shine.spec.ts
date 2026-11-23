@@ -119,7 +119,6 @@ export function outOfViewDraws(samples: readonly Sample[], lag = LAG): { frame: 
   return bad;
 }
 
-
 async function open(page: Page, name: string, poison = ''): Promise<void> {
   await page.setViewportSize({ width: 1200, height: 900 });
   if (THROTTLE > 1) await (await page.context().newCDPSession(page)).send('Emulation.setCPUThrottlingRate', { rate: THROTTLE });
@@ -138,7 +137,6 @@ const frames = (page: Page, n: number): Promise<void> =>
 
 /** What the page reports of every shiny post's canvases: its box and the size of each canvas inside it (a worker's canvases read from the worker). */
 const held = (page: Page): Promise<Held[]> => page.evaluate(() => window.__kbShine!.held());
-
 
 /** A fixed piece of work on the page's thread, in ms: how loaded the machine is just now (the same page, the same work, every run). */
 const calibrate = (page: Page): Promise<number> => page.evaluate(() => {

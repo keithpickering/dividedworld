@@ -112,7 +112,7 @@ async function oneRun(browser: Browser, bend: boolean, n: number) {
     const run = await scrollRun(page, SPEED);
     const seen = await stopDents(page);
     const gaps = run.samples.slice(1).map((s, k) => s.t - run.samples[k]!.t);
-    const out = { run: n, bend, poison: POISON && bend, throttle: THROTTLE, gap: +percentile(gaps, 0.95).toFixed(2), median: +percentile(gaps, 0.5).toFixed(2), frames: run.samples.length, sampled: seen.frames, dentFrames: seen.dent, bentFrames: seen.bent };
+    const out = { run: n, bend, poison: POISON && bend, throttle: THROTTLE, gap: +percentile(gaps, 0.95).toFixed(2), median: +median(gaps).toFixed(2), frames: run.samples.length, sampled: seen.frames, dentFrames: seen.dent, bentFrames: seen.bent };
     console.log(`dent-bend-data ${JSON.stringify(out)}`);
     expect(seen.dent, 'frames of the scroll with a dent standing in view over a foil').toBeGreaterThan(0);
     if (bend) expect(seen.bent, 'frames with such a dent over a foil carrying data-kb-bend').toBeGreaterThan(0);
