@@ -93,7 +93,7 @@ begin
        or not exists (select 1 from acts x where x.id = (v ->> 'act')::uuid)) then
     raise exception 'paid votes are a player, an Act, a weight of at most one vote, and four shares that make one vote' using errcode = '22023';
   end if;
-  -- The net crowd floor each paid vote carries (0415), when it carries one: an object of the four quadrants' amounts, none below 0; absent is none paid.
+  -- The net crowd floor each paid vote carries (0417), when it carries one: an object of the four quadrants' amounts, none below 0; absent is none paid.
   if exists (select 1 from jsonb_array_elements(coalesce(paid, '[]')) v
              where v ? 'floored' and (jsonb_typeof(v -> 'floored') <> 'object'
                 or exists (select 1 from jsonb_each(v -> 'floored') f

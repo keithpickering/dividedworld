@@ -528,7 +528,7 @@ begin
       'firstStaff', jsonb_build_array('fdm-mod'),
       'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true)),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
-  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "uncommon", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}}, "turns": {"waitHours": 48, "perThread": 2, "perSession": 4, "perDay": 60}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
   insert into card_kinds (key, name, alignment, rarity, play, trap) values
     ('fdpmove', 'Persona Move', 'salty', 'common', 'cast', null),
     ('fdptrap', 'Persona Trap', 'salty', 'common', 'set', '{"trigger": {"on": "cast"}}'),

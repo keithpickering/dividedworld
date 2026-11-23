@@ -1,6 +1,6 @@
 -- The crowd floor's setting (docs/plans/2026-11-23-crowd-floor-design.md, section 4, Task 1 of its plan): `crowdFloor`, the hundredths a vote on a character's own Act pays it when its class neither pays nor charges that vote;
 -- 0 switches the floor off. A whole number of hundredths, at least 0, as `crowdPayEach` is held. Each object is copied whole from its latest version on main, with only the change named.
---   1. settings_held   copied whole from 0411_post_effects.sql: `crowdFloor` is a whole number of hundredths, at least 0, in the words of the engine's SETTINGS rule (instance.ts). Grants as they were (replaced in place).
+--   1. settings_held   copied whole from 0415_chattier_staff.sql (its latest): `crowdFloor` is a whole number of hundredths, at least 0, in the words of the engine's SETTINGS rule (instance.ts). Grants as they were (replaced in place).
 --   2. screen_settings copied whole from 0395_polls.sql (no later migration redefines it): `crowdFloor` joins the key list, so the Strategy Guide can say it. Grants as they were (replaced in place).
 -- Masks. A setting is the instance's number; nothing here is computed from a private fact, and the view is public as it was.
 
@@ -81,6 +81,8 @@ begin
     when 'microEventDailyCalls' then case when not setting_whole(v, 0) then 'a whole number of calls, at least 0' end
     when 'digestThreads' then case when not setting_whole(v, 1, 25) then 'a whole number of threads, at least 1 and at most 25' end
     when 'digestExcerpts' then case when not setting_whole(v, 1, 20) then 'a whole number of posts, at least 1 and at most 20' end
+    -- How many conversations with waiting replies the digest shows a pool persona (0415): a whole number from 0 to 12, as DIGEST_MOST.conversations holds.
+    when 'digestConversations' then case when not setting_whole(v, 0, 12) then 'a whole number of conversations, at least 0 and at most 12' end
     when 'digestBoards' then case when not setting_whole(v, 1, 30) then 'a whole number of boards, at least 1 and at most 30' end
     when 'digestBoardDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end
     when 'movedStubDays' then case when not setting_whole(v, 1, 365) then 'a whole number of days, at least 1 and at most 365' end

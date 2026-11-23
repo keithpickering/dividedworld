@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -425,6 +425,14 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');
+      -- The chattier staff's tables (0415), insert-only and no client's: a round's claim on its slot, the day's kept pick, a session of the Boss's, a turn in it with the reply it answered (the Boss's own post quoting Ann's), and the meeting's talking point.
+      insert into pool_round_claims (slot) values ('2030-01-07T10:15:00Z');
+      insert into pool_round_days (day) values ('2030-01-07');
+      insert into pool_kept_picks (day, staff, pick) values ('2030-01-07', 'exp-boss', '{"trigger": "named"}');
+      insert into staff_sessions (day, staff, starts_at, ends_at) values ('2030-01-07', 'exp-boss', '2030-01-07T10:00:00Z', '2030-01-07T11:00:00Z');
+      insert into pool_turns (day, staff, session, thread, post_act, quoting) select '2030-01-07', 'exp-boss', (select max(id) from staff_sessions), t, id, p from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
+      insert into pool_answered (reply, turn) select p, max(id) from pool_turns;
+      insert into staff_points (meeting, staff, line) select max(id), 'exp-boss', 'Needle the Mod, defend the pie.' from meetings;
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
       -- and an update by it, written as post_update writes one.
       perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,

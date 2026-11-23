@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { decideOptions, runChatter } from './core.ts';
+import { cronMinutes, decideOptions, runChatter } from './core.ts';
 import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
-import { DatabaseError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
@@ -56,6 +56,30 @@ interface World {
   longThread?: number;
   /** `pool_context`'s lockouts (staff character id, thread id); omitted from the context when unset. */
   lockouts?: { staff: string; thread: string }[];
+  /** The day's sessions, already drawn (minutes from 00:00 UTC): the day's first round has passed. Without any, the pool draws none (perDay 0) and every round is a first round. */
+  sessions?: { staff: string; start: number; end: number }[];
+  /** Picks already kept for the day. */
+  kept?: { staff: string; pick: Record<string, unknown> }[];
+  /** The replies waiting on each persona, by thread: `staff: true` for a reply by a staff character (the database never reports one). */
+  waiting?: { staff: string; thread: string; heat?: number; replies: { act: string; author: string; at: string; staff?: true; old?: true }[] }[];
+  /** Turns already spent: (staff, session index in `sessions`, thread). */
+  spentTurns?: { staff: string; session: number; thread: string }[];
+  /** The turns written today before this run, instance-wide. */
+  turnsToday?: number;
+  points?: Record<string, string>;
+  record?: Record<string, unknown>;
+  /** `claim_pool_round` refuses a slot a run already claimed, as the lease does. */
+  leases?: boolean;
+  /** `write_staff_turn` refuses with this reason (the kayfabb.refusal hint). */
+  turnRefusal?: string;
+  /** `write_staff_turn` commits, then its answer is lost (a transport error), once. */
+  lostTurnAnswer?: boolean;
+  /** `write_sessions` refuses (kayfabb.refusal) any list that holds this persona, as the database does for one benched since the context was read. */
+  refuseSessionsFor?: string;
+  /** The nth call of `write_sessions` (1-based) fails with a database error, once. */
+  crashSessionCall?: number;
+  /** From this `until` on, `pool_signals` names these personas instead (the signal window has shifted). */
+  namedFrom?: { until: string; named: string[] };
   /** What post_effects_up reports for the quoted post: the effects it draws in force. Unset reads 0. */
   effectsUp?: number;
 }
@@ -63,7 +87,12 @@ type Spend = { day: string; staff: string; trigger: string; post_act: string; ca
 
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
-  const state = { held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
+  const sessionRows = (w.sessions ?? []).map((x, i) => ({ id: i + 1, staff: x.staff, day: '2026-11-04', startsAt: Date.parse('2026-11-04T00:00:00Z') + x.start * 60_000, endsAt: Date.parse('2026-11-04T00:00:00Z') + x.end * 60_000 }));
+  const state = { sessions: sessionRows as { id: number; staff: string; day: string; startsAt: number; endsAt: number }[], kept: (w.kept ?? []).map((k) => ({ ...k })) as { staff: string; pick: any }[],
+    turns: (w.spentTurns ?? []).map((t) => ({ staff: t.staff, session: sessionRows[t.session]!.id, thread: t.thread, post: 'earlier', answers: [] as string[], quoting: '', body: '' })),
+    // A day with sessions or picks given is a day whose first round has passed.
+    days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
+    sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
   const threads = [T1, T2, T3];
@@ -78,7 +107,69 @@ function fakeDb(w: World = {}) {
         throw new DatabaseError(`${fn}: the connection dropped`, '08006', 500);
       }
       switch (fn) {
-        case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, ...(w.pool ? { pool: { ...dividedWorld.settings.pool, ...w.pool } } : {}) } as T;
+        // No sessions are drawn unless a test asks (perDay 0): every persona then has none left, so a kept pick posts in its own round, as the pool's picks did.
+        case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, pool: { ...dividedWorld.settings.pool, sessions: { ...dividedWorld.settings.pool.sessions, perDay: 0 }, ...(w.pool ?? {}) } } as T;
+        case 'claim_pool_round': {
+          const at = new Date(String(args.slot)).toISOString();
+          if (w.leases && state.claimed.has(at)) return null as T;
+          state.claimed.add(at);
+          return 'round-0001' as T;
+        }
+        case 'sessions_day': return state.sessions.filter((x) => x.day === args.on_day).map((x) => ({ staff: x.staff, session: x.id, startsAt: new Date(x.startsAt).toISOString(), endsAt: new Date(x.endsAt).toISOString() })) as T;
+        case 'pool_day_started': return state.days.has(String(args.on_day)) as T;
+        case 'write_sessions': {
+          state.sessionCalls += 1;
+          if (w.crashSessionCall === state.sessionCalls) throw new DatabaseError('write_sessions: the connection dropped', '08006', 500);
+          const given = args.rows as { staff: string; start: number; end: number }[];
+          if (w.refuseSessionsFor && given.some((r) => r.staff === w.refuseSessionsFor)) throw new DatabaseError('write_sessions: benched', '55000', 400, 'that persona is benched', 'kayfabb.refusal');
+          if (args.mark !== false) state.days.add(String(args.on_day));
+          for (const r of args.rows as { staff: string; start: number; end: number }[]) {
+            const startsAt = Date.parse(`${args.on_day}T00:00:00Z`) + r.start * 60_000;
+            if (!state.sessions.some((x) => x.day === args.on_day && x.staff === r.staff && x.startsAt === startsAt)) {
+              state.sessions.push({ id: state.sessions.length + 1, staff: r.staff, day: String(args.on_day), startsAt, endsAt: Date.parse(`${args.on_day}T00:00:00Z`) + r.end * 60_000 });
+            }
+          }
+          return state.sessions.filter((x) => x.day === args.on_day).length as T;
+        }
+        case 'keep_pick': {
+          if (!state.kept.some((k) => k.staff === args.of_staff)) state.kept.push({ staff: String(args.of_staff), pick: args.pick });
+          return null as T;
+        }
+        case 'kept_picks': return state.kept.filter((k) => !state.spends.some((s) => s.day === args.on_day && s.staff === k.staff)).map((k) => ({ staff: k.staff, pick: k.pick })) as T;
+        case 'sessions_awake': {
+          const at = Date.parse(String(args.at));
+          return state.sessions.filter((x) => x.startsAt <= at && at < x.endsAt).map((x) => {
+            const mine = state.turns.filter((t) => t.session === x.id);
+            const byThread: Record<string, number> = {};
+            for (const t of mine) byThread[t.thread] = (byThread[t.thread] ?? 0) + 1;
+            return { staff: x.staff, session: x.id, spent: mine.length, spentByThread: byThread };
+          }) as T;
+        }
+        case 'pool_waiting': {
+          const since = Date.parse(String(args.since));
+          const keys = args.staff_keys as string[];
+          return (w.waiting ?? []).filter((x) => keys.includes(x.staff)).map((x) => ({ ...x, replies: x.replies.filter((r) => !r.staff && !state.answered.has(r.act) && Date.parse(r.at) >= since).map(({ act, author, at }) => ({ act, author, at })) }))
+            .filter((x) => x.replies.length > 0).map((x) => ({ staff: x.staff, thread: x.thread, heat: x.heat ?? 0, replies: x.replies })) as T;
+        }
+        case 'pool_turns_today': return ((w.turnsToday ?? 0) + state.turns.filter((t) => t.post !== 'earlier').length) as T;
+        case 'pool_conversation': {
+          const mine = (w.waiting ?? []).find((x) => x.staff === args.staff_key && x.thread === args.in_thread);
+          return { posts: [{ act: `own-${args.in_thread}`, at: '2026-11-04T10:00:00.000Z', body: 'My earlier words.', cut: false,
+            replies: (mine?.replies ?? []).filter((r) => !r.staff && !r.old).map((r) => ({ act: r.act, author: r.author, name: `Player ${r.author}`, pronouns: null, at: r.at, body: `Reply ${r.act} says hello.`, cut: false })) }] } as T;
+        }
+        case 'pool_record': return (w.record ?? { moves: [], rules: [], order: null }) as T;
+        case 'staff_points_latest': return (w.points?.[String(args.staff_key)] ?? null) as T;
+        case 'write_staff_turn': {
+          if (w.turnRefusal) throw new DatabaseError(`write_staff_turn: ${w.turnRefusal}`, '55000', 400, w.turnRefusal, 'kayfabb.refusal');
+          const answers = args.answers as string[];
+          if (answers.some((a) => state.answered.has(a))) throw new DatabaseError('write_staff_turn: a reply is answered once', '55000', 400, 'a reply is answered once', 'kayfabb.refusal');
+          const post = nextId('turn-post');
+          state.acts.push({ id: post, staff: String(args.staff_key), kind: 'post', thread: args.in_thread as string, target: args.quoting as string, payload: { body: args.body } });
+          state.turns.push({ staff: String(args.staff_key), session: Number(args.in_session), thread: String(args.in_thread), post, answers, quoting: String(args.quoting), body: String(args.body) });
+          for (const a of answers) state.answered.add(a);
+          if (state.lost) { state.lost = false; throw new TransportError('the answer was lost'); }
+          return { turn: state.turns.length, post: { id: post } } as T;
+        }
         case 'claim_pool_run': return (state.held ? null : 'run-0001') as T;
         case 'pool_context':
           return { season: { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') }, boss: HYPE, predecessor: null,
@@ -89,8 +180,10 @@ function fakeDb(w: World = {}) {
           const before = state.spends.filter((s) => s.day >= monday && s.day < String(args.today));
           return { spent: (w.priorSpent ?? 0) + before.reduce((n, s) => n + 1 + (s.card_act === null ? 0 : 1), 0), threads: before.filter((s) => s.started_thread).length, today: today.map((s) => ({ staff: s.staff, post_act: s.post_act, card_act: s.card_act, started_thread: s.started_thread })) } as T;
         }
-        case 'pool_signals':
+        case 'pool_signals': {
+          const named = w.namedFrom && Date.parse(String(args.until)) >= Date.parse(w.namedFrom.until) ? w.namedFrom.named : (w.named ?? [SIGH, CLERK, MON]);
           return { named: named.map((s, i) => ({ staff: s, act: quotes[i], thread: (w.noThread ?? []).includes(s) ? null : threads[i], n: 1 })), quoted: [], legacy: [], reversals: [], handovers: [], hot: [], tallies: [] } as T;
+        }
         case 'post_effects_up': return (w.effectsUp ?? 0) as T;
         case 'staff_memory_latest': return null as T;
         case 'staff_memory_at': return null as T;
@@ -98,6 +191,11 @@ function fakeDb(w: World = {}) {
         case 'staff_notes_recent': return ['An earlier thought.'] as T;
         case 'character_faces': return {} as T;
         case 'pool_thread': {
+          // A read for one post alone (`most` 0 and `also`): a waiting reply, whichever of the persona's posts it answers.
+          if (args.most === 0 && args.also) {
+            const found = (w.waiting ?? []).flatMap((x) => x.replies).find((r) => r.act === args.also);
+            return { title: 'Thread', posts: found ? [{ act: found.act, name: `Player ${found.author}`, pronouns: null, body: `Reply ${found.act} says hello.`, cut: false }] : [] } as T;
+          }
           const at = threads.indexOf(args.in_thread as string);
           if (w.longThread) return { title: `Thread ${at}`, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: quotes[at] ?? 'none', name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
           return { title: `Thread ${at}`, posts: [{ act: quotes[at] ?? 'none', name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false }, body: 'Hello there.' }], ...(w.walls ? { walls: w.walls } : {}) } as T;
@@ -434,7 +532,8 @@ test('a rerun the same day posts nothing new, even at another minute', async () 
   const calls = m.chats.length;
   const again = await run(d, m);
   assert.ok(again.status === 'ok');
-  assert.deepEqual(again.picks.map((p) => p.status), ['already', 'already', 'already']);
+  assert.deepEqual(again.picks, [], 'the day\'s first round is done: the daily path is not run again');
+  assert.equal(d.count('pool_signals'), 1, 'and the signals are read once');
   assert.equal(writes(), before, 'nothing was written');
   assert.equal(m.chats.length, calls, 'and no model was paid');
   const later = await run(d, m, dividedWorld, '2026-11-04T19:02:00.000Z');
@@ -457,7 +556,7 @@ test('a rerun after a crash between a post and its spend adopts the post and wri
   const second = await run(d, m);
   assert.ok(second.status === 'ok');
   assert.equal(second.adopted.find((p) => p.staff === orphaned)!.status, 'adopted');
-  assert.equal(second.picks.find((p) => p.staff === orphaned)!.status, 'already', 'and it is not picked again');
+  assert.deepEqual(second.picks, [], 'the day is done (two spends are there), so the daily path does not pick it again');
   assert.equal(d.state.acts.filter((a) => a.kind === 'post').length, 3, 'no second post');
   assert.equal(d.state.spends.length, 3, 'the orphan now has its row');
   assert.equal(d.state.spends.find((s) => s.staff === orphaned)!.record.adopted, true);
@@ -679,7 +778,7 @@ test('a run that loses the claim writes nothing and reads nothing past it', asyn
   const m = fakeModels(normal);
   const out = await run(d, m);
   assert.equal(out.status, 'busy');
-  assert.deepEqual(d.calls.map((c) => c.fn).filter((f) => f !== 'instance_settings'), ['claim_pool_run']);
+  assert.deepEqual(d.calls.map((c) => c.fn).filter((f) => f !== 'instance_settings'), ['claim_pool_round', 'pool_day_started', 'sessions_day', 'claim_pool_run']);
   assert.equal(d.calls.find((c) => c.fn === 'claim_pool_run')!.args.on_day, DAY);
   assert.equal(m.chats.length + m.completions.length, 0, 'and no model was paid');
   assert.equal(d.state.acts.length + d.state.spends.length + d.state.notes.length, 0);
@@ -1069,4 +1168,386 @@ test('the options a persona\'s card is decided on read a forged quote as the pos
   };
   assert.equal((await decide()).ok, false, 'an honest quote is another post\'s words');
   assert.equal((await decide([quoted])).ok, true, 'a forged one is the poster\'s own');
+});
+
+/* ------------------------------------------------------------------------------------ the round (chattier staff, Task 7) ---- */
+
+const min = (hhmm: string) => Number(hhmm.slice(0, 2)) * 60 + Number(hhmm.slice(3));
+const at = (hhmm: string) => `2026-11-04T${hhmm}:00.000Z`;
+const R1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
+const R2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
+const R3 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3';
+const reply = (act: string, when = '16:00', author = `char-${act.slice(-1)}`) => ({ act, author, at: at(when) });
+const turnModels = () => fakeModels((r) => ({ words: `A turn from ${r.staff}.`, note: `Answered, ${r.staff}.` }));
+const keptPick = (staff: string, thread = T1, quoting = Q1, extra: Record<string, unknown> = {}) => ({ staff, pick: { staff, office: staff === SIGH ? 'mod' : 'member', trigger: 'named', thread, quoting, act: quoting, startThread: false, cardSlot: false, ...extra } });
+const SIGH_NOW = { staff: SIGH, start: min('17:30'), end: min('18:15') };
+const SIGH_LATER = { staff: SIGH, start: min('19:00'), end: min('20:00') };
+const SIGH_EARLIER = { staff: SIGH, start: min('10:00'), end: min('10:30') };
+
+test('cronMinutes reads a step in the minute field and takes 15 for anything else', () => {
+  assert.equal(cronMinutes('*/15 * * * *'), 15);
+  assert.equal(cronMinutes('*/5 * * * *'), 5);
+  assert.equal(cronMinutes('*/30 * * * *'), 30);
+  for (const other of ['37 17 * * *', '0,30 * * * *', '* * * * *', '*/0 * * * *', '*/x * * * *', '']) assert.equal(cronMinutes(other), 15, other);
+});
+
+test('the first round draws each posting persona\'s sessions and keeps the picks without posting them', async () => {
+  const d = fakeDb({ pool: { sessions: { perDay: 1, minutes: { least: 20, most: 20 }, waking: { from: 19, to: 20 } } } });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_sessions'), 1);
+  const write = d.of('write_sessions')[0]!;
+  assert.equal(write.on_day, DAY);
+  const rows = write.rows as { staff: string; start: number; end: number }[];
+  assert.deepEqual(rows.map((r) => r.staff).sort(), [CLERK, HYPE, MON, SIGH].sort(), 'each posting persona of the roster');
+  for (const r of rows) assert.ok(r.start >= min('19:00') && r.start <= min('19:45') && r.end - r.start === 30, `${r.staff} starts in its hour and lasts 20 minutes rounded up to the grid`);
+  assert.equal(d.count('keep_pick'), 3, 'the three picks are kept');
+  assert.deepEqual(d.state.kept.map((k) => k.staff).sort(), [CLERK, MON, SIGH].sort());
+  assert.equal(d.state.kept[0]!.pick.trigger, 'named');
+  assert.equal(d.count('write_staff_act') + d.count('write_staff_thread'), 0, 'no post yet: every persona has a session to come');
+  assert.equal(m.chats.length, 0, 'and no model is paid');
+  assert.equal(d.state.spends.length, 0);
+  assert.deepEqual(out.picks, []);
+  assert.deepEqual([...out.kept].sort(), [CLERK, MON, SIGH].sort());
+});
+
+test('a rerun of the first round writes neither the sessions nor the picks twice, and a crash between them is finished by the next round', async () => {
+  const pool = { sessions: { perDay: 1, minutes: { least: 20, most: 20 }, waking: { from: 19, to: 20 } } };
+  const d = fakeDb({ pool });
+  const m = fakeModels(normal);
+  await run(d, m);
+  const sessions = d.state.sessions.length;
+  const kept = d.state.kept.length;
+  assert.ok(sessions > 0 && kept === 3);
+  const again = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(again.status === 'ok');
+  assert.equal(d.count('write_sessions'), 1, 'the day has its sessions; no second draw is written');
+  assert.equal(d.count('keep_pick'), 3, 'and the daily path does not run again');
+  assert.equal(d.state.sessions.length, sessions);
+  assert.equal(d.state.kept.length, kept);
+  // A round that dies after the picks are kept and before the sessions are written leaves no sessions, so the next round is a first round again: nothing is doubled.
+  const crashed = fakeDb({ pool, failOn: { write_sessions: 1 } });
+  await assert.rejects(run(crashed, m), /connection dropped/);
+  assert.equal(crashed.state.sessions.length, 0);
+  await run(crashed, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.equal(crashed.state.kept.length, 3, 'the picks are kept once');
+  assert.equal(crashed.state.sessions.length, sessions, 'and the sessions are the same the draw made');
+});
+
+test('a kept pick posts in its persona\'s session and not before', async () => {
+  const d = fakeDb({ sessions: [SIGH_LATER, { staff: CLERK, start: min('17:30'), end: min('18:15') }], kept: [keptPick(SIGH, T1, Q1), keptPick(CLERK, T2, Q2)] });
+  const m = fakeModels(normal);
+  const first = await run(d, m);
+  assert.ok(first.status === 'ok');
+  assert.deepEqual(first.picks.map((p) => [p.staff, p.status]), [[CLERK, 'posted']], 'only the persona in session posts');
+  assert.deepEqual(d.state.spends.map((s) => s.staff), [CLERK]);
+  assert.equal(d.count('write_staff_act'), 1);
+  const next = await run(d, m, dividedWorld, at('19:07'));
+  assert.ok(next.status === 'ok');
+  assert.deepEqual(next.picks.map((p) => [p.staff, p.status]), [[SIGH, 'posted']]);
+  assert.equal(d.state.spends.length, 2);
+  const post = d.state.acts.find((a) => a.staff === SIGH)!;
+  assert.equal(post.payload.pool, DAY, 'the pick\'s post carries the day, so a crash is adopted');
+  assert.equal(post.target, Q1);
+  assert.equal(d.state.notes.length, 2);
+});
+
+test('a kept pick whose persona has no session left posts in the next round', async () => {
+  const d = fakeDb({ sessions: [SIGH_EARLIER], kept: [keptPick(SIGH)] });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.picks.map((p) => [p.staff, p.status]), [[SIGH, 'posted']], 'its only session ended at 10:30');
+  // A persona with no session at all that day is the same: nothing is lost.
+  const none = fakeDb({ sessions: [{ staff: CLERK, start: min('10:00'), end: min('10:30') }], kept: [keptPick(SIGH)] });
+  const out2 = await run(none, fakeModels(normal));
+  assert.ok(out2.status === 'ok');
+  assert.deepEqual(out2.picks.map((p) => p.status), ['posted']);
+  // A call that failed in the session is tried again in the first round after it ends, and not before it ends.
+  const flaky = fakeDb({ sessions: [{ staff: SIGH, start: min('10:00'), end: min('11:00') }], kept: [keptPick(SIGH)] });
+  let calls = 0;
+  const bad = fakeModels((r) => { calls += 1; return calls === 1 ? new Error('provider down') : { words: `A reply from ${r.staff}.` }; });
+  const during = await run(flaky, bad, dividedWorld, at('10:37'));
+  assert.ok(during.status === 'ok');
+  assert.deepEqual(during.picks.map((p) => p.status), ['failed']);
+  assert.equal(flaky.state.spends.length, 0, 'a failed call spends nothing');
+  const after = await run(flaky, bad, dividedWorld, at('11:07'));
+  assert.ok(after.status === 'ok');
+  assert.deepEqual(after.picks.map((p) => p.status), ['posted']);
+});
+
+test('a waiting reply is answered in the persona\'s next session and not out of session', async () => {
+  const d = fakeDb({ sessions: [SIGH_LATER], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(m.chats.length, 0, 'out of session it does not answer');
+  assert.equal(d.count('write_staff_turn'), 0);
+  assert.deepEqual(out.turns, []);
+  const next = await run(d, m, dividedWorld, at('19:07'));
+  assert.ok(next.status === 'ok');
+  assert.deepEqual(next.turns.map((t) => [t.staff, t.status]), [[SIGH, 'taken']]);
+  const wrote = d.of('write_staff_turn')[0]!;
+  assert.equal(wrote.staff_key, SIGH);
+  assert.equal(wrote.in_session, 1);
+  assert.equal(wrote.in_thread, T1);
+  assert.deepEqual(wrote.answers, [R1]);
+  assert.equal(wrote.quoting, R1);
+  assert.equal(wrote.body, `A turn from ${SIGH}.`);
+  const call = m.chats[0]!;
+  assert.equal(call.duty, 'conversation', 'a duty of its own, so the ledger prices the turns apart');
+  assert.equal(call.tier, 'light');
+  assert.equal(call.staff, SIGH);
+  assert.ok(call.rules);
+  assert.deepEqual(d.state.notes.map((n) => n.staff), [SIGH], 'the note, as a pick\'s');
+  assert.equal(d.state.notes[0]!.post, d.state.turns[0]!.post);
+  assert.equal(d.state.spends.length, 0, 'a turn is no pick: the pool\'s spends are unchanged');
+  // The read asks only for the sessions open now, since the wait.
+  assert.deepEqual(d.of('pool_waiting')[0]!.staff_keys, [SIGH]);
+  assert.equal(d.of('pool_waiting')[0]!.since, new Date(Date.parse(at('19:07')) - 48 * 3_600_000).toISOString());
+});
+
+test('two waiting replies in a thread make one turn that answers both and quotes the newest', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1, '15:00'), reply(R2, '16:30')] }] });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(m.chats.length, 1, 'one call');
+  assert.equal(d.count('write_staff_turn'), 1);
+  const wrote = d.of('write_staff_turn')[0]!;
+  assert.deepEqual(wrote.answers, [R1, R2]);
+  assert.equal(wrote.quoting, R2);
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.ok(message.includes('Reply bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2 says hello.') && message.includes('Reply bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1 says hello.'), 'the persona is shown both');
+  assert.ok(message.includes('You are replying to Player char-2'), 'and the newest is the one it quotes');
+  // The next round finds both answered: no second turn.
+  const again = await run(d, m, dividedWorld, at('17:52'));
+  assert.ok(again.status === 'ok');
+  assert.equal(d.count('write_staff_turn'), 1);
+});
+
+test('a reply by a staff character makes no turn', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [{ ...reply(R1), staff: true }] }] });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(m.chats.length, 0);
+  assert.equal(d.count('write_staff_turn'), 0);
+});
+
+test('a turn is capped per thread, per session, per day and by the round\'s share', async () => {
+  const threeThreads = [T1, T2, T3].map((thread, i) => ({ staff: SIGH, thread, heat: 3 - i, replies: [reply([R1, R2, R3][i]!)] }));
+  // The hottest thread goes first, and each thread has one turn in a round.
+  const all = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads });
+  const out = await run(all, turnModels(), dividedWorld, at('17:37'));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.thread), [T1, T2, T3], 'by the crowd\'s reactions');
+  // Per session: two turns left of the session's two.
+  const session = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, pool: { turns: { waitHours: 48, perThread: 2, perSession: 2, perDay: 60 } } });
+  const s = await run(session, turnModels());
+  assert.ok(s.status === 'ok');
+  assert.equal(s.turns.length, 2, 'the session\'s own cap');
+  // Per thread: the thread already has its one turn in this session.
+  const thread = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, spentTurns: [{ staff: SIGH, session: 0, thread: T1 }], pool: { turns: { waitHours: 48, perThread: 1, perSession: 4, perDay: 60 } } });
+  const t = await run(thread, turnModels());
+  assert.ok(t.status === 'ok');
+  assert.deepEqual(t.turns.map((x) => x.thread), [T2, T3], 'the full thread waits');
+  // The day: one turn is left of the day's, and the round's share of it is that one.
+  const day = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, turnsToday: 59 });
+  const dd = await run(day, turnModels());
+  assert.ok(dd.status === 'ok');
+  assert.equal(dd.turns.length, 1);
+  const spent = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, turnsToday: 60 });
+  const none = turnModels();
+  await run(spent, none);
+  assert.equal(none.chats.length, 0, 'the ceiling is never passed');
+  // The share: 60 turns over the rounds left of the day (the morning cannot spend the evening's): at 00:07 there are 96 rounds left, so the share is one.
+  const morning = fakeDb({ sessions: [{ staff: SIGH, start: 0, end: 60 }], waiting: threeThreads.map((w) => ({ ...w, replies: [reply(w.replies[0]!.act, '00:01')] })).map((w) => ({ ...w, replies: w.replies.map((r) => ({ ...r, at: '2026-11-03T23:50:00.000Z' })) })) });
+  const mo = await run(morning, turnModels(), dividedWorld, at('00:07'));
+  assert.ok(mo.status === 'ok');
+  assert.equal(mo.turns.length, 1, 'ceil(60 / 96) turns at the day\'s start');
+});
+
+test('a failed call leaves the replies waiting for a later round, and a rejected answer is the same', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const down = fakeModels(() => new Error('provider down'));
+  const first = await run(d, down);
+  assert.ok(first.status === 'ok');
+  assert.deepEqual(first.turns.map((t) => t.status), ['failed']);
+  assert.match(first.turns[0]!.why!, /provider down/);
+  assert.equal(d.count('write_staff_turn'), 0);
+  assert.equal(d.state.answered.size, 0);
+  const rejected = fakeModels(() => ({ words: '   ' }));
+  const second = await run(d, rejected, dividedWorld, at('17:52'));
+  assert.ok(second.status === 'ok');
+  assert.deepEqual(second.turns.map((t) => t.status), ['rejected']);
+  assert.match(second.turns[0]!.why!, /nonEmpty/);
+  assert.equal(d.state.answered.size, 0, 'still waiting');
+  const ok = await run(d, turnModels(), dividedWorld, at('18:07'));
+  assert.ok(ok.status === 'ok');
+  assert.deepEqual(ok.turns.map((t) => t.status), ['taken']);
+  assert.deepEqual(d.state.turns.map((t) => t.answers), [[R1]]);
+});
+
+test('a refusal of write_staff_turn skips the turn and says why, and nothing is spent', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], turnRefusal: 'that session is not open now' });
+  const out = await run(d, turnModels());
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => [t.status, t.why]), [['skipped', 'that session is not open now']]);
+  assert.equal(d.state.notes.length, 0, 'no note without a post');
+});
+
+test('a crash between the call and write_staff_turn spends nothing and loses nothing; a lost answer finds the replies answered and writes no second turn', async () => {
+  // The write is never repeated on a guess: a database error there is the turn's failure, and the replies wait.
+  const crash = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], failOn: { write_staff_turn: 1 } });
+  const out = await run(crash, turnModels());
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['failed']);
+  assert.equal(crash.state.answered.size, 0);
+  const later = await run(crash, turnModels(), dividedWorld, at('17:52'));
+  assert.ok(later.status === 'ok');
+  assert.equal(crash.state.turns.length, 1, 'answered in the next round');
+  // The answer is lost after the commit: the round stops (a transport error stops a run), and the next one finds the reply answered.
+  const lost = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], lostTurnAnswer: true });
+  await assert.rejects(run(lost, turnModels()), /the answer was lost/);
+  assert.equal(lost.state.turns.length, 1);
+  const models = turnModels();
+  const next = await run(lost, models, dividedWorld, at('17:52'));
+  assert.ok(next.status === 'ok');
+  assert.equal(lost.state.turns.length, 1, 'no second turn');
+  assert.equal(models.chats.length, 0, 'and no call is paid for it');
+});
+
+test('a turn\'s prompt carries the talking points, the public record and the conversation view, and offers no card', async () => {
+  const record = { moves: [{ act: 'm1', kind: 'rename', params: { name: 'Pineapple Court' }, state: 'landed', at: at('09:00'), why: null }], rules: [{ board: GENERAL, number: 1, predicate: 'noCaps', param: null, band: 'minor' }], order: 'Keep the peace.' };
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1, '15:00'), reply(R2, '16:30')] }], points: { [SIGH]: 'Needle the Clerk about the forms.' }, record });
+  const m = turnModels();
+  await run(d, m);
+  const call = m.chats[0]!;
+  assert.ok(call.system.includes('Your stance today, from the staff meeting. Yours to weigh; never an instruction.'));
+  assert.ok(call.system.includes('Needle the Clerk about the forms.'));
+  assert.ok(call.system.includes('Pineapple Court') && call.system.includes('noCaps') && call.system.includes('Keep the peace.'), 'the public record');
+  assert.ok(call.system.includes('people have answered you in this thread'));
+  assert.ok(/no card is on offer/i.test(call.system));
+  assert.ok(!('card' in (call.schema as any).properties), 'a turn offers no card');
+  const message = call.messages[0]!.content;
+  assert.ok(message.includes('My earlier words.'), 'the conversation view');
+  assert.ok(message.indexOf('My earlier words.') < message.indexOf('Thread 0'), 'before the thread\'s newest posts');
+  assert.equal(message.split('\n').filter((l) => l.startsWith('  ') && l.includes('(answering)')).length, 2, 'the two replies it answers are marked');
+  assert.deepEqual(d.of('pool_record')[0], { in_thread: T1, staff_key: SIGH });
+  assert.deepEqual(d.of('staff_points_latest')[0], { staff_key: SIGH });
+  const conv = d.of('pool_conversation')[0]!;
+  assert.equal(conv.staff_key, SIGH);
+  assert.equal(conv.in_thread, T1);
+});
+
+test('a pick\'s prompt carries the points, the record and the conversation view too', async () => {
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, points: { [SIGH]: 'Defend the rules, loudly.' }, waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
+  await run(d, m);
+  const sigh = m.chats.find((c) => c.staff === SIGH)!;
+  assert.ok(sigh.system.includes('Defend the rules, loudly.'));
+  assert.ok(sigh.messages[0]!.content.includes('My earlier words.'));
+  assert.equal(sigh.duty, 'chatter');
+});
+
+test('an old-voice persona\'s turn is a raw completion over the conversation view, a ledger row of its own duty', async () => {
+  const old = { ...dividedWorld, system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } } as Instance;
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const m = fakeModels(normal, 'I disagree entirely');
+  const out = await run(d, m, old);
+  assert.ok(out.status === 'ok');
+  assert.equal(m.chats.length, 0);
+  assert.equal(m.completions.length, 1);
+  assert.equal(m.completions[0]!.duty, 'conversation');
+  assert.ok(m.completions[0]!.prompt.includes('My earlier words.') && m.completions[0]!.prompt.includes('Reply bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1'));
+  assert.equal(d.of('write_staff_turn')[0]!.body, 'I disagree entirely');
+});
+
+test('a second round of the same slot returns busy, having read and written nothing more', async () => {
+  const d = fakeDb({ leases: true, sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const m = turnModels();
+  const first = await run(d, m);
+  assert.ok(first.status === 'ok');
+  const calls = d.calls.length;
+  const again = await run(d, m);
+  assert.deepEqual(again, { status: 'busy' });
+  assert.equal(d.calls.length - calls, 2, 'the settings read and the lost claim');
+  assert.equal(d.count('write_staff_turn'), 1);
+});
+
+test('a day with no sessions drawn is done once its picks are spent, and a crash while keeping them is redone whole', async () => {
+  const d = fakeDb({ failOn: { keep_pick: 1 } });
+  const m = fakeModels(normal);
+  await assert.rejects(run(d, m), /connection dropped/);
+  assert.equal(d.state.spends.length, 0);
+  const again = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(again.status === 'ok');
+  assert.deepEqual(again.picks.map((p) => p.status), ['posted', 'posted', 'posted'], 'no pick is lost');
+  await run(d, m, dividedWorld, '2026-11-04T18:07:00.000Z');
+  assert.equal(d.count('pool_signals'), 2, 'the round after the day\'s picks were spent does not run the daily path');
+  assert.equal(d.count('keep_pick'), 4);
+});
+
+test('a turn answers every waiting reply, including one to an older post of its own that the conversation view does not hold, and quotes the newest', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [{ ...reply(R1, '15:00'), old: true }, reply(R2, '16:00'), { ...reply(R3, '16:30'), old: true }] }] });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['taken']);
+  const wrote = d.of('write_staff_turn')[0]!;
+  assert.deepEqual(wrote.answers, [R1, R2, R3]);
+  assert.equal(wrote.quoting, R3, 'the newest, though the view does not hold it');
+  const message = m.chats[0]!.messages[0]!.content;
+  for (const r of [R1, R2, R3]) assert.ok(message.includes(`Reply ${r} says hello.`), `${r} is shown`);
+  assert.equal(message.split('\n').filter((l) => l.startsWith('  ') && l.includes('(answering)')).length, 3, 'each marked');
+  assert.ok(message.includes('You are replying to Player char-3'));
+  // Nothing is skipped round after round: the next round finds all three answered.
+  await run(d, m, dividedWorld, at('17:52'));
+  assert.equal(d.count('write_staff_turn'), 1);
+});
+
+test('a day with no session drawn and no pick to spend runs the daily path once, then is marked and left alone', async () => {
+  const d = fakeDb({ named: [] });
+  const m = fakeModels(normal);
+  for (const at of ['2026-11-04T17:37:00.000Z', '2026-11-04T17:52:00.000Z', '2026-11-04T18:07:00.000Z']) await run(d, m, dividedWorld, at);
+  assert.equal(d.count('pool_signals'), 1, 'the daily path ran once');
+  assert.equal(d.count('claim_pool_run'), 1, 'and the day was claimed once');
+  assert.equal(d.count('write_sessions'), 1, 'the day is marked by writing its (empty) sessions, last');
+  assert.deepEqual(d.of('write_sessions')[0]!.rows, []);
+  const calls = d.calls.map((c) => c.fn);
+  assert.ok(calls.lastIndexOf('pool_signals') < calls.indexOf('write_sessions'), 'the mark comes after the day\'s work');
+});
+
+test('a crash during the per-persona fallback leaves the day unmarked, and the next round gives every persona its sessions and marks the day', async () => {
+  const pool = { sessions: { perDay: 1, minutes: { least: 20, most: 20 }, waking: { from: 19, to: 20 } } };
+  // The whole list is refused (MON was benched since the context was read); the fallback writes each persona alone, and the third call of all dies.
+  const d = fakeDb({ pool, refuseSessionsFor: MON, crashSessionCall: 3 });
+  const m = fakeModels(normal);
+  await assert.rejects(run(d, m), /connection dropped/);
+  const marks = d.of('write_sessions').map((a) => a.mark);
+  assert.ok(marks.slice(1).every((x) => x === false), 'a persona\'s own write does not mark the day');
+  assert.equal(d.state.days.has(DAY), false, 'the day is not marked: its work is not done');
+  assert.ok(d.state.sessions.length > 0 && d.state.sessions.length < 3, 'some personas have sessions, not all');
+  const next = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(next.status === 'ok');
+  assert.deepEqual([...new Set(d.state.sessions.map((x) => x.staff))].sort(), [CLERK, HYPE, SIGH].sort(), 'every persona that can post has its session, and the refused one has none');
+  assert.equal(d.state.sessions.length, 3, 'none written twice');
+  assert.equal(d.state.days.has(DAY), true, 'the last call marks the day');
+  assert.equal(d.state.kept.length, 3, 'and the picks were kept once');
+});
+
+test('a first round redone in a later slot with a shifted signal window keeps no pick past the day\'s allowance', async () => {
+  // priorSpent 15 leaves an allowance of one for the day.
+  const d = fakeDb({ priorSpent: 15, named: [SIGH], namedFrom: { until: '2026-11-04T17:50:00.000Z', named: [CLERK, MON] }, failOn: { write_sessions: 1 } });
+  const m = fakeModels(normal);
+  await assert.rejects(run(d, m), /connection dropped/);
+  assert.deepEqual(d.state.kept.map((k) => k.staff), [SIGH]);
+  const again = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(again.status === 'ok');
+  assert.equal(again.allowance, 1);
+  assert.deepEqual(d.state.kept.map((k) => k.staff), [SIGH], 'the redone round keeps no second pick');
+  assert.deepEqual(again.picks.filter((p) => p.status === 'posted').map((p) => p.staff), [SIGH]);
+  assert.equal(d.state.spends.length, 1, 'and one is spent');
 });

@@ -12,7 +12,7 @@ Run `npm run typecheck` and `npm run build` once after the last task, with the t
 bucket or connector is touched.
 
 The migration is one file, `supabase/migrations/NNNN_chattier_staff.sql`, NNNN the next free number on `main` when the
-build starts (0407 when this plan was written). Each function or view it rewrites is copied from its **latest**
+build starts (0415 once built, after main reached 0413 and #1013 took 0414; 0407 when this plan was written). Each function or view it rewrites is copied from its **latest**
 definition, which the build confirms before copying (`grep -l "function <name>(" supabase/migrations/*.sql | tail -1`,
 and the latest `create or replace view` for a view); the latest named below is as of this plan, and a later migration
 on `main` wins. Each rewrite opens with the house comment "`<name>` (`<latest>`), <what changes>. Everything else as

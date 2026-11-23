@@ -57,6 +57,8 @@ export const BUNDLE_NAME_MOST = 120;
 export const NO_REASON = 'No reason given.';
 /** Characters of a Mod's order, one line in the Boss's voice: queued by `apply_meeting` into staff_orders.order_line. */
 export const ORDER_MOST = 200;
+/** Characters of a persona's talking points, one line in the Boss's voice: stored by `apply_meeting` into staff_points.line. */
+export const POINTS_MOST = 200;
 /** Characters of the handoff note, out of character: stored by `apply_meeting` into handoffs.note (0337). */
 export const HANDOFF_MOST = 2000;
 
@@ -207,6 +209,8 @@ function fieldRules(asked: boolean): Record<string, Rule> {
         },
       },
     },
+    // One line of talking points for each persona that posts (the chattier staff design, section 4). Optional, and the line's bound is cut at a word by the shape pass and recorded: nothing here is a reason to reject a paid answer.
+    points: { type: 'list', optional: true, of: { type: 'object', fields: { staff: { type: 'string', maxLength: 80 }, line: { type: 'string', maxLength: POINTS_MOST } } } },
     // The farewell and the handoff (fangame split design, section 6), written only within farewellWindowHours of the season's end. Both optional: a meeting outside the window, or one that has
     // nothing to say, leaves them out, and nothing here is a reason to reject a paid answer. The farewell's bound is postMaxLength, a setting, so the repair trims it; the handoff's is HANDOFF_MOST.
     farewell: { type: 'string', optional: true },
@@ -239,7 +243,7 @@ function fieldRules(asked: boolean): Record<string, Rule> {
 export const MEETING_PARTS = [
   { key: 'moves', fields: ['moves', 'inherited', 'successor'], ask: 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.' },
   { key: 'bundle', fields: ['bundle'], ask: 'Your moves stand as you answered them. This turn is your bundle: answer bundle if you compose one, and leave it out if you do not.' },
-  { key: 'staff', fields: ['orders', 'patrols'], ask: 'Your moves and your bundle stand as you answered them. This turn is your staff: answer orders and patrols.' },
+  { key: 'staff', fields: ['orders', 'patrols', 'points'], ask: 'Your moves and your bundle stand as you answered them. This turn is your staff: answer orders and patrols, and points, the talking points you give each persona that posts.' },
   { key: 'self', fields: ['memory', 'profile', 'beats', 'farewell', 'handoff'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, and beats, farewell and handoff if you were given beats to play or told to write a farewell.' },
 ] as const satisfies readonly { readonly key: string; readonly fields: readonly string[]; readonly ask: string }[];
 
@@ -331,6 +335,16 @@ export interface ModFacts {
   readonly order: string | null;
 }
 
+/** A persona that posts, as the meeting is shown it when it writes talking points: public facts only. */
+export interface PostingFacts {
+  readonly key: string;
+  readonly name: string;
+  readonly pronouns: PronounSet;
+  /** Its office now: boss, mod or member. */
+  readonly office: string;
+  readonly temperament: string;
+}
+
 export interface PromptFacts {
   readonly boss: Persona;
   /** The Boss's own pronouns: the persona file's, else `Settings.pronouns`, else the engine's it-set. Told to the Boss after its persona. */
@@ -339,6 +353,8 @@ export interface PromptFacts {
   readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots' | 'bundleMostParts'> & { readonly economy?: Readonly<Record<string, number>> };
   /** The Mod Bots on staff, in the order the roster lists them. */
   readonly mods: readonly ModFacts[];
+  /** Every persona in a posting office (the Boss, each Mod, each member), in the roster's order: the personas the staff part writes talking points for. */
+  readonly posting: readonly PostingFacts[];
   /** A character's name by id, for the memories shown, with its pronouns beside it (`Gloomba (she/her)`); 'someone' for an id it does not know. */
   readonly characterName: (id: string) => string;
   readonly phase: PhaseAt;
@@ -455,6 +471,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `Your profile: up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood (a short phrase, at most ${PROFILE_MOST.mood} characters) and a signature. It is public and in your voice. A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`,
     ].join('\n'),
     modsText(f),
+    pointsText(f),
     ...(f.farewell ? [farewellText(f.farewell.postMaxLength, s.structuralHoldHours, f.farewell.seasonEndsAt)] : []),
     ...(f.successorAllowed
       ? [`The season is in its last week. ${f.nomination
@@ -533,6 +550,18 @@ function modsText(f: PromptFacts): string {
     );
   }
   return out.join('\n');
+}
+
+/**
+ * The talking points (the chattier staff design, section 4): one line for each persona that posts. The staff part is asked for them whether or not any Mod is on staff. A persona left out has none today.
+ * Everything shown is public: its name, office and temperament.
+ */
+function pointsText(f: PromptFacts): string {
+  if (f.posting.length === 0) return 'No persona posts today. Do not answer with points.';
+  return [
+    `Talking points. Give each persona that posts one line on the day in "points": {staff (its key), line (at most ${POINTS_MOST} characters, in your voice: its stance, who it is needling, what it defends or resents; it is read by that persona's posts until the next meeting and never acted on)}. One line for each key; a persona you leave out has no talking points today. The personas that post:`,
+    ...f.posting.map((p) => `- ${p.key}: ${oneLineText(p.name, 64)} (${pronounLabel(p.pronouns)}, ${oneLineText(p.office, 20)}). Temperament: ${oneLineText(p.temperament, 200)}`),
+  ].join('\n');
 }
 
 /** A move the Boss inherits, as the meeting reads it from the database. */
@@ -681,6 +710,8 @@ export interface RepairContext {
   readonly bank: number;
   /** The keys of the Mods on staff (`meeting_context().mods`): an order or a patrol names one of them. */
   readonly mods: ReadonlySet<string>;
+  /** The keys of the personas in a posting office, the Boss included (`pool_context().offices`): a talking point names one of them. Omitted: none, so every point is dropped. */
+  readonly posting?: ReadonlySet<string>;
   /** The rules in force (`meeting_context().rules`): a rule that would leave no compliant post is dropped here, spending nothing. */
   readonly rules: readonly RuleInForce[];
   /** Epoch milliseconds. */
@@ -735,6 +766,12 @@ export interface PlannedOrder {
   readonly memory: Memory | null;
 }
 
+/** A persona's talking points for the day, repaired: a key that posts, a line of at most `POINTS_MOST` characters. */
+export interface PlannedPoint {
+  readonly staff: string;
+  readonly line: string;
+}
+
 /** A patrol the Boss scheduled: a Mod on staff and the time (ISO 8601), today. */
 export interface PlannedPatrol {
   readonly mod: string;
@@ -748,6 +785,8 @@ export interface RepairedAnswer {
   readonly moves: readonly PlannedMove[];
   readonly orders: readonly PlannedOrder[];
   readonly patrols: readonly PlannedPatrol[];
+  /** One line for each persona that posts, at most one for a key; a persona left out has none. */
+  readonly points: readonly PlannedPoint[];
   readonly inherited: readonly { readonly move_act: string; readonly decision: 'keep' | 'end' }[];
   readonly successor: { readonly boss: string; readonly why: string } | null;
   /** The bundles to queue: beats' (authored, no cost, parts in dependency order; a beat with no bundle has none) and the Boss's own (cost: its parts). */
@@ -1384,6 +1423,19 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     patrols.push({ mod: String(p0['mod']), at: new Date(clamped).toISOString() });
   });
 
+  // Talking points (the chattier staff design, section 4): a key that is not a persona in a posting office is dropped, a second line for a key is dropped, a blank line is dropped (and does not use up its key), and a line over
+  // POINTS_MOST was already cut at a word, and recorded, by the shape pass above.
+  const points: PlannedPoint[] = [];
+  ((a['points'] ?? []) as Record<string, unknown>[]).forEach((p0, i) => {
+    const path = `points[${i}]`;
+    const key = String(p0['staff']);
+    if (!c.posting?.has(key)) return drop(`${path}.staff`, 'postingPersona');
+    const line = String(p0['line']).trim();
+    if (line === '') return drop(`${path}.line`, 'nonBlank');
+    if (points.some((x) => x.staff === key)) return drop(`${path}.staff`, 'uniqueStaff');
+    points.push({ staff: key, line });
+  });
+
   // Inheritance answers (the handover's, Task 12b): a move named by a uuid, a decision of keep or end, each move once.
   const inherited: { move_act: string; decision: 'keep' | 'end' }[] = [];
   ((a['inherited'] ?? []) as Record<string, unknown>[]).forEach((e, i) => {
@@ -1428,7 +1480,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     farewell = farewell.slice(0, cutAt);
   }
 
-  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, farewell, handoff, trims };
+  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), points, inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, farewell, handoff, trims };
 }
 
 

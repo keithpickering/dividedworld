@@ -6,7 +6,7 @@
 import type { DutyAssignee, SystemContent } from '../rules/types.ts';
 import type { Tier } from './model.ts';
 
-export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge'] as const;
+export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge', 'conversation'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 export interface DutySpec {
@@ -30,6 +30,9 @@ export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   patrolJudge: { mode: 'chat', tier: 'light' },
   // An apology's verdict (member groups design): a chat call by the staff member who made the move. Always the light tier.
   apologyJudge: { mode: 'chat', tier: 'light' },
+  // A persona's turn (the chattier staff design, section 3): a chat call for a persona on the chat voice and a raw completion for one on the old voice, answering the replies waiting on its posts.
+  // A duty of its own, so the ledger prices a week of turns beside the pool's picks and the meeting. Always the light tier.
+  conversation: { mode: 'chat', tier: 'light' },
 };
 
 /**

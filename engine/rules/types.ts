@@ -69,7 +69,22 @@ export interface PoolSettings {
   readonly chatterThreadPosts: number;
   /** Each trigger's strength: a candidate's score is its trigger's strength times its persona's priority. A whole number, at least 1. */
   readonly strengths: Readonly<Record<PoolTrigger, number>>;
-  /** When the pool's daily pick and posts run, as a five-field cron expression in UTC. */
+  /**
+   * A persona's visits (the chattier staff design): the defaults a persona without `habits` takes. `perDay` visits a day (a whole number, 0 to 8), each
+   * lasting a whole number of minutes from `minutes.least` to `minutes.most` (10 to 180), inside the waking span, whole UTC hours 0 to 23 that wrap
+   * past midnight when `to` is below `from` (`to` is exclusive; `from` equal to `to` is the whole day).
+   */
+  readonly sessions: {
+    readonly perDay: number;
+    readonly minutes: { readonly least: number; readonly most: number };
+    readonly waking: { readonly from: number; readonly to: number };
+  };
+  /**
+   * What a round answers (the chattier staff design): replies wait `waitHours` (1 to 168) for a turn; a persona takes at most `perThread` turns
+   * (1 to 6) in one thread and `perSession` (`perThread` to 12) in one session, and the pool at most `perDay` turns a day (0 to 500).
+   */
+  readonly turns: { readonly waitHours: number; readonly perThread: number; readonly perSession: number; readonly perDay: number };
+  /** When a round runs, as a five-field cron expression in UTC. */
   readonly chatterCron: string;
 }
 
@@ -339,6 +354,8 @@ export interface Settings {
   readonly bundleAuthoredMostParts: number;
   /** How many top posts the digest quotes. A starting point. */
   readonly digestExcerpts: number;
+  /** How many conversations (a persona's thread with waiting replies) the digest shows a pool persona, a whole number from 0 to `DIGEST_MOST.conversations`. */
+  readonly digestConversations: number;
   /** How many characters of a post the digest quotes. A starting point. */
   readonly digestExcerptChars: number;
   /** The most opinions of characters a Boss's memory keeps; the Boss orders them most important first and the rest are cut. A starting point. */
@@ -923,6 +940,11 @@ export interface Persona extends StaffSeed {
   readonly inheritsMemoryOf?: string;
   /** Its own phase numbers as a Boss, clamped into the engine's caps (`PHASE_CAPS`). */
   readonly phases?: PhaseOverrides;
+  /**
+   * How often and when it visits (the chattier staff design), each field left out taking `Settings.pool.sessions`'s. `hours` are the whole UTC
+   * hours it favors, at least one and none twice.
+   */
+  readonly habits?: { readonly perDay?: number; readonly minutes?: { readonly least: number; readonly most: number }; readonly hours?: readonly number[] };
   /** The kinds of board it likes to patrol. (Not an arc's beats: see `arc`.) */
   readonly beats: readonly string[];
   /** Its season arc: the plan for how a season goes as Boss, beat by beat, a secret even from the Boss until a beat unlocks. Left out, it runs as every persona does. */
