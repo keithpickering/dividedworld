@@ -207,11 +207,14 @@ function fakeDb(w: World = {}) {
           // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
           // the same day, of the same persona, on the post itself or on the post's quoted target.
           const through = String(args.through);
+          // From the earlier of the week's Monday and the day before `through`: a Monday's run still finds Sunday's orphan.
           const monday = new Date(Date.parse(through) - ((new Date(through).getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
+          const yesterday = new Date(Date.parse(through) - 86_400_000).toISOString().slice(0, 10);
+          const from = monday < yesterday ? monday : yesterday;
           const out: unknown[] = [];
           for (const mark of state.acts) {
             const day = mark.payload?.pool as string | undefined;
-            if (mark.kind === 'card' || mark.kind === 'set' || !day || day < monday || day > through || state.spends.some((s) => s.post_act === mark.id)) continue;
+            if (mark.kind === 'card' || mark.kind === 'set' || !day || day < from || day > through || state.spends.some((s) => s.post_act === mark.id)) continue;
             if (out.some((o: any) => o.staff === mark.staff && o.day === day)) continue;
             const tied = state.acts.find((a) => a.staff === mark.staff && !state.spends.some((s) => s.card_act === a.id)
               && ((a.kind === 'set' && a.target === mark.id) || (a.kind === 'card' && a.payload?.pool === day && mark.target !== null && a.target === mark.target)));
@@ -1357,20 +1360,20 @@ test('a turn is capped per thread, per session, per day and by the round\'s shar
   const t = await run(thread, turnModels());
   assert.ok(t.status === 'ok');
   assert.deepEqual(t.turns.map((x) => x.thread), [T2, T3], 'the full thread waits');
-  // The day: one turn is left of the day's, and the round's share of it is that one.
-  const day = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, turnsToday: 59 });
-  const dd = await run(day, turnModels());
+  // The day: in the last round the whole day is earned, one turn is left of it, and the round's share is that one.
+  const day = fakeDb({ sessions: [{ staff: SIGH, start: min('23:30'), end: min('23:59') }], waiting: threeThreads, turnsToday: 59 });
+  const dd = await run(day, turnModels(), dividedWorld, at('23:52'));
   assert.ok(dd.status === 'ok');
   assert.equal(dd.turns.length, 1);
   const spent = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, turnsToday: 60 });
   const none = turnModels();
   await run(spent, none);
   assert.equal(none.chats.length, 0, 'the ceiling is never passed');
-  // The share: 60 turns over the rounds left of the day (the morning cannot spend the evening's): at 00:07 there are 96 rounds left, so the share is one.
+  // The share: the day's turns are earned by time, floor(60 x (k+1) / 96) by round k, less what is spent: round 0 (00:07) has earned none, round 1 (00:22) has earned one.
   const morning = fakeDb({ sessions: [{ staff: SIGH, start: 0, end: 60 }], waiting: threeThreads.map((w) => ({ ...w, replies: [reply(w.replies[0]!.act, '00:01')] })).map((w) => ({ ...w, replies: w.replies.map((r) => ({ ...r, at: '2026-11-03T23:50:00.000Z' })) })) });
-  const mo = await run(morning, turnModels(), dividedWorld, at('00:07'));
+  const mo = await run(morning, turnModels(), dividedWorld, at('00:22'));
   assert.ok(mo.status === 'ok');
-  assert.equal(mo.turns.length, 1, 'ceil(60 / 96) turns at the day\'s start');
+  assert.equal(mo.turns.length, 1, 'floor(60 x 2 / 96) = 1 turn earned by round 1');
 });
 
 test('a failed call leaves the replies waiting for a later round, and a rejected answer is the same', async () => {
@@ -1639,4 +1642,94 @@ test('a pick carried over from yesterday counts against the week\'s allowance be
   const spent = await carriedRun(1, false);
   assert.ok(spent < free, 'the fixture shows a slot spent changes the allowance');
   assert.equal(await carriedRun(0, true), spent, 'the carried pick is counted as spent');
+});
+
+// Sunday 2026-11-22 and the Monday after it, 2026-11-23: the carried pick of a Sunday is spent in last week.
+const SUNDAY = '2026-11-22';
+const MONDAY_AT = (hhmm: string) => `2026-11-23T${hhmm}:00.000Z`;
+const spendOn = (day: string, staff: string, card: string | null = null, i = 0): Spend => ({ day, staff, trigger: 'named', post_act: `done-${day}-${staff}-${i}`, card_act: card, started_thread: false, record: {} });
+const postsOf = (d: ReturnType<typeof fakeDb>, staff: string, day: string) => d.state.acts.filter((a) => a.staff === staff && a.kind !== 'card' && a.kind !== 'set' && a.payload?.pool === day);
+
+test('a Sunday pick whose post landed and whose spend failed is adopted on Monday, before the carried read, and posts once', async () => {
+  const d = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], failOn: { record_pool_spend: 1 } });
+  d.state.days.delete(DAY);
+  d.state.days.add(SUNDAY);
+  const m = fakeModels(normal);
+  const sunday = await run(d, m, dividedWorld, `${SUNDAY}T12:07:00.000Z`);
+  assert.ok(sunday.status === 'ok');
+  assert.equal(postsOf(d, SIGH, SUNDAY).length, 1, 'the post landed');
+  assert.equal(d.state.spends.some((s) => s.day === SUNDAY && s.staff === SIGH), false, 'and its spend did not');
+  const monday = await run(d, m, dividedWorld, MONDAY_AT('00:07'));
+  assert.ok(monday.status === 'ok');
+  assert.deepEqual(monday.adopted.map((a) => [a.staff, a.status, a.day]), [[SIGH, 'adopted', SUNDAY]]);
+  assert.equal(postsOf(d, SIGH, SUNDAY).length, 1, 'one post, not two');
+  assert.equal(d.state.spends.filter((s) => s.day === SUNDAY && s.staff === SIGH).length, 1, 'spent once, on Sunday');
+});
+
+test('a carried pick blocked on its own day by a card slot is not written the next day, midweek or on a Monday', async () => {
+  // Wednesday 11-04 has an allowance of 4 and a post with a card is two of it: three spends and a card use it all.
+  const wed = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: DAY }], sessions: [SIGH_LATER] });
+  wed.state.spends.push(spendOn(DAY, CLERK, 'card-1'), spendOn(DAY, MON), spendOn(DAY, HYPE));
+  const thu = await run(wed, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(thu.status === 'ok');
+  assert.equal(postsOf(wed, SIGH, DAY).length, 0, 'not written on Thursday');
+  assert.ok(thu.picks.some((p) => p.staff === SIGH && p.status === 'skipped' && /own day/.test(p.why ?? '')), 'and skipped on the record');
+  // Sunday 11-22 with 18 spent before it has an allowance of 2: two spends use it, and Monday's run does not write the third.
+  const sun = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], priorSpent: 18 });
+  sun.state.days.delete(DAY);
+  sun.state.days.add(SUNDAY);
+  sun.state.spends.push(spendOn(SUNDAY, CLERK), spendOn(SUNDAY, MON));
+  const mon = await run(sun, fakeModels(normal), dividedWorld, MONDAY_AT('00:07'));
+  assert.ok(mon.status === 'ok');
+  assert.equal(postsOf(sun, SIGH, SUNDAY).length, 0, 'not written on Monday');
+  assert.ok(mon.picks.some((p) => p.staff === SIGH && p.status === 'skipped' && /own day/.test(p.why ?? '')));
+});
+
+test('a carried pick inside its own day\'s allowance is written on Monday as midweek, and Monday does not count it in its own week', async () => {
+  // Week spent 6 before Monday: the allowance is floor(14 / 7) = 2 with the carried pick not counted (it is last week's), and floor(13 / 7) = 1 if it were.
+  const d = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], priorSpent: 6 });
+  d.state.days.delete(DAY);
+  d.state.days.add(SUNDAY);
+  const out = await run(d, fakeModels(normal), dividedWorld, MONDAY_AT('00:07'));
+  assert.ok(out.status === 'ok');
+  assert.equal(out.allowance, 2, 'Monday\'s allowance leaves out the Sunday pick');
+  assert.equal(postsOf(d, SIGH, SUNDAY).length, 1, 'and the Sunday pick is written');
+});
+
+test('a kept pick of today whose persona has posted already is recorded as such and written no second time', async () => {
+  const d = fakeDb({ kept: [keptPick(SIGH, T1, Q1)], keptListsWritten: true });
+  d.state.spends.push(spendOn(DAY, SIGH));
+  const out = await run(d, fakeModels(normal));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.picks.filter((p) => p.staff === SIGH).map((p) => p.status), ['already']);
+  assert.equal(postsOf(d, SIGH, DAY).length, 0);
+});
+
+test('a day with no allowance reads no kept picks of its own', async () => {
+  const d = fakeDb({ kept: [keptPick(SIGH, T1, Q1)], priorSpent: 20 });
+  const out = await run(d, fakeModels(normal));
+  assert.ok(out.status === 'ok');
+  assert.equal(out.allowance, 0);
+  assert.equal(d.of('kept_picks').filter((a) => a.on_day === DAY).length, 0, 'the day\'s own kept picks are not read');
+  assert.equal(postsOf(d, SIGH, DAY).length, 0);
+});
+
+test('a carried pick offers no card, though its kept pick had a card slot', async () => {
+  const d = fakeDb({ kept: [keptPick(SIGH, T1, Q1, { cardSlot: true })], sessions: [SIGH_LATER], pool: { cardRarityMost: 'uncommon' } });
+  const m = fakeModels(normal);
+  const out = await run(d, m, dividedWorld, nextAt('00:07'));
+  assert.ok(out.status === 'ok');
+  assert.equal(postsOf(d, SIGH, DAY).length, 1, 'the carried pick is written');
+  const carriedChat = m.chats.filter((c) => c.staff === SIGH)[0]!;
+  assert.equal('card' in ((carriedChat.schema as any).properties ?? {}), false, 'no card in its schema');
+});
+
+test('a carried thread start leaves no thread for the next carried pick', async () => {
+  const d = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1, { startThread: true }), day: DAY }, { ...keptPick(CLERK, T2, Q2, { startThread: true }), day: DAY }], sessions: [SIGH_LATER], pool: { threadsWeekly: 2 } });
+  d.state.days.add(NEXT);
+  const out = await run(d, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(out.status === 'ok');
+  const threads = d.state.acts.filter((a) => a.kind === 'thread' && a.payload?.pool === DAY);
+  assert.equal(threads.length, 1, 'one thread started on the carried day, the other pick replied');
+  assert.equal(postsOf(d, CLERK, DAY).length + threads.length, 2, 'both picks were written');
 });

@@ -20,7 +20,7 @@
  *      started (even with no session), so a round that dies earlier leaves the day unmarked and the next is a first round again, which keeps and draws the same (a second keep, a second
  *      write of the same rows, is a no-op in the database) and loses no pick.
  *   3. Each kept pick whose persona has a session open now, or none left in the day, is written by `onePick`, unchanged, and spent in `pool_spends` as ever. Every round adopts the day's orphans first.
- *   4. Turns: the replies waiting on the personas in session (`pool_waiting`), `roundShare` of what is left of the day's turns, `planTurns`; each planned turn reads its conversation, thread, record,
+ *   4. Turns: the replies waiting on the personas in session (`pool_waiting`), `roundShare` (what the day has earned so far by time, less what is spent), `planTurns`; each planned turn reads its conversation, thread, record,
  *      talking points, memory and notes, makes one light-tier call under the duty `conversation` (a chat call, or a raw completion for the old voice), repairs it as a pick's is (no card, no
  *      title), writes it whole with `write_staff_turn` and leaves its note. A refusal of `write_staff_turn` skips the turn; a failed or rejected call spends nothing and its replies wait.
  *   5. The outcome lists the picks written, the turns taken, skipped and failed, and the personas whose picks were kept.
@@ -283,7 +283,8 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
 
   const eve = dayOf(slotAt - DAY);
   const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
-  // Each is a slot of its own day that the week has given already, though its spend is not written until this round: counted as spent (when that day is of today's week), so the week never overdraws.
+  // On any day but Monday, each carried pick is a slot of its own day, which is in today's week, and its spend is not written until this round: counted as spent, so the week never overdraws.
+  // On a Monday the carried pick is Sunday's, spent in last week, so it is not counted in this one (the Monday exception).
   const carriedSpent = new Date(slotAt).getUTCDay() === 1 ? 0 : carried.length;
   // The allowance counts the week before today, so every round of the day computes the allowance the first did.
   const todays = allowance(week.spent + carriedSpent, settings.pool.weekly, slotAt);
@@ -294,6 +295,11 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const records: PickRecord[] = [];
   const kept: string[] = [];
   const roster = tuned.system.roster;
+  // A carried pick is written only inside its own day's allowance: what that day's week gave it (the week as it stood on that day), less what that day already spent (a card counts as a pick, as `used` does).
+  // Past it the pick was never owed, and it is skipped on the record.
+  const eveWeek = carried.length > 0 ? await db.rpc<Week>('pool_week', { today: eve }) : null;
+  const eveAllowance = eveWeek ? allowance(eveWeek.spent, settings.pool.weekly, Date.parse(eve)) : 0;
+  let eveUsed = eveWeek ? eveWeek.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0) : 0;
 
   const slugs = new Set(Object.values(context.boards));
   const offerable = settings.pool.cardRarityMost;
@@ -316,7 +322,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
 
   // The picks kept on the day before and never written (the persona's session began after the last round of that day, or its call failed in the last round, or the cron runs once a day) are
   // written here and spent on their own day: `kept_picks` of a day lists only the picks with no spend row on it, so a rerun never writes one twice. They are that day's slots, so they do
-  // not wait for a session (every one of that day has ended), take nothing from today's allowance, and offer no card.
+  // not wait for a session (every one of that day has ended), take nothing from today's allowance, offer no card, and are held to their own day's allowance (`eveAllowance`).
   // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
   const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...k, on: day, own: true })) : [];
   for (const k of [...carried, ...owns]) {
@@ -332,6 +338,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
     if (k.own && already.has(k.staff)) { records.push({ ...base, status: 'already' }); continue; }
     if (k.own && used + 1 > todays) continue;
+    if (!k.own && eveUsed + 1 > eveAllowance) { records.push({ ...base, status: 'skipped', why: `past the allowance of its own day, ${k.on}` }); continue; }
 
     const record = await onePick({
       db, models, tuned, persona, office: p.office, p, day: k.on, slugs, cardsOnOffer,
@@ -344,7 +351,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
       if (k.own) {
         used += 1 + (record.card ? 1 : 0);
         already.add(k.staff);
-      }
+      } else eveUsed += 1;
       if (record.startedThread) threadsLeft = 0;
     }
   }
