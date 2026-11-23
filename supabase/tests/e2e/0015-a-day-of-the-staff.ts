@@ -110,9 +110,23 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
 
   // ---- The pool runs. ----
   const slot = new Date(Math.floor(Date.now() / 60_000) * 60_000 + 36 * 3_600_000).toISOString();
-  const ran = await runChatter(db, real, instance, slot);
-  assert.equal(ran.status, 'ok', JSON.stringify(ran));
-  const day = ran.day;
+  const first = await runChatter(db, real, instance, slot);
+  assert.equal(first.status, 'ok', JSON.stringify(first));
+  const day = first.day;
+  // The day's first round draws the sessions and keeps the picks; a pick is written in its persona's session (or the first round after its last), so a round is run at the start of
+  // each persona's first session that has not posted yet. A persona with no session that day posts in the first round itself.
+  const picks = [...first.picks];
+  assert.ok(first.kept.length > 0 || picks.length > 0, 'the first round kept the day\'s picks');
+  for (const staff of [OLD, MOD]) {
+    if (picks.some((p) => p.staff === staff && p.status === 'posted')) continue;
+    const sessions = JSON.parse(sql(`select sessions_day('${day}')`)) as { staff: string; startsAt: string }[];
+    const mine = sessions.filter((x) => x.staff === staff).sort((a, b) => Date.parse(a.startsAt) - Date.parse(b.startsAt))[0];
+    assert.ok(mine, `${staff} keeps a session on ${day}`);
+    const round = await runChatter(db, real, instance, new Date(Date.parse(mine.startsAt)).toISOString());
+    assert.equal(round.status, 'ok', JSON.stringify(round));
+    picks.push(...round.picks);
+  }
+  const ran = { picks };
   const picked = (key: string) => ran.picks.find((p) => p.staff === key);
 
   // The ex-Boss replied in the thread that named it, quoting the post that did, and the spend is recorded.
@@ -164,8 +178,8 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   assert.equal(Number(sql(`select pool_week('${nextDay}'::date) ->> 'spent'`)), sameWeek ? Number(sql(`select coalesce(sum(1 + (card_act is not null)::int), 0) from pool_spends where day >= date_trunc('week', '${nextDay}'::date) and day < '${nextDay}'::date`)) : 0, 'pool_week spent counts a card as a second slot');
   if (sameWeek) assert.ok(Number(sql(`select pool_week('${nextDay}'::date) ->> 'spent'`)) >= 4, 'pool_week counts both spends with their cards, four slots at least');
 
-  // A second run of the day, while the first's claim is young, is told so and writes nothing; the ex-Boss still posted once.
-  const again = await runChatter(db, real, instance, new Date(Date.parse(slot) + 60_000).toISOString());
+  // A second round of the first's slot, while its claim is young, is told so and writes nothing; the ex-Boss still posted once.
+  const again = await runChatter(db, real, instance, slot);
   assert.equal(again.status, 'busy', JSON.stringify(again));
   assert.equal(sql(`select count(*) from acts a join characters c on c.id = a.character where c.staff = '${OLD}' and a.kind = 'post' and a.created_at >= '${before}' and a.payload ->> 'pool' = '${day}'`), '1', 'the ex-Boss posted once');
 
