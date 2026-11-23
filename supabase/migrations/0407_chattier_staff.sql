@@ -342,7 +342,7 @@ end $$;
 -- changed between two runs of one day would add sessions beside the first; the unique key is (day, staff, starts_at), not (day, staff).
 -- The day's sessions, `rows` being [{staff, start, end}] with `start` and `end` in minutes from 00:00 UTC of `on_day` (what drawSessions draws, engine/system/sessions.ts). A row already there is left as it is, so a rerun of the
 -- day's first round writes nothing twice; answers how many sessions the day holds. A staff key that is not a posting persona (a persona in a posting office: not the developer or the stand-in, not benched, not waiting) is refused, and so is a span outside the day.
-create function write_sessions(on_day date, rows jsonb) returns integer
+create function write_sessions(on_day date, rows jsonb, mark boolean default true) returns integer
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare bad text;
 begin
@@ -364,8 +364,9 @@ begin
   select on_day, x.staff, (on_day::timestamp at time zone 'UTC') + x."start" * interval '1 minute', (on_day::timestamp at time zone 'UTC') + x."end" * interval '1 minute'
   from jsonb_to_recordset(rows) as x(staff text, "start" integer, "end" integer)
   on conflict (day, staff, starts_at) do nothing;
-  -- The day's mark, last, in this transaction: a day written with no rows is marked as well.
-  insert into pool_round_days (day) values (on_day) on conflict (day) do nothing;
+  -- The day's mark, last, in this transaction: a day written with no rows is marked as well. A write with `mark` false (one persona's rows, in the chatter's fallback after a refusal of the whole list)
+  -- leaves the day unmarked, and the closing write marks it, so a crash between them leaves the day to be finished by the next round (the rows already written are left as they are).
+  if mark then insert into pool_round_days (day) values (on_day) on conflict (day) do nothing; end if;
   return (select count(*)::integer from staff_sessions s where s.day = on_day);
 end $$;
 
@@ -627,10 +628,10 @@ language sql stable security definer set search_path = public, pg_temp as $$
   where p.staff = staff_key and p.meeting = (select m.id from meetings m where m.outcome = 'ok' order by m.slot desc limit 1)
 $$;
 
-revoke execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb), pool_day_started(date), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
+revoke execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb, boolean), pool_day_started(date), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
   pool_waiting(text[], timestamptz), pool_turns_today(date), write_staff_turn(text, bigint, uuid, uuid, uuid[], text), pool_conversation(text, uuid, integer, integer, integer),
   pool_record(uuid, text), staff_points_latest(text) from public, anon, authenticated;
-grant execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb), pool_day_started(date), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
+grant execute on function claim_pool_round(timestamptz, interval), write_sessions(date, jsonb, boolean), pool_day_started(date), sessions_awake(timestamptz), sessions_day(date), keep_pick(date, text, jsonb), kept_picks(date),
   pool_waiting(text[], timestamptz), pool_turns_today(date), write_staff_turn(text, bigint, uuid, uuid, uuid[], text), pool_conversation(text, uuid, integer, integer, integer),
   pool_record(uuid, text), staff_points_latest(text) to service_role;
 

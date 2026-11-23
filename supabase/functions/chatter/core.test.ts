@@ -74,6 +74,10 @@ interface World {
   turnRefusal?: string;
   /** `write_staff_turn` commits, then its answer is lost (a transport error), once. */
   lostTurnAnswer?: boolean;
+  /** `write_sessions` refuses (kayfabb.refusal) any list that holds this persona, as the database does for one benched since the context was read. */
+  refuseSessionsFor?: string;
+  /** The nth call of `write_sessions` (1-based) fails with a database error, once. */
+  crashSessionCall?: number;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any };
 
@@ -84,7 +88,7 @@ function fakeDb(w: World = {}) {
     turns: (w.spentTurns ?? []).map((t) => ({ staff: t.staff, session: sessionRows[t.session]!.id, thread: t.thread, post: 'earlier', answers: [] as string[], quoting: '', body: '' })),
     // A day with sessions or picks given is a day whose first round has passed.
     days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
-    answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
+    sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
   const threads = [T1, T2, T3];
@@ -110,7 +114,11 @@ function fakeDb(w: World = {}) {
         case 'sessions_day': return state.sessions.filter((x) => x.day === args.on_day).map((x) => ({ staff: x.staff, session: x.id, startsAt: new Date(x.startsAt).toISOString(), endsAt: new Date(x.endsAt).toISOString() })) as T;
         case 'pool_day_started': return state.days.has(String(args.on_day)) as T;
         case 'write_sessions': {
-          state.days.add(String(args.on_day));
+          state.sessionCalls += 1;
+          if (w.crashSessionCall === state.sessionCalls) throw new DatabaseError('write_sessions: the connection dropped', '08006', 500);
+          const given = args.rows as { staff: string; start: number; end: number }[];
+          if (w.refuseSessionsFor && given.some((r) => r.staff === w.refuseSessionsFor)) throw new DatabaseError('write_sessions: benched', '55000', 400, 'that persona is benched', 'kayfabb.refusal');
+          if (args.mark !== false) state.days.add(String(args.on_day));
           for (const r of args.rows as { staff: string; start: number; end: number }[]) {
             const startsAt = Date.parse(`${args.on_day}T00:00:00Z`) + r.start * 60_000;
             if (!state.sessions.some((x) => x.day === args.on_day && x.staff === r.staff && x.startsAt === startsAt)) {
@@ -1485,4 +1493,22 @@ test('a day with no session drawn and no pick to spend runs the daily path once,
   assert.deepEqual(d.of('write_sessions')[0]!.rows, []);
   const calls = d.calls.map((c) => c.fn);
   assert.ok(calls.lastIndexOf('pool_signals') < calls.indexOf('write_sessions'), 'the mark comes after the day\'s work');
+});
+
+test('a crash during the per-persona fallback leaves the day unmarked, and the next round gives every persona its sessions and marks the day', async () => {
+  const pool = { sessions: { perDay: 1, minutes: { least: 20, most: 20 }, waking: { from: 19, to: 20 } } };
+  // The whole list is refused (MON was benched since the context was read); the fallback writes each persona alone, and the third call of all dies.
+  const d = fakeDb({ pool, refuseSessionsFor: MON, crashSessionCall: 3 });
+  const m = fakeModels(normal);
+  await assert.rejects(run(d, m), /connection dropped/);
+  const marks = d.of('write_sessions').map((a) => a.mark);
+  assert.ok(marks.slice(1).every((x) => x === false), 'a persona\'s own write does not mark the day');
+  assert.equal(d.state.days.has(DAY), false, 'the day is not marked: its work is not done');
+  assert.ok(d.state.sessions.length > 0 && d.state.sessions.length < 3, 'some personas have sessions, not all');
+  const next = await run(d, m, dividedWorld, '2026-11-04T17:52:00.000Z');
+  assert.ok(next.status === 'ok');
+  assert.deepEqual([...new Set(d.state.sessions.map((x) => x.staff))].sort(), [CLERK, HYPE, SIGH].sort(), 'every persona that can post has its session, and the refused one has none');
+  assert.equal(d.state.sessions.length, 3, 'none written twice');
+  assert.equal(d.state.days.has(DAY), true, 'the last call marks the day');
+  assert.equal(d.state.kept.length, 3, 'and the picks were kept once');
 });

@@ -149,6 +149,11 @@ begin
   if n is distinct from 0 or pool_day_started('2030-01-09') is not true then raise exception 'a day written with no rows is not marked started (%)', n; end if;
   n := write_sessions('2030-01-09', '[]');
   if (select count(*) from pool_round_days where day = '2030-01-09') is distinct from 1 then raise exception 'writing the empty day twice marked it more than once'; end if;
+  -- A write with mark false writes the sessions and leaves the day unmarked; a later write marks it, and the sessions are not written twice.
+  n := write_sessions('2030-01-12', '[{"staff": "cs-boss", "start": 600, "end": 660}]', false);
+  if n is distinct from 1 or pool_day_started('2030-01-12') then raise exception 'a write with mark false marked the day (%)', n; end if;
+  n := write_sessions('2030-01-12', '[{"staff": "cs-boss", "start": 600, "end": 660}]');
+  if n is distinct from 1 or pool_day_started('2030-01-12') is not true then raise exception 'the closing write did not mark the day (%)', n; end if;
   -- A refused write marks nothing.
   perform pg_temp.refused('select write_sessions(''2030-01-11'', ''[{"staff": "nobody", "start": 0, "end": 15}]'')');
   if pool_day_started('2030-01-11') then raise exception 'a refused write marked the day'; end if;
@@ -629,7 +634,7 @@ $$;
 do $$
 declare
   fns regprocedure[] := array[
-    'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'pool_day_started(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
+    'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb, boolean)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'pool_day_started(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
     'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text)',
     'pool_conversation(text, uuid, integer, integer, integer)', 'pool_record(uuid, text)', 'staff_points_latest(text)', 'staff_rows_append_only()']::regprocedure[];
   found text[];

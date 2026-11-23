@@ -405,10 +405,10 @@ async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: s
     await db.rpc('write_sessions', { on_day: day, rows });
   } catch (e) {
     if (stopsTheRun(e) || !isRefusal(e)) throw e;
-    // Persona by persona (each call marks the day, the first of them marking it before the rest are written: a crash among them leaves a persona without its sessions that day, never a pick lost).
+    // Persona by persona, none of them marking the day, then one closing call that does: a crash among them leaves the day unmarked, and the next round finishes it.
     for (const staff of new Set(rows.map((r) => r.staff))) {
       try {
-        await db.rpc('write_sessions', { on_day: day, rows: rows.filter((r) => r.staff === staff) });
+        await db.rpc('write_sessions', { on_day: day, rows: rows.filter((r) => r.staff === staff), mark: false });
       } catch (each) {
         if (stopsTheRun(each) || !isRefusal(each)) throw each;
       }
