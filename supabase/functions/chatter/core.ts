@@ -105,7 +105,7 @@ import {
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
-import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, SchemaRefused } from '../_shared/models/index.ts';
 
 const DAY = 86_400_000;
 
@@ -547,13 +547,25 @@ interface TurnRun extends TurnsRun {
   readonly planned: PlannedTurn;
 }
 
-/** One turn, from its reads to its note. Never throws except for a run-stopping error. A call that failed or was rejected, or a write that was refused, spends nothing and its replies wait. */
+/** One turn, from its reads to its note. Never throws except for a run-stopping error. A write that was refused spends nothing and its replies wait; a call that failed, was rejected or was refused writes an attempt (below), which decides whether its replies wait. */
 async function oneTurn(r: TurnRun): Promise<TurnRecord> {
   const { db, models, tuned, persona, planned } = r;
   const settings = tuned.settings;
   const base = { staff: planned.staff, thread: planned.thread, session: planned.session };
   const skip = (why: string, answers: readonly string[] = planned.answers): TurnRecord => ({ ...base, status: 'skipped', why, answers, trims: [] });
-  const fail = (status: 'failed' | 'rejected', why: string, answers: readonly string[], trims: readonly Trim[]): TurnRecord => ({ ...base, status, why, answers, trims });
+  // A turn that wrote nothing and was not skipped writes its attempt (record_turn_attempt, 0419), so the next round knows why: a refused reply stops waiting at once, a rejected one after two, a failed one keeps waiting,
+  // and a paid call is spent against the day's ceiling. If the attempt itself cannot be written the record still returns, and says so; only a run-stopping error is thrown.
+  const fail = async (outcome: 'refused' | 'rejected' | 'failed', paid: boolean, why: string, answers: readonly string[], trims: readonly Trim[]): Promise<TurnRecord> => {
+    const status = outcome === 'failed' ? 'failed' : 'rejected';
+    try {
+      await db.rpc('record_turn_attempt', { staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, answers, outcome, paid });
+      return { ...base, status, why, answers, trims };
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      if (e instanceof DatabaseError) return { ...base, status, why: `${why} (attempt not recorded: ${said(e)})`, answers, trims };
+      throw e;
+    }
+  };
   try {
     const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
     const [view, read, reads] = await Promise.all([
@@ -610,11 +622,14 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       }
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      return fail(e instanceof AnswerRejected ? 'rejected' : 'failed', said(e), answers, []);
+      // A refusal is the provider's answer and is paid; a schema it would refuse or a prompt too long was never sent; any other AnswerRejected (not JSON, cut off) got an answer and is paid; a transport failure that
+      // outlived its retries got none. There is no fallback to the old voice for a refusal.
+      if (e instanceof AnswerRejected) return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !(e instanceof SchemaRefused || e instanceof PromptTooLong), said(e), answers, []);
+      return fail('failed', false, said(e), answers, []);
     }
 
     const repaired = repairAnswer(raw, settings, false, []);
-    if (!repaired.ok) return fail('rejected', repaired.why, answers, repaired.trims);
+    if (!repaired.ok) return fail('rejected', true, repaired.why, answers, repaired.trims);
     const { answer, trims } = repaired;
 
     // The turn, whole: the post, the turn's row and each reply's answered row, in one transaction. A refusal writes nothing; the replies wait.
@@ -627,7 +642,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     } catch (e) {
       if (stopsTheRun(e)) throw e;
       if (isRefusal(e) && e.hint === 'kayfabb.refusal') return { ...base, status: 'skipped', why: e.reason, answers, trims };
-      return fail('failed', said(e), answers, trims);
+      return fail('failed', true, said(e), answers, trims);
     }
 
     // From here the turn is written: a failed note loses nothing and writes nothing twice.
@@ -643,7 +658,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     return { ...base, status: 'taken', post, answers, trims, noteWritten };
   } catch (e) {
     if (stopsTheRun(e)) throw e;
-    if (e instanceof DatabaseError) return fail('failed', said(e), planned.answers, []);
+    if (e instanceof DatabaseError) return fail('failed', false, said(e), planned.answers, []);
     throw e;
   }
 }

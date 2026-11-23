@@ -48,10 +48,10 @@ create function pg_temp.today() returns date language sql as $$ select (now() at
 create function pg_temp.waits(r uuid, th uuid) returns text language plpgsql as $$
 declare since timestamptz := now() - interval '2 days'; board uuid := (select board from threads where id = th); n text := '';
 begin
-  perform tests.become_service();
   if exists (select 1 from pool_waiting_rows(array['sf2-boss'], since) w where w.act = r) then n := n || 'rows,'; end if;
   if exists (select 1 from pool_waiting_in_thread(th, array['sf2-boss'], since) w where w.act = r) then n := n || 'thread,'; end if;
   if exists (select 1 from pool_waiting_in_board(board, array['sf2-boss'], since) w where w.act = r) then n := n || 'board,'; end if;
+  perform tests.become_service();
   if exists (select 1 from jsonb_array_elements(pool_waiting(array['sf2-boss'], since)) e, jsonb_array_elements(e -> 'replies') x where x ->> 'act' = r::text) then n := n || 'all,'; end if;
   perform tests.unbecome();
   return n;

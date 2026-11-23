@@ -5,7 +5,7 @@ import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
-import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, SchemaRefused, models as realModels } from '../_shared/models/index.ts';
 import { ProviderRefusal } from '../_shared/models/transport.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
@@ -94,6 +94,7 @@ function fakeDb(w: World = {}) {
     turns: (w.spentTurns ?? []).map((t) => ({ staff: t.staff, session: sessionRows[t.session]!.id, thread: t.thread, post: 'earlier', answers: [] as string[], quoting: '', body: '' })),
     // A day with sessions or picks given is a day whose first round has passed.
     days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
+    attempts: [] as { staff: string; session: number; thread: string; answers: string[]; outcome: string; paid: boolean }[],
     sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
@@ -150,10 +151,19 @@ function fakeDb(w: World = {}) {
         case 'pool_waiting': {
           const since = Date.parse(String(args.since));
           const keys = args.staff_keys as string[];
-          return (w.waiting ?? []).filter((x) => keys.includes(x.staff)).map((x) => ({ ...x, replies: x.replies.filter((r) => !r.staff && !state.answered.has(r.act) && Date.parse(r.at) >= since).map(({ act, author, at }) => ({ act, author, at })) }))
+          // A reply a refused attempt covers, or two rejected ones, is given up on (record_turn_attempt); failed attempts leave it waiting.
+          const givenUp = (act: string) => {
+            const covering = state.attempts.filter((a) => a.answers.includes(act));
+            return covering.some((a) => a.outcome === 'refused') || covering.filter((a) => a.outcome === 'rejected').length >= 2;
+          };
+          return (w.waiting ?? []).filter((x) => keys.includes(x.staff)).map((x) => ({ ...x, replies: x.replies.filter((r) => !r.staff && !state.answered.has(r.act) && !givenUp(r.act) && Date.parse(r.at) >= since).map(({ act, author, at }) => ({ act, author, at })) }))
             .filter((x) => x.replies.length > 0).map((x) => ({ staff: x.staff, thread: x.thread, heat: x.heat ?? 0, replies: x.replies })) as T;
         }
-        case 'pool_turns_today': return ((w.turnsToday ?? 0) + state.turns.filter((t) => t.post !== 'earlier').length) as T;
+        case 'pool_turns_today': return ((w.turnsToday ?? 0) + state.turns.filter((t) => t.post !== 'earlier').length + state.attempts.filter((a) => a.paid).length) as T;
+        case 'record_turn_attempt': {
+          state.attempts.push({ staff: String(args.staff_key), session: Number(args.in_session), thread: String(args.in_thread), answers: [...new Set(args.answers as string[])], outcome: String(args.outcome), paid: Boolean(args.paid) });
+          return state.attempts.length as T;
+        }
         case 'pool_conversation': {
           const mine = (w.waiting ?? []).find((x) => x.staff === args.staff_key && x.thread === args.in_thread);
           return { posts: [{ act: `own-${args.in_thread}`, at: '2026-11-04T10:00:00.000Z', body: 'My earlier words.', cut: false,
@@ -1403,6 +1413,87 @@ test('a refusal of write_staff_turn skips the turn and says why, and nothing is 
   assert.ok(out.status === 'ok');
   assert.deepEqual(out.turns.map((t) => [t.status, t.why]), [['skipped', 'that session is not open now']]);
   assert.equal(d.state.notes.length, 0, 'no note without a post');
+});
+
+const refusedAnswer = () => new AnswerRejected('the model refused', 'refusal');
+
+test('a refused answer writes a paid attempt, and its reply is never called for again', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const refusing = fakeModels(() => refusedAnswer());
+  const first = await run(d, refusing);
+  assert.ok(first.status === 'ok');
+  assert.deepEqual(first.turns.map((t) => t.status), ['rejected']);
+  assert.deepEqual(d.state.attempts, [{ staff: SIGH, session: 1, thread: T1, answers: [R1], outcome: 'refused', paid: true }]);
+  const next = turnModels();
+  const second = await run(d, next, dividedWorld, at('17:52'));
+  assert.ok(second.status === 'ok');
+  assert.equal(next.chats.length, 0, 'the refused reply is not offered again');
+  assert.equal(d.count('write_staff_turn'), 0);
+});
+
+test('a reply whose answer is rejected twice is called for twice and no more', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const bad = fakeModels(() => ({ words: '   ' }));
+  await run(d, bad);
+  await run(d, bad, dividedWorld, at('17:52'));
+  assert.equal(bad.chats.length, 2);
+  assert.deepEqual(d.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', true], ['rejected', true]]);
+  await run(d, bad, dividedWorld, at('18:07'));
+  assert.equal(bad.chats.length, 2, 'no third call');
+  // A schema the provider refuses, and a prompt too long, are rejected and not paid.
+  const e = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  await run(e, fakeModels(() => new SchemaRefused([{ path: '', predicate: 'keyword(maxItems)' }])));
+  await run(e, fakeModels(() => new PromptTooLong(9, 3)), dividedWorld, at('17:52'));
+  assert.deepEqual(e.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', false], ['rejected', false]]);
+});
+
+test('a transport failure writes an unpaid failed attempt and the reply is called for again', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const down = fakeModels(() => new Error('provider down'));
+  await run(d, down);
+  assert.deepEqual(d.state.attempts.map((a) => [a.outcome, a.paid, a.answers]), [['failed', false, [R1]]]);
+  const again = turnModels();
+  const out = await run(d, again, dividedWorld, at('17:52'));
+  assert.ok(out.status === 'ok');
+  assert.equal(again.chats.length, 1, 'still waiting');
+  assert.deepEqual(out.turns.map((t) => t.status), ['taken']);
+  // A write_staff_turn that fails with a database error after an answer is failed and paid; the reply still waits.
+  const w = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], failOn: { write_staff_turn: 1 } });
+  await run(w, turnModels());
+  assert.deepEqual(w.state.attempts.map((a) => [a.outcome, a.paid]), [['failed', true]]);
+});
+
+test('a kayfabb.refusal from write_staff_turn writes no attempt', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], turnRefusal: 'that session is not open now' });
+  const out = await run(d, turnModels());
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['skipped']);
+  assert.equal(d.count('record_turn_attempt'), 0);
+});
+
+test('a paid attempt is spent against the day\'s ceiling, so the next round\'s share is smaller', async () => {
+  const three = [T1, T2, T3].map((thread, i) => ({ staff: SIGH, thread, heat: 3 - i, replies: [reply([R1, R2, R3][i]!)] }));
+  const spendOne = (paid: boolean) => ({ staff: SIGH, session: 1, thread: T1, answers: [R1], outcome: 'failed', paid });
+  // The last round of the day, 59 of 60 turns spent: one turn is left. A paid attempt takes it; an unpaid one does not.
+  const lastRound = { sessions: [{ staff: SIGH, start: min('23:30'), end: min('23:59') }], waiting: three, turnsToday: 58 };
+  const paidDb = fakeDb(lastRound);
+  paidDb.state.attempts.push(spendOne(true));
+  const unpaidDb = fakeDb(lastRound);
+  unpaidDb.state.attempts.push(spendOne(false));
+  const calledPaid = turnModels();
+  const calledUnpaid = turnModels();
+  await run(paidDb, calledPaid, dividedWorld, at('23:52'));
+  await run(unpaidDb, calledUnpaid, dividedWorld, at('23:52'));
+  assert.equal(calledPaid.chats.length, 1, '58 turns and a paid attempt leave one of 60');
+  assert.equal(calledUnpaid.chats.length, 2, 'an unpaid attempt spends nothing: two are left');
+});
+
+test('a refused answer whose attempt cannot be written still returns the turn\'s record', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], failOn: { record_turn_attempt: 'always' } });
+  const out = await run(d, fakeModels(() => refusedAnswer()));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['rejected']);
+  assert.match(out.turns[0]!.why!, /attempt not recorded/);
 });
 
 test('a crash between the call and write_staff_turn spends nothing and loses nothing; a lost answer finds the replies answered and writes no second turn', async () => {
