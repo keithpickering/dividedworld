@@ -72,7 +72,7 @@ test('two turns answering one reply at once write exactly one turn, and the seco
     assert.equal(await b.settled(300), false, 'B answered while A held the persona\'s turn');
     a.send('commit;');
     await a.done();
-    await b.settled(15_000);
+    assert.ok(await b.settled(15_000), `B never answered once A committed; err ${b.err}`);
     assert.match(b.err, /a reply is answered once/, `B is refused: ${b.out} ${b.err}`);
     assert.doesNotMatch(b.out, /TURN:\d+/, `B wrote no turn: ${b.out}`);
     b.send('rollback;');

@@ -1,7 +1,7 @@
 -- Chattier staff follow-ups (supabase/migrations/0418_chattier_follow_ups.sql; docs/plans/2026-11-23-chattier-staff-follow-ups-plan.md, Task 1; the final review of PR #1000).
 -- F1: pool_conversation shows a reply under a live author veil as the stand-in's, never as its author (it reads acts_public; a read of raw acts would name the author in a persona's prompt).
 -- F2: pool_record holds only the moves that landed or ended since the latest meeting's slot, on both of its branches.
--- 3. pool_thread takes a list of replies beside the newest posts and its four-argument form reads as before.
+-- pool_thread: takes a list of replies beside the newest posts and its four-argument form reads as before.
 
 create function pg_temp.staff_post(k text, in_thread uuid, body text, target uuid default null) returns uuid language sql as $$
   select (write_staff_act(k, 'post', in_thread, target, jsonb_build_object('body', body)) ->> 'id')::uuid
