@@ -11,6 +11,8 @@
  *  - A row's words and dates are the story's (a date reads "9 days ago" for a while and then a date), so no row is compared.
  *  - The kinds' buttons are held by their words, place and size: the current one (All) is no link, so Posts and Seasons stand for the row's ends.
  *  - The build's nav is named Main, as in 02-board.
+ *  - The build sets the tagline under the name (#1012), so the masthead is two lines, centered in a banner the board's height: the name stands 10px
+ *    higher than the board draws it (y 25, the board's 35), and nothing under the banner moves (the owner's word of 2026-11-23).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -22,7 +24,7 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1000 },
   build: { story: 'boards-10-record--record' },
   landmarks: [
-    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World' },
+    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World', buildShift: { y: -10 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
     { id: 'crumb-name', role: 'link', name: 'Spritey', buildShift: { y: 8.1 } },
     { id: 'title', role: 'heading', name: 'Spritey’s public record', buildShift: { y: 35.6 } },

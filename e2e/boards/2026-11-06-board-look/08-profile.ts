@@ -19,6 +19,8 @@
  *    and the footer stand GROUP_ROW lower.
  *  - The build has a Pronouns row after Rank (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board predates, so the About table is
  *    a row (38.3px) taller and every fact, link and table after Rank stands that much lower than the shifts above would put it.
+ *  - The build sets the tagline under the name (#1012), so the masthead is two lines, centered in a banner the board's height: the name stands 10px
+ *    higher than the board draws it (y 25, the board's 35), and nothing under the banner moves (the owner's word of 2026-11-23).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -30,7 +32,7 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1700 },
   build: { story: 'boards-08-profile--profile' },
   landmarks: [
-    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World' },
+    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World', buildShift: { y: -10 } },
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-index', role: 'link', name: 'Index', within: 'nav' },
     { id: 'nav-general', role: 'link', name: 'General', within: 'nav' },

@@ -19,6 +19,8 @@
  *  - The build has a Pronouns row after Title (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board predates, so the About table is a
  *    row (39.2px) taller, every fact after Title stands that much lower, and the log 39.2px lower than the 26.2px above. The log's middle column reads the
  *    Director's own pronouns ("What she did") where the board draws "What it did".
+ *  - The build sets the tagline under the name (#1012), so the masthead is two lines, centered in a banner the board's height: the name stands 10px
+ *    higher than the board draws it (y 25, the board's 35), and nothing under the banner moves (the owner's word of 2026-11-23).
  */
 import type { BoardManifest } from '../../board-match.ts';
 
@@ -30,7 +32,7 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1000 },
   build: { story: 'boards-14-staff--staff' },
   landmarks: [
-    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World' },
+    { id: 'logo', role: 'text', buildRole: 'link', name: 'DIVIDED WORLD', buildName: 'Divided World', buildShift: { y: -10 } },
     { id: 'nav', role: 'navigation', name: 'Boards', buildName: 'Main', type: false },
     { id: 'nav-system', role: 'link', name: 'Staff Announcements', within: 'nav', box: 'position', type: false, buildShift: { x: 733.16 } },
     { id: 'crumb-index', role: 'link', name: 'Index', nth: 1, buildNth: 1, buildShift: { y: 8.1 } },
