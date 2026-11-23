@@ -85,3 +85,15 @@ test('a wash band with an edge and a slant stays between its edges and sinks to 
   const mean = (v: number[]) => v.reduce((a, b) => a + b, 0) / v.length;
   assert.ok(mean(at('r')) - mean(at('l')) > 0.1, 'the right end sits lower than the left');
 });
+
+test('a question mark\'s hook stays open: its curl never comes back round to where it began', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const shape = glyphs('??', [0.2, 0.2], 0.2, 1, seed);
+    for (const hook of [shape[0]!, shape[2]!]) {
+      /* The hook's arc is its first fifteen points; the last is the stem's foot. */
+      const [start, end] = [hook[0]!, hook[14]!];
+      /* An open hook curls down to its stem, well below where it began; a loop comes back up level with its start. */
+      assert.ok(end[1] - start[1] > 0.02, `seed ${seed}: the curl ends at ${end}, back level with its start ${start}`);
+    }
+  }
+});

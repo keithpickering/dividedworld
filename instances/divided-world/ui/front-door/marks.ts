@@ -78,7 +78,7 @@ export function glyphs(text: string, at: Pt, size: number, aspect: number, seed 
   const ax = (n: number) => n / aspect;
   let left = at[0];
   [...text].forEach((ch) => {
-    const s = size * (0.85 + r() * 0.3), lean = (r() - 0.5) * 0.35, curl = 1.6 + r() * 0.35, drop = (r() - 0.5) * size * 0.12;
+    const s = size * (0.85 + r() * 0.3), lean = (r() - 0.5) * 0.35, curl = 1.5 + r() * 0.15, drop = (r() - 0.5) * size * 0.12;
     const w = s * 0.55;
     if (ch === '?') {
       const [x, y] = [left, at[1] + drop];
