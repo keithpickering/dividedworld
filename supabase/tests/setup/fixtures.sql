@@ -14,6 +14,7 @@ insert into settings (key, value) values
   ('reactionCap', '3'),
   ('postEffects', '8'),
   ('crowdPayEach', '2'),
+  ('crowdFloor', '2'),
   ('crowdPayMost', '10'),
   ('walletCap', '600'),
   ('vote', '10'),

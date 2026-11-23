@@ -167,6 +167,8 @@ export interface Settings {
   readonly postEffects: number;
   /** What each Act a player reacts to pays their wallet at the settlement (crowd pay), in hundredths; 0 switches crowd pay off. */
   readonly crowdPayEach: Hundredths;
+  /** What a vote on the character's own Act pays it when its class neither pays nor charges that vote (the crowd floor), in hundredths; 0 switches it off. */
+  readonly crowdFloor: Hundredths;
   /** The most Acts one player is paid crowd pay for in one settlement window, across all their characters. */
   readonly crowdPayMost: number;
   /** The most characters one player runs. */

@@ -143,7 +143,7 @@ describe('sectionsOf', () => {
 
 describe('settingText', () => {
   const settings = {
-    walletCap: 600, charactersPerPlayer: 6, reactionCap: 3, postsPerPage: 20, crowdPayEach: 2, crowdPayMost: 10,
+    walletCap: 600, charactersPerPlayer: 6, reactionCap: 3, postsPerPage: 20, crowdPayEach: 2, crowdFloor: 2, crowdPayMost: 10,
     turnCooldown: { unit: 'day', count: 30 }, settlementLength: { unit: 'day', count: 1 }, editGrace: { unit: 'minute', count: 2 },
     registrationMode: 'invite', toastDefaults: ['quote'],
     cardSettings: { 'whoops.clean': 95 },
@@ -156,6 +156,9 @@ describe('settingText', () => {
   test('crowd pay\'s amount is Aura and its cap is a count', () => {
     assert.equal(settingText('crowdPayEach', settings), '0.02');
     assert.equal(settingText('crowdPayMost', settings), '10');
+  });
+  test('the crowd floor\'s amount is Aura', () => {
+    assert.equal(settingText('crowdFloor', settings), '0.02');
   });
   test('a count is the plain number, and a span is said as a player says it', () => {
     assert.equal(settingText('charactersPerPlayer', settings), '6');

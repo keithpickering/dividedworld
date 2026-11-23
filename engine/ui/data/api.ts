@@ -201,6 +201,7 @@ export interface ScreenSettings {
   readonly editGrace: Span;
   readonly reactionCap: number;
   readonly crowdPayEach: number;
+  readonly crowdFloor: number;
   readonly crowdPayMost: number;
   readonly charactersPerPlayer: number;
   readonly invitesPerPlayer: number;

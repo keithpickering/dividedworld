@@ -540,7 +540,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const instance: Instance = { ...options.instance, settings };
   const screen: ScreenSettings = {
     pronouns: settings.pronouns,
-    postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdPayMost: settings.crowdPayMost,
+    postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdFloor: settings.crowdFloor, crowdPayMost: settings.crowdPayMost,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
     pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
