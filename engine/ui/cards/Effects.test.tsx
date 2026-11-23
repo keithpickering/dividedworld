@@ -224,6 +224,38 @@ describe('a card that writes nests innermost', () => {
   });
 });
 
+describe('the words box (data-kb-words-box)', () => {
+  test('holds the words and a writing card\'s wrap, and the other card\'s wrap holds the box', () => {
+    const { words } = drawn([ui('one'), writer('scribe')], ['one', 'scribe']);
+    const box = words.closest('[data-kb-words-box]')!;
+    expect(box).not.toBeNull();
+    expect(tailsAfter(words)).toEqual(['scribe']);
+    expect(box.contains(words.nextElementSibling)).toBe(true);
+    expect(box.closest('[data-kb-wrap="one"]')).not.toBeNull();
+    expect(box.querySelector('[data-kb-wrap]')).toBeNull();
+  });
+
+  test('a post with no plays has the box', () => {
+    const { words } = drawn([ui('one')], []);
+    expect(words.parentElement!.hasAttribute('data-kb-words-box')).toBe(true);
+  });
+
+  test('with a compose open, the compose\'s body element is the box, one element', async () => {
+    const Open = ({ target }: { readonly target: PlayTarget }) => {
+      const p = usePlay();
+      useEffect(() => { p?.openCompose('comp', target); }, []);
+      return null;
+    };
+    const target: PlayTarget = { post: words, title: 't', author: 'a', to: '/x', plays: createPlays(), know: async () => {} };
+    const comp = ui('comp', { Compose: ({ children }) => <div data-kb-compose-fake>{children}</div> });
+    const { words: w, container } = drawn([ui('one'), comp], ['one'], <Open target={target} />);
+    await vi.waitFor(() => expect(container.querySelector('.kb-compose-body')).not.toBeNull());
+    expect(container.querySelectorAll('[data-kb-words-box]')).toHaveLength(1);
+    expect(w.parentElement!.hasAttribute('data-kb-words-box')).toBe(true);
+    expect(container.querySelector('.kb-compose-body')!.contains(w.parentElement)).toBe(true);
+  });
+});
+
 describe('a post\'s history version nests the same way', () => {
   const version = (cards: CardUi[], played: string[]) => {
     const kayfa = kayfaOf(cards);

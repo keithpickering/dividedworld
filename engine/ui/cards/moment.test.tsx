@@ -287,6 +287,17 @@ describe('a moment nests as a post does', () => {
     expect(chain()).toEqual(['smear']);
   });
 
+  test("the words box holds the words and the writing card's tail, and every other card's wrap holds the box", () => {
+    draw(moment([{ act: card('k2', 'scribey', 9), state: null }, { act: card('k1', 'smear', 1), state: null }]));
+    const words = document.querySelector('[data-kb-words]')!;
+    const box = words.closest('[data-kb-words-box]')!;
+    expect(box).not.toBeNull();
+    expect(words.nextElementSibling?.getAttribute('data-kb-tail')).toBe('scribey');
+    expect(box.contains(words.nextElementSibling)).toBe(true);
+    expect(box.closest('[data-kb-wrap="smear"]')).not.toBeNull();
+    expect(box.querySelector('[data-kb-wrap]')).toBeNull();
+  });
+
   test('a beneath card is inside a card without it, though it was played later', () => {
     const was = cards[1]!;
     cards[1] = ui('ripple', { beneath: true });
