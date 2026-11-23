@@ -243,3 +243,18 @@ describe('the front door with an effect that loads on first use', () => {
     expect(screen.getByTestId('effect')).toHaveTextContent('It plays up to 3 characters.');
   });
 });
+
+describe('the front door\'s pictures', () => {
+  test('a root-relative picture in a staged post is drawn from the page\'s own origin', () => {
+    drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img]', reactions: {} }]);
+    const img = document.querySelector('article.kb-act img');
+    expect(img?.getAttribute('src')).toBe(`${window.location.origin}/x/sheet.gif`);
+  });
+
+  test('a protocol-relative picture is not rewritten, and the parser treats it as it does anywhere', () => {
+    drawWith([{ by: 'ann', body: '[img]//evil.example/a.gif[/img]', reactions: {} }]);
+    const srcs = [...document.querySelectorAll('article.kb-act img')].map((i) => i.getAttribute('src'));
+    expect(srcs.some((s) => s?.includes('evil.example'))).toBe(false);
+    expect(srcs.some((s) => s?.startsWith(window.location.origin))).toBe(false);
+  });
+});

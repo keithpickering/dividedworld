@@ -100,7 +100,12 @@ export function FrontDoor() {
   const noteTitle = useId();
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
   const picture = persona.avatar === undefined ? undefined : ui.avatars?.[persona.avatar];
-  const fill = useCallback((text: string) => text.replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH), [settings]);
+  /* A post's picture must be an http(s) address (`safeImageSrc`), and a bundled file's address is root-relative, so a staged
+     picture that starts with a single `/` is made absolute against the page's own origin. These words are the instance's
+     committed content, never a player's; a protocol-relative or absolute address is left to the parser as anywhere. */
+  const fill = useCallback((text: string) => text
+    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH)
+    .replace(/\[img\](\/(?!\/)[^[]*)\[\/img\]/giu, (_m, src: string) => `[img]${new URL(src, window.location.origin).href}[/img]`), [settings]);
 
   const cast = useMemo(() => new Map(door.cast.map((c) => {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
