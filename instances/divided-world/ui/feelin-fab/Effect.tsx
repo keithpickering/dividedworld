@@ -45,7 +45,7 @@
  * host marks itself `data-kb-bleed` and fab.css puts the foil under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own. The foil does not ask to be
  * bent by a dent (it carries no `data-kb-bend`, engine/ui/cards/body.ts), because bending it did not pass the gate of 10% on the 95th
- * percentile of a busy scroll's frame gap (a steady run read 75% over; docs/research/2026-11-23-dent-bend/README.md); a dent's shading
+ * percentile of a busy scroll's frame gap (a steady set of runs read 75% over; docs/research/2026-11-23-dent-bend/README.md); a dent's shading
  * lies over it instead.
  *
  * How often. The body changes more of the screen in a draw than the words did, so it is redrawn at the share of the loop's rate that
