@@ -108,6 +108,12 @@ describe('the presence box', () => {
 
   describe('a persona in session (the chattier staff design, section 7)', () => {
     /** The index with two players browsing and the persona Mabel in session since a minute ago; she has posted in no thread. */
+    function outOfSession() {
+      const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
+      const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
+      return { ...w, mabel };
+    }
+
     function inSession() {
       const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
       const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
@@ -151,12 +157,12 @@ describe('the presence box', () => {
       expect(again).toHaveTextContent('Mabel, Test Cores');
     });
 
-    /** Mabel posted in the thread 6 hours ago, before her session began; a player's reply to that post is `replyAgoMs` old (answered: by her turn an hour after it, still before the session). */
-    function replyWaiting(replyAgoMs: number, options: { answered?: boolean } = {}) {
-      const w = inSession();
+    /** Mabel posted in the thread before her session began (6 hours ago, or 3 hours before the reply when that is older); a player's reply to that post is `replyAgoMs` old, so always newer than the post it answers (answered: by her turn an hour after it, still before the session). */
+    function replyWaiting(replyAgoMs: number, options: { answered?: boolean; inSessionOnly?: boolean } = {}) {
+      const w = options.inSessionOnly === false ? outOfSession() : inSession();
       const { fake, seeded } = w;
       const player = fake.seed.character(fake.seed.account('replier'), 'Replier', 'face');
-      const hers = fake.seed.staffPost(w.mabel, seeded.thread, 'Hello.', { at: fake.clock.now() - 6 * 3_600_000 });
+      const hers = fake.seed.staffPost(w.mabel, seeded.thread, 'Hello.', { at: fake.clock.now() - Math.max(6 * 3_600_000, replyAgoMs + 3 * 3_600_000) });
       fake.seed.post(seeded.thread, player, 'Hi Mabel.', { quote: hers, at: fake.clock.now() - replyAgoMs });
       if (options.answered) fake.seed.staffPost(w.mabel, seeded.thread, 'Thanks.', { at: fake.clock.now() - replyAgoMs + 3_600_000 });
       return w;
@@ -174,6 +180,21 @@ describe('the presence box', () => {
       const { seeded, fake } = replyWaiting(2 * 3_600_000);
       const board = (await fake.thread(seeded.thread))!.board;
       expect((await fake.presenceBox({ kind: 'board', board })).names.map((n) => n.name)).toContain('Mabel');
+    });
+
+    test('a thread lists her where a reply just inside the wait (47 hours) waits', async () => {
+      const { seeded, show } = replyWaiting(47 * 3_600_000);
+      show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+      const box = await screen.findByRole('region', { name: HEADING });
+      await within(box).findByRole('link', { name: 'Mabel' });
+    });
+
+    test('a persona out of session is not listed where a reply waits', async () => {
+      const { seeded, show } = replyWaiting(2 * 3_600_000, { inSessionOnly: false });
+      show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+      const box = await screen.findByRole('region', { name: HEADING });
+      await within(box).findByRole('link', { name: 'Pipewrench' });
+      expect(box).not.toHaveTextContent('Mabel');
     });
 
     test('a thread does not list her once the reply is older than the wait (48 hours)', async () => {
