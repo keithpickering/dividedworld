@@ -332,7 +332,14 @@ describe('instanceUiProblems', () => {
     test('names draws that cover more than the surface\'s limit', () => {
       const problems = withPlay({ draws: [draw('a', 0.2), draw('b', 0.7)] });
       assert.equal(problems.length, 1);
-      assert.match(problems[0]!, /^front door post 1 play 0 draws cover \d+ cells, over the 100 its surface holds$/);
+      assert.equal(problems[0], 'front door post 1 play 0 draws cover 160 cells, over the 100 its surface holds');
+    });
+    test('names a surface limit the settings do not hold, and does not throw', () => {
+      const d = goodDoor() as { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] };
+      d.posts = [d.posts[0]!, { ...d.posts[1]!, plays: [{ card: 'ink', by: 'a', config: { seed: 1 }, draws: [draw('a', 0.2)] } as Play] }];
+      const bare = { ...(withRules as object), settings: { cardSettings: {} } } as never;
+      const problems = instanceUiProblems({ ...ui(good, d), cards: [{ key: 'ink', status: 's' }, { key: 'plain', status: 's' }, { key: 'react', status: 's' }] as unknown as readonly CardUi[] }, bare);
+      assert.deepEqual(problems, ['front door post 1 play 0 reads a limit "wallLimit" the settings do not hold']);
     });
     test('names a local reaction key no play adds', () => {
       assert.deepEqual(withPlay({}, { [localKey('💀')]: 1 }, 'plain'), [`front door post 1 has a reaction "${localKey('💀')}", which the instance does not have`]);

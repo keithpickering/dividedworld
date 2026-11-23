@@ -264,7 +264,7 @@ function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance
 }
 
 /** A play held to its card's rules: its config, its state, and the draws on its surface, each as the card itself would take them. */
-function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorPost['plays']>[number], rules: CardRules, cast: ReadonlySet<string>, settings: Instance['settings'] | undefined): string[] {
+function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorPost['plays']>[number], rules: CardRules, cast: ReadonlySet<string>, settings: Instance['settings']): string[] {
   const out: string[] = [];
   const config = rules.validateConfig(play.config);
   if (!config.ok) out.push(`${who} has a config the card refuses: ${config.why}`);
@@ -279,15 +279,18 @@ function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorP
   if (draws.length === 0) return out;
   if (rules.surface === undefined) return [...out, `${who} has draws, and the card has no surface`];
   let covered: Cells | null = null;
-  draws.forEach((d, k) => {
+  for (const [k, d] of draws.entries()) {
     if (!cast.has(d.by)) out.push(`${at} draw ${k} is by "${d.by}", who is not in the cast`);
-    const checked = rules.surface!.validateDraw(d.draw);
+    const checked = rules.surface.validateDraw(d.draw);
     if (!checked.ok) out.push(`${at} draw ${k} is one the card refuses: ${checked.why}`);
     else { const cells = cellsOf(checked.value.strokes); covered = covered === null ? cells : union(covered, cells); }
-  });
+  }
   if (draws.length > rules.surface.mostLive) out.push(`${at} has ${draws.length} draws, over the ${rules.surface.mostLive} the card holds live`);
-  if (covered !== null && settings !== undefined) {
-    const most = surfaceMost(rules.key, rules.surface.limitKey, settings);
+  const { limitKey } = rules.surface;
+  const limit = settings.cardSettings[limitKey];
+  if (typeof limit !== 'number' || !Number.isFinite(limit)) out.push(`${at} reads a limit "${limitKey}" the settings do not hold`);
+  else if (covered !== null) {
+    const most = surfaceMost(rules.key, limitKey, settings);
     const n = count(covered);
     if (n > most) out.push(`${at} draws cover ${n} cells, over the ${most} its surface holds`);
   }
