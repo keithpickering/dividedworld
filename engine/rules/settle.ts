@@ -788,7 +788,8 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
          A share lost takes back that floor times the share lost over the share held: what was paid and nothing else, so a vote paid before the floor existed
          takes back none, and a retune or a switch off and on takes back as much as was paid. A take-back reads neither the shield, `floorOn` nor `crowdFloor`. */
       const keyOf = (x: { act?: string; quadrant?: Quadrant; at?: number; kind?: string }) => `${x.act}|${x.quadrant}|${x.at}|${x.kind}`;
-      const shielded = new Set(earned.filter((e) => e.votes !== undefined).map(keyOf));
+      /* Built only while the floor pays: a take-back reads no shield. */
+      const shielded = settings.crowdFloor > 0 ? new Set(earned.filter((e) => e.votes !== undefined).map(keyOf)) : undefined;
       for (const r of classInput.received) {
         const who = voterOf.get(r);
         if (!who) continue;
@@ -800,7 +801,7 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
           if (!back) continue;
           book.floored[r.quadrant] = tidy(held - back);
           floor.push({ player: c.player, character: c.id, reason: 'crowd.floor', amount: -back, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes });
-        } else if (settings.crowdFloor > 0 && !shielded.has(keyOf(r)) && !(rules.floorOn && !rules.floorOn(r))) {
+        } else if (shielded && !shielded.has(keyOf(r)) && !(rules.floorOn && !rules.floorOn(r))) {
           const amount = tidy(settings.crowdFloor * r.votes);
           if (!amount) continue;
           book.floored[r.quadrant] = tidy(held + amount);
