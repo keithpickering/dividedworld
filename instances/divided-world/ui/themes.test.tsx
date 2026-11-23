@@ -3,6 +3,7 @@
  * lists one tile for each, a one-mode theme's modes are the keys of the preview its own file gives, and each tribute sets its
  * tokens so the board stays in its mode (on :root and in both dark blocks alike for a dark-only theme).
  */
+import { readFileSync } from 'node:fs';
 import { cleanup, screen, within } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { afterEach, describe, expect, test } from 'vitest';
@@ -27,7 +28,7 @@ describe('Divided World\'s themes', () => {
       ['house', 'House', 'both'],
       ['blue-steel', 'Blue Steel', 'light'],
       ['midnight', 'Midnight', 'dark'],
-      ['hot-rod', 'Hot Rod', 'dark'],
+      ['hot-rod', 'Hot Debate', 'dark'],
       ['fan-site', 'Fan Site', 'dark'],
     ]);
     expect(new Set(instanceUi.themes.map((t) => t.href)).size, 'each theme loads its own stylesheet').toBe(5);
@@ -40,7 +41,22 @@ describe('Divided World\'s themes', () => {
     renderIn(fake, <UnderRealThemes><SettingsScreen /></UnderRealThemes>, { path: '/settings?section=board' });
     const group = await screen.findByRole('radiogroup', { name: 'Theme' });
     expect(within(group).getAllByRole('radio').map((r) => r.closest('label')?.textContent)).toEqual([
-      'HouseLight and dark', 'Blue SteelLight only', 'MidnightDark only', 'Hot RodDark only', 'Fan SiteDark only',
+      'HouseLight and dark', 'Blue SteelLight only', 'MidnightDark only', 'Hot DebateDark only', 'Fan SiteDark only',
     ]);
+  });
+
+  test('Hot Debate\'s banner fire is credited as CREDITS.md, beside the files, credits it, and only Hot Debate has art', () => {
+    const art = instanceUi.themes.filter((t) => t.banner).map((t) => [t.key, t.banner!.credit]);
+    expect(art.map(([k]) => k)).toEqual(['hot-rod']);
+    const credit = instanceUi.themes.find((t) => t.key === 'hot-rod')!.banner!.credit;
+    const notice = readFileSync('instances/divided-world/ui/themes/hot-debate/CREDITS.md', 'utf8');
+    for (const file of ['fire.gif', 'fire-still.png']) {
+      const row = notice.split('\n').find((l) => l.startsWith(`| \`${file}\``));
+      expect(row, file).toBeDefined();
+      expect(row).toContain(credit.author);
+      expect(row).toContain(credit.source);
+      expect(row).toContain(`[${credit.license}](${credit.licenseUrl})`);
+    }
+    expect(notice).toContain(`"${credit.work}"`);
   });
 });

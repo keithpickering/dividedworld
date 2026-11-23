@@ -65,7 +65,8 @@ describe('the period table (board-look plan, Task 3)', () => {
     expect(rules(base, '*').join(';')).toMatch(/scrollbar-color:\s*var\(--kb-scrollbar-thumb\) var\(--kb-scrollbar-track\)/);
   });
   test('the banner and the boards\' bar are one block on their tokens', () => {
-    expect(rules(frame, '.kb-banner').join(';')).toMatch(/background:\s*var\(--kb-banner-bg\)/);
+    /* The theme's art, if any, lies over the banner's ground (BannerArt); the ground is still the token. */
+    expect(rules(frame, '.kb-banner').join(';')).toMatch(/background:\s*var\(--kb-banner-art-now, none\)[^;]*repeat-x, var\(--kb-banner-bg\)/);
     expect(rules(frame, '.kb-logo').join(';')).toMatch(/color:\s*var\(--kb-logo-fg\)[^]*text-shadow:\s*var\(--kb-logo-shadow\)/);
     expect(rules(frame, '.kb-nav').join(';')).toMatch(/background:\s*var\(--kb-nav-bg\)/);
     expect(rules(frame, '.kb-nav a:focus-visible').join(';')).toMatch(/outline-color:\s*var\(--kb-nav-fg\)/);

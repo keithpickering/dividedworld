@@ -71,7 +71,7 @@ describe('.kb-button in base.css', () => {
 
   test('aria-disabled draws as :disabled does', () => {
     const body = block(".kb-button[aria-disabled='true']");
-    for (const decl of [/color:\s*var\(--kb-muted\)/u, /background:\s*var\(--kb-button-bg\)/u, /border-color:\s*var\(--kb-muted\)/u, /box-shadow:\s*none/u]) expect(body).toMatch(decl);
+    for (const decl of [/color:\s*var\(--kb-button-disabled-fg\)/u, /background:\s*var\(--kb-button-disabled-bg\)/u, /border-color:\s*var\(--kb-button-disabled-fg\)/u, /box-shadow:\s*none/u]) expect(body).toMatch(decl);
     expect(base).toMatch(/\.kb-button:disabled,\s*\.kb-button\[aria-disabled='true'\]\s*\{/u);
   });
 

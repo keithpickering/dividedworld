@@ -25,11 +25,28 @@
   justify-content: space-between;
   align-items: baseline;
   gap: 0.4em 1.2em;
-  /* The banner and the boards' bar are one block (the board-look design): the banner's ground, then the bar's, one frame round both. */
-  background: var(--kb-banner-bg);
+  /*
+   * The banner and the boards' bar are one block (the board-look design): the banner's ground, then the bar's, one frame round both.
+   * A theme's art (BannerArt, engine/ui/types.ts: the root's --kb-banner-art-* properties, set by applyAppearance) is tiled across the
+   * banner's foot over that ground, still where motion is reduced, and the foot is lowered by its `clear` so the words stand above it
+   * on the ground contrast.ts holds them on; every rule that sets the banner's padding adds it. With no art the layer is none and the
+   * foot is the banner's own.
+   */
+  --kb-banner-art-now: var(--kb-banner-art-moving);
+  background: var(--kb-banner-art-now, none) left bottom / auto var(--kb-banner-art-height, 0px) repeat-x, var(--kb-banner-bg);
   border: 1px solid var(--kb-frame);
-  padding: 16px 18px;
+  padding: 16px 18px calc(16px + var(--kb-banner-art-clear, 0px));
   margin-top: 18px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root:not([data-kb-motion="full"]) .kb-banner {
+    --kb-banner-art-now: var(--kb-banner-art-still);
+  }
+}
+
+:root[data-kb-motion="reduce"] .kb-banner {
+  --kb-banner-art-now: var(--kb-banner-art-still);
 }
 
 .kb-banner,
@@ -216,7 +233,8 @@
 @media (min-width: 40.0625em) {
   .kb-banner {
     align-items: center;
-    padding-block: 6px;
+    /* The foot lowered by the theme's art, if any (.kb-banner above). */
+    padding-block: 6px calc(6px + var(--kb-banner-art-clear, 0px));
   }
 }
 
@@ -267,6 +285,11 @@
   text-align: center;
   font-size: var(--kb-size-fine);
   color: var(--kb-muted);
+}
+
+/* The credit for the theme's art, as its license asks, on its own line above the badges. */
+.kb-art-credit {
+  margin: 0.4em 0 0;
 }
 
 .kb-badges {
@@ -1951,7 +1974,7 @@ button.kb-hud-secret:focus-visible {
 @media (max-width: 40em) {
   .kb-banner {
     align-items: center;
-    padding: 6px 16px;
+    padding: 6px 16px calc(6px + var(--kb-banner-art-clear, 0px));
   }
 
   /* The name at the phone board's size (the board-look design: 22px in the house theme). */

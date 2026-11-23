@@ -188,6 +188,11 @@
   --kb-button-hover-fg: var(--kb-bg);
   --kb-button-primary-hover-bg: var(--kb-button-primary-bg);
   --kb-button-primary-hover-fg: var(--kb-button-primary-fg);
+  /* A button that cannot be pressed now (Send on an empty reply): flat, its label and edge in the muted ink on the page's own ground,
+     where the muted ink is already held, so it reads as out of play on any skin's face. A skin may set a face of its own for it;
+     contrast.ts holds the label on it at 4.5:1. */
+  --kb-button-disabled-bg: var(--kb-bg);
+  --kb-button-disabled-fg: var(--kb-muted);
   /* The folder and nav icons (Task 5): black and white, following the mode. */
   --kb-icon-ink: var(--kb-fg);
   --kb-icon-back: var(--kb-bg);

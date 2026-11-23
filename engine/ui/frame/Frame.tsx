@@ -11,12 +11,13 @@
  * into the glass; the board's place for Back is kept by that move, as by every move into the glass
  * (keepBoardPlace, engine/ui/glass/back.ts), not by the link.
  *
- * The page ends in the footer (the credit and the instance's badges). The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
+ * The page ends in the footer (the credit, the theme's art's credit, and the instance's badges). The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
  * hand is open and for which post, and the play form, so the HUD's hand and every post's own buttons read
  * one state. It also holds the page's one tip (engine/ui/tips/Tips.tsx), above the HUD and the page both so a spotlight can cut out either.
  */
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { signInHref } from '../account/next.ts';
+import { useThemeKey } from '../appearance.ts';
 import { useBoot } from '../boot.tsx';
 import { useKayfa } from '../context.tsx';
 import type { BoardSummary } from '../data/api.ts';
@@ -39,6 +40,9 @@ export function Frame({ children }: { readonly children: ReactNode }) {
   const [open, setOpen] = useState(false);
   const [boards, setBoards] = useState<readonly BoardSummary[]>([]);
   const navId = useId();
+  const theme = useThemeKey();
+  /* A test's partial instance may offer no themes; a page always has its house theme. */
+  const art = ui.themes?.find((t) => t.key === theme)?.banner;
   const { pending } = useNavigation();
   /*
    * A move to another page reads as one: the page starts at its top and focus is on it, so a
@@ -125,9 +129,17 @@ export function Frame({ children }: { readonly children: ReactNode }) {
             </ul>
           </nav>
           <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>
-          {/* The footer ends every board page: the credit and the instance's badges, which are decoration, and it links nothing. */}
+          {/*
+            * The footer ends every board page: the credit, the credit for the theme's art while a theme with art is on (its only links,
+            * to the work and its license, as the license asks), and the instance's badges, which are decoration.
+            */}
           <footer className="kb-footer">
             Powered by KayfaBB
+            {art && (
+              <p className="kb-art-credit">
+                Banner art: <a href={art.credit.source}>{art.credit.work}</a> by {art.credit.author}, <a href={art.credit.licenseUrl}>{art.credit.license}</a>
+              </p>
+            )}
             {badges.length > 0 && (
               <div className="kb-badges" aria-hidden="true">
                 {badges.map(([a, b]) => <span key={`${a} ${b}`} className="kb-badge"><span>{a}</span><span>{b}</span></span>)}

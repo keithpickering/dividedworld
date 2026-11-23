@@ -22,7 +22,7 @@
  */
 import { useSyncExternalStore } from 'react';
 import { applyGlass } from './glass/apply.ts';
-import type { GlassTheme, ThemeOption } from './types.ts';
+import type { BannerArt, GlassTheme, ThemeOption } from './types.ts';
 
 /** The account's preferences, as account_preferences holds them: "system" follows the device. */
 export interface AppearancePreference {
@@ -38,7 +38,10 @@ export interface AppearancePreference {
 }
 
 export interface Appearance {
+  /** The theme shown: its key, its stylesheet, and the art it tiles across the banner, if any. */
+  readonly key: string;
   readonly href: string;
+  readonly banner: BannerArt | null;
   /** Light or dark when the player or the theme fixes it; null follows the device. */
   readonly mode: 'light' | 'dark' | null;
   /** Reduced or full when the player overrides the device; null follows it. */
@@ -58,7 +61,7 @@ export function resolveAppearance(pref: AppearancePreference, themes: readonly T
   const chosen = themes.find((t) => t.key === pref.theme && pref.theme !== 'default') ?? house;
   /* A theme with one mode fixes it; otherwise the player's own mode, which stays stored for a theme that holds both. */
   const own = pref.mode === 'light' || pref.mode === 'dark' ? pref.mode : null;
-  return { href: chosen.href, mode: chosen.modes === 'both' ? own : chosen.modes, motion, feel };
+  return { key: chosen.key, href: chosen.href, banner: chosen.banner ?? null, mode: chosen.modes === 'both' ? own : chosen.modes, motion, feel };
 }
 
 /** Puts an appearance on the page: one theme link, swapped in place, and the override attributes. */
@@ -73,6 +76,9 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   }
   if (link.getAttribute('href') !== a.href) link.setAttribute('href', a.href);
   const root = doc.documentElement;
+  /* Which theme is on, for what reads it from the root (the footer's credit for its art, useThemeKey). */
+  root.setAttribute('data-kb-theme', a.key);
+  applyBannerArt(root, a.banner);
   if (a.mode) root.setAttribute('data-kb-mode', a.mode);
   else root.removeAttribute('data-kb-mode');
   if (a.motion) root.setAttribute('data-kb-motion', a.motion);
@@ -90,6 +96,24 @@ export function applyAppearance(doc: Document, pref: AppearancePreference, theme
   mark(root, 'data-kb-text-size', size === null ? null : String(size));
   if (glass) applyGlass(root, glass, high ? 'high' : 'standard');
   return a;
+}
+
+/**
+ * The theme's banner art, as custom properties on the root that frame.css paints (`.kb-banner`): set through the CSSOM, which the
+ * page's style-src allows, and taken off when the theme has none. The addresses are the instance's own files (BannerArt).
+ */
+const BANNER_PROPS = ['--kb-banner-art-moving', '--kb-banner-art-still', '--kb-banner-art-height', '--kb-banner-art-clear'] as const;
+function applyBannerArt(root: HTMLElement, art: BannerArt | null): void {
+  if (!art) { for (const p of BANNER_PROPS) root.style.removeProperty(p); return; }
+  root.style.setProperty('--kb-banner-art-moving', `url(${JSON.stringify(art.moving)})`);
+  root.style.setProperty('--kb-banner-art-still', `url(${JSON.stringify(art.still)})`);
+  root.style.setProperty('--kb-banner-art-height', `${art.height}px`);
+  root.style.setProperty('--kb-banner-art-clear', `${art.clear}px`);
+}
+
+/** The key of the theme on the page, as the root is marked now, or null before one is applied. */
+export function themeKey(doc: Document = document): string | null {
+  return doc.documentElement.getAttribute('data-kb-theme');
 }
 
 function mark(root: HTMLElement, name: string, value: string | null): void {
@@ -117,13 +141,18 @@ export function textSize(doc: Document = document): 100 | 125 | 150 | 200 {
 function subscribeRoot(onChange: () => void): () => void {
   if (typeof MutationObserver !== 'function') return () => {};
   const watch = new MutationObserver(onChange);
-  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size', 'data-kb-motion', 'data-kb-motion-feel'] });
+  watch.observe(document.documentElement, { attributes: true, attributeFilter: ['data-kb-smoke-level', 'data-kb-text-size', 'data-kb-motion', 'data-kb-motion-feel', 'data-kb-theme'] });
   return () => watch.disconnect();
 }
 
 /** The smoke level on the root, kept current. */
 export function useSmokeLevel(): 'full' | 'low' | 'off' {
   return useSyncExternalStore(subscribeRoot, () => smokeLevel(), () => 'full');
+}
+
+/** The key of the theme on the root, kept current. */
+export function useThemeKey(): string | null {
+  return useSyncExternalStore(subscribeRoot, () => themeKey(), () => null);
 }
 
 /** The text size on the root, kept current. */

@@ -24,6 +24,8 @@ import midnight from './themes/midnight.css?url';
 import midnightPreview from './themes/midnight.css?preview';
 import hotRod from './themes/hot-rod.css?url';
 import hotRodPreview from './themes/hot-rod.css?preview';
+import hotDebateFire from './themes/hot-debate/fire.gif?url';
+import hotDebateFireStill from './themes/hot-debate/fire-still.png?url';
 import fanSite from './themes/fan-site.css?url';
 import fanSitePreview from './themes/fan-site.css?preview';
 import coinUrl from './icon/coin.svg?url';
@@ -186,7 +188,20 @@ export const instanceUi: InstanceUi = Object.freeze({
     { key: 'house', name: 'House', href: theme, modes: 'both' as const, preview: themePreview },
     { key: 'blue-steel', name: 'Blue Steel', href: blueSteel, modes: 'light' as const, preview: blueSteelPreview },
     { key: 'midnight', name: 'Midnight', href: midnight, modes: 'dark' as const, preview: midnightPreview },
-    { key: 'hot-rod', name: 'Hot Rod', href: hotRod, modes: 'dark' as const, preview: hotRodPreview },
+    // Hot Debate shipped as Hot Rod and keeps that key, which accounts store. Its banner fire is Nevit Dilmen's (themes/hot-debate/CREDITS.md).
+    { key: 'hot-rod', name: 'Hot Debate', href: hotRod, modes: 'dark' as const, preview: hotRodPreview, banner: Object.freeze({
+      moving: hotDebateFire,
+      still: hotDebateFireStill,
+      height: 56,
+      clear: 40,
+      credit: Object.freeze({
+        work: 'Animated fire',
+        author: 'Nevit Dilmen',
+        source: 'https://commons.wikimedia.org/wiki/File:Animated_fire_by_nevit.gif',
+        license: 'CC BY-SA 3.0',
+        licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0/',
+      }),
+    }) },
     // Fan Site's name is open (the board look design, Open); it ships as "Fan Site" until the owner names it.
     { key: 'fan-site', name: 'Fan Site', href: fanSite, modes: 'dark' as const, preview: fanSitePreview },
   ]),

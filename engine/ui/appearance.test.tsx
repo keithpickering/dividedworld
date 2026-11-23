@@ -7,9 +7,31 @@ const themes: ThemeOption[] = [
   { key: 'midnight', name: 'Midnight', href: '/midnight.css', modes: 'dark', preview: {} },
 ];
 
+const fire = { moving: '/fire.gif', still: '/fire.png', height: 56, clear: 40, credit: { work: 'Fire', author: 'A. Painter', source: 'https://example.com/fire', license: 'CC BY-SA 3.0', licenseUrl: 'https://example.com/by-sa' } };
+
+describe('a theme\'s banner art', () => {
+  const art: ThemeOption[] = [...themes, { key: 'flames', name: 'Flames', href: '/flames.css', modes: 'dark', preview: {}, banner: fire }];
+  test('resolves with its theme, and a theme without art resolves to none', () => {
+    expect(resolveAppearance({ theme: 'flames', motion: 'system' }, art)).toMatchObject({ key: 'flames', banner: fire });
+    expect(resolveAppearance({ theme: 'midnight', motion: 'system' }, art)).toMatchObject({ key: 'midnight', banner: null });
+  });
+  test('is put on the root as the properties frame.css paints, with the theme\'s key, and taken off with a theme that has none', () => {
+    const root = document.documentElement;
+    applyAppearance(document, { theme: 'flames', motion: 'system' }, art);
+    expect(root.getAttribute('data-kb-theme')).toBe('flames');
+    expect(root.style.getPropertyValue('--kb-banner-art-moving')).toBe('url("/fire.gif")');
+    expect(root.style.getPropertyValue('--kb-banner-art-still')).toBe('url("/fire.png")');
+    expect(root.style.getPropertyValue('--kb-banner-art-height')).toBe('56px');
+    expect(root.style.getPropertyValue('--kb-banner-art-clear')).toBe('40px');
+    applyAppearance(document, { theme: 'midnight', motion: 'system' }, art);
+    expect(root.getAttribute('data-kb-theme')).toBe('midnight');
+    for (const p of ['--kb-banner-art-moving', '--kb-banner-art-still', '--kb-banner-art-height', '--kb-banner-art-clear']) expect(root.style.getPropertyValue(p), p).toBe('');
+  });
+});
+
 describe('the theme a preference resolves to', () => {
   test('"system" is the house theme, following the device', () => {
-    expect(resolveAppearance({ theme: 'default', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null, feel: 'smooth' });
+    expect(resolveAppearance({ theme: 'default', motion: 'system' }, themes)).toEqual({ key: 'house', href: '/house.css', banner: null, mode: null, motion: null, feel: 'smooth' });
   });
   test('the default theme in a mode the player chose', () => {
     expect(resolveAppearance({ theme: 'default', mode: 'light', motion: 'system' }, themes)).toMatchObject({ href: '/house.css', mode: 'light' });
@@ -17,7 +39,7 @@ describe('the theme a preference resolves to', () => {
     expect(resolveAppearance({ theme: 'default', mode: 'system', motion: 'system' }, themes).mode).toBe(null);
   });
   test('a stored dark theme, once the migration has rewritten it, reads back as the default theme in dark', () => {
-    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: 'dark', motion: null, feel: 'smooth' });
+    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'system' }, themes)).toEqual({ key: 'house', href: '/house.css', banner: null, mode: 'dark', motion: null, feel: 'smooth' });
   });
   test('the first theme resolves whatever its key is: the engine names no theme', () => {
     const odd: ThemeOption[] = [{ key: 'ink', name: 'Ink', href: '/ink.css', modes: 'both', preview: {} }];
@@ -26,16 +48,16 @@ describe('the theme a preference resolves to', () => {
   });
   test('a one-mode theme fixes the mode whatever mode says, and the stored mode is left alone', () => {
     const pref = { theme: 'midnight', mode: 'light' as const, motion: 'system' as const };
-    expect(resolveAppearance(pref, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: null, feel: 'smooth' });
+    expect(resolveAppearance(pref, themes)).toEqual({ key: 'midnight', href: '/midnight.css', banner: null, mode: 'dark', motion: null, feel: 'smooth' });
     expect(pref.mode).toBe('light');
     /* choosing the house theme again returns the player's own mode */
     expect(resolveAppearance({ ...pref, theme: 'default' }, themes)).toMatchObject({ href: '/house.css', mode: 'light' });
   });
   test('an instance theme with one mode is that mode', () => {
-    expect(resolveAppearance({ theme: 'midnight', motion: 'system' }, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: null, feel: 'smooth' });
+    expect(resolveAppearance({ theme: 'midnight', motion: 'system' }, themes)).toEqual({ key: 'midnight', href: '/midnight.css', banner: null, mode: 'dark', motion: null, feel: 'smooth' });
   });
   test('a theme the instance no longer offers falls back to the house theme on the device', () => {
-    expect(resolveAppearance({ theme: 'gone', motion: 'system' }, themes)).toEqual({ href: '/house.css', mode: null, motion: null, feel: 'smooth' });
+    expect(resolveAppearance({ theme: 'gone', motion: 'system' }, themes)).toEqual({ key: 'house', href: '/house.css', banner: null, mode: null, motion: null, feel: 'smooth' });
   });
   test('a motion the engine does not know follows the device', () => {
     expect(resolveAppearance({ theme: 'default', motion: 'Reduce' as 'reduce' }, themes).motion).toBe(null);
@@ -52,8 +74,8 @@ describe('the theme a preference resolves to', () => {
     expect(resolveAppearance({ theme: 'default', motion: 'system' }, themes)).toMatchObject({ motion: null, feel: 'smooth' });
   });
   test('a stored Snappy survives a theme and a mode chosen beside it', () => {
-    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'snappy' }, themes)).toEqual({ href: '/house.css', mode: 'dark', motion: 'full', feel: 'snappy' });
-    expect(resolveAppearance({ theme: 'midnight', mode: 'light', motion: 'snappy' }, themes)).toEqual({ href: '/midnight.css', mode: 'dark', motion: 'full', feel: 'snappy' });
+    expect(resolveAppearance({ theme: 'default', mode: 'dark', motion: 'snappy' }, themes)).toEqual({ key: 'house', href: '/house.css', banner: null, mode: 'dark', motion: 'full', feel: 'snappy' });
+    expect(resolveAppearance({ theme: 'midnight', mode: 'light', motion: 'snappy' }, themes)).toEqual({ key: 'midnight', href: '/midnight.css', banner: null, mode: 'dark', motion: 'full', feel: 'snappy' });
   });
 });
 

@@ -318,9 +318,9 @@ canvas[data-kb-landing='page'] {
 /* aria-disabled keeps focus where a disabled attribute would drop it (Characters, Follow), so it draws the same; its cursor is its own (thread.css). */
 .kb-button:disabled,
 .kb-button[aria-disabled='true'] {
-  color: var(--kb-muted);
-  background: var(--kb-button-bg);
-  border-color: var(--kb-muted);
+  color: var(--kb-button-disabled-fg);
+  background: var(--kb-button-disabled-bg);
+  border-color: var(--kb-button-disabled-fg);
   text-shadow: none;
   box-shadow: none;
   filter: none;
