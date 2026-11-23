@@ -3,8 +3,12 @@
  * (`CardUi.foldsRow`; `EffectProps.fold`). Null where a post is drawn with no row of its own.
  */
 import { animate, motionValue, type MotionValue } from 'motion/react';
-import { createContext, useContext, useEffect, useLayoutEffect, useRef, type RefObject } from 'react';
+import { createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react';
+import { livePlays, usePlays, type Plays } from '../cards/plays.ts';
+import type { CardUi } from '../cards/types.ts';
 import { useFeel } from '../glass/motion.ts';
+import type { PostbitPerson } from '../postbit/Postbit.tsx';
+import { FoldBar } from './FoldBar.tsx';
 
 export interface RowFold { readonly open: boolean; readonly toggle: () => void }
 
@@ -100,4 +104,54 @@ export function useFoldMotion(open: boolean, active: boolean, grid: RefObject<HT
   }, [open, active]);
   /* The post going away mid-motion stops it. */
   useEffect(() => () => { run.current?.stop(); run.current = null; }, []);
+}
+
+
+/** What a post draws with its fold: whether it folds, the reader's state, the press, what the effect is given, and the ref of the grid the fold hides. */
+export interface RowFolding {
+  readonly folding: boolean;
+  readonly folded: boolean;
+  readonly toggle: () => void;
+  readonly rowFold: RowFold | null;
+  readonly grid: RefObject<HTMLDivElement | null>;
+}
+
+/**
+ * Whether a post folds its row and the reader's state of it, for every place that draws a post with a row (a thread's post, the front door's). The row folds
+ * while the post wears a live play, on its own reach, of a card that folds the row (`CardUi.foldsRow`); an admin's ending of it unfolds the row when the post next
+ * renders. `eligible` is whether the Act is a post at all, `now` the instant the plays are live at, and `article` the post's element, which the motion marks.
+ * The state is the reader's own, in the page's memory.
+ */
+export function useRowFolding({ plays, actId, eligible, now, cards, article }: {
+  readonly plays: Plays; readonly actId: string; readonly eligible: boolean; readonly now: number; readonly cards: readonly CardUi[]; readonly article: RefObject<HTMLElement | null>;
+}): RowFolding {
+  const own = usePlays(plays, actId).plays;
+  const folding = eligible && livePlays(own, now).some((p) => !p.reach && cards.find((c) => c.key === p.card)?.foldsRow === true);
+  const [folded, setFolded] = useState(false);
+  const toggle = useCallback(() => setFolded((was) => !was), []);
+  const grid = useRef<HTMLDivElement>(null);
+  useFoldMotion(folded, folding, grid, article);
+  const rowFold = useMemo(() => (folding ? { open: folded, toggle } : null), [folding, folded, toggle]);
+  return { folding, folded, toggle, rowFold, grid };
+}
+
+/**
+ * A post's row under the fold's context: the bar while it folds, then the grid, hidden until the reader opens it. `id` names the row for the bar's press;
+ * `before` is drawn ahead of the bar and is not part of the row.
+ */
+export function FoldedRow({ fold, id, bar, before, children }: {
+  readonly fold: RowFolding;
+  /** The row's element id, which the bar's press controls: unique on the page. */
+  readonly id: string;
+  readonly bar: { readonly person: PostbitPerson | undefined; readonly name: string; readonly spoken: string; readonly seq: number; readonly marks: ReactNode };
+  readonly before?: ReactNode;
+  readonly children: ReactNode;
+}) {
+  return (
+    <RowFoldCtx.Provider value={fold.rowFold}>
+      {before}
+      {fold.folding && <FoldBar {...bar} open={fold.folded} toggle={fold.toggle} controls={id} />}
+      <div ref={fold.grid} className="kb-act-grid" {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{children}</div>
+    </RowFoldCtx.Provider>
+  );
 }

@@ -12,8 +12,10 @@
  * open a mark's Lens and scrub a splat there with its keyboard path, as in play ("An accessible path costs what the obstacle costs"),
  * and nothing is sent anywhere: a reload brings back the thread as the instance wrote it. The postbits are not links, and there is no
  * Quote, Spin, Edit, Report, permalink, Go to post or As it landed: a sample thread has nowhere for them to go.
+ * A post wearing a card that folds the row (`CardUi.foldsRow`) folds it as a thread's does (`thread/fold.tsx`): a bar with the marks in it, the row behind,
+ * the visitor's own press to open it. Its plays are live at the staged instant, since no clock is read.
  */
-import { useCallback, useId, useMemo } from 'react';
+import { useCallback, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
 import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
@@ -31,6 +33,7 @@ import { createMine, type Mine } from '../reactions/mine.ts';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { useLocation } from '../router.tsx';
 import { StagedCtx } from '../staged.ts';
+import { FoldedRow, useRowFolding } from '../thread/fold.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
@@ -75,17 +78,24 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   /* The sample cast has no pictures. */
   const marks = <PostMarks post={act.id} plays={stores.plays} to={null} moments={false} nameOf={nameOf} faceOf={() => null} tallies={stores.tallies} mine={stores.mine} onSpin={noSpin} />;
   const body = typeof act.currentPayload.body === 'string' ? act.currentPayload.body : '';
+  /* A post wearing a card that folds the row is drawn as the thread draws it (thread/fold.tsx): a bar with the marks in it, and the row behind. A staged post's plays are live at the staged instant. */
+  const { ui } = useKayfa();
+  const ref = useRef<HTMLElement>(null);
+  const fold = useRowFolding({ plays: stores.plays, actId: act.id, eligible: true, now: Date.parse(STAGED_AT), cards: ui.cards, article: ref });
   return (
-    <article id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side">
+    <article
+      ref={ref} id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side"
+      data-kb-fold={fold.folding ? (fold.folded ? 'open' : 'folded') : undefined}
+    >
       <h2 id={`front-door-post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
-      <div className="kb-act-grid">
+      <FoldedRow fold={fold} id={`front-door-post-${seq}-row`} bar={{ person, name, spoken: name, seq, marks }}>
         {person && <Postbit person={person} layout="side" link={false} />}
-        <header className="kb-act-meta">{marks}<span className="kb-act-number">#{seq}</span></header>
+        <header className="kb-act-meta">{!fold.folding && marks}<span className="kb-act-number">#{seq}</span></header>
         <div className="kb-act-main" data-kb-content-area>
           <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} forged={forgedList(act.currentPayload)} /></PostEffects>
           <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
         </div>
-      </div>
+      </FoldedRow>
     </article>
   );
 }

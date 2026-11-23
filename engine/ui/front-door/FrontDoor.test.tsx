@@ -278,4 +278,57 @@ describe('the front door\'s pictures', () => {
     expect(srcs.some((s) => s?.includes('evil.example'))).toBe(false);
     expect(srcs.some((s) => s?.startsWith(window.location.origin))).toBe(false);
   });
+
+  describe('a post wearing a card that folds the row', () => {
+    let folded: EffectProps | null = null;
+    const foldUi: CardUi = { ...plain('folder', (p) => { folded = p; }), foldsRow: true };
+    const folder = rulesOf('folder', {});
+    const foldInstance = { ...doorInstance, cards: [...doorInstance.cards, folder] };
+    const foldPosts: readonly FrontDoorPost[] = [
+      { by: 'bo', body: 'Folded words.', reactions: {}, plays: [{ card: 'folder', by: 'ann', config: {} }] },
+      { by: 'ann', body: 'Plain words.', reactions: {}, plays: [{ card: 'noted', by: 'bo', config: {}, state: {} }] },
+    ];
+    function Fold() {
+      const k = useKayfa();
+      return <KayfaProvider value={{ ...k, instance: foldInstance, ui: { ...k.ui, frontDoor: { ...k.ui.frontDoor, posts: foldPosts } } }}><FrontDoor /></KayfaProvider>;
+    }
+    const drawFold = () => renderInWorld(<Fold />, { cards: [foldUi, notedUi, test_card], instance: foldInstance });
+    const article = (seq: number) => document.querySelector<HTMLElement>(`#front-door-post-${seq}`)!;
+
+    test('the post is folded behind a bar: the effect is given the fold, the article says so, and the grid is hidden', () => {
+      drawFold();
+      expect(folded!.fold).toMatchObject({ open: false });
+      expect(article(1)).toHaveAttribute('data-kb-fold', 'folded');
+      const bar = article(1).querySelector('.kb-fold-bar') as HTMLElement;
+      expect(within(bar).getByRole('button', { name: /^Show post #1 by Bo/u })).toHaveAttribute('aria-expanded', 'false');
+      expect(article(1).querySelector('.kb-act-grid')).toHaveAttribute('hidden');
+    });
+
+    test('the press opens the row, and the effect is told', async () => {
+      drawFold();
+      const grid = article(1).querySelector('.kb-act-grid') as HTMLElement;
+      const press = within(article(1)).getByRole('button', { name: /^Show post #1/u });
+      expect(press).toHaveAttribute('aria-controls', grid.id);
+      expect(grid.id).not.toBe('');
+      await userEvent.click(press);
+      expect(press).toHaveAttribute('aria-expanded', 'true');
+      expect(grid).not.toHaveAttribute('hidden');
+      expect(article(1)).toHaveAttribute('data-kb-fold', 'open');
+      expect(folded!.fold).toMatchObject({ open: true });
+    });
+
+    test('the marks sit in the bar, not on the date row', () => {
+      drawFold();
+      expect(article(1).querySelector('.kb-fold-bar .kb-mark')).not.toBeNull();
+      expect(article(1).querySelector('.kb-act-meta .kb-mark')).toBeNull();
+    });
+
+    test('a post whose card does not fold has no bar and no mark of a fold, and its marks stay on its date row', () => {
+      drawFold();
+      expect(article(2).querySelector('.kb-fold-bar')).toBeNull();
+      expect(article(2)).not.toHaveAttribute('data-kb-fold');
+      expect(article(2).querySelector('.kb-act-grid')).not.toHaveAttribute('hidden');
+      expect(article(2).querySelector('.kb-act-meta .kb-mark')).not.toBeNull();
+    });
+  });
 });

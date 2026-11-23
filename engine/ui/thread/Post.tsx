@@ -16,7 +16,7 @@ import { PostMarks, type FormAsk } from '../cards/Marks.tsx';
 import { AppealCtx, ViolationNotice } from '../cards/Visit.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
 import { effectsOf } from '../cards/land.ts';
-import { livePlays, usePlays, useRewound } from '../cards/plays.ts';
+import { usePlays, useRewound } from '../cards/plays.ts';
 import type { CardPlay } from '../cards/types.ts';
 import { quoteStop } from '../../rules/cards.ts';
 import { isPost, type Instance } from '../../rules/types.ts';
@@ -41,9 +41,8 @@ import { ConcealingNote, HiddenNote, HiddenOwn, useMyHidden } from '../conduct/H
 import { AnnounceLine, LastEdited, MoveEndLine, MoveKeepLine, SystemPost, UnmaskLine, quoteHead, text, useHistory, when, type PostAbout } from './lines.tsx';
 import { pageOf, threadHref } from './pages.ts';
 import { forgedList } from '../../bbcode/quoted.ts';
-import { FoldBar } from './FoldBar.tsx';
 import { Poll } from '../polls/Poll.tsx';
-import { RowFoldCtx, useFoldMotion } from './fold.tsx';
+import { FoldedRow, useRowFolding } from './fold.tsx';
 
 export { ThreadCtx, type ThreadContext };
 
@@ -259,14 +258,9 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
   /* The name as it reads inside a sentence: the staff's word is set for a name slot ("The staff"), so it is lowered here ("Post 3 by the staff"). */
   const spoken = act.character === null ? lowerFirst(name) : name;
   const [editing, setEditing] = useState(false);
-  /* The row folds behind a bar while the post wears a live play, on its own reach, of a card that folds the row (`CardUi.foldsRow`); an admin's ending of it unfolds the row when the post next renders. The reader's own state, in the page's memory. */
-  const ownPlays = usePlays(plays, act.id).plays;
-  const folding = (act.kind === 'post' || act.kind === 'spin') && livePlays(ownPlays, api.now()).some((p) => !p.reach && ui.cards.find((c) => c.key === p.card)?.foldsRow === true);
-  const [folded, setFolded] = useState(false);
-  const toggleFold = useCallback(() => setFolded((was) => !was), []);
-  const grid = useRef<HTMLDivElement>(null);
-  useFoldMotion(folded, folding, grid, ref);
-  const rowFold = useMemo(() => (folding ? { open: folded, toggle: toggleFold } : null), [folding, folded, toggleFold]);
+  /* The row folds behind a bar while the post wears a live play, on its own reach, of a card that folds the row (`CardUi.foldsRow`). */
+  const fold = useRowFolding({ plays, actId: act.id, eligible: act.kind === 'post' || act.kind === 'spin', now: api.now(), cards: ui.cards, article: ref });
+  const { folding } = fold;
   const { actingCharacters: acting } = usePlayer();
   const own = useMyHidden(act.id, act.character !== null && acting.some((c) => c.id === act.character), act.hidden === true);
   const canEdit = act.hidden !== true || own != null;
@@ -325,13 +319,15 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
       data-kb-ruling={rulingOf(act) ?? undefined}
       data-kb-postbit={layout}
       data-kb-arrived={slid ? 'slide' : undefined}
-      data-kb-fold={folding ? (folded ? 'open' : 'folded') : undefined}
+      data-kb-fold={folding ? (fold.folded ? 'open' : 'folded') : undefined}
     >
-    <RowFoldCtx.Provider value={rowFold}>
-      <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
-      {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
-      {folding && <FoldBar person={person} name={name} spoken={spoken} seq={seq} open={folded} toggle={toggleFold} marks={marks} controls={`post-${seq}-row`} />}
-      <div ref={grid} className="kb-act-grid" {...(folding ? { id: `post-${seq}-row`, hidden: !folded } : {})}>
+    <FoldedRow
+      fold={fold} id={`post-${seq}-row`} bar={{ person, name, spoken, seq, marks }}
+      before={<>
+        <h2 id={`post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {spoken}{cut && `, cut in under post ${cut.seq}`}</h2>
+        {cut && <p className="kb-act-cutline kb-small">Cut in line under post {cut.seq}</p>}
+      </>}
+    >
         {/* The author first, then the post's line: the order the board is read in, side by side or stacked. */}
         {!plain && (person
           ? <Postbit person={person} layout={layout} marks={characterMarks} />
@@ -345,8 +341,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
           <Body act={act} name={name} spoken={spoken} person={person} editing={editing} own={own} onEdit={() => setEditing(true)} onDone={() => setEditing(false)} marks={marks} visit={visit} />
         </div>
         <Actions act={act} about={{ seq, name: spoken }} canEdit={canEdit} editing={editing} onEdit={() => setEditing(true)} editButton={editButton} spinOrigin={spinOrigin} setSpinOrigin={setSpinOrigin} onReport={reportable ? askReport : null} />
-      </div>
-    </RowFoldCtx.Provider>
+    </FoldedRow>
     </article>
     </AppealCtx.Provider>
   );
