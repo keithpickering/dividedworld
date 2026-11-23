@@ -281,8 +281,12 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const week = await db.rpc<Week>('pool_week', { today: day });
   const first = !started;
 
+  const eve = dayOf(slotAt - DAY);
+  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
+  // Each is a slot of its own day that the week has given already, though its spend is not written until this round: counted as spent (when that day is of today's week), so the week never overdraws.
+  const carriedSpent = new Date(slotAt).getUTCDay() === 1 ? 0 : carried.length;
   // The allowance counts the week before today, so every round of the day computes the allowance the first did.
-  const todays = allowance(week.spent, settings.pool.weekly, slotAt);
+  const todays = allowance(week.spent + carriedSpent, settings.pool.weekly, slotAt);
   const startedToday = week.today.some((r) => r.started_thread);
   let threadsLeft = startedToday ? 0 : Math.max(settings.pool.threadsWeekly - week.threads, 0);
   let used = week.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0);
@@ -310,33 +314,38 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     sessions = await db.rpc<DaySession[]>('sessions_day', { on_day: day });
   }
 
-  if (todays > 0) {
-    // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
-    const keptPicks = await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day });
-    for (const k of keptPicks) {
-      const p = k.pick;
+  // The picks kept on the day before and never written (the persona's session began after the last round of that day, or its call failed in the last round, or the cron runs once a day) are
+  // written here and spent on their own day: `kept_picks` of a day lists only the picks with no spend row on it, so a rerun never writes one twice. They are that day's slots, so they do
+  // not wait for a session (every one of that day has ended), take nothing from today's allowance, and offer no card.
+  // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
+  const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...k, on: day, own: true })) : [];
+  for (const k of [...carried, ...owns]) {
+    const p = k.pick;
+    if (k.own) {
       const mine = sessions.filter((x) => x.staff === k.staff);
       const open = mine.some((x) => Date.parse(x.startsAt) <= slotAt && slotAt < Date.parse(x.endsAt));
       const toCome = mine.some((x) => Date.parse(x.endsAt) > slotAt);
       if (!open && toCome) continue;
-      const persona = roster.find((r) => r.key === k.staff);
-      const base = { staff: k.staff, trigger: p.trigger, trims: [] as Trim[] };
-      if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
-      if (already.has(k.staff)) { records.push({ ...base, status: 'already' }); continue; }
-      if (used + 1 > todays) continue;
+    }
+    const persona = roster.find((r) => r.key === k.staff);
+    const base = { staff: k.staff, trigger: p.trigger, trims: [] as Trim[] };
+    if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
+    if (k.own && already.has(k.staff)) { records.push({ ...base, status: 'already' }); continue; }
+    if (k.own && used + 1 > todays) continue;
 
-      const record = await onePick({
-        db, models, tuned, persona, office: p.office, p, day, slugs, cardsOnOffer,
-        threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
-      });
-      records.push(record);
-      // A thread start whose spend failed is still a thread started: the rerun adopts it, and no second starts meanwhile.
-      if (record.status === 'failed' && record.post && record.startedThread) threadsLeft = 0;
-      if (record.status === 'posted') {
+    const record = await onePick({
+      db, models, tuned, persona, office: p.office, p, day: k.on, slugs, cardsOnOffer,
+      threadsLeft, cardRoom: k.own && p.cardSlot && used + 2 <= todays,
+    });
+    records.push(record);
+    // A thread start whose spend failed is still a thread started: the rerun adopts it, and no second starts meanwhile.
+    if (record.status === 'failed' && record.post && record.startedThread) threadsLeft = 0;
+    if (record.status === 'posted') {
+      if (k.own) {
         used += 1 + (record.card ? 1 : 0);
         already.add(k.staff);
-        if (record.startedThread) threadsLeft = 0;
       }
+      if (record.startedThread) threadsLeft = 0;
     }
   }
 
@@ -383,7 +392,9 @@ async function keepThePicks(k: Keeping): Promise<{ records: PickRecord[]; kept: 
   // The picks already kept for the day (a first round redone in a later slot, whose signal window has shifted) count toward the day's allowance and are not kept again.
   const before = await db.rpc<{ staff: string }[]>('kept_picks', { on_day: day });
   const keptAlready = new Set(before.map((b) => b.staff));
-  let planned = k.used + keptAlready.size;
+  // A persona is counted once: the spend row of one whose kept pick has posted is in `k.used` already, so its kept pick is not counted again. `kept_picks` lists only the unwritten, so the two cannot
+  // meet today; this holds if a change lists the written ones as well.
+  let planned = k.used + [...keptAlready].filter((s) => !k.already.has(s)).length;
   for (const p of picked.picks) {
     const base = { staff: p.staff, trigger: p.trigger, trims: [] as Trim[] };
     if (!roster.some((r) => r.key === p.staff)) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
@@ -544,13 +555,14 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       personaReads(db, settings, planned.staff),
     ]);
     // A turn answers every waiting reply it was handed, and is shown each: those in the conversation view, and for the rest (replies to an older post of its own) the one post
-    // read alone (`pool_thread` with `most` 0 and `also`, a bounded read of one post). A reply that cannot be read is not answered (the database would find it no longer waiting).
+    // read alone (`pool_thread` with `most` 0 and `more`, one bounded read of them all). A reply that cannot be read is not answered (the database would find it no longer waiting).
     const shown = new Map<string, { name: string; pronouns: PronounSet | null; body: string; cut?: boolean }>(view.conversation.posts.flatMap((m) => m.replies.map((x) => [x.act, x] as const)));
     const missing = planned.answers.filter((a) => !shown.has(a));
-    const fetched = await Promise.all(missing.map((act) => db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: 0, chars: settings.digestExcerptChars, also: act })));
+    // All the older replies in one call (`more`, which the database reads up to 50 of).
+    const fetched = missing.length === 0 ? null : await db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: 0, chars: settings.digestExcerptChars, also: null, more: missing });
     const others: { act: string; name: string; pronouns: PronounSet; body: string; cut: boolean }[] = [];
-    missing.forEach((act, i) => {
-      const x = fetched[i]!.posts.find((q) => q.act === act);
+    missing.forEach((act) => {
+      const x = fetched?.posts.find((q) => q.act === act);
       if (!x) return;
       shown.set(act, x);
       others.push({ act, name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true });

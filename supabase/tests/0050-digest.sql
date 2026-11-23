@@ -76,7 +76,7 @@ begin
       -- The pool's signals (0088): the two functions it owns, and the folds it matches names with.
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
       -- The pool's thread read (0089) and the faces read that replaced its names read (0127): the two functions it owns.
-      'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)',
+      'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'character_faces(jsonb)',
       -- A patrol's sample of the beat's recent posts (0110): the one function it owns, reading acts_public, characters_public and thread_list.
       'patrol_sample(uuid[],integer,integer,bigint)',
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
@@ -146,7 +146,7 @@ begin
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
     'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)',
-    'pool_thread(uuid,integer,integer,uuid)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)']);
+    'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';

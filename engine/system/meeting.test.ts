@@ -665,6 +665,12 @@ test('the prompt tells the Boss the machine\'s three moves, their bounds and whi
   assert.match(served, /carries no demand/);
 });
 
+test('the talking-points instruction says a point never mentions a move still proposed or waiting on admins', () => {
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, posting: [{ key: 'mod-x', name: 'Xe', pronouns: PRONOUN_PRESETS.he, office: 'mod', temperament: 'dry' }], system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  assert.match(served, /never mention a move you are proposing or one still waiting on admins/);
+  assert.match(served, /only of what has landed/);
+});
+
 // ---- Member groups (Task 8): the meeting confers groups ----
 
 const groupMove = (params: unknown, demand: unknown, extra: Record<string, unknown> = {}) => ({ ...move(demand), kind: 'conferGroup', params, ...extra });

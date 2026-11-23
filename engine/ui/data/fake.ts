@@ -238,7 +238,7 @@ export interface Seed {
   staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean; pronouns?: PronounSet }): Id;
   /**
    * A persona's chatter session (a `staff_sessions` row, 0415): `staff` is in session from `startsAt` to `endsAt` (epoch ms). Presence lists it while one is open
-   * (the index's box beside the capped players, never in their "others" count; a thread's and a board's box once it has posted there since the session began).
+   * (the index's box beside the capped players, never in their "others" count; a thread's and a board's box once it has posted there since the session began or has a player's reply waiting there).
    */
   staffSession(staff: string, session: { readonly startsAt: number; readonly endsAt: number }): void;
   /** A staff member's career as `staff_career` would return it (default: none). */
@@ -3452,6 +3452,24 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const open = staffSessions.filter((x) => x.staff === c.staff!.key && x.startsAt <= at && at < x.endsAt);
     return open.length === 0 ? null : Math.min(...open.map((x) => x.startsAt));
   };
+  /**
+   * Whether a player's reply to a persona's post waits in a thread or a board (pool_waiting_in_thread, pool_waiting_in_board, 0415): a public post by a non-staff character, aimed at the
+   * persona's own public post (one of the last `priorityDays`, 28), younger than `pool.turns.waitHours` (48, the SQL's default: the fake holds no pool setting), answered by no turn, in a thread
+   * the persona is not locked out of. The fake keeps no `pool_answered` rows, so a turn is the persona's own later post in the thread: it answers every reply that came before it.
+   */
+  const replyWaiting = (c: CharRec, where: { thread: Id } | { board: Id }): boolean => {
+    const at = now();
+    const wait = 48 * 3_600_000;
+    const inPlace = (a: ActRec) => ('thread' in where ? a.thread === where.thread : threads.get(a.thread)?.board === where.board);
+    const mine = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && inPlace(a));
+    return mine.some((p) => p.at >= at - wait - 28 * 86_400_000 && !liveVeils(p.id, 'author').length
+      && [...acts.values()].some((r) => {
+        if (r.kind !== 'post' || r.target !== p.id || r.at < at - wait || r.character === null) return false;
+        const who = characters.get(r.character);
+        return who !== undefined && !who.staff && liveVeils(r.id, 'author').length === 0
+          && !mine.some((t) => t.thread === r.thread && t.at >= r.at && t.id !== r.id) && lockedOutUntil(c.id, r.thread) === null;
+      }));
+  };
   /** A place's presence box (presence_box, 0093): the characters present within the window, longest there first. It marks no one present. */
   function presenceAt(where: PresencePlace): Presence {
     let place: Id | null = null;
@@ -3478,15 +3496,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }).concat(
         /* A staff character (not the developer) is listed in a thread's and a board's box for the window after its own post there (0084), read from
            public posts, and a board lists it once however many of its threads it posted in. A persona in session is listed there by its posts since the session
-           began, from the session's start (0415's place_since); the index lists it beside the players (below). The fake leaves out the SQL's other way onto a
-           thread or board, a reply waiting there (pool_waiting_in_thread, pool_waiting_in_board), which it does not model. */
+           began, from the session's start (0415's place_since); the index lists it beside the players (below). A persona in session is also listed where a player's
+           reply to its post waits (pool_waiting_in_thread, pool_waiting_in_board; see `replyWaiting`), from the session's start as well. */
         where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
           if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
           /* A persona in session is listed by its posts since the session began, not only the window's (presence_box, 0415). */
           const opened = inSession(c);
           const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= Math.min(at - win, opened ?? Infinity) && a.thread !== null && threads.has(a.thread)
             && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
-          if (posts.length === 0) return [];
+          if (posts.length === 0 && !(opened !== null && replyWaiting(c, where.kind === 'thread' ? { thread: place! } : { board: board! }))) return [];
           return [{ id: c.id, name: c.name, staff: true, since: opened ?? Math.min(...posts.map((a) => a.at)) }];
         }),
       );

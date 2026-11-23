@@ -59,7 +59,9 @@ interface World {
   /** The day's sessions, already drawn (minutes from 00:00 UTC): the day's first round has passed. Without any, the pool draws none (perDay 0) and every round is a first round. */
   sessions?: { staff: string; start: number; end: number }[];
   /** Picks already kept for the day. */
-  kept?: { staff: string; pick: Record<string, unknown> }[];
+  kept?: { staff: string; pick: Record<string, unknown>; day?: string }[];
+  /** `kept_picks` lists the picks already written too (the case the database never produces: it lists only the unwritten). */
+  keptListsWritten?: boolean;
   /** The replies waiting on each persona, by thread: `staff: true` for a reply by a staff character (the database never reports one). */
   waiting?: { staff: string; thread: string; heat?: number; replies: { act: string; author: string; at: string; staff?: true; old?: true }[] }[];
   /** Turns already spent: (staff, session index in `sessions`, thread). */
@@ -88,7 +90,7 @@ type Spend = { day: string; staff: string; trigger: string; post_act: string; ca
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
   const sessionRows = (w.sessions ?? []).map((x, i) => ({ id: i + 1, staff: x.staff, day: '2026-11-04', startsAt: Date.parse('2026-11-04T00:00:00Z') + x.start * 60_000, endsAt: Date.parse('2026-11-04T00:00:00Z') + x.end * 60_000 }));
-  const state = { sessions: sessionRows as { id: number; staff: string; day: string; startsAt: number; endsAt: number }[], kept: (w.kept ?? []).map((k) => ({ ...k })) as { staff: string; pick: any }[],
+  const state = { sessions: sessionRows as { id: number; staff: string; day: string; startsAt: number; endsAt: number }[], kept: (w.kept ?? []).map((k) => ({ day: DAY, ...k })) as { staff: string; pick: any; day: string }[],
     turns: (w.spentTurns ?? []).map((t) => ({ staff: t.staff, session: sessionRows[t.session]!.id, thread: t.thread, post: 'earlier', answers: [] as string[], quoting: '', body: '' })),
     // A day with sessions or picks given is a day whose first round has passed.
     days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
@@ -132,10 +134,10 @@ function fakeDb(w: World = {}) {
           return state.sessions.filter((x) => x.day === args.on_day).length as T;
         }
         case 'keep_pick': {
-          if (!state.kept.some((k) => k.staff === args.of_staff)) state.kept.push({ staff: String(args.of_staff), pick: args.pick });
+          if (!state.kept.some((k) => k.day === args.on_day && k.staff === args.of_staff)) state.kept.push({ day: String(args.on_day), staff: String(args.of_staff), pick: args.pick });
           return null as T;
         }
-        case 'kept_picks': return state.kept.filter((k) => !state.spends.some((s) => s.day === args.on_day && s.staff === k.staff)).map((k) => ({ staff: k.staff, pick: k.pick })) as T;
+        case 'kept_picks': return state.kept.filter((k) => k.day === args.on_day && (w.keptListsWritten || !state.spends.some((s) => s.day === args.on_day && s.staff === k.staff))).map((k) => ({ staff: k.staff, pick: k.pick })) as T;
         case 'sessions_awake': {
           const at = Date.parse(String(args.at));
           return state.sessions.filter((x) => x.startsAt <= at && at < x.endsAt).map((x) => {
@@ -192,9 +194,10 @@ function fakeDb(w: World = {}) {
         case 'character_faces': return {} as T;
         case 'pool_thread': {
           // A read for one post alone (`most` 0 and `also`): a waiting reply, whichever of the persona's posts it answers.
-          if (args.most === 0 && args.also) {
-            const found = (w.waiting ?? []).flatMap((x) => x.replies).find((r) => r.act === args.also);
-            return { title: 'Thread', posts: found ? [{ act: found.act, name: `Player ${found.author}`, pronouns: null, body: `Reply ${found.act} says hello.`, cut: false }] : [] } as T;
+          if (args.most === 0 && (args.also || args.more)) {
+            const wanted = [args.also, ...((args.more as string[] | undefined) ?? [])];
+            const found = (w.waiting ?? []).flatMap((x) => x.replies).filter((r) => wanted.includes(r.act));
+            return { title: 'Thread', posts: found.map((f) => ({ act: f.act, name: `Player ${f.author}`, pronouns: null, body: `Reply ${f.act} says hello.`, cut: false })) } as T;
           }
           const at = threads.indexOf(args.in_thread as string);
           if (w.longThread) return { title: `Thread ${at}`, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: quotes[at] ?? 'none', name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
@@ -1177,6 +1180,7 @@ const at = (hhmm: string) => `2026-11-04T${hhmm}:00.000Z`;
 const R1 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb1';
 const R2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb2';
 const R3 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3';
+const R4 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4';
 const reply = (act: string, when = '16:00', author = `char-${act.slice(-1)}`) => ({ act, author, at: at(when) });
 const turnModels = () => fakeModels((r) => ({ words: `A turn from ${r.staff}.`, note: `Answered, ${r.staff}.` }));
 const keptPick = (staff: string, thread = T1, quoting = Q1, extra: Record<string, unknown> = {}) => ({ staff, pick: { staff, office: staff === SIGH ? 'mod' : 'member', trigger: 'named', thread, quoting, act: quoting, startThread: false, cardSlot: false, ...extra } });
@@ -1550,4 +1554,89 @@ test('a first round redone in a later slot with a shifted signal window keeps no
   assert.deepEqual(d.state.kept.map((k) => k.staff), [SIGH], 'the redone round keeps no second pick');
   assert.deepEqual(again.picks.filter((p) => p.status === 'posted').map((p) => p.staff), [SIGH]);
   assert.equal(d.state.spends.length, 1, 'and one is spent');
+});
+
+const NEXT = '2026-11-05';
+const nextAt = (hhmm: string) => `${NEXT}T${hhmm}:00.000Z`;
+
+test('a pick kept on day D whose persona\'s only session starts after the last round of D is written in the first round of D+1, and spent on D', async () => {
+  const d = fakeDb({ sessions: [SIGH_LATER], kept: [keptPick(SIGH, T1, Q1)] });
+  const m = fakeModels(normal);
+  const last = await run(d, m, dividedWorld, at('18:52'));
+  assert.ok(last.status === 'ok');
+  assert.equal(d.state.spends.length, 0, 'the persona\'s session had not begun');
+  const out = await run(d, m, dividedWorld, nextAt('00:07'));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(d.state.spends.filter((s) => s.staff === SIGH && s.day === DAY).map((s) => s.post_act), [d.state.acts.find((a) => a.staff === SIGH && a.payload.pool === DAY)!.id], 'spent on its own day, on the post written');
+});
+
+test('a once-a-day cron loses no kept pick', async () => {
+  // One round a day: day D\'s round keeps the picks, and the persona\'s session is yet to come when it ends.
+  const pool = { chatterCron: '37 17 * * *', sessions: { perDay: 1, minutes: { least: 20, most: 20 }, waking: { from: 22, to: 23 } } };
+  const d = fakeDb({ pool });
+  const m = fakeModels(normal);
+  const first = await run(d, m);
+  assert.ok(first.status === 'ok');
+  assert.equal(first.kept.length, 3);
+  assert.equal(d.state.spends.length, 0);
+  const next = await run(d, m, dividedWorld, nextAt('17:37'));
+  assert.ok(next.status === 'ok');
+  for (const staff of first.kept) assert.ok(d.state.spends.some((s) => s.day === DAY && s.staff === staff), `${staff}'s pick of ${DAY} is spent on ${DAY}`);
+});
+
+test('a carried-over pick is written once whatever reruns', async () => {
+  const d = fakeDb({ sessions: [SIGH_LATER], kept: [keptPick(SIGH, T1, Q1)] });
+  const m = fakeModels(normal);
+  await run(d, m, dividedWorld, nextAt('00:07'));
+  await run(d, m, dividedWorld, nextAt('00:07'));
+  await run(d, m, dividedWorld, nextAt('00:22'));
+  assert.equal(d.state.acts.filter((a) => a.staff === SIGH && a.payload?.pool === DAY).length, 1, 'one post');
+  assert.equal(d.state.spends.filter((s) => s.staff === SIGH && s.day === DAY).length, 1, 'and one spend');
+});
+
+test('a kept pick past the day\'s allowance is not written', async () => {
+  // Weekly 20 on this Wednesday gives an allowance of 4; four spends today leave no slot. The kept pick waits (and is not lost: the allowance is what the day was given).
+  const d = fakeDb({ sessions: [SIGH_EARLIER], kept: [keptPick(SIGH, T1, Q1)], priorSpent: 0 });
+  const m = fakeModels(normal);
+  d.state.spends.push(...[CLERK, MON, HYPE, 'placeholder-extra'].map((staff, i) => ({ day: DAY, staff, trigger: 'named', post_act: `done-${i}`, card_act: null, started_thread: false, record: {} })));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(out.picks.length, 0);
+  assert.equal(d.state.acts.filter((a) => a.staff === SIGH).length, 0, 'nothing is posted past the allowance');
+});
+
+test('a turn reads its older replies in one pool_thread call', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [{ ...reply(R1, '15:00'), old: true }, reply(R2, '16:00'), { ...reply(R3, '16:30'), old: true }, { ...reply(R4, '16:40'), old: true }] }] });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['taken']);
+  const older = d.calls.filter((c) => c.fn === 'pool_thread' && c.args.most === 0);
+  assert.equal(older.length, 1, 'one call for the older replies');
+  assert.deepEqual([...older[0]!.args.more].sort(), [R1, R3, R4].sort());
+  assert.equal(older[0]!.args.also, null);
+});
+
+test('keepThePicks counts a persona once: one whose kept pick has posted is not counted again', async () => {
+  // The database lists only unwritten picks, so the two sets never meet; the fake lists the written one as well, to show the count holds if a change ever does.
+  const d = fakeDb({ kept: [keptPick(SIGH)], keptListsWritten: true });
+  d.state.days.delete(DAY);
+  d.state.spends.push(...[SIGH, 'placeholder-extra'].map((staff, i) => ({ day: DAY, staff, trigger: 'named', post_act: `done-${i}`, card_act: null, started_thread: false, record: {} })));
+  const out = await run(d, fakeModels(normal));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual([...out.kept].sort(), [CLERK, MON].sort(), 'the allowance of 4 holds two spends and two new picks');
+});
+
+test('a pick carried over from yesterday counts against the week\'s allowance before it is written', async () => {
+  // Thursday 2026-11-05, a week of 20: yesterday's unwritten pick is a slot the week has already given, so today's allowance is the one a week with that slot spent gives.
+  const carriedRun = async (priorSpent: number, kept: boolean) => {
+    const d = fakeDb({ priorSpent, ...(kept ? { sessions: [SIGH_LATER], kept: [keptPick(SIGH, T1, Q1)] } : {}) });
+    const out = await run(d, fakeModels(normal), dividedWorld, nextAt('00:07'));
+    assert.ok(out.status === 'ok');
+    return out.allowance;
+  };
+  const free = await carriedRun(0, false);
+  const spent = await carriedRun(1, false);
+  assert.ok(spent < free, 'the fixture shows a slot spent changes the allowance');
+  assert.equal(await carriedRun(0, true), spent, 'the carried pick is counted as spent');
 });
