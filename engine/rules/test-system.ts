@@ -11,7 +11,7 @@ import { DEFAULT_STRENGTHS } from '../system/pool.ts';
 
 /** The pool's settings as a test world holds them. */
 export const testPool: Settings['pool'] = {
-  weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { ...DEFAULT_STRENGTHS }, chatterCron: '37 17 * * *',
+  weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { ...DEFAULT_STRENGTHS }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4, perDay: 60 }, chatterCron: '37 17 * * *',
 };
 
 /** The Mod Bots' numbers as a test world holds them. */
@@ -29,7 +29,7 @@ export const testCosmeticsContent: Pick<Instance, 'gear' | 'trophies' | 'events'
   events: { lines: [] },
 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'startingPack' | 'cardWriteSettleSeconds' | 'oldVoiceWindow' | 'oldVoiceTokenizer' | 'oldVoicePromptFloor' | 'cardWriteFullShare' | 'cardWriteTopUps' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'startingPack' | 'cardWriteSettleSeconds' | 'oldVoiceWindow' | 'oldVoiceTokenizer' | 'oldVoicePromptFloor' | 'cardWriteFullShare' | 'cardWriteTopUps' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestConversations' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
   systemEnabled: false,
   oldVoice: true,
   startingPack: null,
@@ -47,7 +47,7 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
     reign: { weeklyMoves: 5, bankCap: 10, moveExpiryMostDays: 28 },
     meltdown: { days: 21, weeklyMoves: 8, bankCap: 14, moveExpiryMostDays: 42 },
   },
-  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestBoards: 30, digestBoardDays: 21, movedStubDays: 7, farewellWindowHours: 36, bundleMostParts: 4, bundleAuthoredMostParts: 8, digestExcerpts: 8,
+  inheritanceGraceDays: 3, rosterRecentExcluded: 2, structuralHoldHours: 24, microEventDailyCalls: 20, digestThreads: 10, digestBoards: 30, digestBoardDays: 21, movedStubDays: 7, farewellWindowHours: 36, bundleMostParts: 4, bundleAuthoredMostParts: 8, digestExcerpts: 8, digestConversations: 6,
   digestExcerptChars: 280, memoryOpinions: 40, memoryGrudges: 20, memoryWheelhouse: 30, memoryRealWorld: 30, pool: testPool, modBots: testModBots, warnBar: testWarnBar, apology: testApologySettings, boardNameMaxLength: 60, moveExpiryMostDays: 42, moveExpiryLeastHours: 24, demandCheckMinutes: 5, demandChecksPerTick: 40,
   modelTiers: { strong: 'claude-opus-5-5', light: 'claude-haiku-5-5' },
   cosmetics: { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 }, events: { windowMinutes: 15, dayMost: 4, outcomes: { line: 70, gear: 20, card: 10 }, gearRarity: { common: 80, uncommon: 17, rare: 3 }, cardRarity: { common: 80, uncommon: 17, rare: 3 } } },
@@ -65,7 +65,7 @@ export const testSystem: SystemContent = {
   firstBoss: 'boss-a',
   announcementsTitle: 'Announcements',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [], realWorld: [], scrubWords: ['badword'], wheelhouse: [],
   nameStyle: () => [],

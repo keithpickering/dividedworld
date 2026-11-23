@@ -20,8 +20,13 @@ test('the Mod Bots\' calls are light-tier chat duties', () => {
   }
 });
 
+test('a persona\'s turn is a light-tier chat duty of its own, so the ledger prices the turns apart from the pool\'s picks', () => {
+  assert.deepEqual(DUTY_SPECS.conversation, { mode: 'chat', tier: 'light' });
+  assert.ok((DUTIES as readonly string[]).includes('conversation'));
+});
+
 test('staffFor returns the staff key the instance assigns the duty', () => {
-  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat' } as const } };
+  const instance = { system: { duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss' } as const } };
   assert.equal(staffFor('meeting', instance), 'boss');
   assert.equal(staffFor('appeal', instance), 'beat');
 });

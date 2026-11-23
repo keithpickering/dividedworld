@@ -118,9 +118,51 @@ function perReach(holds: (v: unknown) => boolean, shape: string) {
  * supabase/migrations/0077_settings_held.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const POOL_WHOLE = { weekly: 1, threadsWeekly: 0, priorityDays: 1, notesRead: 1, chatterThreadPosts: 1 } as const;
-const POOL_KEYS = [...Object.keys(POOL_WHOLE), 'holdback', 'cardRarityMost', 'strengths', 'chatterCron'].sort();
+const POOL_KEYS = [...Object.keys(POOL_WHOLE), 'holdback', 'cardRarityMost', 'strengths', 'sessions', 'turns', 'chatterCron'].sort();
+/** A whole number from `least` to `most`. */
+const inRange = (n: unknown, least: number, most: number): n is number => isWhole(n, least) && n <= most;
+/** The bounds of a persona's visits (`pool.sessions`, and a persona's `habits`): visits a day, minutes a visit, and the hours of the day. */
+export const SESSION_BOUNDS = { perDay: { least: 0, most: 8 }, minutes: { least: 10, most: 180 }, hour: { least: 0, most: 23 } } as const;
+/** `minutes` is `{ least, most }`, whole, inside the bounds, the least not above the most. */
+const minutesHeld = (m: unknown): boolean => {
+  if (typeof m !== 'object' || m === null || Array.isArray(m)) return false;
+  const o = m as Record<string, unknown>;
+  const { least, most } = SESSION_BOUNDS.minutes;
+  return Object.keys(o).length === 2 && inRange(o.least, least, most) && inRange(o.most, least, most) && (o.least as number) <= (o.most as number);
+};
+/** What `pool.turns` holds, as the migration's `setting_pool` does. */
+const turnsHeld = (t: unknown): boolean => {
+  if (typeof t !== 'object' || t === null || Array.isArray(t)) return false;
+  const o = t as Record<string, unknown>;
+  return Object.keys(o).length === 4 && inRange(o.waitHours, 1, 168) && inRange(o.perThread, 1, 6) && inRange(o.perSession, isWhole(o.perThread, 1) ? o.perThread : 1, 12) && inRange(o.perDay, 0, 500);
+};
+/** What `pool.sessions` holds, as the migration's `setting_pool` does. */
+const sessionsHeld = (x: unknown): boolean => {
+  if (typeof x !== 'object' || x === null || Array.isArray(x)) return false;
+  const o = x as Record<string, unknown>;
+  const w = o.waking;
+  if (Object.keys(o).length !== 3 || !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most) || !minutesHeld(o.minutes)) return false;
+  if (typeof w !== 'object' || w === null || Array.isArray(w) || Object.keys(w).length !== 2) return false;
+  const { from, to } = w as Record<string, unknown>;
+  return inRange(from, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most) && inRange(to, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most);
+};
+/** A persona's habits, or the words of what is wrong: the pool's bounds, with `hours` a non-empty list of whole hours, none twice. */
+export function habitsProblem(h: unknown): string | null {
+  if (typeof h !== 'object' || h === null || Array.isArray(h)) return 'habits are not an object';
+  const o = h as Record<string, unknown>;
+  const stray = Object.keys(o).find((k) => !['perDay', 'minutes', 'hours'].includes(k));
+  if (stray !== undefined) return `"${stray}" is not one of the habits (perDay, minutes, hours)`;
+  if (o.perDay !== undefined && !inRange(o.perDay, SESSION_BOUNDS.perDay.least, SESSION_BOUNDS.perDay.most)) return `perDay is not a whole number from ${SESSION_BOUNDS.perDay.least} to ${SESSION_BOUNDS.perDay.most}`;
+  if (o.minutes !== undefined && !minutesHeld(o.minutes)) return `minutes is not a least and a most, whole, from ${SESSION_BOUNDS.minutes.least} to ${SESSION_BOUNDS.minutes.most}, the least not above the most`;
+  if (o.hours !== undefined) {
+    const hours = o.hours;
+    if (!Array.isArray(hours) || hours.length < 1 || !hours.every((n) => inRange(n, SESSION_BOUNDS.hour.least, SESSION_BOUNDS.hour.most))) return `hours is not a list of one or more whole UTC hours from ${SESSION_BOUNDS.hour.least} to ${SESSION_BOUNDS.hour.most}`;
+    if (new Set(hours).size !== hours.length) return 'hours names an hour twice';
+  }
+  return null;
+}
 function poolRule(v: unknown): string | null {
-  const shape = 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') and chatterCron (a five-field cron expression, each field inside its range)';
+  const shape = 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') sessions (perDay, a whole number from 0 to 8; minutes, least and most, whole, from 10 to 180, the least not above the most; waking, from and to, whole UTC hours from 0 to 23), turns (waitHours, a whole number from 1 to 168; perThread, from 1 to 6; perSession, from perThread to 12; perDay, from 0 to 500) and chatterCron (a five-field cron expression, each field inside its range)';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
   const given = v as Record<string, unknown>;
   const extra = Object.keys(given).find((k) => !POOL_KEYS.includes(k));
@@ -129,6 +171,8 @@ function poolRule(v: unknown): string | null {
   if (!(typeof given.holdback === 'number' && given.holdback >= 0 && given.holdback <= 0.5)) return `${shape}; "holdback" is not`;
   if (!RARITIES.includes(given.cardRarityMost as never)) return `${shape}; "cardRarityMost" is not`;
   if (!isCron(given.chatterCron)) return `${shape}; "chatterCron" is not`;
+  if (!sessionsHeld(given.sessions)) return `${shape}; "sessions" is not`;
+  if (!turnsHeld(given.turns)) return `${shape}; "turns" is not`;
   const strengths = given.strengths;
   if (typeof strengths !== 'object' || strengths === null || Array.isArray(strengths)) return `${shape}; "strengths" is not`;
   const s = strengths as Record<string, unknown>;
@@ -338,6 +382,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   bundleMostParts: whole(1, 'parts', 16),
   bundleAuthoredMostParts: whole(1, 'parts', 16),
   digestExcerpts: whole(1, 'posts', DIGEST_MOST.excerpts),
+  digestConversations: whole(0, 'conversations', DIGEST_MOST.conversations),
   digestExcerptChars: whole(1, 'characters', DIGEST_MOST.excerptChars),
   memoryOpinions: whole(1, 'opinions'),
   memoryGrudges: whole(1, 'grudges'),
@@ -1229,6 +1274,7 @@ function systemProblems(instance: Instance): string[] {
         else if (!text(line)) out.push(`${who} has a blank office line for "${office}"`);
       }
     }
+    if (p.habits !== undefined) { const why = habitsProblem(p.habits); if (why) out.push(`${who} has habits that fail: ${why}`); }
     if (p.pronouns !== undefined) for (const why of pronounProblems(p.pronouns)) out.push(`${who} has pronouns that fail: ${why}`);
     const authoredMost = instance.settings?.bundleAuthoredMostParts;
     out.push(...arcProblems(who, p, typeof authoredMost === 'number' && Number.isInteger(authoredMost) ? authoredMost : null));

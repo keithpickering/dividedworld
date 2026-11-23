@@ -8,10 +8,24 @@
  *   2. The week's spend (`pool_week`), the season and offices (`pool_context`), the last day's signals (`pool_signals`) and each persona's
  *      memory: the pick's inputs.
  *   3. `candidates`, then `pick`, seeded from the day.
- *   4. For each pick: its career, memory, notes and thread; then one model call, duty `chatter`, with `staff` set, so the call is a ledger row
+ *   4. For each pick: its career, memory, notes and thread; then one model call, duty `chatter` (a turn's is duty `conversation`), with `staff` set, so the call is a ledger row
  *      (models(), "Cost is a column"). A chat persona is asked in structure; a persona on the old voice writes its words in raw completion.
  *   5. The answer is repaired (repairChatter): every bound trimmed and named, and only what cannot be repaired without inventing content is rejected.
  *   6. The post (`write_staff_act` or `write_staff_thread`), then the card if one was asked for and a slot is left, then the note, then the spend.
+ *
+ * **Rounds (the chattier staff design; its plan, Task 7).** The schedule fires a round every `cronMinutes` (the step of the cron's minute field, else 15), and a round does, in this order:
+ *   1. The System-enabled check, then `claim_pool_round(slot)`: a round that loses the claim returns `busy` having written nothing.
+ *   2. The day's first round (the day not marked started, `pool_day_started`): the day's claim, the adoption of orphans, the week, then the daily path above with `keep_pick` where it wrote a post,
+ *      and last the sessions each posting persona keeps that day (`drawSessions`, seeded from the day and the persona, `write_sessions`). That call is last on purpose: it also marks the day
+ *      started (even with no session), so a round that dies earlier leaves the day unmarked and the next is a first round again, which keeps and draws the same (a second keep, a second
+ *      write of the same rows, is a no-op in the database) and loses no pick.
+ *   3. Each kept pick whose persona has a session open now, or none left in the day, is written by `onePick`, unchanged, and spent in `pool_spends` as ever. Every round adopts the day's orphans first.
+ *   4. Turns: the replies waiting on the personas in session (`pool_waiting`), `roundShare` of what is left of the day's turns, `planTurns`; each planned turn reads its conversation, thread, record,
+ *      talking points, memory and notes, makes one light-tier call under the duty `conversation` (a chat call, or a raw completion for the old voice), repairs it as a pick's is (no card, no
+ *      title), writes it whole with `write_staff_turn` and leaves its note. A refusal of `write_staff_turn` skips the turn; a failed or rejected call spends nothing and its replies wait.
+ *   5. The outcome lists the picks written, the turns taken, skipped and failed, and the personas whose picks were kept.
+ * **A crash between a turn's call and `write_staff_turn` spends nothing and loses nothing** (the call is a ledger row; the replies are still waiting); **an answer from `write_staff_turn` lost on
+ * the way back** is a transport error, which stops the round, and the next round finds the replies answered (`pool_answered`) and writes no second turn: the write is never repeated on a guess (handler.ts).
  *
  * **A rerun the same day posts nothing twice.** The pick is seeded from the day and the allowance is computed from the week before today, so a
  * rerun picks the same personas. A persona with a spend row today is skipped (`already`), and the run stops at the day's allowance, counting
@@ -53,13 +67,17 @@ import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import {
   POOL_PREMISE,
+  TURN_PREMISE,
   CHATTER_RULE,
   CHATTER_TOKENS,
   chatterCompletion,
   chatterPrompt,
   chatterSchema,
   repairChatter,
+  type ChatterAnswer,
+  type ConversationView,
   type OfferedCard,
+  type PublicRecord,
   type ThreadPost,
 } from '../../../engine/system/chatter.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
@@ -67,14 +85,18 @@ import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import { scrubbedComplete } from '../../../engine/system/scrub.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
+import { drawSessions } from '../../../engine/system/sessions.ts';
+import { planTurns, roundShare, type AwakeSession, type OpenThread, type PlannedTurn } from '../../../engine/system/turns.ts';
 import {
   allowance,
   candidates,
   dayOf,
   dayRng,
   pick,
+  POSTING_OFFICES,
   priorities,
   seededRng,
+  sessionRng,
   type PoolPhase,
   type PoolPick,
   type PostingOffice,
@@ -147,19 +169,41 @@ export interface PickRecord {
   readonly day?: string;
 }
 
+/** What a turn came to. `taken` wrote a post; every other status wrote nothing and its replies wait (`skipped`: the database refused it or it could not be set up). */
+export type TurnStatus = 'taken' | 'skipped' | 'rejected' | 'failed';
+
+export interface TurnRecord {
+  readonly staff: string;
+  readonly thread: string;
+  readonly session: number;
+  readonly status: TurnStatus;
+  /** Why a turn that wrote nothing did not: the predicate that rejected the answer, the database's refusal, the error, or the reason it was skipped. */
+  readonly why?: string;
+  readonly post?: string;
+  /** The replies the turn answered. */
+  readonly answers: readonly string[];
+  readonly trims: readonly Trim[];
+  readonly noteWritten?: boolean;
+}
+
 export type ChatterOutcome =
   | { readonly status: 'off' }
   | { readonly status: 'no season' }
-  /** Another run of the day holds the claim (core.ts, `claim_pool_run`): this one wrote and read nothing more. */
+  /** Another round of the slot, or another run of the day (the first round's pick), holds the claim: this one wrote and read nothing more. */
   | { readonly status: 'busy' }
   | {
     readonly status: 'ok';
     readonly day: string;
     /** Today's allowance, in slots, before the rows already spent today. */
     readonly allowance: number;
+    /** The picks this round wrote, or skipped (a persona not in the roster, one that already posted today). */
     readonly picks: readonly PickRecord[];
-    /** The posts an earlier run of the week left without a spend, which this run recorded (on their own days). */
+    /** The posts an earlier run of the week left without a spend, which this round recorded (on their own days). */
     readonly adopted: readonly PickRecord[];
+    /** The personas whose pick of the day this round kept (the day's first round) for their session. */
+    readonly kept: readonly string[];
+    /** The round's turns, taken, skipped, rejected and failed. */
+    readonly turns: readonly TurnRecord[];
   };
 
 interface Context {
@@ -197,6 +241,19 @@ const stopsTheRun = (e: unknown): boolean => e instanceof LedgerWriteFailed || e
 /** A refusal a SQL function raised on purpose (a 4xx with its own words), as opposed to a database that is down. */
 const isRefusal = (e: unknown): e is DatabaseError => e instanceof DatabaseError && e.status >= 400 && e.status < 500;
 
+/** A persona's visit on the day, as `sessions_day` reports it. */
+interface DaySession { readonly staff: string; readonly session: number; readonly startsAt: string; readonly endsAt: string }
+
+// The minutes between rounds: N where the cron's minute field is a step of every N minutes (star, slash, N), else 15, the design's round.
+export function cronMinutes(cron: string): number {
+  const field = cron.trim().split(/\s+/)[0] ?? '';
+  const step = /^\*\/(\d+)$/.exec(field);
+  const n = step ? Number(step[1]) : 0;
+  return Number.isSafeInteger(n) && n >= 1 ? n : 15;
+}
+
+const isPosting = (office: string | undefined): boolean => office !== undefined && (POSTING_OFFICES as readonly string[]).includes(office);
+
 export async function runChatter(db: Db, models: Models, instance: Instance, slot: string): Promise<ChatterOutcome> {
   const slotAt = Date.parse(slot);
   if (Number.isNaN(slotAt)) throw new Error(`chatter: slot is not a time: ${JSON.stringify(slot)}`);
@@ -204,43 +261,35 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const settings = tuned.settings;
   if (!settings.systemEnabled) return { status: 'off' };
 
+  // One round of a slot at a time: the claim is taken before anything is read or written, and a crashed round's claim ages out by itself.
+  const round = await db.rpc<string | null>('claim_pool_round', { slot: new Date(slotAt).toISOString() });
+  if (round === null) return { status: 'busy' };
   const day = dayOf(slotAt);
-  // One run of a day at a time: the claim is taken before anything is read or written, and a crashed run's claim ages out by itself.
-  const claimed = await db.rpc<string | null>('claim_pool_run', { on_day: day, lease: CLAIM_LEASE });
-  if (claimed === null) return { status: 'busy' };
+
+  // The day's first round is the one that finds the day not marked started (`pool_day_started`). It claims the day, as the daily run always has, before anything else is read.
+  // `write_sessions` writes the mark, last: it is the first round's last call, after every pick is kept, and it marks the day in the same transaction as the sessions (a day that draws none
+  // is marked all the same). A crash before it leaves the day unmarked, so the next round redoes the day whole (a second keep and a second write of the same rows are no-ops) and loses no pick.
+  const [started, daySessions] = await Promise.all([db.rpc<boolean>('pool_day_started', { on_day: day }), db.rpc<DaySession[]>('sessions_day', { on_day: day })]);
+  let sessions = daySessions;
+  if (!started) {
+    const claimed = await db.rpc<string | null>('claim_pool_run', { on_day: day, lease: CLAIM_LEASE });
+    if (claimed === null) return { status: 'busy' };
+  }
   const context = await db.rpc<Context>('pool_context', {});
   if (!context.season) return { status: 'no season' };
   const adopted = await adoptOrphans(db, day);
   const week = await db.rpc<Week>('pool_week', { today: day });
+  const first = !started;
 
-  // The allowance counts the week before today, so a rerun of the day computes the day's allowance the first run did.
+  // The allowance counts the week before today, so every round of the day computes the allowance the first did.
   const todays = allowance(week.spent, settings.pool.weekly, slotAt);
   const startedToday = week.today.some((r) => r.started_thread);
   let threadsLeft = startedToday ? 0 : Math.max(settings.pool.threadsWeekly - week.threads, 0);
   let used = week.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0);
   const already = new Set(week.today.map((r) => r.staff));
   const records: PickRecord[] = [];
-  if (todays === 0) return { status: 'ok', day, allowance: todays, picks: records, adopted };
-
+  const kept: string[] = [];
   const roster = tuned.system.roster;
-  const signals = await db.rpc<PoolSignals>('pool_signals', { since: new Date(slotAt - DAY).toISOString(), until: new Date(slotAt).toISOString() });
-  const memories: Record<string, Memory | undefined> = {};
-  await Promise.all(roster.map(async (p) => {
-    let m = await db.rpc<Memory | null>('staff_memory_latest', { staff: p.key });
-    if (m === null && p.inheritsMemoryOf) m = await db.rpc<Memory | null>('staff_memory_latest', { staff: p.inheritsMemoryOf });
-    if (m !== null) memories[p.key] = m;
-  }));
-
-  const phase: PoolPhase = {
-    season: context.season,
-    since: slotAt - DAY,
-    until: slotAt,
-    settings,
-    boss: context.boss,
-    predecessor: context.predecessor,
-  };
-  const cands = candidates(signals, roster, memories, phase, { offices: context.offices, boards: context.boards, characters: context.characters, lockouts: context.lockouts ?? [] });
-  const picked = pick(cands, priorities(signals.tallies), todays, threadsLeft, dayRng(day), { strengths: settings.pool.strengths, holdback: settings.pool.holdback });
 
   const slugs = new Set(Object.values(context.boards));
   const offerable = settings.pool.cardRarityMost;
@@ -250,27 +299,334 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
     return inPrint(c) && (play === 'cast' || play === 'set') && atOrBelow(c.rarity, offerable) && staffOffers(c) && !withheld(c, settings);
   });
 
-  for (const p of picked.picks) {
-    const persona = roster.find((r) => r.key === p.staff);
-    const base = { staff: p.staff, trigger: p.trigger, trims: [] as Trim[] };
-    if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
-    if (already.has(p.staff)) { records.push({ ...base, status: 'already' }); continue; }
-    if (used + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
+  if (first) {
+    if (todays > 0) {
+      const keeping = await keepThePicks({ db, tuned, context, roster, slotAt, day, todays, threadsLeft, used, already });
+      records.push(...keeping.records);
+      kept.push(...keeping.kept);
+    }
+    // The sessions come last: they are what says the day's first round is done (see the header).
+    await drawTheSessions(db, tuned, context, day);
+    sessions = await db.rpc<DaySession[]>('sessions_day', { on_day: day });
+  }
 
-    const record = await onePick({
-      db, models, tuned, persona, office: p.office, p, day, slugs, cardsOnOffer,
-      threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
-    });
-    records.push(record);
-    // A thread start whose spend failed is still a thread started: the rerun adopts it, and no second starts meanwhile.
-    if (record.status === 'failed' && record.post && record.startedThread) threadsLeft = 0;
-    if (record.status === 'posted') {
-      used += 1 + (record.card ? 1 : 0);
-      already.add(p.staff);
-      if (record.startedThread) threadsLeft = 0;
+  if (todays > 0) {
+    // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
+    const keptPicks = await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day });
+    for (const k of keptPicks) {
+      const p = k.pick;
+      const mine = sessions.filter((x) => x.staff === k.staff);
+      const open = mine.some((x) => Date.parse(x.startsAt) <= slotAt && slotAt < Date.parse(x.endsAt));
+      const toCome = mine.some((x) => Date.parse(x.endsAt) > slotAt);
+      if (!open && toCome) continue;
+      const persona = roster.find((r) => r.key === k.staff);
+      const base = { staff: k.staff, trigger: p.trigger, trims: [] as Trim[] };
+      if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
+      if (already.has(k.staff)) { records.push({ ...base, status: 'already' }); continue; }
+      if (used + 1 > todays) continue;
+
+      const record = await onePick({
+        db, models, tuned, persona, office: p.office, p, day, slugs, cardsOnOffer,
+        threadsLeft, cardRoom: p.cardSlot && used + 2 <= todays,
+      });
+      records.push(record);
+      // A thread start whose spend failed is still a thread started: the rerun adopts it, and no second starts meanwhile.
+      if (record.status === 'failed' && record.post && record.startedThread) threadsLeft = 0;
+      if (record.status === 'posted') {
+        used += 1 + (record.card ? 1 : 0);
+        already.add(k.staff);
+        if (record.startedThread) threadsLeft = 0;
+      }
     }
   }
-  return { status: 'ok', day, allowance: todays, picks: records, adopted };
+
+  const turns = await takeTurns({ db, models, tuned, context, slotAt, day });
+  return { status: 'ok', day, allowance: todays, picks: records, adopted, kept, turns };
+}
+
+interface Keeping {
+  readonly db: Db;
+  readonly tuned: Instance;
+  readonly context: Context;
+  readonly roster: readonly Persona[];
+  readonly slotAt: number;
+  readonly day: string;
+  readonly todays: number;
+  readonly threadsLeft: number;
+  readonly used: number;
+  readonly already: ReadonlySet<string>;
+}
+
+/** The daily path as ever it ran (the signals, `candidates`, `pick`), except that each pick is kept for its persona's session (`keep_pick`) where it was written. */
+async function keepThePicks(k: Keeping): Promise<{ records: PickRecord[]; kept: string[] }> {
+  const { db, tuned, context, roster, slotAt, day, todays, threadsLeft } = k;
+  const settings = tuned.settings;
+  const signals = await db.rpc<PoolSignals>('pool_signals', { since: new Date(slotAt - DAY).toISOString(), until: new Date(slotAt).toISOString() });
+  const memories: Record<string, Memory | undefined> = {};
+  await Promise.all(roster.map(async (p) => {
+    let m = await db.rpc<Memory | null>('staff_memory_latest', { staff: p.key });
+    if (m === null && p.inheritsMemoryOf) m = await db.rpc<Memory | null>('staff_memory_latest', { staff: p.inheritsMemoryOf });
+    if (m !== null) memories[p.key] = m;
+  }));
+  const phase: PoolPhase = {
+    season: context.season!,
+    since: slotAt - DAY,
+    until: slotAt,
+    settings,
+    boss: context.boss,
+    predecessor: context.predecessor,
+  };
+  const cands = candidates(signals, roster, memories, phase, { offices: context.offices, boards: context.boards, characters: context.characters, lockouts: context.lockouts ?? [] });
+  const picked = pick(cands, priorities(signals.tallies), todays, threadsLeft, dayRng(day), { strengths: settings.pool.strengths, holdback: settings.pool.holdback });
+  const records: PickRecord[] = [];
+  const kept: string[] = [];
+  // The picks already kept for the day (a first round redone in a later slot, whose signal window has shifted) count toward the day's allowance and are not kept again.
+  const before = await db.rpc<{ staff: string }[]>('kept_picks', { on_day: day });
+  const keptAlready = new Set(before.map((b) => b.staff));
+  let planned = k.used + keptAlready.size;
+  for (const p of picked.picks) {
+    const base = { staff: p.staff, trigger: p.trigger, trims: [] as Trim[] };
+    if (!roster.some((r) => r.key === p.staff)) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
+    if (k.already.has(p.staff)) { records.push({ ...base, status: 'already' }); continue; }
+    if (keptAlready.has(p.staff)) continue;
+    if (planned + 1 > todays) { records.push({ ...base, status: 'skipped', why: 'the day\'s allowance is spent' }); continue; }
+    await db.rpc('keep_pick', { on_day: day, of_staff: p.staff, pick: p });
+    planned += 1;
+    kept.push(p.staff);
+  }
+  return { records, kept };
+}
+
+/**
+ * The sessions each posting persona (one in a posting office) keeps on the day, drawn by plain code seeded from the day and the persona and written once
+ * (`write_sessions`; a row already there is left as it is). Where the database refuses the whole list (a persona benched since the context was read), each persona's own
+ * rows are written on their own and the one refused is left without: a persona that cannot post keeps no session, and the rest keep theirs.
+ */
+async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: string): Promise<void> {
+  const rows = tuned.system.roster.filter((p) => isPosting(context.offices[p.key]))
+    .flatMap((p) => drawSessions(p, day, tuned.settings.pool, sessionRng(day, p.key)).map((s) => ({ staff: p.key, start: s.start, end: s.end })));
+  try {
+    // One call, which also marks the day started, even with no rows.
+    await db.rpc('write_sessions', { on_day: day, rows });
+  } catch (e) {
+    if (stopsTheRun(e) || !isRefusal(e)) throw e;
+    // Persona by persona, none of them marking the day, then one closing call that does: a crash among them leaves the day unmarked, and the next round finishes it.
+    for (const staff of new Set(rows.map((r) => r.staff))) {
+      try {
+        await db.rpc('write_sessions', { on_day: day, rows: rows.filter((r) => r.staff === staff), mark: false });
+      } catch (each) {
+        if (stopsTheRun(each) || !isRefusal(each)) throw each;
+      }
+    }
+    await db.rpc('write_sessions', { on_day: day, rows: [] });
+  }
+}
+
+/** The bounds a call's prompt and repair are held to. */
+function limitsOf(settings: Instance['settings']) {
+  return { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
+}
+
+/** A thread read as the prompt shows it: each post's author's pronouns resolved to the instance's default where it has none. */
+function threadOf(read: ThreadRead, instanceSet: PronounSet) {
+  return { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) };
+}
+
+/** A character's name by id for the memory's opinions, with its pronouns beside it; a character the read did not return is "a character". */
+function namesOf(faces: Record<string, { name: string; pronouns: PronounSet | null }>, instanceSet: PronounSet): (id: string) => string {
+  return (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; };
+}
+
+/** An answer repaired under the validator rule: the answer and every trim made, or why it could not be repaired (the predicate and path that failed) with the trims made before it. */
+function repairAnswer(raw: unknown, settings: Instance['settings'], askedTitle: boolean, offered: readonly OfferedCard[]):
+  { ok: true; answer: ChatterAnswer; trims: Trim[] } | { ok: false; why: string; trims: readonly Trim[] } {
+  const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle, offered });
+  if (!repaired.ok) return { ok: false, why: `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, trims: repaired.trims };
+  return { ok: true, answer: repaired.answer, trims: [...repaired.trims] };
+}
+
+/** The persona's own reads for a call: its career, memory, notes and the faces its memory names. */
+async function personaReads(db: Db, settings: Instance['settings'], staff: string) {
+  const [career, memory, since] = await Promise.all([
+    db.rpc<Career>('staff_career', { of_staff: staff }),
+    db.rpc<Memory | null>('staff_memory_latest', { staff }),
+    db.rpc<string | null>('staff_memory_at', { staff }),
+  ]);
+  const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
+  const known = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
+  const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
+  return { career, memory, notes, faces };
+}
+
+/** The most replies to one of its posts a conversation view shows (the database clamps at ten). */
+const CONVERSATION_REPLIES = 10;
+
+interface ConversationRead {
+  readonly posts: readonly {
+    readonly act: string;
+    readonly body: string;
+    readonly cut?: boolean;
+    readonly replies: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string; readonly cut?: boolean }[];
+  }[];
+}
+
+/** What a call reads of a thread beside the thread itself: the persona's own conversation there, the public record, and its talking point. */
+async function threadReads(db: Db, settings: Instance['settings'], staff: string, thread: string) {
+  const [conversation, record, points] = await Promise.all([
+    db.rpc<ConversationRead>('pool_conversation', { staff_key: staff, in_thread: thread, most: settings.pool.chatterThreadPosts, replies: CONVERSATION_REPLIES, chars: settings.digestExcerptChars }),
+    db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: staff }),
+    db.rpc<string | null>('staff_points_latest', { staff_key: staff }),
+  ]);
+  return { conversation, record, points };
+}
+
+/** The view the prompt shows: pronouns resolved as a thread post's are, and the replies this call answers named. */
+function viewOf(c: ConversationRead, instanceSet: PronounSet, answering: readonly string[]): ConversationView {
+  return {
+    posts: c.posts.map((m) => ({ act: m.act, body: m.body, cut: m.cut === true, replies: m.replies.map((r) => ({ act: r.act, name: r.name, pronouns: pronounsOr(r.pronouns, instanceSet), body: r.body, cut: r.cut === true })) })),
+    answering,
+  };
+}
+
+interface TurnsRun {
+  readonly db: Db;
+  readonly models: Models;
+  readonly tuned: Instance;
+  readonly context: Context;
+  readonly slotAt: number;
+  readonly day: string;
+}
+
+/**
+ * The round's turns: the personas in session now, the replies waiting on them since the wait began, the day's share of the ceiling, and `planTurns`.
+ * One after another, as the picks are. Nothing is read unless a persona is in session and the day has turns left.
+ */
+async function takeTurns(r: TurnsRun): Promise<TurnRecord[]> {
+  const { db, tuned, context, slotAt, day } = r;
+  const rules = tuned.settings.pool.turns;
+  const awake = await db.rpc<AwakeSession[]>('sessions_awake', { at: new Date(slotAt).toISOString() });
+  if (awake.length === 0) return [];
+  const spentToday = await db.rpc<number>('pool_turns_today', { on_day: day });
+  const share = roundShare(spentToday, rules.perDay, slotAt, cronMinutes(tuned.settings.pool.chatterCron));
+  if (share === 0) return [];
+  const keys = [...new Set(awake.map((a) => a.staff))].sort();
+  const open = await db.rpc<OpenThread[]>('pool_waiting', { staff_keys: keys, since: new Date(slotAt - rules.waitHours * 3_600_000).toISOString() });
+  const records: TurnRecord[] = [];
+  for (const planned of planTurns(open, awake, share, rules, slotAt)) {
+    const persona = tuned.system.roster.find((p) => p.key === planned.staff);
+    const office = context.offices[planned.staff];
+    const base = { staff: planned.staff, thread: planned.thread, session: planned.session, answers: planned.answers, trims: [] as Trim[] };
+    if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
+    if (!isPosting(office)) { records.push({ ...base, status: 'skipped', why: 'the persona holds no posting office' }); continue; }
+    records.push(await oneTurn({ ...r, persona, office: office as PostingOffice, planned }));
+  }
+  return records;
+}
+
+interface TurnRun extends TurnsRun {
+  readonly persona: Persona;
+  readonly office: PostingOffice;
+  readonly planned: PlannedTurn;
+}
+
+/** One turn, from its reads to its note. Never throws except for a run-stopping error. A call that failed or was rejected, or a write that was refused, spends nothing and its replies wait. */
+async function oneTurn(r: TurnRun): Promise<TurnRecord> {
+  const { db, models, tuned, persona, planned } = r;
+  const settings = tuned.settings;
+  const base = { staff: planned.staff, thread: planned.thread, session: planned.session };
+  const skip = (why: string, answers: readonly string[] = planned.answers): TurnRecord => ({ ...base, status: 'skipped', why, answers, trims: [] });
+  const fail = (status: 'failed' | 'rejected', why: string, answers: readonly string[], trims: readonly Trim[]): TurnRecord => ({ ...base, status, why, answers, trims });
+  try {
+    const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
+    const [view, read, reads] = await Promise.all([
+      threadReads(db, settings, planned.staff, planned.thread),
+      db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: planned.quoting }),
+      personaReads(db, settings, planned.staff),
+    ]);
+    // A turn answers every waiting reply it was handed, and is shown each: those in the conversation view, and for the rest (replies to an older post of its own) the one post
+    // read alone (`pool_thread` with `most` 0 and `also`, a bounded read of one post). A reply that cannot be read is not answered (the database would find it no longer waiting).
+    const shown = new Map<string, { name: string; pronouns: PronounSet | null; body: string; cut?: boolean }>(view.conversation.posts.flatMap((m) => m.replies.map((x) => [x.act, x] as const)));
+    const missing = planned.answers.filter((a) => !shown.has(a));
+    const fetched = await Promise.all(missing.map((act) => db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: 0, chars: settings.digestExcerptChars, also: act })));
+    const others: { act: string; name: string; pronouns: PronounSet; body: string; cut: boolean }[] = [];
+    missing.forEach((act, i) => {
+      const x = fetched[i]!.posts.find((q) => q.act === act);
+      if (!x) return;
+      shown.set(act, x);
+      others.push({ act, name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true });
+    });
+    const answers = planned.answers.filter((a) => shown.has(a));
+    if (answers.length === 0) return skip('none of the waiting replies can be read');
+    const quoting = answers.includes(planned.quoting) ? planned.quoting : answers.at(-1)!;
+    const quotedRead = shown.get(quoting)!;
+    const quotedPost: ThreadPost = { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true };
+    const limits = limitsOf(settings);
+    const thread = threadOf(read, instanceSet);
+    const { career, memory, notes, faces } = reads;
+
+    let raw: unknown;
+    try {
+      if (persona.voice === 'oldVoice') {
+        // The conversation view is its thread: each of its posts, then the replies to it, the newest last.
+        const own = pronounsOr(persona.pronouns, instanceSet);
+        const posts = view.conversation.posts.flatMap((m) => [{ name: persona.name, pronouns: own, body: m.body, cut: m.cut === true }, ...m.replies.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true }))]).concat(others);
+        const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
+        const frame = chatterCompletion({ name: persona.name, thread: { title: read.title, posts }, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
+        const out = await scrubbedComplete(models, {
+          duty: 'conversation', staff: planned.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: settings.postMaxLength,
+        }, tuned.system.scrubWords);
+        raw = { words: out.value };
+      } else {
+        const frame = chatterPrompt({
+          premise: TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread, quoting: quotedPost,
+          trigger: 'answered', conversation: { ...viewOf(view.conversation, instanceSet, answers), others }, record: view.record, points: view.points,
+          // A turn offers no card: the ceiling counts calls and nothing else.
+          offeredCards: [], startThread: false, limits, names: namesOf(faces, instanceSet),
+        });
+        const out = await models.chat({
+          duty: 'conversation', tier: DUTY_SPECS.conversation.tier, staff: planned.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
+          schema: chatterSchema({ askedTitle: false, offered: [] }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
+        });
+        raw = out.value;
+      }
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      return fail(e instanceof AnswerRejected ? 'rejected' : 'failed', said(e), answers, []);
+    }
+
+    const repaired = repairAnswer(raw, settings, false, []);
+    if (!repaired.ok) return fail('rejected', repaired.why, answers, repaired.trims);
+    const { answer, trims } = repaired;
+
+    // The turn, whole: the post, the turn's row and each reply's answered row, in one transaction. A refusal writes nothing; the replies wait.
+    let post: string;
+    try {
+      const written = await db.rpc<{ turn: number; post: { id: string } }>('write_staff_turn', {
+        staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, quoting, answers, body: answer.words,
+      });
+      post = written.post.id;
+    } catch (e) {
+      if (stopsTheRun(e)) throw e;
+      if (isRefusal(e) && e.hint === 'kayfabb.refusal') return { ...base, status: 'skipped', why: e.reason, answers, trims };
+      return fail('failed', said(e), answers, trims);
+    }
+
+    // From here the turn is written: a failed note loses nothing and writes nothing twice.
+    let noteWritten = false;
+    if (answer.note) {
+      try {
+        await db.rpc('write_staff_note', { staff_key: planned.staff, post, body: answer.note });
+        noteWritten = true;
+      } catch (e) {
+        if (stopsTheRun(e)) throw e;
+      }
+    }
+    return { ...base, status: 'taken', post, answers, trims, noteWritten };
+  } catch (e) {
+    if (stopsTheRun(e)) throw e;
+    if (e instanceof DatabaseError) return fail('failed', said(e), planned.answers, []);
+    throw e;
+  }
 }
 
 interface PickRun {
@@ -321,17 +677,13 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         ...wallsOf(c, read) }))
       : [];
 
-    const [career, memory, since] = await Promise.all([
-      db.rpc<Career>('staff_career', { of_staff: p.staff }),
-      db.rpc<Memory | null>('staff_memory_latest', { staff: p.staff }),
-      db.rpc<string | null>('staff_memory_at', { staff: p.staff }),
-    ]);
-    const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: p.staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
-    const known = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
-    const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
+    const { career, memory, notes, faces } = await personaReads(db, settings, p.staff);
+    // The conversation in the thread, the public record and the persona's talking point, as a turn is given them (the old voice writes its words from the thread alone).
+    const extra = read && persona.voice === 'chat' ? await threadReads(db, settings, p.staff, p.thread!) : null;
+    const points = persona.voice !== 'chat' ? null : extra !== null ? extra.points : await db.rpc<string | null>('staff_points_latest', { staff_key: p.staff });
 
-    const limits = { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
-    const thread = read ? { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) } : null;
+    const limits = limitsOf(settings);
+    const thread = read ? threadOf(read, instanceSet) : null;
 
     // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
     let raw: unknown;
@@ -347,8 +699,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       } else {
         const frame = chatterPrompt({
           premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
-          quoting: quotedPost,
-          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: (id) => { const f = faces[id]; return f ? taggedName(clip(f.name, 60), pronounsOr(f.pronouns, instanceSet)) : 'a character'; },
+          quoting: quotedPost, conversation: extra ? viewOf(extra.conversation, instanceSet, []) : null, record: extra?.record ?? null, points,
+          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: namesOf(faces, instanceSet),
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
@@ -361,10 +713,9 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       return fail(e instanceof AnswerRejected ? 'rejected' : 'failed', said(e), []);
     }
 
-    const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle: startsThread, offered });
-    if (!repaired.ok) return fail('rejected', `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, repaired.trims);
-    const answer = repaired.answer;
-    const trims: Trim[] = [...repaired.trims];
+    const repaired = repairAnswer(raw, settings, startsThread, offered);
+    if (!repaired.ok) return fail('rejected', repaired.why, repaired.trims);
+    const { answer, trims } = repaired;
 
     // The post. A database error here stops this pick with nothing written.
     let post: string;

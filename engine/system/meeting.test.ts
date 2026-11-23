@@ -3,7 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { systemSettings, testSystem } from '../rules/test-system.ts';
 import { DEMAND_KINDS } from './demands.ts';
-import { DEMAND_ID_ROLES, HANDOFF_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
+import { DEMAND_ID_ROLES, HANDOFF_MOST, POINTS_MOST, MEETING_FIELDS, MEETING_PARTS, MEETING_RULE, handoffFactsText, inFarewellWindow, inheritedText, meetingSystemPrompt, movesAsk, PROFILE_MOST, namedCharacters, partRule, partSchema, predecessorText, referenceText, repairAnswer, ruleSchema, type HandoffFacts, type InheritedMove, type MachineSlotFacts, type RepairContext } from './meeting.ts';
 import { MEMORY_MOST, noteMost } from './memory.ts';
 import type { TrophyFacts } from './moves.ts';
 import { schemaProblems } from './schema.ts';
@@ -142,7 +142,7 @@ test('the inheritance section is in plain words, says reviewing is free and what
 
 test('the system prompt carries the Boss\'s career as plain facts, and says so when there is none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
   };
   const served = meetingSystemPrompt({ ...facts, career: { led: [{ season: 3, since: '2026-04-01T00:00:00+00:00', until: null, how: 'nomination' }], offices: [] } });
   assert.ok(served.includes('Your career, as plain facts'), served);
@@ -152,7 +152,7 @@ test('the system prompt carries the Boss\'s career as plain facts, and says so w
 
 test('the Boss\'s recent notes are in the prompt as its own thoughts, capped at notesRead with the newest kept, and the section is absent when there are none', () => {
   const facts = {
-    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [],
     career: { led: [], offices: [] },
   };
   const notes = Array.from({ length: settings.pool.notesRead + 3 }, (_, i) => `thought number ${i + 1}`);
@@ -177,7 +177,7 @@ test('the rule\'s schema lists description among the rename\'s params, and the p
   const params = schema.properties.moves.items.properties.params;
   assert.ok('description' in params.properties, JSON.stringify(Object.keys(params.properties)));
   assert.ok(!params.required.includes('description'), 'optional: a Boss that gives none gets the stock line');
-  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const prompt = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   const rename = prompt
     .split('\n').find((l) => l.startsWith('- renameBoard'))!;
   assert.match(rename, /description \(text\)/);
@@ -255,7 +255,7 @@ test('a setRule on a board outside the meeting\'s list, or with a param its pred
 });
 
 test('the prompt lists the predicates a rule may use', () => {
-  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /setRule: set a rule/);
   for (const key of ['minLength', 'noDoublePost', 'repliesOnly']) assert.ok(text.includes(key), key);
 });
@@ -374,7 +374,7 @@ test('the prompt shows each Mod: its name, career, beat preferences, pet rules, 
     memory: memoryOf('birdwatching', { opinions: [{ character: ANN, score: 2, note: 'Polite.' }] }),
     granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
   };
-  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: (id: string) => (id === ANN ? 'Ann the Great' : 'someone') };
   const text = meetingSystemPrompt({ ...facts, mods: [mod] });
   for (const piece of ['Sir Patrols-a-Lot', `key ${M1}`, 'Mod Bot from 2026-10-01', 'games, general', 'noDoublePost', 'fussy about bumps', 'Saw a bump in Games.', 'birdwatching', 'Ann the Great 2', 'they spent 2 and 1 goes back to your bank', `Mario Fan Games (${BOARD})`, 'Crack down on bumping.']) {
     assert.ok(text.includes(piece), `${piece} is in the prompt`);
@@ -398,7 +398,7 @@ test('a Mod\'s section is written with its own pronouns: they/them reads "Their 
     career: { led: [], offices: [] }, notes: ['Saw a bump.'], memory: memoryOf('birdwatching'),
     granted: 3, unspent: 1, boards: [{ id: BOARD, name: 'Mario Fan Games' }], order: 'Crack down on bumping.',
   };
-  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'mod-x', name: 'Xe', pronouns: PRONOUN_PRESETS.he }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone' };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'mod-x', name: 'Xe', pronouns: PRONOUN_PRESETS.he }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone' };
   const they = meetingSystemPrompt({ ...facts, mods: [mod] });
   assert.ok(they.includes('## Sir Patrols-a-Lot (they/them, key mod-one)'), 'the heading');
   for (const line of ['They have held no office before.', 'You last handed them 3 moves; they spent 2', 'Their beat now: Mario Fan Games', 'Your standing order to them: Crack down', 'Their memory: hobby birdwatching', 'Their notes since their last memory (their own thoughts;']) assert.ok(they.includes(line), line);
@@ -411,7 +411,7 @@ test('a Mod\'s section is written with its own pronouns: they/them reads "Their 
 });
 
 test('the Boss\'s prompt opens with the Boss premise, holds the Boss\'s office line, and no other office\'s premise or line', () => {
-  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [] };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [], posting: [] };
   const text = meetingSystemPrompt(facts);
   assert.ok(text.startsWith(testSystem.offices.boss.premise), 'opens with the Boss premise');
   assert.ok(text.includes(testSystem.roster[0]!.officeLines!.boss!), 'the Boss line');
@@ -647,7 +647,7 @@ test('a field two kinds share is dropped without a trim for the kind that has no
 });
 
 test('the prompt no longer tells the Boss to leave out a demand or a rule\'s board, which its schema requires', () => {
-  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
   assert.ok(!/leave "demand" out/.test(served) && !/left out for every board/.test(served), served);
   assert.match(served, /empty kind/);
   assert.match(served, /empty text for every board/);
@@ -657,7 +657,7 @@ test('the prompt no longer tells the Boss to leave out a demand or a rule\'s boa
 });
 
 test('the prompt tells the Boss the machine\'s three moves, their bounds and which carry a demand', () => {
-  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
   assert.match(served, /pullSlot/);
   assert.match(served, /at most 2 slots pulled at once/);
   assert.match(served, /50 to 200 percent/);
@@ -758,7 +758,7 @@ test('namedCharacters includes the character a group move names, so it is checke
 
 test('the prompt lists the conferred groups with their tones and the rules for choosing, and says which kinds a Mod may be handed', () => {
   const mod = { key: M1, name: 'Sir Patrols-a-Lot', pronouns: PRONOUN_PRESETS.it, temperament: 'fussy', beats: [], petRules: [], career: { led: [], offices: [] }, notes: [], memory: null, granted: null, unspent: 0, boards: [], order: null };
-  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [mod] };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [mod] };
   const text = meetingSystemPrompt({ ...facts, groups: { conferred: [{ key: 'trialMembers', name: 'Trial Members', tone: 'punishment' }, { key: 'teachersPet', name: 'Teacher\'s Pet', tone: 'favor' }] } });
   assert.match(text, /trialMembers \(Trial Members\): a punishment/);
   assert.match(text, /teachersPet \(Teacher's Pet\): a favor/);
@@ -902,7 +902,7 @@ const LAP: Beat = { key: 'victory-lap', unlock: [{ kind: 'phase', phase: 'reign'
 const arcPersona: Pick<Persona, 'arc' | 'miniArcs'> = { arc: [SPLIT, APART, CONSOLIDATION, EVERYTHING], miniArcs: [LAP] };
 const read = (keys: string[], due: string[] = [], heldBack: string[] = []): ArcRead => ({ beats: keys.map((key) => ({ key, mini: key === 'victory-lap', due: due.includes(key) })), heldBack });
 const promptFacts = (extra: Record<string, unknown> = {}) => ({
-  boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
+  boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [],
   career: { led: [], offices: [] }, ...extra,
 });
 /** What the secret must never reach: a locked beat's brief, or its key. */
@@ -1205,7 +1205,7 @@ const handoffFacts: HandoffFacts = {
   busiest: [{ board: BOARD, name: 'Pirate Puns Palace', posts: 41 }],
   quietest: [{ board: OTHER_BOARD, name: 'Old Corner', posts: 0 }],
 };
-const bossFacts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } };
+const bossFacts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } };
 
 test('a meeting in the farewell window is told to write a farewell in character and a handoff out of it, with their bounds; any other meeting is not', () => {
   const told = meetingSystemPrompt({ ...bossFacts, farewell: { postMaxLength: 777 } });
@@ -1331,7 +1331,7 @@ test('the reference list of trophies goes with the award move: held back, neithe
 });
 
 test('the prompt tells the Boss the award move and that it carries no demand', () => {
-  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
+  const served = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.it, posting: [], system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], career: { led: [], offices: [] }, notes: [] });
   assert.match(served, /awardTrophy: .*params: .*trophy.*character/);
 });
 
@@ -1356,7 +1356,7 @@ const tally = (schema: any): { properties: number; optional: number; unions: num
 
 test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
   assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
-  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols'], ['memory', 'profile', 'beats', 'farewell', 'handoff']]);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols', 'points'], ['memory', 'profile', 'beats', 'farewell', 'handoff']]);
   const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
   assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
   assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
@@ -1376,7 +1376,7 @@ test('the first turn asks only for what the meeting offers: moves always, inheri
 });
 
 test('a standing nomination is told to the Boss in place of the invitation to name one; the roster line stays', () => {
-  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'quality-control', name: 'QC-1000', pronouns: PRONOUN_PRESETS.it }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [] };
+  const facts = { boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, successorAllowed: true, roster: [{ key: 'quality-control', name: 'QC-1000', pronouns: PRONOUN_PRESETS.it }], notes: [], career: { led: [], offices: [] }, characterName: () => 'someone', mods: [], posting: [] };
   const since = Date.parse('2026-10-30T09:00:00Z');
   const named = meetingSystemPrompt({ ...facts, nomination: { boss: 'quality-control', name: 'QC-1000', since } });
   assert.ok(named.includes('You named QC-1000 on 2026-10-30. That stands unless you name someone else; naming QC-1000 again changes nothing.'), 'the standing nomination');
@@ -1401,8 +1401,9 @@ test('a successor naming the Boss\'s standing nominee is dropped as no new nomin
 });
 
 // The moves part is 40 of the provider's 40, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.
-const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 23, self: 28 } as const;
-const OPTIONAL = { moves: 1, bundle: 1, staff: 7, self: 4 } as const;
+// The staff part is 26 of the provider's 40: the orders and patrols, and the talking points' list with its two fields (points, staff, line).
+const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 26, self: 28 } as const;
+const OPTIONAL = { moves: 1, bundle: 1, staff: 8, self: 4 } as const;
 for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
   test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
@@ -1581,12 +1582,12 @@ test('a present but broken memory still rejects, naming the path', () => {
 });
 
 test('the system prompt says the meeting is answered in four turns, and names each part once, from the parts', () => {
-  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
+  const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /The meeting is answered in four turns/);
   // The beats, the farewell and the handoff are named only to a meeting that has any to answer (the next two tests).
   for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff'].includes(f)).join(', ')})`).length - 1, 1, p.key);
   assert.equal(MEETING_PARTS.length, 4);
-  const told = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, farewell: { postMaxLength: 500 }, beats: shownSplit });
+  const told = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, farewell: { postMaxLength: 500 }, beats: shownSplit });
   assert.ok(told.includes('the "self" part (memory, profile, beats, farewell, handoff)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
   assert.ok(text.endsWith('Answer only in the structure you are asked for.'));
 });
@@ -1601,7 +1602,7 @@ test('each part\'s own rule accepts its own schema\'s shape: a rule with every f
 
 test('the system prompt states each bound the profile and memory are held to, with the number from the rules', () => {
   const facts = {
-    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] },
+    boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] },
   };
   const served = meetingSystemPrompt(facts);
   assert.ok(served.includes(`a mood (a short phrase, at most ${PROFILE_MOST.mood} characters)`), served);
@@ -1685,4 +1686,75 @@ test('a move that waits an hour is dropped when the season ends at that very mom
   assert.ok(!at.moves.some((m) => m.kind === 'moveThread'), JSON.stringify(at.moves));
   const before = seasonRepair({ seasonEndsAt: NOW + H + 1 });
   assert.ok(before.moves.some((m) => m.kind === 'moveThread'), JSON.stringify(before.moves));
+});
+
+/* ------------------------------------------------------------------ the talking points (chattier staff plan, Task 5) ---- */
+
+const P_BOSS = 'boss-key';
+const P_MOD = 'mod-key';
+const P_MEMBER = 'member-key';
+const postingCtx = (extra: Partial<RepairContext> = {}): RepairContext => modCtx({ posting: new Set([P_BOSS, P_MOD, P_MEMBER]), ...extra });
+const withPoints = (points: unknown[], extra: Record<string, unknown> = {}) => ({ ...answer(null), moves: [], points, ...extra });
+const posted = (key: string, name: string, office: string) => ({ key, name, pronouns: PRONOUN_PRESETS.she, office, temperament: `${name} is TEMPER-${key}.` });
+
+test('the staff part asks for points, a list of staff and line, and the bound is POINTS_MOST', () => {
+  assert.equal(POINTS_MOST, 200);
+  const schema = partSchema('staff') as any;
+  assert.deepEqual([...schema.properties.points.items.required].sort(), ['line', 'staff']);
+  assert.ok(!schema.required.includes('points'), 'optional like the orders: a part that is left out repairs');
+});
+
+test('a point for a persona that posts is kept; the prompt names every posting persona, the bound and what it is for', () => {
+  const posting = [posted(P_BOSS, 'Bossy', 'boss'), posted(P_MOD, 'Modly', 'mod'), posted(P_MEMBER, 'Memby', 'member')];
+  const prompt = meetingSystemPrompt(promptFacts({ posting }));
+  for (const p of posting) assert.ok(prompt.includes(p.key) && prompt.includes(p.name) && prompt.includes(`TEMPER-${p.key}`), `${p.key} is named with its office and temperament`);
+  assert.ok(prompt.includes(`at most ${POINTS_MOST} characters`) && prompt.includes('read by that persona\'s posts until the next meeting and never acted on'), prompt);
+  assert.ok(prompt.includes('a persona you leave out has no talking points today'), 'a persona left out has none');
+  const r = repairAnswer(withPoints([{ staff: P_MOD, line: 'Needle Bossy about the toast rule.' }, { staff: P_MEMBER, line: 'Defend the Pineapple thread.' }]), postingCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.points, [{ staff: P_MOD, line: 'Needle Bossy about the toast rule.' }, { staff: P_MEMBER, line: 'Defend the Pineapple thread.' }]);
+});
+
+test('a point for a key that is not a posting persona is dropped and recorded as postingPersona', () => {
+  const r = repairAnswer(withPoints([{ staff: 'nobody', line: 'Hello.' }, { staff: P_MOD, line: 'Kept.' }]), postingCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.points.map((p) => p.staff), [P_MOD]);
+  assert.ok(r.trims.some((t) => t.path === 'points[0].staff' && t.predicate === 'postingPersona'), JSON.stringify(r.trims));
+  const none = repairAnswer(withPoints([{ staff: P_MOD, line: 'Kept?' }]), modCtx());
+  assert.ok(none.ok && none.points.length === 0, 'a context with no posting personas keeps none');
+});
+
+test('a second point for one key is dropped and recorded as uniqueStaff; the first stands', () => {
+  const r = repairAnswer(withPoints([{ staff: P_MOD, line: 'First.' }, { staff: P_MOD, line: 'Second.' }]), postingCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.points, [{ staff: P_MOD, line: 'First.' }]);
+  assert.ok(r.trims.some((t) => t.path === 'points[1].staff' && t.predicate === 'uniqueStaff'), JSON.stringify(r.trims));
+});
+
+test('a line of 230 characters is cut at a word to at most 200, and the trim is recorded', () => {
+  const line = Array.from({ length: 47 }, () => 'word').join(' ').slice(0, 230);
+  assert.ok(line.length > 200);
+  const r = repairAnswer(withPoints([{ staff: P_MOD, line }]), postingCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.ok(r.points[0]!.line.length <= POINTS_MOST && r.points[0]!.line.length > 100 && line.startsWith(r.points[0]!.line), r.points[0]!.line);
+  assert.ok(/word$/.test(r.points[0]!.line), 'cut at a word, not in one');
+  assert.ok(r.trims.some((t) => t.path === 'points[0].line' && t.predicate === `maxLength(${POINTS_MOST})` && t.before === 230), JSON.stringify(r.trims));
+});
+
+test('a blank line is dropped and recorded as nonBlank', () => {
+  const r = repairAnswer(withPoints([{ staff: P_MOD, line: '   ' }, { staff: P_MEMBER, line: 'Fine.' }]), postingCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.points.map((p) => p.staff), [P_MEMBER]);
+  assert.ok(r.trims.some((t) => t.path === 'points[0].line' && t.predicate === 'nonBlank'), JSON.stringify(r.trims));
+  const left = repairAnswer(withPoints([{ staff: P_MOD, line: '   ' }, { staff: P_MOD, line: 'Then this.' }]), postingCtx());
+  assert.ok(left.ok && left.points.length === 1 && left.points[0]!.line === 'Then this.', 'a dropped blank does not use up the key');
+});
+
+test('a meeting with no Mods on staff is still asked for points, and still does not ask for orders or patrols', () => {
+  const posting = [posted(P_BOSS, 'Bossy', 'boss'), posted(P_MEMBER, 'Memby', 'member')];
+  const prompt = meetingSystemPrompt(promptFacts({ mods: [], posting }));
+  assert.ok(prompt.includes('Do not answer with orders or patrols.'), prompt);
+  assert.ok(prompt.includes('"points"') && prompt.includes(P_MEMBER) && prompt.includes(P_BOSS), 'the staff section still asks for points');
+  const r = repairAnswer(withPoints([{ staff: P_MEMBER, line: 'Hold the line.' }]), { ...ctx(), posting: new Set([P_MEMBER]) });
+  assert.ok(r.ok && r.points.length === 1 && r.orders.length === 0, JSON.stringify(r));
 });

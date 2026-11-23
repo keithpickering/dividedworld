@@ -271,6 +271,9 @@ export function seededRng(seed: string): () => number {
 /** The generator for a day, so a rerun on the same day picks the same. */
 export const dayRng = (day: string): (() => number) => seededRng(`kayfabb-pool:${day}`);
 
+/** The generator for a persona's sessions on a day (the chattier staff design), so a rerun draws the same visits. */
+export const sessionRng = (day: string, key: string): (() => number) => seededRng(`kayfabb-sessions:${day}:${key}`);
+
 /* ------------------------------------------------------------------------------------------------------------- pick ---- */
 
 export interface PoolPick {
@@ -297,7 +300,7 @@ export interface Picked {
 
 const key = (s: string | null) => s ?? '';
 /** Code-unit order, never the locale's: two platforms must sort the same keys the same way, or one day's seed picks two winners. */
-const byUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
+export const byUnit = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 
 export function pick(
   cands: readonly Candidate[],
