@@ -67,7 +67,10 @@ export interface HotSignal {
   readonly starter: string | null;
   readonly starterStaff: string | null;
   readonly staffStarted: boolean;
-  readonly authors: readonly { readonly character: string; readonly posts: number }[];
+  /** Each of the ten most frequent authors, with `top`: that author's most reacted post in the thread inside the window (a tie to the newer; a post under a live totals veil counts none). */
+  readonly authors: readonly { readonly character: string; readonly posts: number; readonly top: string | null }[];
+  /** The thread's two most reacted posts in the window, by two different characters, by the same order. */
+  readonly tops: readonly { readonly act: string; readonly character: string }[];
   readonly boardMaker: string | null;
 }
 

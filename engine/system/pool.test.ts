@@ -21,7 +21,7 @@ const PHASES = {
 // A 100-day season: the meltdown begins on day 79.
 const PHASE: PoolPhase = { season: { startsAt: 0, endsAt: 100 * DAY }, since: 40 * DAY, until: 41 * DAY, settings: { phases: PHASES }, boss: 'boss1', predecessor: 'old' };
 const memory = (m: Partial<Memory>): Memory => ({ hobby: { name: 'x', since: 'a', from: 'b' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [], ...m });
-const hot = (over: object = {}) => ({ thread: 't1', board: 'b1', heat: 4, starter: 'c-x', starterStaff: null, staffStarted: false, authors: [], boardMaker: null, ...over });
+const hot = (over: object = {}) => ({ thread: 't1', board: 'b1', heat: 4, starter: 'c-x', starterStaff: null, staffStarted: false, authors: [], tops: [], boardMaker: null, ...over });
 const run = (signals: Partial<PoolSignals>, phase: PoolPhase = PHASE, memories: Record<string, Memory> = {}) =>
   candidates({ ...none, ...signals }, ROSTER, memories, phase, CTX);
 const only = (cs: Candidate[], trigger: string) => cs.filter((c) => c.trigger === trigger);
@@ -70,13 +70,13 @@ test('oldFlame: a favorite or a grudge in its memory writing one of the hottest 
     mem1: memory({ grudges: [{ character: 'c-foe', note: '' }] }),
     fresh: memory({ opinions: [{ character: 'c-meh', score: 1, note: '' }] }),
   };
-  const c = only(run({ hot: [hot({ authors: [{ character: 'c-fav', posts: 3 }, { character: 'c-foe', posts: 1 }, { character: 'c-meh', posts: 2 }] })] }, PHASE, memories), 'oldFlame');
+  const c = only(run({ hot: [hot({ authors: [{ character: 'c-fav', posts: 3, top: null }, { character: 'c-foe', posts: 1, top: null }, { character: 'c-meh', posts: 2, top: null }] })] }, PHASE, memories), 'oldFlame');
   assert.deepEqual(c.map((x) => [x.staff, x.thread]).sort(), [['mem1', 't1'], ['mod1', 't1']], 'a score of 1 is not a favorite');
 });
 
 test('oldFlame: a persona is never lit by its own character\'s post', () => {
   const memories = { mod1: memory({ opinions: [{ character: 'c-mod1', score: 5, note: '' }] }) };
-  assert.deepEqual(only(run({ hot: [hot({ authors: [{ character: 'c-mod1', posts: 3 }] })] }, PHASE, memories), 'oldFlame'), []);
+  assert.deepEqual(only(run({ hot: [hot({ authors: [{ character: 'c-mod1', posts: 3, top: null }] })] }, PHASE, memories), 'oldFlame'), []);
 });
 
 test('hotOnBeat: a hot thread on a board of a persona\'s beats fires for it, and for no one whose beats are elsewhere', () => {
