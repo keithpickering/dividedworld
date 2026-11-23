@@ -468,8 +468,8 @@ function repairAnswer(raw: unknown, settings: Instance['settings'], askedTitle: 
   return { ok: true, answer: repaired.answer, trims: [...repaired.trims] };
 }
 
-/** The persona's own reads for a call: its career, memory, notes and the faces its memory names. */
-async function personaReads(db: Db, settings: Instance['settings'], staff: string) {
+/** The persona's own reads for a call: its career, memory, notes and the faces its memory names, with `also` (a pick's subject, which a kept pick may name after the memory has moved on). */
+async function personaReads(db: Db, settings: Instance['settings'], staff: string, also: readonly (string | null)[] = []) {
   const [career, memory, since] = await Promise.all([
     db.rpc<Career>('staff_career', { of_staff: staff }),
     db.rpc<Memory | null>('staff_memory_latest', { staff }),
@@ -477,6 +477,7 @@ async function personaReads(db: Db, settings: Instance['settings'], staff: strin
   ]);
   const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
   const known = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
+  for (const id of also) if (id && !known.includes(id)) known.push(id);
   const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
   return { career, memory, notes, faces };
 }
@@ -719,7 +720,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         ...wallsOf(c, read) }))
       : [];
 
-    const { career, memory, notes, faces } = await personaReads(db, settings, p.staff);
+    const { career, memory, notes, faces } = await personaReads(db, settings, p.staff, [p.subject]);
     // The conversation in the thread, the public record and the persona's talking point, as a turn is given them (the old voice writes its words from the thread alone).
     const extra = read && persona.voice === 'chat' ? await threadReads(db, settings, p.staff, p.thread!) : null;
     const points = persona.voice !== 'chat' ? null : extra !== null ? extra.points : await db.rpc<string | null>('staff_points_latest', { staff_key: p.staff });
@@ -742,7 +743,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
         const frame = chatterPrompt({
           premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
           quoting: quotedPost, conversation: extra ? viewOf(extra.conversation, instanceSet, []) : null, record: extra?.record ?? null, points,
-          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: namesOf(faces, instanceSet),
+          trigger: p.trigger, subject: p.subject && faces[p.subject] ? p.subject : null, offeredCards: offered, startThread: startsThread, limits, names: namesOf(faces, instanceSet),
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],

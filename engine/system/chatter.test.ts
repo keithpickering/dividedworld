@@ -194,6 +194,29 @@ test('the prompt carries the persona, the premise, the thread cut to excerptChar
   assert.ok(p.message.includes('You are replying to Bob (they/them)'), 'the post it replies to, with its pronouns');
 });
 
+test('a hot trigger\'s reason names the post it replies to, and oldFlame names the flame with its pronouns', () => {
+  const names = (id: string) => (id === 'c-g' ? 'Gloomba (she/her)' : id);
+  const flame = chatterPrompt({ ...base, trigger: 'oldFlame', subject: 'c-g', names });
+  assert.ok(flame.system.includes('Why you are posting: Gloomba (she/her), a character you have strong feelings about, wrote one of today\'s hottest posts: the one you are replying to.'), 'the flame, named');
+  const turf = chatterPrompt({ ...base, trigger: 'homeTurf' });
+  assert.ok(turf.system.includes('Why you are posting: a thread you made has gotten hot; you are replying to its most reacted post today.'), 'homeTurf');
+  const beat = chatterPrompt({ ...base, trigger: 'hotOnBeat' });
+  assert.ok(beat.system.includes('Why you are posting: a thread on one of your beats is among the hottest today; you are replying to its most reacted post.'), 'hotOnBeat');
+});
+
+test('a hot pick carried from before the post was named keeps the old reasons', () => {
+  const flame = chatterPrompt({ ...base, trigger: 'oldFlame', quoting: null, subject: null });
+  assert.ok(flame.system.includes('Why you are posting: a character you have strong feelings about wrote one of today\'s hottest posts.'), 'no subject, no quote');
+  const unquoted = chatterPrompt({ ...base, trigger: 'oldFlame', quoting: null, subject: 'c-g', names: () => 'Gloomba (she/her)' });
+  assert.ok(unquoted.system.includes('Why you are posting: a character you have strong feelings about wrote one of today\'s hottest posts.'), 'a subject but no quote');
+  const unnamed = chatterPrompt({ ...base, trigger: 'oldFlame', subject: null });
+  assert.ok(unnamed.system.includes('Why you are posting: a character you have strong feelings about wrote one of today\'s hottest posts.'), 'a quote but no subject');
+  const turf = chatterPrompt({ ...base, trigger: 'homeTurf', quoting: null });
+  assert.ok(turf.system.includes('Why you are posting: a thread or board you made has gotten hot.'), 'homeTurf with no quote');
+  const beat = chatterPrompt({ ...base, trigger: 'hotOnBeat', quoting: null });
+  assert.ok(beat.system.includes('Why you are posting: a thread on one of your beats is among the hottest today.'), 'hotOnBeat with no quote');
+});
+
 test('a thread post or a quoted post the source cut ends in an ellipsis even under the bound, and one that fit does not', () => {
   const p = chatterPrompt({
     ...base,

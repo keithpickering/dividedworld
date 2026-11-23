@@ -48,6 +48,8 @@ interface World {
   boards?: Record<string, string>;
   /** Personas whose signal names no thread (the pick's thread-null stumble). */
   noThread?: string[];
+  /** The faces `character_faces` answers, by character id; none by default. */
+  faces?: Record<string, { name: string; pronouns: null }>;
   /** The body card_target_reach reports for a post the run did not write. */
   targetBody?: string;
   /** The open walls pool_thread reports on every thread (`{ play, card, about }`). */
@@ -201,7 +203,7 @@ function fakeDb(w: World = {}) {
         case 'staff_memory_at': return null as T;
         case 'staff_career': return { led: [], offices: [] } as T;
         case 'staff_notes_recent': return ['An earlier thought.'] as T;
-        case 'character_faces': return {} as T;
+        case 'character_faces': return Object.fromEntries(((args.ids as string[] | undefined) ?? []).filter((id) => w.faces?.[id]).map((id) => [id, w.faces![id]])) as T;
         case 'pool_thread': {
           // A read for one post alone (`most` 0 and `also`): a waiting reply, whichever of the persona's posts it answers.
           if (args.most === 0 && (args.also || args.more)) {
@@ -1277,6 +1279,23 @@ test('a kept pick written before `subject` existed (no such field) still posts',
   const out = await run(d, fakeModels(normal));
   assert.ok(out.status === 'ok');
   assert.deepEqual(out.picks.map((p) => [p.staff, p.status]), [[SIGH, 'posted']]);
+});
+
+test('an oldFlame pick names its flame in the reason, its face read even where the memory no longer holds it', async () => {
+  const d = fakeDb({ sessions: [SIGH_EARLIER], kept: [keptPick(SIGH, T1, Q1, { trigger: 'oldFlame', subject: 'c-flame' })], faces: { 'c-flame': { name: 'Gloomba', pronouns: null } } });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.ok((d.of('character_faces')[0]?.ids as string[] | undefined)?.includes('c-flame'), 'the flame\'s face is read');
+  assert.ok(m.chats[0]!.system.includes('Why you are posting: Gloomba (it/its), a character you have strong feelings about, wrote one of today\'s hottest posts: the one you are replying to.'), 'the reason names the flame with its pronouns (the instance\'s, where the face has none)');
+});
+
+test('an oldFlame pick whose flame has no face (deleted, hidden) gives the plain reason, never "a character, a character"', async () => {
+  const d = fakeDb({ sessions: [SIGH_EARLIER], kept: [keptPick(SIGH, T1, Q1, { trigger: 'oldFlame', subject: 'c-gone' })] });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.ok(m.chats[0]!.system.includes('Why you are posting: a character you have strong feelings about wrote one of today\'s hottest posts.'), 'the plain reason');
 });
 
 test('a kept pick whose persona has no session left posts in the next round', async () => {
