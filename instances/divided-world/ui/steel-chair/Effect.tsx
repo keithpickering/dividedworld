@@ -21,7 +21,7 @@
  * box and not in the opening post's body around it) and steel-chair.css draws the room at the foot of whatever is marked; only where there
  * is no content area is it a strip in the host (`.dw-chair-room`, hidden where the host is `data-kb-bleed`). Nothing
  * here assumes the content area is as tall as its words plus the room: the world, the layers and the dents' coordinates are all measured boxes
- * (`bodyBox`, the wrapper's offsets, the text's client rects), the room is the content area's last child so it stays at the floor however tall
+ * (`bodyBox`, the words box's client rect against the host's, the text's client rects), the room is the content area's last child so it stays at the floor however tall
  * the body is, and the floor is the area's bottom border.
  *
  * Where the filter stands (docs/plans/2026-11-23-dent-bend-design.md, 1 and 2). A CSS filter on an element clips everything inside it to its region
@@ -393,7 +393,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       };
       const moved = !sameBox(b, box) || !sameGeo(geoNow, g);
       box = b;
-      /* The throw aims at the box the text takes, which on a short post is far narrower than the wrapper (as wide as the content area). */
+      /* The throw aims at the box the text takes, which on a short post is far narrower than the words box (as wide as the content area). */
       target = textBox(wordsEl, h.left + b.left, h.top + b.top)
         ?? { left: g.left, top: g.top, width: g.width, height: g.height };
       placeLayer(chairLayer, b);

@@ -1611,7 +1611,8 @@ describe('the bend, set on the content area', () => {
     expect(props(areaEl())).toEqual(['', '']);
   });
 
-  test('an ORIGIN box\'s area beside the dented post\'s own carries neither property: only the area the effect found is bent', () => {
+  /* jsdom computes no cascade, so the reset that keeps a nested ORIGIN area from inheriting its post's bend (thread.css) is checked in the browser (e2e/steel-chair.spec.ts). */
+  test('only the area the effect found is given the bend: an ORIGIN box\'s area beside it is given neither property', () => {
     mount({ wrapped: 'beside' });
     run();
     expect(props(areaEl())[0]).not.toBe('');
