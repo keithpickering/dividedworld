@@ -10,8 +10,8 @@ import { graffiti } from '../../cards/graffiti.ts';
 import { whoops } from '../../cards/whoops.ts';
 
 const shapes = (seed?: number): Record<string, Shape> => ({
-  arrow: arrow([0.1, 0.9], [0.9, 0.05], seed), ring: ring([0.5, 0.5], 0.6, 0.6, seed), glyphs: glyphs('??', [0.7, 0.8], 0.3, seed),
-  heart: heart([0.9, 0.1], 0.5, seed), scribble: scribble({ x0: 0, y0: 0, x1: 1, y1: 1 }, seed), arrowEdge: arrow([0, 0], [1, 1], seed),
+  arrow: arrow([0.1, 0.9], [0.9, 0.05], 3, seed), ring: ring([0.5, 0.5], 0.6, 0.6, seed), glyphs: glyphs('??', [0.7, 0.8], 0.3, 3, seed),
+  heart: heart([0.9, 0.1], 0.5, 3, seed), scribble: scribble({ x0: 0, y0: 0, x1: 1, y1: 1 }, seed), arrowEdge: arrow([0, 0], [1, 1], 3, seed),
 });
 
 test('every shape stays inside the box, even placed at its edge', () => {
@@ -28,9 +28,24 @@ test('the same seed draws the same strokes, and another seed a different hand', 
 });
 
 test('shapes have the strokes their names say', () => {
-  assert.equal(arrow([0.1, 0.5], [0.8, 0.5]).length, 3, 'a shaft and two barbs');
+  assert.equal(arrow([0.1, 0.5], [0.8, 0.5], 3).length, 3, 'a shaft and two barbs');
   assert.equal(ring([0.5, 0.5], 0.3, 0.3).length, 1);
-  assert.equal(glyphs('??', [0.1, 0.1], 0.2).length, 4, 'a hook and a dot each');
+  assert.equal(glyphs('??', [0.1, 0.1], 0.2, 3).length, 4, 'a hook and a dot each');
+});
+
+test('a heart and a question mark are as proportioned on the page as in the plan, at a post body\'s aspect', () => {
+  const span = (pts: [number, number][], k: 0 | 1) => Math.max(...pts.map((p) => p[k])) - Math.min(...pts.map((p) => p[k]));
+  const h = heart([0.5, 0.5], 0.2, 3).flat();
+  const ratio = (span(h, 0) * 3) / span(h, 1);
+  assert.ok(ratio > 0.8 && ratio < 1.2, `a heart is about as wide as tall on the page: ${ratio}`);
+  const q = glyphs('?', [0.1, 0.1], 0.3, 3)[0]!;
+  const qr = (span(q, 0) * 3) / span(q, 1);
+  assert.ok(qr > 0.4 && qr < 0.9, `a question mark is narrower than tall on the page: ${qr}`);
+  /* An arrow's barbs lean 30 degrees off the shaft on the page, not on the share grid: a level shaft's barbs go back as far as they go up or down. */
+  const [, wing] = arrow([0.1, 0.5], [0.8, 0.5], 3, 5);
+  const tip = wing![0]!, end = wing![wing!.length - 1]!;
+  const back = Math.abs(end[0] - tip[0]) * 3, up = Math.abs(end[1] - tip[1]);
+  assert.ok(back / up > 1 && back / up < 3, `barbs lean about 0.5 radians back of the shaft: ${back / up}`);
 });
 
 test('a tag passes Graffiti\'s validateDraw', () => {

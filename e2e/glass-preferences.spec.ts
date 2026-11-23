@@ -229,7 +229,7 @@ test.describe('200% text at 1280px wide', () => {
     });
   }
 
-  for (const [path, name] of [['/sign-in', 'Sign in'], ['/register', 'Register'], ['/b/general', 'WELCOME TO THE BEEF ZONE']] as const) {
+  for (const [path, name] of [['/sign-in', 'Sign in'], ['/register', 'Register'], ['/b/general', 'Look At My Wiggler Sprites']] as const) {
     test(`${path}, signed out, read at 200%: one column, no sideways scroll, no text cut off`, async ({ page }) => {
       await page.goto('/');
       await page.waitForFunction(() => '__kbFake' in globalThis);

@@ -28,6 +28,9 @@ import { toll } from '../cards/toll.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
 import { feelinGlam } from '../cards/feelin-glam.ts';
 import { feelinFab } from '../cards/feelin-fab.ts';
+import { LayerInk, coveredLines } from '../cards/whoops/scrub.ts';
+import { makeSplat } from '../cards/whoops/splat.ts';
+import { savedOf } from '../cards/whoops/Effect.tsx';
 import { fourDChess } from '../cards/4d-chess.ts';
 import { offDay } from '../cards/off-day.ts';
 import { popSteal } from '../cards/pop-steal.ts';
@@ -67,16 +70,30 @@ describe('Divided World\'s onboarding words', () => {
     expect(Object.keys(instanceUi.onboarding.tips).sort()).toEqual([...TIP_KEYS].sort());
   });
   test('the front door passes the same check, in its own words', () => {
-    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Chadluminum', 'Serious Deer', 'Human Josh', 'D-Guy']);
+    expect(instanceUi.frontDoor.cast.map((c) => c.name)).toEqual(['Snuckles', 'Hotel Bro', 'Chadluminum', 'Serious Deer', 'D-Guy']);
     /* One of each class that posts, each through the postbit's real revealed line: the Lurker never posts, so it is absent by design. */
-    expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'face', 'technician', 'heel', 'tweener']);
-    expect(instanceUi.frontDoor.posts).toHaveLength(6);
+    expect(instanceUi.frontDoor.cast.map((c) => c.revealed?.class)).toEqual(['jabroni', 'heel', 'face', 'technician', 'tweener']);
+    expect(instanceUi.frontDoor.posts).toHaveLength(10);
     /* A picture is a URL the bundler gave (a `?url` import), never a hand-typed path: a typed one 404s and the postbit shows a broken image. */
-    for (const c of instanceUi.frontDoor.cast) {
+    for (const c of instanceUi.frontDoor.cast.filter((c) => c.avatarSquare !== undefined)) {
       expect(c.avatarSquare, `${c.name}'s square`).toMatch(/\.(jpg|png)$|^data:image\//u);
       expect(c.avatarPortrait, `${c.name}'s portrait`).toMatch(/\.(jpg|png)$|^data:image\//u);
     }
     expect(instanceUiProblems(instanceUi, instance).filter((p) => /front door/u.test(p))).toEqual([]);
+  });
+  test('Hotel Bro\'s wash leaves #3\'s words readable and about half the tomato ink, at a desktop box', () => {
+    const play = instanceUi.frontDoor.posts[2]!.plays![0]!;
+    expect(play.card).toBe('whoops');
+    /* The post body at a 1280px window: 987 x 352.5 css px, one line of words at the top (measured on the rendered board). */
+    const box = { w: 987, h: 352.5 };
+    const splat = makeSplat(Number(play.config.seed));
+    const strokes = savedOf(play.state).strokes;
+    const ink = new LayerInk(splat, strokes, box);
+    const line = { top: 7 / box.h, bottom: 29.5 / box.h, text: instanceUi.frontDoor.posts[2]!.body };
+    expect(coveredLines([line], [ink]), 'no line of the words lies under ink').toEqual([false]);
+    const left = 1 - ink.washed;
+    expect(left, `ink left ${left}`).toBeGreaterThan(0.35);
+    expect(left, `ink left ${left}`).toBeLessThan(0.7);
   });
   test('the letter opens as Gabe\'s welcome does', () => {
     expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);

@@ -6,6 +6,10 @@
  *
  * - **A shape** returns strokes, each a list of `[across, down]` points in shares of the post body's box, held to 0 to 1 and to a
  *   ten-thousandth. Every shape takes an optional last `seed` (default 1); two calls with the same arguments and seed return the same points.
+ * - **Aspect.** A share across is `aspect` times longer than the same share down (`aspect` is the box's width over its height; a post body is
+ *   about three times wider than tall). `arrow`, `glyphs` and `heart` draw things whose shape matters (a barb's angle, a heart's roundness),
+ *   so they take the `aspect` and measure their sizes and offsets in shares of the box's HEIGHT, dividing each across-offset by it: a heart
+ *   is as round on the page as it is in the plan. `ring` takes its two radii as given, and `scribble` its box.
  * - **`tag`** makes one Graffiti draw from shapes, in one can, cap and aspect: `{ strokes: [{ can, cap, aspect, points }] }`.
  * - **`washPasses`** makes the saved state of a Whoops! layer: wash strokes, each a back-and-forth pass across a band of the box, packed as
  *   the card packs them.
@@ -37,14 +41,15 @@ function line(r: () => number, [ax, ay]: Pt, [bx, by]: Pt, steps: number, wobble
   return out;
 }
 
-/** An arrow from one point to another: the shaft, then two barbs at the head, three strokes. */
-export function arrow(from: Pt, to: Pt, seed = 1): Shape {
+/** An arrow from one point to another: the shaft, then two barbs at the head, three strokes. The barbs are `min(0.06, a third of the shaft)` of the box's height long. */
+export function arrow(from: Pt, to: Pt, aspect: number, seed = 1): Shape {
   const r = mulberry32(seed);
-  const [dx, dy] = [to[0] - from[0], to[1] - from[1]];
+  /* The angle and the length are worked out as the page shows them (across scaled up by the aspect); the barb's across-offset goes back down by it. */
+  const [dx, dy] = [(to[0] - from[0]) * aspect, to[1] - from[1]];
   const len = Math.hypot(dx, dy) || 1, back = Math.atan2(dy, dx) + Math.PI, barb = Math.min(0.06, len * 0.35);
   const wing = (turn: number): Pt[] => {
     const a = back + turn + jitter(r, 0.12);
-    return line(r, to, [to[0] + Math.cos(a) * barb, to[1] + Math.sin(a) * barb], 4, 0.002);
+    return line(r, to, [to[0] + (Math.cos(a) * barb) / aspect, to[1] + Math.sin(a) * barb], 4, 0.002);
   };
   return [line(r, from, to, Math.max(6, Math.round(len * 40)), 0.004), wing(0.5), wing(-0.5)];
 }
@@ -62,34 +67,36 @@ export function ring(center: Pt, rx: number, ry: number, seed = 1): Shape {
 }
 
 /** Marks written out: each `?` is a hook and a dot, `size` tall (a share of the box's height), `at` the top left of the first. Other characters are spaces. */
-export function glyphs(text: string, at: Pt, size: number, seed = 1): Shape {
+export function glyphs(text: string, at: Pt, size: number, aspect: number, seed = 1): Shape {
   const r = mulberry32(seed);
   const out: Shape = [];
   const w = size * 0.55, pitch = size * 0.8;
+  /* `w`, `pitch` and every across-offset are in shares of the height; `x` is the glyph's left in shares of the width. */
+  const ax = (n: number) => n / aspect;
   [...text].forEach((ch, i) => {
     if (ch !== '?') return;
-    const [x, y] = [at[0] + i * pitch, at[1]];
+    const [x, y] = [at[0] + ax(i * pitch), at[1]];
     const hook: Pt[] = [];
     for (let k = 0; k <= 14; k++) {
       const a = Math.PI * (1.05 - 1.75 * (k / 14));
-      hook.push(pt(x + w / 2 + Math.cos(a) * w * 0.48 + jitter(r, size * 0.015), y + w * 0.5 - Math.sin(a) * w * 0.5 + jitter(r, size * 0.015)));
+      hook.push(pt(x + ax(w / 2 + Math.cos(a) * w * 0.48 + jitter(r, size * 0.015)), y + w * 0.5 - Math.sin(a) * w * 0.5 + jitter(r, size * 0.015)));
     }
-    hook.push(pt(x + w / 2 + jitter(r, size * 0.02), y + size * 0.68));
-    const dot = [pt(x + w / 2, y + size * 0.92), pt(x + w / 2 + size * 0.02 + jitter(r, size * 0.01), y + size * 0.93)];
+    hook.push(pt(x + ax(w / 2 + jitter(r, size * 0.02)), y + size * 0.68));
+    const dot = [pt(x + ax(w / 2), y + size * 0.92), pt(x + ax(w / 2 + size * 0.02 + jitter(r, size * 0.01)), y + size * 0.93)];
     out.push(hook, dot);
   });
   return out;
 }
 
-/** A heart, `size` across (a share of the box's width), as one stroke from its cleft around and back. */
-export function heart(center: Pt, size: number, seed = 1): Shape {
+/** A heart, `size` tall about (a share of the box's height, its width following from the aspect), as one stroke from its cleft around and back. */
+export function heart(center: Pt, size: number, aspect: number, seed = 1): Shape {
   const r = mulberry32(seed);
   const points: Pt[] = [];
   const steps = 40;
   for (let i = 0; i <= steps; i++) {
     const t = (i / steps) * Math.PI * 2;
     const x = 16 * Math.sin(t) ** 3, y = 13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t);
-    points.push(pt(center[0] + (x / 34) * size + jitter(r, size * 0.01), center[1] - (y / 34) * size + jitter(r, size * 0.01)));
+    points.push(pt(center[0] + ((x / 34) * size + jitter(r, size * 0.01)) / aspect, center[1] - (y / 34) * size + jitter(r, size * 0.01)));
   }
   return [points];
 }
