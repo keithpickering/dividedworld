@@ -90,4 +90,28 @@ begin
   -- A retried window still answers "already settled".
   said := apply_settlement(w1, w2, jsonb_build_array(jsonb_build_object('player', ann, 'character', a, 'reason', 'card.boost', 'amount', 10, 'params', '{"card": "x"}'::jsonb)));
   if (said ->> 'applied')::boolean or said ->> 'reason' is distinct from 'already settled' then raise exception 'a retried window answers already settled: %', said; end if;
+  -- The crowd floor's entry (docs/plans/2026-11-23-crowd-floor-plan.md, Task 3) names no class, as `reveal.perk` and a card's payout name none: it is a ledger row of
+  -- its own reason, with shares by Act, and it moves the character's standing like any other entry. The ledger holds a reason by its form, not by a list.
+  said := apply_settlement(w2, w3, jsonb_build_array(
+      jsonb_build_object('player', ann, 'character', a, 'reason', 'crowd.floor', 'amount', 3),
+      jsonb_build_object('player', ann, 'character', a, 'reason', 'alpha.cheered', 'amount', 4)),
+    '{}', '[]',
+    jsonb_build_array(
+      jsonb_build_object('character', a, 'reason', 'crowd.floor', 'act', p2, 'amount', 3),
+      jsonb_build_object('character', a, 'reason', 'alpha.cheered', 'act', p1, 'amount', 4)));
+  if not (said ->> 'applied')::boolean then raise exception 'a settlement holding a crowd.floor entry should apply: %', said; end if;
+  sid := (said ->> 'settlement')::bigint;
+  if (select count(*) from ledger where settlement = sid and reason = 'crowd.floor' and amount = 3) is distinct from 1::bigint then
+    raise exception 'the crowd.floor entry is one ledger row of 3, read %', (select jsonb_agg(to_jsonb(l)) from ledger l where settlement = sid);
+  end if;
+  if exists (select 1 from ledger where settlement = sid and reason = 'crowd.floor' and (select count(*) from class_kinds k where k.key = split_part(reason, '.', 1)) > 0) then
+    raise exception 'the crowd.floor reason names a class';
+  end if;
+  if (select sum(sh.amount) from ledger_shares sh join ledger l on l.id = sh.ledger where l.settlement = sid and l.reason = 'crowd.floor') is distinct from 3::bigint then
+    raise exception 'the crowd.floor entry holds its shares';
+  end if;
+  if (select amount from standings where character = a and season = (select season from settlements where id = sid)) is distinct from
+     coalesce((select sum(amount) from ledger where character = a and settlement in (select id from settlements where season = (select season from settlements where id = sid))), 0)::integer then
+    raise exception 'the standing is not the character''s ledger sum, crowd.floor included';
+  end if;
 end $$;

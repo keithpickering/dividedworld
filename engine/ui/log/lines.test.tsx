@@ -1402,6 +1402,17 @@ describe('the payout cards\' lines', () => {
     expect(scoredAs([cushioned[2]!], testInstance)).toBeNull();
   });
 
+  test('scoredAs leaves the crowd floor and the reveal perk out: neither is a class\'s reason, so neither unsets the class the other lines name', () => {
+    const cheered = { character: 'p', reason: 'face.cheered', amount: 4, shares: [] };
+    const floor = { character: 'p', reason: 'crowd.floor', amount: 1, shares: [] };
+    const perk = { character: 'p', reason: 'reveal.perk', amount: 2, shares: [] };
+    expect(scoredAs([cheered, floor], testInstance)).toBe('face');
+    expect(scoredAs([cheered, perk], testInstance)).toBe('face');
+    expect(scoredAs([cheered, floor, perk], testInstance)).toBe('face');
+    expect(scoredAs([floor], testInstance)).toBeNull();
+    expect(scoredAs([perk], testInstance)).toBeNull();
+  });
+
   test('a 4D Chess that rode says what sprang it, that the cast landed as usual, and what each vote pays, from the card\'s own share', () => {
     const play = act('k1', 'card', 's', { targetActId: 'post3', payload: { card: 'whoops', rode: 'set1' } });
     const spring = act('sp', 'spring', 'p', { targetActId: 'post3', payload: { card: 'chess', trigger: 'cast', did: 'rode', quadrant: 'excitedPositive', set: 'set1', by: 'k1' } });
