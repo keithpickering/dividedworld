@@ -535,6 +535,8 @@ export interface FrontDoorPost {
   readonly plays?: readonly {
     readonly card: string; readonly by: string; readonly config: Readonly<Record<string, unknown>>;
     readonly layer?: number; readonly reactions?: Readonly<Record<string, number>>;
+    readonly state?: Readonly<Record<string, unknown>>;
+    readonly draws?: readonly { readonly by: string; readonly draw: unknown }[];
   }[];
 }
 

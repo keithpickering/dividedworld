@@ -12,17 +12,20 @@
  * open a mark's Lens and scrub a splat there with its keyboard path, as in play ("An accessible path costs what the obstacle costs"),
  * and nothing is sent anywhere: a reload brings back the thread as the instance wrote it. The postbits are not links, and there is no
  * Quote, Spin, Edit, Report, permalink, Go to post or As it landed: a sample thread has nowhere for them to go.
+ * A post wearing a card that folds the row (`CardUi.foldsRow`) folds it as a thread's does (`thread/fold.tsx`): a bar with the marks in it, the row behind,
+ * the visitor's own press to open it. Its plays are live at the staged instant, since no clock is read.
  */
-import { useCallback, useId, useMemo } from 'react';
+import { useCallback, useId, useMemo, useRef } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
+import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { createPlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Character, Id } from '../data/api.ts';
+import type { Act, Character, Id, SurfaceAct } from '../data/api.ts';
 import { Blocks, DASH, type Fill } from '../guide/render.tsx';
 import { parse, settingText } from '../guide/markdown.ts';
 import { Postbit, type PostbitPerson } from '../postbit/Postbit.tsx';
@@ -30,6 +33,7 @@ import { createMine, type Mine } from '../reactions/mine.ts';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { useLocation } from '../router.tsx';
 import { StagedCtx } from '../staged.ts';
+import { FoldedRow, useRowFolding } from '../thread/fold.tsx';
 import { createTallies, type Tallies } from '../thread/tallies.ts';
 import type { FrontDoorCharacter } from '../types.ts';
 import { PersonaMark } from '../updates/Persona.tsx';
@@ -41,6 +45,18 @@ import { forgedList } from '../../bbcode/quoted.ts';
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = (key: string): Id => `front-door:${key}`;
+
+/**
+ * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
+ * (`surfaceStep` in data/fake.ts prunes a draw left owning nothing, so a staged wall drops it too and shows what a live thread would).
+ */
+function wallShares(draws: readonly Cells[]): readonly number[] {
+  const owners = new Uint16Array(GRID * GRID);
+  draws.forEach((cells, k) => { for (let i = 0; i < owners.length; i++) if (hasCell(cells, i)) owners[i] = k + 1; });
+  const owned = new Array<number>(draws.length).fill(0);
+  for (const o of owners) if (o !== 0) owned[o - 1]!++;
+  return owned;
+}
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
 const stage = (c: FrontDoorCharacter, group: string): Character => ({
@@ -62,17 +78,24 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
   /* The sample cast has no pictures. */
   const marks = <PostMarks post={act.id} plays={stores.plays} to={null} moments={false} nameOf={nameOf} faceOf={() => null} tallies={stores.tallies} mine={stores.mine} onSpin={noSpin} />;
   const body = typeof act.currentPayload.body === 'string' ? act.currentPayload.body : '';
+  /* A post wearing a card that folds the row is drawn as the thread draws it (thread/fold.tsx): a bar with the marks in it, and the row behind. A staged post's plays are live at the staged instant. */
+  const { ui } = useKayfa();
+  const ref = useRef<HTMLElement>(null);
+  const fold = useRowFolding({ plays: stores.plays, actId: act.id, eligible: true, now: Date.parse(STAGED_AT), cards: ui.cards, article: ref });
   return (
-    <article id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side">
+    <article
+      ref={ref} id={`front-door-post-${seq}`} className="kb-act" aria-labelledby={`front-door-post-${seq}-title`} data-kb-seq={seq} data-kb-kind="post" data-kb-postbit="side"
+      data-kb-fold={fold.folding ? (fold.folded ? 'open' : 'folded') : undefined}
+    >
       <h2 id={`front-door-post-${seq}-title`} className="kb-visually-hidden">Post {seq} by {name}</h2>
-      <div className="kb-act-grid">
+      <FoldedRow fold={fold} id={`front-door-post-${seq}-row`} bar={{ person, name, spoken: name, seq, marks }}>
         {person && <Postbit person={person} layout="side" link={false} />}
-        <header className="kb-act-meta">{marks}<span className="kb-act-number">#{seq}</span></header>
+        <header className="kb-act-meta">{!fold.folding && marks}<span className="kb-act-number">#{seq}</span></header>
         <div className="kb-act-main" data-kb-content-area>
           <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} forged={forgedList(act.currentPayload)} /></PostEffects>
           <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
         </div>
-      </div>
+      </FoldedRow>
     </article>
   );
 }
@@ -85,7 +108,12 @@ export function FrontDoor() {
   const noteTitle = useId();
   const persona = instance.developer ?? DEFAULT_DEVELOPER;
   const picture = persona.avatar === undefined ? undefined : ui.avatars?.[persona.avatar];
-  const fill = useCallback((text: string) => text.replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH), [settings]);
+  /* A post's picture must be an http(s) address (`safeImageSrc`), and a bundled file's address is root-relative, so a staged
+     picture that starts with a single `/` is made absolute against the page's own origin. These words are the instance's
+     committed content, never a player's; a protocol-relative or absolute address is left to the parser as anywhere. */
+  const fill = useCallback((text: string) => text
+    .replace(/\{\{setting:([^}]+)\}\}/gu, (_m, p: string) => settingText(p.trim(), settings) ?? DASH)
+    .replace(/\[img\](\/(?!\/)[^[]*)\[\/img\]/giu, (_m, src: string) => `[img]${new URL(src, window.location.origin).href}[/img]`), [settings]);
 
   const cast = useMemo(() => new Map(door.cast.map((c) => {
     const rank = Math.min(Math.max(c.rank, 0), Math.max(instance.ranks.length - 1, 0));
@@ -122,8 +150,28 @@ export function FrontDoor() {
       });
     });
     plays.add(acts);
+    /* A play's saved state, and a surface play's draws as its wall's live Acts (what `readSurface` would have read), both with no read. */
+    door.posts.forEach((post, i) => {
+      (post.plays ?? []).forEach((p, j) => {
+        const id = idOf(`${i}:${j}`);
+        if (p.state !== undefined) plays.setStates({ [id]: { state: p.state, savedAt: STAGED_AT } });
+        const rules = instance.cards.find((c) => c.key === p.card);
+        if (p.draws === undefined || !rules?.surface) return;
+        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly cells: Cells }[] = [];
+        for (const d of p.draws) {
+          const verdict = rules.surface.validateDraw(d.draw);
+          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, cells: cellsOf(verdict.value.strokes) });
+        }
+        const shares = wallShares(kept.map((k) => k.cells));
+        const wall: SurfaceAct[] = kept.flatMap((k, n) => shares[n] === 0 ? [] : [{
+          id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,
+          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: shares[n]!,
+        }]);
+        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(BYTES))), wall);
+      });
+    });
     return { plays, tallies, mine: createMine() };
-  }, [door.posts]);
+  }, [door.posts, instance.cards]);
 
   const note = useMemo(() => parse(door.note).filter((b) => b.t !== 'marker'), [door.note]);
   const noteFill: Fill = { settings, path, marker: () => null };

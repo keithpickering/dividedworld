@@ -719,7 +719,7 @@ export function Hud() {
                   <span className="kb-hud-sockets" aria-hidden="true">
                     {Array.from({ length: orbFills(0, 0, settings.walletCap).orbs.length }, (_, i) => <span key={i} className="kb-hud-socket" />)}
                   </span>
-                  <p className="kb-hud-aura-line">No mask, no Aura, no hand yet. Your first character fills them.</p>
+                  <p className="kb-hud-aura-line">Earn reactions to fill your Aura and add effects to posts.</p>
                 </CalmRegion>
               )}
               {!signedIn && (

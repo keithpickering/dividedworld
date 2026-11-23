@@ -7,7 +7,11 @@ export const GRID = 100;
 export type Cells = Uint8Array;
 export interface SurfaceStroke { readonly width: number; readonly aspect: number; readonly points: readonly (readonly [number, number])[] }
 
-const BYTES = (GRID * GRID) / 8;
+/** The bytes a grid's cells take. */
+export const BYTES = (GRID * GRID) / 8;
+
+/** Whether cell `i` is set. */
+export const hasCell = (cells: Cells, i: number): boolean => (cells[i >> 3]! & (0x80 >> (i & 7))) !== 0;
 
 const finite = (n: unknown): n is number => typeof n === 'number' && Number.isFinite(n);
 

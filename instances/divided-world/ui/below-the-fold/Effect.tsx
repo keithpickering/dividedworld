@@ -3,9 +3,9 @@
  * docs/plans/2026-11-13-fold-the-row-design.md): the post is drawn as one bar and nothing else until a reader presses it, which opens the post for
  * that reader on this page, and a second press folds it again. It is a 2003 `[spoiler]` bar, a real button, the same for every reader alike.
  *
- * It works in one of two places. Where a post has a row (a thread's post), the card sets `foldsRow` and the engine draws the bar over the whole row
+ * It works in one of two places. Where a post has a row (a thread's post, the front door's), the card sets `foldsRow` and the engine draws the bar over the whole row
  * (thread/FoldBar.tsx) and gives this effect `fold`; the effect then draws `children` and nothing else, and only tells the Lens the row's state, with the
- * row's own press as its one control. Where there is no row (the ORIGIN box, the front door, a moment, History) there is no `fold`, and the effect draws
+ * row's own press as its one control. Where there is no row (the ORIGIN box, a moment, History) there is no `fold`, and the effect draws
  * its own bar inside the words, as below.
  *
  * Without `fold` the one piece of state is `open`, the reader's own and in the page's memory: nothing is saved, sent or counted, so it lasts until

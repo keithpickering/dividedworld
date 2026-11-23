@@ -3,7 +3,11 @@ import { act, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, test } from 'vitest';
 import type { EffectProps, CardUi } from '../cards/types.ts';
-import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
+import { ok, refuse, type CardRules } from '../../rules/cards.ts';
+import { cellsOf, count, union, type SurfaceStroke } from '../../rules/surface.ts';
+import { KayfaProvider, useKayfa } from '../context.tsx';
+import type { FrontDoorPost } from '../types.ts';
+import { buildWorld, renderIn, renderInWorld, testInstance } from '../test-world.tsx';
 import { FrontDoor } from './FrontDoor.tsx';
 
 /* A card of the test's own with an effect: it wraps the words, says one control, and reports what save and release answer. */
@@ -19,6 +23,29 @@ const test_card: CardUi = {
   describe: () => 'A test card.',
   art: { color: 'currentColor', ink: 'currentColor', canvas: '', mark: '', credit: 'Test' },
 };
+
+/* A card that keeps a state (`validateState`), and one with a surface; each says what its effect was handed. */
+const rulesOf = (key: string, extra: Partial<CardRules>): CardRules => ({ ...testInstance.cards[0]!, key, name: key, stack: 1, reaches: ['post' as const], ...extra } as CardRules);
+const stroke = (y: number): SurfaceStroke => ({ width: 0.1, aspect: 1, points: [[0.1, y], [0.9, y]] });
+const checkDraw = (input: unknown) => (typeof input === 'object' && input !== null && Array.isArray((input as { strokes?: unknown }).strokes)
+  ? ok({ strokes: (input as { strokes: SurfaceStroke[] }).strokes, payload: { strokes: (input as { strokes: unknown[] }).strokes } }) : refuse('strokes'));
+const noted = rulesOf('noted', { validateState: (s: unknown) => ok(s) });
+const slab = rulesOf('slab', { surface: { limitKey: 'slab.limit', mostLive: 48, validateDraw: checkDraw, validateWash: checkDraw } } as Partial<CardRules>);
+const doorInstance = { ...testInstance, cards: [...testInstance.cards, noted, slab], settings: { ...testInstance.settings, cardSettings: { 'slab.limit': 40 } } };
+let notedSeen: EffectProps | null = null;
+let wallSeen: EffectProps | null = null;
+const plain = (key: string, keep: (p: EffectProps) => void): CardUi => ({ key, Effect: (props) => { keep(props); return <div>{props.children}</div>; }, describe: () => key, art: { color: 'currentColor', ink: 'currentColor', canvas: '', mark: '', credit: 'Test' } });
+const notedUi = plain('noted', (p) => { notedSeen = p; });
+const slabUi = plain('slab', (p) => { wallSeen = p; });
+const wallPost = (strokes: readonly SurfaceStroke[], extra: readonly { by: string; draw: unknown }[] = []): FrontDoorPost => ({
+  by: 'bo', body: 'A wall.', reactions: {}, plays: [{ card: 'slab', by: 'ann', config: {}, draws: [...strokes.map((s, i) => ({ by: i === 0 ? 'ann' : 'bo', draw: { strokes: [s] } })), ...extra] }],
+});
+/** The front door with posts of the test's own, on an instance that has the two cards. */
+function WithDoor({ posts, after = [] }: { readonly posts?: readonly FrontDoorPost[]; readonly after?: readonly FrontDoorPost[] }) {
+  const k = useKayfa();
+  return <KayfaProvider value={{ ...k, instance: doorInstance, ui: { ...k.ui, frontDoor: { ...k.ui.frontDoor, posts: [...(posts ?? k.ui.frontDoor.posts), ...after] } } }}><FrontDoor /></KayfaProvider>;
+}
+const drawWith = (posts: readonly FrontDoorPost[]) => renderInWorld(<WithDoor posts={posts} />, { cards: [test_card, notedUi, slabUi], instance: doorInstance });
 const draw = () => renderInWorld(<FrontDoor />, { cards: [test_card] });
 
 describe('the front door', () => {
@@ -140,7 +167,7 @@ describe('the front door', () => {
       for (const [key, value] of Object.entries(fake)) {
         if (typeof value === 'function' && key !== 'now') (fake as unknown as Record<string, unknown>)[key] = (...a: unknown[]) => { names.add(key); return (value as (...x: unknown[]) => unknown)(...a); };
       }
-      const { unmount } = renderIn(fake, element, { cards: [test_card] });
+      const { unmount } = renderIn(fake, element, { cards: [test_card, slabUi] });
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
       await use();
       await act(async () => { await new Promise((r) => setTimeout(r, 50)); });
@@ -148,7 +175,7 @@ describe('the front door', () => {
       return names;
     };
     const baseline = await called(<p>nothing</p>);
-    const withDoor = await called(<FrontDoor />, async () => {
+    const withDoor = await called(<WithDoor after={[wallPost([stroke(0.2), stroke(0.6)])]} />, async () => {
       /* A reaction, a pick and an open Lens with a reaction to the play in it: none of them asks anyone. */
       await userEvent.click(screen.getByRole('button', { name: 'Fire, 2. React' }));
       await userEvent.click(screen.getAllByRole('button', { name: 'React' })[1]!);
@@ -158,6 +185,8 @@ describe('the front door', () => {
       await userEvent.click(within(lens).getByRole('button', { name: '1 play · Ann' }));
       await userEvent.click(within(lens).getByRole('button', { name: 'Fire, 1. React' }));
       await within(lens).findByRole('button', { name: 'Fire, 2, including yours, can\'t be taken back' });
+      /* The wall's `near`, as an effect calls it when the wall comes into view: the staged page reads nothing. */
+      await act(async () => { wallSeen!.surface!.near(); });
     });
     expect([...withDoor].filter((n) => !baseline.has(n))).toEqual([]);
   });
@@ -175,6 +204,53 @@ describe('the front door', () => {
   });
 });
 
+describe('the front door\'s saved states and surface draws', () => {
+  test('a play with a state hands it to its effect under the play\'s id', () => {
+    drawWith([{ by: 'ann', body: 'Hi.', reactions: {}, plays: [{ card: 'noted', by: 'bo', config: {}, state: { note: 'kept' } }] }]);
+    const id = notedSeen!.plays[0]!.id;
+    expect(notedSeen!.states[id]).toMatchObject({ state: { note: 'kept' } });
+  });
+
+  test('a surface play with two draws hands its effect the draws in order, with their drawers, and the cells they cover', () => {
+    drawWith([wallPost([stroke(0.2), stroke(0.6)])]);
+    const s = wallSeen!.surface!;
+    expect(s.acts).toHaveLength(2);
+    expect(s.acts!.map((a) => a.kind)).toEqual(['draw', 'draw']);
+    expect(s.acts![0]!.character).toBe('front-door:ann');
+    expect(s.acts![1]!.character).toBe('front-door:bo');
+    expect(s.acts![0]!.payload).toEqual({ strokes: [stroke(0.2)] });
+    expect(s.covered).toBe(count(union(cellsOf([stroke(0.2)]), cellsOf([stroke(0.6)]))));
+    expect(s.covered).toBeGreaterThan(0);
+  });
+
+  test('overlapping draws each carry the cells they own, a later draw taking cells from an earlier one, and the shares sum to the cells covered', () => {
+    drawWith([wallPost([stroke(0.2), stroke(0.25), stroke(0.6)])]);
+    const s = wallSeen!.surface!;
+    const [a, b, c] = [cellsOf([stroke(0.2)]), cellsOf([stroke(0.25)]), cellsOf([stroke(0.6)])];
+    const shares = s.acts!.map((x) => (x as { share: number }).share);
+    expect(count(a) + count(b)).toBeGreaterThan(count(union(a, b)));
+    expect(shares).toEqual([count(a) - (count(a) + count(b) - count(union(a, b))), count(b), count(c)]);
+    expect(shares[0]).toBeGreaterThan(0);
+    expect(shares.reduce((x, y) => x + y, 0)).toBe(s.covered);
+  });
+
+  test('a draw a later one paints over entirely owns nothing, so the wall does not list it, as a live thread\'s would not', () => {
+    const wide: SurfaceStroke = { width: 0.4, aspect: 1, points: [[0.0, 0.2], [1.0, 0.2]] };
+    drawWith([wallPost([stroke(0.2), wide])]);
+    const s = wallSeen!.surface!;
+    expect(s.acts).toHaveLength(1);
+    expect(s.acts![0]!.character).toBe('front-door:bo');
+    expect((s.acts![0] as { share: number }).share).toBe(s.covered);
+  });
+
+  test('a draw the card\'s rules refuse is not staged, and the others are', () => {
+    drawWith([wallPost([stroke(0.2)], [{ by: 'bo', draw: 'not a draw' }, { by: 'bo', draw: { strokes: [stroke(0.6)] } }])]);
+    const s = wallSeen!.surface!;
+    expect(s.acts).toHaveLength(2);
+    expect(s.covered).toBe(count(union(cellsOf([stroke(0.2)]), cellsOf([stroke(0.6)]))));
+  });
+});
+
 describe('the front door with an effect that loads on first use', () => {
   test('the post shows its words before the effect lands, and inside it after', async () => {
     let land!: () => void;
@@ -185,5 +261,74 @@ describe('the front door with an effect that loads on first use', () => {
     expect(screen.queryByTestId('effect')).toBeNull();
     await act(async () => { land(); await gate; });
     expect(screen.getByTestId('effect')).toHaveTextContent('It plays up to 3 characters.');
+  });
+});
+
+describe('the front door\'s pictures', () => {
+  test('a root-relative picture in a staged post is drawn from the page\'s own origin', () => {
+    drawWith([{ by: 'ann', body: '[img]/x/sheet.gif[/img]', reactions: {} }]);
+    /* Over https it is an img; over http (this test's origin) the renderer shows the same address as a link. */
+    const el = document.querySelector('article.kb-act img, article.kb-act a[href$="sheet.gif"]');
+    expect(el?.getAttribute('src') ?? el?.getAttribute('href')).toBe(`${window.location.origin}/x/sheet.gif`);
+  });
+
+  test('a protocol-relative picture is not rewritten, and the parser treats it as it does anywhere', () => {
+    drawWith([{ by: 'ann', body: '[img]//evil.example/a.gif[/img]', reactions: {} }]);
+    const srcs = [...document.querySelectorAll('article.kb-act img, article.kb-act a')].map((i) => i.getAttribute('src') ?? i.getAttribute('href'));
+    expect(srcs.some((s) => s?.includes('evil.example'))).toBe(false);
+    expect(srcs.some((s) => s?.startsWith(window.location.origin))).toBe(false);
+  });
+
+  describe('a post wearing a card that folds the row', () => {
+    let folded: EffectProps | null = null;
+    const foldUi: CardUi = { ...plain('folder', (p) => { folded = p; }), foldsRow: true };
+    const folder = rulesOf('folder', {});
+    const foldInstance = { ...doorInstance, cards: [...doorInstance.cards, folder] };
+    const foldPosts: readonly FrontDoorPost[] = [
+      { by: 'bo', body: 'Folded words.', reactions: {}, plays: [{ card: 'folder', by: 'ann', config: {} }] },
+      { by: 'ann', body: 'Plain words.', reactions: {}, plays: [{ card: 'noted', by: 'bo', config: {}, state: {} }] },
+    ];
+    function Fold() {
+      const k = useKayfa();
+      return <KayfaProvider value={{ ...k, instance: foldInstance, ui: { ...k.ui, frontDoor: { ...k.ui.frontDoor, posts: foldPosts } } }}><FrontDoor /></KayfaProvider>;
+    }
+    const drawFold = () => renderInWorld(<Fold />, { cards: [foldUi, notedUi, test_card], instance: foldInstance });
+    const article = (seq: number) => document.querySelector<HTMLElement>(`#front-door-post-${seq}`)!;
+
+    test('the post is folded behind a bar: the effect is given the fold, the article says so, and the grid is hidden', () => {
+      drawFold();
+      expect(folded!.fold).toMatchObject({ open: false });
+      expect(article(1)).toHaveAttribute('data-kb-fold', 'folded');
+      const bar = article(1).querySelector('.kb-fold-bar') as HTMLElement;
+      expect(within(bar).getByRole('button', { name: /^Show post #1 by Bo/u })).toHaveAttribute('aria-expanded', 'false');
+      expect(article(1).querySelector('.kb-act-grid')).toHaveAttribute('hidden');
+    });
+
+    test('the press opens the row, and the effect is told', async () => {
+      drawFold();
+      const grid = article(1).querySelector('.kb-act-grid') as HTMLElement;
+      const press = within(article(1)).getByRole('button', { name: /^Show post #1/u });
+      expect(press).toHaveAttribute('aria-controls', grid.id);
+      expect(grid.id).not.toBe('');
+      await userEvent.click(press);
+      expect(press).toHaveAttribute('aria-expanded', 'true');
+      expect(grid).not.toHaveAttribute('hidden');
+      expect(article(1)).toHaveAttribute('data-kb-fold', 'open');
+      expect(folded!.fold).toMatchObject({ open: true });
+    });
+
+    test('the marks sit in the bar, not on the date row', () => {
+      drawFold();
+      expect(article(1).querySelector('.kb-fold-bar .kb-mark')).not.toBeNull();
+      expect(article(1).querySelector('.kb-act-meta .kb-mark')).toBeNull();
+    });
+
+    test('a post whose card does not fold has no bar and no mark of a fold, and its marks stay on its date row', () => {
+      drawFold();
+      expect(article(2).querySelector('.kb-fold-bar')).toBeNull();
+      expect(article(2)).not.toHaveAttribute('data-kb-fold');
+      expect(article(2).querySelector('.kb-act-grid')).not.toHaveAttribute('hidden');
+      expect(article(2).querySelector('.kb-act-meta .kb-mark')).not.toBeNull();
+    });
   });
 });
