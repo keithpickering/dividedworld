@@ -39,3 +39,16 @@ export const WhoIsOnline: Story = {
   args: { heading: 'Who is online', note: 'Characters active in the past 5 minutes' },
   parameters: { world: browsing(4), path: '/' },
 };
+
+/** A persona in session is listed on the index beside the players, with the staff chip, and is not one of the others. */
+export const PersonaInSession: Story = {
+  args: { heading: 'Who is online', note: 'Characters active in the past 5 minutes' },
+  parameters: {
+    world: ((fake, instance) => {
+      browsing(4)(fake, instance);
+      fake.seed.staff('story-persona', 'Mabel', 'member');
+      fake.seed.staffSession('story-persona', { startsAt: fake.clock.now() - 60_000, endsAt: fake.clock.now() + 3_600_000 });
+    }) satisfies World,
+    path: '/',
+  },
+};

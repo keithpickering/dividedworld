@@ -106,6 +106,50 @@ describe('the presence box', () => {
     expect(box).not.toHaveTextContent('Spritey Test Cores');
   });
 
+  describe('a persona in session (the chattier staff design, section 7)', () => {
+    /** The index with two players browsing and the persona Mabel in session since a minute ago; she has posted in no thread. */
+    function inSession() {
+      const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
+      const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
+      w.fake.seed.staffSession('mabel', { startsAt: w.fake.clock.now() - 60_000, endsAt: w.fake.clock.now() + 3_600_000 });
+      return { ...w, mabel };
+    }
+
+    test('the index\'s box names her with the staff group\'s chip, as a thread\'s box does', async () => {
+      const { show } = inSession();
+      show(<PresenceBox place={{ kind: 'index' }} heading="Who is online" />);
+      const box = await screen.findByRole('region', { name: 'Who is online' });
+      await within(box).findByRole('link', { name: 'Mabel' });
+      expect(box).toHaveTextContent('Mabel, Test Cores');
+    });
+
+    test('the count of others leaves her out, though her name is listed beside the capped players', async () => {
+      const w = crowd(['A1', 'B2', 'C3', 'D4'], { presenceNames: 2 });
+      w.fake.seed.staff('mabel', 'Mabel', 'member');
+      w.fake.seed.staffSession('mabel', { startsAt: w.fake.clock.now() - 60_000, endsAt: w.fake.clock.now() + 3_600_000 });
+      w.show(<PresenceBox place={{ kind: 'index' }} heading="Who is online" />);
+      const box = await screen.findByRole('region', { name: 'Who is online' });
+      await within(box).findByRole('link', { name: 'Mabel' });
+      expect(box).toHaveTextContent('Mabel, Test Cores');
+      /* The cap holds two of the five players (four others and the viewer) and the other three are counted; Mabel is neither among nor in that count. */
+      await vi.waitFor(() => expect(box).toHaveTextContent(/and 3 others$/u));
+    });
+
+    test('a thread lists her only once she has posted there in the session', async () => {
+      const { seeded, fake, mabel, show } = inSession();
+      show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+      const box = await screen.findByRole('region', { name: HEADING });
+      await within(box).findByRole('link', { name: 'Pipewrench' });
+      expect(box).not.toHaveTextContent('Mabel');
+      cleanup();
+      fake.seed.staffPost(mabel, seeded.thread, 'Hello.');
+      show(<PresenceBox place={{ kind: 'thread', thread: seeded.thread }} heading={HEADING} />);
+      const again = await screen.findByRole('region', { name: HEADING });
+      await within(again).findByRole('link', { name: 'Mabel' });
+      expect(again).toHaveTextContent('Mabel, Test Cores');
+    });
+  });
+
   describe('a Mod on a visit (the Mod Bots design, section 9; docs/research/2026-11-06-mod-bots/04-presence.png)', () => {
     /** The Clerk visits post 2 of the thread, with no post of its own there. */
     function visiting() {

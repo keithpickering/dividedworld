@@ -236,6 +236,11 @@ export interface Seed {
   tally(act: Id, counts: Readonly<Record<string, number>>): void;
   /** A staff character (a Boss or a Mod Bot): debuted, owned by no player, with no class; it acts only through the seed below. */
   staff(key: string, name: string, office: 'boss' | 'mod' | 'member' | 'benched', options?: { title?: string; signature?: string; at?: number; debuted?: boolean; pronouns?: PronounSet }): Id;
+  /**
+   * A persona's chatter session (a `staff_sessions` row, 0407): `staff` is in session from `startsAt` to `endsAt` (epoch ms). Presence lists it while one is open
+   * (the index's box beside the capped players, never in their "others" count; a thread's and a board's box once it has posted there since the session began).
+   */
+  staffSession(staff: string, session: { readonly startsAt: number; readonly endsAt: number }): void;
   /** A staff member's career as `staff_career` would return it (default: none). */
   career(key: string, career: Career): void;
   /** A staff member's in-character profile, a version at `at` (the latest is the one read). */
@@ -616,6 +621,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const apologies: { move: Id; apology: Id; character: Id; state: 'pending' | 'accepted' | 'rejected' | 'returned'; at: number }[] = [];
   const moveEnds = new Map<Id, { why: 'met' | 'expired' | 'reversed' | 'superseded' | 'spent' | 'overturned'; by: string; at: number }>();
   const careers = new Map<string, Career>();
+  const staffSessions: { staff: string; startsAt: number; endsAt: number }[] = [];
   const staffProfiles: { key: string; at: number; interests: string[]; favorites: Id[]; mood: string; signature: string }[] = [];
   interface QueueRec { id: number; staff: string; successor?: string; lasting?: { kind: string; params: Readonly<Record<string, unknown>> }; bundle?: { id: string; name: string; role: string | null }; waitsOn?: readonly number[]; move: SeedMove; why: string; goLiveAt: number; failure: { at: number; text: string } | null; refusal?: { at: number; text: string }; heldAt: number | null; landed: Id | null; replacedAt?: number; adminDescription?: string }
   const queue: QueueRec[] = [];
@@ -3309,6 +3315,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       .map((s): Standing => ({ ...s, place: s.standing > 0 ? 1 + new Set(listed.filter((o) => o.standing > s.standing).map((o) => o.standing)).size : null }))
       .sort((a, b) => b.standing - a.standing || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0));
   };
+  /** When the open chatter session of a staff character began, or null: none open, or it is not a persona in play (a benched office has none listed). */
+  const inSession = (c: CharRec): number | null => {
+    if (!c.staff || c.staff.office === 'benched') return null;
+    const at = now();
+    const open = staffSessions.filter((x) => x.staff === c.staff!.key && x.startsAt <= at && at < x.endsAt);
+    return open.length === 0 ? null : Math.min(...open.map((x) => x.startsAt));
+  };
   /** A place's presence box (presence_box, 0093): the characters present within the window, longest there first. It marks no one present. */
   function presenceAt(where: PresencePlace): Presence {
     let place: Id | null = null;
@@ -3337,7 +3350,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
            public posts; the index never lists it, and a board lists it once however many of its threads it posted in. */
         where.kind === 'index' ? [] : [...characters.values()].flatMap((c) => {
           if (!c.staff || c.staff.office === 'developer' || c.debutedAt === null || c.retiredAt !== null) return [];
-          const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= at - win && a.thread !== null && threads.has(a.thread)
+          /* A persona in session is listed by its posts since the session began, not only the window's (presence_box, 0407). */
+          const opened = inSession(c);
+          const posts = [...acts.values()].filter((a) => a.kind === 'post' && a.character === c.id && a.at >= Math.min(at - win, opened ?? Infinity) && a.thread !== null && threads.has(a.thread)
             && (where.kind === 'thread' ? a.thread === place : threads.get(a.thread)!.board === board));
           if (posts.length === 0) return [];
           return [{ id: c.id, name: c.name, staff: true, since: Math.min(...posts.map((a) => a.at)) }];
@@ -3359,7 +3374,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return out;
       }, []).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
       const shown = listed.slice(0, settings.presenceNames);
-      return { names: shown.map(({ id, name, staff, visitPost }) => ({ id, name, staff, group: groupOf(characters.get(id)!), ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
+      /* The index lists every persona in session beside the capped players, outside the cap and the "others" count (presence_box, 0407). */
+      const beside: Listed[] = where.kind !== 'index' ? [] : [...characters.values()].flatMap((c) => {
+        const opened = inSession(c);
+        return opened === null || c.debutedAt === null || c.retiredAt !== null ? [] : [{ id: c.id, name: c.name, staff: true, since: opened }];
+      }).sort((a, b) => a.since - b.since || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0));
+      const names = [...shown, ...beside];
+      return { names: names.map(({ id, name, staff, visitPost }) => ({ id, name, staff, group: groupOf(characters.get(id)!), ...(visitPost !== undefined ? { visitPost } : {}) })), others: listed.length - shown.length };
   }
   /** The rule an infraction was filed under, in the glass's words (punishment_words). */
   function ruleOf(inf: ActRec): string | null {
@@ -5692,6 +5713,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       };
       characters.set(c.id, c);
       return c.id;
+    },
+    staffSession(key, session) {
+      staffId(key);
+      staffSessions.push({ staff: key, ...session });
     },
     career(key, career) {
       staffId(key);
