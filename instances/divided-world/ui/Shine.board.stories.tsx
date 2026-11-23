@@ -24,11 +24,15 @@ import { useLocation } from '../../../engine/ui/router.tsx';
 import { probe } from '../../../engine/ui/shine/loop.ts';
 import { foilProbe, setFoilWorker } from '../../../engine/ui/shine/foilClient.ts';
 import { LoadedThread } from '../../../engine/ui/loaded.tsx';
+import { BEND_LAYER } from '../../../engine/ui/cards/body.ts';
+import { cardOf } from '../../../engine/ui/story.tsx';
 import { countRaster, type Counter, type RasterFrame, type StoryAnswer, type StoryAsk } from './shine-probes.ts';
 
 declare global {
   interface Window {
     __kbPoison?: string;
+    /** Story-only, set by e2e/dent-bend.spec.ts before the page loads (the app rewrites its address): whether the `Dented` story bends the foils, over the story's `bend` arg. */
+    __kbBend?: boolean;
     __kbShine?: {
       /**
        * Every shiny post on the page, top to bottom: the loop's draws of it, the box it paints in the viewport (its width too, in CSS
@@ -150,10 +154,10 @@ function painted(el: Element): DOMRect {
   return (el.querySelector('canvas') ?? el).getBoundingClientRect();
 }
 
-interface Args { readonly reduced: boolean }
+interface Args { readonly reduced: boolean; readonly chair?: boolean; readonly bend?: boolean }
 
-function Busy({ reduced }: Args) {
-  const { api } = useKayfa();
+function Busy({ reduced, chair = false, bend = true }: Args) {
+  const { api, instance } = useKayfa();
   const [ready, setReady] = useState(false);
   const thread = /^\/t\/([^/]+)/u.exec(useLocation().path)?.[1] ?? null;
   useEffect(() => {
@@ -168,6 +172,16 @@ function Busy({ reduced }: Args) {
     return () => { setFoilWorker(null); };
   }, []);
   useEffect(() => plant(window.__kbPoison ?? null), []);
+  /* The measurement alone (the story, not the effect; docs/research/2026-11-23-dent-bend, e2e/dent-bend.spec.ts): every foil carries the engine's `data-kb-bend` or does not, as each mounts, so the foil is bent by a standing dent or is shaded only. */
+  useEffect(() => {
+    if (!chair) return;
+    const want = window.__kbBend ?? bend;
+    const apply = (): void => { for (const c of document.querySelectorAll('canvas.dw-fab-foil')) c.toggleAttribute(BEND_LAYER, want); };
+    apply();
+    const seen = new MutationObserver(apply);
+    seen.observe(document.body, { childList: true, subtree: true });
+    return () => { seen.disconnect(); for (const c of document.querySelectorAll('canvas.dw-fab-foil')) c.removeAttribute(BEND_LAYER); };
+  }, [chair, bend]);
   useEffect(() => {
     let raster: Counter | null = null;
     const tell = (on: boolean): void => { foilProbe.worker()?.postMessage({ kind: 'story', what: 'raster', on } satisfies StoryAsk); };
@@ -217,6 +231,8 @@ function Busy({ reduced }: Args) {
         /* Played on by a character that is not its author, at levels one to three in turn. */
         const from = post.character === caster.character ? target.character! : caster.character!;
         for (let layer = 1; layer <= (fabbed % 3) + 1; layer += 1) fake.seed.card(from, post.id, 'feelin-fab', { layer, config: {}, message: `Fab ${layer}` });
+        /* `Dented`: a Steel Chair on every post with a foil, thrown by the same character, so a dent stands where a foil is. */
+        if (chair) fake.seed.card(from, post.id, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
         fabbed += 1;
       });
       fake.seed.reach(caster.character, 'character', sparkly, 'glitter-bomb', { post: mine[0]!, ends: Date.now() + 5 * 86_400_000, message: 'Sparkle.' });
@@ -224,7 +240,7 @@ function Busy({ reduced }: Args) {
       if (live) setReady(true);
     })().catch((e: unknown) => { console.error('the busy thread could not be seeded', e); });
     return () => { live = false; };
-  }, [api, thread]);
+  }, [api, thread, chair, instance]);
   return <Frame>{thread && ready ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
 }
 
@@ -240,3 +256,8 @@ type Story = StoryObj<typeof Busy>;
 
 export const Full: Story = { args: { reduced: false } };
 export const Still: Story = { args: { reduced: true } };
+/**
+ * The Full thread with a Steel Chair on every post that has a Feelin' Fab (the plan's Task 4, docs/plans/2026-11-23-dent-bend-plan.md), and `bend`: whether the foils carry `data-kb-bend`, so the dents bend them
+ * (true) or only shade them (false). The attribute is set by this story for the measurement alone, e2e/dent-bend.spec.ts; the effect does not set it.
+ */
+export const Dented: Story = { args: { reduced: false, chair: true, bend: true } };

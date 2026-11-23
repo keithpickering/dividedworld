@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { REDRAWN_SHARE, onScreen, redrawn, type Box1, type Sample } from './shine-share.ts';
+import { REDRAWN_SHARE, SCROLL_SPEED, onScreen, percentile, redrawn, scrollMs, scrollRun, settle, mouse, fireBursts, type Box1, type Run, type Sample } from './shine-share.ts';
 
 /**
  * The shine loop on a busy page, as Chromium runs it (docs/plans/2026-11-06-shine-plan.md, Task 11; the design's section 6): a thread of
@@ -91,19 +91,6 @@ const THROTTLE = Number(process.env.KB_CPU_THROTTLE ?? 1);
  * else).
  */
 const RASTER_SHARE = 1.5;
-/**
- * How fast the timed scrolls move, in CSS px a second: the speed the scroll had while it was three seconds from the top of the page to
- * its bottom and a post's body had no floor (3,865 px, CI's `shine-data`). The page is longer now (a body is at least 22.5em: 7,267
- * px), and the scroll takes as long as the page is, so the loop's and the worker's time, the raster share and the frames a post is in
- * view for are measured at the speed they always were. Three seconds over this page was 2,420 px a second, and showed a cost these
- * runs never measured: a Glitter Bomb's burst point crossed the middle of the window (the 540 px it is watched against) in about 220
- * ms, under the 300 ms it must stay there to fire (instances/divided-world/ui/glitter-bomb/Effect.tsx `ARM_MS`), so no burst fired
- * and every pass armed all four again, each drawn whole on every frame while it armed (a busy draw is never held to its share): with
- * the floor, 2.41 against the words on CI. That cost is real, a reader can scroll that fast, and it is
- * keithpickering/dividedworld#726's; it is not measured here. The timed runs measure posts whose bursts have fired, which `fireBursts`
- * sees to by name before them, whatever the speed.
- */
-const SCROLL_SPEED = 1290;
 /** Out of view "beyond a margin": a post this many px past the viewport's edge has freed its canvases. */
 const FREED_MARGIN = 300;
 
@@ -132,21 +119,6 @@ export function outOfViewDraws(samples: readonly Sample[], lag = LAG): { frame: 
   return bad;
 }
 
-const percentile = (xs: readonly number[], p: number): number => {
-  const s = [...xs].sort((a, b) => a - b);
-  return s[Math.min(s.length - 1, Math.ceil(p * s.length) - 1)]!;
-};
-
-/** Waits for the fonts and for the thread's first shiny post to stop changing size, so a late layout adds no draw to a count. */
-async function settle(page: Page): Promise<void> {
-  await page.evaluate(() => document.fonts.ready.then(() => undefined));
-  await page.evaluate(() => new Promise<void>((done) => {
-    const read = () => `${document.querySelectorAll('[data-kb-fab], [data-kb-glitter]').length}:${document.documentElement.scrollHeight}`;
-    let prev = read(), same = 0;
-    const tick = () => { const now = read(); same = now === prev ? same + 1 : 0; prev = now; if (same >= 20) done(); else requestAnimationFrame(tick); };
-    requestAnimationFrame(tick);
-  }));
-}
 
 async function open(page: Page, name: string, poison = ''): Promise<void> {
   await page.setViewportSize({ width: 1200, height: 900 });
@@ -167,69 +139,6 @@ const frames = (page: Page, n: number): Promise<void> =>
 /** What the page reports of every shiny post's canvases: its box and the size of each canvas inside it (a worker's canvases read from the worker). */
 const held = (page: Page): Promise<Held[]> => page.evaluate(() => window.__kbShine!.held());
 
-interface Run { samples: Sample[]; work: number[]; workerWork: number[] }
-
-/**
- * Fires every Glitter Bomb's burst, one post at a time: its burst point is brought to the middle of the window and held there until
- * the burst is in the air (the canvas over the words has a backing store only then: instances/divided-world/ui/glitter-bomb/
- * Effect.tsx `sizeOver`). A burst fires once per mount, so the scrolls after this pass posts that are settled, and none arms.
- */
-async function fireBursts(page: Page): Promise<void> {
-  const bombs = page.locator('[data-kb-glitter]');
-  expect(await bombs.count(), 'the thread\'s four Glitter Bomb posts').toBe(4);
-  for (let i = 0; i < 4; i += 1) {
-    /* The point is centered again at each look (the post's first draw moves it to its seeded place), and looked at often: a burst is in the air for a second or two. */
-    await expect.poll(async () => {
-      await bombs.nth(i).locator('.dw-glitter-origin').evaluate((el) => el.scrollIntoView({ block: 'center' }));
-      return bombs.nth(i).locator('canvas.dw-glitter-over').evaluate((c: HTMLCanvasElement) => c.width);
-    }, { message: `Glitter Bomb post ${i}'s burst is in the air`, intervals: [50] }).toBeGreaterThan(0);
-  }
-}
-
-/**
- * How long a scroll of the page from its top to its bottom takes at `SCROLL_SPEED`, in ms. The loop and the worker keep their own
- * time for their last 600 frames (engine/ui/shine/loop.ts `WORK_KEEP`), about ten seconds: `measure` refuses a run longer than that.
- */
-const scrollMs = (page: Page): Promise<number> =>
-  page.evaluate((speed) => Math.round(((document.documentElement.scrollHeight - window.innerHeight) / speed) * 1000), SCROLL_SPEED);
-
-/** A moving mouse, over the page's width and height, for as long as a scroll of `ms` lasts. */
-async function mouse(page: Page, ms: number): Promise<void> {
-  const end = Date.now() + ms * 0.9;
-  for (let i = 0; Date.now() < end; i += 1) { await page.mouse.move(100 + (i * 17) % 1000, 100 + (i * 41) % 700); await page.waitForTimeout(45); }
-}
-
-/** Scrolls the page from the top to the bottom at `SCROLL_SPEED` under a moving mouse, sampling every frame, the loop's own time in the frames it ran and the foil worker's in the batches it drew. */
-async function scrollRun(page: Page): Promise<Run> {
-  await page.evaluate(() => window.scrollTo(0, 0));
-  await page.waitForTimeout(500);
-  const ms = await scrollMs(page);
-  const run = page.evaluate(async (ms) => {
-    const kb = window.__kbShine!;
-    const batches0 = (await kb.workerWork(0)).batches;
-    return new Promise<Run>((done) => {
-      const out: Sample[] = [], max = document.documentElement.scrollHeight - window.innerHeight, f0 = kb.frames();
-      let t0 = 0;
-      const tick = (t: number) => {
-        t0 ||= t;
-        const hs = kb.hosts();
-        out.push({
-          t, draws: hs.map((h) => h.draws), top: hs.map((h) => h.top), bottom: hs.map((h) => h.bottom), height: window.innerHeight,
-          painted: hs.map((h) => ({ top: h.top, bottom: h.bottom, width: h.width })), own: hs.map((h) => h.own),
-          layers: hs.map((h) => h.layers), scrollY: window.scrollY,
-        });
-        const p = Math.min(1, (t - t0) / ms);
-        window.scrollTo(0, p * max);
-        if (p < 1) { requestAnimationFrame(tick); return; }
-        const work = kb.work(kb.frames() - f0);
-        void kb.workerWork(600).then((w) => { const n = Math.min(600, w.batches - batches0); done({ samples: out, work, workerWork: w.work.slice(w.work.length - n) }); });
-      };
-      requestAnimationFrame(tick);
-    });
-  }, ms);
-  await mouse(page, ms);
-  return run;
-}
 
 /** A fixed piece of work on the page's thread, in ms: how loaded the machine is just now (the same page, the same work, every run). */
 const calibrate = (page: Page): Promise<number> => page.evaluate(() => {
