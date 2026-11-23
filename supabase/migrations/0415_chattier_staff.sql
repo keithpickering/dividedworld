@@ -641,6 +641,25 @@ grant execute on function claim_pool_round(timestamptz, interval), write_session
 -- presence_listed (0357_post_veils.sql) is not redefined: a persona in session is read by presence_box itself, from the persona's own sessions and posts in the place asked about, so a read of one thread or board touches nothing outside it
 -- (a third branch of the view would have run the persona's waiting-reply read for every open session on every read, the place filter never reaching it).
 
+-- Whether a persona in session belongs in a thread's or a board's box: it posted there since its session began, or has a reply waiting there. Each is a plpgsql function of its own, called by presence_box once for each persona in
+-- session, and not an inlined `exists` in presence_box's statement. A plpgsql function plans its statements when it first runs them and keeps the plans (0368), so what presence_box planned inline (acts_public, a view of three selects,
+-- and pool_waiting_in_thread or pool_waiting_in_board inlined beside it) was kept by every connection that ever read a board or thread, whether or not a session was open (e2e 0028 measured it: board_page 12.501 MB
+-- over 12.2, thread_page 21.827 over 21.5). Here it is planned only on a read that finds a persona in session. The reads inside are what they were, so the waiting read still probes its target index (the explain in
+-- supabase/tests/0415-chattier-staff.sql holds that on the three pool_waiting functions themselves, which are not changed).
+create function presence_staff_in_thread(in_place uuid, in_character uuid, in_staff text, in_since timestamptz, in_wait interval) returns boolean
+language plpgsql stable set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
+begin
+  return exists (select 1 from acts_public x where x.thread = in_place and x.character = in_character and x.kind = 'post' and x.created_at >= in_since)
+      or exists (select 1 from pool_waiting_in_thread(in_place, array[in_staff], now() - in_wait) w);
+end $$;
+create function presence_staff_in_board(in_place uuid, in_character uuid, in_staff text, in_since timestamptz, in_wait interval) returns boolean
+language plpgsql stable set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
+begin
+  return exists (select 1 from acts_public x join threads xt on xt.id = x.thread where xt.board = in_place and x.character = in_character and x.kind = 'post' and x.created_at >= in_since)
+      or exists (select 1 from pool_waiting_in_board(in_place, array[in_staff], now() - in_wait) w);
+end $$;
+revoke execute on function presence_staff_in_thread(uuid, uuid, text, timestamptz, interval), presence_staff_in_board(uuid, uuid, text, timestamptz, interval) from public, anon, authenticated;
+
 -- presence_box (0128_groups.sql; the plan cache and jit settings 0368_client_reads_plan_once.sql gave it kept), listing a staff persona that is in session (a session open now, the persona in a posting office): in a thread's
 -- box when it posted there since the session began or has a reply waiting there (pool_waiting_in_thread), in a board's box likewise (pool_waiting_in_board), and in the index's box by the session alone, with no waiting read. The index
 -- adds the personas in session to the players' names rather than counting them among the capped ones, so "others" is what the players alone make it. Everything else as 0128_groups.sql wrote it.
@@ -682,8 +701,7 @@ begin
       from staff_sessions s
       join characters c on c.staff = s.staff and c.staff_kind = 'persona' and c.debuted_at is not null and c.retired_at is null
       where s.starts_at <= now() and now() < s.ends_at and not exists (select 1 from staff_office_now o where o.staff = s.staff and o.office in ('waiting', 'benched'))
-        and (exists (select 1 from acts_public x where x.thread = in_place and x.character = c.id and x.kind = 'post' and x.created_at >= s.starts_at)
-             or exists (select 1 from pool_waiting_in_thread(in_place, array[s.staff], now() - wait) w))),
+        and presence_staff_in_thread(in_place, c.id, s.staff, s.starts_at, wait)),
     one as (
       select s.id, s.name, bool_or(s.staff) as staff, min(s.place_since) as place_since, min(s.visit_post) as visit_post from seen s group by s.id, s.name),
     f as (select * from one order by one.place_since, one.id limit cap)
@@ -701,8 +719,7 @@ begin
       from staff_sessions s
       join characters c on c.staff = s.staff and c.staff_kind = 'persona' and c.debuted_at is not null and c.retired_at is null
       where s.starts_at <= now() and now() < s.ends_at and not exists (select 1 from staff_office_now o where o.staff = s.staff and o.office in ('waiting', 'benched'))
-        and (exists (select 1 from acts_public x join threads xt on xt.id = x.thread where xt.board = in_place and x.character = c.id and x.kind = 'post' and x.created_at >= s.starts_at)
-             or exists (select 1 from pool_waiting_in_board(in_place, array[s.staff], now() - wait) w))),
+        and presence_staff_in_board(in_place, c.id, s.staff, s.starts_at, wait)),
     b as (select x.id, x.name, bool_or(x.staff) as staff, min(x.place_since) as place_since from b0 x group by x.id, x.name),
     f as (select * from b order by b.place_since, b.id limit cap)
     select (select coalesce(jsonb_agg(jsonb_build_object('id', f.id, 'name', f.name, 'staff', f.staff, 'banned_until', banned_until(f.id), 'group', group_now(f.id)) order by f.place_since, f.id), '[]'::jsonb) from f),
