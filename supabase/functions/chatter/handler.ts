@@ -16,7 +16,7 @@ import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
 
 /** The calls that write: not sent again after an answer that may have been lost on the way back. The ledger's own writer is one. */
-const WRITES = new Set(['write_staff_act', 'write_staff_thread', 'staff_play_card', 'staff_set_card', 'write_staff_note', 'record_pool_spend', 'claim_pool_run', 'record_model_call']);
+const WRITES = new Set(['write_staff_act', 'write_staff_thread', 'staff_play_card', 'staff_set_card', 'write_staff_note', 'record_pool_spend', 'claim_pool_run', 'claim_pool_round', 'write_staff_turn', 'write_sessions', 'keep_pick', 'record_model_call']);
 
 export async function handle(request: Request, deps: JobDeps): Promise<Response> {
   const env = environment(deps.env);
@@ -34,6 +34,8 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     if (outcome.status === 'ok') {
       const unspent = outcome.picks.filter((p) => p.status === 'rejected' || p.status === 'failed');
       if (unspent.length) console.warn('chatter picks that spent nothing', slot, JSON.stringify(unspent.map((p) => ({ staff: p.staff, status: p.status, why: p.why }))));
+      const unanswered = outcome.turns.filter((t) => t.status !== 'taken');
+      if (unanswered.length) console.warn('chatter turns that wrote nothing', slot, JSON.stringify(unanswered.map((t) => ({ staff: t.staff, thread: t.thread, status: t.status, why: t.why }))));
     }
     return json(200, outcome);
   } catch (e) {
