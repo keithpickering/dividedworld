@@ -1674,6 +1674,12 @@ test('a carried pick blocked on its own day by a card slot is not written the ne
   assert.ok(thu.status === 'ok');
   assert.equal(postsOf(wed, SIGH, DAY).length, 0, 'not written on Thursday');
   assert.ok(thu.picks.some((p) => p.staff === SIGH && p.status === 'skipped' && /own day/.test(p.why ?? '')), 'and skipped on the record');
+  // Never owed, it takes no slot from Thursday: the allowance is what the same week gives with no pick carried.
+  const none = fakeDb({ sessions: [SIGH_LATER] });
+  none.state.spends.push(spendOn(DAY, CLERK, 'card-1'), spendOn(DAY, MON), spendOn(DAY, HYPE));
+  const plain = await run(none, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(plain.status === 'ok');
+  assert.equal(thu.allowance, plain.allowance, 'a carried pick past its own day takes no slot from today');
   // Sunday 11-22 with 18 spent before it has an allowance of 2: two spends use it, and Monday's run does not write the third.
   const sun = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], priorSpent: 18 });
   sun.state.days.delete(DAY);

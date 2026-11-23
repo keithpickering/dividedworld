@@ -283,9 +283,14 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
 
   const eve = dayOf(slotAt - DAY);
   const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
-  // On any day but Monday, each carried pick is a slot of its own day, which is in today's week, and its spend is not written until this round: counted as spent, so the week never overdraws.
-  // On a Monday the carried pick is Sunday's, spent in last week, so it is not counted in this one (the Monday exception).
-  const carriedSpent = new Date(slotAt).getUTCDay() === 1 ? 0 : carried.length;
+  // A carried pick is written only inside its own day's allowance: what that day's week gave it (the week as it stood on that day), less what that day already spent (a card counts as a pick, as `used` does).
+  // Past it the pick was never owed, and it is skipped on the record.
+  const eveWeek = carried.length > 0 ? await db.rpc<Week>('pool_week', { today: eve }) : null;
+  const eveAllowance = eveWeek ? allowance(eveWeek.spent, settings.pool.weekly, Date.parse(eve)) : 0;
+  let eveUsed = eveWeek ? eveWeek.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0) : 0;
+  // On any day but Monday, each carried pick its own day has room for is a slot of that day, which is in today's week, and its spend is not written until this round: counted as spent, so the week
+  // never overdraws. One past its own day's allowance was never owed and takes no slot. On a Monday the carried pick is Sunday's, spent in last week, so it is not counted in this one (the Monday exception).
+  const carriedSpent = new Date(slotAt).getUTCDay() === 1 ? 0 : Math.min(carried.length, Math.max(eveAllowance - eveUsed, 0));
   // The allowance counts the week before today, so every round of the day computes the allowance the first did.
   const todays = allowance(week.spent + carriedSpent, settings.pool.weekly, slotAt);
   const startedToday = week.today.some((r) => r.started_thread);
@@ -295,11 +300,6 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const records: PickRecord[] = [];
   const kept: string[] = [];
   const roster = tuned.system.roster;
-  // A carried pick is written only inside its own day's allowance: what that day's week gave it (the week as it stood on that day), less what that day already spent (a card counts as a pick, as `used` does).
-  // Past it the pick was never owed, and it is skipped on the record.
-  const eveWeek = carried.length > 0 ? await db.rpc<Week>('pool_week', { today: eve }) : null;
-  const eveAllowance = eveWeek ? allowance(eveWeek.spent, settings.pool.weekly, Date.parse(eve)) : 0;
-  let eveUsed = eveWeek ? eveWeek.today.reduce((n, r) => n + 1 + (r.card_act === null ? 0 : 1), 0) : 0;
 
   const slugs = new Set(Object.values(context.boards));
   const offerable = settings.pool.cardRarityMost;
