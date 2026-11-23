@@ -2907,6 +2907,52 @@ test('crowd floor: a vote that moves into a quadrant the class pays takes back h
   assert.equal(amountOf(second, 'tom-1', 'crowd.floor'), -1, 'the neutral half moved away');
   assert.equal(amountOf(second, 'tom-1', 'crowdy.cheer'), 5, 'and the paid quadrant gains its half');
   assert.equal(second.details.find((d) => d.reason === 'crowd.floor')!.quadrant, 'calmPositive');
+  assert.deepEqual(flooredOf(second), { calmPositive: 1 }, 'the floor still on the half of the vote that stayed');
+});
+
+/* A floor is taken back only as paid (#1014, option 2): `paid.floored` is the net floor paid on each quadrant of a player's vote, and a share lost takes back that times
+   the share lost over the share held, whatever crowdFloor is now. Three windows of bob's vote on tom-1's tp1. */
+const ROOMY = [{ class: 'roomy', from: 0 }];
+const W3F = { id: 'wed', from: TO + 24 * H, to: TO + 48 * H };
+const bobOn = (kinds: string[], at: number) => kinds.map((k, i) => react('tp1', 'bob', 'bob-1', k, at + i));
+const floorBy = (r: ReturnType<typeof settle>) => r.details.filter((d) => d.reason === 'crowd.floor').map((d) => [d.quadrant, d.amount]);
+const flooredOf = (r: ReturnType<typeof settle>) => r.paid.find((p) => p.player === 'bob' && p.act === 'tp1')!.floored ?? {};
+
+test('crowd floor: a vote paid before the floor existed never takes back a floor that was not paid, and the quadrant that gained one takes back only that', () => {
+  const w1 = settle(floorBoard(bobOn(['tea', 'tomato'], FROM + 5 * H), ROOMY), withFloor(0));
+  assert.deepEqual(floorBy(w1), []);
+  const w2 = settle({ ...floorBoard([...bobOn(['tea', 'tomato'], FROM + 5 * H), ...bobOn(['fire'], TO + 3 * H)], ROOMY), window: W2, paid: w1.paid }, withFloor(3));
+  assert.deepEqual(floorBy(w2), [['excitedPositive', 1]], 'calm and excited-negative lost a sixth each, with no floor paid on them: nothing taken back; the new third pays 3 x 1/3');
+  assert.deepEqual(flooredOf(w2), { excitedPositive: 1 });
+  const w3 = settle({ ...floorBoard([...bobOn(['tomato'], FROM + 6 * H), ...bobOn(['fire'], W3F.from + 3 * H)], ROOMY), window: W3F, paid: w2.paid }, withFloor(3));
+  assert.ok(floorBy(w3).every(([, a]) => (a as number) > 0), `the dropped quadrant had no floor, so no negative line: ${JSON.stringify(floorBy(w3))}`);
+  assert.deepEqual(flooredOf(w3), { excitedPositive: 1.5, excitedNegative: 0.5 });
+});
+
+test('crowd floor: a retune takes back exactly what was paid, never the new rate', () => {
+  const w1 = settle(floorBoard(bobOn(['tea'], FROM + 5 * H)), withFloor(2));
+  assert.equal(amountOf(w1, 'tom-1', 'crowd.floor'), 2);
+  assert.deepEqual(flooredOf(w1), { calmPositive: 2 });
+  const w2 = settle({ ...floorBoard(bobOn(['fire'], TO + 3 * H)), window: W2, paid: w1.paid }, withFloor(3));
+  assert.equal(amountOf(w2, 'tom-1', 'crowd.floor'), -2, 'what was paid at 2, not 3');
+  assert.deepEqual(flooredOf(w2), {}, 'nothing is left to take back');
+});
+
+test('crowd floor: switched off and on, the vote taken half away takes back half of what was paid', () => {
+  const w1 = settle(floorBoard(bobOn(['tea'], FROM + 5 * H)), withFloor(2));
+  const w2 = settle({ ...floorBoard(bobOn(['tea'], FROM + 5 * H).concat(bobOn(['tea'], TO + 3 * H))), window: W2, paid: w1.paid }, withFloor(0));
+  assert.deepEqual(floorBy(w2), [], 'the vote did not move, and the floor is off');
+  assert.deepEqual(flooredOf(w2), { calmPositive: 2 }, 'what was paid is still on the vote');
+  const w3 = settle({ ...floorBoard([...bobOn(['tea'], FROM + 5 * H), ...bobOn(['fire'], W3F.from + 3 * H)]), window: W3F, paid: w2.paid }, withFloor(2));
+  assert.equal(amountOf(w3, 'tom-1', 'crowd.floor'), -1);
+  assert.deepEqual(flooredOf(w3), { calmPositive: 1 });
+});
+
+test('crowd floor: a vote that moves while the floor is off still takes back what was paid on the share it left', () => {
+  const w1 = settle(floorBoard(bobOn(['tea'], FROM + 5 * H)), withFloor(2));
+  const w2 = settle({ ...floorBoard([...bobOn(['tea'], FROM + 5 * H), ...bobOn(['fire'], TO + 3 * H)]), window: W2, paid: w1.paid }, withFloor(0));
+  assert.equal(amountOf(w2, 'tom-1', 'crowd.floor'), -1);
+  assert.deepEqual(flooredOf(w2), { calmPositive: 1 });
 });
 
 test('crowd floor: floorOn false for posts leaves a post\'s votes with no floor, and a card\'s with it', () => {

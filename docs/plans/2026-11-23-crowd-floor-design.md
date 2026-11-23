@@ -96,6 +96,10 @@ Weighed: 3; 5, half a vote (a Face played as a Heel would earn steadily, blurrin
   one Act do not pay three floors, and a character posting much does not farm it.
 - **A moved vote** takes the floor back by the difference, as class pay does: a vote that leaves a neutral quadrant in
   a later window is a negative line there, and pays a negative floor.
+  *2026-11-23, the owner's answer on #1014 (option 2): a moved vote never takes back a floor that was not paid. Built as
+  `paid_votes.floored`, the net floor paid per quadrant of each vote; a take-back is that floor times the share lost over
+  the share held, so a vote paid before the floor existed, a retune and a switch off and on take back exactly what was
+  paid.*
 - **Not counted**, as class pay is not: staff Acts, The System's Acts, gifts and admin-ended plays (they are not in a
   character's `received`).
 - **Where it lands:** an engine ledger entry with no class, reason `crowd.floor`, with the vote's Act, quadrant, time,

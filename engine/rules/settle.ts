@@ -118,7 +118,9 @@
  * - The crowd floor (`crowdFloor`, docs/plans/2026-11-23-crowd-floor-design.md) is `crowdFloor` of a vote for each vote a character's Act received that its class
  *   neither paid nor charged: a received line none of the class's earnings with `votes` (of any sign) names, by act, quadrant, time and kind, and that the class's
  *   `floorOn` accepts (absent: every one). It is `crowd.floor` with no class, so in no class's season total, and it follows the vote as any share does, halved and, where a
- *   vote moved, taken back (a negative line) from the quadrant it left. It is held apart from the class's earnings and pushed after the boost, the reveal perk and the
+ *   vote moved, taken back (a negative line) from the quadrant it left, but never more than was paid (#1014): `paid.floored` is the net floor paid on each quadrant of a
+ *   player's vote, and a share lost takes back that times the share lost over the share held, whatever `crowdFloor`, the shield or `floorOn` say now, so a vote paid before
+ *   the floor existed takes back none and a retune or a switch off and on takes back exactly what was paid. It is held apart from the class's earnings and pushed after the boost, the reveal perk and the
  *   cushion, so none of them reads it or is read by it; a flat earn pays on top of it. `crowdFloor` 0 pays none.
  * - Input is read in a canonical order and amounts are summed before they are rounded, so the
  *   result is the same whatever order the rows arrive in.
@@ -461,10 +463,14 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
   // Counts a spun thread's repliers, not card targets: a spin is deliberately not widened in here (types.ts isPost).
   const postsIn = group([...acts.values()].filter((a) => a.kind === 'post'), (a) => a.thread);
   const received = new Map<string, ReceivedReaction[]>();
+  /* Who a received line is, and the share of the vote it moves, kept beside it for the crowd floor's books alone; a class is never handed either. */
+  const voterOf = new WeakMap<ReceivedReaction, { readonly player: string; readonly share: number }>();
   for (const v of windowVotes) {
     const target = actOf(v.act);
     const list = received.get(target.character) ?? [];
-    list.push({ act: v.act, actKind: target.kind, quadrant: v.quadrant, at: v.at, actAt: target.at, kind: v.kind, votes: v.votes });
+    const line: ReceivedReaction = { act: v.act, actKind: target.kind, quadrant: v.quadrant, at: v.at, actAt: target.at, kind: v.kind, votes: v.votes };
+    list.push(line);
+    voterOf.set(line, { player: v.player, share: v.share });
     received.set(target.character, list);
   }
   const given = new Map<string, GivenReaction[]>();
@@ -733,6 +739,16 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     }
     return out.sort((x, y) => x.placed - y.placed || cmp(x.debate.act, y.debate.act));
   };
+  /* The net crowd floor paid so far on each player's vote on each Act, by quadrant: what earlier windows paid (`input.paid`) and this window's changes to it.
+     `shares` is what the vote held before this window, the base a take-back's fraction is of. */
+  const priorPaid = new Map((sharedVote ? input.paid ?? [] : []).map((p) => [`${p.player}\u0000${p.act}`, p]));
+  const floorBooks = new Map<string, { shares: PaidVote['shares'] | undefined; floored: Partial<Record<Quadrant, number>> }>();
+  const floorBook = (player: string, act: string) => {
+    const k = `${player}\u0000${act}`;
+    let book = floorBooks.get(k);
+    if (!book) { const before = priorPaid.get(k); book = { shares: before?.shares, floored: { ...(before?.floored ?? {}) } }; floorBooks.set(k, book); }
+    return book;
+  };
   for (const c of characters.values()) {
     const firstOfCharacter = contributions.length;
     const sparked = debatesOf(c.id);
@@ -767,15 +783,28 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
         if (!REASON.test(e.reason)) throw new Error(`settle: class ${stretch.class} returned the reason "${e.reason}", which is not dot-separated words, each starting lowercase`);
         contributions.push({ player: c.player, character: c.id, class: stretch.class, reason: e.reason, amount: e.amount, ...(e.params ? { params: e.params } : {}), ...(e.act ? { act: e.act } : {}), ...(e.quadrant ? { quadrant: e.quadrant } : {}), ...(e.valuing ? { valuing: e.valuing } : {}), ...(e.at !== undefined ? { at: e.at } : {}), ...(e.kind !== undefined ? { kind: e.kind } : {}), ...(e.votes !== undefined ? { votes: e.votes } : {}), ...(e.ofWindow ? { ofWindow: true as const } : {}), ...(e.fromReactions ? { fromReactions: true as const } : {}), ...(e.tally ? { tally: true as const } : {}) });
       }
-      /* The crowd floor: a vote the class neither paid nor charged (no earning with `votes`, of any sign, has its act, quadrant, time and kind) pays
-         `crowdFloor` of a vote, as `crowd.floor` with no class. A moved vote's negative line takes its floor back as it took its pay. */
-      if (settings.crowdFloor > 0) {
-        const keyOf = (x: { act?: string; quadrant?: Quadrant; at?: number; kind?: string }) => `${x.act}|${x.quadrant}|${x.at}|${x.kind}`;
-        const shielded = new Set(earned.filter((e) => e.votes !== undefined).map(keyOf));
-        for (const r of classInput.received) {
-          if (shielded.has(keyOf(r)) || (rules.floorOn && !rules.floorOn(r))) continue;
+      /* The crowd floor. A vote the class neither paid nor charged (no earning with `votes`, of any sign, has its act, quadrant, time and kind) pays
+         `crowdFloor` of a vote, as `crowd.floor` with no class, and the amount joins the net floor paid on that quadrant of the player's vote (`flooredNow`).
+         A share lost takes back that floor times the share lost over the share held: what was paid and nothing else, so a vote paid before the floor existed
+         takes back none, and a retune or a switch off and on takes back as much as was paid. A take-back reads neither the shield, `floorOn` nor `crowdFloor`. */
+      const keyOf = (x: { act?: string; quadrant?: Quadrant; at?: number; kind?: string }) => `${x.act}|${x.quadrant}|${x.at}|${x.kind}`;
+      const shielded = new Set(earned.filter((e) => e.votes !== undefined).map(keyOf));
+      for (const r of classInput.received) {
+        const who = voterOf.get(r);
+        if (!who) continue;
+        const book = floorBook(who.player, r.act);
+        const held = book.floored[r.quadrant] ?? 0;
+        if (r.votes < 0) {
+          const before = book.shares?.[r.quadrant] ?? 0;
+          const back = held > 0 && before > 0 ? tidy(held * Math.min(1, -who.share / before)) : 0;
+          if (!back) continue;
+          book.floored[r.quadrant] = tidy(held - back);
+          floor.push({ player: c.player, character: c.id, reason: 'crowd.floor', amount: -back, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes });
+        } else if (settings.crowdFloor > 0 && !shielded.has(keyOf(r)) && !(rules.floorOn && !rules.floorOn(r))) {
           const amount = tidy(settings.crowdFloor * r.votes);
-          if (amount) floor.push({ player: c.player, character: c.id, reason: 'crowd.floor', amount, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes });
+          if (!amount) continue;
+          book.floored[r.quadrant] = tidy(held + amount);
+          floor.push({ player: c.player, character: c.id, reason: 'crowd.floor', amount, act: r.act, quadrant: r.quadrant, at: r.at, kind: r.kind, votes: r.votes });
         }
       }
     }
@@ -960,7 +989,11 @@ export function settle(input: SettlementInput, instance: Instance, options: Sett
     details,
     standings: [...standing].sort((a, b) => cmp(a[0], b[0])).map(([character, amount]) => ({ character, amount })),
     byClass,
-    paid,
+    paid: paid.map((p) => {
+      const book = floorBooks.get(`${p.player}\u0000${p.act}`);
+      const floored = Object.fromEntries(Object.entries(book?.floored ?? priorPaid.get(`${p.player}\u0000${p.act}`)?.floored ?? {}).filter(([, v]) => v !== 0));
+      return Object.keys(floored).length ? { ...p, floored } : p;
+    }),
     tallied,
     crowd: crowdPay(input, settings),
   };

@@ -563,6 +563,8 @@ export interface SettlementInput {
     readonly act: string;
     readonly weight: number;
     readonly shares: Readonly<Record<Quadrant, number>>;
+    /** The net crowd floor in hundredths paid so far on the vote, by quadrant (absent: none), so a take-back is never more than was paid. */
+    readonly floored?: Readonly<Partial<Record<Quadrant, number>>>;
   }[];
 }
 

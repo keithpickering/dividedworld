@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -383,6 +383,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into scored_as (settlement, character, class_key, play) select (select max(id) from settlements), b, 'heel', id from acts where kind = 'card' and payload ->> 'card' = 'expscore';
       -- An Act a settlement paid crowd pay for (0384): private, append-only, carried across with the rest.
       insert into crowd_paid (settlement, account, act, most) select (select max(id) from settlements), ann, p, 10;
+      -- What a settlement paid on one player's vote and the net crowd floor paid with it (0415): private, carried across with the rest, floored included.
+      insert into paid_votes (account, act, weight, shares, floored, settlement)
+        select ann, p, 1, '{"excitedPositive": 0, "excitedNegative": 0, "calmPositive": 1, "boredNegative": 0}', '{"calmPositive": 2}', (select max(id) from settlements)
+        on conflict (account, act) do update set floored = excluded.floored;
       -- What a settlement tallied on a spark, reason by reason (0398): private, append-only, carried across with the rest.
       insert into tallied_lines (settlement, act, reason, amount) select (select max(id) from settlements), p, 'tweener.outvoted', 20;
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'card.skim', 7, jsonb_build_object('card', 'expskim', 'share', 0.1) from settlements;
@@ -599,6 +603,8 @@ test('an instance exported and imported into a fresh database is the same instan
     const rows = before.get(`public.${t}`);
     assert.ok(rows !== undefined && rows !== '[]', `${t} holds a row in the fixture (got ${rows === undefined ? 'no such table' : rows})`);
   }
+  // The net crowd floor paid on a vote (0415) is in the fixture's paid_votes, so the comparison below carries it across.
+  assert.match(before.get('public.paid_votes')!, /"floored": \{"calmPositive": 2\}/, 'a paid vote holds the floor paid on it in the fixture');
   // The payout cards' own rows, each asserted by what it holds (the table lists above are satisfied by any row): the ledger row naming the skim card, a scored-as row for the scored-as play,
   // that play's `starts`, and the rode spring's quadrant.
   const payouts = (url: string) => psqlOn(url, `select
