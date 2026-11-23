@@ -59,6 +59,12 @@ export const MAX_RETRIES = 3;
  */
 const REQUEST_REFUSALS: readonly number[] = [400, 413, 422];
 
+/** The predicate prefix of an AnswerRejected built for a request the provider turned away (`refused:<status>`): the request was never answered. */
+const REQUEST_REFUSED = 'refused:';
+
+/** True for an AnswerRejected the provider turned away before answering (a 400, 413 or 422), as opposed to an answer that could not be used. */
+export function requestRefused(e: AnswerRejected): boolean { return e.predicate.startsWith(REQUEST_REFUSED); }
+
 /** The ledger could not be written; the call it was for is not trusted. */
 export class LedgerWriteFailed extends Error {}
 
@@ -174,7 +180,7 @@ export function models(env: Env, record: RecordModelCall, options: ModelOptions)
           raw = await withRetries(call, () => completeOverHttp(request, url, env('SYSTEM_COMPLETIONS_KEY') || undefined, env('SYSTEM_COMPLETIONS_MODEL') ?? 'default', wire));
         } catch (e) {
           // A refusal about the request itself (an overflow the count missed, a malformed body) is a rejection, ended at once. Any other (a bad key, a wrong address) is thrown as the ProviderRefusal it is. A 5xx and a 429 never get here.
-          if (e instanceof ProviderRefusal && REQUEST_REFUSALS.includes(e.status)) throw new AnswerRejected(e.message, `refused:${e.status}`);
+          if (e instanceof ProviderRefusal && REQUEST_REFUSALS.includes(e.status)) throw new AnswerRejected(e.message, `${REQUEST_REFUSED}${e.status}`);
           throw e;
         }
         call.model = raw.model;

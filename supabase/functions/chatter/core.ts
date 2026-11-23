@@ -105,7 +105,7 @@ import {
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
-import { AnswerRejected, LedgerWriteFailed, PromptTooLong, SchemaRefused } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, requestRefused, SchemaRefused } from '../_shared/models/index.ts';
 
 const DAY = 86_400_000;
 
@@ -625,7 +625,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       // A refusal is the provider's answer and is paid; a schema it would refuse or a prompt too long was never sent, and a request the provider turned away (`refused:<status>`) was never answered; any
       // other AnswerRejected (not JSON, cut off) got an answer and is paid; a transport failure that outlived its retries got none. There is no fallback to the old voice for a refusal.
       if (e instanceof AnswerRejected) {
-        const unanswered = e instanceof SchemaRefused || e instanceof PromptTooLong || e.predicate.startsWith('refused:');
+        const unanswered = e instanceof SchemaRefused || e instanceof PromptTooLong || requestRefused(e);
         return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !unanswered, said(e), answers, []);
       }
       return fail('failed', false, said(e), answers, []);

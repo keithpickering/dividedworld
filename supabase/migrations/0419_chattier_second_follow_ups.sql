@@ -70,20 +70,31 @@ begin
   end loop;
 end $$;
 
--- A failed attempt, written. Refuses (hint 'kayfabb.refusal') a persona that is none or a session that is not its own; the replies are the distinct `answers`.
+-- A failed attempt, written. Refuses (hint 'kayfabb.refusal') a persona that is none, a session that is not its own, and any `answers` that is empty, has a null element, or names a reply that is not waiting on the persona in
+-- `in_thread` now (by the same read write_staff_turn asks, pool_waiting_in_thread, with the same wait window; so an act that is no reply to it, a reply in another thread, an answered reply and a reply already given up on are
+-- refused, and a reply with one rejected attempt, still waiting, takes its second). The replies are the distinct `answers`.
 create function record_turn_attempt(staff_key text, in_session bigint, in_thread uuid, answers uuid[], outcome text, paid boolean) returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   sess staff_sessions;
+  wanted uuid[];
   made bigint;
 begin
   select * into sess from staff_sessions s where s.id = in_session;
   if sess.id is null or sess.staff is distinct from staff_key then
     raise exception 'that session is not %''s', staff_key using hint = 'kayfabb.refusal', errcode = '42501';
   end if;
+  if coalesce(cardinality(answers), 0) = 0 or array_position(answers, null) is not null then
+    raise exception 'an attempt names the replies it answers' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  select array_agg(distinct x) into wanted from unnest(answers) x;
+  if (select count(*) from pool_waiting_in_thread(in_thread, array[staff_key], now() - coalesce(((select g.value from settings g where g.key = 'pool') -> 'turns' ->> 'waitHours')::integer, 48) * interval '1 hour') w
+      where w.act = any (wanted)) is distinct from cardinality(wanted) then
+    raise exception 'an attempt names the replies waiting on its own posts in its thread' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
   insert into pool_attempts (day, staff, session, thread, outcome, paid)
   values (sess.day, staff_key, in_session, in_thread, record_turn_attempt.outcome, record_turn_attempt.paid) returning id into made;
-  insert into pool_attempt_replies (attempt, reply) select made, x from (select distinct unnest(answers) x) d;
+  insert into pool_attempt_replies (attempt, reply) select made, x from unnest(wanted) x;
   return made;
 end $$;
 revoke execute on function record_turn_attempt(text, bigint, uuid, uuid[], text, boolean) from public, anon, authenticated;
