@@ -144,6 +144,9 @@ export const defaults: Settings = deepFreeze<Settings>({
     // two days for a turn; a persona takes two turns in a thread and four in a visit, and the pool sixty a day; a round runs every fifteen minutes.
     sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } },
     turns: { waitHours: 48, perThread: 2, perSession: 4, perDay: 60 },
+    // A database whose `pool` row an admin has tuned keeps its own cron: the release's seed fills only missing keys
+    // (`seed_setting`, 0355), so the fifteen-minute rounds reach a tuned instance only when an admin sets this there.
+    // A once-a-day cron still loses no pick: one kept past its day is written in the next round.
     chatterCron: '*/15 * * * *',
   },
   /**
