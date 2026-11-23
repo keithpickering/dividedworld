@@ -30,6 +30,7 @@ do $$
 declare
   base timestamptz := '2041-03-01T12:00:00Z';
   a uuid; b uuid; c uuid; many uuid[] := '{}'; x uuid; i integer;
+  tf uuid; rf uuid; sid bigint; plan text; ln record;
   ta uuid; tb uuid; tc uuid; td uuid; te uuid;
   ra uuid; rb uuid; rc uuid; rd uuid; re uuid; ra2 uuid; rr uuid[];
   rootp uuid;
@@ -118,8 +119,29 @@ begin
   perform tests.become_service(); d := system_digest(base - interval '1 hour', base + interval '1 hour'); perform tests.unbecome();
   if d -> 'conversations' is distinct from '[]'::jsonb then raise exception 'a setting of 0 lists conversations'; end if;
   delete from settings where key = 'digestConversations';
+  -- Five more in-window conversations make nine in all, so the default cap of 6 is what shows.
+  for i in 1..5 loop
+    tf := tests.thread('Filler ' || i);
+    rootp := pg_temp.root('dg-mod1', tf, base - interval '1 day');
+    rf := tests.act(a, 'post', tf, '{"body": "Filler reply"}', rootp, base - interval '20 minutes');
+    perform pg_temp.turn('dg-mod1', tf, 'Filler turn ' || i, array[rf], base - (i * 7 + 1) * interval '1 minute', 0);
+  end loop;
   perform tests.become_service(); d := system_digest(base - interval '1 hour', base + interval '1 hour'); perform tests.unbecome();
-  if jsonb_array_length(d -> 'conversations') is distinct from 4 then raise exception 'a missing setting reads the default of 6: %', jsonb_array_length(d -> 'conversations'); end if;
+  if jsonb_array_length(d -> 'conversations') is distinct from 6 then raise exception 'a missing setting reads the default of 6 (of 9 in the window): %', jsonb_array_length(d -> 'conversations'); end if;
+  -- The window read is served by an index, not a scan of every turn ever written: 3000 turns on other days, each with a post of its own, then an explain of the digest's turn read and a look at the function's text.
+  insert into staff_sessions (day, staff, starts_at, ends_at) values ((base - interval '400 days')::date, 'dg-mod1', base - interval '400 days', base - interval '400 days' + interval '1 hour') returning id into sid;
+  set local session_replication_role = replica;
+  insert into acts (character, kind, thread, payload, seq, created_at)
+  select (select id from characters where staff = 'dg-mod1'), 'post', ta, jsonb_build_object('body', 'Old turn ' || g), 900000 + g, base - interval '400 days' + g * interval '1 minute' from generate_series(1, 3000) g;
+  insert into pool_turns (day, staff, session, thread, post_act, quoting, at)
+  select (base - interval '400 days' + o.seq * interval '1 minute')::date, 'dg-mod1', sid, ta, o.id, o.id, base - interval '400 days' + (o.seq - 900000) * interval '1 minute'
+  from acts o where o.seq > 900000 and o.thread = ta;
+  set local session_replication_role = origin;
+  analyze pool_turns;
+  plan := '';
+  for ln in execute format('explain select t.id from pool_turns t where t.at >= %L and t.at < %L and t.day >= ((%L::timestamptz) at time zone ''UTC'')::date - 1 and t.day <= ((%L::timestamptz) at time zone ''UTC'')::date', base - interval '1 hour', base + interval '1 hour', base - interval '1 hour', base + interval '1 hour') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan ~ 'Seq Scan on pool_turns' or plan not like '%pool_turns_day%' then raise exception 'the window read of the turns scans every turn: %', plan; end if;
+  if pg_get_functiondef('system_digest(timestamptz, timestamptz)'::regprocedure) !~ 't\.day\s*>=' then raise exception 'system_digest does not bound the turns by day, so the day index cannot serve its read'; end if;
   -- The role reads the two tables, selecting only, and the function stays the service role's.
   if not has_table_privilege('kayfabb_digest', 'pool_turns', 'select') or not has_table_privilege('kayfabb_digest', 'pool_answered', 'select') then raise exception 'the digest role cannot read the turns'; end if;
   if has_table_privilege('kayfabb_digest', 'pool_turns', 'insert,update,delete') or has_table_privilege('kayfabb_digest', 'pool_answered', 'insert,update,delete') then raise exception 'the digest role writes the turns'; end if;

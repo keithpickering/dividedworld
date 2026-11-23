@@ -239,3 +239,10 @@ test('a conversation whose exchange was cut by SQL ends in an ellipsis', () => {
   const whole = renderDigest({ ...withStaff, conversations: [conv(1)] }, null, []);
   assert.ok(!whole.includes('…"'), 'a post that fit has no ellipsis');
 });
+
+test('a quote mark inside a quoted post or title cannot close the quote early', () => {
+  const text = renderDigest({ ...withStaff, conversations: [conv(1, { title: 'The "big" one', exchange: { text: 'I said "no" twice', cut: false, reply: { character: id(3), text: 'He said "yes" first', cut: false } } })] }, null, []);
+  const row = text.split('\n').find((l) => l.startsWith('1. Modly'))!;
+  assert.equal((row.match(/"/g) ?? []).length, 6, row);
+  assert.ok(row.includes("The 'big' one") && row.includes("I said 'no' twice") && row.includes("He said 'yes' first"), row);
+});

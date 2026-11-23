@@ -1432,7 +1432,8 @@ begin
     select t.id as turn, t.thread, t.staff, t.at, t.post_act, t.quoting,
            (select coalesce(sum(rt.count), 0)::integer from reaction_tallies_open rt where rt.act = t.post_act) as reactions
     from pool_turns t join acts_public pa on pa.id = t.post_act
-    where t.at >= since and t.at < until
+    -- `day` is the UTC day of the session a turn belongs to, which began no later than the turn; the day bounds (a day wider before, for a session that ran past midnight) let the (day) index serve the read, the `at` bounds make it exact.
+    where t.day >= (since at time zone 'UTC')::date - 1 and t.day <= (until at time zone 'UTC')::date and t.at >= since and t.at < until
   ),
   conv as (
     select g.thread, g.staff, g.turns, g.reactions, left(tl.title, 120) as title, cp.id as persona
