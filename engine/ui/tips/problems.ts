@@ -7,11 +7,14 @@
  */
 import type { Instance } from '../../rules/types.ts';
 import type { CardRules } from '../../rules/cards.ts';
-import { MAP, type ClassMarks, type InstanceUi } from '../types.ts';
+import { MAP, type ClassMarks, type FrontDoorPost, type InstanceUi } from '../types.ts';
 import type { CardPlay, CardUi } from '../cards/types.ts';
 import { QUADRANTS, type Quadrant } from '../../rules/types.ts';
 import { ACTION_TIPS, TIP_KEYS } from './keys.ts';
 import { wordsProblems } from '../cards/lens-words.ts';
+import { surfaceMost } from '../../rules/cards.ts';
+import { cellsOf, count, union, type Cells } from '../../rules/surface.ts';
+import { localKey, singleEmoji } from '../../rules/emoji.ts';
 import { CONDUCT_TEMPLATES, TEMPLATES } from '../../mail/conduct.ts';
 
 /** The longest a marquee name may be: the sign's width at 390px. */
@@ -222,8 +225,8 @@ function statusWords(status: NonNullable<CardUi['status']>, stack: number): stri
   return Array.from({ length: stack }, (_, i) => status(Array.from({ length: i + 1 }, () => ({}) as CardPlay)));
 }
 
-/** The front door held to the instance: each problem names the post by its index. */
-function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes'>): string[] {
+/** The front door held to the instance: each problem names the post by its index, and a play by its index in the post. */
+function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const door = ui.frontDoor;
   if (typeof door !== 'object' || door === null) return ['the instance UI has no front door'];
   const out: string[] = [];
@@ -242,11 +245,51 @@ function frontDoorProblems(ui: Pick<InstanceUi, 'frontDoor' | 'cards'>, instance
   if (!door.posts?.length) out.push('the front door has no posts');
   (door.posts ?? []).forEach((post, i) => {
     if (!keys.has(post.by)) out.push(`front door post ${i} is by "${post.by}", who is not in the cast`);
-    for (const key of Object.keys(post.reactions ?? {})) if (!reactions.has(key)) out.push(`front door post ${i} has a reaction "${key}", which the instance does not have`);
+    /* A reaction a `reaction` card's play adds is counted under its `localKey` (Reactions.tsx reads the tally by `localKindsOf`'s key). */
+    const local = new Set<string>();
     for (const play of post.plays ?? []) {
+      if (!(instance.cards ?? []).some((c) => c.key === play.card && c.reaction === true)) continue;
+      const emoji = singleEmoji(play.config.emoji);
+      if (emoji !== null && QUADRANTS.includes(play.config.quadrant as Quadrant)) local.add(localKey(emoji));
+    }
+    for (const key of Object.keys(post.reactions ?? {})) if (!reactions.has(key) && !local.has(key)) out.push(`front door post ${i} has a reaction "${key}", which the instance does not have`);
+    (post.plays ?? []).forEach((play, j) => {
       if (!keys.has(play.by)) out.push(`front door post ${i} has a play by "${play.by}", who is not in the cast`);
       if (!cards.has(play.card)) out.push(`front door post ${i} plays "${play.card}", which has no CardUi`);
-    }
+      const rules = (instance.cards ?? []).find((c) => c.key === play.card);
+      if (rules !== undefined) out.push(...playRulesProblems(`front door post ${i} play ${j} ("${play.card}")`, `front door post ${i} play ${j}`, play, rules, keys, instance.settings));
+    });
   });
+  return out;
+}
+
+/** A play held to its card's rules: its config, its state, and the draws on its surface, each as the card itself would take them. */
+function playRulesProblems(who: string, at: string, play: NonNullable<FrontDoorPost['plays']>[number], rules: CardRules, cast: ReadonlySet<string>, settings: Instance['settings'] | undefined): string[] {
+  const out: string[] = [];
+  const config = rules.validateConfig(play.config);
+  if (!config.ok) out.push(`${who} has a config the card refuses: ${config.why}`);
+  if (play.state !== undefined) {
+    if (rules.validateState === undefined) out.push(`${who} has a state, and the card keeps none`);
+    else {
+      const state = rules.validateState(play.state);
+      if (!state.ok) out.push(`${who} has a state the card refuses: ${state.why}`);
+    }
+  }
+  const draws = play.draws ?? [];
+  if (draws.length === 0) return out;
+  if (rules.surface === undefined) return [...out, `${who} has draws, and the card has no surface`];
+  let covered: Cells | null = null;
+  draws.forEach((d, k) => {
+    if (!cast.has(d.by)) out.push(`${at} draw ${k} is by "${d.by}", who is not in the cast`);
+    const checked = rules.surface!.validateDraw(d.draw);
+    if (!checked.ok) out.push(`${at} draw ${k} is one the card refuses: ${checked.why}`);
+    else { const cells = cellsOf(checked.value.strokes); covered = covered === null ? cells : union(covered, cells); }
+  });
+  if (draws.length > rules.surface.mostLive) out.push(`${at} has ${draws.length} draws, over the ${rules.surface.mostLive} the card holds live`);
+  if (covered !== null && settings !== undefined) {
+    const most = surfaceMost(rules.key, rules.surface.limitKey, settings);
+    const n = count(covered);
+    if (n > most) out.push(`${at} draws cover ${n} cells, over the ${most} its surface holds`);
+  }
   return out;
 }
