@@ -18,6 +18,7 @@ const settings: Settings = {
   reactionCap: 3,
   postEffects: 8,
   crowdPayEach: 2,
+  crowdFloor: 2,
   crowdPayMost: 10,
   charactersPerPlayer: 6,
   settlementCron: '17 8 * * *',

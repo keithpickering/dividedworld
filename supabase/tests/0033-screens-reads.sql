@@ -159,7 +159,7 @@ end $$;
 do $$
 declare
   seen jsonb;
-  listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'crowdPayEach', 'crowdPayMost', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
+  listed text[] := array['postsPerPage', 'hotReplies', 'editGrace', 'reactionCap', 'crowdPayEach', 'crowdFloor', 'crowdPayMost', 'charactersPerPlayer', 'invitesPerPlayer', 'inviteLifetime', 'turnCooldown',
                          'walletCap', 'postMaxLength', 'titleMaxLength', 'registrationMode', 'settlementLength', 'cardSettings',
                          -- How often a page polls who is browsing it, and the window it counts (0041).
                          'presencePollSeconds', 'presenceWindow',

@@ -52,7 +52,7 @@ begin
   -- Compared as a set: the rows come in account order, and the accounts are random.
   if (select jsonb_agg(x order by x ->> 'player') from jsonb_array_elements(input -> 'paid') x) is distinct from
      (select jsonb_agg(x order by x ->> 'player') from jsonb_array_elements(jsonb_build_array(
-       jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole), jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole))) x) then
+       jsonb_build_object('player', ann, 'act', p, 'weight', 1, 'shares', whole, 'floored', '{}'::jsonb), jsonb_build_object('player', bob, 'act', p, 'weight', 1, 'shares', whole, 'floored', '{}'::jsonb))) x) then
     raise exception 'settlement_input should carry what every reactor was paid on the Acts it touches: %', input -> 'paid';
   end if;
 

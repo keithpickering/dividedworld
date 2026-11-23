@@ -36,6 +36,7 @@ test('the defaults are the design\'s section 10 table, in hundredths of an orb',
   assert.deepEqual(defaults.pollLastsMin, { unit: 'hour', count: 1 });
   assert.deepEqual(defaults.pollLastsMax, { unit: 'day', count: 14 });
   assert.equal(defaults.crowdPayEach, 2);
+  assert.equal(defaults.crowdFloor, 2);
   assert.equal(defaults.crowdPayMost, 10);
   assert.equal(defaults.charactersPerPlayer, 6);
   assert.deepEqual(defaults.seasonLength, { unit: 'month', count: 3 });

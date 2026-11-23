@@ -161,10 +161,12 @@ export function reasonName(words: string): string {
 }
 const lowerFirst = (s: string) => s.charAt(0).toLowerCase() + s.slice(1);
 
-/** The class a settlement scored a character's lines as: their reasons' class, when every one names the same class the instance has (a card's payout names none). */
+/** The reason prefixes that are no class's: a card's payout, the crowd floor and the reveal perk. */
+const NO_CLASS = new Set(['card', 'crowd', 'reveal']);
+/** The class a settlement scored a character's lines as: their reasons' class, when every one names the same class the instance has (a card's payout, the crowd floor and the reveal perk name none). */
 export function scoredAs(lines: readonly LogLine[], instance: Instance): string | null {
-  /* A card's payout (`card.boost`, `card.cushion`, `card.skim`, `card.ride`) is no class's reason: a boosted, cushioned or paid character is still scored as the class its other lines name. */
-  const keys = new Set(lines.map((l) => l.reason.split('.')[0]!).filter((k) => k !== 'card'));
+  /* A card's payout (`card.boost`, `card.cushion`, `card.skim`, `card.ride`) is no class's reason: a boosted, cushioned or paid character is still scored as the class its other lines name. Nor is the crowd floor's (`crowd.floor`) or the reveal perk's (`reveal.perk`): each is paid whatever the class. */
+  const keys = new Set(lines.map((l) => l.reason.split('.')[0]!).filter((k) => !NO_CLASS.has(k)));
   if (keys.size !== 1) return null;
   const [key] = keys;
   return instance.classes.find((c) => c.key === key)?.key ?? null;
