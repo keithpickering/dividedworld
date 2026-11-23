@@ -109,22 +109,30 @@ export function markBrightInk(body: HTMLElement | null, on: boolean): void {
   body?.toggleAttribute('data-kb-bright-ink', on);
 }
 
-/** The attribute of the words box: the one plain block the engine draws a post's words in (cards/Effects.tsx), which an effect that bends the words filters. */
+/**
+ * The attribute of the words box: the one plain block the engine draws a post's words in (cards/Effects.tsx), which an effect
+ * that bends the words filters.
+ */
 export const WORDS_BOX = 'data-kb-words-box';
 
 /** The attribute a layer that fills a content area carries to be bent with the area (engine/ui/thread/thread.css reads it). */
 export const BEND_LAYER = 'data-kb-bend';
 
-/** A bend (docs/plans/2026-11-23-dent-bend-design.md, section 2.3): each a CSS `filter` value, such as `url("#id")`. `area` is in the content area's coordinates, `words` in the words box's. */
+/**
+ * A bend (docs/plans/2026-11-23-dent-bend-design.md, section 2.3): each a CSS `filter` value, such as `url("#id")`. `area` is in
+ * the content area's coordinates, `words` in the words box's.
+ */
 export interface Bend {
   readonly area: string;
   readonly words: string;
 }
 
 /**
- * Bends (or stops bending) a post's body: sets `--kb-bend` and `--kb-bend-words` inline on the content area `area`, which every layer marked `BEND_LAYER` and the
- * words box inherit (engine/ui/thread/thread.css). Where there is no area (Stick Around's view lifts the words out of every area) only `--kb-bend-words` is set, on `host`,
- * the effect's own element, and no layer bends. A null `bend` removes what was set. Single-owner, as `markBrightInk` is: one effect bends an area.
+ * Bends (or stops bending) a post's body: sets `--kb-bend` and `--kb-bend-words` inline on the content area `area`, which every
+ * layer marked `BEND_LAYER` and the words box inherit (engine/ui/thread/thread.css). Where there is no area (Stick Around's view
+ * lifts the words out of every area) only `--kb-bend-words` is set, on `host`, the effect's own element, and no layer bends. A
+ * null `bend` removes what was set. Single-owner, as `markBrightInk` is: one effect bends an area, and gives the bend up with the
+ * same `area` and `host` it set it on (an effect whose area changes gives the old one up first).
  */
 export function setBend(area: HTMLElement | null, host: HTMLElement, bend: Bend | null): void {
   const set = (el: HTMLElement, name: string, value: string | undefined) => (value === undefined ? el.style.removeProperty(name) : el.style.setProperty(name, value));
@@ -132,7 +140,10 @@ export function setBend(area: HTMLElement | null, host: HTMLElement, bend: Bend 
   set(area ?? host, '--kb-bend-words', bend?.words);
 }
 
-/** The words box of the content area `host`: the first one inside it whose nearest content area is `host`'s own, so a box inside a nested area (an ORIGIN box) is never taken. */
+/**
+ * The words box of the content area `host`: the first one inside it whose nearest content area is `host`'s own, so a box inside
+ * a nested area (an ORIGIN box) is never taken.
+ */
 export function wordsBoxOf(host: HTMLElement): HTMLElement | null {
   const own = bodyOf(host);
   for (const box of host.querySelectorAll<HTMLElement>(`[${WORDS_BOX}]`)) if (bodyOf(box) === own) return box;

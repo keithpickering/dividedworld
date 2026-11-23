@@ -298,6 +298,15 @@ describe('a moment nests as a post does', () => {
     expect(box.querySelector('[data-kb-wrap]')).toBeNull();
   });
 
+  test('with no card that writes, the one words box holds the words and sits straight inside the wrap', () => {
+    draw(moment([{ act: card('k1', 'smear', 1), state: null }]));
+    const boxes = document.querySelectorAll('[data-kb-words-box]');
+    expect(boxes).toHaveLength(1);
+    expect(boxes[0]!.contains(document.querySelector('[data-kb-words]'))).toBe(true);
+    expect(boxes[0]!.parentElement?.closest('[data-kb-wrap]')?.getAttribute('data-kb-wrap')).toBe('smear');
+    expect(boxes[0]!.querySelector('[data-kb-wrap]')).toBeNull();
+  });
+
   test('a beneath card is inside a card without it, though it was played later', () => {
     const was = cards[1]!;
     cards[1] = ui('ripple', { beneath: true });
