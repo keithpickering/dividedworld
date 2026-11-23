@@ -306,7 +306,7 @@ begin
   spin := (r -> 'act' ->> 'id')::uuid; th := (r -> 'thread' ->> 'id')::uuid;
   perform tests.unbecome();
   -- Nothing waits yet; a player replies to the spin, quoting it. (The three waiting reads are invoker functions, read as the owner here as supabase/tests/0415-chattier-staff.sql reads them.)
-  if (select count(*) from pool_waiting_rows(array['hp-pat'], since) w where w.thread = th) <> 0 then raise exception 'something waits on a spin with no reply'; end if;
+  if (select count(*) from pool_waiting_rows(array['hp-pat'], since) w where w.thread = th) is distinct from 0 then raise exception 'something waits on a spin with no reply'; end if;
   reply := tests.act(bea, 'post', th, '{"body": "A reply to the spin."}', spin);
   if (select count(*) from pool_waiting_rows(array['hp-pat'], since) w where w.thread = th and w.act = reply and w.author = bea) is distinct from 1 then
     raise exception 'pool_waiting_rows: a reply to a persona''s spin does not wait, once: %', (select jsonb_agg(w) from pool_waiting_rows(array['hp-pat'], since) w);
