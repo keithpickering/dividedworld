@@ -301,7 +301,9 @@ one plan, reviews it and owns its PR. The owner merges, except as Merging below 
   on localhost.
 - **Secrets** are never printed, pasted or asked for.
 - **Tidying.** A change may tidy what it passes through, and leaves it cleaner than it found it.
-- **Merging.** While no instance is deployed, a session that dispatches build sessions merges their PRs, and its own
-  design and plan PRs, once the PR's head is green in CI, it has no merge conflict, its review findings are answered,
-  and no question to the owner waits on it. A PR that changes this file, or that turns on a rule the owner was asked
-  about, still waits on the owner. This bullet is rewritten when an instance is first deployed.
+- **Merging.** While no instance has players (a test instance the owner runs does not count), a session that
+  dispatches build sessions merges their PRs, its own design and plan PRs, and the owner's PRs the owner asks it to
+  merge, once the PR's head is green in CI, it has no merge conflict, its review findings are answered, and no question
+  to the owner waits on it. Merging changes no deployed database: applying migrations to an instance stays the owner's
+  go-ahead each time. A PR that changes this file, or that turns on a rule the owner was asked about, still waits on the
+  owner. This bullet is rewritten when the owner says the game has players.
