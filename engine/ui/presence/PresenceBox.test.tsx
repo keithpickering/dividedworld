@@ -109,10 +109,9 @@ describe('the presence box', () => {
   describe('a persona in session (the chattier staff design, section 7)', () => {
     /** The index with two players browsing and the persona Mabel in session since a minute ago; she has posted in no thread. */
     function inSession() {
-      const w = crowd(['Pipewrench', 'Mrs. Hooligan']);
-      const mabel = w.fake.seed.staff('mabel', 'Mabel', 'member');
+      const w = outOfSession();
       w.fake.seed.staffSession('mabel', { startsAt: w.fake.clock.now() - 60_000, endsAt: w.fake.clock.now() + 3_600_000 });
-      return { ...w, mabel };
+      return w;
     }
 
     /** The same index with Mabel out of session: she has no session today. */
@@ -158,8 +157,8 @@ describe('the presence box', () => {
       expect(again).toHaveTextContent('Mabel, Test Cores');
     });
 
-    /** Mabel posted in the thread before her session began (6 hours ago, or 3 hours before the reply when that is older); a player's reply to that post is `replyAgoMs` old, so always newer than the post it answers (answered: by her turn an hour after it, still before the session). */
-    function replyWaiting(replyAgoMs: number, options: { answered?: boolean; outOfSession?: true } = {}) {
+    /** Mabel posted in the thread before her session began (6 hours ago, or 3 hours before the reply when that is older); a player's reply to that post is `replyAgoMs` old, so always newer than the post it answers (answered: by her turn an hour after it, still before the session; outOfSession: she has no session today). */
+    function replyWaiting(replyAgoMs: number, options: { answered?: boolean; outOfSession?: boolean } = {}) {
       const w = options.outOfSession ? outOfSession() : inSession();
       const { fake, seeded } = w;
       const player = fake.seed.character(fake.seed.account('replier'), 'Replier', 'face');
