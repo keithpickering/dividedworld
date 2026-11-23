@@ -1196,7 +1196,7 @@ const R3 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb3';
 const R4 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbb4';
 const reply = (act: string, when = '16:00', author = `char-${act.slice(-1)}`) => ({ act, author, at: at(when) });
 const turnModels = () => fakeModels((r) => ({ words: `A turn from ${r.staff}.`, note: `Answered, ${r.staff}.` }));
-const keptPick = (staff: string, thread = T1, quoting = Q1, extra: Record<string, unknown> = {}) => ({ staff, pick: { staff, office: staff === SIGH ? 'mod' : 'member', trigger: 'named', thread, quoting, act: quoting, startThread: false, cardSlot: false, ...extra } });
+const keptPick = (staff: string, thread = T1, quoting = Q1, extra: Record<string, unknown> = {}) => ({ staff, pick: { staff, office: staff === SIGH ? 'mod' : 'member', trigger: 'named', thread, quoting, act: quoting, subject: null, startThread: false, cardSlot: false, ...extra } });
 const SIGH_NOW = { staff: SIGH, start: min('17:30'), end: min('18:15') };
 const SIGH_LATER = { staff: SIGH, start: min('19:00'), end: min('20:00') };
 const SIGH_EARLIER = { staff: SIGH, start: min('10:00'), end: min('10:30') };
@@ -1268,6 +1268,15 @@ test('a kept pick posts in its persona\'s session and not before', async () => {
   assert.equal(post.payload.pool, DAY, 'the pick\'s post carries the day, so a crash is adopted');
   assert.equal(post.target, Q1);
   assert.equal(d.state.notes.length, 2);
+});
+
+test('a kept pick written before `subject` existed (no such field) still posts', async () => {
+  const k = keptPick(SIGH);
+  delete (k.pick as Record<string, unknown>).subject;
+  const d = fakeDb({ sessions: [SIGH_EARLIER], kept: [k] });
+  const out = await run(d, fakeModels(normal));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.picks.map((p) => [p.staff, p.status]), [[SIGH, 'posted']]);
 });
 
 test('a kept pick whose persona has no session left posts in the next round', async () => {

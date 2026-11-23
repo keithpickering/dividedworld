@@ -22,6 +22,7 @@ const PHASES = {
 const PHASE: PoolPhase = { season: { startsAt: 0, endsAt: 100 * DAY }, since: 40 * DAY, until: 41 * DAY, settings: { phases: PHASES }, boss: 'boss1', predecessor: 'old' };
 const memory = (m: Partial<Memory>): Memory => ({ hobby: { name: 'x', since: 'a', from: 'b' }, opinions: [], grudges: [], wheelhouse: [], realWorld: [], marks: [], ...m });
 const hot = (over: object = {}) => ({ thread: 't1', board: 'b1', heat: 4, starter: 'c-x', starterStaff: null, staffStarted: false, authors: [], tops: [], boardMaker: null, ...over });
+const TOPS = [{ act: 'p1', character: 'c-x' }, { act: 'p2', character: 'c-y' }];
 const run = (signals: Partial<PoolSignals>, phase: PoolPhase = PHASE, memories: Record<string, Memory> = {}) =>
   candidates({ ...none, ...signals }, ROSTER, memories, phase, CTX);
 const only = (cs: Candidate[], trigger: string) => cs.filter((c) => c.trigger === trigger);
@@ -38,12 +39,12 @@ test('the triggers are the design\'s eight, and the defaults put the first five 
 
 test('named: a post that names a persona is a candidate, in that thread, quoting that post', () => {
   const c = run({ named: [{ staff: 'mod1', act: 'a1', thread: 't1', n: 1 }] });
-  assert.deepEqual(c, [{ staff: 'mod1', office: 'mod', trigger: 'named', thread: 't1', quoting: 'a1', act: 'a1' }]);
+  assert.deepEqual(c, [{ staff: 'mod1', office: 'mod', trigger: 'named', thread: 't1', quoting: 'a1', act: 'a1', subject: null }]);
 });
 
 test('quoted: a post that quotes or replies to a persona\'s post is a candidate in that thread', () => {
   const c = run({ quoted: [{ staff: 'mem1', act: 'a2', thread: 't2', n: 1 }] });
-  assert.deepEqual(c, [{ staff: 'mem1', office: 'member', trigger: 'quoted', thread: 't2', quoting: 'a2', act: 'a2' }]);
+  assert.deepEqual(c, [{ staff: 'mem1', office: 'member', trigger: 'quoted', thread: 't2', quoting: 'a2', act: 'a2', subject: null }]);
 });
 
 test('legacy: a move ended, kept or reversed fires for its maker, not for its owner at the Act', () => {
@@ -53,7 +54,7 @@ test('legacy: a move ended, kept or reversed fires for its maker, not for its ow
 
 test('successorStumbles: the Boss entering its meltdown inside the window fires for the Boss before it, and only then', () => {
   const crossing: PoolPhase = { ...PHASE, since: 78.5 * DAY, until: 79.5 * DAY };
-  assert.deepEqual(run({}, crossing), [{ staff: 'old', office: 'member', trigger: 'successorStumbles', thread: null, quoting: null, act: null }]);
+  assert.deepEqual(run({}, crossing), [{ staff: 'old', office: 'member', trigger: 'successorStumbles', thread: null, quoting: null, act: null, subject: null }]);
   assert.deepEqual(run({}, PHASE), [], 'mid-reign, nothing');
   assert.deepEqual(run({}, { ...PHASE, since: 85 * DAY, until: 86 * DAY }), [], 'already in the meltdown before the window: it entered it earlier');
   assert.deepEqual(run({}, { ...crossing, predecessor: null }), [], 'a Boss with no predecessor stumbles in front of no one');
@@ -61,7 +62,7 @@ test('successorStumbles: the Boss entering its meltdown inside the window fires 
 
 test('successorStumbles: an admin reversal of the Boss\'s move fires for the Boss before it, with the reversal as its act', () => {
   const c = run({ reversals: [{ staff: 'boss1', move: 'm9', act: 'r1', thread: 'tm9' }] });
-  assert.deepEqual(c, [{ staff: 'old', office: 'member', trigger: 'successorStumbles', thread: 'tm9', quoting: 'r1', act: 'r1' }]);
+  assert.deepEqual(c, [{ staff: 'old', office: 'member', trigger: 'successorStumbles', thread: 'tm9', quoting: 'r1', act: 'r1', subject: null }]);
 });
 
 test('oldFlame: a favorite or a grudge in its memory writing one of the hottest posts fires, in that thread', () => {
@@ -70,35 +71,71 @@ test('oldFlame: a favorite or a grudge in its memory writing one of the hottest 
     mem1: memory({ grudges: [{ character: 'c-foe', note: '' }] }),
     fresh: memory({ opinions: [{ character: 'c-meh', score: 1, note: '' }] }),
   };
-  const c = only(run({ hot: [hot({ authors: [{ character: 'c-fav', posts: 3, top: null }, { character: 'c-foe', posts: 1, top: null }, { character: 'c-meh', posts: 2, top: null }] })] }, PHASE, memories), 'oldFlame');
+  const c = only(run({ hot: [hot({ authors: [{ character: 'c-fav', posts: 3, top: 'p-fav' }, { character: 'c-foe', posts: 1, top: 'p-foe' }, { character: 'c-meh', posts: 2, top: 'p-x' }] })] }, PHASE, memories), 'oldFlame');
   assert.deepEqual(c.map((x) => [x.staff, x.thread]).sort(), [['mem1', 't1'], ['mod1', 't1']], 'a score of 1 is not a favorite');
 });
 
 test('oldFlame: a persona is never lit by its own character\'s post', () => {
   const memories = { mod1: memory({ opinions: [{ character: 'c-mod1', score: 5, note: '' }] }) };
-  assert.deepEqual(only(run({ hot: [hot({ authors: [{ character: 'c-mod1', posts: 3, top: null }] })] }, PHASE, memories), 'oldFlame'), []);
+  assert.deepEqual(only(run({ hot: [hot({ authors: [{ character: 'c-mod1', posts: 3, top: 'pm' }] })] }, PHASE, memories), 'oldFlame'), []);
+});
+
+test("oldFlame: quotes the flame's top post, names the flame as its subject, one candidate per flame", () => {
+  const memories = { mod1: memory({ opinions: [{ character: 'c-fav', score: 4, note: '' }], grudges: [{ character: 'c-foe', note: '' }] }) };
+  const authors = [{ character: 'c-fav', posts: 3, top: 'pf' }, { character: 'c-foe', posts: 1, top: 'pg' }, { character: 'c-nobody', posts: 1, top: 'pn' }];
+  const c = only(run({ hot: [hot({ authors })] }, PHASE, memories), 'oldFlame').map((x) => [x.staff, x.thread, x.quoting, x.act, x.subject]).sort();
+  assert.deepEqual(c, [['mod1', 't1', 'pf', 'pf', 'c-fav'], ['mod1', 't1', 'pg', 'pg', 'c-foe']]);
+});
+
+test('oldFlame: a flame whose author has no top post adds nothing', () => {
+  const memories = { mod1: memory({ opinions: [{ character: 'c-fav', score: 4, note: '' }] }) };
+  assert.deepEqual(only(run({ hot: [hot({ authors: [{ character: 'c-fav', posts: 3, top: null }] })] }, PHASE, memories), 'oldFlame'), []);
+});
+
+test("homeTurf and hotOnBeat quote the thread's top post, with no subject", () => {
+  const h = hot({ staffStarted: true, starterStaff: 'mem1', boardMaker: 'old', board: 'b1', tops: TOPS });
+  const c = run({ hot: [h] });
+  for (const x of [...only(c, 'homeTurf'), ...only(c, 'hotOnBeat')]) assert.deepEqual([x.quoting, x.act, x.subject], ['p1', 'p1', null], x.trigger + ' ' + x.staff);
+  assert.ok(only(c, 'homeTurf').length === 2 && only(c, 'hotOnBeat').length === 2);
+});
+
+test("homeTurf and hotOnBeat take the runner-up when the top is the persona's own, and drop the candidate when only it posted", () => {
+  const own = [{ act: 'pm', character: 'c-mod1' }, { act: 'p2', character: 'c-y' }];
+  const c = run({ hot: [hot({ board: 'b1', boardMaker: 'mod1', tops: own })] });
+  assert.deepEqual(only(c, 'hotOnBeat').filter((x) => x.staff === 'mod1').map((x) => x.quoting), ['p2']);
+  assert.deepEqual(only(c, 'hotOnBeat').filter((x) => x.staff === 'fresh').map((x) => x.quoting), ['pm'], 'to someone else the top is the top');
+  assert.deepEqual(only(c, 'homeTurf').map((x) => x.quoting), ['p2']);
+  const alone = run({ hot: [hot({ board: 'b1', boardMaker: 'mod1', tops: [{ act: 'pm', character: 'c-mod1' }] })] });
+  assert.deepEqual(only(alone, 'hotOnBeat').map((x) => x.staff), ['fresh']);
+  assert.deepEqual(only(alone, 'homeTurf'), []);
+});
+
+test('pick passes the subject through', () => {
+  const c: Candidate = { staff: 'mod1', office: 'mod', trigger: 'oldFlame', thread: 't1', quoting: 'pf', act: 'pf', subject: 'c-fav' };
+  const { picks } = pick([c], {}, 1, 0, dayRng('d'), POOL);
+  assert.equal(picks[0]?.subject, 'c-fav');
 });
 
 test('hotOnBeat: a hot thread on a board of a persona\'s beats fires for it, and for no one whose beats are elsewhere', () => {
-  const c = only(run({ hot: [hot({ board: 'b1' })] }), 'hotOnBeat');
+  const c = only(run({ hot: [hot({ board: 'b1', tops: TOPS })] }), 'hotOnBeat');
   assert.deepEqual(c.map((x) => x.staff).sort(), ['fresh', 'mod1']);
   assert.ok(c.every((x) => x.thread === 't1'));
-  assert.deepEqual(only(run({ hot: [hot({ board: 'unknown' })] }), 'hotOnBeat'), [], 'a board with no slug is no one\'s beat');
+  assert.deepEqual(only(run({ hot: [hot({ board: 'unknown', tops: TOPS })] }), 'hotOnBeat'), [], 'a board with no slug is no one\'s beat');
 });
 
 test('homeTurf: a hot thread a persona started fires for it; so does a board it made, once an Act records one', () => {
-  const started = only(run({ hot: [hot({ staffStarted: true, starterStaff: 'mem1', board: 'unknown' })] }), 'homeTurf');
-  assert.deepEqual(started, [{ staff: 'mem1', office: 'member', trigger: 'homeTurf', thread: 't1', quoting: null, act: null }]);
-  const made = only(run({ hot: [hot({ boardMaker: 'old', board: 'unknown' })] }), 'homeTurf');
+  const started = only(run({ hot: [hot({ staffStarted: true, starterStaff: 'mem1', board: 'unknown', tops: TOPS })] }), 'homeTurf');
+  assert.deepEqual(started, [{ staff: 'mem1', office: 'member', trigger: 'homeTurf', thread: 't1', quoting: 'p1', act: 'p1', subject: null }]);
+  const made = only(run({ hot: [hot({ boardMaker: 'old', board: 'unknown', tops: TOPS })] }), 'homeTurf');
   assert.deepEqual(made.map((x) => x.staff), ['old']);
-  assert.deepEqual(only(run({ hot: [hot({ board: 'unknown' })] }), 'homeTurf'), [], 'a thread a player started is no persona\'s turf');
+  assert.deepEqual(only(run({ hot: [hot({ board: 'unknown', tops: TOPS })] }), 'homeTurf'), [], 'a thread a player started is no persona\'s turf');
 });
 
 test('seasonTurn: a handover in the window fires for the Boss that left', () => {
   const c = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x', act: 'arr', thread: 'ta' }, { season: 5, outgoing: null, boss: 'mod1', how: 'none', at: 'y', act: null, thread: null }] });
-  assert.deepEqual(c, [{ staff: 'old', office: 'member', trigger: 'seasonTurn', thread: 'ta', quoting: 'arr', act: 'arr' }], 'a reply to the arrival');
+  assert.deepEqual(c, [{ staff: 'old', office: 'member', trigger: 'seasonTurn', thread: 'ta', quoting: 'arr', act: 'arr', subject: null }], 'a reply to the arrival');
   const unsaid = run({ handovers: [{ season: 4, outgoing: 'old', boss: 'boss1', how: 'rotation', at: 'x', act: null, thread: null }] });
-  assert.deepEqual(unsaid, [{ staff: 'old', office: 'member', trigger: 'seasonTurn', thread: null, quoting: null, act: null }], 'an arrival not said: thread-null');
+  assert.deepEqual(unsaid, [{ staff: 'old', office: 'member', trigger: 'seasonTurn', thread: null, quoting: null, act: null, subject: null }], 'an arrival not said: thread-null');
 });
 
 test('a waiting or benched persona is never a candidate, whatever the signal says', () => {
@@ -106,7 +143,7 @@ test('a waiting or benched persona is never a candidate, whatever the signal say
     named: [{ staff: 'wait', act: 'a', thread: 't', n: 1 }, { staff: 'bench', act: 'b', thread: 't', n: 1 }],
     legacy: [{ staff: 'x', maker: 'bench', move: 'm', act: 'e', thread: 't', how: 'met', n: 1 }],
     handovers: [{ season: 1, outgoing: 'wait', boss: 'bench', how: 'rotation', at: 'z', act: null, thread: null }],
-    hot: [hot({ staffStarted: true, starterStaff: 'bench', board: 'unknown' })],
+    hot: [hot({ staffStarted: true, starterStaff: 'bench', board: 'unknown', tops: TOPS })],
   });
   assert.deepEqual(c, []);
   assert.deepEqual(candidates({ ...none, named: [{ staff: 'ghost', act: 'a', thread: 't', n: 1 }] }, ROSTER, {}, PHASE, CTX), [], 'nor a key the roster does not hold');
@@ -133,7 +170,7 @@ test('the allowance is the week\'s remainder over the days left, rounded down, a
 
 /* ------------------------------------------------------------------------------------------------------------ pick ---- */
 
-const cand = (staff: string, trigger: Candidate['trigger'] = 'named', thread = 't-' + staff): Candidate => ({ staff, office: 'member', trigger, thread, quoting: null, act: null });
+const cand = (staff: string, trigger: Candidate['trigger'] = 'named', thread = 't-' + staff): Candidate => ({ staff, office: 'member', trigger, thread, quoting: null, act: null, subject: null });
 const veteran = { value: 2, isNew: false };
 const rookie = { value: 0, isNew: true };
 const PRIOR = (...staff: string[]) => Object.fromEntries(staff.map((s) => [s, veteran]));
@@ -295,6 +332,16 @@ test('lockouts: a persona locked out of a thread gets no candidate there, keeps 
   const cs = candidates(signals, ROSTER, {}, PHASE, ctx);
   assert.deepEqual(cs.filter((c) => c.staff === 'mod1').map((c) => c.thread), ['t2']);
   assert.deepEqual(cs.filter((c) => c.staff === 'mem1').map((c) => c.thread), ['t1']);
+});
+
+test('lockouts: a hot candidate (oldFlame, hotOnBeat, homeTurf) is dropped in the thread, and kept in another', () => {
+  const ctx: PoolContext = { ...CTX, lockouts: [{ staff: 'c-mod1', thread: 't1' }] };
+  const memories = { mod1: memory({ opinions: [{ character: 'c-fav', score: 4, note: '' }] }) };
+  const h = (thread: string) => hot({ thread, board: 'b1', boardMaker: 'mod1', tops: TOPS, authors: [{ character: 'c-fav', posts: 2, top: 'pf' }] });
+  const cs = candidates({ ...none, hot: [h('t1'), h('t2')] }, ROSTER, memories, PHASE, ctx).filter((c) => c.staff === 'mod1');
+  for (const trigger of ['oldFlame', 'hotOnBeat', 'homeTurf']) {
+    assert.deepEqual(cs.filter((c) => c.trigger === trigger).map((c) => c.thread), ['t2'], trigger);
+  }
 });
 
 test('lockouts: a candidate with no thread (a thread start) is never dropped', () => {

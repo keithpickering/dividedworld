@@ -282,7 +282,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const first = !started;
 
   const eve = dayOf(slotAt - DAY);
-  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
+  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...keptRead(k), on: eve, own: false }));
   // A carried pick is written only inside its own day's allowance: what that day's week gave it (the week as it stood on that day), less what that day already spent (a card counts as a pick, as `used` does).
   // Past it the pick was never owed, and it is skipped on the record.
   const eveWeek = carried.length > 0 ? await db.rpc<Week>('pool_week', { today: eve }) : null;
@@ -324,7 +324,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   // written here and spent on their own day: `kept_picks` of a day lists only the picks with no spend row on it, so a rerun never writes one twice. They are that day's slots, so they do
   // not wait for a session (every one of that day has ended), take nothing from today's allowance, offer no card, and are held to their own day's allowance (`eveAllowance`).
   // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
-  const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...k, on: day, own: true })) : [];
+  const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...keptRead(k), on: day, own: true })) : [];
   for (const k of [...carried, ...owns]) {
     const p = k.pick;
     if (k.own) {
@@ -441,6 +441,11 @@ async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: s
 }
 
 /** The bounds a call's prompt and repair are held to. */
+/** A kept pick as `kept_picks` returns it: one written before `subject` existed has none, and reads as null. */
+function keptRead<K extends { pick: PoolPick }>(k: K): K {
+  return { ...k, pick: { ...k.pick, subject: k.pick.subject ?? null } };
+}
+
 function limitsOf(settings: Instance['settings']) {
   return { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
 }
