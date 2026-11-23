@@ -1003,7 +1003,7 @@ begin
   perform tests.become_service();
   why := pg_temp.refusal(format('select set_card(%L, %L, %L, %L, %L, 0)', ann, 'cw-scribe', a, p, '{}'));
   perform tests.unbecome();
-  if why is distinct from 'Scribe writes, so it is cast face up and never set face down' then raise exception 'a card that writes was set face down, or refused in other words: %', why; end if;
+  if why is distinct from 'Scribe writes, so it is played face up and never set face down' then raise exception 'a card that writes was set face down, or refused in other words: %', why; end if;
   if exists (select 1 from face_down f where f.post = p) or exists (select 1 from acts s where s.kind = 'set' and s.target_act_id = p) or card_held(ann, 'cw-scribe') is distinct from 1 then
     raise exception 'a refused set of a card that writes left something behind';
   end if;

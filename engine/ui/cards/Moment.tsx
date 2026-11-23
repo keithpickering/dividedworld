@@ -65,10 +65,14 @@ export function useMomentRead(key: Id, load: () => Promise<PlayMoment | null>): 
  * is the box's: no ring, no tag); `own` (what became of the play itself) and `named` are what the frame says under the post;
  * `unrecorded` says what else was on the post then wasn't recorded.
  */
-export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As it landed', own = null, named, unrecorded, listInto, frame, children }: {
+export function MomentFrame({ play, at, read, back, backLabel = 'Back to now', bare = false, reset, run = 0, label = 'As it landed', own = null, named, unrecorded, listInto, frame, children }: {
   /** `none`: the read answered that the play is no play on a post, which a play on a post never is. */
   readonly play: CardPlay; readonly read: MomentRead['status'] | 'none';
   readonly back?: (() => void) | undefined;
+  /** What the press that goes back says ("Back to now" for a moment; the present's frame goes back to the rewind). */
+  readonly backLabel?: string;
+  /** The frame is no moment: it draws no list ("Nothing you do to this post is saved" is a moment's, and the present is the post itself). */
+  readonly bare?: boolean;
   /** Reset's press (design section 4): over a post (`back` given) the tag reads "As it landed · Reset · Back to now". In an ORIGIN box the head draws its own Reset, and the frame only says the status. */
   readonly reset?: (() => void) | undefined;
   /** How many times the moment has been reset: above 0, the frame says "As it landed again." out loud, to a screen reader only. */
@@ -99,7 +103,7 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
   /* A strip portaled out of the frame takes the frame's ink with it, its alignment's color where the play has none (as `.kb-moment` falls back in moment.css). */
   const stripInk = ink ?? (rules?.alignment === 'salty' ? 'var(--kb-glass-salty)' : 'var(--kb-glass-sweet)');
   const into = listInto !== undefined ? listInto : !content && ring.foot !== null ? ring.foot : undefined;
-  const list = read === 'read' ? (
+  const list = read === 'read' && !bare ? (
     <div className="kb-moment-list" data-kb-strip={into !== undefined ? '' : undefined} style={{ '--kb-moment-ink': stripInk } as CSSProperties}>
       {own !== null && <p className="kb-moment-own">{own}.</p>}
       {named.length > 0 && <p>Also on the post then: {named.join(', ')}</p>}
@@ -120,7 +124,7 @@ export function MomentFrame({ play, at, read, back, reset, run = 0, label = 'As 
           {/* The time the play landed is the frame's label and the Lens's (the owner, 2026-11-06: "the date is in the Lens already"); the tag says only what is not. */}
           {status !== null && read !== 'loading' && <><span aria-hidden="true"> · </span><span>{status}</span></>}
           {reset && back !== undefined && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-reset" onClick={(e) => { e.currentTarget.focus(); reset(); }}>Reset</button></>}
-          {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>Back to now</button></>}
+          {back && <><span aria-hidden="true"> · </span><button type="button" className="kb-moment-back" onClick={(e) => backToNow(e.currentTarget, play, back)}>{backLabel}</button></>}
         </p>
       )}
       {list !== null && (into === undefined ? list : into !== null && createPortal(list, into))}
@@ -283,4 +287,9 @@ export function MomentView({ play, place, nameOf, bodyOf, back, now, source, onV
 /** The play whose moment the page shows, or null; a post subscribes to it, and is redrawn when it changes. */
 export function useShownMoment(store: LensStore): Id | null {
   return useSyncExternalStore(store.subscribe, store.moment, () => null);
+}
+
+/** The rewind play whose post the page shows as the present (Return to present), or null; a post subscribes to it, and is redrawn when it changes. */
+export function useShownPresent(store: LensStore): Id | null {
+  return useSyncExternalStore(store.subscribe, store.present, () => null);
 }

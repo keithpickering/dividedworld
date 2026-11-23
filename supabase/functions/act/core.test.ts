@@ -1173,7 +1173,7 @@ test('each refusal of a skim, a ride and a scored-as play comes back as a plain 
     const { dbs, calls } = pair({ instance_settings: rows(30), whoami, card_target_reach: { reach: 'post', act: target, kind: 'post', length: 10, body: 'hello', effects: [] } });
     const out = await runAction(dbs, walled, { action: 'setCard', card: 'wall', character: id, target, config: { color: 'red' } });
     assert.equal(out.status, 400, JSON.stringify(out.body));
-    assert.match(JSON.stringify(out.body), /is cast face up and never set face down/);
+    assert.match(JSON.stringify(out.body), /is played face up and never set face down/);
     assert.ok(!calls.some((c) => c.startsWith('service:set_card:') || c.startsWith('service:set_surface_card:')), calls.join(','));
   });
 

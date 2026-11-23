@@ -818,9 +818,11 @@ function cardRows(data: LogData, words: Words): LogRow[] {
     const drive = play?.payload.drive;
     const starts = play?.payload.starts;
     const ends = play?.payload.ends;
+    const rewindAt = play?.payload.rewind_at;
     const recorded = {
       ...(typeof tokens === 'number' && Number.isSafeInteger(tokens) ? { tokens } : {}), ...(typeof drive === 'string' ? { opened: drive === play?.id } : {}),
       ...(typeof starts === 'string' ? { starts } : {}), ...(typeof ends === 'string' ? { ends } : {}),
+      ...(typeof rewindAt === 'string' ? { rewindsTo: rewindAt } : {}),
     };
     const sentence = ui.cards.find((c) => c.key === key)?.logPlay?.(typeof config === 'object' && config !== null ? config as Readonly<Record<string, unknown>> : {}, recorded);
     return [...disciplineSaid(play), ...(sentence ? [` ${sentence}`] : [])];

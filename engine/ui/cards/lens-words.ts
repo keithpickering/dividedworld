@@ -170,3 +170,16 @@ export const cutWords = (card: string): string => `Ended the ${card} here early`
 export const cutByWords = (card: string): string => `Ended early by a ${card}`;
 /** The heading of a kind whose every play was cut. */
 export const CUT_STATE = 'Ended early';
+
+/** A rewind card's Lens (Time Machine design, 4.5): the tile that shows the post's newest version with every shown play, the tag its frame wears, and the press that goes back to the rewind. Plain and true. */
+export const PRESENT_TILE = 'Return to present';
+export const PRESENT_LABEL = 'The present';
+export const PRESENT_BACK = 'Back to the rewind';
+
+/** The line under a rewind's row when it hides cards played after its point: they are hidden, not ended, and come back when it ends. `n` counts plays the page holds, all public. */
+export const hiddenWords = (n: number): string => `${n} later ${n === 1 ? 'card' : 'cards'} hidden until it ends`;
+
+/** The point picker of a rewind card's play form: its legend, its line where no point is offered, and a point's name, `date` being the version's time in the reader's zone. */
+export const REWIND_LEGEND = 'Rewind to';
+export const REWIND_NOTHING = 'Nothing to rewind on this post';
+export const pointWords = (first: boolean, date: string): string => (first ? `As first posted, ${date}` : `Edit of ${date}`);

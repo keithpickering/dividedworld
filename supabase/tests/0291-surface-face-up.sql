@@ -24,7 +24,7 @@ begin
   exception when others then
     got := sqlerrm;
   end;
-  if got is distinct from 'Sfu Wall is cast face up and never set face down' then raise exception 'a back for a surface card is refused in decideSet''s words: %', got; end if;
+  if got is distinct from 'Sfu Wall is played face up and never set face down' then raise exception 'a back for a surface card is refused in decideSet''s words: %', got; end if;
   if exists (select 1 from face_down where play = written) then raise exception 'the refused back wrote nothing'; end if;
 end $$;
 

@@ -7431,3 +7431,220 @@ describe('a thread page and its origin read their plays and counts as postPlays 
     expect(first.origin).not.toHaveProperty('more');
   });
 });
+
+describe('a rewind: a card that shows a post as it was and freezes it (0413_rewind.sql)', () => {
+  const ok = <T,>(value: T) => ({ ok: true as const, value });
+  const base = { playPrice: () => 0, validateConfig: (c: unknown) => ok(c ?? {}) };
+  const blot = { ...base, key: 'blot', name: 'Blot', alignment: 'salty' as const, rarity: 'common' as const, canApply: () => ok(undefined) };
+  const big = { ...base, key: 'big', name: 'Big', alignment: 'salty' as const, rarity: 'legendary' as const, canApply: () => ok(undefined) };
+  const tonic = { ...base, key: 'tonic', name: 'Tonic', alignment: 'sweet' as const, rarity: 'common' as const, play: 'use' as const, lasts: { unit: 'day' as const, count: 1 }, canApply: () => ok(undefined) };
+  const snare = { ...base, key: 'snare', name: 'Snare', alignment: 'salty' as const, rarity: 'legendary' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'big', canApply: () => ok(undefined) };
+  const timeTrap = { ...snare, key: 'timetrap', name: 'Time Trap', catches: () => 'clock' };
+  const lure = { ...base, key: 'lure', name: 'Lure', alignment: 'salty' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const } }, catches: () => 'blot', canApply: () => ok(undefined) };
+  const lesser = { ...base, key: 'lesser', name: 'Lesser', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 2 }, rewind: { upTo: 'common' as const }, drawsEffect: {}, canApply: () => ok(undefined) };
+  const lkback = { ...base, key: 'lkback', name: 'Lk Back', alignment: 'sweet' as const, rarity: 'rare' as const, play: 'set' as const, trap: { trigger: { on: 'cast' as const }, match: { flavors: ['salty' as const], upTo: 'rare' as const }, outcome: { kind: 'lockout' as const, hours: 24 } }, canApply: () => ok(undefined) };
+  const clock = { ...base, key: 'clock', name: 'Clock', alignment: 'sweet' as const, rarity: 'rare' as const, reaches: ['post' as const], lasts: { unit: 'day' as const, count: 1 }, rewind: { upTo: 'rare' as const }, drawsEffect: {}, canApply: () => ok(undefined) };
+  const world: Instance = { ...instance, cards: [blot, big, tonic, snare, timeTrap, lure, clock, lesser, lkback], machine: [] };
+  const frozen = (ends: string) => `this post's Clock turns away cards up to rare until ${refusalTime(ends)}`;
+  const PICK = 'pick a point from this post\'s History';
+  /** Ana's post, edited past the grace so its first version is a point; Bo plays the cards. */
+  async function setup() {
+    const fake = createFake({ instance: world });
+    const ana = fake.seed.account('ana');
+    const bo = fake.seed.account('bo');
+    const boss = fake.seed.account('boss', { admin: true });
+    const anaFace = fake.seed.character(ana, 'Ana Face', 'face');
+    const boFace = fake.seed.character(bo, 'Bo Face', 'face');
+    const { thread, act: opener } = fake.seed.thread('general', anaFace, 'Hello', 'The first words.');
+    fake.seed.cards(ana, { snare: 2, timetrap: 1, lure: 1, lkback: 1, tonic: 2 });
+    fake.seed.cards(bo, { blot: 3, big: 2, clock: 3, lesser: 2 });
+    const posted = Date.parse((await fake.act(opener))!.createdAt);
+    fake.clock.advance(3 * MINUTE);
+    fake.signInAs(ana);
+    must(await fake.edit(opener, anaFace, 'The second words.'));
+    fake.signInAs(bo);
+    return { fake, ana, bo, boss, anaFace, boFace, thread, opener, posted };
+  }
+  type Setup = Awaited<ReturnType<typeof setup>>;
+  const played = async (s: Setup) => {
+    const rw = must(await s.fake.playCard('clock', s.boFace, s.opener, { to: s.opener }, ''));
+    return rw;
+  };
+
+  test('a rewind with no point, a point that is no version of the post or a version in the grace, or one that shows the same, is refused in the point\'s words', async () => {
+    const s = await setup();
+    const { fake, boFace, anaFace, opener, thread } = s;
+    expect(await fake.playCard('clock', boFace, opener, {}, '')).toEqual(refused(PICK, 'config'));
+    expect(await fake.playCard('clock', boFace, opener, { to: 7 }, '')).toEqual(refused(PICK, 'config'));
+    const other = fake.seed.post(thread, anaFace, 'Another post.');
+    expect(await fake.playCard('clock', boFace, opener, { to: other }, '')).toEqual(refused(PICK, 'config'));
+    expect(await fake.playCard('clock', boFace, opener, { to: 'not an id' }, '')).toEqual(refused(PICK, 'config'));
+    expect(await fake.playCard('clock', boFace, other, { to: other }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    /* An edit saved inside the grace is part of the post as first posted. */
+    const inside = fake.seed.post(thread, anaFace, 'Fresh.');
+    fake.signInAs(s.ana);
+    must(await fake.edit(inside, anaFace, 'Fresh, fixed.'));
+    fake.signInAs(s.bo);
+    expect(await fake.playCard('clock', boFace, inside, { to: inside }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    expect((await fake.myCards()).find((c) => c.card === 'clock')?.held).toBe(3);
+  });
+
+  test('it lands with rewind_at, the time its version names, and draws an effect on the post', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    expect(rw.payload.card).toBe('clock');
+    expect(rw.payload.rewind_at).toBe(new Date(s.posted + 2 * MINUTE).toISOString());
+    expect(typeof rw.payload.ends).toBe('string');
+    expect((await s.fake.postPlays([s.opener])).plays.map((a) => a.id)).toContain(rw.id);
+  });
+
+  test('a second rewind is refused with the freeze\'s words, and so is a common Move, a Use and a Set, while it is up', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    const words = frozen(String(rw.payload.ends));
+    expect(await s.fake.playCard('clock', s.boFace, s.opener, { to: s.opener }, '')).toEqual(refused(words, 'config'));
+    expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(words, 'config'));
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.useCard('tonic', s.anaFace, s.opener, {}, '')).toEqual(refused(words, 'config'));
+    expect(await s.fake.setCard('lure', s.anaFace, s.opener, {})).toEqual(refused(words, 'config'));
+    expect((await s.fake.myCards()).find((c) => c.card === 'tonic')?.held).toBe(2);
+  });
+
+  test('a rewind is never set face down, with or without a rewind on the post', async () => {
+    const s = await setup();
+    s.fake.seed.cards(s.ana, { clock: 1 });
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.setCard('clock', s.anaFace, s.opener, {})).toEqual(refused('Clock is played face up and never set face down', 'config'));
+  });
+
+  test('a legendary Move lands under a rare rewind and springs no back; the back stays set, the rewind\'s own play met none, and it springs once the rewind ends', async () => {
+    const s = await setup();
+    s.fake.signInAs(s.ana);
+    const set = must(await s.fake.setCard('snare', s.anaFace, s.opener, {}));
+    s.fake.signInAs(s.bo);
+    const rw = await played(s);
+    expect(rw.payload.caught).toBeUndefined();
+
+    const lands = must(await s.fake.playCard('big', s.boFace, s.opener, {}, ''));
+    expect(lands.payload.caught).toBeUndefined();
+    expect((await s.fake.postPlays([s.opener])).plays.filter((a) => a.kind === 'spring')).toEqual([]);
+    expect((await s.fake.myFaceDown([set.id]))).toEqual({});
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.myFaceDown([set.id])).toEqual({ [set.id]: 'snare' });
+    s.fake.clock.advance(DAY + MINUTE);
+    s.fake.signInAs(s.bo);
+    const later = must(await s.fake.playCard('big', s.boFace, s.opener, {}, ''));
+    expect(later.payload.caught).toBe(set.id);
+  });
+
+  test('a back that names the rewind card does not catch the rewind\'s own play, and stays set', async () => {
+    const s = await setup();
+    s.fake.signInAs(s.ana);
+    const set = must(await s.fake.setCard('timetrap', s.anaFace, s.opener, {}));
+    s.fake.signInAs(s.bo);
+    const rw = await played(s);
+    expect(rw.payload.caught).toBeUndefined();
+    expect((await s.fake.postPlays([s.opener])).plays.filter((a) => a.kind === 'spring')).toEqual([]);
+    s.fake.signInAs(s.ana);
+    expect(await s.fake.myFaceDown([set.id])).toEqual({ [set.id]: 'timetrap' });
+  });
+
+  test('after an admin ends the rewind a common Move lands', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    expect((await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).ok).toBe(false);
+    s.fake.signInAs(s.boss);
+    must(await s.fake.reverseCard(rw.id));
+    s.fake.signInAs(s.bo);
+    expect((await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).ok).toBe(true);
+  });
+
+  test('after its time ends a common Move lands', async () => {
+    const s = await setup();
+    await played(s);
+    s.fake.clock.advance(DAY + MINUTE);
+    expect((await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).ok).toBe(true);
+  });
+
+  test('an edit during the rewind lands, and rewindView still gives the version at the point', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    s.fake.clock.advance(MINUTE);
+    s.fake.signInAs(s.ana);
+    must(await s.fake.edit(s.opener, s.anaFace, 'The third words.'));
+    expect((await s.fake.act(s.opener))?.currentPayload).toEqual({ body: 'The third words.' });
+    const view = await s.fake.rewindView(rw.id);
+    expect(view).toMatchObject({ play: rw.id, post: s.opener, at: rw.payload.rewind_at, version: { id: s.opener, currentPayload: { body: 'The first words.' }, editedAt: null, shownEditedAt: null } });
+    expect(await s.fake.rewindView(s.opener)).toBeNull();
+    expect(await s.fake.rewindView('00000000-0000-4000-8000-00000000ffff')).toBeNull();
+  });
+
+  test('a rewind to an edit gives that edit\'s words, as the moment gives them', async () => {
+    const s = await setup();
+    s.fake.clock.advance(3 * MINUTE);
+    s.fake.signInAs(s.ana);
+    must(await s.fake.edit(s.opener, s.anaFace, 'The third words.'));
+    s.fake.clock.advance(MINUTE);
+    must(await s.fake.edit(s.opener, s.anaFace, 'The fourth words.'));
+    s.fake.signInAs(s.bo);
+    const third = (await s.fake.history(s.opener)).find((v) => (v.payload as { body?: string }).body === 'The third words.')!;
+    const rw = must(await s.fake.playCard('clock', s.boFace, s.opener, { to: third.id }, ''));
+    expect(rw.payload.rewind_at).toBe(new Date(Date.parse(third.createdAt)).toISOString());
+    expect((await s.fake.rewindView(rw.id))?.version.currentPayload).toEqual({ body: 'The third words.' });
+  });
+
+  test('the thread page carries rewinds, with the post\'s old words, and none once the rewind has ended', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    const page = (await s.fake.threadPage(s.thread, { page: 1 }, 10, []))!;
+    expect(page.rewinds).toEqual([await s.fake.rewindView(rw.id)]);
+    expect(page.rewinds[0]!.version.currentPayload).toEqual({ body: 'The first words.' });
+    s.fake.signInAs(s.boss);
+    must(await s.fake.reverseCard(rw.id));
+    expect((await s.fake.threadPage(s.thread, { page: 1 }, 10, []))!.rewinds).toEqual([]);
+  });
+
+  test('a spun thread\'s page carries the rewind of its ORIGIN post', async () => {
+    const s = await setup();
+    const rw = await played(s);
+    s.fake.signInAs(s.ana);
+    const spun = must(await s.fake.spin(s.opener, s.anaFace, 'About it', 'b')).thread.id;
+    expect((await s.fake.threadPage(spun, { page: 1 }, 10, []))!.rewinds.map((r) => r.play)).toEqual([rw.id]);
+  });
+
+  test('two live rewinds on a post (a rarer over a lesser): the page lists the latest played first, and a refusal names the latest played', async () => {
+    const s = await setup();
+    const first = must(await s.fake.playCard('lesser', s.boFace, s.opener, { to: s.opener }, ''));
+    s.fake.clock.advance(MINUTE);
+    const second = must(await s.fake.playCard('clock', s.boFace, s.opener, { to: s.opener }, ''));
+    const page = (await s.fake.threadPage(s.thread, { page: 1 }, 10, []))!;
+    expect(page.rewinds.map((r) => r.play)).toEqual([second.id, first.id]);
+    expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(frozen(String(second.payload.ends)), 'config'));
+    /* The rarer one ended by an admin, the lesser alone is named. */
+    s.fake.signInAs(s.boss);
+    must(await s.fake.reverseCard(second.id));
+    s.fake.signInAs(s.bo);
+    expect(await s.fake.playCard('blot', s.boFace, s.opener, {}, '')).toEqual(refused(`this post's Lesser turns away cards up to common until ${refusalTime(String(first.payload.ends))}`, 'config'));
+  });
+
+  test('a back sprung into a live lockout after the point shows, so it makes the point offered (play_post: sprung and in force)', async () => {
+    const s = await setup();
+    const { fake, ana, bo, boss, anaFace, boFace, thread } = s;
+    const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
+    fake.signInAs(ana);
+    const plain = must(await fake.post(thread, anaFace, 'Plain.', null)).id;
+    fake.clock.advance(3 * MINUTE);
+    fake.signInAs(bo);
+    expect(await fake.playCard('clock', boFace, plain, { to: plain }, '')).toEqual(refused('this post shows the same at that point as it does now', 'config'));
+    fake.signInAs(ana);
+    const back = must(await fake.setCard('lkback', anaFace, plain, {}));
+    fake.signInAs(bo);
+    const move = must(await fake.playCard('blot', boFace, plain, {}, ''));
+    fake.signInAs(boss);
+    must(await fake.reverseCard(move.id));
+    fake.signInAs(bo);
+    expect(back.id).toBeDefined();
+    must(await fake.playCard('clock', boHeel, plain, { to: plain }, ''));
+  });
+});
+

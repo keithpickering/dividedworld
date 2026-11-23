@@ -47,6 +47,7 @@ import type { CardPlay, ConfigFormProps } from './types.ts';
 import { usePierce } from './pierce.ts';
 import { effectCards, livePlays, readEffects, stackPlays, usePlays } from './plays.ts';
 import { usePostVersion } from './tails.ts';
+import { RewindPoints } from './RewindPoints.tsx';
 import type { PlayTarget } from './play.tsx';
 import { conditionWords, countOf, fieldOfRefusal, noConditions, SetConditions, whenOf, type ConditionsDraft, type Field, type Problems } from './SetConditions.tsx';
 import './play.css';
@@ -241,12 +242,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const shortWords = short && wallet ? plainRefusal(`that costs ${orbs(price)}, and your wallet holds ${orbs(wallet.balance)}`) : '';
   /* A Set waits for the card's own settings to be accepted, as a cast's price does (a set card that names a card has no card until the player names one). */
   const unsettled = setting && !rules.validateConfig(config).ok;
+  /* A rewind names the point it goes back to, and a form with none picked (or none offered) plays nothing. */
+  const unpicked = rules.rewind !== undefined && !rules.validateConfig(config).ok;
   const flawed = Object.keys(problems).length > 0;
   /* The reply is a post: a letter or a digit in it, and no longer than a post may be. */
   const replyMost = screen.postMaxLength;
   const unwritten = replying && (!/[\p{L}\p{N}]/u.test(reply) || [...reply].length > replyMost);
   const out = wasCaught && player.loaded && (player.cards.find((c) => c.card === card)?.held ?? 0) === 0;
-  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || flawed || lockedUntil !== null;
+  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || unpicked || flawed || lockedUntil !== null;
   const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
   /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
   const springs = when || lockedSays ? `Springs ${conditionWords({ ...when, ...(lockedSays ? { says: lockedSays } : {}) }, nameOf)}, and lands on ${landsWords(rules)}.` : springWords(rules);
@@ -399,7 +402,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
           </p>
           {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
           {setting && <p className="kb-play-sets" data-kb-sets>{springs}</p>}
-          {Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} faceDown={setting ? 'will' : choosing ? 'can' : 'no'} {...(gimmicks ? { gimmicks } : {})} /></div>}
+          {rules.rewind !== undefined && post && !beyond && <RewindPoints post={post} plays={target.plays} id={id} config={config} onChange={setConfig} />}
+          {rules.rewind === undefined && Config && post && <div><Config config={config} onChange={setConfig} post={post} id={id} castable={castable} faceDown={setting ? 'will' : choosing ? 'can' : 'no'} {...(gimmicks ? { gimmicks } : {})} /></div>}
           {conditional && post && (
             <SetConditions id={id} open={whenOpen} onToggle={() => setWhenOpen((o) => !o)} draft={draft} onChange={(next) => { setPlaced(null); setDraft(next); }} lockedSays={lockedSays} words={watched!.text} count={countOf(when)} problems={shown} />
           )}

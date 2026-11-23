@@ -29,7 +29,7 @@ import { PostEffects, momentParts } from '../cards/Effects.tsx';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { MomentView } from '../cards/Moment.tsx';
-import { createPlays, effectCards, holdsEffects, homeOf, keepingKeys, markedPlays, playOf, readEffects, shownPlays, usePlays, type Plays } from '../cards/plays.ts';
+import { createPlays, effectCards, holdsEffects, homeOf, keepingKeys, markedPlays, playOf, readEffects, readRewinds, rewindCards, shownPlays, usePlays, useRewound, type Plays } from '../cards/plays.ts';
 import type { CardPlay, CardView } from '../cards/types.ts';
 import { useKayfa } from '../context.tsx';
 import { PLAY_FROM, type Act, type Character, type Id, type OriginPlace, type PageOrigin, type ThreadSummary } from '../data/api.ts';
@@ -82,8 +82,8 @@ function takeInPolls(origin: PageOrigin, polls: Polls, ticket: number): void {
  * in kind, so the post's effects draw here as they do there. The page's origin is taken in as it arrives (`takeIn`, before the box's first frame and again for each page read); a play, an edit, a saved
  * state and a tally are heard on the origin thread's channel.
  */
-function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls): { readonly act: Act | null } {
-  const { api, ui } = useKayfa();
+function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, tallies: Tallies, shared: boolean, polls: Polls, catchUp?: () => void): { readonly act: Act | null } {
+  const { api, ui, instance } = useKayfa();
   /* The player's own characters: a ballot of theirs heard here is their own ballot on the poll. */
   const { characters } = usePlayer();
   const own = useRef<ReadonlySet<Id>>(new Set());
@@ -101,6 +101,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
   useEffect(() => { if (!shared) takeInOrigin(from, origin, plays, tallies, new Map(), undefined, polls); }, [shared, from, origin, plays, tallies, polls]);
   useEffect(() => {
     const cards = effectCards(ui);
+    const rewinding = rewindCards(instance.cards);
     return api.subscribeThread(thread, {
       onAct(a) {
         if (a.kind === 'poll') { polls.pollAct(a); if (a.id === origin) setAct((was) => (was ? newer(was, a) : a)); return; }
@@ -111,7 +112,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
           return;
         }
         if (a.id === origin) setAct((was) => (was ? newer(was, a) : a));
-        else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); }
+        else if (a.kind === 'card' && a.targetActId === origin) { plays.add([a]); void readEffects(api, plays, [a], cards); void readRewinds(api, plays, [a], rewinding, catchUp); }
       },
       onEffect(play) { void api.effectStates([play]).then((saved) => plays.setStates(saved), () => { /* the next save is heard again */ }); },
       /* A reaction to the origin, or to a play on it, counts on its tag here as it does in its thread. */
@@ -119,7 +120,7 @@ function useOrigin(from: PageOrigin, origin: Id, thread: Id, plays: Plays, talli
       /* The origin post's poll: its counts, a replacement, a close and a ballot, as the origin's thread hears them (the same events the thread screen applies to its own polls). */
       onPoll(e) { polls.counts(e); },
     });
-  }, [api, ui, origin, thread, plays, tallies, polls]);
+  }, [api, ui, instance.cards, origin, thread, plays, tallies, polls, catchUp]);
   return { act };
 }
 
@@ -213,7 +214,7 @@ function PollOrigin({ act, post, polls, name }: { readonly act: Act; readonly po
 }
 
 export function Origin({ summary }: { readonly summary: ThreadSummary }) {
-  const { perPage, tallies, mine, origin: held, originPlays, originPolls } = useThread();
+  const { perPage, tallies, mine, origin: held, originPlays, originPolls, catchUp } = useThread();
   const { api, instance, ui } = useKayfa();
   const originId = summary.originActId!;
   const from = held ?? NOT_THERE;
@@ -222,10 +223,12 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
   const plays = originPlays ?? own;
   const ownPolls = useMemo(() => createPolls(), []);
   const polls = originPolls ?? ownPolls;
-  const { act } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls);
+  const { act } = useOrigin(from, originId, summary.originThread!, plays, tallies, originPlays !== undefined && originPolls !== undefined, polls, catchUp);
   const box = useRef<HTMLDivElement>(null);
   useEffect(() => { if (takeOrigin(summary.id)) box.current?.focus(); }, [summary.id]);
   const played = usePlays(plays, originId).plays;
+  /* The live ORIGIN box rewinds as the post does in its thread (its words and plays are chosen in `PostEffects`); a moment box (a card play's, a spin's) is read once and never does. */
+  const rewound = useRewound(plays, originId);
   /*
    * A spin from a card play itself shows the play as the box's one mark, kept under the post it landed on (the Act is not a
    * post of this thread, and its post is in another).
@@ -346,7 +349,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
         return (
           <>
             <PostEffects plays={plays} post={act} place="origin" marks={marks} nameOf={nameOf} bodyOf={(version) => <BbCode text={text(version.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(version.currentPayload)} />}><BbCode text={text(act.currentPayload.body)} quoteHead={quoteHead} forged={forgedList(act.currentPayload)} /></PostEffects>
-            <LastEdited act={act} />
+            <LastEdited act={rewound?.rewind.version ?? act} />
             {act.kind === 'post' && <p className="kb-small" data-kb-over-ink>{history.button}</p>}
             {/* Lifted always and empty until History opens: a wrapper with nothing in it draws and covers nothing, and its ground (spin.css) is on what it holds. */}
             <div className="kb-origin-lift" data-kb-over-ink>{history.panel}</div>

@@ -75,6 +75,7 @@ test('the instance sells its cards at their prices', () => {
     ['tattle-tale', 'salty', 300],
     ['thick-skin', 'sweet', 150],
     ['this', 'pepperoni', 20],
+    ['time-machine', 'pepperoni', 300],
     ['toll', 'pepperoni', 150],
     ['ultra-happy-heart', 'sweet', 600],
     ['whodunnit', 'pepperoni', 300],
@@ -415,9 +416,9 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   // Hype-Up (card notes, Hype-Up on a post) is now a common, so the hit pull leaves it out: twenty uncommons share the 74 (Front Row, Sweet Heat and Thick Skin, uncommons, joined them). Sugar Coat, Graffiti, Line Cutter, Feelin' Glam, Whodunnit?, Super Happy Heart and Tattle-Tale are the rares that share the 24 with Main Event.
   // Off Day and Ultra Happy Heart are the legendaries that share the 2: two, at 0.01 each, so Ultra Happy Heart can be pulled.
   // So Very Happy (rare, the so-very-happy plan's Task 7) joined them, so nine share the 24.
-  // Buzzkill (rare, the buzzkill plan's Task 7) joined them, so ten share the 24.
+  // Buzzkill (rare, the buzzkill plan's Task 7) joined them, so ten share the 24. Time Machine (rare, the Time Machine plan's Task 6) makes eleven.
   const rares = cards.filter((c) => c.rarity === 'rare');
-  assert.deepEqual(rares.map((c) => c.key).sort(), ['buzzkill', 'feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'whodunnit']);
+  assert.deepEqual(rares.map((c) => c.key).sort(), ['buzzkill', 'feelin-glam', 'graffiti', 'line-cutter', 'main-event', 'so-very-happy', 'sugar-coat', 'super-happy-heart', 'tattle-tale', 'time-machine', 'whodunnit']);
   for (const c of rares) assert.ok(Math.abs(chance.get(c.key)! - 0.24 / rares.length) < 1e-9, `${c.name} at ${chance.get(c.key)}`);
   const legendaries = cards.filter((c) => c.rarity === 'legendary');
   assert.deepEqual(legendaries.map((c) => c.key).sort(), ['off-day', 'ultra-happy-heart']);
@@ -563,7 +564,7 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
 
 test('Jimmy Wails cannot be set face down: it draws, runs a drive and needs a message, so it is cast now and face up (issue #446)', () => {
   const j = jimmy();
-  assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is cast face up and never set face down' });
+  assert.deepEqual(decideSet(j, settings, on('a post'), [], {}, cards), { ok: false, why: 'Jimmy Wails is played face up and never set face down' });
 });
 
 /* ---- Laugh Track (docs/plans/2026-11-11-laugh-track-plan.md, Task 9) ---- */
@@ -633,7 +634,7 @@ test('Line Cutter lands on a post, once, never under a reply that cut in, and co
   assert.equal(cutter.playPrice(settings, post(10), {}), 0);
   assert.equal(castOnPost(cutter), true, 'Card Collector may name it');
   assert.equal(staffOffers(cutter), false, 'a persona has no reply to carry');
-  assert.deepEqual(decideSet(cutter, settings, post(10), [], {}, cards), { ok: false, why: 'Line Cutter carries a reply, so it is cast face up and never set face down' });
+  assert.deepEqual(decideSet(cutter, settings, post(10), [], {}, cards), { ok: false, why: 'Line Cutter carries a reply, so it is played face up and never set face down' });
 });
 
 test("a Sugar Coat on the post turns a Line Cutter away, and a Force Field does not", () => {
@@ -679,7 +680,7 @@ test('no one of the five is ever set face down, a persona never plays one, and o
   for (const k of FIVE) {
     const card = maybe(k);
     const target: CardTarget = card?.reaches?.[0] === 'character' ? { reach: 'character', character: 'c1' } : post(10);
-    assert.deepEqual(card && decideSet(card, settings, target, [], {}, cards), { ok: false, why: `${card?.name} acts the moment it lands, so it is cast face up and never set face down` }, k);
+    assert.deepEqual(card && decideSet(card, settings, target, [], {}, cards), { ok: false, why: `${card?.name} acts the moment it lands, so it is played face up and never set face down` }, k);
     assert.equal(card !== undefined && staffOffers(card), false, `${k}: a persona does not play on its own office's rulings`);
   }
   assert.deepEqual(FIVE.map((k) => maybe(k) !== undefined && castOnPost(maybe(k)!)), [false, false, false, true, false]);

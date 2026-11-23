@@ -128,7 +128,7 @@ describe('what the adapter may request', () => {
     });
     const api = h.api;
     await Promise.allSettled([
-      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.postPlays([A]), api.kindPlays(A, 'whoops', null, 20), api.effectStates([A]), api.tails([A]), api.playMoment(A), api.spinMoment(A), api.myReleases([A]), api.releaseEffect(A),
+      api.settings(), api.boards(), api.board('general'), api.board(C), api.threads(C, { offset: 0, limit: 5 }), api.thread(T), api.acts(T, 1, 5), api.act(A), api.actsById([A]), api.history(A), api.spunFrom(A), api.spunFromMany([A], 10), api.postPlays([A]), api.kindPlays(A, 'whoops', null, 20), api.effectStates([A]), api.tails([A]), api.playMoment(A), api.rewindView(A), api.spinMoment(A), api.myReleases([A]), api.releaseEffect(A),
       api.characters([B]), api.characterCounts(B), api.characterStats([B]), api.standingAmounts([B]), api.standingPlace(B), api.characterActs(B, ['post'], { offset: 0, limit: 5 }), api.finishedSeasons(), api.resultsPage(1, 2), api.resultPlace(1, B), api.standingsCount(), api.standingsPage(0, 5), api.tallies([A]), api.viewCounts([T]), api.season(),
       api.boardNames(), api.moveNotice(A), api.movesLog('director'), api.movesLog('director', { at: '2026-10-01T10:00:00+00:00', act: A }), api.staffProfile('director'), api.adminQueue(), api.holdMove(1), api.reverseMove(A), api.updates(), api.updates('2026-10-01T10:00:00+00:00'), api.postUpdate('T', 'B', []),
       api.lastSettledAt(), api.classReveals([B]), api.turnsAnnounced([B]), api.nextSettlementAt(), api.myCharacters(), api.wallet(),
@@ -2413,6 +2413,24 @@ describe('reads by many ids', () => {
     expect(h.to('rpc/play_moment')).toHaveLength(2);
   });
 
+  it('rewindView asks rewind_view once, reads the play, post, point and the version shaped as a moment\'s, and reads a refusal or a null as null', async () => {
+    const h = harness((r) => {
+      if (r.url.pathname !== `${REST}/rpc/rewind_view`) return undefined;
+      const play = (r.body as { play: string }).play;
+      if (play === B) return json({ code: 'P0002', message: 'that is no rewind', hint: 'kayfabb.refusal' }, 400);
+      if (play === T) return json(null);
+      return json({ play: A, post: C, at: '2026-10-01T09:02:00+00:00', version: { ...ACT_ROW, id: C, current_payload: { body: 'then' }, edited_at: null, shown_edited_at: null } });
+    });
+    const v = await h.api.rewindView(A);
+    expect(h.to('rpc/rewind_view')).toHaveLength(1);
+    expect(h.to('rpc/rewind_view')[0]!.body).toEqual({ play: A });
+    expect(v).toMatchObject({ play: A, post: C, at: '2026-10-01T09:02:00+00:00', version: { id: C, currentPayload: { body: 'then' }, editedAt: null, shownEditedAt: null } });
+    expect(await h.api.rewindView(B)).toBeNull();
+    expect(await h.api.rewindView(T)).toBeNull();
+    expect(await h.api.rewindView('not an id')).toBeNull();
+    expect(h.to('rpc/rewind_view')).toHaveLength(3);
+  });
+
   it('spinMoment asks spin_moment once, reads what playMoment reads and its time, and reads a refusal as null', async () => {
     const h = harness((r) => {
       if (r.url.pathname !== `${REST}/rpc/spin_moment`) return undefined;
@@ -3214,6 +3232,15 @@ describe('a screen in one call', () => {
     expect([plain?.polls, plain?.voters, plain?.votersMore, plain?.voterCast, plain?.myBallots]).toEqual([[], [], [], [], []]);
     const spun = await once('thread_page', { ...DOC, origin: { act: null, plays: [], more: false, moment: null, at: null, cast: [], polls: [poll], voters: [], votersMore: [], myBallots: [] } }).api.threadPage(T, { page: 1 }, 20, []);
     expect(spun?.origin?.polls).toHaveLength(1);
+  });
+
+  it('thread_page passes `rewinds` through as rewind_view gave them, empty when the document has none', async () => {
+    const DOC = { summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [] };
+    const rewinds = [{ play: B, post: A, at: '2026-10-01T09:02:00+00:00', version: { ...ACT_ROW, id: A, current_payload: { body: 'then' }, edited_at: '2026-10-01T09:05:00+00:00', shown_edited_at: '2026-10-01T09:05:00+00:00' } }];
+    const page = await once('thread_page', { ...DOC, rewinds }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(page?.rewinds).toMatchObject([{ play: B, post: A, at: '2026-10-01T09:02:00+00:00', version: { id: A, currentPayload: { body: 'then' }, editedAt: '2026-10-01T09:05:00+00:00', shownEditedAt: '2026-10-01T09:05:00+00:00' } }]);
+    expect((await once('thread_page', DOC).api.threadPage(T, { page: 1 }, 20, []))?.rewinds).toEqual([]);
+    expect((await once('thread_page', { ...DOC, rewinds: null }).api.threadPage(T, { page: 1 }, 20, []))?.rewinds).toEqual([]);
   });
 
   it('thread_page: maps `under`, `cut` and `kept`, and asks the tallies of the nested replies and the kept plays too', async () => {
