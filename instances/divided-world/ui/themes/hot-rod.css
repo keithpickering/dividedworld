@@ -3,9 +3,10 @@
  * and a banner of flames: its entry in instances/divided-world/ui/index.ts tiles an animated fire (themes/hot-debate/) along the
  * banner's foot, on the black ground set here, and the footer credits it.
  * As on the red ezboards it pays homage to, the posts sit on black inside a red grid and the small print (dates, post counts) is red;
- * a visited link turns lavender, as Midnight's and Fan Site's do. Its buttons are Bowser Tech's from 2003: a flat #999 face pillowed
- * by a black glow inside its edge, with black bold lettering; the primary one is the same pillow in fire orange, and a disabled one
- * is flat and dark. Dark only, so it sets its tokens on :root and in both dark blocks alike (the board look design, section 1). Its
+ * a visited link turns amber, a hue step from the gold as far as Midnight's and Fan Site's visited links step from theirs, at the
+ * gold's full color. Its buttons are Bowser Tech's from 2003 in spirit: a #999 face pillowed by a black glow inside its edge, with
+ * black bold lettering, softened to sit beside the theme's gradients (a faint sheen down the face, a highlight along the top, the
+ * glow at 60%); the primary one is the same pillow in fire orange, and a disabled one is flat and dark. Dark only, so it sets its tokens on :root and in both dark blocks alike (the board look design, section 1). Its
  * key stays `hot-rod`, the name it shipped under, since accounts store the key. The game's own pieces keep the house theme's colors.
  */
 :root {
@@ -16,7 +17,7 @@
   --kb-logo-spacing: 0.09em;
   --kb-logo-leading: 1;
   --kb-font-badge: Silkscreen, "Courier New", monospace;
-  --kb-button-shadow: inset 0 0 4px 2px #000;
+  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px rgb(0 0 0 / 0.6);
   --kb-button-primary-shadow: var(--kb-button-shadow);
   --kb-button-weight: bold;
   --kb-button-tracking: normal;
@@ -50,7 +51,7 @@
   --kb-rule: #d9531e;
   --kb-muted: #ff5a4a;
   --kb-link: #ffcc00;
-  --kb-link-visited: #d9b8ff;
+  --kb-link-visited: #ffa234;
   --kb-focus: #ffcc00;
   --kb-selection-fg: #000;
   --kb-selection-bg: #ffcc00;
@@ -83,17 +84,17 @@
   --kb-input-bg: #0a0403;
   --kb-input-edge: #7a1e00;
   --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
-  --kb-button-bg: #999999;
+  --kb-button-bg: linear-gradient(#a6a6a6, #999999 50%, #8f8f8f);
   --kb-button-edge: #000;
   --kb-button-fg: #000;
-  --kb-button-fg-shadow: none;
+  --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.3);
   --kb-button-case: none;
-  --kb-button-primary-bg: #ff8c1a;
+  --kb-button-primary-bg: linear-gradient(#ffa64d, #ff8c1a 50%, #f27d0c);
   --kb-button-primary-fg: #000;
-  --kb-button-primary-fg-shadow: none;
-  --kb-button-hover-bg: #b3b3b3;
+  --kb-button-primary-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.3);
+  --kb-button-hover-bg: linear-gradient(#bfbfbf, #b3b3b3 50%, #a8a8a8);
   --kb-button-hover-fg: #000;
-  --kb-button-primary-hover-bg: #ffad4d;
+  --kb-button-primary-hover-bg: linear-gradient(#ffc07a, #ffad4d 50%, #ff9f33);
   --kb-button-primary-hover-fg: #000;
   --kb-button-pressed-shadow: inset 0 0 6px 3px #000;
   --kb-button-disabled-bg: #262626;
@@ -116,7 +117,7 @@
     --kb-logo-spacing: 0.09em;
     --kb-logo-leading: 1;
     --kb-font-badge: Silkscreen, "Courier New", monospace;
-    --kb-button-shadow: inset 0 0 4px 2px #000;
+    --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px rgb(0 0 0 / 0.6);
     --kb-button-primary-shadow: var(--kb-button-shadow);
     --kb-button-weight: bold;
     --kb-button-tracking: normal;
@@ -150,7 +151,7 @@
     --kb-rule: #d9531e;
     --kb-muted: #ff5a4a;
     --kb-link: #ffcc00;
-    --kb-link-visited: #d9b8ff;
+    --kb-link-visited: #ffa234;
     --kb-focus: #ffcc00;
     --kb-selection-fg: #000;
     --kb-selection-bg: #ffcc00;
@@ -183,17 +184,17 @@
     --kb-input-bg: #0a0403;
     --kb-input-edge: #7a1e00;
     --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
-    --kb-button-bg: #999999;
+    --kb-button-bg: linear-gradient(#a6a6a6, #999999 50%, #8f8f8f);
     --kb-button-edge: #000;
     --kb-button-fg: #000;
-    --kb-button-fg-shadow: none;
+    --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.3);
     --kb-button-case: none;
-    --kb-button-primary-bg: #ff8c1a;
+    --kb-button-primary-bg: linear-gradient(#ffa64d, #ff8c1a 50%, #f27d0c);
     --kb-button-primary-fg: #000;
-    --kb-button-primary-fg-shadow: none;
-    --kb-button-hover-bg: #b3b3b3;
+    --kb-button-primary-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.3);
+    --kb-button-hover-bg: linear-gradient(#bfbfbf, #b3b3b3 50%, #a8a8a8);
     --kb-button-hover-fg: #000;
-    --kb-button-primary-hover-bg: #ffad4d;
+    --kb-button-primary-hover-bg: linear-gradient(#ffc07a, #ffad4d 50%, #ff9f33);
     --kb-button-primary-hover-fg: #000;
     --kb-button-pressed-shadow: inset 0 0 6px 3px #000;
     --kb-button-disabled-bg: #262626;
@@ -216,7 +217,7 @@
   --kb-logo-spacing: 0.09em;
   --kb-logo-leading: 1;
   --kb-font-badge: Silkscreen, "Courier New", monospace;
-  --kb-button-shadow: inset 0 0 4px 2px #000;
+  --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px rgb(0 0 0 / 0.6);
   --kb-button-primary-shadow: var(--kb-button-shadow);
   --kb-button-weight: bold;
   --kb-button-tracking: normal;
@@ -250,7 +251,7 @@
   --kb-rule: #d9531e;
   --kb-muted: #ff5a4a;
   --kb-link: #ffcc00;
-  --kb-link-visited: #d9b8ff;
+  --kb-link-visited: #ffa234;
   --kb-focus: #ffcc00;
   --kb-selection-fg: #000;
   --kb-selection-bg: #ffcc00;
@@ -283,17 +284,17 @@
   --kb-input-bg: #0a0403;
   --kb-input-edge: #7a1e00;
   --kb-input-shadow: inset 1px 1px 2px rgb(0 0 0 / 0.6);
-  --kb-button-bg: #999999;
+  --kb-button-bg: linear-gradient(#a6a6a6, #999999 50%, #8f8f8f);
   --kb-button-edge: #000;
   --kb-button-fg: #000;
-  --kb-button-fg-shadow: none;
+  --kb-button-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.3);
   --kb-button-case: none;
-  --kb-button-primary-bg: #ff8c1a;
+  --kb-button-primary-bg: linear-gradient(#ffa64d, #ff8c1a 50%, #f27d0c);
   --kb-button-primary-fg: #000;
-  --kb-button-primary-fg-shadow: none;
-  --kb-button-hover-bg: #b3b3b3;
+  --kb-button-primary-fg-shadow: 0 1px 0 rgb(255 255 255 / 0.3);
+  --kb-button-hover-bg: linear-gradient(#bfbfbf, #b3b3b3 50%, #a8a8a8);
   --kb-button-hover-fg: #000;
-  --kb-button-primary-hover-bg: #ffad4d;
+  --kb-button-primary-hover-bg: linear-gradient(#ffc07a, #ffad4d 50%, #ff9f33);
   --kb-button-primary-hover-fg: #000;
   --kb-button-pressed-shadow: inset 0 0 6px 3px #000;
   --kb-button-disabled-bg: #262626;
