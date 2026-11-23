@@ -32,6 +32,11 @@ import { pageViolations } from './axe.ts';
  * under reduced motion, whose picture is drawn at once and is exactly the rest the animated run ends in for the same seed (Effect.test.tsx),
  * until the pose is there, and fail if none of the first SCAN_SEEDS has it. The pose of the second is a chair that took a nudge, which the
  * effect writes on the chair as `data-nudges`; a rest alone does not show it.
+ *
+ * `KB_POISON` (environment, default none) plants one defect back by hand so that a run shows a test red: `clip` (the foil test, with-fab only):
+ * the chair's host gets the old filter, its region grown back to the words box, which clips the foil to it; `trap` (the signature test, with-fab
+ * only): the element that holds Fab's host gets the area's filter, which holds the foil in a stacking context over the signature; `inherit` (the
+ * nested-area test): the nested content area takes the post's bend properties again.
  */
 test.use({ bypassCSP: true });
 
@@ -972,6 +977,8 @@ test('with-fab: no block: the four corners of each dent\'s box are the same with
  * Poisons (the defect itself, put back by hand; `KB_POISON=clip` or `KB_POISON=trap` in the environment does it, for the run that shows the test red).
  * `clip`: the chair's host gets the old filter (the words' filter, its region grown back to the words box), which clips the foil to it. `trap`: the
  * element that holds Fab's host gets `filter: url(#...-area)` (a region over the whole area), which holds the foil in a stacking context over the signature.
+ * The clip and trap poisons can be red only on `with-fab`: on `fab-after` the foil is the outer effect, and the chair's host is inside Fab's, so it can
+ * neither clip nor trap the foil. `fab-after` is a no-regression companion with no red run of its own.
  */
 const POISON = process.env.KB_POISON ?? '';
 const frames2 = (page: Page) => page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
@@ -1006,6 +1013,7 @@ for (const name of ['with-fab', 'fab-after'] as const) {
       /* The post in the middle of the window, clear of the HUD at its foot. */
       await area(page).evaluate((box) => box.scrollIntoView({ block: 'center' }));
       await frames2(page);
+      await expect(area(page).locator('.kb-signature'), 'the signature is drawn').toBeVisible();
       await chairLayers(page, true);
     });
 
@@ -1021,17 +1029,25 @@ for (const name of ['with-fab', 'fab-after'] as const) {
           for (const q of range.getClientRects()) if (q.width > 0 && q.height > 0) last = q;
         }
         const sig = box.querySelector('.kb-signature')!.getBoundingClientRect();
-        return { inner, last: last ? { right: last.right, top: last.top, bottom: last.bottom } : null, sigBottom: sig.bottom };
+        const wb = box.querySelector('[data-kb-words-box]')!.getBoundingClientRect();
+        return { inner, last: last ? { right: last.right, top: last.top, bottom: last.bottom } : null, sigBottom: sig.bottom, words: { left: wb.left, top: wb.top, right: wb.right, bottom: wb.bottom }, viewport: window.innerHeight };
       });
       expect(points.last, 'the words have a last line').not.toBeNull();
+      expect(points.inner.bottom + 1, 'the bottom border of the post is inside the window').toBeLessThanOrEqual(points.viewport);
       const w = points.inner.right - points.inner.left;
+      /* The clip poison reaches only what lies inside the words' box, so every point is outside it: beside the words' box at the last line's height
+         (the box ends before the area's right edge, or the point would be inside it), and below it. */
       const at = [
-        { name: 'beside the last, short line', x: Math.min(points.inner.right - 6, points.last!.right + 40), y: (points.last!.top + points.last!.bottom) / 2 },
+        { name: 'beside the last, short line', x: Math.min(points.inner.right - 4, points.words.right + 12), y: (points.last!.top + points.last!.bottom) / 2 },
         { name: 'near the bottom border, left', x: points.inner.left + w * 0.2, y: points.inner.bottom - 4 },
         { name: 'near the bottom border, middle', x: points.inner.left + w * 0.5, y: points.inner.bottom - 4 },
         { name: 'near the bottom border, right', x: points.inner.left + w * 0.8, y: points.inner.bottom - 4 },
         { name: 'under the signature', x: points.inner.left + w * 0.7, y: Math.min(points.inner.bottom - 4, points.sigBottom + 6) },
       ];
+      for (const p of at) {
+        const inside = p.x >= points.words.left && p.x <= points.words.right && p.y >= points.words.top && p.y <= points.words.bottom;
+        expect(inside, `${p.name} (${Math.round(p.x)}, ${Math.round(p.y)}) lies outside the words' box ${JSON.stringify(points.words)}`).toBe(false);
+      }
       const sample = async () => {
         const out: number[][] = [];
         for (const p of at) out.push((await pixelsOf(page, { x: Math.floor(p.x), y: Math.floor(p.y), width: 3, height: 3 })).px);
