@@ -289,3 +289,35 @@ removes statements 2 and 5 (1:58.4). The edit chooses the longest version the na
 
 The joins were measured, not listened to. The analysis's README (`.runs/hype/musiccut`, ignored by git) holds the measurements, and the
 owner's ear is the test. Nobody building this has heard a join.
+
+## Revised, 2026-11-22
+
+The thread under the film was rewritten as one story (`docs/plans/2026-11-22-wiggler-thread-design.md`). This section records where its
+staff lines come from. It adds to the record above and does not replace it.
+
+### The Staff's lines, again
+
+The owner relaxed the rule of 2026-11-21 that every staff line is the rehearsal's. Asked whether a rehearsal should be reworked to take a
+written thread, the owner chose generated output in its place: "real rehearsal dialogue is ideal but probably not worth reworking the
+rehearsal system". So the film's staff lines are now of three kinds. None is labeled on screen, and each is recorded here:
+
+- **REAL:** the second rehearsal's logs, as in the section above. Two lines: QC-1000's visit opener (`openerQcArts`) and its filing on
+  Serious Deer (`filingQcGotcha`).
+- **GENERATED:** six lines, from `docs/research/2026-11-21-commentary-video/staff-takes/`:
+  - two report verdicts;
+  - three filings;
+  - one pool post.
+
+  `build.ts` builds each call's prompt with the engine's own builders (`filingPrompt`, `reportPrompt`, `chatterPrompt`) from the thread's
+  posts. One fresh light-tier agent answered each prompt with nothing else in view. `check.ts` puts the answers through the engine's repair:
+  none was trimmed or dropped. Each is one take, kept as it came, except the Obstruction filing, retaken once because its first prompt
+  carried the wrong charge. Its first take is kept as `answers/d-filing-20.premise-mistake.json`.
+- **WRITTEN** by the session, by the owner's leave on 2026-11-22: the quiz on Chadluminum's post, in the shape the written-quiz design
+  (#1002) will give a Mod, and FanGaME's reason for moving the thread, in his voice from his logged lines.
+
+The prompts in `staff-takes/prompts/` are rebuilt after two corrections to the cast: Serious Deer's pronouns and Chadluminum's spelling. So
+they are not byte for byte what was sent. No GENERATED line uses either, and each line stands as it came.
+
+What the visits do on screen (who is visited and when, the Hall Pass, the lockout, the Turn) is scripted by the stage, as the Hall Pass and
+the filings were before (departures, above). The quiz's wrong answer and the filings that follow are therefore the stage's, and so are the
+points they move.
