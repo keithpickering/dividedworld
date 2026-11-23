@@ -16,13 +16,14 @@
 import { useCallback, useId, useMemo } from 'react';
 import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
+import { cellsOf, count, GRID, union, type Cells } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
 import { PostEffects } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { createPlays, type Plays } from '../cards/plays.ts';
 import { useKayfa } from '../context.tsx';
-import type { Act, Character, Id } from '../data/api.ts';
+import type { Act, Character, Id, SurfaceAct } from '../data/api.ts';
 import { Blocks, DASH, type Fill } from '../guide/render.tsx';
 import { parse, settingText } from '../guide/markdown.ts';
 import { Postbit, type PostbitPerson } from '../postbit/Postbit.tsx';
@@ -41,6 +42,20 @@ import { forgedList } from '../../bbcode/quoted.ts';
 const STAGED_AT = '2026-01-01T00:00:00.000Z';
 
 const idOf = (key: string): Id => `front-door:${key}`;
+
+const hasCell = (cells: Cells, i: number): boolean => ((cells[i >> 3]! >> (7 - (i & 7))) & 1) === 1;
+
+/**
+ * A staged wall's draws as a wall's live Acts, oldest first, each with the share of the wall it owns: a later draw owns the cells it covers
+ * (`surfaceStep` in data/fake.ts, which prunes a draw left owning nothing; a sample wall's author keeps every draw she wrote, so none is dropped).
+ */
+function wallShares(draws: readonly Cells[]): readonly number[] {
+  const owners = new Uint16Array(GRID * GRID);
+  draws.forEach((cells, k) => { for (let i = 0; i < owners.length; i++) if (hasCell(cells, i)) owners[i] = k + 1; });
+  const owned = new Array<number>(draws.length).fill(0);
+  for (const o of owners) if (o !== 0) owned[o - 1]!++;
+  return owned;
+}
 
 /** A made-up character is in the ladder's first rung, the one every new character starts in. */
 const stage = (c: FrontDoorCharacter, group: string): Character => ({
@@ -122,8 +137,28 @@ export function FrontDoor() {
       });
     });
     plays.add(acts);
+    /* A play's saved state, and a surface play's draws as its wall's live Acts (what `readSurface` would have read), both with no read. */
+    door.posts.forEach((post, i) => {
+      (post.plays ?? []).forEach((p, j) => {
+        const id = idOf(`${i}:${j}`);
+        if (p.state !== undefined) plays.setStates({ [id]: { state: p.state, savedAt: STAGED_AT } });
+        const rules = instance.cards.find((c) => c.key === p.card);
+        if (p.draws === undefined || !rules?.surface) return;
+        const kept: { readonly by: string; readonly payload: Record<string, unknown>; readonly cells: Cells }[] = [];
+        for (const d of p.draws) {
+          const verdict = rules.surface.validateDraw(d.draw);
+          if (verdict.ok) kept.push({ by: d.by, payload: verdict.value.payload, cells: cellsOf(verdict.value.strokes) });
+        }
+        const shares = wallShares(kept.map((k) => k.cells));
+        const wall: SurfaceAct[] = kept.map((k, n) => ({
+          id: idOf(`draw:${i}:${j}:${n}`), character: idOf(k.by), kind: 'draw', thread: idOf('thread'), targetActId: id, seq: null, createdAt: STAGED_AT,
+          payload: k.payload, currentPayload: {}, editedAt: null, shownEditedAt: null, share: shares[n]!,
+        }));
+        plays.setSurfaceActs(id, count(kept.reduce<Cells>((all, k) => union(all, k.cells), new Uint8Array(GRID * GRID / 8))), wall);
+      });
+    });
     return { plays, tallies, mine: createMine() };
-  }, [door.posts]);
+  }, [door.posts, instance.cards]);
 
   const note = useMemo(() => parse(door.note).filter((b) => b.t !== 'marker'), [door.note]);
   const noteFill: Fill = { settings, path, marker: () => null };

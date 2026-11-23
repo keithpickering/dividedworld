@@ -156,9 +156,10 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
    */
   const nears = useRef(new Map<Id, () => void>());
   const faces = useRef(new Map<Id, { readonly key: string; readonly face: NonNullable<EffectProps['surface']> }>());
+  /* A staged wall's Acts are in the store already (the front door's), so asking for them reads nothing. */
   const nearOf = (play: Id): (() => void) => {
     let near = nears.current.get(play);
-    if (!near) { near = () => { if (plays.wantSurface(play)) void readSurface(api, plays, play); }; nears.current.set(play, near); }
+    if (!near) { near = () => { if (!staged && plays.wantSurface(play)) void readSurface(api, plays, play); }; nears.current.set(play, near); }
     return near;
   };
   const draw = useCallback<NonNullable<EffectProps['surface']>['draw']>(async (play, as, input) => {
