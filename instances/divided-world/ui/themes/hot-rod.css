@@ -6,7 +6,8 @@
  * a visited link turns amber, a hue step from the gold as far as Midnight's and Fan Site's visited links step from theirs, at the
  * gold's full color. Its buttons are Bowser Tech's from 2003 in spirit: a #999 face pillowed by a black glow inside its edge, with
  * black bold lettering, softened to sit beside the theme's gradients (a faint sheen down the face, a highlight along the top, the
- * glow at 60%); the primary one is the same pillow in fire orange, and a disabled one is flat and dark. Dark only, so it sets its tokens on :root and in both dark blocks alike (the board look design, section 1). Its
+ * glow at 60%); the primary one is the same pillow in fire orange with a scarlet glow, which black would wash out, and a
+ * disabled one is flat and dark. Dark only, so it sets its tokens on :root and in both dark blocks alike (the board look design, section 1). Its
  * key stays `hot-rod`, the name it shipped under, since accounts store the key. The game's own pieces keep the house theme's colors.
  */
 :root {
@@ -18,7 +19,7 @@
   --kb-logo-leading: 1;
   --kb-font-badge: Silkscreen, "Courier New", monospace;
   --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px rgb(0 0 0 / 0.6);
-  --kb-button-primary-shadow: var(--kb-button-shadow);
+  --kb-button-primary-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px #c41e00;
   --kb-button-weight: bold;
   --kb-button-tracking: normal;
   --kb-button-tracking-small: normal;
@@ -118,7 +119,7 @@
     --kb-logo-leading: 1;
     --kb-font-badge: Silkscreen, "Courier New", monospace;
     --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px rgb(0 0 0 / 0.6);
-    --kb-button-primary-shadow: var(--kb-button-shadow);
+    --kb-button-primary-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px #c41e00;
     --kb-button-weight: bold;
     --kb-button-tracking: normal;
     --kb-button-tracking-small: normal;
@@ -218,7 +219,7 @@
   --kb-logo-leading: 1;
   --kb-font-badge: Silkscreen, "Courier New", monospace;
   --kb-button-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px rgb(0 0 0 / 0.6);
-  --kb-button-primary-shadow: var(--kb-button-shadow);
+  --kb-button-primary-shadow: inset 0 1px 0 rgb(255 255 255 / 0.45), inset 0 0 4px 2px #c41e00;
   --kb-button-weight: bold;
   --kb-button-tracking: normal;
   --kb-button-tracking-small: normal;
