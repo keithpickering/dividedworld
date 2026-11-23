@@ -44,8 +44,9 @@
  * no content area (Stick Around's view) is it the host's own box. Painting the body, the
  * host marks itself `data-kb-bleed` and fab.css puts the foil under everything in the body (its reactions, its signature, an ORIGIN
  * box above the words), not only under the words. The host watches the body's size as well as its own. The foil does not ask to be
- * bent by a dent (it carries no `data-kb-bend`, engine/ui/cards/body.ts), because bending it cost 14% at the 95th percentile of a
- * busy scroll's frame gap against a bar of 10% (docs/research/2026-11-23-dent-bend/README.md); a dent's shading lies over it instead.
+ * bent by a dent (it carries no `data-kb-bend`, engine/ui/cards/body.ts), because bending it did not pass the gate of 10% on the 95th
+ * percentile of a busy scroll's frame gap (a steady run read 75% over; docs/research/2026-11-23-dent-bend/README.md); a dent's shading
+ * lies over it instead.
  *
  * How often. The body changes more of the screen in a draw than the words did, so it is redrawn at the share of the loop's rate that
  * keeps the screen area it changes a second to what the words' box changed (engine/ui/cards/body.ts `paintShare`, issue #304), and a

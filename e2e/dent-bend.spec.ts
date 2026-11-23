@@ -38,7 +38,11 @@ const FOILS = 12;
  */
 const SPEED = Number(process.env.DENT_BEND_SPEED ?? 300);
 
-const median = (xs: readonly number[]): number => percentile(xs, 0.5);
+/* The true median, the mean of the two middle values of an even count: `percentile(xs, 0.5)` takes the lower of them, which is not what the plan's "median of the eight" says. */
+const median = (xs: readonly number[]): number => {
+  const s = [...xs].sort((a, b) => a - b), m = s.length >> 1;
+  return s.length % 2 ? s[m]! : (s[m - 1]! + s[m]!) / 2;
+};
 
 async function open(browser: Browser, bend: boolean): Promise<{ page: Page; close: () => Promise<void> }> {
   const context = await browser.newContext({ viewport: { width: 1200, height: 900 } });
