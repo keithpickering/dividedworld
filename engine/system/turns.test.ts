@@ -12,16 +12,41 @@ const awake = (staff: string, session = 1, spent = 0, spentByThread: Record<stri
   ({ staff, session, spent, spentByThread });
 const SLOT = DAY0 + 600 * MIN;
 
-test('roundShare: the day left over the rounds left, rounded up', () => {
-  assert.equal(roundShare(0, 40, DAY0, 15), 1); // 96 rounds left: ceil(40/96)
-  assert.equal(roundShare(0, 400, DAY0, 15), 5); // ceil(400/96)
-  assert.equal(roundShare(30, 40, DAY0 + 23 * 60 * MIN + 45 * MIN, 15), 10); // the last round takes all that is left
-  assert.equal(roundShare(0, 40, DAY0 + 23 * 60 * MIN + 30 * MIN, 15), 20); // two rounds left
+test('roundShare: by round k the day has earned floor(perDay x (k+1) / N), less what is spent', () => {
+  assert.equal(roundShare(0, 40, DAY0, 15), 0); // round 0 of 96: floor(40/96)
+  assert.equal(roundShare(0, 400, DAY0, 15), 4); // floor(400/96)
+  assert.equal(roundShare(0, 40, DAY0 + 12 * 60 * MIN, 15), 20); // round 48: floor(40*49/96) = 20
+  assert.equal(roundShare(30, 40, DAY0 + 23 * 60 * MIN + 45 * MIN, 15), 10); // the last round has earned the whole day
+});
+
+test('roundShare: with demand in every round the last round still has a turn, and the day never overspends', () => {
+  let spent = 0;
+  let last = 0;
+  for (let k = 0; k < 96; k++) {
+    last = roundShare(spent, 60, DAY0 + k * 15 * MIN, 15);
+    spent += last;
+  }
+  assert.ok(last > 0, 'the last round has a turn');
+  assert.ok(spent <= 60, 'the day never exceeds perDay');
+  assert.equal(spent, 60);
+  // not front-loaded: by 14:45 UTC (round 59) well under the whole day is gone
+  let by1445 = 0;
+  for (let k = 0; k <= 59; k++) by1445 += roundShare(by1445, 60, DAY0 + k * 15 * MIN, 15);
+  assert.ok(by1445 <= 37, `only about 37 of 60 by 14:45, got ${by1445}`);
+});
+
+test('roundShare: a quiet morning leaves the turns earned so far at 18:00', () => {
+  assert.equal(roundShare(0, 96, DAY0 + 18 * 60 * MIN, 15), 73); // round 72: floor(96*73/96)
+});
+
+test('roundShare: a once-a-day cron gets the whole day', () => {
+  assert.equal(roundShare(0, 40, DAY0, 1440), 40);
 });
 
 test('roundShare: a spent day is zero, never below', () => {
   assert.equal(roundShare(40, 40, DAY0, 15), 0);
   assert.equal(roundShare(50, 40, DAY0 + 60 * MIN, 15), 0);
+  assert.equal(roundShare(30, 40, DAY0 + 60 * MIN, 15), 0); // spent beyond what is earned
 });
 
 test('planTurns: one turn per persona per thread, answering every waiting reply, quoting the newest', () => {

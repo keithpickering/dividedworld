@@ -2,7 +2,7 @@
  * Turns: what a round answers (the chattier staff design; its plan, Task 3), in plain code. A round is one run of the chatter function; a
  * persona with a session open spends turns in it, each answering the waiting replies in one thread. Two pure functions:
  *
- *   roundShare(spentToday, perDay, slot, cronMinutes)     how many turns this round may plan
+ *   roundShare(spentToday, perDay, slot, cronMinutes)     how many turns this round may plan (the day earned evenly, a slice a round)
  *   planTurns(open, sessions, share, turns, slot)         which turns, hottest thread first
  *
  * Every input is public play (a persona's threads, the replies waiting on it, the public reaction total on its turns, the sessions drawn
@@ -43,16 +43,18 @@ export interface PlannedTurn {
 }
 
 /**
- * What is left of the day's turns over the rounds left in the day (this slot's counted), rounded up, never below 0. `slot` is the round's
- * time in epoch milliseconds, and rounds fall every `cronMinutes` from the start of the UTC day.
+ * How many turns this round may plan: the day's turns are earned evenly, one slice per round, so no round front-loads the day. `slot` is
+ * the round's time in epoch milliseconds, and rounds fall every `cronMinutes` from the start of the UTC day: round k = floor(intoDay / step)
+ * of N = ceil(DAY / step) a day. By round k the day has earned floor(perDay x (k + 1) / N); the round may plan what is earned and not yet
+ * spent, never below 0. A quiet morning leaves its earnings available later; the last round has earned the whole day.
  */
 export function roundShare(spentToday: number, perDay: number, slot: number, cronMinutes: number): number {
-  const left = Math.max(perDay - spentToday, 0);
-  if (left === 0) return 0;
   const step = Math.max(cronMinutes, 1) * 60 * 1000;
   const intoDay = ((slot % DAY_MS) + DAY_MS) % DAY_MS;
-  const rounds = Math.max(Math.ceil((DAY_MS - intoDay) / step), 1);
-  return Math.ceil(left / rounds);
+  const rounds = Math.ceil(DAY_MS / step);
+  const k = Math.min(Math.floor(intoDay / step), rounds - 1);
+  const earned = Math.floor((perDay * (k + 1)) / rounds);
+  return Math.max(earned - spentToday, 0);
 }
 
 /**
