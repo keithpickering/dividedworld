@@ -2953,7 +2953,9 @@ test('crowd floor: an earn boost, the reveal perk and a cushion neither add to t
   assert.equal(amountOf(flat, 'tom-1', 'crowd.floor'), 50, 'on top of the floor, which it does not change');
 });
 
-test('crowd floor: a cushioned weakness vote gets no floor, and a negative floor line from a moved vote is not cushioned', () => {
+test('crowd floor: a weakness vote the class charges gets no floor and is cushioned; a moved vote\'s negative floor line is never cushioned, nor boosted', () => {
+  // The cushion half holds by construction (the cushion reads only a loss from a reaction, `votes > 0`, and a positive floor line is never a
+  // weakness charge); it is kept as a pin. The moved vote's negative line is `crowd.floor` with no class, held apart from `own`, so no cushion reads it.
   const sting = settle(floorBoard([react('tp1', 'bob', 'bob-1', 'zzz', FROM + 5 * H)], CROWDY, [onTom('g1', 'softCushion', FROM + 2 * H)]), floorWorld);
   assert.equal(floorsOf(sting).length, 0);
   assert.equal(cushionTo(sting, 'tom-1'), 5);
@@ -2964,10 +2966,54 @@ test('crowd floor: a cushioned weakness vote gets no floor, and a negative floor
   assert.equal(cushionsOf(moved).length, 0);
 });
 
+test('crowd floor: a boost on the floor\'s own quadrant never boosts a floor line, including the first one', () => {
+  // The real guard against pushing floor lines into `own` before the boost pass: a calmBoost on the calm quadrant would boost a positive floor line.
+  const r = settle(floorBoard([react('tp1', 'bob', 'bob-1', 'tea', FROM + 5 * H)], CROWDY, [onTom('g1', 'calmBoost', FROM + 2 * H)]), withFloor(50));
+  assert.equal(amountOf(r, 'tom-1', 'crowd.floor'), 50);
+  assert.equal(boostTo(r, 'tom-1'), 0);
+});
+
 test('crowd floor: a reaction on a staff post, or on one of The System\'s own Acts, pays no floor', () => {
   const b = floorBoard([react('boss-post', 'bob', 'bob-1', 'tea', FROM + 5 * H), react('sys-1', 'cat', 'cat-1', 'tea', FROM + 6 * H)]);
-  const r = settle({ ...b, systemActs: ['sys-1'], unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }] }, floorWorld);
+  // sys-1 is a real Act of tom-1's, listed as The System's: only the systemActs filter keeps its reaction from the floor.
+  const sysAct: InputAct = { id: 'sys-1', character: 'tom-1', kind: 'post', at: FROM + 1 * H + 2, thread: 't1' };
+  const r = settle({ ...b, acts: [...b.acts, sysAct], systemActs: ['sys-1'], unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }] }, floorWorld);
   assert.equal(floorsOf(r).length, 0);
+  const control = settle({ ...b, acts: [...b.acts, sysAct], unscoredTargets: [{ id: 'boss-post', kind: 'post', at: FROM + 1 * H, thread: 't1', staff: true }] }, floorWorld);
+  assert.deepEqual(floorsOf(control).map((e) => e.amount), [2], 'with sys-1 an ordinary Act, its reaction does pay the floor (only the staff post stays out)');
+});
+
+/* "firesOnly" pays one kind alone ('fire'), so another kind in the same quadrant ('heart') is not paid and is not shielded by it. */
+const firesOnly: ClassRules = {
+  key: 'firesonly',
+  name: 'Fires only',
+  earn: (input, settings) => input.received.filter((r) => r.kind === 'fire').map((r) => perVote('firesonly.cheer', settings.vote * r.votes, r)),
+};
+/* "early" pays a vote only before FROM + 6h, so the same kind at a later time is not paid. */
+const early: ClassRules = {
+  key: 'early',
+  name: 'Early',
+  earn: (input, settings) => input.received.filter((r) => r.at < FROM + 6 * H).map((r) => perVote('early.cheer', settings.vote * r.votes, r)),
+};
+const keyWorld: Instance = { ...floorWorld, classes: [...floorWorld.classes, firesOnly, early] };
+
+test('crowd floor: a kind the class does not pay earns the floor beside a paid kind of the same quadrant, Act and time', () => {
+  const r = settle(floorBoard([
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'heart', FROM + 5 * H),
+  ], [{ class: 'firesonly', from: 0 }]), keyWorld);
+  assert.equal(amountOf(r, 'tom-1', 'firesonly.cheer'), 10);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'crowd.floor').map((d) => [d.act, d.quadrant, d.at, d.amount]), [['tp1', 'excitedPositive', FROM + 5 * H, 2]]);
+  assert.equal(amountOf(r, 'tom-1', 'crowd.floor'), 2);
+});
+
+test('crowd floor: the same kind at a time the class does not pay earns the floor beside one it does, on one Act', () => {
+  const r = settle(floorBoard([
+    react('tp1', 'bob', 'bob-1', 'fire', FROM + 5 * H),
+    react('tp1', 'cat', 'cat-1', 'fire', FROM + 7 * H),
+  ], [{ class: 'early', from: 0 }]), keyWorld);
+  assert.equal(amountOf(r, 'tom-1', 'early.cheer'), 10);
+  assert.deepEqual(r.details.filter((d) => d.reason === 'crowd.floor').map((d) => [d.act, d.quadrant, d.at, d.amount]), [['tp1', 'excitedPositive', FROM + 7 * H, 2]]);
 });
 
 test('crowd floor: the estimate shows the owner\'s floor for the open window, as the settlement will pay it', () => {

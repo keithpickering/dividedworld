@@ -386,12 +386,12 @@ test('a Lurker\'s entries whose words state a number carry the number they were 
 
 test('reactions to a card count for the card\'s player under whichever class they hold', () => {
   const asHeel = settle(board('heel'), world);
-  // The card's player is now a Heel: the fire and the zzz on its card are not heat and the class pays nothing for them, so the crowd floor does
+  // The card's player is now a Heel: the fire and the facepalm on its card are not heat and the class pays nothing for them, so the crowd floor does
   // (2 on each whole vote; both quadrants are a Heel's neutral ones), and its Salty card drew two votes to its target's one, which a Heel is paid for.
   assert.deepEqual(asHeel.entries.filter((e) => e.character === 'lu').map((e) => [e.reason, e.amount]), [['crowd.floor', 4], ['heel.stoleThunder', 20]]);
   const b = board('heel');
   const heated: SettlementInput = { ...b, reactions: [...b.reactions, { act: 'k1', player: 'pf', character: 'fa', kind: 'tomato', at: 5 * H }] };
-  // The Face's player's fire is now half their vote (3 of crowd floor with the facepalm's whole vote: 1 + 2), where it was a whole one (2 + 2).
+  // The Face's player now reacts with fire and tomato, so the fire is half their vote: 1 of crowd floor, plus 2 on the other player's whole facepalm, 3 in all (it was 2 + 2).
   assert.equal(sum(settle(heated, world), 'lu'), 33, 'and the Face\'s player\'s tomato on the card is half their vote, of heat, paid two votes\' worth, plus the crowd floor on the fire and the facepalm');
 });
 
