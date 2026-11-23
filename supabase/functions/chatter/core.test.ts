@@ -5,7 +5,7 @@ import { CHATTER_TOKENS } from '../../../engine/system/chatter.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
-import { AnswerRejected, LedgerWriteFailed, PromptTooLong, models as realModels } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed, PromptTooLong, SchemaRefused, models as realModels } from '../_shared/models/index.ts';
 import { ProviderRefusal } from '../_shared/models/transport.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { ModelCallRow } from '../_shared/models/ledger.ts';
@@ -94,6 +94,7 @@ function fakeDb(w: World = {}) {
     turns: (w.spentTurns ?? []).map((t) => ({ staff: t.staff, session: sessionRows[t.session]!.id, thread: t.thread, post: 'earlier', answers: [] as string[], quoting: '', body: '' })),
     // A day with sessions or picks given is a day whose first round has passed.
     days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
+    attempts: [] as { staff: string; session: number; thread: string; answers: string[]; outcome: string; paid: boolean }[],
     sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
@@ -150,10 +151,19 @@ function fakeDb(w: World = {}) {
         case 'pool_waiting': {
           const since = Date.parse(String(args.since));
           const keys = args.staff_keys as string[];
-          return (w.waiting ?? []).filter((x) => keys.includes(x.staff)).map((x) => ({ ...x, replies: x.replies.filter((r) => !r.staff && !state.answered.has(r.act) && Date.parse(r.at) >= since).map(({ act, author, at }) => ({ act, author, at })) }))
+          // A reply a refused attempt covers, or two rejected ones, is given up on (record_turn_attempt); failed attempts leave it waiting.
+          const givenUp = (act: string) => {
+            const covering = state.attempts.filter((a) => a.answers.includes(act));
+            return covering.some((a) => a.outcome === 'refused') || covering.filter((a) => a.outcome === 'rejected').length >= 2;
+          };
+          return (w.waiting ?? []).filter((x) => keys.includes(x.staff)).map((x) => ({ ...x, replies: x.replies.filter((r) => !r.staff && !state.answered.has(r.act) && !givenUp(r.act) && Date.parse(r.at) >= since).map(({ act, author, at }) => ({ act, author, at })) }))
             .filter((x) => x.replies.length > 0).map((x) => ({ staff: x.staff, thread: x.thread, heat: x.heat ?? 0, replies: x.replies })) as T;
         }
-        case 'pool_turns_today': return ((w.turnsToday ?? 0) + state.turns.filter((t) => t.post !== 'earlier').length) as T;
+        case 'pool_turns_today': return ((w.turnsToday ?? 0) + state.turns.filter((t) => t.post !== 'earlier').length + state.attempts.filter((a) => a.paid).length) as T;
+        case 'record_turn_attempt': {
+          state.attempts.push({ staff: String(args.staff_key), session: Number(args.in_session), thread: String(args.in_thread), answers: [...new Set(args.answers as string[])], outcome: String(args.outcome), paid: Boolean(args.paid) });
+          return state.attempts.length as T;
+        }
         case 'pool_conversation': {
           const mine = (w.waiting ?? []).find((x) => x.staff === args.staff_key && x.thread === args.in_thread);
           return { posts: [{ act: `own-${args.in_thread}`, at: '2026-11-04T10:00:00.000Z', body: 'My earlier words.', cut: false,
@@ -207,11 +217,14 @@ function fakeDb(w: World = {}) {
           // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
           // the same day, of the same persona, on the post itself or on the post's quoted target.
           const through = String(args.through);
+          // From the earlier of the week's Monday and the day before `through`: a Monday's run still finds Sunday's orphan.
           const monday = new Date(Date.parse(through) - ((new Date(through).getUTCDay() + 6) % 7) * 86_400_000).toISOString().slice(0, 10);
+          const yesterday = new Date(Date.parse(through) - 86_400_000).toISOString().slice(0, 10);
+          const from = monday < yesterday ? monday : yesterday;
           const out: unknown[] = [];
           for (const mark of state.acts) {
             const day = mark.payload?.pool as string | undefined;
-            if (mark.kind === 'card' || mark.kind === 'set' || !day || day < monday || day > through || state.spends.some((s) => s.post_act === mark.id)) continue;
+            if (mark.kind === 'card' || mark.kind === 'set' || !day || day < from || day > through || state.spends.some((s) => s.post_act === mark.id)) continue;
             if (out.some((o: any) => o.staff === mark.staff && o.day === day)) continue;
             const tied = state.acts.find((a) => a.staff === mark.staff && !state.spends.some((s) => s.card_act === a.id)
               && ((a.kind === 'set' && a.target === mark.id) || (a.kind === 'card' && a.payload?.pool === day && mark.target !== null && a.target === mark.target)));
@@ -1357,20 +1370,20 @@ test('a turn is capped per thread, per session, per day and by the round\'s shar
   const t = await run(thread, turnModels());
   assert.ok(t.status === 'ok');
   assert.deepEqual(t.turns.map((x) => x.thread), [T2, T3], 'the full thread waits');
-  // The day: one turn is left of the day's, and the round's share of it is that one.
-  const day = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, turnsToday: 59 });
-  const dd = await run(day, turnModels());
+  // The day: in the last round the whole day is earned, one turn is left of it, and the round's share is that one.
+  const day = fakeDb({ sessions: [{ staff: SIGH, start: min('23:30'), end: min('23:59') }], waiting: threeThreads, turnsToday: 59 });
+  const dd = await run(day, turnModels(), dividedWorld, at('23:52'));
   assert.ok(dd.status === 'ok');
   assert.equal(dd.turns.length, 1);
   const spent = fakeDb({ sessions: [SIGH_NOW], waiting: threeThreads, turnsToday: 60 });
   const none = turnModels();
   await run(spent, none);
   assert.equal(none.chats.length, 0, 'the ceiling is never passed');
-  // The share: 60 turns over the rounds left of the day (the morning cannot spend the evening's): at 00:07 there are 96 rounds left, so the share is one.
+  // The share: the day's turns are earned by time, floor(60 x (k+1) / 96) by round k, less what is spent: round 0 (00:07) has earned none, round 1 (00:22) has earned one.
   const morning = fakeDb({ sessions: [{ staff: SIGH, start: 0, end: 60 }], waiting: threeThreads.map((w) => ({ ...w, replies: [reply(w.replies[0]!.act, '00:01')] })).map((w) => ({ ...w, replies: w.replies.map((r) => ({ ...r, at: '2026-11-03T23:50:00.000Z' })) })) });
-  const mo = await run(morning, turnModels(), dividedWorld, at('00:07'));
+  const mo = await run(morning, turnModels(), dividedWorld, at('00:22'));
   assert.ok(mo.status === 'ok');
-  assert.equal(mo.turns.length, 1, 'ceil(60 / 96) turns at the day\'s start');
+  assert.equal(mo.turns.length, 1, 'floor(60 x 2 / 96) = 1 turn earned by round 1');
 });
 
 test('a failed call leaves the replies waiting for a later round, and a rejected answer is the same', async () => {
@@ -1400,6 +1413,91 @@ test('a refusal of write_staff_turn skips the turn and says why, and nothing is 
   assert.ok(out.status === 'ok');
   assert.deepEqual(out.turns.map((t) => [t.status, t.why]), [['skipped', 'that session is not open now']]);
   assert.equal(d.state.notes.length, 0, 'no note without a post');
+});
+
+const refusedAnswer = () => new AnswerRejected('the model refused', 'refusal');
+
+test('a refused answer writes a paid attempt, and its reply is never called for again', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const refusing = fakeModels(() => refusedAnswer());
+  const first = await run(d, refusing);
+  assert.ok(first.status === 'ok');
+  assert.deepEqual(first.turns.map((t) => t.status), ['rejected']);
+  assert.deepEqual(d.state.attempts, [{ staff: SIGH, session: 1, thread: T1, answers: [R1], outcome: 'refused', paid: true }]);
+  const next = turnModels();
+  const second = await run(d, next, dividedWorld, at('17:52'));
+  assert.ok(second.status === 'ok');
+  assert.equal(next.chats.length, 0, 'the refused reply is not offered again');
+  assert.equal(d.count('write_staff_turn'), 0);
+});
+
+test('a reply whose answer is rejected twice is called for twice and no more', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const bad = fakeModels(() => ({ words: '   ' }));
+  await run(d, bad);
+  await run(d, bad, dividedWorld, at('17:52'));
+  assert.equal(bad.chats.length, 2);
+  assert.deepEqual(d.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', true], ['rejected', true]]);
+  await run(d, bad, dividedWorld, at('18:07'));
+  assert.equal(bad.chats.length, 2, 'no third call');
+  // A schema the provider refuses, and a prompt too long, are rejected and not paid.
+  const e = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  await run(e, fakeModels(() => new SchemaRefused([{ path: '', predicate: 'keyword(maxItems)' }])));
+  await run(e, fakeModels(() => new PromptTooLong(9, 3)), dividedWorld, at('17:52'));
+  assert.deepEqual(e.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', false], ['rejected', false]]);
+  // A request the provider turned away before answering (a 400 about the request itself) is rejected and was never answered: not paid.
+  const f = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  await run(f, fakeModels(() => new AnswerRejected('the request is malformed', 'refused:400')));
+  assert.deepEqual(f.state.attempts.map((a) => [a.outcome, a.paid]), [['rejected', false]]);
+});
+
+test('a transport failure writes an unpaid failed attempt and the reply is called for again', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const down = fakeModels(() => new Error('provider down'));
+  await run(d, down);
+  assert.deepEqual(d.state.attempts.map((a) => [a.outcome, a.paid, a.answers]), [['failed', false, [R1]]]);
+  const again = turnModels();
+  const out = await run(d, again, dividedWorld, at('17:52'));
+  assert.ok(out.status === 'ok');
+  assert.equal(again.chats.length, 1, 'still waiting');
+  assert.deepEqual(out.turns.map((t) => t.status), ['taken']);
+  // A write_staff_turn that fails with a database error after an answer is failed and paid; the reply still waits.
+  const w = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], failOn: { write_staff_turn: 1 } });
+  await run(w, turnModels());
+  assert.deepEqual(w.state.attempts.map((a) => [a.outcome, a.paid]), [['failed', true]]);
+});
+
+test('a kayfabb.refusal from write_staff_turn writes no attempt', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], turnRefusal: 'that session is not open now' });
+  const out = await run(d, turnModels());
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['skipped']);
+  assert.equal(d.count('record_turn_attempt'), 0);
+});
+
+test('a paid attempt is spent against the day\'s ceiling, so the next round\'s share is smaller', async () => {
+  const three = [T1, T2, T3].map((thread, i) => ({ staff: SIGH, thread, heat: 3 - i, replies: [reply([R1, R2, R3][i]!)] }));
+  const spendOne = (paid: boolean) => ({ staff: SIGH, session: 1, thread: T1, answers: [R1], outcome: 'failed', paid });
+  // The last round of the day, 59 of 60 turns spent: one turn is left. A paid attempt takes it; an unpaid one does not.
+  const lastRound = { sessions: [{ staff: SIGH, start: min('23:30'), end: min('23:59') }], waiting: three, turnsToday: 58 };
+  const paidDb = fakeDb(lastRound);
+  paidDb.state.attempts.push(spendOne(true));
+  const unpaidDb = fakeDb(lastRound);
+  unpaidDb.state.attempts.push(spendOne(false));
+  const calledPaid = turnModels();
+  const calledUnpaid = turnModels();
+  await run(paidDb, calledPaid, dividedWorld, at('23:52'));
+  await run(unpaidDb, calledUnpaid, dividedWorld, at('23:52'));
+  assert.equal(calledPaid.chats.length, 1, '58 turns and a paid attempt leave one of 60');
+  assert.equal(calledUnpaid.chats.length, 2, 'an unpaid attempt spends nothing: two are left');
+});
+
+test('a refused answer whose attempt cannot be written still returns the turn\'s record', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], failOn: { record_turn_attempt: 'always' } });
+  const out = await run(d, fakeModels(() => refusedAnswer()));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['rejected']);
+  assert.match(out.turns[0]!.why!, /attempt not recorded/);
 });
 
 test('a crash between the call and write_staff_turn spends nothing and loses nothing; a lost answer finds the replies answered and writes no second turn', async () => {
@@ -1639,4 +1737,100 @@ test('a pick carried over from yesterday counts against the week\'s allowance be
   const spent = await carriedRun(1, false);
   assert.ok(spent < free, 'the fixture shows a slot spent changes the allowance');
   assert.equal(await carriedRun(0, true), spent, 'the carried pick is counted as spent');
+});
+
+// Sunday 2026-11-22 and the Monday after it, 2026-11-23: the carried pick of a Sunday is spent in last week.
+const SUNDAY = '2026-11-22';
+const MONDAY_AT = (hhmm: string) => `2026-11-23T${hhmm}:00.000Z`;
+const spendOn = (day: string, staff: string, card: string | null = null, i = 0): Spend => ({ day, staff, trigger: 'named', post_act: `done-${day}-${staff}-${i}`, card_act: card, started_thread: false, record: {} });
+const postsOf = (d: ReturnType<typeof fakeDb>, staff: string, day: string) => d.state.acts.filter((a) => a.staff === staff && a.kind !== 'card' && a.kind !== 'set' && a.payload?.pool === day);
+
+test('a Sunday pick whose post landed and whose spend failed is adopted on Monday, before the carried read, and posts once', async () => {
+  const d = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], failOn: { record_pool_spend: 1 } });
+  d.state.days.delete(DAY);
+  d.state.days.add(SUNDAY);
+  const m = fakeModels(normal);
+  const sunday = await run(d, m, dividedWorld, `${SUNDAY}T12:07:00.000Z`);
+  assert.ok(sunday.status === 'ok');
+  assert.equal(postsOf(d, SIGH, SUNDAY).length, 1, 'the post landed');
+  assert.equal(d.state.spends.some((s) => s.day === SUNDAY && s.staff === SIGH), false, 'and its spend did not');
+  const monday = await run(d, m, dividedWorld, MONDAY_AT('00:07'));
+  assert.ok(monday.status === 'ok');
+  assert.deepEqual(monday.adopted.map((a) => [a.staff, a.status, a.day]), [[SIGH, 'adopted', SUNDAY]]);
+  assert.equal(postsOf(d, SIGH, SUNDAY).length, 1, 'one post, not two');
+  assert.equal(d.state.spends.filter((s) => s.day === SUNDAY && s.staff === SIGH).length, 1, 'spent once, on Sunday');
+});
+
+test('a carried pick blocked on its own day by a card slot is not written the next day, midweek or on a Monday', async () => {
+  // Wednesday 11-04 has an allowance of 4 and a post with a card is two of it: three spends and a card use it all.
+  const wed = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: DAY }], sessions: [SIGH_LATER] });
+  wed.state.spends.push(spendOn(DAY, CLERK, 'card-1'), spendOn(DAY, MON), spendOn(DAY, HYPE));
+  const thu = await run(wed, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(thu.status === 'ok');
+  assert.equal(postsOf(wed, SIGH, DAY).length, 0, 'not written on Thursday');
+  assert.ok(thu.picks.some((p) => p.staff === SIGH && p.status === 'skipped' && /own day/.test(p.why ?? '')), 'and skipped on the record');
+  // Never owed, it takes no slot from Thursday: the allowance is what the same week gives with no pick carried.
+  const none = fakeDb({ sessions: [SIGH_LATER] });
+  none.state.spends.push(spendOn(DAY, CLERK, 'card-1'), spendOn(DAY, MON), spendOn(DAY, HYPE));
+  const plain = await run(none, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(plain.status === 'ok');
+  assert.equal(thu.allowance, plain.allowance, 'a carried pick past its own day takes no slot from today');
+  // Sunday 11-22 with 18 spent before it has an allowance of 2: two spends use it, and Monday's run does not write the third.
+  const sun = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], priorSpent: 18 });
+  sun.state.days.delete(DAY);
+  sun.state.days.add(SUNDAY);
+  sun.state.spends.push(spendOn(SUNDAY, CLERK), spendOn(SUNDAY, MON));
+  const mon = await run(sun, fakeModels(normal), dividedWorld, MONDAY_AT('00:07'));
+  assert.ok(mon.status === 'ok');
+  assert.equal(postsOf(sun, SIGH, SUNDAY).length, 0, 'not written on Monday');
+  assert.ok(mon.picks.some((p) => p.staff === SIGH && p.status === 'skipped' && /own day/.test(p.why ?? '')));
+});
+
+test('a carried pick inside its own day\'s allowance is written on Monday as midweek, and Monday does not count it in its own week', async () => {
+  // Week spent 6 before Monday: the allowance is floor(14 / 7) = 2 with the carried pick not counted (it is last week's), and floor(13 / 7) = 1 if it were.
+  const d = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1), day: SUNDAY }], priorSpent: 6 });
+  d.state.days.delete(DAY);
+  d.state.days.add(SUNDAY);
+  const out = await run(d, fakeModels(normal), dividedWorld, MONDAY_AT('00:07'));
+  assert.ok(out.status === 'ok');
+  assert.equal(out.allowance, 2, 'Monday\'s allowance leaves out the Sunday pick');
+  assert.equal(postsOf(d, SIGH, SUNDAY).length, 1, 'and the Sunday pick is written');
+});
+
+test('a kept pick of today whose persona has posted already is recorded as such and written no second time', async () => {
+  const d = fakeDb({ kept: [keptPick(SIGH, T1, Q1)], keptListsWritten: true });
+  d.state.spends.push(spendOn(DAY, SIGH));
+  const out = await run(d, fakeModels(normal));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.picks.filter((p) => p.staff === SIGH).map((p) => p.status), ['already']);
+  assert.equal(postsOf(d, SIGH, DAY).length, 0);
+});
+
+test('a day with no allowance reads no kept picks of its own', async () => {
+  const d = fakeDb({ kept: [keptPick(SIGH, T1, Q1)], priorSpent: 20 });
+  const out = await run(d, fakeModels(normal));
+  assert.ok(out.status === 'ok');
+  assert.equal(out.allowance, 0);
+  assert.equal(d.of('kept_picks').filter((a) => a.on_day === DAY).length, 0, 'the day\'s own kept picks are not read');
+  assert.equal(postsOf(d, SIGH, DAY).length, 0);
+});
+
+test('a carried pick offers no card, though its kept pick had a card slot', async () => {
+  const d = fakeDb({ kept: [keptPick(SIGH, T1, Q1, { cardSlot: true })], sessions: [SIGH_LATER], pool: { cardRarityMost: 'uncommon' } });
+  const m = fakeModels(normal);
+  const out = await run(d, m, dividedWorld, nextAt('00:07'));
+  assert.ok(out.status === 'ok');
+  assert.equal(postsOf(d, SIGH, DAY).length, 1, 'the carried pick is written');
+  const carriedChat = m.chats.filter((c) => c.staff === SIGH)[0]!;
+  assert.equal('card' in ((carriedChat.schema as any).properties ?? {}), false, 'no card in its schema');
+});
+
+test('a carried thread start leaves no thread for the next carried pick', async () => {
+  const d = fakeDb({ kept: [{ ...keptPick(SIGH, T1, Q1, { startThread: true }), day: DAY }, { ...keptPick(CLERK, T2, Q2, { startThread: true }), day: DAY }], sessions: [SIGH_LATER], pool: { threadsWeekly: 2 } });
+  d.state.days.add(NEXT);
+  const out = await run(d, fakeModels(normal), dividedWorld, nextAt('00:07'));
+  assert.ok(out.status === 'ok');
+  const threads = d.state.acts.filter((a) => a.kind === 'thread' && a.payload?.pool === DAY);
+  assert.equal(threads.length, 1, 'one thread started on the carried day, the other pick replied');
+  assert.equal(postsOf(d, CLERK, DAY).length + threads.length, 2, 'both picks were written');
 });
