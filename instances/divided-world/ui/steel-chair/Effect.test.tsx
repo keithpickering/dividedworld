@@ -108,6 +108,8 @@ let size = { h: 200 };
 let areaWidth = 300;
 /** Whether the words wrapper's client rect is moved 4 px by the hit's shake (a transform moves `getBoundingClientRect` and not `offsetLeft`). */
 let shaking = false;
+/** How much a scaled ancestor shrinks the words box's client rect (its layout size, `offsetWidth`, is not scaled). */
+let wordsScale = 1;
 /** Whether the content area is `size.h` tall plus the room while the effect's host is in it (what the CSS does), or `size.h` always. */
 let roomAdds = false;
 /** The ORIGIN box's content area (`.kb-origin-area`), which the stub gives a size of its own, not the post's. */
@@ -222,7 +224,7 @@ const pin = (seed: number | null) => { pinned = seed; };
 
 beforeEach(() => {
   vi.useFakeTimers();
-  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null; hub.sleepAll = false;
+  queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; wordsScale = 1; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null; hub.sleepAll = false;
   const realRandom = crypto.getRandomValues.bind(crypto);
   vi.spyOn(crypto, 'getRandomValues').mockImplementation(((a: ArrayBufferView) => {
     if (a instanceof Uint32Array && a.length === 1) { a[0] = pinned ?? seedAt(++seeds); return a; }
@@ -242,9 +244,11 @@ beforeEach(() => {
     if (this.classList.contains('kb-origin-area')) return rect(0, 0, originArea.w, originArea.h);
     if (this.classList.contains('kb-act-main')) return rect(dx, dy, areaWidth, areaHeight(this));
     if (this.classList.contains('dw-chair')) return rect(10 + dx, 8 + dy, 280, size.h - 16);
-    if (this.hasAttribute('data-kb-words-box')) return rect(10 + dx, 8 + dy, 280, size.h - 16 - ROOM_HEIGHT);
+    if (this.hasAttribute('data-kb-words-box')) return rect(10 + dx, 8 + dy, 280 * wordsScale, (size.h - 16 - ROOM_HEIGHT) * wordsScale);
     return rect(0, 0, 0, 0);
   });
+  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-kb-words-box') ? 280 : 0; });
+  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.hasAttribute('data-kb-words-box') ? size.h - 16 - ROOM_HEIGHT : 0; });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.w : this.classList.contains('kb-act-main') ? areaWidth : 0; });
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.h : this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
@@ -629,6 +633,53 @@ describe('what a re-arm and a reflow leave behind', () => {
     expect(requested, 'frames asked for after a callback that changed nothing').toBe(asked);
     expect(queue.size).toBe(0);
     expect(document.querySelector('filter')!.getAttribute('x')).toBe(filterBefore);
+  });
+
+  test("under a scaled ancestor the words' filter is sized by the words box's layout size, not its scaled client rect", () => {
+    wordsScale = 0.5;
+    mount();
+    run();
+    const f = document.querySelector('filter[id$="-words"]')!;
+    expect(Number(f.getAttribute('width')), 'the region is the layout width plus DENT_SCALE on each side').toBe(280 + 2 * DENT_SCALE);
+    expect(Number(f.getAttribute('height'))).toBe(size.h - 16 - ROOM_HEIGHT + 2 * DENT_SCALE);
+  });
+
+  test('when the content area the effect finds changes mid-dent, the bend and the shake move to the new area and leave the old', () => {
+    mount();
+    run();
+    const first = areaEl();
+    expect(first.style.getPropertyValue('--kb-bend')).not.toBe('');
+    expect(first).toHaveAttribute('data-dw-chair-shake');
+    const other = document.createElement('div');
+    other.className = 'kb-act-main';
+    other.setAttribute('data-kb-content-area', '');
+    document.body.appendChild(other);
+    const h = host()!;
+    first.removeChild(h);
+    other.appendChild(h);
+    try {
+      act(() => { for (const r of sized) r.cb(); });
+      expect(other.style.getPropertyValue('--kb-bend'), 'the new area is bent').not.toBe('');
+      expect(first.style.getPropertyValue('--kb-bend'), 'the old area is not').toBe('');
+      expect(first.style.getPropertyValue('--kb-bend-words')).toBe('');
+      expect(first).not.toHaveAttribute('data-dw-chair-shake');
+    } finally {
+      other.removeChild(h);
+      first.appendChild(h);
+      other.remove();
+    }
+  });
+
+  test('a re-arm mid-run (reduced motion on, or the moment changing) leaves no bend and no shake behind', async () => {
+    mount();
+    run();
+    expect(areaEl().style.getPropertyValue('--kb-bend')).not.toBe('');
+    expect(areaEl()).toHaveAttribute('data-dw-chair-shake');
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    await act(async () => { await Promise.resolve(); });
+    expect(areaEl().style.getPropertyValue('--kb-bend'), 'no bend until the post is seen again').toBe('');
+    expect(areaEl().style.getPropertyValue('--kb-bend-words')).toBe('');
+    expect(areaEl()).not.toHaveAttribute('data-dw-chair-shake');
   });
 
   /* A dent keeps its px in the content area; after the post narrows, the shading (an overflow-visible layer) of one that no longer fits would

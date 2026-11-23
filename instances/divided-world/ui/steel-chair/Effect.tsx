@@ -380,6 +380,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         body = next;
         giveRoom(next);
         rebend();
+        /* A shake still running on the old area ends with it (a quarter second at most); the next hit shakes the new one. */
+        if (shaken && shaken !== (next ?? el)) { shaken.removeAttribute(SHAKE_MARK); shaken = null; }
       }
       /* The words box (the engine's, where the effect's children draw the words); where there is none the host is measured, and nothing bends the words. */
       const wordsEl = wordsBoxOf(el) ?? el;
@@ -387,9 +389,11 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       const w = wordsEl.getBoundingClientRect(), h = el.getBoundingClientRect();
       /* Where the words box stands is read from the client rects of the box and the host, whose difference a transform on both leaves alone: the
          hit's shake is on the content area (or the host), which moves every rect in the post by the same few px, so a size callback that fires
-         mid-shake stores the place a callback at rest would, changes no coordinate and wakes nothing. */
+         mid-shake stores the place a callback at rest would, changes no coordinate and wakes nothing. Its size is its layout size (`offset*`), as
+         the filter's coordinates are the box's own untransformed px; a rect's size would be scaled by a scaled ancestor. Left and top are rect
+         differences and so are in the window's px: a scaled ancestor is not supported for them (as `bodyBox` does not support one). */
       const g: Geo = {
-        left: w.left - h.left - b.left, top: w.top - h.top - b.top, width: w.width, height: w.height, w: b.w, h: b.h, zone: zoneHeight(b.h),
+        left: w.left - h.left - b.left, top: w.top - h.top - b.top, width: wordsEl.offsetWidth, height: wordsEl.offsetHeight, w: b.w, h: b.h, zone: zoneHeight(b.h),
       };
       const moved = !sameBox(b, box) || !sameGeo(geoNow, g);
       box = b;
