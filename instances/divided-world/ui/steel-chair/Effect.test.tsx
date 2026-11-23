@@ -119,7 +119,7 @@ const arm = () => { aim(true); act(() => { vi.advanceTimersByTime(300); }); };
 /** The post's middle comes into view; a run begins and the world goes on to rest. */
 const run = () => { see(true); arm(); settled(); };
 
-interface Options { plays?: CardPlay[]; moment?: EffectProps['moment']; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' }
+interface Options { plays?: CardPlay[]; moment?: EffectProps['moment']; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' | 'beside' }
 const made = { show: vi.fn<(view: CardView | null) => void>(), met: vi.fn(), save: vi.fn(), release: vi.fn() };
 function Host({ o }: { o: Options }) {
   const [plays, setPlays] = useState(o.plays ?? [play(1)]);
@@ -127,11 +127,13 @@ function Host({ o }: { o: Options }) {
   const props: EffectProps = {
     post, plays, states: {}, released: new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, moment: o.moment ?? null,
     show: made.show, met: made.met, ink: NO_INK, holdScreen: () => {}, marks: null, save: made.save, release: made.release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
-    children: <p data-kb-words>The words of the post.</p>,
+    children: <div data-kb-words-box><p data-kb-words>The words of the post.</p></div>,
   };
   const inner = <SteelChairEffect {...props} />;
   if (o.wrapped === false) return inner;
   /* 'area': the ORIGIN box's place, a marked area inside the opening post's marked `.kb-act-main`. */
+  /* 'beside': a post's body that holds the effect and, beside it, an ORIGIN box's own content area. */
+  if (o.wrapped === 'beside') return <div className="kb-act-main" data-kb-content-area>{inner}<div className="kb-origin-area" data-kb-content-area /></div>;
   if (o.wrapped === 'area') return <div className="kb-act-main" data-kb-content-area><div className="kb-origin-area" data-kb-content-area>{inner}</div></div>;
   return <div className="kb-act-main" data-kb-content-area>{inner}</div>;
 }
@@ -159,7 +161,9 @@ const rect = (left: number, top: number, width: number, height: number) => ({ x:
 const areaHeight = (el: Element) => size.h + (roomAdds && el.querySelector('.dw-chair') ? ROOM_HEIGHT : 0);
 
 const host = () => document.querySelector<HTMLElement>('.dw-chair');
-const wordsEl = () => document.querySelector<HTMLElement>('.dw-chair-words')!;
+const wordsEl = () => document.querySelector<HTMLElement>('[data-kb-words-box]')!;
+/** The content area the effect found (the post's body), where the shake and the bend are set. */
+const areaEl = () => document.querySelector<HTMLElement>('.kb-act-main')!;
 const groups = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-group')];
 const dents = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-dent')];
 const dentAt = () => dents().map((d) => [d.style.left, d.style.top]);
@@ -233,18 +237,14 @@ beforeEach(() => {
   vi.stubGlobal('IntersectionObserver', FakeIntersection);
   vi.stubGlobal('ResizeObserver', FakeResize);
   vi.spyOn(Element.prototype, 'getBoundingClientRect').mockImplementation(function (this: Element) {
+    /* The hit's shake is a transform on the content area: it moves the area's rect and every rect inside it, by the same 4 px and 1 px. */
+    const [dx, dy] = shaking ? [4, -1] : [0, 0];
     if (this.classList.contains('kb-origin-area')) return rect(0, 0, originArea.w, originArea.h);
-    if (this.classList.contains('kb-act-main')) return rect(0, 0, areaWidth, areaHeight(this));
-    if (this.classList.contains('dw-chair')) return rect(10, 8, 280, size.h - 16);
-    if (this.classList.contains('dw-chair-words')) return shaking ? rect(14, 7, 280, size.h - 16 - ROOM_HEIGHT) : rect(10, 8, 280, size.h - 16 - ROOM_HEIGHT);
+    if (this.classList.contains('kb-act-main')) return rect(dx, dy, areaWidth, areaHeight(this));
+    if (this.classList.contains('dw-chair')) return rect(10 + dx, 8 + dy, 280, size.h - 16);
+    if (this.hasAttribute('data-kb-words-box')) return rect(10 + dx, 8 + dy, 280, size.h - 16 - ROOM_HEIGHT);
     return rect(0, 0, 0, 0);
   });
-  /* The words wrapper's layout box inside its offset parent (the host), which a transform does not move: where the host's box is 10 and 8 in from the content area. */
-  const layoutBox = (el: HTMLElement) => (el.classList.contains('dw-chair-words') ? { left: 0, top: 0, width: 280, height: size.h - 16 - ROOM_HEIGHT } : { left: 0, top: 0, width: 0, height: 0 });
-  vi.spyOn(HTMLElement.prototype, 'offsetLeft', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).left; });
-  vi.spyOn(HTMLElement.prototype, 'offsetTop', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).top; });
-  vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).width; });
-  vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockImplementation(function (this: HTMLElement) { return layoutBox(this).height; });
   vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.w : this.classList.contains('kb-act-main') ? areaWidth : 0; });
   vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockImplementation(function (this: HTMLElement) { return this.classList.contains('kb-origin-area') ? originArea.h : this.classList.contains('kb-act-main') ? areaHeight(this) : 0; });
   document.documentElement.setAttribute('data-kb-motion', 'full');
@@ -578,12 +578,13 @@ describe('the layers and the world fill the content area', () => {
     }
   });
 
-  test('a hit puts a dent at its point and shakes the post once, with no filter attribute left on the words that nothing needs', () => {
+  test('a hit puts a dent at its point and shakes the post content area once', () => {
     mount();
     see(true); arm();
-    expect(wordsEl()).not.toHaveAttribute('data-shake');
+    expect(areaEl()).not.toHaveAttribute('data-dw-chair-shake');
     settled();
-    expect(wordsEl()).toHaveAttribute('data-shake');
+    expect(areaEl(), "the shake is on the content area, not on the words").toHaveAttribute('data-dw-chair-shake');
+    expect(wordsEl()).not.toHaveAttribute('data-dw-chair-shake');
     expect(dents()).toHaveLength(1);
   });
 });
@@ -617,10 +618,10 @@ describe('what a re-arm and a reflow leave behind', () => {
 
   /* A transform (the hit's 4 px shake) moves getBoundingClientRect but not the layout box, so a size callback that fires mid-shake must not
      read the shake as a new place for the words, store it, and wake the world. */
-  test("a size callback mid-shake measures the words' layout, not their shaken box: nothing moves and no frame is asked for", () => {
+  test("a size callback mid-shake measures the words box's place in the post, not the shake: nothing moves and no frame is asked for", () => {
     mount();
     run();
-    expect(wordsEl()).toHaveAttribute('data-shake');
+    expect(areaEl()).toHaveAttribute('data-dw-chair-shake');
     const asked = requested;
     const filterBefore = document.querySelector('filter')!.getAttribute('x');
     shaking = true;
@@ -665,7 +666,7 @@ describe('a dent: its own images, and how its shading combines', () => {
     return { x: parseFloat(d.style.left), y: parseFloat(d.style.top), width, height };
   };
   const urlOf = (el: HTMLElement, name: string) => el.style.getPropertyValue(name);
-  const bends = () => [...document.querySelectorAll('filter feImage')].map((e) => e.getAttribute('href'));
+  const bends = () => [...document.querySelectorAll('filter[id$="-words"] feImage')].map((e) => e.getAttribute('href'));
 
   test("three plays' dents each carry their own play's shade and light, and each feImage its own bend", () => {
     mount({ plays: [play(1), play(2), play(3)] });
@@ -1210,8 +1211,7 @@ describe('reduced motion', () => {
     expect(dents()).toHaveLength(2);
     expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
     for (const g of groups()) { expectOnFloor(g, 200); for (const c of corners(g)) { expect(c.x).toBeGreaterThan(-SLACK); expect(c.x).toBeLessThan(300 + SLACK); } }
-    expect(wordsEl()).not.toHaveAttribute('data-shake');
-    expect(document.querySelector('[data-shake]')).toBeNull();
+    expect(document.querySelector('[data-dw-chair-shake]')).toBeNull();
     expect(hub.sound.play).not.toHaveBeenCalled();
     expect(requested).toBe(0);
   });
@@ -1327,7 +1327,7 @@ describe('a moment', () => {
     expect(dents()).toHaveLength(2);
     expect(groups().every((g) => g.hasAttribute('data-rest'))).toBe(true);
     expect(hub.sound.play).not.toHaveBeenCalled();
-    expect(document.querySelector('[data-shake]')).toBeNull();
+    expect(document.querySelector('[data-dw-chair-shake]')).toBeNull();
   });
 
   test("Throw again is in the view's controls and throws again, with a different target", () => {
@@ -1403,13 +1403,13 @@ describe('a stale still flag is ignored', () => {
 });
 
 describe('the filter', () => {
-  test('where it is trusted the words carry the filter, once there is a dent, and the filter has the plan\'s parts', () => {
+  test('where it is trusted the content area is bent with the filters, once there is a dent, and the filter has the plan\'s parts', () => {
     mount({ plays: [play(1), play(2)] });
-    expect(wordsEl().style.filter).toBe('');
+    expect(areaEl().style.getPropertyValue('--kb-bend-words')).toBe('');
     run();
     const filter = document.querySelector('filter')!;
     expect(filter).not.toBeNull();
-    expect(wordsEl().style.filter).toContain(`#${filter.id}`);
+    expect(areaEl().style.getPropertyValue('--kb-bend-words')).toContain(`#${filter.id}`);
     expect(filter.getAttribute('color-interpolation-filters')).toBe('sRGB');
     expect(filter.getAttribute('primitiveUnits')).toBe('userSpaceOnUse');
     const map = filter.querySelector('feDisplacementMap')!;
@@ -1476,8 +1476,7 @@ describe('the filter', () => {
     hub.trusted = false;
     mount();
     run();
-    expect(wordsEl().style.filter).toBe('');
-    expect(wordsEl().getAttribute('style') ?? '').not.toContain('filter');
+    expect(areaEl().getAttribute('style') ?? '').not.toContain('--kb-bend');
     expect(document.querySelector('filter')).toBeNull();
     expect(dents()).toHaveLength(1);
   });
@@ -1489,8 +1488,7 @@ describe('the filter, where an image cannot be made', () => {
     mount();
     run();
     expect(dents()).toHaveLength(1);
-    expect(wordsEl().style.filter).toBe('');
-    expect(wordsEl().getAttribute('style') ?? '').not.toContain('filter');
+    expect(areaEl().getAttribute('style') ?? '').not.toContain('--kb-bend');
     const d = dents()[0]!;
     expect(d.style.getPropertyValue('--dw-dent-img')).toBe(`url("data:image/png;base64,S${d.dataset.play}")`);
     expect(document.querySelector<HTMLElement>('.dw-chair-glow')!.style.getPropertyValue('--dw-glow-img')).toBe(`url("data:image/png;base64,L${d.dataset.play}")`);
@@ -1560,5 +1558,127 @@ describe('nobody is special', () => {
     const a = html({ author: false, caster: false });
     expect(html({ author: true, caster: false })).toBe(a);
     expect(html({ author: false, caster: true })).toBe(a);
+  });
+});
+
+/*
+ * The bend (docs/plans/2026-11-23-dent-bend-design.md, 1 and 2): no element of the effect's carries a filter, which would clip and trap every layer that
+ * fills the content area; the effect gives the engine two filters through `setBend`, and the area and the words box wear them by custom properties.
+ */
+describe('the bend, set on the content area', () => {
+  const props = (el: HTMLElement) => [el.style.getPropertyValue('--kb-bend'), el.style.getPropertyValue('--kb-bend-words')];
+  const filters = () => ({ area: document.querySelector('filter[id$="-area"]')!, words: document.querySelector('filter[id$="-words"]')! });
+
+  test('no element in the effect carries a filter once a dent lands: there is no wrapper of the effect\'s own', () => {
+    mount();
+    run();
+    expect(dents()).toHaveLength(1);
+    expect(document.querySelector('.dw-chair-words'), 'no wrapper').toBeNull();
+    for (const el of document.querySelectorAll<HTMLElement>('.dw-chair, .dw-chair *, [data-kb-words-box]')) {
+      expect(el.style.filter, `${el.className || el.tagName} has no filter of its own`).toBe('');
+    }
+  });
+
+  test('the area carries --kb-bend and --kb-bend-words naming the two filters, and loses both on unmount and when the last play ends', () => {
+    mount();
+    expect(props(areaEl())).toEqual(['', '']);
+    run();
+    const { area, words } = filters();
+    expect(area).not.toBeNull();
+    expect(words).not.toBeNull();
+    expect(area.id).not.toBe(words.id);
+    expect(props(areaEl())).toEqual([`url("#${area.id}")`, `url("#${words.id}")`]);
+    /* The last play ends and the post stays: the area is still in the page, and the bend is gone with the effect. */
+    act(() => { hub.setPlays([]); });
+    expect(areaEl().isConnected).toBe(true);
+    expect(props(areaEl())).toEqual(['', '']);
+    expect(areaEl().getAttribute('style') ?? '').not.toContain('--kb-bend');
+    /* An unmount takes it off too. */
+    cleanup();
+    mount();
+    run();
+    const area2 = areaEl();
+    expect(props(area2)[0]).not.toBe('');
+    cleanup();
+    expect(props(area2)).toEqual(['', '']);
+  });
+
+  test('the post leaving the view clears the run and the bend with it', () => {
+    mount();
+    run();
+    expect(props(areaEl())[0]).not.toBe('');
+    see(false);
+    expect(props(areaEl())).toEqual(['', '']);
+  });
+
+  test('an ORIGIN box\'s area beside the dented post\'s own carries neither property: only the area the effect found is bent', () => {
+    mount({ wrapped: 'beside' });
+    run();
+    expect(props(areaEl())[0]).not.toBe('');
+    const origin = document.querySelector<HTMLElement>('.kb-origin-area')!;
+    expect(props(origin)).toEqual(['', '']);
+  });
+
+  test('with no content area only the words property is set, on the host, and the shake is on the host', () => {
+    mount({ wrapped: false, place: 'origin' });
+    run();
+    const { words } = filters();
+    expect(host()!.style.getPropertyValue('--kb-bend-words')).toBe(`url("#${words.id}")`);
+    expect(host()!.style.getPropertyValue('--kb-bend')).toBe('');
+    expect(host()).toHaveAttribute('data-dw-chair-shake');
+    act(() => { hub.setPlays([]); });
+    expect(document.querySelector('[data-dw-chair-shake]')).toBeNull();
+  });
+
+  test('the two filters differ in where they stand and their region, and in nothing else', () => {
+    mount({ plays: [play(1), play(2)] });
+    run();
+    const { area, words } = filters();
+    /* Words: the words box's px (280 wide, size.h - 16 - ROOM_HEIGHT tall in the stub). Area: the content area's (areaWidth by size.h). */
+    expect([area.getAttribute('x'), area.getAttribute('y')].map(Number)).toEqual([-DENT_SCALE, -DENT_SCALE]);
+    expect(Number(area.getAttribute('width'))).toBe(areaWidth + 2 * DENT_SCALE);
+    expect(Number(area.getAttribute('height'))).toBe(size.h + 2 * DENT_SCALE);
+    expect(Number(words.getAttribute('width'))).toBe(280 + 2 * DENT_SCALE);
+    const shape = (f: Element) => [...f.children].map((c) => [c.tagName, c.getAttribute('in'), c.getAttribute('in2'), c.getAttribute('result'), c.getAttribute('operator')].join('|'));
+    expect(shape(area)).toEqual(shape(words));
+    /* The area's feImages stand where the dents do in the content area; the words' are relative to the words box, which stands at (10, 8) in it. */
+    const at = (f: Element) => [...f.querySelectorAll('feImage')].map((e) => [Number(e.getAttribute('x')), Number(e.getAttribute('y')), e.getAttribute('width'), e.getAttribute('height')]);
+    const [aw, ww] = [at(area), at(words)];
+    expect(aw).toHaveLength(2);
+    aw.forEach((p, i) => {
+      expect(p[0]! as number - (ww[i]![0] as number)).toBeCloseTo(10, 5);
+      expect(p[1]! as number - (ww[i]![1] as number)).toBeCloseTo(8, 5);
+      expect([p[2], p[3]]).toEqual([ww[i]![2], ww[i]![3]]);
+    });
+    /* Each dent's box in the area's filter is where its shading lies in the area. */
+    const shaded = dents().map((d) => [parseFloat(d.style.left), parseFloat(d.style.top)]);
+    expect(aw.map((p) => [p[0], p[1]])).toEqual(shaded);
+  });
+
+  test('both filters\' transfer functions are driven by one dent\'s growth', () => {
+    mount();
+    see(true); arm();
+    for (let i = 0; i < 400 && !dents().length; i++) frame();
+    const slopes = () => ['area', 'words'].map((w) => Number(document.querySelector(`filter[id$="-${w}"] feFuncR`)!.getAttribute('slope')));
+    const intercepts = () => ['area', 'words'].map((w) => Number(document.querySelector(`filter[id$="-${w}"] feFuncG`)!.getAttribute('intercept')));
+    expect(slopes()[0]).toBeLessThan(1);
+    let mid = false;
+    for (let i = 0; i < 12; i++) {
+      frame();
+      const [a, w] = slopes();
+      expect(a, 'the same slope in both').toBe(w);
+      expect(intercepts()[0]).toBe(intercepts()[1]);
+      if (a! > 0 && a! < 1) mid = true;
+    }
+    expect(mid, 'caught between nothing and full').toBe(true);
+    expect(slopes()).toEqual([1, 1]);
+    expect(intercepts()).toEqual([0, 0]);
+  });
+
+  test('where the filter is not trusted neither property is set', () => {
+    hub.trusted = false;
+    mount();
+    run();
+    expect(areaEl().getAttribute('style') ?? '').not.toContain('--kb-bend');
   });
 });

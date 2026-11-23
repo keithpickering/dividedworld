@@ -12,9 +12,10 @@
  * above the words). That box is the physics world: its left and right borders are the walls and its bottom border the floor; chair.ts draws
  * the world in an oblique view (the floor recedes up the screen), so a chair at rest is drawn inside the box, never past a border. Where
  * there is no body (no content area above the effect) the effect's own box is the world. A `ResizeObserver` on the box (and the host) resizes the world and
- * places the layers again. The words are a wrapper inside the host; the throw aims at the box the text really takes (a Range's client
- * rects: a short post's wrapper is as wide as the content area), and since the filter is applied to that wrapper its coordinates are the
- * wrapper's, not the content area's: `geo` holds the measured offset between the two. The floor's room is the content area's own
+ * places the layers again. The words are the engine's words box (`wordsBoxOf`, engine/ui/cards/body.ts: `data-kb-words-box`) inside the host, and the
+ * effect draws no wrapper of its own; the throw aims at the box the text really takes (a Range's client rects: a short post's words box is as wide as
+ * the content area), and the words' filter is in the words box's coordinates, not the content area's: `geo` holds the measured offset between the two,
+ * and the area's own size. The floor's room is the content area's own
  * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest), so a resting chair reaches neither the reactions row nor the words: the
  * effect marks the body it found (`data-dw-chair-room`, the nearest content area, so a chair in a spun thread's ORIGIN box makes room in the
  * box and not in the opening post's body around it) and steel-chair.css draws the room at the foot of whatever is marked; only where there
@@ -22,6 +23,14 @@
  * here assumes the content area is as tall as its words plus the room: the world, the layers and the dents' coordinates are all measured boxes
  * (`bodyBox`, the wrapper's offsets, the text's client rects), the room is the content area's last child so it stays at the floor however tall
  * the body is, and the floor is the area's bottom border.
+ *
+ * Where the filter stands (docs/plans/2026-11-23-dent-bend-design.md, 1 and 2). A CSS filter on an element clips everything inside it to its region
+ * and makes it a stacking context, so a filter on the words' wrapper clipped and trapped every layer that fills the content area (a foil under the
+ * words) when a chair was played after it. So no element of the effect's carries a filter. The effect builds two filters from the same dents and gives
+ * them to the engine with `setBend`: one in the content area's coordinates, which each layer marked `data-kb-bend` wears (a layer is bent whether its
+ * card was played before the chair or after it), and one in the words box's coordinates, which the words box wears. Where there is no content area
+ * (Stick Around's view) only the words' filter is set, on the host. The hit's shake is an attribute on the content area (`data-dw-chair-shake`), or on
+ * the host where there is none, so the whole post shakes, layers and all.
  *
  * The dents. Each is a pressed-in plate of metal: a height map made from its play's id alone (dent.ts `dentShape`, `dentHeight`), the same
  * for every reader and on every replay, while where it lands is the run's, in an ellipse's box (within 15% of round). One light, fixed in the
@@ -47,7 +56,7 @@
  * steps a frame (a slow frame or a tab coming back drops the rest of the time it owes), and sets each chair's and each piece's style straight on the DOM nodes
  * through refs; React renders only when a chair or a dent comes or goes. The shade of a piece is taken from its normal after the body's
  * orientation turns it, since the light is fixed in the world. A dent's depth grows by moving its map's pixels from neutral (128) to full,
- * so each dent has its own growth in the one filter, and the others keep their depth when a new one lands.
+ * so each dent has its own growth in each of the two filters (both move together), and the others keep their depth when a new one lands.
  *
  * The throws' clock is the world's. The run counts the steps it has run, and chair n enters the world when that count reaches n times
  * STAGGER_STEPS (0.35 s of simulated time), checked after every step, so a chair may enter between two steps of one frame. A wall-clock timer
@@ -67,7 +76,7 @@ import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { spanWords } from '../../../../engine/ui/account/words.ts';
 import { useSound } from '../../../../engine/ui/audio/sound.ts';
 import { useGameSound } from '../../../../engine/ui/audio/useGameSound.ts';
-import { bodyBox, bodyOf, placeLayer, sameBox, type BodyBox } from '../../../../engine/ui/cards/body.ts';
+import { bodyBox, bodyOf, placeLayer, sameBox, setBend, wordsBoxOf, type Bend, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { endsWords } from '../../../../engine/ui/cards/marks.ts';
 import { useAt } from '../../../../engine/ui/cards/plays.ts';
 import type { CardPlay, CardView, EffectProps } from '../../../../engine/ui/cards/types.ts';
@@ -103,6 +112,8 @@ function shapeOf(play: string): DentShape {
  * area (one host per post-reach card per post; a moment replaces the live effect, never joins it), so the mark is a plain attribute and is not counted.
  */
 const ROOM_MARK = 'data-dw-chair-room';
+/** The attribute the hit's shake is: on the content area (or the host where there is none), where steel-chair.css runs the 4 px shake. */
+const SHAKE_MARK = 'data-dw-chair-shake';
 /** The most chairs one post draws (the card's stack). */
 const MOST = 3;
 /**
@@ -157,16 +168,16 @@ function keptRef<N>(
 /** A dent: where it landed in the content area's px, and whether it is drawn at full depth from the start (reduced motion). */
 interface Dent { readonly play: string; readonly x: number; readonly y: number; readonly full: boolean }
 /**
- * Where the words wrapper stands in the content area, and how big it is: what the filter's coordinates are converted by; and `zone`, the height a dent
- * may land in (dent.ts `zoneHeight` of the content area's height).
+ * Where the words box stands in the content area, and how big it is: what the words' filter's coordinates are converted by; `w` and `h`, the content area's
+ * own size (the area's filter's region); and `zone`, the height a dent may land in (dent.ts `zoneHeight` of the content area's height).
  */
-interface Geo { readonly left: number; readonly top: number; readonly width: number; readonly height: number; readonly zone: number }
+interface Geo { readonly left: number; readonly top: number; readonly width: number; readonly height: number; readonly w: number; readonly h: number; readonly zone: number }
 /**
  * What the effect remembers while it stays mounted: whether `met` has been said.
  */
 interface Memory { met: boolean }
 /** What the run offers the views: another run, and the plays' list having changed. */
-interface Control { replay(): void; sync(): void }
+interface Control { replay(): void; sync(): void; rebend(): void }
 /** What a chair's group remembers between frames, so a style is written only when it changed. */
 interface Cache {
   pieces: HTMLElement[]; list: Piece[]; fold: number; transform: string; depth: string; nudges: number; matrices: string[]; applied: string[]; shades: string[];
@@ -178,14 +189,14 @@ const overshoot = (d: { x: number; y: number }, radius: number, b: BodyBox): num
 
 const sameGeo = (a: Geo | null, b: Geo): boolean => {
   const near = (x: number, y: number) => Math.abs(x - y) < 0.01;
-  return a !== null && near(a.left, b.left) && near(a.top, b.top) && near(a.width, b.width) && near(a.height, b.height) && near(a.zone, b.zone);
+  return a !== null && near(a.left, b.left) && near(a.top, b.top) && near(a.width, b.width) && near(a.height, b.height) && near(a.w, b.w) && near(a.h, b.h) && near(a.zone, b.zone);
 };
 
 /**
  * The box the words really occupy, in the content area's px: the union of the client rects of a `Range` over each text node under the
- * wrapper (a line of text is as wide as its words, not as the wrapper), from the content area's top left corner at (`originX`, `originY`)
- * in the window. A range over the wrapper's contents would not do: it also reports the border box of every element inside, as wide as the
- * wrapper. Null where there is nothing to measure (no layout, as in jsdom), and the caller falls back to the wrapper's box.
+ * words box (a line of text is as wide as its words, not as the box), from the content area's top left corner at (`originX`, `originY`)
+ * in the window. A range over the box's contents would not do: it also reports the border box of every element inside, as wide as the
+ * box. Null where there is nothing to measure (no layout, as in jsdom), and the caller falls back to the words box's own.
  */
 function textBox(words: HTMLElement, originX: number, originY: number): Box | null {
   if (typeof document.createRange !== 'function') return null;
@@ -266,7 +277,6 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const filterId = useId();
   const trusted = useMemo(() => filterTrusted(), []);
   const host = useRef<HTMLDivElement>(null);
-  const words = useRef<HTMLDivElement>(null);
   const layer = useRef<HTMLDivElement>(null);
   const shading = useRef<HTMLDivElement>(null);
   const glows = useRef<HTMLDivElement>(null);
@@ -276,6 +286,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   /* What the frame loop writes to: each chair's group, and each dent's two transfer functions (its depth), by play. */
   const groups = useRef(new Map<string, HTMLElement>());
   const depths = useRef(new Map<string, SVGElement[]>());
+  const fnsOf = (play: string): SVGElement[] => [...(depths.current.get(`${play}|area`) ?? []), ...(depths.current.get(`${play}|words`) ?? [])];
   /*
    * The ref callbacks, one per play and kept: a function made afresh in each render makes React detach and attach the node on every render.
    */
@@ -286,19 +297,20 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const groupRef = (play: string) => keptRef(
     refs.current.group, play, (node) => groups.current.set(play, node), () => groups.current.delete(play),
   );
-  const depthRef = (play: string) => keptRef(
-    refs.current.depth, play, (node) => depths.current.set(play, [...node.children] as SVGElement[]), () => depths.current.delete(play),
+  /* Each play has a transfer node in each of the two filters (`which`: the area's and the words'); the frame loop moves both. */
+  const depthRef = (play: string, which: 'area' | 'words') => keptRef(
+    refs.current.depth, `${play}|${which}`, (node) => depths.current.set(`${play}|${which}`, [...node.children] as SVGElement[]), () => depths.current.delete(`${play}|${which}`),
   );
   const control = useRef<Control | null>(null);
   const paintNow = useRef<() => void>(() => {});
-  const latest = useRef({ live, sound, met });
-  latest.current = { live, sound, met };
+  const latest = useRef<{ live: readonly CardPlay[]; sound: typeof sound; met: typeof met; bend: Bend | null }>({ live, sound, met, bend: null });
+  latest.current = { live, sound, met, bend: latest.current.bend };
 
   const key = live.map((p) => p.id).join('|');
   useEffect(() => {
-    const el = host.current, wordsEl = words.current, chairLayer = layer.current, dentLayer = shading.current;
+    const el = host.current, chairLayer = layer.current, dentLayer = shading.current;
     const glowLayer = glows.current;
-    if (!el || !wordsEl || !chairLayer || !dentLayer || !glowLayer) return;
+    if (!el || !chairLayer || !dentLayer || !glowLayer) return;
     let world: World | null = null;
     let running = false;
     let loud = false;
@@ -312,6 +324,9 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     /* The body that carries the room's mark: set only by `giveRoom`, so that a run cleared (which forgets `body`) or an effect moved before
        its first measure cannot leave a mark that nothing will take off. */
     let marked: HTMLElement | null = null;
+    /* Where the bend is set (the content area, or null for the host's own where there is none), while one is; and the element the shake's attribute is on. */
+    let bentOn: { area: HTMLElement | null } | null = null;
+    let shaken: HTMLElement | null = null;
     let found = false;
     let target: Box = { left: 0, top: 0, width: 0, height: 0 };
     let size: ResizeObserver | null = null;
@@ -340,6 +355,18 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     /* The room is there from the moment a play is live, as the old `:has(.dw-chair)` rule gave it, so the post does not grow when a run starts. */
     giveRoom(bodyOf(el));
 
+    /* The bend (engine `setBend`) is given up first where the body it stands on is not the one found now, or is no longer wanted. */
+    const unbend = (): void => {
+      if (!bentOn) return;
+      setBend(bentOn.area, el, null);
+      bentOn = null;
+    };
+    const rebend = (): void => {
+      const want = latest.current.bend;
+      if (bentOn && (!want || bentOn.area !== body)) unbend();
+      if (want && !bentOn) { setBend(body, el, want); bentOn = { area: body }; }
+    };
+
     /*
      * The box to paint and its words: the content area's padding box (or the host's own), the layers placed over it, and where the words
      * stand in it.
@@ -352,20 +379,22 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         if (next) size?.observe(next);
         body = next;
         giveRoom(next);
+        rebend();
       }
+      /* The words box (the engine's, where the effect's children draw the words); where there is none the host is measured, and nothing bends the words. */
+      const wordsEl = wordsBoxOf(el) ?? el;
       const b = bodyBox(el, body);
       const w = wordsEl.getBoundingClientRect(), h = el.getBoundingClientRect();
-      /* Where the wrapper stands is its layout box (`offset*`, relative to the host, which is its offset parent), which a transform does not
-         move: the hit's shake moves `getBoundingClientRect` by up to 4 px, and a size callback that fires mid-shake would otherwise store that
-         as the wrapper's place, change the filter's coordinates and wake the world. `shift` is what the transform adds to the client rects. */
-      const shiftX = w.left - h.left - wordsEl.offsetLeft, shiftY = w.top - h.top - wordsEl.offsetTop;
+      /* Where the words box stands is read from the client rects of the box and the host, whose difference a transform on both leaves alone: the
+         hit's shake is on the content area (or the host), which moves every rect in the post by the same few px, so a size callback that fires
+         mid-shake stores the place a callback at rest would, changes no coordinate and wakes nothing. */
       const g: Geo = {
-        left: wordsEl.offsetLeft - b.left, top: wordsEl.offsetTop - b.top, width: wordsEl.offsetWidth, height: wordsEl.offsetHeight, zone: zoneHeight(b.h),
+        left: w.left - h.left - b.left, top: w.top - h.top - b.top, width: w.width, height: w.height, w: b.w, h: b.h, zone: zoneHeight(b.h),
       };
       const moved = !sameBox(b, box) || !sameGeo(geoNow, g);
       box = b;
       /* The throw aims at the box the text takes, which on a short post is far narrower than the wrapper (as wide as the content area). */
-      target = textBox(wordsEl, h.left + b.left + shiftX, h.top + b.top + shiftY)
+      target = textBox(wordsEl, h.left + b.left, h.top + b.top)
         ?? { left: g.left, top: g.top, width: g.width, height: g.height };
       placeLayer(chairLayer, b);
       placeLayer(dentLayer, b);
@@ -432,8 +461,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     /* A dent's depth, 0 to 1: the transfer functions of its map move each pixel's push toward neutral (128), so 0 draws nothing. */
     const grow = (t: number): void => {
       for (const [play, t0] of growing) {
-        const fns = depths.current.get(play);
-        if (!fns) continue;
+        const fns = fnsOf(play);
+        if (fns.length === 0) continue;
         const start = t0 ?? t;
         growing.set(play, start);
         const a = Math.min(1, (t - start) / GROW_MS);
@@ -444,9 +473,12 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
 
     const shake = (): void => {
       if (reduced) return;
-      wordsEl.removeAttribute('data-shake');
-      void wordsEl.offsetWidth;
-      wordsEl.setAttribute('data-shake', '');
+      const at = body ?? el;
+      if (shaken && shaken !== at) shaken.removeAttribute(SHAKE_MARK);
+      at.removeAttribute(SHAKE_MARK);
+      void at.offsetWidth;
+      at.setAttribute(SHAKE_MARK, '');
+      shaken = at;
     };
 
     const onEvent = (e: BodyEvent): void => {
@@ -598,12 +630,14 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       bodyOfPlay.clear(); playOfBody.clear();
       world = null;
       running = false;
+      unbend();
       found = false; body = null;
-      wordsEl.removeAttribute('data-shake');
+      shaken?.removeAttribute(SHAKE_MARK); shaken = null;
       if (render) { setChairs([]); setDents([]); }
     };
 
     control.current = {
+      rebend,
       replay: () => { clearRun(true); startRun(); },
       /* Plays that came or went while the run stands: the gone lose their chair and dent, the new are thrown alone into the world. */
       sync: () => {
@@ -679,13 +713,13 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 
-  /* The filter and the shading, from the dents in the content area's px: the filter's coordinates are the words wrapper's. */
+  /* The filters and the shading, from the dents in the content area's px: the words' filter's coordinates are the words box's, the area's are the content area's. */
   const shown = dents.filter((d) => live.some((p) => p.id === d.play));
-  const off = geo ?? { left: 0, top: 0, width: 0, height: 0, zone: 0 };
+  const off = geo ?? { left: 0, top: 0, width: 0, height: 0, w: 0, h: 0, zone: 0 };
   /* Each dent's own shape comes from its play's id alone (dent.ts `dentShape`): the same for every reader and on every replay. */
   const shapesOf = shown.map((d) => shapeOf(d.play));
   const prims = dentPrimitives(shown.map((d, i) => ({ x: d.x - off.left, y: d.y - off.top, shape: shapesOf[i]! })), { width: off.width, height: off.zone });
-  /* Each dent's three images (dent.ts `dentImages`: kept per play, box size and density, so a render makes them once): the bend for the filter,
+  /* Each dent's three images (dent.ts `dentImages`: kept per play, box size and density, so a render makes them once): the bend for the filters,
      the shade and the light for the two shading layers. Where the images need a canvas that is not there each is '' and sets nothing. */
   const density = Math.min(typeof window === 'undefined' ? 1 : window.devicePixelRatio || 1, 2);
   const inArea = (p: { x: number; y: number; width: number; height: number; size: number }) => ({ ...p, x: p.x + off.left, y: p.y + off.top });
@@ -693,10 +727,13 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   /* The dents are capped against the ones before them in `shown` (the order they landed in), in one space: the content area's px. */
   const images = shown.map((d, i) => dentImages(d.play, inArea(prims[i]!), density, earlierOf(i)));
   const filterOn = trusted && shown.length > 0 && geo !== null && images.every((m) => m.bend !== '');
-  /* The filter's region: the wrapper's box plus DENT_SCALE on every side, in the wrapper's px (as `primitiveUnits` is). The default region
-     (-10% to 120% of the box) is too small for a one-line post, where a displacement of up to DENT_SCALE / 2 px moves the glyphs out of it
-     and clips them. */
-  const region = { x: -DENT_SCALE, y: -DENT_SCALE, width: off.width + 2 * DENT_SCALE, height: off.height + 2 * DENT_SCALE };
+  /* What the engine is asked to bend with, from the two filters' ids. */
+  const bend = useMemo<Bend | null>(
+    () => (filterOn ? { area: `url("#${filterId}-area")`, words: `url("#${filterId}-words")` } : null),
+    [filterOn, filterId],
+  );
+  latest.current.bend = bend;
+  useLayoutEffect(() => { control.current?.rebend(); }, [bend]);
   /* A dent's box (the ellipse the displacement's `feImage` is stretched to), which each shading layer's image fills; the image carries the
      dent's whole shape, so the box is all the style needs besides the image's address. */
   const boxStyle = (i: number): CSSProperties => {
@@ -710,38 +747,49 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     images[i]!.light ? { ...boxStyle(i), '--dw-glow-img': `url("${images[i]!.light}")` } as CSSProperties : boxStyle(i)
   );
   const last = shown.length - 1;
+  /*
+   * One filter, built from the dents above: `which` names it (`${filterId}-words` or `-area`), `at` is where its coordinates' origin stands from the words
+   * box's (0, 0 for the words' filter; the words box's place in the content area for the area's), and `region` is its box in its own px: the box plus
+   * DENT_SCALE on every side, as the default region (-10% to 120% of the box) is too small for a one-line post, where a displacement of up to
+   * DENT_SCALE / 2 px moves the glyphs out of it and clips them. The two differ in nothing else: the flood, each dent's `feImage`, growth transfer
+   * and sum, and the displacement are the same.
+   */
+  const bendFilter = (which: 'words' | 'area', atX: number, atY: number, region: { x: number; y: number; width: number; height: number }) => (
+    <filter id={`${filterId}-${which}`} colorInterpolationFilters="sRGB" primitiveUnits="userSpaceOnUse" filterUnits="userSpaceOnUse" {...region}>
+      <feFlood floodColor="rgb(128,128,128)" result="neutral" />
+      {shown.map((d, i) => (
+        <Fragment key={d.play}>
+          <feImage
+            href={images[i]!.bend} x={prims[i]!.x + atX} y={prims[i]!.y + atY} width={prims[i]!.width} height={prims[i]!.height}
+            preserveAspectRatio="none" result={`map-${i}`}
+          />
+          <feComponentTransfer in={`map-${i}`} result={`dent-${i}`} ref={depthRef(d.play, which)}>
+            <feFuncR type="linear" slope={d.full ? 1 : 0} intercept={d.full ? 0 : 0.5} />
+            <feFuncG type="linear" slope={d.full ? 1 : 0} intercept={d.full ? 0 : 0.5} />
+          </feComponentTransfer>
+          {/* The dent's square laid over neutral, so it is neutral (adds nothing) outside its circle; then its offset is added to the
+              running map. */}
+          <feComposite in={`dent-${i}`} in2="neutral" operator="over" result={`full-${i}`} />
+          <feComposite
+            in={i === 0 ? 'neutral' : `sum-${i - 1}`} in2={`full-${i}`} operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.5"
+            result={`sum-${i}`}
+          />
+        </Fragment>
+      ))}
+      <feDisplacementMap
+        in="SourceGraphic" in2={last >= 0 ? `sum-${last}` : 'neutral'} scale={DENT_SCALE} xChannelSelector="R" yChannelSelector="G"
+      />
+    </filter>
+  );
   return (
     <div ref={host} className="dw-chair">
       {trusted ? (
         <svg width="0" height="0" aria-hidden="true" focusable="false" style={{ position: 'absolute' }}>
-          <filter id={filterId} colorInterpolationFilters="sRGB" primitiveUnits="userSpaceOnUse" filterUnits="userSpaceOnUse" {...region}>
-            <feFlood floodColor="rgb(128,128,128)" result="neutral" />
-            {shown.map((d, i) => (
-              <Fragment key={d.play}>
-                <feImage
-                  href={images[i]!.bend} x={prims[i]!.x} y={prims[i]!.y} width={prims[i]!.width} height={prims[i]!.height}
-                  preserveAspectRatio="none" result={`map-${i}`}
-                />
-                <feComponentTransfer in={`map-${i}`} result={`dent-${i}`} ref={depthRef(d.play)}>
-                  <feFuncR type="linear" slope={d.full ? 1 : 0} intercept={d.full ? 0 : 0.5} />
-                  <feFuncG type="linear" slope={d.full ? 1 : 0} intercept={d.full ? 0 : 0.5} />
-                </feComponentTransfer>
-                {/* The dent's square laid over neutral, so it is neutral (adds nothing) outside its circle; then its offset is added to the
-                    running map. */}
-                <feComposite in={`dent-${i}`} in2="neutral" operator="over" result={`full-${i}`} />
-                <feComposite
-                  in={i === 0 ? 'neutral' : `sum-${i - 1}`} in2={`full-${i}`} operator="arithmetic" k1="0" k2="1" k3="1" k4="-0.5"
-                  result={`sum-${i}`}
-                />
-              </Fragment>
-            ))}
-            <feDisplacementMap
-              in="SourceGraphic" in2={last >= 0 ? `sum-${last}` : 'neutral'} scale={DENT_SCALE} xChannelSelector="R" yChannelSelector="G"
-            />
-          </filter>
+          {bendFilter('words', 0, 0, { x: -DENT_SCALE, y: -DENT_SCALE, width: off.width + 2 * DENT_SCALE, height: off.height + 2 * DENT_SCALE })}
+          {bendFilter('area', off.left, off.top, { x: -DENT_SCALE, y: -DENT_SCALE, width: off.w + 2 * DENT_SCALE, height: off.h + 2 * DENT_SCALE })}
         </svg>
       ) : null}
-      <div ref={words} className="dw-chair-words" style={filterOn ? { filter: `url("#${filterId}")` } : undefined}>{children}</div>
+      {children}
       <div className="dw-chair-room" aria-hidden="true" />
       {/* The dents' shading, in two layers that each fill the content area: the shade (black with an alpha) and the light (white with an alpha),
           laid on the words plainly with no blend, each dent's image already corrected against the dents before it (steel-chair.css). */}

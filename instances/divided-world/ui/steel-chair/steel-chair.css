@@ -14,11 +14,10 @@
   position: relative;
 }
 
-/* The words' wrapper: the filter is set on it by the effect, and the one shake of a hit (4 px, 0.25 s) runs on it. */
-.dw-chair-words {
-  position: relative;
-}
-.dw-chair-words[data-shake] {
+/* The hit's one shake (4 px, 0.25 s): the effect sets `data-dw-chair-shake` on the content area it found (or on its host where there is none), so the whole
+   post moves, layers and all. The area is already a stacking context, so the transform traps nothing new. No filter is set here: the dent's bend is
+   the engine's (`setBend`, docs/plans/2026-11-23-dent-bend-design.md). */
+[data-dw-chair-shake] {
   animation: dw-chair-shake 0.25s linear 1;
 }
 @keyframes dw-chair-shake {
@@ -131,9 +130,9 @@
 
 /* No shake under reduced motion (the effect also draws the dent and the resting chairs at once and starts no frame). */
 @media (prefers-reduced-motion: reduce) {
-  :root:not([data-kb-motion='full']) .dw-chair-words[data-shake] { animation: none; }
+  :root:not([data-kb-motion='full']) [data-dw-chair-shake] { animation: none; }
 }
-:root[data-kb-motion='reduce'] .dw-chair-words[data-shake] { animation: none; }
+:root[data-kb-motion='reduce'] [data-dw-chair-shake] { animation: none; }
 
 /* Forced colors: the system palette would turn the shading and the steel into flat boxes, so they are hidden. The filter stays: it draws
    nothing of its own, it only bends the words, so the dent is still seen as a dent. The room stays too, so the post does not change size. */
