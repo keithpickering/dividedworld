@@ -42,13 +42,13 @@ const alerts: World = (fake, instance) => {
   for (let i = 0; i < 4; i++) seed.post(ink.thread, gloomba, `Defending it, round ${i + 1}.`, { at: utc(2, 9, 20 + i) });
   seed.card(quoter, ink.act, card, { at: utc(2, 9, 38) });
   seed.alert(me, { kind: 'hint', act: ink.act, character: spritey, sub: 'leading:excitedNegative', at: utc(2, 9, 41) });
-  /* The new lines, each about an Act as the server writes it; the staff, cards and groups come from the instance by what they do, so a change to its lists changes no row. */
+  /* The new lines, each about an Act as the server writes it; the cards are named by key (a new card changes no row), and the staff and the group come from the instance by what they do. */
   const mod = seed.staff('hall-monitor', 'Hall Monitor', 'mod');
-  const fall = instance.cards.find((c) => c.discipline?.kind === 'fall');
-  const drive = instance.cards.find((c) => c.drive !== undefined);
-  const wall = instance.cards.find((c) => c.surface !== undefined);
+  const fall = cardOf(instance.cards, 'take-the-fall');
+  const drive = cardOf(instance.cards, 'jimmy-wails');
+  const wall = cardOf(instance.cards, 'graffiti');
   const punishment = instance.groups.conferred.find((g) => g.tone === 'punishment');
-  if (!fall || !drive || !wall || !punishment) throw new Error('the instance has no fall card, drive card, wall card or punishing group, which this story names');
+  if (!punishment) throw new Error('the instance has no punishing group, which this story names');
   const at = (minute: number) => utc(2, 9, minute);
   const mine = (kind: 'ruling' | 'cardEnded' | 'cardOnYours' | 'gift' | 'conduct', sub: string | null, act: Id, character: Id, minute: number) => seed.alert(me, { kind, ...(sub === null ? {} : { sub }), act, character, at: at(minute) });
   const filed = seed.post(splat.thread, pipewrench, 'Posting again, and again.', { at: utc(2, 9, 0) });
