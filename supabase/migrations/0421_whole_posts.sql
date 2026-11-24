@@ -18,8 +18,8 @@
 --    the persona's own id is read from characters_public, the debuted characters, and a persona that has not debuted has none), so a hidden post (acts_public's `hidden`, which still lists the row, with no words) is in no part of it: not as a post, not as a quote, not counted in the window. security definer, owned by kayfabb_digest as pool_thread is, the service role's only.
 --    quote_refs is read by that role: its select on (act, quoted) and a policy of its own, as the digest role has on the other tables it reads (0045_digest.sql). A quote of a post is in the quoting post's own public body,
 --    and the rows read are those of Acts acts_public already shows, so nothing is said that a player cannot see.
---    The newest `window` is read by number from thread_list's last_seq, and the page by an id array, so the view is never evaluated over the whole thread (the test reads the rows of acts a 1,000- and a 4,000-post thread cost, with the persona posting all through each and one of its posts answered 300 times: the same). `set jit = off`, as 0368's reads have it: a call's cost passes jit_above_cost and JIT added ~350 ms.
---    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts for the persona's posts, acts_replies for the replies, acts_edits (an index-only probe) for a post's latest edit, quote_refs' primary key, acts' own key). The hop is not picked by id first: a post's quotes are ordered by the quoted post's date, which quote_refs does not hold, so each quoted post is looked at, a number bounded by the quoting body's length (postMaxLength) and not by the thread.
+--    The newest `window` is read by number from thread_list's last_seq, and the page by an id array, so the view is never evaluated over the whole thread (the test reads the rows of acts a 1,000- and a 4,000-post thread cost, with the persona posting all through each, one of its posts answered a tenth of the thread's length of times and, in the longer one, played on 300 times: the same). `set jit = off`, as 0368's reads have it: a call's cost passes jit_above_cost and JIT added ~350 ms.
+--    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts for the persona's posts, acts_target (kind = 'post', ordered) for the replies, acts_edits (an index-only probe) for a post's latest edit, quote_refs' primary key, acts' own key). The hop is not picked by id first: a post's quotes are ordered by the quoted post's date, which quote_refs does not hold, so each quoted post is looked at, a number bounded by the quoting body's length (postMaxLength) and not by the thread.
 -- Ways out: no state is added. A spend, a turn and an attempt are ledger rows; a budget spent by the day's end is the next day's fresh one.
 -- Masks: pool_read reads public Acts and characters (characters_public); the persona's own id is its own. Nothing here reads an owner, a class or who reacted.
 -- The test that drives it red is supabase/tests/0421-whole-posts.sql.
@@ -223,7 +223,7 @@ create policy digest_reads on quote_refs for select to kayfabb_digest using (tru
 
 -- The digest role is granted no column of `acts` (0050), so the newest ids are picked by two functions it may execute, owned by the migration's role: each returns Act ids and nothing else (ids of posts that are public in a thread, a
 -- hidden one's among them, which pool_read puts through acts_public before it says anything of them), and no client role may call them. Each is an index range read of the newest n: acts_thread_posts (thread, character, created_at, id) for a
--- character's posts, acts_replies for the replies to a post; n is clamped to 100.
+-- character's posts, acts_target for the replies to a post; n is clamped to 100.
 create function pool_own_post_ids(in_thread uuid, by_character uuid, n integer) returns uuid[]
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(array(select y.id from acts y where y.thread = in_thread and y.kind = 'post' and y.character = by_character order by y.created_at desc, y.id desc limit least(greatest(coalesce(n, 0), 0), 100)), '{}'::uuid[])
@@ -236,8 +236,13 @@ revoke execute on function pool_own_post_ids(uuid, uuid, integer), pool_reply_id
 grant execute on function pool_own_post_ids(uuid, uuid, integer), pool_reply_ids(uuid, uuid, integer) to kayfabb_digest;
 
 -- `self` is looked up by staff key alone, not staff_kind = 'persona': a Mod Bot reads a thread through this too (Task 7), with its own staff key.
--- The newest replies to a post, in order, for pool_read: acts_target is not ordered, and a post with thousands of replies would be read whole to find its newest ten.
-create index acts_replies on acts (target_act_id, created_at desc, id desc) where kind = 'post';
+-- The newest replies to a post, in order, for pool_read. acts_target (0001: (target_act_id) where kind <> 'edit') is not ordered, so a post with thousands of replies would be read whole to find its newest ten. It is rebuilt here
+-- with the same name, predicate and leading column, and the key goes on to (kind, created_at desc, id desc): a post's non-post Acts (cards, sets, springs, visits and the rest, which can be numerous) sit in other kind ranges,
+-- so the kind = 'post' probe is one bounded, ordered range and not a walk through them. Every other read of acts_target is by target_act_id alone, the leading column, and stays an index probe. It is a rebuild and not a second index
+-- because every index on `acts` is a relcache entry in each connection that touches the table, and one more pushed a cold read's CacheMemoryContext over an allocation step
+-- (supabase/tests/e2e/0028-cold-read-budget.ts, issue #968): the count of indexes on acts is the same as before.
+drop index acts_target;
+create index acts_target on acts (target_act_id, kind, created_at desc, id desc) where kind <> 'edit';
 
 create function pool_read(in_thread uuid, staff_key text, named uuid[], "window" integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp set jit = off as $$

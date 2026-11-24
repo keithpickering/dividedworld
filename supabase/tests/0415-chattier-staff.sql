@@ -601,7 +601,7 @@ begin
   analyze characters;
   plan := '';
   for ln in execute format('explain select * from pool_waiting_rows(array[%L], now() - interval ''2 days'')', 'cs-boss') loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
-  if plan not like '%acts_target%' or plan not like '%Index Cond: (target_act_id = p.id)%' then raise exception 'the waiting replies are not probed by the target index, once for each post of the persona: %', plan; end if;
+  if plan not like '%acts_target%' or plan !~ 'Index Cond: \(+target_act_id = p\.id\)' then raise exception 'the waiting replies are not probed by the target index, once for each post of the persona: %', plan; end if;
   if plan ~ 'Seq Scan on acts\M' or plan ~ 'Merge Join' then raise exception 'the waiting replies scan or merge the posts: %', plan; end if;
   -- A thread's presence read starts from the persona's own posts in that thread and probes the target index from them; a board's, from its posts in that board's threads. Neither reads other places.
   plan := '';

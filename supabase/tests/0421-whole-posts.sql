@@ -331,10 +331,16 @@ begin
     ids := ids || tests.act(case when i % 10 = 0 then boss when i % 2 = 0 then a else b end, 'post', t, jsonb_build_object('body', 'Long post ' || i),
                             case when i > n - 90 and i % 10 = 5 then ids[i - 5] end, base + i * interval '1 second');
   end loop;
-  -- The persona posts all through the thread (every tenth: 100 and 400 posts), and one of its newest posts has 300 replies.
-  for i in 1..300 loop
+  -- The persona posts all through the thread (every tenth: 100 and 400 posts), and one of its newest posts has a tenth of the thread's length in replies (100 and 400, so the replies' own cost shows if it grows with them) and, in the longer
+  -- thread only, 300 cards played on it: Acts that target the post and are not replies (acts_target's key holds the kind, so the newest-replies probe is a range of kind = 'post' and never walks these).
+  for i in 1..n / 10 loop
     perform tests.act(case when i % 2 = 0 then a else b end, 'post', t, jsonb_build_object('body', 'Late reply ' || i), ids[n - 80], base + (n + i) * interval '1 second');
   end loop;
+  if n > 1000 then
+    for i in 1..300 loop
+      perform tests.act(a, 'card', t, '{}'::jsonb, ids[n - 80], base + (n + 1000 + i) * interval '1 second');
+    end loop;
+  end if;
   return t;
 end $$;
 do $$
