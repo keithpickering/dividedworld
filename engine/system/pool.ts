@@ -67,7 +67,10 @@ export interface HotSignal {
   readonly starter: string | null;
   readonly starterStaff: string | null;
   readonly staffStarted: boolean;
-  readonly authors: readonly { readonly character: string; readonly posts: number }[];
+  /** Each of the ten most frequent authors, with `top`: that author's most reacted post in the thread inside the window (a tie to the newer; a post under a live totals veil counts none). */
+  readonly authors: readonly { readonly character: string; readonly posts: number; readonly top: string | null }[];
+  /** The thread's two most reacted posts in the window, by two different characters, by the same order. */
+  readonly tops: readonly { readonly act: string; readonly character: string }[];
   readonly boardMaker: string | null;
 }
 
@@ -103,10 +106,15 @@ export interface Candidate {
    * when the week's thread share allows one, and skips it otherwise.
    */
   readonly thread: string | null;
-  /** The post the reply quotes: the Act that set it off where it has a thread (a post, a move's end or keep, a reversal, an arrival); else null. */
+  /**
+   * The post the reply quotes: the Act that set it off where it has a thread (a post, a move's end or keep, a reversal, an arrival); else null.
+   * For the hot triggers it is the flame's (`oldFlame`) or the thread's (`homeTurf`, `hotOnBeat`) most reacted post in the window.
+   */
   readonly quoting: string | null;
-  /** The Act that set it off, a post or a move's end, a keep, a reversal; null where none did. */
+  /** The Act that set it off, a post or a move's end, a keep, a reversal; null where none did. For the hot triggers it equals `quoting`. */
   readonly act: string | null;
+  /** The character the trigger is about: the flame for `oldFlame`; null for every other trigger. */
+  readonly subject: string | null;
 }
 
 /** The season and the window `successorStumbles` reads, with the two staff it turns on. */
@@ -151,9 +159,9 @@ export function candidates(
   const out: Candidate[] = [];
   // A locked-out persona cannot post in that thread; a candidate with no thread (a thread start) is never dropped.
   const locked = new Set(ctx.lockouts.map((l) => JSON.stringify([l.staff, l.thread])));
-  const add = (staff: string | null | undefined, trigger: PoolTrigger, thread: string | null, quoting: string | null, act: string | null) => {
+  const add = (staff: string | null | undefined, trigger: PoolTrigger, thread: string | null, quoting: string | null, act: string | null, subject: string | null = null) => {
     const office = officeOf(staff);
-    if (staff != null && office !== null && !(thread !== null && locked.has(JSON.stringify([ctx.characters[staff], thread])))) out.push({ staff, office, trigger, thread, quoting, act });
+    if (staff != null && office !== null && !(thread !== null && locked.has(JSON.stringify([ctx.characters[staff], thread])))) out.push({ staff, office, trigger, thread, quoting, act, subject });
   };
 
   for (const s of signals.named) add(s.staff, 'named', s.thread, s.act, s.act);
@@ -176,26 +184,32 @@ export function candidates(
   for (const h of signals.handovers) add(h.outgoing, 'seasonTurn', h.thread, h.act, h.act);
 
   for (const hot of signals.hot) {
-    const authors = new Set(hot.authors.map((a) => a.character));
+    // The thread's most reacted post that is not the persona's own: the first of `tops`; none where only the persona posted.
+    const topFor = (staff: string | null | undefined) => hot.tops.find((t) => t.character !== (staff == null ? undefined : ctx.characters[staff]))?.act ?? null;
+    const addTop = (staff: string | null | undefined, trigger: PoolTrigger) => {
+      const top = topFor(staff);
+      if (top !== null) add(staff, trigger, hot.thread, top, top);
+    };
     // Home turf: a thread a persona started, or a board it made, is hot.
-    if (hot.staffStarted) add(hot.starterStaff, 'homeTurf', hot.thread, null, null);
-    add(hot.boardMaker, 'homeTurf', hot.thread, null, null);
+    if (hot.staffStarted) addTop(hot.starterStaff, 'homeTurf');
+    addTop(hot.boardMaker, 'homeTurf');
     // Old flame: a character its memory names as a favorite or a grudge wrote one of the day's hottest posts (and it is not its own).
     for (const p of roster) {
       const m = memories[p.key];
       if (!m) continue;
       const own = ctx.characters[p.key];
       const flames = new Set([...m.opinions.filter((o) => o.score >= FAVORITE_SCORE).map((o) => o.character), ...m.grudges.map((g) => g.character)]);
-      if ([...flames].some((c) => c !== own && authors.has(c))) add(p.key, 'oldFlame', hot.thread, null, null);
+      // One candidate per flame, each quoting that flame's top post; `pick` keeps the persona's best.
+      for (const a of hot.authors) if (flames.has(a.character) && a.character !== own && a.top !== null) add(p.key, 'oldFlame', hot.thread, a.top, a.top, a.character);
     }
     // Hot on its beat: a thread on a board of its beats is among the day's hottest.
     const slug = ctx.boards[hot.board];
-    if (slug !== undefined) for (const p of roster) if (p.beats.includes(slug)) add(p.key, 'hotOnBeat', hot.thread, null, null);
+    if (slug !== undefined) for (const p of roster) if (p.beats.includes(slug)) addTop(p.key, 'hotOnBeat');
   }
 
   const seen = new Set<string>();
   return out.filter((c) => {
-    const k = JSON.stringify([c.staff, c.trigger, c.thread, c.quoting, c.act]);
+    const k = JSON.stringify([c.staff, c.trigger, c.thread, c.quoting, c.act, c.subject]);
     if (seen.has(k)) return false;
     seen.add(k);
     return true;
@@ -283,6 +297,8 @@ export interface PoolPick {
   readonly thread: string | null;
   readonly quoting: string | null;
   readonly act: string | null;
+  /** The character the trigger is about (the flame for `oldFlame`), else null. */
+  readonly subject: string | null;
   /** This post starts a thread (the day's highest scorer, while the week has a thread left). `thread` and `quoting` are its reply, should no board serve. */
   readonly startThread: boolean;
   /** The post may carry a card play, which costs one more slot of the pool: set on the top scorers, as many as slots remain. */
@@ -314,7 +330,8 @@ export function pick(
   // The candidates in a fixed order, each given its tie-breaker from the one generator, so the same day and the same candidates pick
   // the same whatever order they arrive in.
   const ordered = [...cands].sort((a, b) => byUnit(key(a.staff), key(b.staff)) || byUnit(a.trigger, b.trigger)
-    || byUnit(key(a.thread), key(b.thread)) || byUnit(key(a.quoting), key(b.quoting)) || byUnit(key(a.act), key(b.act)));
+    || byUnit(key(a.thread), key(b.thread)) || byUnit(key(a.quoting), key(b.quoting)) || byUnit(key(a.act), key(b.act))
+    || byUnit(key(a.subject), key(b.subject)));
   const scored = ordered.map((c) => {
     const p = priorityOf[c.staff];
     return { c, tie: rng(), isNew: p === undefined ? true : p.isNew, score: (pool.strengths[c.trigger] ?? 0) * Math.max(p?.value ?? 0, PRIORITY_FLOOR) };
@@ -334,7 +351,7 @@ export function pick(
   const chosen = [...fromNew, ...ranked.filter((s) => !taken.has(s)).slice(0, slots - fromNew.length)].sort(better);
   const cardSlots = slots - chosen.length;
   const picks = chosen.map((s, i): PoolPick => ({
-    staff: s.c.staff, office: s.c.office, trigger: s.c.trigger, thread: s.c.thread, quoting: s.c.quoting, act: s.c.act,
+    staff: s.c.staff, office: s.c.office, trigger: s.c.trigger, thread: s.c.thread, quoting: s.c.quoting, act: s.c.act, subject: s.c.subject,
     startThread: i === 0 && threadsLeft > 0,
     cardSlot: i < cardSlots,
   }));

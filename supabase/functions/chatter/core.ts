@@ -11,7 +11,7 @@
  *   4. For each pick: its career, memory, notes and thread; then one model call, duty `chatter` (a turn's is duty `conversation`), with `staff` set, so the call is a ledger row
  *      (models(), "Cost is a column"). A chat persona is asked in structure; a persona on the old voice writes its words in raw completion.
  *   5. The answer is repaired (repairChatter): every bound trimmed and named, and only what cannot be repaired without inventing content is rejected.
- *   6. The post (`write_staff_act` or `write_staff_thread`), then the card if one was asked for and a slot is left, then the note, then the spend.
+ *   6. The post (`write_staff_act`, `write_staff_thread` or `write_staff_spin`), then the card if one was asked for and a slot is left, then the note, then the spend.
  *
  * **Rounds (the chattier staff design; its plan, Task 7).** The schedule fires a round every `cronMinutes` (the step of the cron's minute field, else 15), and a round does, in this order:
  *   1. The System-enabled check, then `claim_pool_round(slot)`: a round that loses the claim returns `busy` having written nothing.
@@ -282,7 +282,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   const first = !started;
 
   const eve = dayOf(slotAt - DAY);
-  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...k, on: eve, own: false }));
+  const carried = (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: eve })).map((k) => ({ ...keptRead(k), on: eve, own: false }));
   // A carried pick is written only inside its own day's allowance: what that day's week gave it (the week as it stood on that day), less what that day already spent (a card counts as a pick, as `used` does).
   // Past it the pick was never owed, and it is skipped on the record.
   const eveWeek = carried.length > 0 ? await db.rpc<Week>('pool_week', { today: eve }) : null;
@@ -324,7 +324,7 @@ export async function runChatter(db: Db, models: Models, instance: Instance, slo
   // written here and spent on their own day: `kept_picks` of a day lists only the picks with no spend row on it, so a rerun never writes one twice. They are that day's slots, so they do
   // not wait for a session (every one of that day has ended), take nothing from today's allowance, offer no card, and are held to their own day's allowance (`eveAllowance`).
   // The kept picks that are due: the persona's session is open now, or it has none left in the day. They are written as the pool's picks always were.
-  const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...k, on: day, own: true })) : [];
+  const owns = todays > 0 ? (await db.rpc<{ staff: string; pick: PoolPick }[]>('kept_picks', { on_day: day })).map((k) => ({ ...keptRead(k), on: day, own: true })) : [];
   for (const k of [...carried, ...owns]) {
     const p = k.pick;
     if (k.own) {
@@ -441,6 +441,11 @@ async function drawTheSessions(db: Db, tuned: Instance, context: Context, day: s
 }
 
 /** The bounds a call's prompt and repair are held to. */
+/** A kept pick as `kept_picks` returns it: one written before `subject` existed has none, and reads as null. */
+function keptRead<K extends { pick: PoolPick }>(k: K): K {
+  return { ...k, pick: { ...k.pick, subject: k.pick.subject ?? null } };
+}
+
 function limitsOf(settings: Instance['settings']) {
   return { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
 }
@@ -463,8 +468,8 @@ function repairAnswer(raw: unknown, settings: Instance['settings'], askedTitle: 
   return { ok: true, answer: repaired.answer, trims: [...repaired.trims] };
 }
 
-/** The persona's own reads for a call: its career, memory, notes and the faces its memory names. */
-async function personaReads(db: Db, settings: Instance['settings'], staff: string) {
+/** The persona's own reads for a call: its career, memory, notes and the faces its memory names, with `also` (a pick's subject, which a kept pick may name after the memory has moved on). */
+async function personaReads(db: Db, settings: Instance['settings'], staff: string, also: readonly (string | null)[] = []) {
   const [career, memory, since] = await Promise.all([
     db.rpc<Career>('staff_career', { of_staff: staff }),
     db.rpc<Memory | null>('staff_memory_latest', { staff }),
@@ -472,6 +477,7 @@ async function personaReads(db: Db, settings: Instance['settings'], staff: strin
   ]);
   const notes = await db.rpc<string[]>('staff_notes_recent', { of_staff: staff, since: since ? new Date(Date.parse(since)).toISOString() : null, most: settings.pool.notesRead });
   const known = memory ? [...memory.opinions.map((o) => o.character), ...memory.grudges.map((g) => g.character)] : [];
+  for (const id of also) if (id && !known.includes(id)) known.push(id);
   const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
   return { career, memory, notes, faces };
 }
@@ -496,6 +502,15 @@ async function threadReads(db: Db, settings: Instance['settings'], staff: string
     db.rpc<string | null>('staff_points_latest', { staff_key: staff }),
   ]);
   return { conversation, record, points };
+}
+
+/** What a spin start reads of the origin's thread: the public record and the talking point, never the conversation. */
+async function spinReads(db: Db, staff: string, thread: string) {
+  const [record, points] = await Promise.all([
+    db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: staff }),
+    db.rpc<string | null>('staff_points_latest', { staff_key: staff }),
+  ]);
+  return { conversation: null, record, points };
 }
 
 /** The view the prompt shows: pronouns resolved as a thread post's are, and the replies this call answers named. */
@@ -691,32 +706,39 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     // Where it posts: a thread start (the pick's thread-null stumble, or the day's top scorer, while the week has a thread left and the persona
     // has a beats board and a voice that can give a title); else a reply in its trigger's thread.
     const wantsStart = p.startThread || p.thread === null;
-    const board = wantsStart && r.threadsLeft > 0 && persona.voice === 'chat' ? beatsBoard(persona, r.slugs, `${day}:${p.staff}`) : null;
-    const startsThread = board !== null;
+    const mayStart = wantsStart && r.threadsLeft > 0 && persona.voice === 'chat';
+    // A start whose pick has an Act is a spin of that Act, in its thread and on its board (the database places it); one with none (the meltdown stumble) is a plain start on a beats board.
+    const spins = mayStart && p.act !== null && p.thread !== null;
+    const board = mayStart && !spins ? beatsBoard(persona, r.slugs, `${day}:${p.staff}`) : null;
+    const startsThread = spins || board !== null;
+    // The post it writes on: the Act it spins off, or the post it replies to.
+    const quotes = spins ? p.act : p.quoting;
     if (!startsThread && p.thread === null) return skip(r.threadsLeft > 0 ? 'no board on its beats to start a thread on' : 'no thread to reply in, and the week has no thread left');
 
-    const read = !startsThread
-      ? await db.rpc<ThreadRead>('pool_thread', { in_thread: p.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: p.quoting })
+    const read = spins || !startsThread
+      ? await db.rpc<ThreadRead>('pool_thread', { in_thread: p.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: quotes })
       : null;
     // A character with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set. The persona's own set is its file's, else the same.
     const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
-    const quotedRead = read && p.quoting ? (read.posts.find((x) => x.act === p.quoting) ?? null) : null;
+    const quotedRead = read && quotes ? (read.posts.find((x) => x.act === quotes) ?? null) : null;
     const quotedPost: ThreadPost | null = quotedRead ? { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true } : null;
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
     // when the day's allowance has a slot for a card.
     // A post at `postEffects` takes no further drawing cast, so none is offered for it; one read of the quoted post, and only where a drawing cast would be offered.
-    // A Set lands on the persona's own new post and is offered as today. decideOptions still holds the limit if the post fills between the offer and the play.
-    const offeredCasts = r.cardRoom && persona.voice === 'chat' && quotedPost !== null && p.quoting !== null && r.cardsOnOffer.some((c) => playOf(c) === 'cast' && c.drawsEffect !== undefined);
-    const postFull = offeredCasts && (await db.rpc<number>('post_effects_up', { post: p.quoting })) >= settings.postEffects;
+    // A Set lands on the persona's own new post and is offered as today, but not on a spin (staff_play_card takes only a post target); an origin that is no post is offered no Cast
+    // (the read does not show it). decideOptions still holds the limit if the post fills between the offer and the play.
+    const offeredCasts = r.cardRoom && persona.voice === 'chat' && quotedPost !== null && quotes !== null && r.cardsOnOffer.some((c) => playOf(c) === 'cast' && c.drawsEffect !== undefined);
+    const postFull = offeredCasts && (await db.rpc<number>('post_effects_up', { post: quotes })) >= settings.postEffects;
     const offered: OfferedCard[] = r.cardRoom && persona.voice === 'chat'
-      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? true : quotedPost !== null && !(postFull && c.drawsEffect !== undefined))).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set', ...(c.staffOptions ? { options: c.staffOptions } : {}),
+      ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? !spins : quotedPost !== null && !(postFull && c.drawsEffect !== undefined))).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set', ...(c.staffOptions ? { options: c.staffOptions } : {}),
         ...wallsOf(c, read) }))
       : [];
 
-    const { career, memory, notes, faces } = await personaReads(db, settings, p.staff);
+    const { career, memory, notes, faces } = await personaReads(db, settings, p.staff, [p.subject]);
     // The conversation in the thread, the public record and the persona's talking point, as a turn is given them (the old voice writes its words from the thread alone).
-    const extra = read && persona.voice === 'chat' ? await threadReads(db, settings, p.staff, p.thread!) : null;
+    // A spin is shown the record and the talking point but no conversation: its persona's posts in the origin's thread are not in the new one.
+    const extra = read && persona.voice === 'chat' ? (spins ? await spinReads(db, p.staff, p.thread!) : await threadReads(db, settings, p.staff, p.thread!)) : null;
     const points = persona.voice !== 'chat' ? null : extra !== null ? extra.points : await db.rpc<string | null>('staff_points_latest', { staff_key: p.staff });
 
     const limits = limitsOf(settings);
@@ -736,8 +758,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       } else {
         const frame = chatterPrompt({
           premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
-          quoting: quotedPost, conversation: extra ? viewOf(extra.conversation, instanceSet, []) : null, record: extra?.record ?? null, points,
-          trigger: p.trigger, offeredCards: offered, startThread: startsThread, limits, names: namesOf(faces, instanceSet),
+          quoting: quotedPost, conversation: extra?.conversation ? viewOf(extra.conversation, instanceSet, []) : null, record: extra?.record ?? null, points,
+          trigger: p.trigger, subject: p.subject && faces[p.subject] ? p.subject : null, offeredCards: offered, startThread: startsThread, spinning: spins, limits, names: namesOf(faces, instanceSet),
         });
         const out = await models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
@@ -757,11 +779,14 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     // The post. A database error here stops this pick with nothing written.
     let post: string;
     try {
-      if (startsThread) {
+      if (spins) {
+        const made = await db.rpc<{ act: { id: string } }>('write_staff_spin', { staff_key: p.staff, origin: p.act, title: answer.title, body: answer.words, marker: { pool: day } });
+        post = made.act.id;
+      } else if (startsThread) {
         const made = await db.rpc<{ act: { id: string } }>('write_staff_thread', { staff_key: p.staff, board, title: answer.title, body: answer.words, marker: { pool: day } });
         post = made.act.id;
       } else {
-        const written = await db.rpc<{ id: string }>('write_staff_act', { staff_key: p.staff, kind: 'post', thread: p.thread, target: p.quoting, payload: { body: answer.words, pool: day } });
+        const written = await db.rpc<{ id: string }>('write_staff_act', { staff_key: p.staff, kind: 'post', thread: p.thread, target: quotes, payload: { body: answer.words, pool: day } });
         post = written.id;
       }
     } catch (e) {
@@ -782,7 +807,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           const wall = answer.card.wall;
           const decideFirst = async (pick: unknown): Promise<{ ok: true; draw: DecidedDraw } | { ok: false; why: string }> => {
             if (wall !== undefined) { const d = decideDraw(rules, tuned.settings, pick); return d.ok ? { ok: true, draw: d.value } : { ok: false, why: d.why }; }
-            const d = await decideOptions(db, tuned, rules, p.quoting, 'reply', {}, pick);
+            const d = await decideOptions(db, tuned, rules, quotes, 'reply', {}, pick);
             trims.push(...d.trims);
             return d.ok && d.draw !== undefined ? { ok: true, draw: d.draw } : { ok: false, why: d.ok ? 'no first draw' : d.why };
           };
@@ -806,7 +831,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           const drawn = wall !== undefined
             ? await db.rpc<{ id: string }>('staff_draw_on_surface', { staff_key: p.staff, play: wall, payload: { ...first.payload, pool: day }, cells: first.cells, most: first.most })
             : await db.rpc<{ id: string }>('staff_play_surface_card', {
-              staff_key: p.staff, card: answer.card.key, target: p.quoting, config: {}, message: '', pool_day: day,
+              staff_key: p.staff, card: answer.card.key, target: quotes, config: {}, message: '', pool_day: day,
               // `tokens` has no default in staff_play_surface_card, so it is always sent, null for a card that writes nothing.
               tokens: rules.writes === undefined ? null : rules.writes.tokens({} as never, tuned.settings),
               first: first.payload, first_cells: first.cells, most: first.most, most_live: rules.surface.mostLive,
@@ -817,7 +842,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           // names the predicate, and the configuration is plain code's, seeded from the day and the persona so a rerun builds the same.
           let config: unknown = null;
           if (rules && answer.card.config !== undefined) {
-            const decided = await decideOptions(db, tuned, rules, answer.card.on === 'reply' ? p.quoting : post, answer.card.on, answer.card.config);
+            const decided = await decideOptions(db, tuned, rules, answer.card.on === 'reply' ? quotes : post, answer.card.on, answer.card.config);
             // What the card's repair trimmed (its `repairStaff`) is written on the call's record beside the options' own, whether or not the options then pass.
             trims.push(...decided.trims);
             if (decided.ok) config = decided.config;
@@ -837,7 +862,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
           // A card that writes buys its tokens at this decision, from the settings as the rows hold them now, as a player's play does (act/core.ts); the database writes them with the play.
           const tokens = rules?.writes?.tokens(config as never, tuned.settings);
           const played = answer.card.on === 'reply'
-            ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: p.quoting, config, message: '', pool_day: day, ...(tokens === undefined ? {} : { tokens }) })
+            ? await db.rpc<{ id: string }>('staff_play_card', { staff_key: p.staff, card: answer.card.key, target: quotes, config, message: '', pool_day: day, ...(tokens === undefined ? {} : { tokens }) })
             : await db.rpc<{ id: string }>('staff_set_card', { staff_key: p.staff, card: answer.card.key, target: post, config, ...(catches === undefined ? {} : { catches }) });
           card = played.id;
         }

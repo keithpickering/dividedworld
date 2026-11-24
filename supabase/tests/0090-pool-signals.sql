@@ -434,14 +434,14 @@ begin
     raise exception 'who started the hot threads: %', d -> 'hot';
   end if;
   if (d #>> '{hot,2,starter}')::uuid is distinct from (select id from characters where staff = 'ps-clerk') then raise exception 'the starter is %', d -> 'hot' -> 2; end if;
-  -- Who posted in each hot thread: distinct characters with their posts in the window, from the public Acts (the character id opinions use).
+  -- Who posted in each hot thread: distinct characters with their posts in the window, from the public Acts (the character id opinions use). Each also carries a `top` (supabase/tests/0420-hot-posts.sql), left out here.
   if exists (
     select 1 from jsonb_array_elements(d -> 'hot') h
     where (select coalesce(jsonb_agg(jsonb_build_object('character', x.character, 'posts', x.n) order by x.n desc, x.character), '[]'::jsonb)
            from (select p.character, count(*) as n from acts_public p
                  where p.thread = (h ->> 'thread')::uuid and p.kind = 'post' and p.character is not null and p.created_at >= pg_temp.base() and p.created_at < pg_temp.base() + interval '1 hour'
                  group by p.character order by n desc, p.character limit 10) x)
-          is distinct from h -> 'authors') then
+          is distinct from (select coalesce(jsonb_agg(e - 'top' order by n), '[]'::jsonb) from jsonb_array_elements(h -> 'authors') with ordinality t(e, n))) then
     raise exception 'hot authors are %', d -> 'hot';
   end if;
   if jsonb_array_length(d #> '{hot,0,authors}') < 4 then raise exception 'the busiest thread has too few authors: %', d #> '{hot,0}'; end if;
