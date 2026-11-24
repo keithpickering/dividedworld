@@ -119,9 +119,12 @@ might work."
 the Boss posts one entry:
 
 - **A list built by code, exact and complete**, each item linking to its Act:
-  - **Newcomers:** characters whose first public Act fell in the window. A reaction is never public (who reacted is
-    private), and a face-down card is not public until it springs, so neither makes a character a newcomer: the
-    record must never say that a new mask has begun to react or has laid a trap.
+  - **Newcomers:** characters seen for the first time in what the public reads (`acts_public`) as of the settlement,
+    each listed once in its life. A reaction is not an Act and who reacted is private, so it never makes a character a
+    newcomer: the record must never say that a new mask has begun to react. A post under a live author veil
+    (Whodunnit?) shows the anonymous stand-in, not its author, so it does not make one either; the character is
+    listed at the first report after it is seen. A face-down card's `set` names its setter in public already (only
+    the card is hidden), so it counts.
   - **Turns announced** in the window, and **Turns taking effect** at this settlement (announced ones only).
   - **Reveals** made in the window.
   - A silent Turn is never listed. A busy day's list runs across as many posts as `postMaxLength` needs.
@@ -130,8 +133,8 @@ the Boss posts one entry:
   entry is posted under a stock heading.
 
 The current season's thread ("Season 1: Promos" on dw.gripe) takes the entries under its title: retitling it would be an
-edit. New seasons open theirs under the new title. Season News in the glass stops listing debuts and keeps one item per
-settlement with Turns.
+edit. New seasons open theirs under the new title. Season News in the glass stops listing debuts; its Turns item is one
+per Roster Report entry that names Turns taking effect, linking to the entry. Old items read as before.
 
 Weighed: the meeting writing the commentary (richer, no extra call, but the strong tier's public words would be written
 an hour after the settlement, and the commentary would no longer be bounded to the list); the Boss posting each event
@@ -198,8 +201,9 @@ exactly what each Mod will enforce, which is why they are closed).
 - **Layers.** All of the mechanics are engine. Divided World gives the thread titles, the stock heading and its Boss's
   voice. The Roster Report's and the minutes' thread titles join the engine's `Copy` and its completeness check; the
   move thread titles join the staff's stock lines.
-- **The masks.** The Roster Report's list reads public Acts only, and its commentary call is given that list and
-  nothing else. Newcomers are counted from public Acts, never reactions or face-down cards. The minutes are written by a
+- **The masks.** The Roster Report's list reads public Acts only (`acts_public`), and its commentary call is given that
+  list and nothing else. Newcomers are counted from what the public reads, never reactions, and a veiled post's author
+  is not counted while the veil holds. The minutes are written by a
   meeting whose input is public facts. A Turn's announcement is posted when its player chooses, in a thread its player
   chooses. A silent Turn appears nowhere but its own player's log. No refusal here differs with who owns a target.
 - **Ways out.** One state goes (waiting to debut). A committed Turn ends at its settlement, as a queued one does. A board
