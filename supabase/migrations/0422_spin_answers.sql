@@ -52,8 +52,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
   left join threads xlt on xlt.id = xl.thread
   where o.id = origin
 $$;
--- thread_open reads it as its owner, so no API role calls it (as 0357 closes stand_in and shown_author).
-revoke execute on function spin_answer_place(uuid) from public, anon, authenticated, service_role;
+-- thread_open is read as its caller, so the roles that read it call this too; it answers only public facts of a public Act.
+revoke execute on function spin_answer_place(uuid) from public, anon;
+grant execute on function spin_answer_place(uuid) to authenticated, service_role;
 
 -- ===================================================================================== 2. thread_open ====
 -- thread_open (0396), its origin_place also naming an ask or an answer, before the last branch (a post). Everything else as 0396 wrote it.
