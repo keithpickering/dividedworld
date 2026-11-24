@@ -560,6 +560,10 @@ describe('a ruling, one line per sub (the rulings design, section 7)', () => {
     const inf = act('inf', { kind: 'infraction', character: null, seq: null, payload: { about_act: 'post4', character: 'c1', points: 3, rule_number: 2, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
     expect(said(r('warning', { act: 'inf' }), c([inf], { staffNames: new Map() })).detail).toBe('A Mod filed rule 2. They drop off Nov 9. You can appeal from the post. In Hobbies.');
   });
+  test('warning: where the post could not be loaded, it offers no appeal from a post it cannot link to', () => {
+    const inf = act('inf', { kind: 'infraction', character: null, seq: null, targetActId: null, payload: { about_act: 'gone', character: 'c1', points: 3, rule_number: 2, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
+    expect(said(r('warning', { act: 'inf' }), c([inf])).detail).not.toContain('appeal from the post');
+  });
   test('warning: the post is the one the infraction names, loaded by its payload id, when the infraction links to none', () => {
     const inf = act('inf', { kind: 'infraction', character: null, seq: null, targetActId: null, payload: { about_act: 'post4', character: 'c1', points: 3, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
     expect(said(r('warning', { act: 'inf' }), c([inf])).ways).toEqual(postWayOf);

@@ -504,7 +504,7 @@ describe('Settings › Notifications', () => {
     ['Belts lost', 'One of your characters loses a belt to another.'],
     ['Belts back', 'One of your characters holds a belt again after an admin took a taker\'s award back.'],
     ['Rulings', 'A Mod Bot, the Boss or an admin rules on one of your characters.'],
-    ['Gifts', 'A gift reaches one of your characters through a drive.'],
+    ['Gifts', 'A gift is given to a drive on one of your characters\' posts.'],
     ['Code of conduct', 'An admin hides or brings back one of your posts.'],
     ['Settlements', 'A settlement is in and moved your characters.'],
     ['Updates', 'The developer posts an update.'],

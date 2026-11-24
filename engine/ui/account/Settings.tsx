@@ -77,7 +77,7 @@ const NOTIFICATIONS: readonly { readonly kind: AlertKind; readonly title: string
   { kind: 'beltLost', title: 'Belts lost', sentence: 'One of your characters loses a belt to another.' },
   { kind: 'beltBack', title: 'Belts back', sentence: 'One of your characters holds a belt again after an admin took a taker\'s award back.' },
   { kind: 'ruling', title: 'Rulings', sentence: 'A Mod Bot, the Boss or an admin rules on one of your characters.' },
-  { kind: 'gift', title: 'Gifts', sentence: 'A gift reaches one of your characters through a drive.' },
+  { kind: 'gift', title: 'Gifts', sentence: 'A gift is given to a drive on one of your characters\' posts.' },
   { kind: 'conduct', title: 'Code of conduct', sentence: 'An admin hides or brings back one of your posts.' },
   { kind: 'settlement', title: 'Settlements', sentence: 'A settlement is in and moved your characters.' },
   { kind: 'update', title: 'Updates', sentence: 'The developer posts an update.' },

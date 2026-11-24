@@ -316,7 +316,7 @@ function rulingWords(row: Alert, act: Act | undefined, ctx: WordsContext): Said 
       /* The Mod is named by its staff key (a Mod's, not a character's id), resolved from the page's staff names. */
       const staff = typeof p.staff === 'string' ? ctx.staffNames?.get(p.staff) : undefined;
       const drops = isoDay(p.expires_at);
-      return mine(`${name} got ${points(p.points)}`, sentences(act ? [`${staff ? `${staff} filed` : 'A Mod filed'} ${rulesOf(p.rule_number)}.`] : [], drops ? [`They drop off ${drops}.`] : [], ['You can appeal from the post.']), post);
+      return mine(`${name} got ${points(p.points)}`, sentences(act ? [`${staff ? `${staff} filed` : 'A Mod filed'} ${rulesOf(p.rule_number)}.`] : [], drops ? [`They drop off ${drops}.`] : [], about?.seq != null ? ['You can appeal from the post.'] : []), post);
     }
     case 'ban': {
       const until = isoDay(p.until);
