@@ -79,11 +79,13 @@ export function markQuotes(body: string, byAct: Map<string, ReadCandidate>, self
   for (const [k, v] of byAct) lower.set(k.toLowerCase(), v);
   let out = '';
   let at = 0;
+  let covered = 0; // the end of the last outermost quote, replaced or kept: a quote inside one is never considered
   for (const s of ordered) {
-    if (s.from < at) continue; // inside a quote already handled
+    if (s.from < covered) continue;
     const open = body.lastIndexOf('[', s.from - 2);
     if (open < at || body.slice(open, open + 6).toLowerCase() !== '[quote') continue;
     const end = body.slice(s.to, s.to + 8).toLowerCase() === '[/quote]' ? s.to + 8 : s.to;
+    covered = end;
     const c = lower.get(s.act.toLowerCase());
     let marker: string | null = null;
     if (c === undefined) {
@@ -120,11 +122,20 @@ export function readThread(cands: readonly ReadCandidate[], focus: ReadFocus, re
   const answered: ReadCandidate[] = [];
   for (let i = mustPosts.length - 1; i >= 0; i--) {
     const c = mustPosts[i]!;
-    if (i === mustPosts.length - 1 || total + size(c) <= readMost) { take(c); answered.unshift(c); }
+    if (i === mustPosts.length - 1) { take(c); answered.unshift(c); }
+    else if (total + size(c) <= readMost) { take(c); answered.unshift(c); }
+    else break; // an older reply that does not fit stays waiting; no even older one is passed to
   }
   for (const r of [...answered].reverse()) {
     const t = r.replyTo === null ? undefined : byAct.get(r.replyTo);
     if (t !== undefined && mine(t) && !taken.has(t.act) && total + size(t) <= readMost) take(t);
+  }
+  // Then the posts of this thread those taken posts quote, same rule.
+  for (const r of [...answered].reverse()) {
+    for (const a of r.quotes) {
+      const t = byAct.get(a);
+      if (t !== undefined && !taken.has(t.act) && total + size(t) <= readMost) take(t);
+    }
   }
 
   // 2. The other tiers.

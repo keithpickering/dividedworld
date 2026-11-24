@@ -68,24 +68,35 @@ test('only the outermost quote is replaced, and a quote closed by the end of the
 });
 
 test('no shown body is a cut of its marked source', () => {
-  const cs = [cand(1, 'a', 'x'.repeat(5000)), cand(2, 'b', 'y'.repeat(3000)), cand(3, ME, 'z'.repeat(900))];
+  const a = cand(1, 'a', 'x'.repeat(5000), { name: 'Ann' });
+  const m = cand(2, ME, 'z'.repeat(900));
+  const b = cand(3, 'b', `${q(a.act, a.body)} ${'y'.repeat(3000)} ${q(m.act, m.body)} tail`, { name: 'Bo', quotes: [a.act, m.act] });
+  const cs = [a, m, b];
   const r = readThread(cs, { self: ME, must: [] }, 100000);
   assert.equal(r.posts.length, 3);
-  for (const p of r.posts) assert.equal(p.body, cs.find((c) => c.act === p.act)!.body);
+  const map = index(cs);
+  assert.ok(r.posts.find((p) => p.act === b.act)!.body.startsWith('[quoting Ann, post #1] '));
+  for (const p of r.posts) assert.equal(p.body, markQuotes(cs.find((c) => c.act === p.act)!.body, map, ME));
+});
+
+test('a whole quote nested inside a kept (partial) outer quote stays as written', () => {
+  const a = cand(2, 'x', 'inner whole words', { name: 'Ann' });
+  const t = cand(3, 'y', `${q(a.act, 'inner whole words')} and more`, { name: 'Bo' });
+  const body = `[quote=${t.act}]only the ${q(a.act, 'inner whole words')}[/quote]`;
+  assert.equal(markQuotes(body, index([a, t]), ME), body);
 });
 
 test('tier order: answered reply, a post quoting the persona and the opener beat newer strangers', () => {
   const opener = cand(1, 'op', 'o'.repeat(100));
   const mine = cand(2, ME, 'm'.repeat(100));
   const reply = cand(3, 'r', 'r'.repeat(100), { replyTo: mine.act });
-  const quoter = cand(4, 'qq', `${q(mine.act, mine.body)}` + 'q'.repeat(100 - 0), { quotes: [mine.act] });
+  const quoter = cand(4, 'qq', q(mine.act, mine.body) + 'q'.repeat(100), { quotes: [mine.act] });
   const s1 = cand(5, 's1', 's'.repeat(100));
   const s2 = cand(6, 's2', 's'.repeat(100));
   const s3 = cand(7, 's3', 's'.repeat(100));
-  const ceiling = 100 + (quoter.body.length > 0 ? 0 : 0);
-  const marked = readThread([opener, mine, reply, quoter, s1, s2, s3], { self: ME, must: [reply.act] }, 10000);
-  const quoterSize = marked.posts.find((p) => p.act === quoter.act)!.body.length;
-  const r = readThread([opener, mine, reply, quoter, s1, s2, s3], { self: ME, must: [reply.act] }, 100 + 100 + quoterSize + 100 + ceiling - ceiling);
+  const all = [opener, mine, reply, quoter, s1, s2, s3];
+  const quoterSize = readThread(all, { self: ME, must: [reply.act] }, 10000).posts.find((p) => p.act === quoter.act)!.body.length;
+  const r = readThread(all, { self: ME, must: [reply.act] }, 100 + 100 + quoterSize + 100);
   const shown = r.posts.map((p) => p.seq);
   assert.deepEqual(shown, [1, 2, 3, 4]);
   assert.deepEqual(r.answered, [reply.act]);
@@ -130,6 +141,67 @@ test('omitted and the not-shown lines count exactly', () => {
   assert.equal(total, r.omitted);
   const first = r.posts[0]!.seq;
   if (first > 1) assert.equal(lines[0], `(${first - 1} earlier posts not shown)`);
+});
+
+test('the earlier-posts line is written when the opener is left out', () => {
+  const cs = [cand(1, 'o', 'o'.repeat(500)), cand(2, 'a', 'a'.repeat(500)), cand(3, ME, 'mine'), cand(4, 'r', 'reply', { replyTo: uuid(1003) })];
+  const r = readThread(cs, { self: ME, must: [cs[3]!.act] }, 20);
+  assert.deepEqual(r.posts.map((p) => p.seq), [3, 4]);
+  assert.deepEqual(readLines(r)[0], '(2 earlier posts not shown)');
+  const r1 = readThread(cs.slice(1), { self: ME, must: [cs[3]!.act] }, 20);
+  assert.equal(readLines(r1)[0], '(1 earlier post not shown)');
+});
+
+test('must tier older replies stop at the first that does not fit', () => {
+  const mine = cand(1, ME, 'm');
+  const a = cand(2, 'a', 'a'.repeat(5000), { replyTo: mine.act });
+  const b = cand(3, 'b', 'b'.repeat(30000), { replyTo: mine.act });
+  const c = cand(4, 'c', 'c'.repeat(20000), { replyTo: mine.act });
+  const r = readThread([mine, a, b, c], { self: ME, must: [a.act, b.act, c.act] }, 40000);
+  assert.deepEqual(r.answered, [c.act]);
+});
+
+test('a post quoted by an answered reply is pulled in the must tier, ahead of newer posts', () => {
+  const old = cand(1, 'str', 'old stranger words', { name: 'Str' });
+  const mine = cand(2, ME, 'mine');
+  const reply = cand(3, 'r', `${q(old.act, old.body)} reply`, { quotes: [old.act] });
+  const toIt = cand(4, 'k', 'k'.repeat(50), { replyTo: mine.act });
+  const newer = cand(5, 'n', 'n'.repeat(50));
+  const all = [old, mine, reply, toIt, newer];
+  const replySize = readThread(all, { self: ME, must: [reply.act] }, 10000).posts.find((p) => p.act === reply.act)!.body.length;
+  const r = readThread(all, { self: ME, must: [reply.act] }, replySize + old.body.length);
+  assert.deepEqual(r.posts.map((p) => p.seq), [1, 3]);
+});
+
+test('company ranks above strangers', () => {
+  const mine = cand(1, ME, 'mine');
+  const friend = cand(2, 'friend', 'f'.repeat(50), { replyTo: mine.act });
+  const friend2 = cand(3, 'friend', 'g'.repeat(50));
+  const stranger = cand(4, 'str', 's'.repeat(50));
+  const opener = cand(0, 'op', 'o'.repeat(50));
+  const r = readThread([opener, mine, friend, friend2, stranger], { self: ME, must: [] }, 4 + 50 + 50 + 50);
+  assert.deepEqual(r.posts.map((p) => p.seq), [0, 1, 2, 3]);
+});
+
+test('a stranger post quoted by a post that quotes the persona ranks at tier 2', () => {
+  const mine = cand(1, ME, 'mine');
+  const old = cand(2, 'str', 'old words', { name: 'Str' });
+  const quoter = cand(3, 'qq', `${q(mine.act, 'mine')}${q(old.act, 'old words')}`, { quotes: [mine.act, old.act] });
+  const opener = cand(0, 'op', 'o'.repeat(40));
+  const newer = cand(4, 'n', 'n'.repeat(40));
+  const all = [opener, old, mine, quoter, newer];
+  const sizeQ = readThread(all, { self: ME, must: [] }, 10000).posts.find((p) => p.act === quoter.act)!.body.length;
+  const r = readThread(all, { self: ME, must: [] }, 4 + sizeQ + 9 + 40);
+  assert.deepEqual(r.posts.map((p) => p.seq), [0, 1, 2, 3]);
+  assert.ok(r.posts.some((p) => p.act === old.act));
+});
+
+test('the persona\'s own answered post is taken in the must tier', () => {
+  const opener = cand(1, 'op', 'o'.repeat(500));
+  const mine = cand(2, ME, 'mine');
+  const reply = cand(3, 'r', 'reply', { replyTo: mine.act });
+  const r = readThread([opener, mine, reply], { self: ME, must: [reply.act] }, 9);
+  assert.deepEqual(r.posts.map((p) => p.seq), [2, 3]);
 });
 
 test('readLines writes the header with pronouns and marks, and the body', () => {
