@@ -278,12 +278,15 @@ begin
   why := pg_temp.coded(format('select reverse_card(%L)', sp_id));
   perform tests.unbecome();
   if why is null or why not like '55000 an admin has already ended that card%' then raise exception 'a second end: %', why; end if;
-  -- The setter's alert reads on: exactly one cardEnded alert, to the setter's player, about the card_end; the locked character's player is told nothing (design 3.4).
-  if (select count(*) from alerts where kind = 'cardEnded' and act = end_id) is distinct from 1::bigint
-     or not exists (select 1 from alerts where kind = 'cardEnded' and act = end_id and account = ann and character = a) then
-    raise exception 'the setter''s cardEnded alert: %', (select jsonb_agg(to_jsonb(x)) from alerts x where x.act = end_id);
+  -- The setter's alert reads on: one cardEnded alert, to the setter's player, about the card_end. The locked character's player is now told too, as
+  -- cardEnded/onYours about the same card_end (docs/plans/2026-11-23-rulings-and-missing-alerts-design.md, section 3, "a lockout that held your character",
+  -- which revises this file's "the locked character's player is told nothing (design 3.4)"). Exactly those two, and nobody else.
+  if (select count(*) from alerts where kind = 'cardEnded' and act = end_id) is distinct from 2::bigint
+     or not exists (select 1 from alerts where kind = 'cardEnded' and act = end_id and account = ann and character = a and sub is null)
+     or not exists (select 1 from alerts where kind = 'cardEnded' and act = end_id and account = bob and character = b and sub = 'onYours') then
+    raise exception 'the setter''s cardEnded alert and the locked character''s onYours: %', (select jsonb_agg(to_jsonb(x)) from alerts x where x.act = end_id);
   end if;
-  if exists (select 1 from alerts where kind = 'cardEnded' and account = bob) then raise exception 'the locked character''s player was alerted'; end if;
+  if exists (select 1 from alerts where kind = 'cardEnded' and account = bob and act is distinct from end_id) then raise exception 'the locked character''s player was alerted of another end'; end if;
   -- The log's ended source (my_cards_ended) carries the end to the setter's player ('cast') and the locked character's player ('onMine'), and to nobody else.
   perform tests.become(ann);
   if (select count(*) from my_cards_ended where card_end = end_id and play = sp_id and side = 'cast' and character = a) is distinct from 1::bigint then raise exception 'the setter''s log does not carry the end of the lockout'; end if;

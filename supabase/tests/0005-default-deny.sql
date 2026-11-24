@@ -39,7 +39,9 @@ declare
                            -- Polls (0395): every poll's counts, the same for every caller (characters counted, no owner read), and the caller's own ballots, a secret one's character and picks included.
                            'poll_counts', 'my_ballots', 'my_latest_ballots',
                            -- The poll reads (0396): the caller's own ballots' sibling, an admin's closes of the caller's own polls, read by the log alone.
-                           'my_poll_closes'];
+                           'my_poll_closes',
+                           -- My log's moved threads (0423): the moves of threads the caller's own characters started, read by the log alone.
+                           'my_threads_moved'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[],jsonb)', 'post(uuid,uuid,text,uuid,uuid[],jsonb)',
                            'edit_post(uuid,uuid,text,jsonb)',
                            -- A ballot and a poll's two closes (0395): the player's doors, which verify the caller plays the character; an admin's close checks the caller inside. The poll's draft is written inside post, start_thread and edit_post.

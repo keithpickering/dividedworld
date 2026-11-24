@@ -1,5 +1,5 @@
 -- log_page(before) (supabase/migrations/0123_log_page.sql; the glass-load design, section 7; its plan, Task 9): /log and /log/settlement in one read.
--- `sources` holds the twenty-three reads (the caller's polls' ballots and closes since 0396, the caller's crowd pay since 0385, tested in 0385-crowd-log.sql) (the falls taken for the caller's posts since 0361, the cosmetics log's since 0213, the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0149, the draws and the washes on surfaces since 0317) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
+-- `sources` holds the twenty-four reads (the moves of the caller's threads since 0423) (the caller's polls' ballots and closes since 0396, the caller's crowd pay since 0385, tested in 0385-crowd-log.sql) (the falls taken for the caller's posts since 0361, the cosmetics log's since 0213, the group moves' since 0134, the packs' since 0139, the texts written on the caller's posts since 0149, the draws and the washes on surfaces since 0317) the adapter's log() makes, each its view's rows newest first at or before `before`, at most LOG_ROWS (200), with the
 -- same columns and filters; `shares` the shares of the settlements read, whole; and the pieces useLog's `around` reads for them, computed over every row
 -- read: the Acts the lines name and the two rounds those follow, the saved states of the plays, the characters, threads and boards named, the caller's
 -- characters' standings and announced Turns, and the season. Another player's rows are absent; a visitor is refused.
@@ -121,7 +121,7 @@ begin
   perform tests.become(ann);
   doc := log_page(null);
 
-  -- ---- The twenty-three sources: each its view's rows, newest first, at most 200, the same columns ----
+  -- ---- The twenty-four sources: each its view's rows, newest first, at most 200, the same columns ----
   if doc -> 'sources' -> 'ledger' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select settlement, starts_at, ends_at, character, reason, amount, shares_kept, params from my_ledger order by ends_at desc, settlement, character, reason limit 200) r))
      or jsonb_array_length(doc -> 'sources' -> 'ledger') is distinct from 2 then raise exception 'ledger: %', doc -> 'sources' -> 'ledger'; end if;
@@ -163,7 +163,10 @@ begin
   -- The packs (0139): this caller bought none here, so the source is the view's empty read; 0139-machine.sql holds a bought pack's row.
   if doc -> 'sources' -> 'packs' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
        select id, pack, price, repriced, contents, bought_at, source from my_packs order by bought_at desc, id limit 200) r)) then raise exception 'packs: %', doc -> 'sources' -> 'packs'; end if;
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 23 then raise exception 'twenty-three sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
+  -- The moves of the caller's threads (0423, design section 2 of docs/plans/2026-11-23-rulings-and-missing-alerts-design.md): the view's read; 0423-rulings-alerts.sql holds a moved thread's row.
+  if doc -> 'sources' -> 'moved' is distinct from pg_temp.arr((select jsonb_agg(to_jsonb(r)) from (
+       select move, at, thread, character, from_board, to_board, title, from_name, to_name from my_threads_moved order by at desc, move limit 200) r)) then raise exception 'moved: %', doc -> 'sources' -> 'moved'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 24 then raise exception 'twenty-four sources, not %', (select count(*) from jsonb_object_keys(doc -> 'sources')); end if;
   -- The polls' two sources (0396) are this caller's own and empty here (0396-poll-reads.sql holds their rows).
   if doc -> 'sources' -> 'ballots' is distinct from '[]'::jsonb or doc -> 'sources' -> 'pollCloses' is distinct from '[]'::jsonb then raise exception 'ballots and pollCloses: %, %', doc -> 'sources' -> 'ballots', doc -> 'sources' -> 'pollCloses'; end if;
   if doc::text like '%' || b1::text || '"%' and exists (select 1 from jsonb_array_elements(doc -> 'sources' -> 'ledger') x where x ->> 'character' = b1::text) then raise exception 'another player''s ledger line is in the page'; end if;
@@ -234,7 +237,7 @@ begin
   -- A signed-in caller with nothing: empty sources, no error.
   perform tests.become(nobody);
   doc := log_page(null);
-  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 23 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads twenty-three empty sources: %', doc -> 'sources'; end if;
+  if (select count(*) from jsonb_object_keys(doc -> 'sources')) is distinct from 24 or exists (select 1 from jsonb_each(doc -> 'sources') e where e.value is distinct from '[]'::jsonb) then raise exception 'a caller with nothing reads twenty-four empty sources: %', doc -> 'sources'; end if;
   perform tests.unbecome();
 
   -- A visitor is refused.
