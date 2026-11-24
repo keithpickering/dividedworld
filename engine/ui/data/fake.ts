@@ -964,11 +964,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A report, its verdict, an appeal or its ruling (0422): the ask, its answer, what an appeal is of and the post or line the place names. An asker no one can name is no place. */
     if (origin.kind === 'report' || origin.kind === 'report_verdict' || origin.kind === 'appeal' || origin.kind === 'appeal_ruling') {
       const ask = origin.kind === 'report' || origin.kind === 'appeal' ? origin : acts.get(origin.target ?? '');
-      const asker = ask?.character == null ? undefined : characters.get(ask.character);
-      if (ask === undefined || asker === undefined) return null;
+      /* Names as 0422 gives them: the ask's character as acts_public shows it (the stand-in under a veil), and a player's character that has not debuted has no public name, so no place (it falls through, as SQL does). */
+      const asker = ask === undefined || ask.character === null ? undefined : charOf(shownAuthor(ask) ?? '');
+      if (ask === undefined || asker === undefined || (asker.staff === undefined && asker.debutedAt === null)) return null;
       const answered = origin.kind === 'report_verdict' || origin.kind === 'appeal_ruling' ? origin
         : [...acts.values()].find((a) => a.kind === (ask.kind === 'report' ? 'report_verdict' : 'appeal_ruling') && a.target === ask.id);
-      const staff = answered?.character == null ? undefined : characters.get(answered.character);
+      const answerer = answered?.character == null ? undefined : characters.get(answered.character);
+      const staff = answerer !== undefined && (answerer.staff !== undefined || answerer.debutedAt !== null) ? answerer : undefined;
       const punishment = ask.kind === 'appeal' ? acts.get(ask.target ?? '') : undefined;
       const about = ask.kind === 'report' ? acts.get(ask.target ?? '')
         : punishment?.kind === 'infraction' ? acts.get(String(punishment.payload['about_act']))

@@ -5606,6 +5606,16 @@ describe('post veils, blind totals and a post-local reaction (card notes, Part 3
   const veil = async (w: VeilWorld) => { must(await w.fake.playCard('whodunnit', w.anaFace, w.post, {}, '')); return (await w.fake.act(w.post))!.character!; };
   const pageActs = async (w: VeilWorld, as: string) => { w.fake.signInAs(as); return (await w.fake.threadPage(w.thread, { page: 1 }, 5, []))!; };
 
+  test('a report under a veil names the stand-in as its asker, as acts_public shows it', async () => {
+    const w = veilWorld();
+    const stand = await veil(w);
+    const report = w.fake.seed.report(w.boFace, w.post, 'my own');
+    w.fake.signInAs(w.ana);
+    const place = must(await w.fake.spin(report, w.anaFace, 'About it', 'b')).thread.origin;
+    expect(place).toMatchObject({ kind: 'answer', spun: 'ask', asker: { id: stand } });
+    expect(JSON.stringify(place)).not.toContain(w.boFace);
+  });
+
   test('the stand-in is a character of its own, named by the instance (else the engine\'s plain one), holding the anonymous office, and no player\'s', async () => {
     const w = veilWorld();
     const stand = await veil(w);
@@ -7703,14 +7713,46 @@ describe('an ask or an answer as an origin', () => {
     expect(await d.placeOf(appeal)).toEqual({ kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'ban', group: null, on: d.on });
   });
 
-  test('an appeal of a move names its group and the move\'s own line where it has one', async () => {
+  test('an appeal of a move names its group and the move\'s own line, from its ask and from its ruling', async () => {
     const d = desk();
     const move = d.fake.seed.groupMove('s-mod', { character: d.boFace, group: 'trialMembers' });
     const appeal = d.fake.seed.appeal(d.boFace, move, 'please');
     const line = (await d.fake.act(move))!;
-    const place = await d.placeOf(appeal);
-    expect(place).toMatchObject({ kind: 'answer', spun: 'ask', ask: 'appeal', punishment: 'move', group: 'trialMembers', staff: null });
-    expect((place as { on: unknown }).on).toEqual(line.seq === null ? null : { kind: 'post', thread: line.thread, title: expect.any(String), seq: line.seq });
+    expect(line.seq).not.toBeNull();
+    const on = { kind: 'post', thread: line.thread, title: (await d.fake.thread(line.thread))!.title, seq: line.seq };
+    const want = { kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'move', group: 'trialMembers', on };
+    expect(await d.placeOf(appeal)).toEqual(want);
+    const ruling = d.fake.seed.ruling(appeal, d.mod, 'upheld');
+    expect(await d.placeOf(ruling)).toEqual({ ...want, spun: 'answer', staff: d.staff });
+  });
+
+  test('a ruling on a ban names the ban\'s infraction post', async () => {
+    const d = desk();
+    const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
+    const ban = d.fake.seed.ban(d.boFace, d.fake.clock.now() + DAY, { infraction: inf });
+    const ruling = d.fake.seed.ruling(d.fake.seed.appeal(d.boFace, ban, 'please'), d.mod, 'reduced');
+    expect(await d.placeOf(ruling)).toEqual({ kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: d.staff, punishment: 'ban', group: null, on: d.on });
+  });
+
+  test('a report of an Act with no place number has no post in its place', async () => {
+    const d = desk();
+    const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
+    expect((await d.fake.act(inf))!.seq).toBeNull();
+    const report = d.fake.seed.report(d.anaFace, inf, 'odd');
+    expect(await d.placeOf(report)).toMatchObject({ kind: 'answer', spun: 'ask', ask: 'report', on: null });
+  });
+
+  test('an asker that has not debuted has no answer place, and an answerer that has not debuted and is no staff is null', async () => {
+    const d = desk();
+    const ghost = d.fake.seed.character(d.ana, 'Ghost', 'face', { debuted: false });
+    const report = d.fake.seed.report(ghost, d.opener, 'rude');
+    /* Spun by a character of the player's that may: the origin falls through to its own seq (none), as SQL does. */
+    expect(await d.placeOf(report)).toBeNull();
+    const heard = d.fake.seed.report(d.anaFace, d.opener, 'rude');
+    const lurker = d.fake.seed.character(d.bo, 'Lurker', 'face', { debuted: false });
+    const verdict = d.fake.seed.verdict(heard, lurker, 'dismissed');
+    expect(await d.placeOf(verdict)).toMatchObject({ kind: 'answer', spun: 'answer', asker: d.asker, staff: null });
+    expect(await d.placeOf(heard)).toMatchObject({ spun: 'ask', staff: null });
   });
 
   test('a post as an origin keeps its own place', async () => {

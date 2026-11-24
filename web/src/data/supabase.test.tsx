@@ -3680,6 +3680,9 @@ describe('an exchange', () => {
     await expect(h.api.exchange(POST)).rejects.toThrow();
     await expect(h.api.exchange('99999999-9999-4999-8999-999999999999')).rejects.toThrow();
     await expect(h.api.exchange('not an id')).rejects.toThrow();
+    /* An answer whose ask cannot be found. */
+    const orphan = harness(table([row(ANSWER, 'report_verdict', { character: A, target_act_id: ASK })]));
+    await expect(orphan.api.exchange(ANSWER)).rejects.toThrow('could not be found');
   });
 });
 
