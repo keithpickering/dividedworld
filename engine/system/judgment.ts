@@ -373,7 +373,8 @@ export interface FilingInput extends ModPromptInput {
   readonly read: ThreadReadResult | null;
   /** What it is charged with: each rule in words, its band and what drew the visit. */
   readonly charges: readonly { readonly rule: string; readonly band: string; readonly cause: string }[];
-  readonly limits: { readonly threadPosts: number; readonly excerptChars: number; readonly titleMaxLength: number };
+  /** `excerptChars` is the patrol's cross-board sample only (a sample post is still cut); the judges read whole posts through the reader. */
+  readonly limits: { readonly excerptChars: number; readonly titleMaxLength: number };
   /** `line` (default) asks for the line and a move; `move` is the old voice's second call, which asks for a move alone beside the line it has already said. */
   readonly mode?: 'line' | 'move';
   readonly said?: string;
@@ -416,13 +417,22 @@ const threadLines = (title: string | null, read: ThreadReadResult | null, l: Fil
   return [...(title === null ? [] : [`Thread: "${clip(title, l.titleMaxLength)}"`]), ...(read === null ? [] : readLines(read, { mustLabel: 'judged' }))];
 };
 
-/** The post a judge judges: the newest of the read's must tier. */
-const judgedOf = (read: ThreadReadResult | null): ReadPost | undefined => read?.posts.filter((p) => p.marks.answering).at(-1);
+/**
+ * The post a judge judges: the newest of the read's must tier. A ruling is never made on a post the model did not see, so a null read or a read with no must post
+ * throws (the predicate named); callers check before calling.
+ */
+const judgedOf = (read: ThreadReadResult | null): ReadPost => {
+  const j = read?.posts.filter((p) => p.marks.answering).at(-1);
+  if (j === undefined) throw new Error('the judged post is not in the read');
+  return j;
+};
 
 /** `The post reported, by Bob (they/them), is post #2, marked (judged) above.`; the body is in the thread above, once. */
 const judgedLine = (lead: string, read: ThreadReadResult | null): string => {
   const j = judgedOf(read);
-  return j === undefined ? `${lead}, who is not named here.` : `${lead}, by ${j.pronouns === null ? clip(j.name, 60) : tag({ name: j.name, pronouns: j.pronouns })}, is post #${j.seq}, marked (judged) above.`;
+  // A character with no pronouns on record is named plainly, as a name is elsewhere.
+  const who = j.pronouns === null ? clip(j.name, 60) : tag({ name: j.name, pronouns: j.pronouns });
+  return `${lead}, by ${who}, is post #${j.seq}, marked (judged) above.`;
 };
 
 /** What a premise charge is for (the rehearsal patch design, section 4): a board's own ask, however odd, is what fits there. */
@@ -474,6 +484,7 @@ export function filingPrompt(i: FilingInput): { readonly system: string; readonl
  * end the frame early or add a line of its own.
  */
 export function filingCompletion(i: { readonly name: string; readonly board: string; readonly title: string | null; readonly read: ThreadReadResult | null; readonly charges: FilingInput['charges']; readonly limits: FilingInput['limits']; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
+  judgedOf(i.read); // the judged post must be in the read: callers check before calling
   const posts: readonly ReadPost[] = i.read?.posts ?? [];
   // The judged post is never dropped (it is what the line is about); the rest go by tier, whole, as chatterCompletion's do. Each line is numbered from its place in the thread so a marker's number is findable, and is third person (a frame has no "you").
   const keep = posts.reduce((k, p, n) => (p.marks.answering ? n : k), -1);
