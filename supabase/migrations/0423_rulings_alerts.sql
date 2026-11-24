@@ -584,7 +584,7 @@ grant execute on function close_report(uuid, text, text, jsonb, text) to service
 
 
 -- Section 3 (design section 2): a Boss's moves that land on yours
--- system_tick (0403_departed_personas.sql), a landed conferGroup writes the member one ruling/grouped alert and a landed moveThread writes the thread's starter one ruling/threadMoved alert,
+-- system_tick (0403_departed_personas.sql), a landed conferGroup writes the member one ruling/grouped alert and a landed moveThread writes the thread's starter (the character of its first Act) one ruling/threadMoved alert,
 -- both about the move's Act (write_alert skips staff and a character with no owner); a mergeBoard and a group left write nothing. Everything else as 0403_departed_personas.sql wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -729,7 +729,7 @@ begin
         if due.kind = 'conferGroup' then
           perform write_alert(safe_uuid(lp ->> 'character'), 'ruling', 'grouped', written, null);
         elsif due.kind = 'moveThread' then
-          perform write_alert((select a.character from threads t join acts a on a.id = t.origin_act_id where t.id = safe_uuid(lp ->> 'thread')), 'ruling', 'threadMoved', written, null);
+          perform write_alert((select a.character from acts a where a.thread = safe_uuid(lp ->> 'thread') and a.seq = 1), 'ruling', 'threadMoved', written, null);
         end if;
         -- What it was built on, recorded now that it has landed: an admin's reversal of one of them follows it (reverse_move).
         if due.depends_on is not null then

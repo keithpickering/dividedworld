@@ -335,7 +335,6 @@ declare
   starter uuid := pg_temp.player('mv-starter');
   member uuid := pg_temp.player('mv-member');
   other uuid := pg_temp.player('mv-other');
-  origin uuid;
   dest uuid; src uuid; gone uuid; into_b uuid;
   q bigint;
   landed uuid;
@@ -343,8 +342,7 @@ declare
   t2 uuid; t3 uuid;
 begin
   insert into boards (slug, name) values ('ra-dest', 'Ra Dest') returning id into dest;
-  origin := pg_temp.say(starter, t);
-  update threads set origin_act_id = origin where id = t;
+  perform pg_temp.say(starter, t);
 
   -- 1. conferGroup
   q := pg_temp.mv_queue('conferGroup', jsonb_build_object('character', member, 'group', 'raTrial'), false);
@@ -373,8 +371,7 @@ begin
 
   -- 4. A moveThread refused at its landing (its board is closed by then) writes nothing.
   t2 := tests.thread('Ra refused');
-  origin := pg_temp.say(other, t2);
-  update threads set origin_act_id = origin where id = t2;
+  perform pg_temp.say(other, t2);
   insert into boards (slug, name) values ('ra-gone', 'Ra Gone') returning id into gone;
   q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t2, 'board', gone), true);
   -- The board it names is merged into another a minute sooner in the same tick, so it is closed when this move meets it.
@@ -386,8 +383,7 @@ begin
 
   -- 5. A staff starter has no account: no alert, and the move lands.
   t3 := tests.thread('Ra staffed');
-  origin := (write_staff_act('ra-m1', 'post', t3, null, jsonb_build_object('body', 'Staff began this.')) ->> 'id')::uuid;
-  update threads set origin_act_id = origin where id = t3;
+  perform write_staff_act('ra-m1', 'post', t3, null, jsonb_build_object('body', 'Staff began this.'));
   before := (select count(*) from alerts);
   q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t3, 'board', dest), true);
   landed := pg_temp.mv_land(q);
