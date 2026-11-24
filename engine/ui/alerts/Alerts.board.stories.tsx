@@ -4,8 +4,10 @@
  * The page is the screen itself (`LoadedAlerts`, the screen under its route's loader) in the glass's page shell, as the route /alerts puts it (web/src/App.tsx), signed in as a player
  * with three characters. The rows are the board's kinds, read from a world on the fake backend, so their words are the engine's own words:
  * a quote, a followed thread, a card on a post, a hint and a ruling after the mark; a settlement, an update, and the Boss's arrival before it.
- * Every sub of a ruling, a card an admin ended or refunded, a drawing, a gift and each real moderation outcome is there too, each about an Act in the shape the server writes it
- * (an infraction with its Mod's key and the post it names, a move with its params, a donation with its hundredths, a draw on a wall), so the words are what a player reads.
+ * `Open` is the board's own scene, which the board match reads (e2e/boards.spec.ts). `Rulings` is the same world with every sub of a ruling, a card an admin ended or
+ * refunded, a drawing, a gift and each real moderation outcome added (the rulings design, docs/plans/2026-11-23-rulings-and-missing-alerts-design.md, section 7), each about an
+ * Act in the shape the server writes it (an infraction with its Mod's key and the post it names, a move with its params, a donation with its hundredths, a draw on a wall), so
+ * the words are what a player reads. They are a story of their own because they fill more than the board's first page.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { Page } from '../glass/Page.tsx';
@@ -18,7 +20,8 @@ const PLAYED = '4d-chess';
 
 const utc = (day: number, hour: number, minute = 0) => Date.UTC(2026, 10, day, hour, minute);
 
-const alerts: World = (fake, instance) => {
+/** The board's world, up to signing in; it returns what the rulings story builds on. */
+function boardWorld(...[fake, instance]: Parameters<World>) {
   const { seed } = fake;
   const cls = classOf(instance.classes, 'face').key;
   const other = classOf(instance.classes, 'heel').key;
@@ -42,6 +45,20 @@ const alerts: World = (fake, instance) => {
   for (let i = 0; i < 4; i++) seed.post(ink.thread, gloomba, `Defending it, round ${i + 1}.`, { at: utc(2, 9, 20 + i) });
   seed.card(quoter, ink.act, card, { at: utc(2, 9, 38) });
   seed.alert(me, { kind: 'hint', act: ink.act, character: spritey, sub: 'leading:excitedNegative', at: utc(2, 9, 41) });
+  return { me, pipewrench, hooligan, spritey, gloomba, quoter, card, splat, ink };
+}
+
+/** Signed in as the player, with the mark set where the board draws its divider. */
+function signIn(fake: Parameters<World>[0], me: Id) {
+  fake.signInAs(me);
+  void fake.seeAlerts(new Date(utc(2, 8, 52)).toISOString());
+}
+
+const alerts: World = (fake, instance) => { signIn(fake, boardWorld(fake, instance).me); };
+
+const rulings: World = (fake, instance) => {
+  const { seed } = fake;
+  const { me, pipewrench, hooligan, spritey, gloomba, quoter, card, splat, ink } = boardWorld(fake, instance);
   /* The new lines, each about an Act as the server writes it; the cards are named by key (a new card changes no row), and the staff and the group come from the instance by what they do. */
   const mod = seed.staff('hall-monitor', 'Hall Monitor', 'mod');
   const fall = cardOf(instance.cards, 'take-the-fall');
@@ -82,8 +99,7 @@ const alerts: World = (fake, instance) => {
   mine('conduct', 'hideUntilEdited', hidden, spritey, 44);
   mine('conduct', 'unhide', hidden, spritey, 45);
   mine('conduct', 'approve', seed.edit(hidden, spritey, 'A post that was fixed.', { at: utc(2, 9, 46) }), spritey, 47);
-  fake.signInAs(me);
-  void fake.seeAlerts(new Date(utc(2, 8, 52)).toISOString());
+  signIn(fake, me);
 };
 
 /** The screen at /alerts, in its page shell. */
@@ -98,3 +114,4 @@ const meta: Meta<typeof AlertsStory> = {
 };
 export default meta;
 export const Open: StoryObj<typeof AlertsStory> = {};
+export const Rulings: StoryObj<typeof AlertsStory> = { parameters: { world: rulings } };
