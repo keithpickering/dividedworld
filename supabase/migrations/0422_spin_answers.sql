@@ -12,7 +12,7 @@
 -- Cost (Weigh a design at the scale of a busy instance): the new joins are by primary key or by the unique partial index of the answer's kind (acts_one_report_verdict, acts_one_appeal_ruling), and each is
 -- reached only by a thread whose origin is one of the four kinds; every other thread's row finds the join's condition false. supabase/tests/0422-spin-answers.sql measures a board's deep page (thread_list by board,
 -- newest first, offset 2000 of 5,000 threads) with every other thread spun from a verdict against the same board spun from posts alone: 2,267 ms for the posts-only board and 2,350 ms for the half-spun one (best of three, in a transaction, a ratio of 1.04; the absolute figure is a transaction's plan, slower than an instance's after a VACUUM ANALYZE).
--- Ways out: no state is added; a spin is a thread like any other. Masks: the place reads public facts of public Acts (an ask's character through acts_public, names through characters_public); it reads no owner,
+-- Ways out: no state is added; a spin is a thread like any other. Masks: the place reads public facts of public Acts (an ask's character through acts_public, names through characters, a public fact; characters_public would drop a character that has not debuted, and with it the whole place); it reads no owner,
 -- class or reaction.
 
 -- ===================================================================================== 1. thread_open ====
@@ -49,12 +49,12 @@ create or replace view thread_open as
              'on', jsonb_build_object('kind', 'post', 'thread', pp.thread, 'title', ppt.title, 'seq', pp.seq))
            when o.kind = 'ballot' and pp.seq is not null and bc.id is not null then jsonb_build_object('kind', 'ballot', 'character', jsonb_build_object('id', bc.id, 'name', bc.name), 'question', bp.payload ->> 'question',
              'on', jsonb_build_object('kind', 'post', 'thread', pp.thread, 'title', ppt.title, 'seq', pp.seq))
-           when o.kind in ('report', 'report_verdict', 'appeal', 'appeal_ruling') and xc.id is not null then jsonb_build_object(
+           when o.kind in ('report', 'report_verdict', 'appeal', 'appeal_ruling') and xa.id is not null then jsonb_build_object(
              'kind', 'answer',
              'spun', case when o.kind in ('report', 'appeal') then 'ask' else 'answer' end,
              'ask', xa.kind,
-             'asker', jsonb_build_object('id', xc.id, 'name', xc.name),
-             'staff', case when xs.id is not null then jsonb_build_object('id', xs.id, 'name', xs.name) end,
+             'asker', jsonb_build_object('id', xi."character", 'name', xc.name),
+             'staff', case when coalesce(xv.id, xr.id, xg.id) is not null then jsonb_build_object('id', coalesce(xv."character", xr."character", xg."character"), 'name', xs.name) end,
              'punishment', xp.kind,
              'group', case when xp.kind = 'move' then xp.payload #>> '{params,group}' end,
              'on', case when xl.seq is not null then jsonb_build_object('kind', 'post', 'thread', xl.thread, 'title', xlt.title, 'seq', xl.seq) end)
@@ -87,11 +87,11 @@ create or replace view thread_open as
   -- thread whose origin is one of the four kinds: for every other thread the join's own condition on `o.kind` is false and nothing is read.
   left join acts xa on xa.id = case when o.kind in ('report', 'appeal') then o.id when o.kind in ('report_verdict', 'appeal_ruling') then o.target_act_id end
   left join acts_public xi on xi.id = xa.id
-  left join characters_public xc on xc.id = xi."character"
+  left join characters xc on xc.id = xi."character"
   left join acts xv on xv.id = o.id and o.kind in ('report_verdict', 'appeal_ruling')
   left join acts xr on xr.target_act_id = xa.id and o.kind = 'report' and xr.kind = 'report_verdict'
   left join acts xg on xg.target_act_id = xa.id and o.kind = 'appeal' and xg.kind = 'appeal_ruling'
-  left join characters_public xs on xs.id = coalesce(xv."character", xr."character", xg."character")
+  left join characters xs on xs.id = coalesce(xv."character", xr."character", xg."character")
   left join acts xp on xp.id = xa.target_act_id and xa.kind = 'appeal'
   left join acts xb on xb.id = case when xp.kind = 'ban' then (xp.payload ->> 'infraction_act')::uuid end
   left join acts xl on xl.id = case when xa.kind = 'report' then xa.target_act_id

@@ -139,28 +139,39 @@ begin
      or has_table_privilege('anon', 'my_reports', 'select') or has_table_privilege('anon', 'my_appeals', 'select') then raise exception 'my_reports and my_appeals keep their grants'; end if;
 end $$;
 
--- ---- 5. The asker is read through acts_public (where a veil covers the ask's character, the stand-in shows; no veil is seeded here, the check is that the place reads that view's character) ----
+-- ---- 5. A veiled asker is the stand-in, named as acts_public shows it; a staff or an asker that has not debuted does not take the place away ----
+-- A player reports their own post under a live author veil (post_veils, a card play that covers it): acts_public shows the report under the stand-in. The place must name the stand-in, never the owner's character.
 do $$
 declare
-  ann uuid := tests.account('sv-ann'); bob uuid := tests.account('sv-bob');
-  w uuid := tests.character(ann, 'Sv Wario'); v uuid := tests.character(bob, 'Sv Victim');
-  kassie uuid; stand uuid;
-  t uuid := tests.thread('Sv thread'); p uuid := tests.post(v, t, 'A post.');
-  r uuid; vd uuid; th uuid; got jsonb;
+  ann uuid := tests.account('sv-ann');
+  w uuid := tests.character(ann, 'Sv Wario');
+  kassie uuid; stand uuid; ghost uuid;
+  t uuid := tests.thread('Sv thread'); p uuid := tests.post(w, t, 'My own post.');
+  card uuid; r uuid; vd uuid; th uuid; got jsonb; shown uuid;
 begin
   insert into characters (name, staff, staff_kind, debuted_at) values ('Sv Kassie', 'sv-kassie', 'persona', now()) returning id into kassie;
   select id into stand from characters where staff_kind = 'anonymous';
-  if stand is null then
-    insert into characters (name, staff, staff_kind, debuted_at) values ('Sv Anonymous', 'sv-anon', 'anonymous', now()) returning id into stand;
-  end if;
+  if stand is null then insert into characters (name, staff, staff_kind, debuted_at) values ('Sv Anonymous', 'sv-anon', 'anonymous', now()) returning id into stand; end if;
+  set local session_replication_role = replica;
+  insert into acts (character, kind, thread, target_act_id, payload) values (w, 'card', t, p, '{"card": "sv-veil", "reach": "post"}') returning id into card;
+  insert into post_veils (play, post, veil, author, ends_at, post_kind) values (card, p, 'author', w, now() + interval '1 day', 'post');
+  set local session_replication_role = origin;
   perform set_config('kayfabb.report_writer', 'on', true); perform set_config('kayfabb.staff_writer', 'on', true);
   insert into acts (character, kind, thread, target_act_id, payload) values (w, 'report', t, p, '{"reason": "a"}') returning id into r;
   insert into acts (character, kind, thread, target_act_id, payload) values (kassie, 'report_verdict', t, r, jsonb_build_object('report_act', r, 'verdict', 'dismissed', 'line', 'No.')) returning id into vd;
   perform set_config('kayfabb.report_writer', '', true); perform set_config('kayfabb.staff_writer', '', true);
-  -- The report's character as acts_public shows it, whatever that is (the stand-in under a veil on the ask), is the asker the place names.
-  th := (spin_written(vd, v, 'Spun veil', 'Discuss.', false, array[]::uuid[]) -> 'thread' ->> 'id')::uuid;
+  shown := (select "character" from acts_public where id = r);
+  if shown is distinct from stand then raise exception 'the fixture: the veiled report shows as %, not the stand-in', shown; end if;
+  th := (spin_written(vd, w, 'Spun veil', 'Discuss.', false, array[]::uuid[]) -> 'thread' ->> 'id')::uuid;
   got := (select origin_place -> 'asker' from thread_open where id = th);
-  if got ->> 'id' is distinct from (select "character"::text from acts_public where id = r) then raise exception 'the asker is the ask''s character as acts_public shows it: %', got; end if;
+  if got is distinct from jsonb_build_object('id', stand, 'name', (select name from characters where id = stand)) then raise exception 'a veiled asker is the stand-in with its name, not %', got; end if;
+  -- An asker that has not debuted (not in characters_public) and the answer's staff keep the place.
+  insert into characters (owner, name) values (ann, 'Sv Ghost') returning id into ghost;
+  update characters set debuted_at = null where id = kassie;
+  got := (select origin_place from thread_open where id = th);
+  if got ->> 'kind' is distinct from 'answer' or got #>> '{staff,id}' is distinct from kassie::text or got #>> '{staff,name}' is distinct from 'Sv Kassie' then
+    raise exception 'an answer by a staff character outside characters_public keeps its place and names it: %', got;
+  end if;
 end $$;
 
 -- ---- 6. The cost: a deep board page, half its threads spun from answers ----
