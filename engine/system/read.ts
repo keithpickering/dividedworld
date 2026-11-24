@@ -7,6 +7,9 @@
  * left of the ceiling is passed over and the next is tried. A quoted candidate ranks at the best tier of any post quoting it.
  *
  * Quotes (design section 3): a real quote of a candidate's whole words becomes a marker naming the post. The cut is at the parser's reported spans, as `concealQuotes` does, never a re-serialization.
+ * An unclosed `[quote=<act>]` of a non-candidate with nothing after it has empty contents and reads as a hidden post.
+ * What is left out is counted by the thread's own numbering: `seq` is a post's 1-based number in the thread, so every number from 1 to the newest candidate's that is not shown is a post not shown,
+ * whether or not it was a candidate (the candidates are a sparse set: the opener, the newest window, the named and the persona's). `omitted` is that count.
  * A name in a marker is the candidate's own `name`, as the public views gave it, so a marker never names an author more plainly than the board does.
  */
 import { parse, type QuoteSpan } from '../bbcode/parse.ts';
@@ -54,12 +57,12 @@ export interface ReadPost extends ReadCandidate {
 export interface ThreadReadResult {
   /** In thread order. */
   readonly posts: readonly ReadPost[];
-  /** The candidates left out. */
+  /** The posts of the thread not shown: every number from 1 to `through` that no shown post has. */
   readonly omitted: number;
   /** The must posts taken, oldest first. */
   readonly answered: readonly string[];
-  /** The seq of every candidate left out, so `readLines` can say where the gaps are. */
-  readonly leftOut: readonly number[];
+  /** The highest seq among the candidates (the newest post is always one); the thread's length as far as the read knows it. */
+  readonly through: number;
 }
 
 const sourceCache = new WeakMap<ReadCandidate, string>();
@@ -71,12 +74,20 @@ function sourceOf(c: ReadCandidate): string {
 
 /** The body with each outermost real quote of a candidate's whole words (or of a hidden post) replaced by its marker; every other character, and every other quote, as written. */
 export function markQuotes(body: string, byAct: Map<string, ReadCandidate>, self: string | null): string {
+  return markWith(body, lowerActs(byAct), self);
+}
+
+function lowerActs(byAct: Map<string, ReadCandidate>): Map<string, ReadCandidate> {
+  const lower = new Map<string, ReadCandidate>();
+  for (const [k, v] of byAct) lower.set(k.toLowerCase(), v);
+  return lower;
+}
+
+function markWith(body: string, lower: Map<string, ReadCandidate>, self: string | null): string {
   if (!/\[quote/i.test(body)) return body;
   const spans: QuoteSpan[] = [];
   parse(body, spans);
   const ordered = [...spans].sort((a, b) => a.from - b.from || b.to - a.to);
-  const lower = new Map<string, ReadCandidate>();
-  for (const [k, v] of byAct) lower.set(k.toLowerCase(), v);
   let out = '';
   let at = 0;
   let covered = 0; // the end of the last outermost quote, replaced or kept: a quote inside one is never considered
@@ -104,9 +115,12 @@ export function markQuotes(body: string, byAct: Map<string, ReadCandidate>, self
  * Chooses what a call reads. `readMost` is the ceiling, in characters of marked post text; it bounds every tier but the must tier, whose newest post is read whatever its size
  * and whose older posts are added, newest first, only while the total stays within it.
  */
-export function readThread(cands: readonly ReadCandidate[], focus: ReadFocus, readMost: number): ThreadReadResult {
-  const byAct = new Map<string, ReadCandidate>(cands.map((c) => [c.act, c]));
-  const bodies = new Map<string, string>(cands.map((c) => [c.act, markQuotes(c.body, byAct, focus.self)]));
+export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, readMost: number): ThreadReadResult {
+  const byAct = new Map<string, ReadCandidate>();
+  for (const c of all) if (!byAct.has(c.act)) byAct.set(c.act, c); // the first of an act wins
+  const cands = [...byAct.values()];
+  const lower = lowerActs(byAct);
+  const bodies = new Map<string, string>(cands.map((c) => [c.act, markWith(c.body, lower, focus.self)]));
   const size = (c: ReadCandidate): number => bodies.get(c.act)!.length;
   const self = focus.self;
   const mine = (c: ReadCandidate): boolean => self !== null && c.author === self;
@@ -118,7 +132,7 @@ export function readThread(cands: readonly ReadCandidate[], focus: ReadFocus, re
   const quotesYou = (c: ReadCandidate): boolean => !mine(c) && c.quotes.some((a) => { const t = byAct.get(a); return t !== undefined && mine(t); });
 
   // 1. The must tier.
-  const mustPosts = focus.must.map((a) => byAct.get(a)).filter((c): c is ReadCandidate => c !== undefined);
+  const mustPosts = [...new Set(focus.must)].map((a) => byAct.get(a)).filter((c): c is ReadCandidate => c !== undefined).sort((a, b) => a.seq - b.seq);
   const answered: ReadCandidate[] = [];
   for (let i = mustPosts.length - 1; i >= 0; i--) {
     const c = mustPosts[i]!;
@@ -164,8 +178,8 @@ export function readThread(cands: readonly ReadCandidate[], focus: ReadFocus, re
     body: bodies.get(c.act)!,
     marks: { you: mine(c), answering: answeredActs.has(c.act), repliesToYou: repliesToYou(c), quotesYou: quotesYou(c) },
   }));
-  const leftOut = cands.filter((c) => !taken.has(c.act)).map((c) => c.seq).sort((a, b) => a - b);
-  return { posts, omitted: leftOut.length, answered: answered.map((c) => c.act), leftOut };
+  const through = cands.reduce((m, c) => Math.max(m, c.seq), 0);
+  return { posts, omitted: Math.max(through - posts.length, 0), answered: answered.map((c) => c.act), through };
 }
 
 /**
@@ -175,18 +189,17 @@ export function readThread(cands: readonly ReadCandidate[], focus: ReadFocus, re
 export function readLines(read: ThreadReadResult, o: { readonly mustLabel?: 'answering' | 'judged' } = {}): string[] {
   const label = o.mustLabel ?? 'answering';
   const out: string[] = [];
-  const gap = (lo: number, hi: number, first: boolean): void => {
-    const n = read.leftOut.filter((s) => s > lo && s < hi).length;
+  const gap = (n: number, first: boolean): void => {
     if (n > 0) out.push(`(${n} ${first ? 'earlier ' : ''}${n === 1 ? 'post' : 'posts'} not shown)`);
   };
-  let prev = -Infinity;
+  let prev = 0;
   for (const p of read.posts) {
-    gap(prev, p.seq, prev === -Infinity);
+    gap(p.seq - prev - 1, prev === 0);
     const name = p.name.length > 60 ? p.name.slice(0, 60) : p.name;
     const marks = [p.marks.you ? 'you' : '', p.marks.answering ? label : '', p.marks.repliesToYou ? 'replies to you' : '', p.marks.quotesYou ? 'quotes you' : ''].filter(Boolean).map((m) => ` (${m})`).join('');
     out.push(`${p.pronouns === null ? name : taggedName(name, p.pronouns)} [post #${p.seq}]${marks}`, p.body);
     prev = p.seq;
   }
-  gap(prev, Infinity, false);
+  gap(read.through - prev, false);
   return out;
 }

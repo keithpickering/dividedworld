@@ -5,9 +5,7 @@ import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 
 const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 const ME = 'char-me';
-let counter = 0;
 function cand(seq: number, author: string, body: string, o: Partial<ReadCandidate> = {}): ReadCandidate {
-  counter += 1;
   return { act: o.act ?? uuid(1000 + seq), seq, at: `2026-11-0${(seq % 9) + 1}T00:00:00Z`, author, name: o.name ?? author, pronouns: null, body, replyTo: null, quotes: [], ...o };
 }
 const index = (cs: readonly ReadCandidate[]): Map<string, ReadCandidate> => new Map(cs.map((c) => [c.act, c]));
@@ -26,7 +24,7 @@ test('Spritey thread: the opener is whole and the quoting reply reads the marker
   const reply = cand(4, 'spritey', body, { name: 'Spritey', replyTo: mine.act, quotes: [mine.act] });
   assert.ok(body.length > 700);
   const r = readThread([opener, mine, reply], { self: ME, must: [] }, 2000);
-  assert.equal(r.omitted, 0);
+  assert.equal(r.omitted, 1); // post #2 is not a candidate here
   assert.equal(r.posts[0]!.body, opener.body);
   assert.equal(r.posts[2]!.body, `[quoting your post #3]${questions}`);
   assert.equal(r.posts[2]!.marks.quotesYou, true);
@@ -148,7 +146,8 @@ test('the earlier-posts line is written when the opener is left out', () => {
   const r = readThread(cs, { self: ME, must: [cs[3]!.act] }, 20);
   assert.deepEqual(r.posts.map((p) => p.seq), [3, 4]);
   assert.deepEqual(readLines(r)[0], '(2 earlier posts not shown)');
-  const r1 = readThread(cs.slice(1), { self: ME, must: [cs[3]!.act] }, 20);
+  const one = [cand(1, 'o', 'o'.repeat(500)), cand(2, ME, 'mine'), cand(3, 'r', 'reply', { replyTo: uuid(1002) })];
+  const r1 = readThread(one, { self: ME, must: [one[2]!.act] }, 20);
   assert.equal(readLines(r1)[0], '(1 earlier post not shown)');
 });
 
@@ -216,4 +215,53 @@ test('the same inputs read the same', () => {
   const cs = [cand(1, 'a', 'one'), cand(2, ME, 'two'), cand(3, 'b', 'three', { replyTo: uuid(1002) })];
   const f = { self: ME, must: [cs[2]!.act] };
   assert.deepEqual(readThread(cs, f, 500), readThread(cs, f, 500));
+});
+
+test('a sparse candidate set counts every post of the thread not shown', () => {
+  const cs = [cand(1, 'o', 'open'), ...Array.from({ length: 61 }, (_, i) => cand(100 + i, `u${i}`, 'x'))];
+  const r = readThread(cs, { self: ME, must: [] }, 100000);
+  assert.equal(r.posts.length, 62);
+  assert.equal(r.omitted, 98);
+  const lines = readLines(r);
+  assert.equal(lines.filter((l) => /not shown/.test(l)).length, 1);
+  assert.equal(lines[2], '(98 posts not shown)');
+  const tail = readThread([cand(1, 'o', 'open'), cand(2, 'a', 'a'.repeat(100)), cand(5, 'b', 'b'.repeat(100))], { self: ME, must: [] }, 4);
+  assert.equal(tail.omitted, 4);
+  assert.equal(readLines(tail).at(-1), '(4 posts not shown)');
+});
+
+test('candidates are deduped by act, first wins', () => {
+  const a = cand(1, 'a', 'first');
+  const r = readThread([a, { ...a, body: 'second' }], { self: ME, must: [] }, 1000);
+  assert.deepEqual(r.posts.map((p) => p.body), ['first']);
+});
+
+test('an unclosed quote of a non-candidate with empty contents reads as a hidden post', () => {
+  assert.equal(markQuotes(`x [quote=${uuid(5)}]`, new Map(), ME), 'x [quoting a hidden post]');
+});
+
+test('edges: empty input, empty body, case and spacing, self-quote, self null, tiny ceiling, unknown must, many must', () => {
+  assert.deepEqual(readThread([], { self: ME, must: [uuid(1)] }, 10), { posts: [], omitted: 0, answered: [], through: 0 });
+  assert.deepEqual(readLines(readThread([], { self: ME, must: [] }, 10)), []);
+  assert.equal(markQuotes('', new Map(), ME), '');
+  const a = cand(2, 'x', 'Some  words\tthere', { name: 'Ann' });
+  assert.equal(markQuotes(`[quote=${a.act.toUpperCase()}]Some words there[/quote]`, index([a]), ME), '[quoting Ann, post #2]');
+  const selfQ = cand(1, 'x', 'plain', { quotes: [uuid(1001)] });
+  assert.equal(readThread([selfQ], { self: ME, must: [] }, 100).posts.length, 1);
+  const n = readThread([cand(1, ME, 'mine'), cand(2, 'a', 'abc')], { self: null, must: [] }, 100);
+  assert.equal(n.posts.length, 2);
+  assert.ok(n.posts.every((p) => !p.marks.you));
+  const tiny = readThread([cand(1, 'a', 'aaaa'), cand(2, 'b', 'bbbb')], { self: ME, must: [] }, 3);
+  assert.deepEqual([tiny.posts.length, tiny.omitted], [0, 2]);
+  const u = readThread([cand(1, 'a', 'aaaa')], { self: ME, must: [uuid(999)] }, 100);
+  assert.deepEqual(u.answered, []);
+  assert.equal(u.posts.length, 1);
+  const cs = [cand(1, 'a', 'a'), cand(2, 'b', 'b'), cand(3, 'c', 'c')];
+  assert.deepEqual(readThread(cs, { self: ME, must: [cs[1]!.act, cs[2]!.act] }, 100).answered, [cs[1]!.act, cs[2]!.act]);
+});
+
+test('must is ordered by seq, not by array position', () => {
+  const a = cand(2, 'a', 'a'.repeat(30)), b = cand(3, 'b', 'b'.repeat(30)), c = cand(4, 'c', 'c'.repeat(30));
+  const r = readThread([a, b, c], { self: ME, must: [c.act, a.act, b.act] }, 60);
+  assert.deepEqual(r.answered, [b.act, c.act]);
 });
