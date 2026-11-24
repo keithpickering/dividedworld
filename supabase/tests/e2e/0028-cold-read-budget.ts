@@ -16,8 +16,8 @@
  * step 5; docs/plans/2026-11-15-warm-reads-design.md, section 3) reads what a connection allocates, and the used figure is still right for the cache, for three reasons:
  *   - There is one cache per connection, not one per page type. The bytes its last block leaves free are allocated once per connection, by whichever call first
  *     needed that block, and a connection that has served every page type holds them whatever order it served them in.
- *   - Those free bytes are mostly the unused tail of the last block, which is about as large as all the blocks before it and never more than 8 MB. The rest are
- *     freelist chunks, left over from earlier blocks or freed by the cache, which it takes again before it asks for a block.
+ *   - Those free bytes are mostly the unused tail of the last block, which is at most about as large as all the blocks before it and never more than 8 MB. The
+ *     rest are freelist chunks, left over from earlier blocks or freed by the cache, which it takes again for requests of their size.
  *   - Charged to one function's budget, they make that function's figure depend on the order of the files and on the last analyze, not on its plan.
  * So they are a cost of the connection, about one block at most, and not a cost of any screen function. The kept plans are still counted by the blocks they hold:
  * every other context, including the CachedPlan and CachedPlanSource contexts that hang under CacheMemoryContext. The budget exists to catch them, and a plan that
