@@ -311,3 +311,43 @@ begin
     raise exception 'a post whose latest edit is hidden is read';
   end if;
 end $$;
+
+-- ---- 3d. pool_read is bounded by constants, not by the thread's length ----
+-- The Acts it reads (index and heap tuples of `acts`, which acts_public is built from) are the same for a thread of 1,000 posts and one of 4,000 with the same last hundred: the view is evaluated for the seeds, never for the whole thread.
+create function pg_temp.acts_read() returns bigint language sql as $$
+  select coalesce(sum(seq_tup_read + idx_tup_fetch), 0)::bigint from pg_stat_xact_all_tables where relname = 'acts'
+$$;
+create function pg_temp.long_thread(n integer) returns uuid language plpgsql as $$
+declare
+  a uuid := (select id from characters where name = 'Wp Len Ann');
+  b uuid := (select id from characters where name = 'Wp Len Bea');
+  boss uuid := (select id from characters where staff = 'wp-boss');
+  t uuid := tests.thread('Wp Long ' || n);
+  base timestamptz := now() - interval '2 days';
+  ids uuid[] := '{}'; i integer;
+begin
+  for i in 1..n loop
+    ids := ids || tests.act(case when i > n - 90 and i % 10 = 0 then boss when i % 2 = 0 then a else b end, 'post', t, jsonb_build_object('body', 'Long post ' || i),
+                            case when i > n - 90 and i % 10 = 5 then ids[i - 5] end, base + i * interval '1 second');
+  end loop;
+  return t;
+end $$;
+do $$
+declare
+  small uuid; big uuid; c0 bigint; c_small bigint; c_big bigint; r_small jsonb; r_big jsonb;
+begin
+  perform tests.character(tests.account('wp-len-ann'), 'Wp Len Ann');
+  perform tests.character(tests.account('wp-len-bea'), 'Wp Len Bea');
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  small := pg_temp.long_thread(1000);
+  big := pg_temp.long_thread(4000);
+  analyze acts;
+  perform set_config('track_functions', 'all', true);
+  c0 := pg_temp.acts_read(); r_small := pool_read(small, 'wp-boss', null, 60); c_small := pg_temp.acts_read() - c0;
+  c0 := pg_temp.acts_read(); r_big := pool_read(big, 'wp-boss', null, 60); c_big := pg_temp.acts_read() - c0;
+  perform set_config('track_functions', 'none', true);
+  if jsonb_array_length(r_small -> 'posts') is distinct from jsonb_array_length(r_big -> 'posts') or jsonb_array_length(r_big -> 'posts') < 60 then
+    raise exception 'the two reads are not alike: % and % posts', jsonb_array_length(r_small -> 'posts'), jsonb_array_length(r_big -> 'posts');
+  end if;
+  if c_big > c_small + 20 then raise exception 'pool_read reads % rows of acts in a 4,000-post thread and % in a 1,000-post one: it grows with the thread', c_big, c_small; end if;
+end $$;

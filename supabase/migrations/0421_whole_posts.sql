@@ -18,6 +18,7 @@
 --    the persona's own id is read from characters_public, the debuted characters, and a persona that has not debuted has none), so a hidden post (acts_public's `hidden`, which still lists the row, with no words) is in no part of it: not as a post, not as a quote, not counted in the window. security definer, owned by kayfabb_digest as pool_thread is, the service role's only.
 --    quote_refs is read by that role: its select on (act, quoted) and a policy of its own, as the digest role has on the other tables it reads (0045_digest.sql). A quote of a post is in the quoting post's own public body,
 --    and the rows read are those of Acts acts_public already shows, so nothing is said that a player cannot see.
+--    The newest `window` is read by number from thread_list's last_seq, and the page by an id array, so the view is never evaluated over the whole thread (the test reads the rows of acts a 1,000- and a 4,000-post thread cost: 404 each). `set jit = off`, as 0368's reads have it: a call's cost passes jit_above_cost and JIT added ~350 ms.
 --    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts, acts_target for the replies, acts_edits (an index-only probe) for a post's latest edit, quote_refs' primary key, acts' own key).
 -- Ways out: no state is added. A spend, a turn and an attempt are ledger rows; a budget spent by the day's end is the next day's fresh one.
 -- Masks: pool_read reads public Acts and characters (characters_public); the persona's own id is its own. Nothing here reads an owner, a class or who reacted.
@@ -222,7 +223,7 @@ create policy digest_reads on quote_refs for select to kayfabb_digest using (tru
 
 -- `self` is looked up by staff key alone, not staff_kind = 'persona': a Mod Bot reads a thread through this too (Task 7), with its own staff key.
 create function pool_read(in_thread uuid, staff_key text, named uuid[], "window" integer) returns jsonb
-language sql stable security definer set search_path = public, pg_temp as $$
+language sql stable security definer set search_path = public, pg_temp set jit = off as $$
   with me as (select c.id from characters_public c where c.staff = pool_read.staff_key),
   -- The persona's newest 20 posts in the thread (a spin it started counts as one, as in pool_conversation).
   mine as (
@@ -236,7 +237,12 @@ language sql stable security definer set search_path = public, pg_temp as $$
   seeds as (
     select a.id from acts_public a where a.thread = in_thread and a.seq = 1 and a.kind in ('post', 'spin') and a.hidden is not true
     union
-    (select n.id from acts_public n where n.thread = in_thread and n.kind = 'post' and n.hidden is not true order by n.created_at desc, n.id desc limit least(greatest(coalesce("window", 0), 0), 200))
+    -- The newest `window` posts, by number: only the thread's last 2 x window + 60 numbers are looked at (thread_list's last_seq), so the view is evaluated for a constant count of Acts, never for the whole thread
+    -- (acts_public's veiled branch has no index to order by and would otherwise be read to the thread's start). Hidden posts and the few numbered Acts that are no post (a spin, an unmask, a tally) are inside that margin.
+    (select n.id from acts_public n
+     where n.thread = in_thread and n.kind = 'post' and n.hidden is not true
+       and n.seq > coalesce((select t.last_seq from thread_list t where t.id = in_thread), 0) - 2 * least(greatest(coalesce("window", 0), 0), 200) - 60
+     order by n.seq desc, n.id desc limit least(greatest(coalesce("window", 0), 0), 200))
     union
     select a.id from acts_public a where a.thread = in_thread and a.kind = 'post' and a.hidden is not true and a.id = any (coalesce(pool_read.named[1:50], '{}'::uuid[]))
     union
@@ -262,8 +268,9 @@ language sql stable security definer set search_path = public, pg_temp as $$
            coalesce((select e.id from acts_public e where e.kind = 'edit' and e.target_act_id = a.id order by e.created_at desc, e.id desc limit 1), a.id) as ref,
            (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
            coalesce(a.current_payload ->> 'body', '') as body
-    from chosen k join acts_public a on a.id = k.id join characters_public c on c.id = a.character
-    where a.thread = in_thread and a.hidden is not true
+    from acts_public a join characters_public c on c.id = a.character
+    -- The ids are fixed first (an array), so the view is evaluated for those posts and not hash-joined to the whole thread's.
+    where a.id = any (array(select k.id from chosen k)) and a.thread = in_thread and a.hidden is not true
   )
   select jsonb_build_object(
     'title', coalesce((select t.title from thread_list t where t.id = in_thread), ''),
