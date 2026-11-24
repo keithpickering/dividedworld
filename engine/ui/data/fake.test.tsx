@@ -7648,3 +7648,117 @@ describe('a rewind: a card that shows a post as it was and freezes it (0413_rewi
   });
 });
 
+
+/* A report, its verdict, an appeal and its ruling are origins with a place, and an exchange reads them (spin-mod-answers plan, Tasks 1 and 2; 0422). */
+describe('an ask or an answer as an origin', () => {
+  function desk() {
+    const w = world();
+    const mod = w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+    const on = { kind: 'post' as const, thread: w.thread, title: 'Hello', seq: 1 };
+    const asker = { id: w.anaFace, name: 'Ana Face' };
+    const staff = { id: mod, name: 'Mod Staff' };
+    /** The place of a thread spun from `act`, by Ana's own mask. */
+    const placeOf = async (act: string) => must(await w.fake.spin(act, w.anaFace, 'About it', 'b')).thread.origin;
+    return { ...w, mod, on, asker, staff, placeOf };
+  }
+
+  test('a dismissed report: from its ask and from its answer, the asker, the staff and the reported post', async () => {
+    const d = desk();
+    const report = d.fake.seed.report(d.anaFace, d.opener, 'rude');
+    const open = { kind: 'answer', spun: 'ask', ask: 'report', asker: d.asker, staff: null, punishment: null, group: null, on: d.on };
+    expect(await d.placeOf(report)).toEqual(open);
+    const verdict = d.fake.seed.verdict(report, d.mod, 'dismissed');
+    expect(await d.placeOf(report)).toEqual({ ...open, staff: d.staff });
+    expect(await d.placeOf(verdict)).toEqual({ ...open, spun: 'answer', staff: d.staff });
+  });
+
+  test('a report heard as a visit and one that backfired read the same as a dismissed one', async () => {
+    const d = desk();
+    const report = d.fake.seed.report(d.anaFace, d.opener, 'rude');
+    const visit = d.fake.seed.visit(d.mod, d.opener, {});
+    const verdict = d.fake.seed.verdict(report, d.mod, 'visit', { visit });
+    expect(await d.placeOf(verdict)).toMatchObject({ kind: 'answer', spun: 'answer', ask: 'report', staff: d.staff, on: d.on });
+    const second = d.fake.seed.report(d.anaFace, d.opener, 'again');
+    const backfire = d.fake.seed.verdict(second, d.mod, 'backfire');
+    expect(await d.placeOf(backfire)).toMatchObject({ spun: 'answer', ask: 'report', asker: d.asker, punishment: null, group: null, on: d.on });
+  });
+
+  test('an appeal of an infraction names the infraction\'s post, from its ask and from its ruling', async () => {
+    const d = desk();
+    const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
+    const appeal = d.fake.seed.appeal(d.boFace, inf, 'please');
+    const asker = { id: d.boFace, name: 'Bo Face' };
+    const want = { kind: 'answer', spun: 'ask', ask: 'appeal', asker, staff: null, punishment: 'infraction', group: null, on: d.on };
+    expect(await d.placeOf(appeal)).toEqual(want);
+    const ruling = d.fake.seed.ruling(appeal, d.mod, 'reduced');
+    expect(await d.placeOf(ruling)).toEqual({ ...want, spun: 'answer', staff: d.staff });
+    expect(await d.placeOf(appeal)).toEqual({ ...want, staff: d.staff });
+  });
+
+  test('an appeal of a ban names the post of the infraction the ban followed', async () => {
+    const d = desk();
+    const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
+    const ban = d.fake.seed.ban(d.boFace, d.fake.clock.now() + DAY, { infraction: inf });
+    const appeal = d.fake.seed.appeal(d.boFace, ban, 'please');
+    expect(await d.placeOf(appeal)).toEqual({ kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'ban', group: null, on: d.on });
+  });
+
+  test('an appeal of a move names its group and the move\'s own line where it has one', async () => {
+    const d = desk();
+    const move = d.fake.seed.groupMove('s-mod', { character: d.boFace, group: 'trialMembers' });
+    const appeal = d.fake.seed.appeal(d.boFace, move, 'please');
+    const line = (await d.fake.act(move))!;
+    const place = await d.placeOf(appeal);
+    expect(place).toMatchObject({ kind: 'answer', spun: 'ask', ask: 'appeal', punishment: 'move', group: 'trialMembers', staff: null });
+    expect((place as { on: unknown }).on).toEqual(line.seq === null ? null : { kind: 'post', thread: line.thread, title: expect.any(String), seq: line.seq });
+  });
+
+  test('a post as an origin keeps its own place', async () => {
+    const d = desk();
+    expect(await d.placeOf(d.opener)).toEqual({ kind: 'post', thread: d.thread, title: 'Hello', seq: 1 });
+  });
+
+  test('filing a report or an appeal answers with the answer\'s Act, and the log rows carry it', async () => {
+    const d = desk();
+    d.fake.seed.wallet(d.ana, 500);
+    const filed = must(await d.fake.fileReport(d.anaFace, d.opener, 'rude'));
+    expect(filed.answer).toEqual(expect.any(String));
+    const verdictAct = await d.fake.act(filed.answer!);
+    expect([verdictAct?.kind, verdictAct?.targetActId]).toEqual(['report_verdict', filed.report]);
+    expect((await d.fake.log()).reports[0]).toMatchObject({ report: filed.report, answer: filed.answer });
+    const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
+    d.fake.signInAs(d.bo);
+    d.fake.seed.wallet(d.bo, 500);
+    const appealed = must(await d.fake.fileAppeal(d.boFace, inf, 'please'));
+    expect(appealed.answer).toEqual(expect.any(String));
+    expect((await d.fake.act(appealed.answer!))?.kind).toBe('appeal_ruling');
+    expect((await d.fake.log()).appeals[0]).toMatchObject({ appeal: appealed.appeal, answer: appealed.answer });
+  });
+
+  test('an unanswered report\'s log row has no answer', async () => {
+    const d = desk();
+    d.fake.seed.report(d.anaFace, d.opener, 'rude');
+    expect((await d.fake.log()).reports[0]?.answer).toBeNull();
+  });
+
+  test('an exchange reads from an ask, from an answer and from an unanswered ask, and refuses a post', async () => {
+    const d = desk();
+    const report = d.fake.seed.report(d.anaFace, d.opener, 'rude');
+    const unanswered = d.fake.seed.report(d.anaFace, d.opener, 'again');
+    const verdict = d.fake.seed.verdict(report, d.mod, 'dismissed');
+    for (const origin of [report, verdict]) {
+      const x = await d.fake.exchange(origin);
+      expect([x.ask.id, x.answer?.id, x.punishment], origin).toEqual([report, verdict, null]);
+    }
+    expect(await d.fake.exchange(unanswered)).toMatchObject({ ask: { id: unanswered }, answer: null, punishment: null });
+    const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
+    const appeal = d.fake.seed.appeal(d.boFace, inf, 'please');
+    const ruling = d.fake.seed.ruling(appeal, d.mod, 'upheld');
+    for (const origin of [appeal, ruling]) {
+      const x = await d.fake.exchange(origin);
+      expect([x.ask.id, x.answer?.id, x.punishment?.id], origin).toEqual([appeal, ruling, inf]);
+    }
+    await expect(d.fake.exchange(d.opener)).rejects.toThrow();
+    await expect(d.fake.exchange('nothing')).rejects.toThrow();
+  });
+});
