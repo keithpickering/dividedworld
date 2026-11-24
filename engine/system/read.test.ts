@@ -274,3 +274,13 @@ test('each shown post carries its tier: the answered reply 1, the persona\'s own
   const r = readThread([opener, mine, stranger, reply], { self: ME, must: [reply.act] }, 10_000);
   assert.deepEqual(r.posts.map((p) => [p.seq, p.tier]), [[1, 3], [2, 2], [3, 5], [4, 1]]);
 });
+
+test('thirdPerson is the body with every marker naming its author, the persona\'s own included; a plain body is unchanged', () => {
+  const mine = cand(3, ME, 'my whole words', { name: 'QC-1000' });
+  const reply = cand(4, 'x', `${q(mine.act, 'my whole words')} and more`, { quotes: [mine.act] });
+  const plain = cand(5, 'y', 'just words');
+  const r = readThread([mine, reply, plain], { self: ME, must: [] }, 10_000);
+  assert.equal(r.posts[1]!.body, '[quoting your post #3] and more');
+  assert.equal(r.posts[1]!.thirdPerson, '[quoting QC-1000, post #3] and more');
+  assert.equal(r.posts[2]!.thirdPerson, 'just words');
+});

@@ -330,13 +330,13 @@ const REASONS: Readonly<Record<PoolTrigger | 'answered', string>> = {
   hotOnBeat: 'a thread on one of your beats is among the hottest today',
 };
 
-/**
- * Why it is posting, in words. The hot triggers carry the post they quote (the flame's, or the thread's most reacted in the window), so their reason
- * names it, and `oldFlame` names the flame. A hot pick with no quote, or a flame with no name to give (a pick kept from before this, a character with no face), keeps the plain reason.
- */
 /** Whether the read marks a post this call answers (a hot pick's quoted post, a turn's replies): the hot reasons name it. */
 const answers = (i: ChatterInput): boolean => i.read !== null && i.read.answered.length > 0;
 
+/**
+ * Why it is posting, in words. The hot triggers' post is the read's answered post (the flame's, or the thread's most reacted in the window, passed as the read's must tier), so their reason
+ * names it when the read has one, and `oldFlame` names the flame. A hot pick with no quote, or a flame with no name to give (a pick kept from before this, a character with no face), keeps the plain reason.
+ */
 function reasonOf(i: ChatterInput, names: (id: string) => string): string {
   if (answers(i) && i.trigger === 'oldFlame' && i.subject) return `${names(i.subject)}, a character you have strong feelings about, wrote one of today's hottest posts: the one you are replying to`;
   if (answers(i) && i.trigger === 'homeTurf') return 'a thread you made has gotten hot; you are replying to its most reacted post today';
@@ -410,7 +410,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
     ...(record.length ? [['The public record, as plain facts. It is shown, never acted on:', ...record.map((x) => `- ${x}`)].join('\n')] : []),
     'Answer only in the structure you are asked for.',
   ].join('\n\n');
-  const lines = i.read !== null && i.read.posts.length > 0 ? [`Thread: "${clip(i.title ?? '', l.titleMaxLength)}"`, ...readLines(i.read)] : [];
+  const lines = i.read !== null && i.read.posts.length > 0 ? [...(i.title === null ? [] : [`Thread: "${clip(i.title, l.titleMaxLength)}"`]), ...readLines(i.read)] : [];
   const message = [
     ...(lines.length ? [lines.join('\n')] : ['There is no thread yet; yours will be its first post.']),
     ...(i.startThread && i.spinning && lines.length ? ['You are spinning off the thread shown above.'] : []),
@@ -423,7 +423,10 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
  * The old voice's document (design, section 4: a persona on the old voice writes its words in raw completion). A base model continues a
  * document, so this is a 2003 thread page that ends exactly where the persona's own post begins, and it stops at the end of the line:
  * the old voice writes one line, with no title, card or note. A name and a post are collapsed to one line first, so a newline in a
- * player's words cannot end the frame early or add a row of its own.
+ * player's words cannot end the frame early or add a row of its own. Each post line is numbered from its place in the thread (`#3 Ann: ...`) so a
+ * quote marker's number is findable, and carries `thirdPerson`, since a frame has no "you". When the frame is over `fit`, whole posts go: `fitThreadPrompt` is
+ * handed each post's reader tier and drops the highest tier number first, the oldest first within a tier, never the newest answered reply (`keep`, the one post
+ * the persona is answering); the persona's own line is never dropped.
  */
 export function chatterCompletion(i: { readonly name: string; readonly title: string | null; readonly read: ThreadReadResult | null; readonly limits: ChatterLimits; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
   const posts: readonly ReadPost[] = i.read?.posts ?? [];
@@ -431,9 +434,9 @@ export function chatterCompletion(i: { readonly name: string; readonly title: st
   // The newest answered reply is never dropped (it is what the persona answers); the rest go by tier, whole, lowest first.
   const keep = posts.reduce((k, p, n) => (p.marks.answering ? n : k), -1);
   const prompt = fitThreadPrompt({
-    posts: posts.map((p) => `${clip(p.name, 60)}: ${oneLine(p.body)}`), tiers: posts.map((p) => p.tier), keep: keep < 0 ? undefined : keep,
+    posts: posts.map((p) => `#${p.seq} ${clip(p.name, 60)}: ${oneLine(p.thirdPerson)}`), tiers: posts.map((p) => p.tier), keep: keep < 0 ? undefined : keep,
     title: i.title, titleMaxLength: i.limits.titleMaxLength, fit: i.fit,
-    build: (kept, title) => ['Welcome to the Message Boards - Thread View', i.title !== null ? (title === null ? 'Thread:' : `Thread: ${title}`) : 'Thread: (new)', '', ...kept, name].join('\n'),
+    build: (kept, title) => ['Welcome to the Message Boards - Thread View', i.title === null && posts.length === 0 ? 'Thread: (new)' : title === null ? 'Thread:' : `Thread: ${title}`, '', ...kept, name].join('\n'),
   });
   return { prompt, stop: ['\n'] };
 }

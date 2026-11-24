@@ -164,7 +164,7 @@ test('the provider schema asks for a title only for a thread start, and offers o
 function post(seq: number, name: string, body: string, o: { tier?: ReadPost['tier']; answering?: boolean; you?: boolean; pronouns?: PronounSet } = {}): ReadPost {
   return {
     act: `act-${seq}`, seq, at: '2026-11-01T00:00:00Z', author: `char-${name}`, name, pronouns: o.pronouns ?? null, body, replyTo: null, quotes: [],
-    marks: { you: o.you === true, answering: o.answering === true, repliesToYou: false, quotesYou: false }, tier: o.answering ? 1 : o.tier ?? 5,
+    thirdPerson: body, marks: { you: o.you === true, answering: o.answering === true, repliesToYou: false, quotesYou: false }, tier: o.answering ? 1 : o.tier ?? 5,
   };
 }
 const readOf = (posts: readonly ReadPost[]): ThreadReadResult => ({ posts, omitted: 0, answered: posts.filter((p) => p.marks.answering).map((p) => p.act), through: posts.reduce((m, p) => Math.max(m, p.seq), 0) });
@@ -266,7 +266,7 @@ const fitFrame = (budget: number, over: Partial<Parameters<typeof chatterComplet
 const noPosts = readOf([]);
 
 test('the pool post frame under budget is every post whole, byte for byte', () => {
-  const whole = `Welcome to the Message Boards - Thread View\nThread: A long thread title about pineapples and more\n\n${fitPosts.map((p) => `${p.name}: ${p.body}`).join('\n')}\nOld Timer:`;
+  const whole = `Welcome to the Message Boards - Thread View\nThread: A long thread title about pineapples and more\n\n${fitPosts.map((p) => `#${p.seq} ${p.name}: ${p.body}`).join('\n')}\nOld Timer:`;
   assert.equal(fitFrame(whole.length).prompt, whole, 'a budget that just holds it');
   assert.equal(fitFrame(1_000_000).prompt, whole);
   assert.deepEqual(fitFrame(1_000_000).stop, ['\n']);
@@ -275,7 +275,7 @@ test('the pool post frame under budget is every post whole, byte for byte', () =
 
 test('over budget the pool post frame drops the oldest thread posts first, whole, and still ends with the persona\'s own line', () => {
   const whole = fitFrame(1_000_000).prompt;
-  const lineLen = `P0: ${fitPosts[0]!.body}\n`.length;
+  const lineLen = `#1 P0: ${fitPosts[0]!.body}\n`.length;
   const one = fitFrame(whole.length - 1).prompt;
   assert.ok(!one.includes('P0:') && one.includes('P1:') && one.includes('P5:'), one);
   assert.ok(one.includes(`Thread: ${LONG_TITLE}`), 'the title is untouched while a post can go');
@@ -321,16 +321,16 @@ test('a title bound below 40 is the clip that is used, and no clip is longer tha
 
 test('a long thread is fitted in about log2 of its posts in counts, and keeps the most posts that fit, newest kept', () => {
   const posts = Array.from({ length: 200 }, (_, i) => post(i + 1, `P${String(i).padStart(3, '0')}`, 'z'.repeat(60), { pronouns: they }));
-  const lineLen = `P000: ${'z'.repeat(60)}\n`.length;
+  const newest = (n: number): number => posts.slice(-n).reduce((t, p) => t + `#${p.seq} ${p.name}: ${p.body}\n`.length, 0);
   const bare = chatterCompletion({ name: 'Old Timer', title: 'Long', read: noPosts, limits: fitLimits, fit: ROOMY }).prompt.length;
   let calls = 0;
   const count = (t: string): number => { calls++; return t.length; };
-  const c = chatterCompletion({ name: 'Old Timer', title: 'Long', read: readOf(posts), limits: fitLimits, fit: { budget: bare + 73 * lineLen - 1, count } });
+  const c = chatterCompletion({ name: 'Old Timer', title: 'Long', read: readOf(posts), limits: fitLimits, fit: { budget: bare + newest(73) - 1, count } });
   assert.ok(calls <= 12, `${calls} counts`);
-  const kept = c.prompt.split('\n').filter((l) => /^P\d{3}:/.test(l));
+  const kept = c.prompt.split('\n').filter((l) => /^#\d+ P\d{3}:/.test(l));
   assert.equal(kept.length, 72, 'the most posts that fit');
-  assert.equal(kept[0]!.slice(0, 4), 'P128');
-  assert.equal(kept[71]!.slice(0, 4), 'P199', 'the newest is kept');
+  assert.equal(kept[0]!.split(' ')[1]!.slice(0, 4), 'P128');
+  assert.equal(kept[71]!.split(' ')[1]!.slice(0, 4), 'P199', 'the newest is kept');
 });
 
 test('a title clip does not split a surrogate pair', () => {
@@ -348,7 +348,7 @@ test('over a window too small for every post, a stranger\'s post goes before the
   const reply = post(4, 'Replier', 'r'.repeat(400), { answering: true });
   const read = readOf([opener, stranger, mine, reply]);
   const bare = chatterCompletion({ name: 'Old Timer', title: 'T', read: readOf([]), limits: fitLimits, fit: ROOMY }).prompt.length;
-  const line = (p: ReadPost): number => `${p.name}: ${p.body}\n`.length;
+  const line = (p: ReadPost): number => `#${p.seq} ${p.name}: ${p.body}\n`.length;
   const at = (budget: number) => chatterCompletion({ name: 'Old Timer', title: 'T', read, limits: fitLimits, fit: { budget, count: (t) => t.length } }).prompt;
   const noStranger = at(bare + line(opener) + line(mine) + line(reply));
   assert.ok(noStranger.includes('Opener:') && noStranger.includes('Me:') && noStranger.includes('Replier:') && !noStranger.includes('Stranger:'), noStranger);
@@ -615,4 +615,22 @@ test('a spin start says it spins off the post shown, gives a title, and shows th
   assert.ok(p.message.trimEnd().endsWith('Write the title and the opening post.'));
   const bare = chatterPrompt({ ...base, startThread: true, spinning: true, title: null, read: null });
   assert.ok(bare.message.includes('There is no thread yet'));
+});
+
+test('the old voice numbers each post line from its seq, and never says "your post": a quote of the persona\'s own post names it', () => {
+  const mine: ReadPost = { ...post(3, 'Gloomba', 'my long post', { you: true, tier: 2 }) };
+  const reply: ReadPost = { ...post(4, 'Ann', '[quoting your post #3] I disagree.', { answering: true }), thirdPerson: '[quoting Gloomba, post #3] I disagree.' };
+  const c = chatterCompletion({ name: 'Gloomba', title: 'T', read: readOf([mine, reply]), limits: fitLimits, fit: ROOMY });
+  assert.ok(c.prompt.includes('\n#3 Gloomba: my long post\n#4 Ann: [quoting Gloomba, post #3] I disagree.\nGloomba:'), c.prompt);
+  assert.ok(!c.prompt.includes('your post'));
+  const typed = { ...post(5, 'Eve', 'I typed [quoting your post #3] myself.'), thirdPerson: 'I typed [quoting your post #3] myself.' };
+  assert.ok(chatterCompletion({ name: 'Gloomba', title: 'T', read: readOf([typed]), limits: fitLimits, fit: ROOMY }).prompt.includes('[quoting your post #3] myself'), 'a player\'s own typed text is left as written');
+});
+
+test('a null title with posts: the prompt has no Thread line, and the frame is the bare form, never (new)', () => {
+  const p = chatterPrompt({ ...base, title: null });
+  assert.ok(!p.message.includes('Thread:'), p.message);
+  assert.ok(p.message.startsWith('Ann (she/her) [post #1]'));
+  const c = chatterCompletion({ name: 'Old Timer', title: null, read: fitRead, limits: fitLimits, fit: ROOMY });
+  assert.ok(c.prompt.includes('\nThread:\n') && !c.prompt.includes('(new)'), c.prompt);
 });

@@ -52,6 +52,8 @@ export interface ReadMarks {
 /** A candidate with its body as marked (quotes of whole posts replaced). */
 export interface ReadPost extends ReadCandidate {
   readonly marks: ReadMarks;
+  /** `body` marked as for a reader who is no one in the thread: the persona's own posts are named like anyone's (`[quoting Name, post #3]`, never `your post`). For a frame that has no "you" (the old voice). */
+  readonly thirdPerson: string;
   /** The post's tier, 1 (must) to 5 (everyone else), as the module doc lists them; a fitter that must drop whole posts drops the highest number first. */
   readonly tier: 1 | 2 | 3 | 4 | 5;
 }
@@ -123,6 +125,7 @@ export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, read
   const cands = [...byAct.values()];
   const lower = lowerActs(byAct);
   const bodies = new Map<string, string>(cands.map((c) => [c.act, markWith(c.body, lower, focus.self)]));
+  const thirds = new Map<string, string>(cands.map((c) => [c.act, focus.self === null ? bodies.get(c.act)! : markWith(c.body, lower, null)]));
   const size = (c: ReadCandidate): number => bodies.get(c.act)!.length;
   const self = focus.self;
   const mine = (c: ReadCandidate): boolean => self !== null && c.author === self;
@@ -178,6 +181,7 @@ export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, read
   const posts: ReadPost[] = shown.map((c) => ({
     ...c,
     body: bodies.get(c.act)!,
+    thirdPerson: thirds.get(c.act)!,
     marks: { you: mine(c), answering: answeredActs.has(c.act), repliesToYou: repliesToYou(c), quotesYou: quotesYou(c) },
     tier: (answeredActs.has(c.act) ? 1 : rank.get(c.act)!) as ReadPost['tier'],
   }));
