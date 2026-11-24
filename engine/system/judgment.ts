@@ -484,15 +484,15 @@ export function filingPrompt(i: FilingInput): { readonly system: string; readonl
  * end the frame early or add a line of its own.
  */
 export function filingCompletion(i: { readonly name: string; readonly board: string; readonly title: string | null; readonly read: ThreadReadResult | null; readonly charges: FilingInput['charges']; readonly limits: FilingInput['limits']; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
-  judgedOf(i.read); // the judged post must be in the read: callers check before calling
-  const posts: readonly ReadPost[] = i.read?.posts ?? [];
+  const judged = judgedOf(i.read); // the judged post must be in the read: callers check before calling
+  const posts: readonly ReadPost[] = i.read!.posts;
   // The judged post is never dropped (it is what the line is about); the rest go by tier, whole, as chatterCompletion's do. Each line is numbered from its place in the thread so a marker's number is findable, and is third person (a frame has no "you").
-  const keep = posts.reduce((k, p, n) => (p.marks.answering ? n : k), -1);
+  const keep = posts.indexOf(judged);
   const action = `[Moderator action: ${i.charges.map((c) => clip(c.rule, 200)).join('; ')}]`;
   const name = `${clip(i.name, 60)}:`;
   // The moderator-action line and the Mod's own line are `build`'s, so fitting the thread never removes them (design section 3).
   const prompt = fitThreadPrompt({
-    posts: posts.map((p) => `#${p.seq} ${clip(p.name, 60)}: ${oneLine(p.thirdPerson)}`), tiers: posts.map((p) => p.tier), keep: keep < 0 ? undefined : keep,
+    posts: posts.map((p) => `#${p.seq} ${clip(p.name, 60)}: ${oneLine(p.thirdPerson)}`), tiers: posts.map((p) => p.tier), keep,
     title: i.title ?? '(new)', titleMaxLength: i.limits.titleMaxLength, fit: i.fit,
     build: (kept, title) => ['Welcome to the Message Boards - Thread View', `Board: ${clip(i.board, 80)}`, title === null ? 'Thread:' : `Thread: "${title}"`, ...kept, action, name].join('\n'),
   });
