@@ -4,7 +4,7 @@ import { pacer, planTurns, roundShare, type AwakeSession, type OpenThread } from
 
 const MIN = 60 * 1000;
 const DAY0 = Date.UTC(2026, 10, 22);
-const TURNS = { waitHours: 24, perThread: 2, perSession: 3, perDay: 40 };
+const TURNS = { waitHours: 24, perThread: 2, perSession: 3 };
 const reply = (act: string, minutesAgo = 60) => ({ act, author: 'p', at: new Date(DAY0 + 600 * MIN - minutesAgo * MIN).toISOString() });
 const open = (staff: string, thread: string, acts: string[], heat = 0, age = 60): OpenThread =>
   ({ staff, thread, heat, replies: acts.map((a, i) => reply(a, age - i)) });
