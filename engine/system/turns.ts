@@ -4,7 +4,7 @@
  *
  *   roundShare(spentToday, perDay, slot, cronMinutes)     how many characters this round may spend (the day earned evenly, a slice a round)
  *   planTurns(open, sessions, turns, slot)                which turns the caps allow, hottest thread first
- *   pacer(available) / takeWhile(planned, available, sizeOf)   whether the next turn may start, as each turn's size is learned
+ *   pacer(available)                                      whether the next turn may start, as each turn's size is learned
  *
  * Every input is public play (a persona's threads, the replies waiting on it, the public reaction total on its turns, the sessions drawn
  * for it): nothing here reads who owns a character, a class or who reacted. A seeded tie-break from the slot makes a rerun of a round plan
@@ -44,11 +44,12 @@ export interface PlannedTurn {
 }
 
 /**
- * How many characters this round may spend (its callers pass characters: `spentToday` is the day's characters charged, `perDay` the
- * day's character budget; the arithmetic is unit-free): the day's budget is earned evenly, one slice per round, so no round front-loads the day. `slot` is
- * the round's time in epoch milliseconds, and rounds fall every `cronMinutes` from the start of the UTC day: round k = floor(intoDay / step)
- * of N = ceil(DAY / step) a day. By round k the day has earned floor(perDay x (k + 1) / N); the round may plan what is earned and not yet
- * spent, never below 0. A quiet morning leaves its earnings available later; the last round has earned the whole day.
+ * How many characters this round may spend. Its callers pass characters: `spentToday` is the day's characters charged and `perDay` the
+ * day's character budget, though the arithmetic is unit-free. The day's budget is earned evenly, one slice per round, so no round
+ * front-loads the day. `slot` is the round's time in epoch milliseconds, and rounds fall every `cronMinutes` from the start of the UTC
+ * day: round k = floor(intoDay / step) of N = ceil(DAY / step) a day. By round k the day has earned floor(perDay x (k + 1) / N); the
+ * round may spend what is earned and not yet spent, never below 0. A quiet morning leaves its earnings available later; the last round
+ * has earned the whole day.
  */
 export function roundShare(spentToday: number, perDay: number, slot: number, cronMinutes: number): number {
   const step = Math.max(cronMinutes, 1) * 60 * 1000;
@@ -108,16 +109,4 @@ export function planTurns(
 export function pacer(available: number): { mayStart(): boolean; charge(size: number): void; remaining(): number } {
   let left = available;
   return { mayStart: () => left > 0, charge: (size) => { left -= size; }, remaining: () => left };
-}
-
-/** `pacer` over a list: takes turns in order while one may start, reading `sizeOf` only for a turn that started. */
-export function takeWhile<T>(planned: readonly T[], available: number, sizeOf: (turn: T, index: number) => number): { taken: T[]; remaining: number } {
-  const p = pacer(available);
-  const taken: T[] = [];
-  for (const [i, t] of planned.entries()) {
-    if (!p.mayStart()) break;
-    taken.push(t);
-    p.charge(sizeOf(t, i));
-  }
-  return { taken, remaining: p.remaining() };
 }

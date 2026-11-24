@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { pacer, planTurns, roundShare, takeWhile, type AwakeSession, type OpenThread } from './turns.ts';
+import { pacer, planTurns, roundShare, type AwakeSession, type OpenThread } from './turns.ts';
 
 const MIN = 60 * 1000;
 const DAY0 = Date.UTC(2026, 10, 22);
@@ -86,28 +86,22 @@ test('planTurns: with no share every capped turn is returned, hottest first', ()
   assert.deepEqual(plan.map((p) => p.thread), ['hot', 'cool']);
 });
 
-test('takeWhile: a turn may start while characters remain, and may overdraw', () => {
-  const sizes = [8000, 8000, 2000];
-  const taken = takeWhile(['x', 'y', 'z'], 10000, (_t, i) => sizes[i]!);
-  assert.deepEqual(taken.taken, ['x', 'y']);
-  assert.equal(taken.remaining, -6000);
-});
-
-test('takeWhile: nothing available starts nothing, and a size is read only for a turn that started', () => {
-  const asked: number[] = [];
-  assert.deepEqual(takeWhile(['x'], 0, () => 1).taken, []);
-  takeWhile(['x', 'y', 'z'], 5, (_t, i) => { asked.push(i); return 5; });
-  assert.deepEqual(asked, [0]);
-});
-
-test('pacer: the incremental form of takeWhile', () => {
+test('pacer: with 10,000 available, turns of 8,000, 8,000 and 2,000 take the first two and refuse the third', () => {
   const p = pacer(10000);
-  assert.equal(p.mayStart(), true);
-  p.charge(8000);
-  assert.equal(p.mayStart(), true);
-  p.charge(8000);
+  const started: number[] = [];
+  for (const size of [8000, 8000, 2000]) {
+    if (!p.mayStart()) break;
+    started.push(size);
+    p.charge(size);
+  }
+  assert.deepEqual(started, [8000, 8000]);
   assert.equal(p.remaining(), -6000);
   assert.equal(p.mayStart(), false);
+});
+
+test('pacer: exactly nothing available, or less, starts nothing', () => {
+  assert.equal(pacer(0).mayStart(), false);
+  assert.equal(pacer(-1).mayStart(), false);
 });
 
 test('planTurns: heat, then waiting replies, then the older wait', () => {
