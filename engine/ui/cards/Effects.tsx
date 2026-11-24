@@ -19,6 +19,10 @@
  * function. Only a takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws
  * them on the post it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
  *
+ * **The words box** (`WORDS_BOX`, cards/body.ts; docs/plans/2026-11-23-dent-bend-design.md, section 2.2): the post's words are always drawn in one plain block, `<div data-kb-words-box>`, which
+ * takes no room of its own. It stands inside every effect but a card that writes's (so a tail bends with the words) and outside those, the words' own wraps inside it; a compose's body
+ * element is the box itself. The moment draws the same box. An effect that bends the words filters it (`setBend`); a History version draws no box.
+ *
  * **A play's moment is playable** (docs/plans/2026-11-16-playable-moments-design.md; the frame is Moment.tsx). `MomentEffects` draws each play that `playsInMoment` says is drawn
  * (it has an effect, is no takeover, and until issue #774 its rules have no surface or drive; the engine names no card) and names the rest (`momentParts`). Each effect is the
  * live effect, started from the state it had then and run at the moment's own time (`EffectProps.moment`: null on a live post, `{ at }` in a moment), so it takes input, moves and
@@ -45,6 +49,7 @@ import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type Play
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
 import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
 import { createClaims, NO_INK } from './claims.ts';
+import { WORDS_BOX } from './body.ts';
 import { surfaceMost, type CardRules, type Reach } from '../../rules/cards.ts';
 import type { Span } from '../../rules/types.ts';
 import type { PostPlays } from './plays.ts';
@@ -245,13 +250,13 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const composing = play?.compose && play.compose.target.post?.id === post.id ? play.compose : null;
   const Compose = composing ? ui.cards.find((c) => c.key === composing.card)?.Compose : undefined;
   const bodyRef = useRef<HTMLDivElement | null>(null);
-  if (composing && Compose && bodyRef.current === null && typeof document !== 'undefined') bodyRef.current = document.createElement('div');
+  if (composing && Compose && bodyRef.current === null && typeof document !== 'undefined') { bodyRef.current = document.createElement('div'); bodyRef.current.setAttribute(WORDS_BOX, ''); }
   if (!composing) bodyRef.current = null;
   const bodyEl = bodyRef.current;
   /* The slot is the outermost thing here, so a play landing on the post mid-compose (a layer wrapping the words) never moves it in the tree: it would remount, and the card's drawing with it. */
   const slot = (inner: ReactNode) => (composing && play && Compose && bodyEl ? <ComposeSlot composing={composing} Compose={Compose} post={post} play={play} body={bodyEl}>{inner}</ComposeSlot> : inner);
   /* The post's words sit in `bodyEl`, a div the slot owns (so it is one element however the layers wrap it), innermost inside every layer but a card that writes's. */
-  const plain = (inner: ReactNode) => (composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{inner}</WordsIn> : inner);
+  const plain = (inner: ReactNode) => (composing && Compose && bodyEl ? <WordsIn el={bodyEl}>{inner}</WordsIn> : <div {...{ [WORDS_BOX]: '' }}>{inner}</div>);
   if (layers.every((l) => l.acting.length === 0) && !momentAct && !presenting) return <>{slot(plain(words))}</>;
   /* Each layer's cards in the order each was first played there; `nestOrder` says the order they nest in. */
   const firsts = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key): Wrap => ({ reach: l.reach, key, mine: l.acting.filter((p) => p.card === key), of: l.of })));
@@ -657,10 +662,13 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
       ...[...new Set(counted.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: counted.filter((p) => p.card === key) })),
     ];
     const nested = nestOrder(wraps, ui.cards, writing);
-    return [...nested.writing, ...nested.rest, ...nested.takeovers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
+    const list = [...nested.writing, ...nested.rest, ...nested.takeovers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
+    return { list, inside: nested.writing.length };
   }, [counted, parts.above, ui.cards, writing, written]);
-  let wrapped = children;
-  for (const [rank, { key, reach, mine, written: tails }] of order.entries()) {
+  /* The words box holds the words and the writing cards' wraps; every other wrap is outside it, as in PostEffects. */
+  let wrapped: ReactNode = children;
+  if (order.inside === 0) wrapped = <div {...{ [WORDS_BOX]: '' }}>{wrapped}</div>;
+  for (const [rank, { key, reach, mine, written: tails }] of order.list.entries()) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <MomentEffect key={`${reach}:${key}`} Effect={Effect} card={key} at={at} onView={onView}
@@ -670,6 +678,7 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
         {wrapped}
       </MomentEffect>
     );
+    if (rank + 1 === order.inside) wrapped = <div {...{ [WORDS_BOX]: '' }}>{wrapped}</div>;
   }
   return <>{wrapped}</>;
 }

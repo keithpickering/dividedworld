@@ -262,6 +262,25 @@
   margin-bottom: 0.6em;
 }
 
+/*
+ * The bend (docs/plans/2026-11-23-dent-bend-design.md, sections 2.2 and 2.3; engine/ui/cards/body.ts `setBend`). An effect that bends a post sets
+ * `--kb-bend` (a filter in the content area's coordinates) and `--kb-bend-words` (one in the words box's) on the area; every area resets both to none, so a
+ * nested area (an ORIGIN box in a post's body) never inherits its post's bend. A layer that fills the area asks to be bent with `data-kb-bend`. The words
+ * box is the one plain block the engine draws the words in: no margin, padding or position of its own, so it changes no layout.
+ */
+[data-kb-content-area] {
+  --kb-bend: none;
+  --kb-bend-words: none;
+}
+
+[data-kb-words-box] {
+  filter: var(--kb-bend-words, none);
+}
+
+[data-kb-bend] {
+  filter: var(--kb-bend, none);
+}
+
 [data-kb-content-area] [data-kb-effect-ink] {
   z-index: 1;
 }

@@ -32,6 +32,11 @@ import { pageViolations } from './axe.ts';
  * under reduced motion, whose picture is drawn at once and is exactly the rest the animated run ends in for the same seed (Effect.test.tsx),
  * until the pose is there, and fail if none of the first SCAN_SEEDS has it. The pose of the second is a chair that took a nudge, which the
  * effect writes on the chair as `data-nudges`; a rest alone does not show it.
+ *
+ * `KB_POISON` (environment, default none) plants one defect back by hand so that a run shows a test red: `clip` (the foil test, with-fab only):
+ * the chair's host gets the old filter, its region grown back to the words box, which clips the foil to it; `trap` (the signature test, with-fab
+ * only): the element that holds Fab's host gets the area's filter, which holds the foil in a stacking context over the signature; `inherit` (the
+ * nested-area test): the nested content area takes the post's bend properties again.
  */
 test.use({ bypassCSP: true });
 
@@ -62,10 +67,11 @@ const SEEDS = {
   three: [101],
   phone: [113],
   'with-fab': [101],
+  'fab-after': [101],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
 const SPREAD_SEED = 158;
-type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab';
+type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab' | 'fab-after';
 
 /** The post that wears the card: its content area (the world) and its parts. */
 const area = (page: Page) => page.locator('.kb-act-main:has(.dw-chair)').first();
@@ -139,7 +145,7 @@ const measure = (page: Page): Promise<Measure> => page.evaluate(() => {
   const last = [...box.children].filter((c) => getComputedStyle(c).position !== 'absolute').at(-1)!;
   const contentBottom = inner.bottom - parseFloat(style.paddingBottom);
   const lines: Box[] = [];
-  const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
+  const walker = document.createTreeWalker(box.querySelector('[data-kb-words-box]')!, NodeFilter.SHOW_TEXT);
   for (let n = walker.nextNode(); n; n = walker.nextNode()) {
     const range = document.createRange();
     range.selectNodeContents(n);
@@ -251,7 +257,7 @@ test('one-light: every word is still in the page\'s text, selectable, and none i
   await atRest(page, 1);
   await expect(page.getByText('The best driver in the entire series is Luigi.').first()).toBeVisible();
   const read = await area(page).evaluate((box) => {
-    const words = box.querySelector('.dw-chair-words')!;
+    const words = box.querySelector('[data-kb-words-box]')!;
     const range = document.createRange();
     range.selectNodeContents(words);
     const selection = window.getSelection()!;
@@ -335,7 +341,7 @@ test('reduced: the dent and the resting chair are there on first paint and nothi
   const was = await chairs(page).first().evaluate((el) => (el as HTMLElement).style.transform);
   expect(await framesOver(page, 700), 'frames asked for').toBe(0);
   expect(await chairs(page).first().evaluate((el) => (el as HTMLElement).style.transform)).toBe(was);
-  expect(await area(page).locator('.dw-chair-words[data-shake]').count()).toBe(0);
+  expect(await area(page).locator('[data-dw-chair-shake]').count()).toBe(0);
   const m = await measure(page);
   inside(m);
   onTheFloor(m);
@@ -346,12 +352,12 @@ test('short-post: the host is as tall as its words, the content area holds the r
   await atRest(page, 1);
   expect(await framesAfterRest(page, 1), 'frames asked for after the chair rests').toBe(0);
   const rows = await area(page).evaluate((box) => {
-    const words = box.querySelector('.dw-chair-words')!.getBoundingClientRect();
+    const words = box.querySelector('[data-kb-words-box]')!.getBoundingClientRect();
     const host = box.querySelector('.dw-chair')!.getBoundingClientRect();
     const inner = box.getBoundingClientRect();
     /* The text's own rects: a range over the wrapper's contents would add the border box of every element, as wide as the wrapper. */
     const rects: DOMRect[] = [];
-    const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(box.querySelector('[data-kb-words-box]')!, NodeFilter.SHOW_TEXT);
     for (let n = walker.nextNode(); n; n = walker.nextNode()) {
       const range = document.createRange();
       range.selectNodeContents(n);
@@ -421,7 +427,7 @@ test('short-post: the filter\'s region covers the wrapper and its displacement, 
   await atRest(page, 1);
   await page.evaluate(() => document.fonts.ready);
   const region = await area(page).evaluate((box) => {
-    const words = box.querySelector<HTMLElement>('.dw-chair-words')!;
+    const words = box.querySelector<HTMLElement>('[data-kb-words-box]')!;
     const filter = box.querySelector('filter')!;
     const num = (name: string) => Number(filter.getAttribute(name));
     const w = words.getBoundingClientRect();
@@ -513,7 +519,7 @@ const TEST_MS = SCAN_MS + REST_MS + 40_000;
 /** The content area's and the words' boxes in the window (the layout a pose depends on), measured on whatever the page now shows. */
 const layoutOf = (page: Page) => page.evaluate(() => {
   const box = document.querySelector<HTMLElement>('.kb-act-main:has(.dw-chair)')!;
-  const words = box.querySelector<HTMLElement>('.dw-chair-words')!;
+  const words = box.querySelector<HTMLElement>('[data-kb-words-box]')!;
   const rect = (e: Element) => { const r = e.getBoundingClientRect(); return { left: r.left + scrollX, top: r.top + scrollY, width: r.width, height: r.height }; };
   return { area: rect(box), words: rect(words), client: [box.clientWidth, box.clientHeight], viewport: [document.documentElement.clientWidth, innerWidth] };
 });
@@ -692,7 +698,7 @@ async function shading(page: Page) {
       const r = d.getBoundingClientRect();
       return { play: d.dataset.play ?? '', left: r.left, top: r.top, width: r.width, height: r.height };
     });
-    const walker = document.createTreeWalker(box.querySelector('.dw-chair-words')!, NodeFilter.SHOW_TEXT);
+    const walker = document.createTreeWalker(box.querySelector('[data-kb-words-box]')!, NodeFilter.SHOW_TEXT);
     const range = document.createRange();
     range.selectNodeContents(walker.nextNode()!);
     const t = range.getBoundingClientRect();
@@ -959,6 +965,171 @@ test('with-fab: no block: the four corners of each dent\'s box are the same with
     for (let j = 0; j < drawn.length; j++) most = Math.max(most, Math.abs(drawn[j]! - bare[j]!));
     expect(most, `dent ${i}: the dent is drawn: inside its box some pixel differs with the shading shown and hidden by more than 2 levels (the most is ${most})`).toBeGreaterThan(2);
   }
+});
+
+/**
+ * The foil is whole and nothing is trapped (docs/plans/2026-11-23-dent-bend-plan.md, Task 3), on the post Steel Chair and Feelin' Fab share in each order
+ * (`with-fab`: the chair played over a foil, so the chair's host holds Fab's; `fab-after`: a foil over a chair), under reduced motion (the foil holds still).
+ * No element of the effect's carries a filter any more, so the chair's host neither clips the foil to the words' box nor makes a stacking context that
+ * holds it above the signature. The chair's shading layers and chairs are hidden, so what is compared is the foil and the post. "Before the dent lands"
+ * is the post with the bend taken off by a stylesheet (`bendOff`): reduced motion draws the dent on first paint, so there is no moment before it.
+ *
+ * Poisons (the defect itself, put back by hand; `KB_POISON=clip` or `KB_POISON=trap` in the environment does it, for the run that shows the test red).
+ * `clip`: the chair's host gets the old filter (the words' filter, its region grown back to the words box), which clips the foil to it. `trap`: the
+ * element that holds Fab's host gets `filter: url(#...-area)` (a region over the whole area), which holds the foil in a stacking context over the signature.
+ * The clip and trap poisons can be red only on `with-fab`: on `fab-after` the foil is the outer effect, and the chair's host is inside Fab's, so it can
+ * neither clip nor trap the foil. `fab-after` is a no-regression companion with no red run of its own.
+ */
+const POISON = process.env.KB_POISON ?? '';
+const frames2 = (page: Page) => page.evaluate(() => new Promise<void>((done) => requestAnimationFrame(() => requestAnimationFrame(() => done()))));
+
+/** The bend off (a stylesheet's `!important` beats the effect's inline properties) and on again. */
+const bendOff = async (page: Page, off: boolean) => {
+  await page.evaluate((on) => {
+    document.getElementById('kb-test-no-bend')?.remove();
+    if (on) {
+      const style = document.createElement('style');
+      style.id = 'kb-test-no-bend';
+      style.textContent = '[data-kb-content-area], [data-kb-content-area] * { --kb-bend: none !important; --kb-bend-words: none !important; }';
+      document.head.append(style);
+    }
+  }, off);
+  await frames2(page);
+};
+
+/** The effect's layers hidden (or shown): the chair's shading and the chairs. */
+const chairLayers = (page: Page, hidden: boolean) => area(page).evaluate((box, h) => {
+  for (const el of box.querySelectorAll<HTMLElement>('.dw-chair-layer, .dw-chair-dents, .dw-chair-glows')) el.style.visibility = h ? 'hidden' : '';
+}, hidden);
+
+for (const name of ['with-fab', 'fab-after'] as const) {
+  test.describe(`${name}: the foil and the bend`, () => {
+    test.beforeEach(async ({ page }) => {
+      await page.emulateMedia({ reducedMotion: 'reduce' });
+      /* Tall enough that the HUD at the foot of the window is not over the post's bottom border. */
+      await open(page, name, { width: 1440, height: 1120 });
+      await atRest(page, 1);
+      await expect(page.locator('.kb-act-main:has(.dw-chair) canvas.dw-fab-foil'), 'Feelin Fab\'s foil is on the post').toHaveCount(1);
+      /* The post in the middle of the window, clear of the HUD at its foot. */
+      await area(page).evaluate((box) => box.scrollIntoView({ block: 'center' }));
+      await frames2(page);
+      await expect(area(page).locator('.kb-signature'), 'the signature is drawn').toBeVisible();
+      await chairLayers(page, true);
+    });
+
+    test('the foil is whole: five points of the content area outside the words\' box are the same before the dent lands and after', async ({ page }) => {
+      const points = await area(page).evaluate((box) => {
+        const a = box.getBoundingClientRect();
+        const inner = { left: a.left + box.clientLeft, top: a.top + box.clientTop, right: a.left + box.clientLeft + box.clientWidth, bottom: a.top + box.clientTop + box.clientHeight };
+        const walker = document.createTreeWalker(box.querySelector('[data-kb-words-box]')!, NodeFilter.SHOW_TEXT);
+        let last: DOMRect | null = null;
+        for (let n = walker.nextNode(); n; n = walker.nextNode()) {
+          const range = document.createRange();
+          range.selectNodeContents(n);
+          for (const q of range.getClientRects()) if (q.width > 0 && q.height > 0) last = q;
+        }
+        const sig = box.querySelector('.kb-signature')!.getBoundingClientRect();
+        const wb = box.querySelector('[data-kb-words-box]')!.getBoundingClientRect();
+        return { inner, last: last ? { right: last.right, top: last.top, bottom: last.bottom } : null, sigBottom: sig.bottom, words: { left: wb.left, top: wb.top, right: wb.right, bottom: wb.bottom }, viewport: window.innerHeight };
+      });
+      expect(points.last, 'the words have a last line').not.toBeNull();
+      expect(points.inner.bottom + 1, 'the bottom border of the post is inside the window').toBeLessThanOrEqual(points.viewport);
+      const w = points.inner.right - points.inner.left;
+      /* The clip poison reaches only what lies inside the words' box, so every point is outside it: beside the words' box at the last line's height
+         (the box ends before the area's right edge, or the point would be inside it), and below it. */
+      const at = [
+        { name: 'beside the last, short line', x: Math.min(points.inner.right - 4, points.words.right + 12), y: (points.last!.top + points.last!.bottom) / 2 },
+        { name: 'near the bottom border, left', x: points.inner.left + w * 0.2, y: points.inner.bottom - 4 },
+        { name: 'near the bottom border, middle', x: points.inner.left + w * 0.5, y: points.inner.bottom - 4 },
+        { name: 'near the bottom border, right', x: points.inner.left + w * 0.8, y: points.inner.bottom - 4 },
+        { name: 'under the signature', x: points.inner.left + w * 0.7, y: Math.min(points.inner.bottom - 4, points.sigBottom + 6) },
+      ];
+      for (const p of at) {
+        const inside = p.x >= points.words.left && p.x <= points.words.right && p.y >= points.words.top && p.y <= points.words.bottom;
+        expect(inside, `${p.name} (${Math.round(p.x)}, ${Math.round(p.y)}) lies outside the words' box ${JSON.stringify(points.words)}`).toBe(false);
+      }
+      const sample = async () => {
+        const out: number[][] = [];
+        for (const p of at) out.push((await pixelsOf(page, { x: Math.floor(p.x), y: Math.floor(p.y), width: 3, height: 3 })).px);
+        return out;
+      };
+      await bendOff(page, true);
+      const before = await sample();
+      await bendOff(page, false);
+      if (POISON === 'clip') {
+        await area(page).evaluate((box) => {
+          const host = box.querySelector<HTMLElement>('.dw-chair')!;
+          const filter = box.querySelector('filter[id$="-words"]')!;
+          const words = box.querySelector<HTMLElement>('[data-kb-words-box]')!;
+          filter.setAttribute('x', '0'); filter.setAttribute('y', '0');
+          filter.setAttribute('width', String(words.offsetWidth)); filter.setAttribute('height', String(words.offsetHeight));
+          host.style.filter = `url(#${filter.id})`;
+        });
+        await frames2(page);
+      }
+      const after = await sample();
+      /* The test can see the foil: with it hidden, most of the five points are another color (the post's ground). */
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('canvas.dw-fab-foil')) el.style.visibility = 'hidden'; });
+      const bare = await sample();
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('canvas.dw-fab-foil')) el.style.visibility = ''; });
+      const seen = at.filter((_, i) => Math.max(...before[i]!.map((v, j) => Math.abs(v - bare[i]![j]!))) > 10).length;
+      expect(seen, 'points where the foil is visible (it differs from the bare post by more than 10 levels)').toBeGreaterThanOrEqual(4);
+      for (const [i, p] of at.entries()) {
+        const worst = Math.max(...before[i]!.map((v, j) => Math.abs(v - after[i]![j]!)));
+        expect(worst, `${p.name} (${Math.round(p.x)}, ${Math.round(p.y)}): the foil there changes by ${worst} levels of 255 once the dent has landed (was ${JSON.stringify(before[i]!.slice(0, 4))}, is ${JSON.stringify(after[i]!.slice(0, 4))})`).toBeLessThanOrEqual(2);
+      }
+    });
+
+    test('nothing is trapped: the signature\'s letters are the same with the foil shown and hidden', async ({ page }) => {
+      const sig = await area(page).evaluate((box) => {
+        const r = box.querySelector('.kb-signature')!.getBoundingClientRect();
+        return { x: Math.ceil(r.left), y: Math.ceil(r.top) + 3, width: Math.floor(r.width) - 1, height: Math.floor(r.height) - 4 };
+      });
+      expect(sig.height, 'the signature is drawn').toBeGreaterThan(4);
+      if (POISON === 'trap') {
+        await area(page).evaluate((box) => {
+          /* The area's filter, whose region covers the whole content area, so the foil is held and not clipped (the clip is the other poison). */
+          const filter = box.querySelector('filter[id$="-area"]')!;
+          box.querySelector('.dw-fab')!.parentElement!.style.filter = `url(#${filter.id})`;
+        });
+        await frames2(page);
+      }
+      /* The signature's own pixels are its letters, the darkest of the clip: the foil is behind them, so its colors change the ground and not them. */
+      const letters = (px: number[]) => { let n = 0; for (let i = 0; i < px.length; i += 4) if (luma(px, i) < 110) n++; return n; };
+      const shown = letters((await pixelsOf(page, sig)).px);
+      await area(page).evaluate((box) => { for (const el of box.querySelectorAll<HTMLElement>('canvas.dw-fab-foil')) el.style.visibility = 'hidden'; });
+      const hidden = letters((await pixelsOf(page, sig)).px);
+      expect(hidden, 'the signature has letters').toBeGreaterThan(50);
+      expect(shown, `letters drawn with the foil shown (${shown}) against hidden (${hidden})`).toBeGreaterThanOrEqual(hidden * 0.95);
+    });
+  });
+}
+
+/**
+ * An ORIGIN box's content area inside a dented post's does not wear the post's bend (thread.css resets both properties on every content area): a post
+ * shown in the box is its own. No story holds an ORIGIN box inside a dented post's body, so the box is built in the page: a content area with a words
+ * box, inserted into the dented area. Poison (`KB_POISON=inherit`): the nested area takes the properties from its parent again.
+ */
+test('one-light: a content area nested in the dented post does not inherit its bend', async ({ page }) => {
+  await open(page, 'one-light');
+  await atRest(page, 1);
+  const read = await area(page).evaluate((box, poison) => {
+    const nested = document.createElement('div');
+    nested.setAttribute('data-kb-content-area', '');
+    nested.innerHTML = '<div data-kb-words-box>x</div>';
+    if (poison) { nested.style.setProperty('--kb-bend', 'inherit'); nested.style.setProperty('--kb-bend-words', 'inherit'); }
+    box.append(nested);
+    const prop = (el: Element, name: string) => getComputedStyle(el).getPropertyValue(name).trim();
+    return {
+      outer: { bend: prop(box, '--kb-bend'), words: prop(box, '--kb-bend-words') },
+      nested: { bend: prop(nested, '--kb-bend'), words: prop(nested, '--kb-bend-words'), filter: getComputedStyle(nested.firstElementChild!).filter },
+    };
+  }, POISON === 'inherit');
+  expect(read.outer.bend, 'the dented post names the area filter').toContain('url(');
+  expect(read.outer.words, 'the dented post names the words filter').toContain('url(');
+  expect(read.nested.bend, 'the nested area\'s --kb-bend').toBe('none');
+  expect(read.nested.words, 'the nested area\'s --kb-bend-words').toBe('none');
+  expect(read.nested.filter, 'the nested words box\'s computed filter').toBe('none');
 });
 
 for (const name of ['one-light', 'one-dark', 'reduced', 'with-fab'] as const) {

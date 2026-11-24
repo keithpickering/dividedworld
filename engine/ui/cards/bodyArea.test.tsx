@@ -132,3 +132,49 @@ describe('the places that draw a post\'s body mark it', () => {
     for (const m of mains) expect(m).toHaveAttribute('data-kb-content-area');
   });
 });
+
+/* The bend interface (docs/plans/2026-11-23-dent-bend-design.md, section 2.3): one helper sets the two filters, a lookup finds the words box. */
+describe('setBend', () => {
+  const bend = { area: 'url("#a")', words: 'url("#w")' };
+  test('sets both properties on the area and none on the host', () => {
+    const root = mount('<div data-kb-content-area id="area"><span id="host"></span></div>');
+    const area = root.querySelector<HTMLElement>('#area')!, host = root.querySelector<HTMLElement>('#host')!;
+    bodyModule.setBend(area, host, bend);
+    expect(area.style.getPropertyValue('--kb-bend')).toBe('url("#a")');
+    expect(area.style.getPropertyValue('--kb-bend-words')).toBe('url("#w")');
+    expect(host.style.getPropertyValue('--kb-bend')).toBe('');
+    expect(host.style.getPropertyValue('--kb-bend-words')).toBe('');
+  });
+  test('with no area, sets only --kb-bend-words, on the host', () => {
+    const host = mount('<span id="host"></span>').querySelector<HTMLElement>('#host')!;
+    bodyModule.setBend(null, host, bend);
+    expect(host.style.getPropertyValue('--kb-bend-words')).toBe('url("#w")');
+    expect(host.style.getPropertyValue('--kb-bend')).toBe('');
+  });
+  test('null removes what it set, from the area or from the host', () => {
+    const root = mount('<div data-kb-content-area id="area"><span id="host"></span></div><span id="lone"></span>');
+    const area = root.querySelector<HTMLElement>('#area')!, host = root.querySelector<HTMLElement>('#host')!, lone = root.querySelector<HTMLElement>('#lone')!;
+    bodyModule.setBend(area, host, bend);
+    bodyModule.setBend(null, lone, bend);
+    bodyModule.setBend(area, host, null);
+    bodyModule.setBend(null, lone, null);
+    expect(area.style.getPropertyValue('--kb-bend')).toBe('');
+    expect(area.style.getPropertyValue('--kb-bend-words')).toBe('');
+    expect(lone.style.getPropertyValue('--kb-bend-words')).toBe('');
+  });
+});
+
+describe('wordsBoxOf', () => {
+  test('finds the words box of the host\'s own content area', () => {
+    const root = mount('<div data-kb-content-area id="area"><div data-kb-words-box id="box"></div></div>');
+    expect(bodyModule.wordsBoxOf(root.querySelector<HTMLElement>('#area')!)).toBe(root.querySelector('#box'));
+  });
+  test('skips a box inside a nested content area', () => {
+    const root = mount('<div data-kb-content-area id="area"><div data-kb-content-area><div data-kb-words-box id="inner"></div></div><div data-kb-words-box id="own"></div></div>');
+    expect(bodyModule.wordsBoxOf(root.querySelector<HTMLElement>('#area')!)?.id).toBe('own');
+  });
+  test('is null where the only box is in a nested area', () => {
+    const root = mount('<div data-kb-content-area id="area"><div data-kb-content-area><div data-kb-words-box></div></div></div>');
+    expect(bodyModule.wordsBoxOf(root.querySelector<HTMLElement>('#area')!)).toBeNull();
+  });
+});
