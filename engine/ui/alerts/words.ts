@@ -11,7 +11,7 @@ import { FOLLOWED_COUNT_CAP } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { shortQuote, springConditions } from '../cards/lens-words.ts';
 import { upperFirst } from '../copy-words.ts';
-import { inSentence, lockoutEnd } from '../log/lines.ts';
+import { inSentence, lockoutEnd, utcDay } from '../log/lines.ts';
 
 /** A run of words: plain, or a title set in italics, as the board draws it. */
 export type Part = string | { readonly em: string };
@@ -25,7 +25,7 @@ export interface Said {
   readonly who: string;
 }
 export interface WordsContext {
-  readonly instance: Pick<Instance, 'cards'>;
+  readonly instance: Pick<Instance, 'cards'> & Partial<Pick<Instance, 'groups'>>;
   readonly ui: Pick<InstanceUi, 'copy'>;
   /** The Acts the rows name, and the Acts those name (a card's post). */
   readonly acts: ReadonlyMap<Id, Act>;
@@ -124,9 +124,14 @@ function endedOn(row: Alert, play: Act, ctx: WordsContext): { place: Part[]; way
   }
 }
 
-/** The key the cards of one target share, so a page can batch them; null for a row that is not a card on something that can be told. */
+/** The key the cards of one target share, so a page can batch them; null for a row that is not a card on something that can be told. A drawing batches per wall (`wall:<the play>`), a gift per drive (`drive:<the drive's opening play>`). */
 export function targetKey(row: Alert, ctx: WordsContext): string | null {
-  if (row.kind !== 'cardOnYours' || row.act === null) return null;
+  if (row.act === null) return null;
+  if (row.kind === 'gift' || (row.kind === 'cardOnYours' && row.sub === 'drew')) {
+    const target = ctx.acts.get(row.act)?.targetActId;
+    return target ? `${row.kind === 'gift' ? 'drive' : 'wall'}:${target}` : null;
+  }
+  if (row.kind !== 'cardOnYours') return null;
   const play = ctx.acts.get(row.act);
   if (!play) return null;
   const reach = typeof play.payload.reach === 'string' ? play.payload.reach : 'post';
@@ -137,6 +142,11 @@ export function targetKey(row: Alert, ctx: WordsContext): string | null {
 /** Cards played on one target, as one row ("Glitter Bomb and 2 more were played on your post"); `rows` are newest first. */
 export function batchWords(rows: readonly Alert[], ctx: WordsContext): Said {
   const newest = rows[0]!;
+  if (rows.length > 1 && newest.kind === 'gift') return { line: [`${rows.length} gifts reached ${possessive(newest.name, 'your character')} drive`], detail: sentences(inTitle(newest)), ways: giftWay(newest, ctx), who: newest.name ?? 'Yours' };
+  if (rows.length > 1 && newest.sub === 'drew') {
+    const wall = drewOn(newest, ctx);
+    return { line: [`${rows.length} drawings on the wall on ${wall.place}`], detail: sentences(inTitle(newest)), ways: wall.ways, who: newest.name ?? 'Yours' };
+  }
   const on = cardOn(newest, ctx);
   if (!on || rows.length === 1) return wordsFor(newest, ctx);
   return {
@@ -262,6 +272,88 @@ function trapStruck(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
   };
 }
 
+
+const possessive = (name: string | null, fallback: string) => (name ? `${name}'s` : fallback);
+const isoDay = (v: unknown): string | null => (typeof v === 'string' && Number.isFinite(Date.parse(v)) ? utcDay(v) : null);
+const rulesOf = (n: unknown) => (typeof n === 'number' ? `rule ${n}` : 'a rule');
+const points = (n: unknown) => (typeof n === 'number' ? `${n} warn ${n === 1 ? 'point' : 'points'}` : 'warn points');
+
+/** Where a drawing landed: the wall's post, said by its author's public name, and the way to it. */
+function drewOn(row: Alert, ctx: WordsContext): { place: string; ways: Way[] } {
+  const draw = row.act === null ? undefined : ctx.acts.get(row.act);
+  const wall = draw?.targetActId ? ctx.acts.get(draw.targetActId) : undefined;
+  const post = wall?.targetActId ? ctx.acts.get(wall.targetActId) : undefined;
+  return { place: post && post.seq !== null ? `${ownPost(row.name)} #${post.seq}` : ownPost(row.name), ways: postWay(post, row, ctx) };
+}
+/** A gift's way: the drive's post, where it could be read. */
+function giftWay(row: Alert, ctx: WordsContext): Way[] {
+  const gift = row.act === null ? undefined : ctx.acts.get(row.act);
+  const drive = gift?.targetActId ? ctx.acts.get(gift.targetActId) : undefined;
+  return postWay(drive?.targetActId ? ctx.acts.get(drive.targetActId) : undefined, row, ctx);
+}
+
+const LOG: Way[] = [{ text: 'Open My log', to: '/log' }];
+
+/** A ruling, one line per sub (the rulings design, section 7): plain, naming the character, its detail read from the Act where there is one. An unknown or null sub keeps the generic words. */
+function rulingWords(row: Alert, act: Act | undefined, ctx: WordsContext): Said {
+  const who = row.name ?? 'Yours';
+  const name = row.name ?? 'your character';
+  const mine = (line: string, detail: readonly Part[], ways: readonly Way[]): Said => ({ line: [line], detail: ways === LOG ? [...detail] : sentences(detail, inTitle(row)), ways, who });
+  /* An infraction names the post it was filed on (`about_act`); a card's play, its post; else the post is the Act itself, or the thread. */
+  const about = act?.kind === 'infraction' && typeof act.payload.about_act === 'string' ? ctx.acts.get(act.payload.about_act) : aboutPost(act, ctx);
+  const post = postWay(about, row, ctx);
+  const p = act?.payload ?? {};
+  switch (row.sub) {
+    case 'warning': {
+      const staff = typeof p.staff === 'string' ? ctx.names?.get(p.staff) : undefined;
+      const drops = isoDay(p.expires_at);
+      return mine(`${name} got ${points(p.points)}`, sentences(act ? [`${staff ? `${staff} filed` : 'A Mod filed'} ${rulesOf(p.rule_number)}.`] : [], drops ? [`They drop off ${drops}.`] : [], ['You can appeal from the post.']), post);
+    }
+    case 'ban': {
+      const until = isoDay(p.until);
+      return mine(until ? `${name} was banned until ${until}` : `${name} was banned`, ['The warn bar filled. The ban ends by itself; you can appeal it to the Boss.'], LOG);
+    }
+    case 'fallTaken': {
+      const taker = typeof p.character === 'string' ? ctx.names?.get(p.character) : undefined;
+      return mine(`${taker ?? 'Another character'} took the fall for ${ownPost(row.name)}`, [`The ${points(p.points)} landed on ${taker ?? 'them'}, not on ${name}.`], post);
+    }
+    case 'reportJudged': return mine(`${possessive(row.name, 'Your')} report was judged${typeof p.verdict === 'string' ? `: ${p.verdict}` : ''}`, [], post);
+    case 'reportRefunded': return mine(`${possessive(row.name, 'Your')} report could not be heard`, ['Its cost was refunded.'], post);
+    case 'appealAnswered': return mine(`${possessive(row.name, 'Your')} appeal was ${typeof p.verdict === 'string' ? p.verdict : 'answered'}`, [], LOG);
+    case 'appealRefunded': return mine(`${possessive(row.name, 'Your')} appeal was not heard`, ['Its cost was refunded. You can appeal again.'], LOG);
+    case 'grouped': {
+      const params = (typeof p.params === 'object' && p.params !== null ? p.params : {}) as { group?: unknown };
+      const groups = [...(ctx.instance.groups?.ladder ?? []), ...(ctx.instance.groups?.conferred ?? [])];
+      const group = groups.find((g) => g.key === params.group)?.name;
+      const ends = isoDay(p.until);
+      return mine(`${name} was put in ${group ?? 'a group'}`, [ends ? `It ends ${ends} by itself. You can also appeal it, or apologize.` : 'You can appeal it, or apologize.'], LOG);
+    }
+    case 'threadMoved': {
+      const board = typeof p.boardName === 'string' && p.boardName !== '' ? p.boardName : null;
+      return { line: [{ em: row.title ?? 'Your thread' }, board ? ` was moved to the ${board} board` : ' was moved to another board'], detail: [], ways: threadWay(row), who };
+    }
+    case 'trophyReversed': return mine(`An admin took back a trophy from ${name}`, ['The log says which.'], LOG);
+    case 'pollClosed': return mine(`An admin closed ${possessive(row.name, 'your')} poll`, [], post);
+    case 'gearGiven': return mine(`An admin gave ${name} gear`, ['The log says what.'], LOG);
+    default: return { line: [`A ruling landed on ${name}`], detail: sentences(['The ruling is public, on the board.'], inTitle(row)), ways: post, who };
+  }
+}
+
+/** Real moderation of a post, in the glass's own plain voice: never in character. */
+function conductWords(row: Alert, ctx: WordsContext, act: Act | undefined): Said {
+  const own = ownPost(row.name);
+  const post = postWay(act, row, ctx);
+  const who = row.name ?? 'Yours';
+  const said = (line: string, detail: readonly Part[] = []): Said => ({ line: [line], detail: sentences(detail, inTitle(row)), ways: post, who });
+  switch (row.sub) {
+    case 'hide': return said(`An admin hid ${own} for the code of conduct`);
+    case 'hideUntilEdited': return said(`An admin hid ${own} until it is edited`, ['Edit the post to bring it back.']);
+    case 'unhide': return said(`An admin brought back ${own}`);
+    case 'approve': return said(`An admin approved the edit to ${own}`);
+    default: return said(`A code of conduct decision on ${own}`);
+  }
+}
+
 export function wordsFor(row: Alert, ctx: WordsContext): Said {
   const who = row.name ?? 'Yours';
   const act = row.act === null ? undefined : ctx.acts.get(row.act);
@@ -280,11 +372,25 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
         ways: postWay(act, row, ctx), who,
       };
     case 'cardOnYours': {
+      if (row.sub === 'drew') {
+        const drawer = act?.character == null ? undefined : ctx.names?.get(act.character);
+        const wall = drewOn(row, ctx);
+        return { line: [`${drawer ?? 'A character'} drew on the wall on ${wall.place}`], detail: inTitle(row), ways: wall.ways, who };
+      }
       const on = cardOn(row, ctx);
       if (!on) return { line: ['A card was played on something of yours'], detail: inTitle(row), ways: threadWay(row), who };
       return { line: [`${on.card} was played on `, ...on.place], detail: on.detail, ways: on.ways, who };
     }
     case 'cardEnded': {
+      if (row.sub === 'refunded') return { line: [`Your ${cardName(act?.payload.card, ctx) ?? 'card'} did not take; it was refunded`], detail: inTitle(row), ways: postWay(act?.targetActId ? ctx.acts.get(act.targetActId) : undefined, row, ctx), who };
+      if (row.sub === 'onYours') {
+        const target = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
+        if (target?.kind === 'card') {
+          const on = endedOn(row, target, ctx);
+          return { line: [`An admin ended ${cardName(target.payload.card, ctx) ?? 'a card'} on `, ...on.place], detail: inTitle(row), ways: on.ways, who };
+        }
+        return { line: ['An admin ended a card on something of yours'], detail: inTitle(row), ways: threadWay(row), who };
+      }
       const play = act?.targetActId ? ctx.acts.get(act.targetActId) : undefined;
       /* An admin's end of a lockout (the target is a lockedOut spring, the setter's Act): nothing was spent or lost, so none of a card's words about cost apply. */
       if (play?.kind === 'spring' && play.payload.did === 'lockedOut') {
@@ -345,10 +451,14 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       return { line: [row.name !== null && row.sub !== null ? `${row.name} holds ${inSentence(row.sub)} again` : 'One of your characters holds a belt again'], detail: ['The log says what changed.'], ways: [{ text: 'Open My log', to: '/log' }], who };
     case 'beltLost':
       return { line: [row.name !== null && row.sub !== null ? `${row.name} lost ${inSentence(row.sub)}` : 'One of your characters lost a belt'], detail: ['The log says who took it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
-    case 'ruling':
-      return { line: [`A ruling landed on ${row.name ?? 'your character'}`], detail: sentences(['The ruling is public, on the board.'], inTitle(row)), ways: postWay(aboutPost(act, ctx), row, ctx), who };
+    case 'ruling': return rulingWords(row, act, ctx);
+    case 'gift': {
+      const amount = typeof act?.payload.amount === 'number' ? ` of ${act.payload.amount}` : '';
+      return { line: [`A gift${amount} reached ${row.name ?? 'your character'}`], detail: inTitle(row), ways: giftWay(row, ctx), who };
+    }
+    case 'conduct': return conductWords(row, ctx, act);
     case 'settlement': {
-      const moved = row.count === null ? 'It moved your characters.' : `It moved ${row.count} of your characters.`;
+      const moved = row.count === 0 ? 'Crowd pay came in.' : row.count === null ? 'It moved your characters.' : `It moved ${row.count} of your characters.`;
       const newest = row.sub !== null && row.sub === ctx.newestSettlement;
       const id = Number(row.sub);
       return {

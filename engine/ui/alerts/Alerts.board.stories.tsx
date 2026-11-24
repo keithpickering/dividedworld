@@ -40,6 +40,9 @@ const alerts: World = (fake, instance) => {
   seed.card(quoter, ink.act, card, { at: utc(2, 9, 38) });
   seed.alert(me, { kind: 'hint', act: ink.act, character: spritey, sub: 'leading:excitedNegative', at: utc(2, 9, 41) });
   seed.alert(me, { kind: 'ruling', act: splat.act, character: pipewrench, sub: 'warning', at: utc(2, 9, 20) });
+  const quoted = seed.post(ink.thread, spritey, 'A post that needed a hand.', { at: utc(2, 9, 30) });
+  seed.alert(me, { kind: 'conduct', act: quoted, character: spritey, sub: 'hideUntilEdited', at: utc(2, 9, 25) });
+  seed.alert(me, { kind: 'gift', act: ink.act, character: spritey, at: utc(2, 9, 26) });
   fake.signInAs(me);
   void fake.seeAlerts(new Date(utc(2, 8, 52)).toISOString());
 };

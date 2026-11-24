@@ -5,7 +5,7 @@
  * the line in the heavy body over its detail and its links, the character it concerns in a skewed tag, and the time at the right. A new row has a
  * diamond in its kind's ink before its line. The text stands in calms (calm.css), as the Log's table does.
  *
- * Ink by kind: followed threads and quotes in the neon, cards, traps and rulings in the salty, settlements and hints in the ready, news in the pale.
+ * Ink by kind: followed threads and quotes in the neon, cards, traps and rulings in the salty, settlements, gifts and hints in the ready, news and the code of conduct in the pale.
  * Sizes are the boards' px or the glass's size tokens, never under the label (20px) on the Main board's layout (engine/ui/glass/board.test.tsx reads
  * this file). On the Phone board's layout each row is stacked: the icon and the line, the detail under them, then the tag and the time, at the phone's
  * sizes.
@@ -112,11 +112,13 @@
 }
 
 .kb-alerts-row[data-kb-kind='settlement'],
+.kb-alerts-row[data-kb-kind='gift'],
 .kb-alerts-row[data-kb-kind='hint'] {
   --kb-alerts-ink: var(--kb-glass-ready);
 }
 
 .kb-alerts-row[data-kb-kind='update'],
+.kb-alerts-row[data-kb-kind='conduct'],
 .kb-alerts-row[data-kb-kind='seasonNews'] {
   --kb-alerts-ink: var(--kb-glass-pale);
 }

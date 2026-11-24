@@ -1,6 +1,6 @@
 /**
  * The icon of an alert's kind, in the kind's ink (set by the caller's `color`): the shapes Alerts' rows and the toasts both draw. Followed threads
- * and quotes in the neon, cards, traps and rulings in the salty, settlements and hints in the ready, news in the pale (alerts.css, toasts.css).
+ * and quotes in the neon, cards, traps and rulings in the salty, settlements, gifts and hints in the ready, news and the code of conduct in the pale (alerts.css, toasts.css).
  */
 import type { ReactNode } from 'react';
 import type { AlertKind } from '../../rules/alerts.ts';
@@ -19,6 +19,10 @@ export const SHAPES: Readonly<Record<AlertKind, ReactNode>> = {
   trophy: <path d="M9 5h14v6a7 7 0 0 1-14 0zM9 8H5a4 4 0 0 0 4 5M23 8h4a4 4 0 0 1-4 5M16 18v4M11 27h10M13 22h6" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" />,
   beltBack: <><rect x="4" y="11" width="24" height="10" rx="2" fill="none" strokeWidth="2.2" /><path d="M13 12v8h6v-8z" fill="none" strokeWidth="2" strokeLinejoin="round" /></>,
   beltLost: <><rect x="4" y="11" width="24" height="10" rx="2" fill="none" strokeWidth="2.2" /><path d="M13 12v8h6v-8z" fill="none" strokeWidth="2" strokeLinejoin="round" /><path d="M5 27L27 5" strokeWidth="2.2" strokeLinecap="round" /></>,
+  /* A wrapped box with a ribbon: a gift reached the character. */
+  gift: <><rect x="5" y="13" width="22" height="14" fill="none" strokeWidth="2.2" /><path d="M4 9h24v4H4zM16 9v18" fill="none" strokeWidth="2.2" /><path d="M16 9c-2-5-8-4-6 0M16 9c2-5 8-4 6 0" fill="none" strokeWidth="2" strokeLinecap="round" /></>,
+  /* A page with a check: real moderation of a post, out of the fiction. */
+  conduct: <><path d="M8 4h12l4 4v20H8z" fill="none" strokeWidth="2.2" strokeLinejoin="round" /><path d="M12 17l3 3 6-7" fill="none" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round" /></>,
   hint: <path d="M16 4c1 5 7 7 7 14a7 7 0 0 1-14 0c0-4 2-6 3-8 1 3 2 4 4 4-1-4-1-7 0-10z" fill="none" strokeWidth="2.2" strokeLinejoin="round" />,
   settlement: <><circle cx="16" cy="16" r="10" fill="none" strokeWidth="2.2" /><path d="M16 10v6l4 3" strokeWidth="2.2" strokeLinecap="round" fill="none" /></>,
   update: <><rect x="5" y="6" width="22" height="20" fill="none" strokeWidth="2.2" /><path d="M5 11h22M10 16h12M10 20h8" strokeWidth="2" strokeLinecap="round" /></>,

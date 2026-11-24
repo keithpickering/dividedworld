@@ -100,11 +100,13 @@
 }
 
 .kb-toast[data-kb-kind='settlement'],
+.kb-toast[data-kb-kind='gift'],
 .kb-toast[data-kb-kind='hint'] {
   --kb-toast-ink: var(--kb-glass-ready);
 }
 
 .kb-toast[data-kb-kind='update'],
+.kb-toast[data-kb-kind='conduct'],
 .kb-toast[data-kb-kind='seasonNews'] {
   --kb-toast-ink: var(--kb-glass-pale);
 }
