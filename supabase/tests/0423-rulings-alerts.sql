@@ -499,3 +499,45 @@ begin
   if (select count(*) from alerts a where a.sub = 'gearGiven') is distinct from 1 then raise exception 'a grant of two copies wrote % alerts', (select count(*) from alerts a where a.sub = 'gearGiven'); end if;
   if (select count(*) from alerts a where a.account = pg_temp.owner(other) and a.kind = 'ruling' and a.sub = 'gearGiven' and a.act is null and a.character = other) is distinct from 1 then raise exception 'the character given gear was not told'; end if;
 end $$;
+
+-- Task 6 (section 5): real moderation on a post.
+--
+-- 1. decide with hide, hideUntilEdited, unhide or approve writes one conduct alert with that sub to the post author's account, about the version Act.
+-- 2. A nudge and a suspend write none.
+-- 3. The mail queue's rows are the same as before: the alerts add no mail, and the outcomes that sent mail still send exactly one.
+
+do $$
+declare
+  boss uuid := tests.account('ra-cd-admin');
+  author uuid := pg_temp.player('cd-author');
+  t uuid; p uuid; started jsonb;
+  o text; n bigint; m bigint; mails bigint;
+  want_mail jsonb := '{"hide": 1, "hideUntilEdited": 1, "unhide": 0, "approve": 0, "nudge": 1, "suspend": 1}';
+begin
+  insert into admins (account) values (boss) on conflict do nothing;
+  perform tests.become(pg_temp.owner(author));
+  started := start_thread('general', author, 'Ra conduct', 'Ra words.');
+  perform tests.unbecome();
+  p := (started -> 'act' ->> 'id')::uuid;
+  if p is null then raise exception 'no post to decide on: %', started; end if;
+
+  foreach o in array array['hide', 'hideUntilEdited', 'unhide', 'approve', 'nudge', 'suspend'] loop
+    n := (select count(*) from alerts a where a.kind = 'conduct');
+    mails := (select count(*) from mail_outbox);
+    perform tests.become(boss);
+    perform decide(null, p, o, case when o = 'suspend' then now() + interval '2 days' end, 'a note');
+    perform tests.unbecome();
+    m := (select count(*) from alerts a where a.kind = 'conduct') - n;
+    if o in ('nudge', 'suspend') then
+      if m is distinct from 0 then raise exception 'decide % wrote % conduct alerts', o, m; end if;
+    else
+      if m is distinct from 1 then raise exception 'decide % wrote % conduct alerts, not one', o, m; end if;
+      if (select count(*) from alerts a where a.kind = 'conduct' and a.sub = o and a.act = p and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
+        raise exception 'decide % did not tell the post''s author about the version', o;
+      end if;
+    end if;
+    if (select count(*) from mail_outbox) - mails is distinct from (want_mail ->> o)::bigint then
+      raise exception 'decide % queued % mail rows, not %', o, (select count(*) from mail_outbox) - mails, want_mail ->> o;
+    end if;
+  end loop;
+end $$;

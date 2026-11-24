@@ -1058,3 +1058,35 @@ begin
   perform write_alert(of_character, 'ruling', 'gearGiven', null, null);
   return jsonb_build_object('granted', copies);
 end $$;
+
+-- Section 5 (design section 4): real moderation on a post.
+-- decide (0341, whole): where it writes a decision that hides, hides until edited, unhides or approves a version, the version's character is told, about that version.
+-- The account-level outcomes (nudge, suspend, ban, lift) tell no character; the mail (0341) is unchanged.
+create or replace function decide(account uuid, version_act uuid, outcome text, until timestamptz default null, note text default '') returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid := decide.account;
+  made bigint;
+begin
+  perform only_admins('decides');
+  perform signed_in_account();
+  if outcome is null or outcome not in ('none', 'nudge', 'hide', 'hideUntilEdited', 'suspend', 'ban', 'unhide', 'lift', 'approve', 'close') then
+    raise exception 'that is not an outcome' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if decide.account is null and decide.version_act is null then
+    raise exception 'name an account or a version' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if outcome in ('suspend', 'ban', 'lift', 'nudge') and who is null then who := conduct_author(decide.version_act); end if;
+  if outcome in ('suspend', 'ban', 'lift', 'nudge') and who is null then
+    raise exception 'that version has no player account' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  if outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve') and decide.version_act is null then
+    raise exception '% names a version' , outcome using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  made := conduct_write(null, decide.version_act, case when outcome in ('suspend', 'ban', 'lift', 'nudge') then who else decide.account end, outcome, decide.until, decide.note);
+  if outcome in ('hide', 'hideUntilEdited', 'unhide', 'approve') then
+    perform write_alert((select a.character from acts a where a.id = decide.version_act), 'conduct', outcome, decide.version_act, null);
+  end if;
+  perform mail_for_decision(made);
+  return made;
+end $$;
