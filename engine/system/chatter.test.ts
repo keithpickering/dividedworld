@@ -3,12 +3,13 @@ import assert from 'node:assert/strict';
 import { EXCERPT_WORDS } from './excerpt.ts';
 import { READ_WORDS, readThread, type ReadCandidate, type ReadPost, type ThreadReadResult } from './read.ts';
 import { testSystem } from '../rules/test-system.ts';
-import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, CHATTER_RULE, CHATTER_WORDS_MOST, CHATTER_TOKENS, type OfferedCard, type RepairFacts } from './chatter.ts';
+import { chatterCompletion, chatterPrompt, chatterSchema, repairChatter, repairRuling, rulingWords, STAFF_TURN_PREMISE, TURN_PREMISE, CHATTER_RULE, CHATTER_WORDS_MOST, CHATTER_TOKENS, type OfferedCard, type RepairFacts } from './chatter.ts';
 import { personaPrompt } from './prompt.ts';
 import { noteMost } from './memory.ts';
 import { PRONOUN_PRESETS, type PronounSet } from '../rules/pronouns.ts';
 import { repair } from './validate.ts';
 import { schemaProblems } from './schema.ts';
+import { requestKinds, repairModMove, type BossMoveContext, type ModMoveContext } from './judgment.ts';
 
 const persona = testSystem.roster[0]!;
 const she = PRONOUN_PRESETS.she;
@@ -633,4 +634,187 @@ test('a null title with posts: the prompt has no Thread line, and the frame is t
   assert.ok(p.message.startsWith('Ann (she/her) [post #1]'));
   const c = chatterCompletion({ name: 'Old Timer', title: null, read: fitRead, limits: fitLimits, fit: ROOMY });
   assert.ok(c.prompt.includes('\nThread:\n') && !c.prompt.includes('(new)'), c.prompt);
+});
+
+/* ------------------------------------------------------------------------------------- the request block ---- */
+
+const B1 = '11111111-1111-4111-8111-111111111111';
+const B2 = '22222222-2222-4222-8222-222222222222';
+const B3 = '33333333-3333-4333-8333-333333333333';
+const T1 = 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';
+const R1 = 'rrrrrrrr-0000-4000-8000-000000000001';
+const R2 = 'rrrrrrrr-0000-4000-8000-000000000002';
+const modCtx = (c: Partial<ModMoveContext> = {}): ModMoveContext => ({ allowance: 2, beat: [B1, B2], ruleDaysMost: 7, expiryLeastHours: 1, threadBoards: new Map([[T1, B1]]), ...c });
+const bossCtx = (c: Partial<BossMoveContext> = {}): BossMoveContext => ({ bank: 2, threadBoards: new Map([[T1, B1]]), expiryLeastHours: 1, moveExpiryMostDays: 7, structuralHoldHours: 24, ...c });
+const modRuling = (c: Partial<ModMoveContext> = {}) => ({ answering: [R1, R2], office: 'mod' as const, mod: modCtx(c) });
+const bossRuling = (c: Partial<BossMoveContext> = {}) => ({ answering: [R1, R2], office: 'boss' as const, boss: bossCtx(c) });
+const moveThread = { kind: 'moveThread', params: { thread: T1, board: B2 }, expires_in_hours: 0, why: 'Asked to, and it fits.' };
+const rule = (r: string, extra: Record<string, unknown> = {}) => ({ reply: R1, ruling: r, ...extra });
+
+test('a Mod fulfills with a thread move: kept, expiry 0, the reply named', () => {
+  const r = repairRuling(rule('fulfill', { move: moveThread }), modRuling());
+  assert.equal(r.dropped, null);
+  assert.deepEqual(r.request, { reply: R1, ruling: 'fulfill', move: moveThread });
+  assert.deepEqual(r.trims, []);
+});
+
+test('a reply that is not one of those answered drops the block, answering', () => {
+  const r = repairRuling(rule('reject', { reply: R1.replace('rrrrrrrr', 'zzzzzzzz') }), modRuling());
+  assert.equal(r.request, null);
+  assert.deepEqual(r.dropped, { path: 'request.reply', predicate: 'answering' });
+  assert.deepEqual(repairRuling({ ruling: 'reject' }, modRuling()).dropped, { path: 'request.reply', predicate: 'answering' });
+});
+
+test('a ruling outside the three drops the block, oneOf(fulfill, reject, confer)', () => {
+  const r = repairRuling(rule('maybe'), modRuling());
+  assert.equal(r.request, null);
+  assert.deepEqual(r.dropped, { path: 'request.ruling', predicate: 'oneOf(fulfill, reject, confer)' });
+});
+
+test('a block that is not an object is dropped, isObject', () => {
+  assert.deepEqual(repairRuling('fulfill', modRuling()).dropped, { path: 'request', predicate: 'isObject' });
+  assert.deepEqual(repairRuling(['x'], modRuling()).dropped, { path: 'request', predicate: 'isObject' });
+});
+
+test('a Mod fulfill of a kind its office does not make becomes a confer, fulfillToConfer, with the drop on the record', () => {
+  const r = repairRuling(rule('fulfill', { move: { kind: 'renameBoard', params: { board: B1, name: 'N', premise: 'p', description: 'd' }, expires_in_hours: 5, why: 'w' } }), modRuling());
+  assert.deepEqual(r.request, { reply: R1, ruling: 'confer' });
+  assert.deepEqual(r.dropped, { path: 'request.move.kind', predicate: 'office' });
+  assert.ok(r.trims.some((t) => t.path === 'request.ruling' && t.predicate === 'fulfillToConfer'), JSON.stringify(r.trims));
+});
+
+test('a Mod fulfill with allowance 0 becomes a confer, the drop naming allowance', () => {
+  const r = repairRuling(rule('fulfill', { move: moveThread }), modRuling({ allowance: 0 }));
+  assert.equal(r.request!.ruling, 'confer');
+  assert.deepEqual(r.dropped, { path: 'request.move', predicate: 'allowance' });
+  assert.ok(r.trims.some((t) => t.predicate === 'fulfillToConfer'));
+});
+
+test('a Mod fulfill with a board off its beat becomes a confer, the drop naming onBeat at that board', () => {
+  const r = repairRuling(rule('fulfill', { move: { ...moveThread, params: { thread: T1, board: B3 } } }), modRuling());
+  assert.equal(r.request!.ruling, 'confer');
+  assert.deepEqual(r.dropped, { path: 'request.move.params.board', predicate: 'onBeat' });
+});
+
+test('a fulfill with no move is a confer, fulfillToConfer, and a fulfill with a move that is not an object too', () => {
+  for (const given of [rule('fulfill'), rule('fulfill', { move: 'moveThread' })]) {
+    const r = repairRuling(given, modRuling());
+    assert.equal(r.request!.ruling, 'confer');
+    assert.equal(r.request!.move, undefined);
+    assert.ok(r.trims.some((t) => t.path === 'request.ruling' && t.predicate === 'fulfillToConfer'), JSON.stringify(r.trims));
+  }
+  assert.deepEqual(repairRuling(rule('fulfill', { move: 'moveThread' }), modRuling()).dropped, { path: 'request.move', predicate: 'isObject' });
+});
+
+test('a fulfill given an expiry on a lasting kind is kept at 0 and the trim is lastingHasNoExpiry', () => {
+  const r = repairRuling(rule('fulfill', { move: { ...moveThread, expires_in_hours: 12 } }), modRuling());
+  assert.equal(r.request!.ruling, 'fulfill');
+  assert.equal(r.request!.move!.expires_in_hours, 0);
+  assert.ok(r.trims.some((t) => t.predicate === 'lastingHasNoExpiry'));
+});
+
+test('a reject or a confer carrying a move has the move dropped, noMove, and the ruling stands', () => {
+  for (const ruling of ['reject', 'confer'] as const) {
+    const r = repairRuling(rule(ruling, { move: moveThread }), modRuling());
+    assert.deepEqual(r.request, { reply: R1, ruling });
+    assert.deepEqual(r.trims, [{ path: 'request.move', predicate: 'noMove', before: 1, after: 0 }]);
+  }
+});
+
+test('a Boss fulfill of a thread move is kept; with bank 0 it becomes a confer naming bank', () => {
+  const ok1 = repairRuling(rule('fulfill', { move: moveThread }), bossRuling());
+  assert.deepEqual(ok1.request, { reply: R1, ruling: 'fulfill', move: moveThread });
+  const none = repairRuling(rule('fulfill', { move: moveThread }), bossRuling({ bank: 0 }));
+  assert.equal(none.request!.ruling, 'confer');
+  assert.deepEqual(none.dropped, { path: 'request.move', predicate: 'bank' });
+});
+
+test('a Boss fulfill: an unknown thread drops knownThread, a kind outside its office drops the kind, the expiry is clamped to the phase', () => {
+  const unknown = repairRuling(rule('fulfill', { move: { ...moveThread, params: { thread: B3, board: B2 } } }), bossRuling());
+  assert.deepEqual(unknown.dropped, { path: 'request.move.params.thread', predicate: 'knownThread' });
+  const kind = repairRuling(rule('fulfill', { move: { ...moveThread, kind: 'awardTrophy' } }), bossRuling());
+  assert.equal(kind.dropped!.path, 'request.move.kind');
+  const rename = { kind: 'renameBoard', params: { board: B1, name: 'New Name', premise: 'p', description: 'd' }, expires_in_hours: 9999, why: 'w' };
+  const long = repairRuling(rule('fulfill', { move: rename }), bossRuling());
+  assert.equal(long.request!.ruling, 'fulfill', JSON.stringify(long));
+  assert.equal(long.request!.move!.expires_in_hours, 7 * 24);
+  assert.ok(long.trims.some((t) => t.path === 'request.move.expires_in_hours' && t.predicate === 'atMost(168)'));
+});
+
+test('a Boss fulfill with a lasting kind takes expiry 0, and the Boss move has the why bound', () => {
+  const r = repairRuling(rule('fulfill', { move: { ...moveThread, expires_in_hours: 5, why: 'x'.repeat(400) } }), bossRuling());
+  assert.equal(r.request!.move!.expires_in_hours, 0);
+  assert.ok(r.trims.some((t) => t.predicate === 'lastingHasNoExpiry'));
+  assert.ok(r.trims.some((t) => t.path === 'request.move.why' && t.predicate.startsWith('maxLength(')));
+});
+
+test('a Mod ruling is held by repairModMove: the same move, the same drop', () => {
+  const direct = repairModMove(moveThread, modCtx({ allowance: 0 }));
+  assert.deepEqual(repairRuling(rule('fulfill', { move: moveThread }), modRuling({ allowance: 0 })).dropped, { ...direct.dropped!, path: `request.${direct.dropped!.path}` });
+});
+
+test('repairChatter keeps a repaired request beside the words', () => {
+  const r = ok({ words: 'Done.', request: rule('fulfill', { move: moveThread }) }, { ruling: modRuling() });
+  assert.deepEqual(r.answer.request, { reply: R1, ruling: 'fulfill', move: moveThread });
+});
+
+test('a request block on a turn that was not offered one is dropped, notAsked, and the words stand', () => {
+  const r = ok({ words: 'Done.', request: rule('fulfill', { move: moveThread }) });
+  assert.equal(r.answer.request, undefined);
+  assert.deepEqual(r.trims, [{ path: 'request', predicate: 'notAsked', before: 1, after: 0 }]);
+});
+
+test('a malformed block never costs the post: a ruling "maybe" and a move that is a string both leave the words', () => {
+  const a = ok({ words: 'Hm.', request: rule('maybe') }, { ruling: modRuling() });
+  assert.equal(a.answer.request, undefined);
+  assert.ok(a.trims.some((t) => t.path === 'request.ruling' && t.predicate === 'oneOf(fulfill, reject, confer)'));
+  const b = ok({ words: 'Hm.', request: rule('fulfill', { move: 'moveThread' }) }, { ruling: modRuling() });
+  assert.equal(b.answer.request!.ruling, 'confer');
+  assert.equal(b.answer.words, 'Hm.');
+});
+
+test('CHATTER_RULE passes a request block through untyped, so a malformed ruling never costs the post', () => {
+  const given = { words: 'Hi.', request: { reply: 5, ruling: 'maybe', move: 'a string' } };
+  const r = repair(given, CHATTER_RULE);
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual((r.value as any).request, given.request);
+  assert.ok(repair({ words: 'Hi.' }, CHATTER_RULE).ok);
+});
+
+test('the schema offers request only with ruling given, with ruling an enum, and names only the office kinds', () => {
+  const none = chatterSchema({ askedTitle: false, offered: [] }) as any;
+  assert.equal('request' in none.properties, false);
+  const mod = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'mod' } }) as any;
+  assert.deepEqual(mod.properties.request.properties.ruling.enum, ['fulfill', 'reject', 'confer']);
+  assert.deepEqual(mod.properties.request.required, ['reply', 'ruling']);
+  assert.deepEqual(mod.properties.request.properties.move.properties.kind.enum, ['setRule', 'moveThread']);
+  const boss = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'boss' } }) as any;
+  assert.deepEqual(boss.properties.request.properties.move.properties.kind.enum, [...requestKinds('boss')]);
+  assert.ok(!boss.properties.request.properties.move.properties.kind.enum.includes('setRule'));
+  assert.deepEqual(schemaProblems(mod), []);
+  assert.deepEqual(schemaProblems(boss), []);
+  assert.deepEqual(schemaProblems(chatterSchema({ askedTitle: true, offered: [CAST, SET], ruling: { office: 'boss' } })), []);
+});
+
+test('a member persona keeps the turn premise byte-identical; staff get the ruling premise', () => {
+  assert.equal(TURN_PREMISE, 'You are back in a thread because people have answered you there. You are writing on your own, as a character on the board. This is not a meeting and not a ruling: you are one voice in a thread, and what you write is a post like anyone\'s.');
+  assert.equal(STAFF_TURN_PREMISE, 'You are back in a thread because people have answered you there. You are writing on your own, as a character on the board. This is not a meeting: you are one voice in a thread, and what you write is a post like anyone\'s, though if someone asks you for something you may rule on it.');
+});
+
+test('the ruling words name the kinds, the allowance or bank, the beat by name and id, confer and its lapse', () => {
+  const mod = rulingWords({ office: 'mod', allowance: 2, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24 });
+  for (const want of ['setRule', 'moveThread', '2 moves', 'Games', B1, 'confer', '3 days']) assert.ok(mod.includes(want), want + ': ' + mod);
+  const boss = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24 });
+  for (const want of ['renameBoard', 'createBoard', 'mergeBoard', '1 move', '24 hours', 'next meeting']) assert.ok(boss.includes(want), want + ': ' + boss);
+  assert.ok(!boss.includes('setRule'));
+});
+
+test('a staff turn prompt carries the ruling words, a member turn none', () => {
+  const words = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24 });
+  const staff = chatterPrompt({ ...base, premise: STAFF_TURN_PREMISE, ruling: words });
+  assert.ok(staff.system.includes(words));
+  assert.ok(staff.system.includes(STAFF_TURN_PREMISE));
+  const member = chatterPrompt({ ...base, premise: TURN_PREMISE });
+  assert.ok(!member.system.includes('rule on it'));
+  assert.ok(member.system.includes(TURN_PREMISE));
 });

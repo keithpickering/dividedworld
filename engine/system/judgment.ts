@@ -131,6 +131,49 @@ function capLength(text: string, most: number): string {
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
+/** A move's why: one line, required, cut at `WHY_MOST` with the trim named. The drop, or the line. */
+function readWhy(raw: unknown, trims: Trim[]): { readonly why: string } | Dropped {
+  if (raw === undefined || raw === null) return { path: 'move.why', predicate: 'required' };
+  if (typeof raw !== 'string') return { path: 'move.why', predicate: 'isString' };
+  let why = oneLine(raw);
+  if (why === '') return { path: 'move.why', predicate: 'nonEmpty' };
+  if (why.length > WHY_MOST) {
+    const cut = capLength(why, WHY_MOST).trimEnd();
+    trims.push({ path: 'move.why', predicate: `maxLength(${WHY_MOST})`, before: why.length, after: cut.length });
+    why = cut;
+  }
+  return { why };
+}
+
+/**
+ * A move's expiry in whole hours. A lasting kind stays until reversed or superseded: the code sets it to 0 and a value given is dropped with the trim `lastingHasNoExpiry`.
+ * Any other is required, digits given as text are the number they spell (`asNumber`), and it is rounded and clamped into `least` to `most` hours with a trim.
+ */
+function readHours(raw: unknown, lasting: boolean, least: number, most: number, trims: Trim[]): number | Dropped {
+  if (lasting) {
+    const asNumber = typeof raw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(raw) ? Number(raw) : raw;
+    if (typeof asNumber === 'number' && Number.isFinite(asNumber) && asNumber !== 0) trims.push({ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: asNumber, after: 0 });
+    return 0;
+  }
+  let hoursRaw = raw;
+  if (typeof hoursRaw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(hoursRaw)) {
+    const as = Number(hoursRaw);
+    trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: hoursRaw.length, after: as });
+    hoursRaw = as;
+  }
+  if (hoursRaw === undefined || hoursRaw === null) return { path: 'move.expires_in_hours', predicate: 'required' };
+  if (typeof hoursRaw !== 'number' || !Number.isFinite(hoursRaw)) return { path: 'move.expires_in_hours', predicate: 'isNumber' };
+  let hours = Math.round(hoursRaw);
+  if (hours > most) {
+    trims.push({ path: 'move.expires_in_hours', predicate: `atMost(${most})`, before: hoursRaw, after: most });
+    hours = most;
+  } else if (hours < least) {
+    trims.push({ path: 'move.expires_in_hours', predicate: `atLeast(${least})`, before: hoursRaw, after: least });
+    hours = least;
+  }
+  return hours;
+}
+
 /** The kinds a Mod's office may make. */
 const modKinds = (): string[] => MOVE_KINDS.filter((k) => k.offices.includes('mod')).map((k) => k.key);
 
@@ -192,44 +235,15 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   if (!onBeat(board)) return no(under('board'), 'onBeat', trims);
 
   // The why: the admins read it.
-  const whyRaw = raw['why'];
-  if (whyRaw === undefined || whyRaw === null) return no('move.why', 'required', trims);
-  if (typeof whyRaw !== 'string') return no('move.why', 'isString', trims);
-  let why = oneLine(whyRaw);
-  if (why === '') return no('move.why', 'nonEmpty', trims);
-  if (why.length > WHY_MOST) {
-    const cut = capLength(why, WHY_MOST).trimEnd();
-    trims.push({ path: 'move.why', predicate: `maxLength(${WHY_MOST})`, before: why.length, after: cut.length });
-    why = cut;
-  }
+  const whyRead = readWhy(raw['why'], trims);
+  if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);
+  const why = whyRead.why;
 
-  // A lasting kind stays until reversed or superseded: it has no expiry, so the code sets it to 0 and a value given is dropped with a trim.
-  if (kind.lasting) {
-    const given0 = raw['expires_in_hours'];
-    const asNumber = typeof given0 === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(given0) ? Number(given0) : given0;
-    if (typeof asNumber === 'number' && Number.isFinite(asNumber) && asNumber !== 0) trims.push({ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: asNumber, after: 0 });
-    return { move: { kind: kind.key, params: { ...given, ...(thread === null ? {} : { thread }), board }, expires_in_hours: 0, why }, trims, dropped: null };
-  }
-
-  // How long it runs: whole hours, from the fewest any move lasts to the most days a Mod's rule may.
-  let hoursRaw = raw['expires_in_hours'];
-  // Digits given as text are the number they spell, as a count's parameter is: coerced, with the trim named.
-  if (typeof hoursRaw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(hoursRaw)) {
-    const as = Number(hoursRaw);
-    trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: hoursRaw.length, after: as });
-    hoursRaw = as;
-  }
-  if (hoursRaw === undefined || hoursRaw === null) return no('move.expires_in_hours', 'required', trims);
-  if (typeof hoursRaw !== 'number' || !Number.isFinite(hoursRaw)) return no('move.expires_in_hours', 'isNumber', trims);
-  const most = ctx.ruleDaysMost * 24;
-  let hours = Math.round(hoursRaw);
-  if (hours > most) {
-    trims.push({ path: 'move.expires_in_hours', predicate: `atMost(${most})`, before: hoursRaw, after: most });
-    hours = most;
-  } else if (hours < ctx.expiryLeastHours) {
-    trims.push({ path: 'move.expires_in_hours', predicate: `atLeast(${ctx.expiryLeastHours})`, before: hoursRaw, after: ctx.expiryLeastHours });
-    hours = ctx.expiryLeastHours;
-  }
+  // How long it runs: a lasting kind has none; any other is whole hours, from the fewest any move lasts to the most days a Mod's rule may.
+  const hoursRead = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.ruleDaysMost * 24, trims);
+  if (typeof hoursRead !== 'number') return no(hoursRead.path, hoursRead.predicate, trims);
+  const hours = hoursRead;
+  if (kind.lasting) return { move: { kind: kind.key, params: { ...given, ...(thread === null ? {} : { thread }), board }, expires_in_hours: 0, why }, trims, dropped: null };
 
   if (!conferring) return { move: { kind: kind.key, params: { ...given, board }, expires_in_hours: hours, why }, trims, dropped: null };
 
@@ -246,6 +260,63 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   const wrote = isObject(raw['demand']) ? raw['demand']['kind'] : undefined;
   if (wrote !== 'apologyAccepted') trims.push({ path: 'move.demand', predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 });
   return { move: { kind: kind.key, params: params2, expires_in_hours: hours, why, demand: { kind: 'apologyAccepted', params: {} } }, trims, dropped: null };
+}
+
+/** What a Boss's request fulfill is held to: the numbers the database holds again in `apply_boss_move`. */
+export interface BossMoveContext {
+  /** Whole moves the bank can pay now (`bank_now`, floored); below one drops any move, `bank`. */
+  readonly bank: number;
+  /** Thread id (lowercase) to the id of the board it is on now, for the threads the call may name; a `moveThread` names one of them, else `knownThread`. */
+  readonly threadBoards?: ReadonlyMap<string, string>;
+  /** The fewest hours a move lasts (`moveExpiryLeastHours`). */
+  readonly expiryLeastHours: number;
+  /** The most days a move of this phase lasts: the phase's number under the setting's (`moveExpiryMostDays`). */
+  readonly moveExpiryMostDays: number;
+  /** The hours a structural move waits in the admin queue before it lands (`structuralHoldHours`); the database sets it, the prompt says it. */
+  readonly structuralHoldHours: number;
+}
+
+/**
+ * The kinds a persona may make to fulfill a request: the catalog's kinds of its office that need no context a turn does not hold (a group's catalog, the machine's slots, a
+ * trophy, a demand, a successor). A Mod's: setRule and moveThread. The Boss's: the four that shape a board or move a thread (a rule it makes at a meeting).
+ */
+export function requestKinds(office: 'boss' | 'mod'): readonly string[] {
+  const keys = office === 'mod' ? ['setRule', 'moveThread'] : ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard'];
+  return MOVE_KINDS.filter((k) => keys.includes(k.key) && k.offices.includes(office)).map((k) => k.key);
+}
+
+/**
+ * The Boss's one move in a request, held as the meeting holds one: a kind in the catalog the Boss's office makes (and one a request may carry, `requestKinds`), params that hold
+ * against the kind (`moveParamsProblems`), a thread the call was given, a why, an expiry clamped into the phase (a lasting kind takes none: 0, trimmed `lastingHasNoExpiry`), and a
+ * bank of at least one. What cannot be repaired without inventing content is dropped, naming the predicate. A board's name against the instance's style, and a board that exists, the
+ * database holds again; a refusal there becomes a confer.
+ */
+export function repairBossMove(raw: unknown, ctx: BossMoveContext): RepairedMove {
+  if (raw === undefined || raw === null) return { move: null, trims: [], dropped: null };
+  const no = (path: string, pred: string, trims: readonly Trim[] = []): RepairedMove => ({ move: null, trims, dropped: { path, predicate: pred } });
+  if (!isObject(raw)) return no('move', 'isObject');
+  if (!(ctx.bank >= 1)) return no('move', 'bank');
+  const kind = typeof raw['kind'] === 'string' ? moveKind(raw['kind']) : undefined;
+  const allowed = requestKinds('boss');
+  if (!kind || !allowed.includes(kind.key)) return no('move.kind', `oneOf(${allowed.join(', ')})`);
+  if (!kind.offices.includes('boss')) return no('move.kind', 'office');
+  if (!isObject(raw['params'])) return no('move.params', 'isObject');
+  const params: Record<string, unknown> = { ...raw['params'] };
+  const under = (path: string): string => `move.params.${path}`;
+  const checked = moveParamsProblems(kind.key, params);
+  const trims: Trim[] = checked.trims.map((t) => ({ ...t, path: under(t.path) }));
+  if (!checked.ok) return no(under(checked.path), checked.predicate, trims);
+  const given: Record<string, unknown> = { ...(checked.value as Record<string, unknown>) };
+  if (kind.key === 'moveThread') {
+    const thread = String(given['thread']).toLowerCase();
+    if (ctx.threadBoards?.get(thread) === undefined) return no(under('thread'), 'knownThread', trims);
+    given['thread'] = thread;
+  }
+  const whyRead = readWhy(raw['why'], trims);
+  if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);
+  const hours = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.moveExpiryMostDays * 24, trims);
+  if (typeof hours !== 'number') return no(hours.path, hours.predicate, trims);
+  return { move: { kind: kind.key, params: given, expires_in_hours: hours, why: whyRead.why }, trims, dropped: null };
 }
 
 /** A move-only answer (an old voice's second call): the answer must be an object, and its `move` is repaired as any other. */
