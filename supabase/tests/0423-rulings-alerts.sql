@@ -581,3 +581,127 @@ begin
     end if;
   end loop;
 end $$;
+
+-- Task 7 (section 6): gifts and drawings.
+--
+-- 1. A gift writes one gift alert to the drive post's author's account, about the donation Act; a gift between one player's two masks writes none.
+-- 2. A draw on a wall writes one cardOnYours/drew alert to the wall post's author, about the draw Act; a draw by the author's other mask writes none; a staff draw writes one.
+-- 3. A wash writes none.
+-- 4. A refused gift or draw writes none.
+-- 5. The answers do not differ in shape with whether an alert was written (write_alert returns nothing the caller uses).
+
+insert into card_kinds (key, name, alignment, rarity, play, stack, drive) values
+  ('t-ra-drive', 'Test Alert Drive', 'sweet', 'uncommon', 'cast', 3, '{"lasts": {"unit": "hour", "count": 1}, "gifts": ["raGift"], "overhead": "raOver"}');
+insert into card_kinds (key, name, alignment, rarity, play, reaches, stack, surface) values
+  ('t-ra-wall', 'Test Alert Wall', 'pepperoni', 'rare', 'cast', '{post}', 1, true);
+update settings set value = value || '{"raGift": 10, "raOver": 25}'::jsonb where key = 'economy';
+
+create function pg_temp.cells(first integer, n integer) returns bit(10000) language sql as $$
+  select (repeat('0', first) || repeat('1', n) || repeat('0', 10000 - first - n))::bit(10000)
+$$;
+
+do $$
+declare
+  author uuid := pg_temp.player('gw-author');
+  author2 uuid := tests.character(pg_temp.owner(author), 'Ra gw author two');
+  donor uuid := pg_temp.player('gw-donor');
+  caster uuid := pg_temp.player('gw-caster');
+  t uuid; p uuid; drive uuid; wall uuid; played jsonb;
+  said jsonb; said2 jsonb; refused text; gifted uuid; drew uuid; washed uuid;
+  persona uuid;
+  n bigint;
+  payload jsonb := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+begin
+  perform tests.become(pg_temp.owner(author));
+  t := ((start_thread('general', author, 'Ra gifts two', 'Ra gift words two.')) -> 'act' ->> 'thread')::uuid;
+  perform tests.unbecome();
+  p := (select a.id from acts a where a.thread = t and a.kind = 'post' order by a.created_at limit 1);
+  insert into card_ledger (account, card, kind, price) select pg_temp.owner(caster), k, 'bought', 0 from unnest(array['t-ra-drive', 't-ra-wall']) k, generate_series(1, 3);
+  perform tests.become_service();
+  played := play_card(pg_temp.owner(caster), 't-ra-drive', caster, p, '{}', 0, 'Please give.');
+  drive := (played ->> 'id')::uuid;
+  played := play_card(pg_temp.owner(caster), 't-ra-wall', caster, p, '{}', 0, '');
+  wall := (played ->> 'id')::uuid;
+  perform tests.unbecome();
+  if drive is null or wall is null or not exists (select 1 from surfaces s where s.play = wall) then raise exception 'no drive or wall to act on: % %', drive, wall; end if;
+  insert into wallets (account, balance) values (pg_temp.owner(donor), 400), (pg_temp.owner(author), 400)
+    on conflict (account) do update set balance = excluded.balance;
+
+  -- 1. A gift: one gift alert to the author's account, about the donation Act.
+  perform tests.become_service();
+  said := donate(pg_temp.owner(donor), donor, drive, 10);
+  perform tests.unbecome();
+  gifted := (said #>> '{gift,id}')::uuid;
+  if (select count(*) from alerts a where a.kind = 'gift' and a.character is not null) is distinct from 1
+     or (select count(*) from alerts a where a.kind = 'gift' and a.sub is null and a.act = gifted and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
+    raise exception 'a gift did not write one gift alert to the author about the donation: %', (select jsonb_agg(to_jsonb(a)) from alerts a where a.kind = 'gift' and a.character is not null);
+  end if;
+
+  -- A gift between one player's two masks writes none.
+  n := (select count(*) from alerts a where a.kind = 'gift' and a.character is not null);
+  perform tests.become_service();
+  said2 := donate(pg_temp.owner(author), author2, drive, 10);
+  perform tests.unbecome();
+  if (select count(*) from alerts a where a.kind = 'gift' and a.character is not null) is distinct from n then raise exception 'a gift between one player''s masks wrote an alert'; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(said) k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said2) k)
+     or (select array_agg(k order by k) from jsonb_object_keys(said -> 'gift') k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said2 -> 'gift') k) then
+    raise exception 'the answer of a gift differs with whether an alert was written: % / %', said, said2;
+  end if;
+
+  -- 4a. A refused gift writes none.
+  n := (select count(*) from alerts a where a.kind = 'gift' and a.character is not null);
+  perform tests.become_service();
+  refused := pg_temp.refusal(format('select donate(%L, %L, %L, 13)', pg_temp.owner(donor), donor, drive));
+  perform tests.unbecome();
+  if refused is null then raise exception 'a gift of an amount the card does not offer was not refused'; end if;
+  if (select count(*) from alerts a where a.kind = 'gift' and a.character is not null) is distinct from n then raise exception 'a refused gift wrote an alert'; end if;
+
+  -- 2. A draw by another player: one cardOnYours/drew alert to the author, about the draw Act.
+  perform tests.become_service();
+  said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(0, 100), 4000);
+  perform tests.unbecome();
+  drew := (said ->> 'id')::uuid;
+  if (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew') is distinct from 1
+     or (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew' and a.act = drew and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
+    raise exception 'a draw did not write one drew alert to the wall post''s author about the draw: %', (select jsonb_agg(to_jsonb(a)) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew');
+  end if;
+
+  -- By the author's other mask: none.
+  n := (select count(*) from alerts a where a.sub = 'drew');
+  perform tests.become_service();
+  said2 := draw_on_surface(pg_temp.owner(author), author2, wall, payload, pg_temp.cells(200, 100), 4000);
+  perform tests.unbecome();
+  if (select count(*) from alerts a where a.sub = 'drew') is distinct from n then raise exception 'a draw by the author''s other mask wrote an alert'; end if;
+  if (select array_agg(k order by k) from jsonb_object_keys(said) k) is distinct from (select array_agg(k order by k) from jsonb_object_keys(said2) k) then
+    raise exception 'the answer of a draw differs with whether an alert was written: % / %', said, said2;
+  end if;
+
+  -- A staff draw (a persona's): a null owner, so the author is told.
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Ra Gw Persona', 'ra-gw-persona', 'persona', now()) returning id into persona;
+  perform set_config('kayfabb.staff_writer', '', true);
+  n := (select count(*) from alerts a where a.sub = 'drew');
+  perform tests.become_service();
+  said := staff_draw_on_surface('ra-gw-persona', wall, payload, pg_temp.cells(400, 100), 4000);
+  perform tests.unbecome();
+  if (select count(*) from alerts a where a.sub = 'drew') - n is distinct from 1
+     or (select count(*) from alerts a where a.sub = 'drew' and a.act = (said ->> 'id')::uuid and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
+    raise exception 'a staff draw did not write one drew alert to the author';
+  end if;
+
+  -- 3. A wash writes none.
+  n := (select count(*) from alerts a where a.kind = 'cardOnYours');
+  perform tests.become_service();
+  said := wash_surface(pg_temp.owner(author), author, wall, payload, pg_temp.cells(0, 50));
+  perform tests.unbecome();
+  if (said ->> 'kind') is distinct from 'wash' then raise exception 'the wash did not land: %', said; end if;
+  if (select count(*) from alerts a where a.kind = 'cardOnYours') is distinct from n then raise exception 'a wash wrote a cardOnYours alert'; end if;
+
+  -- 4b. A refused draw (past the wall's limit) writes none.
+  n := (select count(*) from alerts a where a.kind = 'cardOnYours');
+  perform tests.become_service();
+  refused := pg_temp.refusal(format('select draw_on_surface(%L, %L, %L, %L, %L, 10)', pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(1000, 500)::text));
+  perform tests.unbecome();
+  if refused is null then raise exception 'a draw past the limit was not refused'; end if;
+  if (select count(*) from alerts a where a.kind = 'cardOnYours') is distinct from n then raise exception 'a refused draw wrote an alert'; end if;
+end $$;

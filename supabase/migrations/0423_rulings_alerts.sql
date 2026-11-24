@@ -1090,3 +1090,137 @@ begin
   perform mail_for_decision(made);
   return made;
 end $$;
+
+-- Section 6 (design section 5): gifts and drawings
+-- donate (0153, whole): after the donation Act, the drive post's character is told, about the donation. surface_apply (0317, whole): after a draw's Act (staff_draw_on_surface lands here too), the wall post's character is told cardOnYours/drew about the draw; a wash tells none.
+create or replace function donate(who uuid, through uuid, drive uuid, amount integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  opening acts%rowtype;
+  on_post acts%rowtype;
+  ck card_kinds%rowtype;
+  eco jsonb := coalesce((select s.value from settings s where s.key = 'economy' and jsonb_typeof(s.value) = 'object'), '{}'::jsonb);
+  closes timestamptz;
+  offered integer[];
+  pct numeric;
+  overhead integer;
+  arrives integer;
+  author_account uuid;
+  have integer;
+  gift uuid := gen_random_uuid();
+begin
+  perform played_by(through, who);
+  perform not_banned(through);
+  -- The drive: a card play whose payload names itself as its drive, of a card that has one. An Act is never changed, so reading it before the lock is reading it.
+  select * into opening from acts a where a.id = donate.drive and a.kind = 'card';
+  select * into ck from card_kinds k where k.key = opening.payload ->> 'card';
+  if opening.id is null or ck.drive is null or opening.payload ->> 'drive' is distinct from opening.id::text or coalesce(opening.payload ->> 'reach', 'post') <> 'post' then
+    raise exception 'that is not a drive' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- The post's row, as place_cast locks it: a play and a gift on one post are laid one at a time, and what is read below is read after any play that was ahead of this gift.
+  select * into on_post from acts a where a.id = opening.target_act_id for no key update;
+  -- Open: the drive's latest play, plus the card's span, is still ahead (place_cast's own test of an open drive, through the one helper that says which plays make one).
+  select max(d.created_at) + span_interval(ck.drive -> 'lasts') into closes from drive_plays(on_post.id, opening.payload ->> 'card') d where d.drive = opening.id;
+  if closes is null or closes <= now() then raise exception 'this drive has ended' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  -- The amounts the card offers, as the economy holds them now.
+  select array_agg(distinct (eco ->> g.k)::integer order by (eco ->> g.k)::integer) into offered
+  from jsonb_array_elements_text(case when jsonb_typeof(ck.drive -> 'gifts') = 'array' then ck.drive -> 'gifts' else '[]'::jsonb end) g(k)
+  where jsonb_typeof(eco -> g.k) = 'number' and (eco ->> g.k)::numeric = trunc((eco ->> g.k)::numeric) and (eco ->> g.k)::numeric >= 1;
+  if offered is null then raise exception 'this drive takes no gifts right now' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  if donate.amount is null or not donate.amount = any (offered) then
+    raise exception 'a gift here is one of %', (select string_agg(to_char(o / 100.0, 'FM990.00'), ', ' order by o) from unnest(offered) o) using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  pct := case when jsonb_typeof(eco -> (ck.drive ->> 'overhead')) = 'number' then (eco ->> (ck.drive ->> 'overhead'))::numeric end;
+  if pct is null or pct < 0 or pct > 100 then raise exception 'this drive''s overhead is not set' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  overhead := ceil(donate.amount * pct / 100)::integer;
+  arrives := donate.amount - overhead;
+  -- The post's author's account, read here to credit it and nowhere else. Staff hold no wallet, so a staff post's gift is all overhead.
+  select c.owner into author_account from characters c where c.id = on_post.character;
+  if author_account is null or is_staff_side(on_post.character, on_post.kind, on_post.id) then
+    author_account := null;
+    overhead := donate.amount;
+    arrives := 0;
+  end if;
+  -- Both wallets, in account order, so two gifts crossing each other's posts cannot wait on each other. The giver's balance is read under the lock: a refusal for a short wallet is the wallet as it is.
+  insert into wallets (account) select x from unnest(array[donate.who, author_account]) x where x is not null on conflict (account) do nothing;
+  perform 1 from wallets w where w.account in (donate.who, author_account) order by w.account for update;
+  select w.balance into have from wallets w where w.account = donate.who;
+  if have < donate.amount then raise exception 'your wallet holds less than that' using hint = 'kayfabb.refusal', errcode = 'P0001'; end if;
+
+  insert into acts (id, character, kind, thread, target_act_id, payload)
+  values (gift, donate.through, 'donation', opening.thread, opening.id, jsonb_build_object('amount', donate.amount, 'overhead', overhead, 'arrives', arrives));
+  -- After the Act, so each wallet event names the gift. The cap clamps what arrives and records what it cut off in the author's own event.
+  -- The post's author is told of the gift (section 6): the acting account is the donor character's owner, and one player's two masks tell nobody. write_alert answers nothing, so the answer is the same either way.
+  perform write_alert(on_post.character, 'gift', null, gift, (select c.owner from characters c where c.id = donate.through));
+  perform wallet_move(donate.who, -donate.amount, 'gift_out', null, gift);
+  if author_account is not null and arrives > 0 then perform wallet_move(author_account, arrives, 'gift_in', null, gift); end if;
+  return jsonb_build_object('gift', act_projection(gift), 'balance', (select w.balance from wallets w where w.account = donate.who));
+end $$;
+revoke execute on function donate(uuid, uuid, uuid, integer) from public, anon, authenticated;
+grant execute on function donate(uuid, uuid, uuid, integer) to service_role;
+create or replace function surface_apply(on_play uuid, by_character uuid, in_kind text, in_payload jsonb, in_cells bit(10000), most integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  s surfaces%rowtype;
+  st surface_state;
+  written uuid := gen_random_uuid();
+  in_thread uuid;
+  at timestamptz;
+  flag text;
+  before_cells integer;
+  after_cells integer;
+  wash_cut jsonb;
+  wash_cells integer;
+  by_author uuid;
+begin
+  select * into s from surfaces x where x.play = on_play for update;
+  if not found then raise exception 'there is no wall on that post' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- An admin's End this card can commit between the caller's early check and the lock: the card is read again here, under the lock, and a draw or a wash that waited for it is refused.
+  if exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = on_play) then
+    raise exception 'an admin ended that card' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- Read after the lock, so the Acts' created_at order is the order the lock was taken in, which is the order rebuild_surface replays them in.
+  at := clock_timestamp();
+  st := surface_step(s.live, s.owners, s.cover, in_kind, written, in_cells);
+  if in_kind = 'draw' then
+    before_cells := bit_count(s.cover);
+    after_cells := bit_count(st.cover);
+    if after_cells > most and after_cells > before_cells then
+      raise exception '%', format('this wall is %s%% covered, and its limit is %s%%; this tag would take it to %s%%', floor(before_cells / 100.0)::integer, floor(most / 100.0)::integer, ceil(after_cells / 100.0)::integer)
+        using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+    if (select count(distinct o) from unnest(st.owners) o where o <> 0) > s.most_live then
+      raise exception 'this wall holds % tags; paint over one or wait for a wash', s.most_live using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+  end if;
+  select a.thread into in_thread from acts a where a.id = on_play;
+  flag := coalesce(current_setting('kayfabb.surface_writer', true), '');
+  perform set_config('kayfabb.surface_writer', 'on', true);
+  -- A wash records what it uncovered and which draws it cut, with the cells of each it took, read from the owners the lock holds: the figures the log says it in (my_draws, my_walls_drawn_on) without replaying the wall.
+  -- They are the server's: a payload that arrives carrying the keys loses them, and the drawer's 64 KiB bound leaves them out as it leaves out `cells`.
+  if in_kind = 'wash' then
+    select coalesce(jsonb_agg(jsonb_build_object('draw', x.draw, 'took', x.n) order by x.first), '[]'::jsonb), coalesce(sum(x.n), 0)::integer into wash_cut, wash_cells
+    from (select s.live[s.owners[g.i]] as draw, count(*) as n, min(g.i) as first
+          from generate_series(1, 10000) g(i) where get_bit(in_cells, g.i - 1) = 1 and s.owners[g.i] <> 0 group by 1) x;
+  end if;
+  insert into acts (id, character, kind, thread, target_act_id, payload, created_at)
+  values (written, by_character, in_kind, in_thread, on_play, (in_payload - 'cells' - 'uncovered' - 'cut') || jsonb_build_object('cells', in_cells::text)
+    || case when in_kind = 'wash' then jsonb_build_object('uncovered', wash_cells, 'cut', wash_cut) else '{}'::jsonb end, at);
+  perform set_config('kayfabb.surface_writer', flag, true);
+  -- The log's narrow rows, in the Act's own transaction (what surface_marks_of and surface_cuts_of recompute from the Acts).
+  select a.character into by_author from acts a where a.id = s.post;
+  -- A draw tells the wall post's author (section 6): the acting account is the drawing character's owner (null for staff, so the author is told); one player's two masks tell nobody. A wash tells nobody.
+  if in_kind = 'draw' then
+    perform write_alert(by_author, 'cardOnYours', 'drew', written, (select c.owner from characters c where c.id = by_character));
+  end if;
+  insert into surface_marks (act, play, post, author, character, kind, cells, at)
+  values (written, on_play, s.post, by_author, by_character, in_kind, case when in_kind = 'draw' then bit_count(in_cells) else wash_cells end, at);
+  if in_kind = 'wash' then
+    insert into surface_cuts (wash, draw, took, play, post, washer, drawer, at)
+    select written, (e ->> 'draw')::uuid, (e ->> 'took')::integer, on_play, s.post, by_character, d.character, at
+    from jsonb_array_elements(wash_cut) e join acts d on d.id = (e ->> 'draw')::uuid;
+  end if;
+  update surfaces set cover = st.cover, owners = st.owners, live = st.live, updated_at = at where play = on_play;
+  return (act_projection(written) #- '{payload,cells}' #- '{current_payload,cells}') || jsonb_build_object('covered', bit_count(st.cover), 'live', to_jsonb(st.live));
+end $$;
+revoke execute on function surface_apply(uuid, uuid, text, jsonb, bit, integer) from public, anon, authenticated, service_role;
