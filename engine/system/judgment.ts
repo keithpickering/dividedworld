@@ -281,10 +281,10 @@ export interface BossMoveContext {
 
 /**
  * The kinds a persona may make to fulfill a request: the catalog's kinds of its office that need no context a turn does not hold (a group's catalog, the machine's slots, a
- * trophy, a demand, a successor). A Mod's: its whole office (setRule, conferGroup, moveThread); a conferGroup is held against the group context the turn carries (`ModMoveContext.groups`), and dropped without it. The Boss's: the four that shape a board or move a thread (a rule it makes at a meeting).
+ * trophy, a demand, a successor). A Mod's: its whole office (setRule, conferGroup, moveThread); a conferGroup is held against the group context the turn carries (`ModMoveContext.groups`), and dropped without it, so `conferring` false leaves it out of what a turn is offered. The Boss's: the four that shape a board or move a thread (a rule it makes at a meeting).
  */
-export function requestKinds(office: 'boss' | 'mod'): readonly string[] {
-  const keys = office === 'mod' ? ['setRule', 'conferGroup', 'moveThread'] : ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard'];
+export function requestKinds(office: 'boss' | 'mod', conferring = true): readonly string[] {
+  const keys = office === 'mod' ? ['setRule', ...(conferring ? ['conferGroup'] : []), 'moveThread'] : ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard'];
   return MOVE_KINDS.filter((k) => keys.includes(k.key) && k.offices.includes(office)).map((k) => k.key);
 }
 
@@ -407,7 +407,10 @@ export interface ModPromptInput {
 }
 
 /** The punishments a Mod may confer. */
-const punishmentsOf = (i: Pick<ModPromptInput, 'conferred'>): ConferredGroup[] => (i.conferred ?? []).filter((g) => g.tone === 'punishment');
+export const punishmentsOf = (i: Pick<ModPromptInput, 'conferred'>): ConferredGroup[] => (i.conferred ?? []).filter((g) => g.tone === 'punishment');
+
+/** The punishment groups a Mod may confer, by key with its name (`key (Name); key (Name)`), as the judgment prompt and a chatter turn's ruling words list them. */
+export const punishmentList = (i: Pick<ModPromptInput, 'conferred'>): string => punishmentsOf(i).map((g) => `${g.key} (${clip(g.name, 60)})`).join('; ');
 
 const clip = (s: string, n: number): string => {
   const line = oneLine(s);
@@ -447,7 +450,7 @@ export function modPrompt(i: ModPromptInput): string {
       `Its params: board (one of your beat: ${i.beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}), predicate (one of the catalog above), param (${PREDICATES.map((p) => `${p.key}: ${PARAM_WORDS(p)}`).join('; ')}; as text, a number as its digits, left out where there is none), band (${BANDS.join(', ')}: how serious breaking it is).`,
       ...(punishmentsOf(i).length
         ? [
-          `A conferGroup move puts one character in a punishment group, named by its key: ${punishmentsOf(i).map((g) => `${g.key} (${clip(g.name, 60)})`).join('; ')}. Its params: character (the id of the character), group (a key above) and board (one of your beat, as above; no predicate, param or band). The rule: one board, on your beat, and an apology you will judge. The character cannot post on that board until you accept an apology or the move runs out. The code sets its demand to the apology whatever you write. Characters who were punished as often as staff may be, or who are in a group move already, cannot be chosen: a move that names one is dropped.`,
+          `A conferGroup move puts one character in a punishment group, named by its key: ${punishmentList(i)}. Its params: character (the id of the character), group (a key above) and board (one of your beat, as above; no predicate, param or band). The rule: one board, on your beat, and an apology you will judge. The character cannot post on that board until you accept an apology or the move runs out. The code sets its demand to the apology whatever you write. Characters who were punished as often as staff may be, or who are in a group move already, cannot be chosen: a move that names one is dropped.`,
         ]
         : []),
       ...(i.thread !== undefined

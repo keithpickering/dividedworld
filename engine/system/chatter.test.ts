@@ -797,15 +797,34 @@ test('CHATTER_RULE passes a request block through untyped, so a malformed ruling
   assert.ok(repair({ words: 'Hi.' }, CHATTER_RULE).ok);
 });
 
+const CATALOG = [{ key: 'timeout', name: 'The Naughty Step', tone: 'punishment' }, { key: 'gold', name: 'Gold Star', tone: 'favor' }] as any;
+
+test('conferGroup is offered only with a catalog of punishments: not in the schema or the words without one', () => {
+  for (const conferred of [undefined, [], [CATALOG[1]]]) {
+    const schema = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'mod', conferred } }) as any;
+    const move = schema.properties.request.properties.move.properties;
+    assert.ok(!move.kind.enum.includes('conferGroup'));
+    assert.equal(move.params.properties.group, undefined);
+    const words = rulingWords({ office: 'mod', allowance: 1, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24, conferred });
+    assert.ok(!words.includes('conferGroup'), words);
+  }
+  const words = rulingWords({ office: 'mod', allowance: 1, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24, conferred: CATALOG });
+  for (const want of ['conferGroup', 'timeout (The Naughty Step)']) assert.ok(words.includes(want), want + ': ' + words);
+  assert.ok(!words.includes('gold'), words);
+});
+
 test('the schema offers request only with ruling given, with ruling an enum, and names only the office kinds', () => {
   const none = chatterSchema({ askedTitle: false, offered: [] }) as any;
   assert.equal('request' in none.properties, false);
   const mod = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'mod' } }) as any;
   assert.deepEqual(mod.properties.request.properties.ruling.enum, ['fulfill', 'reject', 'confer']);
   assert.deepEqual(mod.properties.request.required, ['reply', 'ruling']);
-  assert.deepEqual(mod.properties.request.properties.move.properties.kind.enum, ['setRule', 'conferGroup', 'moveThread']);
-  assert.deepEqual(mod.properties.request.properties.move.properties.params.properties.character, { type: 'string' });
-  assert.deepEqual(mod.properties.request.properties.move.properties.params.properties.group, { type: 'string' });
+  assert.deepEqual(mod.properties.request.properties.move.properties.kind.enum, ['setRule', 'moveThread']);
+  const conferring = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'mod', conferred: CATALOG } }) as any;
+  assert.deepEqual(conferring.properties.request.properties.move.properties.kind.enum, ['setRule', 'conferGroup', 'moveThread']);
+  assert.deepEqual(conferring.properties.request.properties.move.properties.params.properties.character, { type: 'string' });
+  assert.deepEqual(conferring.properties.request.properties.move.properties.params.properties.group, { type: 'string', enum: ['timeout'] });
+  assert.deepEqual(schemaProblems(conferring), []);
   const boss = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'boss' } }) as any;
   assert.deepEqual(boss.properties.request.properties.move.properties.kind.enum, [...requestKinds('boss')]);
   assert.ok(!boss.properties.request.properties.move.properties.kind.enum.includes('setRule'));
@@ -820,7 +839,7 @@ test('a member persona keeps the turn premise byte-identical; staff get the ruli
 });
 
 test('the ruling words name the kinds, the allowance or bank, the beat by name and id, confer and its lapse', () => {
-  const mod = rulingWords({ office: 'mod', allowance: 2, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24 });
+  const mod = rulingWords({ office: 'mod', allowance: 2, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24, conferred: CATALOG });
   for (const want of ['setRule', 'conferGroup', 'moveThread', '2 moves', 'Games', B1, 'confer', '3 days']) assert.ok(mod.includes(want), want + ': ' + mod);
   const boss = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24 });
   for (const want of ['renameBoard', 'createBoard', 'mergeBoard', '1 move', '24 hours', 'next meeting']) assert.ok(boss.includes(want), want + ': ' + boss);

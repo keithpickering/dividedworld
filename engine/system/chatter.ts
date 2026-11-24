@@ -28,12 +28,13 @@ import { FIT_TITLE_CHARS } from '../rules/cards.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
+import type { ConferredGroup } from './meeting.ts';
 import { careerText, type Career } from './career.ts';
 import { noteMost, type Memory } from './memory.ts';
 import type { PoolTrigger, PostingOffice } from './pool.ts';
 import type { Rule, Trim } from './validate.ts';
 import { readLines, READ_WORDS, type ReadPost, type ThreadReadResult } from './read.ts';
-import { repairBossMove, repairModMove, requestKinds, type BossMoveContext, type Dropped, type ModMove, type ModMoveContext, type RepairedMove } from './judgment.ts';
+import { punishmentList, punishmentsOf, repairBossMove, repairModMove, requestKinds, type BossMoveContext, type Dropped, type ModMove, type ModMoveContext, type RepairedMove } from './judgment.ts';
 
 /** A card the persona may play today: a Cast lands on the post it replies to, a Set on its own post. */
 export interface OfferedCard {
@@ -125,10 +126,12 @@ export const CHATTER_RULE: Rule = {
  * The `request` block a staff turn is offered: the reply it rules on, the ruling as a fixed choice, and, for a fulfill, one move of a kind its office makes. The params are one flat
  * object of optional text fields (no anyOf, so any provider's structured output holds it), only those the office's kinds use; `repairRuling` holds each kind to its own shape.
  */
-function requestSchema(office: 'boss' | 'mod'): Record<string, unknown> {
+function requestSchema(office: 'boss' | 'mod', conferred?: readonly ConferredGroup[]): Record<string, unknown> {
   const text = { type: 'string' };
+  const punishments = punishmentsOf({ conferred });
+  const conferring = office === 'mod' && punishments.length > 0;
   const params: Record<string, unknown> = office === 'mod'
-    ? { board: text, thread: text, predicate: text, param: text, character: text, group: text, band: { type: 'string', enum: ['minor', 'moderate', 'severe'] } }
+    ? { board: text, thread: text, predicate: text, param: text, ...(conferring ? { character: text, group: { type: 'string', enum: punishments.map((g) => g.key) } } : {}), band: { type: 'string', enum: ['minor', 'moderate', 'severe'] } }
     : { board: text, thread: text, into: text, name: text, premise: text, description: text, fallback: text };
   return {
     type: 'object',
@@ -138,7 +141,7 @@ function requestSchema(office: 'boss' | 'mod'): Record<string, unknown> {
       move: {
         type: 'object',
         properties: {
-          kind: { type: 'string', enum: [...requestKinds(office)] },
+          kind: { type: 'string', enum: [...requestKinds(office, conferring)] },
           params: { type: 'object', properties: params, additionalProperties: false },
           expires_in_hours: { type: 'number' },
           why: text,
@@ -153,7 +156,7 @@ function requestSchema(office: 'boss' | 'mod'): Record<string, unknown> {
 }
 
 /** The provider's structured-output schema for one call: a title only where a thread start asks, the card keys only on offer. */
-export function chatterSchema(c: { readonly askedTitle: boolean; readonly offered: readonly OfferedCard[]; readonly ruling?: { readonly office: 'boss' | 'mod' } }): Record<string, unknown> {
+export function chatterSchema(c: { readonly askedTitle: boolean; readonly offered: readonly OfferedCard[]; readonly ruling?: { readonly office: 'boss' | 'mod'; readonly conferred?: readonly ConferredGroup[] } }): Record<string, unknown> {
   const properties: Record<string, unknown> = { words: { type: 'string' } };
   const required = ['words'];
   if (c.askedTitle) {
@@ -182,7 +185,7 @@ export function chatterSchema(c: { readonly askedTitle: boolean; readonly offere
       additionalProperties: false,
     };
   }
-  if (c.ruling) properties['request'] = requestSchema(c.ruling.office);
+  if (c.ruling) properties['request'] = requestSchema(c.ruling.office, c.ruling.conferred);
   properties['note'] = { type: 'string' };
   return { type: 'object', properties, required, additionalProperties: false };
 }
@@ -274,15 +277,16 @@ export function repairRuling(raw: unknown, ruling: RulingFacts): { readonly requ
  * What a staff turn is told about ruling, after its premise: that a reply may ask staff for something the game can do; that it may grant it with one move of its office (the kinds, what
  * it has to spend, its beat by name and id), refuse it, or pass it to the meeting; and that the post is its words either way. Plain facts and the engine's own words; no instance named.
  */
-export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysMost: number; readonly structuralHoldHours: number; readonly allowance?: number; readonly bank?: number; readonly beat?: readonly { readonly id: string; readonly name: string }[] }): string {
-  const kinds = requestKinds(f.office);
+export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysMost: number; readonly structuralHoldHours: number; readonly allowance?: number; readonly bank?: number; readonly beat?: readonly { readonly id: string; readonly name: string }[]; readonly conferred?: readonly ConferredGroup[] }): string {
+  const conferring = punishmentsOf(f).length > 0;
+  const kinds = requestKinds(f.office, conferring);
   const n = f.office === 'mod' ? f.allowance ?? 0 : Math.floor(f.bank ?? 0);
   const spend = f.office === 'mod'
     ? `The Boss has handed you ${n} move${n === 1 ? '' : 's'} to spend, and a granted request spends one.`
     : `Your bank holds ${n} move${n === 1 ? '' : 's'} now, and a granted request spends one.`;
   const beat = f.office === 'mod' && f.beat?.length ? [`Your beat: ${f.beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}. A move of yours names boards of your beat only.`] : [];
   const group = kinds.includes('conferGroup') && f.office === 'mod'
-    ? ['A conferGroup move puts one character in a punishment group of the catalog you are given at your meetings, by its key. Its params: character (the id), group (a key) and board (one of your beat); no predicate, param or band. It is dropped, and the request passes on, if the character cannot be chosen.']
+    ? [`A conferGroup move puts one character in a punishment group, named by its key: ${punishmentList(f)}. Its params: character (the id), group (a key) and board (one of your beat); no predicate, param or band. It is dropped, and the request passes on, if the character cannot be chosen.`]
     : [];
   const structural = f.office === 'boss' ? [`A renameBoard, createBoard or mergeBoard waits ${f.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.`] : [];
   return [
