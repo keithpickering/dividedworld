@@ -114,3 +114,85 @@ export const OriginBoxFromCharacterAtPost: StoryObj = { render: () => <PressedSp
 
 /** A thread spun from a card on a character with no post pressed: the cast-from post as it landed, on one line. */
 export const OriginBoxFromCharacterLanded: StoryObj = { render: () => <LandedSpunThread />, parameters: { world: reachWorld } };
+
+const GENERAL = (instance: Parameters<World>[1]) => instance.boards.find((b) => !b.system)!.slug;
+
+/** One staff member, the reported post's thread, and a player with an asker; each exchange story spins its own thread from the ask or the answer. */
+const exchangeWorld = (cases: readonly { readonly title: string; readonly make: (f: Parameters<World>[0], mod: string, asker: string, post: string) => { ask: string; answer: string } }[]): World => (fake, instance) => {
+  const me = fake.seed.account('story-player');
+  const asker = fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
+  const other = fake.seed.character(fake.seed.account('story-other'), 'Spritey', (instance.classes[1] ?? instance.classes[0]!).key);
+  const mod = fake.seed.staff('story-mod', 'Kassie', 'mod');
+  const t = fake.seed.thread(GENERAL(instance), other, TITLE, 'A post someone reported.');
+  fake.signInAs(me);
+  for (const c of cases) {
+    const made = c.make(fake, mod, asker, t.act);
+    void fake.spin(c.title.endsWith('answer') ? made.answer : made.ask, asker, c.title, 'About this.');
+  }
+};
+
+/** The thread titled `title`, opened on its ORIGIN box. */
+function SpunExchange({ title }: { readonly title: string }) {
+  const spun = useThread(title);
+  return spun ? <LoadedThread thread={spun.id} /> : <div aria-busy="true" />;
+}
+
+/** The ORIGIN box, held to a mode, so the board's light and dark are each a story. */
+function InMode({ mode, title }: { readonly mode: 'light' | 'dark'; readonly title: string }) {
+  useEffect(() => {
+    const root = document.documentElement;
+    root.setAttribute('data-kb-mode', mode);
+    return () => root.removeAttribute('data-kb-mode');
+  }, [mode]);
+  return <SpunExchange title={title} />;
+}
+
+const reportMade = (verdict: 'visit' | 'dismissed' | 'backfire', line: string) => (f: Parameters<World>[0], mod: string, asker: string, post: string) => {
+  const ask = f.seed.report(asker, post, 'This post is not in the spirit of the game.');
+  return { ask, answer: f.seed.verdict(ask, mod, verdict, { line, ...(verdict === 'visit' ? { visit: f.seed.visit(mod, post, {}) } : {}) }) };
+};
+const appealMade = (punishing: 'infraction' | 'ban' | 'move', verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', line: string) => (f: Parameters<World>[0], mod: string, asker: string, post: string) => {
+  const infraction = f.seed.infraction(f.seed.visit(mod, post, {}));
+  const target = punishing === 'infraction' ? infraction
+    : punishing === 'ban' ? f.seed.ban(asker, f.clock.now() + 5 * 86_400_000, { infraction })
+    : f.seed.groupMove('story-mod', { character: asker, group: GROUP });
+  const ask = f.seed.appeal(asker, target, 'I was only joking.');
+  return { ask, answer: f.seed.ruling(ask, mod, verdict, { line, ...(punishing === 'infraction' ? {} : { until: f.clock.now() + 86_400_000 }) }) };
+};
+/** A group the instance confers, named by key as every story names what it draws. */
+const GROUP = 'trialMembers';
+
+const exchangeCases = [
+  { title: 'Dismissed report, spun from the answer', make: reportMade('dismissed', 'Nothing to see here.') },
+  { title: 'Report visit, spun from the answer', make: reportMade('visit', 'I will take a look.') },
+  { title: 'Backfire, spun from the answer', make: reportMade('backfire', 'You, however, were rude.') },
+  { title: 'Upheld infraction appeal, spun from the answer', make: appealMade('infraction', 'upheld', 'It stays.') },
+  { title: 'Reduced ban appeal, spun from the answer', make: appealMade('ban', 'reduced', 'Shorter, then.') },
+  { title: 'Overturned move appeal, spun from the answer', make: appealMade('move', 'overturned', 'Undone.') },
+  { title: 'Unanswered report, spun from the ask', make: (f: Parameters<World>[0], _m: string, asker: string, post: string) => ({ ask: f.seed.report(asker, post, 'Is anyone there?'), answer: '' }) },
+] as const;
+const exchanges = exchangeWorld(exchangeCases);
+
+const exchangeStory = (title: string, mode: 'light' | 'dark'): StoryObj => ({ render: () => <InMode mode={mode} title={title} />, parameters: { world: exchanges } });
+
+/** A dismissed report, spun from the Mod's verdict: the asker's reason, the Mod's words and the plain line. */
+export const ExchangeDismissedLight = exchangeStory('Dismissed report, spun from the answer', 'light');
+export const ExchangeDismissedDark = exchangeStory('Dismissed report, spun from the answer', 'dark');
+/** A report heard as a visit. */
+export const ExchangeVisitLight = exchangeStory('Report visit, spun from the answer', 'light');
+export const ExchangeVisitDark = exchangeStory('Report visit, spun from the answer', 'dark');
+/** A report that backfired. */
+export const ExchangeBackfireLight = exchangeStory('Backfire, spun from the answer', 'light');
+export const ExchangeBackfireDark = exchangeStory('Backfire, spun from the answer', 'dark');
+/** An appeal of an infraction, upheld. */
+export const ExchangeInfractionRulingLight = exchangeStory('Upheld infraction appeal, spun from the answer', 'light');
+export const ExchangeInfractionRulingDark = exchangeStory('Upheld infraction appeal, spun from the answer', 'dark');
+/** An appeal of a ban, reduced. */
+export const ExchangeBanRulingLight = exchangeStory('Reduced ban appeal, spun from the answer', 'light');
+export const ExchangeBanRulingDark = exchangeStory('Reduced ban appeal, spun from the answer', 'dark');
+/** An appeal of a move, overturned. */
+export const ExchangeMoveRulingLight = exchangeStory('Overturned move appeal, spun from the answer', 'light');
+export const ExchangeMoveRulingDark = exchangeStory('Overturned move appeal, spun from the answer', 'dark');
+/** A report no one has answered: "Not answered yet." */
+export const ExchangeUnansweredLight = exchangeStory('Unanswered report, spun from the ask', 'light');
+export const ExchangeUnansweredDark = exchangeStory('Unanswered report, spun from the ask', 'dark');
