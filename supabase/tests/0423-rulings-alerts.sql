@@ -705,3 +705,95 @@ begin
   if refused is null then raise exception 'a draw past the limit was not refused'; end if;
   if (select count(*) from alerts a where a.kind = 'cardOnYours') is distinct from n then raise exception 'a refused draw wrote an alert'; end if;
 end $$;
+
+-- Task 8 (section 7): the refunded writing card, and crowd pay in the settlement alert.
+--
+-- 1. A write that failed and was refunded writes one cardEnded/refunded alert to the caster's account about the play; a second refund writes none.
+-- 2. my_alerts lists a settlement that paid the account crowd pay and no ledger line, with count 0; one with ledger lines is as before (count = characters with lines); another account sees neither.
+-- 3. A tie of settlements across a page's edge keeps the crowd-only one.
+
+insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;
+insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('ra-scribe', 'Ra Scribe', 'salty', 'uncommon', 'cast', 3, true);
+
+do $$
+declare
+  ann uuid := tests.account('rr-ann'); bob uuid := tests.account('rr-bob');
+  a uuid := tests.character(ann, 'Rr Caster'); b uuid := tests.character(bob, 'Rr Author');
+  t uuid := tests.thread('Rr refund thread');
+  p uuid; pl uuid; played jsonb; said jsonb;
+begin
+  insert into wallets (account, balance) values (ann, 600) on conflict (account) do update set balance = 600;
+  insert into card_ledger (account, card, kind, price) values (ann, 'ra-scribe', 'bought', 0);
+  p := tests.post(b, t, 'A post a writing card is played on.', '2030-03-01T00:00:00Z');
+  perform tests.become_service();
+  played := play_card(ann, 'ra-scribe', a, p, '{}', 50, '', tokens => 100);
+  perform tests.unbecome();
+  pl := (played ->> 'id')::uuid;
+  if exists (select 1 from alerts x where x.kind = 'cardEnded' and x.act = pl) then raise exception 'a play wrote a cardEnded alert before any refund'; end if;
+
+  perform tests.become_service();
+  said := finish_card_write(pl, p, null, 'unreachable');
+  perform tests.unbecome();
+  if (select count(*) from alerts x where x.kind = 'cardEnded' and x.act = pl) is distinct from 1
+     or (select count(*) from alerts x where x.kind = 'cardEnded' and x.sub = 'refunded' and x.act = pl and x.account = ann and x.character = a) is distinct from 1 then
+    raise exception 'a refunded write did not write one cardEnded/refunded alert to the caster about the play: %', (select jsonb_agg(to_jsonb(x)) from alerts x where x.kind = 'cardEnded' and x.act = pl);
+  end if;
+
+  perform tests.become_service();
+  said := refund_card_write(pl);
+  perform tests.unbecome();
+  if (select count(*) from alerts x where x.kind = 'cardEnded' and x.act = pl) is distinct from 1 then raise exception 'a second refund wrote another alert: %', (select jsonb_agg(to_jsonb(x)) from alerts x where x.kind = 'cardEnded' and x.act = pl); end if;
+  if exists (select 1 from alerts x where x.account = bob and x.kind = 'cardEnded') then raise exception 'the post''s author was told of the caster''s refund'; end if;
+end $$;
+
+do $$
+declare
+  dan uuid := tests.account('rr-dan'); eve uuid := tests.account('rr-eve');
+  d1 uuid := tests.character(dan, 'Rr Dan One'); d2 uuid := tests.character(dan, 'Rr Dan Two'); e1 uuid := tests.character(eve, 'Rr Eve One');
+  at1 timestamptz := now() + interval '300 days';
+  s_crowd bigint; s_lines bigint; s_tie_a bigint; s_tie_b bigint;
+  got record;
+  n integer;
+begin
+  insert into wallets (account, balance) values (dan, 100), (eve, 100) on conflict (account) do update set balance = 100;
+  -- A settlement that paid Dan crowd pay and no ledger line.
+  insert into settlements (starts_at, ends_at, season, applied_at) values (at1 - interval '9 days', at1 - interval '8 days', (select min(id) from seasons), at1) returning id into s_crowd;
+  insert into wallet_events (account, settlement, kind, change, balance_after) values (dan, s_crowd, 'crowd', 4, 100);
+  -- One that moved two of Dan's characters (three lines), and paid Eve crowd pay.
+  insert into settlements (starts_at, ends_at, season, applied_at) values (at1 - interval '8 days', at1 - interval '7 days', (select min(id) from seasons), at1 + interval '1 day') returning id into s_lines;
+  insert into ledger (settlement, account, character, reason, amount) values (s_lines, dan, d1, 'post.reacted', 10), (s_lines, dan, d1, 'post.quoted', 5), (s_lines, dan, d2, 'post.reacted', 7);
+  insert into wallet_events (account, settlement, kind, change, balance_after) values (eve, s_lines, 'crowd', 2, 100);
+
+  perform tests.become(dan);
+  select count(*) into n from my_alerts(null, 30) m where m.kind = 'settlement';
+  if n is distinct from 2 then raise exception 'Dan reads two settlements, one of crowd pay alone and one of ledger lines: %', n; end if;
+  select * into got from my_alerts(null, 30) m where m.kind = 'settlement' and m.sub = s_crowd::text;
+  if not found or got.count is distinct from 0 or got.at is distinct from at1 or got.thread is not null or got.act is not null or got.character is not null then
+    raise exception 'a settlement of crowd pay alone is listed with count 0 at its applied time: %', got;
+  end if;
+  select * into got from my_alerts(null, 30) m where m.kind = 'settlement' and m.sub = s_lines::text;
+  if not found or got.count is distinct from 2 or got.at is distinct from at1 + interval '1 day' then raise exception 'a settlement with ledger lines counts the characters it moved (2): %', got; end if;
+  perform tests.unbecome();
+
+  -- Eve was paid crowd pay in the second settlement alone: one row, count 0.
+  perform tests.become(eve);
+  if (select count(*) from my_alerts(null, 30) m where m.kind = 'settlement') is distinct from 1
+     or (select m.count from my_alerts(null, 30) m where m.kind = 'settlement') is distinct from 0
+     or (select m.sub from my_alerts(null, 30) m where m.kind = 'settlement') is distinct from s_lines::text then
+    raise exception 'Eve reads the one settlement that paid her crowd pay, with count 0: %', (select jsonb_agg(to_jsonb(m)) from my_alerts(null, 30) m where m.kind = 'settlement');
+  end if;
+  perform tests.unbecome();
+
+  -- A page of one: the newest settlement, and a crowd-only one applied at the same instant is its tie and stays.
+  insert into settlements (starts_at, ends_at, season, applied_at) values (at1 + interval '1 day', at1 + interval '2 days', (select min(id) from seasons), at1 + interval '40 days') returning id into s_tie_a;
+  insert into settlements (starts_at, ends_at, season, applied_at) values (at1 + interval '2 days', at1 + interval '3 days', (select min(id) from seasons), at1 + interval '40 days') returning id into s_tie_b;
+  insert into wallet_events (account, settlement, kind, change, balance_after) values (dan, s_tie_a, 'crowd', 1, 100);
+  insert into ledger (settlement, account, character, reason, amount) values (s_tie_b, dan, d2, 'post.reacted', 3);
+  perform tests.become(dan);
+  if (select array_agg(m.sub order by m.sub) from my_alerts(null, 1) m where m.kind = 'settlement') is distinct from (select array_agg(x order by x) from unnest(array[s_tie_a::text, s_tie_b::text]) x)
+     or (select m.count from my_alerts(null, 1) m where m.sub = s_tie_a::text) is distinct from 0
+     or (select m.count from my_alerts(null, 1) m where m.sub = s_tie_b::text) is distinct from 1 then
+    raise exception 'a page of one keeps the crowd-only settlement applied at the newest one''s instant: %', (select jsonb_agg(to_jsonb(m)) from my_alerts(null, 1) m where m.kind = 'settlement');
+  end if;
+  perform tests.unbecome();
+end $$;

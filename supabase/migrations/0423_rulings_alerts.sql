@@ -1224,3 +1224,144 @@ begin
   return (act_projection(written) #- '{payload,cells}' #- '{current_payload,cells}') || jsonb_build_object('covered', bit_count(st.cover), 'live', to_jsonb(st.live));
 end $$;
 revoke execute on function surface_apply(uuid, uuid, text, jsonb, bit, integer) from public, anon, authenticated, service_role;
+
+-- Section 7 (design section 6): the refunded writing card, and crowd pay in the settlement alert
+--
+-- 1. refund_card_write (0149) tells the caster, once per refund, that the write failed and the play was refunded: write_alert(<the play's character>, 'cardEnded', 'refunded', <the play Act>, null). Everything else as 0149 wrote it.
+-- 2. my_alerts (0368) counts a settlement the account was paid crowd pay in (a wallet_events row of kind 'crowd', 0384) as well as one it has ledger lines in; only the settlement CTEs st_k and st_tie change. Its `count` stays the number of the account's
+--    characters with ledger lines, 0 for a settlement of crowd pay alone. alerts_page reads the same columns. my_alerts_unread (0368) is not changed here.
+
+create or replace function refund_card_write(play uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  k acts%rowtype;
+  payer record;
+  paid integer;
+  moved integer := 0;
+begin
+  select * into k from acts a where a.id = refund_card_write.play and a.kind = 'card';
+  if not found then raise exception 'there is no such card play' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.card_write.' || k.id::text, 0));
+  -- The play's Act row, the lock reverse_card takes, so a refund and an admin's end of the same play never both commit: whichever comes second
+  -- waits for the first and then sees its end or its refund. The order is the advisory lock, then the row, as finish_card_write reaches here
+  -- (it holds the advisory lock first); reverse_card takes the row alone and never the advisory lock, and play_card takes the account and the
+  -- post, never an existing play's row, so no two of them can wait on each other.
+  perform 1 from acts a where a.id = k.id for no key update;
+  if exists (select 1 from card_write_refunds r where r.play = k.id) then return jsonb_build_object('refunded', false, 'already', true); end if;
+  -- A play an admin ended is over, and ending a card refunds nothing (reverse_card, 0092): the worker's late failure moves nothing either.
+  if exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = k.id) then
+    delete from card_writes w where w.play = k.id;
+    return jsonb_build_object('refunded', false, 'over', true);
+  end if;
+  if exists (select 1 from card_texts x where x.play = k.id and x.text is not null) then return jsonb_build_object('refunded', false, 'kept', true); end if;
+  select l.account, l.card into payer from card_ledger l where l.kind = 'played' and l.act = k.id;
+  if payer.account is null then
+    insert into card_write_refunds (play, amount) values (k.id, null);
+    delete from card_writes w where w.play = k.id;
+    return jsonb_build_object('refunded', false, 'payer', false, 'over', true);
+  end if;
+  select coalesce(-sum(w.change), 0)::integer into paid from wallet_events w where w.kind = 'play' and w.ref = k.id and w.account = payer.account;
+  if paid > 0 then
+    perform wallet_move(payer.account, paid, 'refund', null, k.id);
+    select e.change into moved from wallet_events e where e.kind = 'refund' and e.ref = k.id and e.account = payer.account order by e.id desc limit 1;
+  end if;
+  insert into card_write_refunds (play, amount) values (k.id, moved);
+  delete from card_writes w where w.play = k.id;
+  insert into card_ledger (account, card, kind, act, price) values (payer.account, payer.card, 'returned', k.id, moved);
+  -- The caster is told the write failed and was refunded (section 6): once, because the refund row above is written once and a second call returns before it. A Mod Bot's play (no payer) was no one's to refund, and its character has no account.
+  perform write_alert(k.character, 'cardEnded', 'refunded', k.id, null);
+  return jsonb_build_object('refunded', true, 'amount', moved);
+end $$;
+revoke execute on function refund_card_write(uuid) from public, anon, authenticated;
+grant execute on function refund_card_write(uuid) to service_role;
+
+create or replace function public.my_alerts(before timestamp with time zone DEFAULT NULL::timestamp with time zone, most integer DEFAULT 30)
+ returns setof alert_row
+ language plpgsql
+ stable security definer
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  return query
+  with me as materialized (select signed_in_account() as id),
+  lim as (select coalesce($1, 'infinity'::timestamptz) as before, greatest(1, least(coalesce($2, 30), 100)) as k),
+  -- Written: the instant of the k-th newest row before the cursor, so the range below is k rows and their ties.
+  w_floor as (
+    select coalesce((select a.at from alerts a where a.account = (select id from me) and a.at < (select before from lim)
+                     order by a.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+  ),
+  written as (
+    select a.kind, a.sub, a.act, a.character, a.at, ac.thread, c.name, t.title, null::integer as count
+    from alerts a
+    left join acts ac on ac.id = a.act
+    left join characters c on c.id = a.character
+    left join threads t on t.id = ac.thread
+    where a.account = (select id from me) and a.at < (select before from lim) and a.at >= (select at from w_floor)
+  ),
+  f as materialized (select * from my_followed_threads v where v.newest_at < (select before from lim)),
+  f_floor as (
+    select coalesce((select v.newest_at from f v order by v.newest_at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz) as at
+  ),
+  followed as (
+    select 'followed'::text as kind, null::text as sub, null::uuid as act, null::uuid as character, v.newest_at as at, v.thread, null::text as name, v.title, v.new_posts as count
+    from f v where v.newest_at >= (select at from f_floor)
+  ),
+  -- Settlements: the caller's ledger lines, or the crowd pay it was paid (a wallet_events row of kind 'crowd', which has no ledger line), from the newest settlement back, k settlements.
+  -- The ledger is read up to the newest settlement applied before the cursor: the largest id among them, so no settlement that
+  -- qualifies is cut whatever order the ids came in (a stand-in for time that assumed they go together broke where a committed
+  -- settlement was applied later than a newer id). Without a cursor it is the largest id there is, from the key alone.
+  -- Each source is read by account (ledger_account; wallet_events_account) and cut to its k newest before they are joined, so what is read grows with the account's own rows, never the instance's.
+  -- `count` is the account's characters with ledger lines in the settlement: 0 for one that paid crowd pay alone.
+  hi as (
+    select coalesce(case when (select before from lim) = 'infinity'::timestamptz then (select max(s.id) from settlements s)
+                         else (select max(s.id) from settlements s where s.applied_at < (select before from lim)) end, 0) as id
+  ),
+  st_k as (
+    select s.id, s.applied_at, g.n
+    from (
+      select u.id from (
+        (select l.settlement as id from ledger l join settlements s on s.id = l.settlement
+         where l.account = (select id from me) and l.settlement <= (select id from hi) and s.applied_at < (select before from lim)
+         group by l.settlement order by l.settlement desc limit (select k from lim))
+        union
+        (select e.settlement as id from wallet_events e join settlements s on s.id = e.settlement
+         where e.account = (select id from me) and e.kind = 'crowd' and e.settlement <= (select id from hi) and s.applied_at < (select before from lim)
+         group by e.settlement order by e.settlement desc limit (select k from lim))
+      ) u order by u.id desc limit (select k from lim)
+    ) c
+    join settlements s on s.id = c.id
+    cross join lateral (select count(distinct l.character)::integer as n from ledger l where l.account = (select id from me) and l.settlement = s.id) g
+    order by s.id desc
+  ),
+  st_floor as (
+    select case when (select count(*) from st_k) = (select k from lim) then (select min(applied_at) from st_k) else '-infinity'::timestamptz end as at
+  ),
+  st_tie as (
+    select s.id, s.applied_at, g.n
+    from settlements s
+    cross join lateral (select count(distinct l.character)::integer as n from ledger l
+                        where l.account = (select id from me) and l.settlement = s.id) g
+    where s.applied_at = (select at from st_floor) and s.id not in (select id from st_k)
+      and (g.n > 0 or exists (select 1 from wallet_events e where e.account = (select id from me) and e.kind = 'crowd' and e.settlement = s.id))
+  ),
+  settled as (
+    select 'settlement'::text as kind, x.id::text as sub, null::uuid as act, null::uuid as character, x.applied_at as at, null::uuid as thread, null::text as name, null::text as title, x.n as count
+    from (select * from st_k union all select * from st_tie) x
+  ),
+  merged as (
+    select * from written
+    union all select * from followed
+    union all select * from settled
+    union all select * from alerts_news((select before from lim), (select k from lim))
+  )
+  select m.kind, m.sub, m.act, m.character, m.at, m.thread, m.name, m.title, m.count
+  from merged m
+  where m.at >= coalesce((select m2.at from merged m2 order by m2.at desc offset (select k - 1 from lim) limit 1), '-infinity'::timestamptz)
+  order by m.at desc, m.kind, m.sub nulls first, m.act nulls first, m.thread nulls first;
+end
+$function$;
+revoke execute on function my_alerts(timestamptz, integer) from public, anon;
+grant execute on function my_alerts(timestamptz, integer) to authenticated;
