@@ -265,3 +265,12 @@ test('must is ordered by seq, not by array position', () => {
   const r = readThread([a, b, c], { self: ME, must: [c.act, a.act, b.act] }, 60);
   assert.deepEqual(r.answered, [b.act, c.act]);
 });
+
+test('each shown post carries its tier: the answered reply 1, the persona\'s own 2, the opener 3, company 4, a stranger 5', () => {
+  const opener = cand(1, 'o', 'opener');
+  const mine = cand(2, ME, 'mine');
+  const stranger = cand(3, 'z', 'stranger');
+  const reply = cand(4, 'a', 'reply', { replyTo: mine.act });
+  const r = readThread([opener, mine, stranger, reply], { self: ME, must: [reply.act] }, 10_000);
+  assert.deepEqual(r.posts.map((p) => [p.seq, p.tier]), [[1, 3], [2, 2], [3, 5], [4, 1]]);
+});

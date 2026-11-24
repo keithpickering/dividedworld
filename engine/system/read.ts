@@ -52,6 +52,8 @@ export interface ReadMarks {
 /** A candidate with its body as marked (quotes of whole posts replaced). */
 export interface ReadPost extends ReadCandidate {
   readonly marks: ReadMarks;
+  /** The post's tier, 1 (must) to 5 (everyone else), as the module doc lists them; a fitter that must drop whole posts drops the highest number first. */
+  readonly tier: 1 | 2 | 3 | 4 | 5;
 }
 
 export interface ThreadReadResult {
@@ -177,6 +179,7 @@ export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, read
     ...c,
     body: bodies.get(c.act)!,
     marks: { you: mine(c), answering: answeredActs.has(c.act), repliesToYou: repliesToYou(c), quotesYou: quotesYou(c) },
+    tier: (answeredActs.has(c.act) ? 1 : rank.get(c.act)!) as ReadPost['tier'],
   }));
   const through = cands.reduce((m, c) => Math.max(m, c.seq), 0);
   return { posts, omitted: Math.max(through - posts.length, 0), answered: answered.map((c) => c.act), through };
