@@ -305,13 +305,14 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       }
       const moveContext = (): ModMoveContext => ({
         allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
+        threadBoards: new Map([[v.thread.toLowerCase(), v.board.id.toLowerCase()]]),
         ...(groups ? { groups: groups.facts } : {}),
       });
       const input = (): FilingInput => ({
         persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
         ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
         ...(groups ? { conferred: groups.conferred } : {}),
-        board: v.board, title: heard.title, read: heard.read, charges,
+        board: v.board, thread: v.thread, title: heard.title, read: heard.read, charges,
         limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
       });
 

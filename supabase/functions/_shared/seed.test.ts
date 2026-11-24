@@ -134,7 +134,7 @@ test('the seed carries the engine\'s catalogs of moves (with whether each is str
     { key: 'flashSale', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: [] },
     { key: 'awardTrophy', structural: false, shapesBoard: false, lasting: false, offices: ['boss'], derived: ['trophyName', 'characterName'] },
     { key: 'createBoard', structural: true, shapesBoard: true, lasting: true, offices: ['boss'], derived: [] },
-    { key: 'moveThread', structural: false, shapesBoard: false, lasting: true, offices: ['boss'], derived: [] },
+    { key: 'moveThread', structural: false, shapesBoard: false, lasting: true, offices: ['boss', 'mod'], derived: [] },
     { key: 'mergeBoard', structural: true, shapesBoard: true, lasting: true, offices: ['boss'], derived: [] },
   ]);
   assert.deepEqual(demands.map((d) => d.key), DEMAND_KINDS.map((d) => d.key));

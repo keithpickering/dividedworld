@@ -83,7 +83,47 @@ test('a kind the Mod\'s office may not make is dropped, naming why', () => {
   const unknown = repairModMove({ ...good, kind: 'burnItDown' }, ctx);
   assert.equal(unknown.move, null);
   assert.equal(unknown.dropped?.path, 'move.kind');
-  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule, conferGroup\)$/);
+  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule, conferGroup, moveThread\)$/);
+});
+
+const T1 = '33333333-3333-4333-8333-333333333333';
+const MORE = '44444444-4444-4444-8444-444444444444';
+const moveCtx: ModMoveContext = { ...ctx, beat: [GAMES, MORE], threadBoards: new Map([[T1, GAMES]]) };
+const moving = { kind: 'moveThread', params: { thread: T1, board: MORE }, why: 'It belongs in More.' };
+
+test('a Mod\'s moveThread with both boards on its beat is kept with expiry 0', () => {
+  const out = repairModMove(moving, moveCtx);
+  assert.equal(out.dropped, null);
+  assert.deepEqual(out.move, { kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' });
+  assert.deepEqual(out.trims, []);
+});
+
+test('a moveThread whose thread is on a board off the beat drops move.params.thread onBeat', () => {
+  const out = repairModMove(moving, { ...moveCtx, threadBoards: new Map([[T1, OTHER]]) });
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.thread', predicate: 'onBeat' });
+});
+
+test('a moveThread to a board off the beat drops move.params.board onBeat', () => {
+  const out = repairModMove({ ...moving, params: { thread: T1, board: OTHER } }, moveCtx);
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.board', predicate: 'onBeat' });
+});
+
+test('a moveThread naming a thread the call was not given drops knownThread', () => {
+  const out = repairModMove(moving, { ...moveCtx, threadBoards: new Map() });
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.thread', predicate: 'knownThread' });
+  const { threadBoards: _given, ...unmapped } = moveCtx;
+  const none = repairModMove(moving, unmapped);
+  assert.deepEqual(none.dropped, { path: 'move.params.thread', predicate: 'knownThread' });
+});
+
+test('an expiry given on a lasting kind is dropped with the trim lastingHasNoExpiry and set to 0', () => {
+  const out = repairModMove({ ...moving, expires_in_hours: 48 }, moveCtx);
+  assert.equal(out.dropped, null);
+  assert.equal(out.move?.expires_in_hours, 0);
+  assert.deepEqual(out.trims, [{ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: 48, after: 0 }]);
 });
 
 test('a board off the beat, or no board at all, is dropped', () => {

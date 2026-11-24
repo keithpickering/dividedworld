@@ -413,7 +413,7 @@ export const CREATE_BOARD: MoveKind = {
 /** The Boss moves one thread to another board. A second move of the same thread supersedes the first; reversing one returns the thread to where the one before it put it. */
 export const MOVE_THREAD: MoveKind = {
   key: 'moveThread',
-  offices: ['boss'],
+  offices: ['boss', 'mod'],
   structural: false,
   shapesBoard: false,
   lasting: true,

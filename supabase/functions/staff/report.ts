@@ -125,13 +125,14 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   const groups = await readModGroups(db, standing);
   const context = {
     allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules,
+    threadBoards: new Map([[opened.thread.toLowerCase(), opened.board.id.toLowerCase()]]),
     ...(groups ? { groups: groups.facts } : {}),
   };
   const frame = reportPrompt({
     ...(groups ? { conferred: groups.conferred } : {}),
     persona: mod.persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
     ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-    board: opened.board, title: heard.title, read: heard.read,
+    board: opened.board, thread: opened.thread, title: heard.title, read: heard.read,
     reporter: { name: opened.reporter.name, pronouns: await pronounsOfCharacter(db, opened.reporter.id, fallback) }, reason: opened.reason,
     limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
   });

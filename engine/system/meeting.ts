@@ -523,8 +523,8 @@ function modsText(f: PromptFacts): string {
   if (f.mods.length === 0) return 'You have no Mod Bots on staff. Do not answer with orders or patrols.';
   // A Mod may confer only a punishment, which the queue holds it to; the wording says so.
   const handable = ASKABLE_MOVE_KINDS.filter((k) => k.offices.includes('mod') && !(f.heldBack ?? []).includes(k.key)).map((k) => (k.key === 'conferGroup' ? 'conferGroup punishments' : k.key));
-  const handed = handable.filter((k) => k === 'setRule' || k === 'conferGroup punishments');
-  const handedText = handed.length ? `(a Mod may be handed ${handed.join(' and ')} on its beat)` : '';
+  const handed = handable.filter((k) => k === 'setRule' || k === 'conferGroup punishments' || k === 'moveThread').map((k) => (k === 'moveThread' ? 'moveThread (both boards on its beat)' : k));
+  const handedText = handed.length ? `(a Mod may be handed ${handed.length < 2 ? handed.join('') : `${handed.slice(0, -1).join(', ')} and ${handed[handed.length - 1]}`} on its beat)` : '';
   const out = [
     'Your Mod Bots.',
     `They are your hands on the boards, with less power than you: they act between meetings, in their own judgments, and only with a move you hand them out of your bank (an allowance), of a kind they may make (${handable.join(', ')}; every other kind stays yours), on a board of their beat ${handedText}. A Mod holds at most ${m.allowanceMost} at once, and a rule a Mod sets lasts at most ${m.ruleDaysMost} days. A move you hand away is one you do not make. What a Mod does not spend goes back to your bank before this meeting counts it, and is shown below.`,

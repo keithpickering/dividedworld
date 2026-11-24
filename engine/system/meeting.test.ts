@@ -381,7 +381,7 @@ test('the prompt shows each Mod: its name, career, beat preferences, pet rules, 
   }
   assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
   assert.match(text, /renameBoard[^\n]*Made by the Boss\./);
-  assert.match(text, /\(setRule, conferGroup punishments; every other kind stays yours\)/);
+  assert.match(text, /\(setRule, conferGroup punishments, moveThread; every other kind stays yours\)/);
   assert.match(text, /a rule a Mod sets lasts at most 7 days/);
   assert.match(text, /at most 6 patrols/);
   assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');
@@ -771,7 +771,7 @@ test('the prompt lists the conferred groups with their tones and the rules for c
   assert.match(text, /A punishment may name one board[^\n]*accepted apology/);
   assert.match(text, /A favor bars nothing[^\n]*it names a checkAt[^\n]*demand/);
   assert.match(text, /capped \(punished[^\n]*or held \(already in a group move\) cannot be chosen/);
-  assert.match(text, /a Mod may be handed setRule and conferGroup punishments on its beat/);
+  assert.match(text, /a Mod may be handed setRule, conferGroup punishments and moveThread \(both boards on its beat\) on its beat/);
   assert.ok(!/Group moves\./.test(meetingSystemPrompt(facts)), 'no conferred groups, no section');
 });
 
