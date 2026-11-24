@@ -16,7 +16,7 @@ declare
 begin
   insert into alerts (account, kind, sub, act) values (ann, 'gift', null, null);
   insert into alerts (account, kind, sub, act) values (ann, 'conduct', 'hide', null);
-  if (select count(*) from alerts where account = ann and kind in ('gift', 'conduct')) <> 2 then raise exception 'a gift and a conduct alert are not both stored'; end if;
+  if (select count(*) from alerts where account = ann and kind in ('gift', 'conduct')) is distinct from 2 then raise exception 'a gift and a conduct alert are not both stored'; end if;
   if pg_temp.refusal(format('insert into alerts (account, kind, act) values (%L, %L, null)', ann, 'confetti')) is null then raise exception 'an alert of kind confetti was stored'; end if;
 
   perform tests.become(ann);
