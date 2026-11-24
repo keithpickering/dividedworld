@@ -231,51 +231,41 @@ const admin = (f: Fixture) => f.admin;
 const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: number): Budget => ({ call, as, mb });
 
 /**
- * Each screen function, one real call that answers a document. The budgets are the workflow's measurements (PR 720's sql job, 2026-11-15; index_page's and board_page's, PR 727's, the same day,
- * the first with who is online pinned: 5.954 and 8.498 MB, every other figure within 0.001 MB of PR 720's), each rounded up to one decimal plus 0.3 MB; a search read
- * is called with a term and no filter, since the plan it keeps does not depend on the term.
- * Re-recorded on the workflow's Postgres 17 for the polls migration (0395 redefines acts_public with a third select, so planning keeps more): board_page 9.789, boot 8.770,
- * index_page 6.870 and thread_page 17.172 MB, each rounded up to one decimal plus 0.3 MB; every other budget is unchanged. thread_page again for 0396's
- * poll_latest_ballots reads (poll_counts, poll_voter_acts and my_latest_ballots in its poll block): 21.198 MB, so 21.5.
- * board_page again for 0403_departed_personas.sql: 11.820 MB, so 12.2. The plans it keeps are the same size as before (its WITH plan 1039 kB, the pinned threads'
- * play_reach plan 1024 kB). What moved is one block of CacheMemoryContext. AllocSet blocks double, so the catalog cache's next block is 2 MB, and on main it sat about
- * 90 kB under that step. 0403 gives season_handovers, which board_page plans through season_boss_changes, a primary key on an identity column and a partial unique index
- * (one roll-over a season) beside its key on (season, id). Their relcache entries, with the planner statistics for the rows the files before this one commit, take the
- * cache past the step: 4283 kB in the workflow's run, where a fresh database's first call holds 2227. Issue #968 asks how the budget should treat that step.
+ * Each screen function, one real call that answers a document; a search read is called with a term and no filter, since the plan it keeps does not depend on the term.
+ * The budgets were re-recorded for #968, when the catalog cache began to be counted by what it uses (the header). They come from the workflow's sql job on Postgres 17,
+ * run 45475266814 on c1d072b, the first run with that count, and each is rounded up to one decimal plus 0.3 MB. Every figure fell, since none carries the cache's free
+ * bytes any longer: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995.
+ * Counted by blocks, board_page had moved by 2 MB twice. Once it was a change (0403_departed_personas.sql gave season_handovers, which board_page plans through
+ * season_boss_changes, two more indexes, and with the planner statistics of the rows the files before this one commit, their relcache entries took the cache from
+ * 2227 kB to 4283 kB). Once it was no change at all: 9.822 on d7661f6 and 11.821 on 1201d38, with no SQL changed between them, by whether an analyze had run.
+ * Both were one new block of CacheMemoryContext, which this count no longer reads. Its plans did not change: the WITH plan was 1039 kB and the pinned threads'
+ * play_reach plan 1024 kB on both sides. On Postgres 16, after the files before this one, deleting every planner statistic moved board_page by 2.03 MB counted by
+ * blocks and by 0.15 MB counted this way. board_page's wider far-under gap for "two plans" is gone with it.
  */
 export const BUDGETS: Record<string, Budget> = {
-  alerts_page: budget(() => 'public.alerts_page(null)', player, 5.7),
-  // 12.2 (above): its larger plan, which the workflow also measured at 11.821 on the Buzzkill branch (1201d38) before 0403_departed_personas.sql, so 11.9 + 0.3; a smaller plan, 9.8 MB, is as likely by the statistics (KNIFE_EDGE_GAP_MB).
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 12.2),
-  boot: budget(() => 'public.boot()', player, 9.1),
-  drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 3.0),
-  index_page: budget(() => 'public.index_page()', player, 7.2),
-  // 16.1: the workflow measured 15.769 on d7661f6 (the Buzzkill branch merged with main), so 15.8 + 0.3. The Buzzkill migration (0405) is not the cause: on Postgres 16, after the files before this one, log_page kept 15.642 MB with 0405
-  // and 15.637 without it (+0.005 MB), so the growth over the old 15.7 is not 0405's, and where it came from was not traced (main merged into the branch at d7661f6).
-  log_page: budget(() => 'public.log_page(null)', player, 16.1),
-  my_characters_page: budget(() => 'public.my_characters_page()', player, 4.8),
-  profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.6),
-  queue_page: budget(() => 'public.queue_page()', admin, 5.0),
-  record_page: budget((f) => `public.record_page('${f.mine}', 'post', 1)`, player, 6.5),
-  results_page: budget(() => 'public.results_page(1, 1)', player, 1.1),
-  search_posts: budget(() => `public.search_posts('post', null, null, null, null, false, null, null, 5)`, player, 5.8),
-  search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.7),
+  alerts_page: budget(() => 'public.alerts_page(null)', player, 5.5),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 10.4),
+  boot: budget(() => 'public.boot()', player, 7.3),
+  drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 2.4),
+  index_page: budget(() => 'public.index_page()', player, 7.4),
+  log_page: budget(() => 'public.log_page(null)', player, 14.6),
+  my_characters_page: budget(() => 'public.my_characters_page()', player, 4.3),
+  profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.5),
+  queue_page: budget(() => 'public.queue_page()', admin, 4.9),
+  record_page: budget((f) => `public.record_page('${f.mine}', 'post', 1)`, player, 6.4),
+  results_page: budget(() => 'public.results_page(1, 1)', player, 0.8),
+  search_posts: budget(() => `public.search_posts('post', null, null, null, null, false, null, null, 5)`, player, 5.7),
+  search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.0),
   search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.2),
-  season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 3.5),
-  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 21.5),
-  updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.8),
+  season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 2.7),
+  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 20.1),
+  updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.1),
 };
 
 /** A budget is its measurement rounded up to one decimal, plus this much room (megabytes). */
 const ROOM_MB = 0.3;
 /** The least gap that asks for a budget to be lowered: twice the room, so a budget set by the rule is never asked to be lowered at once. */
 const FLOOR_MB = 2 * ROOM_MB;
-/**
- * Functions whose kept plan is one of two by what the last analyze left, the same code and rows: a gap under the budget this wide is not far under it. board_page keeps 9.8 MB or 11.8 MB (9.777 and 11.289 on
- * Postgres 16 before and after one `analyze` of the scratch database, and the next analyze can put it back; the workflow measured 9.822 on d7661f6 and 11.821 on 1201d38 with no SQL changed between them, whether
- * autovacuum's analyze ran in the file deciding it), so its budget holds the larger plan and its gap the difference.
- */
-const KNIFE_EDGE_GAP_MB: Record<string, number> = { board_page: 2.5 };
 
 /**
  * One line for each fault: a screen function with no budget; a budget for a name that is no screen function; a measurement over its budget; a measurement under its
@@ -293,7 +283,7 @@ export function budgetFaults(names: string[], budgets: Record<string, number>, m
     if (m === undefined) continue;
     const b = budgets[n]!;
     if (m > b) out.push(`${n}: it kept ${m.toFixed(3)} MB, over its budget of ${b.toFixed(3)} MB`);
-    else if (b - m > Math.max(b / 10, FLOOR_MB, KNIFE_EDGE_GAP_MB[n] ?? 0)) out.push(`${n}: it kept ${m.toFixed(3)} MB, far under its budget of ${b.toFixed(3)} MB; lower the budget`);
+    else if (b - m > Math.max(b / 10, FLOOR_MB)) out.push(`${n}: it kept ${m.toFixed(3)} MB, far under its budget of ${b.toFixed(3)} MB; lower the budget`);
   }
   return out;
 }
@@ -395,16 +385,6 @@ test('budgetFaults names a function with no budget, a budget with no function an
   assert.deepEqual(budgetFaults(['a_page'], { a_page: 10 }, { a_page: 10 }), [], 'at the budget is allowed');
   assert.equal(budgetFaults(['a_page'], { a_page: 10 }, { a_page: 10.1 }).length, 1, 'over by a tenth of a megabyte is a fault');
   assert.match(budgetFaults(['a_page'], { a_page: 10 }, { a_page: 10.1234 })[0]!, /kept 10.123 MB, over its budget of 10.000 MB/, 'a fault prints three decimals');
-});
-
-test('a function on a statistics knife-edge has the wider gap its two plans need, and no other does', () => {
-  // board_page keeps one of two plans by what the last analyze left (9.8 or 11.8 MB, the same code and rows), so its budget is the larger and the gap under it the difference.
-  const wide = (m: number) => budgetFaults(['board_page'], { board_page: 12.2 }, { board_page: m });
-  assert.deepEqual(wide(11.8), [], 'the larger plan is inside its budget');
-  assert.deepEqual(wide(9.8), [], 'the smaller plan is not far under it');
-  assert.equal(wide(9.4).length, 1, 'a figure under both plans is far under');
-  assert.equal(wide(12.3).length, 1, 'over the budget is a fault');
-  assert.equal(budgetFaults(['a_page'], { a_page: 12.2 }, { a_page: 9.8 }).length, 1, 'another function gets no wide gap');
 });
 
 test('the far-under gap is the larger of a tenth of the budget and 0.6 MB', () => {
