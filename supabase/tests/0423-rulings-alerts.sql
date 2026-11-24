@@ -862,3 +862,94 @@ begin
   perform tests.unbecome();
   if got is distinct from '[]'::jsonb then raise exception 'a player who only posted read a moved thread: %', got; end if;
 end $$;
+
+-- Review fix for Task 11 (design section 7; section 9 of the migration): what alerts_page loads for the new lines.
+--
+-- 1. A warning and a fallTaken name the post they were filed on (`about_act`): that post, with its number, is among the Acts; the warning's Mod is among the people by its staff key; fallTaken's people hold the taker.
+-- 2. A gift's and a drawing's post, three links from the alert's Act, is among the Acts; a drawing's people hold the drawer.
+-- 3. A threadMoved row's board is among the boards, by name.
+-- 4. Nothing is loaded for another account's rows, and a page holds no more than its 30 rows' worth.
+
+create function pg_temp.page_as(c uuid) returns jsonb language plpgsql as $$
+declare got jsonb;
+begin
+  perform tests.become(pg_temp.owner(c));
+  got := alerts_page(null);
+  perform tests.unbecome();
+  return got;
+end $$;
+
+do $$
+declare
+  t uuid := tests.thread('Ra loads fall');
+  author uuid := pg_temp.player('ld-author'); taker uuid := pg_temp.player('ld-taker'); other uuid := pg_temp.player('ld-other');
+  p uuid := pg_temp.say(author, t);
+  v uuid; inf uuid; got jsonb; staff_key text;
+begin
+  insert into card_ledger (account, card, kind, price) values (pg_temp.owner(taker), 't-ra-fall', 'bought', 0);
+  perform play_card(pg_temp.owner(taker), 't-ra-fall', taker, p, '{}', 0, '', 'post');
+  v := pg_temp.visit(p);
+  perform file_visit(v, 'Filed.');
+  inf := (select i.id from acts i where i.kind = 'infraction' and i.payload ->> 'visit_act' = v::text);
+  staff_key := (select i.payload ->> 'staff' from acts i where i.id = inf);
+
+  got := pg_temp.page_as(author);
+  if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = p::text and (a ->> 'seq') is not null) then raise exception 'fallTaken: the post the infraction names is not loaded with its number: %', got -> 'acts'; end if;
+  if not exists (select 1 from jsonb_array_elements(got -> 'people') c where c ->> 'id' = taker::text) then raise exception 'fallTaken: the taker is not among the people: %', got -> 'people'; end if;
+
+  got := pg_temp.page_as(taker);
+  if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = p::text and (a ->> 'seq') is not null) then raise exception 'warning: the post the infraction names is not loaded with its number'; end if;
+  if not exists (select 1 from jsonb_array_elements(got -> 'people') c where c ->> 'staff' = staff_key) then raise exception 'warning: the Mod that filed (%) is not among the people by its staff key: %', staff_key, got -> 'people'; end if;
+
+  got := pg_temp.page_as(other);
+  if jsonb_array_length(got -> 'acts') <> 0 or jsonb_array_length(got -> 'people') <> 0 then raise exception 'another account''s page loads Acts or people it has no row for: %', got; end if;
+end $$;
+
+do $$
+declare
+  author uuid := pg_temp.player('ld2-author');
+  donor uuid := pg_temp.player('ld2-donor');
+  caster uuid := pg_temp.player('ld2-caster');
+  t uuid; p uuid; drive uuid; wall uuid; played jsonb; said jsonb; gifted uuid; drew uuid; got jsonb;
+  payload jsonb := '{"strokes": [{"width": 0.01, "points": [[0.1, 0.1]]}]}';
+begin
+  perform tests.become(pg_temp.owner(author));
+  t := ((start_thread('general', author, 'Ra loads gifts', 'Ra load words.')) -> 'act' ->> 'thread')::uuid;
+  perform tests.unbecome();
+  p := (select a.id from acts a where a.thread = t and a.kind = 'post' order by a.created_at limit 1);
+  insert into card_ledger (account, card, kind, price) select pg_temp.owner(caster), k, 'bought', 0 from unnest(array['t-ra-drive', 't-ra-wall']) k, generate_series(1, 3);
+  perform tests.become_service();
+  played := play_card(pg_temp.owner(caster), 't-ra-drive', caster, p, '{}', 0, 'Please give.');
+  drive := (played ->> 'id')::uuid;
+  played := play_card(pg_temp.owner(caster), 't-ra-wall', caster, p, '{}', 0, '');
+  wall := (played ->> 'id')::uuid;
+  perform tests.unbecome();
+  insert into wallets (account, balance) values (pg_temp.owner(donor), 400) on conflict (account) do update set balance = excluded.balance;
+  perform tests.become_service();
+  said := donate(pg_temp.owner(donor), donor, drive, 10);
+  gifted := (said #>> '{gift,id}')::uuid;
+  said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(0, 100), 4000);
+  drew := (said ->> 'id')::uuid;
+  perform tests.unbecome();
+
+  got := pg_temp.page_as(author);
+  if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = gifted::text) or not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = drew::text) then raise exception 'the gift or the draw is not loaded: %', got -> 'acts'; end if;
+  if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = p::text and (a ->> 'seq') is not null) then raise exception 'the post three links from a gift and a draw is not loaded: %', got -> 'acts'; end if;
+  if not exists (select 1 from jsonb_array_elements(got -> 'people') c where c ->> 'id' = donor::text and c ->> 'name' = 'Ra ld2-donor') then raise exception 'the drawer is not among the people by name: %', got -> 'people'; end if;
+end $$;
+
+do $$
+declare
+  t uuid := tests.thread('Ra loads moved');
+  starter uuid := pg_temp.player('ld3-starter');
+  dest uuid; q bigint; landed uuid; got jsonb;
+begin
+  insert into boards (slug, name) values ('ra-ld-dest', 'Ra Load Dest') returning id into dest;
+  perform pg_temp.say(starter, t);
+  q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t, 'board', dest), true);
+  landed := pg_temp.mv_land(q);
+  got := pg_temp.page_as(starter);
+  if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = landed::text) then raise exception 'the move is not loaded'; end if;
+  if (select b ->> 'name' from jsonb_array_elements(got -> 'boards') b where b ->> 'id' = dest::text) is distinct from 'Ra Load Dest' then raise exception 'the board the thread moved to is not among the boards by name: %', got -> 'boards'; end if;
+  if jsonb_array_length(got -> 'boards') <> 1 then raise exception 'the page holds boards it has no row for: %', got -> 'boards'; end if;
+end $$;

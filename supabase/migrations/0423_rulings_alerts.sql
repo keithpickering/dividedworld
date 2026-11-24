@@ -2102,3 +2102,142 @@ begin
   );
 end
 $function$;
+
+-- Section 9 (design section 7): what Alerts loads for the new lines
+--
+-- The new lines name Acts and people the page did not load: a warning's and a fallTaken's post is the infraction's `about_act` (a payload id, never a link of target_act_id), a warning's Mod is a staff key (the infraction's
+-- `staff`, a Mod's, not a character's id), fallTaken names the taker (the infraction's `character`), a gift's and a drawing's post is three links from the donation or the draw (donation, drive play, post; draw, wall play, post),
+-- a drawing names its drawer (the draw's character), and a threadMoved line names the board in the move's `params.board`. alerts_page (0368, whole) with those loaded and nothing else changed:
+--   chain: three links, as for a card an admin ended, also for a gift and a drew (`deep`);
+--   extra: the infraction's `about_act`, for a ruling row whose Act is an infraction;
+--   pe: the people, the authors of the third link (as before) and, for the rows that name them, the draw's character, the infraction's `character` (fallTaken) and the staff character the infraction's `staff` names (warning);
+--   boards: the board each threadMoved row's move names, by id and name (boards are public).
+-- The uuid is checked by pattern in the query (safe_uuid is closed to the caller, as alerts_page runs as the caller). Cost: the page is 30 rows, so each addition is at most 30 probes by primary key, unchanged by the size of the instance; each is a public Act or a public name, read from the row's own Act.
+-- Nothing here is computed from a private fact: the taker, the drawer and the Mod are each in a public Act, and the page is the caller's own rows as before. Way out: a read; it adds no state.
+create or replace function public.alerts_page(in_before timestamp with time zone)
+ returns jsonb
+ language plpgsql
+ stable
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  return (
+  WITH RECURSIVE al AS (
+          SELECT (to_jsonb(a.*) - 'ordinality'::text) AS j,
+             a.ordinality AS o
+            FROM my_alerts(alerts_page.in_before, 30) WITH ORDINALITY a(kind, sub, act, "character", at, thread, name, title, count, ordinality)
+         ), chain(id, depth, ended) AS (
+          SELECT ((al.j ->> 'act'::text))::uuid AS uuid,
+             1 AS "?column?",
+             (((al.j ->> 'kind'::text) = 'cardEnded'::text) OR ((al.j ->> 'kind'::text) = 'gift'::text) OR (((al.j ->> 'kind'::text) = 'cardOnYours'::text) AND ((al.j ->> 'sub'::text) = 'drew'::text))) AS "?column?"
+            FROM al
+           WHERE ((al.j ->> 'act'::text) IS NOT NULL)
+         UNION
+          SELECT x.target_act_id,
+             (c.depth + 1),
+             c.ended
+            FROM (chain c
+              JOIN acts_public x ON ((x.id = c.id)))
+           WHERE (((c.depth < 2) OR ((c.depth < 3) AND c.ended)) AND (x.target_act_id IS NOT NULL))
+         ), extra AS (
+          SELECT (CASE WHEN x.payload ->> 'about_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (x.payload ->> 'about_act')::uuid END) AS id
+            FROM al
+              JOIN acts_public x ON x.id = ((al.j ->> 'act'::text))::uuid
+           WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND x.kind = 'infraction'::text
+         ), ac AS (
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE ((a.id IN ( SELECT c.id
+                    FROM chain c)) OR (a.id IN ( SELECT e.id
+                    FROM extra e)))
+         ), pe AS (
+          SELECT a."character" AS id
+            FROM ac a
+           WHERE (a.id IN ( SELECT h.id
+                    FROM chain h
+                   WHERE (h.depth = 3)))
+         UNION
+          SELECT a."character"
+            FROM al
+              JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
+           WHERE ((al.j ->> 'kind'::text) = 'cardOnYours'::text) AND ((al.j ->> 'sub'::text) = 'drew'::text)
+         UNION
+          SELECT (CASE WHEN a.payload ->> 'character' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload ->> 'character')::uuid END)
+            FROM al
+              JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
+           WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'fallTaken'::text) AND a.kind = 'infraction'::text
+         UNION
+          SELECT c.id
+            FROM characters_public c
+           WHERE c.staff IN ( SELECT a.payload ->> 'staff'
+                    FROM al
+                      JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
+                   WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'warning'::text) AND a.kind = 'infraction'::text)
+         ), th AS (
+          SELECT DISTINCT ((al.j ->> 'thread'::text))::uuid AS id
+            FROM al
+           WHERE (((al.j ->> 'kind'::text) = 'followed'::text) AND ((al.j ->> 'thread'::text) IS NOT NULL))
+         )
+  SELECT jsonb_build_object('alerts', COALESCE(( SELECT jsonb_agg(al.j ORDER BY al.o) AS jsonb_agg
+            FROM al), '[]'::jsonb), 'seenAt', ( SELECT p.alerts_seen_at
+            FROM account_preferences p
+          LIMIT 1), 'openedAt', my_account_opened(), 'acts', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY a.created_at, ((a.id)::text COLLATE "C")) AS jsonb_agg
+            FROM ac a), '[]'::jsonb), 'people', COALESCE(( SELECT jsonb_agg(f.face ORDER BY f.name) AS jsonb_agg
+            FROM ( SELECT cp.name,
+                     (to_jsonb(cp.*) || jsonb_build_object('profile', ( SELECT (to_jsonb(p.*) || profile_cosmetics(p."character"))
+                            FROM ( SELECT r."character",
+                                     r.title,
+                                     r.signature,
+                                     r.avatar_square,
+                                     r.avatar_portrait,
+                                     r.square_frame,
+                                     r.portrait_frame,
+                                     r.pip_style,
+                                     r.pronouns
+                                    FROM character_profiles r
+                                   WHERE (r."character" = cp.id)) p))) AS face
+                    FROM ( SELECT c.id,
+                             c.name,
+                             c.joined,
+                             c.staff,
+                             c.office,
+                             c."group"
+                            FROM characters_public c
+                           WHERE (c.id IN ( SELECT p.id
+                                    FROM pe p))) cp) f), '[]'::jsonb), 'openings', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY ((a.thread)::text COLLATE "C")) AS jsonb_agg
+            FROM acts_public a
+           WHERE ((a.thread IN ( SELECT t.id
+                    FROM th t)) AND (a.seq = 1))), '[]'::jsonb), 'reading', COALESCE(( SELECT jsonb_agg(to_jsonb(r.*) ORDER BY ((r.thread)::text COLLATE "C")) AS jsonb_agg
+            FROM ( SELECT g.thread,
+                     g.furthest_seq
+                    FROM reading g
+                   WHERE (g.thread IN ( SELECT t.id
+                            FROM th t))) r), '[]'::jsonb), 'boards', COALESCE(( SELECT jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) ORDER BY ((b.id)::text COLLATE "C")) AS jsonb_agg
+            FROM boards_now b
+           WHERE (b.id IN ( SELECT (CASE WHEN a.payload #>> '{params,board}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload #>> '{params,board}')::uuid END)
+                    FROM al
+                      JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
+                   WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'threadMoved'::text) AND a.kind = 'move'::text))), '[]'::jsonb)) AS jsonb_build_object
+  );
+end
+$function$;
