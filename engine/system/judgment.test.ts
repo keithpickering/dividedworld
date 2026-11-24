@@ -218,6 +218,25 @@ test('the Mod\'s prompt lists the conferred punishments by key and name, with th
   assert.deepEqual(plain.properties.move.properties.kind.enum, ['setRule']);
 });
 
+test('a Mod\'s prompt and schema offer moveThread, and its thread param, only where the call names a thread', () => {
+  const kinds = (schema: unknown) => (schema as any).properties.move.properties.kind.enum;
+  const withThread = [['a filing', filingPrompt(filing({ thread: T1 }))], ['a report', reportPrompt(report({ thread: T1 }))]] as const;
+  for (const [name, p] of withThread) {
+    assert.match(p.system, /moveThread/, `${name}: the prompt names the kind`);
+    assert.ok(p.system.includes(`this thread, ${T1}, to another board`), `${name}: the prompt names the thread`);
+    assert.ok(kinds(p.schema).includes('moveThread'), `${name}: the schema offers the kind`);
+    assert.deepEqual((p.schema as any).properties.move.properties.params.properties.thread, { type: 'string', enum: [T1] }, `${name}: the schema offers the thread param`);
+  }
+  const without = [['a filing', filingPrompt(filing())], ['a report', reportPrompt(report())], ['a patrol', patrolPrompt(patrol())]] as const;
+  for (const [name, p] of without) {
+    assert.ok(!p.system.includes('moveThread'), `${name}: no thread, no moveThread in the prompt`);
+    assert.ok(!kinds(p.schema).includes('moveThread'), `${name}: no thread, no moveThread in the schema`);
+    assert.equal((p.schema as any).properties.move.properties.params.properties.thread, undefined, `${name}: no thread param`);
+  }
+  assert.ok(!modPrompt(base).includes('moveThread'), 'the bare Mod prompt offers none');
+  assert.ok(!appealPrompt(appeal()).system.includes('moveThread'), 'an appeal makes no move');
+});
+
 test('an expiry given as digits is read as a number, with a recorded trim', () => {
   const out = repairModMove({ ...good, expires_in_hours: ' 48 ' }, ctx);
   assert.equal(out.move?.expires_in_hours, 48);

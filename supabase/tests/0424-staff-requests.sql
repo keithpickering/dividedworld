@@ -119,6 +119,18 @@ create function pg_temp.mt(thread uuid, board uuid) returns jsonb language sql a
   select jsonb_build_object('kind', 'moveThread', 'params', jsonb_build_object('thread', thread, 'board', board), 'expires_in_hours', 0, 'why', 'It belongs there.')
 $$;
 
+-- ---- 0b. The migration's own update changes an instance seeded before it ----
+-- seed_instance writes offices from the catalog, so the world above already has boss and mod and would hide a migration that lost its `update move_kinds`. An instance seeded earlier has the Boss's alone: put that row back, then run the migration again from the file (its section 1 is create or replace and an update, so it replays), and the row must be the Mod's too.
+-- The path is relative to the directory the suite runs from, the repository root (tools/test-sql.mjs).
+update move_kinds set offices = array['boss'] where key = 'moveThread';
+do $$ begin
+  if (select offices from move_kinds where key = 'moveThread') is distinct from array['boss'] then raise exception 'the pre-0424 row was not set back'; end if;
+end $$;
+\i supabase/migrations/0424_staff_requests.sql
+do $$ begin
+  if (select offices from move_kinds where key = 'moveThread') is distinct from array['boss', 'mod'] then raise exception 'the migration did not make moveThread a Mod''s: %', (select offices from move_kinds where key = 'moveThread'); end if;
+end $$;
+
 -- ---- 1. A Mod's moveThread on beat queues with no expiry and spends one ----
 do $$
 declare
@@ -175,9 +187,17 @@ declare
   t uuid := pg_temp.thread_on('mm-games', 'Mt Boss moves this');
   m bigint := (select max(id) from meetings);
   q bigint;
+  q2 bigint;
+  nobody uuid;
 begin
   insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
   values (m, 'mm-boss', 'moveThread', jsonb_build_object('thread', t, 'board', general), null, 'The Boss decides.', now(), now() + interval '48 hours', false) returning id into q;
   if (select expires_at from queued_moves where id = q) is not null then raise exception 'the Boss''s lasting move kept an expiry'; end if;
   if (select spent_order from queued_moves where id = q) is not null then raise exception 'the Boss''s move spent a Mod''s order'; end if;
+  -- The beat check is a Mod's alone: the Boss's moveThread to a board no Mod's beat holds (Off Topic is Mod One's, so a fresh board is on nobody's) queues too.
+  insert into boards (slug, name, description) values ('mm-nobody', 'Nobody''s', 'On no beat.') returning id into nobody;
+  if exists (select 1 from staff_orders o where nobody = any (o.boards)) then raise exception 'the world: a Mod watches the new board'; end if;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values (m, 'mm-boss', 'moveThread', jsonb_build_object('thread', t, 'board', nobody), null, 'The Boss decides again.', now(), null, false) returning id into q2;
+  if (select staff from queued_moves where id = q2) is distinct from 'mm-boss' then raise exception 'the Boss''s moveThread off every beat was not queued'; end if;
 end $$;
