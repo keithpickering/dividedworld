@@ -175,6 +175,9 @@ begin
   insert into reaction_tallies (act, kind, count) select id, 'up', 1 + (seq % 5) from acts where thread = any (th) and seq % 3 = 0;
   set local session_replication_role = origin;
   analyze acts; analyze reaction_tallies; analyze characters;
+  -- As 0304-post-veils.sql does: with seq scans priced out, a Seq Scan on acts in a plan means no index can serve that part, which is what this asks; a planner's choice of a scan over an index it could use (as CI's made
+  -- for acts_public's latest-edit probe, over a table seeded with no edits) is not.
+  set local enable_seqscan = off;
   q := replace(replace(replace(replace(q, 'tl.id', quote_literal(th[1])), 'a.character', quote_literal(chars[1])), 'since', quote_literal(pg_temp.base())), 'until', quote_literal(pg_temp.base() + interval '1 hour'));
   set local role kayfabb_digest;
   for ln in execute 'explain ' || q loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
@@ -197,6 +200,7 @@ begin
   execute q into got;
   reset role;
   if got is null then raise exception 'the top read of a character with posts in the window answers none'; end if;
+  set local enable_seqscan = on;
 end $$;
 
 -- ---- Task 4: write_staff_spin ----
@@ -400,6 +404,9 @@ begin
   set local session_replication_role = origin;
   analyze acts;
   analyze characters;
+  -- As 0304-post-veils.sql does: with seq scans priced out, a Seq Scan on acts in a plan means no index can serve that part, which is what this asks; a planner's choice of a scan over an index it could use (as CI's made
+  -- for acts_public's latest-edit probe, over a table seeded with no edits) is not.
+  set local enable_seqscan = off;
   -- A spin is always its thread's opener (seq 1: spin_written and write_staff_spin each insert it as the first Act of the thread they make), so a thread-keyed spin branch is keyed on (thread, seq = 1) and is one probe
   -- however large the thread; the seeded spins above are one to a thread (threads 2 to 41), each seq 1. A spin branch keyed on the persona alone (a board's, or all of them) is bounded by the persona's own openers.
   foreach q in array array[
@@ -432,6 +439,7 @@ begin
       raise exception 'a thread-keyed spin branch is not keyed on the thread''s opener (%): %', q, plan;
     end if;
   end loop;
+  set local enable_seqscan = on;
   -- The explained spin branches of pool_conversation and the presence functions are copies of the functions' own; the functions carry the same key.
   if (select count(*) from pg_proc where proname in ('presence_staff_in_thread', 'presence_staff_in_board') and prosrc ~ 'x\.kind = ''spin'' and x\.seq = 1') is distinct from 2
      or (select count(*) from pg_proc where proname = 'pool_conversation' and prosrc ~ 'a\.seq = 1 and a\.kind = ''spin''') is distinct from 1 then
