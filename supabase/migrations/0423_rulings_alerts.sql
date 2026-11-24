@@ -1230,6 +1230,10 @@ revoke execute on function surface_apply(uuid, uuid, text, jsonb, bit, integer) 
 -- 1. refund_card_write (0149) tells the caster, once per refund, that the write failed and the play was refunded: write_alert(<the play's character>, 'cardEnded', 'refunded', <the play Act>, null). Everything else as 0149 wrote it.
 -- 2. my_alerts (0368) counts a settlement the account was paid crowd pay in (a wallet_events row of kind 'crowd', 0384) as well as one it has ledger lines in; only the settlement CTEs st_k and st_tie change. Its `count` stays the number of the account's
 --    characters with ledger lines, 0 for a settlement of crowd pay alone. alerts_page reads the same columns. my_alerts_unread (0368) gets the same counting, below.
+--
+-- An account's crowd pay is read by its own partial index, newest settlement first, so the settlement alert reads its k newest crowd rows and no more,
+-- however many other wallet moves (plays, purchases, gifts) the account has made. wallet_events_account (account, at) would read them all and sort.
+create index wallet_events_crowd on wallet_events (account, settlement desc) where kind = 'crowd';
 
 create or replace function refund_card_write(play uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -1313,7 +1317,7 @@ begin
   -- The ledger is read up to the newest settlement applied before the cursor: the largest id among them, so no settlement that
   -- qualifies is cut whatever order the ids came in (a stand-in for time that assumed they go together broke where a committed
   -- settlement was applied later than a newer id). Without a cursor it is the largest id there is, from the key alone.
-  -- Each source is read by account (ledger_account; wallet_events_account) and cut to its k newest before they are joined, so what is read grows with the account's own rows, never the instance's.
+  -- Each source is read by account (ledger_account; wallet_events_crowd) and cut to its k newest before they are joined, so what is read grows with the account's own rows, never the instance's.
   -- `count` is the account's characters with ledger lines in the settlement: 0 for one that paid crowd pay alone.
   hi as (
     select coalesce(case when (select before from lim) = 'infinity'::timestamptz then (select max(s.id) from settlements s)
@@ -1407,7 +1411,7 @@ begin
       limit 10) f)
     union all
     -- Settlements: the caller's ledger lines, or the crowd pay it was paid (a wallet_events row of kind 'crowd', which has no ledger line), as my_alerts lists them.
-    -- Each source is read by account (ledger_account; wallet_events_account) and cut to its ten newest before they are joined.
+    -- Each source is read by account (ledger_account; wallet_events_crowd) and cut to its ten newest before they are joined.
     select (select count(*) from (
       select u.id from (
         (select l.settlement as id from ledger l join settlements s on s.id = l.settlement
