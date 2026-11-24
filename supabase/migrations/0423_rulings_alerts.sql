@@ -212,3 +212,372 @@ begin
   if why is not null then raise exception '% is %', new.key, why using errcode = '23514'; end if;
   return new;
 end $function$;
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Section 2 (design section 1): what a Mod Bot's work lands
+-- ---------------------------------------------------------------------------------------------------------------------
+
+-- file_visit (0361_discipline_cards), telling the character the infraction landed on, and the author where a fall was taken. Everything else as 0361 wrote it.
+CREATE OR REPLACE FUNCTION public.file_visit(visit_act uuid, line text DEFAULT NULL::text)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  v acts%rowtype;
+  charges jsonb;
+  top jsonb;
+  who uuid;
+  mod_key text;
+  said text;
+  ended jsonb;
+  hit jsonb;
+  author uuid;
+  fall uuid;
+  taker uuid;
+begin
+  select * into v from acts a where a.id = file_visit.visit_act and a.kind = 'visit';
+  if not found then raise exception 'there is no such visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The lock order this file keeps, here and in every writer a fall meets: the post's row (place_cast takes it to lay a play on a post, so a fall cast and a filing are laid one after the other, and the one that goes
+  -- second sees the first), then the visit's open row (the row end_visit takes: the end and the infraction are one decision, and the one that waits finds the visit ended), then, inside infract, the row of the
+  -- character the infraction lands on. place_cast at post reach takes the post's row; at character reach it takes the character's row alone. start_visit takes advisory locks (visit:<post>, cap:<author>) and then
+  -- the open row, and no post row today. `for no key update` is place_cast's own mode, so the two conflict; it does not conflict with a key share (a foreign key) or a read.
+  -- The rule for a later change: post first everywhere. Any path that takes both a post row and a character row takes the post's first (so a path that plays from a post on a character takes the post it is cast from
+  -- before the character), and a path that takes the open row takes the post's before it. Then no two writers hold one and want the other.
+  perform 1 from acts p where p.id = v.target_act_id for no key update;
+  perform 1 from visits_open o where o.visit_act = v.id for update;
+  charges := visit_charges(v.id);
+  top := (select c from jsonb_array_elements(charges) with ordinality e(c, n)
+          order by case c ->> 'band' when 'severe' then 3 when 'moderate' then 2 else 1 end desc, n limit 1);
+  mod_key := (select c.staff from characters c where c.id = v.character);
+  said := coalesce(nullif(btrim(coalesce(line, '')), ''), visit_line('visitFiled', mod_key, charges));
+  ended := end_visit(v.id, 'filed', null, said);
+  if not (ended ->> 'ended')::boolean then
+    return jsonb_build_object('filed', false, 'end_act', ended -> 'end_act', 'outcome', ended ->> 'outcome');
+  end if;
+  author := (select a.character from acts a where a.id = v.target_act_id);
+  who := author;
+  -- Task 4 (section 3), taking the fall: the oldest live play of a fall card on the post's own reach that no infraction names, not caught (a caught play holds no place) and not ended by an admin; its caster takes
+  -- the filing in the author's place. The play is a public Act, so nothing here reads an owner. A caster infract would refuse where it would not refuse the author (a staff character now: infract warns a player
+  -- character alone; a character that is gone cannot be, an Act's character being a foreign key) takes no fall: the filing lands on the author as if there were none, and the play stays unspent. A caster who is
+  -- banned now takes it, as infract warns a banned character today. The post's row is held (above), so nothing spends this play or lays another between this read and the infraction.
+  select k.id, k.character into fall, taker
+  from acts k join card_kinds ck on ck.key = k.payload ->> 'card' and ck.discipline ->> 'kind' = 'fall'
+  where k.kind = 'card' and k.target_act_id = v.target_act_id and coalesce(k.payload ->> 'reach', 'post') = 'post' and not (k.payload ? 'caught') and not card_ended(k.id)
+    and not exists (select 1 from acts i where i.kind = 'infraction' and i.payload ? 'fall_play' and i.payload ->> 'fall_play' = k.id::text)
+  order by k.created_at, k.id limit 1;
+  if fall is not null and taker is distinct from author and exists (select 1 from characters c where c.id = taker and c.staff is null) then
+    who := taker;
+  else
+    fall := null;
+  end if;
+  hit := infract(who, top ->> 'band', v.target_act_id, mod_key, nullif(top ->> 'rule_number', '')::integer, v.id, fall);
+  -- A filing is the one thing that tells the visited: the character the infraction landed on hears a ban or a warning, about that Act. Where a fall was taken, the author hears `fallTaken` about the infraction, acting as the taker's player,
+  -- so a player who took the fall for their own other mask hears nothing on it. A visit that ended any other way (intercepted, trapped, reversed, dropped) returned above and wrote nothing.
+  perform write_alert(who, 'ruling', case when hit ->> 'ban' is not null then 'ban' else 'warning' end, coalesce((hit ->> 'ban')::uuid, (hit ->> 'infraction')::uuid), null);
+  if fall is not null then
+    perform write_alert(author, 'ruling', 'fallTaken', (hit ->> 'infraction')::uuid, (select c.owner from characters c where c.id = who));
+  end if;
+  return jsonb_build_object('filed', true, 'end_act', ended -> 'end_act') || hit;
+end $function$;
+revoke execute on function file_visit(uuid, text) from public, anon, authenticated;
+grant execute on function file_visit(uuid, text) to service_role;
+
+-- close_appeal (0361_discipline_cards), telling the appellant the ruling. Everything else as 0361 wrote it.
+CREATE OR REPLACE FUNCTION public.close_appeal(appeal_act uuid, verdict text, line text DEFAULT NULL::text, staff text DEFAULT NULL::text, most_days integer DEFAULT NULL::integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ SECURITY DEFINER
+ SET search_path TO 'public', 'pg_temp'
+AS $function$
+declare
+  ap acts%rowtype;
+  pun acts%rowtype;
+  ruling acts%rowtype;
+  mod_key text;
+  who uuid;
+  appellant text;
+  said text := left(btrim(coalesce(close_appeal.line, '')), 280);
+  v text := close_appeal.verdict;
+  pts integer;
+  delta integer := 0;
+  payload jsonb;
+  hit jsonb;
+  new_until timestamptz;
+  days integer;
+  paid record;
+  amount integer := 0;
+  written uuid;
+  key text;
+  own_end timestamptz;
+  length interval;
+  most_all numeric;
+  most numeric;
+  ended boolean := false;
+begin
+  select * into ap from acts a where a.id = close_appeal.appeal_act and a.kind = 'appeal';
+  if not found then raise exception 'there is no such appeal' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The appeal's own lock: closing and refunding it are one decision, so it is closed once, or refunded once, never both.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.appeal.' || ap.id::text, 0));
+  select * into ruling from acts a where a.kind = 'appeal_ruling' and a.target_act_id = ap.id;
+  if found then
+    -- The ruling's own numbers, so a retry after a lost answer reports the true outcome.
+    return jsonb_build_object('closed', false, 'existing', true, 'ruling_act', ruling.id, 'verdict', ruling.payload ->> 'verdict', 'line', ruling.payload ->> 'line',
+      'points_delta', (ruling.payload ->> 'points_delta')::integer,
+      'refunded_amount', coalesce((select f.amount from appeal_refunds f where f.appeal_act = ap.id and f.why = 'overturned'), 0))
+      || case when ruling.payload ? 'until' then jsonb_build_object('until', ruling.payload ->> 'until') else '{}'::jsonb end;
+  end if;
+  if exists (select 1 from appeal_refunds f where f.appeal_act = ap.id) then
+    return jsonb_build_object('closed', false, 'refunded', true);
+  end if;
+  if v is null or v not in ('overturned', 'upheld', 'reduced', 'increased') then
+    raise exception 'an appeal is answered with overturned, upheld, reduced or increased, not %', coalesce(v, 'nothing') using errcode = '22023';
+  end if;
+  select * into pun from acts a where a.id = ap.target_act_id;
+  -- A move ends under its own lock (end_move's): the ruling, the tick and an apology's end are then one after another, and a move one of them ended is seen as ended here.
+  if pun.kind = 'move' then perform pg_advisory_xact_lock(hashtext('kayfabb.end_move'), hashtext(pun.id::text)); end if;
+  -- The punishment ran out while the appeal waited: nothing is left to rule on, and an increase must not revive it. No ruling; the price comes back (the appeal stays used).
+  if not punishment_running(pun.id) then
+    perform refund_appeal(ap.id, 'expired');
+    return jsonb_build_object('closed', false, 'refunded', true, 'expired', true, 'reason', 'that punishment had already run out before the appeal was heard, so nothing was ruled and your Aura is back');
+  end if;
+  mod_key := appeal_hearer(pun.id);
+  if mod_key is null then raise exception 'no one is on staff to hear an appeal' using errcode = '55000'; end if;
+  if close_appeal.staff is not null and close_appeal.staff <> mod_key then
+    raise exception 'this appeal is heard by someone else now' using errcode = '55000';
+  end if;
+  who := ap.character;
+  appellant := (select c.name from characters c where c.id = who);
+
+  if pun.kind = 'move' then
+    own_end := (pun.payload ->> 'expires_at')::timestamptz;
+    -- A move that ends only by an apology or an admin has no length to halve or add to: the model's other verdicts are written as upheld, in the stock line.
+    if own_end is null and v in ('reduced', 'increased') then v := 'upheld'; said := ''; end if;
+  end if;
+  payload := jsonb_build_object('appeal_act', ap.id, 'verdict', v);
+
+  if pun.kind = 'infraction' then
+    pts := (pun.payload ->> 'points')::integer;
+    if v = 'overturned' then delta := -pts;
+    elsif v = 'reduced' then delta := -least(pts, greatest(1, (pts + 1) / 2));
+    elsif v = 'increased' then
+      -- One more infraction of the same band for the same post: at most one band's points, and a full bar bans. A fall's infraction names its play again, so the increase lands on the same character, the one who appealed (Task 4).
+      hit := infract(who, pun.payload ->> 'band', (pun.payload ->> 'about_act')::uuid, mod_key, nullif(pun.payload ->> 'rule_number', '')::integer, nullif(pun.payload ->> 'visit_act', '')::uuid, nullif(pun.payload ->> 'fall_play', '')::uuid);
+      delta := (hit ->> 'points')::integer;
+      payload := payload || jsonb_build_object('infraction_act', hit ->> 'infraction');
+    end if;
+  elsif pun.kind = 'move' then
+    -- Its length is from its landing to its own end. A reduction ends it at landing plus half the length (the end may be behind us); an increase adds half the length, but
+    -- never past the phase's most days from landing (the smaller of the phase's number and the instance's own).
+    length := own_end - pun.created_at;
+    if v = 'overturned' then new_until := now();
+    elsif v = 'reduced' then new_until := pun.created_at + length / 2;
+    elsif v = 'increased' then
+      -- The instance's setting is the outer limit (setting() raises where it is missing); the phase's number, where the call has one, can only lower it.
+      most_all := (setting('moveExpiryMostDays') #>> '{}')::numeric;
+      most := greatest(1, least(coalesce(close_appeal.most_days, most_all), most_all));
+      new_until := own_end + least(length / 2, greatest(interval '0', most * interval '1 day' - length));
+    end if;
+    if new_until is not null then payload := payload || jsonb_build_object('until', new_until); end if;
+  else
+    -- A ban: its length is its days; a reduction counts half of them from the ban's start, an increase runs half of them past its end.
+    days := (pun.payload ->> 'days')::integer;
+    if v = 'overturned' then new_until := now();
+    elsif v = 'reduced' then new_until := pun.created_at + days * interval '12 hours';
+    elsif v = 'increased' then new_until := (pun.payload ->> 'until')::timestamptz + days * interval '12 hours';
+    end if;
+    if new_until is not null then payload := payload || jsonb_build_object('until', new_until); end if;
+  end if;
+
+  key := 'appeal' || initcap(v);
+  said := coalesce(nullif(said, ''), appeal_line(key, mod_key, appellant));
+  payload := payload || jsonb_build_object('points_delta', delta, 'line', said);
+  written := (write_staff_act(mod_key, 'appeal_ruling', ap.thread, ap.id, payload) ->> 'id')::uuid;
+  -- The appellant hears the ruling, about the ruling Act. An `increased` verdict's extra points or ban are told in this one alert: its call to infract above writes no warning or ban of its own.
+  perform write_alert(ap.character, 'ruling', 'appealAnswered', written, null);
+
+  -- A move's effect: overturned ends it at once; a reduction that has already run its course ends it now. Each is end_move's, so a move something else just ended is not ended twice.
+  if pun.kind = 'move' then
+    if v = 'overturned' then
+      ended := (end_move(pun.id, 'overturned', 'appeal') ->> 'ended')::boolean;
+      if ended then perform say_move_end(pun.id, 'overturned'); end if;
+    elsif v = 'reduced' and new_until <= now() then
+      ended := (end_move(pun.id, 'expired', 'appeal') ->> 'ended')::boolean;
+      if ended then perform say_move_end(pun.id, 'expired'); end if;
+    end if;
+  end if;
+
+  -- An overturned appeal gets its price back.
+  if v = 'overturned' then
+    select w.account, -w.change as price into paid from wallet_events w where w.kind = 'appeal' and w.ref = ap.id;
+    amount := coalesce(paid.price, 0);
+    insert into appeal_refunds (appeal_act, amount, why) values (ap.id, amount, 'overturned');
+    if amount > 0 then perform wallet_move(paid.account, amount, 'refund', null, ap.id); end if;
+  end if;
+  return jsonb_build_object('closed', true, 'ruling_act', written, 'verdict', v, 'staff', mod_key, 'line', said, 'points_delta', delta, 'refunded_amount', amount)
+    || case when new_until is not null then jsonb_build_object('until', new_until) else '{}'::jsonb end
+    || case when ended then jsonb_build_object('ended', true) else '{}'::jsonb end
+    || case when hit is not null then jsonb_build_object('infraction', hit ->> 'infraction', 'ban', hit -> 'ban') else '{}'::jsonb end;
+end $function$;
+revoke execute on function close_appeal(uuid, text, text, text, integer) from public, anon, authenticated;
+grant execute on function close_appeal(uuid, text, text, text, integer) to service_role;
+
+-- refund_appeal (0109_appeals), telling the appellant the appeal was refunded unheard. Everything else as 0109 wrote it.
+create or replace function refund_appeal(appeal_act uuid, why text default 'failed') returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  ap acts%rowtype;
+  paid record;
+  amount integer;
+begin
+  select * into ap from acts a where a.id = refund_appeal.appeal_act and a.kind = 'appeal';
+  if not found then raise exception 'there is no such appeal' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.appeal.' || ap.id::text, 0));
+  if exists (select 1 from acts a where a.kind = 'appeal_ruling' and a.target_act_id = ap.id) then
+    return jsonb_build_object('refunded', false, 'closed', true);
+  end if;
+  if exists (select 1 from appeal_refunds f where f.appeal_act = ap.id) then
+    return jsonb_build_object('refunded', false, 'already', true);
+  end if;
+  select w.account, -w.change as price into paid from wallet_events w where w.kind = 'appeal' and w.ref = ap.id;
+  amount := coalesce(paid.price, 0);
+  insert into appeal_refunds (appeal_act, amount, why) values (ap.id, amount, coalesce(refund_appeal.why, 'failed'));
+  if amount > 0 then perform wallet_move(paid.account, amount, 'refund', null, ap.id); end if;
+  -- The one place a refund of an unheard appeal is told: close_appeal's expired path and the stale sweep both come through here, so each refund writes it once (the checks above return before any second refund).
+  perform write_alert(ap.character, 'ruling', 'appealRefunded', ap.id, null);
+  return jsonb_build_object('refunded', true, 'amount', amount);
+end $$;
+revoke execute on function refund_appeal(uuid, text) from public, anon, authenticated;
+grant execute on function refund_appeal(uuid, text) to service_role;
+
+-- refund_report (0401_report_no_visit), telling the reporter the report was refunded unheard. Everything else as 0401 wrote it.
+create or replace function refund_report(report_act uuid, why text default 'failed') returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  r acts%rowtype;
+  amount integer;
+begin
+  -- A no-visit refund (veiled, visited) is written by close_report beside its verdict and by nothing else, so no call can write one without it.
+  if refund_report.why is not null and refund_report.why not in ('failed', 'stale') then
+    raise exception 'refund_report refunds a failed or a stale report, not %', refund_report.why using errcode = '22023';
+  end if;
+  select * into r from acts a where a.id = refund_report.report_act and a.kind = 'report';
+  if not found then raise exception 'there is no such report' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.report.' || r.id::text, 0));
+  if exists (select 1 from acts a where a.kind = 'report_verdict' and a.target_act_id = r.id) then
+    return jsonb_build_object('refunded', false, 'closed', true);
+  end if;
+  if exists (select 1 from report_refunds f where f.report_act = r.id) then
+    return jsonb_build_object('refunded', false, 'already', true);
+  end if;
+  amount := pay_report_back(r.id, coalesce(refund_report.why, 'failed'));
+  -- A report refunded unheard is told here, once (the checks above return before a second refund). close_report's no-visit refund (veiled, visited) is beside a verdict and is told by that verdict's reportJudged.
+  perform write_alert(r.character, 'ruling', 'reportRefunded', r.id, null);
+  return jsonb_build_object('refunded', true, 'amount', amount);
+end $$;
+revoke execute on function refund_report(uuid, text) from public, anon, authenticated;
+grant execute on function refund_report(uuid, text) to service_role;
+
+-- close_report (0401_report_no_visit), telling the reporter the verdict. Everything else as 0401 wrote it.
+create or replace function close_report(report_act uuid, verdict text, line text default null, charge jsonb default null, staff text default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  r acts%rowtype;
+  v acts%rowtype;
+  thr_board uuid;
+  board record;
+  mod_key text;
+  reporter text;
+  said text := left(btrim(coalesce(close_report.line, '')), 280);
+  rn integer;
+  house boolean;
+  rule_row rules_now%rowtype;
+  ch jsonb;
+  band text;
+  words text;
+  started jsonb;
+  target uuid;
+  payload jsonb;
+  written uuid;
+  repaired boolean := false;
+  reason text;
+  amount integer;
+begin
+  select * into r from acts a where a.id = close_report.report_act and a.kind = 'report';
+  if not found then raise exception 'there is no such report' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  -- The report's own lock: closing and refunding it are one decision, so it is closed once, or refunded once, never both.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.report.' || r.id::text, 0));
+  -- The verdict is checked first: a no-visit report holds a verdict and a refund, so a refund found first would answer a retried close with "refunded before the Mod answered
+  -- it", which is false. A verdict answers as it did, with its refund where it has one; a refund with no verdict is a report refunded before it was judged.
+  select * into v from acts a where a.kind = 'report_verdict' and a.target_act_id = r.id;
+  if found then
+    return jsonb_build_object('closed', false, 'existing', true, 'verdict_act', v.id, 'verdict', v.payload ->> 'verdict') ||
+      case when v.payload ? 'visit_act' then jsonb_build_object('visit', v.payload -> 'visit_act') else '{}'::jsonb end ||
+      coalesce((select jsonb_build_object('refund', jsonb_build_object('why', f.why, 'amount', f.amount)) from report_refunds f where f.report_act = r.id), '{}'::jsonb);
+  end if;
+  if exists (select 1 from report_refunds f where f.report_act = r.id) then
+    return jsonb_build_object('closed', false, 'refunded', true);
+  end if;
+  if close_report.verdict is null or close_report.verdict not in ('visit', 'dismissed', 'backfire') then
+    raise exception 'a report is answered with a visit, a dismissal or a backfire, not %', coalesce(close_report.verdict, 'nothing') using errcode = '22023';
+  end if;
+  select t.board into thr_board from threads t where t.id = r.thread;
+  select b.id, b.name, b.premise into board from boards_now b where b.id = thr_board;
+  mod_key := case when close_report.staff is not null and exists (select 1 from staff_now n where n.staff = close_report.staff) then close_report.staff else beat_of(board.id) end;
+  if mod_key is null then raise exception 'no Mod is on staff to answer a report' using errcode = '55000'; end if;
+  reporter := (select c.name from characters c where c.id = r.character);
+
+  if close_report.verdict = 'visit' then
+    -- The charge, repaired: a rule in force on the board (or a house rule, when it says so) with the rule's own band, else the board's premise at the minor band.
+    if jsonb_typeof(close_report.charge) = 'object' then
+      if jsonb_typeof(close_report.charge -> 'rule_number') = 'number' and (close_report.charge ->> 'rule_number')::numeric = trunc((close_report.charge ->> 'rule_number')::numeric)
+         and (close_report.charge ->> 'rule_number')::numeric between 1 and 100000 then
+        rn := (close_report.charge ->> 'rule_number')::integer;
+      end if;
+      house := coalesce(close_report.charge -> 'house' = 'true'::jsonb, false);
+      band := close_report.charge ->> 'band';
+    end if;
+    if rn is not null then
+      select * into rule_row from rules_now x where x.number = rn and case when house then x.board is null else x.board = board.id end limit 1;
+    end if;
+    if rule_row.move_act is not null then
+      select 'Rule ' || rule_row.number || ': ' || fill_tokens(x.plain, jsonb_build_object('param', coalesce(rule_row.param #>> '{}', ''))) into words from rule_predicates x where x.key = rule_row.predicate;
+      if rule_row.board is null then words := 'House ' || words; end if;
+      ch := jsonb_build_object('rule_number', rule_row.number, 'board', board.id, 'band', rule_row.band, 'cause', 'report', 'about_act', r.target_act_id, 'predicate', rule_row.predicate, 'rule', words);
+    else
+      if rn is not null or band is null or band not in ('minor', 'moderate', 'severe') then band := 'minor'; repaired := rn is not null; end if;
+      ch := jsonb_build_object('rule_number', null, 'board', board.id, 'band', band, 'cause', 'report', 'about_act', r.target_act_id, 'rule', 'the premise of ' || board.name);
+    end if;
+    started := start_visit(r.target_act_id, mod_key, ch);
+    -- A visit that opened none: the reason start_visit named, or a fault. Nothing is written for a reason a report cannot meet (the staff function then refunds the report as failed).
+    if started ->> 'visit' is null then
+      reason := case when started ->> 'veiled' = 'true' then 'veiled' when started ->> 'repeat' = 'true' then 'visited' end;
+      if reason is null then
+        raise exception 'a report''s visit opened none, for no reason a report can meet: %', started using errcode = 'P0001';
+      end if;
+    end if;
+    said := coalesce(nullif(said, ''), visit_line('visitArrived', mod_key, jsonb_build_array(ch)));
+  elsif close_report.verdict = 'dismissed' then
+    said := coalesce(nullif(said, ''), report_line('reportDismissed', mod_key, reporter));
+  else
+    -- The reporter's latest post, charged minor with wasting the staff's time. A reporter with no post has nothing to visit: the verdict still lands.
+    select a.id into target from acts a where a.character = r.character and a.kind in ('post', 'spin') order by a.created_at desc, a.id desc limit 1;
+    if target is not null then
+      started := start_visit(target, mod_key, jsonb_build_object('rule_number', null, 'board', (select t.board from threads t join acts a on a.thread = t.id where a.id = target), 'band', 'minor',
+        'cause', 'backfire', 'about_act', target, 'rule', 'wasting the staff''s time'));
+    end if;
+    said := coalesce(nullif(said, ''), report_line('reportBackfired', mod_key, reporter));
+  end if;
+
+  payload := jsonb_build_object('report_act', r.id, 'verdict', close_report.verdict, 'line', said);
+  if started is not null and started ->> 'visit' is not null then payload := payload || jsonb_build_object('visit_act', started ->> 'visit'); end if;
+  written := (write_staff_act(mod_key, 'report_verdict', r.thread, r.id, payload) ->> 'id')::uuid;
+  perform write_alert(r.character, 'ruling', 'reportJudged', written, null);
+  if reason is not null then amount := pay_report_back(r.id, reason); end if;
+  return jsonb_build_object('closed', true, 'verdict_act', written, 'verdict', close_report.verdict, 'staff', mod_key, 'line', said, 'charge_repaired', repaired)
+    || case when started is not null then jsonb_build_object('visit', started ->> 'visit', 'started', started) else '{}'::jsonb end
+    || case when reason is not null then jsonb_build_object('refund', jsonb_build_object('why', reason, 'amount', amount)) else '{}'::jsonb end;
+end $$;
+revoke execute on function close_report(uuid, text, text, jsonb, text) from public, anon, authenticated;
+grant execute on function close_report(uuid, text, text, jsonb, text) to service_role;
