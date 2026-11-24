@@ -1,4 +1,5 @@
 -- Hot triggers name their post (supabase/migrations/0420_hot_posts.sql; docs/plans/2026-11-23-hot-triggers-name-their-post-plan.md, Tasks 1, 4 and 6).
+-- Review fix F1 (the last section): a spin takes a spend and a note, record_pool_spend and write_staff_note refusing any other Act.
 -- Task 1: pool_signals' `hot` part carries, for each of a hot thread's authors, `top` (that author's most reacted post in the thread inside the window, a tie to the newer, a post under a live totals veil counting none),
 -- and for the thread `tops` (its two most reacted posts, by two different characters, each {act, character}). Each author's `top` is a probe of acts_thread_posts; `tops` is one index pass over the thread's window posts.
 
@@ -445,4 +446,55 @@ begin
      or (select count(*) from pg_proc where proname = 'pool_conversation' and prosrc ~ 'a\.seq = 1 and a\.kind = ''spin''') is distinct from 1 then
     raise exception 'a presence function''s or pool_conversation''s spin test is not keyed on seq = 1';
   end if;
+end $$;
+
+-- ---- Review fix F1: a spin is spent and noted ----
+-- record_pool_spend (0317) and write_staff_note (0089) took only a `post` Act, so the spin write_staff_spin makes was never spent: kept_picks listed the pick again every round and pool_week counted the week's thread as unused, so every
+-- round paid for another model call and wrote another spun thread. Both take a persona's `post` or `spin` now, and still refuse any other Act (a card, an edit, another character's post or spin) with the messages they gave.
+do $$
+declare
+  ann uuid := tests.character(tests.account('f1-ann'), 'F1 Ann');
+  d1 date := date_trunc('week', '2051-03-01'::timestamp)::date + 1;
+  d0 date := date_trunc('week', '2051-03-01'::timestamp)::date;
+  origin uuid := tests.post(ann, tests.thread('F1 Origin'), 'Spin me, persona.');
+  edit uuid := tests.act(ann, 'edit', (select thread from acts where id = origin), '{"body": "Edited."}', origin);
+  r jsonb; spin1 uuid; spin2 uuid; pspin uuid; th uuid; said text; n bigint;
+begin
+  perform tests.become_service();
+  -- A spun thread's spend, with started = true, and its note.
+  r := write_staff_spin('hp-pat', origin, 'F1 spun', 'Spun words.', jsonb_build_object('pool', d1::text));
+  spin1 := (r -> 'act' ->> 'id')::uuid; th := (r -> 'thread' ->> 'id')::uuid;
+  perform keep_pick(d1, 'hp-pat', '{"trigger": "hot"}');
+  if jsonb_array_length(kept_picks(d1)) is distinct from 1 then raise exception 'the kept pick is not listed before its spend: %', kept_picks(d1); end if;
+  r := record_pool_spend(d1, 'hp-pat', 'hotOnBeat', spin1, null, true);
+  if r ->> 'status' is distinct from 'spent' then raise exception 'a spin takes no spend: %', r; end if;
+  if (select s.started_thread from pool_spends s where s.day = d1 and s.staff = 'hp-pat' and s.post_act = spin1) is distinct from true then raise exception 'the spend of a spin is not a started thread'; end if;
+  if jsonb_array_length(kept_picks(d1)) is distinct from 0 then raise exception 'a spent spin''s pick is listed again: %', kept_picks(d1); end if;
+  if (pool_week(d1 + 1) ->> 'threads')::bigint is distinct from 1 then raise exception 'the week does not count the spun thread: %', pool_week(d1 + 1); end if;
+  if write_staff_note('hp-pat', spin1, 'A note on the spin.') is null then raise exception 'a spin takes no note'; end if;
+  if (select count(*) from staff_notes n where n.act = spin1 and n.staff = 'hp-pat') is distinct from 1 then raise exception 'the spin''s note was not written'; end if;
+
+  -- An orphan spin: a pool-marked spin with no spend is listed as a started thread, and adopting it takes it off the list.
+  r := write_staff_spin('hp-pat', tests.post(ann, tests.thread('F1 Origin Two'), 'Another.'), 'F1 spun two', 'More words.', jsonb_build_object('pool', d0::text));
+  spin2 := (r -> 'act' ->> 'id')::uuid;
+  if not exists (select 1 from jsonb_array_elements(pool_orphans(d1)) e where e ->> 'act' = spin2::text and (e ->> 'startedThread')::boolean and e ->> 'day' = d0::text) then
+    raise exception 'an orphaned spin is not listed: %', pool_orphans(d1);
+  end if;
+  if exists (select 1 from jsonb_array_elements(pool_orphans(d1)) e where e ->> 'act' = spin1::text) then raise exception 'a spent spin is listed as an orphan'; end if;
+  r := record_pool_spend(d0, 'hp-pat', 'adopted', spin2, null, true);
+  if r ->> 'status' is distinct from 'spent' then raise exception 'adopting an orphaned spin failed: %', r; end if;
+  if exists (select 1 from jsonb_array_elements(pool_orphans(d1)) e where e ->> 'act' = spin2::text) then raise exception 'an adopted spin is still listed as an orphan'; end if;
+  if (pool_week(d1 + 1) ->> 'threads')::bigint is distinct from 2 then raise exception 'the week does not count both spun threads: %', pool_week(d1 + 1); end if;
+
+  -- Neither a post nor a spin of the persona's: refused as before.
+  perform tests.unbecome();
+  pspin := tests.act(ann, 'spin', (select thread from acts where id = spin1), '{"title": "x", "body": "A player''s spin."}', origin);
+  perform tests.become_service();
+  foreach r in array array[to_jsonb(edit), to_jsonb(origin), to_jsonb(pspin)] loop
+    said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false)', d1 + 1, 'hp-pat', 'hotOnBeat', r #>> '{}'));
+    if said is distinct from '22023 the spend''s post is not a post of hp-pat' then raise exception 'a spend of another''s Act: %', said; end if;
+    said := pg_temp.refused(format('select write_staff_note(%L, %L, %L)', 'hp-pat', r #>> '{}', 'No.'));
+    if said is distinct from '22023 a note goes with a post of its own persona' then raise exception 'a note on another''s Act: %', said; end if;
+  end loop;
+  perform tests.unbecome();
 end $$;

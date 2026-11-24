@@ -275,8 +275,13 @@ function fakeDb(w: World = {}) {
           const body = wrote ? String(wrote.payload?.body ?? '') : (w.targetBody ?? 'Hello there. Pineapple is a fine topping.');
           return { act: args.target, kind: 'post', length: body.length, body, version: 'v1', effects: [], above: {} } as T;
         }
-        case 'write_staff_note': state.notes.push({ staff: String(args.staff_key), post: String(args.post), body: String(args.body) }); return 1 as T;
+        case 'write_staff_note': {
+          // As the real function: a note goes with a post or a spin of its own persona (a thread the fake calls 'thread' is a post in the database).
+          if (!state.acts.some((x) => x.id === args.post && x.staff === args.staff_key && ['post', 'thread', 'spin'].includes(x.kind))) throw new DatabaseError('write_staff_note: a note goes with a post of its own persona', '22023', 400, 'a note goes with a post of its own persona');
+          state.notes.push({ staff: String(args.staff_key), post: String(args.post), body: String(args.body) }); return 1 as T;
+        }
         case 'record_pool_spend': {
+          if (!state.acts.some((x) => x.id === args.post && x.staff === args.of_staff && ['post', 'thread', 'spin'].includes(x.kind))) throw new DatabaseError(`record_pool_spend: the spend's post is not a post of ${args.of_staff}`, '22023', 400, `the spend's post is not a post of ${args.of_staff}`);
           if (state.spends.some((s) => s.day === args.on_day && s.staff === args.of_staff)) return { status: 'already' } as T;
           state.spends.push({ day: String(args.on_day), staff: String(args.of_staff), trigger: String(args.by_trigger), post_act: String(args.post), card_act: (args.card as string | null) ?? null, started_thread: Boolean(args.started), record: args.note });
           return { status: 'spent' } as T;

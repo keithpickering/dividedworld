@@ -8,7 +8,12 @@
 -- Ways out: no state is added; the signal and the reads are reads, and a spin is an ordinary Act in an ordinary thread.
 -- Masks (Tasks 1 and 6): only the totals the crowd sees and the public Acts' characters are read, never who reacted, an owner or a class; the digest role's own list of what it may read is not widened (reaction_tallies_open it read already).
 --
--- The test that drives it red is supabase/tests/0420-hot-posts.sql.
+-- Review fix F1. record_pool_spend (latest 0317) and write_staff_note (latest 0089) took a persona's `post` Act only, so the spin write_staff_spin makes was never spent or noted: kept_picks listed the pick again each round, pool_week counted
+-- the week's thread as unused, and every round paid for another model call and wrote another spun thread; pool_orphans (widened below) listed a spin no adoption could take. Each is copied whole from its latest definition (search_path
+-- and grants kept, as a replaced function keeps them), the kind check changed to `kind in ('post', 'spin')` and nothing else; any other Act is refused with the same message.
+-- Ways out: no state is added; a spin's spend ends the pick's keep and the week's count of unused threads, as a post's does.
+-- Masks: neither function reads who reacted, an owner or a class; each reads the persona's own Act.
+-- The test that drives it red is supabase/tests/0420-hot-posts.sql (its Review fix F1 section).
 
 create or replace function pool_signals(since timestamptz, until timestamptz) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
@@ -363,3 +368,37 @@ language sql stable security definer set search_path = public, pg_temp as $$
                        where not exists (select 1 from acts_public e where e.kind = 'card_end' and e.target_act_id = k.id)
                          and not exists (select 1 from card_write_refunds r where r.play = k.id)), '[]'::jsonb))
 $$;
+
+-- ---- Review fix F1. A spin takes a spend and a note ----
+create or replace function record_pool_spend(on_day date, of_staff text, by_trigger text, post uuid, card uuid, started boolean, note jsonb default '{}')
+returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  made bigint;
+begin
+  select c.id into who from characters c where c.staff = of_staff and c.staff_kind = 'persona';
+  if who is null then raise exception 'there is no persona "%"', of_staff using errcode = 'P0002'; end if;
+  if not exists (select 1 from acts a where a.id = post and a.character = who and a.kind in ('post', 'spin')) then
+    raise exception 'the spend''s post is not a post of %', of_staff using errcode = '22023';
+  end if;
+  if card is not null and not exists (select 1 from acts a where a.id = card and a.character = who and a.kind in ('card', 'set', 'draw')) then
+    raise exception 'the spend''s card is not a card of %', of_staff using errcode = '22023';
+  end if;
+  insert into pool_spends (day, staff, trigger, post_act, card_act, started_thread, record)
+  values (on_day, of_staff, by_trigger, post, card, coalesce(started, false), coalesce(note, '{}'::jsonb))
+  on conflict (day, staff) do nothing returning id into made;
+  if made is null then return jsonb_build_object('status', 'already'); end if;
+  return jsonb_build_object('status', 'spent', 'id', made);
+end $$;
+
+create or replace function write_staff_note(staff_key text, post uuid, body text) returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare made bigint;
+begin
+  if not exists (select 1 from acts a join characters c on c.id = a.character where a.id = post and a.kind in ('post', 'spin') and c.staff = staff_key and c.staff_kind = 'persona') then
+    raise exception 'a note goes with a post of its own persona' using errcode = '22023';
+  end if;
+  insert into staff_notes (staff, act, body) values (staff_key, post, body) returning id into made;
+  return made;
+end $$;
