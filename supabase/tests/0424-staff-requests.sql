@@ -13,6 +13,9 @@
 -- 9. requests_ruled: a meeting's answers, the bank's room, a refused fulfill as a reject with its reason, a request ruled once.
 -- 10. system_tick lapses a waiting request at lapses_at and not a minute before, writes one reply, lapses a hidden request with no reply, and lapses with no reply while The System is off.
 -- 11. The setting staffRequests and its poisons.
+--
+-- Section 4 (Task 4: the turn's call record).
+-- 12. record_staff_call keeps a `ruling` duty keyed by a post, a second one is the next attempt, and a duty outside the list is still refused.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -735,4 +738,17 @@ begin
   end loop;
   if (select value from settings where key = 'staffRequests') is distinct from '{"daysMost": 3, "meetingMost": 2}'::jsonb then raise exception 'a refused staffRequests changed the row'; end if;
   update settings set value = '{"daysMost": 5, "meetingMost": 20}' where key = 'staffRequests';
+end $$;
+
+-- ---- 12. The turn's call record ----
+do $$
+declare
+  post uuid := pg_temp.rule(pg_temp.board('mm-general'), 'noBumping');
+  got jsonb;
+begin
+  got := record_staff_call(post, 'ruling', 'mm-boss', '{"ruling": "reject", "trims": []}');
+  if (got ->> 'attempt')::integer is distinct from 1 then raise exception 'a ruling call record was not kept: %', got; end if;
+  got := record_staff_call(post, 'ruling', 'mm-boss', '{"ruling": "reject", "trims": []}');
+  if (got ->> 'attempt')::integer is distinct from 2 then raise exception 'a second ruling record was not the next attempt: %', got; end if;
+  if pg_temp.refusal(format('select record_staff_call(%L, ''chatter'', ''mm-boss'', ''{}'')', post)) is null then raise exception 'a record for a duty outside the list was kept'; end if;
 end $$;

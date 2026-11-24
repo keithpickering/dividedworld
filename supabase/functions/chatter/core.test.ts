@@ -90,6 +90,16 @@ interface World {
   effectsUp?: number;
   /** `pool_read` does not report the pick's Act among the thread's posts (the Act is a move's end, keep or arrival, not a post). */
   originNotPost?: boolean;
+  /** A Mod's `mod_standing` (allowance and beat); none: no move to spend and an empty beat. */
+  standing?: { allowance: number; beat: { id: string; name: string }[] };
+  /** What `bank_now` reports for the Boss. */
+  bank?: number;
+  /** `rule_request` refuses with this database error code (a refusal is a 4xx: 22023 or 23514). */
+  ruleRefusal?: string;
+  /** `rule_request` turns a fulfill into a confer for this reason (the guard refused the move). */
+  moveRefused?: string;
+  /** `rule_request` loses its connection (a transport failure). */
+  ruleTransport?: boolean;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any; chars?: number };
 
@@ -101,7 +111,7 @@ function fakeDb(w: World = {}) {
     // A day with sessions or picks given is a day whose first round has passed.
     days: new Set<string>(sessionRows.length || w.kept?.length ? ['2026-11-04'] : []),
     attempts: [] as { staff: string; session: number; thread: string; answers: string[]; outcome: string; paid: boolean; chars?: number }[],
-    sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
+    requests: [] as { staff: string; request: string; turn: string; ruling: string; move: unknown }[], callRecords: [] as { cause_act: string; duty: string; staff: string; record: any }[], sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
   const named = w.named ?? [SIGH, CLERK, MON];
   const threads = [T1, T2, T3];
@@ -183,6 +193,21 @@ function fakeDb(w: World = {}) {
           if (state.lost) { state.lost = false; throw new TransportError('the answer was lost'); }
           return { turn: state.turns.length, post: { id: post } } as T;
         }
+        case 'thread_place': return GENERAL as T;
+        case 'mod_standing': return { office: 'mod', allowance: w.standing?.allowance ?? 0, order: null, beat: w.standing?.beat ?? [] } as T;
+        case 'mod_group_context': return { conferred: [], characters: [] } as T;
+        case 'bank_now': return (w.bank ?? 3) as T;
+        case 'rule_request': {
+          if (w.ruleTransport) throw new TransportError('the connection dropped');
+          if (w.ruleRefusal) throw new DatabaseError('rule_request: refused', w.ruleRefusal, 400, 'a request is ruled fulfill, reject or confer');
+          const had = state.requests.find((x) => x.staff === args.staff_key && x.request === args.request_act);
+          if (had) return { request: state.requests.indexOf(had) + 1, ruling: had.ruling, move: had.move, existing: true } as T;
+          const became = args.ruling === 'fulfill' && w.moveRefused ? 'confer' : String(args.ruling);
+          const move = became === 'fulfill' ? { queued: true, structural: ['renameBoard', 'createBoard', 'mergeBoard'].includes((args.move as any).kind) } : null;
+          state.requests.push({ staff: String(args.staff_key), request: String(args.request_act), turn: String(args.turn_act), ruling: became, move });
+          return { request: state.requests.length, ruling: became, move, existing: false, ...(became !== args.ruling ? { asked: 'fulfill', reason: w.moveRefused } : {}) } as T;
+        }
+        case 'record_staff_call': { state.callRecords.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record as any }); return { recorded: true, attempt: state.callRecords.length } as T; }
         case 'claim_pool_run': return (state.held ? null : 'run-0001') as T;
         case 'pool_context':
           return { season: { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') }, boss: HYPE, predecessor: null,
@@ -2135,4 +2160,135 @@ test('a call that was not paid is recorded as spending no characters', async () 
   await run(d, fakeModels(() => new PromptTooLong(9, 3)), dividedWorld, at('17:52'));
   assert.deepEqual(d.state.attempts.map((a) => [a.paid, a.chars]), [[false, 0], [false, 0]]);
   assert.equal(await d.db.rpc('pool_chars_today', { on_day: DAY }), 0);
+});
+
+/* ------------------------------------------------------------------------------------ a staff turn's ruling (staff requests, Task 4) ---- */
+
+const OTHER = '22222222-2222-4222-8222-222222222222';
+const BEAT = [{ id: GENERAL, name: 'general' }, { id: OTHER, name: 'other' }];
+const HYPE_NOW = { staff: HYPE, start: min('17:30'), end: min('18:15') };
+const CLERK_NOW = { staff: CLERK, start: min('17:30'), end: min('18:15') };
+const moveThread = { kind: 'moveThread', params: { thread: T1, board: OTHER }, expires_in_hours: 0, why: 'They asked, and it fits.' };
+const ruling = (request: unknown) => fakeModels((r) => ({ words: `Decided, said ${r.staff}.`, request }));
+
+test('a Mod\'s turn that grants a thread move queues it through rule_request and writes the request after the post', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 2, beat: BEAT } });
+  const m = ruling({ reply: R1, ruling: 'fulfill', move: moveThread });
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_turn'), 1);
+  assert.equal(d.count('rule_request'), 1);
+  const asked = d.of('rule_request')[0]!;
+  assert.deepEqual([asked.staff_key, asked.request_act, asked.ruling], [SIGH, R1, 'fulfill']);
+  assert.equal(asked.turn_act, d.state.turns[0]!.post, 'the ruling is tied to the turn\'s post');
+  assert.equal((asked.move as any).kind, 'moveThread');
+  assert.ok(!('weekly_moves' in asked), 'a Mod passes no phase numbers');
+  assert.deepEqual(d.state.requests.map((x) => [x.ruling, x.move]), [['fulfill', { queued: true, structural: false }]]);
+  assert.ok(d.calls.findIndex((c) => c.fn === 'rule_request') > d.calls.findIndex((c) => c.fn === 'write_staff_turn'), 'after the post');
+  assert.ok(m.chats[0]!.system.includes('rule on it in "request"') && (m.chats[0]!.schema as any).properties.request, 'the prompt and the schema offer the ruling');
+  const t = out.turns[0]!;
+  assert.equal(t.status, 'taken');
+  assert.deepEqual([t.ruling?.reply, t.ruling?.ruling, t.ruling?.written?.move, t.ruling?.recorded], [R1, 'fulfill', { queued: true, structural: false }, true]);
+  assert.equal(d.state.callRecords.length, 1);
+  assert.deepEqual([d.state.callRecords[0]!.duty, d.state.callRecords[0]!.cause_act, d.state.callRecords[0]!.record.ruling], ['ruling', t.post, 'fulfill']);
+});
+
+test('a Boss\'s turn that grants renameBoard queues it structural, with the phase\'s numbers for its bank', async () => {
+  const d = fakeDb({ sessions: [HYPE_NOW], waiting: [{ staff: HYPE, thread: T1, replies: [reply(R1)] }], bank: 2 });
+  const rename = { kind: 'renameBoard', params: { board: GENERAL, name: 'The Lounge', premise: 'Where people lounge.', description: 'Sit down.' }, expires_in_hours: 0, why: 'A fair ask.' };
+  const m = ruling({ reply: R1, ruling: 'fulfill', move: rename });
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('rule_request'), 1);
+  const asked = d.of('rule_request')[0]!;
+  assert.equal(typeof asked.weekly_moves, 'number');
+  assert.equal(typeof asked.bank_cap, 'number');
+  assert.equal((asked.move as any).kind, 'renameBoard');
+  assert.deepEqual(d.state.requests.map((x) => x.move), [{ queued: true, structural: true }]);
+  assert.ok(m.chats[0]!.system.includes('Your bank holds 2 moves now'), 'the prompt says the bank');
+  assert.equal(d.of('bank_now')[0]!.staff, HYPE);
+});
+
+test('a member\'s turn given a request block writes none, and the trim says it was not asked', async () => {
+  const d = fakeDb({ sessions: [CLERK_NOW], waiting: [{ staff: CLERK, thread: T1, replies: [reply(R1)] }] });
+  const m = ruling({ reply: R1, ruling: 'fulfill', move: moveThread });
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('write_staff_turn'), 1, 'the post is written');
+  assert.equal(d.count('rule_request'), 0);
+  assert.equal(d.count('record_staff_call'), 0);
+  assert.ok(!('request' in (m.chats[0]!.schema as any).properties) && !m.chats[0]!.system.includes('rule on it'), 'a member is offered no ruling');
+  assert.ok(out.turns[0]!.trims.some((t) => t.path === 'request' && t.predicate === 'notAsked'));
+  assert.equal(out.turns[0]!.ruling, undefined);
+});
+
+test('a fulfill the guard refuses is written as a confer, and the record names why', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 1, beat: BEAT }, moveRefused: 'the thread is already there' });
+  const out = await run(d, ruling({ reply: R1, ruling: 'fulfill', move: moveThread }));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(d.state.requests.map((x) => x.ruling), ['confer']);
+  const t = out.turns[0]!;
+  assert.equal(t.status, 'taken');
+  assert.deepEqual([t.ruling?.written?.asked, t.ruling?.written?.reason], ['fulfill', 'the thread is already there']);
+  assert.deepEqual([d.state.callRecords[0]!.record.written.asked, d.state.callRecords[0]!.record.written.reason], ['fulfill', 'the thread is already there']);
+});
+
+test('a ruling the repair cannot keep passes up as a confer and names every trim on the record', async () => {
+  // No allowance: the fulfill cannot be made, so the request is passed on (fulfillToConfer), and the post is still written.
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 0, beat: BEAT } });
+  const out = await run(d, ruling({ reply: R1, ruling: 'fulfill', move: moveThread }));
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(d.state.requests.map((x) => x.ruling), ['confer']);
+  assert.equal(d.of('rule_request')[0]!.move, null);
+  const trims = d.state.callRecords[0]!.record.trims as { path: string; predicate: string }[];
+  assert.ok(trims.some((t) => t.predicate === 'fulfillToConfer') && trims.some((t) => t.predicate === 'allowance'), JSON.stringify(trims));
+});
+
+test('a ruling on a reply the turn did not answer is dropped, writes no request and the record says so', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const out = await run(d, ruling({ reply: R4, ruling: 'reject' }));
+  assert.ok(out.status === 'ok');
+  assert.equal(d.count('rule_request'), 0);
+  assert.equal(out.turns[0]!.status, 'taken');
+  assert.equal(d.state.callRecords.length, 1);
+  assert.equal(d.state.callRecords[0]!.record.dropped, 'the ruling could not be repaired');
+  assert.ok((d.state.callRecords[0]!.record.trims as { predicate: string }[]).some((t) => t.predicate === 'answering'));
+});
+
+test('a turn that is retried writes one request', async () => {
+  // The first write of the post fails (a database error, nothing written): the reply waits, the next round writes the turn and its one request.
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 1, beat: BEAT }, failOn: { write_staff_turn: 1 } });
+  const m = ruling({ reply: R1, ruling: 'reject' });
+  const first = await run(d, m);
+  assert.ok(first.status === 'ok');
+  assert.equal(first.turns[0]!.status, 'failed');
+  assert.equal(d.count('rule_request'), 0, 'no post, so no ruling');
+  const again = await run(d, m, dividedWorld, at('17:52'));
+  assert.ok(again.status === 'ok');
+  assert.equal(again.turns[0]!.status, 'taken');
+  assert.equal(d.count('rule_request'), 1);
+  assert.equal(d.state.requests.length, 1);
+  // The same request ruled again (the same persona and request post) is the first row, as the database holds it.
+  const replay = await d.db.rpc<{ existing: boolean }>('rule_request', { staff_key: SIGH, request_act: R1, turn_act: 'x', ruling: 'confer', move: null });
+  assert.equal(replay.existing, true);
+  assert.equal(d.state.requests.length, 1);
+});
+
+test('a database refusal of the ruling never takes the post back: the reason is on the turn\'s record and the run goes on', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 1, beat: BEAT }, ruleRefusal: '22023' });
+  const out = await run(d, ruling({ reply: R1, ruling: 'fulfill', move: moveThread }));
+  assert.ok(out.status === 'ok');
+  assert.equal(out.turns[0]!.status, 'taken');
+  assert.equal(d.state.turns.length, 1, 'the post stands');
+  assert.equal(d.state.requests.length, 0);
+  assert.equal(d.count('record_turn_attempt'), 0, 'the turn is not failed');
+  assert.ok(out.turns[0]!.ruling?.refused?.includes('rule_request'), 'the turn says why');
+  assert.ok(String(d.state.callRecords[0]!.record.refused).includes('rule_request: refused'), 'the call record says why');
+  assert.equal(d.state.callRecords[0]!.record.ruling, 'fulfill');
+});
+
+test('a transport failure of rule_request stops the run as any other does', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], ruleTransport: true });
+  await assert.rejects(() => run(d, ruling({ reply: R1, ruling: 'reject' })), TransportError);
+  assert.equal(d.state.turns.length, 1, 'the post was written');
 });

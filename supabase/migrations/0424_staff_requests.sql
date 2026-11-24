@@ -8,6 +8,8 @@
 --
 --   2. The tables, the writes and the reads (Task 3): staff_requests, staff_request_rulings, apply_boss_move, rule_request, requests_waiting, requests_ruled, staffRequests' validator, and the tick's lapse (see section 2's own header).
 --
+--   4. The turn's call record (Task 4): staff_call_records takes the duty `ruling`, a staff turn's ruling on a request, keyed by the turn's post (the chatter Edge Function writes it with record_staff_call).
+--
 -- Masks. Nothing here reads an owner, a class or a reactor; a board and a thread are public. Ways out. A moveThread is lasting and ends as 0320 wrote it: reversed by an admin, or superseded by a later move of the thread.
 -- Cost: one thread_place call for a Mod's moveThread, and none for any other kind.
 
@@ -1310,3 +1312,9 @@ begin
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'beats', arcs, 'budget', out_of_time,
     'noThread', enabled and ann is null, 'awardsFailed', awards_failed, 'requestsLapsed', lapsed_n);
 end $$;
+
+-- ===================================================================================== 4. The turn's call record ====
+-- A staff turn that rules on a request keeps what it did beside the post: the ruling, the move queued or why a fulfill became a confer, a refusal of the ruling and every trim (record_staff_call, 0106). The duty is
+-- `ruling`; its cause is the turn's post. Nothing else changes: the table is still append-only and no client reads it.
+alter table staff_call_records drop constraint staff_call_records_duty_check;
+alter table staff_call_records add constraint staff_call_records_duty_check check (duty in ('filing', 'reportJudge', 'patrolJudge', 'appeal', 'ruling'));

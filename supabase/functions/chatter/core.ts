@@ -26,6 +26,7 @@
  *      the duty `conversation` (a chat call, or a raw completion for the old voice), repairs it as a pick's is (no card, no title), writes it whole with `write_staff_turn` and leaves its note. A refusal of `write_staff_turn` skips the turn;
  *      a failed or rejected call whose answer was not paid for spends nothing and its replies wait.
  *   5. The outcome lists the picks written, the turns taken, skipped and failed, and the personas whose picks were kept.
+ * **A staff turn's ruling (the staff requests design, Task 4).** A chat-voice Boss's or Mod's turn is offered a `request` block (`readRuling`: office, allowance and beat or bank, the thread's board, the group catalog), repaired with the turn's other bounds, and written with `rule_request` after `write_staff_turn`; a database refusal never takes the post back and is on the turn's `staff_call_records` row (duty `ruling`). A member's turn is offered none. If `write_staff_turn`'s answer is lost, the next round finds the replies answered and the ruling is not written (the request lapses by itself, as any unruled one does).
  * **A crash between a turn's call and `write_staff_turn` spends nothing and loses nothing** (the call is a ledger row; the replies are still waiting); **an answer from `write_staff_turn` lost on
  * the way back** is a transport error, which stops the round, and the next round finds the replies answered (`pool_answered`) and writes no second turn: the write is never repeated on a guess (handler.ts).
  *
@@ -69,6 +70,7 @@ import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import {
   POOL_PREMISE,
+  STAFF_TURN_PREMISE,
   TURN_PREMISE,
   CHATTER_RULE,
   CHATTER_TOKENS,
@@ -76,10 +78,15 @@ import {
   chatterPrompt,
   chatterSchema,
   repairChatter,
+  rulingWords,
   type ChatterAnswer,
+  type ChatterRequest,
+  type RulingFacts,
   type OfferedCard,
   type PublicRecord,
 } from '../../../engine/system/chatter.ts';
+import { phaseAt } from '../../../engine/system/phases.ts';
+import type { ConferredGroup } from '../../../engine/system/meeting.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
@@ -106,6 +113,7 @@ import {
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { readOf, type PoolRead } from '../_shared/pool-read.ts';
+import { readModGroups, type Standing } from '../staff/core.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, requestRefused, SchemaRefused } from '../_shared/models/index.ts';
 
@@ -188,6 +196,20 @@ export interface TurnRecord {
   readonly noteWritten?: boolean;
   /** The characters the turn was charged: the size of the prompt it sent (0 for a turn that sent none, or whose call was not paid). */
   readonly chars?: number;
+  /** A staff turn's ruling on a request, as the database wrote it, or why it did not (the post stands either way). */
+  readonly ruling?: RulingRecord;
+}
+
+/** What became of a ruling: the reply and the ruling the repair settled on, what `rule_request` answered (the move it queued, or why a fulfill became a confer), or the refusal that wrote nothing. */
+export interface RulingRecord {
+  readonly reply: string;
+  readonly ruling: ChatterRequest['ruling'];
+  /** `rule_request`'s answer: set when the database took the ruling. */
+  readonly written?: { readonly ruling: string; readonly move: unknown; readonly existing: boolean; readonly asked?: string; readonly reason?: string };
+  /** The database's reason for taking no ruling; the post stands. */
+  readonly refused?: string;
+  /** Whether the turn's call record was kept (it is only lost to a database error; a transport failure stops the run). */
+  readonly recorded: boolean;
 }
 
 export type ChatterOutcome =
@@ -477,9 +499,9 @@ function namesOf(faces: Record<string, { name: string; pronouns: PronounSet | nu
 }
 
 /** An answer repaired under the validator rule: the answer and every trim made, or why it could not be repaired (the predicate and path that failed) with the trims made before it. */
-function repairAnswer(raw: unknown, settings: Instance['settings'], askedTitle: boolean, offered: readonly OfferedCard[]):
+function repairAnswer(raw: unknown, settings: Instance['settings'], askedTitle: boolean, offered: readonly OfferedCard[], ruling?: RulingFacts):
   { ok: true; answer: ChatterAnswer; trims: Trim[] } | { ok: false; why: string; trims: readonly Trim[] } {
-  const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle, offered });
+  const repaired = repairChatter(raw, { postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength, askedTitle, offered, ...(ruling ? { ruling } : {}) });
   if (!repaired.ok) return { ok: false, why: `the answer failed ${repaired.predicate} at ${repaired.path || 'the top'}`, trims: repaired.trims };
   return { ok: true, answer: repaired.answer, trims: [...repaired.trims] };
 }
@@ -496,6 +518,92 @@ async function personaReads(db: Db, settings: Instance['settings'], staff: strin
   for (const id of also) if (id && !known.includes(id)) known.push(id);
   const faces = known.length ? await db.rpc<Record<string, { name: string; pronouns: PronounSet | null }>>('character_faces', { ids: known }) : {};
   return { career, memory, notes, faces };
+}
+
+/** What a staff turn is offered to rule on: the repair's facts, the words the prompt carries, the schema's option, and (the Boss's) the phase's numbers `rule_request` needs for its bank. */
+interface RulingRead {
+  readonly facts: RulingFacts;
+  readonly words: string;
+  readonly schema: { readonly office: 'boss' | 'mod'; readonly conferred?: readonly ConferredGroup[] };
+  readonly numbers?: { readonly weeklyMoves: number; readonly bankCap: number };
+}
+
+/**
+ * What a staff persona's turn needs to rule: its office (the round's `pool_context`), and for a Mod its standing (`mod_standing`: allowance and beat) and group catalog (`readModGroups`, as a judgment reads
+ * it), for the Boss its bank now (`bank_now` over the phase's numbers); and the board the thread is on (`thread_place`), for a `moveThread`. A member, and an office that is not the persona's now, are offered
+ * nothing. A read the database cannot answer costs the turn its ruling only (the post stands); a transport failure stops the run as everywhere.
+ */
+async function readRuling(r: TurnRun, answering: readonly string[]): Promise<RulingRead | null> {
+  const { db, tuned, persona, planned } = r;
+  const settings = tuned.settings;
+  if (r.office !== 'boss' && r.office !== 'mod') return null;
+  try {
+    const place = await db.rpc<string | null>('thread_place', { in_thread: planned.thread });
+    const threadBoards = new Map<string, string>(place ? [[planned.thread.toLowerCase(), place.toLowerCase()]] : []);
+    const daysMost = settings.staffRequests.daysMost;
+    if (r.office === 'mod') {
+      const standing = await db.rpc<Standing>('mod_standing', { staff: planned.staff });
+      if (standing.office !== 'mod') return null;
+      const groups = await readModGroups(db, standing);
+      const mod = { allowance: standing.allowance, beat: standing.beat.map((b) => b.id.toLowerCase()), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, threadBoards, ...(groups ? { groups: groups.facts } : {}) };
+      return {
+        facts: { answering, office: 'mod', mod },
+        words: rulingWords({ office: 'mod', daysMost, structuralHoldHours: settings.structuralHoldHours, allowance: standing.allowance, beat: standing.beat, ...(groups ? { conferred: groups.conferred } : {}), expiryLeastHours: settings.moveExpiryLeastHours, expiryMostHours: settings.modBots.ruleDaysMost * 24 }),
+        schema: { office: 'mod', ...(groups ? { conferred: groups.conferred } : {}) },
+      };
+    }
+    if (!r.context.season) return null;
+    const phase = phaseAt(r.context.season, r.slotAt, settings, persona);
+    const { weeklyMoves, bankCap } = phase.numbers;
+    const bank = Math.floor(Number(await db.rpc<number>('bank_now', { staff: planned.staff, weekly_moves: weeklyMoves, bank_cap: bankCap })));
+    const moveExpiryMostDays = Math.min(phase.numbers.moveExpiryMostDays, settings.moveExpiryMostDays);
+    return {
+      facts: { answering, office: 'boss', boss: { bank, threadBoards, expiryLeastHours: settings.moveExpiryLeastHours, moveExpiryMostDays, structuralHoldHours: settings.structuralHoldHours } },
+      words: rulingWords({ office: 'boss', daysMost, structuralHoldHours: settings.structuralHoldHours, bank, expiryLeastHours: settings.moveExpiryLeastHours, expiryMostHours: moveExpiryMostDays * 24, nameStyleBrief: tuned.system.nameStyleBrief, boardNameMaxLength: settings.boardNameMaxLength }),
+      schema: { office: 'boss' },
+      numbers: { weeklyMoves, bankCap },
+    };
+  } catch (e) {
+    if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+    return null;
+  }
+}
+
+/**
+ * After the turn's post: the repaired ruling written with `rule_request` (one transaction, idempotent on the persona and the request post), and the turn's call record (duty `ruling`, keyed by the post)
+ * naming the ruling, the move queued or why a fulfill became a confer, the request's trims and drops. A database error of either never takes the post back: the reason is on the record (or, if the record
+ * itself cannot be written, on the returned one). A transport failure or an unwritten ledger stops the run.
+ */
+async function ruleTheRequest(r: TurnRun, post: string, quoting: string, raw: unknown, answer: ChatterAnswer, trims: readonly Trim[], read: RulingRead): Promise<RulingRecord | undefined> {
+  const { db, planned } = r;
+  const given = typeof raw === 'object' && raw !== null && (raw as Record<string, unknown>)['request'] != null;
+  const own = trims.filter((t) => t.path === 'request' || t.path.startsWith('request.'));
+  const request = answer.request;
+  if (!request && !given && own.length === 0) return undefined;
+  let written: RulingRecord['written'];
+  let refused: string | undefined;
+  if (request) {
+    try {
+      const out = await db.rpc<{ ruling: string; move: unknown; existing: boolean; asked?: string; reason?: string }>('rule_request', {
+        staff_key: planned.staff, request_act: request.reply, turn_act: post, ruling: request.ruling, move: request.move ?? null,
+        ...(read.numbers ? { weekly_moves: read.numbers.weeklyMoves, bank_cap: read.numbers.bankCap } : {}),
+      });
+      written = { ruling: out.ruling, move: out.move ?? null, existing: out.existing === true, ...(out.asked ? { asked: out.asked } : {}), ...(out.reason ? { reason: out.reason } : {}) };
+    } catch (e) {
+      if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+      refused = said(e);
+    }
+  }
+  const dropped = request ? undefined : given ? 'the ruling could not be repaired' : undefined;
+  const record = { quoting, ...(request ? { reply: request.reply, ruling: request.ruling } : {}), ...(written ? { written } : {}), ...(refused ? { refused } : {}), ...(dropped ? { dropped } : {}), trims: own };
+  let recorded = false;
+  try {
+    await db.rpc('record_staff_call', { cause_act: post, duty: 'ruling', staff: planned.staff, record });
+    recorded = true;
+  } catch (e) {
+    if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+  }
+  return request ? { reply: request.reply, ruling: request.ruling, ...(written ? { written } : {}), ...(refused ? { refused } : {}), recorded } : undefined;
 }
 
 /** What a call reads of a thread beside the posts: the public record and the persona's talking point. A spin start reads the same of the origin's thread. */
@@ -592,6 +700,8 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     const quoting = answers.at(-1)!;
     const limits = limitsOf(settings);
     const { career, memory, notes, faces } = reads;
+    // A staff persona's turn may rule on a request among the replies it answers (a chat voice: the old voice writes words only); a member's, and a pick's, never.
+    const ruling = persona.voice === 'oldVoice' ? null : await readRuling(r, answers);
 
     let raw: unknown;
     try {
@@ -604,14 +714,14 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title: pooled.title, read,
+          premise: ruling ? STAFF_TURN_PREMISE : TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title: pooled.title, read,
           trigger: 'answered', record: extra.record, points: extra.points,
           // A turn offers no card: the ceiling counts characters and nothing else.
-          offeredCards: [], startThread: false, limits, names: namesOf(faces, instanceSet),
+          offeredCards: [], startThread: false, limits, names: namesOf(faces, instanceSet), ...(ruling ? { ruling: ruling.words } : {}),
         });
         const out = await sender.models.chat({
           duty: 'conversation', tier: DUTY_SPECS.conversation.tier, staff: planned.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
-          schema: chatterSchema({ askedTitle: false, offered: [] }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
+          schema: chatterSchema({ askedTitle: false, offered: [], ...(ruling ? { ruling: ruling.schema } : {}) }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
         });
         raw = out.value;
       }
@@ -627,7 +737,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       return fail('failed', sender.answered() > 0, said(e), answers, [], sender.answered());
     }
 
-    const repaired = repairAnswer(raw, settings, false, []);
+    const repaired = repairAnswer(raw, settings, false, [], ruling?.facts);
     if (!repaired.ok) return fail('rejected', true, repaired.why, answers, repaired.trims);
     const { answer, trims } = repaired;
 
@@ -655,7 +765,9 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
         if (stopsTheRun(e)) throw e;
       }
     }
-    return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent() };
+    // The ruling, last of the writes that can fail: the post stands whatever the database says of it.
+    const ruled = ruling ? await ruleTheRequest(r, post, quoting, raw, answer, trims, ruling) : undefined;
+    return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent(), ...(ruled ? { ruling: ruled } : {}) };
   } catch (e) {
     if (stopsTheRun(e)) throw e;
     if (e instanceof DatabaseError) return fail('failed', sender.answered() > 0, said(e), planned.answers, []);
