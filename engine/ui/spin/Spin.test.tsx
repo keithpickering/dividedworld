@@ -1688,9 +1688,12 @@ describe('the ORIGIN box of a thread spun from an ask or an answer', () => {
         await waitFor(() => expect(box).toHaveTextContent(c.said));
         expect(box).toHaveTextContent(c.line);
         expect(within(box.querySelector('.kb-origin-area') as HTMLElement).getByText(c.plain)).toBeInTheDocument();
-        expect(within(box).getAllByRole('link', { name: 'Pipewrench' }).length).toBeGreaterThan(0);
-        expect(within(box).getAllByRole('link', { name: 'Mod Staff' }).length).toBeGreaterThan(0);
-        expect(box).toHaveTextContent('A Mod');
+        for (const [name, id] of [['Pipewrench', d.pipe], ['Mod Staff', d.mod]] as const) {
+          const links = within(box.querySelector('.kb-origin-area') as HTMLElement).getAllByRole('link', { name });
+          for (const l of links) expect(l).toHaveAttribute('href', `/c/${encodeURIComponent(id)}`);
+        }
+        /* A verdict is a Mod's; the seeded ruling carries no office stamp, so it names no role. */
+        if (c.name.includes('report') || c.name === 'a backfire') expect(box).toHaveTextContent('A Mod'); else expect(box).not.toHaveTextContent('A Mod');
         expect(box).not.toHaveTextContent('Not answered yet.');
         /* The exchange carries its own two bylines: the box draws none over the area. */
         expect(box.querySelector('.kb-origin-byline')).toBeNull();
@@ -1725,5 +1728,45 @@ describe('the ORIGIN box of a thread spun from an ask or an answer', () => {
     await waitFor(() => expect(box).toHaveTextContent('Try me.'));
     expect(read).toHaveBeenCalledTimes(2);
     expect(within(box).queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  test('focus stays on the exchange\'s box after Try again is pressed and after the read settles', async () => {
+    const d = desk();
+    const spun = await spinFrom(d, d.fake.seed.report(d.pipe, d.post, 'Focus me.'));
+    vi.spyOn(d.fake, 'exchange').mockRejectedValueOnce(new Error('offline'));
+    openSpun(d, spun);
+    const box = await origin();
+    await userEvent.click(await within(box).findByRole('button', { name: 'Try again' }));
+    const frame = box.querySelector('.kb-exchange') as HTMLElement;
+    expect(frame).toHaveFocus();
+    await waitFor(() => expect(box).toHaveTextContent('Focus me.'));
+    expect(box.querySelector('.kb-exchange')).toBe(frame);
+    expect(frame).toHaveFocus();
+  });
+
+  test('a Boss\'s ruling names the Boss\'s role, a Mod\'s a Mod, and one with no office stamp names none', async () => {
+    const d = desk();
+    const ask = d.fake.seed.appeal(d.pipe, d.fake.seed.infraction(d.visit()), 'Please.');
+    const ruling = d.fake.seed.ruling(ask, d.mod, 'upheld', { line: 'No.' });
+    let stamp: 'boss' | 'mod' | undefined;
+    const real = d.fake.exchange.bind(d.fake);
+    vi.spyOn(d.fake, 'exchange').mockImplementation(async (id) => {
+      const got = await real(id);
+      const { office: _drop, ...rest } = got.answer!.payload;
+      return { ...got, answer: { ...got.answer!, payload: stamp === undefined ? rest : { ...rest, office: stamp } } };
+    });
+    const role = async (office: 'boss' | 'mod' | undefined) => {
+      stamp = office;
+      cleanup();
+      openSpun(d, await spinFrom(d, ruling, `Spun ${String(office)}`));
+      const box = await origin();
+      await waitFor(() => expect(box).toHaveTextContent('No.'));
+      return (box.querySelectorAll('.kb-exchange-by')[1] as HTMLElement).textContent;
+    };
+    expect(await role('boss')).toContain('The Boss');
+    expect(await role('mod')).toContain('A Mod');
+    const bare = await role(undefined);
+    expect(bare).not.toContain('A Mod');
+    expect(bare).not.toContain('The Boss');
   });
 });

@@ -162,7 +162,15 @@ const appealMade = (punishing: 'infraction' | 'ban' | 'move', verdict: 'overturn
 /** A group the instance confers, named by key as every story names what it draws. */
 const GROUP = 'trialMembers';
 
+/** A Boss's ruling: the stamp the fake's staff seed gives a Boss, so the byline names the Boss's role. */
+const bossRuling = (f: Parameters<World>[0], _mod: string, asker: string, post: string) => {
+  const boss = f.seed.staff('story-boss', 'The Boss', 'boss');
+  const ask = f.seed.appeal(asker, f.seed.infraction(f.seed.visit(boss, post, {})), 'I was only joking.');
+  return { ask, answer: f.seed.ruling(ask, boss, 'overturned', { line: 'Fine. Go.' }) };
+};
+
 const exchangeCases = [
+  { title: 'Boss ruling, spun from the answer', make: bossRuling },
   { title: 'Dismissed report, spun from the answer', make: reportMade('dismissed', 'Nothing to see here.') },
   { title: 'Report visit, spun from the answer', make: reportMade('visit', 'I will take a look.') },
   { title: 'Backfire, spun from the answer', make: reportMade('backfire', 'You, however, were rude.') },
@@ -193,6 +201,9 @@ export const ExchangeBanRulingDark = exchangeStory('Reduced ban appeal, spun fro
 /** An appeal of a move, overturned. */
 export const ExchangeMoveRulingLight = exchangeStory('Overturned move appeal, spun from the answer', 'light');
 export const ExchangeMoveRulingDark = exchangeStory('Overturned move appeal, spun from the answer', 'dark');
+/** An appeal ruled on by the Boss: the byline carries the Boss's role. */
+export const ExchangeBossRulingLight = exchangeStory('Boss ruling, spun from the answer', 'light');
+export const ExchangeBossRulingDark = exchangeStory('Boss ruling, spun from the answer', 'dark');
 /** A report no one has answered: "Not answered yet." */
 export const ExchangeUnansweredLight = exchangeStory('Unanswered report, spun from the ask', 'light');
 export const ExchangeUnansweredDark = exchangeStory('Unanswered report, spun from the ask', 'dark');

@@ -8,16 +8,15 @@
  * subscription: a spun exchange is a moment, and one answered after the spin shows on the next opening. The names are the place's, which the server computes as
  * `acts_public` shows the ask's character (a stand-in under a veil), never read from `characters` with its owner; a failed read says so and offers Try again.
  */
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { modRole } from '../cards/visit.ts';
 import { useKayfa } from '../context.tsx';
-import type { AnswerPlace, Character, Exchange as ExchangeRead, Id } from '../data/api.ts';
+import type { Act, AnswerPlace, Character, Exchange as ExchangeRead, Id } from '../data/api.ts';
 import { Byline } from '../mini.tsx';
 import { Link } from '../router.tsx';
 import { when } from '../thread/lines.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { answerWords } from './exchange.ts';
-import type { Act } from '../data/api.ts';
 
 type Read = { readonly status: 'loading' } | { readonly status: 'failed' } | { readonly status: 'read'; readonly exchange: ExchangeRead; readonly cast: ReadonlyMap<Id, Character> };
 
@@ -52,25 +51,29 @@ export function Exchange({ origin, place, perPage, nameOf }: {
     return () => { live = false; };
   }, [api, origin.id, tries]);
 
-  if (read.status === 'loading') return <p className="kb-small kb-muted">Loading…</p>;
+  /* One wrapper stays mounted through loading, failed and read, so the focus Try again gives it is never lost to an unmount. */
+  const wrap = (children: ReactNode) => <div ref={box} tabIndex={-1} className="kb-exchange" data-kb-exchange={read.status}>{children}</div>;
+  if (read.status === 'loading') return wrap(<p className="kb-small kb-muted">Loading…</p>);
   if (read.status === 'failed') {
-    return (
-      <div ref={box} tabIndex={-1} className="kb-exchange">
+    return wrap(
+      <>
         <p className="kb-small kb-muted">The exchange did not load.</p>
         <button type="button" className="kb-exchange-retry" onClick={() => { box.current?.focus(); setTries((n) => n + 1); }}>Try again</button>
-      </div>
+      </>,
     );
   }
   const { ask, answer, punishment } = read.exchange;
   const asking = ask.kind === 'report' ? 'reason' : 'plea';
   const askName = place?.asker.name ?? nameOf(ask.character);
   const staffName = answer === null ? '' : place?.staff?.name ?? nameOf(answer.character);
-  const role = answer !== null && answer.kind === 'appeal_ruling' && answer.payload.office === 'boss' ? ui.copy.roleWord : modRole(ui.copy);
+  /* A verdict is a Mod's. A ruling names the office stamped on it (0157); an unstamped one names none, and no default stands in for it (as the log's rows do). */
+  const office = answer?.kind === 'appeal_ruling' ? answer.payload.office : 'mod';
+  const role = office === 'boss' ? ui.copy.roleWord : office === 'mod' ? modRole(ui.copy) : null;
   const kind = punishment?.kind === 'infraction' || punishment?.kind === 'ban' || punishment?.kind === 'move' ? punishment.kind : place?.punishment ?? null;
   const on = place?.on ?? null;
   const said = words(ask, asking);
-  return (
-    <div className="kb-exchange">
+  return wrap(
+    <>
       <p className="kb-exchange-by kb-small kb-muted">
         {ask.character !== null ? <Byline character={read.cast.get(ask.character)} name={askName} link id={ask.character} /> : <b>{askName}</b>} · <time dateTime={ask.createdAt}>{when(ask.createdAt)}</time>
       </p>
@@ -78,13 +81,13 @@ export function Exchange({ origin, place, perPage, nameOf }: {
       {answer === null ? <p className="kb-small kb-muted">Not answered yet.</p> : (
         <>
           <p className="kb-exchange-by kb-small kb-muted">
-            {answer.character !== null ? <Byline character={read.cast.get(answer.character)} name={staffName} link id={answer.character} /> : <b>{staffName}</b>} · {role} · <time dateTime={answer.createdAt}>{when(answer.createdAt)}</time>
+            {answer.character !== null ? <Byline character={read.cast.get(answer.character)} name={staffName} link id={answer.character} /> : <b>{staffName}</b>}{role !== null && <> · {role}</>} · <time dateTime={answer.createdAt}>{when(answer.createdAt)}</time>
           </p>
           <p className="kb-exchange-said">{words(answer, 'line')}</p>
           <p className="kb-small">{answerWords(answer, kind, staffName, askName, api.now())}</p>
         </>
       )}
       {on !== null && <p className="kb-small"><Link to={threadHref(on.thread, pageOf(on.seq, perPage), on.seq)}>Go to post #{on.seq}</Link></p>}
-    </div>
+    </>,
   );
 }
