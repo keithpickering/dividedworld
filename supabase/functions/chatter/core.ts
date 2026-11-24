@@ -697,7 +697,8 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     const pooled = spins || !startsThread
       ? await db.rpc<PoolRead>('pool_read', { in_thread: p.thread, staff_key: p.staff, named: quotes === null ? [] : [quotes], window: READ_WINDOW })
       : null;
-    const read = pooled === null ? null : readOf(pooled, instanceSet, quotes === null ? [] : [quotes], settings.pool.readMost);
+    // A spin start reads the origin's thread as no one in it: the persona's own posts and what answers them are not part of what it reads (no marks, no tiers by relation to it); only the origin is named.
+    const read = pooled === null ? null : readOf(spins ? { ...pooled, self: null } : pooled, instanceSet, quotes === null ? [] : [quotes], settings.pool.readMost);
     const quotedPost = read && quotes ? (read.posts.find((x) => x.act === quotes) ?? null) : null;
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only

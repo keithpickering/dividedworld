@@ -1918,6 +1918,21 @@ test('the day\'s top pick, with a post as its Act, spins a thread off that post 
   assert.match(start.messages[0]!.content as string, /Write the title and the opening post\./);
 });
 
+test('a spin start reads its origin thread with no post of its own: no you, replies-to-you or quotes-you marks, while a plain reply pick has them', async () => {
+  const waiting = dividedWorld.system.roster.flatMap((p) => [T1, T2, T3].map((t) => ({ staff: p.key, thread: t, replies: [reply(R1)] })));
+  const d = fakeDb({ pool: { cardRarityMost: 'uncommon' }, waiting });
+  const m = fakeModels(normal);
+  await run(d, m);
+  const start = m.chats.find((c) => (c.schema as any).required.includes('title'))!;
+  const spin = start.messages[0]!.content as string;
+  assert.match(spin, /Hello there\./, 'the origin is read');
+  assert.match(spin, /My earlier words\./, 'the thread is read whole');
+  assert.doesNotMatch(spin, /\((you|replies to you|quotes you)\)/, 'a spin shows no mark of the persona\'s own posts');
+  const plain = m.chats.filter((c) => !(c.schema as any).required.includes('title'));
+  assert.ok(plain.some((c) => /\(you\)/.test(c.messages[0]!.content as string)), 'a plain reply pick marks the persona\'s own post');
+  assert.ok(plain.some((c) => /\(replies to you\)/.test(c.messages[0]!.content as string)), 'and the reply to it');
+});
+
 test('a spin start offers no Set, and the card it names on its own post is dropped', async () => {
   const d = fakeDb({ pool: { cardRarityMost: 'uncommon' } });
   const m = fakeModels(normal);
