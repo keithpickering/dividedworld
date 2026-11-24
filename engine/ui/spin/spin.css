@@ -181,3 +181,36 @@
   display: block;
   font-weight: normal;
 }
+
+/*
+ * The exchange an ORIGIN box draws for a report, a verdict, an appeal or a ruling (Exchange.tsx). It stands in the content area as a post's words do: no border, ground or
+ * effect of its own, so the area's frame is the only box. The asker's words and the staff's are quoted by a typographic mark and an indent, never a ruled rectangle.
+ */
+.kb-exchange > p {
+  margin: 0.3em 0;
+}
+
+.kb-exchange-said {
+  padding-inline-start: 1em;
+  overflow-wrap: anywhere;
+}
+
+.kb-exchange-by {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.25em;
+}
+
+.kb-exchange-retry {
+  margin: 0;
+  padding: 0 2px;
+  border: 0;
+  background: transparent;
+  color: var(--kb-link);
+  font: inherit;
+  font-weight: 500;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+  cursor: pointer;
+}

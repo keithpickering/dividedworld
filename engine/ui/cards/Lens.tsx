@@ -942,6 +942,8 @@ export interface LensProps {
   readonly modPronouns?: PronounSet | undefined;
   /** A form the panel is open on (Forms.tsx): a post's report or an appeal. It is the panel's one tab while it is open, and the cards' and the visit's are not offered with it. */
   readonly form?: LensForm | undefined;
+  /** Spin a thread from a form's answer (the Mod's verdict or ruling): the Lens has closed. Absent, the form offers none. */
+  readonly onSpinAct?: ((act: Id, name: string, opener: HTMLElement) => void) | undefined;
   /** The post's Report to admins: a plain link at the very foot of the panel, under every tab, for a post whose current version is not hidden (a hidden one offers none). Absent for a character, a thread or a board. */
   readonly reportTo?: ReportTo | undefined;
 }
@@ -968,7 +970,7 @@ const PreparedTab = forwardRef<HTMLButtonElement, {
   );
 });
 
-export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, author = null, faceOf, strip, onSpin, where = 'post', postAt, moments = true, then, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, reportTo }: LensProps) {
+export function Lens({ open, store, post, plays, tallies, mine, compare, to, nameOf, author = null, faceOf, strip, onSpin, where = 'post', postAt, moments = true, then, visit, modPronouns = ENGINE_DEFAULT_PRONOUNS, form, onSpinAct, reportTo }: LensProps) {
   const { api, instance, ui } = useKayfa();
   const here = usePlays(plays, post);
   const narrow = useSheet();
@@ -981,6 +983,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
   const cardKinds = kindsOf(billed);
   /* A form is the panel's one tab while it is open; a visit's tab is ahead of the cards'. */
   const onForm = form !== undefined && open.card === form.kind;
+  /* A form's answer spins a thread from the post's host: the Lens closes first, as it does for a card's or a visit's Spin thread. */
+  const spinAnswer = onSpinAct ? { onSpin: (act: Id, label: string) => { store.close(); onSpinAct(act, label, open.opener); } } : {};
   const kinds = useMemo(() => (onForm ? [form.kind] : visit ? [VISIT_KIND, ...cardKinds] : cardKinds), [onForm, form?.kind, visit, cardKinds.join('\u0000')]); // eslint-disable-line react-hooks/exhaustive-deps
   const card = kinds.includes(open.card) ? open.card : null;
   const onVisit = !onForm && card === VISIT_KIND && visit !== undefined;
@@ -1220,8 +1224,8 @@ export function Lens({ open, store, post, plays, tallies, mine, compare, to, nam
         {/* The grid is the whole body while it shows: the Report foot link goes with the tab's sections, and is back with them. */}
         {gridOn ? <KindsGrid kinds={kinds} labelOf={labelOf} billed={billed} counts={here.counts} now={now} keeping={keeping} onChoose={pick} /> : <>
         {(waiting ?? visitP).data === null && (waiting ?? visitP).failed && <p role="alert" className="kb-lens-line">{PREPARED_FAILED}</p>}
-        {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} />}
-        {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} />}
+        {onForm && form.kind === REPORT_KIND && reportP.data && <ReportForm post={form.post} seq={form.seq} ready={reportP.data} {...spinAnswer} />}
+        {onForm && form.kind === APPEAL_KIND && appealP.data && <AppealForm infraction={form.infraction} visit={form.visit} nameOf={nameOf} modPronouns={modPronouns} facts={appealP.data} {...spinAnswer} />}
         {onVisit && visitP.data && (
           <VisitPanel first={visitP.data}
             visit={visit.visit} thread={visit.thread} author={visit.author} nameOf={nameOf} modPronouns={modPronouns} tallies={tallies} mine={mine} onEnded={visit.onEnded} fall={fall === null ? null : { id: fall.id, caster: fall.caster! }} onFallSpent={(id) => { plays.setSpent([id]); }}

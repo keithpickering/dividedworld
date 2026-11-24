@@ -58,7 +58,7 @@ import type {
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
   KindCount, KindPage, PostPlaysRead, PostHit, ThreadHit, SearchCursor, SearchPage, SearchQuery, SearchSort, Suggestions,
-  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, NoVisit, ReportRefund, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogReport, NoVisit, ReportRefund, ReportResult, ReportVerdict, Visit, VisitBand, VisitCharge, VisitEnd, VisitOutcome, VisitStory, Exchange,
   Donated, DriveGift, DriveGifts, Presence, PresencePlace, ReachListener, ScreenSettings, Season, Session, Standing, Tally, ThreadListener, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, Wallet, WalletEvent,
 } from './api.ts';
 
@@ -318,7 +318,7 @@ export interface Seed {
   verdict(report: Id, mod: Id, verdict: 'visit' | 'dismissed' | 'backfire', options?: { line?: string; visit?: Id; at?: number }): Id;
   /** The infraction a visit's filing wrote (`infract`) against its post's author, dropping off at `expiresAt` (default two weeks on, from `at`, which defaults to the visit's own date). A live Take the Fall play on the post that no infraction yet names takes it instead: the filing lands on the play's caster and names it (`fall_play`), which spends it. */
   infraction(visit: Id, options?: { points?: number; band?: VisitBand; ruleNumber?: number | null; expiresAt?: number; at?: number }): Id;
-  /** A character's appeal of an infraction or of a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
+  /** A character's appeal of an infraction, a ban or a group move on it (`open_appeal`), and the staff member's ruling on it (`until`: the end a ruling sets, as on a ban). */
   appeal(character: Id, infraction: Id, plea: string, options?: { at?: number }): Id;
   ruling(appeal: Id, mod: Id, verdict: 'overturned' | 'upheld' | 'reduced' | 'increased', options?: { line?: string; at?: number; until?: number }): Id;
   /** The points a heart's play took off an infraction (`warn_reliefs`, 0361): the play is a `card` Act the seed has written. Counted while that play is not ended. */
@@ -960,6 +960,31 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (origin.kind === 'poll') return { kind: 'poll', question: String(poll.payload.question), on };
       const who = origin.character === null || poll.payload.secret === true ? undefined : characters.get(origin.character);
       return who === undefined ? null : { kind: 'ballot', character: { id: who.id, name: who.name }, question: String(poll.payload.question), on };
+    }
+    /* A report, its verdict, an appeal or its ruling (0422): the ask, its answer, what an appeal is of and the post or line the place names. An asker no one can name is no place. */
+    if (origin.kind === 'report' || origin.kind === 'report_verdict' || origin.kind === 'appeal' || origin.kind === 'appeal_ruling') {
+      const ask = origin.kind === 'report' || origin.kind === 'appeal' ? origin : acts.get(origin.target ?? '');
+      /* Names as 0422 gives them: the ask's character as acts_public shows it (the stand-in under a veil), and a player's character that has not debuted has no public name, so no place (it falls through, as SQL does). */
+      const asker = ask === undefined || ask.character === null ? undefined : charOf(shownAuthor(ask) ?? '');
+      if (ask === undefined || asker === undefined || (asker.staff === undefined && asker.debutedAt === null)) return null;
+      const answered = origin.kind === 'report_verdict' || origin.kind === 'appeal_ruling' ? origin
+        : [...acts.values()].find((a) => a.kind === (ask.kind === 'report' ? 'report_verdict' : 'appeal_ruling') && a.target === ask.id);
+      const answerer = answered?.character == null ? undefined : characters.get(answered.character);
+      const staff = answerer !== undefined && (answerer.staff !== undefined || answerer.debutedAt !== null) ? answerer : undefined;
+      const punishment = ask.kind === 'appeal' ? acts.get(ask.target ?? '') : undefined;
+      const about = ask.kind === 'report' ? acts.get(ask.target ?? '')
+        : punishment?.kind === 'infraction' ? acts.get(String(punishment.payload['about_act']))
+        : punishment?.kind === 'ban' ? acts.get(String(acts.get(String(punishment.payload['infraction_act']))?.payload['about_act']))
+        : punishment?.kind === 'move' ? punishment : undefined;
+      const on = about === undefined || about.seq === null ? null : placeOf(about);
+      const params = (punishment?.payload['params'] ?? {}) as Record<string, unknown>;
+      return {
+        kind: 'answer', spun: origin === ask ? 'ask' : 'answer', ask: ask.kind === 'report' ? 'report' : 'appeal', asker: { id: asker.id, name: asker.name },
+        staff: staff === undefined ? null : { id: staff.id, name: staff.name },
+        punishment: punishment?.kind === 'infraction' || punishment?.kind === 'ban' || punishment?.kind === 'move' ? punishment.kind : null,
+        group: punishment?.kind === 'move' && typeof params['group'] === 'string' ? params['group'] : null,
+        on: on !== null && on.kind === 'post' ? on : null,
+      };
     }
     return origin.seq !== null ? placeOf(origin) : null;
   }
@@ -3633,7 +3658,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const v = all.find((x) => x.kind === 'report_verdict' && x.target === r.id);
           return {
             report: r.id, character: r.character!, at: iso(r.at), post: r.target!, postSeq: seqOf(r.target), thread: r.thread, verdict: (v?.payload.verdict as ReportVerdict | undefined) ?? null,
-            verdictAt: v ? iso(v.at) : null, mod: named(v?.character ?? null), refund: refundedReports.get(r.id) ?? null,
+            verdictAt: v ? iso(v.at) : null, mod: named(v?.character ?? null), refund: refundedReports.get(r.id) ?? null, answer: v?.id ?? null,
           };
         }),
       appeals: newest(all.filter((a) => a.kind === 'appeal' && owned(a.character) && fits(a.at)).map((a) => ({ ms: a.at, order: a.order, a })))
@@ -3644,7 +3669,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           return {
             appeal: a.id, character: a.character!, at: iso(a.at), punishment: a.target!, punishmentKind: p?.kind === 'ban' ? 'ban' : p?.kind === 'move' ? 'move' : 'infraction', postSeq: seqOf(about), thread: a.thread,
             verdict: (r?.payload.verdict as AppealVerdict | undefined) ?? null, ruledAt: r ? iso(r.at) : null, pointsDelta: typeof r?.payload.points_delta === 'number' ? r.payload.points_delta : null,
-            hearer: named(r?.character ?? null), refund: refundedAppeals.has(a.id) ? 'failed' : null,
+            hearer: named(r?.character ?? null), refund: refundedAppeals.has(a.id) ? 'failed' : null, answer: r?.id ?? null,
           };
         }),
     };
@@ -4192,6 +4217,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         warnPoints: inf ? warnOf(inf.payload.character as Id) : null,
       };
     },
+    exchange(origin): Exchange {
+      const here = acts.get(origin);
+      const kind = here?.kind;
+      if (here === undefined || (kind !== 'report' && kind !== 'report_verdict' && kind !== 'appeal' && kind !== 'appeal_ruling')) throw new Error('that is not a report or an appeal');
+      const isAsk = kind === 'report' || kind === 'appeal';
+      const ask = isAsk ? here : acts.get(here.target ?? '');
+      if (ask === undefined) throw new Error('that exchange could not be found');
+      const answer = isAsk ? [...acts.values()].find((a) => a.kind === (kind === 'report' ? 'report_verdict' : 'appeal_ruling') && a.target === origin) : here;
+      const punishment = ask.kind === 'appeal' ? acts.get(ask.target ?? '') : undefined;
+      return { ask: publicAct(ask), answer: answer ? publicAct(answer) : null, punishment: punishment ? publicAct(punishment) : null };
+    },
     intercept(through, visit, answer) {
       const who = acting(through);
       if (isRefusal(who)) return who;
@@ -4277,8 +4313,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       const line = verdict === 'visit' ? 'Noted. A visit is on its way.' : verdict === 'dismissed' ? 'Dismissed. Do not waste the staff\'s time.' : 'That report is a waste of the staff\'s time, and it will be remembered.';
       const given = write({ character: mod.id, kind: 'report_verdict', thread: p.thread, target: report.id, payload: { report_act: report.id, verdict, line, ...(visit ? { visit_act: visit } : {}) } });
-      void given;
-      return ok<ReportResult>({ report: report.id, verdict, line, visit, refund });
+      return ok<ReportResult>({ report: report.id, verdict, line, visit, refund, answer: given.id });
     },
     fileAppeal(through, punishment, plea) {
       const who = acting(through);
@@ -4330,7 +4365,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const end = verdict === 'overturned' ? now() : verdict === 'reduced' ? start + (days * 86_400_000) / 2 : verdict === 'increased' ? was + (days * 86_400_000) / 2 : null;
         if (end !== null) until = iso(end);
       }
-      write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}), ...(hearer.staff?.office === 'boss' || hearer.staff?.office === 'mod' ? { office: hearer.staff.office } : {}) } });
+      const ruled = write({ character: hearer.id, kind: 'appeal_ruling', thread: pun.thread, target: appeal.id, payload: { appeal_act: appeal.id, verdict, points_delta: delta, line, ...(until ? { until } : {}), ...(hearer.staff?.office === 'boss' || hearer.staff?.office === 'mod' ? { office: hearer.staff.office } : {}) } });
       if (movePunishes) {
         if (verdict === 'overturned') {
           moveEnds.set(pun.id, { why: 'overturned', by: 'appeal', at: now() });
@@ -4342,7 +4377,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }
       const refunded = verdict === 'overturned' ? settings.modBots.appealPrice : 0;
       giveBack(account, refunded, appeal.id);
-      return ok<AppealResult>({ appeal: appeal.id, verdict, line, pointsDelta: delta, refunded });
+      return ok<AppealResult>({ appeal: appeal.id, verdict, line, pointsDelta: delta, refunded, answer: ruled.id });
     },
     reportsLeft: (character) => reportsLeftNow(character),
     beatMod(board) {
@@ -6119,7 +6154,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     appeal(character, infraction, plea, o) {
       const i = acts.get(infraction);
-      if (!i || (i.kind !== 'infraction' && !(i.kind === 'move' && i.payload['kind'] === 'conferGroup'))) throw new Error(`no such infraction ${infraction}`);
+      if (!i || (i.kind !== 'infraction' && i.kind !== 'ban' && !(i.kind === 'move' && i.payload['kind'] === 'conferGroup'))) throw new Error(`no such infraction ${infraction}`);
       return write({ character, kind: 'appeal', thread: i.thread, target: infraction, at: o?.at, payload: { plea } }).id;
     },
     ruling(appeal, mod, verdict, o) {

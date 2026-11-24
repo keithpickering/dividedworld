@@ -105,6 +105,13 @@ function fakeModels(reply: (r: ChatRequest) => unknown) {
 }
 const go = (d: ReturnType<typeof fakeDbs>, m: { models: Models }, req: unknown = body) => runAppeal(d.dbs, async () => m.models, dividedWorld, req);
 
+test('a close that names no ruling Act answers null', async () => {
+  const d = fakeDbs({ closeSays: { ruling_act: undefined } });
+  const out = await go(d, fakeModels(() => ({ verdict: 'reduced', line: 'Half, then.' })));
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal(out.body['answer'], null);
+});
+
 test('an infraction\'s appeal: opened as the player, judged on the appeal duty by the staff member the database names, recorded, and closed with the verdict', async () => {
   const d = fakeDbs();
   const m = fakeModels(() => ({ verdict: 'reduced', line: 'Half, then.' }));
@@ -122,6 +129,7 @@ test('an infraction\'s appeal: opened as the player, judged on the appeal duty b
   assert.equal(d.state.refunds, 0);
   assert.equal(out.body['verdict'], 'reduced');
   assert.equal(out.body['appeal'], APPEAL);
+  assert.equal(out.body['answer'], 'ffffffff-ffff-4fff-8fff-fffffffffff1', 'the ruling\'s Act is carried back, for the spin that names it');
   assert.deepEqual(d.calls.filter((c) => c.db === 'service' && c.fn === 'open_appeal'), [], 'the service never opens an appeal for a player');
 });
 

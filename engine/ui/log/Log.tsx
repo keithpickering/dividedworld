@@ -22,6 +22,8 @@ import { useEffect, useId, useRef, useState, type KeyboardEvent as ReactKeyboard
 import { words as pronounWords, type PronounSet } from '../../rules/pronouns.ts';
 import { useKayfa } from '../context.tsx';
 import { BanAppeal } from '../cards/Forms.tsx';
+import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
+import type { SpinOrigin } from '../thread/Post.tsx';
 import type { Id, LogSettlement } from '../data/api.ts';
 import { CONTACT_PATH } from '../contact/Contact.tsx';
 import { SignInPrompt } from '../mini.tsx';
@@ -114,7 +116,7 @@ function Breakdown({ settlement, data, words, tab, id, open, onClose }: { readon
   );
 }
 
-function Row({ row, data, words, tab, open, onToggle, entering }: { readonly entering?: true; readonly row: LogRow; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly open: boolean; readonly onToggle: (id: number, to?: boolean) => void }) {
+function Row({ row, data, words, tab, open, onToggle, entering, onSpin }: { readonly onSpin: (o: SpinOrigin) => void; readonly entering?: true; readonly row: LogRow; readonly data: LogData; readonly words: Words; readonly tab: Id | null; readonly open: boolean; readonly onToggle: (id: number, to?: boolean) => void }) {
   const base = useId();
   const breakdown = `${base}-posts`;
   const button = useRef<HTMLButtonElement>(null);
@@ -127,7 +129,12 @@ function Row({ row, data, words, tab, open, onToggle, entering }: { readonly ent
         <td className="kb-log-what" data-kb-label="What">{row.what}</td>
         <td className="kb-log-details" data-kb-label="Details">
           <Said parts={row.details} />
-          {row.appealBan && <p className="kb-log-ban-appeal"><BanAppeal character={row.appealBan.character} ban={row.appealBan} /></p>}
+          {row.appealBan && <p className="kb-log-ban-appeal"><BanAppeal character={row.appealBan.character} ban={row.appealBan} onSpin={(id, label, opener) => onSpin({ id, label, opener })} /></p>}
+          {row.spinAnswer && (
+            <p className="kb-log-spin-answer">
+              <button type="button" className="kb-link-button" aria-label={`Spin thread from ${row.spinAnswer.label}`} onClick={(e) => onSpin({ id: row.spinAnswer!.id, label: row.spinAnswer!.label, opener: e.currentTarget })}>Spin thread</button>
+            </p>
+          )}
           {s?.sharesKept && (
             <div className="kb-log-posts-row">
               <GlassButton
@@ -197,6 +204,8 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
   /* Some rows are made from the player's characters (rank changes, Turns), so with them unread an empty log is not known to be empty. */
   const { charactersFailed } = usePlayer();
   const words: Words = { instance, ui, postsPerPage: settings.postsPerPage, economy: economyNow(instance.settings, settings.economy), now: api.now() };
+  const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  const drafts = useSpinDrafts();
   const tabs = tabsOf(data);
   const current = tabs.find((c) => c.id === tab) ?? null;
   const rows = logRows(data, words, settings.walletCap, current?.id ?? null);
@@ -237,6 +246,13 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
         Everything on this page is true. Each line names the Act that did it, what it changed and how much Aura moved. It never says who reacted, or
         any character's class but your own.
       </CalmRegion>
+      {spinOrigin && (
+        <SpinForm
+          key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+          draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); (back?.isConnected ? back : table.current)?.focus(); }}
+        />
+      )}
       <CalmRegion className="kb-log-board">
         <table ref={table} className="kb-log-table" tabIndex={-1}>
           <caption className="kb-visually-hidden">{current ? `${current.name}'s log` : 'Your log'}, newest first</caption>
@@ -252,7 +268,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
           <tbody>
             {!settled && rows.length === 0 && charactersFailed && <tr><td colSpan={5}><CharactersFailed className="kb-log-empty" /></td></tr>}
             {!settled && rows.length === 0 && !charactersFailed && <NothingYet name={current?.name ?? null} pronouns={current?.pronouns ?? null} next={data.nextSettlement} now={words.now} />}
-            {rows.map((r) => <Row key={r.key} entering={added.entering(r.key)} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} />)}
+            {rows.map((r) => <Row key={r.key} entering={added.entering(r.key)} row={r} data={data} words={words} tab={current?.id ?? null} open={r.settlement !== undefined && open.has(r.settlement.id)} onToggle={onToggle} onSpin={setSpinOrigin} />)}
           </tbody>
         </table>
         {!settled && rows.length > 0 && <p className="kb-log-empty">{nothingSettled(current?.name ?? null, data.nextSettlement, words.now, current?.pronouns ?? null)}</p>}

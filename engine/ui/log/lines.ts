@@ -79,6 +79,8 @@ export interface LogRow {
   readonly settlement?: LogSettlement;
   /** A ban's line while it runs and has not been appealed: the ban, which the line's "Appeal to the Boss" names (Forms.tsx's `BanAppeal`). */
   readonly appealBan?: MyBan;
+  /** A report's verdict or an appeal's ruling the player can spin a thread from (the Act, and what the spin form calls it): set where the answer's Act is known (`my_reports.verdict_act`, `my_appeals.ruling_act`). */
+  readonly spinAnswer?: { readonly id: Id; readonly label: string };
 }
 
 /** What the log is drawn from: the player's own reads, and the public Acts and threads its lines name. */
@@ -760,6 +762,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
       key: `report:${r.report}`, kind: 'report', at: r.at, what: 'You reported a post',
       details: [`${nameOf(r.character)} reported `, post(r.thread, r.postSeq, false), `${forPrice(price)}. The report is public.${verdict}`],
       aura: -(price ?? 0) + gone, wallet: null, characters: [r.character],
+      ...(r.answer !== null ? { spinAnswer: { id: r.answer, label: r.mod === null ? 'the verdict' : `${r.mod}'s verdict` } } : {}),
     });
   }
 
@@ -783,6 +786,7 @@ function modRows(data: LogData, words: Words): LogRow[] {
         ? [`${nameOf(a.character)} appealed `, moved?.seq == null ? what : { text: what, href: threadHref(moved.thread, pageOf(moved.seq, words.postsPerPage), moved.seq) }, `${forPrice(price)}. The plea is public.${ruling}`]
         : [`${nameOf(a.character)} appealed ${what} from `, post(a.thread, a.postSeq, true), `${forPrice(price)}. The plea is public.${ruling}`],
       aura: -(price ?? 0) + gone, wallet: null, characters: [a.character],
+      ...(a.answer !== null ? { spinAnswer: { id: a.answer, label: a.hearer === null ? 'the ruling' : `${a.hearer}'s ruling` } } : {}),
     });
   }
 

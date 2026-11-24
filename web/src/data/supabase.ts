@@ -50,7 +50,7 @@ import type {
   Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Rewind, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory, Exchange,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -324,6 +324,11 @@ function toPostPlace(raw: unknown): Extract<PlaceOn, { kind: 'post' }> | null {
   return place !== null && place.kind === 'post' ? place : null;
 }
 
+/** An ask or an answer's person: `{id, name}`, both text, else null. */
+function toWho(raw: unknown): { readonly id: Id; readonly name: string } | null {
+  return isObject(raw) && isText(raw['id']) && isText(raw['name']) ? { id: raw['id'], name: raw['name'] } : null;
+}
+
 /** A spun thread's origin_place (thread_open and thread_list, 0079): null for no place, a malformed one or an unknown kind; a play whose `on` is malformed keeps `on: null`. */
 function toPlace(raw: unknown): OriginPlace | null {
   if (!isObject(raw)) return null;
@@ -339,6 +344,17 @@ function toPlace(raw: unknown): OriginPlace | null {
     if (!isText(raw['question']) || on === null) return null;
     if (raw['kind'] === 'poll') return { kind: 'poll', question: raw['question'], on };
     return isObject(who) && isText(who['id']) && isText(who['name']) ? { kind: 'ballot', character: { id: who['id'], name: who['name'] }, question: raw['question'], on } : null;
+  }
+  /* An ask or an answer (0422): every key is checked; the post is a post place or null; anything else malformed is no place. */
+  if (raw['kind'] === 'answer') {
+    const asker = toWho(raw['asker']);
+    const staff = raw['staff'] === null ? null : toWho(raw['staff']);
+    const spun = raw['spun'] === 'ask' || raw['spun'] === 'answer' ? raw['spun'] : null;
+    const ask = raw['ask'] === 'report' || raw['ask'] === 'appeal' ? raw['ask'] : null;
+    const punishment = raw['punishment'] === null ? null : raw['punishment'] === 'infraction' || raw['punishment'] === 'ban' || raw['punishment'] === 'move' ? raw['punishment'] : undefined;
+    const group = raw['group'] === null || isText(raw['group']) ? raw['group'] : undefined;
+    if (spun === null || ask === null || asker === null || (staff === null && raw['staff'] !== null) || punishment === undefined || group === undefined) return null;
+    return { kind: 'answer', spun, ask, asker, staff, punishment, group, on: toPostPlace(raw['on']) };
   }
   const place = toPlaceOn(raw);
   return place !== null && (place.kind === 'post' || place.kind === 'update') ? place : null;
@@ -736,7 +752,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
     })),
     reports: src['reports'].map((r): LogReport => ({
       report: r['report'], character: r['character'], at: r['at'], post: r['post'], postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'],
-      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: REPORT_REFUNDS.find((w) => w === r['refund']) ?? null,
+      verdict: VERDICTS.find((v) => v === r['verdict']) ?? null, verdictAt: str(r['verdict_at']), mod: str(r['mod_name']), refund: REPORT_REFUNDS.find((w) => w === r['refund']) ?? null, answer: str(r['verdict_act']),
     })),
     cosmetics: src['cosmetics'].map((r): LogCosmetic => ({
       kind: COSMETIC_KINDS.find((k) => k === r['kind']) ?? 'found', id: String(r['id']), at: r['at'], character: str(r['character']),
@@ -748,7 +764,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       appeal: r['appeal'], character: r['character'], at: r['at'], punishment: r['punishment'], punishmentKind: r['punishment_kind'] === 'ban' ? 'ban' : r['punishment_kind'] === 'move' ? 'move' : 'infraction',
       postSeq: typeof r['post_seq'] === 'number' ? r['post_seq'] : null, thread: r['thread'], verdict: RULINGS.find((v) => v === r['verdict']) ?? null, ruledAt: str(r['ruled_at']),
       pointsDelta: typeof r['points_delta'] === 'number' ? r['points_delta'] : null, hearer: str(r['hearer_name']),
-      refund: r['refund'] === 'failed' || r['refund'] === 'stale' || r['refund'] === 'expired' ? r['refund'] : null,
+      refund: r['refund'] === 'failed' || r['refund'] === 'stale' || r['refund'] === 'expired' ? r['refund'] : null, answer: str(r['ruling_act']),
     })),
   };
 }
@@ -1264,8 +1280,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       rows(() => client.from('my_falls_taken').select('infraction,character,at,post,post_seq,thread,rule,points,mod_name,taker_name'), 'at', (q) => q, ['infraction']),
       /* The staff moves of the player's characters into groups (0134): each with how it ended and the appeal's ruling on it. */
       rows(() => client.from('my_group_moves').select('move,character,at,thread,seq,group,board,board_name,expires_at,landed_until,check_at,demand,office,ended_why,ended_by,ended_at,ruling,ruled_at,ruled_until,ruled_office'), 'at', (q) => q, ['move']),
-      rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund'), 'at', (q) => q, ['report']),
-      rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund'), 'at', (q) => q, ['appeal']),
+      rows(() => client.from('my_reports').select('report,character,at,post,post_seq,thread,verdict,verdict_at,mod_name,refund,verdict_act'), 'at', (q) => q, ['report']),
+      rows(() => client.from('my_appeals').select('appeal,character,at,punishment,punishment_kind,post_seq,thread,verdict,ruled_at,points_delta,hearer_name,refund,ruling_act'), 'at', (q) => q, ['appeal']),
       /* What happened to the player's characters beside Aura (0213): a find, an admin's gear, a trophy given or taken back, a belt lost; the caller's own rows alone. */
       rows(() => client.from('my_cosmetic_log').select('kind,id,at,character,outcome,item,text,copies,trophy,name,by,by_name,season,place,line,to_name'), 'at', (q) => q, ['kind', 'id']),
     ]);
@@ -2013,6 +2029,22 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         warnPoints: inf && typeof bar[0]?.['warn_points'] === 'number' ? bar[0]['warn_points'] : null,
       };
     },
+    async exchange(origin): Promise<Exchange> {
+      if (!idOk(origin)) throw new Error('that exchange could not be found');
+      const one = async (build: () => PromiseLike<unknown>): Promise<Row | undefined> => (await list(build))[0];
+      const here = await one(() => client.from('acts_public').select('*').eq('id', origin).limit(1));
+      const kind = here?.['kind'];
+      if (kind !== 'report' && kind !== 'report_verdict' && kind !== 'appeal' && kind !== 'appeal_ruling') throw new Error('that is not a report or an appeal');
+      const isAsk = kind === 'report' || kind === 'appeal';
+      const answered = kind === 'report' ? 'report_verdict' : 'appeal_ruling';
+      const ask = isAsk ? here : await one(() => client.from('acts_public').select('*').eq('id', String(here!['target_act_id'])).limit(1));
+      if (!ask) throw new Error('that exchange could not be found');
+      const [answer, punishment] = await Promise.all([
+        isAsk ? one(() => client.from('acts_public').select('*').eq('kind', answered).eq('target_act_id', origin).limit(1)) : Promise.resolve(here),
+        ask['kind'] === 'appeal' && typeof ask['target_act_id'] === 'string' ? one(() => client.from('acts_public').select('*').eq('id', ask['target_act_id']).limit(1)) : Promise.resolve(undefined),
+      ]);
+      return { ask: toAct(ask), answer: answer ? toAct(answer) : null, punishment: punishment ? toAct(punishment) : null };
+    },
     async intercept(through, visit, answer): Promise<Answer<InterceptResult>> {
       if (!idOk(through) || !idOk(visit)) return refusal('that visit could not be found');
       const a = await rpcWrite(() => client.rpc('intercept', { through, visit_act: visit, answer }));
@@ -2027,14 +2059,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const back = a.value['refund'];
       const given: Record<string, unknown> = typeof back === 'object' && back !== null ? { ...back } : {};
       const refund: ReportResult['refund'] = given['why'] === 'veiled' || given['why'] === 'visited' ? { why: given['why'], amount: num(given['amount']) } : null;
-      return { ok: true, value: { report: String(a.value['report'] ?? ''), verdict, line: str(a.value['line']) ?? '', visit: str(a.value['visit']), refund } };
+      return { ok: true, value: { report: String(a.value['report'] ?? ''), verdict, line: str(a.value['line']) ?? '', visit: str(a.value['visit']), refund, answer: str(a.value['answer']) } };
     },
     async fileAppeal(through, punishment, plea): Promise<Answer<AppealResult>> {
       if (!idOk(through) || !idOk(punishment)) return refusal('that punishment could not be found');
       const a = await edge('staff/appeal', { through, punishment, plea }, LOST);
       if (!a.ok) return a;
       const verdict = RULINGS.find((v) => v === a.value['verdict']) ?? null;
-      return { ok: true, value: { appeal: String(a.value['appeal'] ?? ''), verdict, line: str(a.value['line']) ?? '', pointsDelta: num(a.value['points_delta']), refunded: num(a.value['refunded']) } };
+      return { ok: true, value: { appeal: String(a.value['appeal'] ?? ''), verdict, line: str(a.value['line']) ?? '', pointsDelta: num(a.value['points_delta']), refunded: num(a.value['refunded']), answer: str(a.value['answer']) } };
     },
     async reportsLeft(character): Promise<number | null> {
       if (!idOk(character)) return null;
