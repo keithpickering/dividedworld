@@ -25,7 +25,7 @@ begin
     raise exception 'the Sunday post is not an orphan on its own Sunday';
   end if;
   -- spent, it is no orphan
-  perform record_pool_spend('2030-01-13'::date, 'sf2-boss', 'named', sunday, null, false);
+  perform record_pool_spend('2030-01-13'::date, 'sf2-boss', 'named', sunday, null, false, '{}', 0);
   if exists (select 1 from jsonb_array_elements(pool_orphans('2030-01-14')) e where e ->> 'act' = sunday::text) then
     raise exception 'a spent post is an orphan';
   end if;
@@ -83,13 +83,13 @@ begin
   end loop;
 
   perform tests.become_service();
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_ref], 'refused', true);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_rej], 'rejected', true);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_two, r_two], 'rejected', false);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_two], 'rejected', true);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_fail], 'failed', false);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_fail], 'failed', true);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_fail], 'failed', false);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_ref], 'refused', true, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_rej], 'rejected', true, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_two, r_two], 'rejected', false, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_two], 'rejected', true, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_fail], 'failed', false, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_fail], 'failed', true, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_fail], 'failed', false, 0);
   perform tests.unbecome();
 
   if pg_temp.waits(r_ref, t) <> '' then raise exception 'a refused reply still waits in: %', pg_temp.waits(r_ref, t); end if;
@@ -99,40 +99,40 @@ begin
 
   -- write_staff_turn refuses a given-up reply and still writes a turn for one that waits.
   perform tests.become_service();
-  said := pg_temp.refused(format('select write_staff_turn(%L, %s, %L, %L, array[%L::uuid], %L)', 'sf2-boss', sid, t, r_ref, r_ref, 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %s, %L, %L, array[%L::uuid], %L, 0)', 'sf2-boss', sid, t, r_ref, r_ref, 'No.'));
   if said is null or said !~ 'a turn answers the replies waiting' then raise exception 'write_staff_turn wrote a turn for a refused reply: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %s, %L, %L, array[%L::uuid], %L)', 'sf2-boss', sid, t, r_two, r_two, 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %s, %L, %L, array[%L::uuid], %L, 0)', 'sf2-boss', sid, t, r_two, r_two, 'No.'));
   if said is null or said !~ 'a turn answers the replies waiting' then raise exception 'write_staff_turn wrote a turn for a twice rejected reply: %', said; end if;
-  perform write_staff_turn('sf2-boss', sid, t, r_rej, array[r_rej, r_fail], 'Yes.');
+  perform write_staff_turn('sf2-boss', sid, t, r_rej, array[r_rej, r_fail], 'Yes.', 0);
   -- The ceiling: the turn, the paid attempts (refused, rejected, rejected, failed) and none of the unpaid.
   if pool_turns_today(pg_temp.today()) is distinct from before + 1 + 4 then raise exception 'the day counts % calls, not %', pool_turns_today(pg_temp.today()), before + 5; end if;
   if pool_turns_today(pg_temp.today() + 1) is distinct from 0 then raise exception 'another day counts attempts'; end if;
   -- A session that is not the persona's, and an outcome outside the three, write nothing.
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true)', 'sf2-boss', sid + 1000, t, r_ref, 'refused'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, 0)', 'sf2-boss', sid + 1000, t, r_ref, 'refused'));
   if said is null or said !~ '^42501' then raise exception 'an attempt in a session that is not the persona''s was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true)', 'sf2-boss', sid, t, r_new, 'shrugged'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, 0)', 'sf2-boss', sid, t, r_new, 'shrugged'));
   if said is null or said !~ '^23514' then raise exception 'an attempt with an unknown outcome was written: %', said; end if;
   -- An attempt is for replies waiting on the persona in that thread. A reply with one rejected attempt still waits, so a second rejected attempt is recorded, and the reply is then given up on.
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_new], 'rejected', true);
-  perform record_turn_attempt('sf2-boss', sid, t, array[r_new], 'rejected', true);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_new], 'rejected', true, 0);
+  perform record_turn_attempt('sf2-boss', sid, t, array[r_new], 'rejected', true, 0);
   perform tests.unbecome();
   if pg_temp.waits(r_new, t) <> '' then raise exception 'a reply rejected twice still waits in: %', pg_temp.waits(r_new, t); end if;
   perform tests.become_service();
   -- Everything else is refused, and nothing is written: an act that is not a reply to the persona, a reply in another thread, a null element, no replies, a reply already answered, a reply already given up on.
   rows_before := (select count(*) from pool_attempts);
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true)', 'sf2-boss', sid, t, r_plain, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, 0)', 'sf2-boss', sid, t, r_plain, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt for an act that is not a reply to the persona was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true)', 'sf2-boss', sid, t, r_other, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, 0)', 'sf2-boss', sid, t, r_other, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt for a reply in another thread was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid, null], %L, true)', 'sf2-boss', sid, t, r_fail, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid, null], %L, true, 0)', 'sf2-boss', sid, t, r_fail, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt with a null among its replies was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[]::uuid[], %L, true)', 'sf2-boss', sid, t, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[]::uuid[], %L, true, 0)', 'sf2-boss', sid, t, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt for no replies was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, null, %L, true)', 'sf2-boss', sid, t, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, null, %L, true, 0)', 'sf2-boss', sid, t, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt with null replies was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true)', 'sf2-boss', sid, t, r_rej, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, 0)', 'sf2-boss', sid, t, r_rej, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt for an answered reply was written: %', said; end if;
-  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true)', 'sf2-boss', sid, t, r_ref, 'failed'));
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, 0)', 'sf2-boss', sid, t, r_ref, 'failed'));
   if said is null or said !~ '^22023' then raise exception 'an attempt for a reply already given up on was written: %', said; end if;
   if (select count(*) from pool_attempts) is distinct from rows_before then raise exception 'a refused attempt wrote a row'; end if;
   perform tests.unbecome();
@@ -161,7 +161,7 @@ begin
   end loop;
   foreach who in array array['anon', 'authenticated'] loop
     perform set_config('role', who, true);
-    fn := 'select record_turn_attempt(''sf2-boss'', 1, gen_random_uuid(), array[gen_random_uuid()], ''failed'', false)';
+    fn := 'select record_turn_attempt(''sf2-boss'', 1, gen_random_uuid(), array[gen_random_uuid()], ''failed'', false, 0)';
     said := pg_temp.refused(fn);
     perform tests.unbecome();
     if said is null or said !~ '^42501' then raise exception '% can call record_turn_attempt: %', who, said; end if;

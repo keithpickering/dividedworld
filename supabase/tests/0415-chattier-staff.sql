@@ -52,7 +52,7 @@ begin
   perform keep_pick('2030-02-01', 'cs-boss', '{"trigger": "named"}');
   perform claim_pool_round('2030-02-01 10:00+00');
   sid := (select id from staff_sessions where staff = 'cs-boss' and day = pg_temp.today());
-  perform write_staff_turn('cs-boss', sid, tt, r, array[r], 'A turn.');
+  perform write_staff_turn('cs-boss', sid, tt, r, array[r], 'A turn.', 0);
   perform tests.unbecome();
   insert into meetings (started_at, finished_at, outcome, slot) values (now() - interval '1 day', now() - interval '1 day', 'ok', now() - interval '1 day');
   insert into staff_points (meeting, staff, line) select max(id), 'cs-boss', 'A line.' from meetings;
@@ -99,7 +99,7 @@ begin
     foreach fn in array array['select claim_pool_round(now())', 'select write_sessions(''2030-02-01'', ''[]'')', 'select sessions_awake(now())', 'select sessions_day(''2030-02-01'')', 'select pool_day_started(''2030-02-01'')',
       'select keep_pick(''2030-02-01'', ''cs-boss'', ''{}'')', 'select kept_picks(''2030-02-01'')', 'select pool_waiting(array[''cs-boss''], now())',
       'select count(*) from pool_waiting_rows(array[''cs-boss''], now())', 'select pool_turns_today(''2030-02-01'')',
-      'select write_staff_turn(''cs-boss'', 1, gen_random_uuid(), gen_random_uuid(), array[gen_random_uuid()], ''x'')',
+      'select write_staff_turn(''cs-boss'', 1, gen_random_uuid(), gen_random_uuid(), array[gen_random_uuid()], ''x'', 0)',
       'select pool_conversation(''cs-boss'', gen_random_uuid(), 1, 1, 1)', 'select pool_record(gen_random_uuid(), ''cs-boss'')', 'select staff_points_latest(''cs-boss'')'] loop
       perform set_config('role', who, true);
       denied := false;
@@ -208,7 +208,7 @@ begin
   perform keep_pick('2030-01-09', 'cs-mod', '{"trigger": "oldFlame"}');
   k := kept_picks('2030-01-09');
   if jsonb_array_length(k) is distinct from 2 or k -> 0 ->> 'staff' is distinct from 'cs-boss' or k -> 0 -> 'pick' ->> 'n' is distinct from '1' then raise exception 'the first keep is the day''s: %', k; end if;
-  perform record_pool_spend('2030-01-09', 'cs-boss', 'named', p, null, false);
+  perform record_pool_spend('2030-01-09', 'cs-boss', 'named', p, null, false, '{}', 0);
   k := kept_picks('2030-01-09');
   if jsonb_array_length(k) is distinct from 1 or k -> 0 ->> 'staff' is distinct from 'cs-mod' then raise exception 'a written pick is still listed: %', k; end if;
   if kept_picks('2030-01-10') is distinct from '[]'::jsonb then raise exception 'another day lists picks'; end if;
@@ -309,28 +309,28 @@ begin
 
   -- The refusals write nothing: a closed session, another persona's session, a quote outside the answers, a reply to another persona's post, a staff reply, no answers, a locked-out thread.
   before_acts := (select count(*) from acts); before_turns := (select count(*) from pool_turns); before_answers := (select count(*) from pool_answered);
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', closed, t, a2, array[a1, a2], 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', closed, t, a2, array[a1, a2], 'No.'));
   if said is null or said !~ '^55000' then raise exception 'a closed session wrote a turn: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', msid, t, a2, array[a1, a2], 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', msid, t, a2, array[a1, a2], 'No.'));
   if said is null or said !~ '^42501' then raise exception 'another persona''s session wrote a turn: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, a3, array[a1, a2], 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, a3, array[a1, a2], 'No.'));
   if said is null or said !~ '^22023' then raise exception 'a quote outside the answers wrote a turn: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, a3, array[a3], 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, a3, array[a3], 'No.'));
   if said is null or said !~ '^22023' then raise exception 'a reply to another persona''s post was answered: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, s1, array[s1], 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, s1, array[s1], 'No.'));
   if said is null or said !~ '^22023' then raise exception 'a staff reply was answered: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, a2, array[]::uuid[], 'No.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, a2, array[]::uuid[], 'No.'));
   if said is null or said !~ '^22023' then raise exception 'a turn with no answers was written: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t2, l1, array[l1], 'Locked.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t2, l1, array[l1], 'Locked.'));
   if said is null or said !~ '^22023' then raise exception 'a reply in a locked-out thread was answered: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, o1, array[o1, a2], 'Old.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, o1, array[o1, a2], 'Old.'));
   if said is null or said !~ '^22023' then raise exception 'a reply older than the wait was answered: %', said; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, v1, array[v1, a2], 'Veiled.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, v1, array[v1, a2], 'Veiled.'));
   if said is null or said !~ '^22023' then raise exception 'a reply under an author veil was answered: %', said; end if;
   if (select count(*) from acts) is distinct from before_acts or (select count(*) from pool_turns) is distinct from before_turns or (select count(*) from pool_answered) is distinct from before_answers then raise exception 'a refused turn wrote something'; end if;
 
   -- A turn: the post, the turn and the answers together.
-  made := write_staff_turn('cs-boss', sid, t, a2, array[a1, a2], 'The boss answers them both.');
+  made := write_staff_turn('cs-boss', sid, t, a2, array[a1, a2], 'The boss answers them both.', 0);
   tpost := (made -> 'post' ->> 'id')::uuid;
   made_turn := (made ->> 'turn')::bigint;
   if not exists (select 1 from acts where id = tpost and kind = 'post' and target_act_id = a2 and thread = t and character = boss) then raise exception 'the turn''s post is not the boss''s quote of the newest reply: %', made; end if;
@@ -339,7 +339,7 @@ begin
   -- Answered replies are waiting no more, and the session has spent a turn in the thread.
   w := (select e from jsonb_array_elements(pool_waiting(array['cs-boss'], since)) e where e ->> 'thread' = t::text);
   if w is not null then raise exception 'answered replies are still waiting: %', w; end if;
-  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L)', 'cs-boss', sid, t, a1, array[a1], 'Again.'));
+  said := pg_temp.refused(format('select write_staff_turn(%L, %L, %L, %L, %L::uuid[], %L, 0)', 'cs-boss', sid, t, a1, array[a1], 'Again.'));
   if said is null or said !~ '^55000' then raise exception 'an answered reply was answered again: %', said; end if;
   if (select count(*) from pool_turns) is distinct from before_turns + 1 then raise exception 'a refused second answer wrote a turn'; end if;
   w := (select e from jsonb_array_elements(sessions_awake(now())) e where (e ->> 'session')::bigint = sid);
@@ -366,7 +366,7 @@ begin
   perform tests.become_service();
   perform write_sessions(pg_temp.today(), '[{"staff": "cs-boss", "start": 0, "end": 1440}]');
   sid := (select id from staff_sessions where staff = 'cs-boss' and day = pg_temp.today() order by id limit 1);
-  made := write_staff_turn('cs-boss', sid, t, r1, array[r1], 'First turn.');
+  made := write_staff_turn('cs-boss', sid, t, r1, array[r1], 'First turn.', 0);
   tp := (made -> 'post' ->> 'id')::uuid;
   perform tests.unbecome();
   -- The public tally the crowd sees (the table react() keeps), two up on the turn and one boo.
@@ -635,7 +635,7 @@ do $$
 declare
   fns regprocedure[] := array[
     'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb, boolean)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'pool_day_started(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
-    'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text)',
+    'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text, integer)', 'pool_chars_today(date)',
     'pool_conversation(text, uuid, integer, integer, integer)', 'pool_record(uuid, text)', 'staff_points_latest(text)', 'staff_rows_append_only()']::regprocedure[];
   found text[];
 begin

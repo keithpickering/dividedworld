@@ -43,6 +43,10 @@ begin
   if bad is distinct from 'arrival_act, boss, cause, how, landed_at, outgoing, season' then
     raise exception 'the digest role reads these columns of season_handovers: %', bad;
   end if;
+  -- What the Acts quote (0421): the role reads the two columns of quote_refs that pool_read joins, and no more.
+  select string_agg(attname, ', ' order by attname) into bad from pg_attribute
+  where attrelid = 'quote_refs'::regclass and attnum > 0 and not attisdropped and has_column_privilege('kayfabb_digest', 'quote_refs', attname, 'select');
+  if bad is distinct from 'act, quoted' then raise exception 'the digest role reads these columns of quote_refs: %', bad; end if;
   if has_column_privilege('kayfabb_digest', 'queued_moves', 'held_by', 'select') then raise exception 'the digest role reads queued_moves.held_by'; end if;
   -- No my_* view: they read auth.uid(), and the role is nobody.
   select string_agg(relname, ', ') into bad from pg_class
@@ -58,7 +62,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the twenty-three reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the twenty-four reviewed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -77,6 +81,8 @@ begin
       'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)', 'name_skeleton(text)',
       -- The pool's thread read (0089) and the faces read that replaced its names read (0127): the two functions it owns.
       'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'character_faces(jsonb)',
+      -- A persona's whole-post read of a thread (0421), reading acts_public, characters_public, character_profiles, thread_list and the quotes quote_refs holds: the function it owns.
+      'pool_read(uuid,text,uuid[],integer)',
       -- A patrol's sample of the beat's recent posts (0110): the one function it owns, reading acts_public, characters_public and thread_list.
       'patrol_sample(uuid[],integer,integer,bigint)',
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
@@ -87,7 +93,7 @@ begin
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
       -- And whether a ballot's poll is secret (0395): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
       'ballot_secret(uuid)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed twenty-three: %', fns;
+    raise exception 'the functions the digest role may execute are not the reviewed twenty-four: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 
@@ -146,7 +152,7 @@ begin
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
     'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)',
-    'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)']);
+    'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'pool_read(uuid,text,uuid[],integer)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';

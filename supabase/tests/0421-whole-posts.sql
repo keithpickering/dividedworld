@@ -1,0 +1,220 @@
+-- Whole posts (supabase/migrations/0421_whole_posts.sql; docs/plans/2026-11-23-whole-posts-plan.md, Task 2; design sections 2, 3 and 5).
+-- 1. The settings: the pool's `turns` has no perDay; the pool holds charsPerDay and readMost; the stored row's rewrite (perDay x 13,000) is a function the migration runs and this file re-runs on rows of its own.
+-- 2. The spends: pool_spends, pool_turns and pool_attempts hold `chars`; the three writers take it as their last parameter; pool_chars_today sums the day's three tables and leaves an unpaid attempt out.
+-- 3. pool_read: the persona's read of a thread, whole bodies: the opener, the newest `window` posts, the posts named, the persona's own newest posts and the replies to them, and the posts of the thread those quote (one hop); never a hidden post.
+
+create function pg_temp.refused(stmt text) returns text language plpgsql as $$
+begin execute stmt; return null; exception when others then return sqlstate || ' ' || sqlerrm; end $$;
+create function pg_temp.today() returns date language sql as $$ select (now() at time zone 'UTC')::date $$;
+
+-- ---- 1. The settings ----
+do $$
+declare
+  good jsonb := '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8,
+    "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2},
+    "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}},
+    "turns": {"waitHours": 48, "perThread": 2, "perSession": 4}, "charsPerDay": 780000, "readMost": 40000, "chatterCron": "37 17 * * *"}';
+  old jsonb;
+  said text;
+  rewritten jsonb;
+begin
+  if setting_pool(good) is not null then raise exception 'the whole-posts pool settings are refused: %', setting_pool(good); end if;
+  if setting_pool(good || '{"charsPerDay": 0}') is not null or setting_pool(good || '{"charsPerDay": 20000000}') is not null
+     or setting_pool(good || '{"readMost": 1000}') is not null or setting_pool(good || '{"readMost": 200000}') is not null then
+    raise exception 'a charsPerDay or readMost at its edge is refused';
+  end if;
+  -- the old turns.perDay is refused, and a missing charsPerDay or readMost
+  old := jsonb_set(good, '{turns,perDay}', '60');
+  said := setting_pool(old);
+  if said is null then raise exception 'a pool with turns.perDay is accepted'; end if;
+  if setting_pool(good - 'charsPerDay') is null then raise exception 'a pool with no charsPerDay is accepted'; end if;
+  if setting_pool(good - 'readMost') is null then raise exception 'a pool with no readMost is accepted'; end if;
+  foreach said in array array['-1', '20000001', '1.5', '"5"', 'null', 'true'] loop
+    if setting_pool(good || jsonb_build_object('charsPerDay', said::jsonb)) is null then raise exception 'charsPerDay % is accepted', said; end if;
+  end loop;
+  foreach said in array array['0', '999', '200001', '1000.5', '"5"', 'null', 'true'] loop
+    if setting_pool(good || jsonb_build_object('readMost', said::jsonb)) is null then raise exception 'readMost % is accepted', said; end if;
+  end loop;
+  if setting_pool(good) is not null or setting_pool(good || '{"extra": 1}') is null then raise exception 'the pool''s fields are not held'; end if;
+  -- the shape sentence says so
+  said := setting_pool(good - 'charsPerDay');
+  if said !~ 'charsPerDay' or said !~ 'readMost' or said ~ 'perDay, from 0 to 500' then raise exception 'the shape sentence does not describe the new pool: %', said; end if;
+  -- seed_setting cannot put turns.perDay back: its write is the settings trigger's, which holds setting_pool
+  said := pg_temp.refused(format('select seed_setting(%L, %L::jsonb)', 'pool', old::text));
+  if said is null or said !~ '^23514' then raise exception 'seed_setting wrote a pool with turns.perDay: %', said; end if;
+
+  -- the stored row's rewrite: perDay 60 is charsPerDay 780,000; readMost 40,000 where absent; perDay gone from turns
+  old := good - 'charsPerDay' - 'readMost';
+  old := jsonb_set(old, '{turns,perDay}', '60');
+  rewritten := pool_rewrite_whole_posts(old);
+  if rewritten -> 'charsPerDay' is distinct from '780000'::jsonb then raise exception 'perDay 60 became charsPerDay %', rewritten -> 'charsPerDay'; end if;
+  if rewritten -> 'readMost' is distinct from '40000'::jsonb then raise exception 'readMost was set to %', rewritten -> 'readMost'; end if;
+  if rewritten -> 'turns' ? 'perDay' then raise exception 'perDay is still in turns'; end if;
+  if rewritten -> 'turns' is distinct from '{"waitHours": 48, "perThread": 2, "perSession": 4}'::jsonb then raise exception 'turns changed: %', rewritten -> 'turns'; end if;
+  if setting_pool(rewritten) is not null then raise exception 'the rewritten row is refused: %', setting_pool(rewritten); end if;
+  if (rewritten - 'turns' - 'charsPerDay' - 'readMost') is distinct from (good - 'turns' - 'charsPerDay' - 'readMost') then raise exception 'the rewrite touched other fields'; end if;
+  -- a tuned readMost and a row that is already rewritten stay as they are
+  if pool_rewrite_whole_posts(jsonb_set(old, '{readMost}', '1234')) -> 'readMost' is distinct from '1234'::jsonb then raise exception 'a stored readMost was overwritten'; end if;
+  if pool_rewrite_whole_posts(good) is distinct from good then raise exception 'a rewritten row was rewritten again'; end if;
+  -- no perDay: the draft's 800,000; perDay 500 is 6,500,000
+  if pool_rewrite_whole_posts(old #- '{turns,perDay}') -> 'charsPerDay' is distinct from '800000'::jsonb then raise exception 'a row with no perDay did not get 800000'; end if;
+  if pool_rewrite_whole_posts(jsonb_set(old, '{turns,perDay}', '500')) -> 'charsPerDay' is distinct from '6500000'::jsonb then raise exception 'perDay 500 did not become 6500000'; end if;
+  if pool_rewrite_whole_posts(jsonb_set(old, '{turns,perDay}', '0')) -> 'charsPerDay' is distinct from '0'::jsonb then raise exception 'perDay 0 did not become 0'; end if;
+end $$;
+
+-- ---- 2. The spends ----
+insert into characters (name, staff, staff_kind, debuted_at) values ('Wp Boss', 'wp-boss', 'persona', now());
+
+do $$
+declare
+  t uuid := tests.thread('Wp Spends');
+  ann uuid := tests.account('wp-ann'); a uuid := tests.character(ann, 'Wp Ann');
+  p uuid := (write_staff_act('wp-boss', 'post', t, null, jsonb_build_object('body', 'A boss post.')) ->> 'id')::uuid;
+  r1 uuid := tests.act(a, 'post', t, '{"body": "One."}', p);
+  r2 uuid := tests.act(a, 'post', t, '{"body": "Two."}', p);
+  r3 uuid := tests.act(a, 'post', t, '{"body": "Three."}', p);
+  spent uuid := (write_staff_act('wp-boss', 'post', t, null, jsonb_build_object('body', 'The spend''s post.')) ->> 'id')::uuid;
+  sid bigint; said text; n integer; d date := pg_temp.today();
+  f text;
+begin
+  -- the old signatures are gone, the new ones are the service role's
+  foreach f in array array['record_pool_spend(date,text,text,uuid,uuid,boolean,jsonb)', 'write_staff_turn(text,bigint,uuid,uuid,uuid[],text)', 'record_turn_attempt(text,bigint,uuid,uuid[],text,boolean)'] loop
+    if to_regprocedure(f) is not null then raise exception 'the old signature % is still there', f; end if;
+  end loop;
+  foreach f in array array['record_pool_spend(date,text,text,uuid,uuid,boolean,jsonb,integer)', 'write_staff_turn(text,bigint,uuid,uuid,uuid[],text,integer)',
+                           'record_turn_attempt(text,bigint,uuid,uuid[],text,boolean,integer)', 'pool_chars_today(date)', 'pool_turns_today(date)'] loop
+    if to_regprocedure(f) is null then raise exception '% is missing', f; end if;
+    if has_function_privilege('anon', to_regprocedure(f), 'execute') or has_function_privilege('authenticated', to_regprocedure(f), 'execute')
+       or not has_function_privilege('service_role', to_regprocedure(f), 'execute') then
+      raise exception '% is not the service role''s alone', f;
+    end if;
+  end loop;
+  -- the columns
+  if (select count(*) from information_schema.columns where table_name in ('pool_spends', 'pool_turns', 'pool_attempts') and column_name = 'chars'
+        and data_type = 'integer' and is_nullable = 'NO' and column_default = '0') is distinct from 3 then
+    raise exception 'chars is not an integer not null default 0 on the three tables';
+  end if;
+
+  perform tests.become_service();
+  perform write_sessions(d, '[{"staff": "wp-boss", "start": 0, "end": 1440}]');
+  sid := (select id from staff_sessions where staff = 'wp-boss' and day = d);
+  if pool_chars_today(d) is distinct from 0 then raise exception 'a day with nothing spent counts %', pool_chars_today(d); end if;
+  perform record_pool_spend(d, 'wp-boss', 'named', spent, null, false, '{}', 1200);
+  perform write_staff_turn('wp-boss', sid, t, r1, array[r1], 'A turn.', 4000);
+  perform record_turn_attempt('wp-boss', sid, t, array[r2], 'rejected', true, 300);
+  perform record_turn_attempt('wp-boss', sid, t, array[r3], 'failed', false, 999999);
+  if (select chars from pool_spends where post_act = spent) is distinct from 1200 then raise exception 'the spend did not keep its chars'; end if;
+  if (select chars from pool_turns where thread = t) is distinct from 4000 then raise exception 'the turn did not keep its chars'; end if;
+  if (select array_agg(chars order by id) from pool_attempts where thread = t) is distinct from array[300, 999999] then raise exception 'the attempts did not keep their chars'; end if;
+  if pool_chars_today(d) is distinct from 1200 + 4000 + 300 then raise exception 'the day counts % characters, not 5500 (an unpaid attempt is left out)', pool_chars_today(d); end if;
+  if pool_chars_today(d + 1) is distinct from 0 or pool_chars_today(d - 1) is distinct from 0 then raise exception 'another day counts characters'; end if;
+  if pool_turns_today(d) is distinct from 2 then raise exception 'pool_turns_today changed: %', pool_turns_today(d); end if;
+  -- chars are never negative
+  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false, %L, -1)', d + 1, 'wp-boss', 'named', spent, '{}'));
+  if said is null or said !~ '^23514' then raise exception 'a negative chars was written: %', said; end if;
+  said := pg_temp.refused(format('select record_turn_attempt(%L, %s, %L, array[%L::uuid], %L, true, -5)', 'wp-boss', sid, t, r3, 'failed'));
+  if said is null or said !~ '^23514' then raise exception 'a negative attempt chars was written: %', said; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- 3. pool_read ----
+do $$
+declare
+  t uuid := tests.thread('Wp Read');
+  ann uuid := tests.account('wp-r-ann'); a uuid := tests.character(ann, 'Wp R Ann');
+  bea uuid := tests.account('wp-r-bea'); b uuid := tests.character(bea, 'Wp R Bea');
+  boss uuid := (select id from characters where staff = 'wp-boss');
+  adm uuid := tests.account('wp-r-admin');
+  base timestamptz := now() - interval '1 day';
+  ids uuid[] := '{}';
+  big text := repeat('x', 19995) || ' END.';
+  r jsonb; posts jsonb; seqs integer[]; want integer[]; got integer[]; e jsonb; hidden uuid; named uuid[]; said text; i integer; who uuid; body text;
+begin
+  insert into admins (account) values (adm);
+  -- the persona's posts are written at the times the fixture gives them, as the game's own writer would (staff_writer lets a staff character's Act through)
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  for i in 1..100 loop
+    who := case when i = 5 or i = 95 then boss when i % 2 = 0 then a else b end;
+    body := case when i = 20 then format('Twenty, after [quote="%s" user=%s]Post 3.[/quote] done.', ids[3], b)
+                 when i = 90 then format('Ninety [quote="%s" user=%s]Twenty, after[/quote] ok', ids[20], a)
+                 when i = 100 then big
+                 else format('Post %s.', i) end;
+    ids := ids || tests.act(who, 'post', t, jsonb_build_object('body', body),
+      case when i between 6 and 17 then ids[5] end, base + i * interval '1 minute');
+  end loop;
+  -- post 70 is hidden by an admin (acts_public still lists it, with `hidden` set and no words)
+  hidden := ids[70];
+  insert into conduct_decisions (version_act, post, admin, outcome) values (hidden, hidden, adm, 'hide');
+  named := array[ids[30], hidden];
+
+  perform tests.become_service();
+  r := pool_read(t, 'wp-boss', named, 60);
+  perform tests.unbecome();
+  if r ->> 'title' is distinct from 'Wp Read' then raise exception 'the title is %', r ->> 'title'; end if;
+  if (r ->> 'self')::uuid is distinct from boss then raise exception 'self is %, not the persona', r ->> 'self'; end if;
+  posts := r -> 'posts';
+  select array_agg((p ->> 'seq')::integer order by (p ->> 'seq')::integer) into got from jsonb_array_elements(posts) p;
+  -- the opener; the newest 60 (visible: 100 down to 40, without the hidden 70); the named 30; the persona's 5 and 95; the newest 10 replies to 5 (8 to 17); the one post quoted by 90 (20), and not what 20 quotes (3)
+  select array_agg(x order by x) into want from (select 1 x union select generate_series(40, 100) except select 70
+    union select 30 union select 5 union select generate_series(8, 17) union select 20) w;
+  if got is distinct from want then raise exception 'pool_read returned seqs %, not %', got, want; end if;
+  if got @> array[3] or got @> array[6] or got @> array[7] or got @> array[39] or got @> array[70] then raise exception 'pool_read returned a post it should not: %', got; end if;
+  -- each once, in thread order
+  if (select count(distinct p ->> 'act') from jsonb_array_elements(posts) p) is distinct from jsonb_array_length(posts) then raise exception 'a post is returned twice'; end if;
+  if (select array_agg(p ->> 'seq' order by ord) from jsonb_array_elements(posts) with ordinality as e(p, ord)) is distinct from (select array_agg(x::text order by x) from unnest(want) x) then
+    raise exception 'posts are not in thread order';
+  end if;
+  -- never the hidden post, by id or by words
+  if posts::text ~ hidden::text then raise exception 'the hidden post is named'; end if;
+  if posts::text ~ 'Post 70[.]' then raise exception 'the hidden post''s words are returned'; end if;
+  -- the fields
+  select p into e from jsonb_array_elements(posts) p where (p ->> 'seq')::integer = 100;
+  if e ->> 'body' is distinct from big or length(e ->> 'body') <> 20000 then raise exception 'a 20,000 character body was cut to %', length(e ->> 'body'); end if;
+  if (e ->> 'act')::uuid is distinct from ids[100] or (e ->> 'author')::uuid is distinct from a or e ->> 'name' <> 'Wp R Ann' or not e ? 'pronouns' or not e ? 'at' or not e ? 'replyTo' or not e ? 'quotes' then
+    raise exception 'a post''s fields are wrong: %', e - 'body';
+  end if;
+  select p into e from jsonb_array_elements(posts) p where (p ->> 'seq')::integer = 90;
+  if e -> 'quotes' is distinct from jsonb_build_array(ids[20]) then raise exception 'post 90 quotes %', e -> 'quotes'; end if;
+  select p into e from jsonb_array_elements(posts) p where (p ->> 'seq')::integer = 20;
+  -- quotes lists the posts of the thread a post quotes, in the read or not (post 3 is not: one hop only)
+  if e -> 'quotes' is distinct from jsonb_build_array(ids[3]) then raise exception 'post 20 quotes %', e -> 'quotes'; end if;
+  select p into e from jsonb_array_elements(posts) p where (p ->> 'seq')::integer = 12;
+  if (e ->> 'replyTo')::uuid is distinct from ids[5] then raise exception 'a reply does not name its target: %', e; end if;
+  select p into e from jsonb_array_elements(posts) p where (p ->> 'seq')::integer = 5;
+  if e ->> 'replyTo' is not null or (e ->> 'author')::uuid is distinct from boss or e ->> 'body' <> 'Post 5.' then raise exception 'the persona''s post is wrong: %', e; end if;
+
+  -- an unknown persona: self is null, the rest is the window and the named post; a window of 0 is the opener and what is named
+  r := pool_read(t, 'nobody', named, 3);
+  if r -> 'self' <> 'null'::jsonb then raise exception 'an unknown key has a self: %', r -> 'self'; end if;
+  select array_agg((p ->> 'seq')::integer order by (p ->> 'seq')::integer) into got from jsonb_array_elements(r -> 'posts') p;
+  if got is distinct from array[1, 30, 98, 99, 100] then raise exception 'an unknown persona, window 3: %', got; end if;
+  r := pool_read(t, 'nobody', null, 0);
+  select array_agg((p ->> 'seq')::integer order by (p ->> 'seq')::integer) into got from jsonb_array_elements(r -> 'posts') p;
+  if got is distinct from array[1] then raise exception 'window 0 and nothing named: %', got; end if;
+  -- named is capped at 50
+  select array_agg(x) into named from unnest(ids[2:61]) x;
+  r := pool_read(t, 'nobody', named, 0);
+  if jsonb_array_length(r -> 'posts') <> 51 then raise exception 'named is capped at 50, plus the opener: % posts', jsonb_array_length(r -> 'posts'); end if;
+  -- a thread with no posts, and one that is not there
+  r := pool_read(tests.thread('Wp Empty'), 'wp-boss', null, 60);
+  if r -> 'posts' <> '[]'::jsonb then raise exception 'an empty thread has posts: %', r -> 'posts'; end if;
+  r := pool_read(gen_random_uuid(), 'wp-boss', null, 60);
+  if r -> 'posts' <> '[]'::jsonb or r ->> 'title' <> '' then raise exception 'a missing thread reads as %', r; end if;
+
+  -- the owner and the grants are pool_thread's
+  if (select pg_get_userbyid(p.proowner) from pg_proc p where p.oid = to_regprocedure('pool_read(uuid,text,uuid[],integer)')) is distinct from 'kayfabb_digest'
+     or (select pg_get_userbyid(p.proowner) from pg_proc p where p.oid = to_regprocedure('pool_thread(uuid,integer,integer,uuid,uuid[])')) is distinct from 'kayfabb_digest' then
+    raise exception 'pool_read is not owned by kayfabb_digest';
+  end if;
+  if not (select p.prosecdef and p.provolatile = 's' and 'search_path=public, pg_temp' = any (p.proconfig) from pg_proc p where p.oid = to_regprocedure('pool_read(uuid,text,uuid[],integer)')) then
+    raise exception 'pool_read is not stable security definer with a pinned search_path';
+  end if;
+  if has_function_privilege('anon', to_regprocedure('pool_read(uuid,text,uuid[],integer)'), 'execute') or has_function_privilege('authenticated', to_regprocedure('pool_read(uuid,text,uuid[],integer)'), 'execute')
+     or not has_function_privilege('service_role', to_regprocedure('pool_read(uuid,text,uuid[],integer)'), 'execute') then
+    raise exception 'pool_read is not the service role''s alone';
+  end if;
+  perform tests.become(ann);
+  said := pg_temp.refused(format('select pool_read(%L, %L, null, 60)', t, 'wp-boss'));
+  perform tests.unbecome();
+  if said is null or said !~ '^42501' then raise exception 'a player called pool_read: %', said; end if;
+end $$;
