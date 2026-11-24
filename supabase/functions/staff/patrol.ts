@@ -167,7 +167,7 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
       ...(groups ? { conferred: groups.conferred } : {}),
       persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
       ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-      boards, sample, limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+      boards, sample, limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
     });
     const context = {
       allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,

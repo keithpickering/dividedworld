@@ -11,7 +11,7 @@ import { DEFAULT_STRENGTHS } from '../system/pool.ts';
 
 /** The pool's settings as a test world holds them. */
 export const testPool: Settings['pool'] = {
-  weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { ...DEFAULT_STRENGTHS }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4, perDay: 60 }, chatterCron: '37 17 * * *',
+  weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { ...DEFAULT_STRENGTHS }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4 }, charsPerDay: 800_000, readMost: 40_000, chatterCron: '37 17 * * *',
 };
 
 /** The Mod Bots' numbers as a test world holds them. */

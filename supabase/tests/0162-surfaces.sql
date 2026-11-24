@@ -798,7 +798,7 @@ begin
   if el ->> 'card' is distinct from d1::text then raise exception 'the persona''s wall draw of the day is adopted as its card: %', el; end if;
   el := (select e from jsonb_array_elements(pool_orphans('2030-01-13')) e where e ->> 'staff' = 'sf-persona2' and e ->> 'day' = '2030-01-08');
   if el ->> 'card' is not null then raise exception 'a draw with no pool day is not adopted: %', el; end if;
-  r := record_pool_spend('2030-01-08', 'sf-persona', 'named', pp, d1, false);
+  r := record_pool_spend('2030-01-08', 'sf-persona', 'named', pp, d1, false, '{}', 0);
   perform tests.unbecome();
   if r ->> 'status' is distinct from 'spent' then raise exception 'a spend names a wall draw as its card: %', r; end if;
   if (select card_act from pool_spends where staff = 'sf-persona' and day = '2030-01-08') is distinct from d1 then raise exception 'the draw is the spend''s card'; end if;

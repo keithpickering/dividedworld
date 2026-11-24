@@ -60,8 +60,10 @@ import {
 import type { ConferredGroup } from '../../../engine/system/meeting.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
 import type { Models } from '../../../engine/system/model.ts';
+import { READ_WINDOW, type ThreadReadResult } from '../../../engine/system/read.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
+import { readOf, type PoolRead } from '../_shared/pool-read.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 
@@ -129,23 +131,18 @@ export interface Standing {
   readonly beat: readonly { readonly id: string; readonly name: string }[];
 }
 
-/** `pool_thread`'s answer: each post's author carries `pronouns`, null for a character with no profile row. */
-export interface ThreadRead {
-  readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string; readonly cut?: boolean }[];
-}
-
 /** The instance's default set (`Settings.pronouns`), else the engine's it-set: what a character with no profile row is written with. */
 export const instanceSet = (settings: { readonly pronouns?: PronounSet }): PronounSet => pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
 
-/** The thread as a prompt is given it, each author's set settled. */
-export const threadFor = (read: ThreadRead, fallback: PronounSet) => ({ title: read.title, posts: read.posts.map((p) => ({ name: p.name, pronouns: pronounsOr(p.pronouns, fallback), body: p.body, cut: p.cut === true })) });
-
-/** The post named by `act` in the read, its author's set settled; `absent` where the read does not hold it, or where there is none (a group move's appeal is about no post). */
-export const postFor = (read: ThreadRead, act: string | null, fallback: PronounSet, absent: { readonly name: string }) => {
-  const found = read.posts.find((p) => p.act === act);
-  return found ? { name: found.name, pronouns: pronounsOr(found.pronouns, fallback), body: found.body, cut: found.cut === true } : { name: absent.name, pronouns: fallback, body: '' };
-};
+/**
+ * What a judge reads of a thread: one `pool_read` for the Mod (`staff`) with the judged post named, then the reader with the judged post as its must tier. `judged` says whether the judged post was
+ * read: a ruling is never made on a post the model did not see, so a caller that needs it (every filing, report and appeal of a post) stops when it is false. `title` is the thread's.
+ */
+export async function judgedRead(db: Db, settings: Instance['settings'], thread: string, staff: string, judged: string): Promise<{ readonly title: string; readonly read: ThreadReadResult; readonly judged: boolean }> {
+  const pooled = await db.rpc<PoolRead>('pool_read', { in_thread: thread, staff_key: staff, named: [judged], window: READ_WINDOW });
+  const read = readOf(pooled, instanceSet(settings), [judged], settings.pool.readMost);
+  return { title: pooled.title, read, judged: read.answered.length > 0 };
+}
 
 /** One character's pronouns, from `character_faces` (a report's reporter, an appeal's appellant), else the fallback. */
 export async function pronounsOfCharacter(db: Db, id: string, fallback: PronounSet): Promise<PronounSet> {
@@ -297,9 +294,9 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       const standing = mod.standing;
       const rules = rulesOf.get(v.board.id) ?? await db.rpc<RuleLine[]>('rules_in_force', { board: v.board.id });
       rulesOf.set(v.board.id, rules);
-      const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: v.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: v.post });
-      const fallback = instanceSet(settings);
-      const post = postFor(read, v.post, fallback, { name: 'a character' });
+      const heard = await judgedRead(db, settings, v.thread, v.staff, v.post);
+      // A post the read does not hold (hidden since the visit, or gone) is not ruled on: the visit is filed with its stock line, as a failed call is.
+      if (!heard.judged) why = 'the post inspected cannot be read';
       const charges = v.charges.map((c) => ({ rule: c.rule ?? 'a breach of the rules', band: c.band, cause: c.cause }));
       let groups = groupsOf.get(v.staff);
       if (groups === undefined) {
@@ -314,16 +311,16 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
         persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career!, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
         ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
         ...(groups ? { conferred: groups.conferred } : {}),
-        board: v.board, thread: threadFor(read, fallback), post, charges,
-        limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+        board: v.board, title: heard.title, read: heard.read, charges,
+        limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
       });
 
-      // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
-      try {
+      // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure. None is made for a post that was not read.
+      if (!why) try {
         if (persona.voice === 'oldVoice') {
           // The window's room for the line, then the prompt fitted to what is left (design section 3); a prompt that still does not fit is refused by `models.complete` as a rejection, and the filing takes its stock line.
           const maxTokens = Math.min(OLD_VOICE_LINE_TOKENS, writeTokensMost(settings));
-          const frame = filingCompletion({ name: persona.name, board: v.board.name, thread: input().thread, post: input().post, charges, limits: input().limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
+          const frame = filingCompletion({ name: persona.name, board: v.board.name, title: heard.title, read: heard.read, charges, limits: input().limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
           used++; calls++;
           const out = await models.complete({ duty: 'filing', staff: v.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: FILING_LINE_MOST });
           const repaired = repairFiling({ words: out.value }, moveContext());

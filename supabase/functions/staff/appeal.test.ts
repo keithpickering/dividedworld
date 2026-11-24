@@ -33,6 +33,10 @@ interface World {
   endless?: boolean;
   /** The Boss's meeting context: absent (no season) or failing. */
   context?: 'none' | 'fails';
+  /** The whole body `pool_read` gives the punished post. */
+  postBody?: string;
+  /** `pool_read` does not hold the punished post. */
+  unreadable?: boolean;
 }
 
 function fakeDbs(w: World = {}) {
@@ -77,7 +81,7 @@ function fakeDbs(w: World = {}) {
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return [] as T;
         case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true } }])) as T;
-        case 'pool_thread': return { title: 'Best Mario game?', posts: [{ act: POST, name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: 'Odyssey. Odyssey.' }] } as T;
+        case 'pool_read': return { title: 'Best Mario game?', self: null, posts: w.unreadable ? [] : [{ act: POST, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'bob', name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
         case 'record_staff_call': { state.records.push(args); return { recorded: true } as T; }
         case 'close_appeal': {
           state.closed.push(args);
@@ -166,7 +170,7 @@ test('a group punishment\'s appeal: the prompt says what the move did by the gro
   assert.match(text, /ends early if they apologize/);
   assert.match(text, /appeal a punishment you made/);
   assert.ok(!/The post it is about/.test(text), 'a move is about no post');
-  assert.equal(d.count('pool_thread'), 0, 'the Announcements thread is not read for a move');
+  assert.equal(d.count('pool_read'), 0, 'the Announcements thread is not read for a move');
   assert.deepEqual(d.state.closed.map((c) => [c.verdict, c.line, c.staff]), [['increased', 'Longer.', BOSS]]);
   const most = dividedWorld.settings.phases.honeymoon.moveExpiryMostDays;
   assert.equal(d.state.closed[0].most_days, most, 'the season is three days old: the honeymoon\'s most days, passed to the database');
@@ -395,4 +399,23 @@ test('a barred account is answered 403 with the hint, and nothing is judged', as
   assert.deepEqual({ status: out.status, body: out.body }, { status: 403, body: { error: 'this account is banned', hint: 'kayfabb.barred' } });
   assert.equal(m.chats.length, 0);
   assert.deepEqual(d.calls.map((c) => c.fn), ['open_appeal']);
+});
+
+test('an appeal on a 5,000-character post passes it to the hearer whole; one whose post cannot be read is judged by no one and refunded', async () => {
+  const long = `${'A very long case for the defense of the pineapple. '.repeat(100)}`.slice(0, 5_000);
+  const d = fakeDbs({ postBody: long });
+  const m = fakeModels(() => ({ verdict: 'upheld', line: 'No.' }));
+  const out = await go(d, m);
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.equal(message.split(long).length - 1, 1, 'the whole post, once');
+  assert.ok(!message.includes('…'));
+  assert.deepEqual(d.calls.filter((c) => c.fn === 'pool_read').map((c) => c.args.named), [[POST]]);
+  const gone = fakeDbs({ unreadable: true });
+  const none = fakeModels(() => ({ verdict: 'upheld', line: 'No.' }));
+  const refused = await go(gone, none);
+  assert.equal(refused.status, 502);
+  assert.equal(none.chats.length, 0, 'no ruling on a post the hearer did not see');
+  assert.equal(gone.state.closed.length, 0);
+  assert.equal(gone.state.refunds, 1);
 });
