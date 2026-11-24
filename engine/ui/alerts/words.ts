@@ -11,7 +11,7 @@ import { FOLLOWED_COUNT_CAP } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 import { shortQuote, springConditions } from '../cards/lens-words.ts';
 import { upperFirst } from '../copy-words.ts';
-import { inSentence, lockoutEnd, utcDay } from '../log/lines.ts';
+import { inSentence, lockoutEnd, plain, utcDay } from '../log/lines.ts';
 
 /** A run of words: plain, or a title set in italics, as the board draws it. */
 export type Part = string | { readonly em: string };
@@ -40,6 +40,12 @@ export interface WordsContext {
   readonly newestSettlement: string | null;
   /** The staff characters among `names` (a public fact of a character): a staff setter's catching set card takes nothing. Absent, none is known to be staff. */
   readonly staff?: ReadonlySet<Id>;
+  /** The names of the Mods by staff key (public, a staff character's): the infraction of a warning names its Mod by key, not by character. */
+  readonly staffNames?: ReadonlyMap<string, string>;
+  /** Public names of the boards a moved thread's move names, by id. */
+  readonly boards?: ReadonlyMap<Id, string>;
+  /** Public titles of the threads a move names (a thread moved): the row's own thread is the move's, in Announcements, so the thread that moved is named by the page. */
+  readonly threadTitles?: ReadonlyMap<Id, string>;
 }
 
 export const plainText = (parts: readonly Part[]): string => parts.map((p) => (typeof p === 'string' ? p : p.em)).join('');
@@ -142,7 +148,7 @@ export function targetKey(row: Alert, ctx: WordsContext): string | null {
 /** Cards played on one target, as one row ("Glitter Bomb and 2 more were played on your post"); `rows` are newest first. */
 export function batchWords(rows: readonly Alert[], ctx: WordsContext): Said {
   const newest = rows[0]!;
-  if (rows.length > 1 && newest.kind === 'gift') return { line: [`${rows.length} gifts reached ${possessive(newest.name, 'your character')} drive`], detail: sentences(inTitle(newest)), ways: giftWay(newest, ctx), who: newest.name ?? 'Yours' };
+  if (rows.length > 1 && newest.kind === 'gift') return { line: [`${rows.length} gifts were given to the drive on ${postWords(newest.name, giftPost(newest, ctx))}`], detail: sentences(inTitle(newest)), ways: giftWay(newest, ctx), who: newest.name ?? 'Yours' };
   if (rows.length > 1 && newest.sub === 'drew') {
     const wall = drewOn(newest, ctx);
     return { line: [`${rows.length} drawings on the wall on ${wall.place}`], detail: sentences(inTitle(newest)), ways: wall.ways, who: newest.name ?? 'Yours' };
@@ -285,12 +291,14 @@ function drewOn(row: Alert, ctx: WordsContext): { place: string; ways: Way[] } {
   const post = wall?.targetActId ? ctx.acts.get(wall.targetActId) : undefined;
   return { place: post && post.seq !== null ? `${ownPost(row.name)} #${post.seq}` : ownPost(row.name), ways: postWay(post, row, ctx) };
 }
-/** A gift's way: the drive's post, where it could be read. */
-function giftWay(row: Alert, ctx: WordsContext): Way[] {
+/** A gift's post: the drive's, three links from the donation (donation, drive play, post), where it could be read. */
+function giftPost(row: Alert, ctx: WordsContext): Act | undefined {
   const gift = row.act === null ? undefined : ctx.acts.get(row.act);
   const drive = gift?.targetActId ? ctx.acts.get(gift.targetActId) : undefined;
-  return postWay(drive?.targetActId ? ctx.acts.get(drive.targetActId) : undefined, row, ctx);
+  return drive?.targetActId ? ctx.acts.get(drive.targetActId) : undefined;
 }
+/** A gift's way: the drive's post, where it could be read. */
+const giftWay = (row: Alert, ctx: WordsContext): Way[] => postWay(giftPost(row, ctx), row, ctx);
 
 const LOG: Way[] = [{ text: 'Open My log', to: '/log' }];
 
@@ -305,7 +313,8 @@ function rulingWords(row: Alert, act: Act | undefined, ctx: WordsContext): Said 
   const p = act?.payload ?? {};
   switch (row.sub) {
     case 'warning': {
-      const staff = typeof p.staff === 'string' ? ctx.names?.get(p.staff) : undefined;
+      /* The Mod is named by its staff key (a Mod's, not a character's id), resolved from the page's staff names. */
+      const staff = typeof p.staff === 'string' ? ctx.staffNames?.get(p.staff) : undefined;
       const drops = isoDay(p.expires_at);
       return mine(`${name} got ${points(p.points)}`, sentences(act ? [`${staff ? `${staff} filed` : 'A Mod filed'} ${rulesOf(p.rule_number)}.`] : [], drops ? [`They drop off ${drops}.`] : [], ['You can appeal from the post.']), post);
     }
@@ -317,7 +326,12 @@ function rulingWords(row: Alert, act: Act | undefined, ctx: WordsContext): Said 
       const taker = typeof p.character === 'string' ? ctx.names?.get(p.character) : undefined;
       return mine(`${taker ?? 'Another character'} took the fall for ${ownPost(row.name)}`, [`The ${points(p.points)} landed on ${taker ?? 'them'}, not on ${name}.`], post);
     }
-    case 'reportJudged': return mine(`${possessive(row.name, 'Your')} report was judged${typeof p.verdict === 'string' ? `: ${p.verdict}` : ''}`, [], post);
+    case 'reportJudged': {
+      /* The verdict is one of three (`visit`, `dismissed`, `backfire`); a visit is said only where the verdict names the one it opened (a report with no Mod to send, or whose post could not be visited, keeps `visit` and opens none). */
+      const opened = typeof p.visit_act === 'string' && p.visit_act !== '';
+      const result = p.verdict === 'dismissed' ? ': dismissed' : p.verdict === 'backfire' ? ': it backfired' : p.verdict === 'visit' ? (opened ? ': a Mod opened a visit to the post' : ', but no visit was opened') : '';
+      return mine(`${possessive(row.name, 'Your')} report was judged${result}`, p.verdict === 'backfire' && opened ? ['A Mod opened a visit to your own latest post.'] : [], post);
+    }
     case 'reportRefunded': return mine(`${possessive(row.name, 'Your')} report could not be heard`, ['Its cost was refunded.'], post);
     case 'appealAnswered': return mine(`${possessive(row.name, 'Your')} appeal was ${typeof p.verdict === 'string' ? p.verdict : 'answered'}`, [], LOG);
     case 'appealRefunded': return mine(`${possessive(row.name, 'Your')} appeal was not heard`, ['Its cost was refunded. You can appeal again.'], LOG);
@@ -325,12 +339,20 @@ function rulingWords(row: Alert, act: Act | undefined, ctx: WordsContext): Said 
       const params = (typeof p.params === 'object' && p.params !== null ? p.params : {}) as { group?: unknown };
       const groups = [...(ctx.instance.groups?.ladder ?? []), ...(ctx.instance.groups?.conferred ?? [])];
       const group = groups.find((g) => g.key === params.group)?.name;
-      const ends = isoDay(p.until);
-      return mine(`${name} was put in ${group ?? 'a group'}`, [ends ? `It ends ${ends} by itself. You can also appeal it, or apologize.` : 'You can appeal it, or apologize.'], LOG);
+      /* How it ends is said from what the move holds: its own end (`expires_at`, where it has one) and its demand (an accepted apology ends it); with neither, the log. An appeal or an apology is a punishment's way out, so a favor never offers one. */
+      const tone = (ctx.instance.groups?.conferred ?? []).find((g) => g.key === params.group)?.tone;
+      const ends = isoDay(p.expires_at);
+      const demand = (typeof p.demand === 'object' && p.demand !== null ? (p.demand as { kind?: unknown }).kind : undefined) === 'apologyAccepted';
+      const how = [...(ends ? [`It ends ${ends} by itself.`] : []), ...(demand ? ['It ends when an apology is accepted.'] : [])];
+      return mine(`${name} was put in ${group ?? 'a group'}`, sentences(how.length > 0 ? [how.join(' ')] : ['The log says how it ends.'], tone === 'punishment' ? ['You can appeal it, or apologize.'] : []), LOG);
     }
     case 'threadMoved': {
-      const board = typeof p.boardName === 'string' && p.boardName !== '' ? p.boardName : null;
-      return { line: [{ em: row.title ?? 'Your thread' }, board ? ` was moved to the ${board} board` : ' was moved to another board'], detail: [], ways: threadWay(row), who };
+      /* The alert's own thread is the move's (Announcements); the thread that moved, and the board it went to, are the move's params. */
+      const params = (typeof p.params === 'object' && p.params !== null ? p.params : {}) as { board?: unknown; thread?: unknown };
+      const board = typeof params.board === 'string' ? ctx.boards?.get(params.board) ?? null : null;
+      const moved = typeof params.thread === 'string' && params.thread !== '' ? params.thread : null;
+      const title = moved === null ? undefined : ctx.threadTitles?.get(moved);
+      return { line: [title ? { em: title } : 'Your thread', board ? ` was moved to the ${board} board` : ' was moved to another board'], detail: [], ways: moved === null ? [] : [{ text: 'Go to the thread', to: `/t/${moved}` }], who };
     }
     case 'trophyReversed': return mine(`An admin took back a trophy from ${name}`, ['The log says which.'], LOG);
     case 'pollClosed': return mine(`An admin closed ${possessive(row.name, 'your')} poll`, [], post);
@@ -342,7 +364,8 @@ function rulingWords(row: Alert, act: Act | undefined, ctx: WordsContext): Said 
 /** Real moderation of a post, in the glass's own plain voice: never in character. */
 function conductWords(row: Alert, ctx: WordsContext, act: Act | undefined): Said {
   const own = ownPost(row.name);
-  const post = postWay(act, row, ctx);
+  /* The Act of an edit's decision is the version (seq null); the post it is of is the edit's target. */
+  const post = postWay(act?.kind === 'edit' && act.targetActId ? ctx.acts.get(act.targetActId) ?? act : act, row, ctx);
   const who = row.name ?? 'Yours';
   const said = (line: string, detail: readonly Part[] = []): Said => ({ line: [line], detail: sentences(detail, inTitle(row)), ways: post, who });
   switch (row.sub) {
@@ -453,8 +476,11 @@ export function wordsFor(row: Alert, ctx: WordsContext): Said {
       return { line: [row.name !== null && row.sub !== null ? `${row.name} lost ${inSentence(row.sub)}` : 'One of your characters lost a belt'], detail: ['The log says who took it.'], ways: [{ text: 'Open My log', to: '/log' }], who };
     case 'ruling': return rulingWords(row, act, ctx);
     case 'gift': {
-      const amount = typeof act?.payload.amount === 'number' ? ` of ${act.payload.amount}` : '';
-      return { line: [`A gift${amount} reached ${row.name ?? 'your character'}`], detail: inTitle(row), ways: giftWay(row, ctx), who };
+      /* `amount` and `arrives` are in hundredths; what arrives is nothing where the post's author is staff, so "reached" is said only for what did. */
+      const amount = typeof act?.payload.amount === 'number' ? ` of ${plain(act.payload.amount)}` : '';
+      const arrives = typeof act?.payload.arrives === 'number' ? act.payload.arrives : null;
+      const went = arrives === null ? [] : arrives === 0 ? ['It all went to the drive\'s overhead.'] : [`${plain(arrives)} of it was sent to ${row.name ?? 'your character'}, after the drive's overhead.`];
+      return { line: [`A gift${amount} was given to the drive on ${postWords(row.name, giftPost(row, ctx))}`], detail: sentences(went, inTitle(row)), ways: giftWay(row, ctx), who };
     }
     case 'conduct': return conductWords(row, ctx, act);
     case 'settlement': {

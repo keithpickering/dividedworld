@@ -2149,6 +2149,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       return {
         alerts: rowsOf(d['alerts']).flatMap(toAlert), seenAt: str(d['seenAt']), openedAt: str(d['openedAt']), acts: rowsOf(d['acts']).map(toAct),
         people: rowsOf(d['people']).map(faceOf), openings: rowsOf(d['openings']).map(toAct), reading,
+        boards: rowsOf(d['boards']).flatMap((b) => (typeof b['id'] === 'string' && typeof b['name'] === 'string' ? [{ id: b['id'], name: b['name'] }] : [])),
+        threads: rowsOf(d['threads']).flatMap((t) => (typeof t['id'] === 'string' && typeof t['title'] === 'string' ? [{ id: t['id'], title: t['title'] }] : [])),
       };
     },
     /* The RPC's `in_handover_season` only asks for the queue (any non-null); the id names which to-do the page then opens. */

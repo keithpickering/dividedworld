@@ -327,6 +327,14 @@ export interface Seed {
   lift(play: Id, ban: Id): void;
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
+  /** A gift on a drive (the donation `donate` writes): the character gave `amount` hundredths; `arrives` is what reached the post's author after overhead (default: all of it). Returns the donation's Act. */
+  donation(character: Id, drive: Id, amount: number, options?: { arrives?: number; at?: number }): Id;
+  /** A draw on a wall (a card play of a surface card): the Act a drawing alert is about. Held and paid for nowhere. */
+  draw(character: Id, wall: Id, options?: { at?: number }): Id;
+  /** An admin's end of a card play (the card_end `reverse_card` writes): the Act a card-ended alert is about. */
+  cardEnd(play: Id, options?: { at?: number }): Id;
+  /** An admin's close of a poll (the poll_close `close_poll_as_admin` writes): the Act a poll-closed alert is about. */
+  pollClose(poll: Id, options?: { at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
   judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict | 'failed'; /** Run once after the report's price is taken and before its verdict (the model call's window, in which a veil can land), then cleared. */ readonly meanwhile?: () => void }): void;
   /** A saved card effect on a thread's play, heard by its subscribers. */
@@ -4987,17 +4995,45 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     alertsPage(before): AlertsPage {
       const alerts = core.alerts(before);
       const acts = new Map<Id, Act>();
-      /* The rows' Acts, and the Acts those lead to, three links deep (alerts_page's chain). */
-      let next = alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
-      for (let depth = 0; depth < 3 && next.length; depth++) {
-        const read = core.actsById(next.filter((id) => !acts.has(id)));
-        for (const a of read) acts.set(a.id, a);
-        next = read.flatMap((a) => (a.targetActId === null ? [] : [a.targetActId]));
+      /*
+       * The rows' Acts, and the Acts those lead to. The kinds that came before the rulings keep the fake's wide reading (three links, every author named); the new lines are held to alerts_page's own
+       * rules (0423, section 9), so a gap in what the real page loads shows here as it would there: two links for a ruling and a conduct row, three for a gift and a drawing, the people only the ones named below.
+       */
+      const isNew = (a: Alert) => a.kind === 'ruling' || a.kind === 'gift' || a.kind === 'conduct' || (a.kind === 'cardOnYours' && a.sub === 'drew');
+      const most = (a: Alert) => (!isNew(a) || a.kind === 'gift' || a.kind === 'cardOnYours' ? 3 : 2);
+      const wide = new Set<Id>();
+      const third = new Set<Id>();
+      for (const row of alerts) {
+        let id: Id | null = row.act;
+        for (let depth = 1; id !== null && depth <= most(row); depth++) {
+          const a: Act | undefined = acts.get(id) ?? core.actsById([id])[0];
+          if (!a) break;
+          acts.set(a.id, a);
+          if (!isNew(row)) wide.add(a.id);
+          else if (depth === 3) third.add(a.id);
+          id = a.targetActId;
+        }
       }
+      /* The post a ruling's infraction was filed on (`about_act`), a payload id and no link; and what the new lines name, each a public Act's own: the drawer, the character a fall landed on, the Mod a warning names by staff key, the board a move names. */
+      const named = (r: Alert) => (r.act === null ? undefined : acts.get(r.act));
+      const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v : null);
+      const about = alerts.flatMap((r) => { const a = named(r); const id = r.kind === 'ruling' && a?.kind === 'infraction' ? text(a.payload['about_act']) : null; return id === null ? [] : [id]; });
+      for (const a of core.actsById(about.filter((id) => !acts.has(id)))) acts.set(a.id, a);
+      const authors = new Set([...acts.values()].filter((a) => wide.has(a.id) || third.has(a.id)).flatMap((a) => (a.character === null ? [] : [a.character])));
+      for (const r of alerts) {
+        const a = named(r);
+        if (r.kind === 'cardOnYours' && r.sub === 'drew' && a?.character) authors.add(a.character);
+        if (r.kind === 'ruling' && r.sub === 'fallTaken' && a?.kind === 'infraction') { const taker = text(a.payload['character']); if (taker !== null) authors.add(taker); }
+        if (r.kind === 'ruling' && r.sub === 'warning' && a?.kind === 'infraction') { const key = text(a.payload['staff']); for (const c of characters.values()) if (key !== null && c.staff?.key === key && c.debutedAt !== null) authors.add(c.id); }
+      }
+      const moved = alerts.flatMap((r) => { const a = named(r); const id = r.kind === 'ruling' && r.sub === 'threadMoved' && a?.kind === 'move' && typeof a.payload['params'] === 'object' && a.payload['params'] !== null ? text((a.payload['params'] as { board?: unknown }).board) : null; return id === null ? [] : [id]; });
+      const movedThreads = alerts.flatMap((r) => { const a = named(r); const id = r.kind === 'ruling' && r.sub === 'threadMoved' && a?.kind === 'move' && typeof a.payload['params'] === 'object' && a.payload['params'] !== null ? text((a.payload['params'] as { thread?: unknown }).thread) : null; return id === null ? [] : [id]; });
       const threads = [...new Set(alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
       return {
         alerts, seenAt: core.preferences().alertsSeenAt, openedAt: (() => { try { return core.accountOpenedAt(); } catch { return null; } })(), acts: [...acts.values()],
-        people: core.characters([...new Set([...acts.values()].flatMap((a) => (a.character === null ? [] : [a.character])))]), openings: core.openingActs(threads), reading: core.reading(threads),
+        people: core.characters([...authors]), openings: core.openingActs(threads), reading: core.reading(threads),
+        boards: core.boardNames().filter((b) => moved.includes(b.id)).map((b) => ({ id: b.id, name: b.name })),
+        threads: [...new Set(movedThreads)].flatMap((id) => { const t = core.thread(id); return t === null ? [] : [{ id, title: t.title }]; }),
       };
     },
     updatesPage(update, before, handover): UpdatesPage {
@@ -5716,7 +5752,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     alert(account, a) {
       seeded(account);
-      if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours' || a.kind === 'cardEnded') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
+      /* A card on yours and a card an admin ended are read from the Acts that make them, but for the subs no Act of the fake's derives: a drawing, an admin's end of a card on yours, a card refunded. */
+      const subOnly = a.kind === 'cardOnYours' ? a.sub === 'drew' : a.kind === 'cardEnded' ? a.sub === 'onYours' || a.sub === 'refunded' : false;
+      if (!isWritten(a.kind) || a.kind === 'quote' || ((a.kind === 'cardOnYours' || a.kind === 'cardEnded') && !subOnly)) throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
       if (!acts.has(a.act)) throw new Error('an alert is about an Act that exists');
       if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
       const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
@@ -6143,6 +6181,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!inf) throw new Error('a ban follows an infraction that filled the bar');
       const at = o?.at ?? now();
       return write({ character: null, kind: 'ban', thread: inf.thread, at, payload: { character, days: o?.days ?? 1, until: iso(until), infraction_act: inf.id, season: 1 } }).id;
+    },
+    donation(character, drive, amount, o) {
+      const d = acts.get(drive);
+      if (!d || d.kind !== 'card') throw new Error(`no such drive ${drive}`);
+      const arrives = o?.arrives ?? amount;
+      return write({ character, kind: 'donation', thread: d.thread, target: drive, at: o?.at, payload: { amount, overhead: amount - arrives, arrives } }).id;
+    },
+    draw(character, wall, o) {
+      const w = acts.get(wall);
+      if (!w || w.kind !== 'card') throw new Error(`no such wall ${wall}`);
+      return write({ character, kind: 'draw', thread: w.thread, target: wall, at: o?.at, payload: { strokes: [{ width: 0.01, points: [[0.1, 0.1]] }], cells: '' } }).id;
+    },
+    pollClose(poll, o) {
+      const p = acts.get(poll);
+      if (!p || p.kind !== 'poll') throw new Error(`no such poll ${poll}`);
+      return write({ character: null, kind: 'poll_close', thread: p.thread, target: poll, at: o?.at, payload: { by: 'admin' } }).id;
+    },
+    cardEnd(play, o) {
+      const p = acts.get(play);
+      if (!p || p.kind !== 'card') throw new Error(`no such card play ${play}`);
+      return write({ character: null, kind: 'card_end', thread: p.thread, target: play, at: o?.at, payload: {} }).id;
     },
     judging(answers) {
       if (answers.report) judged.report = answers.report;

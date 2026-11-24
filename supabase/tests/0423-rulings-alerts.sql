@@ -952,4 +952,7 @@ begin
   if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = landed::text) then raise exception 'the move is not loaded'; end if;
   if (select b ->> 'name' from jsonb_array_elements(got -> 'boards') b where b ->> 'id' = dest::text) is distinct from 'Ra Load Dest' then raise exception 'the board the thread moved to is not among the boards by name: %', got -> 'boards'; end if;
   if jsonb_array_length(got -> 'boards') <> 1 then raise exception 'the page holds boards it has no row for: %', got -> 'boards'; end if;
+  -- The alert's own thread is the move's (the Announcements thread); the thread that moved is the move's `params.thread`, so its title comes with the page.
+  if (select x ->> 'title' from jsonb_array_elements(got -> 'threads') x where x ->> 'id' = t::text) is distinct from 'Ra loads moved' then raise exception 'the thread that moved is not among the threads by title: %', got -> 'threads'; end if;
+  if jsonb_array_length(got -> 'threads') <> 1 then raise exception 'the page holds threads it has no row for: %', got -> 'threads'; end if;
 end $$;

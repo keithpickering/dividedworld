@@ -2672,11 +2672,15 @@ export interface AlertsPage {
   readonly openedAt: Awaited<ReturnType<KayfaApi['accountOpenedAt']>>;
   /** The Acts the rows name and the ones those lead to (`actsById`). */
   readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
-  /** The authors of those Acts (`characters(ids)`). */
+  /** The authors of the third link of those Acts, and the characters the new lines name: a drawing's drawer, the character a fall landed on, the Mod (by `staff` key) a warning names (`characters(ids)`). */
   readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
   /** The first post of each followed thread among the rows (`openingActs`). */
   readonly openings: Awaited<ReturnType<KayfaApi['openingActs']>>;
   readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+  /** The boards the rows' moves name (a thread moved): public names, by id. */
+  readonly boards: readonly { readonly id: Id; readonly name: string }[];
+  /** The threads those moves name (the thread that moved; the row's own thread is the move's): public titles, by id. */
+  readonly threads: readonly { readonly id: Id; readonly title: string }[];
 }
 
 /** The Updates page (updates_page, 0121): a page of Updates, the open one's reactions, and for an admin with a handover season the queue. */

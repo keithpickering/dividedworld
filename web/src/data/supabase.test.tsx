@@ -3352,16 +3352,18 @@ describe('a screen in one call', () => {
     const answer = {
       alerts: [{ kind: 'quote', sub: null, act: A, character: B, at: '2026-10-02T10:00:00+00:00', thread: T, name: 'Bea', title: null, count: null }, { kind: 'from-the-future', at: '2026-10-02T09:00:00+00:00' }],
       seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', acts: [ACT_ROW], people: [{ ...CHAR, profile: PROFILE }], openings: [{ ...ACT_ROW, id: C, seq: 1 }], reading: [{ thread: T, furthest_seq: 2 }],
+      boards: [{ id: A, name: 'Hobbies' }, { id: 7, name: 'bad' }], threads: [{ id: T, title: 'Moved' }, { id: 5, title: 'bad' }],
     };
     const h = once('alerts_page', answer);
     const page = await h.api.alertsPage('2026-10-03T00:00:00+00:00');
     expect(only(h, 'alerts_page')).toEqual({ in_before: '2026-10-03T00:00:00+00:00' });
     expect(page.alerts.map((x) => [x.kind, x.act, x.name])).toEqual([['quote', A, 'Bea']]);
-    expect(page).toMatchObject({ seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', people: [BEA], reading: { [T]: 2 } });
+    expect(page).toMatchObject({ seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', people: [BEA], reading: { [T]: 2 }, boards: [{ id: A, name: 'Hobbies' }], threads: [{ id: T, title: 'Moved' }] });
     expect(page.acts).toEqual([ACT]);
     expect(page.openings[0]).toMatchObject({ id: C, seq: 1 });
     const first = once('alerts_page', { ...answer, seenAt: null, openedAt: null });
-    expect(await first.api.alertsPage(null)).toMatchObject({ seenAt: null, openedAt: null });
+    expect(await first.api.alertsPage(null)).toMatchObject({ seenAt: null, openedAt: null, boards: [{ id: A, name: 'Hobbies' }] });
+    expect(await once('alerts_page', { ...answer, boards: undefined, threads: undefined }).api.alertsPage(null)).toMatchObject({ boards: [], threads: [] });
     expect(only(first, 'alerts_page')).toEqual({ in_before: null });
   });
 

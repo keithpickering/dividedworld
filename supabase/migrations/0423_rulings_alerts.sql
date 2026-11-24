@@ -2107,11 +2107,11 @@ $function$;
 --
 -- The new lines name Acts and people the page did not load: a warning's and a fallTaken's post is the infraction's `about_act` (a payload id, never a link of target_act_id), a warning's Mod is a staff key (the infraction's
 -- `staff`, a Mod's, not a character's id), fallTaken names the taker (the infraction's `character`), a gift's and a drawing's post is three links from the donation or the draw (donation, drive play, post; draw, wall play, post),
--- a drawing names its drawer (the draw's character), and a threadMoved line names the board in the move's `params.board`. alerts_page (0368, whole) with those loaded and nothing else changed:
+-- a drawing names its drawer (the draw's character), and a threadMoved line names the thread that moved and the board in the move's `params` (the alert's own thread is the move's, the Announcements thread, so the title of the thread that moved comes with the page). alerts_page (0368, whole) with those loaded and nothing else changed:
 --   chain: three links, as for a card an admin ended, also for a gift and a drew (`deep`);
 --   extra: the infraction's `about_act`, for a ruling row whose Act is an infraction;
 --   pe: the people, the authors of the third link (as before) and, for the rows that name them, the draw's character, the infraction's `character` (fallTaken) and the staff character the infraction's `staff` names (warning);
---   boards: the board each threadMoved row's move names, by id and name (boards are public).
+--   boards, threads: the board and the thread each threadMoved row's move names, by id and name or title (both are public).
 -- The uuid is checked by pattern in the query (safe_uuid is closed to the caller, as alerts_page runs as the caller). Cost: the page is 30 rows, so each addition is at most 30 probes by primary key, unchanged by the size of the instance; each is a public Act or a public name, read from the row's own Act.
 -- Nothing here is computed from a private fact: the taker, the drawer and the Mod are each in a public Act, and the page is the caller's own rows as before. Way out: a read; it adds no state.
 create or replace function public.alerts_page(in_before timestamp with time zone)
@@ -2235,6 +2235,11 @@ begin
                             FROM th t))) r), '[]'::jsonb), 'boards', COALESCE(( SELECT jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) ORDER BY ((b.id)::text COLLATE "C")) AS jsonb_agg
             FROM boards_now b
            WHERE (b.id IN ( SELECT (CASE WHEN a.payload #>> '{params,board}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload #>> '{params,board}')::uuid END)
+                    FROM al
+                      JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
+                   WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'threadMoved'::text) AND a.kind = 'move'::text))), '[]'::jsonb), 'threads', COALESCE(( SELECT jsonb_agg(jsonb_build_object('id', t.id, 'title', t.title) ORDER BY ((t.id)::text COLLATE "C")) AS jsonb_agg
+            FROM thread_open t
+           WHERE (t.id IN ( SELECT (CASE WHEN a.payload #>> '{params,thread}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload #>> '{params,thread}')::uuid END)
                     FROM al
                       JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
                    WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'threadMoved'::text) AND a.kind = 'move'::text))), '[]'::jsonb)) AS jsonb_build_object
