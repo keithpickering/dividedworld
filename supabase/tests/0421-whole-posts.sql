@@ -136,7 +136,7 @@ begin
   for i in 1..100 loop
     who := case when i = 5 or i = 95 then boss when i % 2 = 0 then a else b end;
     body := case when i = 20 then format('Twenty, after [quote="%s" user=%s]Post 3.[/quote] done.', ids[3], b)
-                 when i = 90 then format('Ninety [quote="%s" user=%s]Twenty, after[/quote] ok', ids[20], a)
+                 when i = 90 then format('Ninety [quote="%s" user=%s]Twenty, after[/quote] ok [quote="%s" user=%s]Post 70.[/quote]', ids[20], a, ids[70], a)
                  when i = 100 then big
                  else format('Post %s.', i) end;
     ids := ids || tests.act(who, 'post', t, jsonb_build_object('body', body),
@@ -165,6 +165,7 @@ begin
     raise exception 'posts are not in thread order';
   end if;
   -- never the hidden post, by id or by words
+  -- (post 90 quotes it: it is in no post's `quotes` and not read through the hop)
   if posts::text ~ hidden::text then raise exception 'the hidden post is named'; end if;
   if posts::text ~ 'Post 70[.]' then raise exception 'the hidden post''s words are returned'; end if;
   -- the fields
@@ -327,8 +328,12 @@ declare
   ids uuid[] := '{}'; i integer;
 begin
   for i in 1..n loop
-    ids := ids || tests.act(case when i > n - 90 and i % 10 = 0 then boss when i % 2 = 0 then a else b end, 'post', t, jsonb_build_object('body', 'Long post ' || i),
+    ids := ids || tests.act(case when i % 10 = 0 then boss when i % 2 = 0 then a else b end, 'post', t, jsonb_build_object('body', 'Long post ' || i),
                             case when i > n - 90 and i % 10 = 5 then ids[i - 5] end, base + i * interval '1 second');
+  end loop;
+  -- The persona posts all through the thread (every tenth: 100 and 400 posts), and one of its newest posts has 300 replies.
+  for i in 1..300 loop
+    perform tests.act(case when i % 2 = 0 then a else b end, 'post', t, jsonb_build_object('body', 'Late reply ' || i), ids[n - 80], base + (n + i) * interval '1 second');
   end loop;
   return t;
 end $$;

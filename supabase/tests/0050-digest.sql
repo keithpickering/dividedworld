@@ -62,7 +62,7 @@ begin
   where relnamespace = 'public'::regnamespace and relkind in ('v', 'r') and has_table_privilege('kayfabb_digest', oid, 'insert,update,delete,truncate,references,trigger');
   if bad is not null then raise exception 'the digest role writes %', bad; end if;
   -- The role's reach, whole: it cannot create in the schema (the owner change takes the grant and gives it back), no client
-  -- role can become it, and the functions it may execute are exactly the twenty-four reviewed here: a new grant fails this.
+  -- role can become it, and the functions it may execute are exactly the reviewed ones listed here: a new grant fails this.
   if has_schema_privilege('kayfabb_digest', 'public', 'create') then raise exception 'the digest role can create in public'; end if;
   foreach t in array array['anon', 'authenticated', 'service_role'] loop
     if pg_has_role(t, 'kayfabb_digest', 'member') then raise exception '% is a member of the digest role', t; end if;
@@ -83,6 +83,8 @@ begin
       'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'character_faces(jsonb)',
       -- A persona's whole-post read of a thread (0421), reading acts_public, characters_public, character_profiles, thread_list and the quotes quote_refs holds: the function it owns.
       'pool_read(uuid,text,uuid[],integer)',
+      -- The two helpers it picks the newest ids with (0421), owned by the migration's role because the digest role reads no column of acts: they return Act ids and nothing else.
+      'pool_own_post_ids(uuid,uuid,integer)', 'pool_reply_ids(uuid,uuid,integer)',
       -- A patrol's sample of the beat's recent posts (0110): the one function it owns, reading acts_public, characters_public and thread_list.
       'patrol_sample(uuid[],integer,integer,bigint)',
       -- Pure predicates a CHECK calls, granted to PUBLIC by 0080 so a direct writer is not refused; each reads no table.
@@ -93,7 +95,7 @@ begin
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
       -- And whether a ballot's poll is secret (0395): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
       'ballot_secret(uuid)']) x) then
-    raise exception 'the functions the digest role may execute are not the reviewed twenty-four: %', fns;
+    raise exception 'the functions the digest role may execute are not the reviewed ones: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
 

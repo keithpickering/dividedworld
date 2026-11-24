@@ -421,7 +421,7 @@ begin
     plan := '';
     for ln in execute 'explain ' || q loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
     if plan ~ 'Seq Scan on acts\M' or plan ~ 'Merge Join' then raise exception 'a read scans or merges acts (%): %', q, plan; end if;
-    if q like '%pool_waiting%' and (plan !~ 'acts_target' or plan !~ 'target_act_id = ') then raise exception 'a waiting read does not probe the target index for replies (%): %', q, plan; end if;
+    if q like '%pool_waiting%' and (plan !~ 'acts_(target|replies)' or plan !~ 'target_act_id = ') then raise exception 'a waiting read does not probe the target index for replies (%): %', q, plan; end if;
     if q like '%pool_waiting_in_thread%' and (plan !~ 'acts_thread_posts' or plan !~ format('thread = ''%s''', th[2])) then raise exception 'the thread read does not probe acts_thread_posts for the posts branch: %', plan; end if;
     -- The spin branch of every read is a probe of an opener index (the unique (thread, seq) one when the thread is named, the persona's openers (character, thread) where seq = 1 otherwise) and never acts_patrol_posts, which a
     -- thread-keyed spin branch without seq = 1 is served by, scanning the thread's whole window to filter it by character.

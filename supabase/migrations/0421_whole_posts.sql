@@ -18,8 +18,8 @@
 --    the persona's own id is read from characters_public, the debuted characters, and a persona that has not debuted has none), so a hidden post (acts_public's `hidden`, which still lists the row, with no words) is in no part of it: not as a post, not as a quote, not counted in the window. security definer, owned by kayfabb_digest as pool_thread is, the service role's only.
 --    quote_refs is read by that role: its select on (act, quoted) and a policy of its own, as the digest role has on the other tables it reads (0045_digest.sql). A quote of a post is in the quoting post's own public body,
 --    and the rows read are those of Acts acts_public already shows, so nothing is said that a player cannot see.
---    The newest `window` is read by number from thread_list's last_seq, and the page by an id array, so the view is never evaluated over the whole thread (the test reads the rows of acts a 1,000- and a 4,000-post thread cost: 404 each). `set jit = off`, as 0368's reads have it: a call's cost passes jit_above_cost and JIT added ~350 ms.
---    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts, acts_target for the replies, acts_edits (an index-only probe) for a post's latest edit, quote_refs' primary key, acts' own key).
+--    The newest `window` is read by number from thread_list's last_seq, and the page by an id array, so the view is never evaluated over the whole thread (the test reads the rows of acts a 1,000- and a 4,000-post thread cost, with the persona posting all through each and one of its posts answered 300 times: the same). `set jit = off`, as 0368's reads have it: a call's cost passes jit_above_cost and JIT added ~350 ms.
+--    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts for the persona's posts, acts_replies for the replies, acts_edits (an index-only probe) for a post's latest edit, quote_refs' primary key, acts' own key). The hop is not picked by id first: a post's quotes are ordered by the quoted post's date, which quote_refs does not hold, so each quoted post is looked at, a number bounded by the quoting body's length (postMaxLength) and not by the thread.
 -- Ways out: no state is added. A spend, a turn and an attempt are ledger rows; a budget spent by the day's end is the next day's fresh one.
 -- Masks: pool_read reads public Acts and characters (characters_public); the persona's own id is its own. Nothing here reads an owner, a class or who reacted.
 -- The test that drives it red is supabase/tests/0421-whole-posts.sql.
@@ -221,14 +221,33 @@ grant execute on function pool_chars_today(date) to service_role;
 grant select (act, quoted) on quote_refs to kayfabb_digest;
 create policy digest_reads on quote_refs for select to kayfabb_digest using (true);
 
+-- The digest role is granted no column of `acts` (0050), so the newest ids are picked by two functions it may execute, owned by the migration's role: each returns Act ids and nothing else (ids of posts that are public in a thread, a
+-- hidden one's among them, which pool_read puts through acts_public before it says anything of them), and no client role may call them. Each is an index range read of the newest n: acts_thread_posts (thread, character, created_at, id) for a
+-- character's posts, acts_replies for the replies to a post; n is clamped to 100.
+create function pool_own_post_ids(in_thread uuid, by_character uuid, n integer) returns uuid[]
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(array(select y.id from acts y where y.thread = in_thread and y.kind = 'post' and y.character = by_character order by y.created_at desc, y.id desc limit least(greatest(coalesce(n, 0), 0), 100)), '{}'::uuid[])
+$$;
+create function pool_reply_ids(in_thread uuid, to_act uuid, n integer) returns uuid[]
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce(array(select y.id from acts y where y.target_act_id = to_act and y.thread = in_thread and y.kind = 'post' order by y.created_at desc, y.id desc limit least(greatest(coalesce(n, 0), 0), 100)), '{}'::uuid[])
+$$;
+revoke execute on function pool_own_post_ids(uuid, uuid, integer), pool_reply_ids(uuid, uuid, integer) from public, anon, authenticated, service_role;
+grant execute on function pool_own_post_ids(uuid, uuid, integer), pool_reply_ids(uuid, uuid, integer) to kayfabb_digest;
+
 -- `self` is looked up by staff key alone, not staff_kind = 'persona': a Mod Bot reads a thread through this too (Task 7), with its own staff key.
+-- The newest replies to a post, in order, for pool_read: acts_target is not ordered, and a post with thousands of replies would be read whole to find its newest ten.
+create index acts_replies on acts (target_act_id, created_at desc, id desc) where kind = 'post';
+
 create function pool_read(in_thread uuid, staff_key text, named uuid[], "window" integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp set jit = off as $$
   with me as (select c.id from characters_public c where c.staff = pool_read.staff_key),
-  -- The persona's newest 20 posts in the thread (a spin it started counts as one, as in pool_conversation).
+  -- The persona's newest 20 posts in the thread (a spin it started counts as one, as in pool_conversation). The ids come from `acts` first, newest 40 (a margin for the few that acts_public then leaves out: hidden, or veiled to another
+  -- author), by acts_thread_posts' own order, and only those are put through the view, so its cost is that of 40 posts however many the persona has written in the thread.
   mine as (
     select o.id from (
-      select a.id, a.created_at from acts_public a where a.thread = in_thread and a.kind = 'post' and a.hidden is not true and a.character = (select m.id from me m)
+      select a.id, a.created_at from acts_public a where a.hidden is not true and a.character = (select m.id from me m)
+        and a.id = any (pool_own_post_ids(in_thread, (select m.id from me m), 40))
       union all
       select a.id, a.created_at from acts_public a where a.thread = in_thread and a.seq = 1 and a.kind = 'spin' and a.hidden is not true and a.character = (select m.id from me m)) o
     order by o.created_at desc, o.id desc limit 20
@@ -249,7 +268,10 @@ language sql stable security definer set search_path = public, pg_temp set jit =
     select m.id from mine m
     union
     select r.id from mine m cross join lateral (
-      select x.id from acts_public x where x.target_act_id = m.id and x.thread = in_thread and x.kind = 'post' and x.hidden is not true order by x.created_at desc, x.id desc limit 10) r
+      -- the newest 20 replies' ids (pool_reply_ids), then the view for those, as for mine
+      select x.id from acts_public x where x.hidden is not true
+        and x.id = any (pool_reply_ids(in_thread, m.id, 20))
+      order by x.created_at desc, x.id desc limit 10) r
   ),
   -- One hop: the posts of this thread the seeds quote.
   -- An edit is an Act of its own and its quote_refs hang on its id, so a post's quotes are read from its latest edit's id when it has one (as acts_public's current_payload is), else its own.
