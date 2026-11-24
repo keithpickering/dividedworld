@@ -730,28 +730,51 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     send(`thread:${act.thread}`, 'act', () => { for (const l of [...(threadListeners.get(act.thread) ?? [])]) l.onAct?.(shown); });
     /* The alert the write queued (write_alert, 0058), announced to the target's account alone: none for a staff or unowned target, or
        for the account that did it. */
-    const alert = derivedAlert(act);
-    if (alert === null) return;
-    const live = { id: crypto.randomUUID(), kind: alert.kind, sub: null, act: act.id, character: alert.character, at: iso(act.at) };
-    send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
+    sendAlerts(act);
+  };
+  const sendAlerts = (act: ActRec) => {
+    for (const alert of derivedAlert(act)) {
+      const live = { id: crypto.randomUUID(), kind: alert.kind, sub: alert.sub, act: act.id, character: alert.character, at: iso(act.at) };
+      send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
+    }
   };
   /**
-   * The alert an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, or a card on a post, a character or a
-   * thread, for the owner of what it landed on. Null for a staff target, a spring, and a target of the Act's own account.
+   * The alerts an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, a card on a post, a character or a
+   * thread, a gift to a drive's post, a drawing on a wall, and a card an admin ended, for the owner of what it landed on (the caster's player too, for the card ended).
+   * Empty for a staff target, a spring, and a target of the Act's own account (a card's caster's, for the end of one).
    */
-  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours' | 'cardEnded'; character: Id } | null {
-    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert); none for a staff caster. */
+  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours' | 'cardEnded' | 'gift'; sub: 'drew' | 'onYours' | null; character: Id }[] {
+    const ownerOf = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
+    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert; none for a staff caster), and the side it landed on's (onYours), none for the caster's own. */
     if (a.kind === 'card_end') {
-      const caster = a.target === null ? undefined : acts.get(a.target)?.character;
-      const owner = caster == null ? undefined : characters.get(caster)?.owner;
-      return caster == null || !owner ? null : { account: owner, kind: 'cardEnded', character: caster };
+      const play = a.target === null ? undefined : acts.get(a.target);
+      const caster = play?.character;
+      const out: { account: Id; kind: 'cardEnded'; sub: 'onYours' | null; character: Id }[] = [];
+      const casterOwner = ownerOf(caster);
+      if (caster != null && casterOwner) out.push({ account: casterOwner, kind: 'cardEnded', sub: null, character: caster });
+      if (play === undefined || (play.kind !== 'card' && play.kind !== 'spring')) return out;
+      const reach = (play.payload.reach ?? 'post') as string;
+      const target = play.kind === 'spring' ? (typeof play.payload.locks === 'string' ? play.payload.locks : undefined)
+        : reach === 'post' ? (play.target === null ? undefined : acts.get(play.target)?.character)
+        : reach === 'character' ? String(play.payload.character)
+        : reach === 'thread' ? [...acts.values()].find((x) => x.thread === play.payload.thread && x.seq === 1)?.character : undefined;
+      const owner = ownerOf(target);
+      if (target != null && owner && owner !== casterOwner) out.push({ account: owner, kind: 'cardEnded', sub: 'onYours', character: target });
+      return out;
     }
-    if (a.character === null) return null;
+    /* A drive's post's author is told of a gift, and a wall's of a drawing; a staff drawer (no character) tells the author as well. */
+    if (a.kind === 'donation' || a.kind === 'draw') {
+      const author = a.target === null ? undefined : acts.get(a.target)?.target == null ? undefined : acts.get(acts.get(a.target)!.target!)?.character;
+      const owner = ownerOf(author);
+      if (author == null || !owner || owner === ownerOf(a.character)) return [];
+      return [{ account: owner, kind: a.kind === 'donation' ? 'gift' : 'cardOnYours', sub: a.kind === 'draw' ? 'drew' : null, character: author }];
+    }
+    if (a.character === null) return [];
     let kind: 'quote' | 'cardOnYours';
     let target: Id | null | undefined;
     if (a.kind === 'post' && a.target !== null) {
       const quoted = acts.get(a.target);
-      if (quoted?.kind !== 'post') return null;
+      if (quoted?.kind !== 'post') return [];
       kind = 'quote'; target = quoted.character;
     } else if (a.kind === 'card' && a.target !== null && a.payload.spring === undefined) {
       const reach = (a.payload.reach ?? 'post') as string;
@@ -759,10 +782,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       target = reach === 'post' ? acts.get(a.target)?.character
         : reach === 'character' ? String(a.payload.character)
         : reach === 'thread' ? [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character : null;
-    } else return null;
-    const owner = target == null ? undefined : characters.get(target)?.owner;
-    if (owner == null || owner === characters.get(a.character)?.owner) return null;
-    return { account: owner, kind, character: target! };
+    } else return [];
+    const owner = ownerOf(target);
+    if (owner == null || owner === characters.get(a.character)?.owner) return [];
+    return [{ account: owner, kind, sub: null, character: target! }];
   }
   /* A play beyond a post is also heard on `reach` by every signed-in page (act/core.ts's BROADCASTS.play_card). */
   const sendReach = (act: ActRec) => {
@@ -1656,7 +1679,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (character !== null && p.character !== character) return refuse('only a poll\'s author can close it');
     const closed = pollRefusal(p);
     if (closed) return closed;
-    return wrote(write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } }), p);
+    const close = write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } });
+    /* An admin's close tells the poll's own player (close_poll_as_admin's write_alert): ruling/pollClosed, about the close; none for the admin's own poll or a staff one. */
+    const owner = character === null && p.character !== null ? characters.get(p.character)?.owner : undefined;
+    if (owner && owner !== me()?.id) {
+      const line = { account: owner, kind: 'ruling' as const, sub: 'pollClosed', act: close.id, character: p.character, at: close.at };
+      seededAlerts.push(line);
+      send(`account:${owner}`, 'alert', () => { for (const l of [...(accountListeners.get(owner) ?? [])]) l.onAlert?.({ id: crypto.randomUUID(), kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
+    }
+    return wrote(close, p);
   }
   function closePoll(poll: Id, character: Id): Answer<PollWritten> {
     const bad = request({ action: 'closePoll', poll, character });
@@ -2159,6 +2190,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...sent, cells: decided.value.cells, ...(kind === 'wash' ? { uncovered: [...cut.values()].reduce((n, c) => n + c, 0), cut: [...cut].map(([draw, n]) => ({ draw, took: n })) } : {}) } });
     s.cells.set(written, cells);
     s.cover = next.cover; s.owners = next.owners; s.live = next.live;
+    if (kind === 'draw') sendAlerts(rec);
     const covered = count(next.cover);
     send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
     return ok({ ...publicAct(rec), covered, live: [...next.live] });
@@ -5607,9 +5639,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const ownerOfCharacter = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
     const out: Alert[] = [];
     for (const a of acts.values()) {
-      if ((a.character === null && a.kind !== 'card_end') || ownerOfCharacter(a.character) === account.id) continue;
-      const derived = derivedAlert(a);
-      if (derived?.account === account.id) out.push(line({ kind: derived.kind, sub: null, act: a.id, character: derived.character, at: a.at }));
+      if ((a.character === null && a.kind !== 'card_end' && a.kind !== 'draw') || ownerOfCharacter(a.character) === account.id) continue;
+      for (const derived of derivedAlert(a)) if (derived.account === account.id) out.push(line({ kind: derived.kind, sub: derived.sub, act: a.id, character: derived.character, at: a.at }));
     }
     for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
     for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
