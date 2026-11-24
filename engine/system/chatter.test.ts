@@ -679,8 +679,24 @@ test('a block that is not an object is dropped, isObject', () => {
 test('a Mod fulfill of a kind its office does not make becomes a confer, fulfillToConfer, with the drop on the record', () => {
   const r = repairRuling(rule('fulfill', { move: { kind: 'renameBoard', params: { board: B1, name: 'N', premise: 'p', description: 'd' }, expires_in_hours: 5, why: 'w' } }), modRuling());
   assert.deepEqual(r.request, { reply: R1, ruling: 'confer' });
-  assert.deepEqual(r.dropped, { path: 'request.move.kind', predicate: 'office' });
+  assert.deepEqual(r.dropped, { path: 'request.move.kind', predicate: `oneOf(${requestKinds('mod').join(', ')})` });
   assert.ok(r.trims.some((t) => t.path === 'request.ruling' && t.predicate === 'fulfillToConfer'), JSON.stringify(r.trims));
+});
+
+test('a Mod fulfills with conferGroup under the group context: kept; without the context, or outside its request kinds, a confer naming the predicate', () => {
+  const WHO = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const groups = { conferred: new Map([['trial', 'punishment' as const]]), capped: new Set<string>(), held: new Set<string>() };
+  const conferral = { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: B1 }, expires_in_hours: 48, why: 'Needs a cooling off.' };
+  const kept = repairRuling(rule('fulfill', { move: conferral }), modRuling({ groups }));
+  assert.equal(kept.dropped, null);
+  assert.deepEqual(kept.request, { reply: R1, ruling: 'fulfill', move: { ...conferral, demand: { kind: 'apologyAccepted', params: {} } } });
+  const bare = repairRuling(rule('fulfill', { move: conferral }), modRuling());
+  assert.deepEqual(bare.request, { reply: R1, ruling: 'confer' });
+  assert.ok(bare.dropped !== null);
+  const outside = repairRuling(rule('fulfill', { move: { ...conferral, kind: 'awardTrophy' } }), modRuling({ groups }));
+  assert.deepEqual(outside.request, { reply: R1, ruling: 'confer' });
+  assert.deepEqual(outside.dropped, { path: 'request.move.kind', predicate: `oneOf(${requestKinds('mod').join(', ')})` });
+  assert.ok(outside.trims.some((t) => t.predicate === 'fulfillToConfer'));
 });
 
 test('a Mod fulfill with allowance 0 becomes a confer, the drop naming allowance', () => {
@@ -787,7 +803,9 @@ test('the schema offers request only with ruling given, with ruling an enum, and
   const mod = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'mod' } }) as any;
   assert.deepEqual(mod.properties.request.properties.ruling.enum, ['fulfill', 'reject', 'confer']);
   assert.deepEqual(mod.properties.request.required, ['reply', 'ruling']);
-  assert.deepEqual(mod.properties.request.properties.move.properties.kind.enum, ['setRule', 'moveThread']);
+  assert.deepEqual(mod.properties.request.properties.move.properties.kind.enum, ['setRule', 'conferGroup', 'moveThread']);
+  assert.deepEqual(mod.properties.request.properties.move.properties.params.properties.character, { type: 'string' });
+  assert.deepEqual(mod.properties.request.properties.move.properties.params.properties.group, { type: 'string' });
   const boss = chatterSchema({ askedTitle: false, offered: [], ruling: { office: 'boss' } }) as any;
   assert.deepEqual(boss.properties.request.properties.move.properties.kind.enum, [...requestKinds('boss')]);
   assert.ok(!boss.properties.request.properties.move.properties.kind.enum.includes('setRule'));
@@ -803,7 +821,7 @@ test('a member persona keeps the turn premise byte-identical; staff get the ruli
 
 test('the ruling words name the kinds, the allowance or bank, the beat by name and id, confer and its lapse', () => {
   const mod = rulingWords({ office: 'mod', allowance: 2, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24 });
-  for (const want of ['setRule', 'moveThread', '2 moves', 'Games', B1, 'confer', '3 days']) assert.ok(mod.includes(want), want + ': ' + mod);
+  for (const want of ['setRule', 'conferGroup', 'moveThread', '2 moves', 'Games', B1, 'confer', '3 days']) assert.ok(mod.includes(want), want + ': ' + mod);
   const boss = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24 });
   for (const want of ['renameBoard', 'createBoard', 'mergeBoard', '1 move', '24 hours', 'next meeting']) assert.ok(boss.includes(want), want + ': ' + boss);
   assert.ok(!boss.includes('setRule'));

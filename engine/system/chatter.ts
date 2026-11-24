@@ -128,7 +128,7 @@ export const CHATTER_RULE: Rule = {
 function requestSchema(office: 'boss' | 'mod'): Record<string, unknown> {
   const text = { type: 'string' };
   const params: Record<string, unknown> = office === 'mod'
-    ? { board: text, thread: text, predicate: text, param: text, band: { type: 'string', enum: ['minor', 'moderate', 'severe'] } }
+    ? { board: text, thread: text, predicate: text, param: text, character: text, group: text, band: { type: 'string', enum: ['minor', 'moderate', 'severe'] } }
     : { board: text, thread: text, into: text, name: text, premise: text, description: text, fallback: text };
   return {
     type: 'object',
@@ -250,10 +250,15 @@ export function repairRuling(raw: unknown, ruling: RulingFacts): { readonly requ
     if (has) trims.push({ path: 'request.move', predicate: 'noMove', before: 1, after: 0 });
     return { request: { reply: asked, ruling: choice }, trims, dropped: null };
   }
+  // Both offices are held to the kinds a request may carry, the same way (the Boss's repair checks it itself); a Mod's is checked here, after its allowance, as its repair orders them.
+  const allowed = requestKinds('mod');
+  const outside = (m: unknown): boolean => typeof m === 'object' && m !== null && !Array.isArray(m) && !allowed.includes(String((m as Record<string, unknown>)['kind']));
   const repaired: RepairedMove = !has
     ? { move: null, trims: [], dropped: { path: 'move', predicate: 'required' } }
     : ruling.office === 'mod'
-      ? ruling.mod ? repairModMove(given['move'], ruling.mod) : { move: null, trims: [], dropped: { path: 'move', predicate: 'allowance' } }
+      ? !ruling.mod ? { move: null, trims: [], dropped: { path: 'move', predicate: 'allowance' } }
+        : ruling.mod.allowance >= 1 && outside(given['move']) ? { move: null, trims: [], dropped: { path: 'move.kind', predicate: `oneOf(${allowed.join(', ')})` } }
+        : repairModMove(given['move'], ruling.mod)
       : ruling.boss ? repairBossMove(given['move'], ruling.boss) : { move: null, trims: [], dropped: { path: 'move', predicate: 'bank' } };
   trims.push(...repaired.trims.map((t) => ({ ...t, path: `request.${t.path}` })));
   if (repaired.move === null) {
@@ -276,6 +281,9 @@ export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysM
     ? `The Boss has handed you ${n} move${n === 1 ? '' : 's'} to spend, and a granted request spends one.`
     : `Your bank holds ${n} move${n === 1 ? '' : 's'} now, and a granted request spends one.`;
   const beat = f.office === 'mod' && f.beat?.length ? [`Your beat: ${f.beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}. A move of yours names boards of your beat only.`] : [];
+  const group = kinds.includes('conferGroup') && f.office === 'mod'
+    ? ['A conferGroup move puts one character in a punishment group of the catalog you are given at your meetings, by its key. Its params: character (the id), group (a key) and board (one of your beat); no predicate, param or band. It is dropped, and the request passes on, if the character cannot be chosen.']
+    : [];
   const structural = f.office === 'boss' ? [`A renameBoard, createBoard or mergeBoard waits ${f.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.`] : [];
   return [
     'A reply in this thread may ask staff for something the game can do. If one asks you, you may rule on it in "request" (at most one reply, and only one of the replies you are shown), with "reply" (its id) and "ruling":',
@@ -283,6 +291,7 @@ export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysM
     '- reject: refuse it. Give no move.',
     `- confer: pass it on: ${f.office === 'boss' ? 'you rule on it at your next meeting' : 'the Boss rules on it at its next meeting'}; it lapses unanswered after ${f.daysMost} day${f.daysMost === 1 ? '' : 's'}. Give no move.`,
     ...beat,
+    ...group,
     ...structural,
     'Your post is your words whichever you choose: say what you decided, in your own voice. Leave "request" out when nobody asked for anything.',
   ].join('\n');

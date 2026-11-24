@@ -278,10 +278,10 @@ export interface BossMoveContext {
 
 /**
  * The kinds a persona may make to fulfill a request: the catalog's kinds of its office that need no context a turn does not hold (a group's catalog, the machine's slots, a
- * trophy, a demand, a successor). A Mod's: setRule and moveThread. The Boss's: the four that shape a board or move a thread (a rule it makes at a meeting).
+ * trophy, a demand, a successor). A Mod's: its whole office (setRule, conferGroup, moveThread); a conferGroup is held against the group context the turn carries (`ModMoveContext.groups`), and dropped without it. The Boss's: the four that shape a board or move a thread (a rule it makes at a meeting).
  */
 export function requestKinds(office: 'boss' | 'mod'): readonly string[] {
-  const keys = office === 'mod' ? ['setRule', 'moveThread'] : ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard'];
+  const keys = office === 'mod' ? ['setRule', 'conferGroup', 'moveThread'] : ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard'];
   return MOVE_KINDS.filter((k) => keys.includes(k.key) && k.offices.includes(office)).map((k) => k.key);
 }
 
