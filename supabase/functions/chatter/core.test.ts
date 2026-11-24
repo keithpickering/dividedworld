@@ -2107,6 +2107,19 @@ test('an old-voice turn whose scrub paid one ask and then failed on transport is
   assert.equal(d.state.attempts[0]!.paid, true, 'and the attempt is paid');
 });
 
+test('an old-voice turn whose scrub paid one ask and then had a second never answered is paid and charged the first ask', async () => {
+  const old: Instance = { ...dividedWorld, system: { ...dividedWorld.system, scrubWords: ['badword'], roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } };
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const m = fakeModels(normal);
+  m.models.complete = async (r) => { m.completions.push(r); if (m.completions.length === 2) throw new AnswerRejected('the server refused', 'refused:400'); return result('you absolute badword'); };
+  const out = await run(d, m, old);
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 2);
+  assert.deepEqual(out.turns.map((t) => t.status), ['rejected']);
+  assert.equal(d.state.attempts[0]!.chars, m.completions[0]!.prompt.length);
+  assert.equal(d.state.attempts[0]!.paid, true, 'the first ask was answered, so the attempt is paid');
+});
+
 test('a write_staff_turn refusal after a paid call charges the pacer its characters, though nothing is written', async () => {
   const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], turnRefusal: 'that session is not open now' });
   const m = turnModels();

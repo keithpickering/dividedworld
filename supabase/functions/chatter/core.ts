@@ -621,7 +621,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       // other AnswerRejected (not JSON, cut off) got an answer and is paid; a transport failure that outlived its retries got none. There is no fallback to the old voice for a refusal.
       if (e instanceof AnswerRejected) {
         const unanswered = e instanceof SchemaRefused || e instanceof PromptTooLong || requestRefused(e);
-        return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !unanswered, said(e), answers, []);
+        return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !unanswered || sender.answered() > 0, said(e), answers, [], unanswered ? sender.answered() : undefined);
       }
       // A transport failure sent an ask nobody answered: the attempt is paid if an earlier ask was, and charged only those.
       return fail('failed', sender.answered() > 0, said(e), answers, [], sender.answered());
