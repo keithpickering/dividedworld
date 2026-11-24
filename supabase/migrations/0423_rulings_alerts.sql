@@ -1229,7 +1229,7 @@ revoke execute on function surface_apply(uuid, uuid, text, jsonb, bit, integer) 
 --
 -- 1. refund_card_write (0149) tells the caster, once per refund, that the write failed and the play was refunded: write_alert(<the play's character>, 'cardEnded', 'refunded', <the play Act>, null). Everything else as 0149 wrote it.
 -- 2. my_alerts (0368) counts a settlement the account was paid crowd pay in (a wallet_events row of kind 'crowd', 0384) as well as one it has ledger lines in; only the settlement CTEs st_k and st_tie change. Its `count` stays the number of the account's
---    characters with ledger lines, 0 for a settlement of crowd pay alone. alerts_page reads the same columns. my_alerts_unread (0368) is not changed here.
+--    characters with ledger lines, 0 for a settlement of crowd pay alone. alerts_page reads the same columns. my_alerts_unread (0368) gets the same counting, below.
 
 create or replace function refund_card_write(play uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -1365,3 +1365,69 @@ end
 $function$;
 revoke execute on function my_alerts(timestamptz, integer) from public, anon;
 grant execute on function my_alerts(timestamptz, integer) to authenticated;
+
+-- Plan gap in Task 8: the HUD's unread count counts a crowd-only settlement as the list does. my_alerts_unread (0368), whole, with only its settlement count changed.
+create or replace function public.my_alerts_unread()
+ returns integer
+ language plpgsql
+ stable security definer
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  return (
+  with me as materialized (select signed_in_account() as id),
+  seen as (
+    select coalesce((select p.alerts_seen_at from account_preferences p where p.account = (select id from me)),
+                    (select a.created_at from accounts a where a.id = (select id from me))) as at
+  ),
+  parts as (
+    select (select count(*) from (select 1 from alerts a where a.account = (select id from me) and a.at > (select at from seen) limit 10) w) as n
+    union all
+    -- Followed threads, by their own probe that stops at ten and not by the view that reads every one (0059): the threads the caller
+    -- started (acts_thread_openers) and chose, less the ones unfollowed, kept where a post by a character they do not own sits past
+    -- their place and after the mark. A thread whose last Act is no newer than the mark (threads.last_at, 0030) is skipped from its
+    -- own row; the post is looked for from the newest back, so a thread with one is answered by the first row.
+    select (select count(*) from (
+      select 1 from (
+        select o.thread from characters c join acts o on o.character = c.id and o.seq = 1 where c.owner = (select id from me)
+        union
+        select f.thread from thread_follows f where f.account = (select id from me) and f.follow
+      ) fo
+      join threads th on th.id = fo.thread
+      left join reading r on r.account = (select id from me) and r.thread = th.id
+      where th.last_at > (select at from seen)
+        and not exists (select 1 from thread_follows u where u.account = (select id from me) and u.thread = th.id and not u.follow)
+        and exists (select 1 from acts a join characters pc on pc.id = a.character
+                    where a.thread = th.id and a.kind = 'post' and a.seq > coalesce(r.furthest_seq, 0) and a.created_at > (select at from seen)
+                      and pc.owner is distinct from (select id from me)
+                    order by a.seq desc limit 1)
+      limit 10) f)
+    union all
+    -- Settlements: the caller's ledger lines, or the crowd pay it was paid (a wallet_events row of kind 'crowd', which has no ledger line), as my_alerts lists them.
+    -- Each source is read by account (ledger_account; wallet_events_account) and cut to its ten newest before they are joined.
+    select (select count(*) from (
+      select u.id from (
+        (select l.settlement as id from ledger l join settlements s on s.id = l.settlement
+         where l.account = (select id from me)
+           and l.settlement >= coalesce((select min(s0.id) from settlements s0 where s0.applied_at > (select at from seen)), 9223372036854775807)
+           and s.applied_at > (select at from seen)
+         group by l.settlement order by l.settlement desc limit 10)
+        union
+        (select e.settlement as id from wallet_events e join settlements s on s.id = e.settlement
+         where e.account = (select id from me) and e.kind = 'crowd'
+           and e.settlement >= coalesce((select min(s0.id) from settlements s0 where s0.applied_at > (select at from seen)), 9223372036854775807)
+           and s.applied_at > (select at from seen)
+         group by e.settlement order by e.settlement desc limit 10)
+      ) u order by u.id desc limit 10) x)
+    union all
+    select alerts_news_unread((select at from seen))
+  )
+  select least(10, sum(n))::integer from parts
+  );
+end
+$function$;
+revoke execute on function my_alerts_unread() from public, anon;
+grant execute on function my_alerts_unread() to authenticated;

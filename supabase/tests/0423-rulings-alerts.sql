@@ -711,6 +711,7 @@ end $$;
 -- 1. A write that failed and was refunded writes one cardEnded/refunded alert to the caster's account about the play; a second refund writes none.
 -- 2. my_alerts lists a settlement that paid the account crowd pay and no ledger line, with count 0; one with ledger lines is as before (count = characters with lines); another account sees neither.
 -- 3. A tie of settlements across a page's edge keeps the crowd-only one.
+-- 4. my_alerts_unread counts the crowd-only settlement the account has not seen, as the list does, and not one it has.
 
 insert into settings (key, value) values ('oldVoice', 'true') on conflict (key) do update set value = excluded.value;
 insert into card_kinds (key, name, alignment, rarity, play, stack, writes) values ('ra-scribe', 'Ra Scribe', 'salty', 'uncommon', 'cast', 3, true);
@@ -783,6 +784,27 @@ begin
     raise exception 'Eve reads the one settlement that paid her crowd pay, with count 0: %', (select jsonb_agg(to_jsonb(m)) from my_alerts(null, 30) m where m.kind = 'settlement');
   end if;
   perform tests.unbecome();
+
+  -- The HUD's unread count reads settlements as the list does: Dan's two (one of crowd pay alone) count, Eve's one counts; once the account has seen past a settlement it no longer counts.
+  perform tests.become(dan);
+  if my_alerts_unread() is distinct from 2 then raise exception 'Dan''s unread count is the two settlements, the crowd-only one included: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+  perform tests.become(eve);
+  if my_alerts_unread() is distinct from 1 then raise exception 'Eve''s unread count is the one settlement that paid her crowd pay: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+  insert into account_preferences (account, alerts_seen_at) values (dan, at1 + interval '12 hours') on conflict (account) do update set alerts_seen_at = excluded.alerts_seen_at;
+  perform tests.become(dan);
+  if my_alerts_unread() is distinct from 1 then raise exception 'a crowd-only settlement the account has seen no longer counts, the newer one does: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+  insert into account_preferences (account, alerts_seen_at) values (eve, at1 + interval '12 hours') on conflict (account) do update set alerts_seen_at = excluded.alerts_seen_at;
+  perform tests.become(eve);
+  if my_alerts_unread() is distinct from 1 then raise exception 'Eve''s newer crowd-only settlement is still unread: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+  update account_preferences set alerts_seen_at = at1 + interval '2 days' where account in (dan, eve);
+  perform tests.become(dan);
+  if my_alerts_unread() is distinct from 0 then raise exception 'all settlements seen, none count: %', my_alerts_unread(); end if;
+  perform tests.unbecome();
+  update account_preferences set alerts_seen_at = null where account in (dan, eve);
 
   -- A page of one: the newest settlement, and a crowd-only one applied at the same instant is its tie and stays.
   insert into settlements (starts_at, ends_at, season, applied_at) values (at1 + interval '1 day', at1 + interval '2 days', (select min(id) from seasons), at1 + interval '40 days') returning id into s_tie_a;
