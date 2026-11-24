@@ -145,22 +145,21 @@ function readWhy(raw: unknown, trims: Trim[]): { readonly why: string } | Droppe
   return { why };
 }
 
+/** Digits given as text are the number they spell; anything else is as it was given. */
+const digitsAsNumber = (raw: unknown): unknown => (typeof raw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(raw) ? Number(raw) : raw);
+
 /**
  * A move's expiry in whole hours. A lasting kind stays until reversed or superseded: the code sets it to 0 and a value given is dropped with the trim `lastingHasNoExpiry`.
  * Any other is required, digits given as text are the number they spell (`asNumber`), and it is rounded and clamped into `least` to `most` hours with a trim.
  */
 function readHours(raw: unknown, lasting: boolean, least: number, most: number, trims: Trim[]): number | Dropped {
   if (lasting) {
-    const asNumber = typeof raw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(raw) ? Number(raw) : raw;
-    if (typeof asNumber === 'number' && Number.isFinite(asNumber) && asNumber !== 0) trims.push({ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: asNumber, after: 0 });
+    const given = digitsAsNumber(raw);
+    if (typeof given === 'number' && Number.isFinite(given) && given !== 0) trims.push({ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: given, after: 0 });
     return 0;
   }
-  let hoursRaw = raw;
-  if (typeof hoursRaw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(hoursRaw)) {
-    const as = Number(hoursRaw);
-    trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: hoursRaw.length, after: as });
-    hoursRaw = as;
-  }
+  let hoursRaw = digitsAsNumber(raw);
+  if (typeof raw === 'string' && typeof hoursRaw === 'number') trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: raw.length, after: hoursRaw });
   if (hoursRaw === undefined || hoursRaw === null) return { path: 'move.expires_in_hours', predicate: 'required' };
   if (typeof hoursRaw !== 'number' || !Number.isFinite(hoursRaw)) return { path: 'move.expires_in_hours', predicate: 'isNumber' };
   let hours = Math.round(hoursRaw);
@@ -222,17 +221,21 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   const onBeat = (id: string): boolean => ctx.beat.some((b) => b.toLowerCase() === id);
   const moving = kind.key === 'moveThread';
   let thread: string | null = null;
+  let threadNow: string | null = null;
   if (moving) {
     thread = typeof given['thread'] === 'string' ? given['thread'].toLowerCase() : null;
     const from = thread === null ? undefined : ctx.threadBoards?.get(thread);
     if (from === undefined) return no(under('thread'), 'knownThread', trims);
     if (!onBeat(from.toLowerCase())) return no(under('thread'), 'onBeat', trims);
+    threadNow = from.toLowerCase();
   }
 
   // A Mod's rule is on a board of its beat: the board is named, and it is one it watches.
   const board = typeof given['board'] === 'string' ? given['board'].toLowerCase() : null;
   if (board === null) return no(under('board'), 'required', trims);
   if (!onBeat(board)) return no(under('board'), 'onBeat', trims);
+  // Moving a thread to the board it is on changes nothing, and would spend an allowance to do it.
+  if (threadNow !== null && board === threadNow) return no(under('board'), 'notAlreadyThere', trims);
 
   // The why: the admins read it.
   const whyRead = readWhy(raw['why'], trims);
@@ -450,7 +453,7 @@ export function modPrompt(i: ModPromptInput): string {
       ...(i.thread !== undefined
         ? [`A moveThread move takes this thread, ${i.thread}, to another board. Its params: thread (${i.thread}) and board (the board it goes to, one of your beat above). The thread must be on a board of your beat now. It has no expiry: set expires_in_hours to 0. The thread stays where you put it until the move is reversed or another move takes it elsewhere.`]
         : []),
-      `Its expires_in_hours is from ${i.expiryLeastHours} to ${days * 24} hours: a rule you set lasts at most ${days} days. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, not corrected.`,
+      `${i.thread !== undefined ? 'For any other kind, its' : 'Its'} expires_in_hours is from ${i.expiryLeastHours} to ${days * 24} hours: a rule you set lasts at most ${days} days. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, not corrected.`,
     ].join('\n')
     : 'You have no allowance left from the Boss, so you make no move this time: do not answer with a move.';
   return [

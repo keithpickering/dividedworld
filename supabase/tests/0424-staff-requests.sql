@@ -120,13 +120,16 @@ create function pg_temp.mt(thread uuid, board uuid) returns jsonb language sql a
 $$;
 
 -- ---- 0b. The migration's own update changes an instance seeded before it ----
--- seed_instance writes offices from the catalog, so the world above already has boss and mod and would hide a migration that lost its `update move_kinds`. An instance seeded earlier has the Boss's alone: put that row back, then run the migration again from the file (its section 1 is create or replace and an update, so it replays), and the row must be the Mod's too.
--- The path is relative to the directory the suite runs from, the repository root (tools/test-sql.mjs).
+-- seed_instance writes offices from the catalog, so the world above already has boss and mod and would hide a migration that lost its `update move_kinds`. An instance seeded earlier has the Boss's alone: put that row back, then run the migration's update again from the file, and the row must be the Mod's too.
+-- Only the lines between the migration's `-- begin: moveThread offices` and `-- end: moveThread offices` markers are replayed, and not the whole file: later sections of the migration create tables and would fail a second run, while this statement is the one that is safe to repeat. Delete the update from the migration and the extraction is empty, and the check below goes red.
+-- The path is relative to the directory the suite runs from, the repository root (tools/test-sql.mjs); the extract goes to the system temp directory.
 update move_kinds set offices = array['boss'] where key = 'moveThread';
 do $$ begin
   if (select offices from move_kinds where key = 'moveThread') is distinct from array['boss'] then raise exception 'the pre-0424 row was not set back'; end if;
 end $$;
-\i supabase/migrations/0424_staff_requests.sql
+\set offices_file `echo "${TMPDIR:-/tmp}/kayfabb-0424-section-1-offices.sql"`
+\set extracted `sed -n '/^-- begin: moveThread offices/,/^-- end: moveThread offices/p' supabase/migrations/0424_staff_requests.sql > "${TMPDIR:-/tmp}/kayfabb-0424-section-1-offices.sql"`
+\i :offices_file
 do $$ begin
   if (select offices from move_kinds where key = 'moveThread') is distinct from array['boss', 'mod'] then raise exception 'the migration did not make moveThread a Mod''s: %', (select offices from move_kinds where key = 'moveThread'); end if;
 end $$;
@@ -200,4 +203,36 @@ begin
   insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
   values (m, 'mm-boss', 'moveThread', jsonb_build_object('thread', t, 'board', nobody), null, 'The Boss decides again.', now(), null, false) returning id into q2;
   if (select staff from queued_moves where id = q2) is distinct from 'mm-boss' then raise exception 'the Boss''s moveThread off every beat was not queued'; end if;
+end $$;
+
+-- ---- 4. A refused no-op, a replay of a lasting move, and a rule's clamp after the re-create ----
+do $$
+declare
+  games uuid := pg_temp.board('mm-games');
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  t uuid := pg_temp.thread_on('mm-games', 'Mt No-op and replay');
+  c1 uuid := pg_temp.cause('mt4a');
+  c2 uuid := pg_temp.cause('mt4b');
+  c3 uuid := pg_temp.cause('mt4c');
+  start_n integer := mod_allowance('mm-m1');
+  before_n bigint := (select count(*) from queued_moves);
+  first_try jsonb;
+  again jsonb;
+  ruled jsonb;
+begin
+  if start_n is distinct from 2 then raise exception 'the world: mm-m1 holds %', start_n; end if;
+  -- A move to the board the thread is on is refused in plain words and spends nothing.
+  again := apply_mod_move('mm-m1', pg_temp.mt(t, games), c1);
+  if again ->> 'move' is not null or again ->> 'reason' is distinct from 'the thread is already on that board' then raise exception 'a move to the thread''s own board was not refused plainly: %', again; end if;
+  if (select count(*) from queued_moves) is distinct from before_n or mod_allowance('mm-m1') is distinct from start_n then raise exception 'the no-op refusal wrote a row or spent the allowance'; end if;
+  -- The same cause replayed for a lasting kind returns the first row, and the allowance is spent once.
+  first_try := apply_mod_move('mm-m1', pg_temp.mt(t, offtopic), c2);
+  again := apply_mod_move('mm-m1', pg_temp.mt(t, offtopic), c2);
+  if (first_try ->> 'queued')::boolean is not true then raise exception 'the first move was not queued: %', first_try; end if;
+  if (again ->> 'existing')::boolean is not true or (again ->> 'queued')::boolean is not false or again ->> 'move' is distinct from first_try ->> 'move' then raise exception 'the replay did not return the first row: % then %', first_try, again; end if;
+  if mod_allowance('mm-m1') is distinct from start_n - 1 then raise exception 'a replayed lasting move spent more than once: %', mod_allowance('mm-m1'); end if;
+  -- setRule still clamps its expiry (rules last at most ruleDaysMost = 7 days) beside the lasting branch.
+  ruled := apply_mod_move('mm-m1', pg_temp.mv(games, 9999), c3);
+  if (ruled ->> 'queued')::boolean is not true or (ruled #>> '{trimmed,expires_in_hours,after}')::numeric is distinct from 168 then raise exception 'setRule was not clamped to 168 hours: %', ruled; end if;
+  if (select expires_at - go_live_at from queued_moves where id = (ruled ->> 'move')::bigint) is distinct from interval '168 hours' then raise exception 'the clamped rule kept the wrong expiry'; end if;
 end $$;

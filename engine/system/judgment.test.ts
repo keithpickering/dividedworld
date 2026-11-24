@@ -110,6 +110,14 @@ test('a moveThread to a board off the beat drops move.params.board onBeat', () =
   assert.deepEqual(out.dropped, { path: 'move.params.board', predicate: 'onBeat' });
 });
 
+test('a moveThread to the board the thread is on already drops move.params.board notAlreadyThere', () => {
+  const out = repairModMove({ ...moving, params: { thread: T1, board: GAMES } }, moveCtx);
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.board', predicate: 'notAlreadyThere' });
+  const upper = repairModMove({ ...moving, params: { thread: T1, board: GAMES.toUpperCase() } }, moveCtx);
+  assert.deepEqual(upper.dropped, { path: 'move.params.board', predicate: 'notAlreadyThere' }, 'ids compare in lowercase');
+});
+
 test('a moveThread naming a thread the call was not given drops knownThread', () => {
   const out = repairModMove(moving, { ...moveCtx, threadBoards: new Map() });
   assert.equal(out.move, null);
@@ -235,6 +243,13 @@ test('a Mod\'s prompt and schema offer moveThread, and its thread param, only wh
   }
   assert.ok(!modPrompt(base).includes('moveThread'), 'the bare Mod prompt offers none');
   assert.ok(!appealPrompt(appeal()).system.includes('moveThread'), 'an appeal makes no move');
+});
+
+test('the Mod prompt scopes the expiry range to the kinds that take one, where moveThread is offered', () => {
+  const p = reportPrompt(report({ thread: T1 })).system;
+  assert.match(p, /set expires_in_hours to 0/);
+  assert.match(p, /For any other kind, its expires_in_hours is from/);
+  assert.ok(!/\nIts expires_in_hours is from/.test(p), 'the range is no longer stated for every kind');
 });
 
 test('an expiry given as digits is read as a number, with a recorded trim', () => {

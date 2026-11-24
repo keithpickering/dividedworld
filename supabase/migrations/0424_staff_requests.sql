@@ -11,7 +11,9 @@
 
 -- ===================================================================================== 1. A Mod's moveThread ====
 -- The catalog says a Mod makes it too (the engine's MOVE_THREAD.offices, a test asserts the two agree).
+-- begin: moveThread offices (the suite replays only these lines)
 update move_kinds set offices = array['boss', 'mod'] where key = 'moveThread';
+-- end: moveThread offices
 
 -- apply_mod_move (0136), a lasting kind taking no expiry. Everything else as 0136 wrote it.
 create or replace function apply_mod_move(staff text, move jsonb, cause_act uuid) returns jsonb
@@ -313,6 +315,7 @@ begin
         source := thread_place(safe_uuid(new.params ->> 'thread'));
         if source is null or beat_of(source) is distinct from new.staff then raise exception 'the thread is on a board that is not on %''s beat', new.staff using errcode = '23514'; end if;
         if beat_of(watched) is distinct from new.staff then raise exception 'the board it goes to is not on %''s beat', new.staff using errcode = '23514'; end if;
+        if watched = source then raise exception 'the thread is already on that board' using errcode = '23514'; end if;
       elsif beat_of(watched) is distinct from new.staff then raise exception 'that board is not on %''s beat', new.staff using errcode = '23514';
       end if;
       -- A rule a Mod sets lasts at most `modBots.ruleDaysMost` days (7 where the setting is not there yet; setting_modbots holds it a whole number, and it is read as numeric all the same): the Boss's phase bounds the Boss's, and nothing but this bounds a Mod's.
