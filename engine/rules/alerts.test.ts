@@ -2,10 +2,10 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { ALERT_KINDS, WRITTEN_KINDS, DERIVED_KINDS, EVERYONE_KINDS, RULING_SUBS, isWritten, isForEveryone } from './alerts.ts';
+import { ALERT_KINDS, WRITTEN_KINDS, DERIVED_KINDS, EVERYONE_KINDS, RULING_SUBS, CARD_ENDED_SUBS, CARD_ON_YOURS_SUBS, CONDUCT_SUBS, isWritten, isForEveryone } from './alerts.ts';
 
 // The alerts design, section 2's catalog, as the plan's Task 3 names its keys.
-const catalog = ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'settlement', 'hint', 'followed', 'update', 'seasonNews', 'ruling', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
+const catalog = ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'settlement', 'hint', 'followed', 'update', 'seasonNews', 'ruling', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack', 'gift', 'conduct'];
 
 test('the catalog holds the design\'s kinds, each once', () => {
   assert.deepEqual([...ALERT_KINDS].sort(), [...catalog].sort());
@@ -24,7 +24,7 @@ test('written, derived and everyone\'s kinds partition the catalog: every kind i
 });
 
 test('the settlement and followed threads are derived when read, never stored; everyone gets an update and season news', () => {
-  assert.deepEqual([...WRITTEN_KINDS].sort(), ['beltBack', 'beltLost', 'cardEnded', 'cardOnYours', 'framed', 'hint', 'quote', 'ruling', 'trapSprang', 'trapStruck', 'trophy']);
+  assert.deepEqual([...WRITTEN_KINDS].sort(), ['beltBack', 'beltLost', 'cardEnded', 'cardOnYours', 'conduct', 'framed', 'gift', 'hint', 'quote', 'ruling', 'trapSprang', 'trapStruck', 'trophy']);
   assert.deepEqual([...DERIVED_KINDS].sort(), ['followed', 'settlement']);
   assert.deepEqual([...EVERYONE_KINDS].sort(), ['seasonNews', 'update']);
   assert.equal(isWritten('quote'), true);
@@ -34,8 +34,15 @@ test('the settlement and followed threads are derived when read, never stored; e
   assert.equal(isForEveryone('hint'), false);
 });
 
-test('no ruling has a build yet, so none has a sub-key', () => {
-  assert.deepEqual([...RULING_SUBS], []);
+test('a ruling names what landed in its sub-key (rulings design, section 7)', () => {
+  assert.deepEqual([...RULING_SUBS], ['warning', 'ban', 'fallTaken', 'reportJudged', 'reportRefunded', 'appealAnswered', 'appealRefunded', 'grouped', 'threadMoved', 'trophyReversed', 'pollClosed', 'gearGiven']);
+  assert.deepEqual([...CARD_ENDED_SUBS], ['onYours', 'refunded']);
+  assert.deepEqual([...CARD_ON_YOURS_SUBS], ['drew']);
+  assert.deepEqual([...CONDUCT_SUBS], ['hide', 'hideUntilEdited', 'unhide', 'approve']);
+});
+
+test('each sub list holds no duplicate', () => {
+  for (const subs of [RULING_SUBS, CARD_ENDED_SUBS, CARD_ON_YOURS_SUBS, CONDUCT_SUBS]) assert.equal(new Set(subs).size, subs.length);
 });
 
 test('the kinds in TypeScript are the kinds the toast choice accepts, in the column\'s check, set_preferences and the toastDefaults setting (the lists are one list)', () => {
