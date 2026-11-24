@@ -1442,6 +1442,9 @@ grant execute on function my_alerts_unread() to authenticated;
 -- the caller's own characters (the character of its first Act), and so says nothing about who else started a thread. It is a view that runs as its owner, because thread_departures is closed to the caller;
 -- the filter by my_characters is what limits it. Reading is one pass over the moves, which are a Boss's decisions and few; log_page cuts them to the 200 newest within its window, as every list it holds.
 -- Way out: the move ends as every move does (reversed, superseded or by an admin); the row is a record and shows where the thread went.
+-- A thread's departures, found by the thread: the view joins the caller's started threads to them, so a player who started many threads reads only those threads' moves.
+create index thread_departures_thread on thread_departures (thread);
+
 create view my_threads_moved as
   select d.act as move, m.created_at as at, d.thread, s.character, d.from_board as "from", case when jsonb_typeof(m.payload #> '{params,board}') = 'string' then (m.payload #>> '{params,board}')::uuid end as "to",
          t.title, (select b.name from boards_now b where b.id = d.from_board) as from_name,
