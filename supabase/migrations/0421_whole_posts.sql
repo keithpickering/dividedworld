@@ -1,29 +1,29 @@
 -- Whole posts, the database (docs/plans/2026-11-23-whole-posts-plan.md, Task 2; the design is docs/plans/2026-11-23-whole-posts-design.md, sections 2, 3 and 5).
 -- A persona's turn reads whole posts instead of excerpts, and the day's budget is counted in characters instead of turns.
 --
--- 1. pool_read(in_thread, staff_key, named, "window")   one read of a thread for a persona: {title, self, posts}, every body whole (no left(), no cut). posts is the union, each once, in thread order, of the thread's first
+-- 1. the settings   setting_pool (0415), `turns` without perDay, and the pool holding `charsPerDay` (a whole number from 0 to 20,000,000: the characters of staff words in a UTC day) and `readMost` (a whole number from 1,000 to 200,000:
+--    the most characters a turn's read holds). Everything else as 0415 wrote it. The stored `pool` row is rewritten here by pool_rewrite_whole_posts, which a test re-runs on rows of its own: turns.perDay removed, charsPerDay
+--    set to perDay x 13,000 (800,000 where there was no perDay), readMost 40,000 where absent; `tuned_at` is kept (the seeding flag, as a seed's own write sets it). A settings row, not an Act: an UPDATE is allowed.
+--    seed_setting (0355) cannot put turns.perDay back: its write goes through the settings trigger, which holds setting_pool, and a pool with turns.perDay is refused (23514); on a tuned row it fills only keys the row lacks.
+--
+-- 2. the spends   pool_spends, pool_turns and pool_attempts hold `chars` (the characters the call wrote or was charged, an integer, not null, default 0, never negative). record_pool_spend, write_staff_turn and
+--    record_turn_attempt take it as their last parameter, with no default, so a caller that forgets it is refused and not silently charged nothing; the old signatures are dropped and the new ones carry the grants.
+--    pool_chars_today(day) is the sum of chars over the day's pool_spends, pool_turns and paid pool_attempts (as pool_turns_today, 0419, counts the day's turns plus paid attempts; it stays). Each function is its latest
+--    definition (0420, 0415, 0419) with the parameter added and the column written; lock order and refusals as they were.
+--
+-- 3. pool_read(in_thread, staff_key, named, "window")   one read of a thread for a persona: {title, self, posts}, every body whole (no left(), no cut). posts is the union, each once, in thread order, of the thread's first
 --    post; its newest `window` posts (the engine's READ_WINDOW, passed in; clamped to 200 here); `named` (the first 50); the persona's newest 20 posts there and the newest 10 replies to each; and the posts of this
 --    thread that any of those quote (quote_refs), one hop and no further, at most 10 for each quoting post. Each post is {act, seq, at, author, name, pronouns, body, replyTo, quotes}: seq is the post's number in the thread
 --    (acts.seq, the "#n" pool_thread names a post by), replyTo its target_act_id, quotes the posts of this thread it quotes. Reads only acts_public, characters_public, character_profiles, quote_refs and thread_list (and
 --    the persona's own id is read from characters_public, the debuted characters, and a persona that has not debuted has none), so a hidden post (acts_public's `hidden`, which still lists the row, with no words) is in no part of it: not as a post, not as a quote, not counted in the window. security definer, owned by kayfabb_digest as pool_thread is, the service role's only.
 --    quote_refs is read by that role: its select on (act, quoted) and a policy of its own, as the digest role has on the other tables it reads (0045_digest.sql). A quote of a post is in the quoting post's own public body,
 --    and the rows read are those of Acts acts_public already shows, so nothing is said that a player cannot see.
---    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts, quote_refs' primary key, acts' own key).
---
--- 2. the settings   setting_pool (0415), `turns` without perDay, and the pool holding `charsPerDay` (a whole number from 0 to 20,000,000: the characters of staff words in a UTC day) and `readMost` (a whole number from 1,000 to 200,000:
---    the most characters a turn's read holds). Everything else as 0415 wrote it. The stored `pool` row is rewritten here by pool_rewrite_whole_posts, which a test re-runs on rows of its own: turns.perDay removed, charsPerDay
---    set to perDay x 13,000 (800,000 where there was no perDay), readMost 40,000 where absent; `tuned_at` is kept (the seeding flag, as a seed's own write sets it). A settings row, not an Act: an UPDATE is allowed.
---    seed_setting (0355) cannot put turns.perDay back: its write goes through the settings trigger, which holds setting_pool, and a pool with turns.perDay is refused (23514); on a tuned row it fills only keys the row lacks.
---
--- 3. the spends   pool_spends, pool_turns and pool_attempts hold `chars` (the characters the call wrote or was charged, an integer, not null, default 0, never negative). record_pool_spend, write_staff_turn and
---    record_turn_attempt take it as their last parameter, with no default, so a caller that forgets it is refused and not silently charged nothing; the old signatures are dropped and the new ones carry the grants.
---    pool_chars_today(day) is the sum of chars over the day's pool_spends, pool_turns and paid pool_attempts (as pool_turns_today, 0419, counts the day's turns plus paid attempts; it stays). Each function is its latest
---    definition (0420, 0415, 0419) with the parameter added and the column written; lock order and refusals as they were.
+--    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts, acts_target for the replies, acts_edits (an index-only probe) for a post's latest edit, quote_refs' primary key, acts' own key).
 -- Ways out: no state is added. A spend, a turn and an attempt are ledger rows; a budget spent by the day's end is the next day's fresh one.
 -- Masks: pool_read reads public Acts and characters (characters_public); the persona's own id is its own. Nothing here reads an owner, a class or who reacted.
 -- The test that drives it red is supabase/tests/0421-whole-posts.sql.
 
--- ===================================================================================== 2. the settings ====
+-- ===================================================================================== 1. the settings ====
 -- setting_pool (0415_chattier_staff.sql), `turns` without perDay, the pool holding charsPerDay and readMost.
 create or replace function setting_pool(v jsonb) returns text
 language plpgsql immutable set search_path = public, pg_temp as $$
@@ -103,7 +103,7 @@ begin
   perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
 end $$;
 
--- ===================================================================================== 3. the spends ====
+-- ===================================================================================== 2. the spends ====
 alter table pool_spends add column chars integer not null default 0 check (chars >= 0);
 alter table pool_turns add column chars integer not null default 0 check (chars >= 0);
 alter table pool_attempts add column chars integer not null default 0 check (chars >= 0);
@@ -216,7 +216,7 @@ $$;
 revoke execute on function pool_chars_today(date) from public, anon, authenticated;
 grant execute on function pool_chars_today(date) to service_role;
 
--- ===================================================================================== 1. pool_read ====
+-- ===================================================================================== 3. pool_read ====
 grant select (act, quoted) on quote_refs to kayfabb_digest;
 create policy digest_reads on quote_refs for select to kayfabb_digest using (true);
 

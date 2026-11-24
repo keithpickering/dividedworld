@@ -263,7 +263,7 @@ begin
   for i in 1..12 loop ids := ids || tests.act(a, 'post', t, jsonb_build_object('body', 'Reply ' || i), ids[26], base + (30 + i) * interval '1 minute'); end loop;
   r := pool_read(t, 'wp-boss', null, 0);
   if jsonb_array_length(r -> 'posts') is distinct from 1 + 20 + 10 then raise exception 'a persona read holds % posts, not 31', jsonb_array_length(r -> 'posts'); end if;
-  if r -> 'posts' @> jsonb_build_array(jsonb_build_object('body', 'Persona 5')) or exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' in ('Persona 5', 'Reply 1', 'Reply 2')) then
+  if exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' in ('Persona 5', 'Reply 1', 'Reply 2')) then
     raise exception 'the 20-post or the 10-reply cap is not the newest';
   end if;
   if not exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' = 'Persona 6') or not exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' = 'Reply 3') then
@@ -283,4 +283,31 @@ begin
     raise exception 'the quotes are not the newest ten, newest first: %', e -> 'quotes';
   end if;
   if jsonb_array_length(r -> 'posts') is distinct from 12 then raise exception 'the hop adds % posts, not ten', jsonb_array_length(r -> 'posts') - 2; end if;
+end $$;
+
+-- ---- 3c. pool_read: the window is clamped to 200, and a post whose latest edit is hidden is left out ----
+do $$
+declare
+  a uuid := tests.character(tests.account('wp-d-ann'), 'Wp D Ann');
+  adm uuid := tests.account('wp-d-admin');
+  base timestamptz := now() - interval '1 day';
+  t uuid := tests.thread('Wp Window'); i integer; p uuid; ed uuid; r jsonb;
+begin
+  insert into admins (account) values (adm);
+  for i in 1..250 loop perform tests.post(a, t, 'Post ' || i, base + i * interval '1 minute'); end loop;
+  r := pool_read(t, 'nobody', null, 1000);
+  if jsonb_array_length(r -> 'posts') is distinct from 201 then raise exception 'a window of 1000 reads % posts, not 200 and the opener', jsonb_array_length(r -> 'posts'); end if;
+  if not exists (select 1 from jsonb_array_elements(r -> 'posts') x where x ->> 'body' = 'Post 250') or exists (select 1 from jsonb_array_elements(r -> 'posts') x where x ->> 'body' = 'Post 50') then
+    raise exception 'the clamped window is not the newest 200';
+  end if;
+  r := pool_read(t, 'nobody', null, -5);
+  if jsonb_array_length(r -> 'posts') is distinct from 1 then raise exception 'a negative window reads % posts', jsonb_array_length(r -> 'posts'); end if;
+
+  p := tests.post(a, t, 'Soon to be hidden.', base + interval '300 minutes');
+  ed := tests.act(a, 'edit', t, '{"body": "An edit an admin hides."}', p, base + interval '301 minutes');
+  if not exists (select 1 from jsonb_array_elements(pool_read(t, 'nobody', array[p], 0) -> 'posts') x where (x ->> 'act')::uuid = p) then raise exception 'the edited post is not read before the hide'; end if;
+  insert into conduct_decisions (version_act, post, admin, outcome) values (ed, p, adm, 'hide');
+  if exists (select 1 from jsonb_array_elements(pool_read(t, 'nobody', array[p], 5) -> 'posts') x where (x ->> 'act')::uuid = p or x ->> 'body' like '%an admin hides%') then
+    raise exception 'a post whose latest edit is hidden is read';
+  end if;
 end $$;
