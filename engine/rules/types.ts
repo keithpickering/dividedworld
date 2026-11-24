@@ -174,6 +174,17 @@ export interface ConductSettings {
   readonly adminAddress: string | null;
 }
 
+/**
+ * The staff requests' numbers (`Settings.staffRequests`; the staff requests design). `daysMost` is how long a request waits for a ruling before it
+ * lapses by itself; `meetingMost` is how many of the waiting requests one meeting rules on. Mirrors `setting_staffrequests` in SQL.
+ */
+export interface StaffRequestSettings {
+  /** The most days a request waits for a ruling before the tick lapses it, a whole number, at least 1. */
+  readonly daysMost: number;
+  /** The most waiting requests one meeting rules on, a whole number, at least 1. */
+  readonly meetingMost: number;
+}
+
 /** The settings the engine itself reads. A class's own numbers live with the class. */
 export interface Settings {
   /** The most a wallet holds; Aura past it leaves the wallet and stays in the standing. */
@@ -389,6 +400,8 @@ export interface Settings {
   readonly apology: ApologySettings;
   /** The code of conduct's numbers: how many reports to admins an account holds open, and where replies to a moderation email go. */
   readonly conduct: ConductSettings;
+  /** The staff requests' numbers: how long a request waits for a ruling, and how many one meeting rules on. A starting point each. */
+  readonly staffRequests: StaffRequestSettings;
   /** The longest a board's name may be, in characters, whether The System or a player proposes it. */
   readonly boardNameMaxLength: number;
   /** The most days any move may last, whatever its phase allows. A starting point. */

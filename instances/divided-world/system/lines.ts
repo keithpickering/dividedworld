@@ -140,4 +140,19 @@ export const stockLines: StockLines = Object.freeze({
     'You asked for a second opinion, {appellant}. {mod}\'s second opinion is worse than the first.',
     'Increased. {mod} would like {appellant} to treat this as a learning opportunity, mostly for {appellant}.',
   ]),
+  requestGranted: Object.freeze([
+    'Fine. Done. Don\'t make it a habit, {asker}.',
+    'Granted. Enjoy it while it lasts.',
+    'The meeting says yes. I said no, but I was outvoted by me.',
+  ]),
+  requestRefused: Object.freeze([
+    'No.',
+    'Brought it to the meeting. The meeting laughed.',
+    '{asker}, the answer is no, and the question is noted.',
+  ]),
+  requestLapsed: Object.freeze([
+    'I was going to get to this.',
+    'Lost in the shuffle. Ask again, nicer.',
+    'The meeting ran long, {asker}.',
+  ]),
 });

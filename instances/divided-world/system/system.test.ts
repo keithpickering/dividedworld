@@ -175,6 +175,15 @@ test('the four appeal lines use only the tokens an appeal\'s ruling is given', (
   }
 });
 
+test('the three request lines use only the tokens a request\'s ruling is given', () => {
+  for (const k of ['requestGranted', 'requestRefused', 'requestLapsed'] as const) {
+    assert.ok(STOCK_LINE_KEYS.includes(k), k);
+    assert.deepEqual([...STOCK_LINE_TOKENS[k]], ['boss', 'asker']);
+    assert.ok(system.stockLines[k].length >= 1, k);
+    for (const line of system.stockLines[k]) for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) assert.ok(['boss', 'asker'].includes(token!), `${k}: {${token}}`);
+  }
+});
+
 // Task 14 (Mod Bots): Divided World's staff content.
 test('every persona\'s pet rules are known predicates, and its visit hours sit inside the settings\' range', async () => {
   const { predicate } = await import('../../../engine/rules/predicates.ts');
