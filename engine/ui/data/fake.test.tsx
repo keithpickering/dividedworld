@@ -4641,6 +4641,23 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     expect(await walletOf(fake, ana)).toBe(75);
   });
 
+  test('a gift to a drive on a staff post tells nobody', async () => {
+    const { fake, ana, bo, anaFace, thread } = driveWorld();
+    const staff = fake.seed.staff('boss', 'The Boss', 'boss');
+    const drive = fake.seed.card(staff, fake.seed.staffPost(staff, thread, 'Hello from the glass.'), 'appeal');
+    const heard: { kind: string }[] = [];
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(ana);
+    must(await fake.donate(anaFace, drive, 10));
+    await flush();
+    expect(heard).toEqual([]);
+    expect((await fake.alerts()).filter((a) => a.kind === 'gift')).toEqual([]);
+    fake.signInAs(bo);
+    expect((await fake.alerts()).filter((a) => a.kind === 'gift')).toEqual([]);
+  });
+
   test('the answer is the same whether or not the author\'s wallet is full, and the overflow is lost without a word', async () => {
     const a = driveWorld();
     const b = driveWorld();
@@ -5332,6 +5349,28 @@ describe('a surface, as the server keeps it', () => {
     must(await fake.draw(play, anaHeel, { strokes: [stroke(0.1, 0.1)] }));
     await flush();
     expect(heard.ana).toHaveLength(1);
+  });
+
+  test('a staff draw on a wall tells the wall post\'s author cardOnYours/drew', async () => {
+    const { fake, ana, anaFace, play } = wall();
+    const drawn = fake.seed.draw(null as unknown as string, play);
+    fake.signInAs(ana);
+    expect((await fake.alerts()).filter((a) => a.sub === 'drew')).toMatchObject([{ kind: 'cardOnYours', sub: 'drew', act: drawn, character: anaFace }]);
+  });
+
+  test('a wash tells nobody, the author\'s own and the caster\'s alike', async () => {
+    const { fake, ana, bo, anaFace, play } = wall();
+    const heard: { kind: string; sub: string | null }[] = [];
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(ana);
+    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    await flush();
+    expect(heard).toEqual([]);
+    expect((await fake.alerts()).filter((a) => a.act === washed.id)).toEqual([]);
+    fake.signInAs(bo);
+    expect((await fake.alerts()).filter((a) => a.act === washed.id)).toEqual([]);
   });
 
   test('the limit\'s refusal says what the database says, with the same numbers', async () => {

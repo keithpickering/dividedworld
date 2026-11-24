@@ -745,7 +745,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    */
   function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours' | 'cardEnded' | 'gift'; sub: 'drew' | 'onYours' | null; character: Id }[] {
     const ownerOf = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
-    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert; none for a staff caster), and the side it landed on's (onYours), none for the caster's own. */
+    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert; none for a staff
+       caster), and the side it landed on's (onYours), none for the caster's own. */
     if (a.kind === 'card_end') {
       const play = a.target === null ? undefined : acts.get(a.target);
       const caster = play?.character;
@@ -764,7 +765,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     /* A drive's post's author is told of a gift, and a wall's of a drawing; a staff drawer (no character) tells the author as well. */
     if (a.kind === 'donation' || a.kind === 'draw') {
-      const author = a.target === null ? undefined : acts.get(a.target)?.target == null ? undefined : acts.get(acts.get(a.target)!.target!)?.character;
+      const play = a.target === null ? undefined : acts.get(a.target);
+      const post = play?.target == null ? undefined : acts.get(play.target);
+      const author = post?.character;
       const owner = ownerOf(author);
       if (author == null || !owner || owner === ownerOf(a.character)) return [];
       return [{ account: owner, kind: a.kind === 'donation' ? 'gift' : 'cardOnYours', sub: a.kind === 'draw' ? 'drew' : null, character: author }];
@@ -1680,8 +1683,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const closed = pollRefusal(p);
     if (closed) return closed;
     const close = write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } });
-    /* An admin's close tells the poll's own player (close_poll_as_admin's write_alert, which passes no acting account): ruling/pollClosed, about the close, the admin's
-       own poll included; none for a staff one, which has no owner. */
+    /* An admin's close tells the poll's own player (close_poll_as_admin's write_alert, which passes no acting account):
+       ruling/pollClosed, about the close, the admin's own poll included; none for a staff one, which has no owner. */
     const owner = character === null && p.character !== null ? characters.get(p.character)?.owner : undefined;
     if (owner) {
       const line = { account: owner, kind: 'ruling' as const, sub: 'pollClosed', act: close.id, character: p.character, at: close.at };
