@@ -1680,9 +1680,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const closed = pollRefusal(p);
     if (closed) return closed;
     const close = write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } });
-    /* An admin's close tells the poll's own player (close_poll_as_admin's write_alert): ruling/pollClosed, about the close; none for the admin's own poll or a staff one. */
+    /* An admin's close tells the poll's own player (close_poll_as_admin's write_alert, which passes no acting account): ruling/pollClosed, about the close, the admin's
+       own poll included; none for a staff one, which has no owner. */
     const owner = character === null && p.character !== null ? characters.get(p.character)?.owner : undefined;
-    if (owner && owner !== me()?.id) {
+    if (owner) {
       const line = { account: owner, kind: 'ruling' as const, sub: 'pollClosed', act: close.id, character: p.character, at: close.at };
       seededAlerts.push(line);
       send(`account:${owner}`, 'alert', () => { for (const l of [...(accountListeners.get(owner) ?? [])]) l.onAlert?.({ id: crypto.randomUUID(), kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });

@@ -7002,6 +7002,17 @@ describe('polls (0395, 0396)', () => {
     expect((await fake.alerts()).filter((a) => a.kind === 'ruling')).toEqual([]);
   });
 
+  test('an admin who closes a poll their own account owns is told too: close_poll_as_admin passes no acting account', async () => {
+    const { fake } = await poll();
+    const boss = fake.seed.account('boss', { admin: true });
+    const bossFace = fake.seed.character(boss, 'Boss Face', 'face');
+    fake.signInAs(boss);
+    const started = must(await fake.startThread('general', bossFace, 'Mine', 'Vote.', undefined, draft));
+    const mine = (await fake.threadPage(started.thread.id, { page: 1 }, null, []))!.polls[0]!.act.id;
+    const close = must(await fake.closePollAsAdmin(mine)).act;
+    expect((await fake.alerts()).filter((a) => a.kind === 'ruling')).toMatchObject([{ sub: 'pollClosed', act: close.id, character: bossFace }]);
+  });
+
   test('a poll and a public ballot can be spun: the place names them, the page\'s origin carries the poll, and the refusals are the server\'s', async () => {
     const { fake, id, anaFace, thread, post, ana } = await poll();
     const ballot = must(await fake.castBallot(id, anaFace, [1])).act;
