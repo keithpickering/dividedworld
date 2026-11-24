@@ -394,3 +394,112 @@ begin
   if landed is null then raise exception 'the move of a staff thread did not land: %', (select r.failure from queued_moves r where r.id = q); end if;
   if (select count(*) from alerts) is distinct from before then raise exception 'a staff starter was alerted'; end if;
 end $$;
+
+-- Task 5 (section 4): an admin's in-game acts on yours.
+--
+-- 1. reverse_card tells the target beside the caster: a post's author at post reach, the character at character reach, the thread's starter at thread reach, `cardEnded/onYours` about the card_end.
+-- 2. Where the caster and the target are one player's, the caster's alert alone; at board reach, the caster's alone.
+-- 3. reverse_award writes ruling/trophyReversed to the award's character's account, about no Act.
+-- 4. close_poll_as_admin writes ruling/pollClosed to the poll post's author, about the close Act.
+-- 5. grant_gear writes ruling/gearGiven to the character's account, about no Act.
+
+do $$
+declare
+  boss uuid := tests.account('ra-admin');
+  caster uuid := pg_temp.player('ad-caster');
+  author uuid := pg_temp.player('ad-author');
+  other uuid := pg_temp.player('ad-other');
+  twin uuid := tests.character(pg_temp.owner(caster), 'Ra ad-twin');
+  t uuid;
+  p uuid; own_post uuid; started jsonb;
+  play uuid; got jsonb; ended uuid;
+  trophy text; award uuid; poll uuid; closed jsonb; n integer;
+begin
+  insert into admins (account) values (boss);
+  insert into gear_kinds (key, rarity) values ('ra-hat', 'common');
+  -- The thread is started by `other` through the real path, so its starter is the character of its first Act.
+  perform tests.become(pg_temp.owner(other));
+  started := start_thread('general', other, 'Ra admin acts', 'Ra starter.');
+  perform tests.unbecome();
+  t := (started -> 'thread' ->> 'id')::uuid;
+  p := tests.post(author, t, 'Ra target post.');
+  own_post := tests.post(twin, t, 'Ra twin post.');
+
+  -- 1. A card on a post: the caster's alert, and the author's onYours about the same card_end.
+  play := tests.act(caster, 'card', t, '{"card": "splat"}', p);
+  perform tests.become(boss);
+  got := reverse_card(play);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(caster) and a.kind = 'cardEnded' and a.sub is null and a.act = ended and a.character = caster) is distinct from 1 then raise exception 'the caster was not told of the end of a card on a post'; end if;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(author) and a.kind = 'cardEnded' and a.sub = 'onYours' and a.act = ended and a.character = author) is distinct from 1 then raise exception 'the post author was not told of an admin ending a card on a post'; end if;
+  if (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from 2 then raise exception 'an admin''s end of a card on a post wrote % alerts', (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended); end if;
+
+  -- 2. Caster and target one player's: the caster's alert alone.
+  play := tests.act(caster, 'card', t, '{"card": "splat"}', own_post);
+  perform tests.become(boss);
+  got := reverse_card(play);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select array_agg(a.account || ':' || coalesce(a.sub, 'null')) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from array[pg_temp.owner(caster)::text || ':null'] then
+    raise exception 'a card on one''s own other mask wrote: %', (select array_agg(a.account || ':' || coalesce(a.sub, 'null')) from alerts a where a.kind = 'cardEnded' and a.act = ended);
+  end if;
+
+  -- 3. Character reach: the character's player.
+  play := tests.act(caster, 'card', t, '{"card": "selfie", "reach": "character"}', p);
+  insert into play_reach (play, reach, character, ends_at) values (play, 'character', other, now() + interval '1 day');
+  perform tests.become(boss);
+  got := reverse_card(play);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(other) and a.kind = 'cardEnded' and a.sub = 'onYours' and a.act = ended and a.character = other) is distinct from 1 then raise exception 'the character at character reach was not told'; end if;
+  if (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from 2 then raise exception 'an end at character reach wrote % alerts', (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended); end if;
+
+  -- 4. Thread reach: the thread's starter.
+  play := tests.act(caster, 'card', t, '{"card": "marquee", "reach": "thread"}', p);
+  insert into play_reach (play, reach, thread, ends_at) values (play, 'thread', t, now() + interval '1 day');
+  perform tests.become(boss);
+  got := reverse_card(play);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(other) and a.kind = 'cardEnded' and a.sub = 'onYours' and a.act = ended and a.character = other) is distinct from 1 then raise exception 'the thread''s starter was not told'; end if;
+  if (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from 2 then raise exception 'an end at thread reach wrote % alerts', (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended); end if;
+
+  -- 5. Board reach: the caster's alert alone.
+  play := tests.act(caster, 'card', t, '{"card": "quake", "reach": "board"}', null);
+  insert into play_reach (play, reach, board, ends_at) values (play, 'board', (select board from threads where id = t), now() + interval '1 day');
+  perform tests.become(boss);
+  got := reverse_card(play);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select array_agg(a.account || ':' || coalesce(a.sub, 'null')) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from array[pg_temp.owner(caster)::text || ':null'] then
+    raise exception 'a card at board reach wrote: %', (select array_agg(a.account || ':' || coalesce(a.sub, 'null')) from alerts a where a.kind = 'cardEnded' and a.act = ended);
+  end if;
+
+  -- 6. reverse_award
+  perform tests.become(boss);
+  trophy := make_trophy('Ra Cup') ->> 'trophy';
+  award := (award_trophy(trophy, author, 'Well done.') ->> 'award')::uuid;
+  perform tests.unbecome();
+  n := (select count(*) from alerts a where a.kind = 'ruling');
+  perform tests.become(boss);
+  perform reverse_award(award);
+  perform tests.unbecome();
+  if (select count(*) from alerts a where a.kind = 'ruling') is distinct from n + 1 then raise exception 'reverse_award wrote % ruling alerts', (select count(*) from alerts a where a.kind = 'ruling') - n; end if;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(author) and a.kind = 'ruling' and a.sub = 'trophyReversed' and a.act is null and a.character = author) is distinct from 1 then raise exception 'the award''s character was not told its trophy was taken back'; end if;
+
+  -- 7. close_poll_as_admin
+  poll := tests.act(author, 'poll', t, jsonb_build_object('question', 'Best kart?', 'options', jsonb_build_array('Pipe Frame', 'Badwagon'), 'pick', 1, 'secret', false, 'closes_at', now() + interval '1 day'), p);
+  perform tests.become(boss);
+  closed := close_poll_as_admin(poll);
+  perform tests.unbecome();
+  if (select count(*) from alerts a where a.account = pg_temp.owner(author) and a.kind = 'ruling' and a.sub = 'pollClosed' and a.act = (closed -> 'act' ->> 'id')::uuid and a.character = author) is distinct from 1 then raise exception 'the poll''s author was not told an admin closed it: %', closed; end if;
+  if (select count(*) from alerts a where a.sub = 'pollClosed') is distinct from 1 then raise exception 'closing a poll wrote more than one alert'; end if;
+
+  -- 8. grant_gear
+  perform tests.become(boss);
+  perform grant_gear(other, 'ra-hat', 2);
+  perform tests.unbecome();
+  if (select count(*) from alerts a where a.sub = 'gearGiven') is distinct from 1 then raise exception 'a grant of two copies wrote % alerts', (select count(*) from alerts a where a.sub = 'gearGiven'); end if;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(other) and a.kind = 'ruling' and a.sub = 'gearGiven' and a.act is null and a.character = other) is distinct from 1 then raise exception 'the character given gear was not told'; end if;
+end $$;

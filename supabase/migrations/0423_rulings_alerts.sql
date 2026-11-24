@@ -931,3 +931,130 @@ begin
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'beats', arcs, 'budget', out_of_time,
     'noThread', enabled and ann is null, 'awardsFailed', awards_failed);
 end $$;
+
+-- ===================================================================================== Section 4 ====
+-- Section 4 (design section 3): an admin's in-game acts on yours
+-- Each function is copied whole from its latest definition before this migration; only the alert is added. Their grants are as they were: create or replace keeps them, and each revoke and grant that followed a definition is copied with it.
+--   reverse_card         0405_cut.sql: beside the caster's alert, the target's cardEnded/onYours about the card_end, the caster's owner acting. The target is found as my_cards_ended (0402) finds it:
+--                        the post's author (post reach), the character (character reach), the thread's starter (thread reach; the Act of seq 1 in the thread, as the view reads it), the locked character
+--                        of a lockout, none at board reach.
+--   reverse_award        0206_trophies.sql: ruling/trophyReversed to the award's character, about no Act.
+--   close_poll_as_admin  0395_polls.sql: ruling/pollClosed to the poll post's character, about the close Act.
+--   grant_gear           0213_cosmetics_log.sql: ruling/gearGiven to the character, about no Act, once per grant.
+-- Ways out: nothing here adds a state a player can be put in; an alert is read and cleared as every alert is.
+
+create or replace function reverse_card(play uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  p acts%rowtype;
+  written uuid;
+  target uuid;
+begin
+  perform only_admins('ends a card');
+  -- The play's row is locked, so two admins at once write one end between them and the second sees the first's.
+  select * into p from acts a where a.id = play and (a.kind = 'card' or (a.kind = 'spring' and a.payload ->> 'did' = 'lockedOut')) for no key update;
+  if not found then raise exception 'that is not a card play' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if p.kind = 'spring' then
+    -- A sprung lockout: over once its `until` has passed. It has no caught, ends, reach, keeps or refunds: those are a card play's.
+    if (p.payload ->> 'until')::timestamptz <= now() then
+      raise exception 'that card has already worn off' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+    if exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = p.id) then
+      raise exception 'an admin has already ended that card' using hint = 'kayfabb.refusal', errcode = '55000';
+    end if;
+  else
+  if p.payload ? 'caught' then raise exception 'that card was caught by a trap, so it never landed' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  -- A play of a kind that keeps still counts on the posts it was up over after its time (thread_page's `kept`), so an admin may end it then.
+  if ((p.payload ->> 'ends')::timestamptz <= now() or exists (select 1 from play_reach r where r.play = p.id and r.ends_at <= now()))
+     and not coalesce((select ck.keeps from card_kinds ck where ck.key = p.payload ->> 'card'), false) then
+    raise exception 'that card has already worn off' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  if exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = p.id) then
+    raise exception 'an admin has already ended that card' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  if exists (select 1 from card_write_refunds r where r.play = p.id) then
+    raise exception 'That card didn''t take, so there is nothing of it on this post.' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- A play a card that cuts ended: the card that did it is named, since ending that card is what brings this one back (card_cut_at reads the cutting plays an admin has not ended).
+  if card_cut_at(p.id) is not null then
+    raise exception 'a % already ended that card; end that card to bring this one back',
+      (select ck.name from acts c join card_kinds ck on ck.key = c.payload ->> 'card'
+       where c.kind = 'card' and (c.payload -> 'cut' ->> 'play') = p.id::text and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = c.id)
+       order by c.created_at, c.id limit 1)
+      using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- Any other way a play is over (a pierce a cast spent): it is not an admin's to end again.
+  if card_ended(p.id) then raise exception 'that card is already over' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+  end if;
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload)
+  values (null, 'card_end', p.thread, p.id, jsonb_build_object('why', 'reversed', 'by', 'admin')) returning id into written;
+  perform set_config('kayfabb.card_end_writer', '', true);
+  -- The caster's alert (Task 4; for a lockout, the setter's, as the spring is the setter's Act): one, in this transaction, for the caster's own player, about the card_end. write_alert writes none
+  -- for a staff character (no owner), so a staff play's end tells nobody. `acting` is null: the admin is not told apart from the caster.
+  perform write_alert(p.character, 'cardEnded', null, written, null);
+  -- The target's alert (Task 5; design section 3), found as my_cards_ended finds the target side: the post's author at post reach, the character at character reach, the thread's starter at thread reach,
+  -- the locked character for a lockout, and none at board reach. `acting` is the caster's owner, so a play on one's own other mask tells the caster alone.
+  if p.kind = 'spring' then
+    target := (p.payload ->> 'locks')::uuid;
+  else
+    select case coalesce(pr.reach, 'post')
+             when 'post' then (select x.character from acts x where x.id = p.target_act_id)
+             when 'character' then pr.character
+             when 'thread' then (select o.character from acts o where o.thread = pr.thread and o.seq = 1)
+           end
+      into target from (select 1) one left join play_reach pr on pr.play = p.id;
+  end if;
+  perform write_alert(target, 'cardEnded', 'onYours', written, (select c.owner from characters c where c.id = p.character));
+  -- The answer carries the play, and for a play beyond a post its reach, so the act function can broadcast the end on `reach`.
+  return act_projection(written) || jsonb_strip_nulls(jsonb_build_object('play', p.id,
+    'reach', case when p.payload ->> 'reach' in ('character', 'thread', 'board') then p.payload ->> 'reach' end));
+end $$;;
+
+create or replace function reverse_award(of_award uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  taken uuid;
+begin
+  perform only_admins('takes a trophy back');
+  perform 1 from trophy_awards where id = of_award for share;
+  if not found then raise exception 'there is no such trophy' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  insert into trophy_reversals (award, by) values (of_award, signed_in_account()) on conflict (award) do nothing returning award into taken;
+  if taken is null then raise exception 'that trophy was already taken back' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  delete from trophies_shown where award = of_award;
+  -- The award's character is told (Task 5): a ruling about no Act, since the log names which award.
+  perform write_alert((select a.character from trophy_awards a where a.id = of_award), 'ruling', 'trophyReversed', null, null);
+  return jsonb_build_object('reversed', of_award);
+end $$;
+revoke execute on function reverse_award(uuid) from public, anon;
+grant execute on function reverse_award(uuid) to authenticated;
+
+create or replace function close_poll_as_admin(poll uuid) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  closed jsonb;
+begin
+  perform only_admins('closes a poll');
+  closed := poll_close_written(close_poll_as_admin.poll, null);
+  -- The poll post's character is told (Task 5), about the close Act.
+  perform write_alert((select a.character from acts a where a.id = close_poll_as_admin.poll), 'ruling', 'pollClosed', (closed -> 'act' ->> 'id')::uuid, null);
+  return closed;
+end $$;
+revoke execute on function close_poll_as_admin(uuid) from public, anon;
+grant execute on function close_poll_as_admin(uuid) to authenticated;
+
+create or replace function grant_gear(of_character uuid, gear_key text, copies integer) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  its_owner uuid;
+begin
+  perform only_admins('grants gear');
+  if copies is null or copies not between 1 and 100 then raise exception 'a grant is 1 to 100 copies' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  if not exists (select 1 from gear_kinds k where k.key = gear_key) then raise exception 'there is no gear "%"', gear_key using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  select owner into its_owner from characters where id = of_character;
+  if its_owner is null then raise exception 'there is no such character' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  insert into gear_ledger (account, gear, kind, through) select its_owner, gear_key, 'granted', of_character from generate_series(1, copies);
+  -- The character is told (Task 5), about no Act: the log names the gear.
+  perform write_alert(of_character, 'ruling', 'gearGiven', null, null);
+  return jsonb_build_object('granted', copies);
+end $$;
