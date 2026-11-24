@@ -7,6 +7,20 @@
  *
  * What is measured is what a connection keeps, not the peak of the planning: the peak has no reading Postgres gives from inside a function. The kept figure moves with the
  * planning (the kept plan is what the planner built) and repeats from one fresh connection to the next to within a few hundredths of a megabyte.
+ *
+ * The catalog cache is counted by the bytes it uses, every other context by the blocks it holds (`keptBytes`; issue #968, the owner's choice, 2026-11-24).
+ * CacheMemoryContext holds the relcache and syscache entries and the planner statistics that planning reads. Like any AllocSet it grows by blocks that double, up to
+ * Postgres's 8 MB cap, so its next block is about as large as everything it holds already: 2 MB once it holds 2 MB. The call that first needs a byte past the
+ * last block gets the whole new block. Counted by blocks, board_page's figure moved by 2 MB when about 150 kB more was used (0403, at BUDGETS). It also moved by 2 MB
+ * with no SQL changed, when an analyze moved the statistics. That is a fact about the files' order and the statistics, not about a plan. The pool's arithmetic (README,
+ * step 5; docs/plans/2026-11-15-warm-reads-design.md, section 3) reads what a connection allocates, and the used figure is still right for the cache, for three reasons:
+ *   - There is one cache per connection, not one per page type. The bytes its last block leaves free are allocated once per connection, by whichever call first
+ *     needed that block, and a connection that has served every page type holds them whatever order it served them in.
+ *   - Those free bytes are never more than the last block, so never more than the cache uses, and never more than 8 MB.
+ *   - Charged to one function's budget, they make that function's figure depend on the order of the files and on the last analyze, not on its plan.
+ * So they are a cost of the connection, bounded by that block, and not a cost of any screen function. The kept plans are still counted by the blocks they hold:
+ * every other context, including the CachedPlan and CachedPlanSource contexts that hang under CacheMemoryContext. The budget exists to catch them, and a plan that
+ * grows by a block grows the connection by that block.
  *   1. Every screen function has a budget and every budget names a screen function. The names are the rule screen-functions.ts holds (`screenNames`), which the screen
  *      functions' guard (0016-screen-reads.ts) reads too, not a copy.
  *   2. A function over its budget fails, naming the figures. A budget far above what is measured guards nothing, so a measurement under its budget by more than the larger
@@ -148,28 +162,54 @@ export function onlineFaults(seen: Online, own: { mask: string; persona: string 
 }
 
 /**
+ * What a connection's memory contexts hold at one moment: `cacheTotal` and `cacheFree` are CacheMemoryContext's own bytes (its blocks, and what they leave free),
+ * `others` every other context's blocks (CacheMemoryContext's children too: a kept plan's CachedPlan and CachedPlanSource contexts are among them), and `caches`
+ * how many contexts were named CacheMemoryContext, which is one on every Postgres this reads.
+ */
+export interface Held { others: number; cacheTotal: number; cacheFree: number; caches: number; }
+/** The SQL that answers a `Held` as one line of JSON. `pg_backend_memory_contexts` gives each context's own bytes, never its children's. */
+const HELD = `select json_build_object(
+    'others', coalesce(sum(total_bytes) filter (where name <> 'CacheMemoryContext'), 0),
+    'cacheTotal', coalesce(sum(total_bytes) filter (where name = 'CacheMemoryContext'), 0),
+    'cacheFree', coalesce(sum(free_bytes) filter (where name = 'CacheMemoryContext'), 0),
+    'caches', count(*) filter (where name = 'CacheMemoryContext'))
+  from pg_backend_memory_contexts;`;
+
+/**
+ * What a call kept, in bytes, from what the connection held before it and after it: every context but the catalog cache by the blocks it holds, the catalog cache by
+ * the bytes it uses (the header says why). A reading with no CacheMemoryContext, or more than one, throws: the cache would be counted as nothing, or twice.
+ */
+export function keptBytes(before: Held, after: Held): number {
+  for (const [when, h] of [['before', before], ['after', after]] as const) {
+    assert.equal(h.caches, 1, `${when} the call the connection had ${h.caches} contexts named CacheMemoryContext, not one; the catalog cache would not be counted once`);
+  }
+  return (after.others - before.others) + ((after.cacheTotal - after.cacheFree) - (before.cacheTotal - before.cacheFree));
+}
+
+/**
  * One cold read: one `sql()` call, so one fresh connection. It reads what the connection's contexts hold as the harness's superuser (the view needs it), then in one
- * transaction becomes the fixture's account, makes the call once and unbecomes, then reads again. Answers the difference, in bytes. `call` is a SQL expression and
- * `as` the account that makes it.
+ * transaction becomes the fixture's account, makes the call once and unbecomes, then reads again. Answers what the call kept (`keptBytes`). `call` is a SQL expression
+ * and `as` the account that makes it.
  */
 export function kept(call: string, as: string): number {
   requireRecorded();
   const out = sql(`
-    select sum(total_bytes) as before_bytes from pg_backend_memory_contexts \\gset
+    ${HELD}
     begin;
     do $cold$ begin perform tests.become('${as}'); perform ${call}; perform tests.unbecome(); end $cold$;
     commit;
-    select sum(total_bytes) - :before_bytes from pg_backend_memory_contexts;`);
-  const bytes = Number(out.split('\n').at(-1));
-  assert.ok(Number.isFinite(bytes), `no figure from: ${out}`);
+    ${HELD}`).split('\n');
+  const [before, after] = [out[0], out.at(-1)].map((line) => JSON.parse(line ?? '') as Held);
+  const bytes = keptBytes(before!, after!);
+  assert.ok(Number.isFinite(bytes), `no figure from: ${out.join('\n')}`);
   return bytes;
 }
 
 /**
  * What a cold read keeps, by memory context: the same call as `kept`, then the connection's largest contexts, one line each (its name, the start of its ident, which
- * for a cached plan is its query, and its kilobytes), then the tables with the largest column statistics. A function over its budget names these in the failure, so
- * the message says whether a plan grew or the catalog cache did: planning reads each planned table's statistics into CacheMemoryContext, so the rows the files before
- * this one committed move the figure with no change to any plan.
+ * for a cached plan is its query, and its kilobytes, with CacheMemoryContext's used kilobytes beside its blocks), then the tables with the largest column statistics. A
+ * function over its budget names these in the failure, so the message says whether a plan grew or the catalog cache did: planning reads each planned table's
+ * statistics into CacheMemoryContext, so the rows the files before this one committed move the figure with no change to any plan.
  */
 export function contexts(call: string, as: string, most = 12): string {
   requireRecorded();
@@ -177,7 +217,8 @@ export function contexts(call: string, as: string, most = 12): string {
     begin;
     do $cold$ begin perform tests.become('${as}'); perform ${call}; perform tests.unbecome(); end $cold$;
     commit;
-    select name || coalesce(': ' || left(regexp_replace(ident, '\\s+', ' ', 'g'), 140), '') || ' (' || round(total_bytes / 1024.0) || ' kB)'
+    select name || coalesce(': ' || left(regexp_replace(ident, '\\s+', ' ', 'g'), 140), '') || ' (' || round(total_bytes / 1024.0) || ' kB'
+      || case when name = 'CacheMemoryContext' then ', ' || round(used_bytes / 1024.0) || ' kB used, the figure counted' else '' end || ')'
     from pg_backend_memory_contexts order by total_bytes desc limit ${most};
     select 'statistics of ' || starelid::regclass || ': ' || round(sum(pg_column_size(s.*)) / 1024.0) || ' kB, ' || c.reltuples::bigint || ' rows'
     from pg_statistic s join pg_class c on c.oid = s.starelid where c.relnamespace = 'public'::regnamespace group by starelid, c.reltuples order by sum(pg_column_size(s.*)) desc limit ${most};`);
@@ -375,4 +416,32 @@ test('the far-under gap is the larger of a tenth of the budget and 0.6 MB', () =
   assert.equal(far(2.5, 2.0), false, 'budget 2.5, measured 2.0: allowed');
   assert.equal(far(2.5, 1.8), true, 'budget 2.5, measured 1.8: a fault');
   assert.equal(far(2.5, 1.95), false, 'budget 2.5, measured 1.95: inside the floor, allowed');
+});
+
+test('keptBytes counts the catalog cache by what it uses, so a new cache block alone moves a figure only by what the block holds', () => {
+  const kB = 1024;
+  // The figures #968 measured for board_page: a fresh connection's cache holds 2227 kB with 92 kB free; after the files before this one it holds 4284 kB with 2340
+  // kB used. The new 2 MB block is the whole difference in blocks, and 205 kB is the difference in use. The plans (`others`) are the same.
+  const before: Held = { others: 7 * MB, cacheTotal: 2227 * kB, cacheFree: 92 * kB, caches: 1 };
+  const step: Held = { others: 7 * MB, cacheTotal: 4284 * kB, cacheFree: (4284 - 2340) * kB, caches: 1 };
+  assert.equal(keptBytes(before, step), (2340 - 2135) * kB, 'a cache block step counts only the bytes the cache now uses');
+  assert.deepEqual(budgetFaults(['a_page'], { a_page: 7.5 }, { a_page: mb(7 * MB + keptBytes(before, step)) }), [], 'a step alone does not take a function over its budget');
+});
+
+test('keptBytes counts every other context by its blocks, so a plan that grows is over its budget', () => {
+  const kB = 1024;
+  const before: Held = { others: 7 * MB, cacheTotal: 2227 * kB, cacheFree: 92 * kB, caches: 1 };
+  // A plan 1 MB larger: one more megabyte of CachedPlan blocks (they hang under CacheMemoryContext but are contexts of their own), and the cache unchanged.
+  const grown: Held = { ...before, others: 8 * MB };
+  assert.equal(keptBytes(before, grown), MB);
+  assert.equal(budgetFaults(['a_page'], { a_page: 7.5 }, { a_page: mb(7 * MB + keptBytes(before, grown)) }).length, 1, 'a plan 1 MB larger is over');
+  // Free bytes in a plan's own context still count: only the catalog cache is read by use.
+  const sparse: Held = { ...before, others: 7 * MB + 2 * MB };
+  assert.equal(keptBytes(before, sparse), 2 * MB);
+});
+
+test('keptBytes refuses a reading with no catalog cache, or more than one', () => {
+  const h: Held = { others: MB, cacheTotal: MB, cacheFree: 0, caches: 1 };
+  assert.throws(() => keptBytes({ ...h, caches: 0 }, h), /before the call the connection had 0 contexts named CacheMemoryContext/);
+  assert.throws(() => keptBytes(h, { ...h, caches: 2 }), /after the call the connection had 2 contexts named CacheMemoryContext/);
 });
