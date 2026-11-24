@@ -400,11 +400,11 @@ test('the far-under gap is the larger of a tenth of the budget and 0.6 MB', () =
 
 test('keptBytes counts the catalog cache by what it uses, so a new cache block alone moves a figure only by what the block holds', () => {
   const kB = 1024;
-  // The figures #968 measured for board_page: a fresh connection's cache holds 2227 kB with 92 kB free; after the files before this one it holds 4284 kB with 2340
-  // kB used. The new 2 MB block is the whole difference in blocks, and 205 kB is the difference in use. The plans (`others`) are the same.
-  const before: Held = { others: 7 * MB, cacheTotal: 2227 * kB, cacheFree: 92 * kB, caches: 1 };
+  // The figures #968 measured for board_page: a fresh database's cache holds 2227 kB with 2188 kB used; after the files before this one it holds 4284 kB with 2340
+  // kB used. The new 2 MB block is the whole difference in blocks, and 152 kB is the difference in use. The plans (`others`) are the same.
+  const before: Held = { others: 7 * MB, cacheTotal: 2227 * kB, cacheFree: (2227 - 2188) * kB, caches: 1 };
   const step: Held = { others: 7 * MB, cacheTotal: 4284 * kB, cacheFree: (4284 - 2340) * kB, caches: 1 };
-  assert.equal(keptBytes(before, step), (2340 - 2135) * kB, 'a cache block step counts only the bytes the cache now uses');
+  assert.equal(keptBytes(before, step), (2340 - 2188) * kB, 'a cache block step counts only the bytes the cache now uses');
   assert.deepEqual(budgetFaults(['a_page'], { a_page: 7.5 }, { a_page: mb(7 * MB + keptBytes(before, step)) }), [], 'a step alone does not take a function over its budget');
 });
 
