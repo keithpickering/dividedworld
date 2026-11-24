@@ -137,6 +137,11 @@ const answerRows: readonly (readonly [string, OriginPlace, readonly object[], st
     "Kassie's ruling on Wario's appeal of the warn points from a post", '/c/c%2Fk'],
   ['an answer place whose staff is null reads as its ask', answer({ staff: null }), [who(wario), plain("'s report of "), postPart],
     "Wario's report of #12 in Title", '/c/c%2Fw'],
+  ['an ask reads as its ask even where it has an answer', answer({ spun: 'ask' }), [who(wario), plain("'s report of "), postPart],
+    "Wario's report of #12 in Title", '/c/c%2Fw'],
+  ['an appeal of a move whose group is not known', answer({ spun: 'ask', ask: 'appeal', punishment: 'move', group: null, on: null, staff: null }),
+    [who(wario), plain("'s appeal of "), plain('the move into '), plain('a group')],
+    "Wario's appeal of the move into a group", '/c/c%2Fw'],
 ];
 
 for (const [name, place, parts, words, href] of answerRows) {
