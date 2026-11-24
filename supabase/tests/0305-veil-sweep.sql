@@ -166,6 +166,7 @@ select 'relation', n, m, w from (values
 ) t(n, m, w);
 insert into listed (kind, name, mark, why)
 select 'function', n, m, w from (values
+  ('spin_answer_place', 'no author', 'the place of a thread spun from a report, a verdict, an appeal or a ruling (thread_open calls it): the asker is read as acts_public shows it, the stand-in under a live author veil (supabase/tests/0422-spin-answers.sql, section 5, drives it red against a read of acts.character); the staff and the names are public'),
   ('admin_contact', 'no author', 'one setting, the same for every caller'),
   ('accept_conduct', 'no author', 'a write: the caller''s own acceptance of the code of conduct'),
   ('admin_failed_mail', 'no author', 'an admin''s read of the mail that failed: the account it was for and the template, never a post or a character; refused to a player'),
@@ -446,7 +447,7 @@ from (values
   ('characters_public', array['id', 'name', 'group', 'office', 'staff'], 'no author', 'a debuted character''s public face (policy: characters_public): its id, name, group, office and staff key; the stand-in is one of them, and no post''s author is in a name or an id'),
   ('class_reveals', array['act', 'class', 'thread', 'via'], 'no author', 'a reveal is the character''s own public Act: its id, the class revealed, its thread and how (reveal, Turn or unmask)'),
   ('moves_log', array['bundle', 'ended_why', 'id', 'kind', 'role', 'staff', 'thread'], 'no author', 'a Boss''s move, staff and public: the move''s id, kind, role, staff key, thread, bundle and the reason it ended'),
-  ('my_appeals', array['appeal', 'punishment', 'punishment_kind', 'refund', 'thread', 'verdict'], 'no author', 'the caller''s own appeal (the view filters by auth.uid()): ids, the punishment''s kind, the refund and the verdict'),
+  ('my_appeals', array['appeal', 'punishment', 'punishment_kind', 'refund', 'ruling_act', 'thread', 'verdict'], 'no author', 'the caller''s own appeal (the view filters by auth.uid()): ids, the punishment''s kind, the refund, the verdict and the ruling''s id (a public Act of a staff character)'),
   ('my_appeals', array['hearer_name'], 'no author', 'the name of the Mod Bot that heard the appeal: a staff persona, public as it signs its rulings'),
   ('my_bans', array['ban', 'infraction', 'rule', 'ruling', 'thread'], 'no author', 'the caller''s own ban (the view filters by auth.uid()): ids, the rule and the ruling'),
   ('my_cards_ended', array['card', 'card_end', 'play', 'reach', 'side'], 'no author', 'the caller''s own plays and the plays on the caller''s own posts: ids, the card''s key, its reach and which side of the play the caller is; no character'),
@@ -466,7 +467,7 @@ from (values
   ('my_posts_played_on', array['play', 'post', 'reach'], 'no author', 'a play on the caller''s own post: the play''s id, the post''s id and the reach'),
   ('my_posts_played_on', array['target_name'], 'no author', 'the name of the character played on, which the view''s own filter makes the caller''s'),
   ('my_posts_written_on', array['play', 'post', 'version'], 'no author', 'a text written on the caller''s own post: ids'),
-  ('my_reports', array['post', 'refund', 'report', 'thread', 'verdict'], 'no author', 'the caller''s own report: the report, the reported post''s id (not its author), the verdict and the refund'),
+  ('my_reports', array['post', 'refund', 'report', 'thread', 'verdict', 'verdict_act'], 'no author', 'the caller''s own report: the report, the reported post''s id (not its author), the verdict, the verdict''s id (a public Act of a staff character) and the refund'),
   ('my_reports', array['mod_name'], 'no author', 'the name of the Mod Bot that ruled: a staff persona, public as it signs its rulings'),
   ('my_scored_as', array['card', 'named_class', 'play'], 'no author', 'the caller''s own scored-as play: the card''s key, the class the caller named and the play''s id'),
   ('my_ballots', array['act', 'poll'], 'no author', 'the caller''s own ballot: its id and its poll (the view filters by auth.uid())'),

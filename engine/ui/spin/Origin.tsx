@@ -47,6 +47,7 @@ import { ChangedList, Prose, updateOf } from '../updates/UpdateWords.tsx';
 import type { Tallies } from '../thread/tallies.ts';
 import { spunCount, takeOrigin, type Spun } from './spun.ts';
 import type { SpinOrigin } from '../thread/Post.tsx';
+import { Exchange } from './Exchange.tsx';
 import { OriginLink } from './OriginLink.tsx';
 import { placeHref, placeParts } from './place.ts';
 import { SpinForm, useSpinDrafts } from './SpinForm.tsx';
@@ -181,13 +182,13 @@ function Byline({ who, at }: { readonly who: ReactNode; readonly at: string | nu
 
 /** Whether the box draws an Act of this kind as a post, its words under a byline: every kind the box's switch leaves to its default. */
 function isPostLike(kind: Act['kind']): boolean {
-  return !['update', 'card', 'draw', 'wash', 'unmask', 'announce', 'tally', 'reveal'].includes(kind);
+  return !['update', 'card', 'draw', 'wash', 'unmask', 'announce', 'tally', 'reveal', 'report', 'report_verdict', 'appeal', 'appeal_ruling'].includes(kind);
 }
 
 /** The post a part of a play's place names, as its words and its address: `at` (the pressed post) or, with `at` left out, `from` (the cast-from post). */
 function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typeof PLAY_FROM, cardName: (key: string) => string | undefined, perPage: number): { readonly words: string; readonly href: string } | null {
   if (place[which] === null) return null;
-  const part = placeParts(which === 'at' ? place : { ...place, at: null }, cardName, perPage).at(-1);
+  const part = placeParts(which === 'at' ? place : { ...place, at: null }, cardName, () => undefined, perPage).at(-1);
   return part && part.href !== null ? { words: part.words, href: part.href } : null;
 }
 
@@ -345,6 +346,11 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
       case 'announce': return <AnnounceLine act={act} name={name} />;
       case 'tally':
       case 'reveal': return <SystemPost act={act} />;
+      /* A report, a verdict, an appeal or a ruling: the exchange, with its own two bylines (the box draws none over the area). */
+      case 'report':
+      case 'report_verdict':
+      case 'appeal':
+      case 'appeal_ruling': return <Exchange origin={act} place={summary.origin?.kind === 'answer' ? summary.origin : null} perPage={perPage} nameOf={nameOf} />;
       default:
         return (
           <>

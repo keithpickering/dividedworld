@@ -300,6 +300,14 @@ describe('reads and their rows', () => {
         { kind: 'play', card: 'glint', on: { kind: 'character', id: B, name: 'Ana Face' }, from: { kind: 'post', thread: C, title: 'T', seq: 3 }, at: null }],
       [{ kind: 'poll', question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'poll', question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
       [{ kind: 'ballot', character: { id: B, name: 'Wario' }, question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'ballot', character: { id: B, name: 'Wario' }, question: 'Best kart?', on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      /* An ask or an answer (0422): a report's place names its post, an appeal of a move its group and, where the move has no line, no post. */
+      [{ kind: 'answer', spun: 'ask', ask: 'report', asker: { id: B, name: 'Ana Face' }, staff: null, punishment: null, group: null, on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, { kind: 'answer', spun: 'ask', ask: 'report', asker: { id: B, name: 'Ana Face' }, staff: null, punishment: null, group: null, on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      [{ kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: B, name: 'Ana Face' }, staff: { id: A, name: 'The Clerk' }, punishment: 'move', group: 'trialMembers', on: null }, { kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: B, name: 'Ana Face' }, staff: { id: A, name: 'The Clerk' }, punishment: 'move', group: 'trialMembers', on: null }],
+      [{ kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: B, name: 'Ana Face' }, staff: { id: A, name: 'The Clerk' }, punishment: 'ban', group: null, on: { kind: 'post', thread: C, title: 'T', seq: 3 } },
+        { kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: B, name: 'Ana Face' }, staff: { id: A, name: 'The Clerk' }, punishment: 'ban', group: null, on: { kind: 'post', thread: C, title: 'T', seq: 3 } }],
+      /* A post that is malformed leaves the place and its words, which name no post; an answer whose own keys are malformed is no place (below). */
+      [{ kind: 'answer', spun: 'ask', ask: 'report', asker: { id: B, name: 'Ana Face' }, staff: null, punishment: null, group: null, on: { kind: 'update', act: A, title: 'U' } },
+        { kind: 'answer', spun: 'ask', ask: 'report', asker: { id: B, name: 'Ana Face' }, staff: null, punishment: null, group: null, on: null }],
       /* A poll or a ballot whose parts are malformed is no place. */
       [{ kind: 'poll', question: 5, on: { kind: 'post', thread: C, title: 'T', seq: 3 } }, null],
       [{ kind: 'poll', question: 'Q', on: { kind: 'update', act: A, title: 'U' } }, null],
@@ -310,6 +318,22 @@ describe('reads and their rows', () => {
       const row = await harness(() => rows([{ ...THREAD_ROW, origin_place: raw }])).api.thread(T);
       expect(row?.origin, JSON.stringify(raw)).toEqual(want);
     }
+  });
+
+  it('reads an answer place with every key checked, and each malformed key as no place', async () => {
+    const read = async (raw: unknown) => (await harness(() => rows([{ ...THREAD_ROW, origin_place: raw }])).api.thread(T))?.origin;
+    const whole = { kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: B, name: 'Ana Face' }, staff: { id: A, name: 'The Clerk' }, punishment: 'infraction', group: null, on: { kind: 'post', thread: C, title: 'T', seq: 3 } };
+    expect(await read(whole)).toEqual(whole);
+    const odd: Record<string, unknown[]> = {
+      spun: ['both', 5, undefined], ask: ['visit', null, undefined], asker: [null, { id: B }, { name: 'x' }, { id: 5, name: 'x' }, 'Ana', undefined],
+      staff: [{ id: A }, { id: A, name: 5 }, 'The Clerk', undefined], punishment: ['fall', 5, undefined], group: [5, undefined],
+    };
+    for (const [key, bads] of Object.entries(odd)) for (const bad of bads) expect(await read({ ...whole, [key]: bad }), `${key} ${JSON.stringify(bad)}`).toBeNull();
+    /* A report has no punishment, an unanswered ask no staff, and a move's group is text. */
+    expect(await read({ ...whole, spun: 'ask', ask: 'report', staff: null, punishment: null })).toMatchObject({ ask: 'report', staff: null, punishment: null });
+    /* `on` is a post place or null; anything else reads as null with the rest kept. */
+    expect(await read({ ...whole, on: 5 })).toEqual({ ...whole, on: null });
+    expect(await read({ ...whole, on: undefined })).toEqual({ ...whole, on: null });
   });
 
   it('reads a play\'s `from` and `at` as post places, and as null when missing or malformed, the rest of the play kept', async () => {
@@ -2118,10 +2142,10 @@ describe('the log', () => {
       if (name === 'my_bans') return rows([{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', own_until: '2026-10-31T20:31:00+00:00', lifted_at: '2026-10-30T09:00:00+00:00', lifted_card: 'ultra-happy-heart' }]);
       if (name === 'my_group_moves') return rows([{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, board_name: 'General', expires_at: '2026-11-05T20:32:00+00:00', landed_until: '2026-11-04T20:32:00+00:00', check_at: null, demand: 'apologyAccepted', office: 'boss', ended_why: 'met', ended_by: 'demand', ended_at: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruled_at: '2026-10-29T22:00:00+00:00', ruled_until: '2026-11-05T20:32:00+00:00', ruled_office: 'boss' }]);
       if (name === 'my_cosmetic_log') return rows([{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', by_name: 'Sighbot', season: null, place: null, line: null, to_name: 'Sock Puppet' }]);
-      if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null },
-        ...(['veiled', 'visited', 'bored'] as const).map((refund, i) => ({ report: `r${i + 2}`, character: B, at: '2026-10-29T16:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'visit', verdict_at: '2026-10-29T16:00:03+00:00', mod_name: 'The Clerk', refund }))]);
-      if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null },
-        { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishment_kind: 'move', post_seq: null, thread: T, verdict: null, ruled_at: null, points_delta: null, hearer_name: null, refund: null }]);
+      if (name === 'my_reports') return rows([{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'dismissed', verdict_at: '2026-10-29T17:00:03+00:00', mod_name: 'The Clerk', refund: null, verdict_act: 'v1' },
+        ...(['veiled', 'visited', 'bored'] as const).map((refund, i) => ({ report: `r${i + 2}`, character: B, at: '2026-10-29T16:00:00+00:00', post: A, post_seq: 41, thread: T, verdict: 'visit', verdict_at: '2026-10-29T16:00:03+00:00', mod_name: 'The Clerk', refund, verdict_act: i === 0 ? 'v2' : null }))]);
+      if (name === 'my_appeals') return rows([{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishment_kind: 'infraction', post_seq: 41, thread: T, verdict: 'reduced', ruled_at: '2026-10-29T21:00:04+00:00', points_delta: -1, hearer_name: 'The Clerk', refund: null, ruling_act: 'u1' },
+        { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishment_kind: 'move', post_seq: null, thread: T, verdict: null, ruled_at: null, points_delta: null, hearer_name: null, refund: null, ruling_act: null }]);
       return undefined;
     });
   }
@@ -2157,10 +2181,10 @@ describe('the log', () => {
       bans: [{ ban: 'b1', character: B, at: '2026-10-29T20:31:00+00:00', days: 1, until: '2026-10-30T20:31:00+00:00', infraction: 'i1', rule: 'Rule 2: No double posting', thread: T, ruling: 'reduced', ownUntil: '2026-10-31T20:31:00+00:00', liftedAt: '2026-10-30T09:00:00+00:00', liftedCard: 'ultra-happy-heart' }],
       falls: [FALL],
       groupMoves: [{ move: 'g1', character: B, at: '2026-10-29T20:32:00+00:00', thread: T, seq: 7, group: 'trialMembers', board: A, boardName: 'General', expiresAt: '2026-11-05T20:32:00+00:00', landedUntil: '2026-11-04T20:32:00+00:00', checkAt: null, demand: 'apologyAccepted', office: 'boss', endedWhy: 'met', endedBy: 'demand', endedAt: '2026-10-30T10:00:00+00:00', ruling: 'reduced', ruledAt: '2026-10-29T22:00:00+00:00', ruledUntil: '2026-11-05T20:32:00+00:00', ruledOffice: 'boss' }],
-      reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null },
-        ...(['veiled', 'visited', null] as const).map((refund, i) => ({ report: `r${i + 2}`, character: B, at: '2026-10-29T16:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'visit' as const, verdictAt: '2026-10-29T16:00:03+00:00', mod: 'The Clerk', refund }))],
-      appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null },
-        { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishmentKind: 'move', postSeq: null, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null }],
+      reports: [{ report: 'r1', character: B, at: '2026-10-29T17:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'dismissed', verdictAt: '2026-10-29T17:00:03+00:00', mod: 'The Clerk', refund: null, answer: 'v1' },
+        ...(['veiled', 'visited', null] as const).map((refund, i) => ({ report: `r${i + 2}`, character: B, at: '2026-10-29T16:00:00+00:00', post: A, postSeq: 41, thread: T, verdict: 'visit' as const, verdictAt: '2026-10-29T16:00:03+00:00', mod: 'The Clerk', refund, answer: i === 0 ? 'v2' : null }))],
+      appeals: [{ appeal: 'a1', character: B, at: '2026-10-29T21:00:00+00:00', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'reduced', ruledAt: '2026-10-29T21:00:04+00:00', pointsDelta: -1, hearer: 'The Clerk', refund: null, answer: 'u1' },
+        { appeal: 'a2', character: B, at: '2026-10-29T20:50:00+00:00', punishment: 'g1', punishmentKind: 'move', postSeq: null, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null, answer: null }],
       cosmetics: [{ kind: 'lost', id: 'l1', at: '2026-10-29T19:30:00+00:00', character: B, outcome: null, item: null, text: null, copies: null, trophy: 'belt', name: 'The Belt', by: 'boss', byName: 'Sighbot', season: null, place: null, line: null, toName: 'Sock Puppet' }],
       before: null,
     });
@@ -3620,21 +3644,73 @@ describe('a visit\'s story', () => {
   });
 });
 
+/* The exchange a spun report or appeal draws (Task 2 of the spin-mod-answers plan): the ask, its answer and the punishment, each read from acts_public. */
+describe('an exchange', () => {
+  const ASK = '11111111-1111-4111-8111-111111111111';
+  const ANSWER = '22222222-2222-4222-8222-222222222222';
+  const PUNISHMENT = '33333333-3333-4333-8333-333333333333';
+  const POST = '44444444-4444-4444-8444-444444444444';
+  const row = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+    id, character: B, kind, thread: T, target_act_id: null, seq: null, created_at: '2026-10-01T10:00:00+00:00', payload: {}, current_payload: {}, edited_at: null, shown_edited_at: null, ...extra,
+  });
+  /** A table that answers the equality filters the adapter sends, as PostgREST does. */
+  const table = (all: ReturnType<typeof row>[]): Router => (r) => {
+    if (!r.url.pathname.endsWith('/acts_public')) return undefined;
+    let out = all;
+    for (const [k, v] of r.url.searchParams) if (v.startsWith('eq.')) out = out.filter((a) => String((a as unknown as Record<string, unknown>)[k]) === v.slice(3));
+    return rows(out.slice(0, Number(r.url.searchParams.get('limit') ?? out.length)));
+  };
+  const all = [
+    row(POST, 'post', { seq: 1 }), row(ASK, 'report', { target_act_id: POST, payload: { reason: 'Rude.' } }), row(ANSWER, 'report_verdict', { character: A, target_act_id: ASK, payload: { verdict: 'dismissed' } }),
+    row('55555555-5555-4555-8555-555555555555', 'report', { target_act_id: POST }),
+    row(PUNISHMENT, 'infraction', { payload: { about_act: POST } }), row('66666666-6666-4666-8666-666666666666', 'appeal', { target_act_id: PUNISHMENT }),
+    row('77777777-7777-4777-8777-777777777777', 'appeal_ruling', { character: A, target_act_id: '66666666-6666-4666-8666-666666666666' }),
+  ];
+
+  it('reads a report from its ask and from its answer: the same ask, answer and no punishment', async () => {
+    const h = harness(table(all));
+    for (const origin of [ASK, ANSWER]) {
+      const x = await h.api.exchange(origin);
+      expect([x.ask.id, x.answer?.id, x.punishment], origin).toEqual([ASK, ANSWER, null]);
+    }
+  });
+
+  it('reads an ask nobody has answered with no answer, and an appeal with the punishment it is of', async () => {
+    const h = harness(table(all));
+    const open = await h.api.exchange('55555555-5555-4555-8555-555555555555');
+    expect([open.ask.kind, open.answer, open.punishment]).toEqual(['report', null, null]);
+    for (const origin of ['66666666-6666-4666-8666-666666666666', '77777777-7777-4777-8777-777777777777']) {
+      const x = await h.api.exchange(origin);
+      expect([x.ask.kind, x.answer?.kind, x.punishment?.id], origin).toEqual(['appeal', 'appeal_ruling', PUNISHMENT]);
+    }
+  });
+
+  it('refuses an Act that is none of the four kinds, and one that is not there, by throwing', async () => {
+    const h = harness(table(all));
+    await expect(h.api.exchange(POST)).rejects.toThrow();
+    await expect(h.api.exchange('99999999-9999-4999-8999-999999999999')).rejects.toThrow();
+    await expect(h.api.exchange('not an id')).rejects.toThrow();
+    /* An answer whose ask cannot be found. */
+    const orphan = harness(table([row(ANSWER, 'report_verdict', { character: A, target_act_id: ASK })]));
+    await expect(orphan.api.exchange(ANSWER)).rejects.toThrow('could not be found');
+  });
+});
+
 /* The report and appeal doors, the quota read and what the pages say of a ban and a visit (the Mod Bots design, section 9; 0111). */
 describe('reports, appeals and what a page says of a ban', () => {
   const POST = 'aaaaaaaa-0000-4000-8000-000000000001';
   const PUNISHMENT = 'aaaaaaaa-0000-4000-8000-000000000002';
 
   it('reports through the staff function with the player\'s session, once, and maps the verdict and the visit', async () => {
-    const h = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', verdict: 'visit', line: 'Noted.', visit: 'v1' }) : undefined));
+    const h = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', verdict: 'visit', line: 'Noted.', visit: 'v1', answer: 'v9' }) : undefined));
     const a = await h.api.fileReport(B, POST, 'a repeat');
-    expect(a).toEqual({ ok: true, value: { report: 'r1', verdict: 'visit', line: 'Noted.', visit: 'v1', refund: null } });
+    expect(a).toEqual({ ok: true, value: { report: 'r1', verdict: 'visit', line: 'Noted.', visit: 'v1', refund: null, answer: 'v9' } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/staff').map((r) => r.body)).toEqual([{ through: B, post: POST, reason: 'a repeat' }]);
   });
 
   it('maps the refund a visit verdict that opened no visit carries, and nothing for an unknown reason', async () => {
     const h = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', verdict: 'visit', line: 'Noted.', visit: null, refund: { why: 'veiled', amount: 25 } }) : undefined));
-    expect(await h.api.fileReport(B, POST, 'x')).toEqual({ ok: true, value: { report: 'r1', verdict: 'visit', line: 'Noted.', visit: null, refund: { why: 'veiled', amount: 25 } } });
+    expect(await h.api.fileReport(B, POST, 'x')).toEqual({ ok: true, value: { report: 'r1', verdict: 'visit', line: 'Noted.', visit: null, refund: { why: 'veiled', amount: 25 }, answer: null } });
     const odd = harness((r) => (r.url.pathname === '/functions/v1/staff' ? json({ report: 'r1', verdict: 'visit', line: 'Noted.', visit: null, refund: { why: 'bored', amount: 25 } }) : undefined));
     expect(await odd.api.fileReport(B, POST, 'x')).toMatchObject({ ok: true, value: { refund: null } });
   });
@@ -3650,9 +3726,9 @@ describe('reports, appeals and what a page says of a ban', () => {
   });
 
   it('appeals through the appeal path of the same function', async () => {
-    const h = harness((r) => (r.url.pathname === '/functions/v1/staff/appeal' ? json({ appeal: 'a1', verdict: 'reduced', line: 'Half.', points_delta: -1 }) : undefined));
+    const h = harness((r) => (r.url.pathname === '/functions/v1/staff/appeal' ? json({ appeal: 'a1', verdict: 'reduced', line: 'Half.', points_delta: -1, answer: 'u9' }) : undefined));
     const a = await h.api.fileAppeal(B, PUNISHMENT, 'please');
-    expect(a).toEqual({ ok: true, value: { appeal: 'a1', verdict: 'reduced', line: 'Half.', pointsDelta: -1, refunded: 0 } });
+    expect(a).toEqual({ ok: true, value: { appeal: 'a1', verdict: 'reduced', line: 'Half.', pointsDelta: -1, refunded: 0, answer: 'u9' } });
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/staff/appeal').map((r) => r.body)).toEqual([{ through: B, punishment: PUNISHMENT, plea: 'please' }]);
   });
 

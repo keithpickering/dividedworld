@@ -424,3 +424,8 @@
 .kb-log-ban-appeal {
   margin: 0.4em 0 0;
 }
+
+/* "Spin thread" on a report's or an appeal's line that has an answer (docs/plans/2026-11-23-spin-mod-answers-plan.md, Task 6): a line of its own under the words, as the ban's appeal is. */
+.kb-log-spin-answer {
+  margin: 0.4em 0 0;
+}

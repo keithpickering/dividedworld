@@ -291,13 +291,49 @@ describe('a Mod Bot\'s moderation log lists its visits, the reports it judged an
     const text = all.map((r) => r.textContent!.replace(/\s+/gu, ' '));
     expect(text.map((t) => t.replace(/^[A-Z][a-z]{2} \d+/u, ''))).toEqual([
       'Visited post #3 (Rule 2: No double posting, minor)open',
-      'Heard an appeal of warn points from post #2reduced',
-      'Judged a report of post #2dismissed',
+      'Heard an appeal of warn points from post #2reduced Spin thread',
+      'Judged a report of post #2dismissed Spin thread',
       'Visited post #2 (Rule 2: No double posting, minor), on patrolfiled',
     ]);
 
     const link = within(all.find((r) => /Judged a report/u.test(r.textContent!))!).getByRole('link', { name: 'post #2' });
     expect(link).toHaveAttribute('href', expect.stringMatching(/^\/t\/.+\?page=1#post-2$/u));
+  });
+});
+
+describe('Spin thread in a Mod Bot\'s moderation log', () => {
+  test('a report row and an appeal row have it, labeled by the Mod\'s name; a visit row has none; it opens the spin form from the verdict\'s Act', async () => {
+    open('bot', (fake, world) => {
+      const { seed } = fake;
+      const poster = seed.character(seed.account('poster'), 'Poster', 'face');
+      const { thread } = seed.thread('general', poster, 'A thread', 'post 1');
+      const p = seed.post(thread, poster, 'post 2');
+      const v1 = seed.visit(world.bot, p, { at: Date.now() - 3 * 86_400_000, endsInMs: 3_600_000, charges: [{ cause: 'patrol' }] });
+      seed.visitEnd(v1, { outcome: 'filed', line: 'Filed.', at: Date.now() - 3 * 86_400_000 + 3_600_000 });
+      const inf = seed.infraction(v1, { points: 2, at: Date.now() - 3 * 86_400_000 + 3_600_000 });
+      const reporter = seed.character(seed.account('reporter'), 'Reporter', 'heel');
+      const r = seed.report(reporter, p, 'rude', { at: Date.now() - 2 * 86_400_000 });
+      seed.verdict(r, world.bot, 'dismissed', { line: 'Hmph.', at: Date.now() - 2 * 86_400_000 + 1000 });
+      const a = seed.appeal(poster, inf, 'Please.', { at: Date.now() - 86_400_000 });
+      seed.ruling(a, world.bot, 'reduced', { line: 'Half.', at: Date.now() - 86_400_000 + 1000 });
+    });
+    await waitFor(async () => expect((await rows()).length).toBe(3));
+    const all = await rows();
+    const by = (re: RegExp) => all.find((r) => re.test(r.textContent!))!;
+    const name = (await screen.findByRole('heading', { level: 1 })).textContent!;
+    expect(within(by(/Visited/u)).queryByRole('button', { name: /Spin/u })).toBeNull();
+    const verdict = within(by(/Judged a report/u)).getByRole('button', { name: `Spin thread from ${name}'s verdict` });
+    expect(within(by(/Heard an appeal/u)).getByRole('button', { name: `Spin thread from ${name}'s ruling` })).toHaveTextContent('Spin thread');
+    await userEvent.click(verdict);
+    const form = await screen.findByRole('form', { name: new RegExp(`${name}'s verdict`, 'u') });
+    await userEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(verdict).toHaveFocus());
+    /* An opener that is gone when the form closes: focus goes to the log's table, never the page. */
+    await userEvent.click(verdict);
+    const again = await screen.findByRole('form', { name: new RegExp(`${name}'s verdict`, 'u') });
+    verdict.remove();
+    await userEvent.click(within(again).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(within(document.body).getByRole('table', { name: 'Moderation log' })).toHaveFocus());
   });
 });
 

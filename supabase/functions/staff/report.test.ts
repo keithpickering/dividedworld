@@ -107,7 +107,15 @@ test('a visit verdict: the report is opened as the player, judged on the reportJ
   assert.equal(out.body['report'], REPORT);
   assert.equal(out.body['visit'], VISIT);
   assert.equal(out.body['refund'], null);
+  assert.equal(out.body['answer'], 'ffffffff-ffff-4fff-8fff-fffffffffff1', 'the verdict\'s Act is carried back, for the spin that names it');
   assert.deepEqual(d.calls.filter((c) => c.db === 'service').map((c) => c.fn).filter((f) => f === 'open_report'), [], 'the service never opens a report for a player');
+});
+
+test('a close that names no verdict Act answers null', async () => {
+  const d = fakeDbs({ closeSays: { verdict_act: undefined } });
+  const out = await go(d, fakeModels(() => ({ verdict: 'visit', line: 'Rule 2, I think.', charge: { rule: 'Rule 2', band: 'minor' } })));
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  assert.equal(out.body['answer'], null);
 });
 
 test('a visit verdict that opened no visit passes close_report\'s refund on, with no visit and no refund_report call', async () => {

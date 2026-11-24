@@ -327,8 +327,25 @@ export type PostPlace = Extract<PlaceOn, { kind: 'post' }>;
  */
 export const PLAY_FROM = 'from' as const;
 
+/**
+ * A report, its verdict, an appeal or its ruling as a spun thread's origin (thread_open, 0422). `spun` says which was spun: the ask or the answer. `ask` is the kind of the ask. `asker` is
+ * the ask's character as acts_public shows it; `staff` the answer's character, null for an ask no one has answered. `punishment` is what an appeal is of (null for a report) and `group` a
+ * move's group (null otherwise). `on` is the post the ask names (a report's post, an infraction's or a ban's infraction's post) or a move's own line, null where there is none.
+ */
+export interface AnswerPlace {
+  readonly kind: 'answer';
+  readonly spun: 'ask' | 'answer';
+  readonly ask: 'report' | 'appeal';
+  readonly asker: { readonly id: Id; readonly name: string };
+  readonly staff: { readonly id: Id; readonly name: string } | null;
+  readonly punishment: 'infraction' | 'ban' | 'move' | null;
+  readonly group: string | null;
+  readonly on: PostPlace | null;
+}
+
 /** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
 export type OriginPlace =
+  | AnswerPlace
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
   /** A poll, and a public ballot on one (0396): `on` is the poll's post. A secret ballot is no origin. */
   | { readonly kind: 'poll'; readonly question: string; readonly on: PostPlace }
@@ -673,6 +690,13 @@ export type ReportVerdict = 'visit' | 'dismissed' | 'backfire';
 /** Why a report's price went back (`report_refunds.why`): its judgment failed, it was never judged, or it was judged a visit and none opened. */
 export const REPORT_REFUNDS = ['failed', 'stale', 'veiled', 'visited'] as const;
 export type ReportRefund = (typeof REPORT_REFUNDS)[number];
+/** A report or an appeal, its answer and the punishment an appeal is of: what `exchange` reads. */
+export interface Exchange {
+  readonly ask: Act;
+  readonly answer: Act | null;
+  readonly punishment: Act | null;
+}
+
 /** A `visit` verdict that opened no visit, and why: the post's author was hidden, or the post was already visited on that charge. */
 export type NoVisit = Extract<ReportRefund, 'veiled' | 'visited'>;
 
@@ -685,6 +709,8 @@ export interface ReportResult {
   readonly visit: Id | null;
   /** The price back for a visit verdict that opened no visit (the post's author hidden, or the post already visited on that charge); null otherwise. */
   readonly refund: { readonly why: NoVisit; readonly amount: number } | null;
+  /** The verdict's Act (the one a spin from this report names); null where the report was heard and the answer's Act was not carried back. */
+  readonly answer: Id | null;
 }
 
 /** An appeal's four rulings (`appeal_ruling`). */
@@ -698,6 +724,8 @@ export interface AppealResult {
   readonly pointsDelta: number;
   /** Hundredths that went back (an overturned appeal); 0 otherwise. */
   readonly refunded: number;
+  /** The ruling's Act (the one a spin from this appeal names); null where it was not carried back. */
+  readonly answer: Id | null;
 }
 
 /** The state a card's effect has saved on one play, and when: what every reader loads, the post author's version. */
@@ -2127,6 +2155,8 @@ export interface LogReport {
   readonly mod: string | null;
   /** Why its price went back, where it did. */
   readonly refund: ReportRefund | null;
+  /** The verdict's Act (`my_reports.verdict_act`, 0422); null until it is heard. */
+  readonly answer: Id | null;
 }
 
 /** An appeal one of the player's characters made. */
@@ -2144,6 +2174,8 @@ export interface LogAppeal {
   readonly pointsDelta: number | null;
   readonly hearer: string | null;
   readonly refund: 'failed' | 'stale' | 'expired' | null;
+  /** The ruling's Act (`my_appeals.ruling_act`, 0422); null until it is ruled on. */
+  readonly answer: Id | null;
 }
 
 /**
@@ -3057,6 +3089,11 @@ export interface KayfaApi {
   threadPage(thread: Id, at: { readonly page?: number | null; readonly seq?: number | null }, perPage: number | null, effectCards: readonly string[]): Promise<ThreadPage | null>;
   /** How a visit went (`VisitStory`), read when its Lens tab opens: its thread and post are the page's. */
   visitStory(thread: Id, visit: Id, post: Id): Promise<VisitStory>;
+  /**
+   * A report, a verdict, an appeal or a ruling and the rest of its exchange (the ORIGIN box of a spun thread): the ask, its answer (null while none), and for an appeal the punishment it is of.
+   * Rejects where `origin` is none of the four kinds or cannot be found, so the box shows Try again.
+   */
+  exchange(origin: Id): Promise<Exchange>;
   /**
    * One try to talk a visit down, through this character (`intercept`): a quiz's `answer` is one of its choices; a bribe and a distraction take none.
    * Refused in the server's words (a character that has tried, a visit that is over, a short wallet).
