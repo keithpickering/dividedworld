@@ -296,3 +296,101 @@ begin
   if said is distinct from 'a report is a player''s character''s Act' then raise exception 'a staff report was not refused: %', said; end if;
   if (select count(*) from alerts) is distinct from before then raise exception 'a refused staff appeal or report wrote an alert row'; end if;
 end $$;
+
+-- Task 4 (design section 2): a Boss's moves that land on yours.
+--
+-- 1. A landed conferGroup writes one ruling/grouped alert to the character's account, about the landed Act.
+-- 2. A landed moveThread writes one ruling/threadMoved alert to the thread starter's account, about the landed Act.
+-- 3. A landed mergeBoard writes none.
+-- 4. A moveThread whose landing is refused writes none.
+-- 5. A thread started by staff gets none (no account).
+
+insert into move_kinds (key, structural, shapes_board, lasting, offices, derived) values
+  ('conferGroup', false, false, false, '{boss,mod}', '{groupName}'),
+  ('moveThread', false, false, true, '{boss}', '{}'),
+  ('mergeBoard', true, true, true, '{boss}', '{}') on conflict (key) do nothing;
+insert into group_kinds (key, name, color, source, tone) values ('raTrial', 'Ra Trial', '#d2691e', 'conferred', 'punishment') on conflict (key) do nothing;
+
+create function pg_temp.mv_queue(kind text, params jsonb, lasting boolean, shift interval default interval '0') returns bigint language plpgsql as $$
+declare
+  m bigint;
+  q bigint;
+  at timestamptz := now() - interval '1 minute' + shift;
+begin
+  insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
+  insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural)
+  values (m, 'ra-boss', kind, params, null, 'because', at, case when lasting then at else now() + interval '3 days' end, kind = 'mergeBoard') returning id into q;
+  return q;
+end $$;
+
+create function pg_temp.mv_land(q bigint) returns uuid language plpgsql as $$
+begin
+  perform system_tick();
+  return (select r.landed_act from queued_moves r where r.id = q);
+end $$;
+
+do $$
+declare
+  t uuid := tests.thread('Ra moved');
+  starter uuid := pg_temp.player('mv-starter');
+  member uuid := pg_temp.player('mv-member');
+  other uuid := pg_temp.player('mv-other');
+  origin uuid;
+  dest uuid; src uuid; gone uuid; into_b uuid;
+  q bigint;
+  landed uuid;
+  before bigint;
+  t2 uuid; t3 uuid;
+begin
+  insert into boards (slug, name) values ('ra-dest', 'Ra Dest') returning id into dest;
+  origin := pg_temp.say(starter, t);
+  update threads set origin_act_id = origin where id = t;
+
+  -- 1. conferGroup
+  q := pg_temp.mv_queue('conferGroup', jsonb_build_object('character', member, 'group', 'raTrial'), false);
+  landed := pg_temp.mv_land(q);
+  if landed is null then raise exception 'the conferGroup did not land: %', (select r.failure from queued_moves r where r.id = q); end if;
+  if pg_temp.rulings(member) is distinct from array['grouped:' || landed] then raise exception 'a landed conferGroup writes one grouped about its Act: %', pg_temp.rulings(member); end if;
+  if (select x.character from alerts x where x.account = pg_temp.owner(member) and x.sub = 'grouped') is distinct from member then raise exception 'the grouped alert is the member character''s'; end if;
+  if pg_temp.rulings(starter) is distinct from '{}'::text[] then raise exception 'the starter got a ruling from a conferGroup: %', pg_temp.rulings(starter); end if;
+
+  -- 2. moveThread
+  q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t, 'board', dest), true);
+  landed := pg_temp.mv_land(q);
+  if landed is null then raise exception 'the moveThread did not land: %', (select r.failure from queued_moves r where r.id = q); end if;
+  if pg_temp.rulings(starter) is distinct from array['threadMoved:' || landed] then raise exception 'a landed moveThread writes one threadMoved about its Act: %', pg_temp.rulings(starter); end if;
+  if (select x.character from alerts x where x.account = pg_temp.owner(starter) and x.sub = 'threadMoved') is distinct from starter then raise exception 'the threadMoved alert is the starter character''s'; end if;
+  if pg_temp.rulings(member) is distinct from array['grouped:' || (select q2.landed_act from queued_moves q2 where q2.kind = 'conferGroup' order by q2.id desc limit 1)] then raise exception 'the move of a thread alerted the member: %', pg_temp.rulings(member); end if;
+
+  -- 3. mergeBoard
+  insert into boards (slug, name) values ('ra-src', 'Ra Src') returning id into src;
+  insert into boards (slug, name) values ('ra-into', 'Ra Into') returning id into into_b;
+  before := (select count(*) from alerts);
+  q := pg_temp.mv_queue('mergeBoard', jsonb_build_object('board', src, 'into', into_b), true);
+  landed := pg_temp.mv_land(q);
+  if landed is null then raise exception 'the mergeBoard did not land: %', (select r.failure from queued_moves r where r.id = q); end if;
+  if (select count(*) from alerts) is distinct from before then raise exception 'a mergeBoard wrote an alert row'; end if;
+
+  -- 4. A moveThread refused at its landing (its board is closed by then) writes nothing.
+  t2 := tests.thread('Ra refused');
+  origin := pg_temp.say(other, t2);
+  update threads set origin_act_id = origin where id = t2;
+  insert into boards (slug, name) values ('ra-gone', 'Ra Gone') returning id into gone;
+  q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t2, 'board', gone), true);
+  -- The board it names is merged into another a minute sooner in the same tick, so it is closed when this move meets it.
+  perform pg_temp.mv_queue('mergeBoard', jsonb_build_object('board', gone, 'into', into_b), true, interval '-1 minute');
+  before := (select count(*) from alerts);
+  landed := pg_temp.mv_land(q);
+  if landed is not null or (select r.refused_at from queued_moves r where r.id = q) is null then raise exception 'the move to a closed board was not refused'; end if;
+  if (select count(*) from alerts) is distinct from before or pg_temp.rulings(other) is distinct from '{}'::text[] then raise exception 'a refused moveThread wrote an alert'; end if;
+
+  -- 5. A staff starter has no account: no alert, and the move lands.
+  t3 := tests.thread('Ra staffed');
+  origin := (write_staff_act('ra-m1', 'post', t3, null, jsonb_build_object('body', 'Staff began this.')) ->> 'id')::uuid;
+  update threads set origin_act_id = origin where id = t3;
+  before := (select count(*) from alerts);
+  q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t3, 'board', dest), true);
+  landed := pg_temp.mv_land(q);
+  if landed is null then raise exception 'the move of a staff thread did not land: %', (select r.failure from queued_moves r where r.id = q); end if;
+  if (select count(*) from alerts) is distinct from before then raise exception 'a staff starter was alerted'; end if;
+end $$;
