@@ -16,10 +16,10 @@
  * step 5; docs/plans/2026-11-15-warm-reads-design.md, section 3) reads what a connection allocates, and the used figure is still right for the cache, for three reasons:
  *   - There is one cache per connection, not one per page type. The bytes its last block leaves free are allocated once per connection, by whichever call first
  *     needed that block, and a connection that has served every page type holds them whatever order it served them in.
- *   - Those free bytes are mostly the unused tail of the last block, which is never larger than all the blocks before it nor than 8 MB; the rest are chunks the
- *     cache freed and takes again before it asks for a block.
+ *   - Those free bytes are mostly the unused tail of the last block, which is about as large as all the blocks before it and never more than 8 MB. The rest are
+ *     freelist chunks, left over from earlier blocks or freed by the cache, which it takes again before it asks for a block.
  *   - Charged to one function's budget, they make that function's figure depend on the order of the files and on the last analyze, not on its plan.
- * So they are a cost of the connection, bounded by that block, and not a cost of any screen function. The kept plans are still counted by the blocks they hold:
+ * So they are a cost of the connection, about one block at most, and not a cost of any screen function. The kept plans are still counted by the blocks they hold:
  * every other context, including the CachedPlan and CachedPlanSource contexts that hang under CacheMemoryContext. The budget exists to catch them, and a plan that
  * grows by a block grows the connection by that block.
  *   1. Every screen function has a budget and every budget names a screen function. The names are the rule screen-functions.ts holds (`screenNames`), which the screen
@@ -196,7 +196,7 @@ export function heldPair(out: string): [Held, Held] {
   const read = (line: string | undefined): Held => {
     let h: Partial<Record<keyof Held, unknown>> | undefined;
     try { h = JSON.parse(line ?? '') as typeof h; } catch { h = undefined; }
-    const ok = h !== undefined && (['others', 'cacheTotal', 'cacheFree', 'caches'] as const).every((k) => typeof h![k] === 'number');
+    const ok = typeof h === 'object' && h !== null && (['others', 'cacheTotal', 'cacheFree', 'caches'] as const).every((k) => typeof h![k] === 'number');
     assert.ok(ok && lines.length >= 2, `no reading of the memory contexts in: ${out}`);
     return h as Held;
   };
@@ -248,8 +248,8 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  * Each screen function, one real call that answers a document; a search read is called with a term and no filter, since the plan it keeps does not depend on the term.
  * The budgets were re-recorded for #968, when the catalog cache began to be counted by what it uses (the header). They come from the workflow's sql job on Postgres 17,
  * run 45475266814 on c1d072b, the first run with that count, and each is rounded up to one decimal plus 0.3 MB. A function whose call took the cache past a block
- * fell by 1.5 to 2 MB: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995. A few
- * budgets moved by a tenth either way, since every one now follows the rule from this one run (index_page's rose to 7.4).
+ * fell by 1.5 to 2 MB: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995. The
+ * others fell by up to 0.8 MB, except index_page's, which rose 0.2 to 7.4, since every budget now follows the rule from this one run.
  * Counted by blocks, board_page had moved by 2 MB twice. Once it was a change (0403_departed_personas.sql gave season_handovers, which board_page plans through
  * season_boss_changes, two more indexes, and with the planner statistics of the rows the files before this one commit, their relcache entries took the cache from
  * 2227 kB to 4283 kB). Once it was no change at all: 9.822 on d7661f6 and 11.821 on 1201d38, with no SQL changed between them, by whether an analyze had run.
@@ -443,6 +443,7 @@ test('heldPair reads the first and last lines of a cold read, and refuses an out
   const line = JSON.stringify(h);
   assert.deepEqual(heldPair(`${line}\n${JSON.stringify({ ...h, others: 5 })}`), [h, { ...h, others: 5 }]);
   assert.throws(() => heldPair(line), /no reading of the memory contexts/, 'one reading is not two');
+  assert.throws(() => heldPair(`${line}\nnull`), /no reading of the memory contexts/, 'a last line of JSON that is no object');
   assert.throws(() => heldPair(`${line}\nCOMMIT`), /no reading of the memory contexts/, 'a last line that is not a reading');
   assert.throws(() => heldPair(`${line}\n${JSON.stringify({ ...h, others: '5' })}`), /no reading of the memory contexts/, 'a field that is not a number');
 });
