@@ -138,7 +138,7 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   assert.equal(reply.target_act_id, boPost, 'quoting the post that named it');
   assert.equal(reply.payload.body, words[OLD]);
   assert.equal(sql(`select c.staff from acts a join characters c on c.id = a.character where a.id = '${oldPick.post}'`), OLD);
-  assert.match(promptsFor[OLD] ?? '', new RegExp(`You are replying to Staffday Bo \\([a-z]+/[a-z]+\\): "${boPostBody.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), 'the model was shown the post it quotes');
+  assert.match(promptsFor[OLD] ?? '', new RegExp(`Staffday Bo \\([a-z]+/[a-z]+\\) \\[post #\\d+\\] \\(answering\\)\\n${boPostBody.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`), 'the model was shown the post it quotes, whole, marked as the one it answers');
   const spend = JSON.parse(sql(`select to_jsonb(s) from pool_spends s where s.staff = '${OLD}' and s.day = '${day}'`));
   assert.equal(spend.post_act, oldPick.post);
   assert.equal(spend.trigger, 'named');

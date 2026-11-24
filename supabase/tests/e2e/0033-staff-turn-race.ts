@@ -57,7 +57,7 @@ test('two turns answering one reply at once write exactly one turn, and the seco
   const post = sql(`select (write_staff_act('${key}', 'post', '${thread}', null, '{"body": "The boss speaks."}') ->> 'id')`);
   const reply = sql(`select tests.act('${player}', 'post', '${thread}', '{"body": "Ann answers."}', '${post}', now() - interval '1 hour')`);
   const sid = sql(`select id from staff_sessions where staff = '${key}' order by id desc limit 1`);
-  const turn = (body: string) => `select 'TURN:' || (write_staff_turn('${key}', ${sid}, '${thread}', '${reply}', array['${reply}']::uuid[], '${body}') ->> 'turn');`;
+  const turn = (body: string) => `select 'TURN:' || (write_staff_turn('${key}', ${sid}, '${thread}', '${reply}', array['${reply}']::uuid[], '${body}', 0) ->> 'turn');`;
   const turns = () => Number(sql(`select count(*) from pool_turns where staff = '${key}'`));
   const answers = () => Number(sql(`select count(*) from pool_answered where reply = '${reply}'`));
   const a = session();

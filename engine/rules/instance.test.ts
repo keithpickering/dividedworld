@@ -80,7 +80,7 @@ const settings: Settings = {
   memoryGrudges: 20,
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
-  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4, perDay: 60 }, chatterCron: '37 17 * * *' },
+  pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4 }, charsPerDay: 800_000, readMost: 40_000, chatterCron: '37 17 * * *' },
   modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
@@ -622,7 +622,7 @@ test('the pool\'s settings are checked: whole numbers, a holdback from 0 to 0.5,
 });
 
 test('the pool\'s sessions and turns are checked at each edge (chattier staff design, Task 1)', () => {
-  const pool = settings.pool as unknown as { sessions: { perDay: number; minutes: { least: number; most: number }; waking: { from: number; to: number } }; turns: { waitHours: number; perThread: number; perSession: number; perDay: number } };
+  const pool = settings.pool as unknown as { sessions: { perDay: number; minutes: { least: number; most: number }; waking: { from: number; to: number } }; turns: { waitHours: number; perThread: number; perSession: number } };
   const run = (change: object) => settingsProblems({ ...settings, pool: { ...pool, ...change } } as unknown as Settings).join('\n');
   const sessions = (change: object) => run({ sessions: { ...pool.sessions, ...change } });
   const turns = (change: object) => run({ turns: { ...pool.turns, ...change } });
@@ -646,8 +646,13 @@ test('the pool\'s sessions and turns are checked at each edge (chattier staff de
   assert.match(turns({ perSession: 13 }), /setting "pool"/);
   assert.equal(turns({ perThread: 6, perSession: 12 }), '');
   assert.equal(turns({ perThread: 1, perSession: 1 }), '');
-  for (const v of [-1, 501, 1.5]) assert.match(turns({ perDay: v }), /setting "pool"/, `perDay ${v}`);
-  for (const v of [0, 500]) assert.equal(turns({ perDay: v }), '');
+  assert.match(turns({ perDay: 60 }), /setting "pool"/, 'turns.perDay is gone (whole posts design, section 5)');
+  for (const v of [-1, 20_000_001, 1.5, '5', null]) assert.match(run({ charsPerDay: v }), /setting "pool"/, `charsPerDay ${String(v)}`);
+  for (const v of [0, 20_000_000]) assert.equal(run({ charsPerDay: v }), '', `charsPerDay ${v}`);
+  for (const v of [999, 200_001, 1.5, '5', null]) assert.match(run({ readMost: v }), /setting "pool"/, `readMost ${String(v)}`);
+  for (const v of [1000, 200_000]) assert.equal(run({ readMost: v }), '', `readMost ${v}`);
+  assert.match(run({ charsPerDay: undefined }), /setting "pool"/);
+  assert.match(run({ readMost: undefined }), /setting "pool"/);
   assert.match(run({ turns: undefined }), /setting "pool"/);
   assert.match(turns({ extra: 1 }), /setting "pool"/);
 });

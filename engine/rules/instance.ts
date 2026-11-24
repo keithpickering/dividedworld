@@ -118,7 +118,7 @@ function perReach(holds: (v: unknown) => boolean, shape: string) {
  * supabase/migrations/0077_settings_held.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
 const POOL_WHOLE = { weekly: 1, threadsWeekly: 0, priorityDays: 1, notesRead: 1, chatterThreadPosts: 1 } as const;
-const POOL_KEYS = [...Object.keys(POOL_WHOLE), 'holdback', 'cardRarityMost', 'strengths', 'sessions', 'turns', 'chatterCron'].sort();
+const POOL_KEYS = [...Object.keys(POOL_WHOLE), 'holdback', 'cardRarityMost', 'strengths', 'sessions', 'turns', 'charsPerDay', 'readMost', 'chatterCron'].sort();
 /** A whole number from `least` to `most`. */
 const inRange = (n: unknown, least: number, most: number): n is number => isWhole(n, least) && n <= most;
 /** The bounds of a persona's visits (`pool.sessions`, and a persona's `habits`): visits a day, minutes a visit, and the hours of the day. */
@@ -134,7 +134,7 @@ const minutesHeld = (m: unknown): boolean => {
 const turnsHeld = (t: unknown): boolean => {
   if (typeof t !== 'object' || t === null || Array.isArray(t)) return false;
   const o = t as Record<string, unknown>;
-  return Object.keys(o).length === 4 && inRange(o.waitHours, 1, 168) && inRange(o.perThread, 1, 6) && inRange(o.perSession, isWhole(o.perThread, 1) ? o.perThread : 1, 12) && inRange(o.perDay, 0, 500);
+  return Object.keys(o).length === 3 && inRange(o.waitHours, 1, 168) && inRange(o.perThread, 1, 6) && inRange(o.perSession, isWhole(o.perThread, 1) ? o.perThread : 1, 12);
 };
 /** What `pool.sessions` holds, as the migration's `setting_pool` does. */
 const sessionsHeld = (x: unknown): boolean => {
@@ -162,7 +162,7 @@ export function habitsProblem(h: unknown): string | null {
   return null;
 }
 function poolRule(v: unknown): string | null {
-  const shape = 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') sessions (perDay, a whole number from 0 to 8; minutes, least and most, whole, from 10 to 180, the least not above the most; waking, from and to, whole UTC hours from 0 to 23), turns (waitHours, a whole number from 1 to 168; perThread, from 1 to 6; perSession, from perThread to 12; perDay, from 0 to 500) and chatterCron (a five-field cron expression, each field inside its range)';
+  const shape = 'an object giving weekly, priorityDays, notesRead and chatterThreadPosts (whole numbers, at least 1), threadsWeekly (a whole number, at least 0), holdback (from 0 to 0.5), cardRarityMost (common, uncommon, rare or legendary), strengths (a whole number, at least 1, for each of ' + POOL_TRIGGERS.join(', ') + ') sessions (perDay, a whole number from 0 to 8; minutes, least and most, whole, from 10 to 180, the least not above the most; waking, from and to, whole UTC hours from 0 to 23), turns (waitHours, a whole number from 1 to 168; perThread, from 1 to 6; perSession, from perThread to 12), charsPerDay (a whole number from 0 to 20,000,000), readMost (a whole number from 1,000 to 200,000) and chatterCron (a five-field cron expression, each field inside its range)';
   if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
   const given = v as Record<string, unknown>;
   const extra = Object.keys(given).find((k) => !POOL_KEYS.includes(k));
@@ -173,6 +173,8 @@ function poolRule(v: unknown): string | null {
   if (!isCron(given.chatterCron)) return `${shape}; "chatterCron" is not`;
   if (!sessionsHeld(given.sessions)) return `${shape}; "sessions" is not`;
   if (!turnsHeld(given.turns)) return `${shape}; "turns" is not`;
+  if (!inRange(given.charsPerDay, 0, 20_000_000)) return `${shape}; "charsPerDay" is not`;
+  if (!inRange(given.readMost, 1_000, 200_000)) return `${shape}; "readMost" is not`;
   const strengths = given.strengths;
   if (typeof strengths !== 'object' || strengths === null || Array.isArray(strengths)) return `${shape}; "strengths" is not`;
   const s = strengths as Record<string, unknown>;

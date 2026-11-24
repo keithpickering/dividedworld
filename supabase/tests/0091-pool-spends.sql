@@ -50,12 +50,12 @@ declare
   r jsonb; said text;
 begin
   perform tests.become_service();
-  r := record_pool_spend('2030-01-07', 'ps-boss', 'named', p1, null, false, '{"trims": []}');
+  r := record_pool_spend('2030-01-07', 'ps-boss', 'named', p1, null, false, '{"trims": []}', 0);
   if r ->> 'status' is distinct from 'spent' then raise exception 'the first spend was not recorded: %', r; end if;
   -- The poison: the same persona, the same day, a different post. It is not an error and it writes nothing.
-  r := record_pool_spend('2030-01-07', 'ps-boss', 'quoted', p3, null, false);
+  r := record_pool_spend('2030-01-07', 'ps-boss', 'quoted', p3, null, false, '{}', 0);
   if r ->> 'status' is distinct from 'already' then raise exception 'a second spend for a day was recorded: %', r; end if;
-  perform record_pool_spend('2030-01-07', 'ps-mod', 'hotOnBeat', p2, null, true, '{"cardRefused": "No."}');
+  perform record_pool_spend('2030-01-07', 'ps-mod', 'hotOnBeat', p2, null, true, '{"cardRefused": "No."}', 0);
   perform tests.unbecome();
   if (select count(*) from pool_spends) is distinct from 2 then raise exception 'the day holds % spends, not 2', (select count(*) from pool_spends); end if;
   -- The unique key is the table's own, not only the function's.
@@ -74,13 +74,13 @@ begin
   end if;
   -- A spend names the persona's own posts: another persona's post, a post that is not a post, and a persona that is not one are refused.
   perform tests.become_service();
-  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false)', '2030-01-09', 'ps-boss', 'named', p2));
+  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false, ''{}'', 0)', '2030-01-09', 'ps-boss', 'named', p2));
   if said is null or said !~ '^22023' then raise exception 'a spend named another persona''s post: %', said; end if;
-  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false)', '2030-01-09', 'ps-boss', 'named', t));
+  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false, ''{}'', 0)', '2030-01-09', 'ps-boss', 'named', t));
   if said is null then raise exception 'a spend named a thread as its post'; end if;
-  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, %L, false)', '2030-01-09', 'ps-boss', 'named', p3, p3));
+  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, %L, false, ''{}'', 0)', '2030-01-09', 'ps-boss', 'named', p3, p3));
   if said is null or said !~ '^22023' then raise exception 'a post was a spend''s card: %', said; end if;
-  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false)', '2030-01-09', 'nobody', 'named', p3));
+  said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false, ''{}'', 0)', '2030-01-09', 'nobody', 'named', p3));
   if said is null or said !~ '^P0002' then raise exception 'a spend for no one: %', said; end if;
   perform tests.unbecome();
 end $$;
@@ -97,7 +97,7 @@ begin
     if not denied then raise exception '% can read the pool''s spends', who; end if;
     foreach fn in array array['select pool_week(''2030-01-07'')', 'select pool_orphans(''2030-01-07'')', 'select claim_pool_run(''2030-01-07'')', 'select pool_context()', 'select character_faces(''[]'')',
       'select pool_thread(gen_random_uuid(), 1, 1, null)', 'select write_staff_thread(''ps-boss'', ''side'', ''t'', ''b'')', 'select schedule_chatter()',
-      'select record_pool_spend(''2030-01-07'', ''ps-boss'', ''named'', gen_random_uuid(), null, false)', 'select write_staff_note(''ps-boss'', gen_random_uuid(), ''n'')'] loop
+      'select record_pool_spend(''2030-01-07'', ''ps-boss'', ''named'', gen_random_uuid(), null, false, ''{}'', 0)', 'select write_staff_note(''ps-boss'', gen_random_uuid(), ''n'')'] loop
       denied := false;
       begin execute fn; exception when insufficient_privilege then denied := true; end;
       if not denied then raise exception '% can call %', who, fn; end if;
@@ -119,7 +119,7 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload) values (c, 'card', t, tue, jsonb_build_object('card', (select key from card_kinds order by key limit 1))) returning id into card;
   perform set_config('kayfabb.staff_writer', '', true);
   perform tests.become_service();
-  perform record_pool_spend('2030-01-08', 'ps-boss', 'quoted', tue, card, false);
+  perform record_pool_spend('2030-01-08', 'ps-boss', 'quoted', tue, card, false, '{}', 0);
   -- Wednesday asks: Monday's two rows and Tuesday's card row are three slots and one card, four slots, and one thread.
   w := pool_week('2030-01-09');
   if (w ->> 'spent')::int is distinct from 4 or (w ->> 'threads')::int is distinct from 1 or jsonb_array_length(w -> 'today') is distinct from 0 then
@@ -153,7 +153,7 @@ begin
   if pg_temp.orphan('ps-mod', '2030-01-11') is not null then raise exception 'an orphan of another day was found'; end if;
   if pg_temp.orphan('ps-boss', '2030-01-10') is not null then raise exception 'an orphan of another persona was found'; end if;
   -- Once its spend is recorded it is no orphan.
-  perform record_pool_spend('2030-01-10', 'ps-mod', 'named', marked, null, false);
+  perform record_pool_spend('2030-01-10', 'ps-mod', 'named', marked, null, false, '{}', 0);
   if pg_temp.orphan('ps-mod', '2030-01-10') is not null then raise exception 'a spent post is still an orphan'; end if;
   perform tests.unbecome();
 end $$;
@@ -188,7 +188,7 @@ begin
   found := pg_temp.orphan('ps-mod', '2030-01-12');
   if (found ->> 'card')::uuid is distinct from mine then raise exception 'the marked Cast on the quoted target is not tied: %', found; end if;
   -- Recorded as the spend's card, the card is no one else's, and the post is no orphan.
-  perform record_pool_spend('2030-01-12', 'ps-mod', 'named', reply, mine, false);
+  perform record_pool_spend('2030-01-12', 'ps-mod', 'named', reply, mine, false, '{}', 0);
   if pg_temp.orphan('ps-mod', '2030-01-12') is not null then raise exception 'a spent post is still an orphan'; end if;
   perform tests.unbecome();
 end $$;
@@ -216,7 +216,7 @@ begin
   found := pg_temp.orphan('ps-boss', '2030-01-13');
   if (found ->> 'card')::uuid is distinct from set_act then raise exception 'the Set on the post is not tied: %', found; end if;
   -- And it is recorded as the spend's card (the spend names a card or a set Act).
-  perform record_pool_spend('2030-01-13', 'ps-boss', 'adopted', start_post, set_act, true);
+  perform record_pool_spend('2030-01-13', 'ps-boss', 'adopted', start_post, set_act, true, '{}', 0);
   if (select card_act from pool_spends where post_act = start_post) is distinct from set_act then raise exception 'the Set was not recorded as the spend''s card'; end if;
   perform tests.unbecome();
 end $$;
@@ -238,7 +238,7 @@ begin
   if pg_temp.orphan('ps-mod', '2030-01-05') is not null then raise exception 'an orphan of the week before was found'; end if;
   if jsonb_array_length(pool_orphans('2030-01-07')) <> 0 then raise exception 'the orphans of later days were listed on Monday: %', pool_orphans('2030-01-07'); end if;
   -- Adopted on its own day, so the week counts it, and the unique (day, staff) holds.
-  perform record_pool_spend('2030-01-09', 'ps-mod', 'adopted', early, null, false, '{"adopted": true}');
+  perform record_pool_spend('2030-01-09', 'ps-mod', 'adopted', early, null, false, '{"adopted": true}', 0);
   if pg_temp.orphan('ps-mod', '2030-01-09') is not null then raise exception 'an adopted post is still an orphan'; end if;
   if (pool_week('2030-01-13') ->> 'spent')::int < 1 then raise exception 'the week does not count the adopted spend: %', pool_week('2030-01-13'); end if;
   perform tests.unbecome();
@@ -368,7 +368,7 @@ do $$
 declare cmd text; sched text;
 begin
   if (select count(*) from pg_trigger where tgname = 'settings_reschedule_chatter' and not tgisinternal) is distinct from 1::bigint then raise exception 'the pool setting does not reschedule the chatter'; end if;
-  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}}, "turns": {"waitHours": 48, "perThread": 2, "perSession": 4, "perDay": 60}, "chatterCron": "41 3 * * *"}')
+  insert into settings (key, value) values ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}}, "turns": {"waitHours": 48, "perThread": 2, "perSession": 4}, "charsPerDay": 780000, "readMost": 40000, "chatterCron": "41 3 * * *"}')
   on conflict (key) do update set value = excluded.value;
   select schedule, command into sched, cmd from cron.job where jobname = 'kayfabb-chatter';
   if sched is distinct from '41 3 * * *' then raise exception 'the chatter is scheduled at %', sched; end if;
