@@ -8,6 +8,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
 import { LoadedThread } from '../loaded.tsx';
+import { AppealForm, ReportForm } from './Forms.tsx';
 import { landsOn, ok } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
@@ -443,5 +444,77 @@ describe('the appeal to the Boss of a ban (the design, section 5: "No player is 
     await within(form).findByRole('form', { name: 'Appeal' });
     const bad = await axeViolations(form);
     expect(bad, describeViolations(bad)).toEqual([]);
+  });
+});
+
+describe('Spin thread on a form\'s answer', () => {
+  test('a report form with onSpin shows Spin thread after the Mod\'s words, and calls it with the verdict\'s Act, its label and the button', async () => {
+    const w = world();
+    w.fake.seed.judging({ report: 'dismissed' });
+    const onSpin = vi.fn();
+    renderIn(w.fake, <ReportForm post={w.second} seq={2} ready={{ left: 3, judge: null }} onSpin={onSpin} />, { path: `/t/${w.thread}` });
+    const form = await screen.findByRole('form', { name: 'Report post #2' });
+    expect(within(form).queryByRole('button', { name: /^Spin a thread/u })).toBeNull();
+    await userEvent.type(within(form).getByRole('textbox'), 'rude');
+    await userEvent.click(within(form).getByRole('button', { name: /^Report ·/u }));
+    const spin = await within(form).findByRole('button', { name: 'Spin thread from the verdict' });
+    expect(spin).toHaveTextContent('Spin thread');
+    const verdict = (await w.fake.log()).reports[0]!;
+    await userEvent.click(spin);
+    expect(onSpin).toHaveBeenCalledWith(verdict.answer, 'the verdict', spin);
+  });
+
+  test('without onSpin, a report form shows no Spin thread', async () => {
+    const w = world();
+    w.fake.seed.judging({ report: 'dismissed' });
+    renderIn(w.fake, <ReportForm post={w.second} seq={2} ready={{ left: 3, judge: null }} />, { path: `/t/${w.thread}` });
+    const form = await screen.findByRole('form', { name: 'Report post #2' });
+    await userEvent.type(within(form).getByRole('textbox'), 'rude');
+    await userEvent.click(within(form).getByRole('button', { name: /^Report ·/u }));
+    await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('heard and dismissed'));
+    expect(within(form).queryByRole('button', { name: /Spin/u })).toBeNull();
+  });
+
+  test('a report whose judgment failed has no answer, so no Spin thread', async () => {
+    const w = world();
+    w.fake.seed.judging({ report: 'failed' });
+    renderIn(w.fake, <ReportForm post={w.second} seq={2} ready={{ left: 3, judge: null }} onSpin={vi.fn()} />, { path: `/t/${w.thread}` });
+    const form = await screen.findByRole('form', { name: 'Report post #2' });
+    await userEvent.type(within(form).getByRole('textbox'), 'rude');
+    await userEvent.click(within(form).getByRole('button', { name: /^Report ·/u }));
+    await within(form).findByRole('alert');
+    expect(within(form).queryByRole('button', { name: /Spin/u })).toBeNull();
+  });
+
+  test('an appeal form with onSpin shows Spin thread after the ruling, and calls it with the ruling\'s Act', async () => {
+    const w = world();
+    const visit = w.fake.seed.visit(w.clerk, w.mine, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    const inf = w.fake.seed.infraction(visit, { points: 2 });
+    w.fake.seed.judging({ appeal: 'upheld' });
+    const onSpin = vi.fn();
+    renderIn(w.fake, <AppealForm infraction={inf} visit={undefined} nameOf={() => 'Pipewrench'} facts={{ character: w.pipe, band: 'minor', points: 2, expiresAt: '', ruleNumber: 2 }} onSpin={onSpin} />, { path: `/t/${w.thread}` });
+    const form = await screen.findByRole('form', { name: 'Appeal' });
+    await userEvent.type(within(form).getByRole('textbox'), 'Please.');
+    await userEvent.click(within(form).getByRole('button', { name: /^Appeal ·/u }));
+    const spin = await within(form).findByRole('button', { name: 'Spin thread from the ruling' });
+    const ruling = (await w.fake.log()).appeals[0]!;
+    await userEvent.click(spin);
+    expect(onSpin).toHaveBeenCalledWith(ruling.answer, 'the ruling', spin);
+  });
+
+  test('through a post: the Lens closes, the post hosts the spin form, cancelling it returns focus to the Report link', async () => {
+    const w = world();
+    w.fake.seed.judging({ report: 'dismissed' });
+    open(w);
+    const report = await within(await article(2)).findByRole('button', { name: 'Report' });
+    await userEvent.click(report);
+    const panel = await dialog('Report this post');
+    await userEvent.type(await within(panel).findByRole('textbox'), 'rude');
+    await userEvent.click(within(panel).getByRole('button', { name: /^Report ·/u }));
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Spin thread from The Clerk\'s verdict' }));
+    const spin = await screen.findByRole('form', { name: /Spin/u });
+    await userEvent.type(within(spin).getByRole('textbox', { name: 'Thread title' }), 'My draft');
+    await userEvent.click(within(spin).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(report).toHaveFocus());
   });
 });

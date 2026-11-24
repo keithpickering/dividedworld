@@ -952,6 +952,48 @@ describe('My log: the Mod Bots\' lines (the design, section 9)', () => {
 });
 
 
+describe('My log: Spin thread on a report\'s and an appeal\'s answer', () => {
+  function answered() {
+    const w = world();
+    const clerk = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(clerk, w.p2, { at: at(30, 9), endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.', at: at(30, 12) });
+    const inf = w.fake.seed.infraction(visit, { points: 2, at: at(30, 12) });
+    const gp = w.fake.seed.post(w.thread, w.glo, 'Gloomba again.', { at: at(30, 13) });
+    return { ...w, clerk, inf, gp };
+  }
+
+  test('a report row with a verdict has "Spin thread", labeled by the Mod\'s name, which opens the spin form from the verdict and returns focus on cancel', async () => {
+    const { fake, me, pipe, gp } = answered();
+    void fake.fileReport(pipe, gp, 'rude');
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    const verdict = (await fake.log()).reports[0]!.answer!;
+    const button = await screen.findByRole('button', { name: 'Spin thread from The Clerk\'s verdict' });
+    expect(button).toHaveTextContent('Spin thread');
+    await userEvent.click(button);
+    const form = await screen.findByRole('form', { name: /The Clerk's verdict/u });
+    expect(form).toHaveTextContent('Spinning a thread from The Clerk\'s verdict');
+    expect(form.querySelector('input')!.id).toBe(`spin-title-${verdict}`);
+    await userEvent.type(within(form).getByRole('textbox', { name: 'Thread title' }), 'Draft');
+    await userEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(button).toHaveFocus());
+  });
+
+  test('an appeal row with a ruling has it too, labeled as the ruling; a row with no answer has none', async () => {
+    const { fake, me, pipe, inf, gp } = answered();
+    void fake.fileAppeal(pipe, inf, 'It was a mistake.');
+    fake.seed.judging({ report: 'failed' });
+    void fake.fileReport(pipe, gp, 'rude');
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    expect(await screen.findByRole('button', { name: 'Spin thread from The Clerk\'s ruling' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /verdict/u })).toBeNull();
+    expect(screen.getAllByRole('button', { name: /^Spin thread from/u })).toHaveLength(1);
+  });
+});
+
+
 describe('My log: the way out of a ban', () => {
   function banned() {
     const w = world();

@@ -92,6 +92,18 @@ export interface MoveAppealFacts {
 /** The Mod's own words, quoted. */
 const quoted = (line: string) => (line.trim() === '' ? null : <span className="kb-visit-said">“{line}”</span>);
 
+/** What a form's answer offers: spin a thread from the Mod's verdict or ruling, as the Lens's own "Spin thread" tile does; named by what it spins. */
+export type SpinAnswer = (answer: Id, label: string, opener: HTMLElement) => void;
+function SpinAnswerButton({ answer, label, onSpin }: { readonly answer: Id; readonly label: string; readonly onSpin: SpinAnswer }) {
+  return (
+    <div className="kb-lens-actions">
+      <button type="button" className="kb-kit-tile kb-lens-action" aria-label={`Spin thread from ${label}`} onClick={(e) => onSpin(answer, label, e.currentTarget)}>
+        <span className="kb-kit-tile-label" aria-hidden="true">Spin thread</span>
+      </button>
+    </div>
+  );
+}
+
 /** What the report tab reads before it shows: the mask's reports left today and who judges on this board's beat. Neither read can stop the tab; a failed one is left out. */
 export interface ReportRead {
   readonly left: number | null;
@@ -112,14 +124,14 @@ export function useReportRead(): Prepared<ReportRead> {
   }, () => `${maskId ?? ''}:${board ?? ''}`);
 }
 
-export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly seq: number; readonly ready: ReportRead }) {
+export function ReportForm({ post, seq, ready, onSpin }: { readonly post: Id; readonly seq: number; readonly ready: ReportRead; readonly onSpin?: SpinAnswer }) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const mask = player.hudCharacter;
   const [reason, setReason] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [result, setResult] = useState<{ readonly verdict: string; readonly line: string; readonly refund: { readonly why: string; readonly amount: number } | null } | null>(null);
+  const [result, setResult] = useState<{ readonly verdict: string; readonly line: string; readonly refund: { readonly why: string; readonly amount: number } | null; readonly answer: Id | null } | null>(null);
   const [left, setLeft] = useState<number | null>(ready.left);
   const judge = ready.judge;
   const ids = useId();
@@ -141,7 +153,7 @@ export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly s
     try {
       const a = await api.fileReport(mask.id, post, reason);
       if (!a.ok) { setRefusal(a.error); return; }
-      setResult({ verdict: a.value.verdict ?? 'heard', line: a.value.line, refund: a.value.refund });
+      setResult({ verdict: a.value.verdict ?? 'heard', line: a.value.line, refund: a.value.refund, answer: a.value.answer });
       setReason('');
       void player.refresh();
       const again = await Promise.resolve(api.reportsLeft(mask.id)).catch(() => null);
@@ -192,6 +204,7 @@ export function ReportForm({ post, seq, ready }: { readonly post: Id; readonly s
         {said}
         {result !== null && result.line.trim() !== '' && <> {role} said: {quoted(result.line)}</>}
       </p>
+      {onSpin && result !== null && result.answer !== null && <SpinAnswerButton answer={result.answer} label={judge ? `${judge.mod}'s verdict` : 'the verdict'} onSpin={onSpin} />}
     </form>
   );
 }
@@ -223,7 +236,7 @@ export function useAppealRead(infraction: Id): Prepared<Said> {
   }, () => infraction);
 }
 
-export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban, move, onFiled, facts }: {
+export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban, move, onFiled, facts, onSpin }: {
   readonly infraction: Id; readonly visit: Visit | undefined; readonly nameOf: (c: Id | null) => string; readonly modPronouns?: PronounSet | null; readonly ban?: MyBan;
   /** Set for a group move: the form then appeals the move, with its facts and terms, and reads nothing of its own. */
   readonly move?: MoveAppealFacts;
@@ -231,13 +244,15 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
   readonly onFiled?: () => void;
   /** The infraction's facts, read before the tab showed; none for a ban or a move. */
   readonly facts?: Said;
+  /** Where given, a ruling that carries its Act offers "Spin thread" after the hearer's words. */
+  readonly onSpin?: SpinAnswer;
 }) {
   const { api, instance, ui } = useKayfa();
   const player = usePlayer();
   const [plea, setPlea] = useState('');
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
-  const [result, setResult] = useState<{ readonly verdict: string | null; readonly line: string } | null>(null);
+  const [result, setResult] = useState<{ readonly verdict: string | null; readonly line: string; readonly answer: Id | null } | null>(null);
   const ids = useId();
   const price = instance.settings.modBots.appealPrice;
   const role = modRole(ui.copy);
@@ -258,7 +273,7 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
     try {
       const a = await api.fileAppeal(ban ? ban.character : move ? move.character : f!.character, ban ? ban.ban : move ? move.move : infraction, plea);
       if (!a.ok) { setRefusal(a.error); return; }
-      setResult({ verdict: a.value.verdict, line: a.value.line });
+      setResult({ verdict: a.value.verdict, line: a.value.line, answer: a.value.answer });
       setPlea('');
       void player.refresh();
       onFiled?.();
@@ -313,6 +328,7 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
           ? <>Your appeal was made, and it is public. Its ruling will be in the thread.</>
           : <>{mod} heard it and {ban ? banRulingWords(result.verdict) : move ? moveRulingWords(result.verdict) : rulingWords(result.verdict)}.{result.line.trim() !== '' && <> {mod} said: {quoted(result.line)}</>}</>)}
       </p>
+      {onSpin && result !== null && result.answer !== null && <SpinAnswerButton answer={result.answer} label={ban || move ? `${lowerFirst(mod)}'s ruling` : visit ? `${mod}'s ruling` : 'the ruling'} onSpin={onSpin} />}
     </form>
   );
 }
@@ -322,7 +338,7 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
  * in a ban mode over the page: the Boss hears it, with the ban's end and the terms. The ban's Act is what an appeal names (`my_bans`): `ban` where the caller already holds it (the log's
  * line), else read for `character` when the form opens. Shown only where the screen is the banned character's own player's (the composer, the player's own log).
  */
-export function BanAppeal({ character, ban }: { readonly character: Id; readonly ban?: MyBan }) {
+export function BanAppeal({ character, ban, onSpin }: { readonly character: Id; readonly ban?: MyBan; /** The host's spin: the form closes, then it opens its spin form from the ruling. */ readonly onSpin?: SpinAnswer }) {
   const { api, instance } = useKayfa();
   const opener = useRef<HTMLButtonElement>(null);
   /* The ban is read before the overlay opens (the glass-load design, section 4); a ban the caller holds opens at once. A ban that has ended answers nothing, which is a read that failed. */
@@ -346,7 +362,7 @@ export function BanAppeal({ character, ban }: { readonly character: Id; readonly
       <Layers>
       {shown !== null && (
         <Overlay title="Appeal the ban" surface="log" kicker="Appeal to the Boss" onClose={cancel} returnFocusTo={() => opener.current}>
-          <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} />
+          <AppealForm infraction={shown.ban} visit={undefined} nameOf={() => ''} ban={shown} {...(onSpin ? { onSpin: (a: Id, label: string, o: HTMLElement) => { cancel(); onSpin(a, label, opener.current ?? o); } } : {})} />
         </Overlay>
       )}
       </Layers>

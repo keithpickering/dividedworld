@@ -25,6 +25,8 @@ import { GroupBar } from '../postbit/GroupBar.tsx';
 import { StaffBadge, showsStaffBadge } from '../postbit/StaffBadge.tsx';
 import { Link } from '../router.tsx';
 import { pageOf, threadHref } from '../thread/pages.ts';
+import { SpinForm, useSpinDrafts } from '../spin/SpinForm.tsx';
+import type { SpinOrigin } from '../thread/Post.tsx';
 import { Avatar } from './Avatar.tsx';
 import { didWords, endedModWords, isModAct, postOf } from './modlog.ts';
 import './profile.css';
@@ -110,7 +112,7 @@ export function StaffProfile({ character: c }: { readonly character: Character }
           </tbody>
         </table>
       </section>
-      <ModerationLog staff={staff} bot={c.office === 'mod'} pronouns={c.pronouns} />
+      <ModerationLog staff={staff} bot={c.office === 'mod'} pronouns={c.pronouns} name={c.name} />
     </div>
   );
 }
@@ -151,7 +153,7 @@ function CareerList({ staff, pronouns }: { readonly staff: string; readonly pron
 const UNINTRODUCED = 'a Boss who has not been introduced';
 
 /** A visit, a report judged or an appeal heard (`moves_log`, 0111): what it did, linked to the post, and how it ended. */
-function ModActCells({ row, perPage }: { readonly row: MoveLogRow; readonly perPage: number }) {
+function ModActCells({ row, perPage, name, onSpin }: { readonly row: MoveLogRow; readonly perPage: number; readonly name: string; readonly onSpin: (act: string, label: string, opener: HTMLElement) => void }) {
   const seq = postOf(row);
   const words = didWords(row);
   return (
@@ -161,12 +163,20 @@ function ModActCells({ row, perPage }: { readonly row: MoveLogRow; readonly perP
         {seq === null ? 'a post' : <Link to={threadHref(row.thread, pageOf(seq, perPage), seq)}>post #{seq}</Link>}
         {words.after}
       </td>
-      <td role="cell" className="kb-small kb-muted">{endedModWords(row)}</td>
+      <td role="cell" className="kb-small kb-muted">
+        {endedModWords(row)}
+        {row.kind !== 'visit' && (
+          <>
+            {' '}
+            <button type="button" className="kb-link-button" aria-label={`Spin thread from ${name}'s ${row.kind === 'report' ? 'verdict' : 'ruling'}`} onClick={(e) => onSpin(row.act, `${name}'s ${row.kind === 'report' ? 'verdict' : 'ruling'}`, e.currentTarget)}>Spin thread</button>
+          </>
+        )}
+      </td>
     </>
   );
 }
 
-function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; readonly bot: boolean; readonly pronouns: PronounSet }) {
+function ModerationLog({ staff, bot, pronouns, name }: { readonly staff: string; readonly bot: boolean; readonly pronouns: PronounSet; readonly name: string }) {
   const pw = pronounWords(pronouns);
   const { api, settings } = useKayfa();
   const [rows, setRows] = useState<readonly MoveLogRow[] | null>(null);
@@ -175,6 +185,8 @@ function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; reado
   const [bosses, setBosses] = useState<readonly { readonly staff: string; readonly name: string }[]>([]);
   const [state, setState] = useState<'ready' | 'failed' | 'paging'>('ready');
   const characterOf = useMoveCharacters(rows ?? []);
+  const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
+  const drafts = useSpinDrafts();
 
   useEffect(() => {
     let live = true;
@@ -209,6 +221,13 @@ function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; reado
       {rows !== null && rows.length === 0 && (
         <p>{bot ? `Nothing here yet. A Mod Bot's log lists ${pw.their} visits, the reports ${pw.they} judged and the appeals ${pw.they} heard, once ${pw.they} ${pw.has} any.` : `Nothing here yet. ${pw.They} ${pw.has} not made a move.`}</p>
       )}
+      {spinOrigin && (
+        <SpinForm
+          key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
+          draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); back?.focus(); }}
+        />
+      )}
       {rows !== null && rows.length > 0 && (
         <table className="kb-table kb-modlog" role="table" aria-labelledby={heading}>
           <thead role="rowgroup">
@@ -220,7 +239,7 @@ function ModerationLog({ staff, bot, pronouns }: { readonly staff: string; reado
               <tr key={r.act} role="row">
                 <td role="cell" className="kb-small"><time dateTime={r.at} title={new Date(r.at).toLocaleString('en-US')}>{shortDate(r.at)}</time></td>
                 {isModAct(r)
-                  ? <ModActCells row={r} perPage={settings.postsPerPage} />
+                  ? <ModActCells row={r} perPage={settings.postsPerPage} name={name} onSpin={(id, label, opener) => setSpinOrigin({ id, label, opener })} />
                   : (
                     <>
                       <td role="cell"><MoveSentence kind={r.kind} params={r.params} character={characterOf(r.params)} boards={boards} bosses={bosses} unnamed={UNINTRODUCED} tense="done" act={r.act} /></td>
