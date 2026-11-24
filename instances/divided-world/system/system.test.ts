@@ -4,6 +4,7 @@ import { system } from './index.ts';
 import { fangame } from './personas/fangame.ts';
 import { ontopic } from './personas/ontopic.ts';
 import { qualityControl } from './personas/quality-control.ts';
+import { beefCoach } from './personas/beef-coach.ts';
 import { placeholderBosses } from './fixtures/index.ts';
 import { BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, MEMBER_ANSWER_RULES, persona, offices } from './persona.ts';
 import { personaPrompt } from '../../../engine/system/prompt.ts';
@@ -314,10 +315,10 @@ test('the instance passes instanceProblems with the arc in', () => {
   assert.deepEqual(instanceProblems(instance), []);
 });
 
-for (const [label, bot] of [['QC-1000', qualityControl], ['ONTOPIC 5.0', ontopic]] as const) {
+for (const [label, bot, key] of [['QC-1000', qualityControl, 'quality-control'], ['ONTOPIC 5.0', ontopic, 'ontopic'], ['BEEF COACH', beefCoach, 'beef-coach']] as const) {
   test(`${label}'s key, title, signature, pet rules, quiz answers and beats fit the engine`, async () => {
     const { predicate } = await import('../../../engine/rules/predicates.ts');
-    assert.equal(bot.key, label === 'QC-1000' ? 'quality-control' : 'ontopic');
+    assert.equal(bot.key, key);
     assert.ok(bot.title.length <= 40);
     assert.ok(bot.signature.length <= 500);
     for (const k of bot.petRules) assert.ok(predicate(k) !== undefined, `${bot.key}: ${k}`);
@@ -339,6 +340,15 @@ test('ONTOPIC 5.0 may give five stars', () => {
   assert.match(prompt, /whole scale/);
   assert.match(prompt, /five stars/);
   assert.match(prompt, /never charge a post on the Pointless Post Palace for being pointless/);
+});
+
+test('BEEF COACH\'s pronouns are they/them, they have every office line, and their coaching stays on the field', () => {
+  assert.deepEqual(beefCoach.pronouns, PRONOUN_PRESETS.they);
+  for (const o of ['boss', 'mod', 'member'] as const) assert.ok((beefCoach.officeLines?.[o] ?? '').length > 0, o);
+  const prompt = personaPrompt(system, beefCoach, 'mod');
+  assert.match(prompt, /never about the life of the person behind the character/);
+  assert.match(prompt, /blow the whistle, stop play, and pick a side in nothing/);
+  assert.match(prompt, /one or two of these habits/);
 });
 
 test('QC-1000\'s habits are occasional', () => {
