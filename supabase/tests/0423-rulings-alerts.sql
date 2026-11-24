@@ -500,6 +500,46 @@ begin
   if (select count(*) from alerts a where a.account = pg_temp.owner(other) and a.kind = 'ruling' and a.sub = 'gearGiven' and a.act is null and a.character = other) is distinct from 1 then raise exception 'the character given gear was not told'; end if;
 end $$;
 
+-- Task 5, review fix: reverse_card's lockout target. An admin ends a lockedOut spring: the locked character's player is told beside the setter's caster alert; one player's both, the caster's alone.
+do $$
+declare
+  boss uuid := tests.account('ra-lk-admin');
+  setter uuid := pg_temp.player('lk-setter');
+  locked uuid := pg_temp.player('lk-locked');
+  twin uuid := tests.character(pg_temp.owner(setter), 'Ra lk-twin');
+  started jsonb; t uuid; p uuid; sset uuid; spring uuid; got jsonb; ended uuid;
+begin
+  insert into admins (account) values (boss);
+  perform tests.become(pg_temp.owner(locked));
+  started := start_thread('general', locked, 'Ra lockout', 'Ra lk starter.');
+  perform tests.unbecome();
+  t := (started -> 'thread' ->> 'id')::uuid;
+  p := tests.post(setter, t, 'Ra lk setter post.');
+
+  -- (a) The locked character belongs to someone else: the setter's caster alert and the locked player's onYours, about the one card_end.
+  sset := tests.act(setter, 'set', t, '{}', p);
+  spring := tests.act(setter, 'spring', t, jsonb_build_object('card', 'lkback', 'trigger', 'cast', 'did', 'lockedOut', 'set', sset::text, 'locks', locked::text, 'until', (now() + interval '1 day')::text), p);
+  perform tests.become(boss);
+  got := reverse_card(spring);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(setter) and a.kind = 'cardEnded' and a.sub is null and a.act = ended and a.character = setter) is distinct from 1 then raise exception 'the setter was not told of the end of a lockout'; end if;
+  if (select count(*) from alerts a where a.account = pg_temp.owner(locked) and a.kind = 'cardEnded' and a.sub = 'onYours' and a.act = ended and a.character = locked) is distinct from 1 then raise exception 'the locked character was not told an admin ended its lockout'; end if;
+  if (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from 2 then raise exception 'an admin''s end of a lockout wrote % alerts', (select count(*) from alerts a where a.kind = 'cardEnded' and a.act = ended); end if;
+
+  -- (b) Setter and locked character one player's: the caster's alert alone.
+  sset := tests.act(setter, 'set', t, '{}', p);
+  spring := tests.act(setter, 'spring', t, jsonb_build_object('card', 'lkback', 'trigger', 'cast', 'did', 'lockedOut', 'set', sset::text, 'locks', twin::text, 'until', (now() + interval '1 day')::text), p);
+  perform tests.become(boss);
+  got := reverse_card(spring);
+  perform tests.unbecome();
+  ended := (got ->> 'id')::uuid;
+  if (select array_agg(a.account || ':' || coalesce(a.sub, 'null')) from alerts a where a.kind = 'cardEnded' and a.act = ended) is distinct from array[pg_temp.owner(setter)::text || ':null'] then
+    raise exception 'a lockout on one''s own other mask wrote: %', (select array_agg(a.account || ':' || coalesce(a.sub, 'null')) from alerts a where a.kind = 'cardEnded' and a.act = ended);
+  end if;
+end $$;
+
+
 -- Task 6 (section 5): real moderation on a post.
 --
 -- 1. decide with hide, hideUntilEdited, unhide or approve writes one conduct alert with that sub to the post author's account, about the version Act.
