@@ -819,3 +819,46 @@ begin
   end if;
   perform tests.unbecome();
 end $$;
+
+-- Task 9 (design section 2): a thread moved, in My log.
+--
+-- 1. log_page's `moved` holds one entry for a landed moveThread of a thread one of the caller's characters started: {move, at, thread, character, from, to}, with the thread's title and the two boards' names.
+-- 2. Another account reads none, and neither does a player who only posted in the thread.
+
+do $$
+declare
+  t uuid := tests.thread('Ra logged move');
+  starter uuid := pg_temp.player('lg-starter');
+  poster uuid := pg_temp.player('lg-poster');
+  other uuid := pg_temp.player('lg-other');
+  dest uuid; home uuid;
+  q bigint; landed uuid;
+  got jsonb;
+begin
+  insert into boards (slug, name) values ('ra-log-dest', 'Ra Log Dest') returning id into dest;
+  perform pg_temp.say(starter, t);
+  perform pg_temp.say(poster, t);
+  home := (select th.board from threads th where th.id = t);
+  q := pg_temp.mv_queue('moveThread', jsonb_build_object('thread', t, 'board', dest), true);
+  landed := pg_temp.mv_land(q);
+  if landed is null then raise exception 'the moveThread did not land: %', (select r.failure from queued_moves r where r.id = q); end if;
+
+  perform tests.become(pg_temp.owner(starter));
+  got := log_page(null) -> 'sources' -> 'moved';
+  perform tests.unbecome();
+  if jsonb_typeof(got) is distinct from 'array' or jsonb_array_length(got) is distinct from 1 then raise exception 'the starter reads one moved thread: %', got; end if;
+  if (got -> 0 ->> 'move')::uuid is distinct from landed or (got -> 0 ->> 'thread')::uuid is distinct from t or (got -> 0 ->> 'character')::uuid is distinct from starter
+     or (got -> 0 ->> 'to')::uuid is distinct from dest or (got -> 0 ->> 'from')::uuid is distinct from home or got -> 0 ->> 'at' is null then
+    raise exception 'the moved entry is wrong: %', got -> 0;
+  end if;
+  if got -> 0 ->> 'title' is distinct from 'Ra logged move' or got -> 0 ->> 'to_name' is distinct from 'Ra Log Dest' or got -> 0 ->> 'from_name' is null then raise exception 'the moved entry does not name the thread and board: %', got -> 0; end if;
+
+  perform tests.become(pg_temp.owner(other));
+  got := log_page(null) -> 'sources' -> 'moved';
+  perform tests.unbecome();
+  if got is distinct from '[]'::jsonb then raise exception 'another account read a moved thread: %', got; end if;
+  perform tests.become(pg_temp.owner(poster));
+  got := log_page(null) -> 'sources' -> 'moved';
+  perform tests.unbecome();
+  if got is distinct from '[]'::jsonb then raise exception 'a player who only posted read a moved thread: %', got; end if;
+end $$;

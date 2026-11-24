@@ -50,7 +50,7 @@ import type {
   Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Rewind, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
-  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
+  AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogThreadMoved, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory,
 } from '../../../engine/ui/data/api.ts';
 
 export interface SupabaseApiOptions {
@@ -665,7 +665,7 @@ const COSMETIC_OUTCOMES = ['line', 'gear', 'card'] as const;
 const COSMETIC_BYS = ['season', 'boss', 'demand', 'admin'] as const;
 
 /** The log's rows as `readLogPage` reads them, from the rows of the player's views (`log`) or of `log_page`'s sources: both name their columns the same. */
-function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>> & { readonly crowd?: Row[]; readonly ballots?: Row[]; readonly pollCloses?: Row[] }, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
+function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' | 'playsOnMine' | 'writes' | 'draws' | 'wallsDrawn' | 'saves' | 'setEnds' | 'caught' | 'ended' | 'infractions' | 'bans' | 'falls' | 'groupMoves' | 'reports' | 'appeals' | 'cosmetics', Row[]>> & { readonly crowd?: Row[]; readonly ballots?: Row[]; readonly pollCloses?: Row[]; readonly moved?: Row[] }, shareRows: Row[], backs: ReadonlyMap<string, Row> = new Map()): LogRead {
   const ledger = src['ledger'].map((r): LedgerRow => ({
     settlement: num(r['settlement']), startsAt: r['starts_at'], endsAt: r['ends_at'], sharesKept: r['shares_kept'] !== false,
     character: r['character'], reason: r['reason'], amount: num(r['amount']), ...((p) => (p ? { params: p } : {}))(numbers(r['params'])),
@@ -705,6 +705,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       secret: r['secret'] === true, options: Array.isArray(r['options']) ? r['options'].map(String) : [], changed: r['changed'] === true, place: logPlace(r['place']),
     }] : [])) }),
     ...(src.pollCloses === undefined ? {} : { pollCloses: src.pollCloses.flatMap((r): LogPollClose[] => (isObject(r['place']) ? [{ act: r['act'], poll: r['poll'], character: r['character'], at: r['at'], question: String(r['question'] ?? ''), place: logPlace(r['place']) }] : [])) }),
+    ...(src.moved === undefined ? {} : { moved: src.moved.map((r): LogThreadMoved => ({ move: r['move'], at: r['at'], thread: r['thread'], character: r['character'], from: r['from'], to: str(r['to']), title: String(r['title'] ?? ''), fromName: str(r['from_name']), toName: str(r['to_name']) })) }),
     draws: src['draws'].map(surfaceLogRow),
     wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),
@@ -2315,7 +2316,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       if (!isObject(d)) throw new ReadFailure('server');
       const sources: Row = isObject(d['sources']) ? d['sources'] : {};
       const first = toLogRead({
-        crowd: rowsOf(sources['crowd']), ballots: rowsOf(sources['ballots']), pollCloses: rowsOf(sources['pollCloses']),
+        crowd: rowsOf(sources['crowd']), ballots: rowsOf(sources['ballots']), pollCloses: rowsOf(sources['pollCloses']), moved: rowsOf(sources['moved']),
         ledger: rowsOf(sources['ledger']), wallet: rowsOf(sources['wallet']), cards: rowsOf(sources['cards']), packs: rowsOf(sources['packs']), playsOnMine: rowsOf(sources['playsOnMine']), writes: rowsOf(sources['writes']), draws: rowsOf(sources['draws']), wallsDrawn: rowsOf(sources['wallsDrawn']), saves: rowsOf(sources['saves']),
         setEnds: rowsOf(sources['setEnds']), caught: rowsOf(sources['caught']), ended: rowsOf(sources['ended']),
         infractions: rowsOf(sources['infractions']), bans: rowsOf(sources['bans']), falls: rowsOf(sources['falls']), groupMoves: rowsOf(sources['groupMoves']), reports: rowsOf(sources['reports']), appeals: rowsOf(sources['appeals']), cosmetics: rowsOf(sources['cosmetics']),
