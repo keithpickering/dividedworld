@@ -23,7 +23,7 @@ export function answerWords(answer: Act, punishmentKind: 'infraction' | 'ban' | 
   if (verdict === 'upheld') return `${hearer} upheld it. Nothing changed.`;
   const delta = typeof p.points_delta === 'number' ? p.points_delta : 0;
   if (punishmentKind === 'ban' || punishmentKind === 'move') {
-    const until = typeof p.until === 'string' ? p.until : undefined;
+    const until = typeof p.until === 'string' && !Number.isNaN(Date.parse(p.until)) ? p.until : undefined;
     const when = until === undefined ? '' : ` ${utcWhen(until)} UTC`;
     const ended = until !== undefined && Date.parse(until) <= now;
     if (verdict === 'overturned') return `${hearer} overturned it: it ended${when}.`;

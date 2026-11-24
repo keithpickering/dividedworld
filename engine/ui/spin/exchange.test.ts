@@ -78,3 +78,20 @@ test('an increased ban or move says it was lengthened, and ends or ended by its 
   assert.equal(answerWords(act('appeal_ruling', { verdict: 'increased', until: past }), 'move', 'Kassie', 'Wario', now),
     'Kassie lengthened it: it ended Nov 20 · 10:00 UTC.');
 });
+
+test('a verdict or ruling the words do not know says it ruled on it', () => {
+  assert.equal(answerWords(act('report_verdict', { verdict: 'mystery' }), null, 'Kassie', 'Wario', now), 'Kassie ruled on it.');
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'mystery' }), 'ban', 'Kassie', 'Wario', now), 'Kassie ruled on it.');
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'mystery' }), 'infraction', 'Kassie', 'Wario', now), 'Kassie ruled on it.');
+});
+
+test('an upheld ban changes nothing', () => {
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'upheld' }), 'ban', 'The Boss', 'Wario', now), 'The Boss upheld it. Nothing changed.');
+});
+
+test('a ban ruling with no until, or one that is no time, says nothing of when', () => {
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'overturned' }), 'ban', 'The Boss', 'Wario', now), 'The Boss overturned it: it ended.');
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'reduced' }), 'ban', 'Kassie', 'Wario', now), 'Kassie reduced it: it ends.');
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'reduced', until: 'not a time' }), 'ban', 'Kassie', 'Wario', now), 'Kassie reduced it: it ends.');
+  assert.equal(answerWords(act('appeal_ruling', { verdict: 'increased', until: 'not a time' }), 'move', 'Kassie', 'Wario', now), 'Kassie lengthened it: it ends.');
+});

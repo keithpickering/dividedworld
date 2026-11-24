@@ -145,7 +145,7 @@ do $$
 declare
   ann uuid := tests.account('sv-ann');
   w uuid := tests.character(ann, 'Sv Wario');
-  kassie uuid; stand uuid; ghost uuid;
+  kassie uuid; stand uuid;
   t uuid := tests.thread('Sv thread'); p uuid := tests.post(w, t, 'My own post.');
   card uuid; r uuid; vd uuid; th uuid; got jsonb; shown uuid;
 begin
@@ -166,12 +166,31 @@ begin
   got := (select origin_place -> 'asker' from thread_open where id = th);
   if got is distinct from jsonb_build_object('id', stand, 'name', (select name from characters where id = stand)) then raise exception 'a veiled asker is the stand-in with its name, not %', got; end if;
   -- An asker that has not debuted (not in characters_public) and the answer's staff keep the place.
-  insert into characters (owner, name) values (ann, 'Sv Ghost') returning id into ghost;
   update characters set debuted_at = null where id = kassie;
   got := (select origin_place from thread_open where id = th);
   if got ->> 'kind' is distinct from 'answer' or got #>> '{staff,id}' is distinct from kassie::text or got #>> '{staff,name}' is distinct from 'Sv Kassie' then
     raise exception 'an answer by a staff character outside characters_public keeps its place and names it: %', got;
   end if;
+end $$;
+
+-- ---- 5b. A player's character that has not debuted has no public name: its ask draws no answer place, and its answer names no staff ----
+do $$
+declare
+  ann uuid := tests.account('sg-ann'); bob uuid := tests.account('sg-bob');
+  v uuid := tests.character(bob, 'Sg Victim');
+  ghost uuid; kassie uuid; t uuid := tests.thread('Sg thread'); p uuid := tests.post(v, t, 'A post.');
+  r uuid; vd uuid; th uuid; got jsonb;
+begin
+  insert into characters (owner, name, debuted_at) values (ann, 'Sg Ghost', now()) returning id into ghost;
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Sg Kassie', 'sg-kassie', 'persona', now()) returning id into kassie;
+  perform set_config('kayfabb.report_writer', 'on', true); perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (ghost, 'report', t, p, '{"reason": "a"}') returning id into r;
+  insert into acts (character, kind, thread, target_act_id, payload) values (kassie, 'report_verdict', t, r, jsonb_build_object('report_act', r, 'verdict', 'dismissed', 'line', 'No.')) returning id into vd;
+  perform set_config('kayfabb.report_writer', '', true); perform set_config('kayfabb.staff_writer', '', true);
+  update characters set debuted_at = null where id = ghost;
+  th := (spin_written(vd, v, 'Spun ghost', 'Discuss.', false, array[]::uuid[]) -> 'thread' ->> 'id')::uuid;
+  got := (select origin_place from thread_open where id = th);
+  if got is not null then raise exception 'an ask by a character that has not debuted draws no place: %', got; end if;
 end $$;
 
 -- ---- 6. The cost: a deep board page, half its threads spun from answers ----
