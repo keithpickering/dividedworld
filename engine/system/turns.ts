@@ -2,8 +2,9 @@
  * Turns: what a round answers (the chattier staff design; its plan, Task 3), in plain code. A round is one run of the chatter function; a
  * persona with a session open spends turns in it, each answering the waiting replies in one thread. Two pure functions:
  *
- *   roundShare(spentToday, perDay, slot, cronMinutes)     how many turns this round may plan (the day earned evenly, a slice a round)
- *   planTurns(open, sessions, share, turns, slot)         which turns, hottest thread first
+ *   roundShare(spentToday, perDay, slot, cronMinutes)     how many characters this round may spend (the day earned evenly, a slice a round)
+ *   planTurns(open, sessions, turns, slot)                which turns the caps allow, hottest thread first
+ *   pacer(available) / takeWhile(planned, available, sizeOf)   whether the next turn may start, as each turn's size is learned
  *
  * Every input is public play (a persona's threads, the replies waiting on it, the public reaction total on its turns, the sessions drawn
  * for it): nothing here reads who owns a character, a class or who reacted. A seeded tie-break from the slot makes a rerun of a round plan
@@ -43,7 +44,8 @@ export interface PlannedTurn {
 }
 
 /**
- * How many turns this round may plan: the day's turns are earned evenly, one slice per round, so no round front-loads the day. `slot` is
+ * How many characters this round may spend (its callers pass characters: `spentToday` is the day's characters charged, `perDay` the
+ * day's character budget; the arithmetic is unit-free): the day's budget is earned evenly, one slice per round, so no round front-loads the day. `slot` is
  * the round's time in epoch milliseconds, and rounds fall every `cronMinutes` from the start of the UTC day: round k = floor(intoDay / step)
  * of N = ceil(DAY / step) a day. By round k the day has earned floor(perDay x (k + 1) / N); the round may plan what is earned and not yet
  * spent, never below 0. A quiet morning leaves its earnings available later; the last round has earned the whole day.
@@ -59,12 +61,12 @@ export function roundShare(spentToday: number, perDay: number, slot: number, cro
 
 /**
  * The round's turns: personas in session only, ranked by heat, then by how many replies wait, then by the oldest wait,
- * then a tie-break seeded from the slot; one turn per persona per thread, inside `perThread`, `perSession` and `share`.
+ * then a tie-break seeded from the slot; one turn per persona per thread, inside `perThread` and `perSession`. Every turn the caps
+ * allow is returned, in ranked order; the round decides how many to start (`pacer`).
  */
 export function planTurns(
   open: readonly OpenThread[],
   sessions: readonly AwakeSession[],
-  share: number,
   turns: PoolSettings['turns'],
   slot: number,
 ): PlannedTurn[] {
@@ -90,7 +92,6 @@ export function planTurns(
   const planned: PlannedTurn[] = [];
   const spentNow = new Map<number, number>();
   for (const { o } of ranked) {
-    if (planned.length >= share) break;
     const s = (sessionsOf.get(o.staff) ?? []).find((x) =>
       x.spent + (spentNow.get(x.session) ?? 0) < turns.perSession && (x.spentByThread[o.thread] ?? 0) < turns.perThread);
     if (!s) continue;
@@ -98,4 +99,25 @@ export function planTurns(
     planned.push({ staff: o.staff, session: s.session, thread: o.thread, quoting: o.replies.at(-1)!.act, answers: o.replies.map((r) => r.act) });
   }
   return planned;
+}
+
+/**
+ * Pacing a round by characters. A turn's size is known only after it is built, so the round asks `mayStart()` before each turn and
+ * `charge(size)` after it: a turn may start while anything is available (`available > 0`) and may overdraw, so `remaining()` goes negative.
+ */
+export function pacer(available: number): { mayStart(): boolean; charge(size: number): void; remaining(): number } {
+  let left = available;
+  return { mayStart: () => left > 0, charge: (size) => { left -= size; }, remaining: () => left };
+}
+
+/** `pacer` over a list: takes turns in order while one may start, reading `sizeOf` only for a turn that started. */
+export function takeWhile<T>(planned: readonly T[], available: number, sizeOf: (turn: T, index: number) => number): { taken: T[]; remaining: number } {
+  const p = pacer(available);
+  const taken: T[] = [];
+  for (const [i, t] of planned.entries()) {
+    if (!p.mayStart()) break;
+    taken.push(t);
+    p.charge(sizeOf(t, i));
+  }
+  return { taken, remaining: p.remaining() };
 }
