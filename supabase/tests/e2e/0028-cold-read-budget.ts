@@ -16,7 +16,8 @@
  * step 5; docs/plans/2026-11-15-warm-reads-design.md, section 3) reads what a connection allocates, and the used figure is still right for the cache, for three reasons:
  *   - There is one cache per connection, not one per page type. The bytes its last block leaves free are allocated once per connection, by whichever call first
  *     needed that block, and a connection that has served every page type holds them whatever order it served them in.
- *   - Those free bytes are never more than the last block, so never more than the cache uses, and never more than 8 MB.
+ *   - Those free bytes are mostly the unused tail of the last block, which is never larger than all the blocks before it nor than 8 MB; the rest are chunks the
+ *     cache freed and takes again before it asks for a block.
  *   - Charged to one function's budget, they make that function's figure depend on the order of the files and on the last analyze, not on its plan.
  * So they are a cost of the connection, bounded by that block, and not a cost of any screen function. The kept plans are still counted by the blocks they hold:
  * every other context, including the CachedPlan and CachedPlanSource contexts that hang under CacheMemoryContext. The budget exists to catch them, and a plan that
@@ -36,7 +37,7 @@
  *   KAYFABB_SCRATCH_URL=postgres://postgres:pg@localhost:5432/<scratch> node --experimental-strip-types --no-warnings --test supabase/tests/e2e/0028-cold-read-budget.ts
  * The budgets are the workflow's: its Postgres 17 is the one they must hold on. If a developer's 17 differs from the workflow's and a line fails, read its measured figure and
  * compare it with the budget; a difference inside the room is the minor version, not a regression, and a budget is changed only to what the workflow's own run measured.
- * A Postgres 17.11 on Windows, on a database holding only the migrations and fixtures, measured up to 0.75 MB under the workflow (boot 5.28 against 6.02), so there the
+ * A Postgres 17.11 on Windows, on a database holding only the migrations and fixtures, measured up to 0.75 MB under the workflow (boot 5.28 against 6.02, both counted by blocks, before #968), so there the
  * far-under line can fire on a healthy build: that is the machine, and no budget is lowered for it.
  *
  * `budgetFaults` is that judgment, pure, and each poison below is the defect it exists to catch: a function that reads `acts_public` thirty times over (thirty branches, each
@@ -187,6 +188,22 @@ export function keptBytes(before: Held, after: Held): number {
 }
 
 /**
+ * The two `Held` readings in a cold read's output: its first line and its last, each a line of JSON with every field a number. Anything else throws, naming the output,
+ * so a reading psql did not print is never measured as nothing.
+ */
+export function heldPair(out: string): [Held, Held] {
+  const lines = out.split(/\r?\n/);
+  const read = (line: string | undefined): Held => {
+    let h: Partial<Record<keyof Held, unknown>> | undefined;
+    try { h = JSON.parse(line ?? '') as typeof h; } catch { h = undefined; }
+    const ok = h !== undefined && (['others', 'cacheTotal', 'cacheFree', 'caches'] as const).every((k) => typeof h![k] === 'number');
+    assert.ok(ok && lines.length >= 2, `no reading of the memory contexts in: ${out}`);
+    return h as Held;
+  };
+  return [read(lines[0]), read(lines.at(-1))];
+}
+
+/**
  * One cold read: one `sql()` call, so one fresh connection. It reads what the connection's contexts hold as the harness's superuser (the view needs it), then in one
  * transaction becomes the fixture's account, makes the call once and unbecomes, then reads again. Answers what the call kept (`keptBytes`). `call` is a SQL expression
  * and `as` the account that makes it.
@@ -198,11 +215,8 @@ export function kept(call: string, as: string): number {
     begin;
     do $cold$ begin perform tests.become('${as}'); perform ${call}; perform tests.unbecome(); end $cold$;
     commit;
-    ${HELD}`).split('\n');
-  const [before, after] = [out[0], out.at(-1)].map((line) => JSON.parse(line ?? '') as Held);
-  const bytes = keptBytes(before!, after!);
-  assert.ok(Number.isFinite(bytes), `no figure from: ${out.join('\n')}`);
-  return bytes;
+    ${HELD}`);
+  return keptBytes(...heldPair(out));
 }
 
 /**
@@ -233,14 +247,15 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
 /**
  * Each screen function, one real call that answers a document; a search read is called with a term and no filter, since the plan it keeps does not depend on the term.
  * The budgets were re-recorded for #968, when the catalog cache began to be counted by what it uses (the header). They come from the workflow's sql job on Postgres 17,
- * run 45475266814 on c1d072b, the first run with that count, and each is rounded up to one decimal plus 0.3 MB. Every figure fell, since none carries the cache's free
- * bytes any longer: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995.
+ * run 45475266814 on c1d072b, the first run with that count, and each is rounded up to one decimal plus 0.3 MB. A function whose call took the cache past a block
+ * fell by 1.5 to 2 MB: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995. A few
+ * budgets moved by a tenth either way, since every one now follows the rule from this one run (index_page's rose to 7.4).
  * Counted by blocks, board_page had moved by 2 MB twice. Once it was a change (0403_departed_personas.sql gave season_handovers, which board_page plans through
  * season_boss_changes, two more indexes, and with the planner statistics of the rows the files before this one commit, their relcache entries took the cache from
  * 2227 kB to 4283 kB). Once it was no change at all: 9.822 on d7661f6 and 11.821 on 1201d38, with no SQL changed between them, by whether an analyze had run.
  * Both were one new block of CacheMemoryContext, which this count no longer reads. Its plans did not change: the WITH plan was 1039 kB and the pinned threads'
  * play_reach plan 1024 kB on both sides. On Postgres 16, after the files before this one, deleting every planner statistic moved board_page by 2.03 MB counted by
- * blocks and by 0.15 MB counted this way. board_page's wider far-under gap for "two plans" is gone with it.
+ * blocks and by 0.15 MB counted this way. So board_page needs no wider far-under gap than any other function.
  */
 export const BUDGETS: Record<string, Budget> = {
   alerts_page: budget(() => 'public.alerts_page(null)', player, 5.5),
@@ -415,13 +430,19 @@ test('keptBytes counts every other context by its blocks, so a plan that grows i
   const grown: Held = { ...before, others: 8 * MB };
   assert.equal(keptBytes(before, grown), MB);
   assert.equal(budgetFaults(['a_page'], { a_page: 7.5 }, { a_page: mb(7 * MB + keptBytes(before, grown)) }).length, 1, 'a plan 1 MB larger is over');
-  // Free bytes in a plan's own context still count: only the catalog cache is read by use.
-  const sparse: Held = { ...before, others: 7 * MB + 2 * MB };
-  assert.equal(keptBytes(before, sparse), 2 * MB);
 });
 
 test('keptBytes refuses a reading with no catalog cache, or more than one', () => {
   const h: Held = { others: MB, cacheTotal: MB, cacheFree: 0, caches: 1 };
   assert.throws(() => keptBytes({ ...h, caches: 0 }, h), /before the call the connection had 0 contexts named CacheMemoryContext/);
   assert.throws(() => keptBytes(h, { ...h, caches: 2 }), /after the call the connection had 2 contexts named CacheMemoryContext/);
+});
+
+test('heldPair reads the first and last lines of a cold read, and refuses an output that is not two readings', () => {
+  const h = { others: 1, cacheTotal: 2, cacheFree: 1, caches: 1 };
+  const line = JSON.stringify(h);
+  assert.deepEqual(heldPair(`${line}\n${JSON.stringify({ ...h, others: 5 })}`), [h, { ...h, others: 5 }]);
+  assert.throws(() => heldPair(line), /no reading of the memory contexts/, 'one reading is not two');
+  assert.throws(() => heldPair(`${line}\nCOMMIT`), /no reading of the memory contexts/, 'a last line that is not a reading');
+  assert.throws(() => heldPair(`${line}\n${JSON.stringify({ ...h, others: '5' })}`), /no reading of the memory contexts/, 'a field that is not a number');
 });
