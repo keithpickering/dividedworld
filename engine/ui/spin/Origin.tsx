@@ -187,7 +187,7 @@ function isPostLike(kind: Act['kind']): boolean {
 /** The post a part of a play's place names, as its words and its address: `at` (the pressed post) or, with `at` left out, `from` (the cast-from post). */
 function postOf(place: Extract<OriginPlace, { kind: 'play' }>, which: 'at' | typeof PLAY_FROM, cardName: (key: string) => string | undefined, perPage: number): { readonly words: string; readonly href: string } | null {
   if (place[which] === null) return null;
-  const part = placeParts(which === 'at' ? place : { ...place, at: null }, cardName, perPage).at(-1);
+  const part = placeParts(which === 'at' ? place : { ...place, at: null }, cardName, () => undefined, perPage).at(-1);
   return part && part.href !== null ? { words: part.words, href: part.href } : null;
 }
 

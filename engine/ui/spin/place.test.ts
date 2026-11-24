@@ -9,6 +9,7 @@ import { placeHref, placeParts, placeWords } from './place.ts';
 
 const names: Record<string, string> = { whoops: 'Whoops!' };
 const cardName = (key: string) => names[key];
+const groupName = (key: string) => (key === 'trial' ? 'Trial Members' : undefined);
 const post = { kind: 'post', thread: 't1', title: 'Title', seq: 12 } as const;
 const update = { kind: 'update', act: 'a 1', title: 'Headline' } as const;
 
@@ -32,7 +33,7 @@ const rows: readonly (readonly [string, OriginPlace, string, string | null])[] =
 
 for (const [name, place, words, href] of rows) {
   test(`placeWords and placeHref: ${name}`, () => {
-    assert.equal(placeWords(place, cardName), words);
+    assert.equal(placeWords(place, cardName, groupName), words);
     assert.equal(placeHref(place, 20), href);
   });
 }
@@ -49,7 +50,7 @@ const glint = (extra: { at: typeof pressed | null; from: typeof castFrom | null 
 const glintName = (key: string) => (key === 'glint' ? 'Glitter Bomb' : undefined);
 
 test('placeParts: a play on a character with a pressed post says the card, the name, and where it was pressed', () => {
-  assert.deepEqual(placeParts(glint({ at: pressed, from: castFrom }), glintName, 20), [
+  assert.deepEqual(placeParts(glint({ at: pressed, from: castFrom }), glintName, groupName, 20), [
     { words: 'Glitter Bomb on ', href: null },
     { words: 'Wario', href: '/c/c%2Fw', character: 'c/w' },
     { words: ', at ', href: null },
@@ -58,7 +59,7 @@ test('placeParts: a play on a character with a pressed post says the card, the n
 });
 
 test('placeParts: a play on a character with only a cast-from post says where it was cast from', () => {
-  assert.deepEqual(placeParts(glint({ at: null, from: castFrom }), glintName, 20), [
+  assert.deepEqual(placeParts(glint({ at: null, from: castFrom }), glintName, groupName, 20), [
     { words: 'Glitter Bomb on ', href: null },
     { words: 'Wario', href: '/c/c%2Fw', character: 'c/w' },
     { words: ', cast from ', href: null },
@@ -67,38 +68,81 @@ test('placeParts: a play on a character with only a cast-from post says where it
 });
 
 test('placeParts: a play on a character with neither post is the card and the name alone (an older server)', () => {
-  assert.deepEqual(placeParts(glint({ at: null, from: null }), glintName, 20), [
+  assert.deepEqual(placeParts(glint({ at: null, from: null }), glintName, groupName, 20), [
     { words: 'Glitter Bomb on ', href: null },
     { words: 'Wario', href: '/c/c%2Fw', character: 'c/w' },
   ]);
-  assert.deepEqual(placeParts({ kind: 'play', card: 'glint', on: { kind: 'character', id: 'c1', name: null }, from: null, at: null }, glintName, 20)[1], { words: 'a character', href: '/c/c1', character: 'c1' });
+  assert.deepEqual(placeParts({ kind: 'play', card: 'glint', on: { kind: 'character', id: 'c1', name: null }, from: null, at: null }, glintName, groupName, 20)[1], { words: 'a character', href: '/c/c1', character: 'c1' });
 });
 
 for (const [name, place, words, href] of rows) {
   if (place.kind === 'play' && place.on?.kind === 'character') continue;
   test(`placeParts: ${name} is one part with today's words and address`, () => {
-    assert.deepEqual(placeParts(place, cardName, 20), [{ words, href }]);
+    assert.deepEqual(placeParts(place, cardName, groupName, 20), [{ words, href }]);
   });
 }
 
 test('placeWords and placeHref read placeParts: the whole phrase as words, and the first place it goes', () => {
-  assert.equal(placeWords(glint({ at: pressed, from: castFrom }), glintName), 'Glitter Bomb on Wario, at #31 in Why are my posts shiny');
-  assert.equal(placeWords(glint({ at: null, from: castFrom }), glintName), 'Glitter Bomb on Wario, cast from #12 in Title');
+  assert.equal(placeWords(glint({ at: pressed, from: castFrom }), glintName, groupName), 'Glitter Bomb on Wario, at #31 in Why are my posts shiny');
+  assert.equal(placeWords(glint({ at: null, from: castFrom }), glintName, groupName), 'Glitter Bomb on Wario, cast from #12 in Title');
   assert.equal(placeHref(glint({ at: pressed, from: castFrom }), 20), '/c/c%2Fw');
 });
 
 test('placeParts: a face-down card and a key the instance lacks never name a card on a character either', () => {
-  const on = (card: string | null) => placeParts({ kind: 'play', card, on: onWario, from: null, at: pressed }, glintName, 20)[0];
+  const on = (card: string | null) => placeParts({ kind: 'play', card, on: onWario, from: null, at: pressed }, glintName, groupName, 20)[0];
   assert.deepEqual(on(null), { words: 'a face-down card on ', href: null });
   assert.deepEqual(on('gone'), { words: 'a card on ', href: null });
 });
 
 test('placeParts: a poll and a ballot are one link to the poll\'s post, the words never split', () => {
-  assert.deepEqual(placeParts({ kind: 'poll', question: 'Q?', on: post }, cardName, 20), [{ words: 'the poll “Q?” on #12 in Title', href: '/t/t1?page=1#post-12' }]);
-  assert.equal(placeParts({ kind: 'ballot', character: { id: 'c1', name: 'Wario' }, question: 'Q?', on: post }, cardName, 20).length, 1);
+  assert.deepEqual(placeParts({ kind: 'poll', question: 'Q?', on: post }, cardName, groupName, 20), [{ words: 'the poll “Q?” on #12 in Title', href: '/t/t1?page=1#post-12' }]);
+  assert.equal(placeParts({ kind: 'ballot', character: { id: 'c1', name: 'Wario' }, question: 'Q?', on: post }, cardName, groupName, 20).length, 1);
 });
 
 test('the 60-character cut counts characters, never half a surrogate pair', () => {
-  const words = placeWords({ kind: 'poll', question: '😀'.repeat(61), on: post }, cardName);
+  const words = placeWords({ kind: 'poll', question: '😀'.repeat(61), on: post }, cardName, groupName);
   assert.equal(words, `the poll “${'😀'.repeat(60)}…” on #12 in Title`);
 });
+
+const kassie = { id: 'c/k', name: 'Kassie' } as const;
+const wario = { id: 'c/w', name: 'Wario' } as const;
+const line = { kind: 'post', thread: 't3', title: 'Member moves', seq: 4 } as const;
+const answer = (extra: Partial<Extract<OriginPlace, { kind: 'answer' }>>): OriginPlace =>
+  ({ kind: 'answer', spun: 'answer', ask: 'report', asker: wario, staff: kassie, punishment: null, group: null, on: post, ...extra });
+const who = (c: { id: string; name: string }, href = `/c/${encodeURIComponent(c.id)}`) => ({ words: c.name, href, character: c.id });
+const plain = (words: string) => ({ words, href: null });
+const postPart = { words: '#12 in Title', href: '/t/t1?page=1#post-12' };
+
+const answerRows: readonly (readonly [string, OriginPlace, readonly object[], string, string | null])[] = [
+  ['an answer to a report', answer({}), [who(kassie), plain("'s verdict on "), who(wario), plain("'s report of "), postPart],
+    "Kassie's verdict on Wario's report of #12 in Title", '/c/c%2Fk'],
+  ['an ask, a report', answer({ spun: 'ask', staff: null }), [who(wario), plain("'s report of "), postPart],
+    "Wario's report of #12 in Title", '/c/c%2Fw'],
+  ['an answer to an appeal of warn points', answer({ ask: 'appeal', punishment: 'infraction' }),
+    [who(kassie), plain("'s ruling on "), who(wario), plain("'s appeal of "), plain('the warn points from '), postPart],
+    "Kassie's ruling on Wario's appeal of the warn points from #12 in Title", '/c/c%2Fk'],
+  ['an ask, an appeal of a ban', answer({ spun: 'ask', ask: 'appeal', punishment: 'ban', staff: null }),
+    [who(wario), plain("'s appeal of "), plain('the ban from '), postPart],
+    "Wario's appeal of the ban from #12 in Title", '/c/c%2Fw'],
+  ['an answer to an appeal of a move, linked to its line', answer({ ask: 'appeal', punishment: 'move', group: 'trial', on: line }),
+    [who(kassie), plain("'s ruling on "), who(wario), plain("'s appeal of "), plain('the move into '), { words: 'Trial Members', href: '/t/t3?page=1#post-4' }],
+    "Kassie's ruling on Wario's appeal of the move into Trial Members", '/c/c%2Fk'],
+  ['an appeal of a move with no line and a group the instance lacks', answer({ spun: 'ask', ask: 'appeal', punishment: 'move', group: 'gone', on: null, staff: null }),
+    [who(wario), plain("'s appeal of "), plain('the move into '), plain('gone')],
+    "Wario's appeal of the move into gone", '/c/c%2Fw'],
+  ['a report with no post', answer({ spun: 'ask', staff: null, on: null }), [who(wario), plain("'s report of "), plain('a post')],
+    "Wario's report of a post", '/c/c%2Fw'],
+  ['an appeal of warn points with no post', answer({ ask: 'appeal', punishment: 'infraction', on: null }),
+    [who(kassie), plain("'s ruling on "), who(wario), plain("'s appeal of "), plain('the warn points from '), plain('a post')],
+    "Kassie's ruling on Wario's appeal of the warn points from a post", '/c/c%2Fk'],
+  ['an answer place whose staff is null reads as its ask', answer({ staff: null }), [who(wario), plain("'s report of "), postPart],
+    "Wario's report of #12 in Title", '/c/c%2Fw'],
+];
+
+for (const [name, place, parts, words, href] of answerRows) {
+  test(`placeParts, placeWords and placeHref: ${name}`, () => {
+    assert.deepEqual(placeParts(place, cardName, groupName, 20), parts);
+    assert.equal(placeWords(place, cardName, groupName), words);
+    assert.equal(placeHref(place, 20), href);
+  });
+}
