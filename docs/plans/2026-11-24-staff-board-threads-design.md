@@ -162,6 +162,12 @@ default the thread being read, when it is on that board). The card Act is writte
 announcements thread today, free-standing, reacted to and spun; only its place changes. A board with no thread yet
 refuses with plain words: start a thread there first. Cards already played stay where they are.
 
+Found while planning: a board card has no row in any thread today. It is drawn on the board's banner and in its threads'
+marks, and the announcements thread never showed it. So for the card to be in context, its thread now draws it: one line
+under the newest post at the moment it was played, with its reactions and a Spin. The banner is unchanged. A sprung
+board card lands in the thread its face-down card was laid in when that thread is on its board, else in the board's most
+recently active thread.
+
 **Appeals** stay in the move's thread (the owner: "appeals can stay in the move's thread"): a petition in the decision's
 own file, answered there.
 
