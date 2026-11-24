@@ -81,9 +81,19 @@ export interface PoolSettings {
   };
   /**
    * What a round answers (the chattier staff design): replies wait `waitHours` (1 to 168) for a turn; a persona takes at most `perThread` turns
-   * (1 to 6) in one thread and `perSession` (`perThread` to 12) in one session, and the pool at most `perDay` turns a day (0 to 500).
+   * (1 to 6) in one thread and `perSession` (`perThread` to 12) in one session, and a day's spend is `charsPerDay`, not a count of turns.
    */
-  readonly turns: { readonly waitHours: number; readonly perThread: number; readonly perSession: number; readonly perDay: number };
+  readonly turns: { readonly waitHours: number; readonly perThread: number; readonly perSession: number };
+  /**
+   * The characters the pool may spend in a UTC day, across every persona (whole posts design, section 5): a whole number from 0 to 20,000,000. A post is
+   * charged by the characters it holds, whatever the number of turns; a round's share of it is `roundShare`'s.
+   */
+  readonly charsPerDay: number;
+  /**
+   * The most characters of a thread a persona is shown when it writes in it (`ThreadReadResult`, whole posts design, section 5): a whole number from
+   * 1,000 to 200,000. The read keeps whole posts, never a cut body.
+   */
+  readonly readMost: number;
   /** When a round runs, as a five-field cron expression in UTC. */
   readonly chatterCron: string;
 }
