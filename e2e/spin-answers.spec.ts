@@ -39,7 +39,7 @@ test('a dismissed report spun from the form shows both bylines, the Mod\'s words
   await report.getByRole('button', { name: /^Spin thread from / }).click();
   const form = page.getByRole('form', { name: /^Spin a thread/u });
   await form.getByRole('textbox', { name: 'Thread title' }).fill('A dismissal');
-  await form.locator('button[data-kb-primary]').click();
+  await form.getByRole('button', { name: 'Spin thread' }).click();
   const box = origin(page);
   await expect(box).toBeVisible();
   await expect(box.locator('.kb-exchange')).toHaveAttribute('data-kb-exchange', 'read');
@@ -71,10 +71,11 @@ test('an appeal\'s ruling spun from the Mod\'s moderation log shows the ruling\'
   await row.getByRole('button', { name: /^Spin thread from / }).click();
   const form = page.getByRole('form', { name: /^Spin a thread/u });
   await form.getByRole('textbox', { name: 'Thread title' }).fill('A ruling');
-  await form.locator('button[data-kb-primary]').click();
+  await form.getByRole('button', { name: 'Spin thread' }).click();
   const box = origin(page);
   await expect(box.locator('.kb-exchange')).toHaveAttribute('data-kb-exchange', 'read');
   await expect(box).toContainText('It stays.');
   await expect(box).toContainText(`${MOD} Two upheld it. Nothing changed.`);
   await expect(box).not.toContainText(/Aura/u);
+  expect(await pageViolations(page)).toEqual([]);
 });
