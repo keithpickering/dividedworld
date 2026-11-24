@@ -20,7 +20,7 @@ begin
       'moves', jsonb_build_array(jsonb_build_object('key', 'nameSuccessor', 'structural', true),
         jsonb_build_object('key', 'mergeBoard', 'structural', true, 'shapesBoard', true, 'lasting', true, 'offices', jsonb_build_array('boss'))),
       'demands', jsonb_build_array(jsonb_build_object('key', 'postsOnBoard')))));
-  insert into settings (key, value) values ('digestThreads', '3'), ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}}, "turns": {"waitHours": 48, "perThread": 2, "perSession": 4, "perDay": 60}, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
+  insert into settings (key, value) values ('digestThreads', '3'), ('pool', '{"weekly": 20, "holdback": 0.2, "threadsWeekly": 1, "cardRarityMost": "common", "priorityDays": 28, "notesRead": 12, "chatterThreadPosts": 8, "strengths": {"named": 5, "quoted": 5, "legacy": 5, "successorStumbles": 5, "oldFlame": 5, "homeTurf": 2, "seasonTurn": 2, "hotOnBeat": 2}, "sessions": {"perDay": 3, "minutes": {"least": 20, "most": 60}, "waking": {"from": 13, "to": 5}}, "turns": {"waitHours": 48, "perThread": 2, "perSession": 4}, "charsPerDay": 780000, "readMost": 40000, "chatterCron": "37 17 * * *"}') on conflict (key) do update set value = excluded.value;
   update characters set debuted_at = now() where staff = 'hp-bench';
   insert into staff_offices (staff, office, cause) values ('hp-bench', 'benched', 'admin');
 end $$;
@@ -466,7 +466,7 @@ begin
   spin1 := (r -> 'act' ->> 'id')::uuid; th := (r -> 'thread' ->> 'id')::uuid;
   perform keep_pick(d1, 'hp-pat', '{"trigger": "hot"}');
   if jsonb_array_length(kept_picks(d1)) is distinct from 1 then raise exception 'the kept pick is not listed before its spend: %', kept_picks(d1); end if;
-  r := record_pool_spend(d1, 'hp-pat', 'hotOnBeat', spin1, null, true);
+  r := record_pool_spend(d1, 'hp-pat', 'hotOnBeat', spin1, null, true, '{}', 0);
   if r ->> 'status' is distinct from 'spent' then raise exception 'a spin takes no spend: %', r; end if;
   if (select s.started_thread from pool_spends s where s.day = d1 and s.staff = 'hp-pat' and s.post_act = spin1) is distinct from true then raise exception 'the spend of a spin is not a started thread'; end if;
   if jsonb_array_length(kept_picks(d1)) is distinct from 0 then raise exception 'a spent spin''s pick is listed again: %', kept_picks(d1); end if;
@@ -481,7 +481,7 @@ begin
     raise exception 'an orphaned spin is not listed: %', pool_orphans(d1);
   end if;
   if exists (select 1 from jsonb_array_elements(pool_orphans(d1)) e where e ->> 'act' = spin1::text) then raise exception 'a spent spin is listed as an orphan'; end if;
-  r := record_pool_spend(d0, 'hp-pat', 'adopted', spin2, null, true);
+  r := record_pool_spend(d0, 'hp-pat', 'adopted', spin2, null, true, '{}', 0);
   if r ->> 'status' is distinct from 'spent' then raise exception 'adopting an orphaned spin failed: %', r; end if;
   if exists (select 1 from jsonb_array_elements(pool_orphans(d1)) e where e ->> 'act' = spin2::text) then raise exception 'an adopted spin is still listed as an orphan'; end if;
   if (pool_week(d1 + 1) ->> 'threads')::bigint is distinct from 2 then raise exception 'the week does not count both spun threads: %', pool_week(d1 + 1); end if;
@@ -491,7 +491,7 @@ begin
   pspin := tests.act(ann, 'spin', (select thread from acts where id = spin1), '{"title": "x", "body": "A player''s spin."}', origin);
   perform tests.become_service();
   foreach r in array array[to_jsonb(edit), to_jsonb(origin), to_jsonb(pspin)] loop
-    said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false)', d1 + 1, 'hp-pat', 'hotOnBeat', r #>> '{}'));
+    said := pg_temp.refused(format('select record_pool_spend(%L, %L, %L, %L, null, false, ''{}'', 0)', d1 + 1, 'hp-pat', 'hotOnBeat', r #>> '{}'));
     if said is distinct from '22023 the spend''s post is not a post of hp-pat' then raise exception 'a spend of another''s Act: %', said; end if;
     said := pg_temp.refused(format('select write_staff_note(%L, %L, %L)', 'hp-pat', r #>> '{}', 'No.'));
     if said is distinct from '22023 a note goes with a post of its own persona' then raise exception 'a note on another''s Act: %', said; end if;

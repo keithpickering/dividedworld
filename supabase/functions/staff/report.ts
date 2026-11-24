@@ -34,7 +34,7 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { instanceSet, learnMod, postFor, pronounsOfCharacter, readModGroups, said, threadFor, type ThreadRead } from './core.ts';
+import { instanceSet, judgedRead, learnMod, pronounsOfCharacter, readModGroups, said } from './core.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type ReportAnswer = DoorAnswer;
@@ -118,9 +118,10 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   const standing = mod.standing;
 
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
-  const read = await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
+  const heard = await judgedRead(db, settings, opened.thread, opened.staff, opened.post);
+  // A post the read does not hold (hidden since the report, or gone) is not ruled on: nothing is judged, and the report is refunded as any report the Mod could not hear is.
+  if (!heard.judged) throw new Error('the reported post cannot be read');
   const fallback = instanceSet(settings);
-  const post = postFor(read, opened.post, fallback, { name: 'a character' });
   const groups = await readModGroups(db, standing);
   const context = {
     allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, rules,
@@ -130,9 +131,9 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
     ...(groups ? { conferred: groups.conferred } : {}),
     persona: mod.persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules, allowance: standing.allowance, beat: standing.beat,
     ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-    board: opened.board, thread: threadFor(read, fallback), post,
+    board: opened.board, title: heard.title, read: heard.read,
     reporter: { name: opened.reporter.name, pronouns: await pronounsOfCharacter(db, opened.reporter.id, fallback) }, reason: opened.reason,
-    limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+    limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
   });
 
   // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.

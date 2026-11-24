@@ -8,6 +8,7 @@ import { MEETING_RULE, MEETING_PARTS, partRule, partSchema, repairAnswer, ruleSc
 import { CHATTER_RULE, chatterSchema, repairChatter, type OfferedCard } from '../system/chatter.ts';
 import { FILING_RULE, PATROL_RULE, filingPrompt, patrolPrompt, repairFiling, repairPatrol, type FilingInput, type PatrolInput } from '../system/judgment.ts';
 import { APOLOGY_RULE, apologyPrompt, repairApology } from '../system/apology.ts';
+import { readThread } from '../system/read.ts';
 import { repair } from '../system/validate.ts';
 
 const H = 3_600_000;
@@ -97,13 +98,13 @@ const base = {
   notes: [], rules: [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }],
   allowance: 2, beat: [{ id: GAMES, name: 'Games' }], ruleDaysMost: 7, expiryLeastHours: 24,
 } as const;
-const limits = { threadPosts: 8, excerptChars: 300, titleMaxLength: 100 };
+const limits = { excerptChars: 300, titleMaxLength: 100 };
 const mctx = { allowance: 2, beat: [GAMES], ruleDaysMost: 7, expiryLeastHours: 24 };
 
 test('a filing\'s schema, with and without a move on offer and in both modes, gives an answer repairFiling accepts or rejects by name', () => {
   const filing = (over: Partial<FilingInput> = {}): FilingInput => ({
-    ...(base as unknown as FilingInput), board: { name: 'Games', premise: 'Talk about games.' }, thread: null,
-    post: { name: 'Bob', pronouns: she, body: 'Odyssey.' }, charges: [{ rule: 'Rule 2', band: 'moderate', cause: 'rule' }], limits, ...over,
+    ...(base as unknown as FilingInput), board: { name: 'Games', premise: 'Talk about games.' }, title: null, read: readThread([{ act: 'a1', seq: 1, at: '2026-11-01T00:00:00Z', author: 'c1', name: 'Bob', pronouns: she, body: 'Odyssey.', replyTo: null, quotes: [] }], { self: null, must: ['a1'] }, 1000),
+    charges: [{ rule: 'Rule 2', band: 'moderate', cause: 'rule' }], limits, ...over,
   });
   for (const over of [{}, { allowance: 0, beat: [] }, { mode: 'move' as const, said: 'Filed.' }]) {
     const { schema } = filingPrompt(filing(over));

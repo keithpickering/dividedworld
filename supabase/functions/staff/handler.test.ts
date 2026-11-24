@@ -83,7 +83,7 @@ function doorDb(fn: string) {
     case 'staff_career': return { led: [], offices: [] };
     case 'staff_memory_latest': case 'staff_memory_at': return null;
     case 'staff_notes_recent': case 'rules_in_force': return [];
-    case 'pool_thread': return { title: 'T', posts: [{ act: POST, name: 'A', pronouns: null, body: 'x' }] };
+    case 'pool_read': return { title: 'T', self: null, posts: [{ act: POST, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'a', name: 'A', pronouns: null, body: 'x', replyTo: null, quotes: [] }] };
     case 'character_faces': return {};
     case 'mod_group_context': return { conferred: [], characters: [] };
     case 'refund_report': case 'refund_appeal': return { refunded: true };

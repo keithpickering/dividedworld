@@ -45,7 +45,11 @@ interface World {
   failOn?: Record<string, number | 'always'>;
   /** Visits the tick files while the model is thinking (the race). */
   tickFiles?: string[];
-  /** When set, pool_thread reports this many long posts (Poster0 oldest, the inspected post last) instead of the one short one. */
+  /** When set, pool_read reports this many long posts (Poster0 oldest, the inspected post last) instead of the one short one. */
+  /** The whole body `pool_read` gives the inspected post. */
+  postBody?: string;
+  /** `pool_read` does not hold the inspected post. */
+  unreadable?: boolean;
   longThread?: number;  /** What `mod_group_context` answers. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
 }
@@ -90,10 +94,12 @@ function fakeDb(w: World = {}) {
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return ['Games gets bumped.'] as T;
         case 'character_faces': return {} as T;
-        case 'pool_thread': {
-          const v = visits.find((x) => x.thread === args.in_thread)!;
-          if (w.longThread) return { title: 'Best Mario game?', posts: Array.from({ length: w.longThread }, (_, i) => ({ act: i === w.longThread! - 1 ? v.post : `x${i}`, name: `Poster${i}`, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}` })) } as T;
-          return { title: 'Best Mario game?', posts: [{ act: v.post, name: 'Bob', body: 'Odyssey. Odyssey.' }] } as T;
+        case 'pool_read': {
+          const v = visits.find((x) => x.post === (args.named as string[])[0])!;
+          const at = '2026-11-04T09:00:00.000Z';
+          if (w.unreadable) return { title: 'Best Mario game?', self: null, posts: [] } as T;
+          if (w.longThread) return { title: 'Best Mario game?', self: null, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: i === w.longThread! - 1 ? v.post : `x${i}`, seq: i + 1, at, author: `poster-${i}`, name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}`, replyTo: null, quotes: [] })) } as T;
+          return { title: 'Best Mario game?', self: null, posts: [{ act: v.post, seq: 1, at, author: 'bob', name: 'Bob', pronouns: null, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
         }
         case 'apply_mod_move': {
           const staffKey = String(args.staff);
@@ -360,7 +366,7 @@ test('an old voice\'s filing asks for the most the window leaves, and its frame 
   assert.match(bare.req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/, 'the moderator-action line and the Mod\'s own line are never removed');
 });
 
-test('an old voice\'s filing drops the thread\'s oldest posts when the thread overflows the window less its line', async () => {
+test('an old voice\'s filing drops whole posts, lowest tier first, when the thread overflows the window less its line', async () => {
   const world = { ...withVoice(MON, 'oldVoice'), settings: { ...dividedWorld.settings, oldVoiceWindow: 400, oldVoicePromptFloor: 300, digestExcerptChars: 300, pool: { ...dividedWorld.settings.pool, chatterThreadPosts: 8 } } };
   const d = fakeDb({ visits: [due(V1, P1)], longThread: 8 });
   const m = fakeModels(() => ({ move: move() }), 'A line.');
@@ -370,7 +376,7 @@ test('an old voice\'s filing drops the thread\'s oldest posts when the thread ov
   const budget = world.settings.oldVoiceWindow - req.maxTokens!;
   assert.equal(req.maxTokens, 100);
   assert.ok(count(req.prompt) <= budget, `${count(req.prompt)} tokens against a budget of ${budget}`);
-  assert.ok(!req.prompt.includes('Poster0:') && req.prompt.includes('Poster7:'), 'the oldest posts went and the newest stayed');
+  assert.ok(!req.prompt.includes('Poster1:') && req.prompt.includes('Poster0:') && req.prompt.includes('Poster7:'), 'a stranger\'s post went before the opener, and the inspected post stayed');
   assert.match(req.prompt, /\[Moderator action: [^\n]*\]\n[^\n]*:$/);
 });
 
@@ -624,4 +630,24 @@ test('learnMod: a persona\'s own pronouns are its file\'s, else settings.pronoun
   assert.equal(known.names[OPINED], `${'L'.repeat(60)} (it/its)`, 'cut to 60 before the tag, the missing profile taking the default');
   const tagged = await learnMod(db, withOwn(undefined), { pool, pronouns: she }, base.key);
   assert.equal(tagged.names[OPINED], `${'L'.repeat(60)} (she/her)`);
+});
+
+test('a filing on a 5,000-character post passes it whole; one whose post cannot be read files the stock line and asks no model', async () => {
+  const long = `${'A very long case for the defense of the pineapple. '.repeat(100)}`.slice(0, 5_000);
+  const d = fakeDb({ visits: [due(V1, P1)], postBody: long });
+  const m = fakeModels(() => ({ words: 'Noted.' }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.equal(message.split(long).length - 1, 1, 'the whole post, once');
+  assert.ok(!message.includes('…'));
+  assert.deepEqual(d.of('pool_read').map((a) => [a.staff_key, a.named]), [[MON, [P1]]], 'read for the Mod, naming the inspected post');
+  const gone = fakeDb({ visits: [due(V1, P1)], unreadable: true });
+  const none = fakeModels(() => ({ words: 'Noted.' }));
+  const filed = await run(gone, none);
+  assert.ok(filed.status === 'ok');
+  assert.equal(none.chats.length + none.completions.length, 0, 'no ruling on a post the Mod did not see');
+  assert.equal(filed.filings[0]!.line, 'stock');
+  assert.match(filed.filings[0]!.why!, /cannot be read/);
+  assert.equal(gone.of('file_visit').length, 1, 'the visit is filed all the same');
 });
