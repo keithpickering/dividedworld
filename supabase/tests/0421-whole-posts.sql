@@ -218,3 +218,69 @@ begin
   perform tests.unbecome();
   if said is null or said !~ '^42501' then raise exception 'a player called pool_read: %', said; end if;
 end $$;
+
+-- ---- 3b. pool_read: an edited post's quotes, a veiled author, and the caps ----
+do $$
+declare
+  a uuid := tests.character(tests.account('wp-c-ann'), 'Wp C Ann');
+  b uuid := tests.character(tests.account('wp-c-bea'), 'Wp C Bea');
+  boss uuid := (select id from characters where staff = 'wp-boss');
+  stand uuid;
+  base timestamptz := now() - interval '1 day';
+  t uuid; ids uuid[]; r jsonb; got integer[]; e jsonb; i integer; qs text; edited uuid; veiled uuid; play uuid;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+
+  -- An edit is an Act of its own and its quotes hang on its id: a post edited to drop one quote and add another is read by its edited body.
+  t := tests.thread('Wp Edit');
+  ids := array[tests.post(b, t, 'Opener.', base), tests.post(a, t, 'Q one.', base + interval '1 minute'), tests.post(a, t, 'Q two.', base + interval '2 minutes')];
+  ids := ids || tests.post(b, t, format('Edited [quote="%s" user=%s]Q one.[/quote] soon', ids[2], a), base + interval '3 minutes');
+  perform tests.act(b, 'edit', t, jsonb_build_object('body', format('Edited [quote="%s" user=%s]Q two.[/quote] now', ids[3], a)), ids[4], base + interval '4 minutes');
+  r := pool_read(t, 'nobody', null, 1);
+  select p into e from jsonb_array_elements(r -> 'posts') p where (p ->> 'act')::uuid = ids[4];
+  if e -> 'quotes' is distinct from jsonb_build_array(ids[3]) then raise exception 'an edited post''s quotes are %, not the edited body''s', e -> 'quotes'; end if;
+  select array_agg((p ->> 'seq')::integer order by (p ->> 'seq')::integer) into got from jsonb_array_elements(r -> 'posts') p;
+  if got is distinct from array[1, 3, 4] then raise exception 'the hop does not follow the edit: %', got; end if;
+
+  -- A veiled post's author and name are the stand-in's, as acts_public answers them.
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('wpveil', 'Wp Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1);
+  select c.id into stand from characters c where c.staff_kind = 'anonymous';
+  if stand is null then
+    insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now()) returning id into stand;
+    insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
+  end if;
+  veiled := tests.post(a, t, 'A veiled post.', base + interval '5 minutes');
+  play := tests.act(b, 'card', t, jsonb_build_object('card', 'wpveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '1 day'), veiled, base + interval '6 minutes');
+  insert into post_veils (play, post, veil, author, ends_at) values (play, veiled, 'author', a, now() + interval '1 day');
+  r := pool_read(t, 'nobody', array[veiled], 0);
+  select p into e from jsonb_array_elements(r -> 'posts') p where (p ->> 'act')::uuid = veiled;
+  if e is null or (e ->> 'author')::uuid is distinct from stand or e ->> 'name' is distinct from 'Anonymous' then raise exception 'a veiled post reads as %', e - 'body'; end if;
+
+  -- The persona's newest 20 posts, and the newest 10 replies to the newest of them (window 0: nothing else is read).
+  t := tests.thread('Wp Caps');
+  ids := array[tests.post(b, t, 'Opener.', base)];
+  for i in 1..25 loop ids := ids || tests.act(boss, 'post', t, jsonb_build_object('body', 'Persona ' || i), null, base + i * interval '1 minute'); end loop;
+  for i in 1..12 loop ids := ids || tests.act(a, 'post', t, jsonb_build_object('body', 'Reply ' || i), ids[26], base + (30 + i) * interval '1 minute'); end loop;
+  r := pool_read(t, 'wp-boss', null, 0);
+  if jsonb_array_length(r -> 'posts') is distinct from 1 + 20 + 10 then raise exception 'a persona read holds % posts, not 31', jsonb_array_length(r -> 'posts'); end if;
+  if r -> 'posts' @> jsonb_build_array(jsonb_build_object('body', 'Persona 5')) or exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' in ('Persona 5', 'Reply 1', 'Reply 2')) then
+    raise exception 'the 20-post or the 10-reply cap is not the newest';
+  end if;
+  if not exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' = 'Persona 6') or not exists (select 1 from jsonb_array_elements(r -> 'posts') p where p ->> 'body' = 'Reply 3') then
+    raise exception 'the capped reads are missing their newest';
+  end if;
+
+  -- A post quoting twelve: its quotes and the hop are the newest ten, newest first.
+  t := tests.thread('Wp Quotes');
+  ids := array[tests.post(b, t, 'Opener.', base)];
+  for i in 1..12 loop ids := ids || tests.post(a, t, 'Quoted ' || i || '.', base + i * interval '1 minute'); end loop;
+  qs := '';
+  for i in 2..13 loop qs := qs || format('[quote="%s" user=%s]Quoted %s.[/quote] ', ids[i], a, i - 1); end loop;
+  ids := ids || tests.post(b, t, qs, base + interval '20 minutes');
+  r := pool_read(t, 'nobody', null, 1);
+  select p into e from jsonb_array_elements(r -> 'posts') p where (p ->> 'act')::uuid = ids[14];
+  if jsonb_array_length(e -> 'quotes') is distinct from 10 or e -> 'quotes' -> 0 is distinct from to_jsonb(ids[13]) or e -> 'quotes' -> 9 is distinct from to_jsonb(ids[4]) then
+    raise exception 'the quotes are not the newest ten, newest first: %', e -> 'quotes';
+  end if;
+  if jsonb_array_length(r -> 'posts') is distinct from 12 then raise exception 'the hop adds % posts, not ten', jsonb_array_length(r -> 'posts') - 2; end if;
+end $$;

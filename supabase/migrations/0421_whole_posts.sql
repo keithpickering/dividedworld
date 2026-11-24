@@ -8,7 +8,7 @@
 --    the persona's own id is read from characters_public, the debuted characters, and a persona that has not debuted has none), so a hidden post (acts_public's `hidden`, which still lists the row, with no words) is in no part of it: not as a post, not as a quote, not counted in the window. security definer, owned by kayfabb_digest as pool_thread is, the service role's only.
 --    quote_refs is read by that role: its select on (act, quoted) and a policy of its own, as the digest role has on the other tables it reads (0045_digest.sql). A quote of a post is in the quoting post's own public body,
 --    and the rows read are those of Acts acts_public already shows, so nothing is said that a player cannot see.
---    Bounded by constants: at most 1 + 200 + 50 + 20 + 200 + 330 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts, quote_refs' primary key, acts' own key).
+--    Bounded by constants: seeds are at most 1 + 200 + 50 + 20 + 200 = 471 posts and the hop adds at most 10 for each, so at most 471 + 4,710 = 5,181 posts however long the thread; each probe is an index probe (acts_thread_seq_key, acts_thread_posts, quote_refs' primary key, acts' own key).
 --
 -- 2. the settings   setting_pool (0415), `turns` without perDay, and the pool holding `charsPerDay` (a whole number from 0 to 20,000,000: the characters of staff words in a UTC day) and `readMost` (a whole number from 1,000 to 200,000:
 --    the most characters a turn's read holds). Everything else as 0415 wrote it. The stored `pool` row is rewritten here by pool_rewrite_whole_posts, which a test re-runs on rows of its own: turns.perDay removed, charsPerDay
@@ -220,6 +220,7 @@ grant execute on function pool_chars_today(date) to service_role;
 grant select (act, quoted) on quote_refs to kayfabb_digest;
 create policy digest_reads on quote_refs for select to kayfabb_digest using (true);
 
+-- `self` is looked up by staff key alone, not staff_kind = 'persona': a Mod Bot reads a thread through this too (Task 7), with its own staff key.
 create function pool_read(in_thread uuid, staff_key text, named uuid[], "window" integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   with me as (select c.id from characters_public c where c.staff = pool_read.staff_key),
@@ -245,15 +246,20 @@ language sql stable security definer set search_path = public, pg_temp as $$
       select x.id from acts_public x where x.target_act_id = m.id and x.thread = in_thread and x.kind = 'post' and x.hidden is not true order by x.created_at desc, x.id desc limit 10) r
   ),
   -- One hop: the posts of this thread the seeds quote.
+  -- An edit is an Act of its own and its quote_refs hang on its id, so a post's quotes are read from its latest edit's id when it has one (as acts_public's current_payload is), else its own.
+  seed_refs as (
+    select s.id, coalesce((select e.id from acts_public e where e.kind = 'edit' and e.target_act_id = s.id order by e.created_at desc, e.id desc limit 1), s.id) as ref from seeds s
+  ),
   hop as (
-    select q.id from seeds s cross join lateral (
+    select q.id from seed_refs s cross join lateral (
       select x.id from quote_refs r join acts_public x on x.id = r.quoted
-      where r.act = s.id and x.thread = in_thread and x.hidden is not true and (x.kind = 'post' or (x.kind = 'spin' and x.seq = 1))
+      where r.act = s.ref and x.thread = in_thread and x.hidden is not true and (x.kind = 'post' or (x.kind = 'spin' and x.seq = 1))
       order by x.created_at desc, x.id desc limit 10) q
   ),
   chosen as (select s.id from seeds s union select h.id from hop h),
   page as (
     select a.id, a.seq, a.created_at, a.character, a.target_act_id, c.name,
+           coalesce((select e.id from acts_public e where e.kind = 'edit' and e.target_act_id = a.id order by e.created_at desc, e.id desc limit 1), a.id) as ref,
            (select cp.pronouns from character_profiles cp where cp.character = c.id) as pronouns,
            coalesce(a.current_payload ->> 'body', '') as body
     from chosen k join acts_public a on a.id = k.id join characters_public c on c.id = a.character
@@ -266,10 +272,10 @@ language sql stable security definer set search_path = public, pg_temp as $$
       select jsonb_agg(jsonb_build_object('act', p.id, 'seq', p.seq, 'at', p.created_at, 'author', p.character, 'name', p.name, 'pronouns', p.pronouns,
                                           'body', p.body, 'replyTo', p.target_act_id,
                                           'quotes', coalesce((
-                                            select jsonb_agg(z.id order by z.created_at, z.id)
+                                            select jsonb_agg(z.id order by z.created_at desc, z.id desc)
                                             from (select x.id, x.created_at from quote_refs r join acts_public x on x.id = r.quoted
-                                                  where r.act = p.id and x.thread = in_thread and x.hidden is not true and (x.kind = 'post' or (x.kind = 'spin' and x.seq = 1))
-                                                  order by x.created_at, x.id limit 10) z), '[]'::jsonb))
+                                                  where r.act = p.ref and x.thread = in_thread and x.hidden is not true and (x.kind = 'post' or (x.kind = 'spin' and x.seq = 1))
+                                                  order by x.created_at desc, x.id desc limit 10) z), '[]'::jsonb))
                        order by p.created_at, p.id)
       from page p), '[]'::jsonb))
 $$;
