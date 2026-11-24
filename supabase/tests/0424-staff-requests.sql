@@ -4,6 +4,15 @@
 -- 2. Each board off the beat is refused with its words: the thread's board names the source, the target names the destination. A refusal spends nothing.
 -- 3. A Mod's move cannot stay on a thread it is not given: a thread that does not exist is refused.
 -- 4. The Boss's moveThread is as it was: queued by the guard without a beat check.
+--
+-- Section 2 (Task 3: the tables, the writes and the reads).
+-- 5. staff_requests and staff_request_rulings: RLS on, no client's grants, an UPDATE, a DELETE and a TRUNCATE refused on both, and the view reads each request's latest ruling and, while waiting, when it lapses.
+-- 6. apply_boss_move: its refusals, one debit however often a cause is retried, a structural move held for admins, the bank's weekly accrual counted, and the locks a meeting also takes held before the bank is read.
+-- 7. rule_request: its refusals; a reject, a confer and a Mod's fulfill written once and replayed as written; a fulfill the guard refuses is a confer with the reason, the same whoever asked; a Boss's fulfill debits once.
+-- 8. requests_waiting: oldest first, bounded, whole bodies, a hidden post and a ruled request left out.
+-- 9. requests_ruled: a meeting's answers, the bank's room, a refused fulfill as a reject with its reason, a request ruled once.
+-- 10. system_tick lapses a waiting request at lapses_at and not a minute before, writes one reply, lapses a hidden request with no reply, and lapses with no reply while The System is off.
+-- 11. The setting staffRequests and its poisons.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -235,4 +244,495 @@ begin
   ruled := apply_mod_move('mm-m1', pg_temp.mv(games, 9999), c3);
   if (ruled ->> 'queued')::boolean is not true or (ruled #>> '{trimmed,expires_in_hours,after}')::numeric is distinct from 168 then raise exception 'setRule was not clamped to 168 hours: %', ruled; end if;
   if (select expires_at - go_live_at from queued_moves where id = (ruled ->> 'move')::bigint) is distinct from interval '168 hours' then raise exception 'the clamped rule kept the wrong expiry'; end if;
+end $$;
+
+-- =====================================================================================================================
+-- Section 2 (Task 3)
+-- =====================================================================================================================
+
+-- A staff member's scene: a thread on a board, the persona's own post, a player's reply to it (the request post) and the persona's turn answering that reply. Returns the three ids.
+create function pg_temp.scene(staff text, slug text, label text, asker uuid default null) returns jsonb language plpgsql as $$
+declare
+  t uuid := pg_temp.thread_on(slug, 'Req ' || label);
+  who uuid := coalesce(asker, pg_temp.poster());
+  p0 uuid;
+  r uuid;
+  tn uuid;
+begin
+  p0 := (write_staff_act(staff, 'post', t, null, jsonb_build_object('body', 'Staff opener ' || label)) ->> 'id')::uuid;
+  r := tests.act(who, 'post', t, jsonb_build_object('body', 'Please move this thread ' || label), p0);
+  tn := (write_staff_act(staff, 'post', t, r, jsonb_build_object('body', 'Turn reply ' || label)) ->> 'id')::uuid;
+  return jsonb_build_object('thread', t, 'request', r, 'turn', tn);
+end $$;
+
+-- Whether this transaction holds the advisory lock a key names.
+create function pg_temp.holds(key text) returns boolean language plpgsql as $$
+declare k bigint := hashtextextended(key, 0);
+begin
+  return exists (select 1 from pg_locks l where l.locktype = 'advisory' and l.pid = pg_backend_pid() and l.granted
+    and l.classid::bigint = ((k >> 32) & 4294967295) and l.objid::bigint = (k & 4294967295) and l.objsubid = 1);
+end $$;
+
+create function pg_temp.bank(n numeric, ago interval default interval '0') returns void language plpgsql as $$
+begin
+  update move_bank set balance = n, as_of = now() - ago where staff = 'mm-boss';
+end $$;
+
+-- ---- 5. The world for Task 3, and the tables ----
+do $$
+declare
+  games uuid := pg_temp.board('mm-games');
+  seen text;
+begin
+  perform tests.account('mm-bob');
+  perform tests.character((select id from auth.users where email = 'mm-bob@test.invalid'), 'Mm Asker Two');
+  update settings set value = value || jsonb_build_object('requestLapsed', jsonb_build_array('{boss} says to {asker}: that request lapsed.')) where key = 'systemLines';
+  insert into settings (key, value) values ('staffRequests', '{"daysMost": 3, "meetingMost": 10}') on conflict (key) do update set value = excluded.value;
+  -- Fresh orders: Mod One watches Games and Off Topic with 3 to spend, Mod Two watches General with 2.
+  perform pg_temp.meet('2031-02-08T09:00:00Z', jsonb_build_array(
+    pg_temp.order_for('mm-m1', jsonb_build_array(games, pg_temp.board('mm-offtopic')), 3),
+    pg_temp.order_for('mm-m2', jsonb_build_array(pg_temp.board('mm-general')), 2)));
+  if mod_allowance('mm-m1') is distinct from 3 or mod_allowance('mm-m2') is distinct from 2 then raise exception 'the world: allowances % and %', mod_allowance('mm-m1'), mod_allowance('mm-m2'); end if;
+
+  if (select count(*) from pg_class where relname in ('staff_requests', 'staff_request_rulings') and relrowsecurity) is distinct from 2 then raise exception 'a table has no RLS'; end if;
+  if has_table_privilege('authenticated', 'staff_requests', 'select') or has_table_privilege('anon', 'staff_request_rulings', 'select')
+     or has_table_privilege('authenticated', 'staff_requests_now', 'select') then raise exception 'a client role reads a request table'; end if;
+end $$;
+
+do $$
+declare
+  sc jsonb := pg_temp.scene('mm-m1', 'mm-games', 'append');
+  rid bigint;
+  rid2 bigint;
+  seen text;
+  stmt text;
+begin
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling)
+  values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer') returning id into rid;
+  insert into staff_request_rulings (request, ruling) values (rid, 'lapsed');
+  foreach stmt in array array[
+    'update staff_requests set ruling = ''reject''', 'delete from staff_requests', 'truncate staff_requests',
+    'update staff_request_rulings set ruling = ''reject''', 'delete from staff_request_rulings', 'truncate staff_request_rulings'] loop
+    seen := pg_temp.refusal(stmt);
+    if seen is null or (seen not like '%never edited or removed%' and stmt <> 'truncate staff_requests') then raise exception '% was not refused by the append-only guard: %', stmt, seen; end if;
+  end loop;
+  -- A request is ruled on once, and a ruling is one of the three words.
+  seen := pg_temp.refusal(format('insert into staff_request_rulings (request, ruling) values (%s, %L)', rid, 'reject'));
+  if seen is null or seen not like '23505%' then raise exception 'a second ruling on a request was not refused by its key: %', seen; end if;
+  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values (%L, %L, %L, %L, %L, %L)',
+    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'grant'));
+  if seen is null or seen not like '23514%' then raise exception 'a ruling outside fulfill, reject and confer was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values (%L, %L, %L, %L, %L, %L)',
+    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '23505%' then raise exception 'a second row for one (staff, request) was not refused by its key: %', seen; end if;
+  -- A later ruling is for a request that waited: a reject has none.
+  sc := pg_temp.scene('mm-m1', 'mm-games', 'rejected');
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'reject') returning id into rid2;
+  seen := pg_temp.refusal(format('insert into staff_request_rulings (request, ruling) values (%s, %L)', rid2, 'reject'));
+  if seen is null or seen not like '23514%' then raise exception 'a ruling on a request that was never conferred was not refused: %', seen; end if;
+  -- The view: ruled (lapsed) and so not waiting, no lapses_at.
+  if (select (v.ruling, v.waiting, v.lapses_at is null) from staff_requests_now v where v.id = rid) is distinct from row('lapsed'::text, false, true) then
+    raise exception 'the view does not read the latest ruling: %', (select to_jsonb(v) from staff_requests_now v where v.id = rid);
+  end if;
+end $$;
+
+do $$
+declare
+  sc jsonb := pg_temp.scene('mm-m1', 'mm-games', 'view');
+  rid bigint;
+  v record;
+begin
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at)
+  values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer', now() - interval '1 day') returning id into rid;
+  select * into v from staff_requests_now x where x.id = rid;
+  if v.ruling is distinct from 'confer' or v.waiting is not true or v.lapses_at is distinct from now() + interval '2 days' then
+    raise exception 'a waiting request does not say when it lapses (daysMost 3, conferred a day ago): %', to_jsonb(v);
+  end if;
+end $$;
+
+-- ---- 6. apply_boss_move ----
+do $$
+declare
+  games uuid := pg_temp.board('mm-games');
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  general uuid := pg_temp.board('mm-general');
+  t uuid := pg_temp.thread_on('mm-games', 'Boss moves');
+  c1 uuid := pg_temp.cause('b1');
+  c2 uuid := pg_temp.cause('b2');
+  c3 uuid := pg_temp.cause('b3');
+  c4 uuid := pg_temp.cause('b4');
+  r jsonb;
+  again jsonb;
+  seen text;
+  rows_before bigint;
+begin
+  perform pg_temp.bank(5);
+  -- Refusals: the cause must be an Act; a member and a Mod are no Boss; a move names its kind, params, why; a lasting kind needs no hours, any other does.
+  seen := pg_temp.refusal(format('select apply_boss_move(%L, %L::jsonb, null, 0, 20)', 'mm-boss', pg_temp.mt(t, offtopic)));
+  if seen is null or seen not like '22023%' then raise exception 'a Boss move with no cause was not refused: %', seen; end if;
+  rows_before := (select count(*) from queued_moves);
+  r := apply_boss_move('mm-m1', pg_temp.mt(t, offtopic), c1, 0, 20);
+  if (r ->> 'queued')::boolean is not false or r ->> 'reason' is null then raise exception 'a Mod was let through apply_boss_move: %', r; end if;
+  r := apply_boss_move('mm-boss', '"nope"'::jsonb, c1, 0, 20);
+  if (r ->> 'queued')::boolean is not false or r ->> 'reason' is null then raise exception 'a move that is no object was not refused: %', r; end if;
+  r := apply_boss_move('mm-boss', jsonb_build_object('kind', 'moveThread', 'params', jsonb_build_object('thread', t, 'board', offtopic), 'why', ''), c1, 0, 20);
+  if (r ->> 'queued')::boolean is not false then raise exception 'a move with no why was not refused: %', r; end if;
+  r := apply_boss_move('mm-boss', pg_temp.mv(games, null), c1, 0, 20);
+  if (r ->> 'queued')::boolean is not false then raise exception 'a rule with no hours was not refused: %', r; end if;
+  r := apply_boss_move('mm-boss', jsonb_build_object('kind', 'noSuchKind', 'params', '{}'::jsonb, 'why', 'x', 'expires_in_hours', 48), c1, 0, 20);
+  if (r ->> 'queued')::boolean is not false or r ->> 'reason' is null then raise exception 'a kind outside the catalog was not refused as a reason: %', r; end if;
+  if (select count(*) from queued_moves) is distinct from rows_before or (select balance from move_bank where staff = 'mm-boss') is distinct from 5 then raise exception 'a refusal wrote a row or spent the bank'; end if;
+  -- The phase is named: a bank with no weekly or cap cannot be counted.
+  seen := pg_temp.refusal(format('select apply_boss_move(%L, %L::jsonb, %L, null, null)', 'mm-boss', pg_temp.mt(t, offtopic), c1));
+  if seen is null or seen not like '22023%' then raise exception 'a Boss move with no phase was not refused: %', seen; end if;
+
+  -- A move is queued, spends one, and a retry of the same cause spends nothing and queues nothing.
+  r := apply_boss_move('mm-boss', pg_temp.mt(t, offtopic), c2, 0, 20);
+  if (r ->> 'queued')::boolean is not true or r ->> 'move' is null then raise exception 'the Boss move was not queued: %', r; end if;
+  if (select (q.staff, q.cause_act, q.expires_at is null, q.structural, q.meeting) from queued_moves q where q.id = (r ->> 'move')::bigint)
+     is distinct from row('mm-boss'::text, c2, true, false, (select max(m.id) from meetings m where m.finished_at is not null)) then
+    raise exception 'the queued row is not the Boss''s lasting move for its cause: %', (select to_jsonb(q) from queued_moves q where q.id = (r ->> 'move')::bigint);
+  end if;
+  if (select balance from move_bank where staff = 'mm-boss') is distinct from 4 then raise exception 'the bank holds % after one move, not 4', (select balance from move_bank where staff = 'mm-boss'); end if;
+  again := apply_boss_move('mm-boss', pg_temp.mt(t, offtopic), c2, 0, 20);
+  if (again ->> 'queued')::boolean is not false or (again ->> 'existing')::boolean is not true or again ->> 'move' is distinct from r ->> 'move' then raise exception 'the retry did not return the first row: %', again; end if;
+  if (select balance from move_bank where staff = 'mm-boss') is distinct from 4 or (select count(*) from queued_moves where cause_act = c2) is distinct from 1 then
+    raise exception 'a retried Boss move spent again or queued again';
+  end if;
+  -- The locks: the bank's, and the meeting's own for a meeting still open (a meeting reads the bank under its lock, so a turn and a meeting at one minute are one after the other).
+  if not pg_temp.holds('kayfabb.bank.mm-boss') then raise exception 'apply_boss_move does not hold the Boss''s bank lock'; end if;
+
+  -- A structural move waits for admins as a meeting's does: go-live structuralHoldHours (24) out.
+  r := apply_boss_move('mm-boss', jsonb_build_object('kind', 'renameBoard', 'params', jsonb_build_object('board', general, 'name', 'Everything'), 'expires_in_hours', 48, 'why', 'Plain.'), c3, 0, 20);
+  if (r ->> 'queued')::boolean is not true then raise exception 'the structural move was not queued: %', r; end if;
+  if (select (q.structural, q.go_live_at - now(), q.expires_at - q.go_live_at) from queued_moves q where q.id = (r ->> 'move')::bigint) is distinct from row(true, interval '24 hours', interval '48 hours') then
+    raise exception 'the structural move is not held a day and live two: %', (select to_jsonb(q) from queued_moves q where q.id = (r ->> 'move')::bigint);
+  end if;
+  if (select balance from move_bank where staff = 'mm-boss') is distinct from 3 then raise exception 'the structural move did not spend one'; end if;
+
+  -- The bank counts the weeks since it was written (7 a week, a day gone: one more), and is written at now.
+  perform pg_temp.bank(0, interval '1 day');
+  r := apply_boss_move('mm-boss', pg_temp.mt(t, general), c4, 7, 20);
+  if (r ->> 'queued')::boolean is not true then raise exception 'a bank of one earned since its balance was written did not pay: %', r; end if;
+  if (select (balance, as_of) from move_bank where staff = 'mm-boss') is distinct from row(0::numeric, now()) then raise exception 'the bank is not written at now with the move taken: %', (select to_jsonb(b) from move_bank b where staff = 'mm-boss'); end if;
+  -- Nothing left: a reason, no row, no debit.
+  rows_before := (select count(*) from queued_moves);
+  r := apply_boss_move('mm-boss', pg_temp.mt(t, offtopic), pg_temp.cause('b5'), 0, 20);
+  if (r ->> 'queued')::boolean is not false or r ->> 'reason' is null or (select count(*) from queued_moves) is distinct from rows_before then raise exception 'an empty bank was not refused with a reason: %', r; end if;
+end $$;
+
+-- The meeting's lock, held for a meeting that is still open.
+do $$
+declare
+  m bigint := (begin_meeting('2031-03-01T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
+  r jsonb;
+begin
+  perform pg_temp.bank(5);
+  r := apply_boss_move('mm-boss', pg_temp.mt(pg_temp.thread_on('mm-games', 'Locks'), pg_temp.board('mm-offtopic')), pg_temp.cause('lock'), 0, 20);
+  if (r ->> 'queued')::boolean is not true then raise exception 'the Boss move was not queued beside an open meeting: %', r; end if;
+  if not pg_temp.holds('kayfabb.meeting.' || m) then raise exception 'apply_boss_move does not take the open meeting''s lock (kayfabb.meeting.%) before it reads the bank', m; end if;
+  if (select q.meeting from queued_moves q where q.id = (r ->> 'move')::bigint) is not distinct from m then raise exception 'a move is filed under a meeting not yet held'; end if;
+end $$;
+
+-- ---- 7. rule_request ----
+do $$
+declare
+  games uuid := pg_temp.board('mm-games');
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  general uuid := pg_temp.board('mm-general');
+  sc jsonb;
+  other jsonb;
+  r jsonb;
+  again jsonb;
+  bob uuid := (select id from characters where name = 'Mm Asker Two');
+  seen text;
+  base_n bigint := (select count(*) from staff_requests);
+  allowance integer;
+  reason_a text;
+  reason_b text;
+begin
+  sc := pg_temp.scene('mm-m1', 'mm-games', 'rule');
+  other := pg_temp.scene('mm-m1', 'mm-games', 'other');
+  -- Refusals (22023): a ruling outside the three, a request that is no reply, one in another thread, a turn that is not the persona's, a persona that is no staff, a member's, a request of the persona's own.
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'request', sc ->> 'turn', 'lapsed'));
+  if seen is null or seen not like '22023%' then raise exception 'a ruling of lapsed was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'request', sc ->> 'turn', 'grant'));
+  if seen is null or seen not like '22023%' then raise exception 'an unknown ruling was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', (select id from acts where thread = (sc ->> 'thread')::uuid and seq = 1), sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '22023%' then raise exception 'a request that is no reply was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', other ->> 'request', sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '22023%' then raise exception 'a request in another thread than the turn was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m2', sc ->> 'request', sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '22023%' then raise exception 'a turn that is another persona''s was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m3', sc ->> 'request', sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '22023%' then raise exception 'a member persona ruling on a request was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-nobody', sc ->> 'request', sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '22023%' and seen not like 'P0002%' then raise exception 'an unknown staff key was not refused: %', seen; end if;
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'turn', sc ->> 'turn', 'reject'));
+  if seen is null or seen not like '22023%' then raise exception 'the persona ruling on its own post was not refused: %', seen; end if;
+  if (select count(*) from staff_requests) is distinct from base_n then raise exception 'a refusal wrote a request row'; end if;
+
+  -- A reject changes nothing but the record, and is written once: the replay returns the first row, whatever it is asked.
+  r := rule_request('mm-m1', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'reject', null);
+  if r ->> 'ruling' is distinct from 'reject' or r ->> 'request' is null or (r ->> 'existing')::boolean is not false or r ->> 'move' is not null then raise exception 'the reject is not as written: %', r; end if;
+  if (select (q.staff, q.thread, q.asker, q.turn_act, q.ruling, q.move) from staff_requests q where q.id = (r ->> 'request')::bigint)
+     is distinct from row('mm-m1'::text, (sc ->> 'thread')::uuid, pg_temp.poster(), (sc ->> 'turn')::uuid, 'reject'::text, null::bigint) then
+    raise exception 'the request row is not the reject''s: %', (select to_jsonb(q) from staff_requests q where q.id = (r ->> 'request')::bigint);
+  end if;
+  again := rule_request('mm-m1', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'confer', null);
+  if again ->> 'request' is distinct from r ->> 'request' or again ->> 'ruling' is distinct from 'reject' or (again ->> 'existing')::boolean is not true then raise exception 'the replay did not return the first row: %', again; end if;
+  if (select count(*) from staff_requests) is distinct from base_n + 1 then raise exception 'a replay wrote a second row'; end if;
+
+  -- A confer is a row that waits, and the view says when it lapses.
+  r := rule_request('mm-m1', (other ->> 'request')::uuid, (other ->> 'turn')::uuid, 'confer', null);
+  if r ->> 'ruling' is distinct from 'confer' then raise exception 'the confer is not as written: %', r; end if;
+  if (select (v.waiting, v.lapses_at) from staff_requests_now v where v.id = (r ->> 'request')::bigint) is distinct from row(true, now() + interval '3 days') then raise exception 'a new confer does not lapse in daysMost days'; end if;
+
+  -- A Mod's fulfill on its beat: queued with the request post as its cause, the allowance spent once, a replay spends nothing.
+  sc := pg_temp.scene('mm-m1', 'mm-games', 'grant');
+  allowance := mod_allowance('mm-m1');
+  r := rule_request('mm-m1', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, offtopic));
+  if r ->> 'ruling' is distinct from 'fulfill' or r ->> 'move' is null or r ->> 'reason' is not null then raise exception 'the Mod''s fulfill was not granted: %', r; end if;
+  if (select (q.staff, q.cause_act) from queued_moves q where q.id = (r ->> 'move')::bigint) is distinct from row('mm-m1'::text, (sc ->> 'request')::uuid) then raise exception 'the move''s cause is not the request post'; end if;
+  if (select q.move from staff_requests q where q.id = (r ->> 'request')::bigint) is distinct from (r ->> 'move')::bigint then raise exception 'the request row does not name the move'; end if;
+  if mod_allowance('mm-m1') is distinct from allowance - 1 then raise exception 'the fulfill did not spend one of the allowance'; end if;
+  again := rule_request('mm-m1', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, offtopic));
+  if again ->> 'request' is distinct from r ->> 'request' or (again ->> 'existing')::boolean is not true or again ->> 'move' is distinct from r ->> 'move' or mod_allowance('mm-m1') is distinct from allowance - 1 then
+    raise exception 'the replay of a fulfill spent again or returned another row: %', again;
+  end if;
+
+  -- A fulfill the guard refuses (a thread off the Mod's beat) is a confer, with the reason returned; nothing is spent. Whoever asked, the words are the same.
+  sc := pg_temp.scene('mm-m2', 'mm-games', 'offbeat');
+  other := pg_temp.scene('mm-m2', 'mm-games', 'offbeat2', bob);
+  allowance := mod_allowance('mm-m2');
+  r := rule_request('mm-m2', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, general));
+  again := rule_request('mm-m2', (other ->> 'request')::uuid, (other ->> 'turn')::uuid, 'fulfill', pg_temp.mt((other ->> 'thread')::uuid, general));
+  if r ->> 'ruling' is distinct from 'confer' or r ->> 'move' is not null or r ->> 'reason' is null then raise exception 'a refused fulfill is not a confer with its reason: %', r; end if;
+  if (select q.ruling from staff_requests q where q.id = (r ->> 'request')::bigint) is distinct from 'confer' then raise exception 'the refused fulfill was written as something other than confer'; end if;
+  if r ->> 'reason' is distinct from again ->> 'reason' or again ->> 'ruling' is distinct from 'confer' then raise exception 'the refusal depends on who asked: % against %', r, again; end if;
+  if mod_allowance('mm-m2') is distinct from allowance then raise exception 'a refused fulfill spent the allowance'; end if;
+  -- A fulfill that names no move is a confer too, never a raise.
+  sc := pg_temp.scene('mm-m1', 'mm-games', 'nomove');
+  r := rule_request('mm-m1', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', null);
+  if r ->> 'ruling' is distinct from 'confer' or r ->> 'reason' is null then raise exception 'a fulfill with no move was not a confer: %', r; end if;
+
+  -- The Boss: a fulfill debits the bank once, a retry never twice; it needs the phase; an empty bank is a confer with its reason.
+  perform pg_temp.bank(3);
+  sc := pg_temp.scene('mm-boss', 'mm-games', 'boss');
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, %L::jsonb)', 'mm-boss', sc ->> 'request', sc ->> 'turn', 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, offtopic)));
+  if seen is null or seen not like '22023%' then raise exception 'a Boss fulfill with no phase was not refused: %', seen; end if;
+  if exists (select 1 from staff_requests where request_act = (sc ->> 'request')::uuid) then raise exception 'a refused Boss fulfill left a row'; end if;
+  r := rule_request('mm-boss', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, offtopic), 0, 20);
+  if r ->> 'ruling' is distinct from 'fulfill' or r ->> 'move' is null then raise exception 'the Boss''s fulfill was not granted: %', r; end if;
+  again := rule_request('mm-boss', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, offtopic), 0, 20);
+  if (again ->> 'existing')::boolean is not true or again ->> 'move' is distinct from r ->> 'move' then raise exception 'the retry of the Boss''s fulfill is not the first row: %', again; end if;
+  if (select balance from move_bank where staff = 'mm-boss') is distinct from 2 then raise exception 'the Boss''s fulfill, retried, left % in the bank, not 2', (select balance from move_bank where staff = 'mm-boss'); end if;
+  perform pg_temp.bank(0);
+  sc := pg_temp.scene('mm-boss', 'mm-games', 'broke');
+  r := rule_request('mm-boss', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sc ->> 'thread')::uuid, offtopic), 0, 20);
+  if r ->> 'ruling' is distinct from 'confer' or r ->> 'reason' is null then raise exception 'a Boss fulfill with an empty bank was not a confer: %', r; end if;
+  -- A Boss's confer takes it to the meeting, and a Boss's reject is a reject.
+  sc := pg_temp.scene('mm-boss', 'mm-games', 'bossconfer');
+  r := rule_request('mm-boss', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'confer', null);
+  if r ->> 'ruling' is distinct from 'confer' then raise exception 'the Boss''s confer is not a confer: %', r; end if;
+end $$;
+
+-- ---- 8. requests_waiting ----
+do $$
+declare
+  s1 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'w1');
+  s2 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'w2');
+  s3 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'w3');
+  s4 jsonb := pg_temp.scene('mm-m2', 'mm-general', 'w4');
+  s5 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'w5');
+  x1 bigint; x2 bigint; x3 bigint; x4 bigint; x5 bigint;
+  admin_a uuid := tests.account('mm-admin');
+  got jsonb;
+  long text := repeat('Whole words, never cut. ', 200);
+  i integer;
+begin
+  -- Drain what the earlier sections left waiting: this section reads the queue's head, so it starts from a clean one.
+  insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', now() - interval '1 hour') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer', now() - interval '3 hours') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer', now() - interval '2 hours') returning id into x3;
+  -- Conferred by Mod Two, on a thread it was never asked about: it is still shown, with its own staff.
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m2', (s4 ->> 'turn')::uuid, 'confer', now() - interval '30 minutes') returning id into x4;
+  -- A reject: never waiting.
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'reject', now() - interval '5 hours') returning id into x5;
+
+  got := requests_waiting(10);
+  if jsonb_typeof(got) is distinct from 'array' or jsonb_array_length(got) is distinct from 4 then raise exception 'requests_waiting did not list the four waiting: %', got; end if;
+  if (select array_agg((e ->> 'id')::bigint order by n) from jsonb_array_elements(got) with ordinality t(e, n)) is distinct from array[x2, x3, x1, x4] then
+    raise exception 'requests_waiting is not oldest first by conferral: %', (select array_agg(e ->> 'id') from jsonb_array_elements(got) e);
+  end if;
+  if (select (e ->> 'thread', e ->> 'title', e ->> 'boardName', e ->> 'askerName', e ->> 'staff', e ->> 'staffName', e ->> 'requestAct', e ->> 'body')
+      from jsonb_array_elements(got) e where (e ->> 'id')::bigint = x2)
+     is distinct from row(s2 ->> 'thread', 'Req w2'::text, 'Games'::text, 'Mm Poster'::text, 'mm-m1'::text, 'Move Mod One'::text, s2 ->> 'request', 'Please move this thread w2'::text) then
+    raise exception 'a waiting request does not carry its thread, title, board, asker, staff, request post and body: %', (select e from jsonb_array_elements(got) e where (e ->> 'id')::bigint = x2);
+  end if;
+  if (select (e ->> 'lapsesAt')::timestamptz from jsonb_array_elements(got) e where (e ->> 'id')::bigint = x2) is distinct from now() - interval '3 hours' + interval '3 days' then raise exception 'a waiting request does not say when it lapses'; end if;
+  -- Bounded: the oldest `most`, however many wait; a nothing or less is none.
+  if (select array_agg((e ->> 'id')::bigint order by n) from jsonb_array_elements(requests_waiting(2)) with ordinality t(e, n)) is distinct from array[x2, x3] then raise exception 'requests_waiting(2) is not the two oldest'; end if;
+  if jsonb_array_length(requests_waiting(0)) is distinct from 0 or jsonb_array_length(requests_waiting(null)) is distinct from 0 then raise exception 'requests_waiting(0) or (null) is not empty'; end if;
+  -- A post is read whole, as pool_read reads it: a long request is not cut.
+  perform tests.act(pg_temp.poster(), 'edit', (s3 ->> 'thread')::uuid, jsonb_build_object('body', long), (s3 ->> 'request')::uuid);
+  got := requests_waiting(10);
+  if (select length(e ->> 'body') from jsonb_array_elements(got) e where (e ->> 'id')::bigint = x3) is distinct from length(long) then
+    raise exception 'the request post is not read whole and as edited: % characters, not %', (select length(e ->> 'body') from jsonb_array_elements(got) e where (e ->> 'id')::bigint = x3), length(long);
+  end if;
+  -- A hidden post is left out (the tick lapses it), and so is a ruled request.
+  insert into admins (account) values (admin_a);
+  perform tests.become(admin_a);
+  perform decide(null, (s1 ->> 'request')::uuid, 'hide', null, 'hidden');
+  perform tests.unbecome();
+  insert into staff_request_rulings (request, ruling) values (x4, 'reject');
+  got := requests_waiting(10);
+  if (select array_agg((e ->> 'id')::bigint order by n) from jsonb_array_elements(got) with ordinality t(e, n)) is distinct from array[x2, x3] then
+    raise exception 'a hidden post or a ruled request is listed: %', (select array_agg(e ->> 'id') from jsonb_array_elements(got) e);
+  end if;
+  -- With the head hidden, `most` still fills from what follows it.
+  perform tests.become(admin_a);
+  perform decide(null, (s2 ->> 'request')::uuid, 'hide', null, 'hidden');
+  perform tests.unbecome();
+  if (select array_agg((e ->> 'id')::bigint) from jsonb_array_elements(requests_waiting(1)) e) is distinct from array[x3] then raise exception 'requests_waiting(1) did not skip a hidden head'; end if;
+end $$;
+
+-- ---- 9. requests_ruled ----
+do $$
+declare
+  m bigint := (begin_meeting('2031-03-08T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  s1 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'rr1');
+  s2 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'rr2');
+  s3 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'rr3');
+  s4 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'rr4');
+  s5 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'rr5');
+  x1 bigint; x2 bigint; x3 bigint; x4 bigint; x5 bigint;
+  r jsonb;
+  again jsonb;
+  one jsonb;
+  rows_before bigint;
+begin
+  insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer') returning id into x5;
+  rows_before := (select count(*) from queued_moves);
+
+  -- Two fulfills against a room of one: the first is queued and paid, the second is cut and is a reject with the reason; a reject with a line; a refused fulfill is a reject with the guard's words.
+  r := requests_ruled(m, jsonb_build_array(
+    jsonb_build_object('id', x1, 'ruling', 'fulfill', 'move', pg_temp.mt((s1 ->> 'thread')::uuid, offtopic), 'line', '  Done, and done well.  '),
+    jsonb_build_object('id', x2, 'ruling', 'fulfill', 'move', pg_temp.mt((s2 ->> 'thread')::uuid, offtopic), 'line', 'Also done.'),
+    jsonb_build_object('id', x3, 'ruling', 'reject', 'line', 'No.'),
+    jsonb_build_object('id', x4, 'ruling', 'fulfill', 'move', pg_temp.mt((s4 ->> 'thread')::uuid, (select board from threads where id = (s4 ->> 'thread')::uuid)), 'line', '')), 1);
+  if (r ->> 'spent')::integer is distinct from 1 then raise exception 'the meeting is told to charge % moves, not 1: %', r ->> 'spent', r; end if;
+  one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x1);
+  if one ->> 'ruling' is distinct from 'fulfill' or one ->> 'move' is null or (one #>> '{post,line}') is distinct from 'Done, and done well.' or one #>> '{post,stock}' is distinct from 'requestGranted'
+     or one #>> '{post,replyTo}' is distinct from s1 ->> 'request' or one #>> '{post,thread}' is distinct from s1 ->> 'thread' then
+    raise exception 'the granted ruling is not as the Boss posts it: %', one;
+  end if;
+  if (select (q.staff, q.meeting, q.cause_act) from queued_moves q where q.id = (one ->> 'move')::bigint) is distinct from row('mm-boss'::text, m, (s1 ->> 'request')::uuid) then raise exception 'the granted move is not the Boss''s for this meeting and cause'; end if;
+  one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x2);
+  if one ->> 'ruling' is distinct from 'reject' or one ->> 'move' is not null or one ->> 'reason' is null or one #>> '{post,stock}' is distinct from 'requestRefused' then raise exception 'the fulfill the bank could not pay is not a reject with its reason: %', one; end if;
+  one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x3);
+  if one ->> 'ruling' is distinct from 'reject' or one #>> '{post,line}' is distinct from 'No.' or one ->> 'reason' is not null then raise exception 'the reject is not as the Boss posts it: %', one; end if;
+  one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x4);
+  if one ->> 'ruling' is distinct from 'reject' or one ->> 'reason' is null or one #> '{post,line}' is distinct from 'null'::jsonb then raise exception 'a refused fulfill with a blank line is not a reject with no line (the stock line stands): %', one; end if;
+  if (select count(*) from queued_moves) is distinct from rows_before + 1 then raise exception 'the meeting''s requests queued % moves, not 1', (select count(*) from queued_moves) - rows_before; end if;
+  -- One row each, written once with what was ruled; a request the answer leaves out stays waiting.
+  if (select array_agg(g.ruling order by g.request) from staff_request_rulings g where g.request in (x1, x2, x3, x4)) is distinct from array['fulfill', 'reject', 'reject', 'reject']::text[] then
+    raise exception 'the rulings written are %', (select array_agg(g.ruling order by g.request) from staff_request_rulings g where g.request in (x1, x2, x3, x4));
+  end if;
+  if (select (g.move is not null, g.meeting) from staff_request_rulings g where g.request = x1) is distinct from row(true, m) then raise exception 'the granted ruling does not name its move and its meeting'; end if;
+  if (select g.reason from staff_request_rulings g where g.request = x2) is null then raise exception 'the cut fulfill''s reason is not recorded'; end if;
+  if (select v.waiting from staff_requests_now v where v.id = x5) is distinct from true or (select v.waiting from staff_requests_now v where v.id = x1) is distinct from false then raise exception 'what the meeting left out is not waiting, or what it ruled is'; end if;
+  -- A ruled request is ruled once: the same answers again queue nothing, spend nothing, write nothing, and say why they skipped.
+  again := requests_ruled(m, jsonb_build_array(jsonb_build_object('id', x1, 'ruling', 'fulfill', 'move', pg_temp.mt((s1 ->> 'thread')::uuid, offtopic), 'line', 'Again.'),
+    jsonb_build_object('id', 99999999, 'ruling', 'reject', 'line', 'Nobody.')), 5);
+  if (again ->> 'spent')::integer is distinct from 0 or jsonb_array_length(again -> 'rulings') is distinct from 0 or jsonb_array_length(again -> 'skipped') is distinct from 2
+     or (select count(*) from queued_moves) is distinct from rows_before + 1 then raise exception 'an answer for a ruled or unknown request was not skipped: %', again; end if;
+  -- An answer with a ruling that is neither is skipped, not guessed; answers past meetingMost (2) are not read.
+  update settings set value = '{"daysMost": 3, "meetingMost": 2}' where key = 'staffRequests';
+  again := requests_ruled(m, jsonb_build_array(
+    jsonb_build_object('id', x5, 'ruling', 'confer', 'line', 'Hm.'),
+    jsonb_build_object('id', x5, 'ruling', 'reject', 'line', 'First.'),
+    jsonb_build_object('id', x5, 'ruling', 'reject', 'line', 'Again.')), 5);
+  if jsonb_array_length(again -> 'rulings') is distinct from 1 or again #>> '{rulings,0,post,line}' is distinct from 'First.' or jsonb_array_length(again -> 'skipped') is distinct from 2 then raise exception 'the answers are not read as one ruling and two skips: %', again; end if;
+  if requests_ruled(m, '[]'::jsonb, 5) is distinct from jsonb_build_object('spent', 0, 'rulings', '[]'::jsonb, 'skipped', '[]'::jsonb) then raise exception 'no answers are not a quiet result'; end if;
+end $$;
+
+-- ---- 10. The tick ----
+do $$
+declare
+  a jsonb := pg_temp.scene('mm-m1', 'mm-games', 'lapseA');
+  b jsonb := pg_temp.scene('mm-m1', 'mm-games', 'lapseB');
+  c jsonb := pg_temp.scene('mm-m1', 'mm-games', 'lapseC');
+  d jsonb := pg_temp.scene('mm-m1', 'mm-games', 'lapseD', (select id from characters where name = 'Mm Asker Two'));
+  ra bigint; rb bigint; rc bigint; rd bigint;
+  admin_a uuid := tests.account('mm-admin2');
+  boss uuid := (select id from characters where staff = 'mm-boss');
+  tick jsonb;
+  replies_a integer;
+begin
+  -- Whatever the earlier sections left waiting is ruled, so this section counts only its own.
+  insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
+  -- A is due at this instant, B a minute later, C's post is hidden (it lapses at once, with no reply), D is asked of by Bob.
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((a ->> 'request')::uuid, (a ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (a ->> 'turn')::uuid, 'confer', now() - interval '3 days') returning id into ra;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (b ->> 'turn')::uuid, 'confer', now() - interval '3 days' + interval '1 minute') returning id into rb;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((c ->> 'request')::uuid, (c ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (c ->> 'turn')::uuid, 'confer', now()) returning id into rc;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((d ->> 'request')::uuid, (d ->> 'thread')::uuid, (select id from characters where name = 'Mm Asker Two'), 'mm-m1', (d ->> 'turn')::uuid, 'confer', now() - interval '4 days') returning id into rd;
+  insert into admins (account) values (admin_a);
+  perform tests.become(admin_a);
+  perform decide(null, (c ->> 'request')::uuid, 'hide', null, 'hidden');
+  perform tests.unbecome();
+
+  tick := system_tick();
+  if (tick ->> 'requestsLapsed')::integer is distinct from 3 then raise exception 'the tick lapsed % requests, not 3 (A, C and D): %', tick ->> 'requestsLapsed', tick; end if;
+  if (select (g.ruling, g.post_act is not null) from staff_request_rulings g where g.request = ra) is distinct from row('lapsed'::text, true) then raise exception 'A did not lapse with a reply at lapses_at'; end if;
+  if exists (select 1 from staff_request_rulings g where g.request = rb) or (select v.waiting from staff_requests_now v where v.id = rb) is distinct from true then raise exception 'B lapsed a minute before lapses_at'; end if;
+  if (select (g.ruling, g.post_act) from staff_request_rulings g where g.request = rc) is distinct from row('lapsed'::text, null::uuid) then raise exception 'a hidden request did not lapse with no reply'; end if;
+  if exists (select 1 from acts x where x.character = boss and x.kind = 'post' and x.target_act_id = (c ->> 'request')::uuid) then raise exception 'the Boss replied to a hidden post'; end if;
+  -- The reply: the Boss's, in the thread, to the request post, from the stock line with {boss} and {asker} filled; written once.
+  if (select (x.character, x.thread, x.target_act_id, x.payload ->> 'body') from acts x where x.id = (select g.post_act from staff_request_rulings g where g.request = ra))
+     is distinct from row(boss, (a ->> 'thread')::uuid, (a ->> 'request')::uuid, 'Move Boss says to Mm Poster: that request lapsed.'::text) then
+    raise exception 'the lapse reply is not the stock line in the thread: %', (select to_jsonb(x) from acts x where x.id = (select g.post_act from staff_request_rulings g where g.request = ra));
+  end if;
+  if (select payload ->> 'body' from acts where id = (select g.post_act from staff_request_rulings g where g.request = (select id from staff_requests where request_act = (d ->> 'request')::uuid))) is distinct from 'Move Boss says to Mm Asker Two: that request lapsed.' then
+    raise exception 'the lapse reply does not name the asker it is for';
+  end if;
+  replies_a := (select count(*) from acts x where x.character = boss and x.kind = 'post' and x.target_act_id = (a ->> 'request')::uuid);
+  tick := system_tick();
+  if replies_a is distinct from 1 or (select count(*) from acts x where x.character = boss and x.kind = 'post' and x.target_act_id = (a ->> 'request')::uuid) is distinct from 1
+     or (select count(*) from staff_request_rulings g where g.request in (ra, rc, rd)) is distinct from 3 or (tick ->> 'requestsLapsed')::integer is distinct from 0 then
+    raise exception 'a second tick lapsed again or replied again: %', tick;
+  end if;
+
+  -- The System off: a request still lapses (its way out is time), and says nothing.
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m2', (b ->> 'turn')::uuid, 'confer', now() - interval '9 days') returning id into rb;
+  tick := system_tick();
+  if (tick ->> 'requestsLapsed')::integer is distinct from 1 or (select (g.ruling, g.post_act) from staff_request_rulings g where g.request = rb) is distinct from row('lapsed'::text, null::uuid) then
+    raise exception 'a request did not lapse silently while The System is off: %', tick;
+  end if;
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+end $$;
+
+-- ---- 11. The setting ----
+do $$
+declare
+  poison jsonb;
+  seen text;
+begin
+  if setting_staffrequests('{"daysMost": 3, "meetingMost": 10}'::jsonb) is not null or setting_staffrequests('{"daysMost": 1, "meetingMost": 1}'::jsonb) is not null then raise exception 'a good staffRequests was refused: %', setting_staffrequests('{"daysMost": 3, "meetingMost": 10}'::jsonb); end if;
+  foreach poison in array array['{"daysMost": 0, "meetingMost": 10}', '{"daysMost": 3, "meetingMost": 0}', '{"daysMost": "3", "meetingMost": 10}', '{"daysMost": 1.5, "meetingMost": 10}', '{"daysMost": -1, "meetingMost": 10}',
+    '{"daysMost": 3}', '{"meetingMost": 10}', '{"daysMost": 3, "meetingMost": 10, "extra": 1}', '"3"', '3', 'null', '[3, 10]', '{}']::jsonb[] loop
+    if setting_staffrequests(poison) is null then raise exception 'the poison % passed setting_staffrequests', poison; end if;
+    seen := pg_temp.refusal(format('update settings set value = %L::jsonb where key = %L', poison, 'staffRequests'));
+    if seen is null or seen not like '23514%' or seen not like '%staffRequests is%' then raise exception 'the poison % was written to the settings row: %', poison, seen; end if;
+  end loop;
+  if (select value from settings where key = 'staffRequests') is distinct from '{"daysMost": 3, "meetingMost": 2}'::jsonb then raise exception 'a refused staffRequests changed the row'; end if;
+  update settings set value = '{"daysMost": 5, "meetingMost": 20}' where key = 'staffRequests';
 end $$;
