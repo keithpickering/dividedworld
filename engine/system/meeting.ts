@@ -32,7 +32,7 @@ import { careerText, type Career } from './career.ts';
 import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_MOST, MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, readParam, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
-import { ASKABLE_MOVE_KINDS, ROLE, UUID, isRoleRef, machineLimits, moveKind, moveParamsProblems, type MachineLimits, type TrophyFacts } from './moves.ts';
+import { ASKABLE_MOVE_KINDS, ROLE, UUID, isRoleRef, machineLimits, moveKind, moveParamsProblems, readBlankOptionals, type MachineLimits, type TrophyFacts } from './moves.ts';
 import { BEAT_WHY, BUNDLE_WORDS, DUE_WHY, beatsText, dependencyOrder, fillBundle, ownRoles, type PlannedBundle, type PlannedPart, type ShownBeat } from './beats.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
@@ -307,10 +307,15 @@ export const partSchema = (key: MeetingPartKey): Record<string, unknown> => rule
 
 /* ------------------------------------------------------------------------------- the prompt ---- */
 
-const fieldsOf = (rule: Rule): string =>
+export const fieldsOf = (rule: Rule): string =>
   rule.type === 'object'
     ? Object.entries(rule.fields).map(([k, v]) => `${k} (${v.type === 'enum' ? v.values.join(' | ') : v.type === 'number' ? 'number' : 'text'})`).join(', ')
     : '';
+
+/** What the Boss is told of board names, in the meeting and in a staff turn's ruling: the instance's style, a rename's bounds, and that a name out of style is dropped. */
+export function boardNamesText(nameStyleBrief: string, boardNameMaxLength: number, renaming: boolean): string {
+  return `Board names. ${nameStyleBrief}${renaming ? ` A renameBoard name is at most ${boardNameMaxLength} characters; its premise is a sentence saying what the board is now for.` : ''} A name that is not in the style is dropped, not corrected.${renaming ? ' A renameBoard description is your own words, in character: the board\'s subtitle under its new name, a sentence or two.' : ''}`;
+}
 
 /** A Mod Bot on staff as the Boss's meeting is shown it: public facts and its own record, never who owns a mask, a class or a reactor. */
 export interface ModFacts {
@@ -463,7 +468,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       : []),
     ...(listed('conferGroup') ? groupsText(f.groups?.conferred ?? []) : []),
     ...(listed('renameBoard') || listed('createBoard')
-      ? [`Board names. ${f.system.nameStyleBrief}${listed('renameBoard') ? ` A renameBoard name is at most ${s.boardNameMaxLength} characters; its premise is a sentence saying what the board is now for.` : ''} A name that is not in the style is dropped, not corrected.${listed('renameBoard') ? ' A renameBoard description is your own words, in character: the board\'s subtitle under its new name, a sentence or two.' : ''}`]
+      ? [boardNamesText(f.system.nameStyleBrief, s.boardNameMaxLength, listed('renameBoard'))]
       : []),
     [
       'Your memory. The memory you answer in the self part is your whole new memory: what you leave out of it is forgotten. Order every list most important first.',
@@ -1026,11 +1031,9 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     const strayDemand = !wantsDemand && given0 !== undefined && given0 !== null;
     // The kind's shape comes first: a group move's demand depends on its params. A description the Boss gave is bounded and trimmed there; a missing or blank one is
     // not the Boss's to lose a move over, so it is checked with a placeholder and left out, and the stock description stands in later.
-    const offered = { ...record(m['params']) };
     // A kind's own optional field left as empty text is absent (a rule's board, a conferral's board and check time). A rule's param is read from what was given
     // below, before this: empty text on a predicate that takes none is the converted choice `readParam` records (`asNone`); a field left out records nothing.
-    for (const [name, rule] of Object.entries((kind.params as { fields: Record<string, Rule> }).fields)) if (rule.optional && offered[name] === '') delete offered[name];
-    const blank = typeof offered['description'] !== 'string' || offered['description'].trim() === '';
+    const { params: offered, blankDescription: blank } = readBlankOptionals(kind, record(m['params']));
     // A machine move's whole number one past its bound (201 of at most 200, 49 of at least 50, 49 hours of at most 48) is the ordinary overshoot: it is clamped to the
     // bound and recorded, never a lost answer. A fraction, a non-number and exactly 100 percent are not repairs, and stay for moveParamsProblems to refuse by name.
     const clamps: Trim[] = [];

@@ -764,6 +764,34 @@ test('a Boss fulfill with a lasting kind takes expiry 0, and the Boss move has t
   assert.ok(r.trims.some((t) => t.path === 'request.move.why' && t.predicate.startsWith('maxLength(')));
 });
 
+test('a Boss fulfill reads blank optional params as the meeting does: createBoard with fallback "" is kept, a blank description stands for the stock one', () => {
+  const create = { kind: 'createBoard', params: { name: 'New Name', premise: 'p', description: 'd', fallback: '', board: '', thread: '', into: '' }, expires_in_hours: 0, why: 'Asked to.' };
+  const made = repairRuling(rule('fulfill', { move: create }), bossRuling());
+  assert.equal(made.request!.ruling, 'fulfill', JSON.stringify(made));
+  assert.equal((made.request!.move!.params as Record<string, unknown>)['fallback'] ?? null, null);
+  const rename = { kind: 'renameBoard', params: { board: B1, name: 'New Name', premise: 'p', description: '  ' }, expires_in_hours: 5, why: 'Asked to.' };
+  const renamed = repairRuling(rule('fulfill', { move: rename }), bossRuling());
+  assert.equal(renamed.request!.ruling, 'fulfill', JSON.stringify(renamed));
+  assert.ok(!('description' in (renamed.request!.move!.params as object)));
+});
+
+test('a Mod fulfill reads a blank optional board as left out, as the meeting does', () => {
+  const WHO = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
+  const groups = { conferred: new Map([['trial', 'punishment' as const]]), capped: new Set<string>(), held: new Set<string>() };
+  const blankBoard = { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: '', thread: '', predicate: '' }, expires_in_hours: 48, why: 'Needs a cooling off.' };
+  const r = repairRuling(rule('fulfill', { move: blankBoard }), modRuling({ groups }));
+  assert.ok(!r.dropped || !/atLeast\(36\)/.test(r.dropped.predicate), JSON.stringify(r));
+  const thread = repairRuling(rule('fulfill', { move: { ...moveThread, params: { ...moveThread.params, predicate: '', param: '', band: '' } } }), modRuling());
+  assert.equal(thread.request!.ruling, 'fulfill', JSON.stringify(thread));
+});
+
+test('a missing or non-string kind on a Mod move is required, not oneOf', () => {
+  const none = repairRuling(rule('fulfill', { move: { params: {}, expires_in_hours: 0, why: 'w' } }), modRuling());
+  assert.deepEqual(none.dropped, { path: 'request.move.kind', predicate: 'required' });
+  const odd = repairRuling(rule('fulfill', { move: { kind: 5, params: {}, expires_in_hours: 0, why: 'w' } }), modRuling());
+  assert.equal(odd.dropped!.path, 'request.move.kind');
+});
+
 test('a Mod ruling is held by repairModMove: the same move, the same drop', () => {
   const direct = repairModMove(moveThread, modCtx({ allowance: 0 }));
   assert.deepEqual(repairRuling(rule('fulfill', { move: moveThread }), modRuling({ allowance: 0 })).dropped, { ...direct.dropped!, path: `request.${direct.dropped!.path}` });
@@ -844,6 +872,15 @@ test('the ruling words name the kinds, the allowance or bank, the beat by name a
   const boss = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24 });
   for (const want of ['renameBoard', 'createBoard', 'mergeBoard', '1 move', '24 hours', 'next meeting']) assert.ok(boss.includes(want), want + ': ' + boss);
   assert.ok(!boss.includes('setRule'));
+});
+
+test('the ruling words name each offered kind\'s params, the expiry range and the why length', () => {
+  const mod = rulingWords({ office: 'mod', allowance: 2, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24, conferred: CATALOG, expiryLeastHours: 1, expiryMostHours: 72 });
+  for (const want of ['predicate (', 'param (', 'band (minor, moderate, severe', 'noDoublePost', 'thread (this thread', 'character', 'group', 'from 1 to 72 hours', 'at most 200 characters', 'moveThread lasts until reversed']) assert.ok(mod.includes(want), want + ': ' + mod);
+  const boss = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24, expiryLeastHours: 2, expiryMostHours: 168, nameStyleBrief: 'Names are puns.', boardNameMaxLength: 40 });
+  for (const kind of ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard']) assert.ok(boss.includes(`${kind} (`), kind + ': ' + boss);
+  for (const want of ['thread (text)', 'premise', 'description', 'fallback', 'into', 'Names are puns.', '40 characters', 'from 2 to 168 hours', 'at most 200 characters', 'expires_in_hours to 0']) assert.ok(boss.includes(want), want + ': ' + boss);
+  assert.ok(!boss.includes('predicate ('), boss);
 });
 
 test('a staff turn prompt carries the ruling words, a member turn none', () => {

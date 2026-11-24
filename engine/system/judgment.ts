@@ -35,10 +35,11 @@ import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
+// chatter.ts imports this module's repairs and kind helpers back: a cycle, and safe, because each side uses the other only inside functions, never while its module loads.
 import { cutAtSentence, fitThreadPrompt, memoryLines, type PromptFit } from './chatter.ts';
 import { groupMoveBar, WHY_MOST, type ConferredGroup } from './meeting.ts';
 import { noteMost, type Memory } from './memory.ts';
-import { BANDS, MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
+import { BANDS, MOVE_KINDS, moveKind, moveParamsProblems, readBlankOptionals } from './moves.ts';
 import type { Rule, Trim } from './validate.ts';
 import { excerpt, EXCERPT_WORDS } from './excerpt.ts';
 import { READ_WORDS, readLines, type ReadPost, type ThreadReadResult } from './read.ts';
@@ -195,7 +196,7 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   if (!kind.offices.includes('mod')) return no('move.kind', 'office');
 
   if (!isObject(raw['params'])) return no('move.params', 'isObject');
-  const params: Record<string, unknown> = { ...raw['params'] };
+  const params: Record<string, unknown> = readBlankOptionals(kind, raw['params']).params;
   // A model gives a number as digits and "no parameter" as empty text: both are the same choice, so they are read as the predicate wants them.
   const read = typeof params['predicate'] === 'string' ? readParam(params['predicate'], params['param']) : { value: params['param'] };
   if (read.trim || read.value !== params['param']) params['param'] = read.value;
@@ -304,12 +305,14 @@ export function repairBossMove(raw: unknown, ctx: BossMoveContext): RepairedMove
   if (!kind || !allowed.includes(kind.key)) return no('move.kind', `oneOf(${allowed.join(', ')})`);
   if (!kind.offices.includes('boss')) return no('move.kind', 'office');
   if (!isObject(raw['params'])) return no('move.params', 'isObject');
-  const params: Record<string, unknown> = { ...raw['params'] };
+  // The flat request schema writes every param as text, so a field the kind does not use or leaves optional arrives blank: read as the meeting reads it (`readBlankOptionals`).
+  const { params, blankDescription } = readBlankOptionals(kind, raw['params']);
   const under = (path: string): string => `move.params.${path}`;
-  const checked = moveParamsProblems(kind.key, params);
+  const checked = moveParamsProblems(kind.key, blankDescription ? { ...params, description: '-' } : params);
   const trims: Trim[] = checked.trims.map((t) => ({ ...t, path: under(t.path) }));
   if (!checked.ok) return no(under(checked.path), checked.predicate, trims);
   const given: Record<string, unknown> = { ...(checked.value as Record<string, unknown>) };
+  if (blankDescription) delete given['description'];
   if (kind.key === 'moveThread') {
     const thread = String(given['thread']).toLowerCase();
     if (ctx.threadBoards?.get(thread) === undefined) return no(under('thread'), 'knownThread', trims);
@@ -429,6 +432,14 @@ const moveKindsText = (i: Pick<ModPromptInput, 'conferred' | 'thread'>): string 
 const PARAM_WORDS = (p: (typeof PREDICATES)[number]): string =>
   p.param === 'none' ? 'no parameter' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? `one word of ${p.bounds!.least} to ${p.bounds!.most} characters` : 'a BBCode tag';
 
+/** A setRule move's params as a Mod is told them, in its judgment prompt and in a staff turn's ruling: the beat by name and id, the predicate, its param as text, and the band. */
+export function ruleParamsText(beat: ModPromptInput['beat'], predicateWords: string): string {
+  return `Its params: board (one of your beat: ${beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}), predicate (${predicateWords}), param (${PREDICATES.map((p) => `${p.key}: ${PARAM_WORDS(p)}`).join('; ')}; as text, a number as its digits, left out where there is none), band (${BANDS.join(', ')}: how serious breaking it is).`;
+}
+
+/** The catalog of predicates a rule may set, one line each, as a Mod is told it. */
+export const predicateCatalogLines = (): string[] => PREDICATES.map((p) => `- ${p.key} (${PARAM_WORDS(p)}): ${p.plain('N')}`);
+
 /** Whether a move is on offer: the Mod has something to spend and a board to spend it on. */
 const offersMove = (i: Pick<ModPromptInput, 'allowance' | 'beat'>): boolean => i.allowance >= 1 && i.beat.length > 0;
 
@@ -447,7 +458,7 @@ export function modPrompt(i: ModPromptInput): string {
     : offersMove(i)
     ? [
       `You may make at most one move with this call. The Boss has handed you ${i.allowance} move${i.allowance === 1 ? '' : 's'} to spend, and this would spend one. ${moveKindsText(i)} Leave the move out unless it would really help.`,
-      `Its params: board (one of your beat: ${i.beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}), predicate (one of the catalog above), param (${PREDICATES.map((p) => `${p.key}: ${PARAM_WORDS(p)}`).join('; ')}; as text, a number as its digits, left out where there is none), band (${BANDS.join(', ')}: how serious breaking it is).`,
+      ruleParamsText(i.beat, 'one of the catalog above'),
       ...(punishmentsOf(i).length
         ? [
           `A conferGroup move puts one character in a punishment group, named by its key: ${punishmentList(i)}. Its params: character (the id of the character), group (a key above) and board (one of your beat, as above; no predicate, param or band). The rule: one board, on your beat, and an apology you will judge. The character cannot post on that board until you accept an apology or the move runs out. The code sets its demand to the apology whatever you write. Characters who were punished as often as staff may be, or who are in a group move already, cannot be chosen: a move that names one is dropped.`,
@@ -474,7 +485,7 @@ export function modPrompt(i: ModPromptInput): string {
       : i.rules.length
       ? ['The rules in force where you are looking (a rule never refuses a post; breaking one draws a visit):', ...i.rules.map((r) => `- ${ruleWords(r)}`)].join('\n')
       : 'No rule is in force where you are looking.',
-    ['The rules a rule may set (the catalog; anything else is no rule):', ...PREDICATES.map((p) => `- ${p.key} (${PARAM_WORDS(p)}): ${p.plain('N')}`)].join('\n'),
+    ['The rules a rule may set (the catalog; anything else is no rule):', ...predicateCatalogLines()].join('\n'),
     move,
     'You cannot know who is behind any character; do not guess aloud at who owns a mask.',
   ].join('\n\n');

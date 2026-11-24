@@ -28,13 +28,15 @@ import { FIT_TITLE_CHARS } from '../rules/cards.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
-import type { ConferredGroup } from './meeting.ts';
+import { boardNamesText, fieldsOf, WHY_MOST, type ConferredGroup } from './meeting.ts';
+import { moveKind } from './moves.ts';
 import { careerText, type Career } from './career.ts';
 import { noteMost, type Memory } from './memory.ts';
 import type { PoolTrigger, PostingOffice } from './pool.ts';
 import type { Rule, Trim } from './validate.ts';
 import { readLines, READ_WORDS, type ReadPost, type ThreadReadResult } from './read.ts';
-import { punishmentList, punishmentsOf, repairBossMove, repairModMove, requestKinds, type BossMoveContext, type Dropped, type ModMove, type ModMoveContext, type RepairedMove } from './judgment.ts';
+// judgment.ts imports this module back (cutAtSentence, the thread fit, memoryLines): a cycle, and safe, because each side uses the other only inside functions, never while its module loads.
+import { predicateCatalogLines, punishmentList, punishmentsOf, repairBossMove, repairModMove, requestKinds, ruleParamsText, type BossMoveContext, type Dropped, type ModMove, type ModMoveContext, type RepairedMove } from './judgment.ts';
 
 /** A card the persona may play today: a Cast lands on the post it replies to, a Set on its own post. */
 export interface OfferedCard {
@@ -232,7 +234,6 @@ export function cutAtSentence(text: string, most: number): string {
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
-/** The answer after every bound, or the predicate that could not be repaired. Pure: nothing given is changed. */
 /**
  * A ruling after every bound: `reply` is one of the replies this turn answers and `ruling` one of the three, else the block is dropped (`answering`, `oneOf(fulfill, reject, confer)`)
  * and the post stands. A fulfill's move is held by the office's own repair (`repairModMove`, `repairBossMove`); **a fulfill whose move is missing or dropped becomes a confer**
@@ -255,11 +256,13 @@ export function repairRuling(raw: unknown, ruling: RulingFacts): { readonly requ
   }
   // Both offices are held to the kinds a request may carry, the same way (the Boss's repair checks it itself); a Mod's is checked here, after its allowance, as its repair orders them.
   const allowed = requestKinds('mod');
-  const outside = (m: unknown): boolean => typeof m === 'object' && m !== null && !Array.isArray(m) && !allowed.includes(String((m as Record<string, unknown>)['kind']));
+  const kindOf = (m: unknown): unknown => (typeof m === 'object' && m !== null && !Array.isArray(m) ? (m as Record<string, unknown>)['kind'] : undefined);
+  const outside = (m: unknown): boolean => typeof m === 'object' && m !== null && !Array.isArray(m) && !allowed.includes(String(kindOf(m)));
   const repaired: RepairedMove = !has
     ? { move: null, trims: [], dropped: { path: 'move', predicate: 'required' } }
     : ruling.office === 'mod'
       ? !ruling.mod ? { move: null, trims: [], dropped: { path: 'move', predicate: 'allowance' } }
+        : ruling.mod.allowance >= 1 && (kindOf(given['move']) === undefined || kindOf(given['move']) === null) && typeof given['move'] === 'object' && !Array.isArray(given['move']) ? { move: null, trims: [], dropped: { path: 'move.kind', predicate: 'required' } }
         : ruling.mod.allowance >= 1 && outside(given['move']) ? { move: null, trims: [], dropped: { path: 'move.kind', predicate: `oneOf(${allowed.join(', ')})` } }
         : repairModMove(given['move'], ruling.mod)
       : ruling.boss ? repairBossMove(given['move'], ruling.boss) : { move: null, trims: [], dropped: { path: 'move', predicate: 'bank' } };
@@ -277,7 +280,14 @@ export function repairRuling(raw: unknown, ruling: RulingFacts): { readonly requ
  * What a staff turn is told about ruling, after its premise: that a reply may ask staff for something the game can do; that it may grant it with one move of its office (the kinds, what
  * it has to spend, its beat by name and id), refuse it, or pass it to the meeting; and that the post is its words either way. Plain facts and the engine's own words; no instance named.
  */
-export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysMost: number; readonly structuralHoldHours: number; readonly allowance?: number; readonly bank?: number; readonly beat?: readonly { readonly id: string; readonly name: string }[]; readonly conferred?: readonly ConferredGroup[] }): string {
+export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysMost: number; readonly structuralHoldHours: number; readonly allowance?: number; readonly bank?: number; readonly beat?: readonly { readonly id: string; readonly name: string }[]; readonly conferred?: readonly ConferredGroup[];
+  /** The expiry a move may carry, in hours (the repair's own clamp): given, the words say the range. */
+  readonly expiryLeastHours?: number;
+  readonly expiryMostHours?: number;
+  /** The Boss's board naming: the instance's style and the length a renamed board's name may be; given, the words carry them as the meeting does. */
+  readonly nameStyleBrief?: string;
+  readonly boardNameMaxLength?: number;
+}): string {
   const conferring = punishmentsOf(f).length > 0;
   const kinds = requestKinds(f.office, conferring);
   const n = f.office === 'mod' ? f.allowance ?? 0 : Math.floor(f.bank ?? 0);
@@ -288,6 +298,22 @@ export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysM
   const group = kinds.includes('conferGroup') && f.office === 'mod'
     ? [`A conferGroup move puts one character in a punishment group, named by its key: ${punishmentList(f)}. Its params: character (the id), group (a key) and board (one of your beat); no predicate, param or band. It is dropped, and the request passes on, if the character cannot be chosen.`]
     : [];
+  // What each kind needs, in the catalog's own field names (`fieldsOf`): the flat params write every field, so one a kind does not use is written blank, and an optional one blank is left out.
+  const ids = 'A board, thread or character is named by its id, as you were shown it; a field the kind does not use is written blank.';
+  const params = f.office === 'mod'
+    ? [
+      ...(kinds.includes('setRule') ? [`A setRule move sets one rule on a board of your beat. ${ruleParamsText(f.beat ?? [], `one of: ${predicateCatalogLines().map((l) => l.slice(2)).join('; ')}`)}`] : []),
+      `A moveThread move takes the thread you are answering in to another board of your beat. Its params: thread (this thread's id) and board (the board it goes to). The thread must be on a board of your beat now.`,
+    ]
+    : [
+      `Params by kind: ${kinds.map((k) => `${k} (${fieldsOf(moveKind(k)!.params)})`).join('; ')}. ${ids}`,
+      'A moveThread takes the thread to another board, board its id. A renameBoard gives board (the id), a name, a premise (a sentence saying what the board is now for) and a description (your own words, the subtitle). A createBoard gives name, premise, description, and optionally fallback (a board\'s id, or blank for none). A mergeBoard folds board into into: two different boards, board closed.',
+      ...(f.nameStyleBrief !== undefined && f.boardNameMaxLength !== undefined ? [boardNamesText(f.nameStyleBrief, f.boardNameMaxLength, kinds.includes('renameBoard'))] : []),
+    ];
+  const lasting = kinds.filter((k) => moveKind(k)?.lasting);
+  const expiry = [
+    `${lasting.length ? `${lasting.join(', ')} last${lasting.length === 1 ? 's' : ''} until reversed: set expires_in_hours to 0. ` : ''}${f.expiryLeastHours !== undefined && f.expiryMostHours !== undefined && lasting.length < kinds.length ? `Any other kind's expires_in_hours is from ${f.expiryLeastHours} to ${f.expiryMostHours} hours. ` : ''}Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, and the request passes on.`,
+  ];
   const structural = f.office === 'boss' ? [`A renameBoard, createBoard or mergeBoard waits ${f.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.`] : [];
   return [
     'A reply in this thread may ask staff for something the game can do. If one asks you, you may rule on it in "request" (at most one reply, and only one of the replies you are shown), with "reply" (its id) and "ruling":',
@@ -295,12 +321,15 @@ export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysM
     '- reject: refuse it. Give no move.',
     `- confer: pass it on: ${f.office === 'boss' ? 'you rule on it at your next meeting' : 'the Boss rules on it at its next meeting'}; it lapses unanswered after ${f.daysMost} day${f.daysMost === 1 ? '' : 's'}. Give no move.`,
     ...beat,
+    ...params,
     ...group,
+    ...expiry,
     ...structural,
     'Your post is your words whichever you choose: say what you decided, in your own voice. Leave "request" out when nobody asked for anything.',
   ].join('\n');
 }
 
+/** The answer after every bound, or the predicate that could not be repaired. Pure: nothing given is changed. */
 export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
   const trims: Trim[] = [];
   const no = (path: string, predicate: string): RepairedChatter => ({ ok: false, path, predicate, trims });

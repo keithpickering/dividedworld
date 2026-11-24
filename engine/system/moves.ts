@@ -492,6 +492,18 @@ export function moveKind(key: string): MoveKind | undefined {
 }
 
 /**
+ * A model's params as the kind reads them: a kind's own optional field left as empty text is absent (a rule's board, a conferral's board and check time, a board's fallback), and a
+ * `description` that is missing or blank is not the model's to lose a move over, so `blankDescription` says to check with a placeholder and leave it out, the stock one standing in later.
+ * The meeting and a staff turn's request both read their params this way. A copy: nothing given is changed.
+ */
+export function readBlankOptionals(kind: MoveKind, given: Readonly<Record<string, unknown>>): { readonly params: Record<string, unknown>; readonly blankDescription: boolean } {
+  const params = { ...given };
+  for (const [name, rule] of Object.entries((kind.params as { fields: Record<string, Rule> }).fields)) if (rule.optional && params[name] === '') delete params[name];
+  const blankDescription = typeof params['description'] !== 'string' || params['description'].trim() === '';
+  return { params, blankDescription };
+}
+
+/**
  * A move's params against its kind: the shape and string bounds through `repair` (a string over its bound is trimmed and
  * recorded; a missing or mistyped field is rejected), then each uuid param, then the kind's own check. A key outside the catalog is rejected, naming it.
  * A machine move's numbers are held to `limits` (the economy's `machine.*`; the engine's defaults where none is given).
