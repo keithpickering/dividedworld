@@ -485,18 +485,20 @@ begin
   if (select count(*) from alerts a where a.account = pg_temp.owner(author) and a.kind = 'ruling' and a.sub = 'trophyReversed' and a.act is null and a.character = author) is distinct from 1 then raise exception 'the award''s character was not told its trophy was taken back'; end if;
 
   -- 7. close_poll_as_admin
+  n := (select count(*) from alerts a where a.sub = 'pollClosed');
   poll := tests.act(author, 'poll', t, jsonb_build_object('question', 'Best kart?', 'options', jsonb_build_array('Pipe Frame', 'Badwagon'), 'pick', 1, 'secret', false, 'closes_at', now() + interval '1 day'), p);
   perform tests.become(boss);
   closed := close_poll_as_admin(poll);
   perform tests.unbecome();
   if (select count(*) from alerts a where a.account = pg_temp.owner(author) and a.kind = 'ruling' and a.sub = 'pollClosed' and a.act = (closed -> 'act' ->> 'id')::uuid and a.character = author) is distinct from 1 then raise exception 'the poll''s author was not told an admin closed it: %', closed; end if;
-  if (select count(*) from alerts a where a.sub = 'pollClosed') is distinct from 1 then raise exception 'closing a poll wrote more than one alert'; end if;
+  if (select count(*) from alerts a where a.sub = 'pollClosed') - n is distinct from 1 then raise exception 'closing a poll wrote more than one alert'; end if;
 
-  -- 8. grant_gear
+  -- 8. grant_gear (counted as the change across the grant, as the poll's close is: the suite's database may hold committed alerts of earlier files)
+  n := (select count(*) from alerts a where a.sub = 'gearGiven');
   perform tests.become(boss);
   perform grant_gear(other, 'ra-hat', 2);
   perform tests.unbecome();
-  if (select count(*) from alerts a where a.sub = 'gearGiven') is distinct from 1 then raise exception 'a grant of two copies wrote % alerts', (select count(*) from alerts a where a.sub = 'gearGiven'); end if;
+  if (select count(*) from alerts a where a.sub = 'gearGiven') - n is distinct from 1 then raise exception 'a grant of two copies wrote % alerts', (select count(*) from alerts a where a.sub = 'gearGiven') - n; end if;
   if (select count(*) from alerts a where a.account = pg_temp.owner(other) and a.kind = 'ruling' and a.sub = 'gearGiven' and a.act is null and a.character = other) is distinct from 1 then raise exception 'the character given gear was not told'; end if;
 end $$;
 
@@ -627,12 +629,14 @@ begin
   insert into wallets (account, balance) values (pg_temp.owner(donor), 400), (pg_temp.owner(author), 400)
     on conflict (account) do update set balance = excluded.balance;
 
-  -- 1. A gift: one gift alert to the author's account, about the donation Act.
+  -- 1. A gift: one gift alert to the author's account, about the donation Act. Counted as the change across the gift: a race test commits its gifts
+  -- (0161-drives.sql, through dblink), so the suite's database holds other gifts' alerts before this file runs.
+  n := (select count(*) from alerts a where a.kind = 'gift' and a.character is not null);
   perform tests.become_service();
   said := donate(pg_temp.owner(donor), donor, drive, 10);
   perform tests.unbecome();
   gifted := (said #>> '{gift,id}')::uuid;
-  if (select count(*) from alerts a where a.kind = 'gift' and a.character is not null) is distinct from 1
+  if (select count(*) from alerts a where a.kind = 'gift' and a.character is not null) - n is distinct from 1
      or (select count(*) from alerts a where a.kind = 'gift' and a.sub is null and a.act = gifted and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
     raise exception 'a gift did not write one gift alert to the author about the donation: %', (select jsonb_agg(to_jsonb(a)) from alerts a where a.kind = 'gift' and a.character is not null);
   end if;
@@ -656,12 +660,13 @@ begin
   if refused is null then raise exception 'a gift of an amount the card does not offer was not refused'; end if;
   if (select count(*) from alerts a where a.kind = 'gift' and a.character is not null) is distinct from n then raise exception 'a refused gift wrote an alert'; end if;
 
-  -- 2. A draw by another player: one cardOnYours/drew alert to the author, about the draw Act.
+  -- 2. A draw by another player: one cardOnYours/drew alert to the author, about the draw Act (counted as the change across the draw, as the gift is).
+  n := (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew');
   perform tests.become_service();
   said := draw_on_surface(pg_temp.owner(donor), donor, wall, payload, pg_temp.cells(0, 100), 4000);
   perform tests.unbecome();
   drew := (said ->> 'id')::uuid;
-  if (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew') is distinct from 1
+  if (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew') - n is distinct from 1
      or (select count(*) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew' and a.act = drew and a.character = author and a.account = pg_temp.owner(author)) is distinct from 1 then
     raise exception 'a draw did not write one drew alert to the wall post''s author about the draw: %', (select jsonb_agg(to_jsonb(a)) from alerts a where a.kind = 'cardOnYours' and a.sub = 'drew');
   end if;
@@ -786,6 +791,9 @@ begin
   perform tests.unbecome();
 
   -- The HUD's unread count reads settlements as the list does: Dan's two (one of crowd pay alone) count, Eve's one counts; once the account has seen past a settlement it no longer counts.
+  -- Both have seen up to now: the count also holds the instance's news since the mark (alerts_news_unread), and a race test commits news (through dblink) that a
+  -- test account made in 2000 has not seen, so without the mark the count reads the suite's leftovers. The settlements are 300 days ahead, past the mark.
+  insert into account_preferences (account, alerts_seen_at) values (dan, now()), (eve, now()) on conflict (account) do update set alerts_seen_at = excluded.alerts_seen_at;
   perform tests.become(dan);
   if my_alerts_unread() is distinct from 2 then raise exception 'Dan''s unread count is the two settlements, the crowd-only one included: %', my_alerts_unread(); end if;
   perform tests.unbecome();
@@ -901,8 +909,14 @@ begin
   if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = p::text and (a ->> 'seq') is not null) then raise exception 'warning: the post the infraction names is not loaded with its number'; end if;
   if not exists (select 1 from jsonb_array_elements(got -> 'people') c where c ->> 'staff' = staff_key) then raise exception 'warning: the Mod that filed (%) is not among the people by its staff key: %', staff_key, got -> 'people'; end if;
 
+  -- Another account's page loads what a page of an account with no rows at all loads, read at the same moment: the instance's news, the same for everyone,
+  -- which a race test commits (through dblink) before this file runs, and nothing of the filing.
   got := pg_temp.page_as(other);
-  if jsonb_array_length(got -> 'acts') <> 0 or jsonb_array_length(got -> 'people') <> 0 then raise exception 'another account''s page loads Acts or people it has no row for: %', got; end if;
+  if got is distinct from pg_temp.page_as(pg_temp.player('ld-nobody'))
+     or exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' in (p::text, v::text, inf::text))
+     or exists (select 1 from jsonb_array_elements(got -> 'people') c where c ->> 'id' in (author::text, taker::text)) then
+    raise exception 'another account''s page loads Acts or people it has no row for: %', got;
+  end if;
 end $$;
 
 do $$
