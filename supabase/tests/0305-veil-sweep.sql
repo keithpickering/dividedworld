@@ -190,6 +190,7 @@ select 'function', n, m, w from (values
   ('admin_machine', 'no author', 'an admin''s screen of the machine'),
   ('admin_queue', 'no author', 'an admin''s queue: real moderation speaks plainly and admins see the true author by design (decided in planning); refused to a player'),
   ('alerts_page', 'swept', 'the caller''s alerts and the Acts they lead to'),
+  ('alert_line_refs', 'no author', 'what alerts_page''s ruling, gift and drew rows name (0423), merged into the caller''s own page: the Acts and the drawer are read through acts_public, which shows the stand-in under a live author veil; a fallTaken''s taker is an infraction''s public payload and a warning''s Mod a staff character'),
   ('apologize', 'no author', 'a write: answers the Act it wrote, to the caller who wrote it'),
   ('banned_until', 'no author', 'a character''s ban: a public fact of the character'),
   ('ban_ends', 'no author', 'when one ban ends (0361): a public fact of the ban and its character, never of a post'),

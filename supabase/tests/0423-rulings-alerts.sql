@@ -950,6 +950,15 @@ begin
   if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = gifted::text) or not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = drew::text) then raise exception 'the gift or the draw is not loaded: %', got -> 'acts'; end if;
   if not exists (select 1 from jsonb_array_elements(got -> 'acts') a where a ->> 'id' = p::text and (a ->> 'seq') is not null) then raise exception 'the post three links from a gift and a draw is not loaded: %', got -> 'acts'; end if;
   if not exists (select 1 from jsonb_array_elements(got -> 'people') c where c ->> 'id' = donor::text and c ->> 'name' = 'Ra ld2-donor') then raise exception 'the drawer is not among the people by name: %', got -> 'people'; end if;
+  -- The post is the third link of both chains, and the page's own lists hold Acts besides: what the rows name is merged in, each Act once in the page's order (created_at, then id), each person once by name.
+  if (select jsonb_agg(a ->> 'id' order by o) from jsonb_array_elements(got -> 'acts') with ordinality x(a, o))
+     is distinct from (select jsonb_agg(i order by c, i collate "C") from (select distinct a ->> 'id' as i, (a ->> 'created_at')::timestamptz as c from jsonb_array_elements(got -> 'acts') a) y) then
+    raise exception 'the page''s Acts are each once, by created_at then id: %', got -> 'acts';
+  end if;
+  if (select jsonb_agg(c ->> 'id' order by o) from jsonb_array_elements(got -> 'people') with ordinality x(c, o))
+     is distinct from (select jsonb_agg(i order by n, i) from (select distinct c ->> 'id' as i, c ->> 'name' as n from jsonb_array_elements(got -> 'people') c) y) then
+    raise exception 'the page''s people are each once, by name: %', got -> 'people';
+  end if;
 end $$;
 
 do $$

@@ -1235,6 +1235,31 @@ revoke execute on function surface_apply(uuid, uuid, text, jsonb, bit, integer) 
 -- however many other wallet moves (plays, purchases, gifts) the account has made. wallet_events_account (account, at) would read them all and sort.
 create index wallet_events_crowd on wallet_events (account, settlement desc) where kind = 'crowd';
 
+-- The settlements of the settlement alert, as a function, so the screens that read my_alerts and my_alerts_unread keep their plans (supabase/tests/e2e/0028-cold-read-budget.ts): the newest `most` settlements
+-- with an id in [lo, hi], applied after `after` and before `before`, in which `who` has ledger lines or was paid crowd pay, newest first, each with `n`, the number of `who`'s characters with ledger lines
+-- in it (0 for crowd pay alone). Each source is read by account (ledger_account; wallet_events_crowd)
+-- and cut to its `most` newest before they are joined, so what is read grows with the account's own rows, never the instance's; a row's settlement is read by its key, as the plan is generic and cannot
+-- know the window is one side open. It is a function, not union branches in the readers, so the readers keep their plans (supabase/tests/e2e/0028-cold-read-budget.ts): a language sql function with a SET
+-- clause is never inlined (the planner leaves it before reading its body) and on Postgres 16 and 17 keeps no plan past the query. my_alerts runs it once a page; my_alerts_unread only where a settlement
+-- is newer than the caller's mark (with none, nothing is unread), so a reader with nothing unread plans nothing of it. Where it runs, wallet_events enters the connection's catalog cache, about 30 kB on
+-- Postgres 16: the one cost the crowd half adds to index_page's HUD count, which on the workflow's Postgres 17 sat close enough under a 2 MB block of that cache to cross it (issue #968).
+-- No API role calls it: the two definers below do, as their owner.
+create function settled_ids(who uuid, lo bigint, hi bigint, after timestamptz, before timestamptz, most integer) returns table (id bigint, n integer)
+language sql stable set search_path = public, pg_temp as $$
+  select u.id, max(u.n)::integer from (
+    (select l.settlement as id, count(distinct l.character) as n from ledger l
+     where l.account = who and l.settlement >= lo and l.settlement <= hi
+       and (select s.applied_at > after and s.applied_at < before from settlements s where s.id = l.settlement)
+     group by l.settlement order by l.settlement desc limit most)
+    union all
+    (select e.settlement, 0 from wallet_events e
+     where e.account = who and e.kind = 'crowd' and e.settlement >= lo and e.settlement <= hi
+       and (select s.applied_at > after and s.applied_at < before from settlements s where s.id = e.settlement)
+     group by e.settlement order by e.settlement desc limit most)
+  ) u group by u.id order by u.id desc limit most
+$$;
+revoke execute on function settled_ids(uuid, bigint, bigint, timestamptz, timestamptz, integer) from public, anon, authenticated, service_role;
+
 create or replace function refund_card_write(play uuid) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1313,31 +1338,19 @@ begin
     select 'followed'::text as kind, null::text as sub, null::uuid as act, null::uuid as character, v.newest_at as at, v.thread, null::text as name, v.title, v.new_posts as count
     from f v where v.newest_at >= (select at from f_floor)
   ),
-  -- Settlements: the caller's ledger lines, or the crowd pay it was paid (a wallet_events row of kind 'crowd', which has no ledger line), from the newest settlement back, k settlements.
+  -- Settlements: the caller's ledger lines or crowd pay (settled_ids), from the newest settlement back, k settlements.
   -- The ledger is read up to the newest settlement applied before the cursor: the largest id among them, so no settlement that
   -- qualifies is cut whatever order the ids came in (a stand-in for time that assumed they go together broke where a committed
   -- settlement was applied later than a newer id). Without a cursor it is the largest id there is, from the key alone.
-  -- Each source is read by account (ledger_account; wallet_events_crowd) and cut to its k newest before they are joined, so what is read grows with the account's own rows, never the instance's.
-  -- `count` is the account's characters with ledger lines in the settlement: 0 for one that paid crowd pay alone.
+  -- `count`: the account's characters with ledger lines in it (0: crowd pay alone).
   hi as (
     select coalesce(case when (select before from lim) = 'infinity'::timestamptz then (select max(s.id) from settlements s)
                          else (select max(s.id) from settlements s where s.applied_at < (select before from lim)) end, 0) as id
   ),
   st_k as (
-    select s.id, s.applied_at, g.n
-    from (
-      select u.id from (
-        (select l.settlement as id from ledger l join settlements s on s.id = l.settlement
-         where l.account = (select id from me) and l.settlement <= (select id from hi) and s.applied_at < (select before from lim)
-         group by l.settlement order by l.settlement desc limit (select k from lim))
-        union
-        (select e.settlement as id from wallet_events e join settlements s on s.id = e.settlement
-         where e.account = (select id from me) and e.kind = 'crowd' and e.settlement <= (select id from hi) and s.applied_at < (select before from lim)
-         group by e.settlement order by e.settlement desc limit (select k from lim))
-      ) u order by u.id desc limit (select k from lim)
-    ) c
+    select s.id, s.applied_at, c.n
+    from settled_ids((select id from me), -9223372036854775808, (select id from hi), '-infinity', (select before from lim), (select k from lim)) c
     join settlements s on s.id = c.id
-    cross join lateral (select count(distinct l.character)::integer as n from ledger l where l.account = (select id from me) and l.settlement = s.id) g
     order by s.id desc
   ),
   st_floor as (
@@ -1346,10 +1359,8 @@ begin
   st_tie as (
     select s.id, s.applied_at, g.n
     from settlements s
-    cross join lateral (select count(distinct l.character)::integer as n from ledger l
-                        where l.account = (select id from me) and l.settlement = s.id) g
+    cross join lateral settled_ids((select id from me), s.id, s.id, '-infinity', 'infinity', 1) g
     where s.applied_at = (select at from st_floor) and s.id not in (select id from st_k)
-      and (g.n > 0 or exists (select 1 from wallet_events e where e.account = (select id from me) and e.kind = 'crowd' and e.settlement = s.id))
   ),
   settled as (
     select 'settlement'::text as kind, x.id::text as sub, null::uuid as act, null::uuid as character, x.applied_at as at, null::uuid as thread, null::text as name, null::text as title, x.n as count
@@ -1387,6 +1398,7 @@ begin
     select coalesce((select p.alerts_seen_at from account_preferences p where p.account = (select id from me)),
                     (select a.created_at from accounts a where a.id = (select id from me))) as at
   ),
+  first as (select min(s0.id) as id from settlements s0 where s0.applied_at > (select at from seen)),
   parts as (
     select (select count(*) from (select 1 from alerts a where a.account = (select id from me) and a.at > (select at from seen) limit 10) w) as n
     union all
@@ -1410,22 +1422,9 @@ begin
                     order by a.seq desc limit 1)
       limit 10) f)
     union all
-    -- Settlements: the caller's ledger lines, or the crowd pay it was paid (a wallet_events row of kind 'crowd', which has no ledger line), as my_alerts lists them.
-    -- Each source is read by account (ledger_account; wallet_events_crowd) and cut to its ten newest before they are joined.
-    select (select count(*) from (
-      select u.id from (
-        (select l.settlement as id from ledger l join settlements s on s.id = l.settlement
-         where l.account = (select id from me)
-           and l.settlement >= coalesce((select min(s0.id) from settlements s0 where s0.applied_at > (select at from seen)), 9223372036854775807)
-           and s.applied_at > (select at from seen)
-         group by l.settlement order by l.settlement desc limit 10)
-        union
-        (select e.settlement as id from wallet_events e join settlements s on s.id = e.settlement
-         where e.account = (select id from me) and e.kind = 'crowd'
-           and e.settlement >= coalesce((select min(s0.id) from settlements s0 where s0.applied_at > (select at from seen)), 9223372036854775807)
-           and s.applied_at > (select at from seen)
-         group by e.settlement order by e.settlement desc limit 10)
-      ) u order by u.id desc limit 10) x)
+    -- Settlements, as my_alerts lists them (settled_ids), read only where one is newer than the mark.
+    select case when (select id from first) is not null
+                then (select count(*) from settled_ids((select id from me), (select id from first), 9223372036854775807, (select at from seen), 'infinity', 10)) else 0 end
     union all
     select alerts_news_unread((select at from seen))
   )
@@ -2110,15 +2109,107 @@ $function$;
 --
 -- The new lines name Acts and people the page did not load: a warning's and a fallTaken's post is the infraction's `about_act` (a payload id, never a link of target_act_id), a warning's Mod is a staff key (the infraction's
 -- `staff`, a Mod's, not a character's id), fallTaken names the taker (the infraction's `character`), a gift's and a drawing's post is three links from the donation or the draw (donation, drive play, post; draw, wall play, post),
--- a drawing names its drawer (the draw's character), and a threadMoved line names the thread that moved and the board in the move's `params` (the alert's own thread is the move's, the Announcements thread, so the title of the thread that moved comes with the page). alerts_page (0368, whole) with those loaded and nothing else changed:
---   chain: three links, as for a card an admin ended, also for a gift and a drew (`deep`);
---   extra: the infraction's `about_act`, for a ruling row whose Act is an infraction;
---   pe: the people, the authors of the third link (as before) and, for the rows that name them, the draw's character, the infraction's `character` (fallTaken) and the staff character the infraction's `staff` names (warning);
---   boards, threads: the board and the thread each threadMoved row's move names, by id and name or title (both are public).
+-- a drawing names its drawer (the draw's character), and a threadMoved line names the thread that moved and the board in the move's `params` (the alert's own thread is the move's, the Announcements thread, so the title of the thread that moved comes with the page). alerts_page (0368) with those loaded and nothing else changed. Its query is 0368's, word for word; after it, for a page with a ruling, gift or drew row, alert_line_refs (below) answers what those
+-- rows name, and the page merges it in:
+--   acts: also the third link of a gift's and a drew's chain (as for a card an admin ended: donation, drive play, post; draw, wall play, post) and a ruling's infraction's `about_act`, the list kept in its order
+--         (created_at, then id) with each Act once;
+--   people: also the authors of those third links, the drawer (the draw's character), a fallTaken's taker (the infraction's `character`) and the staff character a warning's infraction's `staff` names, kept
+--         in its order (name) with each once;
+--   boards, threads: the board (id and name) and the thread (id and title) each threadMoved row's move names, both public; empty on a page with none.
+-- Why a function and a second statement, not more CTEs in the query: every screen function keeps its plan on a connection (0368; supabase/tests/e2e/0028-cold-read-budget.ts). Written into the query (a
+-- fourth acts_public, characters_public, boards_now and thread_open), they doubled the page's kept plan (5.2 to 7.8 MB on Postgres 16; 8.0 MB against a 5.7 MB budget on the workflow's 17), and even the
+-- smallest form (the refs as one call) grew the query's cached source past its next block. A PL/pgSQL statement is planned the first time it runs, and alert_line_refs is a language sql function with a SET
+-- clause, never inlined and on Postgres 16 and 17 keeping no plan past the query, so a page with none of those rows keeps what 0368's did. The thread is read from threads less the Updates thread, the rows
+-- thread_open shows, with no need of thread_open's other columns.
 -- The uuid is checked by pattern in the query (safe_uuid is closed to the caller, as alerts_page runs as the caller). Cost: the page is 30 rows, so each addition is at most 30 probes by primary key, unchanged by the size of the instance; each is a public Act or a public name, read from the row's own Act.
 -- Nothing here is computed from a private fact: the taker, the drawer and the Mod are each in a public Act, and the page is the caller's own rows as before. Way out: a read; it adds no state.
+-- The page `doc` (0368's query's document) with what its ruling, gift and drew rows name (above) merged in: the Acts as 0368's `ac` holds them, the people as its `people` (a face: the public character
+-- and its profile), each list kept in the page's order with each entry once, and `boards` and `threads` as {id, name} and {id, title}. Read as the caller (alerts_page runs as its caller), from public Acts and public names alone.
+-- A uuid is checked by pattern before it is cast. Its lines are the page's own (at most 30), so each read is at most 30 probes by primary key, unchanged by the size of the instance.
+create function alert_line_refs(doc jsonb) returns jsonb
+language sql stable set search_path = public, pg_temp as $$
+  with l as materialized (
+    select j ->> 'kind' as line, j ->> 'sub' as sub, x.kind, x."character", x.target_act_id, x.payload
+    from jsonb_array_elements(doc -> 'alerts') j join acts_public x on x.id = case when j ->> 'act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (j ->> 'act')::uuid end
+    where j ->> 'kind' in ('ruling', 'gift') or (j ->> 'kind' = 'cardOnYours' and j ->> 'sub' = 'drew')
+  ),
+  -- The third link of a gift's or a drew's chain: the target of the Act the alert's Act targets.
+  deep as materialized (
+    select y.target_act_id as id from l join acts_public y on y.id = l.target_act_id
+    where l.line in ('gift', 'cardOnYours') and y.target_act_id is not null
+  ),
+  ac as materialized (
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE a.id IN (SELECT d.id FROM deep d)
+              OR a.id IN (SELECT (l.payload ->> 'about_act')::uuid FROM l
+                          WHERE l.line = 'ruling' AND l.kind = 'infraction' AND l.payload ->> 'about_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$')
+  ),
+  pe as (
+    select a."character" as id from ac a where a.id in (select d.id from deep d)
+    union select l."character" from l where l.line = 'cardOnYours'
+    union select case when l.payload ->> 'character' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (l.payload ->> 'character')::uuid end from l
+          where l.line = 'ruling' and l.sub = 'fallTaken' and l.kind = 'infraction'
+    union select c.id from characters_public c
+          where c.staff in (select l.payload ->> 'staff' from l where l.line = 'ruling' and l.sub = 'warning' and l.kind = 'infraction')
+  ),
+  moved as (
+    select case when l.payload #>> '{params,board}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (l.payload #>> '{params,board}')::uuid end as board,
+           case when l.payload #>> '{params,thread}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' then (l.payload #>> '{params,thread}')::uuid end as thread
+    from l where l.line = 'ruling' and l.sub = 'threadMoved' and l.kind = 'move'
+  )
+  select doc || jsonb_build_object(
+    'acts', (select coalesce(jsonb_agg(u.v order by (u.v ->> 'created_at')::timestamptz, (u.v ->> 'id') collate "C"), '[]')
+             from (select distinct on (e.v ->> 'id') e.v from (select v from jsonb_array_elements(doc -> 'acts') v union all select to_jsonb(a.*) from ac a) e) u),
+    'people', (select coalesce(jsonb_agg(u.v order by u.v ->> 'name'), '[]')
+               from (select distinct on (e.v ->> 'id') e.v from (select v from jsonb_array_elements(doc -> 'people') v union all select f.face from ( SELECT cp.name,
+                     (to_jsonb(cp.*) || jsonb_build_object('profile', ( SELECT (to_jsonb(p.*) || profile_cosmetics(p."character"))
+                            FROM ( SELECT r."character",
+                                     r.title,
+                                     r.signature,
+                                     r.avatar_square,
+                                     r.avatar_portrait,
+                                     r.square_frame,
+                                     r.portrait_frame,
+                                     r.pip_style,
+                                     r.pronouns
+                                    FROM character_profiles r
+                                   WHERE (r."character" = cp.id)) p))) AS face
+                    FROM ( SELECT c.id,
+                             c.name,
+                             c.joined,
+                             c.staff,
+                             c.office,
+                             c."group"
+                            FROM characters_public c
+                           WHERE c.id IN (SELECT p.id FROM pe p)) cp) f) e) u),
+    'boards', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) order by b.id::text collate "C") from boards_now b
+                        where b.id in (select m.board from moved m)), '[]'),
+    'threads', coalesce((select jsonb_agg(jsonb_build_object('id', t.id, 'title', t.title) order by t.id::text collate "C") from threads t
+                         where t.id in (select m.thread from moved m) and t.id is distinct from search_updates_thread()), '[]'))
+$$;
+revoke execute on function alert_line_refs(jsonb) from public, anon, service_role;
+grant execute on function alert_line_refs(jsonb) to authenticated;
+
 create or replace function public.alerts_page(in_before timestamp with time zone)
- returns jsonb
+ RETURNS jsonb
  language plpgsql
  stable
  set search_path to 'public', 'pg_temp'
@@ -2127,7 +2218,11 @@ create or replace function public.alerts_page(in_before timestamp with time zone
 as $function$
 #variable_conflict use_column
 begin
+  -- 0368's query, word for word, as `doc`; then what the page's ruling, gift and drew rows name, merged into its lists (the section's header).
   return (
+  SELECT CASE WHEN d.doc @? '$.alerts[*] ? (@.kind == "ruling" || @.kind == "gift" || @.sub == "drew")' THEN alert_line_refs(d.doc)
+              ELSE d.doc || '{"boards": [], "threads": []}' END
+  FROM (
   WITH RECURSIVE al AS (
           SELECT (to_jsonb(a.*) - 'ordinality'::text) AS j,
              a.ordinality AS o
@@ -2135,7 +2230,7 @@ begin
          ), chain(id, depth, ended) AS (
           SELECT ((al.j ->> 'act'::text))::uuid AS uuid,
              1 AS "?column?",
-             (((al.j ->> 'kind'::text) = 'cardEnded'::text) OR ((al.j ->> 'kind'::text) = 'gift'::text) OR (((al.j ->> 'kind'::text) = 'cardOnYours'::text) AND ((al.j ->> 'sub'::text) = 'drew'::text))) AS "?column?"
+             ((al.j ->> 'kind'::text) = 'cardEnded'::text) AS "?column?"
             FROM al
            WHERE ((al.j ->> 'act'::text) IS NOT NULL)
          UNION
@@ -2145,11 +2240,6 @@ begin
             FROM (chain c
               JOIN acts_public x ON ((x.id = c.id)))
            WHERE (((c.depth < 2) OR ((c.depth < 3) AND c.ended)) AND (x.target_act_id IS NOT NULL))
-         ), extra AS (
-          SELECT (CASE WHEN x.payload ->> 'about_act' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (x.payload ->> 'about_act')::uuid END) AS id
-            FROM al
-              JOIN acts_public x ON x.id = ((al.j ->> 'act'::text))::uuid
-           WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND x.kind = 'infraction'::text
          ), ac AS (
           SELECT a.id,
              a."character",
@@ -2170,32 +2260,8 @@ begin
              a.payload_hidden,
              a.payload_concealing
             FROM acts_public a
-           WHERE ((a.id IN ( SELECT c.id
-                    FROM chain c)) OR (a.id IN ( SELECT e.id
-                    FROM extra e)))
-         ), pe AS (
-          SELECT a."character" AS id
-            FROM ac a
-           WHERE (a.id IN ( SELECT h.id
-                    FROM chain h
-                   WHERE (h.depth = 3)))
-         UNION
-          SELECT a."character"
-            FROM al
-              JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
-           WHERE ((al.j ->> 'kind'::text) = 'cardOnYours'::text) AND ((al.j ->> 'sub'::text) = 'drew'::text)
-         UNION
-          SELECT (CASE WHEN a.payload ->> 'character' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload ->> 'character')::uuid END)
-            FROM al
-              JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
-           WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'fallTaken'::text) AND a.kind = 'infraction'::text
-         UNION
-          SELECT c.id
-            FROM characters_public c
-           WHERE c.staff IN ( SELECT a.payload ->> 'staff'
-                    FROM al
-                      JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
-                   WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'warning'::text) AND a.kind = 'infraction'::text)
+           WHERE (a.id IN ( SELECT c.id
+                    FROM chain c))
          ), th AS (
           SELECT DISTINCT ((al.j ->> 'thread'::text))::uuid AS id
             FROM al
@@ -2226,8 +2292,11 @@ begin
                              c.office,
                              c."group"
                             FROM characters_public c
-                           WHERE (c.id IN ( SELECT p.id
-                                    FROM pe p))) cp) f), '[]'::jsonb), 'openings', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY ((a.thread)::text COLLATE "C")) AS jsonb_agg
+                           WHERE (c.id IN ( SELECT a."character"
+                                    FROM ac a
+                                   WHERE (a.id IN ( SELECT h.id
+   FROM chain h
+  WHERE (h.depth = 3)))))) cp) f), '[]'::jsonb), 'openings', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY ((a.thread)::text COLLATE "C")) AS jsonb_agg
             FROM acts_public a
            WHERE ((a.thread IN ( SELECT t.id
                     FROM th t)) AND (a.seq = 1))), '[]'::jsonb), 'reading', COALESCE(( SELECT jsonb_agg(to_jsonb(r.*) ORDER BY ((r.thread)::text COLLATE "C")) AS jsonb_agg
@@ -2235,17 +2304,10 @@ begin
                      g.furthest_seq
                     FROM reading g
                    WHERE (g.thread IN ( SELECT t.id
-                            FROM th t))) r), '[]'::jsonb), 'boards', COALESCE(( SELECT jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) ORDER BY ((b.id)::text COLLATE "C")) AS jsonb_agg
-            FROM boards_now b
-           WHERE (b.id IN ( SELECT (CASE WHEN a.payload #>> '{params,board}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload #>> '{params,board}')::uuid END)
-                    FROM al
-                      JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
-                   WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'threadMoved'::text) AND a.kind = 'move'::text))), '[]'::jsonb), 'threads', COALESCE(( SELECT jsonb_agg(jsonb_build_object('id', t.id, 'title', t.title) ORDER BY ((t.id)::text COLLATE "C")) AS jsonb_agg
-            FROM thread_open t
-           WHERE (t.id IN ( SELECT (CASE WHEN a.payload #>> '{params,thread}' ~ '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' THEN (a.payload #>> '{params,thread}')::uuid END)
-                    FROM al
-                      JOIN ac a ON a.id = ((al.j ->> 'act'::text))::uuid
-                   WHERE ((al.j ->> 'kind'::text) = 'ruling'::text) AND ((al.j ->> 'sub'::text) = 'threadMoved'::text) AND a.kind = 'move'::text))), '[]'::jsonb)) AS jsonb_build_object
+                            FROM th t))) r), '[]'::jsonb)) AS jsonb_build_object
+  ) d(doc)
   );
 end
 $function$;
+
+
