@@ -705,7 +705,7 @@ function toLogRead(src: Readonly<Record<'ledger' | 'wallet' | 'cards' | 'packs' 
       secret: r['secret'] === true, options: Array.isArray(r['options']) ? r['options'].map(String) : [], changed: r['changed'] === true, place: logPlace(r['place']),
     }] : [])) }),
     ...(src.pollCloses === undefined ? {} : { pollCloses: src.pollCloses.flatMap((r): LogPollClose[] => (isObject(r['place']) ? [{ act: r['act'], poll: r['poll'], character: r['character'], at: r['at'], question: String(r['question'] ?? ''), place: logPlace(r['place']) }] : [])) }),
-    ...(src.moved === undefined ? {} : { moved: src.moved.map((r): LogThreadMoved => ({ move: r['move'], at: r['at'], thread: r['thread'], character: r['character'], from: r['from'], to: str(r['to']), title: String(r['title'] ?? ''), fromName: str(r['from_name']), toName: str(r['to_name']) })) }),
+    ...(src.moved === undefined ? {} : { moved: src.moved.map((r): LogThreadMoved => ({ move: r['move'], at: r['at'], thread: r['thread'], character: r['character'], from: r['from_board'], to: str(r['to_board']), title: String(r['title'] ?? ''), fromName: str(r['from_name']), toName: str(r['to_name']) })) }),
     draws: src['draws'].map(surfaceLogRow),
     wallsDrawn: src['wallsDrawn'].map(surfaceLogRow),
     saves: src['saves'].map((r) => ({ play: r['play'], post: r['post'], savedAt: r['saved_at'] })),

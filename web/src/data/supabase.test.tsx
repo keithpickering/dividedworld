@@ -3422,6 +3422,14 @@ describe('a screen in one call', () => {
       expect(older.log.ballots ?? []).toEqual([]);
     });
 
+    it('maps log_page\'s moved threads (from_board and to_board to from and to, with the names), and an older payload without them reads as none', async () => {
+      const moved = { move: A, at: '2026-10-30T11:00:00+00:00', thread: T, character: B, from_board: C, to_board: SET, title: 'Kart talk', from_name: 'General', to_name: 'Karts' };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], moved: [moved] }))).api.logPage(null);
+      expect(page.log.moved).toEqual([{ move: A, at: moved.at, thread: T, character: B, from: C, to: SET, title: 'Kart talk', fromName: 'General', toName: 'Karts' }]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log.moved ?? []).toEqual([]);
+    });
+
     it('maps the top-level scoredAs rows (named_class to classKey), and an older payload without them reads as none', async () => {
       const row = { settlement: 9, character: B, named_class: 'heel', play: C, card: 'offday', starts_at: '2026-10-29T08:17:00+00:00', ends_at: '2026-10-30T08:17:00+00:00' };
       const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }), { scoredAs: [row] })).api.logPage(null);

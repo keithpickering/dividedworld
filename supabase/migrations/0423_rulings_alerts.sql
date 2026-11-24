@@ -1446,7 +1446,7 @@ grant execute on function my_alerts_unread() to authenticated;
 create index thread_departures_thread on thread_departures (thread);
 
 create view my_threads_moved as
-  select d.act as move, m.created_at as at, d.thread, s.character, d.from_board as "from", case when jsonb_typeof(m.payload #> '{params,board}') = 'string' then (m.payload #>> '{params,board}')::uuid end as "to",
+  select d.act as move, m.created_at as at, d.thread, s.character, d.from_board, case when jsonb_typeof(m.payload #> '{params,board}') = 'string' then (m.payload #>> '{params,board}')::uuid end as to_board,
          t.title, (select b.name from boards_now b where b.id = d.from_board) as from_name,
          (select b.name from boards_now b where b.id = case when jsonb_typeof(m.payload #> '{params,board}') = 'string' then (m.payload #>> '{params,board}')::uuid end) as to_name
   from my_characters mc
@@ -1838,8 +1838,8 @@ begin
              v.at,
              v.thread,
              v."character",
-             v."from",
-             v."to",
+             v.from_board,
+             v.to_board,
              v.title,
              v.from_name,
              v.to_name

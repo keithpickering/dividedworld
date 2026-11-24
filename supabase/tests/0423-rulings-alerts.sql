@@ -848,7 +848,7 @@ begin
   perform tests.unbecome();
   if jsonb_typeof(got) is distinct from 'array' or jsonb_array_length(got) is distinct from 1 then raise exception 'the starter reads one moved thread: %', got; end if;
   if (got -> 0 ->> 'move')::uuid is distinct from landed or (got -> 0 ->> 'thread')::uuid is distinct from t or (got -> 0 ->> 'character')::uuid is distinct from starter
-     or (got -> 0 ->> 'to')::uuid is distinct from dest or (got -> 0 ->> 'from')::uuid is distinct from home or got -> 0 ->> 'at' is null then
+     or (got -> 0 ->> 'to_board')::uuid is distinct from dest or (got -> 0 ->> 'from_board')::uuid is distinct from home or got -> 0 ->> 'at' is null then
     raise exception 'the moved entry is wrong: %', got -> 0;
   end if;
   if got -> 0 ->> 'title' is distinct from 'Ra logged move' or got -> 0 ->> 'to_name' is distinct from 'Ra Log Dest' or got -> 0 ->> 'from_name' is null then raise exception 'the moved entry does not name the thread and board: %', got -> 0; end if;
