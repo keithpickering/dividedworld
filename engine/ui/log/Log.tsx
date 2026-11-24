@@ -250,7 +250,7 @@ export function Log({ data, tab, onTab, open, onToggle, onOlder, older = 'idle' 
         <SpinForm
           key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
           draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
-          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); back?.focus(); }}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); (back?.isConnected ? back : table.current)?.focus(); }}
         />
       )}
       <CalmRegion className="kb-log-board">

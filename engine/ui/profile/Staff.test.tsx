@@ -328,6 +328,12 @@ describe('Spin thread in a Mod Bot\'s moderation log', () => {
     const form = await screen.findByRole('form', { name: new RegExp(`${name}'s verdict`, 'u') });
     await userEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(verdict).toHaveFocus());
+    /* An opener that is gone when the form closes: focus goes to the log's table, never the page. */
+    await userEvent.click(verdict);
+    const again = await screen.findByRole('form', { name: new RegExp(`${name}'s verdict`, 'u') });
+    verdict.remove();
+    await userEvent.click(within(again).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(within(document.body).getByRole('table', { name: 'Moderation log' })).toHaveFocus());
   });
 });
 

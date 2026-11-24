@@ -965,7 +965,7 @@ describe('My log: Spin thread on a report\'s and an appeal\'s answer', () => {
 
   test('a report row with a verdict has "Spin thread", labeled by the Mod\'s name, which opens the spin form from the verdict and returns focus on cancel', async () => {
     const { fake, me, pipe, gp } = answered();
-    void fake.fileReport(pipe, gp, 'rude');
+    await fake.fileReport(pipe, gp, 'rude');
     await open(fake, me, pipe);
     await screen.findByRole('table');
     const verdict = (await fake.log()).reports[0]!.answer!;
@@ -980,13 +980,48 @@ describe('My log: Spin thread on a report\'s and an appeal\'s answer', () => {
     await waitFor(() => expect(button).toHaveFocus());
   });
 
-  test('an appeal row with a ruling has it too, labeled as the ruling; a row with no answer has none', async () => {
+  test('when the opener is gone as the form closes, focus goes to the log\'s table and not to the page', async () => {
+    const { fake, me, pipe, gp } = answered();
+    await fake.fileReport(pipe, gp, 'rude');
+    await open(fake, me, pipe);
+    const table = await screen.findByRole('table');
+    const button = await screen.findByRole('button', { name: 'Spin thread from The Clerk\'s verdict' });
+    await userEvent.click(button);
+    const form = await screen.findByRole('form', { name: /The Clerk's verdict/u });
+    button.remove();
+    await userEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(table).toHaveFocus());
+  });
+
+  test('moving to another row\'s Spin thread keeps the first one\'s draft for when it is pressed again', async () => {
     const { fake, me, pipe, inf, gp } = answered();
-    void fake.fileAppeal(pipe, inf, 'It was a mistake.');
-    fake.seed.judging({ report: 'failed' });
-    void fake.fileReport(pipe, gp, 'rude');
+    await fake.fileReport(pipe, gp, 'rude');
+    await fake.fileAppeal(pipe, inf, 'It was a mistake.');
     await open(fake, me, pipe);
     await screen.findByRole('table');
+    const first = await screen.findByRole('button', { name: 'Spin thread from The Clerk\'s verdict' });
+    const second = await screen.findByRole('button', { name: 'Spin thread from The Clerk\'s ruling' });
+    await userEvent.click(first);
+    await userEvent.type(await screen.findByRole('textbox', { name: 'Thread title' }), 'First draft');
+    await userEvent.click(second);
+    const other = await screen.findByRole('form', { name: /ruling/u });
+    expect(within(other).getByRole('textbox', { name: 'Thread title' })).toHaveValue('');
+    await userEvent.type(within(other).getByRole('textbox', { name: 'Thread title' }), 'Second draft');
+    await userEvent.click(first);
+    expect(await screen.findByRole('textbox', { name: 'Thread title' })).toHaveValue('First draft');
+    await userEvent.click(second);
+    expect(await screen.findByRole('textbox', { name: 'Thread title' })).toHaveValue('Second draft');
+  });
+
+  test('an appeal row with a ruling has it too, labeled as the ruling; a row with no answer has none', async () => {
+    const { fake, me, pipe, inf, gp } = answered();
+    await fake.fileAppeal(pipe, inf, 'It was a mistake.');
+    fake.seed.judging({ report: 'failed' });
+    await fake.fileReport(pipe, gp, 'rude');
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    /* The failed report's row is there, and has no answer, so no button of its own. */
+    expect(await screen.findByText(/could not hear it, so your Aura came back/u)).toBeInTheDocument();
     expect(await screen.findByRole('button', { name: 'Spin thread from The Clerk\'s ruling' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: /verdict/u })).toBeNull();
     expect(screen.getAllByRole('button', { name: /^Spin thread from/u })).toHaveLength(1);
@@ -1014,6 +1049,23 @@ describe('My log: the way out of a ban', () => {
     await userEvent.click(within(form).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
     await waitFor(() => expect(within(form).getByRole('status')).toHaveTextContent('The Boss heard it'));
     expect((await fake.log()).appeals[0]).toMatchObject({ punishment: ban, punishmentKind: 'ban' });
+  });
+
+  test('the ban appeal\'s answer spins from the log: the overlay closes, the spin form opens named for the ruling (never "the Boss", who may not be the hearer), and focus is not left on the page', async () => {
+    const { fake, me, pipe } = banned();
+    await open(fake, me, pipe);
+    await screen.findByRole('table');
+    const appeal = await screen.findByRole('button', { name: 'Appeal to the Boss · 0.50 Aura' });
+    await userEvent.click(appeal);
+    const overlay = await screen.findByRole('dialog', { name: 'Appeal the ban' });
+    await userEvent.type(await within(overlay).findByRole('textbox', { name: 'Your plea (public)' }), 'I have learned.');
+    await userEvent.click(within(overlay).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    await userEvent.click(await within(overlay).findByRole('button', { name: 'Spin thread from the ruling' }));
+    await waitFor(() => expect(screen.queryByRole('dialog', { name: 'Appeal the ban' })).toBeNull());
+    const form = await screen.findByRole('form', { name: /the ruling/u });
+    await userEvent.click(within(form).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(screen.queryByRole('form', { name: /the ruling/u })).toBeNull());
+    await waitFor(() => expect(document.body).not.toHaveFocus());
   });
 
   test('an appeal whose judgment failed leaves the offer, as its own line says you can appeal again', async () => {

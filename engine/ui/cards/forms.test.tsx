@@ -517,4 +517,24 @@ describe('Spin thread on a form\'s answer', () => {
     await userEvent.click(within(spin).getByRole('button', { name: 'Cancel' }));
     await waitFor(() => expect(report).toHaveFocus());
   });
+
+  test('an appeal through a post (the Lens): Spin thread closes the Lens, the post hosts the spin form named for the hearer, and cancelling returns focus', async () => {
+    const w = world();
+    const visit = w.fake.seed.visit(w.clerk, w.mine, { at: Date.now() - 4 * 3_600_000, endsInMs: 3_600_000 });
+    w.fake.seed.visitEnd(visit, { outcome: 'filed', line: 'Filed.' });
+    w.fake.seed.infraction(visit, { points: 2 });
+    w.fake.seed.judging({ appeal: 'upheld' });
+    open(w);
+    await userEvent.click(await within(await article(3)).findByRole('button', { name: /Opens the visit\.$/u }));
+    const visitPanel = await dialog(/^Visit/u);
+    await userEvent.click(await within(visitPanel).findByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    const panel = await dialog('Appeal on this post');
+    await userEvent.type(await within(panel).findByRole('textbox', { name: 'Your plea (public)' }), 'Please.');
+    await userEvent.click(within(panel).getByRole('button', { name: 'Appeal · 0.50 Aura' }));
+    await userEvent.click(await within(panel).findByRole('button', { name: 'Spin thread from The Clerk\'s ruling' }));
+    const spin = await screen.findByRole('form', { name: /The Clerk's ruling/u });
+    await userEvent.click(within(spin).getByRole('button', { name: 'Cancel' }));
+    await waitFor(() => expect(document.body).not.toHaveFocus());
+    expect(screen.queryByRole('form', { name: /The Clerk's ruling/u })).toBeNull();
+  });
 });

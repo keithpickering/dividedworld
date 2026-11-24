@@ -328,7 +328,7 @@ export function AppealForm({ infraction, visit, nameOf, modPronouns = null, ban,
           ? <>Your appeal was made, and it is public. Its ruling will be in the thread.</>
           : <>{mod} heard it and {ban ? banRulingWords(result.verdict) : move ? moveRulingWords(result.verdict) : rulingWords(result.verdict)}.{result.line.trim() !== '' && <> {mod} said: {quoted(result.line)}</>}</>)}
       </p>
-      {onSpin && result !== null && result.answer !== null && <SpinAnswerButton answer={result.answer} label={ban || move ? `${lowerFirst(mod)}'s ruling` : visit ? `${mod}'s ruling` : 'the ruling'} onSpin={onSpin} />}
+      {onSpin && result !== null && result.answer !== null && <SpinAnswerButton answer={result.answer} label={move ? `${lowerFirst(mod)}'s ruling` : !ban && visit ? `${mod}'s ruling` : 'the ruling'} onSpin={onSpin} />}
     </form>
   );
 }

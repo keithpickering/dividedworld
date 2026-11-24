@@ -11,7 +11,7 @@
  *
  * A Mod Bot's log is empty until Part 3 gives it visits, and the empty state says so.
  */
-import { useCallback, useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
+import { useCallback, useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { useKayfa } from '../context.tsx';
 import type { BoardName, Character, CharacterCounts, MoveLogRow, MovesCursor, StaffProfile as StaffProfileData } from '../data/api.ts';
 import { careerText, type Career } from '../../system/career.ts';
@@ -187,6 +187,7 @@ function ModerationLog({ staff, bot, pronouns, name }: { readonly staff: string;
   const characterOf = useMoveCharacters(rows ?? []);
   const [spinOrigin, setSpinOrigin] = useState<SpinOrigin | null>(null);
   const drafts = useSpinDrafts();
+  const table = useRef<HTMLTableElement>(null);
 
   useEffect(() => {
     let live = true;
@@ -225,11 +226,11 @@ function ModerationLog({ staff, bot, pronouns, name }: { readonly staff: string;
         <SpinForm
           key={spinOrigin.id} origin={spinOrigin.id} label={spinOrigin.label}
           draft={drafts.get(spinOrigin.id)} onDraft={(d) => drafts.set(spinOrigin.id, d)}
-          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); back?.focus(); }}
+          onClose={() => { const back = spinOrigin.opener; setSpinOrigin(null); (back?.isConnected ? back : table.current)?.focus(); }}
         />
       )}
       {rows !== null && rows.length > 0 && (
-        <table className="kb-table kb-modlog" role="table" aria-labelledby={heading}>
+        <table ref={table} tabIndex={-1} className="kb-table kb-modlog" role="table" aria-labelledby={heading}>
           <thead role="rowgroup">
             <tr role="row"><td role="cell" className="kb-bar" colSpan={3}><h2 id={heading}>Moderation log</h2></td></tr>
             <tr role="row"><th role="columnheader" scope="col">When</th><th role="columnheader" scope="col">What {pw.they} did</th><th role="columnheader" scope="col">How it ended</th></tr>
