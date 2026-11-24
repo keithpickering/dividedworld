@@ -943,7 +943,7 @@ describe('the Mod Bots\' lines', () => {
     const ban = { ban: 'b1', character: 'p', at: '2099-10-30T12:15:00.000Z', days: 3, until: '2099-11-02T12:15:00.000Z', infraction: 'i1', rule: null, thread: T, ruling: null, ownUntil: '2099-11-02T12:15:00.000Z', liftedAt: null, liftedCard: null };
     expect(rowsOf({ bans: [ban] })[0]!.appealBan).toEqual({ ban: 'b1', character: 'p', until: ban.until, days: 3, rule: null });
     expect(rowsOf({ bans: [{ ...ban, until: '2000-01-02T00:00:00.000Z' }] })[0]!.appealBan).toBeUndefined();
-    const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'b1', punishmentKind: 'ban', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
+    const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'b1', punishmentKind: 'ban', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null, answer: null } as const;
     expect(rowsOf({ bans: [ban], appeals: [appeal] }).find((r) => r.kind === 'ban')!.appealBan).toBeUndefined();
     expect(rowsOf({ bans: [ban], appeals: [{ ...appeal, verdict: 'upheld' }] }).find((r) => r.kind === 'ban')!.appealBan).toBeUndefined();
     /* An appeal that was refunded (a failed or a stale judgment) leaves the ban appealable, as its own line says. */
@@ -986,7 +986,7 @@ describe('the Mod Bots\' lines', () => {
     ({ settlement: null, kind, change, overflow: 0, floored: 0, balanceAfter: 100, ref, at: '2099-10-29T17:00:00.000Z' });
 
   test('a report says the verdict, what it cost and that it is public; an unanswered one says what happens next; a refunded one says its Aura came back', () => {
-    const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: null, verdictAt: null, mod: null, refund: null } as const;
+    const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: null, verdictAt: null, mod: null, refund: null, answer: null } as const;
     const dismissed = rowsOf({ wallet: [paid('report', 'r1', -25)], reports: [{ ...base, verdict: 'dismissed', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk' }] })[0]!;
     expect(dismissed).toMatchObject({ kind: 'report', aura: -25, characters: ['q'] });
     expect(said(dismissed)).toBe('Pipewrench reported post #42, for 0.25 Aura. The report is public. The Clerk dismissed it. The 0.25 Aura was spent.');
@@ -999,7 +999,7 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('a visit verdict that opened no visit says why, that the Aura came back and that it still counts for the day; a free one has no amount; a visit with no refund says it sent one', () => {
-    const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'visit', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk', refund: null } as const;
+    const base = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'visit', verdictAt: '2099-10-29T17:00:03.000Z', mod: 'The Clerk', refund: null, answer: null } as const;
     const wallet = [paid('refund', 'r1', 25), paid('report', 'r1', -25)];
     const veiled = rowsOf({ wallet, reports: [{ ...base, refund: 'veiled' }] })[0]!;
     expect(veiled.aura).toBe(0);
@@ -1014,7 +1014,7 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('an appeal says what it was of, the ruling, the points and the price', () => {
-    const base = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
+    const base = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null, answer: null } as const;
     const overturned = rowsOf({ wallet: [paid('appeal', 'a1', -50), paid('refund', 'a1', 50)], appeals: [{ ...base, verdict: 'overturned', pointsDelta: -2, hearer: 'The Clerk' }] })[0]!;
     expect(overturned).toMatchObject({ kind: 'appeal', aura: 0 });
     expect(said(overturned)).toBe('Spritey appealed the warn points from your post #41, for 0.50 Aura. The plea is public. The Clerk overturned it: 2 points came off, and the 0.50 Aura came back.');
@@ -1027,11 +1027,11 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('the Aura is what the wallet\'s events say was paid, never today\'s price (the settings now say 25 and 50)', () => {
-    const report = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'dismissed', verdictAt: null, mod: 'The Clerk', refund: null } as const;
+    const report = { report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: 'dismissed', verdictAt: null, mod: 'The Clerk', refund: null, answer: null } as const;
     const row = rowsOf({ wallet: [paid('report', 'r1', -10)], reports: [report] })[0]!;
     expect(row.aura).toBe(-10);
     expect(said(row)).toContain('for 0.10 Aura. The report is public. The Clerk dismissed it. The 0.10 Aura was spent.');
-    const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'upheld', ruledAt: null, pointsDelta: null, hearer: 'The Clerk', refund: null } as const;
+    const appeal = { appeal: 'a1', character: 'p', at: '2099-10-30T13:00:00.000Z', punishment: 'i1', punishmentKind: 'infraction', postSeq: 41, thread: T, verdict: 'upheld', ruledAt: null, pointsDelta: null, hearer: 'The Clerk', refund: null, answer: null } as const;
     const a = rowsOf({ wallet: [paid('appeal', 'a1', -30)], appeals: [appeal] })[0]!;
     expect(a.aura).toBe(-30);
     expect(said(a)).toContain('for 0.30 Aura.');
@@ -1052,7 +1052,7 @@ describe('the Mod Bots\' lines', () => {
   });
 
   test('each is in the tab of its own character, and in All; one character\'s lines are not in another\'s tab', () => {
-    const log = { infractions: [inf()], reports: [{ report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: null, verdictAt: null, mod: null, refund: null }] } satisfies Partial<Log>;
+    const log = { infractions: [inf()], reports: [{ report: 'r1', character: 'q', at: '2099-10-29T17:00:00.000Z', post: 'p42', postSeq: 42, thread: T, verdict: null, verdictAt: null, mod: null, refund: null, answer: null }] } satisfies Partial<Log>;
     expect(rowsOf(log, 'p').map((r) => r.kind)).toEqual(['infraction']);
     expect(rowsOf(log, 'q').map((r) => r.kind)).toEqual(['report']);
     expect(rowsOf(log, null).map((r) => r.kind).sort()).toEqual(['infraction', 'report']);
@@ -1152,7 +1152,7 @@ describe('the group lines', () => {
   });
 
   test('an appeal of a group move says what it was of, by the group\'s name and linked to the move, the ruling and the price; the lines for the move itself are Task 11\'s', () => {
-    const appeal = { appeal: 'a9', character: 'p', at: '2099-11-06T13:00:00.000Z', punishment: 'm1', punishmentKind: 'move', postSeq: null, thread: 'ann', verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null } as const;
+    const appeal = { appeal: 'a9', character: 'p', at: '2099-11-06T13:00:00.000Z', punishment: 'm1', punishmentKind: 'move', postSeq: null, thread: 'ann', verdict: null, ruledAt: null, pointsDelta: null, hearer: null, refund: null, answer: null } as const;
     const paidFor = (kind: 'appeal' | 'refund', change: number): Log['wallet'][number] => ({ settlement: null, kind, change, overflow: 0, floored: 0, balanceAfter: 100, ref: 'a9', at: '2099-11-06T13:00:00.000Z' });
     const mineRows = (appeals: Log['appeals'], wallet: Log['wallet'] = [paidFor('appeal', -50)]) => logRows(data({ log: { ...empty, groupMoves: [move()], appeals, wallet }, mine }), groupWords, 600, null).filter((r) => r.kind === 'appeal');
     const open = mineRows([appeal])[0]!;

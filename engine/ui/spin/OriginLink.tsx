@@ -15,7 +15,8 @@ import { placeParts } from './place.ts';
 export function OriginLink({ place, perPage, faces }: { readonly place: OriginPlace | null; readonly perPage: number; readonly faces?: (id: string) => Character | undefined }) {
   const { instance } = useKayfa();
   if (place === null) return <>an Act</>;
-  const parts = placeParts(place, (key) => instance.cards.find((c) => c.key === key)?.name, perPage);
+  const groups = [...instance.groups.ladder, ...instance.groups.conferred];
+  const parts = placeParts(place, (key) => instance.cards.find((c) => c.key === key)?.name, (key) => groups.find((g) => g.key === key)?.name, perPage);
   return (
     <>
       {parts.map((part, i) => (

@@ -15,6 +15,7 @@ import type { CardUi, EffectProps } from '../cards/types.ts';
 import { ThreadScreen } from '../thread/Thread.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { bodyOf, liftedOver } from '../cards/body.ts';
+import { testGroups } from '../../rules/test-system.ts';
 
 beforeEach(() => {
   localStorage.clear();
@@ -1626,5 +1627,146 @@ describe('the opening post\'s strip and the ORIGIN band\'s marks are separate', 
     const opening = await screen.findByRole('article', { name: /^Post 1 /u });
     const mark = await within(opening).findByRole('button', { name: /Opens the visit\.$/u });
     expect(mark.closest('.kb-act-meta')).not.toBeNull();
+  });
+});
+
+/* A thread spun from a report, a Mod's verdict, an appeal or a ruling draws the exchange (spin-mod-answers plan, Task 5). */
+describe('the ORIGIN box of a thread spun from an ask or an answer', () => {
+  const DAY = 86_400_000;
+  function desk() {
+    const w = threadWorld(3);
+    const mod = w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
+    const post = w.ids[1]!;
+    const visit = () => w.fake.seed.visit(mod, post, {});
+    return { ...w, mod, post, visit };
+  }
+  type Desk = ReturnType<typeof desk>;
+  /** Each case: the ask and its answer on the desk, the words the box must show. */
+  const cases: readonly { readonly name: string; readonly make: (d: Desk) => { ask: string; answer: string }; readonly said: string; readonly line: string; readonly plain: RegExp }[] = [
+    {
+      name: 'a dismissed report', said: 'This was rude.', line: 'Nothing to see here.', plain: /Mod Staff dismissed it\. No visit opened\./u,
+      make: (d) => { const ask = d.fake.seed.report(d.pipe, d.post, 'This was rude.'); return { ask, answer: d.fake.seed.verdict(ask, d.mod, 'dismissed', { line: 'Nothing to see here.' }) }; },
+    },
+    {
+      name: 'a report heard as a visit', said: 'This was rude.', line: 'I will take a look.', plain: /Mod Staff sent a visit to the post\./u,
+      make: (d) => { const ask = d.fake.seed.report(d.pipe, d.post, 'This was rude.'); return { ask, answer: d.fake.seed.verdict(ask, d.mod, 'visit', { line: 'I will take a look.', visit: d.visit() }) }; },
+    },
+    {
+      name: 'a backfire', said: 'This was rude.', line: 'You, however, were.', plain: /Mod Staff judged it a backfire, but no visit opened\./u,
+      make: (d) => { const ask = d.fake.seed.report(d.pipe, d.post, 'This was rude.'); return { ask, answer: d.fake.seed.verdict(ask, d.mod, 'backfire', { line: 'You, however, were.' }) }; },
+    },
+    {
+      name: 'an appeal of an infraction', said: 'It was a joke.', line: 'It stays.', plain: /Mod Staff upheld it\. Nothing changed\./u,
+      make: (d) => { const ask = d.fake.seed.appeal(d.pipe, d.fake.seed.infraction(d.visit()), 'It was a joke.'); return { ask, answer: d.fake.seed.ruling(ask, d.mod, 'upheld', { line: 'It stays.' }) }; },
+    },
+    {
+      name: 'an appeal of a ban', said: 'It was a joke.', line: 'Shorter, then.', plain: /Mod Staff reduced it: it ends /u,
+      make: (d) => {
+        const ban = d.fake.seed.ban(d.pipe, d.fake.clock.now() + 5 * DAY, { infraction: d.fake.seed.infraction(d.visit()) });
+        const ask = d.fake.seed.appeal(d.pipe, ban, 'It was a joke.');
+        return { ask, answer: d.fake.seed.ruling(ask, d.mod, 'reduced', { line: 'Shorter, then.', until: d.fake.clock.now() + DAY }) };
+      },
+    },
+    {
+      name: 'an appeal of a move', said: 'It was a joke.', line: 'Undone.', plain: /Mod Staff overturned it: it ended /u,
+      make: (d) => {
+        const move = d.fake.seed.groupMove('s-mod', { character: d.pipe, group: testGroups.conferred[0]!.key });
+        const ask = d.fake.seed.appeal(d.pipe, move, 'It was a joke.');
+        return { ask, answer: d.fake.seed.ruling(ask, d.mod, 'overturned', { line: 'Undone.', until: d.fake.clock.now() + DAY }) };
+      },
+    },
+  ];
+
+  for (const c of cases) {
+    for (const from of ['ask', 'answer'] as const) {
+      test(`${c.name}, spun from its ${from}, shows the asker's words, the staff's, the plain line and the post link`, async () => {
+        const d = desk();
+        const made = c.make(d);
+        const spun = await spinFrom(d, made[from]);
+        openSpun(d, spun);
+        const box = await origin();
+        await waitFor(() => expect(box).toHaveTextContent(c.said));
+        expect(box).toHaveTextContent(c.line);
+        expect(within(box.querySelector('.kb-origin-area') as HTMLElement).getByText(c.plain)).toBeInTheDocument();
+        for (const [name, id] of [['Pipewrench', d.pipe], ['Mod Staff', d.mod]] as const) {
+          const links = within(box.querySelector('.kb-origin-area') as HTMLElement).getAllByRole('link', { name });
+          for (const l of links) expect(l).toHaveAttribute('href', `/c/${encodeURIComponent(id)}`);
+        }
+        /* A verdict is a Mod's; the seeded ruling carries no office stamp, so it names no role. */
+        if (c.name.includes('report') || c.name === 'a backfire') expect(box).toHaveTextContent('A Mod'); else expect(box).not.toHaveTextContent('A Mod');
+        expect(box).not.toHaveTextContent('Not answered yet.');
+        /* The exchange carries its own two bylines: the box draws none over the area. */
+        expect(box.querySelector('.kb-origin-byline')).toBeNull();
+        const link = within(box.querySelector('.kb-origin-area') as HTMLElement).getByRole('link', { name: /^Go to post #\d+$/u });
+        expect(link.getAttribute('href')).toMatch(/^\/t\//u);
+      });
+    }
+  }
+
+  test('a spin of an unanswered report shows "Not answered yet." in place of the answer and the plain line', async () => {
+    const d = desk();
+    const ask = d.fake.seed.report(d.pipe, d.post, 'Still waiting.');
+    openSpun(d, await spinFrom(d, ask));
+    const box = await origin();
+    await waitFor(() => expect(box).toHaveTextContent('Still waiting.'));
+    expect(box).toHaveTextContent('Not answered yet.');
+    expect(box).not.toHaveTextContent('Mod Staff');
+    expect(within(box).getByRole('link', { name: 'Go to post #2' })).toBeInTheDocument();
+  });
+
+  test('a failed read shows Try again, and pressing it reads again', async () => {
+    const d = desk();
+    const ask = d.fake.seed.report(d.pipe, d.post, 'Try me.');
+    const spun = await spinFrom(d, ask);
+    const read = vi.spyOn(d.fake, 'exchange').mockRejectedValueOnce(new Error('offline'));
+    openSpun(d, spun);
+    const box = await origin();
+    const retry = await within(box).findByRole('button', { name: 'Try again' });
+    expect(box).toHaveTextContent('The exchange did not load.');
+    expect(read).toHaveBeenCalledTimes(1);
+    await userEvent.click(retry);
+    await waitFor(() => expect(box).toHaveTextContent('Try me.'));
+    expect(read).toHaveBeenCalledTimes(2);
+    expect(within(box).queryByRole('button', { name: 'Try again' })).toBeNull();
+  });
+
+  test('focus stays on the exchange\'s box after Try again is pressed and after the read settles', async () => {
+    const d = desk();
+    const spun = await spinFrom(d, d.fake.seed.report(d.pipe, d.post, 'Focus me.'));
+    vi.spyOn(d.fake, 'exchange').mockRejectedValueOnce(new Error('offline'));
+    openSpun(d, spun);
+    const box = await origin();
+    await userEvent.click(await within(box).findByRole('button', { name: 'Try again' }));
+    const frame = box.querySelector('.kb-exchange') as HTMLElement;
+    expect(frame).toHaveFocus();
+    await waitFor(() => expect(box).toHaveTextContent('Focus me.'));
+    expect(box.querySelector('.kb-exchange')).toBe(frame);
+    expect(frame).toHaveFocus();
+  });
+
+  test('a Boss\'s ruling names the Boss\'s role, a Mod\'s a Mod, and one with no office stamp names none', async () => {
+    const d = desk();
+    const ask = d.fake.seed.appeal(d.pipe, d.fake.seed.infraction(d.visit()), 'Please.');
+    const ruling = d.fake.seed.ruling(ask, d.mod, 'upheld', { line: 'No.' });
+    let stamp: 'boss' | 'mod' | undefined;
+    const real = d.fake.exchange.bind(d.fake);
+    vi.spyOn(d.fake, 'exchange').mockImplementation(async (id) => {
+      const got = await real(id);
+      const { office: _drop, ...rest } = got.answer!.payload;
+      return { ...got, answer: { ...got.answer!, payload: stamp === undefined ? rest : { ...rest, office: stamp } } };
+    });
+    const role = async (office: 'boss' | 'mod' | undefined) => {
+      stamp = office;
+      cleanup();
+      openSpun(d, await spinFrom(d, ruling, `Spun ${String(office)}`));
+      const box = await origin();
+      await waitFor(() => expect(box).toHaveTextContent('No.'));
+      return (box.querySelectorAll('.kb-exchange-by')[1] as HTMLElement).textContent;
+    };
+    expect(await role('boss')).toContain('The Boss');
+    expect(await role('mod')).toContain('A Mod');
+    const bare = await role(undefined);
+    expect(bare).not.toContain('A Mod');
+    expect(bare).not.toContain('The Boss');
   });
 });

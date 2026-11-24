@@ -2,10 +2,10 @@
  * The words and the link of a spun thread's origin place (docs/plans/2026-11-04-origin-place-design.md, section 1). The place
  * comes with the thread's row, worked out in SQL; `placeParts` turns it into the phrase after "spun from", in the stretches that are
  * links, so the board's row and the ORIGIN box say the same thing, and `placeWords` and `placeHref` read the whole phrase and its
- * first address from it. The engine names no card: a key becomes
- * a name through `cardName`, which the instance's card list answers.
+ * first address from it. The engine names no card and no group: a key becomes a name through `cardName` or `groupName`, which the
+ * instance's card list and groups answer.
  */
-import { PLAY_FROM, type OriginPlace, type PlaceOn, type PostPlace } from '../data/api.ts';
+import { PLAY_FROM, type AnswerPlace, type OriginPlace, type PlaceOn, type PostPlace } from '../data/api.ts';
 import { pageOf, threadHref } from '../thread/pages.ts';
 
 const onWords = (on: PlaceOn): string => {
@@ -36,13 +36,37 @@ const cut = (question: string): string => { const chars = [...question]; return 
 const postWords = (p: PostPlace): string => `#${p.seq} in ${p.title}`;
 const cardWords = (card: string | null, cardName: (key: string) => string | undefined): string => card === null ? 'a face-down card' : cardName(card) ?? 'a card';
 
+/** A character's name as a part: a link to its profile, carrying its id. */
+const characterPart = (c: { readonly id: string; readonly name: string }): PlacePart => ({ words: c.name, href: `/c/${encodeURIComponent(c.id)}`, character: c.id });
+
+/**
+ * An exchange with a Mod Bot (docs/plans/2026-11-23-spin-mod-answers-design.md, section 3): "{staff}'s verdict on {asker}'s report of
+ * {post}", or "{staff}'s ruling on {asker}'s appeal of {what}"; an ask, or an answer with no staff, leaves the staff's lead off.
+ * A missing post reads "a post" with no link; a move names its group (the key where the instance lacks it, as the log does) and links
+ * to the move's line where there is one.
+ */
+function answerParts(place: AnswerPlace, groupName: (key: string) => string | undefined, perPage: number): readonly PlacePart[] {
+  const on = place.on;
+  const post: PlacePart = on === null ? { words: 'a post', href: null } : { words: postWords(on), href: onHref(on, perPage) };
+  const appeal = place.ask === 'appeal';
+  const what: readonly PlacePart[] = !appeal ? [post]
+    : place.punishment === 'move'
+      ? [{ words: 'the move into ', href: null }, { words: place.group === null ? 'a group' : groupName(place.group) ?? place.group, href: on === null ? null : onHref(on, perPage) }]
+    : [{ words: place.punishment === 'ban' ? 'the ban from ' : 'the warn points from ', href: null }, post];
+  const lead: readonly PlacePart[] = place.spun === 'answer' && place.staff !== null
+    ? [characterPart(place.staff), { words: appeal ? "'s ruling on " : "'s verdict on ", href: null }] : [];
+  return [...lead, characterPart(place.asker), { words: appeal ? "'s appeal of " : "'s report of ", href: null }, ...what];
+}
+
 /**
  * The phrase after "spun from", in the stretches that are links. A play on a character reads "Glitter Bomb on", the character (its
  * profile), then ", at #31 in ..." (the pressed post) or, with none, ", cast from #12 in ..." (the cast-from post); a server that
- * answers neither leaves the name alone. Every other place is one part. A face-down set and a key the instance lacks never name a
+ * answers neither leaves the name alone. An ask or an answer reads its staff, its asker and what was asked about, each a link where
+ * it can be (docs/plans/2026-11-23-spin-mod-answers-plan.md, Task 3). Every other place is one part. A face-down set and a key the instance lacks never name a
  * card. This is the one place the words are worked out: `placeWords` and `placeHref` read it.
  */
-export function placeParts(place: OriginPlace, cardName: (key: string) => string | undefined, perPage: number): readonly PlacePart[] {
+export function placeParts(place: OriginPlace, cardName: (key: string) => string | undefined, groupName: (key: string) => string | undefined, perPage: number): readonly PlacePart[] {
+  if (place.kind === 'answer') return answerParts(place, groupName, perPage);
   /* A poll and a ballot are one link, to the poll's post, whose words are the whole phrase. */
   if (place.kind === 'poll' || place.kind === 'ballot') {
     const poll = `the poll “${cut(place.question)}” on ${postWords(place.on)}`;
@@ -65,11 +89,11 @@ export function placeParts(place: OriginPlace, cardName: (key: string) => string
 }
 
 /** The whole phrase after "spun from", as plain words. */
-export function placeWords(place: OriginPlace, cardName: (key: string) => string | undefined): string {
-  return placeParts(place, cardName, 1).map(part => part.words).join('');
+export function placeWords(place: OriginPlace, cardName: (key: string) => string | undefined, groupName: (key: string) => string | undefined): string {
+  return placeParts(place, cardName, groupName, 1).map(part => part.words).join('');
 }
 
 /** Where the phrase goes first (a play on a character: the profile), or null where there is nowhere (a play whose target cannot be placed). */
 export function placeHref(place: OriginPlace, perPage: number): string | null {
-  return placeParts(place, () => undefined, perPage).find(part => part.href !== null)?.href ?? null;
+  return placeParts(place, () => undefined, () => undefined, perPage).find(part => part.href !== null)?.href ?? null;
 }

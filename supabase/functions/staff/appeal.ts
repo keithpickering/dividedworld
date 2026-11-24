@@ -183,7 +183,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   if (!closed.closed && closed.refunded && closed.expired) return answer(409, { appeal: opened.appeal, expired: true, error: closed.reason ?? 'That punishment had already run out, so nothing was ruled and your Aura is back.' });
   if (!closed.closed && closed.refunded) return answer(409, { appeal: opened.appeal, error: 'This appeal was refunded before it was ruled on. Appeal again if you still want it heard.' });
   return answer(200, {
-    appeal: opened.appeal, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, points_delta: closed.points_delta ?? 0,
+    appeal: opened.appeal, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, points_delta: closed.points_delta ?? 0, answer: closed.ruling_act ?? null,
     ...(closed.refunded_amount ? { refunded: closed.refunded_amount } : {}), ...(closed.until ? { until: closed.until } : {}),
   });
 }

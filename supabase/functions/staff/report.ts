@@ -176,7 +176,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   }
   return answer(200, {
     report: opened.report, verdict: closed.verdict ?? verdict, line: closed.line ?? repaired.line, visit: closed.visit ?? null,
-    refund: closed.refund ?? null,
+    refund: closed.refund ?? null, answer: closed.verdict_act ?? null,
     ...(move !== undefined ? { move } : {}),
   });
 }
