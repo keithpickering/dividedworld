@@ -2094,6 +2094,28 @@ test('an old voice is charged the prompt actually sent, a scrub\'s second ask co
   assert.equal(turn.of('write_staff_turn')[0]!.in_chars, m3.completions[0]!.prompt.length);
 });
 
+test('an old-voice turn whose scrub paid one ask and then failed on transport is charged the paid ask, not 0', async () => {
+  const old: Instance = { ...dividedWorld, system: { ...dividedWorld.system, scrubWords: ['badword'], roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } };
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
+  const m = fakeModels(normal);
+  m.models.complete = async (r) => { m.completions.push(r); if (m.completions.length === 2) throw new Error('transport down'); return result('you absolute badword'); };
+  const out = await run(d, m, old);
+  assert.ok(out.status === 'ok');
+  assert.equal(m.completions.length, 2);
+  assert.deepEqual(out.turns.map((t) => t.status), ['failed']);
+  assert.equal(d.state.attempts[0]!.chars, m.completions[0]!.prompt.length, 'the ask that was answered is charged; the one that never was is not');
+  assert.equal(d.state.attempts[0]!.paid, true, 'and the attempt is paid');
+});
+
+test('a write_staff_turn refusal after a paid call charges the pacer its characters, though nothing is written', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], turnRefusal: 'that session is not open now' });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['skipped']);
+  assert.equal(out.turns[0]!.chars, m.chats[0]!.system.length + m.chats[0]!.messages[0]!.content.length);
+});
+
 test('a call that was not paid is recorded as spending no characters', async () => {
   const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
   await run(d, fakeModels(() => new Error('provider down')));

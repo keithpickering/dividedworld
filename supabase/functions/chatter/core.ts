@@ -456,14 +456,18 @@ function limitsOf(settings: Instance['settings']) {
  * Counts the prompts a call sends, as the provider receives them: a chat call is its system and its messages, a raw completion its prompt (a scrub's second ask sends it again, and counts again).
  * This is the call's size, in characters, which is what the day is charged ("Cost is a column": the ledger holds the money, this holds the pace).
  */
-function counted(models: Models): { readonly models: Models; sent(): number } {
+function counted(models: Models): { readonly models: Models; sent(): number; answered(): number } {
   let n = 0;
+  let got = 0;
+  // `got` is the size of the asks that came back: a call that was never answered spends nothing, so a transport failure after a paid ask charges that ask alone.
+  const ask = async <T,>(size: number, call: () => Promise<T>): Promise<T> => { n += size; const out = await call(); got += size; return out; };
   return {
     models: {
-      chat: (r) => { n += r.system.length + r.messages.reduce((t, m) => t + m.content.length, 0); return models.chat(r); },
-      complete: (r) => { n += r.prompt.length; return models.complete(r); },
+      chat: (r) => ask(r.system.length + r.messages.reduce((t, m) => t + m.content.length, 0), () => models.chat(r)),
+      complete: (r) => ask(r.prompt.length, () => models.complete(r)),
     },
     sent: () => n,
+    answered: () => got,
   };
 }
 
@@ -559,9 +563,10 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
   // A turn that wrote nothing and was not skipped writes its attempt (record_turn_attempt, 0419), so the next round knows why: a refused reply stops waiting at once, a rejected one after two, a failed one keeps waiting,
   // and a paid call is spent against the day's characters: the size of the prompt it sent. A call that was not paid sent nothing the provider answered, and spends nothing.
   // If the attempt itself cannot be written the record still returns, and says so; only a run-stopping error is thrown.
-  const fail = async (outcome: 'refused' | 'rejected' | 'failed', paid: boolean, why: string, answers: readonly string[], trims: readonly Trim[]): Promise<TurnRecord> => {
+  const fail = async (outcome: 'refused' | 'rejected' | 'failed', paid: boolean, why: string, answers: readonly string[], trims: readonly Trim[], charged?: number): Promise<TurnRecord> => {
     const status = outcome === 'failed' ? 'failed' : 'rejected';
-    const chars = paid ? sender.sent() : 0;
+    // An unpaid failure still charges the asks that were answered before it (a scrub's first ask, then a transport failure on its second); a prompt never sent or never answered charges nothing.
+    const chars = charged ?? (paid ? sender.sent() : sender.answered());
     try {
       await db.rpc('record_turn_attempt', { staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, answers, outcome, paid, in_chars: chars });
       return { ...base, status, why, answers, trims, chars };
@@ -618,7 +623,8 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
         const unanswered = e instanceof SchemaRefused || e instanceof PromptTooLong || requestRefused(e);
         return fail(e.predicate === 'refusal' ? 'refused' : 'rejected', !unanswered, said(e), answers, []);
       }
-      return fail('failed', false, said(e), answers, []);
+      // A transport failure sent an ask nobody answered: the attempt is paid if an earlier ask was, and charged only those.
+      return fail('failed', sender.answered() > 0, said(e), answers, [], sender.answered());
     }
 
     const repaired = repairAnswer(raw, settings, false, []);
@@ -634,7 +640,8 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       post = written.post.id;
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      if (isRefusal(e) && e.hint === 'kayfabb.refusal') return { ...base, status: 'skipped', why: e.reason, answers, trims, chars: 0 };
+      // The call was paid though nothing was written, and the database takes no row for a refusal (record_turn_attempt would change whether the replies wait), so the pacer is charged in memory only.
+      if (isRefusal(e) && e.hint === 'kayfabb.refusal') return { ...base, status: 'skipped', why: e.reason, answers, trims, chars: sender.sent() };
       return fail('failed', true, said(e), answers, trims);
     }
 
@@ -651,7 +658,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent() };
   } catch (e) {
     if (stopsTheRun(e)) throw e;
-    if (e instanceof DatabaseError) return fail('failed', false, said(e), planned.answers, []);
+    if (e instanceof DatabaseError) return fail('failed', sender.answered() > 0, said(e), planned.answers, []);
     throw e;
   }
 }
