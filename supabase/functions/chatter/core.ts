@@ -20,9 +20,11 @@
  *      started (even with no session), so a round that dies earlier leaves the day unmarked and the next is a first round again, which keeps and draws the same (a second keep, a second
  *      write of the same rows, is a no-op in the database) and loses no pick.
  *   3. Each kept pick whose persona has a session open now, or none left in the day, is written by `onePick`, unchanged, and spent in `pool_spends` as ever. Every round adopts the day's orphans first.
- *   4. Turns: the replies waiting on the personas in session (`pool_waiting`), `roundShare` (what the day has earned so far by time, less what is spent), `planTurns`; each planned turn reads its conversation, thread, record,
- *      talking points, memory and notes, makes one light-tier call under the duty `conversation` (a chat call, or a raw completion for the old voice), repairs it as a pick's is (no card, no
- *      title), writes it whole with `write_staff_turn` and leaves its note. A refusal of `write_staff_turn` skips the turn; a failed or rejected call spends nothing and its replies wait.
+ *   4. Turns: the replies waiting on the personas in session (`pool_waiting`), `roundShare` (the characters the day has earned so far by time, less the characters charged: `pool_chars_today`), `planTurns`, and `pacer`: a turn starts while anything of the share is left, is charged
+ *      the size of the prompt it sent (a chat call's system and message, an old voice's frame; each ask a scrub repeats counts again), and may overdraw, after which the round starts no more. Each planned turn reads its thread whole
+ *      through `pool_read` and the reader (`readThread`, under `pool.readMost`; it answers the waiting replies the reader took, newest first, and the rest stay waiting), its record, talking points, memory and notes, makes one light-tier call under
+ *      the duty `conversation` (a chat call, or a raw completion for the old voice), repairs it as a pick's is (no card, no title), writes it whole with `write_staff_turn` and leaves its note. A refusal of `write_staff_turn` skips the turn;
+ *      a failed or rejected call whose answer was not paid for spends nothing and its replies wait.
  *   5. The outcome lists the picks written, the turns taken, skipped and failed, and the personas whose picks were kept.
  * **A crash between a turn's call and `write_staff_turn` spends nothing and loses nothing** (the call is a ledger row; the replies are still waiting); **an answer from `write_staff_turn` lost on
  * the way back** is a transport error, which stops the round, and the next round finds the replies answered (`pool_answered`) and writes no second turn: the write is never repeated on a guess (handler.ts).
@@ -51,7 +53,7 @@
  * the run: an unrecorded call is not trusted.
  *
  * **Cost does not grow with the instance.** One light-tier call per pick, at most the day's allowance (a week's pool over its days), and
- * reads bounded by the roster, the signals' own caps and `chatterThreadPosts`. Nothing here reads a row per player, character or Act.
+ * reads bounded by the roster, the signals' own caps and `pool_read`'s constants (and the reader's `readMost`). Nothing here reads a row per player, character or Act.
  *
  * Nothing private reaches the model: the signals come from the digest role, the thread from public play, and the memory and career are a
  * staff character's. A card's target is the post the pick replies to, or the persona's own post, chosen from the trigger, never from who
@@ -75,10 +77,8 @@ import {
   chatterSchema,
   repairChatter,
   type ChatterAnswer,
-  type ConversationView,
   type OfferedCard,
   type PublicRecord,
-  type ThreadPost,
 } from '../../../engine/system/chatter.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import type { Memory } from '../../../engine/system/memory.ts';
@@ -86,7 +86,8 @@ import type { Models } from '../../../engine/system/model.ts';
 import { scrubbedComplete } from '../../../engine/system/scrub.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import { drawSessions } from '../../../engine/system/sessions.ts';
-import { planTurns, roundShare, type AwakeSession, type OpenThread, type PlannedTurn } from '../../../engine/system/turns.ts';
+import { READ_WINDOW } from '../../../engine/system/read.ts';
+import { pacer, planTurns, roundShare, type AwakeSession, type OpenThread, type PlannedTurn } from '../../../engine/system/turns.ts';
 import {
   allowance,
   candidates,
@@ -104,6 +105,7 @@ import {
 } from '../../../engine/system/pool.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
+import { readOf, type PoolRead } from '../_shared/pool-read.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, requestRefused, SchemaRefused } from '../_shared/models/index.ts';
 
@@ -135,7 +137,7 @@ async function adoptOrphans(db: Db, today: string): Promise<PickRecord[]> {
   for (const o of found) {
     const base = { staff: o.staff, trigger: 'adopted', trims: [] as Trim[], day: o.day, post: o.act };
     try {
-      await db.rpc('record_pool_spend', { on_day: o.day, of_staff: o.staff, by_trigger: 'adopted', post: o.act, card: o.card, started: o.startedThread, note: { adopted: true } });
+      await db.rpc('record_pool_spend', { on_day: o.day, of_staff: o.staff, by_trigger: 'adopted', post: o.act, card: o.card, started: o.startedThread, note: { adopted: true }, in_chars: 0 });
     } catch (e) {
       if (stopsTheRun(e)) throw e;
       adopted.push({ ...base, status: 'failed', why: said(e) });
@@ -184,6 +186,8 @@ export interface TurnRecord {
   readonly answers: readonly string[];
   readonly trims: readonly Trim[];
   readonly noteWritten?: boolean;
+  /** The characters the turn was charged: the size of the prompt it sent (0 for a turn that sent none, or whose call was not paid). */
+  readonly chars?: number;
 }
 
 export type ChatterOutcome =
@@ -223,10 +227,8 @@ interface Week {
   readonly today: readonly { readonly staff: string; readonly card_act: string | null; readonly started_thread: boolean }[];
 }
 
-interface ThreadRead {
-  readonly title: string;
-  readonly posts: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string; readonly cut?: boolean }[];
-  /** The live surfaces on the page it reads (pool_thread), each its play, its card's key and a few plain words naming whose post it is on; absent where the database reports none. */
+/** The live surfaces on the page (`pool_thread`, the only read that reports them): each its play, its card's key and a few plain words naming whose post it is on; absent where the database reports none. */
+interface WallsRead {
   readonly walls?: readonly { readonly play: string; readonly card: string; readonly about: string }[];
 }
 /** The most walls a persona is offered to draw on, for each surface card. */
@@ -447,12 +449,22 @@ function keptRead<K extends { pick: PoolPick }>(k: K): K {
 }
 
 function limitsOf(settings: Instance['settings']) {
-  return { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
+  return { readMost: settings.pool.readMost, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength };
 }
 
-/** A thread read as the prompt shows it: each post's author's pronouns resolved to the instance's default where it has none. */
-function threadOf(read: ThreadRead, instanceSet: PronounSet) {
-  return { title: read.title, posts: read.posts.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true })) };
+/**
+ * Counts the prompts a call sends, as the provider receives them: a chat call is its system and its messages, a raw completion its prompt (a scrub's second ask sends it again, and counts again).
+ * This is the call's size, in characters, which is what the day is charged ("Cost is a column": the ledger holds the money, this holds the pace).
+ */
+function counted(models: Models): { readonly models: Models; sent(): number } {
+  let n = 0;
+  return {
+    models: {
+      chat: (r) => { n += r.system.length + r.messages.reduce((t, m) => t + m.content.length, 0); return models.chat(r); },
+      complete: (r) => { n += r.prompt.length; return models.complete(r); },
+    },
+    sent: () => n,
+  };
 }
 
 /** A character's name by id for the memory's opinions, with its pronouns beside it; a character the read did not return is "a character". */
@@ -482,43 +494,13 @@ async function personaReads(db: Db, settings: Instance['settings'], staff: strin
   return { career, memory, notes, faces };
 }
 
-/** The most replies to one of its posts a conversation view shows (the database clamps at ten). */
-const CONVERSATION_REPLIES = 10;
-
-interface ConversationRead {
-  readonly posts: readonly {
-    readonly act: string;
-    readonly body: string;
-    readonly cut?: boolean;
-    readonly replies: readonly { readonly act: string; readonly name: string; readonly pronouns: PronounSet | null; readonly body: string; readonly cut?: boolean }[];
-  }[];
-}
-
-/** What a call reads of a thread beside the thread itself: the persona's own conversation there, the public record, and its talking point. */
-async function threadReads(db: Db, settings: Instance['settings'], staff: string, thread: string) {
-  const [conversation, record, points] = await Promise.all([
-    db.rpc<ConversationRead>('pool_conversation', { staff_key: staff, in_thread: thread, most: settings.pool.chatterThreadPosts, replies: CONVERSATION_REPLIES, chars: settings.digestExcerptChars }),
-    db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: staff }),
-    db.rpc<string | null>('staff_points_latest', { staff_key: staff }),
-  ]);
-  return { conversation, record, points };
-}
-
-/** What a spin start reads of the origin's thread: the public record and the talking point, never the conversation. */
-async function spinReads(db: Db, staff: string, thread: string) {
+/** What a call reads of a thread beside the posts: the public record and the persona's talking point. A spin start reads the same of the origin's thread. */
+async function recordReads(db: Db, staff: string, thread: string) {
   const [record, points] = await Promise.all([
     db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: staff }),
     db.rpc<string | null>('staff_points_latest', { staff_key: staff }),
   ]);
-  return { conversation: null, record, points };
-}
-
-/** The view the prompt shows: pronouns resolved as a thread post's are, and the replies this call answers named. */
-function viewOf(c: ConversationRead, instanceSet: PronounSet, answering: readonly string[]): ConversationView {
-  return {
-    posts: c.posts.map((m) => ({ act: m.act, body: m.body, cut: m.cut === true, replies: m.replies.map((r) => ({ act: r.act, name: r.name, pronouns: pronounsOr(r.pronouns, instanceSet), body: r.body, cut: r.cut === true })) })),
-    answering,
-  };
+  return { record, points };
 }
 
 interface TurnsRun {
@@ -531,27 +513,32 @@ interface TurnsRun {
 }
 
 /**
- * The round's turns: the personas in session now, the replies waiting on them since the wait began, the day's share of the ceiling, and `planTurns`.
- * One after another, as the picks are. Nothing is read unless a persona is in session and the day has turns left.
+ * The round's turns: the personas in session now, the replies waiting on them since the wait began, the day's share of the characters, and `planTurns`.
+ * One after another, as the picks are. Nothing is read unless a persona is in session and the day has characters left. A turn's size is learned only when its prompt is built, so the round
+ * starts a turn while anything of its share is left (`pacer`) and charges each turn its prompt's size: a turn may overdraw, and no turn starts after that.
  */
 async function takeTurns(r: TurnsRun): Promise<TurnRecord[]> {
   const { db, tuned, context, slotAt, day } = r;
   const rules = tuned.settings.pool.turns;
   const awake = await db.rpc<AwakeSession[]>('sessions_awake', { at: new Date(slotAt).toISOString() });
   if (awake.length === 0) return [];
-  const spentToday = await db.rpc<number>('pool_turns_today', { on_day: day });
-  const share = roundShare(spentToday, rules.perDay, slotAt, cronMinutes(tuned.settings.pool.chatterCron));
+  const spentToday = Number(await db.rpc<number>('pool_chars_today', { on_day: day }));
+  const share = roundShare(spentToday, tuned.settings.pool.charsPerDay, slotAt, cronMinutes(tuned.settings.pool.chatterCron));
   if (share === 0) return [];
+  const pace = pacer(share);
   const keys = [...new Set(awake.map((a) => a.staff))].sort();
   const open = await db.rpc<OpenThread[]>('pool_waiting', { staff_keys: keys, since: new Date(slotAt - rules.waitHours * 3_600_000).toISOString() });
   const records: TurnRecord[] = [];
-  for (const planned of planTurns(open, awake, share, rules, slotAt)) {
+  for (const planned of planTurns(open, awake, rules, slotAt)) {
+    if (!pace.mayStart()) break;
     const persona = tuned.system.roster.find((p) => p.key === planned.staff);
     const office = context.offices[planned.staff];
     const base = { staff: planned.staff, thread: planned.thread, session: planned.session, answers: planned.answers, trims: [] as Trim[] };
     if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
     if (!isPosting(office)) { records.push({ ...base, status: 'skipped', why: 'the persona holds no posting office' }); continue; }
-    records.push(await oneTurn({ ...r, persona, office: office as PostingOffice, planned }));
+    const turn = await oneTurn({ ...r, persona, office: office as PostingOffice, planned });
+    records.push(turn);
+    pace.charge(turn.chars ?? 0);
   }
   return records;
 }
@@ -564,72 +551,60 @@ interface TurnRun extends TurnsRun {
 
 /** One turn, from its reads to its note. Never throws except for a run-stopping error. A write that was refused spends nothing and its replies wait; a call that failed, was rejected or was refused writes an attempt (below), which decides whether its replies wait. */
 async function oneTurn(r: TurnRun): Promise<TurnRecord> {
-  const { db, models, tuned, persona, planned } = r;
+  const { db, tuned, persona, planned } = r;
   const settings = tuned.settings;
   const base = { staff: planned.staff, thread: planned.thread, session: planned.session };
   const skip = (why: string, answers: readonly string[] = planned.answers): TurnRecord => ({ ...base, status: 'skipped', why, answers, trims: [] });
+  const sender = counted(r.models);
   // A turn that wrote nothing and was not skipped writes its attempt (record_turn_attempt, 0419), so the next round knows why: a refused reply stops waiting at once, a rejected one after two, a failed one keeps waiting,
-  // and a paid call is spent against the day's ceiling. If the attempt itself cannot be written the record still returns, and says so; only a run-stopping error is thrown.
+  // and a paid call is spent against the day's characters: the size of the prompt it sent. A call that was not paid sent nothing the provider answered, and spends nothing.
+  // If the attempt itself cannot be written the record still returns, and says so; only a run-stopping error is thrown.
   const fail = async (outcome: 'refused' | 'rejected' | 'failed', paid: boolean, why: string, answers: readonly string[], trims: readonly Trim[]): Promise<TurnRecord> => {
     const status = outcome === 'failed' ? 'failed' : 'rejected';
+    const chars = paid ? sender.sent() : 0;
     try {
-      await db.rpc('record_turn_attempt', { staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, answers, outcome, paid });
-      return { ...base, status, why, answers, trims };
+      await db.rpc('record_turn_attempt', { staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, answers, outcome, paid, in_chars: chars });
+      return { ...base, status, why, answers, trims, chars };
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      if (e instanceof DatabaseError) return { ...base, status, why: `${why} (attempt not recorded: ${said(e)})`, answers, trims };
+      if (e instanceof DatabaseError) return { ...base, status, why: `${why} (attempt not recorded: ${said(e)})`, answers, trims, chars };
       throw e;
     }
   };
   try {
     const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
-    const [view, read, reads] = await Promise.all([
-      threadReads(db, settings, planned.staff, planned.thread),
-      db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: planned.quoting }),
+    // One read of the thread for the persona: the opener, the newest window, the replies it answers (`named`), its own posts and what replies to them, whole (pool_read). The reader chooses from it.
+    const [pooled, extra, reads] = await Promise.all([
+      db.rpc<PoolRead>('pool_read', { in_thread: planned.thread, staff_key: planned.staff, named: planned.answers, window: READ_WINDOW }),
+      recordReads(db, planned.staff, planned.thread),
       personaReads(db, settings, planned.staff),
     ]);
-    // A turn answers every waiting reply it was handed, and is shown each: those in the conversation view, and for the rest (replies to an older post of its own) the one post
-    // read alone (`pool_thread` with `most` 0 and `more`, one bounded read of them all). A reply that cannot be read is not answered (the database would find it no longer waiting).
-    const shown = new Map<string, { name: string; pronouns: PronounSet | null; body: string; cut?: boolean }>(view.conversation.posts.flatMap((m) => m.replies.map((x) => [x.act, x] as const)));
-    const missing = planned.answers.filter((a) => !shown.has(a));
-    // All the older replies in one call (`more`, which the database reads up to 50 of).
-    const fetched = missing.length === 0 ? null : await db.rpc<ThreadRead>('pool_thread', { in_thread: planned.thread, most: 0, chars: settings.digestExcerptChars, also: null, more: missing });
-    const others: { act: string; name: string; pronouns: PronounSet; body: string; cut: boolean }[] = [];
-    missing.forEach((act) => {
-      const x = fetched?.posts.find((q) => q.act === act);
-      if (!x) return;
-      shown.set(act, x);
-      others.push({ act, name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true });
-    });
-    const answers = planned.answers.filter((a) => shown.has(a));
+    // A turn answers the replies the reader took, newest first while they fit `readMost` (the newest is always taken); a reply it did not take is not named, and stays waiting. A reply that cannot be read is not answered either
+    // (the database would find it no longer waiting).
+    const read = readOf(pooled, instanceSet, planned.answers, settings.pool.readMost);
+    const answers = read.answered;
     if (answers.length === 0) return skip('none of the waiting replies can be read');
-    const quoting = answers.includes(planned.quoting) ? planned.quoting : answers.at(-1)!;
-    const quotedRead = shown.get(quoting)!;
-    const quotedPost: ThreadPost = { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true };
+    const quoting = answers.at(-1)!;
     const limits = limitsOf(settings);
-    const thread = threadOf(read, instanceSet);
     const { career, memory, notes, faces } = reads;
 
     let raw: unknown;
     try {
       if (persona.voice === 'oldVoice') {
-        // The conversation view is its thread: each of its posts, then the replies to it, the newest last.
-        const own = pronounsOr(persona.pronouns, instanceSet);
-        const posts = view.conversation.posts.flatMap((m) => [{ name: persona.name, pronouns: own, body: m.body, cut: m.cut === true }, ...m.replies.map((x) => ({ name: x.name, pronouns: pronounsOr(x.pronouns, instanceSet), body: x.body, cut: x.cut === true }))]).concat(others);
         const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
-        const frame = chatterCompletion({ name: persona.name, thread: { title: read.title, posts }, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
-        const out = await scrubbedComplete(models, {
+        const frame = chatterCompletion({ name: persona.name, title: pooled.title, read, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
+        const out = await scrubbedComplete(sender.models, {
           duty: 'conversation', staff: planned.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: settings.postMaxLength,
         }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread, quoting: quotedPost,
-          trigger: 'answered', conversation: { ...viewOf(view.conversation, instanceSet, answers), others }, record: view.record, points: view.points,
-          // A turn offers no card: the ceiling counts calls and nothing else.
+          premise: TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title: pooled.title, read,
+          trigger: 'answered', record: extra.record, points: extra.points,
+          // A turn offers no card: the ceiling counts characters and nothing else.
           offeredCards: [], startThread: false, limits, names: namesOf(faces, instanceSet),
         });
-        const out = await models.chat({
+        const out = await sender.models.chat({
           duty: 'conversation', tier: DUTY_SPECS.conversation.tier, staff: planned.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
           schema: chatterSchema({ askedTitle: false, offered: [] }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
         });
@@ -654,12 +629,12 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     let post: string;
     try {
       const written = await db.rpc<{ turn: number; post: { id: string } }>('write_staff_turn', {
-        staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, quoting, answers, body: answer.words,
+        staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, quoting, answers, body: answer.words, in_chars: sender.sent(),
       });
       post = written.post.id;
     } catch (e) {
       if (stopsTheRun(e)) throw e;
-      if (isRefusal(e) && e.hint === 'kayfabb.refusal') return { ...base, status: 'skipped', why: e.reason, answers, trims };
+      if (isRefusal(e) && e.hint === 'kayfabb.refusal') return { ...base, status: 'skipped', why: e.reason, answers, trims, chars: 0 };
       return fail('failed', true, said(e), answers, trims);
     }
 
@@ -673,7 +648,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
         if (stopsTheRun(e)) throw e;
       }
     }
-    return { ...base, status: 'taken', post, answers, trims, noteWritten };
+    return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent() };
   } catch (e) {
     if (stopsTheRun(e)) throw e;
     if (e instanceof DatabaseError) return fail('failed', false, said(e), planned.answers, []);
@@ -697,8 +672,9 @@ interface PickRun {
 
 /** One pick, from its inputs to its spend. Never throws except for a run-stopping error. */
 async function onePick(r: PickRun): Promise<PickRecord> {
-  const { db, models, tuned, persona, p, day } = r;
+  const { db, tuned, persona, p, day } = r;
   const settings = tuned.settings;
+  const sender = counted(r.models);
   const base = { staff: p.staff, trigger: p.trigger };
   const skip = (why: string, trims: readonly Trim[] = []): PickRecord => ({ ...base, status: 'skipped', why, trims });
   const fail = (status: 'failed' | 'rejected', why: string, trims: readonly Trim[], extra: Partial<PickRecord> = {}): PickRecord => ({ ...base, status, why, trims, ...extra });
@@ -715,13 +691,14 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     const quotes = spins ? p.act : p.quoting;
     if (!startsThread && p.thread === null) return skip(r.threadsLeft > 0 ? 'no board on its beats to start a thread on' : 'no thread to reply in, and the week has no thread left');
 
-    const read = spins || !startsThread
-      ? await db.rpc<ThreadRead>('pool_thread', { in_thread: p.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: quotes })
-      : null;
     // A character with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set. The persona's own set is its file's, else the same.
     const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
-    const quotedRead = read && quotes ? (read.posts.find((x) => x.act === quotes) ?? null) : null;
-    const quotedPost: ThreadPost | null = quotedRead ? { name: quotedRead.name, pronouns: pronounsOr(quotedRead.pronouns, instanceSet), body: quotedRead.body, cut: quotedRead.cut === true } : null;
+    // The thread it reads, whole, through the reader: the post it writes on is named, so it is read first (and the hot reasons, which name the post it replies to, find it as the read's answered post).
+    const pooled = spins || !startsThread
+      ? await db.rpc<PoolRead>('pool_read', { in_thread: p.thread, staff_key: p.staff, named: quotes === null ? [] : [quotes], window: READ_WINDOW })
+      : null;
+    const read = pooled === null ? null : readOf(pooled, instanceSet, quotes === null ? [] : [quotes], settings.pool.readMost);
+    const quotedPost = read && quotes ? (read.posts.find((x) => x.act === quotes) ?? null) : null;
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only
     // when the day's allowance has a slot for a card.
@@ -730,19 +707,21 @@ async function onePick(r: PickRun): Promise<PickRecord> {
     // (the read does not show it). decideOptions still holds the limit if the post fills between the offer and the play.
     const offeredCasts = r.cardRoom && persona.voice === 'chat' && quotedPost !== null && quotes !== null && r.cardsOnOffer.some((c) => playOf(c) === 'cast' && c.drawsEffect !== undefined);
     const postFull = offeredCasts && (await db.rpc<number>('post_effects_up', { post: quotes })) >= settings.postEffects;
+    // The walls come from `pool_thread`, the one read that reports them (`pool_read` does not): asked only where a surface card is on offer, and its posts' bodies are not wanted (one character each).
+    const wantsWalls = r.cardRoom && persona.voice === 'chat' && quotedPost !== null && r.cardsOnOffer.some((c) => c.surface !== undefined && playOf(c) === 'cast');
+    const wallsRead = wantsWalls ? await db.rpc<WallsRead>('pool_thread', { in_thread: p.thread, most: READ_WINDOW, chars: 1, also: quotes, more: null }) : null;
     const offered: OfferedCard[] = r.cardRoom && persona.voice === 'chat'
       ? r.cardsOnOffer.filter((c) => (playOf(c) === 'set' ? !spins : quotedPost !== null && !(postFull && c.drawsEffect !== undefined))).map((c) => ({ key: c.key, name: c.name, play: playOf(c) as 'cast' | 'set', ...(c.staffOptions ? { options: c.staffOptions } : {}),
-        ...wallsOf(c, read) }))
+        ...wallsOf(c, wallsRead) }))
       : [];
 
     const { career, memory, notes, faces } = await personaReads(db, settings, p.staff, [p.subject]);
-    // The conversation in the thread, the public record and the persona's talking point, as a turn is given them (the old voice writes its words from the thread alone).
-    // A spin is shown the record and the talking point but no conversation: its persona's posts in the origin's thread are not in the new one.
-    const extra = read && persona.voice === 'chat' ? (spins ? await spinReads(db, p.staff, p.thread!) : await threadReads(db, settings, p.staff, p.thread!)) : null;
+    // The public record and the persona's talking point, as a turn is given them (the old voice writes its words from the thread alone).
+    const extra = read && persona.voice === 'chat' ? await recordReads(db, p.staff, p.thread!) : null;
     const points = persona.voice !== 'chat' ? null : extra !== null ? extra.points : await db.rpc<string | null>('staff_points_latest', { staff_key: p.staff });
 
     const limits = limitsOf(settings);
-    const thread = read ? threadOf(read, instanceSet) : null;
+    const title = pooled === null ? null : pooled.title;
 
     // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
     let raw: unknown;
@@ -750,18 +729,18 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       if (persona.voice === 'oldVoice') {
         // The window's room for the answer, then the prompt fitted to what is left (design section 3); a prompt that still does not fit is refused by `models.complete` as a rejection.
         const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
-        const frame = chatterCompletion({ name: persona.name, thread, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
-        const out = await scrubbedComplete(models, {
+        const frame = chatterCompletion({ name: persona.name, title, read, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
+        const out = await scrubbedComplete(sender.models, {
           duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: settings.postMaxLength,
         }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, thread,
-          quoting: quotedPost, conversation: extra?.conversation ? viewOf(extra.conversation, instanceSet, []) : null, record: extra?.record ?? null, points,
+          premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title, read,
+          record: extra?.record ?? null, points,
           trigger: p.trigger, subject: p.subject && faces[p.subject] ? p.subject : null, offeredCards: offered, startThread: startsThread, spinning: spins, limits, names: namesOf(faces, instanceSet),
         });
-        const out = await models.chat({
+        const out = await sender.models.chat({
           duty: 'chatter', tier: DUTY_SPECS.chatter.tier, staff: p.staff, system: frame.system, messages: [{ role: 'user', content: frame.message }],
           schema: chatterSchema({ askedTitle: startsThread, offered }), rules: CHATTER_RULE, maxTokens: CHATTER_TOKENS,
         });
@@ -882,7 +861,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       }
     }
     try {
-      await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post, card: card ?? null, started: startsThread, note: record });
+      await db.rpc('record_pool_spend', { on_day: day, of_staff: p.staff, by_trigger: p.trigger, post, card: card ?? null, started: startsThread, note: record, in_chars: sender.sent() });
     } catch (e) {
       if (stopsTheRun(e)) throw e;
       // The post stands with no row: the next run of the day adopts it (pool_orphans) and writes no second.
@@ -901,7 +880,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
 }
 
 /** A surface card's open walls on the page the persona reads, at most three: the card's own, never another's. */
-function wallsOf(card: Instance['cards'][number], read: ThreadRead | null): { walls?: readonly { play: string; about: string }[] } {
+function wallsOf(card: Instance['cards'][number], read: WallsRead | null): { walls?: readonly { play: string; about: string }[] } {
   if (card.surface === undefined) return {};
   const walls = (read?.walls ?? []).filter((w) => w.card === card.key).slice(0, WALLS_OFFERED).map((w) => ({ play: w.play, about: w.about }));
   return walls.length ? { walls } : {};

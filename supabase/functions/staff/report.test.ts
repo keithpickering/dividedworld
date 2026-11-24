@@ -30,6 +30,10 @@ interface World {
   closeSays?: Record<string, unknown>;
   /** What `mod_group_context` answers. */
   groups?: { conferred: { key: string; name: string; tone: string }[]; characters: { id: string; capped: boolean; held: boolean }[] };
+  /** The whole body `pool_read` gives the reported post. */
+  postBody?: string;
+  /** `pool_read` does not hold the reported post (hidden since the report). */
+  unreadable?: boolean;
 }
 
 function fakeDbs(w: World = {}) {
@@ -58,7 +62,7 @@ function fakeDbs(w: World = {}) {
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return [] as T;
         case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false } }])) as T;
-        case 'pool_thread': return { title: 'Best Mario game?', posts: [{ act: POST, name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: 'Odyssey. Odyssey.' }] } as T;
+        case 'pool_read': return { title: 'Best Mario game?', self: null, posts: w.unreadable ? [] : [{ act: POST, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'bob', name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
         case 'record_staff_call': { state.records.push(args); return { recorded: true } as T; }
         case 'close_report': {
           state.closed.push(args);
@@ -256,7 +260,8 @@ test('no judgment reads who owns a mask: no owner, class or reactor is read, and
   // The player's session never reaches the model or its prompt, and the service never calls open_report.
   assert.ok(!text.includes(THROUGH), 'the reporter\'s character id is not told to the model');
   assert.ok(text.includes('The report, from Ann (she/her)'), 'the reporter, with the pronouns the faces read gave');
-  assert.ok(text.includes('The post reported, by Bob (they/them)') && text.includes('Bob (they/them): Odyssey. Odyssey.'), 'the post and the thread');
+  assert.ok(text.includes('The post reported, by Bob (they/them), is post #1, marked (judged) above.') && text.includes('Bob (they/them) [post #1] (judged)\\nOdyssey. Odyssey.'), 'the post and the thread');
+  assert.deepEqual(d.calls.filter((c) => c.fn === 'pool_read').map((c) => c.args), [{ in_thread: THREAD, staff_key: MON, named: [POST], window: 60 }], 'one read, for the Mod, naming the reported post');
   assert.ok(text.includes('Your pronouns are'), 'the Mod is told its own');
 });
 
@@ -317,4 +322,27 @@ test('a barred account is answered 403 with the hint, and nothing is judged', as
   assert.deepEqual({ status: out.status, body: out.body }, { status: 403, body: { error: 'this account is banned', hint: 'kayfabb.barred' } });
   assert.equal(m.chats.length, 0);
   assert.deepEqual(d.calls.map((c) => c.fn), ['open_report']);
+});
+
+test('a report on a 5,000-character post passes it to the Mod whole, once, with no cut', async () => {
+  const long = `${'A very long case for the defense of the pineapple. '.repeat(100)}`.slice(0, 5_000);
+  assert.equal(long.length, 5_000);
+  const d = fakeDbs({ postBody: long });
+  const m = fakeModels(() => ({ verdict: 'dismissed', line: 'x' }));
+  const out = await go(d, m);
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.equal(message.split(long).length - 1, 1, 'the whole post is in the prompt exactly once');
+  assert.ok(!message.includes('…'), 'and nothing was cut');
+});
+
+test('a report whose post cannot be read is judged by no one: no call is made, nothing is closed, and the report is refunded', async () => {
+  const d = fakeDbs({ unreadable: true });
+  const m = fakeModels(() => ({ verdict: 'dismissed', line: 'x' }));
+  const out = await go(d, m);
+  assert.equal(out.status, 502);
+  assert.equal(m.chats.length, 0, 'the model is never asked to rule on a post it did not see');
+  assert.equal(d.state.closed.length, 0);
+  assert.equal(d.state.refunds, 1);
+  assert.match(String(out.body['error']), /refunded/);
 });

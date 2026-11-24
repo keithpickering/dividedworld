@@ -74,14 +74,15 @@ export function psqlDb(as?: string): Db {
         from pg_proc p, unnest(p.proargnames, p.proargtypes::oid[]) with ordinality as a(n, t, i)
         where p.proname = :'fn' and p.pronamespace = 'public'::regnamespace`, { fn });
       const typeOf = new Map(params.split(',').filter(Boolean).map((x) => x.split(':') as [string, string]));
+      // A parameter's name is quoted where it is written, as PostgREST names it: `window` (pool_read) is a reserved word.
       const named = Object.keys(args).map((k) => {
         const type = typeOf.get(k);
         if (!type) throw new Error(`${fn} has no parameter ${k}`);
-        if (type === 'jsonb' || type === 'json') return `${k} => (:'args'::jsonb -> '${k}')::${type}`;
+        if (type === 'jsonb' || type === 'json') return `"${k}" => (:'args'::jsonb -> '${k}')::${type}`;
         // A JSON array is an array parameter as PostgREST sends it (the patrol run's boards); its text is no array literal, so its elements are cast one by one.
         // A JSON null is SQL NULL, as PostgREST passes it.
-        if (type.endsWith('[]')) return `${k} => case when jsonb_typeof(:'args'::jsonb -> '${k}') = 'array' then array(select jsonb_array_elements_text(:'args'::jsonb -> '${k}'))::${type} end`;
-        return `${k} => (:'args'::jsonb ->> '${k}')::${type}`;
+        if (type.endsWith('[]')) return `"${k}" => case when jsonb_typeof(:'args'::jsonb -> '${k}') = 'array' then array(select jsonb_array_elements_text(:'args'::jsonb -> '${k}'))::${type} end`;
+        return `"${k}" => (:'args'::jsonb ->> '${k}')::${type}`;
       });
       try {
         const out = sql(`set role ${role};

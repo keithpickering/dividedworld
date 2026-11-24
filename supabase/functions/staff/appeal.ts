@@ -34,7 +34,7 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { instanceSet, learnMod, postFor, pronounsOfCharacter, said, threadFor, type ThreadRead } from './core.ts';
+import { instanceSet, judgedRead, learnMod, pronounsOfCharacter, said } from './core.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type AppealAnswer = DoorAnswer;
@@ -131,9 +131,10 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
 
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
   // A group move is announced in the Announcements thread and is about no post: there is nothing there for the hearer to read.
-  const read: ThreadRead = opened.post === null ? { title: '', posts: [] } : await db.rpc<ThreadRead>('pool_thread', { in_thread: opened.thread, most: settings.pool.chatterThreadPosts, chars: settings.digestExcerptChars, also: opened.post });
+  const heard = opened.post === null ? null : await judgedRead(db, settings, opened.thread, opened.staff, opened.post);
+  // A punishment of a post (an infraction or a ban) is never ruled on without the post read: nothing is judged, and the appeal is refunded as any appeal no one could hear is. A move is about no post.
+  if (opened.kind !== 'move' && !heard?.judged) throw new Error('the punished post cannot be read');
   const fallback = instanceSet(settings);
-  const post = postFor(read, opened.post, fallback, { name: opened.appellant.name });
   const d = opened.details;
   const punishment: AppealPunishment = {
     kind: opened.kind,
@@ -145,9 +146,9 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
     persona: hearer.persona, office: hearer.standing.office, offices: tuned.system.offices, pronouns: hearer.pronouns, persuadedBy: hearer.persona.persuadedBy, order: standing.order, career: hearer.career, memory: hearer.memory, notes: hearer.notes, rules,
     allowance: standing.allowance, beat: standing.beat, ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
     names: (id) => hearer.names[id] ?? 'a character',
-    board: opened.board, thread: threadFor(read, fallback), post,
+    board: opened.board, title: heard?.title ?? null, read: heard?.read ?? null,
     appellant: { name: opened.appellant.name, pronouns: await pronounsOfCharacter(db, opened.appellant.id, fallback) }, plea: opened.plea, punishment, filedByHearer: opened.details.filed_by === opened.staff,
-    limits: { threadPosts: settings.pool.chatterThreadPosts, excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+    limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
   });
 
   // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure.
