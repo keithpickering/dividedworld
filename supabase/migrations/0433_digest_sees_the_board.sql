@@ -194,10 +194,10 @@ end $function$;
 --   digest_polls       the polls created in the last pollLastsMax and the window (acts_digest_polls_at), each with one probe of its close (acts_one_poll_close), its newest poll (acts_polls) and its post through acts_public (hidden, kind): the polls of a few weeks, never their ballots
 --                      (the ballots are poll_counts' own read, one pass over a poll's voters for the polls kept after the cut to the window's, each).
 --   digest_origin      one probe of an origin Act and, for a set, of the spring Act that names it (acts_target): the one predicate of whether the board shows an origin, asked by digest_spins, digest_standouts and system_digest.
---   digest_spins       the spun threads created in the window (threads_digest_spun) and one digest_origin for each, in order, until the cap is full.
+--   digest_spins       the threads created in the window (threads_created_at: every thread of the window is read, the spun ones kept) and one digest_origin for each spun one, in order, until the cap is full.
 --   digest_plays       the plays played in the window from play_post (play_post_digest_at), sorted by what they drew, then one probe through acts_public of the Act and one of the post, and of its text, state and surface, for each play kept, in order, until the cap is full.
 -- New indexes, each added only because no existing one is ordered by time for its kind: acts_digest_plays_at, acts_digest_ballots_at, acts_digest_polls_at (acts_card_created holds cards alone, with no character, and nothing holds springs, ballots or polls by time:
--- acts_created holds every kind, so a read by it is of every post of the span), threads_digest_spun and play_post_digest_at (play_post has no index by time). Each insert of those kinds writes one more entry; no Act is touched.
+-- acts_created holds every kind, so a read by it is of every post of the span), threads_created_at and play_post_digest_at (play_post has no index by time). Each insert of those kinds writes one more entry; no Act is touched.
 -- supabase/tests/0433-digest-sees-the-board-scale.sql counts the rows of `acts` and `play_post` these read and goes red with an index withheld.
 -- Applying: the five `create index` statements are not concurrent (a migration runs in a transaction, and the owner applies migrations by hand), so each takes a write lock on `acts`, `play_post` or `threads` while it builds, and
 -- inserts of those tables wait. Apply this migration at a quiet moment.
@@ -208,9 +208,9 @@ grant create on schema public to kayfabb_digest;
 create index acts_digest_plays_at on acts (created_at) include (id, "character", target_act_id) where kind = 'spring' or (kind = 'card' and not (payload ? 'caught'));
 create index acts_digest_ballots_at on acts (created_at) include (id, "character", target_act_id) where kind = 'ballot';
 create index acts_digest_polls_at on acts (created_at) include ("character", target_act_id) where kind = 'poll';
--- Keyed by time alone, with no include: an include of origin_act_id made it an index-only scan the planner chose for a probe of threads by origin_act_id (0135's spring reads),
--- reading it whole where threads_origin reads one key.
-create index threads_digest_spun on threads (created_at) where origin_act_id is not null;
+-- A plain index by time, not a partial one on origin_act_id: a partial index `where origin_act_id is not null` is implied by every probe `origin_act_id = X`, and a planner with no statistics read it whole for 0135's spring reads where threads_origin
+-- reads one key. digest_spins reads the threads created in the window by this index and keeps the spun ones.
+create index threads_created_at on threads (created_at);
 create index play_post_digest_at on play_post (played_at) include (post, drawn) where kind <> '' or sprung;
 
 -- The top three characters that are not staff for each of five categories over [from_at, to_at): `cards` (landed card Acts and springs: a face-down set is no play until its spring, and a caught play never landed, nor one whose write was
@@ -470,9 +470,12 @@ begin
   ),
   -- The moves in force (open_moves: a handful of rows, whatever the instance's history) and those whose end fell in the window,
   -- each capped (the reversals first, so a met move's end cannot crowd one out); the merge below orders and caps them again. An end after the window is not the digest's yet.
+  -- The moves in force by their own table, read first and whole (a handful of rows), each Act then probed by its key: a plan that walks acts_public in time order and asks open_moves of each Act, which one that believes the table large takes, reads every Act.
+  open_moves_now as materialized (select om.move_act from open_moves om),
   open_m as (
     select a.id as act, a.created_at as landed_at, a.payload, null::jsonb as ended, 1 as grp, 'inForce'::text as state, a.created_at as sort_at, null::timestamptz as held_at, null::text as why
-    from open_moves o join acts_public a on a.id = o.move_act
+    from open_moves_now o
+    cross join lateral (select p.id, p.created_at, p.payload from acts_public p where p.id = o.move_act offset 0) a
     where a.created_at < until
     order by a.created_at desc, a.id
     limit short_cap
@@ -501,7 +504,7 @@ begin
   ),
   -- The moves in the list that ended `met`, with the params of their demand read as the demand evaluator reads them. A param that is
   -- not what its kind needs reads null, so one malformed move cannot stop the digest.
-  met_m as (
+  met_m as materialized (
     select m.act, m.landed_at, (m.ended ->> 'at')::timestamptz as end_at, m.payload #>> '{demand,kind}' as dkind,
            case when m.payload #>> '{demand,params,board}' ~ uuid_re then (m.payload #>> '{demand,params,board}')::uuid end as board,
            case when m.payload #>> '{demand,params,thread}' ~ uuid_re then (m.payload #>> '{demand,params,thread}')::uuid end as thread,
@@ -569,16 +572,21 @@ begin
     -- quadrantOnBoard: the public tally as it stands when the digest is built, not as of the move's end. A reaction after the end can raise
     -- it, and a public tally keeps no time per reaction (a reaction's time is private, and is never read here), so this credit may include
     -- an author a later reaction put in the quadrant.
-    select mm.act, a.character, min(a.created_at), -sum(t.count)::bigint
+    -- Each move's own read is a lateral aggregate, so a plan runs it once for each quadrant move that met (none, usually) and never joins the board's threads to every character first.
+    select mm.act, q.character, q.first_at, q.weight
     from met_m mm
-    join thread_list tl on tl.board = mm.board
-    join acts_public a on a.thread = tl.id
-    join characters_public c on c.id = a.character
-    join reaction_tallies_open t on t.act = a.id
-    where mm.dkind = 'quadrantOnBoard' and reaction_quadrant(t.act, t.kind) = mm.quadrant
-      and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
-    group by mm.act, a.character
-    having sum(t.count) > 0
+    cross join lateral (
+      select a.character, min(a.created_at) as first_at, -sum(t.count)::bigint as weight
+      from thread_list tl
+      join acts_public a on a.thread = tl.id
+      join characters_public c on c.id = a.character
+      join reaction_tallies_open t on t.act = a.id
+      where tl.board = mm.board and reaction_quadrant(t.act, t.kind) = mm.quadrant
+        and a.kind = 'post' and a.created_at > mm.landed_at and a.created_at <= mm.end_at and c.staff is null
+      group by a.character
+      having sum(t.count) > 0
+    ) q
+    where mm.dkind = 'quadrantOnBoard'
     union all
     select mm.act, a.character, min(a.created_at), 0::bigint
     from met_m mm
@@ -714,20 +722,25 @@ begin
     cross join lateral digest_origin(tl.origin_act_id) o
   ),
   -- The standouts: the helper counts the five categories of public Acts; the sixth, exchanges, is the repliers (public, not staff) whose replies a persona's turn in the span answered, read as the conversations read them.
+  -- The span's turns and the replies each answered, read once (a materialized step: a plan that joins the characters to the replies first runs the turns' and replies' probes again for each of them), then named.
+  so_pairs as materialized (
+    select a.character, pan.reply
+    from pool_turns t
+    -- the turn's post and each reply by its id, one probe for each (a lateral subquery behind `offset 0`: acts_public is a union over every Act, and a planner that believes the turns or replies many hashes it whole)
+    cross join lateral (select 1 from acts_public pa where pa.id = t.post_act offset 0) pk
+    join pool_answered pan on pan.turn = t.id
+    cross join lateral (select x."character" from acts_public x where x.id = pan.reply and x."character" is not null offset 0) a
+    where t.day >= (span_from at time zone 'UTC')::date - 1 and t.day <= (until at time zone 'UTC')::date and t.at >= span_from and t.at < until
+  ),
   so_x as (
     select 'exchanges'::text as category, r.character, r.name, r.n::integer as n
     from (
       select z.character, z.name, z.n, row_number() over (order by z.n desc, z.name, z.character) as rn
       from (
-        select a.character, cp.name, count(distinct pan.reply) as n
-        from pool_turns t
-        -- the turn's post and each reply by its id, one probe for each (a lateral subquery behind `offset 0`: acts_public is a union over every Act, and a planner that believes the turns or replies many hashes it whole)
-        cross join lateral (select 1 from acts_public pa where pa.id = t.post_act offset 0) pk
-        join pool_answered pan on pan.turn = t.id
-        cross join lateral (select x."character" from acts_public x where x.id = pan.reply and x."character" is not null offset 0) a
-        join characters_public cp on cp.id = a.character and cp.staff is null
-        where t.day >= (span_from at time zone 'UTC')::date - 1 and t.day <= (until at time zone 'UTC')::date and t.at >= span_from and t.at < until
-        group by a.character, cp.name
+        select sp.character, cp.name, count(distinct sp.reply) as n
+        from so_pairs sp
+        join characters_public cp on cp.id = sp.character and cp.staff is null
+        group by sp.character, cp.name
       ) z
     ) r where r.rn <= 3
   ),
