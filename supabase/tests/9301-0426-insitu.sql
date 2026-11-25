@@ -535,7 +535,24 @@ begin
   if e1[2] > e1[1] + 20 or e1[3] > e1[1] + 20 or e2[2] > e2[1] + 20 or e2[3] > e2[1] + 20 then raise exception '[%] post_extras reads % / % / % rows of acts (200 / 400 posts / 40 ballots) for 100 posts and % / % / % for 200: it grows', label, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3]; end if;
   if cb > bound or cv > bound then raise exception '[%] pool_read reads % rows of acts: more than %', label, greatest(cb, cv), bound; end if;
   -- no post of the thread is veiled, so a read of it reads no veil (the planted ones are elsewhere in the instance): at most a few rows, never the live veils once for each post
-  if vb > 20 then raise exception '[%] pool_read reads % rows of post_veils and post_veil_cover for a thread no veil covers: it reads the live veils for each post', label, vb; end if;
+  if vb > 20 then
+    declare v1 bigint; o text := ''; ids2 uuid[]; t uuid := pg_temp.f('big'); trow jsonb; n bigint; rel text;
+    begin
+      o := o || 'per table/index: ' || (select string_agg(x.n || '=' || x.c, ', ') from (
+              select t2.relname as n, t2.seq_tup_read as c from pg_stat_xact_all_tables t2 where t2.relname in ('post_veils', 'post_veil_cover')
+              union all select c2.relname, pg_stat_get_xact_tuples_returned(i.indexrelid) from pg_index i join pg_class c2 on c2.oid = i.indexrelid where i.indrelid in ('post_veils'::regclass, 'post_veil_cover'::regclass)) x) || E'\n';
+      v1 := pg_temp.veils_read(); rb := pool_read(t, 'ex-boss', null, 60); o := o || 'pool_read big again ' || (pg_temp.veils_read() - v1) || E'\n';
+      v1 := pg_temp.veils_read(); select count(*) into n from pool_read_rows(t, 'ex-boss', null, 60); o := o || 'pool_read_rows ' || (pg_temp.veils_read() - v1) || E'\n';
+      ids2 := array(select x.act from pool_read_rows(t, 'ex-boss', null, 60) x);
+      select to_jsonb(l) into trow from (select x.title, x.origin_act_id, x.created_at, x.origin_place, x.first_act from thread_list x where x.id = t) l;
+      v1 := pg_temp.veils_read(); r := pool_read_origin(t, trow); o := o || 'pool_read_origin ' || (pg_temp.veils_read() - v1) || E'\n';
+      v1 := pg_temp.veils_read(); r := post_extras_rows(ids2[1:200], ids2[1:200]); o := o || 'post_extras_rows ' || (pg_temp.veils_read() - v1) || E'\n';
+      v1 := pg_temp.veils_read(); perform * from extras_ids(ids2[1:200]); o := o || 'extras_ids ' || (pg_temp.veils_read() - v1) || E'\n';
+      v1 := pg_temp.veils_read(); perform * from acts_public x where x.id = ids2[1]; o := o || 'acts_public one ' || (pg_temp.veils_read() - v1) || E'\n';
+      v1 := pg_temp.veils_read(); perform * from pool_probe(ids2[1]); o := o || 'pool_probe one ' || (pg_temp.veils_read() - v1) || E'\n';
+      raise exception E'[%] pool_read reads % rows of post_veils and post_veil_cover; by part:\n%', label, vb, o;
+    end;
+  end if;
   if greatest(e1[1], e1[2], e1[3]) > per * 100 or greatest(e2[1], e2[2], e2[3]) > per * 200 then raise exception '[%] post_extras reads more than % rows of acts for each post: % for 100 posts, % for 200', label, per, greatest(e1[1], e1[2], e1[3]), greatest(e2[1], e2[2], e2[3]); end if;
   raise notice '[%] rows of acts, pool_read: % (200 posts), % (400), % (40 ballots); post_extras for 100 posts: %, %, % and for 200: %, %, %; rows of the veils'' tables for the 400 posts: %', label, cs, cb, cv, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3], vb;
 end $$;
@@ -594,28 +611,7 @@ begin
   update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid = 'acts'::regclass;
   if (select reltuples from pg_class where oid = 'acts'::regclass) is distinct from 0 then raise exception 'the statistics were not set'; end if;
 end $$;
-do $$
-declare v0 bigint; out text := ''; ids uuid[]; trow jsonb; r jsonb; n bigint; p uuid; t uuid := pg_temp.f('big');
-begin
-  perform set_config('track_functions', 'all', true);
-  v0 := pg_temp.veils_read(); r := pool_read(pg_temp.f('small'), 'ex-boss', null, 60); out := out || 'pool_read small ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); r := pool_read(t, 'ex-boss', null, 60); out := out || 'pool_read big ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); r := pool_read(pg_temp.f('ballots'), 'ex-boss', null, 60); out := out || 'pool_read ballots ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); perform post_extras(array(select a.id from acts a where a.thread = t and a.kind = 'post' order by a.seq desc limit 100)); out := out || 'post_extras 100 ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); select count(*) into n from pool_read_rows(t, 'ex-boss', null, 60); out := out || 'pool_read_rows ' || (pg_temp.veils_read() - v0) || E'\n';
-  ids := array(select x.act from pool_read_rows(t, 'ex-boss', null, 60) x);
-  select to_jsonb(l) into trow from (select x.title, x.origin_act_id, x.created_at, x.origin_place, x.first_act from thread_list x where x.id = t) l;
-  v0 := pg_temp.veils_read(); r := pool_read_origin(t, trow); out := out || 'pool_read_origin ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); r := post_extras_rows(ids[1:200], ids[1:200]); out := out || 'post_extras_rows ' || (pg_temp.veils_read() - v0) || ' for ' || cardinality(ids) || E'\n';
-  v0 := pg_temp.veils_read(); perform * from extras_ids(ids[1:200]); out := out || 'extras_ids ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); perform count(*) from reaction_tallies_open r2 where r2.act = any (ids); out := out || 'reaction_tallies_open ' || (pg_temp.veils_read() - v0) || E'\n';
-  p := ids[1];
-  v0 := pg_temp.veils_read(); perform * from acts_public x where x.id = p; out := out || 'acts_public one ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); perform * from acts_public x where x.id = any (ids); out := out || 'acts_public any ' || (pg_temp.veils_read() - v0) || E'\n';
-  v0 := pg_temp.veils_read(); perform * from pool_probe(p); out := out || 'pool_probe one ' || (pg_temp.veils_read() - v0) || E'\n';
-  raise exception E'veil reads by part:\n%', out;
-end $$;
-
+select pg_temp.measure('empty statistics', 4000, 50);
 select pg_temp.measure_kinds('empty statistics', 600);
 select pg_temp.measure_layers('empty statistics', 700, 10);
 set local plan_cache_mode = force_generic_plan;
