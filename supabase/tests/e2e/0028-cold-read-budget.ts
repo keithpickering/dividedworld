@@ -41,7 +41,7 @@
  * far-under line can fire on a healthy build: that is the machine, and no budget is lowered for it.
  *
  * `budgetFaults` is that judgment, pure, and each poison below is the defect it exists to catch: a function that reads `acts_public` thirty times over (thirty branches, each
- * joining it to itself twice, since a bare thirty reads of its id alone keep only about half of thread_page's figure), committed in the scratch database (each measurement is
+ * joining it to itself three times, since a bare thirty reads of its id alone keep only about half of thread_page's figure, and twice kept 14.144 MB once 0434 made the view's plan smaller, under thread_page's 16.0), committed in the scratch database (each measurement is
  * a connection of its own, so a rolled-back transaction would not be seen) and dropped in a `finally`, is measured against thread_page's budget and must be named as over; a
  * screen function with no budget, a budget with no function and a measurement far under its budget are each named, with cases that tell the larger of the tenth and the floor
  * from the smaller.
@@ -250,6 +250,8 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
  * run 45475266814 on c1d072b, the first run with that count, and each is rounded up to one decimal plus 0.3 MB. A function whose call took the cache past a block
  * fell by 1.5 to 2 MB: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995. The
  * others fell by up to 0.8 MB, except index_page's, which rose 0.2 to 7.4, since every budget now follows the rule from this one run.
+ * Lowered for 0434_reads_bounded_on_any_plan.sql, whose acts_public no longer hashes the live veils once for each statement: index_page from 7.4 to 6.9 (6.595 MB) and thread_page from 20.1 to 16.0 (15.666 MB), by the
+ * rule, from the workflow's sql job on Postgres 17, run 45702811734 on aab83bf.
  * Counted by blocks, board_page had moved by 2 MB twice. Once it was a change (0403_departed_personas.sql gave season_handovers, which board_page plans through
  * season_boss_changes, two more indexes, and with the planner statistics of the rows the files before this one commit, their relcache entries took the cache from
  * 2227 kB to 4283 kB). Once it was no change at all: 9.822 on d7661f6 and 11.821 on 1201d38, with no SQL changed between them, by whether an analyze had run.
@@ -262,7 +264,7 @@ export const BUDGETS: Record<string, Budget> = {
   board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 10.4),
   boot: budget(() => 'public.boot()', player, 7.3),
   drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 2.4),
-  index_page: budget(() => 'public.index_page()', player, 7.4),
+  index_page: budget(() => 'public.index_page()', player, 6.9),
   log_page: budget(() => 'public.log_page(null)', player, 14.6),
   my_characters_page: budget(() => 'public.my_characters_page()', player, 4.3),
   profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.5),
@@ -273,7 +275,7 @@ export const BUDGETS: Record<string, Budget> = {
   search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.0),
   search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.2),
   season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 2.7),
-  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 20.1),
+  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 16.0),
   updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.1),
 };
 
@@ -334,7 +336,7 @@ test('every screen function keeps within its budget on a cold read, and no budge
 
 test('the guard names a function that reads acts_public thirty times as over thread_page\'s budget', () => {
   const f = fixture();
-  const reads = Array.from({ length: 30 }, () => 'select a.id from public.acts_public a join public.acts_public b on b.id = a.id join public.acts_public c on c.id = a.id').join(' union all ');
+  const reads = Array.from({ length: 30 }, () => 'select a.id from public.acts_public a join public.acts_public b on b.id = a.id join public.acts_public c on c.id = a.id join public.acts_public d on d.id = a.id').join(' union all ');
   const create = `create function public.cold_poison_page() returns bigint language plpgsql stable set plan_cache_mode = force_generic_plan as $p$
       begin return (select count(*) from (${reads}) x); end $p$;
     grant execute on function public.cold_poison_page() to authenticated; revoke execute on function public.cold_poison_page() from public, anon;`;

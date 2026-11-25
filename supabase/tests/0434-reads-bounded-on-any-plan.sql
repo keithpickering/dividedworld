@@ -129,18 +129,19 @@ declare
   a uuid := tests.character(tests.account('rb-vee'), 'Rb Vee');
   b uuid := tests.character(tests.account('rb-wil'), 'Rb Wil');
   t uuid := tests.thread('Rb Stand-in');
-  base timestamptz := now() - interval '3 days';
+  -- newer than every other Act the stand-in shows (the planted veils' posts are a day old), so that its newest are this author's
+  base timestamptz := now() - interval '2 hours';
   ps uuid[]; play uuid; i integer;
 begin
   if not exists (select 1 from characters where staff_kind = 'anonymous') then
     insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now());
   end if;
-  insert into acts (character, kind, thread, payload, created_at) select a, 'post', t, jsonb_build_object('body', 'Vee ' || g), base + g * interval '1 minute' from generate_series(1, 3000) g;
+  insert into acts (character, kind, thread, payload, created_at) select a, 'post', t, jsonb_build_object('body', 'Vee ' || g), base + g * interval '1 second' from generate_series(1, 3000) g;
   ps := array(select x.id from acts x where x.thread = t order by x.created_at);
-  -- thirty live author veils over the thread's length, one ended and one over by its time
+  -- thirty live author veils on the author's oldest posts, so that a walk of the author's Acts newest first passes all 3,000 to find them; one ended and one over by its time
   for i in 1..32 loop
-    play := tests.act(b, 'card', t, jsonb_build_object('card', 'pvveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1), ps[i * 90], base + interval '3 days' - interval '1 hour' + i * interval '1 second');
-    insert into post_veils (play, post, veil, author, ends_at) values (play, ps[i * 90], 'author', a, case when i = 32 then now() - interval '1 minute' else now() + interval '1 day' end);
+    play := tests.act(b, 'card', t, jsonb_build_object('card', 'pvveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1), ps[i], base + interval '1 hour' + i * interval '1 second');
+    insert into post_veils (play, post, veil, author, ends_at) values (play, ps[i], 'author', a, case when i = 32 then now() - interval '1 minute' else now() + interval '1 day' end);
     if i = 31 then
       perform set_config('kayfabb.card_end_writer', 'on', true);
       insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, play, '{"why": "reversed", "by": "admin"}');
@@ -151,11 +152,14 @@ begin
   analyze acts; analyze post_veils; analyze post_veil_cover;
 end $$;
 
+-- The pages are measured with no sequential scan, as section 1 measures its probes: the rest of a page (my_alerts_unread's followed threads, among others) reads `acts` whole when the planner thinks the table small, which
+-- is not what is measured here.
 create function pg_temp.stand_in_pages() returns void language plpgsql as $$
 declare
   stand uuid := pg_temp.f('stand'); c0 bigint; c bigint; got jsonb; want uuid[]; have uuid[]; pg integer; kind text; kinds text[];
 begin
   perform set_config('track_functions', 'all', true);
+  perform set_config('enable_seqscan', 'off', true);
   -- main's read of the stand-in's Acts: acts_public by the character, newest first (as 0357's profile_page and record_page ask it)
   want := array(select x.id from acts_public x where x."character" = stand and x.kind in ('post', 'spin', 'card') order by x.created_at desc, x.id desc limit 5);
   if cardinality(want) < 5 then raise exception 'the stand-in shows % Acts, not five', cardinality(want); end if;
@@ -180,6 +184,7 @@ begin
     end loop;
   end loop;
   perform set_config('track_functions', 'none', true);
+  perform set_config('enable_seqscan', 'on', true);
 end $$;
 select pg_temp.stand_in_pages();
 
