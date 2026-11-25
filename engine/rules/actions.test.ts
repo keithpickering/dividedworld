@@ -385,15 +385,24 @@ test('a poll that is not a draft, and picks that are not option numbers, are ref
 });
 
 // A spin and an apology may name their board (docs/plans/2026-11-25-spin-board-plan.md, Task 2): absent or null sends
-// no board_slug, so the server's default (spin_board) holds; a slug is sent as board_slug; anything else is refused in
-// startThread's words.
-test('a spin and an apology may name a board by its slug', () => {
-  for (const [action, base] of [['spin', { origin: other, title: 'Spun', body: '' }], ['apologize', { move: other, title: 'Sorry', body: 'B' }]] as const) {
-    const sent = (request: object) => { const d = decide({ action, character: id, ...base, ...request }, instance); return d.ok ? d.args as { board_slug?: unknown } : `${d.field}: ${d.why}`; };
-    assert.equal(typeof sent({}) === 'object' && 'board_slug' in (sent({}) as object), false, `${action}: absent sends none`);
-    assert.equal(typeof sent({ board: null }) === 'object' && 'board_slug' in (sent({ board: null }) as object), false, `${action}: null sends none`);
-    assert.equal((sent({ board: 'off-topic' }) as { board_slug?: unknown }).board_slug, 'off-topic', `${action}: a slug is sent`);
-    assert.equal(sent({ board: 'Off Topic!' }), 'board: is not a board', `${action}: a bad slug`);
-    assert.equal(sent({ board: 7 }), 'board: is not a board', `${action}: a number`);
-  }
+// no board_slug, so the server's default holds; a slug is sent as board_slug; anything else is refused as a thread's
+// start refuses it.
+test('a spin may name a board by its slug, or leave it to the server', () => {
+  const spun = { ok: true, rpc: 'spin', args: { origin: other, through: id, title: 'Spun', body: '', at_post: null } };
+  assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '' }, instance), spun);
+  assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '', board: null }, instance), spun);
+  assert.deepEqual(decide({ action: 'spin', origin: other, character: id, title: 'Spun', body: '', board: 'off-topic' }, instance),
+    { ...spun, args: { ...spun.args, board_slug: 'off-topic' } });
+  assert.equal(refusal({ action: 'spin', origin: other, character: id, title: 'Spun', board: 'Off Topic!' }), 'board: is not a board');
+  assert.equal(refusal({ action: 'spin', origin: other, character: id, title: 'Spun', board: 7 }), 'board: is not a board');
+});
+
+test('an apology may name a board by its slug, or leave it to the server', () => {
+  const sorry = { ok: true, rpc: 'apologize', args: { in_move: other, through: id, title: 'Sorry', body: 'B' } };
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B' }, instance), sorry);
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', board: null }, instance), sorry);
+  assert.deepEqual(decide({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', board: 'general' }, instance),
+    { ...sorry, args: { ...sorry.args, board_slug: 'general' } });
+  assert.equal(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', board: 'Off Topic!' }), 'board: is not a board');
+  assert.equal(refusal({ action: 'apologize', move: other, character: id, title: 'Sorry', body: 'B', board: 7 }), 'board: is not a board');
 });

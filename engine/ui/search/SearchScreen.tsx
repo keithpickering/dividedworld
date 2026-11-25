@@ -13,9 +13,9 @@
  * live on a post is drawn as its mark is on the post (cards/marks.css), a still tile with its card's name for a screen reader.
  */
 import { useEffect, useRef, useState, type CSSProperties, type FormEvent } from 'react';
-import { useBoot } from '../boot.tsx';
+import { useBoards } from '../boards.ts';
 import { useKayfa } from '../context.tsx';
-import { SEARCH_COUNT_CAP, SEARCH_PER_PAGE, type BoardSummary, type PostHit, type SearchCursor, type SearchSort, type ThreadHit } from '../data/api.ts';
+import { SEARCH_COUNT_CAP, SEARCH_PER_PAGE, type PostHit, type SearchCursor, type SearchSort, type ThreadHit } from '../data/api.ts';
 import { FrontDoor } from '../front-door/FrontDoor.tsx';
 import { Mini } from '../mini.tsx';
 import { Link, useNavigate } from '../router.tsx';
@@ -206,19 +206,6 @@ function Results(props: Rows) {
 }
 
 /* ------------------------------------------------------------------------------------------------------ the form */
-
-function useBoards(): readonly BoardSummary[] {
-  const { api } = useKayfa();
-  const boot = useBoot();
-  const [read, setRead] = useState<readonly BoardSummary[]>([]);
-  useEffect(() => {
-    if (boot) return;
-    let live = true;
-    void api.boards().then((b) => { if (live) setRead(b); }, () => {});
-    return () => { live = false; };
-  }, [api, boot]);
-  return boot ? boot.boards : read;
-}
 
 const dayIn = (iso: string | null): string => (iso === null ? '' : dayOf(iso));
 

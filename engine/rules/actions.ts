@@ -246,20 +246,20 @@ const drawing = (r: Fields): unknown => {
   return r.input;
 };
 
-/** A spin's or an apology's board (docs/plans/2026-11-25-spin-board-plan.md, Task 2): absent or null sends none, so the server's default holds; else a slug, in startThread's words. */
-const boardSlug = (r: Fields): { board_slug?: string } => {
+/** A board named by its slug: a thread's start must name one. */
+const slug = (r: Fields): string => {
   const board = r.board;
-  if (board === undefined || board === null) return {};
   if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
-  return { board_slug: board };
+  return board;
 };
+
+/** A spin's or an apology's board, which may be left out (null too), so the server's default holds. */
+const boardSlug = (r: Fields): { board_slug?: string } => (r.board === undefined || r.board === null ? {} : { board_slug: slug(r) });
 
 /** Each action: the SQL function that writes it, and its arguments from the request. */
 const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   startThread: (r, { settings }) => {
-    const board = r.board;
-    if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
-    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) } };
+    return { rpc: 'start_thread', args: { board_slug: slug(r), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) } };
   },
   post: (r, { settings }) => ({
     rpc: 'post',
