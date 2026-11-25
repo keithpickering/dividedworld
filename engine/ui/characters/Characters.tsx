@@ -235,7 +235,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
         <div className="kb-roster-pending">
           <p className="kb-turn-pending"><b>Turn announced</b>: to {className(p.class)}.</p>
           <p className="kb-roster-line kb-turn-when">
-            Announced in <GlassLink to={threadHref(told.thread, pageOf(told.seq, settings.postsPerPage), told.seq)}>{told.title}</GlassLink>. Takes effect {when ? dayAndTime(when) : 'at the next settlement'}.
+            Announced in <GlassLink to={threadHref(told.thread, pageOf(told.seq, settings.postsPerPage), told.seq)}>{told.title || 'its thread'}</GlassLink>. Takes effect {when ? dayAndTime(when) : 'at the next settlement'}.
           </p>
           <p className="kb-roster-line kb-turn-note">It stands until then: it can&apos;t be changed or withdrawn.</p>
         </div>

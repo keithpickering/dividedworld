@@ -1546,6 +1546,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return d.ok ? null : refuse(d.why, d.field);
   }
 
+  /** `not_closed` (0328): the refusal a closed board's startings and Turn announcements meet, in the SQL's words. */
+  const closedRefusal = (board: Board): Refusal | null => {
+    const closed = closedBoards.get(board.id);
+    if (!closed) return null;
+    const went = boards.find((b) => b.id === (closed.mergedInto ?? closed.fallback));
+    return refuse(closed.mergedInto !== null
+      ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
+      : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
+  };
   function threadAndBoard(id: Id): { t: ThreadRec; board: Board } | Refusal {
     const t = threads.get(id);
     if (!t) return refuse('there is no such thread');
@@ -1811,13 +1820,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const board = boards.find((b) => b.slug === boardSlug);
     if (!board) return refuse('there is no such board');
     if (board.isSystem) return refuse(SYSTEM_BOARD);
-    const closed = closedBoards.get(board.id);
-    if (closed) {
-      const went = boards.find((b) => b.id === (closed.mergedInto ?? closed.fallback));
-      return refuse(closed.mergedInto !== null
-        ? `this board was merged into ${went ? boardNow(went).name : 'another board'}${openEnd(board.id) !== closed.mergedInto && openEnd(board.id) !== null ? `, which was closed too; its threads are in ${boardNow(boards.find((b) => b.id === openEnd(board.id))!).name}, so start your thread there instead` : ', and its threads are there; start your thread there instead'}`
-        : `this board was closed, and its threads are in ${boardNow(boards.find((b) => b.id === (openEnd(board.id) ?? closed.fallback))!).name}; start your thread there instead`);
-    }
+    const closed = closedRefusal(board);
+    if (closed) return closed;
     const stopped = stoppedQuote(null, null, body, '', forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, null);
@@ -3212,13 +3216,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   type TurnAnswer = { class: string; loudness: 'silent' | 'announced'; showFrom: boolean; showTo: boolean; takesEffectAt: string | null; announced: { act: Id; thread: Id } | null };
-  const stands = () => `that Turn was announced, so it stands until it takes effect at ${takesEffectAt() ?? 'the next settlement'}`;
+  /** committed_turn_refusal (0427): a Turn a settlement passed over (`dueAt`, masks_change's unmask backstop) takes effect at the first later window it can, which no time names. */
+  const stands = (c: CharRec) => `that Turn was announced, so it stands until it takes effect at ${c.pending?.dueAt !== undefined ? 'the next settlement it can' : takesEffectAt() ?? 'the next settlement'}`;
 
-  /** turn_thread_checks (0427): the thread an announcement is posted in is one a reveal could be (unmask's checks). */
-  function turnThreadRefusal(thread: Id): Refusal | null {
+  /**
+   * turn_thread_checks (0427), in its order and the SQL's words: not_banned, the thread exists, not the System's board, not_locked_out, not_closed, not_barred.
+   * The fake carries every one of them; a bar is the fake's `barsOf`, a conferGroup move's, so it is refused only where such a move is in force.
+   */
+  function turnThreadRefusal(c: CharRec, thread: Id): Refusal | null {
+    const banned = bannedUntilOf(c.id);
+    if (banned !== null) return refuse(`this character is banned until ${refusalTime(iso(Math.ceil(banned / 60_000) * 60_000))}; the ban ends by itself then, and it holds only this character, not your other characters`);
     const found = threadAndBoard(thread);
     if (isRefusal(found)) return found;
-    return found.board.isSystem ? refuse(SYSTEM_BOARD) : null;
+    if (found.board.isSystem) return refuse(SYSTEM_BOARD);
+    const lockedOut = lockedOutRefusal(c.id, thread);
+    if (lockedOut) return lockedOut;
+    const closed = closedRefusal(found.board);
+    if (closed) return closed;
+    const bar = barsOf(c.id).find((b) => b.board === found.board.id);
+    if (bar) return refuse(`${c.name} is barred from posting on ${boardNow(found.board).name} until ${bar.expiresAt === null ? 'a time not yet set' : `${refusalTime(iso(Math.ceil(Date.parse(bar.expiresAt) / 60_000) * 60_000))}`}`);
+    return null;
   }
 
   /** write_announce with `ahead` (0427): the character's own announce Act of a Turn, written when it is asked; the class it Turns from is named only where `showFrom`, the class it takes only where `showTo`. */
@@ -3236,12 +3253,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
-    if (c.pending?.announced) return refuse(stands());
+    if (c.pending?.announced) return refuse(stands(c));
     if (classNow(c).cls === to) return refuse(c.pending ? 'this character already is one: withdraw its waiting Turn to keep it' : 'this character already is one');
     const opens = turnOpens(c);
     if (opens !== null) return refuse(`this character can Turn again at ${iso(opens).replace(/\.\d+Z$/, 'Z')}`);
     if (loudness === 'announced') {
-      const barred = turnThreadRefusal(thread!);
+      const barred = turnThreadRefusal(c, thread!);
       if (barred) return barred;
     }
     // Asked again before the settlement, it is the same Turn, changed (unless announced: that stands).
@@ -3258,7 +3275,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (isRefusal(c)) return c;
     if (!c.pending) return refuse('no Turn of that character is waiting');
     if (c.pending.announced) return refuse('that Turn was announced already');
-    const barred = turnThreadRefusal(thread);
+    const barred = turnThreadRefusal(c, thread);
     if (barred) return barred;
     const told = writeAhead(c, thread, c.pending.class, showFrom, showTo);
     c.pending = { ...c.pending, loudness: 'announced', showFrom, showTo, announced: { act: told.id, thread, seq: told.seq ?? 0, title: threads.get(thread)!.title } };
@@ -3271,7 +3288,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (!c.pending) return refuse('no Turn of that character is waiting');
-    if (c.pending.announced) return refuse(stands());
+    if (c.pending.announced) return refuse(stands(c));
     c.pending = null;
     return ok({ withdrawn: true });
   }

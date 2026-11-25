@@ -358,6 +358,24 @@ describe('Turns', () => {
     expect((await fake.turnsAnnounced([anaFace])).map((t) => ({ was: t.was, at: t.at }))).toEqual([{ was: 'face', at: new Date(landed).toISOString() }]);
     expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
   });
+  test('an announced Turn meets the checks of turn_thread_checks (0427), in the SQL\'s words (a ban; a closed board has no threads left to name, closing moves them)', async () => {
+    const { fake, anaFace, thread, opener } = world();
+    const until = fake.clock.now() + 3 * DAY;
+    fake.seed.ban(anaFace, until, { infraction: fake.seed.infraction(fake.seed.visit(fake.seed.staff('mod', 'Mod Bot', 'mod'), opener)) });
+    const banned = await fake.turn(anaFace, 'lurker', 'announced', false, true, thread);
+    expect(banned.ok).toBe(false);
+    expect(banned.ok === false && banned.error).toMatch(/^this character is banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC; the ban ends by itself then, and it holds only this character, not your other characters$/u);
+  });
+  test('a Turn a settlement passed over stands until the next settlement it can, as committed_turn_refusal says', async () => {
+    const { fake, anaFace, thread } = world();
+    must(await fake.turn(anaFace, 'lurker', 'announced', false, true, thread));
+    must(await fake.unmask(anaFace, thread, 'It was me.'));
+    fake.seed.settle({});
+    const mine = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(mine.pendingTurn).not.toBeNull();
+    const refusal = await fake.withdrawTurn(anaFace);
+    expect(refusal).toEqual(refused('that Turn was announced, so it stands until it takes effect at the next settlement it can'));
+  });
   test('a silent Turn is announced later: where and what to name, committing it; none waiting says so', async () => {
     const { fake, anaFace, thread } = world();
     expect(await fake.announceTurn(anaFace, thread, false, false)).toEqual(refused('no Turn of that character is waiting'));

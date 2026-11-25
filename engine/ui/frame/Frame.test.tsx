@@ -1093,13 +1093,12 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     expect(await screen.findByText(/Pipewrench revealed as Face in The tea thread\./u)).toBeInTheDocument();
   });
 
-  test('on a thread, the HUD opens the Turn dialog on that thread: an announced Turn is posted there, with no picker', async () => {
+  test('on a thread, the HUD opens the Turn dialog on that thread: the picker starts on it, and focus lands on the HUD\'s status line when the opener is gone', async () => {
     const w = RevealWorld();
     await onThread(w);
     await userEvent.click(await screen.findByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
-    expect(within(dialog).getByText('It will be posted in this thread.')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('combobox', { name: 'Thread' })).toBeNull();
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('The tea thread');
     const turn = vi.spyOn(w.fake, 'turn');
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
@@ -1108,6 +1107,9 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     expect(await screen.findByText(/Pipewrench's Turn is announced in The tea thread\./u)).toBeInTheDocument();
     /* A Turn waiting, announced or not, is My characters' to show: the opener is gone from the HUD. */
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Turn Pipewrench' })).toBeNull());
+    /* The opener unmounted with the Turn: focus is on the HUD's status line, not on the body. */
+    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
+    expect(document.activeElement).toHaveClass('kb-hud-flash');
   });
 
   test('off a thread, the Board and Thread start empty', async () => {

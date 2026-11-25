@@ -6,7 +6,7 @@
  * Turn takes effect at the next settlement. A silent one is posted nowhere and, until then, can be
  * changed (this dialog again, its choices filled in), withdrawn or announced later (`announce`: the
  * class stays, and the dialog asks only what to name and where). An announced one is posted at once,
- * in a thread chosen with the picker Reveal shares (or the open thread, `at`), and then stands: it
+ * in a thread chosen with the picker Reveal shares (which starts on the open thread, `at`), and then stands: it
  * can be neither changed nor withdrawn. Out of character and plain: the class is the player's own,
  * and the preview names a class only where the player chose to name it.
  *
@@ -44,7 +44,7 @@ export interface TurnDialogProps {
   readonly onClose: () => void;
   readonly onDone: (message: string) => void;
   readonly returnFocusTo?: () => HTMLElement | null;
-  /** The thread the opener is on: an announced Turn is posted in it, and the picker is not shown. */
+  /** The thread the opener is on: the picker starts on it (as Reveal's does), so an announced Turn is ready at once and can still be posted elsewhere. */
   readonly at?: { readonly id: Id; readonly title: string; readonly board: Id } | null;
   /** Announce the silent Turn that is waiting, keeping its class: asks only what to name and where. */
   readonly announce?: boolean;
@@ -177,7 +177,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               </label>
             </fieldset>
           </fieldset>
-          {loudness === 'announced' && (at ? <p className="kb-turn-line kb-turn-where">It will be posted in this thread.</p> : <ThreadPicker value={chosen} onChange={setChosen} />)}
+          {loudness === 'announced' && <ThreadPicker value={chosen} onChange={setChosen} />}
           {to ? (
             <PreviewBox preview={turnPreview({ name: character.name, was: now, to: nameOf(to), loudness, showFrom, showTo, threadTitle: chosen?.title ?? null })} />
           ) : (

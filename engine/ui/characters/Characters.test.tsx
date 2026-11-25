@@ -436,6 +436,18 @@ describe('the Turn', () => {
     expect(await screen.findByText(new RegExp(`Pipewrench's Turn is announced in ${thread.title}`, 'u'))).toBeInTheDocument();
   });
 
+  test('a committed Turn whose thread has no title still names where it was announced', async () => {
+    const w = world();
+    const thread = await generalThread(w);
+    expect((await w.fake.turn(w.pipe, 'heel', 'announced', true, false, thread.id)).ok).toBe(true);
+    const page = await w.fake.myCharactersPage();
+    const untitled = { ...page, characters: page.characters.map((c) => (c.pendingTurn?.announced ? { ...c, pendingTurn: { ...c.pendingTurn, announced: { ...c.pendingTurn.announced, title: '' } } } : c)) };
+    vi.spyOn(w.fake, 'myCharactersPage').mockResolvedValue(untitled);
+    open(w);
+    await ready();
+    expect(within(row('Pipewrench')).getByRole('link', { name: 'its thread' })).toBeInTheDocument();
+  });
+
   test('a committed Turn shows no Change, Withdraw or Announce, only where it was announced and when it takes effect', async () => {
     const w = world();
     const thread = await generalThread(w);

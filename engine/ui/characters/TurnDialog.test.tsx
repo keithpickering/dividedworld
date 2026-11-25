@@ -61,14 +61,14 @@ describe('an announced Turn', () => {
     expect(acts[0]).toMatchObject({ kind: 'announce', thread: t.thread, payload: { what: 'turn', class: 'heel', ahead: true } });
   });
 
-  test('opened on a thread, says it will be posted there and shows no picker', async () => {
+  test('opened on a thread, the picker starts on it, and the player can still choose another', async () => {
     const w = world();
     const t = thread(w);
     const board = (await w.fake.boards()).find((b) => b.slug === 'general')!.id;
     const turn = vi.spyOn(w.fake, 'turn');
     const { dialog, character } = await dialogOf({ w, at: { id: t.thread, title: 'The tea thread', board } });
-    expect(within(dialog).getByText('It will be posted in this thread.')).toBeInTheDocument();
-    expect(within(dialog).queryByRole('combobox', { name: 'Thread' })).toBeNull();
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('The tea thread');
+    expect(within(dialog).queryByText('It will be posted in this thread.')).toBeNull();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(turn).toHaveBeenCalledWith(character.id, 'heel', 'announced', false, false, t.thread));

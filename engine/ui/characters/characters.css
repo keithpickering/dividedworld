@@ -1,5 +1,5 @@
 /*
- * My characters, New character, the Turn and the debut dialogs, on the glass: the Roster board
+ * My characters, New character and the Turn dialog, on the glass: the Roster board
  * (docs/research/2026-10-29-two-worlds/10-roster.html) and the Turn board (06-turn.html). Colors
  * are the glass's tokens and the instance's class colors (`--kb-glass-class-<key>-*`, set on a card
  * or a chip as `--kb-class-fill`, `-ink`, `-large` by ClassChip.tsx); sizes are the boards' px or
@@ -410,8 +410,7 @@
   color: var(--kb-glass-text);
 }
 
-.kb-roster-pending,
-.kb-character-waiting {
+.kb-roster-pending {
   display: flex;
   flex-direction: column;
   gap: 8px;

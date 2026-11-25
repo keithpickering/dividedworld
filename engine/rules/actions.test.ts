@@ -252,7 +252,7 @@ test('a character is made with a name, a class and pronouns only: no debut, no t
   // An older client's debut fields are not sent on.
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' }, instance),
     { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', pronouns: null } });
-  assert.match(refusal({ action: 'setDebut', character: id, timing: 'now', loudness: 'silent' }) ?? '', /^action:/);
+  assert.match(refusal({ action: 'noSuchAction', character: id, timing: 'now', loudness: 'silent' }) ?? '', /^action:/);
 });
 
 test('a character is made with pronouns the way they are stored: lowered, or refused plainly', () => {
