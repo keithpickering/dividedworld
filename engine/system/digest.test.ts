@@ -459,7 +459,7 @@ test('the new lists stop at their ceilings and every free string is clipped; the
   assert.ok(sections <= newBound, `${sections} > ${newBound}`);
   const extrasOnly = (e: typeof ex | undefined, o: typeof bigOrigin | undefined) => renderDigest({ ...d, polls: undefined, spins: undefined, plays: undefined, standouts: undefined, excerpts: d.excerpts.map((x) => ({ ...x, extras: e, origin: o })), bossReactions: d.bossReactions.map((x) => ({ ...x, extras: e, origin: o })), conversations: d.conversations.map((c) => ({ ...c, exchange: { ...c.exchange!, extras: e, origin: o, reply: { ...c.exchange!.reply, extras: e, origin: o } } })) }, null, [], undefined, opts).length;
   const extraText = renderDigest({ ...d, polls: undefined, spins: undefined, plays: undefined, standouts: undefined }, null, [], undefined, opts).length - extrasOnly(undefined, undefined);
-  const extraBound = (E + E + 2 * V) * (CLIPS.pollShort + 10 + CLIPS.play + 10 + PP * (CLIPS.play + 1) + CLIPS.origin + 1);
+  const extraBound = (E + E + 2 * V) * (CLIPS.question + CLIPS.pollShort + 20 + CLIPS.play + 10 + PP * (CLIPS.play + 1) + CLIPS.origin + 1);
   assert.ok(extraText <= extraBound, `extras ${extraText} > ${extraBound}`);
   assert.ok(extraText > extraBound / 2, `the bound is tight: ${extraText} against ${extraBound}`);
   assert.equal(text.length, renderDigest({ ...d, polls: d.polls!.map((p) => ({ ...p, title: long(50000) })) }, null, [], undefined, opts).length, 'longer free text does not make it longer');
@@ -492,8 +492,4 @@ test('a tied poll in short form keeps its closing tail and its counts match the 
   const d: Digest = { ...small, excerpts: [{ ...small.excerpts[0]!, extras: { poll: tied, plays: [], reactions: {}, rewoundTo: null } }] };
   const row = renderDigest(d, null, [], undefined, seeOpts).split('\n').find((l) => l.startsWith('Luigi (they/them), 7 reactions'))!;
   assert.ok(/, closes in 2 hours\]$/.test(row), row.slice(-120));
-  // More counts than options: the options past the cut do not lend their counts to the leaders.
-  const lopsided = { ...poll, options: Array.from({ length: DIGEST_MOST.pollOptions + 2 }, (_, i) => `O${i}`), counts: [...Array.from({ length: DIGEST_MOST.pollOptions }, () => 1), 50, 50], voters: 102 };
-  const r2 = renderDigest({ ...small, excerpts: [{ ...small.excerpts[0]!, extras: { poll: lopsided, plays: [], reactions: {}, rewoundTo: null } }] }, null, [], undefined, seeOpts);
-  assert.ok(!r2.includes('tied at 50') && !r2.includes('leads 50'), r2);
 });

@@ -16,7 +16,7 @@ import type { Memory } from './memory.ts';
 import { excerpt, EXCERPT_WORDS } from './excerpt.ts';
 import { READ_WORDS } from './read.ts';
 import { amountWords, ago } from './when.ts';
-import { originLine, playLine, pollLines, pollShort, rewoundLine, type ReadOrigin, type ReadPlay, type ReadPoll, type Extras } from './extras.ts';
+import { originLine, playLine, pollLines, pollStanding, pollTime, rewoundLine, type ReadOrigin, type ReadPlay, type ReadPoll, type Extras } from './extras.ts';
 import type { SeenPlay } from '../rules/cards.ts';
 
 /**
@@ -230,7 +230,7 @@ export const CLIPS = {
   feedItem: 200,
   memoryNote: 300,
   memoryItem: 120,
-  /** A poll's question, an option, and the short poll line; a play's line; an origin line. */
+  /** A poll's question, an option, and the standing-and-time tail of the short poll line (the question is clipped apart); a play's line; an origin line. */
   question: 200,
   option: 100,
   pollShort: 400,
@@ -362,38 +362,32 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   const now = words.now ?? Date.parse(digest.until);
   const seen = words.seen ?? (() => null);
   const cardName = words.cardName ?? (() => undefined);
-  const playText = (p: ReadPlay): string => clip(line(playLine(p, { now, seen: seen(p.card, { config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, now), amountWords }), cardName })), CLIPS.play);
+  const playText = (p: ReadPlay, elsewhere = false): string => clip(line(playLine(p, { now, elsewhere, seen: seen(p.card, { config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, now), amountWords }), cardName })), CLIPS.play);
   // A poll with its free strings and option list bounded, before any renderer sees it.
-  // The counts are cut to the options' length, so an option past the cut never lends its count to the leaders.
-  const tame = (p: ReadPoll): ReadPoll => ({ ...p, question: clip(line(p.question ?? ''), CLIPS.question), options: (p.options ?? []).slice(0, DIGEST_MOST.pollOptions).map((o) => clip(line(o), CLIPS.option)), counts: (p.counts ?? []).slice(0, DIGEST_MOST.pollOptions) });
-  // The short poll line, assembled in parts so no clip can cut its closing tail: a tie names at most three options, then "others"; the question and the standing are clipped before they are joined.
+  const tame = (p: ReadPoll): ReadPoll => ({ ...p, question: clip(line(p.question ?? ''), CLIPS.question), options: (p.options ?? []).slice(0, DIGEST_MOST.pollOptions).map((o) => clip(line(o), CLIPS.option)) });
+  // The short poll line, assembled from the reader's parts so no clip can cut its closing tail: the question is clipped at CLIPS.question; the standing (a tie names at most three options, then "others") and the time are the tail, which CLIPS.pollShort bounds.
   const pollText = (p: ReadPoll): string => {
     const t = tame(p);
     const counts = t.options.map((_, i) => t.counts?.[i] ?? 0);
     const top = counts.reduce((m, c) => Math.max(m, c), 0);
     const tiedAt = counts.filter((c) => c === top).length;
     const shown = tiedAt > 3 && top > 0 ? { ...t, options: t.options.filter((_, i) => counts[i] === top).slice(0, 3).concat(['others']), counts: [top, top, top, top] } : t;
-    const short = line(pollShort({ ...shown, question: '' }, now));
-    const at = short.indexOf('"", ');
-    // `[poll: "", <standing>, <time>]`: the question goes back in, clipped, and the rest is the standing and the time, each already bounded.
-    return `[poll: "${unquote(clip(line(t.question ?? ''), CLIPS.question))}", ${clip(short.slice(at + 4, -1), CLIPS.pollShort)}]`;
+    return `[poll: "${unquote(t.question ?? '')}", ${clip(line(`${pollStanding(shown)}, ${pollTime(shown, now)}`), CLIPS.pollShort)}]`;
   };
   // The Cards section names the post after the line, so a card with no sentence of the instance's reads without "on this post".
-  const playRow = (p: ReadPlay): string => {
-    const sentence = seen(p.card, { config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, now), amountWords });
-    if (sentence !== null && sentence !== '') return playText(p);
-    return clip(line(`[${p.card === null ? 'A card set face down' : cardName(p.card) ?? 'A card'} was played, ${ago(p.at, now)}]`), CLIPS.play);
-  };
   const originText = (o: DigestOrigin): string => clip(line(originLine(o, now, { cardName })), CLIPS.origin);
   /**
    * A shown post's extras in short form, each as ` <text>`: its poll, a rewind, its plays, its origin. The reaction counts (`extras.reactions`) are left out on purpose: the excerpt line already shows the post's reaction total.
    */
-  const extrasOf = (x: DigestSee): string => [
+  const extrasOf = (x: DigestSee): string => {
+    const rewound = rewoundLine(x.extras?.rewoundTo, now);
+    return [
     ...(x.extras?.poll ? [pollText(x.extras.poll)] : []),
-    ...(rewoundLine(x.extras?.rewoundTo, now) === null ? [] : [line(rewoundLine(x.extras?.rewoundTo, now)!)]),
-    ...(x.extras?.plays ?? []).slice(0, DIGEST_MOST.postPlays).map(playText),
+    ...(rewound === null ? [] : [line(rewound)]),
+    ...(x.extras?.plays ?? []).slice(0, DIGEST_MOST.postPlays).map((p) => playText(p)),
     ...(x.origin ? [originText(x.origin)] : []),
   ].map((t) => ` ${t}`).join('');
+  };
   const { threads: T, boards: B, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
   const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E + (2 + DIGEST_MOST.conversationWith) * DIGEST_MOST.conversations).map((c) => [c.id, taggedName(clip(line(c.name), CLIPS.name), c.pronouns)]));
   const name = (id: string): string => known.get(id) ?? 'someone';
@@ -457,8 +451,8 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
     const rows = digest.polls.slice(0, DIGEST_MOST.polls).flatMap((p) => {
       const shown = p.extras?.poll;
       if (shown === null || shown === undefined) return [];
-      const [first = '', ...rest] = pollLines(tame(shown), now);
-      return [`On ${postWords(p.seq)} in "${unquote(clip(line(p.title), CLIPS.title))}" (${clip(line(p.board), CLIPS.board)}):`, first.replace(/^\[poll on this post\]/, '[poll]'), ...rest];
+      const [first = '', ...rest] = pollLines(tame(shown), now, '[poll]');
+      return [`On ${postWords(p.seq)} in "${unquote(clip(line(p.title), CLIPS.title))}" (${clip(line(p.board), CLIPS.board)}):`, first, ...rest];
     });
     section('Polls', rows, 'No poll was open or ran in the window.');
   }
@@ -468,7 +462,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   if (digest.plays !== undefined) {
     section(
       'Cards on the board',
-      digest.plays.slice(0, DIGEST_MOST.plays).map((p) => `${playRow(p)} on ${postWords(p.seq)} in "${unquote(clip(line(p.title), CLIPS.title))}".`),
+      digest.plays.slice(0, DIGEST_MOST.plays).map((p) => `${playText(p, true)} on ${postWords(p.seq)} in "${unquote(clip(line(p.title), CLIPS.title))}".`),
       'No card was played in the window.',
     );
   }
