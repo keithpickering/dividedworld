@@ -10,6 +10,9 @@
 -- 4. A second apply of an applied meeting posts nothing again.
 -- 5. Minutes longer than postMaxLength are cut to it.
 -- 6. The thread is one of the instance's own (instance_threads()), so it follows the system board's flag.
+-- 7. The minutes are words that decide nothing: with the instance's `meetingsThreadTitle` missing, a meeting that carries minutes still applies (its moves and points land), the record says
+--    minutesPosted false and minutesSkipped names the missing word, and no thread is opened (the sub-block rolled its own insert back).
+-- 8. The same with a Boss that cannot write (retired): the meeting applies, the minutes are skipped with the reason, nothing is posted.
 -- (Poison: apply_meeting posting before the already-applied check, or posting with `meetings_thread` read before the season's row is locked. Red on "an applied meeting posted its minutes again".)
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -30,7 +33,8 @@ do $$
 declare
   general uuid;
   sid bigint;
-  m1 bigint; m2 bigint; m3 bigint; m4 bigint; m5 bigint; m6 bigint;
+  m1 bigint; m2 bigint; m3 bigint; m4 bigint; m5 bigint; m6 bigint; m7 bigint; m8 bigint;
+  threads_before integer;
   r jsonb;
   t uuid;
   posts integer;
@@ -94,4 +98,32 @@ begin
 
   -- 6. The thread is one of the instance's own.
   perform pg_temp.expect(t in (select instance_threads()), 'the Staff Meetings thread is not in instance_threads()');
+
+  -- 7. No meetingsThreadTitle: the meeting applies, the minutes are skipped.
+  update seasons set meetings_thread = null where id = sid;
+  select count(*) into threads_before from threads;
+  update settings set value = value - 'meetingsThreadTitle' where key = 'copy';
+  m7 := (begin_meeting('2031-04-07T09:00:00Z') ->> 'meeting')::bigint;
+  r := apply_meeting(m7, pg_temp.payload(general, 'Seven', jsonb_build_object('minutes', 'Unseeded.', 'points', jsonb_build_array(jsonb_build_object('staff', 'mn-boss', 'line', 'Hold the line.')))));
+  perform pg_temp.expect(r ->> 'status' = 'applied', 'a missing meetingsThreadTitle failed the meeting: ' || r::text);
+  perform pg_temp.expect(exists (select 1 from queued_moves q where q.meeting = m7), 'a missing meetingsThreadTitle lost the meeting''s moves');
+  perform pg_temp.expect(exists (select 1 from staff_points p where p.meeting = m7), 'a missing meetingsThreadTitle lost the meeting''s points');
+  perform pg_temp.expect((select (record ->> 'minutesPosted')::boolean from meetings where id = m7) is false, 'a missing word: minutesPosted was not false');
+  perform pg_temp.expect((select record ->> 'minutesSkipped' from meetings where id = m7) like '%meetingsThreadTitle%', 'minutesSkipped did not name the missing word: ' || coalesce((select record ->> 'minutesSkipped' from meetings where id = m7), 'null'));
+  perform pg_temp.expect((select meetings_thread from seasons where id = sid) is null, 'a skipped minutes left the season pointing at a thread');
+  perform pg_temp.expect((select count(*) from threads) = threads_before, 'a skipped minutes left a thread behind');
+  update settings set value = value || jsonb_build_object('meetingsThreadTitle', 'Season {season}: Staff Meetings') where key = 'copy';
+  update seasons set meetings_thread = t where id = sid;
+
+  -- 8. A Boss that cannot write (retired; the season's Boss is never benched, as staff_office_now reads it): the same.
+  select count(*) into threads_before from threads;
+  update characters set retired_at = now() where staff = 'mn-boss';
+  m8 := (begin_meeting('2031-04-08T09:00:00Z') ->> 'meeting')::bigint;
+  r := apply_meeting(m8, pg_temp.payload(general, 'Eight', jsonb_build_object('minutes', 'Benched.', 'points', jsonb_build_array(jsonb_build_object('staff', 'mn-boss', 'line', 'Nope.')))));
+  perform pg_temp.expect(r ->> 'status' = 'applied', 'a retired Boss failed the meeting: ' || r::text);
+  perform pg_temp.expect(exists (select 1 from queued_moves q where q.meeting = m8), 'a retired Boss lost the meeting''s moves');
+  perform pg_temp.expect((select (record ->> 'minutesPosted')::boolean from meetings where id = m8) is false, 'retired: minutesPosted was not false');
+  perform pg_temp.expect((select record ->> 'minutesSkipped' from meetings where id = m8) is not null, 'retired: minutesSkipped did not say why: ' || coalesce((select record ->> 'minutesSkipped' from meetings where id = m8), 'null'));
+  perform pg_temp.expect((select count(*) from acts a where a.thread = t and a.kind = 'post') = 3, 'a retired Boss posted minutes');
+  perform pg_temp.expect((select count(*) from threads) = threads_before, 'a retired Boss left a thread behind');
 end $$;

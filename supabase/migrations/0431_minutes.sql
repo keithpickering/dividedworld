@@ -10,7 +10,8 @@
 --                             through instance_threads() (0429).
 --   apply_meeting             0424's, with the minutes posted when given (within postMaxLength) and the record's `minutesPosted`. A meeting already applied returns before it, so it posts nothing again.
 --
--- A season with no meetings that carry minutes never makes the thread, and an instance that gives no `meetingsThreadTitle` meets copy_of's refusal naming it only when a meeting gives minutes.
+-- A season with no meetings that carry minutes never makes the thread. The minutes decide nothing, so a failure to post them never fails the meeting: an instance that gives no `meetingsThreadTitle`
+-- (copy_of's refusal), a benched Boss or a Boss locked out of the thread leaves `minutesPosted` false and the reason in the record's `minutesSkipped`, and the moves, orders, points and memory stand.
 
 create function meetings_thread(in_season bigint) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -115,6 +116,7 @@ declare
   -- The minutes (0431): the Boss's words on the meeting, posted as written; a blank one, or a value that is not text, is none.
   minutes_txt text := nullif(btrim(case when jsonb_typeof(payload -> 'minutes') = 'string' then payload ->> 'minutes' end, E' \t\n\r\f\v'), '');
   minutes_posted boolean := false;
+  minutes_skipped text;
 begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.meeting.' || apply_meeting.meeting, 0));
   if not exists (select 1 from meetings x where x.id = apply_meeting.meeting) then
@@ -477,8 +479,14 @@ begin
   -- The minutes, after the moves are queued: the Boss's post in the season's Staff Meetings thread, within postMaxLength (the engine already trimmed them to its own bound). An applied meeting returned above, so a retry never posts them again.
   if minutes_txt is not null then
     if hf_post_most is not null and char_length(minutes_txt) > hf_post_most then minutes_txt := left(minutes_txt, hf_post_most); end if;
-    perform write_staff_act(boss, 'post', meetings_thread(season_id), null, jsonb_build_object('body', minutes_txt));
-    minutes_posted := true;
+    -- The minutes are words that decide nothing: a thread the instance has no word for, a benched Boss or a Boss locked out of the thread must not fail a meeting whose paid answer is
+    -- being applied. The sub-block rolls back its own thread insert and season update, and the record says why (as `bundlesSkipped` does).
+    begin
+      perform write_staff_act(boss, 'post', meetings_thread(season_id), null, jsonb_build_object('body', minutes_txt));
+      minutes_posted := true;
+    exception when others then
+      minutes_skipped := left(sqlerrm, 300);
+    end;
   end if;
 
   insert into move_bank (staff, balance, as_of) values (boss, bal2 - spent - handed, now())
@@ -500,6 +508,7 @@ begin
       'handoffTrims', hf_trims,
       'handoffSkipped', hf_skipped,
       'minutesPosted', minutes_posted,
+      'minutesSkipped', to_jsonb(minutes_skipped),
       'patrolsWritten', jsonb_build_object('written', pat_n, 'skipped', pat_skipped),
       'pointsWritten', jsonb_build_object('written', pt_n, 'skipped', pt_skipped, 'trimmed', pt_trimmed),
       'requestsRuled', jsonb_build_object('ruled', jsonb_array_length(rr -> 'rulings'), 'spent', rr -> 'spent', 'skipped', rr -> 'skipped')));
