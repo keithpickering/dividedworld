@@ -7,6 +7,7 @@
  */
 import { ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const ropeBreak: CardRules<Record<string, never>> = {
   key: 'rope-break',
@@ -15,6 +16,7 @@ export const ropeBreak: CardRules<Record<string, never>> = {
   rarity: 'common',
   play: 'set',
   trap: { trigger: { on: 'cast' }, match: { flavors: ['salty'], upTo: 'common' } },
+  seen: (p) => `${who(p)}'s Rope Break sprang on this post, ${p.ago}: a Salty card played here snapped against it, did nothing, and ended up in the setter's hand.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

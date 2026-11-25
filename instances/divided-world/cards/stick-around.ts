@@ -10,6 +10,7 @@
  */
 import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { textField, who } from './seen-words.ts';
 
 const DEFAULT_SENTENCE = 'I legally certify that I have read this post in full and thought about it contemplatively';
 const MOST = 200;
@@ -21,6 +22,10 @@ export const stickAround: CardRules<{ sentence: string }> = {
   name: 'Stick Around',
   alignment: 'sweet',
   rarity: 'common',
+  seen: (p) => {
+    const sentence = textField(p.config, 'sentence', 200);
+    return `${who(p)} made this post stick to readers, ${p.ago}: it pulls them in and fills their screen, and they have to ${sentence === null ? 'check the caster\'s sentence' : `check a box swearing “${sentence}”`} to be let go.`;
+  },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(stickAround, target, effects, now),
   staffOptions: {

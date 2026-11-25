@@ -14,6 +14,7 @@ import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards
 import { occurrences } from './autocorrect/match.ts';
 import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { textField, who } from './seen-words.ts';
 
 export const WORDS = { most: 60 } as const;
 
@@ -58,6 +59,11 @@ export const thisCard: CardRules<ThisConfig> = {
   reaches: ['post'],
   stack: 3,
   setPhrase: (config) => config.phrase,
+  seen: (p) => {
+    const phrase = textField(p.config, 'phrase', 80), words = textField(p.config, 'words', 60);
+    const note = words === null ? 'THIS' : `THIS ${words}`;
+    return `${who(p)} pointed an arrow at ${phrase === null ? 'some of the words in this post' : `“${phrase}”`}, ${p.ago}, with a note: “${note}”.`;
+  },
   playPrice: () => 0,
   canApply: (target, effects, config, now) => {
     const lands = landsOn(thisCard, target, effects, now);

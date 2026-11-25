@@ -14,6 +14,7 @@ import { economyOf, landsOn, ok, refuse, WRITE_TOKENS_MOST, writeTokensMost, typ
 import { defaults } from '../settings.ts';
 import { BAN, youWereSayingFrame } from './you-were-saying/frame.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { field, textField, who } from './seen-words.ts';
 
 export type YouWereSayingConfig = { readonly steps: number };
 
@@ -59,6 +60,12 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
         economyOf(settings, 'youWereSaying.baseTokens') + Math.min(config.steps, mostSteps(settings)) * economyOf(settings, 'youWereSaying.stepTokens'),
       ),
     frame: youWereSayingFrame,
+  },
+  seen: (p) => {
+    const tail = textField(p.state, 'tail', 400) ?? textField(p.config, 'tail', 400);
+    const gone = typeof field(p.state, 'cleared') === 'string';
+    const head = `${who(p)} woke the old voice on this post, ${p.ago}, and it rambled on past the end of the author's words in a tail of green terminal text`;
+    return tail === null ? `${head}.${gone ? ' The author has erased the tail.' : ''}` : `${head}: “${tail}”${gone ? ' The author has erased the tail.' : ''}`;
   },
   playPrice: (settings, target, config) => {
     if (target.reach !== 'post') return 0;

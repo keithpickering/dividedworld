@@ -6,6 +6,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const whodunnit: CardRules<Record<string, never>> = {
   key: 'whodunnit',
@@ -16,6 +17,7 @@ export const whodunnit: CardRules<Record<string, never>> = {
   rarity: 'rare',
   lasts: { unit: 'day', count: 3 },
   veil: 'author',
+  seen: (p) => `${who(p)} played Whodunnit? on this post, ${p.ago}: its author's name is scrubbed off and it is signed by the anonymous poster instead, until the veil lifts.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(whodunnit, target, effects, now),
   validateConfig: () => ok({}),

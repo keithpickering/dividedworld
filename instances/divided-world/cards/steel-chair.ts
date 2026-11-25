@@ -7,6 +7,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths, Span } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const STEEL_CHAIR_LASTS: Span = { unit: 'day', count: 3 };
 
@@ -19,6 +20,7 @@ export const steelChair: CardRules<Record<string, never>> = {
   rarity: 'common',
   stack: 3,
   lasts: STEEL_CHAIR_LASTS,
+  seen: (p) => `${who(p)} threw a folding chair at this post, ${p.ago}: it dented the post and lies on the floor under the words, covering none of them.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(steelChair, target, effects, now),
   validateConfig: () => ok({}),

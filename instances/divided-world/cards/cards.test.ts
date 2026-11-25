@@ -23,7 +23,7 @@ import { reactions } from '../reactions.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import type { CardTarget } from '../../../engine/rules/cards.ts';
 import type { PullPack } from '../../../engine/rules/packs.ts';
-import { by, jimmy, on, post, surf } from './test-kit.ts';
+import { by, jimmy, on, post, seenOf, surf } from './test-kit.ts';
 
 /** What the machine sells a card for: its slot's price. */
 const priceOf = (key: string): number => instance.machine.find((m) => 'card' in m.item && m.item.card === key)!.price;
@@ -791,4 +791,30 @@ test('Trap Card became Card Collector and Bluff was withdrawn, and the instance 
   assert.deepEqual(collector?.formerly, [{ key: 'trap-card', name: 'Trap Card' }]);
   assert.deepEqual(instance.withdrawn, [{ key: 'bluff', name: 'Bluff', refund: 100 }]);
   assert.deepEqual(instanceProblems(instance), []);
+});
+
+test('every card that can land on a post says what a reader of the board sees of it', () => {
+  // A card with no `seen` is shown on the board as "<name> was played on this post", which a model cannot reason about
+  // (docs/plans/2026-11-25-reads-see-the-board-design.md, section 3).
+  const onPosts = cards.filter((c) => (c.reaches ?? ['post']).includes('post'));
+  assert.ok(onPosts.length > 0);
+  assert.deepEqual(onPosts.filter((c) => c.seen === undefined).map((c) => c.key), [], 'cards that reach a post and have no seen');
+});
+
+test('every seen sentence reads for a bare play, a play with no caster, and a play whose data is malformed', () => {
+  const onPosts = cards.filter((c) => (c.reaches ?? ['post']).includes('post'));
+  for (const c of onPosts) {
+    const bare = seenOf(c.key);
+    assert.match(bare, /\S/, `${c.key}: a sentence`);
+    assert.ok(bare.includes('2 days ago'), `${c.key} says when: ${bare}`);
+    const nameless = seenOf(c.key, { by: null });
+    assert.ok(!nameless.includes('Wario') && !nameless.includes('null') && !nameless.includes('undefined'), `${c.key} reads without a caster: ${nameless}`);
+    assert.ok(seenOf(c.key, { by: 'Wario' }).includes('Wario'), `${c.key} names its caster where the board does`);
+    // Config and state are data from outside: whatever they hold, a sentence comes back and nothing throws.
+    for (const junk of [undefined, null, 7, 'text', [], [1, 2], { cues: 'x', phrase: 7, replacement: {}, color: 4, sentence: [], words: 3, strokes: 'no', peeled: 'no', stuck: 5, clean: 'yes', cleared: 1, tail: 9, covered: 'lots', emoji: 9, stencil: 1, can: 2, seed: 'x' }]) {
+      const s = seenOf(c.key, { config: junk, state: junk });
+      assert.match(s, /\S/, `${c.key} with ${JSON.stringify(junk)}`);
+      assert.ok(!/undefined|NaN|\[object/.test(s), `${c.key}: ${s}`);
+    }
+  }
 });

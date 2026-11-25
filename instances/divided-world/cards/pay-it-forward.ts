@@ -6,6 +6,7 @@
  */
 import { ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const payItForward: CardRules<Record<string, never>> = {
   key: 'pay-it-forward',
@@ -14,6 +15,7 @@ export const payItForward: CardRules<Record<string, never>> = {
   rarity: 'uncommon',
   play: 'set',
   trap: { trigger: { on: 'cast' }, match: { flavors: ['sweet'], upTo: 'uncommon' }, outcome: { kind: 'refund' } },
+  seen: (p) => `${who(p)}'s Pay It Forward sprang on this post, ${p.ago}: a kind card played here landed fine, and was handed right back to the one who played it.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

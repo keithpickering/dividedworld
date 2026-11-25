@@ -7,6 +7,7 @@
  */
 import { ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const whoopeeCushion: CardRules<Record<string, never>> = {
   key: 'whoopee-cushion',
@@ -15,6 +16,7 @@ export const whoopeeCushion: CardRules<Record<string, never>> = {
   rarity: 'common',
   play: 'set',
   trap: { trigger: { on: 'cast' }, match: { upTo: 'common' }, outcome: { kind: 'ride', share: 0.25, every: true } },
+  seen: (p) => `${who(p)}'s Whoopee Cushion went off on this post, ${p.ago}: a card was played here and the whole thread heard a long, loud pfffft.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

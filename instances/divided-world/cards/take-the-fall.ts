@@ -5,6 +5,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const takeTheFall: CardRules<Record<string, never>> = {
   key: 'take-the-fall',
@@ -12,6 +13,7 @@ export const takeTheFall: CardRules<Record<string, never>> = {
   alignment: 'sweet',
   rarity: 'uncommon',
   discipline: { kind: 'fall' },
+  seen: (p) => `${who(p)} stepped up to take the fall for this post, ${p.ago}: the next time a Mod Bot files on it, the filing lands on them instead of its author.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(takeTheFall, target, effects, now),
   validateConfig: () => ok({}),

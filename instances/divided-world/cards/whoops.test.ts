@@ -7,7 +7,7 @@ import { STROKES, whoops } from './whoops.ts';
 import { encodePoints } from './whoops/points.ts';
 import type { Pt } from './whoops/scrub.ts';
 import { defaults as settings } from '../settings.ts';
-import { post } from './test-kit.ts';
+import { post, seenOf } from './test-kit.ts';
 
 test('Whoops! costs 0.25 more per 500 characters of its target, at most 2.00 added', () => {
   const config = { color: '#ff00aa' };
@@ -132,4 +132,29 @@ test('it draws an effect, and a layer washed clean (the state\'s clean is true) 
   assert.equal(cleared({ strokes: [], clean: false }), false);
   assert.equal(cleared({ strokes: [] }), false);
   for (const odd of [{}, null, 'clean', undefined, [], 1]) assert.equal(cleared(odd), false, JSON.stringify(odd));
+});
+
+test('Whoops! says what the splat looks like to a reader, and how much of it has been scrubbed away', () => {
+  const stroke = (width: number, points: Pt[]) => ({ tool: 'wash', width, aspect: 2, points: pack(points) });
+  const sweep = (width: number) => stroke(width, Array.from({ length: 30 }, (_, i): Pt => [i / 29, 0.5]));
+  const wholeBox = Array.from({ length: 12 }, (_, i) => stroke(0.5, Array.from({ length: 30 }, (_, j): Pt => [j / 29, i / 11])));
+  const config = { color: 'teal', seed: 12345 };
+  assert.equal(seenOf('whoops', { config }), 'Wario covered this post in a big teal splat of goop, 2 days ago.', 'a bare play: nothing is washed');
+  assert.equal(seenOf('whoops', { config, by: null }), 'Someone covered this post in a big teal splat of goop, 2 days ago.');
+  assert.equal(seenOf('whoops', { config: { color: '#ff00aa' } }), 'Wario covered this post in a big splat of goop, 2 days ago.', 'a hex ink is not a word');
+  assert.equal(seenOf('whoops', { config, state: { strokes: [] } }), seenOf('whoops', { config }), 'a save with no strokes washes nothing');
+  assert.equal(seenOf('whoops', { config, state: { strokes: [], clean: true } }), 'Wario covered this post in a big teal splat of goop, 2 days ago. It has all been scrubbed away.');
+  // Every band the engine says is told in the card's words; the share behind it is the screens' own.
+  const said = (strokes: object[]) => seenOf('whoops', { config, state: { strokes }, amountWords: (share) => `<${share.toFixed(2)}>` });
+  assert.match(said([sweep(0.04)]), /^Wario covered .* 2 days ago\. <0\.\d\d> of it has been scrubbed away\.$/, 'a thin line is some of it, said through amountWords');
+  assert.match(said(wholeBox), /<0\.99> of it has been scrubbed away\.$/, 'a layer still holding ink is never all of it');
+  for (const [words, then] of [['a bit', 'A bit'], ['some', 'Some'], ['about half', 'About half'], ['most', 'Most'], ['almost all', 'Almost all']] as const) {
+    assert.match(seenOf('whoops', { config, state: { strokes: [sweep(0.04)] }, amountWords: () => words }), new RegExp(`2 days ago\\. ${then} of it has been scrubbed away\\.$`), words);
+  }
+  assert.doesNotMatch(seenOf('whoops', { config, state: { strokes: [sweep(0.04)] }, amountWords: () => 'none' }), /scrubbed/, 'none says nothing');
+  // The real bands rise with the strokes: a dab is little, the whole box is most.
+  const rank = ['none', 'a bit', 'some', 'about half', 'most', 'almost all', 'all'];
+  const at = (strokes: object[]) => rank.findIndex((w) => seenOf('whoops', { config, state: { strokes } }).includes(`${w[0]!.toUpperCase()}${w.slice(1)} of it`) || (w === 'none' && !/scrubbed/.test(seenOf('whoops', { config, state: { strokes } }))));
+  assert.ok(at([sweep(0.04)]) < at(wholeBox), 'more washing reads as more');
+  assert.equal(at(wholeBox), rank.indexOf('almost all'));
 });

@@ -21,6 +21,8 @@ import { landsOn, ok, refuse, type CardRules, type Verdict } from '../../../engi
 import type { SurfaceStroke } from '../../../engine/rules/surface.ts';
 import { STENCILS, STENCIL_KEYS, type StencilKey } from './graffiti/stencils.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { capital, field, who } from './seen-words.ts';
+import { GRID } from '../../../engine/rules/surface.ts';
 
 export const CANS = { black: '#111111', white: '#fafafa', red: '#e8202a', orange: '#ff7a1a', yellow: '#ffd200',
   lime: '#7ed321', green: '#16a34a', teal: '#14b8a6', cyan: '#22c7f0', blue: '#2457e6', purple: '#7c3aed',
@@ -39,6 +41,8 @@ const isCan = (v: unknown): v is Can => typeof v === 'string' && Object.hasOwn(C
 const isCap = (v: unknown): v is Cap => typeof v === 'string' && Object.hasOwn(CAPS, v);
 const isStencil = (v: unknown): v is StencilKey => typeof v === 'string' && Object.hasOwn(STENCILS, v);
 const isSpot = (v: unknown): v is number => typeof v === 'number' && Number.isInteger(v) && v >= 0 && v <= 8;
+/** What a stencil is, to sit in a sentence (graffiti/words.ts says the same to a player; it imports this file, so the staff's words are kept here). */
+const STENCIL_NOUNS: Record<StencilKey, string> = { mustache: 'a mustache', horns: 'a pair of horns', crown: 'a crown', kilroy: 'Kilroy was here', x: 'a big X', smiley: 'a smiley face' };
 const CAN_WORDS = `the cans are ${Object.keys(CANS).join(', ')}`;
 
 type Points = [number, number][];
@@ -129,6 +133,15 @@ export const graffiti: CardRules<GraffitiConfig> = {
   stack: 1,
   screenReads: [{ key: 'graffiti.limit', whole: true, min: 1, max: 100 }],
   surface: { limitKey: 'graffiti.limit', mostLive: BOUNDS.mostLive, validateDraw, validateWash },
+  seen: (p) => {
+    const stencil = field(p.config, 'stencil'), can = field(p.config, 'can');
+    const mark = typeof stencil === 'string' && typeof can === 'string' ? `${STENCIL_NOUNS[stencil as StencilKey] ?? 'a drawing'} in ${can} spray paint` : null;
+    const first = mark === null ? `${who(p)} turned this post into a wall, ${p.ago}: any character can spray it, and its own character can scrub it.` : `${who(p)} sprayed ${mark} across this post, ${p.ago}; any character can add to the wall, and its own character can scrub it.`;
+    const covered = field(p.state, 'covered');
+    // The wall's cover is the surface's own (a count of the 100 x 100 cells it holds), which the reader gives where it has it.
+    const share = typeof covered === 'number' && Number.isFinite(covered) ? Math.min(1, Math.max(0, covered / (GRID * GRID))) : null;
+    return share === null || p.amountWords(share) === 'none' ? first : `${first} ${capital(p.amountWords(share))} of the wall is covered in paint.`;
+  },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(graffiti, target, effects, now),
   // A player's play names nothing (the draw is the first draw); a Mod Bot's names a stencil, a can and a spot, all or none.

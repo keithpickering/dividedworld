@@ -5,6 +5,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const forceField: CardRules<Record<string, never>> = {
   key: 'force-field',
@@ -14,6 +15,7 @@ export const forceField: CardRules<Record<string, never>> = {
   play: 'use',
   gimmick: { kind: 'ward', upTo: 'uncommon' },
   lasts: { unit: 'day', count: 7 },
+  seen: (p) => `${who(p)} raised a Force Field around this post, ${p.ago}: lesser cards bounce off it for a week, and then it fades.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(forceField, target, effects, now),
   validateConfig: () => ok({}),

@@ -7,7 +7,7 @@ import { CUES, PLACES, laughTrack, placesOf, type Cue } from './laugh-track.ts';
 import { castOnPost, decidePlay, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
-import { on } from './test-kit.ts';
+import { on, seenOf } from './test-kit.ts';
 
 const WORDS = ['alpha', 'bravo', 'charlie', 'delta', 'echoes', 'foxtrot', 'golfing', 'hotel'];
 const target = (text: string) => postTarget('p1', 'post', text);
@@ -284,4 +284,11 @@ test('Laugh Track\'s price is 0.05 a place past five, at most 1.00, and a face a
   assert.equal(laughTrack.playPrice(settings, { reach: 'character', character: 'c' }, { cues: [cue('word')] }), 0);
   const tuned = withOverrides(settings, { economy: { 'laughTrack.perPlace': 10, 'laughTrack.freePlaces': 1 } });
   assert.equal(laughTrack.playPrice(tuned, on('word word word'), { cues: [cue('word')] }), 20, 'its numbers are the settings\'');
+});
+
+test('Laugh Track says which words the audience reacts to, and how', () => {
+  const config = { cues: [{ phrase: 'big mistake', sound: 'boo' }, { phrase: 'best day ever', sound: 'cheer' }, { phrase: 'ha ha', sound: 'laugh' }] };
+  assert.equal(seenOf('laugh-track', { config }), 'Wario wired this post for sound, 2 days ago: a studio audience gives a boo at “big mistake”, a cheer at “best day ever”, a laugh at “ha ha” when a reader points at the cued words.');
+  assert.match(seenOf('laugh-track', { config, by: null }), /^Someone wired this post for sound/);
+  assert.match(seenOf('laugh-track'), /an audience is listening for particular words/);
 });
