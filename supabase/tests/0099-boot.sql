@@ -29,8 +29,10 @@ begin
   insert into card_ledger (account, card, kind, price) values (ann, 'blot', 'bought', 0), (ann, 'blot', 'bought', 0), (ann, 'sweetie', 'bought', 0);
   insert into account_preferences (account, theme, postbit) values (ann, 'dusk', 'stacked');
   insert into character_profiles (character, title, signature) values (a1, 'The Zed', 'zed sig') on conflict (character) do update set title = excluded.title;
-  perform tests.post(a1, t, 'First.');
-  perform tests.post(b1, t, 'Second.');
+  -- Ann's post is the thread's last, so the board's last poster, which is public, is her character: a board names the
+  -- character of its newest thread's highest seq, and with Bob's post last, his character would be in the boot by that road.
+  perform tests.post(b1, t, 'First.');
+  perform tests.post(a1, t, 'Second.');
   last_end := (select max(ends_at) from settlements);
   if last_end is null or last_end < now() - interval '1 hour' then
     perform set_config('role', 'service_role', true);

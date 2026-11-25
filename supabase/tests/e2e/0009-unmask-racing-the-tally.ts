@@ -15,29 +15,20 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { migratedDatabase } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
-/** A database of its own, with every migration and the fixtures, dropped after `run`. */
+/** A database of its own, with every migration and the fixtures, dropped after `run`: a clone of the runner's `migrated` snapshot, given the fixtures. */
 function onItsOwnDatabase(suffix: string, run: (db: string) => void) {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_${suffix}`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  const own = migratedDatabase(suffix);
   try {
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    const migrations = path.join(root, 'supabase/migrations');
-    for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
-    run(db.toString());
+    psqlOn(own.url, fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
+    run(own.url);
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    own.drop();
   }
 }
 

@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- A merge rebuilds its threads in one statement, and the counts follow per statement (supabase/migrations/0312_thread_places_at_scale.sql; final review of PR #450, finding F1).
 --
 -- Landing a mergeBoard rebuilt every thread of the merged board one thread_place() call at a time, the board count and the search copy each following per row, all inside the tick's one

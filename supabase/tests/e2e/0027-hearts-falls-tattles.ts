@@ -17,13 +17,12 @@
  * the fake judge's "nothing found" says anything of a weight; and the weight itself is public plays only, so nothing here reads an owner.
  *
  * Stepped over, as 0012, 0015 and 0017 step over theirs: the visits' end times (a state row is moved to a minute ago so the filing run may file), the Mod's office (written as the
- * office log's seed row if an earlier file did not), the season's Boss, and the players' wallets and hands (a purchase is another function's: `wallets` and `card_ledger` are written
- * directly, as 0002 and 0020 do). Every board, account and character is this file's own and every assertion is about its ids, since the files before leave committed rows.
+ * office log's seed row if the template has none), the season's Boss, and the players' wallets and hands (a purchase is another function's: `wallets` and `card_ledger` are written
+ * directly, as 0002 and 0020 do). Every board, account and character is this file's own and every assertion is about its ids.
  *
- * Order: a high number, so it runs after the others (tools/test-sql.mjs sorts the files). It relies on nothing a file before it commits except what any file of the stage leaves: the
- * export's Storage is a fake that serves any object a row names (the files before this one leave avatar rows), and the imported database is told of the `export_probe` table 0003 commits,
- * if it is there. It leaves its own committed rows behind and drops the database it imports into.
- * Reads only the scratch database tools/test-sql.mjs made (scratchUrl refuses any other); run by tools/test-sql.mjs.
+ * Order does not matter: tools/test-sql.mjs runs this file on a clone of its own, so no other file's rows are here. The export's Storage is a fake that serves any object a row names
+ * (the template's fixtures may name avatar files), and the file's own committed rows go with its clone. It drops the database it imports into.
+ * Reads only the clone tools/test-sql.mjs made for it (scratchUrl refuses any other); run by tools/test-sql.mjs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -33,7 +32,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
-import { psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
+import { migratedDatabase, psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
 import { handleAction } from '../../functions/act/core.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runFilings } from '../../functions/staff/core.ts';
@@ -369,23 +368,15 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
   for (const t of ['warn_reliefs', 'ban_lifts']) assert.notEqual(sql(`select count(*) from ${t}`), '0', `${t} holds rows to carry across`);
   const before = contents(from);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-hearts-'));
-  const fresh = new URL(from);
-  const name = `${fresh.pathname.slice(1)}_hearts_imported`;
-  const server = new URL(from);
-  server.pathname = '/postgres';
-  fresh.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // The fresh instance: a clone of the runner's snapshot of the shim and every migration, nothing seeded.
+  const home = migratedDatabase('hearts_imported');
+  const fresh = new URL(home.url);
   const oldStore = await fakeStorage(true);
   const newStore = await fakeStorage(false);
   try {
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     for (const t of ['warn_reliefs', 'ban_lifts']) assert.ok(fs.existsSync(path.join(dir, `public.${t}.jsonl`)), `the export holds ${t}`);
-    psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    const migrations = path.join(root, 'supabase/migrations');
-    for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
-    // A table an earlier file committed outside the migrations (0003's probe) is made in the fresh database too, as 0003 makes it.
-    if (psqlOn(from, `select to_regclass('public.export_probe') is not null`) === 't') psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
     const after = contents(fresh.toString());
@@ -399,6 +390,6 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
     await oldStore.close();
     await newStore.close();
     fs.rmSync(dir, { recursive: true, force: true });
-    try { psqlOn(server.toString(), `drop database if exists ${name} with (force);`); } catch { /* the harness drops the scratch database's own */ }
+    try { home.drop(); } catch { /* the runner drops what is named for its clone */ }
   }
 });

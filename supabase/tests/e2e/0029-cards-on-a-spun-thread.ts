@@ -3,7 +3,7 @@
  * design sections 1, 5, 6 and 9). Of the plan's cases C1 to C16 only C1, C3, C5, C10 and C12 run here, as named below.
  * The path is the act function's own (supabase/functions/act/core.ts), the settlement job's core (supabase/functions/settle/core.ts)
  * and the export and import tools (tools/export-instance.mjs, tools/import-instance.mjs), against the real migrations on the
- * scratch database, with the instance's REAL cards seeded (Feelin' Fab, Last Word, Good Vibes, Main Event and Mooch).
+ * file's own clone of the suite's template, with the instance's REAL cards seeded (Feelin' Fab, Last Word, Good Vibes, Main Event and Mooch).
  *
  * The day: Ann's character spins a post of Bob's, so the spun thread S opens with Ann's `spin` Act at seq 1, and Bob's
  * character replies once. Then, each through the act function:
@@ -19,14 +19,14 @@
  * imported again to the same forum, and the imported forum reads the plays the same.
  *
  * Stepped over, as 0001, 0027 and 0003 step over theirs: the players' wallets and hands (`wallets` and `card_ledger` are
- * written directly), and the clock. The act function writes at the wall clock, but the settlement's window opens where the files
- * before this one left the settlements (ahead of it), and the skim needs the plays inside the window's reach, so this file's
+ * written directly), and the clock. The act function writes at the wall clock, but the settlement's window opens where the
+ * settlements stand on the clone (none yet, so at the first season's start, behind now), and the skim needs the plays inside the window's reach, so this file's
  * own Acts, reactions and threads are carried to just after the window's start, all by one distance (their order and gaps are
  * kept). Every board, account and character is this file's own, and every assertion is about its ids.
  *
- * Order: a high number, so it runs after the others (tools/test-sql.mjs sorts the files). It leaves its own committed rows
- * behind and drops the database it imports into. Reads only the scratch database tools/test-sql.mjs made (scratchUrl
- * refuses any other); run by tools/test-sql.mjs.
+ * Order does not matter: tools/test-sql.mjs runs this file on a clone of its own, so no other file's rows are here and its own
+ * committed rows go with the clone. It drops the database it imports into. Reads only the clone tools/test-sql.mjs made for it
+ * (scratchUrl refuses any other); run by tools/test-sql.mjs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -35,7 +35,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
+import { migratedDatabase, psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
 import { handleAction } from '../../functions/act/core.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
@@ -94,8 +94,8 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   const KEYS = ['feelin-fab', 'last-word', 'good-vibes', 'main-event', 'mooch'];
   assert.equal(sql(`select count(*) from card_kinds where key in (${KEYS.map((k) => `'${k}'`).join(', ')})`), String(KEYS.length), 'the instance\'s five cards are in the catalog');
 
-  // Where the settlements stand: this file's own window opens there. Its characters are older than that and than now.
-  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
+  // Where the settlements stand: this file's own window opens there (with none yet, at the first season's start, where the settlement's windows begin: a window at now() is past the ones a run settles). Its characters are older than that and than now.
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`);
   const early = sql(`select to_jsonb(least(now(), '${start}'::timestamptz) - interval '3 days')#>>'{}'`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
 
@@ -191,7 +191,7 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   // ---- The clock: this file's Acts, reactions and threads are carried to just after the window's start, by one distance. ----
   // No guard-free way exists. Moving only the reactions (as 0012 does) is not enough: settlement also reads the Mooch plays made before
   // the window and still up in it (migration 0370, skim_up: made within the card's week before window_start and ending after it). The act
-  // function stamped them at the wall clock, and the window opens wherever the earlier files left the settlements, which can be past that
+  // function stamped them at the wall clock, and the window opens wherever the settlements stand on the clone, which can be past that
   // week. Only an update of the Acts' own time puts them inside it, so acts_no_update is off for this one transaction. Replica mode skips the
   // ordinary triggers but not an ALWAYS one (0001_core.sql), hence the alter; it is enabled again, as ALWAYS, before the commit (an error
   // rolls the transaction back, the trigger's state with it).
@@ -211,10 +211,10 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
     commit;`);
 
   // ---- The settlement: the skim is paid on the opening post as on the plain post, and the opening post's reactions go to the spinner. ----
-  // The settlement reads every character on the instance, and 0028 (the file before this one) left its fixture committed, its characters in the test
+  // The settlement reads every character on the instance, and the clone holds the fixtures' characters (the template's), in the test
   // fixtures' classes (alpha, beta: supabase/tests/setup/fixtures.sql:47), which the instance has not. The settle engine refuses a held class the instance lacks
-  // (engine/rules/settle.ts:208), so the instance this settles with is the real one plus those classes, each earning nothing: the leftover characters are in the
-  // input and score nothing, and nothing of theirs is edited or removed. Any file after this one that settles must do the same.
+  // (engine/rules/settle.ts:208), so the instance this settles with is the real one plus those classes, each earning nothing: the fixtures' characters are in the
+  // input and score nothing, and nothing of theirs is edited or removed. Any file that settles on a clone must do the same.
   const held = sql(`select coalesce(string_agg(distinct class_key, ','), '') from class_history`).split(',').filter((k) => k !== '');
   const known = new Set(instance.classes.map((c) => c.key));
   const settling = { ...instance, classes: [...instance.classes, ...held.filter((k) => !known.has(k)).map((k) => ({ key: k, name: k, earn: () => [] }))] };
@@ -267,22 +267,14 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   assert.notEqual(sql(`select count(*) from acts where kind = 'card' and target_act_id = '${open}'`), '0', 'the opening post holds plays to carry across');
   const before = contents(from);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-spun-cards-'));
-  const fresh = new URL(from);
-  const name = `${fresh.pathname.slice(1)}_spun_imported`;
-  const server = new URL(from);
-  server.pathname = '/postgres';
-  fresh.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // The fresh instance: a clone of the runner's snapshot of the shim and every migration, nothing seeded.
+  const home = migratedDatabase('spun_imported');
+  const fresh = new URL(home.url);
   const oldStore = await fakeStorage(true);
   const newStore = await fakeStorage(false);
   try {
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
-    psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    const migrations = path.join(root, 'supabase/migrations');
-    for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
-    // A table an earlier file committed outside the migrations (0003's probe) is made in the fresh database too, as 0003 makes it.
-    if (psqlOn(from, `select to_regclass('public.export_probe') is not null`) === 't') psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
     const after = contents(fresh.toString());
@@ -297,6 +289,6 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
     await oldStore.close();
     await newStore.close();
     fs.rmSync(dir, { recursive: true, force: true });
-    try { psqlOn(server.toString(), `drop database if exists ${name} with (force);`); } catch { /* the harness drops the scratch database's own */ }
+    try { home.drop(); } catch { /* the runner drops what is named for its clone */ }
   }
 });

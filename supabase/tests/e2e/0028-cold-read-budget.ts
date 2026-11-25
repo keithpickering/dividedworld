@@ -28,7 +28,7 @@
  *      of a tenth of the budget and 0.6 MB fails too and asks for the budget to be lowered.
  *   3. Postgres 17 only: the figures differ by major version, so `requireRecorded` stops the file before the fixture and before every measurement on another, and every
  *      test that measures fails on that one message.
- * A megabyte is 1,048,576 bytes. A budget is its measurement in the workflow (the sql job, on its Postgres 17, after the files before this one), rounded up to one decimal,
+ * A megabyte is 1,048,576 bytes. A budget is its measurement in the workflow (the sql job, on its Postgres 17, on the template and this file's own fixture), rounded up to one decimal,
  * plus 0.3 MB of room, so ordinary run-to-run movement never fails
  * a build and the far-under gap (twice the room) never asks a freshly set budget to be lowered.
  *
@@ -41,34 +41,33 @@
  * far-under line can fire on a healthy build: that is the machine, and no budget is lowered for it.
  *
  * `budgetFaults` is that judgment, pure, and each poison below is the defect it exists to catch: a function that reads `acts_public` thirty times over (thirty branches, each
- * joining it to itself three times, since a bare thirty reads of its id alone keep only about half of thread_page's figure, and twice kept 14.144 MB once 0434 made the view's plan smaller, under thread_page's 16.0), committed in the scratch database (each measurement is
+ * joining it to itself three times, since a bare thirty reads of its id alone keep only about half of thread_page's figure, and twice kept 14.144 MB once 0434 made the view's plan smaller, under thread_page's budget), committed in the scratch database (each measurement is
  * a connection of its own, so a rolled-back transaction would not be seen) and dropped in a `finally`, is measured against thread_page's budget and must be named as over; a
  * screen function with no budget, a budget with no function and a measurement far under its budget are each named, with cases that tell the larger of the tenth and the floor
  * from the smaller.
  *
  * The fixture (two accounts, three characters, a staff persona, a board of its own with a thread of twenty posts with five card plays and one post by the persona, an admin) is committed once so
  * each call answers a document and not a refusal. A call reads the fixture's own rows (its board, thread, characters and accounts), or something no file changes (season 1 and
- * the open season, which fixtures.sql makes, and ids or terms that match nothing), or the whole instance as the files before this one left it (index_page's boards, the queue,
- * a season's rankings, a search, the updates): the same rows in every run of the suite, which is why a budget is the workflow's figure after those files and a run of this
- * file alone on a database holding only the fixtures measures another state. None names 'general', which an earlier file merges away.
- * It is left in the scratch database: this is the last end-to-end file, and a later file that counted accounts or characters would see it, and would find every mask an
- * earlier file left online a day stale (below). `drive_gifts_page` and `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those
+ * the open season, which fixtures.sql makes, and ids or terms that match nothing), or the instance as the template holds it (index_page's boards, the queue,
+ * a season's rankings, a search, the updates): the same rows in every run of the suite, since every end-to-end file runs on a clone of its own (tools/test-sql.mjs), which is why a
+ * budget is the workflow's figure on that state: the template and this file's own fixture, and nothing an earlier file left. A run of this file alone on a clone measures the same state.
+ * None names 'general', which an earlier file merged away when the files shared one database; no file does now.
+ * It is committed to this file's own clone, which is dropped after it: no later file sees it. It would otherwise find every mask a file left online a day stale (below).
+ * `drive_gifts_page` and `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those
  * pages call only for each row is not planned by these calls and its plan is not in their figures.
  *
  * Who is online is pinned, because it is what decides, by the clock, whether a helper is planned. The online box (`presence_box`, which index_page, board_page and
  * thread_page each call) names every mask seen inside the presence window (five minutes) and calls `banned_until` and `group_now` once for each name. A first call plans
  * only what it runs, so for index_page and board_page neither helper is planned with nobody online and both are with one mask online (thread_page plans them for its
- * posters whoever is online), and `ban_ends` and what it calls are planned only where that mask has a ban. An earlier file commits a mask's presence at `now()`, a mask
- * with a ban an Unban lifted (0003-export.ts), so index_page's figure was one or the other by how long the files between took: 5.2 MB in a run that reached this file 5
- * minutes 22 seconds after that one passed, 5.960 MB in a run that reached it after 4 minutes 20, and under 5.5 again when that job was run again (the sql job,
- * 2026-11-15, the same commit of every file under supabase/). The ban is little of that: with the fixture's own mask online, which has none, the workflow measures
- * 5.954. A board's and a thread's box also read every staff persona's posts inside the window, anywhere on the
- * instance, to name those on that board or in that thread, and reading them runs `conceal_layer` on each: 0.06 MB of board_page's figure, there or not by when an
- * earlier file's Mod last posted.
+ * posters whoever is online), and `ban_ends` and what it calls are planned only where that mask has a ban. When the files shared one database, an earlier file's
+ * presence rows decided it by the clock: index_page measured 5.2 MB in one run and 5.960 MB in another of the same commit, by how long the files between took (the sql job,
+ * 2026-11-15). Each file now runs on a clone of its own, which holds only the template's rows, but the pin stays: it is what makes the figure the plan's and not the
+ * clock's. A board's and a thread's box also read every staff persona's posts inside the window, anywhere on the instance, to name those on that board or in that
+ * thread, and reading them runs `conceal_layer` on each: 0.06 MB of board_page's figure.
  *
  * So the fixture makes one of its own masks the one mask online, browsing its own thread, and has its own persona post in that thread, as an instance with anyone on
- * it stands; and it sets every other presence row's `seen_at` a day back (an earlier file's leftovers, and this is the last file). An Act cannot be dated back, so an
- * earlier file's Mod may still be named beside the fixture's; the fixture's is always there, so `conceal_layer` is always planned. The fixture's mask has no ban (one is
+ * it stands; and it sets every other presence row's `seen_at` a day back, so a presence row the template ever comes to hold cannot move the figure. The fixture's
+ * persona is always there, so `conceal_layer` is always planned. The fixture's mask has no ban (one is
  * written only through `infract`, which needs an instance's settings a database holding only the fixtures does not have), so `ban_ends` is outside index_page's and
  * board_page's figures as a row's helper is outside drive_gifts_page's. `onlineFaults` holds the pin before the first measurement and after the last: a mask online
  * that is not the fixture's, or the fixture's mask or persona gone from the window (a machine that took five minutes over this file), fails by that name and not as a
@@ -246,36 +245,32 @@ const budget = (call: (f: Fixture) => string, as: (f: Fixture) => string, mb: nu
 
 /**
  * Each screen function, one real call that answers a document; a search read is called with a term and no filter, since the plan it keeps does not depend on the term.
- * The budgets were re-recorded for #968, when the catalog cache began to be counted by what it uses (the header). They come from the workflow's sql job on Postgres 17,
- * run 45475266814 on c1d072b, the first run with that count, and each is rounded up to one decimal plus 0.3 MB. A function whose call took the cache past a block
- * fell by 1.5 to 2 MB: board_page from 11.820 to 10.068 MB, thread_page from 21.198 to 19.706, log_page from 15.769 to 14.232 and boot from 8.770 to 6.995. The
- * others fell by up to 0.8 MB, except index_page's, which rose 0.2 to 7.4, since every budget now follows the rule from this one run.
- * Lowered for 0434_reads_bounded_on_any_plan.sql, whose acts_public no longer hashes the live veils once for each statement: index_page from 7.4 to 6.9 (6.595 MB) and thread_page from 20.1 to 16.0 (15.666 MB), by the
- * rule, from the workflow's sql job on Postgres 17, run 45702811734 on aab83bf.
- * Counted by blocks, board_page had moved by 2 MB twice. Once it was a change (0403_departed_personas.sql gave season_handovers, which board_page plans through
- * season_boss_changes, two more indexes, and with the planner statistics of the rows the files before this one commit, their relcache entries took the cache from
- * 2227 kB to 4283 kB). Once it was no change at all: 9.822 on d7661f6 and 11.821 on 1201d38, with no SQL changed between them, by whether an analyze had run.
- * Both were one new block of CacheMemoryContext, which this count no longer reads. Its plans did not change: the WITH plan was 1039 kB and the pinned threads'
- * play_reach plan 1024 kB on both sides. On Postgres 16, after the files before this one, deleting every planner statistic moved board_page by 2.03 MB counted by
- * blocks and by 0.15 MB counted this way. So board_page needs no wider far-under gap than any other function.
+ * The budgets were re-recorded for #587, when every file began to run on a clone of its own: the figures are the template's and this file's fixture's, and no longer
+ * what the files before this one left. They come from the workflow's sql job on Postgres 17, run 45678827582 on e8bf5dc, the first run on clones, and each is rounded
+ * up to one decimal plus 0.3 MB. Seven fell by more than the far-under gap: board_page from a budget of 10.4 to a measured 9.167 MB, boot 7.3 to 6.053, index_page
+ * 7.4 to 5.984, my_characters_page 4.3 to 3.235, profile_page 6.5 to 5.452, queue_page 4.9 to 3.785 and record_page 6.4 to 5.385, the state measured being the
+ * template's and not what other files committed. The others moved by less, and every budget follows the rule from this one run.
+ * Before, for #968 (run 45475266814 on c1d072b), the catalog cache began to be counted by what it uses: a function whose call took the cache past a block fell by
+ * 1.5 to 2 MB. Counted by blocks, board_page had moved by 2 MB twice, once for a change (0403_departed_personas.sql's two indexes) and once for no change at all,
+ * by whether an analyze had run; both were one new block of CacheMemoryContext, which this count no longer reads.
  */
 export const BUDGETS: Record<string, Budget> = {
-  alerts_page: budget(() => 'public.alerts_page(null)', player, 5.5),
-  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 10.4),
-  boot: budget(() => 'public.boot()', player, 7.3),
-  drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 2.4),
-  index_page: budget(() => 'public.index_page()', player, 6.9),
-  log_page: budget(() => 'public.log_page(null)', player, 14.6),
-  my_characters_page: budget(() => 'public.my_characters_page()', player, 4.3),
-  profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 6.5),
-  queue_page: budget(() => 'public.queue_page()', admin, 4.9),
-  record_page: budget((f) => `public.record_page('${f.mine}', 'post', 1)`, player, 6.4),
-  results_page: budget(() => 'public.results_page(1, 1)', player, 0.8),
-  search_posts: budget(() => `public.search_posts('post', null, null, null, null, false, null, null, 5)`, player, 5.7),
+  alerts_page: budget(() => 'public.alerts_page(null)', player, 5.4),
+  board_page: budget((f) => `public.board_page('${f.board}', 1, array[]::text[])`, player, 9.5),
+  boot: budget(() => 'public.boot()', player, 6.4),
+  drive_gifts_page: budget(() => `public.drive_gifts_page(gen_random_uuid(), now(), 'ffffffff-ffff-ffff-ffff-ffffffffffff')`, player, 2.3),
+  index_page: budget(() => 'public.index_page()', player, 6.3),
+  log_page: budget(() => 'public.log_page(null)', player, 13.7),
+  my_characters_page: budget(() => 'public.my_characters_page()', player, 3.6),
+  profile_page: budget((f) => `public.profile_page('${f.theirs}')`, player, 5.8),
+  queue_page: budget(() => 'public.queue_page()', admin, 4.1),
+  record_page: budget((f) => `public.record_page('${f.mine}', 'post', 1)`, player, 5.7),
+  results_page: budget(() => 'public.results_page(1, 1)', player, 0.7),
+  search_posts: budget(() => `public.search_posts('post', null, null, null, null, false, null, null, 5)`, player, 5.6),
   search_suggest: budget(() => `public.search_suggest('co', null, null, false, 5)`, player, 3.0),
-  search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.2),
+  search_threads: budget(() => `public.search_threads('cold', null, null, null, null, false, null, null, 5)`, player, 6.1),
   season_page: budget(() => `public.season_page('rankings', null, null, 1)`, player, 2.7),
-  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 16.0),
+  thread_page: budget((f) => `public.thread_page('${f.thread}', 1, null, 20, array['sweetie'])`, player, 19.2),
   updates_page: budget(() => 'public.updates_page(null, null, null)', player, 2.1),
 };
 

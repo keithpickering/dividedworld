@@ -42,6 +42,20 @@
  * drifts back to automatic unnoticed and a page's kept plan has no connection to be used again on; without `--set`
  * the step only reads; a second runner would write the pool from a workflow that holds no secret.
  *
+ * R16 holds the SQL shards in sql.yml as R9 holds the e2e ones (docs/plans/2026-11-25-sql-suite-split-design.md, section 5):
+ * the job that runs `npm run test:sql` has a matrix whose only key is `shard`, a list that is exactly 1 to n, fail-fast
+ * off so a failed shard still reports, a command whose total is `${{ strategy.job-total }}` and that writes a report, and
+ * an upload of that report named `sql-report-<shard>` that runs when the shard failed. A job `sql-total` needs the shards,
+ * runs when one failed (`always()`, and not for a draft, as the shards are not run), reads their result, downloads every
+ * report and gathers them (`node tools/test-sql.mjs --gather=<dir>`), which fails unless every file on disk ran. Without
+ * it a gap in the list, or a shard that never reported, loses files and stays green.
+ *
+ * R16 also holds: the shards' job `if` is exactly the draft-skip condition, `sql-total`'s is exactly `always() && (<draft-skip>)`
+ * (parentheses required), the upload's is exactly `always()` with `if-no-files-found: error`, `continue-on-error` appears nowhere
+ * in sql.yml, the result step's run is exactly `[ "$SHARDS" = success ]`, and both jobs' `timeout-minutes` is present and at most 30,
+ * so the limit cannot creep back up unnoticed. No `sql-total` step has `if`, `shell`, `working-directory` or
+ * `continue-on-error`, no `defaults` appears, and the gather and result steps' `run` is exactly their one command.
+ *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
  *
@@ -269,6 +283,76 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
         }
       }
       if (bad9.length) out.push(`${path}: R9 the e2e job: ${bad9.join('; ')}`);
+    }
+  }
+
+  // R16: sql.yml's shards are one list, and sql-total gathers every report.
+  const sqlDoc = docs[`${WORKFLOWS}/sql.yml`];
+  if (sqlDoc) {
+    // An `if` compared as written less its `${{ }}` wrapper and extra whitespace.
+    const normIf = (v) => String(v ?? '').trim().replace(/^\$\{\{\s*([\s\S]*?)\s*\}\}$/, '$1').replace(/\s+/g, ' ').trim();
+    const DRAFT_SKIP = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+    const hasContinue = (v) => JSON.stringify(v ?? {}).includes('"continue-on-error"');
+    const hasDefaults = [sqlDoc, ...Object.values(isObj(sqlDoc.jobs) ? sqlDoc.jobs : {})].some((x) => isObj(x) && 'defaults' in x);
+    if (hasDefaults) out.push(`${WORKFLOWS}/sql.yml: R16 defaults appears (a workflow's or a job's); it could change the shell every step runs in`);
+    if (hasContinue(sqlDoc)) out.push(`${WORKFLOWS}/sql.yml: R16 continue-on-error appears; a failed job or step must stay failed`);
+    const path = `${WORKFLOWS}/sql.yml`;
+    const isSuite = (s) => /npm run test:sql/.test(String(s?.run ?? ''));
+    const jobsOf = isObj(sqlDoc.jobs) ? sqlDoc.jobs : {};
+    const suiteJobs = Object.entries(jobsOf).filter(([, j]) => list(j?.steps).some(isSuite));
+    if (!suiteJobs.length) out.push(`${path}: R16 no job runs npm run test:sql; the release would run no SQL suite`);
+    const COMMAND = 'npm run test:sql -- --shard=${{ matrix.shard }}/${{ strategy.job-total }} --report=';
+    for (const [shardJobName, job] of suiteJobs) {
+      const matrix = job.strategy?.matrix;
+      const bad16 = [];
+      const keys = isObj(matrix) ? Object.keys(matrix) : [];
+      if (keys.length !== 1 || keys[0] !== 'shard') bad16.push(`its matrix's only key must be shard (it has ${keys.join(', ') || 'no matrix'})`);
+      const shard = isObj(matrix) ? matrix.shard : undefined;
+      if (keys.includes('shard') && !(Array.isArray(shard) && shard.length >= 1 && shard.every((v, i) => v === i + 1))) {
+        bad16.push(`the shard list must be the integers 1 to n in order, with no gap or repeat (it is ${JSON.stringify(shard)})`);
+      }
+      if (normIf(job.if) !== DRAFT_SKIP) bad16.push(`the shards' job (${shardJobName}) if must be exactly ${DRAFT_SKIP}`);
+      if (!(typeof job['timeout-minutes'] === 'number' && job['timeout-minutes'] <= 30)) bad16.push('timeout-minutes must be present and at most 30 on the shards');
+      if (job.strategy?.['fail-fast'] !== false) bad16.push('fail-fast must be false, or one failed shard cancels the others before they report');
+      for (const step of list(job.steps).filter(isSuite)) {
+        const run = String(step.run).trim();
+        if (!(run.startsWith(COMMAND) && /^\S+$/.test(run.slice(COMMAND.length).replace(/\$\{\{[^}]*\}\}/g, 'X')))) {
+          bad16.push(`the command must be exactly ${COMMAND}<path>`);
+        }
+      }
+      const uploads = list(job.steps).filter((st) => String(st?.uses ?? '').startsWith('actions/upload-artifact'));
+      if (!uploads.some((st) => st.with?.name === 'sql-report-${{ matrix.shard }}' && normIf(st.if) === 'always()' && st.with?.['if-no-files-found'] === 'error')) {
+        bad16.push('no upload-artifact step named sql-report-${{ matrix.shard }} with if exactly always() and if-no-files-found: error, so a failed shard would leave no report, or an absent one would pass');
+      }
+      for (const st of list(job.steps).filter((x) => /test-sql-drift\.mjs/.test(String(x?.run ?? '')))) {
+        if (!/matrix\.shard\s*==\s*1\b/.test(String(st.if ?? ''))) bad16.push('test-sql-drift.mjs must run in the first shard only (if: matrix.shard == 1)');
+      }
+      const total = jobsOf['sql-total'];
+      if (!isObj(total)) bad16.push('there is no sql-total job to gather the reports');
+      else {
+        if (!list(total.needs).includes(shardJobName)) bad16.push(`sql-total does not need ${shardJobName}, the shards' job (needs: ${JSON.stringify(total.needs ?? null)})`);
+        if (normIf(total.if) !== `always() && (${DRAFT_SKIP})`) bad16.push(`sql-total if must be exactly always() && (${DRAFT_SKIP}), with the parentheses, so it runs when a shard failed and not for a draft`);
+        if (!(typeof total['timeout-minutes'] === 'number' && total['timeout-minutes'] <= 30)) bad16.push('timeout-minutes must be present and at most 30 on sql-total');
+        const resultSteps = list(total.steps).filter((st) => JSON.stringify(st ?? {}).includes(`needs.${shardJobName}.result`));
+        if (!resultSteps.some((st) => String(st.run ?? '').trim() === '[ "$SHARDS" = success ]'
+          && st.if === undefined && normIf(st.env?.SHARDS) === `needs.${shardJobName}.result`)) {
+          bad16.push(`sql-total result step: a step with no if must run [ "$SHARDS" = success ] with SHARDS from needs.${shardJobName}.result, so a cancelled or skipped shard turns it red`);
+        }
+        const downloads = list(total.steps).filter((st) => String(st?.uses ?? '').startsWith('actions/download-artifact'));
+        const dl = downloads.find((st) => st.with?.pattern === 'sql-report-*' && st.with?.['merge-multiple'] === true && typeof st.with?.path === 'string');
+        if (!dl) bad16.push('sql-total has no download-artifact step with pattern: sql-report-*, merge-multiple: true and a path');
+        for (const st of list(total.steps)) {
+          for (const k of ['if', 'shell', 'working-directory', 'continue-on-error']) {
+            if (isObj(st) && k in st) bad16.push(`a sql-total step has ${k} (${JSON.stringify(st.run ?? st.uses ?? '')}); none may, or it could be skipped or always pass`);
+          }
+        }
+        const gathers = list(total.steps).filter((st) => /--gather\b/.test(String(st?.run ?? '')));
+        const dir = dl?.with?.path;
+        if (!gathers.some((st) => String(st.run).trim() === `node tools/test-sql.mjs --gather=${dir}` && dir)) {
+          bad16.push(`sql-total must run node tools/test-sql.mjs --gather=<the directory it downloaded to${dir ? `: ${dir}` : ''}>`);
+        }
+      }
+      if (bad16.length) out.push(`${path}: R16 the ${shardJobName} job: ${bad16.join('; ')}`);
     }
   }
 

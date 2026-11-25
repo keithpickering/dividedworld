@@ -16,7 +16,7 @@
  * upload stores its files a moment before its profile is written, and the hour keeps the sweep
  * from ever taking one in between. It says which database and which
  * Storage it reads before it reads them, and never prints the URL's credentials or
- * the secret key (instance-files.mjs's scrub). supabase/tests/e2e/0007-avatar-sweep.ts runs it
+ * the secret key (instance-files.mjs's scrub). supabase/tests/e2e/0007-avatar-sweep-across-0025.ts runs it
  * against a scratch database and a stand-in for Storage.
  */
 import { BUCKETS, answered, connection, fail, psql, storage, unnamed } from './instance-files.mjs';

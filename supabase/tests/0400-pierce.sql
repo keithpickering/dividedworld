@@ -301,6 +301,10 @@ begin
   if exists (select 1 from acts k where k.kind = 'card' and k.thread = t and k.payload ? 'pierce') then raise exception 'a Use or a landed Move carries a pierce'; end if;
 
   -- The probe of a spent pierce is one lookup of acts_pierce_by (a partial expression index), not a scan of the Acts.
+  -- It is judged on the Acts of a board that has been played on, analyzed here: a fresh instance's `acts` holds a handful of
+  -- rows with no statistics, on which the planner prefers another partial index (acts_origin_plays) for the same kinds.
+  insert into acts (character, kind, thread, payload) select a, 'post', t, jsonb_build_object('body', 'Filler ' || g) from generate_series(1, 3000) g;
+  analyze acts;
   perform set_config('enable_seqscan', 'off', true);
   for plan_line in execute format($q$explain select 1 from acts c where c.kind = 'card' and c.payload ? 'pierce' and (c.payload #>> '{pierce,by}') = %L$q$, pierce::text) loop
     plan_text := plan_text || plan_line || E'\n';

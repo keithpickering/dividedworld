@@ -10,26 +10,18 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { databaseBefore } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('stored themes system, light, dark and an instance\'s own become a theme and a mode', () => {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_mode`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0115 left it, from the runner's snapshot of its replay; only the migrations from 0115 on are applied here.
+  const old = databaseBefore('0115', 'mode');
+  assert.equal(old.crossing, '0115_board_mode.sql', 'the migration this holds is there');
+  const db = new URL(old.url);
   try {
-    const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    assert.ok(all.includes('0115_board_mode.sql'), 'the migration this holds is there');
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of all.filter((f) => f < '0115')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
     // Before: one account per stored theme, the old column mixing the house theme in a mode with the instance's own keys.
     psqlOn(db.toString(), `
@@ -40,8 +32,7 @@ test('stored themes system, light, dark and an instance\'s own become a theme an
       end $$;`);
     assert.equal(psqlOn(db.toString(), `select string_agg(theme, ',' order by theme) from account_preferences`), 'dark,dusk,light,system');
 
-    psqlOn(db.toString(), fs.readFileSync(path.join(migrations, '0115_board_mode.sql'), 'utf8'));
-    for (const m of all.filter((f) => f > '0115_board_mode.sql')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
 
     const after = (label: string) => psqlOn(db.toString(), `select theme || ',' || mode from account_preferences p join auth.users u on u.id = p.account where u.email = '${label}@test.invalid'`);
     assert.equal(after('mode-s'), 'default,system', 'system is the default theme following the device');
@@ -51,6 +42,6 @@ test('stored themes system, light, dark and an instance\'s own become a theme an
     // The motion beside each theme, Snappy (0112) among them, is left as it was.
     assert.equal(psqlOn(db.toString(), `select string_agg(motion, ',' order by u.email) from account_preferences p join auth.users u on u.id = p.account`), 'snappy,reduce,full,system');
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });
