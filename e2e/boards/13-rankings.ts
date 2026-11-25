@@ -29,10 +29,12 @@
  * the build's first dash, before the four Ringside rows' place and class dashes) and not compared with the board (`box: 'none'`), as the place
  * dashes are. The four Ringside class dashes' `buildNth` shift by one for the same reason. The board's Thwompson row is two lines tall in the
  * class column (the Revealed and Turned lines each take a line) and the build's is one, 32px shorter, so every landmark from Thwompson's row
- * down is 32px higher in the build. Thwompson's row and its place, rank and standing cells are compared by their x and y (`position`), the
- * height being the one thing that changed. Rows 6 to 9 (Ringside 1 to 4) are compared by their size, and each of their cells and class dashes
- * from the row's own corner (`origin` its row), so a cell is still held to its place in its row; the glass polish's 16px puts a row's left edge 16px left of the
- * board's, so those cells carry a `buildShift` of x 16 and the row of width 16 (Thwompson's row, held by its x, of x -16). Nothing above Thwompson's row changed mode.
+ * down is 32px higher in the build. Every comparison keeps its old mode and adds the one shift (`buildShift`), so nothing loses a dimension:
+ * Thwompson's row (5): its rowheader and its place cell (`height`) and its rank and standing cells (`full`) are `height: -32`; they are
+ * top-aligned, so their y does not move. Rows 6 to 9 (Ringside 1 to 4) rise 32px: each rowheader (`height`), name link (`height`), place, rank
+ * and standing cell and class dash is held where it was (the same mode and the same origin, the table) with `y: -32`; the name links' origin is
+ * the table, as for every row. `none-thwompson` is found by `buildNth` 0 and its box is not compared (`box: 'none'`), but its type is still
+ * compared with the board's first dash. Nothing above Thwompson's row changed.
  *
  * The season's line and the dates are in the reader's own time; the board draws them in UTC, and the
  * board match opens both pages in UTC (e2e/boards.spec.ts), whatever the machine's zone.
@@ -50,21 +52,18 @@ const cell = (id: string, name: string, box?: Landmark['box'], origin = 'table',
 /** A row: its header (the name, with Yours on the player's own), its link, and its place, rank and standing. */
 function row(n: number, name: string, place: string, rank: string, standing: string, own: boolean, buildPlace?: string): Landmark[] {
   const id = `row-${n}`;
-  /* Thwompson's row (5) is 32px shorter in the build, so it is held by its place, not its height, and the rows below it (6 and on) rise by 32px: each is held by its size, and its cells from its own corner (the header). */
-  const below = n > 5;
-  const origin = below ? id : 'table';
-  /* The glass polish's 16px (the header) puts a row's own left edge 16px left of the board's, so a cell held from its row's corner stands 16px further from it. */
-  const fromRow = below ? { x: 16 } : undefined;
-  const placeCell = cell(`${id}-place`, place, n === 5 ? 'position' : 'height', origin);
+  /* Thwompson's row (5) is 32px shorter in the build, so its landmarks are 32px shorter (`height`), and every row below it (6 and on) stands 32px higher (`y`); the header says why. */
+  const shift: Landmark['buildShift'] | undefined = n === 5 ? { height: -32 } : n > 5 ? { y: -32 } : undefined;
+  const placeCell = cell(`${id}-place`, place, 'height', 'table', shift);
   return [
-    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: below ? 'size' : n === 5 ? 'position' : 'height', ...(below ? { buildShift: { width: 16 } } : n === 5 ? { buildShift: { x: -16 } } : {}) },
-    { id: `${id}-name`, role: 'link', name, within: id, origin, box: 'height' },
+    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: 'height', ...(shift ? { buildShift: shift } : {}) },
+    { id: `${id}-name`, role: 'link', name, within: id, origin: 'table', box: 'height', ...(n > 5 ? { buildShift: shift } : {}) },
     ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id, origin: 'table', box: 'height' as const }] : []),
     /* The board's "6" cells are the build's "Unplaced" ones, in the same order, so the place among them (`nth`) holds on both sides. */
     /* Its word is hidden from the eye and its dash from a reader, so it has no type to read; the board draws no dash to hold the dash's own type to (the header). */
     buildPlace === undefined ? placeCell : { ...placeCell, buildName: buildPlace, type: false },
-    cell(`${id}-rank`, rank, n === 5 ? 'position' : undefined, origin, fromRow),
-    cell(`${id}-standing`, standing, n === 5 ? 'position' : undefined, origin, fromRow),
+    cell(`${id}-rank`, rank, undefined, 'table', shift),
+    cell(`${id}-standing`, standing, undefined, 'table', shift),
   ];
 }
 
@@ -143,7 +142,7 @@ const manifest: BoardManifest = {
      * row's place dash (#492, the header) comes before its class dash, so the class dashes are the build's third, fifth, seventh and ninth.
      */
     { id: 'none-thwompson', role: 'text', name: '—', within: 'table', nth: 0, buildNth: 0, origin: 'table', box: 'none' },
-    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, buildNth: 2 * n, origin: `row-${n + 5}`, buildShift: { x: 16 } })),
+    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, buildNth: 2 * n, origin: 'table', buildShift: { y: -32 } })),
   ],
 };
 
