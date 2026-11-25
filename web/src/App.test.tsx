@@ -84,7 +84,7 @@ test('another account signing in starts the open screen afresh: the last account
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   const pipe = (await fake.myCharacters()).find((c) => c.name === 'Pipewrench')!;
-  await fake.turn(pipe.id, instance.classes.find((c) => c.key !== pipe.class)!.key, 'announced', false, false);
+  await fake.turn(pipe.id, instance.classes.find((c) => c.key !== pipe.class)!.key, 'silent', false, false);
   render(<App api={fake} />);
   await userEvent.click(await screen.findByRole('tab', { name: /^Pipewrench/u }));
   await userEvent.click(await screen.findByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));

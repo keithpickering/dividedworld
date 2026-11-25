@@ -140,6 +140,62 @@ begin
   insert into settings (key, value) values ('systemAnnouncements', to_jsonb(ann::text));
 end $$;
 
+-- ---- 1b. A caster locked out of the picked thread is refused ----
+do $$
+declare
+  owner uuid := tests.account('bc-lock');
+  a uuid := tests.character(owner, 'Bc Locked');
+  b_lk uuid; t_lk uuid; t_free uuid; p_lk uuid; set_lk uuid; why text; w1 text; w2 text;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('bclock', 'Bc Lock', 'salty', 'legendary', 'cast', '{board}', interval '1 day');
+  perform pg_temp.hand(owner, 'bclock', 'bclock', 'bclock');
+  insert into boards (slug, name) values ('bc-lock', 'Bc Lock') returning id into b_lk;
+  insert into threads (board, title) values (b_lk, 'Bc Locked Out Of') returning id into t_lk;
+  insert into threads (board, title) values (b_lk, 'Bc Not Locked Out Of') returning id into t_free;
+  p_lk := tests.post(a, t_lk, 'Before the lockout.');
+  perform tests.post(a, t_free, 'Elsewhere.');
+  set_lk := tests.act(a, 'set', t_lk, '{}', p_lk);
+  perform tests.act(a, 'spring', t_lk, jsonb_build_object('card', 'bclock', 'trigger', 'cast', 'did', 'lockedOut', 'set', set_lk::text, 'locks', a::text, 'until', (now() + interval '1 day')::text), p_lk);
+  why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, null, null, null, null, %L, %L)', owner, 'bclock', a, b_lk, '{}', '', 'board', '{}', t_lk));
+  if why is null or why not like '%is locked out of this thread until%' then raise exception 'play_card of a board card in a thread the caster is locked out of, said %', why; end if;
+  why := pg_temp.refusal(format('select place_cast(%L, %L, %L, %L, %L, %L, null, %L, 0, %L, %L)', a, 'bclock', b_lk, '{}', '', 'board', owner, '{}', t_lk));
+  if why is null or why not like '%is locked out of this thread until%' then raise exception 'place_cast of a board card in a thread the caster is locked out of, said %', why; end if;
+  if (select count(*) from card_ledger where account = owner and kind = 'played') is distinct from 0 then raise exception 'a refused board card spent a card'; end if;
+  -- The lockout holds that thread alone: the board's other thread takes the card.
+  if play_card(owner, 'bclock', a, b_lk, '{}', 0, '', 'board', null, null, null, null, '{}', t_free) ->> 'thread' is distinct from t_free::text then raise exception 'the board''s other thread did not take the card'; end if;
+end $$;
+
+-- ---- 2b. spring_traps lands a sprung board card in its board's thread, and writes nothing in the announcements thread ----
+do $$
+declare
+  owner uuid := tests.account('bc-st-own');
+  other uuid := tests.account('bc-st-oth');
+  a uuid := tests.character(owner, 'Bc Trapper');
+  b uuid := tests.character(other, 'Bc Quoter');
+  b_st uuid; t_st uuid; p uuid; q uuid; ann uuid; ann_acts bigint; res jsonb; landed uuid;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('bctrap', 'Bc Trap', 'salty', 'legendary', 'cast', '{board}', interval '1 day');
+  perform pg_temp.hand(owner, 'bctrap');
+  insert into boards (slug, name) values ('bc-st', 'Bc St') returning id into b_st;
+  insert into threads (board, title) values (b_st, 'Bc Trapped Here') returning id into t_st;
+  p := tests.post(a, t_st, 'Quote me.');
+  q := tests.post(b, t_st, 'Quoting.');
+  ann := (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements');
+  if ann is null then
+    insert into threads (board, title) select id, 'Bc Announcements Three' from boards where slug = 'the-system' returning id into ann;
+    insert into settings (key, value) values ('systemAnnouncements', to_jsonb(ann::text));
+  end if;
+  ann_acts := (select count(*) from acts x where x.thread = ann);
+  perform tests.become_service();
+  perform set_card(owner, 'bctrap', a, p, '{}', 0);
+  perform tests.unbecome();
+  res := spring_traps('quote', p, q);
+  if res is null or res -> 'struck' is null then raise exception 'a board Move did not spring on a quote: %', res; end if;
+  landed := (res -> 'struck' ->> 'id')::uuid;
+  if (select x.thread from acts x where x.id = landed) is distinct from t_st then raise exception 'a sprung board card did not land in its board''s thread, it landed in %', (select x.thread from acts x where x.id = landed); end if;
+  if (select count(*) from acts x where x.thread = ann) is distinct from ann_acts then raise exception 'spring_traps wrote into the announcements thread'; end if;
+end $$;
+
 -- ---- 4. thread_page carries the board cards of its page ----
 do $$
 declare

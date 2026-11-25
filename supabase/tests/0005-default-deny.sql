@@ -176,6 +176,8 @@ declare
                            'post_play_ids(uuid[])', 'post_kind_counts(uuid[])', 'play_rider_ids(uuid[])',
                            -- The live rewind plays of a list of posts (0413): the definer behind thread_page's `rewinds`, the ids of face-up plays on public posts from the kept rows, the same for every caller; granted as post_play_ids is.
                            'post_rewind_plays(uuid[])',
+                           -- The board cards written in a thread within a page's span (0430): the definer behind thread_page's `boardCards`, ids alone from the kept Acts, the same for every caller; granted as post_play_ids is, because thread_page is a security invoker.
+                           'board_card_ids(uuid,integer,integer,integer)',
                            -- A page of a kind's plays that are over on a post (0410): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
                            'kind_play_ids(uuid,text,timestampwithtimezone,uuid,integer)',
                            -- A post's plays and counts in one read (0410): the plays of up to 200 posts, in force and each kind's stand-ins, with their riders, through acts_public. An invoker for a signed-in player, writing nothing, the same for every caller.
