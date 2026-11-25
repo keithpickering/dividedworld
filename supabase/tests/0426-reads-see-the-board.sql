@@ -383,8 +383,8 @@ begin
       raise exception '% is not owned by the digest role, the service role''s alone and a definer', f;
     end if;
   end loop;
-  foreach f in array array['extras_ids(uuid[])', 'extras_layers(text, uuid)', 'pool_read_origin(uuid)', 'post_extras(uuid[])', 'pool_read(uuid, text, uuid[], integer)', 'spin_answer_place(uuid)'] loop
-    if not has_function_privilege('kayfabb_digest', f::regprocedure, 'execute') and f not in ('post_extras(uuid[])', 'pool_read(uuid, text, uuid[], integer)', 'pool_read_origin(uuid)') then raise exception 'the digest role cannot run %', f; end if;
+  foreach f in array array['extras_ids(uuid[])', 'extras_layers(text, uuid)', 'pool_read_origin(uuid, jsonb)', 'post_extras(uuid[])', 'pool_read(uuid, text, uuid[], integer)', 'spin_answer_place(uuid)'] loop
+    if not has_function_privilege('kayfabb_digest', f::regprocedure, 'execute') and f not in ('post_extras(uuid[])', 'pool_read(uuid, text, uuid[], integer)', 'pool_read_origin(uuid, jsonb)') then raise exception 'the digest role cannot run %', f; end if;
     if f not in ('post_extras(uuid[])', 'pool_read(uuid, text, uuid[], integer)', 'spin_answer_place(uuid)') and (has_function_privilege('service_role', f::regprocedure, 'execute') or has_function_privilege('authenticated', f::regprocedure, 'execute') or has_function_privilege('anon', f::regprocedure, 'execute')) then
       raise exception '% is callable by a client role', f;
     end if;
@@ -528,7 +528,7 @@ end $$;
 -- pool_read of a thread of 200 and of 400 plain posts spun from each kind of origin: the same rows of `acts`, below the bound (the plain thread's own read, 0425's, is about 450; the rest is the origin's read; 600 is the stated bound).
 create function pg_temp.measure_kinds(label text, bound bigint) returns void language plpgsql as $$
 declare
-  k text; c0 bigint; lo bigint; hi bigint; worst bigint := 0; r jsonb; line text := '';
+  k text; c0 bigint; lo bigint; hi bigint; worst bigint := 0; r jsonb; line text := ''; trw jsonb;
 begin
   perform set_config('track_functions', 'all', true);
   foreach k in array array['post', 'poll', 'ballot', 'play', 'char', 'board', 'update', 'report', 'verdict', 'appeal', 'ruling'] loop
@@ -546,6 +546,10 @@ begin
     line := line || ' ' || k || ' ' || lo || '/' || hi;
     worst := greatest(worst, hi);
   end loop;
+  -- a thread that was not spun costs the origin read nothing in `acts` (its first statement reads the thread's row and no Act; CI's 0425 compares threads whose reads differ by a few rows, and a constant here is a row more in one and not the other)
+  trw := (select to_jsonb(l) from (select x.title, x.origin_act_id, x.created_at, x.origin_place, x.first_act from thread_list x where x.id = pg_temp.f('t')) l);
+  c0 := pg_temp.acts_read(); perform pool_read_origin(pg_temp.f('t'), trw); lo := pg_temp.acts_read() - c0;
+  if lo <> 0 then raise exception '[%] the origin read of an unspun thread reads % rows of acts', label, lo; end if;
   perform set_config('track_functions', 'none', true);
   raise notice '[%] rows of acts by kind of origin (200 / 400 posts):%, worst %', label, line, worst;
 end $$;

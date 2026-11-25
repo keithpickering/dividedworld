@@ -176,19 +176,22 @@ end $$;
 
 -- ---------------------------------------------------------------------------------------------------- pool_read_origin ----
 -- The thread's origin without its extras: { kind, place, at, spunAt, moment, post, momentPlays }, null for a thread that was not spun. `post` has the pool_read post's keys plus `thread` and `title`; pool_read adds the extras and takes `momentPlays` out.
-create function pool_read_origin(in_thread uuid) returns jsonb
+create function pool_read_origin(in_thread uuid, trow jsonb) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp set jit = off
   set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
-  t record; o record; pp record; who record;
+  o record; pp record; who record;
   place jsonb; on_kind text; pid uuid; via text; via_id uuid;
-  cand jsonb; moment boolean; mplays jsonb; ttl text; qs uuid[]; lthr uuid; lseq integer;
+  origin_act uuid; spun_at timestamptz; first_act uuid; cand jsonb; moment boolean; mplays jsonb; ttl text; qs uuid[]; lthr uuid; lseq integer;
 begin
-  select l.origin_act_id, l.origin_place, l.created_at, l.first_act into t from thread_list l where l.id = in_thread;
-  if t.origin_act_id is null then return null; end if;
-  select a.id, a.kind, a.thread, a.target_act_id, a.created_at, a.payload into o from acts_public a where a.id = t.origin_act_id;
+  -- The thread's row comes from pool_read, which read it once for its title too (`trow`: origin_act_id, created_at, origin_place, first_act), so that the origin costs `acts` no row of its own: a thread that was not spun costs it nothing.
+  origin_act := (trow ->> 'origin_act_id')::uuid;
+  if origin_act is null then return null; end if;
+  spun_at := (trow ->> 'created_at')::timestamptz;
+  place := nullif(trow -> 'origin_place', 'null'::jsonb);
+  first_act := (trow ->> 'first_act')::uuid;
+  select a.id, a.kind, a.thread, a.target_act_id, a.created_at, a.payload into o from acts_public a where a.id = origin_act;
   if o.id is null then return null; end if;
-  place := t.origin_place;
   on_kind := place #>> '{on,kind}';
   moment := o.kind in ('card', 'set', 'spring');
   if place is not null then
@@ -224,7 +227,7 @@ begin
     end if;
   end if;
   if moment and cand is not null then
-    if on_kind = 'character' and jsonb_typeof(place -> 'at') = 'object' and t.first_act is not null then via := 'spin'; via_id := t.first_act;
+    if on_kind = 'character' and jsonb_typeof(place -> 'at') = 'object' and first_act is not null then via := 'spin'; via_id := first_act;
     elsif o.kind = 'card' and on_kind in ('post', 'character') then via := 'play'; via_id := o.id; end if;
     mplays := '[]'::jsonb;
     if via is not null then
@@ -242,7 +245,7 @@ begin
         ) m), '[]'::jsonb);
     end if;
   end if;
-  return jsonb_build_object('kind', o.kind, 'place', place, 'at', o.created_at, 'spunAt', t.created_at, 'moment', moment, 'post', cand, 'momentPlays', mplays);
+  return jsonb_build_object('kind', o.kind, 'place', place, 'at', o.created_at, 'spunAt', spun_at, 'moment', moment, 'post', cand, 'momentPlays', mplays);
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------- pool_read ----
@@ -252,14 +255,15 @@ create function pool_read(in_thread uuid, staff_key text, named uuid[], "window"
 language plpgsql stable security definer set search_path = public, pg_temp set jit = off
   set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
-  rows jsonb; ids uuid[]; org jsonb; oid uuid; ex jsonb := '[]'::jsonb; i integer; ex_by jsonb; merged jsonb; opost jsonb; mp jsonb;
+  trow jsonb; rows jsonb; ids uuid[]; org jsonb; oid uuid; ex jsonb := '[]'::jsonb; i integer; ex_by jsonb; merged jsonb; opost jsonb; mp jsonb;
 begin
+  select to_jsonb(l) into trow from (select x.title, x.origin_act_id, x.created_at, x.origin_place, x.first_act from thread_list x where x.id = in_thread) l;
   select coalesce(jsonb_agg(jsonb_build_object('act', p.act, 'seq', p.seq, 'at', p.at, 'author', p.author, 'name', p.name, 'pronouns', p.pronouns,
                                                'body', p.body, 'replyTo', p.reply_to, 'quotes', p.quotes) order by p.at, p.act), '[]'::jsonb),
          coalesce(array_agg(p.act order by p.at, p.act), '{}'::uuid[])
     into rows, ids
   from pool_read_rows(in_thread, staff_key, named, "window") p;
-  org := pool_read_origin(in_thread);
+  org := pool_read_origin(in_thread, trow);
   oid := (org #>> '{post,act}')::uuid;
   if oid is not null and not (oid = any (ids)) then ids := ids || oid; end if;
   i := 1;
@@ -281,7 +285,7 @@ begin
     org := (org - 'momentPlays') || jsonb_build_object('post', opost);
   end if;
   return jsonb_build_object(
-    'title', coalesce((select t.title from thread_list t where t.id = in_thread), ''),
+    'title', coalesce(trow ->> 'title', ''),
     'self', (select c.id from characters_public c where c.staff = pool_read.staff_key),
     'posts', merged,
     'origin', org);
@@ -289,9 +293,9 @@ end $$;
 
 alter function post_extras_rows(uuid[], uuid[]) owner to kayfabb_digest;
 alter function post_extras(uuid[]) owner to kayfabb_digest;
-alter function pool_read_origin(uuid) owner to kayfabb_digest;
+alter function pool_read_origin(uuid, jsonb) owner to kayfabb_digest;
 alter function pool_read(uuid, text, uuid[], integer) owner to kayfabb_digest;
 revoke create on schema public from kayfabb_digest;
-revoke execute on function post_extras_rows(uuid[], uuid[]), post_extras(uuid[]), pool_read_origin(uuid), pool_read(uuid, text, uuid[], integer) from public, anon, authenticated, service_role;
+revoke execute on function post_extras_rows(uuid[], uuid[]), post_extras(uuid[]), pool_read_origin(uuid, jsonb), pool_read(uuid, text, uuid[], integer) from public, anon, authenticated, service_role;
 grant execute on function post_extras(uuid[]) to service_role;
 grant execute on function pool_read(uuid, text, uuid[], integer) to service_role;
