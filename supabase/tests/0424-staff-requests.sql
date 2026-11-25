@@ -1049,3 +1049,85 @@ begin
   if (select count(*) from acts where thread = (sc ->> 'thread')::uuid) is distinct from posts or (select count(*) from staff_requests) is distinct from reqs
      or exists (select 1 from pool_answered x where x.reply = (sc ->> 'reply')::uuid) then raise exception 'a turn rolled back after its post left a post, a request or an answered reply'; end if;
 end $$;
+
+-- ---- 15. The meeting rules on requests (Task 5: migration section 3) ----
+-- apply_meeting hands payload.requests to requests_ruled with the room the bank has left after the Boss's own moves, writes the rulings in its own transaction, charges what they spent in the one write of the balance, returns the rulings for the
+-- Edge function to post after the commit, and takes the Boss's bank lock before it reads the bank. A retry of the closed meeting writes, queues and charges nothing. system_digest returns the waiting requests, bounded by meetingMost.
+do $$
+declare
+  m bigint;
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  games uuid := pg_temp.board('mm-games');
+  s1 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'am1');
+  s2 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'am2');
+  s3 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'am3');
+  s4 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'am4');
+  s5 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'am5');
+  x1 bigint; x2 bigint; x3 bigint; x4 bigint; x5 bigint;
+  r jsonb;
+  again jsonb;
+  dg jsonb;
+  queued_before bigint;
+  rulings_before bigint;
+  rec jsonb;
+  payload jsonb;
+begin
+  insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer') returning id into x5;
+
+  insert into settings (key, value) values ('digestThreads', '5'), ('digestExcerpts', '5'), ('digestExcerptChars', '280') on conflict (key) do nothing;
+  -- The digest carries the waiting requests, oldest first, each with its thread's board, and no more than meetingMost of them.
+  update settings set value = '{"daysMost": 3, "meetingMost": 4}' where key = 'staffRequests';
+  dg := system_digest(now() - interval '1 day', now());
+  if jsonb_array_length(dg -> 'requests') is distinct from 4 or (dg #>> '{requests,0,id}')::bigint is distinct from x1 or (dg #>> '{requests,0,board}')::uuid is distinct from games then
+    raise exception 'the digest does not carry the 4 oldest waiting requests, with their boards: %', dg -> 'requests';
+  end if;
+  if dg #>> '{requests,0,body}' is distinct from 'Please move this thread am1' then raise exception 'the digest''s request is not the post whole: %', dg #>> '{requests,0}'; end if;
+  update settings set value = '{"daysMost": 3, "meetingMost": 10}' where key = 'staffRequests';
+
+  -- A bank of 2, and a cap of 2 (so what the Mods return cannot add to it): the Boss's own move spends one, the first fulfill the other, the second fulfill is cut by the room and is a reject; a reject; an unknown id and a ruling of confer are skipped; one request is left out.
+  perform pg_temp.bank(2);
+  m := (begin_meeting('2031-05-01T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
+  queued_before := (select count(*) from queued_moves);
+  rulings_before := (select count(*) from staff_request_rulings);
+  payload := jsonb_build_object('boss', 'mm-boss', 'weekly_moves', 0, 'bank_cap', 2, 'memory', pg_temp.memory('wrestling'),
+    'profile', jsonb_build_object('interests', jsonb_build_array('pie'), 'favorites', '[]'::jsonb, 'mood', 'smug', 'signature', 'It is decided.'),
+    'moves', jsonb_build_array(pg_temp.mt(pg_temp.thread_on('mm-games', 'Own move am'), offtopic) || jsonb_build_object('go_live_at', now())),
+    'requests', jsonb_build_array(
+      jsonb_build_object('id', x1, 'ruling', 'fulfill', 'move', pg_temp.mt((s1 ->> 'thread')::uuid, offtopic), 'line', 'Done.'),
+      jsonb_build_object('id', x2, 'ruling', 'fulfill', 'move', pg_temp.mt((s2 ->> 'thread')::uuid, offtopic), 'line', 'Also done.'),
+      jsonb_build_object('id', x3, 'ruling', 'reject', 'line', 'No.'),
+      jsonb_build_object('id', 99999999, 'ruling', 'reject', 'line', 'Nobody.'),
+      jsonb_build_object('id', x4, 'ruling', 'confer', 'line', 'Later.')),
+    'record', '{}'::jsonb);
+  r := apply_meeting(m, payload);
+  if r ->> 'status' is distinct from 'applied' then raise exception 'the meeting was not applied: %', r; end if;
+  if not pg_temp.holds('kayfabb.bank.mm-boss') then raise exception 'apply_meeting did not take the Boss''s bank lock'; end if;
+  if (r ->> 'bank_before')::numeric is distinct from 2 or (r ->> 'bank_after')::numeric is distinct from 0 or (select balance from move_bank where staff = 'mm-boss') is distinct from 0::numeric then
+    raise exception 'the bank was not charged 2 (one move, one request): %, balance %', r, (select balance from move_bank where staff = 'mm-boss');
+  end if;
+  if jsonb_array_length(r -> 'requests') is distinct from 3 then raise exception 'the meeting did not return 3 rulings to post: %', r -> 'requests'; end if;
+  if (select e ->> 'ruling' from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x1) is distinct from 'fulfill'
+     or (select e ->> 'ruling' from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x2) is distinct from 'reject'
+     or (select e #>> '{post,line}' from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x2) is distinct from 'Also done.' then
+    raise exception 'the rulings are not as answered, the cut fulfill a reject keeping its line: %', r -> 'requests';
+  end if;
+  if (select count(*) from queued_moves) is distinct from queued_before + 2 then raise exception 'the meeting queued % moves, the Boss''s own and the granted request''s', (select count(*) from queued_moves) - queued_before; end if;
+  if (select count(*) from staff_request_rulings) is distinct from rulings_before + 3 then raise exception 'the meeting wrote % rulings, not 3', (select count(*) from staff_request_rulings) - rulings_before; end if;
+  if not exists (select 1 from queued_moves q where q.cause_act = (s1 ->> 'request')::uuid and q.meeting = m and q.staff = 'mm-boss' and q.kind = 'moveThread') then raise exception 'the granted request''s move is not queued for the meeting'; end if;
+  select record -> 'requestsRuled' into rec from meetings where id = m;
+  if (rec ->> 'ruled')::integer is distinct from 3 or (rec ->> 'spent')::integer is distinct from 1 or jsonb_array_length(rec -> 'skipped') is distinct from 2 then raise exception 'the meeting''s record of its requests: %', rec; end if;
+  if (select v.waiting from staff_requests_now v where v.id = x4) is distinct from true or (select v.waiting from staff_requests_now v where v.id = x5) is distinct from true then raise exception 'a request the answer skipped or left out is not waiting'; end if;
+
+  -- A retry: the meeting is closed, so nothing is queued, ruled or charged a second time, and no ruling is handed to be posted again.
+  again := apply_meeting(m, payload);
+  if again ->> 'status' is distinct from 'already applied' or again ? 'requests' then raise exception 'a closed meeting was applied again: %', again; end if;
+  if (select count(*) from queued_moves) is distinct from queued_before + 2 or (select count(*) from staff_request_rulings) is distinct from rulings_before + 3
+     or (select balance from move_bank where staff = 'mm-boss') is distinct from 0::numeric then raise exception 'a retried meeting queued, ruled or charged again'; end if;
+  -- The same answers for a later meeting do not rule on a ruled request again.
+  if requests_ruled(m, payload -> 'requests', 5) -> 'rulings' <> '[]'::jsonb then raise exception 'a ruled request was ruled again'; end if;
+end $$;
