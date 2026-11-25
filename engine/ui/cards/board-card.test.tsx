@@ -80,6 +80,6 @@ describe('the play form of a board card', () => {
     const { dialog } = await form({ open: false });
     await within(dialog).findByRole('combobox', { name: 'Thread' });
     expect(within(dialog).queryByRole('combobox', { name: 'Board' })).toBeNull();
-    expect(within(dialog).getByText('General', { selector: '.kb-glass-field-text' })).toBeInTheDocument();
+    expect(within(dialog).getByText('General', { selector: '.kb-glass-field span' })).toBeInTheDocument();
   });
 });

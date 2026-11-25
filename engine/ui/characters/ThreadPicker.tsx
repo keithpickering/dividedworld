@@ -52,7 +52,7 @@ export function ThreadPicker({ value, onChange, boards: offered = (b) => !b.isSy
     <div className="kb-reveal-where">
       {/* Limited to one board, the board is told, not chosen: a select of one option is a tab stop that decides nothing. */}
       {fixed !== undefined && boards.length === 1
-        ? <p className="kb-glass-field"><span>Board</span> <span className="kb-glass-field-text">{boards[0]!.name}</span></p>
+        ? <p className="kb-glass-field"><span>Board</span> <span>{boards[0]!.name}</span></p>
         : (
           <label className="kb-glass-field">
             <span>Board</span>
