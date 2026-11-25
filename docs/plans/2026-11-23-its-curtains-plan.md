@@ -1,10 +1,9 @@
-# The Big Reveal, a curtain over a whole post: plan
+# It's Curtains, a curtain over a whole post: plan
 
-Record, written 2026-11-23. Carries out `docs/plans/2026-11-23-big-reveal-design.md`. One PR from `main`.
+Record, written 2026-11-23. Carries out `docs/plans/2026-11-23-its-curtains-design.md`. One PR from `main`.
 
-**May start** once the design and this plan merge. Task 5 waits on the owner's three sound takes in
-`docs/research/2026-11-23-big-reveal/sounds/`; every other task can be built before they arrive, and the PR is not
-opened until Task 5 is done.
+**May start** once the design and this plan merge. The owner's four sound takes are in
+`docs/research/2026-11-23-its-curtains/sounds/` (added 2026-11-25).
 
 Every task goes test first: write the failing test, record its red run, then the code. During a task, run only the
 tests for the changed code (`npx vitest run <file>`, or `node --experimental-strip-types --test <file>` for the
@@ -19,9 +18,9 @@ deployed database, bucket or connector is touched.
 **The world.** The curtain is a game piece on the board, drawn in its fabric's color; the post under it stays the
 house style. The play form and the Lens are the engine's glass.
 
-**Names used below.** Key `big-reveal`, between `below-the-fold` and `blind-study` in every sorted list. Rules in
-`instances/divided-world/cards/big-reveal.ts`; screens in `instances/divided-world/ui/big-reveal/`; classes begin
-`dw-reveal`. Effect CSS sits in that folder, never directly in `ui/` (`tools/check-theme.mjs` reads `ui/*.css` as
+**Names used below.** Key `its-curtains`, between `hype-up` and `jimmy-wails` in every sorted list. Rules in
+`instances/divided-world/cards/its-curtains.ts`; screens in `instances/divided-world/ui/its-curtains/`; classes begin
+`dw-curtains`. Effect CSS sits in that folder, never directly in `ui/` (`tools/check-theme.mjs` reads `ui/*.css` as
 themes).
 
 ## Task 1. `playPrice` sees the target's effects
@@ -112,11 +111,11 @@ nothing started; flip to `false` and assert it starts once.
 
 Model: haiku
 
-**Files:** `instances/divided-world/cards/big-reveal.ts`, `instances/divided-world/cards/big-reveal.test.ts`,
+**Files:** `instances/divided-world/cards/its-curtains.ts`, `instances/divided-world/cards/its-curtains.test.ts`,
 `instances/divided-world/cards/index.ts` (one import and one `listed` line, sorted), `instances/divided-world/cards/cards.test.ts`
-(the prices table: `['big-reveal', 'pepperoni', 150]`), `instances/divided-world/settings.ts` (`economy`).
+(the prices table: `['its-curtains', 'pepperoni', 150]`), `instances/divided-world/settings.ts` (`economy`).
 
-`big-reveal.ts`, opening with a header comment that names the design:
+`its-curtains.ts`, opening with a header comment that names the design:
 
 ```ts
 export const FABRICS = {
@@ -130,21 +129,21 @@ export const FABRICS = {
 export type Fabric = keyof typeof FABRICS;
 ```
 
-`bigReveal: CardRules<{ fabric: Fabric }>`:
+`itsCurtains: CardRules<{ fabric: Fabric }>`:
 
-- Basics: `key: 'big-reveal'`, `name: 'The Big Reveal'`, `alignment: 'pepperoni'`, `rarity: 'uncommon'`,
+- Basics: `key: 'its-curtains'`, `name: "It's Curtains"`, `alignment: 'pepperoni'`, `rarity: 'uncommon'`,
   `reaches: ['post']`, `stack: 3`, `drawsEffect: {}`.
-- `reads`: `[{ key: 'bigReveal.secondAdd', whole: true, min: 0 }, { key: 'bigReveal.thirdAdd', whole: true, min: 0 }]`.
+- `reads`: `[{ key: 'itsCurtains.secondAdd', whole: true, min: 0 }, { key: 'itsCurtains.thirdAdd', whole: true, min: 0 }]`.
 - `staffConfigs`: one `{ fabric }` for each fabric.
 - `validateConfig`: a config whose `fabric` is a key of `FABRICS` gives `ok({ fabric })`. A missing `fabric` gives
   `ok({ fabric: 'red' })`. Anything else refuses `'the curtain is one of the listed fabrics'`. No other key is kept.
-- `canApply`: `landsOn(bigReveal, target, effects, now)`.
-- `playPrice(settings, target, _config, effects)`: on a post, count the live own-reach plays of `big-reveal` in
-  `effects` (`isLive`, reach unset or `'post'`). 0 of them gives 0, 1 gives `economyOf(settings, 'bigReveal.secondAdd')`,
-  and 2 or more gives `economyOf(settings, 'bigReveal.thirdAdd')`. Off a post, 0.
+- `canApply`: `landsOn(itsCurtains, target, effects, now)`.
+- `playPrice(settings, target, _config, effects)`: on a post, count the live own-reach plays of `its-curtains` in
+  `effects` (`isLive`, reach unset or `'post'`). 0 of them gives 0, 1 gives `economyOf(settings, 'itsCurtains.secondAdd')`,
+  and 2 or more gives `economyOf(settings, 'itsCurtains.thirdAdd')`. Off a post, 0.
 - `export const price: Hundredths = 150`.
 
-`settings.ts` economy: `'bigReveal.secondAdd': 100`, `'bigReveal.thirdAdd': 200`.
+`settings.ts` economy: `'itsCurtains.secondAdd': 100`, `'itsCurtains.thirdAdd': 200`.
 
 Tests, red first:
 
@@ -152,32 +151,33 @@ Tests, red first:
 - The price table row.
 - A fourth curtain refuses with `landsOn`'s words.
 - Prices of 0, 100 and 200 for a bare post, one curtain and two curtains, and 0 again when the one curtain has ended.
-- An override of `bigReveal.secondAdd` reaches the price (as the test at `cards.test.ts` l.95 does for another card).
+- An override of `itsCurtains.secondAdd` reaches the price (as the test at `cards.test.ts` l.95 does for another card).
 - `validateConfig` accepts each fabric, defaults to red, and refuses `'#ff0000'` and `'Red'`.
 
 ## Task 5. The sounds
 
 Model: haiku
 
-**Waits on** the owner's three takes in `docs/research/2026-11-23-big-reveal/sounds/` (a record, left as it is). If
-they are not there, this task stops and asks; nothing else is used in their place.
+**From** the owner's four takes in `docs/research/2026-11-23-its-curtains/sounds/` (a record, left as it is):
+`its-curtains-drumroll.mp3`, `its-curtains-crash.mp3`, `its-curtains-whoosh.mp3` and `its-curtains-tada.mp3`.
 
-**Files:** `instances/divided-world/ui/sounds/big-reveal-drumroll.mp3`, `big-reveal-whoosh.mp3`,
-`big-reveal-tada.mp3`, `instances/divided-world/ui/sounds/sounds.json`, `instances/divided-world/ui/sounds.ts`,
+**Files:** `instances/divided-world/ui/sounds/its-curtains-drumroll.mp3`, `its-curtains-crash.mp3`,
+`its-curtains-whoosh.mp3`, `its-curtains-tada.mp3`, `instances/divided-world/ui/sounds/sounds.json`, `instances/divided-world/ui/sounds.ts`,
 `instances/divided-world/ui/index.test.tsx` (the sounds table).
 
 - Cut each with `ffmpeg`, as `docs/plans/2026-11-15-steel-chair-plan.md` Task 2 does. The drumroll is cut at a point
-  where it loops without a click, and is checked by playing it looped in a story. The whoosh and tada are trimmed to
-  their sound, each under 300 KB.
-- `sounds.json` gets three entries with `source: "ElevenLabs Sound Effects"`, and the `license` and `maker` strings the
+  where it loops without a click, and is checked by playing it looped in a story. The crash, whoosh and tada are
+  trimmed to their sound (the crash and tada keep their ring-out), each under 300 KB.
+- `sounds.json` gets four entries with `source: "ElevenLabs Sound Effects"`, and the `license` and `maker` strings the
   existing entries carry, copied exactly. Then `node tools/measure-sounds.mjs` writes `lufs`, `peak` and `sha256`, and
   `node tools/check-sounds.mjs` passes.
-- `sounds.ts` gets three slots, ink `'var(--kb-pepperoni)'`:
-  - `big-reveal.drumroll`, caption `'Drumroll'`, with `loop` set.
-  - `big-reveal.whoosh`, caption `'Curtain whooshes open'`.
-  - `big-reveal.tada`, caption `'Ta-da!'`.
+- `sounds.ts` gets four slots, ink `'var(--kb-pepperoni)'`:
+  - `its-curtains.drumroll`, caption `'Drumroll'`, with `loop` set.
+  - `its-curtains.crash`, caption `'Cymbal crash'`.
+  - `its-curtains.whoosh`, caption `'Curtain whooshes open'`.
+  - `its-curtains.tada`, caption `'Ta-da!'`.
 
-Tests, red first: the sounds table in `index.test.tsx` grows by the three keys and captions.
+Tests, red first: the sounds table in `index.test.tsx` grows by the four keys and captions.
 
 ## Task 6. The curtain on screen
 
@@ -185,23 +185,23 @@ Model: sonnet
 
 **Files:**
 
-- `instances/divided-world/ui/cards/big-reveal/ui.ts`
+- `instances/divided-world/ui/cards/its-curtains/ui.ts`
 - `instances/divided-world/ui/cards.ts` (one line, sorted)
 - `instances/divided-world/ui/index.test.tsx` if it lists cards
 - `instances/divided-world/ui/moment.test.tsx` (the drawn and unreactive lists at l.84 and l.174)
-- in `instances/divided-world/ui/big-reveal/`:
+- in `instances/divided-world/ui/its-curtains/`:
   - `Curtain.tsx` (the drawing and its motion, shared by both places)
   - `Cover.tsx`
   - `Effect.tsx`
   - `ConfigForm.tsx`
   - `confetti.ts`
-  - `reveal.css`
-  - `BigReveal.board.stories.tsx`
+  - `curtains.css`
+  - `ItsCurtains.board.stories.tsx`
   - tests beside each
 
 The curtain (`Curtain.tsx`):
 
-- **Shape.** Two halves drawn from the pleat shape of `docs/research/2026-11-23-big-reveal/minus-world/curtain.svg`,
+- **Shape.** Two halves drawn from the pleat shape of `docs/research/2026-11-23-its-curtains/minus-world/curtain.svg`,
   three pleats each, stretched to the covered box's height. Each pleat's gradient is the fabric's dark, mid, light, mid
   and dark shades at the drawing's stops (0.05, 0.24, 0.50, 0.75, 0.95). Along the top edge, a row of swags drawn from
   `curtain-draped.svg`, enough to span the width, in the fabric's shades with the gold trim kept gold.
@@ -212,7 +212,7 @@ The curtain (`Curtain.tsx`):
 - **The button.** The curtain is one `button` covering the box, with `data-kb-over-ink`. Its label is "Open the
   curtain", plus ", 1 of 3" where `total` is above 1, counting from the outermost. Focus shows a visible ring inside
   the box.
-- **Drumroll.** The `big-reveal.drumroll` loop, in group `big-reveal`, with the play's id. With a mouse, it starts on a
+- **Drumroll.** The `its-curtains.drumroll` loop, in group `its-curtains`, with the play's id. With a mouse, it starts on a
   gesture by Laugh Track's rule (`instances/divided-world/ui/laugh-track/Effect.tsx`, the document `pointermove` record
   and `moved`) and stops on leave. On touch (no mouse position known, a coarse pointer), it plays while the curtain
   crosses the reader's line (the `laughTrack.line` card setting, read the way `laugh-track/watch.ts` reads it) and
@@ -222,7 +222,9 @@ The curtain (`Curtain.tsx`):
   - A click opens nothing if the text selection is not collapsed, if the pointer moved more than 10 CSS px since
     `pointerdown`, or if the page scrolled since `pointerdown`. That last one is the latent drag, such as a tap that
     only stops a fling.
-  - On open: stop the drumroll, play `big-reveal.whoosh` and then `big-reveal.tada` (group `big-reveal`, voices 2).
+  - On open: stop the drumroll and play `its-curtains.crash` at once, `its-curtains.whoosh` as the halves start to
+    move, and `its-curtains.tada` as the confetti is thrown (group `its-curtains`, voices 3, so the crash's ring-out
+    is not cut by the tada).
     The halves translate out left and right and the swags up over 750 ms (ease-in), then confetti, then `cover.open()`
     (or the Effect's own count) once the halves are out.
 - **Confetti.** Built in `confetti.ts` as a pure function of a seed, the play's id, so tests can pin it.
@@ -231,7 +233,7 @@ The curtain (`Curtain.tsx`):
     `pointer-events: none`, then removed.
   - It may cross the box's top border on its way up: that is the joke of a burst.
 - **Reduced motion** (`useFeel() === 'off'`). The press still opens it. The halves are removed at once, the spotlights
-  stand still, and no confetti. Both sounds still play.
+  stand still, and no confetti. All three opening sounds still play, in the same order.
 - **Forced colors.** The curtain is a solid `CanvasText` panel with "Open the curtain" in `Canvas`, so the post stays
   hidden and the press is the same.
 
@@ -265,7 +267,7 @@ Hot Box's form (`instances/divided-world/ui/hot-box/ConfigForm.tsx`) without its
 - `hint`: `'Press the curtain to see the post.'`
 - `Effect`, `Cover` (both lazy), `ConfigForm`.
 - `coversRow: true`.
-- `sounds`: the three keys.
+- `sounds`: the four keys.
 - `tag`: the play's fabric's mid shade.
 - `describe(settings)`: "A Pepperoni card, uncommon. It hangs a curtain in the fabric you choose over a post, author and
   all. A drumroll plays while a reader points at it, and one press opens it, with a ta-da and confetti. Each reader
@@ -283,7 +285,7 @@ Tests, red first:
 - **Sound.**
   - The drumroll loop starts on a moved pointer, not on an enter at the last-known position.
   - On a touch-only page it starts when the line crosses the curtain.
-  - Whoosh and tada play on open.
+  - Crash, whoosh and tada play on open, in that order.
 - **Effect without cover.** It covers the content area, provides `covered`, and the Lens state and controls move from
   "Shut for you" with Open to "Open for you" with Encore, and back on Encore.
 - **The fabrics.** The form submits each fabric and defaults to Red.
@@ -306,11 +308,11 @@ Each story is added to `e2e/board-stories.test.ts` as its siblings are.
 
 Model: sonnet
 
-**Files:** `instances/divided-world/ui/cards/big-reveal/art.webp` (1080×1680), `mark.svg`, `art.json`
+**Files:** `instances/divided-world/ui/cards/its-curtains/art.webp` (1080×1680), `mark.svg`, `art.json`
 (`credit: "Divided World"`, the CC0 license string Hot Box's carries), and `scene.blend`, as `ui/cards/hot-box/` holds
 them, made by `docs/plans/2026-11-11-rendered-card-art-design.md` and `specs/card-art.md`.
 
-- **The scene.** It follows `docs/research/2026-11-23-big-reveal/card-art-reference.png`: red curtains drawn back by
+- **The scene.** It follows `docs/research/2026-11-23-its-curtains/card-art-reference.png`: red curtains drawn back by
   gold tiebacks, a dark backdrop, a bare wooden stage, and a white chicken with a red comb in a spotlight.
 - **The mark.** The two tied-back curtain halves as a square emblem.
 
@@ -320,7 +322,7 @@ them, made by `docs/plans/2026-11-11-rendered-card-art-design.md` and `specs/car
 
 Model: sonnet
 
-**Files:** `e2e/big-reveal.spec.ts`, `e2e/origin-effects.spec.ts` (one case).
+**Files:** `e2e/its-curtains.spec.ts`, `e2e/origin-effects.spec.ts` (one case).
 
 - **In a thread, with a mouse.**
   - The row, postbit included, is hidden under the curtain and not reachable by Tab past the curtain's button.

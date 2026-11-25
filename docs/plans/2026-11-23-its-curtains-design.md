@@ -1,19 +1,23 @@
-# The Big Reveal, a curtain over a whole post: design
+# It's Curtains, a curtain over a whole post: design
 
 Record, written 2026-11-23. Designed with the owner in a design session. The plan is
-`docs/plans/2026-11-23-big-reveal-plan.md`. The owner's references are in `docs/research/2026-11-23-big-reveal/`.
+`docs/plans/2026-11-23-its-curtains-plan.md`. The owner's references are in `docs/research/2026-11-23-its-curtains/`.
 
 ## 1. What it is
 
-Minus World's Season 1 roster listed The Big Reveal as a Pepperoni spell, "Hide this post behind a red curtain which
+Minus World's Season 1 roster listed it, as The Big Reveal, as a Pepperoni spell, "Hide this post behind a red curtain which
 will open dramatically when clicked", and it was never finished. It comes back here because it has proven use: the
 same mechanic as Below the Fold (the whole post hidden behind one press), with far more fanfare. That fanfare can draw
 readers in or be ironic, which is what makes it Pepperoni.
 
+It was renamed from The Big Reveal before it was built (the owner, 2026-11-25), because Reveal is already the name of
+the class-reveal mechanic (`docs/plans/2026-10-29-class-reveal-design.md`) and a card called a reveal would read as
+one. The owner picked It's Curtains over Curtain Call.
+
 A post wearing it is covered from the postbit to the foot by a stage curtain: two halves, with swags along the top edge.
 When the mouse moves over it (or, on a touch screen, when it is on the reader's line), a drumroll loops and two
-spotlights trace a figure 8 over it. A press opens it: the halves fly left and right, the swags fly up, a whoosh and an
-original tada play, and confetti falls. Behind it is the post and every effect on it, which only now begin.
+spotlights trace a figure 8 over it. A press opens it: the drumroll ends on a snare and cymbal hit, the halves fly left
+and right, the swags fly up, a whoosh and an original tada play, and confetti falls. Behind it is the post and every effect on it, which only now begin.
 
 ## 2. Decisions
 
@@ -51,8 +55,8 @@ depends on position). A deep stack makes a post tedious to reach, which is funny
 curtain costs more to play (2.6).
 
 **2.6 Price.** Uncommon, 1.50 at the machine. The first curtain on a post adds nothing to play, the second adds 1.00
-and the third 2.00: 4.50 for the full stack. The two surcharges are economy settings (`bigReveal.secondAdd`,
-`bigReveal.thirdAdd`). Weighed: common at 1.00 with +1.00 and +3.00, and rare at 3.00 with a flat +1.50.
+and the third 2.00: 4.50 for the full stack. The two surcharges are economy settings (`itsCurtains.secondAdd`,
+`itsCurtains.thirdAdd`). Weighed: common at 1.00 with +1.00 and +3.00, and rare at 3.00 with a flat +1.50.
 
 The engine gap: `CardRules.playPrice(settings, target, config)` never sees the effects already on the target, so no
 card's price can depend on how many of it a post carries. It gains a fourth argument, the target's effects, the same
@@ -81,12 +85,15 @@ gesture the browser holds sound back, so the first drumroll on a touch screen ma
 as Steel Chair's Throw again does. The Lens's state reads "Curtain 1 of 3 shut for you" or "Open for you". The ways out
 are the reader's press on the curtain and an admin ending the play.
 
-**2.11 Sounds.** Three, which the owner makes in ElevenLabs and puts in `docs/research/2026-11-23-big-reveal/sounds/`,
-as for Steel Chair: a drumroll that loops seamlessly, a curtain whoosh, and a tada flourish in the spirit of Windows
-3.1's. Not Microsoft's own file, which is theirs and cannot be in an open-source repository. Weighed: generating them
-in this session, and a build session generating them, which would touch a connector.
+**2.11 Sounds.** Four, which the owner made in ElevenLabs and put in `docs/research/2026-11-23-its-curtains/sounds/`,
+as for Steel Chair: a steady drumroll that loops, a snare and splash cymbal hit that ends it, a fabric whoosh, and a
+quick horn tada in the spirit of Windows 3.1's. Not Microsoft's own file, which is theirs and cannot be in an
+open-source repository. On open the four run in order: the loop stops, the hit lands, the whoosh plays as the halves
+leave, and the tada as the confetti flies. The owner added the hit when the takes came in (2026-11-25); the design
+first named three. Weighed: generating them in this session, and a build session generating them, which would touch a
+connector.
 
-**2.12 Art.** The card face follows the owner's reference (`docs/research/2026-11-23-big-reveal/card-art-reference.png`),
+**2.12 Art.** The card face follows the owner's reference (`docs/research/2026-11-23-its-curtains/card-art-reference.png`),
 made by the rendered card-art pipeline (`docs/plans/2026-11-11-rendered-card-art-design.md`).
 
 **2.13 Not built.** The sad-trombone combination with a Salty card from the Minus World roster. The owner: "We never
@@ -108,4 +115,5 @@ did the sad trombone thing, I don't think it's needed here."
 
 - The six fabrics' exact shades, and the confetti's count, colors and fall time: the plan sets starting values, for the
   owner to tune in review.
-- The exact length of the drumroll loop and where the whoosh and tada are cut: set when the owner's takes are in.
+- The exact length of the drumroll loop, where the hit, whoosh and tada are cut, and how they overlap on open: set by
+  the build against the owner's takes, for the owner to tune in review.
