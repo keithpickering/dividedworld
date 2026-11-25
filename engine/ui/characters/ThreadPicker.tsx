@@ -50,13 +50,18 @@ export function ThreadPicker({ value, onChange, boards: offered = (b) => !b.isSy
 
   return (
     <div className="kb-reveal-where">
-      <label className="kb-glass-field">
-        <span>Board</span>
-        <select className="kb-glass-select" aria-label={fixed === undefined ? 'Board (optional)' : 'Board'} value={board} onChange={(e) => { setBoard(e.target.value); onChange(null); }}>
-          {fixed === undefined && <option value="">All boards</option>}
-          {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
-        </select>
-      </label>
+      {/* Limited to one board, the board is told, not chosen: a select of one option is a tab stop that decides nothing. */}
+      {fixed !== undefined && boards.length === 1
+        ? <p className="kb-glass-field"><span>Board</span> <span className="kb-glass-field-text">{boards[0]!.name}</span></p>
+        : (
+          <label className="kb-glass-field">
+            <span>Board</span>
+            <select className="kb-glass-select" aria-label={fixed === undefined ? 'Board (optional)' : 'Board'} value={board} onChange={(e) => { setBoard(e.target.value); onChange(null); }}>
+              {fixed === undefined && <option value="">All boards</option>}
+              {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
+            </select>
+          </label>
+        )}
       {/* The picker is this one block, so a later search can replace it. Typing after a choice makes it no longer the chosen thread; a choice itself fills the box with the chosen title, which is not a change. */}
       <GlassCombobox
         key={board}

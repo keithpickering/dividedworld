@@ -563,6 +563,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       setSystemBoard(page.board ? page.board.isSystem : null);
       setBoardUnread(!page.board);
       dispatch(loadedFrom(page, P, null));
+      /* The pages shown are replaced, so are the board cards drawn among them: a line of a page no longer shown goes with it (a read that adds a page merges, in readPage). */
+      setBoardCards(new Map(page.boardCards.map((c): [Id, Act] => [c.id, c])));
       settle(page, false);
     })().catch(() => { /* the address stays as it is; the reader can try again */ }).finally(() => { if (live) setBusy(false); });
     return () => { live = false; };
@@ -996,14 +998,17 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
   const cardsAfter = useMemo(() => {
     const out = new Map<Id, Act[]>();
     if (boardCards.size === 0 || shown.length === 0) return out;
+    /* A card older than every Act shown is on an earlier page, unless the first page is the one shown: it opens the thread, so a card before its first post is its. */
+    const opens = feed.firstPage <= 1;
     for (const c of [...boardCards.values()].sort((x, y) => Date.parse(x.createdAt) - Date.parse(y.createdAt) || (x.id < y.id ? -1 : 1))) {
       const at = Date.parse(c.createdAt);
+      if (at < Date.parse(shown[0]!.createdAt) && !opens) continue;
       let under = shown[0]!;
       for (const a of shown) if (Date.parse(a.createdAt) <= at) under = a;
       out.set(under.id, [...(out.get(under.id) ?? []), c]);
     }
     return out;
-  }, [boardCards, shown]);
+  }, [boardCards, shown, feed.firstPage]);
   const quotableAt = useCallback((seq: number) => {
     /* A reply drawn under a post is a post of the screen as any, found by its own number. */
     const a = shown.find((x) => x.seq === seq) ?? [...nested.current.values()].find((u) => u.act.seq === seq)?.act;

@@ -257,6 +257,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const replyMost = screen.postMaxLength;
   const unwritten = replying && (!/[\p{L}\p{N}]/u.test(reply) || [...reply].length > replyMost);
   const out = wasCaught && player.loaded && (player.cards.find((c) => c.card === card)?.held ?? 0) === 0;
+  const waitsOnThread = boardTarget !== null && how !== 'use' && boardThread === null;
   const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || unpicked || flawed || lockedUntil !== null || (boardTarget !== null && how !== 'use' && boardThread === null);
   const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
   /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
@@ -413,7 +414,8 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               <p className="kb-play-label">Play it in a thread on {beyond?.name ?? 'this board'}</p>
               {/* Keyed by the open thread, which may be published a moment after the form opens: the field then starts on it. */}
               <ThreadPicker key={open?.id ?? ''} only={boardTarget} value={boardThread} onChange={setPicked} />
-              {boardThread === null && <p className="kb-play-fine" role="status">Pick the thread to play it in. The card is written there, and the board shows it too.</p>}
+              {/* Mounted with the picker so a screen reader hears its text arrive, and the send button names it as the reason it waits. */}
+              <p className="kb-play-fine" id={`${id}-thread`} role="status" aria-label="Where to play it">{boardThread === null ? 'Pick the thread to play it in. The card is written there, and the board shows it too.' : ''}</p>
             </div>
           )}
           {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
@@ -474,7 +476,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
         </div>
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         <ButtonRow>
-          <GlassButton type="submit" kind="primary" disabled={blocked} {...(unsettled ? { 'aria-describedby': `${id}-unsettled` } : {})}>{again ? `${verb} again anyway` : setting ? (named ? `Set face down as ${named.name}` : 'Set face down') : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
+          <GlassButton type="submit" kind="primary" disabled={blocked} {...(waitsOnThread || unsettled ? { 'aria-describedby': [waitsOnThread ? `${id}-thread` : '', unsettled ? `${id}-unsettled` : ''].filter(Boolean).join(' ') } : {})}>{again ? `${verb} again anyway` : setting ? (named ? `Set face down as ${named.name}` : 'Set face down') : hud ? `${verb} as ${hud.name}` : verb}</GlassButton>
           <GlassButton onClick={onClose}>Cancel</GlassButton>
         </ButtonRow>
       </form>

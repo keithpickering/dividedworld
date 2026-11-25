@@ -61,4 +61,25 @@ describe('the play form of a board card', () => {
     expect(within(dialog).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
     expect(await axeViolations(dialog).then(describeViolations)).toBe('');
   });
+
+  test('the disabled send button says why, and the reason is a live region that stays mounted', async () => {
+    const { dialog } = await form({ open: false });
+    const send = within(dialog).getByRole('button', { name: 'Play as Pipewrench' });
+    expect(send).toBeDisabled();
+    expect(send).toHaveAccessibleDescription(/Pick the thread to play it in/u);
+    const reason = within(dialog).getByRole('status', { name: 'Where to play it' });
+    expect(reason).toHaveTextContent(/Pick the thread to play it in/u);
+    /* Once a thread is open the region is still there, empty, and the button no longer waits on it. */
+    cleanup();
+    const open = await form({ open: true });
+    await waitFor(() => expect(within(open.dialog).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled());
+    expect(within(open.dialog).getByRole('status', { name: 'Where to play it' })).toBeEmptyDOMElement();
+  });
+
+  test('the one board is shown as text, not as a select with a single option', async () => {
+    const { dialog } = await form({ open: false });
+    await within(dialog).findByRole('combobox', { name: 'Thread' });
+    expect(within(dialog).queryByRole('combobox', { name: 'Board' })).toBeNull();
+    expect(within(dialog).getByText('General', { selector: '.kb-glass-field-text' })).toBeInTheDocument();
+  });
 });

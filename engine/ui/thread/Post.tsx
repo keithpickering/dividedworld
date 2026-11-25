@@ -366,7 +366,7 @@ export function BoardCardLine({ card }: { readonly card: Act }) {
       <p className="kb-act-line">{caster} played {name}{board === '' ? ' on the board' : ` on ${board}`}.</p>
       <Reactions act={card.id} author={card.character} authorName={caster} tallies={tallies} mine={mine} />
       <div className="kb-act-links kb-small">
-        <button ref={button} type="button" className="kb-button" data-kb-size="small" aria-expanded={spinning} aria-controls={`spin-${card.id}`} onClick={() => setSpinning((s) => !s)}>Spin thread</button>
+        <button ref={button} type="button" className="kb-button" data-kb-size="small" aria-expanded={spinning} aria-controls={`spin-${card.id}`} aria-label={`Spin thread from ${name} on ${board === '' ? 'the board' : board}`} onClick={() => setSpinning((s) => !s)}>Spin thread</button>
       </div>
       <div id={`spin-${card.id}`}>
         {spinning && (

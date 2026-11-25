@@ -3206,6 +3206,23 @@ describe('a board card played in this thread', () => {
     expect(last.nextElementSibling).toBe(line(w.cards[2]!));
     expect(line(w.cards[0]!)).toBeNull();
     /* Its reactions and a Spin come with the line. */
-    expect(within(line(w.cards[1]!)!).getByRole('button', { name: 'Spin thread' })).toBeInTheDocument();
+    expect(within(line(w.cards[1]!)!).getByRole('button', { name: 'Spin thread from Bc Quake on General' })).toBeInTheDocument();
+  });
+
+  test('paging to another page in one mount leaves the old page\'s lines behind, and paging back brings them back', async () => {
+    const w = await cardWorld();
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, settings: { postsPerPage: 3 } });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    expect(line(w.cards[0]!)).not.toBeNull();
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 2' })[0]!);
+    const four = await screen.findByRole('article', { name: /^Post 4 /u });
+    expect(four.nextElementSibling).toBe(line(w.cards[1]!));
+    /* Card 0 was played before every post this page shows: it is on page 1, and drawn under no post here. */
+    expect(line(w.cards[0]!)).toBeNull();
+    expect(document.querySelectorAll('[data-kb-boardcard]')).toHaveLength(2);
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+    const two = await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(two.nextElementSibling).toBe(line(w.cards[0]!)));
+    expect(line(w.cards[1]!)).toBeNull();
   });
 });

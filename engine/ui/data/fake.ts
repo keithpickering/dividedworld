@@ -6253,7 +6253,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         thread = from.thread; on = from.id;
       } else if (reach === 'thread') {
         thread = target; on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
-      } else { thread = o?.thread ?? announcements(); on = null; }
+      } else {
+        /* A board card is written in a thread on its board (0430): the one given, else the board's first. */
+        const home = o?.thread ?? [...threads.values()].find((t) => t.board === target && t.id !== updatesThreadId)?.id;
+        if (home === undefined) throw new Error(`a board play needs a thread on its board: seed one on ${target} or pass \`thread\``);
+        thread = home; on = null;
+      }
       const bound = span(settings.reachLasts[reach]);
       const endsAt = o?.ends ?? at + Math.min(rules?.lasts ? span(rules.lasts) : bound, bound);
       const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ...(reach === 'board' ? { targetName: boards.find((b) => b.id === target)?.name ?? null } : {}), ends: iso(endsAt) } }));

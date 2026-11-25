@@ -839,7 +839,7 @@ describe('pinned threads and the banner', () => {
     /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
     await waitFor(() => expect(heard).toHaveBeenCalled());
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
-    fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true });
+    fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true, thread: w.ids[0]! });
     await new Promise((r) => setTimeout(r, 50));
     expect(within(banner).queryByRole('button', { name: /^Rumble, \d play/u })).toBeNull();
   });
