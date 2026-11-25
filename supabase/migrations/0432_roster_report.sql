@@ -13,7 +13,7 @@
 --                       what class_history holds; a silent Turn (no announcement) is in no list.
 --   write_roster_entry  the Boss's posts in the season's thread (promos_thread, as the settlement opened it), the newcomers written down as seen, the entry. It returns at once for a window that has an entry.
 --                       With the System off, no Boss, or a post that cannot be made, the entry is written with no posts and `skipped` says why, and the newcomers are not marked seen (they are listed at a later entry).
---   roster_due          the applied windows of the open season with no entry, oldest first.
+--   roster_due          the applied windows with no entry, oldest first: the open season's, and the last window of the season closed just before it (reveal_season closes the season in the settlement's own transaction).
 --   news_announce       0100's, making no Season News item for an ahead announcement (a Turn announced at once is news when it takes effect, in the entry that names it).
 --   news_landed.kind    gains `roster`: written by write_roster_entry when its window had Turns taking effect, on the entry's first post.
 --   season_news         0429's, reading a `roster` landing as one item (kind `roster`): the first 20 Turns taking effect and a count, linked to the entry's first post. Old items read as before.
@@ -71,18 +71,26 @@ alter table news_landed add constraint news_landed_kind_check check (kind in ('t
 
 -- ---- the changeover ----
 
--- What a Roster Report would list as new is what the public has not yet seen: a character that has a public Act already was announced by the old ways (its debut, or its first words). Written down as seen, at the last
--- window settled (or now, where none was).
-insert into roster_seen (character, window_end, act)
-select p.id, coalesce((select max(s.ends_at) from settlements s), now()), f.id
-from characters_public p
-cross join lateral (select a.id from acts_public a where a."character" = p.id order by a.created_at, a.id limit 1) f
-where p.staff is null
-on conflict (character) do nothing;
--- The windows already settled have no entry to write now; the record says so, and only later windows are due.
-insert into roster_entries (window_end, season, record)
-select s.ends_at, s.season, jsonb_build_object('skipped', 'before the Roster Report')
-from settlements s;
+-- roster_changeover is the migration's one-time step, a function only so that a test can lay the state of an instance before the migration and run it. It is run once, below. Not for a client.
+create function roster_changeover() returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  -- What a Roster Report would list as new is what the public has not yet seen: a character that has a public Act already was announced by the old ways (its debut, or its first words). Written down as seen, at the
+  -- last window settled (or now, where none was).
+  insert into roster_seen (character, window_end, act)
+  select p.id, coalesce((select max(s.ends_at) from settlements s), now()), f.id
+  from characters_public p
+  cross join lateral (select a.id from acts_public a where a."character" = p.id order by a.created_at, a.id limit 1) f
+  where p.staff is null
+  on conflict (character) do nothing;
+  -- The windows already settled have no entry to write now; the record says so, and only later windows are due.
+  insert into roster_entries (window_end, season, record)
+  select s.ends_at, s.season, jsonb_build_object('skipped', 'before the Roster Report')
+  from settlements s
+  on conflict (window_end) do nothing;
+end $$;
+revoke execute on function roster_changeover() from public, anon, authenticated, service_role;
+select roster_changeover();
 
 -- ---- the facts ----
 
@@ -155,11 +163,15 @@ end $$;
 revoke execute on function roster_facts(timestamptz) from public, anon, authenticated;
 grant execute on function roster_facts(timestamptz) to service_role;
 
--- The applied windows of the open season that have no entry, oldest first.
+-- The applied windows with no entry, oldest first: those of the open season, and the last window of the season closed just before it. apply_settlement records a season's last window under the closing season, and
+-- reveal_season closes that season and opens the next in the same transaction, so by the time the Roster Report looks, that window is the closed season's. It is the one window of it that is due: a closed season ends
+-- at its last window's end (the window that closes it), so `s.ends_at = c.ends_at` names it, and no older window of the closed season, nor any season before it, is ever due.
 create function roster_due() returns setof timestamptz
 language sql stable security definer set search_path = public, pg_temp as $$
   select s.ends_at from settlements s
-  where s.season = (select x.id from seasons x where x.ends_at is null order by x.starts_at desc limit 1)
+  where (s.season = (select x.id from seasons x where x.ends_at is null order by x.starts_at desc limit 1)
+         or s.season = (select c.id from seasons c where c.ends_at is not null and c.ends_at = (select x.starts_at from seasons x where x.ends_at is null order by x.starts_at desc limit 1)
+                        and s.ends_at = c.ends_at))
     and not exists (select 1 from roster_entries e where e.window_end = s.ends_at)
   order by s.ends_at
 $$;

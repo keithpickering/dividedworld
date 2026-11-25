@@ -14,6 +14,8 @@
 --  6. roster_due names the windows with no entry, oldest first.
 --  7. No Boss, or the System off: the entry is written with no posts and its record says why; the newcomers are not marked seen.
 --  8. Season News: an entry that names Turns taking effect lands one `roster` item (first 20 and a count, linked to the entry's first post); an ahead announcement lands no `announcements` item of its own.
+--  9. The season's last window: due after reveal_season closes its season, reported in the closed season's thread and Season News; the closed season's older windows and earlier seasons are not due.
+-- 10. The changeover: a settlement and a character from before the migration are neither due nor listed as new.
 -- (Poison: roster_facts reading the class_history row's class for a landed Turn, instead of what the announcement names, is red on section 3's "a landed Turn that named no class shows none".)
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -302,6 +304,98 @@ begin
   perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(items.detail -> 'turns') e where e ->> 'name' = 'Rr Turns Quietly' and e ? 'class'), 'and none where it named none');
   -- An entry with nothing taking effect lands no item.
   perform pg_temp.expect((select count(*) from news_landed n where n.kind = 'roster') = 1, 'only the entry that names Turns taking effect is news');
+end $$;
+
+-- ---- 9. The season's last window: reported in the season it closed ----
+-- apply_settlement records the season's last window under the closing season, and reveal_season closes that season and opens the next in the same transaction: the window is no longer the open season's, and still gets its entry,
+-- in the closed season's thread, under the closed season's number. The closed season's older windows and the seasons before it are not due.
+do $$
+declare
+  ann uuid := tests.account('rr-last');
+  t uuid := (select v::uuid from rr where k = 't');
+  base timestamptz := (select v::timestamptz from rr where k = 'base');
+  sid bigint := (select v::bigint from rr where k = 'sid');
+  w5 timestamptz := base + interval '2 minutes';
+  w6 timestamptz := base + interval '3 minutes';
+  w7 timestamptz := base + interval '4 minutes';
+  last_ch uuid := tests.character(ann, 'Rr Turns At The End', 'alpha', now() - interval '60 days');
+  old_sid bigint;
+  old_end timestamptz := base + interval '4 minutes' - interval '2 months';
+  revealed jsonb;
+  due timestamptz[];
+  r jsonb;
+  th uuid;
+  items record;
+  first_post uuid;
+begin
+  -- A season before it, closed, with a window that has no entry.
+  update seasons set starts_at = old_end where id = sid;
+  insert into seasons (number, starts_at, ends_at) values (900, '2000-01-01', old_end) returning id into old_sid;
+  insert into settlements (starts_at, ends_at, season) values (old_end - interval '1 day', old_end, old_sid);
+  -- The season's last window lands an announced Turn, and the season closes at it, as apply_settlement writes both.
+  perform tests.become(ann);
+  perform turn(last_ch, 'beta', 'announced', true, false, t);
+  perform tests.unbecome();
+  insert into settlements (starts_at, ends_at, season) values (w6, w7, sid);
+  perform masks_change(w7);
+  update settings set value = '{"unit": "month", "count": 1}' where key = 'seasonLength';
+  revealed := reveal_season(w7);
+  perform pg_temp.expect(revealed is not null and (select ends_at from seasons where id = sid) = w7, 'the season closed at its last window: ' || coalesce(revealed::text, 'nothing'));
+  update seasons set boss = 'rr-boss' where ends_at is null;
+  insert into rr values ('w7', w7::text), ('last', last_ch::text), ('old_end', old_end::text);
+
+  select coalesce(array_agg(d order by d), '{}') into due from roster_due() d where d in (w5, w6, w7, old_end);
+  perform pg_temp.expect(w7 = any(due), 'the closed season''s last window is due: ' || due::text);
+  perform pg_temp.expect(not (w5 = any(due)) and not (old_end = any(due)), 'the closed season''s older windows and the seasons before it are not due: ' || due::text);
+  perform pg_temp.expect(not exists (select 1 from roster_due() d where d <= w6), 'no older window of any closed season is due');
+
+  r := write_roster_entry(w7, array[]::uuid[], array['The season''s last Turns.'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'written')::boolean and (r ->> 'posts')::integer = 1 and r ->> 'skipped' is null, 'the last window is written: ' || r::text);
+  th := (select turns_thread from seasons where id = sid);
+  perform pg_temp.expect((r ->> 'thread')::uuid = th, 'in the closed season''s thread: ' || r::text);
+  first_post := (select e.acts[1] from roster_entries e where e.window_end = w7);
+  perform pg_temp.expect((select a.thread = th from acts a where a.id = first_post), 'the post is in the closed season''s thread');
+  perform pg_temp.expect((select e.season = sid and (e.record ->> 'landedCount')::integer = 1 from roster_entries e where e.window_end = w7), 'the entry holds the Turn that took effect');
+  select * into items from season_news(null, 50) x where x.kind = 'roster' and x.act = first_post;
+  perform pg_temp.expect(items.act is not null and items.season = (select number from seasons where id = sid), 'Season News shows it under the closed season: ' || coalesce(to_jsonb(items)::text, 'nothing'));
+  perform pg_temp.expect((select e ->> 'name' from jsonb_array_elements(items.detail -> 'turns') e) = 'Rr Turns At The End', 'naming the Turn');
+  perform pg_temp.expect(not exists (select 1 from roster_due() d where d = w7), 'and it is due no more');
+end $$;
+
+-- ---- 10. The changeover: what existed before the migration is not reported ----
+-- The migration ran once, on the instance as it was (roster_changeover); here an instance as it was is laid out (a window settled, a character that acted, and no entry or seen row for either) and the step is run again.
+do $$
+declare
+  ann uuid := tests.account('rr-old');
+  w7 timestamptz := (select v::timestamptz from rr where k = 'w7');
+  pre_end timestamptz := w7 + interval '2 minutes';
+  post_end timestamptz := w7 + interval '4 minutes';
+  osid bigint := (select id from seasons where ends_at is null);
+  oldie uuid := tests.character(ann, 'Rr Acted Before', 'alpha', now() - interval '60 days');
+  silent uuid := tests.character(ann, 'Rr Silent Before', 'alpha', now() - interval '60 days');
+  fresh uuid := tests.character(ann, 'Rr Acts After', 'alpha', now() - interval '60 days');
+  t uuid := (select v::uuid from rr where k = 't');
+  f jsonb;
+begin
+  insert into settlements (starts_at, ends_at, season) values (w7, pre_end, osid);
+  perform tests.post(oldie, t, 'Before the report existed.', w7 + interval '30 seconds');
+  -- The state the migration found: the old window is due, and the old character would be listed as new.
+  perform pg_temp.expect(pre_end in (select d from roster_due() d), 'before the changeover the old window is due');
+  perform pg_temp.expect(pg_temp.ids(roster_facts(pre_end), 'newcomers') @> array[oldie], 'before the changeover the character that acted is a newcomer');
+  perform roster_changeover();
+  perform pg_temp.expect(pre_end not in (select d from roster_due() d), 'a settlement from before the migration is not due');
+  perform pg_temp.expect((select e.record ->> 'skipped' = 'before the Roster Report' and cardinality(e.acts) = 0 from roster_entries e where e.window_end = pre_end), 'its entry says it was before the Roster Report');
+  perform pg_temp.expect(exists (select 1 from roster_seen s where s.character = oldie and s.act is not null), 'a character with a public Act is written down as seen');
+  perform pg_temp.expect(not exists (select 1 from roster_seen s where s.character = silent), 'one that never acted is not');
+  -- Only what comes after is reported: a later window is due, and lists the new face and not the old one.
+  insert into settlements (starts_at, ends_at, season) values (pre_end, post_end, osid);
+  perform tests.post(fresh, t, 'After the report existed.', pre_end + interval '30 seconds');
+  perform pg_temp.expect(post_end in (select d from roster_due() d) and pre_end not in (select d from roster_due() d), 'a window settled after the changeover is due, and the old one still is not');
+  f := roster_facts(post_end);
+  perform pg_temp.expect(pg_temp.ids(f, 'newcomers') @> array[fresh] and not (pg_temp.ids(f, 'newcomers') @> array[oldie]), 'the first entry lists the new face and not the character that acted before');
+  -- Run twice, it changes nothing more.
+  perform roster_changeover();
+  perform pg_temp.expect((select count(*) from roster_entries e where e.window_end = pre_end) = 1, 'the changeover is run twice without harm');
 end $$;
 
 -- ---- Put the instance back ----
