@@ -102,7 +102,9 @@ begin
       -- staff_request_shown is the one request both read by key (its request, its public post and its asker's public name), owned by the role too.
       'requests_waiting(integer)', 'requests_waiting_total()', 'staff_request_days()', 'staff_request_shown(bigint)',
       -- What the staff read sees of the board (0426): the two helpers the migration's role owns (ids, times and saved states of polls, plays and moments: the digest role reads none of play_post, effect_state, card_texts, surfaces or the moment tables), the place of a thread spun from an ask or an answer that thread_list calls, and the two functions the digest role owns.
-      'extras_ids(uuid[])', 'extras_layers(text,uuid)', 'spin_answer_place(uuid)', 'post_extras(uuid[])', 'post_extras_rows(uuid[],uuid[])', 'pool_read_origin(uuid,jsonb)']) x) then
+      'extras_ids(uuid[])', 'extras_layers(text,uuid)', 'spin_answer_place(uuid)', 'post_extras(uuid[])', 'post_extras_rows(uuid[],uuid[])', 'pool_read_origin(uuid,jsonb)',
+      -- What the digest sees of the board (0433): the four helpers the migration's role owns (the standouts' counts by character, the polls open in the window, the spun threads and the plays played in it: ids, times, public names and counts, from Acts the digest role reads no column of).
+      'digest_standouts(timestamp with time zone,timestamp with time zone)', 'digest_polls(timestamp with time zone,timestamp with time zone)', 'digest_spins(timestamp with time zone,timestamp with time zone,integer)', 'digest_plays(timestamp with time zone,timestamp with time zone,integer)']) x) then
     raise exception 'the functions the digest role may execute are not the reviewed ones: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;

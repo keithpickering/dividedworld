@@ -288,8 +288,10 @@ begin
   if x -> 'poll' is distinct from '{"question": "Whose idea?", "options": [{"text": "Mine", "count": 0}, {"text": "Yours", "count": 0}, {"text": "Theirs", "count": 2}], "closed": true}'::jsonb then raise exception '5 the digest''s excerpt of a secret poll: %', x; end if;
   select e into x from jsonb_array_elements(d -> 'excerpts') e where (e ->> 'act')::uuid = p3;
   if x is null or x ? 'poll' then raise exception '5 an excerpt of a post with no poll carries one: %', x; end if;
-  -- It names no voter, public or secret: no id and no name of any of the three, anywhere in the digest.
-  if d::text like '%' || v1::text || '%' or d::text like '%' || v2::text || '%' or d::text like '%' || v3::text || '%' or d::text like '%Prd Voter%' then raise exception '5 the digest names a voter: %', d; end if;
+  -- It names no voter, public or secret: no id and no name of any of the three, anywhere in the digest but the standouts (0433: the characters who voted most on public polls are named there, with a count only they know; a voter on a secret poll alone,
+  -- v3, is named nowhere, v2 having voted on the public poll as well).
+  if (d - 'standouts')::text like '%' || v1::text || '%' or (d - 'standouts')::text like '%' || v2::text || '%' or (d - 'standouts')::text like '%' || v3::text || '%' or (d - 'standouts')::text like '%Prd Voter%' then raise exception '5 the digest names a voter: %', d; end if;
+  if d::text like '%' || v3::text || '%' or d::text like '%Prd Voter Three%' then raise exception '5 the digest names a voter of a secret poll alone: %', d; end if;
   -- The digest's role reads the counts (a public view of characters counted) and no one's own ballots.
   if not has_table_privilege('kayfabb_digest', 'poll_counts', 'select') or has_table_privilege('kayfabb_digest', 'my_ballots', 'select') or has_table_privilege('kayfabb_digest', 'my_poll_closes', 'select') then raise exception '5 the digest role''s reach of the poll views'; end if;
 end $$;
