@@ -159,6 +159,9 @@ const fires = (markdown, pattern, o = {}) => {
     check(`${name}: the real guide with the not-switched-on line added fires`, guideFaults({ ...real, markdown: withLine }).length === 1);
     check(`${name}: the real guide against settings with The System off fires`, guideFaults({ ...real, settings: { ...real.settings, systemEnabled: false } }).length === 1);
     check(`${name}: a guide with the line is clean where The System is off`, guideFaults({ ...real, markdown: withLine, settings: { ...real.settings, systemEnabled: false } }).length === 0);
+    // The staff-board plan (Task 9): a character is active at once, so the guide offers no debut; a Turn is announced by the player in a thread they pick, never posted by The System.
+    check(`${name}: the real guide offers no debut`, !/\bdebut/i.test(real.markdown));
+    check(`${name}: the real guide does not say "The System posts"`, !real.markdown.includes('The System posts'));
     const r = guideFaults(real);
     check(`${name}: the real guide is clean`, r.length === 0, JSON.stringify(r));
   }
