@@ -23,7 +23,8 @@
 -- ---- 1. the changeover ----
 
 -- A retired waiting character is made active too: restore_character (0043) only clears retired_at and nothing debuts a character now, so one left waiting would never act after a restore. Its debuted_at
--- changes nothing a reader shows of a retired character (every reader that lists characters tests retired_at beside debuted_at, and characters_public lists a retired one that debuted already).
+-- puts it where a debuted retired character already is: characters_public, the name search, the standings roster and season_size test debuted_at alone. Only a retired character that never
+-- debuted is new there, and retire_character (0205) refuses a waiting one, so such a row is older data or hand SQL.
 
 update characters set debuted_at = now() where debuted_at is null and staff is null;
 
