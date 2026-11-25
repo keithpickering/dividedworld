@@ -99,6 +99,8 @@ export interface DigestRequest {
   readonly requestAct: string;
   readonly thread: string;
   readonly title: string;
+  /** The id of the board the thread is on now (null where it has none); a move of the request's names a board by id. */
+  readonly board: string | null;
   readonly boardName: string;
   readonly askerName: string;
   readonly staff: string;

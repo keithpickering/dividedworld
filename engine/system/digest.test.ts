@@ -251,7 +251,7 @@ test('a quote mark inside a quoted post or title cannot close the quote early', 
 /* ------------------------------------------------------------------ the requests (staff requests plan, Task 5) ---- */
 
 const request = (n: number, body: string, at = '2026-10-30T12:00:00Z'): import('./digest.ts').DigestRequest => ({
-  id: n, requestAct: id(100 + n), thread: id(1), title: 'Who ate the pie', boardName: 'General', askerName: `Asker ${n}`, staff: 'sigh', staffName: 'Sigh Bot', body, at, lapsesAt: '2026-11-02T12:00:00Z',
+  id: n, requestAct: id(100 + n), thread: id(1), title: 'Who ate the pie', board: id(60), boardName: 'General', askerName: `Asker ${n}`, staff: 'sigh', staffName: 'Sigh Bot', body, at, lapsesAt: '2026-11-02T12:00:00Z',
 });
 
 test('the requests section reads each waiting request with its id, where, who asked, who passed it, how long it waited and when it lapses, and the post whole', () => {

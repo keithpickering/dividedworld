@@ -29,7 +29,8 @@
 import type { Instance } from '../../../engine/rules/types.ts';
 import { shownBeats, type ArcRead } from '../../../engine/system/beats.ts';
 import type { Career } from '../../../engine/system/career.ts';
-import { DIGEST_MOST, renderDigest, withPronouns, type RawDigest } from '../../../engine/system/digest.ts';
+import { DIGEST_MOST, renderDigest, shownRequests, withPronouns, type RawDigest, type RequestLimits } from '../../../engine/system/digest.ts';
+import { fillStockLine } from '../../../engine/system/stock.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
@@ -93,6 +94,8 @@ export type MeetingOutcome =
     readonly successor: { readonly boss: string; readonly why: string } | null;
     readonly bankBefore?: number;
     readonly bankAfter?: number;
+    /** The rulings on waiting requests the database wrote, each with whether the Boss's reply to the request was posted (a reply that was not stays out; the ruling stands). */
+    readonly requests?: readonly { readonly id: number; readonly ruling: 'fulfill' | 'reject'; readonly posted: boolean }[];
   };
 
 interface Context {
@@ -133,6 +136,13 @@ interface Context {
     readonly conferred: readonly { readonly key: string; readonly name: string; readonly tone: 'punishment' | 'favor' }[];
     readonly characters: readonly { readonly id: string; readonly capped: boolean; readonly held: boolean }[];
   };
+}
+
+/** What `apply_meeting` returns for each request it ruled on (0424, requests_ruled): the ruling, and where and what the Boss posts. */
+interface RuledRequest {
+  readonly id: number;
+  readonly ruling: 'fulfill' | 'reject';
+  readonly post: { readonly thread: string; readonly replyTo: string; readonly line: string | null; readonly stock: 'requestGranted' | 'requestRefused' };
 }
 
 /** The (trophy, character) pairs the answer's awardTrophy moves name, for the one read of what stands (`trophy_award_facts`). A pair that is not a string and a uuid is left for the repair to refuse. */
@@ -224,6 +234,9 @@ export async function runMeeting(
     const instanceSet = pronounsOr(settings.pronouns, ENGINE_DEFAULT_PRONOUNS);
     const personaSet = (own: Parameters<typeof pronounsOr>[0]) => pronounsOr(own, instanceSet);
     const digest = withPronouns(await db.rpc<RawDigest>('system_digest', { since: new Date(sinceAt).toISOString(), until: slotIso }), instanceSet);
+    // The requests waiting for the Boss's ruling, as the digest renders them: bounded by meetingMost and then by the reader's readMost over the bodies, whole or left out. The ones left out are not shown, so not answerable, and stay waiting.
+    const requestLimits: RequestLimits = { readMost: settings.pool.readMost, meetingMost: settings.staffRequests.meetingMost };
+    const shownReqs = shownRequests(digest.requests ?? [], requestLimits).shown;
 
     // Its own latest memory; a Boss with none (a new one) reads nothing, or the memory of the Boss its persona inherits.
     let memory = await db.rpc<Memory | null>('staff_memory_latest', { staff: bossKey });
@@ -307,6 +320,7 @@ export async function runMeeting(
       // A name for a character a memory mentions: the digest's own names, and 'someone' for any other.
       characterName: (id) => { const c = digest.characters.find((x) => x.id === id); return c ? taggedName(c.name.slice(0, 60), c.pronouns) : 'someone'; },
       successorAllowed,
+      requestsWaiting: shownReqs.length,
       ...(nomination ? { nomination } : {}),
       groups: { conferred: context.groups?.conferred ?? [] },
       beats,
@@ -327,7 +341,7 @@ export async function runMeeting(
       key: t.key, name: t.name, belt: t.belt, holder: t.holder ? t.holder.id.toLowerCase() : null, holderName: t.holder ? t.holder.name : null,
     }));
     const message = [
-      renderDigest(digest, memory, titles),
+      renderDigest(digest, memory, titles, requestLimits),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
       ...(context.predecessor ? ['', ...predecessorText(context.predecessor)] : []),
       ...(farewell && context.handoffFacts ? ['', ...farewellFactsText(context.handoffFacts)] : []),
@@ -419,6 +433,7 @@ export async function runMeeting(
       // The threads the model was shown (the reference list is bounded), the only ones a demand may name.
       threads: new Set(digest.threads.slice(0, REFERENCE_MOST.threads).map((t) => t.thread)),
       isPublic: (id) => publicNow.has(id),
+      requests: { shown: new Map(shownReqs.map((r) => [r.id, { thread: r.thread, board: r.board }])), postMaxLength: settings.postMaxLength },
       successorAllowed,
       ...(nomination ? { nomination } : {}),
       successors,
@@ -437,7 +452,9 @@ export async function runMeeting(
     }
 
     const trims: Trim[] = [...repaired.trims];
-    const moves = repaired.moves.map((m, i) => withDescription(tuned, m, i, notes));
+    const moves = repaired.moves.map((m, i) => withDescription(tuned, m, `moves[${i}]`, notes));
+    // A granted request's rename takes the stock description as a rename among the moves does (the request's move is asked without one).
+    const requests = repaired.requests.map((r, i) => (r.move ? { ...r, move: withDescription(tuned, r.move, `requests[${i}].move`, notes) } : r));
 
     const record = {
       phase: phase.phase,
@@ -454,7 +471,7 @@ export async function runMeeting(
       // Each part's outcome: a part that was not kept left its fields out of the answer.
       parts,
     };
-    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; beats_played?: string[]; bank_before?: number; bank_after?: number }>('apply_meeting', {
+    const applied = await db.rpc<{ status: 'applied' | 'already applied'; queued?: number; beats_played?: string[]; bank_before?: number; bank_after?: number; requests?: RuledRequest[] }>('apply_meeting', {
       meeting,
       payload: {
         boss: bossKey,
@@ -493,6 +510,8 @@ export async function runMeeting(
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
         // The talking points: one line for each persona that posts, kept by the database beside the orders, in the same transaction.
         points: repaired.points.map((p) => ({ staff: p.staff, line: p.line })),
+        // The rulings on the requests that were shown: the database rules each once, queues a fulfill's move under this meeting and charges the bank for it.
+        ...(requests.length ? { requests: requests.map((r) => ({ id: r.id, ruling: r.ruling, line: r.line, ...(r.move ? { move: r.move } : {}) })) } : {}),
         orders: repaired.orders.map((o) => ({ mod: o.mod, boards: o.boards, order: o.order, allowance: o.allowance, ...(o.memory ? { memory: o.memory } : {}) })),
         // The database computes the bank itself, in the transaction, from these numbers, so a delayed apply debits the true balance.
         weekly_moves: phase.numbers.weeklyMoves,
@@ -501,6 +520,8 @@ export async function runMeeting(
       },
     });
     if (applied.status === 'already applied') return { status: 'already applied', meeting };
+    // The Boss's replies to the requests it ruled on, after the commit: the rulings stand whatever becomes of a post, so a reply that fails is recorded and the meeting is still the applied one (nothing below may throw).
+    const replied = await postRequestReplies(db, tuned, bossKey, personaSet(boss.pronouns), meeting, applied.requests ?? [], new Map(shownReqs.map((r) => [r.id, r.askerName])), notes);
     return {
       status: 'ok',
       meeting,
@@ -515,6 +536,7 @@ export async function runMeeting(
       inherited: repaired.inherited,
       successor: repaired.successor,
       ...(applied.bank_before !== undefined ? { bankBefore: applied.bank_before, bankAfter: applied.bank_after } : {}),
+      ...(replied.length ? { requests: replied } : {}),
     };
   } catch (e) {
     try {
@@ -526,8 +548,40 @@ export async function runMeeting(
   }
 }
 
-/** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. */
-function withDescription(instance: Instance, move: PlannedMove, index: number, notes: string[]): PlannedMove {
+/**
+ * The Boss's reply in the thread to each request it ruled on (`write_staff_act`, a post quoting the request post): its own line, else the stock line `requestGranted` or `requestRefused` with `{boss}` and `{asker}` filled (and
+ * the Boss's pronouns), chosen by the request's id so a retry writes what the first would have. An instance with no such line, and no line from the Boss, says nothing. A post that cannot be written (a locked thread, a
+ * transport failure that may or may not have run) is recorded, in the outcome's notes and in a call record of its own (`record_staff_call`, duty `ruling`, the request post as its cause and the Boss as its staff, naming the meeting:
+ * a meeting's own row is written once as it closes, and is closed by now), and the others are still tried; the ruling is written and stands. Nothing here throws: the meeting is applied and closed, and a failure after that must
+ * never close it failed.
+ */
+async function postRequestReplies(
+  db: Db, instance: Instance, boss: string, bossPronouns: Parameters<typeof fillStockLine>[3], meeting: number, ruled: readonly RuledRequest[], askers: ReadonlyMap<number, string>, notes: string[],
+): Promise<{ id: number; ruling: 'fulfill' | 'reject'; posted: boolean }[]> {
+  const bossName = instance.system.roster.find((b) => b.key === boss)?.name ?? '';
+  const out: { id: number; ruling: 'fulfill' | 'reject'; posted: boolean }[] = [];
+  for (const r of ruled) {
+    const body = r.post.line ?? fillStockLine(instance.system.stockLines[r.post.stock] ?? [], r.id, { boss: bossName, asker: askers.get(r.id) ?? '' }, bossPronouns);
+    if (body === null) { out.push({ id: r.id, ruling: r.ruling, posted: false }); continue; }
+    let error: string | undefined;
+    try {
+      await db.rpc('write_staff_act', { staff_key: boss, kind: 'post', thread: r.post.thread, target: r.post.replyTo, payload: { body } });
+    } catch (e) {
+      error = said(e);
+      notes.push(`request ${r.id}: the Boss's reply was not posted (${clip(error, 200)}); the ruling stands.`);
+    }
+    out.push({ id: r.id, ruling: r.ruling, posted: error === undefined });
+    try {
+      await db.rpc('record_staff_call', { cause_act: r.post.replyTo, duty: 'ruling', staff: boss, record: { meeting, request: r.id, ruling: r.ruling, posted: error === undefined, ...(error === undefined ? {} : { error }) } });
+    } catch (e) {
+      notes.push(`request ${r.id}: the Boss's reply to it could not be recorded (${clip(said(e), 200)}).`);
+    }
+  }
+  return out;
+}
+
+/** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. `at` names the move in the notes (`moves[2]`). */
+function withDescription<M extends { readonly kind: string; readonly params: Readonly<Record<string, unknown>> }>(instance: Instance, move: M, at: string, notes: string[]): M {
   if (move.kind !== 'renameBoard') return move;
   if (typeof move.params['description'] === 'string' && move.params['description'] !== '') return move;
   const name = String(move.params['name']);
@@ -535,7 +589,7 @@ function withDescription(instance: Instance, move: PlannedMove, index: number, n
   // The same name always draws the same line, so a retried meeting writes what the first would have.
   let h = 0;
   for (const ch of name) h = (h * 31 + ch.codePointAt(0)!) >>> 0;
-  notes.push(`moves[${index}]: the Boss gave no description; a stock description stands in.`);
+  notes.push(`${at}: the Boss gave no description; a stock description stands in.`);
   return { ...move, params: { ...move.params, description: lines[h % lines.length]!.replaceAll('{board}', name) } };
 }
 
