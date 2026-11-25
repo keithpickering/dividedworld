@@ -125,7 +125,7 @@ begin
   perform 1 from characters where id = through for no key update;
   -- A committed Turn stands until it takes effect.
   perform committed_turn_refusal(through);
-  select class_key into was from class_now(through, 'infinity');
+  select class_key into was from class_now(through, now());
   if was = to_class then
     if exists (select 1 from pending_turns where character = through) then
       raise exception 'this character already is one: withdraw its waiting Turn to keep it' using hint = 'kayfabb.refusal', errcode = '22023';

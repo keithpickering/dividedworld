@@ -88,3 +88,35 @@ begin
     raise exception 'an estimate shows another player''s character''s reveals: %', got;
   end if;
 end $$;
+
+-- A Turn announced ahead (in a thread, with its new class named) is a reveal only once the settlement lands it, and the perk starts at the landing, not at the announcement's write time (0427).
+do $$
+declare
+  ann uuid := tests.account('rv-ahead-ann');
+  e uuid := tests.character(ann, 'Rv Ahead', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Rv ahead thread');
+  w0 timestamptz := (select max(ends_at) from settlements);
+  landing timestamptz := now() + interval '10 minutes';
+  between_ timestamptz := now() + interval '5 minutes';
+  after_ timestamptz := now() + interval '20 minutes';
+  announced timestamptz;
+  said jsonb;
+begin
+  perform tests.become(ann);
+  said := turn(e, 'beta', 'announced', true, true, t);
+  perform tests.unbecome();
+  announced := (select created_at from acts where id = (said -> 'announcement' ->> 'id')::uuid);
+  -- Before the settlement: the Turn has not landed, so the perk has not started, whatever the window.
+  if pg_temp.char_of(settlement_input(w0, after_), e) -> 'reveals' is distinct from '[]'::jsonb then
+    raise exception 'an ahead announcement starts the reveal perk before its Turn lands: %', pg_temp.char_of(settlement_input(w0, after_), e) -> 'reveals';
+  end if;
+  perform masks_change(landing);
+  -- A window ending after the announcement was written and before the landing does not see it: the perk starts at the landing.
+  if between_ <= announced then raise exception 'the setup: the window must end after the announcement was written'; end if;
+  if pg_temp.char_of(settlement_input(w0, between_), e) -> 'reveals' is distinct from '[]'::jsonb then
+    raise exception 'the reveal perk started at the announcement''s write time, not the landing: %', pg_temp.char_of(settlement_input(w0, between_), e) -> 'reveals';
+  end if;
+  if pg_temp.char_of(settlement_input(w0, after_), e) -> 'reveals' is distinct from jsonb_build_array(pg_temp.ms(landing)) then
+    raise exception 'the reveal perk does not start at the landing: %', pg_temp.char_of(settlement_input(w0, after_), e) -> 'reveals';
+  end if;
+end $$;
