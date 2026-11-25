@@ -14,7 +14,7 @@ import type { Boot, ScreenSettings, ThreadListener } from './data/api.ts';
 import { BootProvider } from './boot.tsx';
 import { PlayerProvider } from './player.tsx';
 import { ACTION_TIPS, TIP_KEYS } from './tips/keys.ts';
-import type { ConductUi, GuideUi, InstanceUi } from './types.ts';
+import type { ConductUi, GuideUi, InstanceUi, Licensing } from './types.ts';
 import { RouterProvider } from './router.tsx';
 import { systemSettings, testCosmeticsContent, testSystem, testGroups } from '../rules/test-system.ts';
 
@@ -146,6 +146,8 @@ export interface WorldOptions {
   readonly guide?: GuideUi;
   /** A different code of conduct than the test world's small one. */
   readonly conduct?: ConductUi;
+  /** Different licensing (source, terms, credits) than the test world's small one. */
+  readonly licensing?: Licensing;
   /** Copy words of the test's own, laid over the test world's (a marquee list). */
   readonly copy?: Partial<Kayfa['ui']['copy']>;
   /** The random function the screens draw from (`Kayfa.random`), fixed by a test that picks. */
@@ -206,7 +208,7 @@ export function tapThread(fake: Fake): () => ThreadListener {
 
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.conduct || options.copy || options.cardBack || options.sounds ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.conduct || options.licensing || options.copy || options.cardBack || options.sounds ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.licensing ? { licensing: options.licensing } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(
