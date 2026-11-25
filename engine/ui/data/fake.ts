@@ -3247,7 +3247,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     // Asked again before the settlement, it is the same Turn, changed (unless announced: that stands).
     let told: Act | null = null;
     if (loudness === 'announced') told = writeAhead(c, thread!, to, showFrom, showTo);
-    c.pending = { class: to, loudness, showFrom, showTo, takesEffectAt: null, announced: told === null ? null : { act: told.id, thread: thread!, seq: told.seq ?? 0 }, asked: now() };
+    c.pending = { class: to, loudness, showFrom, showTo, takesEffectAt: null, announced: told === null ? null : { act: told.id, thread: thread!, seq: told.seq ?? 0, title: threads.get(thread!)!.title }, asked: now() };
     return ok({ class: to, loudness, showFrom, showTo, takesEffectAt: takesEffectAt(), announced: told === null ? null : { act: told.id, thread: thread! } });
   }
 
@@ -3261,7 +3261,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const barred = turnThreadRefusal(thread);
     if (barred) return barred;
     const told = writeAhead(c, thread, c.pending.class, showFrom, showTo);
-    c.pending = { ...c.pending, loudness: 'announced', showFrom, showTo, announced: { act: told.id, thread, seq: told.seq ?? 0 } };
+    c.pending = { ...c.pending, loudness: 'announced', showFrom, showTo, announced: { act: told.id, thread, seq: told.seq ?? 0, title: threads.get(thread)!.title } };
     return ok({ class: c.pending.class, loudness: 'announced', showFrom, showTo, takesEffectAt: takesEffectAt(), announced: { act: told.id, thread } });
   }
 

@@ -66,6 +66,13 @@ begin
   end if;
   if (pg_temp.pending(both_)).announce_act is distinct from (p ->> 'id')::uuid then raise exception 'the pending Turn holds its announcement''s id'; end if;
   if (select loudness from pending_turns where character = both_) is distinct from 'announced' then raise exception 'the pending Turn is announced'; end if;
+  -- The player's own screen titles the link to the announcement's thread from my_characters, with no other read.
+  perform tests.become(ann);
+  if (select m.pending_announce_title from my_characters m where m.id = both_) is distinct from 'Where the Turn is said' then
+    raise exception 'my_characters carries the announcement thread''s title: %', (select m.pending_announce_title from my_characters m where m.id = both_);
+  end if;
+  if (select m.pending_announce_title from my_characters m where m.id = plain) is not null then raise exception 'a character with no pending Turn has no announcement title'; end if;
+  perform tests.unbecome();
   -- The other three shapes: only what the player chose to name.
   perform tests.become(ann);
   p := turn(from_, 'beta', 'announced', true, false, t) -> 'announcement' -> 'payload';

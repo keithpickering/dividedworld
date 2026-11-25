@@ -326,7 +326,7 @@ describe('the Turn', () => {
     expect(within(loud).getByRole('checkbox', { name: /^Name the new class/u })).not.toBeChecked();
   });
 
-  /* A name quotes the words it adds to the character's own Promo; the preview below is the post, so the two are held together. */
+  /* A name quotes the words it adds to the post; the preview below is the post, so the two are held together. */
   test('says in each name the words it adds to the post, and the preview then shows them', async () => {
     const w = world();
     open(w);
@@ -446,7 +446,8 @@ describe('the Turn', () => {
     for (const name of [/^Change/u, /^Withdraw/u, /^Announce/u, /^Turn Pipewrench/u]) expect(within(r).queryByRole('button', { name })).toBeNull();
     expect(within(r).getByText(/Turn announced/u)).toBeInTheDocument();
     expect(within(r).getByText(/Announced in/u)).toHaveTextContent(/Takes effect /u);
-    expect(await within(r).findByRole('link', { name: thread.title })).toBeInTheDocument();
+    /* The title comes with the character: the link is there at once, with no thread read. */
+    expect(within(r).getByRole('link', { name: thread.title })).toBeInTheDocument();
     expect(within(card('Pipewrench')).getByText('Turn announced')).toBeInTheDocument();
   });
 

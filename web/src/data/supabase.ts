@@ -616,7 +616,7 @@ function toMyCharacter(r: Row): MyCharacter {
         showTo: r['pending_show_to'] === true,
         takesEffectAt: r['takes_effect_at'] ?? null,
         announced: r['pending_announce_act'] && r['pending_announce_thread']
-          ? { act: r['pending_announce_act'], thread: r['pending_announce_thread'], seq: Number(r['pending_announce_seq'] ?? 0) }
+          ? { act: r['pending_announce_act'], thread: r['pending_announce_thread'], seq: Number(r['pending_announce_seq'] ?? 0), title: String(r['pending_announce_title'] ?? '') }
           : null,
       }
     : null;

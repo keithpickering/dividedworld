@@ -53,7 +53,8 @@ create view my_characters as
                    where l.ends > now()), '[]'::jsonb) as lockouts,
          p.announce_act as pending_announce_act,
          n.thread as pending_announce_thread,
-         n.seq as pending_announce_seq
+         n.seq as pending_announce_seq,
+         n.title as pending_announce_title
   from characters c
   cross join lateral (select x.class_key, x.started_at, x.due_at from class_history x where x.character = c.id order by x.started_at desc limit 1) h
   cross join lateral (
@@ -62,7 +63,7 @@ create view my_characters as
            + span_interval((select s.value from settings s where s.key = 'turnCooldown')) as at
   ) t
   left join pending_turns p on p.character = c.id
-  left join lateral (select a.thread, a.seq from acts a where a.id = p.announce_act) n on true
+  left join lateral (select a.thread, a.seq, th.title from acts a join threads th on th.id = a.thread where a.id = p.announce_act) n on true
   where c.owner = auth.uid();
 revoke all on my_characters from anon, authenticated;
 grant select on my_characters to authenticated;

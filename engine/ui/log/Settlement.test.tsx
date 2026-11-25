@@ -141,6 +141,24 @@ describe('the settlement\'s summary', () => {
     expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. It was announced in Season 1: Who Turned, with the old class.');
   });
 
+  test('a Turn announced ahead, when it was asked, reads its announcement at the landing: the thread and the old class', async () => {
+    const fake = buildWorld();
+    const { seed } = fake;
+    seed.season({ number: 1, startsAt: new Date(at(1, 0)).toISOString() });
+    const me = seed.account('me');
+    const pipe = seed.character(me, 'Pipewrench', 'heel', { at: at(2), pronouns: PRONOUN_PRESETS.she });
+    const { thread } = seed.thread('general', pipe, 'Where the Turn is said', 'Opening.', { at: at(27) });
+    seed.wallet(me, 290);
+    fake.signInAs(me);
+    /* The announcement is written now, ahead of the settlement; nothing writes another when the Turn lands (0427). */
+    expect((await fake.turn(pipe, 'face', 'announced', true, false, thread)).ok).toBe(true);
+    seed.settle({ at: at(29, 8, 17), debut: false, turns: true, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 100 }] });
+    await openSummary(fake, me, pipe);
+    const turn = await screen.findByRole('region', { name: 'Turn' });
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. It was announced in Where the Turn is said, with the old class.');
+    expect(within(turn).getByRole('link', { name: 'Where the Turn is said' })).toBeInTheDocument();
+  });
+
   test('a they/them character\'s Turn line agrees with the plural: "they score as", never "they scores"', async () => {
     const { fake, me, hoo } = world({ hooTurns: true });
     openSummary(fake, me, hoo);

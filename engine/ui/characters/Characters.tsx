@@ -109,16 +109,6 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
 
   const mine = useMemo(() => [...page.characters].sort(joined), [page.characters]);
-  /* The title of each thread a committed Turn was announced in, read once each: the line links to it by name. */
-  const [threadTitles, setThreadTitles] = useState<ReadonlyMap<Id, string>>(new Map());
-  const announcedIn = useMemo(() => [...new Set(page.characters.flatMap((c) => (c.pendingTurn?.announced ? [c.pendingTurn.announced.thread] : [])))].sort(), [page.characters]);
-  useEffect(() => {
-    let live = true;
-    for (const id of announcedIn) {
-      void api.thread(id).then((t) => { if (live && t) setThreadTitles((m) => new Map(m).set(id, t.title)); }, () => {});
-    }
-    return () => { live = false; };
-  }, [api, announcedIn]);
   const selected = mine.find((c) => c.id === picked) ?? mine.find((c) => c.id === player.hudCharacter?.id) ?? mine[0] ?? null;
 
   /* Another character chosen: the panel swaps (motion.ts `swap`), the old one leaving upward when the one chosen is after it in the roster's order, downward when before. */
@@ -241,12 +231,11 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       const p = c.pendingTurn;
       const when = p.takesEffectAt ?? next;
       const told = p.announced!;
-      const where = threadTitles.get(told.thread);
       return (
         <div className="kb-roster-pending">
           <p className="kb-turn-pending"><b>Turn announced</b>: to {className(p.class)}.</p>
           <p className="kb-roster-line kb-turn-when">
-            Announced in <GlassLink to={threadHref(told.thread, pageOf(told.seq, settings.postsPerPage), told.seq)}>{where ?? 'its thread'}</GlassLink>. Takes effect {when ? dayAndTime(when) : 'at the next settlement'}.
+            Announced in <GlassLink to={threadHref(told.thread, pageOf(told.seq, settings.postsPerPage), told.seq)}>{told.title}</GlassLink>. Takes effect {when ? dayAndTime(when) : 'at the next settlement'}.
           </p>
           <p className="kb-roster-line kb-turn-note">It stands until then: it can&apos;t be changed or withdrawn.</p>
         </div>

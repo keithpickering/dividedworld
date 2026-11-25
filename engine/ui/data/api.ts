@@ -1380,7 +1380,7 @@ export interface PendingTurn {
    * The announcement Act of a committed Turn (0427): written when the Turn was asked, in the thread named, `seq` its place there. A committed Turn stands until it
    * takes effect and can be neither changed nor withdrawn; null for a silent one, which can still be announced later (`announceTurn`).
    */
-  readonly announced: { readonly act: Id; readonly thread: Id; readonly seq: number } | null;
+  readonly announced: { readonly act: Id; readonly thread: Id; readonly seq: number; /** The thread's title, so the link to it needs no read of its own. */ readonly title: string } | null;
 }
 
 export interface Wallet {

@@ -763,7 +763,7 @@ describe('reads and their rows', () => {
 
   it('maps my_characters, with a pending Turn only when one is waiting', async () => {
     const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false, class_due_at: null };
-    const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00', pending_announce_act: A, pending_announce_thread: T, pending_announce_seq: 4 }]));
+    const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00', pending_announce_act: A, pending_announce_thread: T, pending_announce_seq: 4, pending_announce_title: 'Where it was said' }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
     expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', retiredAt: null, pendingTurn: null, presenceHidden: false });
@@ -772,7 +772,7 @@ describe('reads and their rows', () => {
     expect(mine[1]?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     // When a Turn that waited past a reveal was due (0074): a wiring no other test holds (#179).
     expect(mine[1]?.classDueAt).toBe('2026-10-31T00:00:00+00:00');
-    expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00', announced: { act: A, thread: T, seq: 4 } });
+    expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00', announced: { act: A, thread: T, seq: 4, title: 'Where it was said' } });
     expect(mine[0]?.pendingTurn).toBeNull();
   });
 
