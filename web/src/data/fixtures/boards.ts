@@ -373,7 +373,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     seed.cards(player, { whoops: 1, 'stick-around': 1 });
     seed.estimate(player, { entries: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount })) });
   });
-  when(TURNED_AT, () => seed.turn(pipewrench, 'face', { loudness: 'announced', showFrom: true, showTo: false }));
+  when(TURNED_AT, () => seed.turn(pipewrench, 'face', { loudness: 'silent' }));
   /* ---- the classes said in public, and Thwompson's Turn ---- */
   when(THWOMPSON_REVEALED_AT, (at) => {
     const lurking = seed.thread('general', thwompson, 'i read everything', 'Someone has to. Since you ask, here is what I am.', { at: at - MINUTE });
@@ -383,7 +383,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     const said = seed.thread('general', gloomba, 'cards on the table', 'Fine. You want to know who I am? Here it is.', { at: at - MINUTE });
     seed.reveal(gloomba, said.thread, { at });
   });
-  when(THWOMPSON_TURNS_AT, () => seed.turn(thwompson, 'heel', { loudness: 'announced', showFrom: false, showTo: false }));
+  when(THWOMPSON_TURNS_AT, () => seed.turn(thwompson, 'heel', { loudness: 'silent' }));
 
   when(SETTLE_2, (at) => {
     const shareOn = { 'post-43': posts[43]!, 'play-46': plays[46]! };

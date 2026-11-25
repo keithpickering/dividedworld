@@ -317,12 +317,56 @@ describe('Turns', () => {
   test('a second ask replaces the waiting Turn; to the class it is, it says to withdraw', async () => {
     const { fake, anaFace } = world();
     const first = must(await fake.turn(anaFace, 'heel', 'silent', false, false));
-    expect(first).toEqual({ class: 'heel', loudness: 'silent', showFrom: false, showTo: false, takesEffectAt: null });
-    must(await fake.turn(anaFace, 'lurker', 'announced', true, true));
+    expect(first).toEqual({ class: 'heel', loudness: 'silent', showFrom: false, showTo: false, takesEffectAt: null, announced: null });
+    must(await fake.turn(anaFace, 'lurker', 'silent', false, false));
     const mine = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
     expect(mine.class).toBe('face');
-    expect(mine.pendingTurn).toEqual({ class: 'lurker', loudness: 'announced', showFrom: true, showTo: true, takesEffectAt: null });
+    expect(mine.pendingTurn).toEqual({ class: 'lurker', loudness: 'silent', showFrom: false, showTo: false, takesEffectAt: null, announced: null });
     expect(await fake.turn(anaFace, 'face', 'silent', false, false)).toEqual(refused('this character already is one: withdraw its waiting Turn to keep it'));
+  });
+  test('an announced Turn names a thread, is posted there at once and stands: no change, no withdrawal, no second announcement', async () => {
+    const { fake, anaFace, thread } = world();
+    expect(await fake.turn(anaFace, 'lurker', 'announced', false, true)).toEqual(refused('is not an id', 'thread'));
+    expect(await fake.turn(anaFace, 'lurker', 'silent', false, false, thread)).toEqual(refused('a silent Turn is posted nowhere', 'thread'));
+    const told = must(await fake.turn(anaFace, 'lurker', 'announced', true, true, thread));
+    expect(told.announced).toMatchObject({ thread });
+    const posted = (await fake.actsById([told.announced!.act]))[0]!;
+    expect(posted).toMatchObject({ kind: 'announce', character: anaFace, thread, payload: { what: 'turn', ahead: true, was: 'face', class: 'lurker' } });
+    const mine = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(mine.pendingTurn).toMatchObject({ class: 'lurker', loudness: 'announced', announced: { act: told.announced!.act, thread } });
+    const stands = /^that Turn was announced, so it stands until it takes effect at /u;
+    for (const a of [await fake.turn(anaFace, 'heel', 'silent', false, false), await fake.withdrawTurn(anaFace)]) {
+      expect(a.ok).toBe(false);
+      expect(a.ok === false && a.error).toMatch(stands);
+    }
+    expect(await fake.announceTurn(anaFace, thread, false, false)).toEqual(refused('that Turn was announced already'));
+  });
+  test('an announced Turn is refused on the System\'s board, in a thread that is not there, and its class is public only once it takes effect', async () => {
+    const { fake, anaFace, thread } = world();
+    const staff = fake.seed.thread('announcements', null, 'Staff', '');
+    expect((await fake.turn(anaFace, 'lurker', 'announced', false, true, staff.thread)).ok).toBe(false);
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
+    must(await fake.turn(anaFace, 'lurker', 'announced', true, true, thread));
+    /* Ahead of its Turn the announcement reveals nothing: the class becomes public as the Turn lands, dated then. */
+    expect(await fake.classReveals([anaFace])).toEqual([]);
+    expect(await fake.turnsAnnounced([anaFace])).toEqual([]);
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.classShownAt).toBeNull();
+    fake.clock.advance(DAY);
+    fake.seed.settle({});
+    const landed = fake.clock.now();
+    expect((await fake.classReveals([anaFace])).map((r) => ({ class: r.class, at: r.at }))).toEqual([{ class: 'lurker', at: new Date(landed).toISOString() }]);
+    expect((await fake.turnsAnnounced([anaFace])).map((t) => ({ was: t.was, at: t.at }))).toEqual([{ was: 'face', at: new Date(landed).toISOString() }]);
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
+  });
+  test('a silent Turn is announced later: where and what to name, committing it; none waiting says so', async () => {
+    const { fake, anaFace, thread } = world();
+    expect(await fake.announceTurn(anaFace, thread, false, false)).toEqual(refused('no Turn of that character is waiting'));
+    must(await fake.turn(anaFace, 'heel', 'silent', false, false));
+    const told = must(await fake.announceTurn(anaFace, thread, true, false));
+    expect(told).toMatchObject({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, announced: { thread } });
+    expect((await fake.actsById([told.announced!.act]))[0]).toMatchObject({ payload: { what: 'turn', ahead: true, was: 'face' } });
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toMatchObject({ loudness: 'announced', announced: { act: told.announced!.act, thread } });
+    expect((await fake.withdrawTurn(anaFace)).ok).toBe(false);
   });
   test('withdrawing with none waiting, and with one', async () => {
     const { fake, anaFace } = world();
@@ -379,8 +423,8 @@ describe('pronouns', () => {
   const REFUSAL = 'pronouns are five words of 1 to 12 letters';
   test('a character made with she/her reads it back on Character and MyCharacter; one made with none takes the instance\'s', async () => {
     const { fake } = world({ charactersPerPlayer: 6 });
-    const hers = must(await fake.createCharacter('Hers', 'face', 'now', 'silent', PRONOUN_PRESETS.she));
-    const plain = must(await fake.createCharacter('Plain', 'face', 'now', 'silent'));
+    const hers = must(await fake.createCharacter('Hers', 'face', PRONOUN_PRESETS.she));
+    const plain = must(await fake.createCharacter('Plain', 'face'));
     expect((await fake.characters([hers.id]))[0]?.pronouns).toEqual(PRONOUN_PRESETS.she);
     expect((await fake.myCharacters()).find((c) => c.id === hers.id)?.pronouns).toEqual(PRONOUN_PRESETS.she);
     expect((await fake.characters([plain.id]))[0]?.pronouns).toEqual(settings.pronouns);
@@ -388,10 +432,10 @@ describe('pronouns', () => {
   });
   test('a set is stored lowercased; a bad one is refused in the server\'s words and makes nothing', async () => {
     const { fake } = world({ charactersPerPlayer: 6 });
-    const loud = must(await fake.createCharacter('Loud', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'SHE' }));
+    const loud = must(await fake.createCharacter('Loud', 'face', { ...PRONOUN_PRESETS.she, subject: 'SHE' }));
     expect((await fake.characters([loud.id]))[0]?.pronouns.subject).toBe('she');
     const before = (await fake.myCharacters()).length;
-    expect(await fake.createCharacter('Bad', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'abcdefghijklm' })).toEqual(refused(REFUSAL));
+    expect(await fake.createCharacter('Bad', 'face', { ...PRONOUN_PRESETS.she, subject: 'abcdefghijklm' })).toEqual(refused(REFUSAL));
     expect((await fake.myCharacters()).length).toBe(before);
   });
   test('set_profile stores a set, keeps the stored one when given none, and refuses a bad one with nothing changed', async () => {
@@ -417,43 +461,36 @@ describe('pronouns', () => {
 describe('making a character', () => {
   test('the name\'s rules', async () => {
     const { fake } = world();
-    expect(await fake.createCharacter('   ', 'face', 'tally', 'announced')).toEqual(refused('is empty', 'name'));
-    expect(await fake.createCharacter('n'.repeat(41), 'face', 'tally', 'announced')).toEqual(refused('is longer than 40 characters', 'name'));
-    expect(await fake.createCharacter('Two  Spaces', 'face', 'tally', 'announced')).toEqual(
+    expect(await fake.createCharacter('   ', 'face')).toEqual(refused('is empty', 'name'));
+    expect(await fake.createCharacter('n'.repeat(41), 'face')).toEqual(refused('is longer than 40 characters', 'name'));
+    expect(await fake.createCharacter('Two  Spaces', 'face')).toEqual(
       refused('can hold letters, marks, digits, symbols and single spaces, nothing hidden', 'name'));
-    expect(await fake.createCharacter('Fine', 'wrestler', 'tally', 'announced')).toEqual(refused('there is no class "wrestler"', 'class'));
-    expect(await fake.createCharacter('Fine', 'face', 'later' as 'now', 'announced')).toEqual(refused('a character drops now or debuts at the tally', 'timing'));
+    expect(await fake.createCharacter('Fine', 'wrestler')).toEqual(refused('there is no class "wrestler"', 'class'));
   });
   test('a name is taken whatever its case, even by a waiting or a retired character', async () => {
     const { fake, ana } = world({ charactersPerPlayer: 6 });
     fake.seed.character(ana, 'Quiet One', 'face', { debuted: false });
-    expect(await fake.createCharacter('quiet one', 'face', 'tally', 'announced')).toEqual(refused('that name is taken'));
-    expect(await fake.createCharacter('ANA FACE', 'face', 'tally', 'announced')).toEqual(refused('that name is taken'));
+    expect(await fake.createCharacter('quiet one', 'face')).toEqual(refused('that name is taken'));
+    expect(await fake.createCharacter('ANA FACE', 'face')).toEqual(refused('that name is taken'));
   });
   test('a player runs at most so many, retired ones not counted', async () => {
     const { fake, anaHeel } = world();
-    must(await fake.createCharacter('Third', 'face', 'tally', 'announced'));
-    expect(await fake.createCharacter('Fourth', 'face', 'tally', 'announced')).toEqual(refused('a player runs at most 3 characters'));
+    must(await fake.createCharacter('Third', 'face'));
+    expect(await fake.createCharacter('Fourth', 'face')).toEqual(refused('a player runs at most 3 characters'));
     fake.seed.retire(anaHeel);
-    expect(await fake.createCharacter('Fourth', 'face', 'tally', 'announced')).toMatchObject({ ok: true });
+    expect(await fake.createCharacter('Fourth', 'face')).toMatchObject({ ok: true });
   });
-  test('a new character waits, and is absent from every public read until it debuts', async () => {
+  test('a new character is active at once: public to every read, in the standings, and no Act is written', async () => {
     const { fake } = world();
-    const made = must(await fake.createCharacter('Newcomer', 'lurker', 'tally', 'with_class'));
-    expect(made).toMatchObject({ name: 'Newcomer', class: 'lurker', waiting: true, loudness: 'with_class' });
-    expect(await fake.characters([made.id])).toEqual([]);
-    expect((await fake.standingsPage(0, 1000)).map((s) => s.character)).not.toContain(made.id);
-    expect(await fake.characterCounts(made.id)).toEqual({ posts: 0, spins: 0, cards: 0 });
-    expect((await fake.myCharacters()).find((c) => c.id === made.id)).toMatchObject({ debutedAt: null, class: 'lurker', debutLoudness: 'with_class' });
-    fake.seed.settle({});
+    const acts = (await fake.myCharacters()).length;
+    const made = must(await fake.createCharacter('Newcomer', 'lurker'));
+    expect(made).toEqual({ id: made.id, name: 'Newcomer', class: 'lurker' });
     expect((await fake.characters([made.id])).map((c) => c.name)).toEqual(['Newcomer']);
     expect((await fake.standingsPage(0, 1000)).map((s) => s.character)).toContain(made.id);
-  });
-  test('dropped now it is debuted; a debuted character cannot be re-timed', async () => {
-    const { fake } = world();
-    const made = must(await fake.createCharacter('Dropped', 'face', 'now', 'silent'));
-    expect(made.waiting).toBe(false);
-    expect(await fake.setDebut(made.id, 'tally', 'announced')).toEqual(refused('it has debuted'));
+    expect((await fake.myCharacters()).length).toBe(acts + 1);
+    expect((await fake.myCharacters()).find((c) => c.id === made.id)).toMatchObject({ class: 'lurker' });
+    expect((await fake.myCharacters()).find((c) => c.id === made.id)?.debutedAt).not.toBeNull();
+    expect(await fake.classReveals([made.id])).toEqual([]);
   });
 });
 
@@ -589,7 +626,7 @@ describe('live events', () => {
     const { fake, anaFace, thread } = world();
     await fake.turn(anaFace, 'heel', 'silent', false, false);
     await fake.withdrawTurn(anaFace);
-    await fake.createCharacter('Quietly', 'face', 'tally', 'announced');
+    await fake.createCharacter('Quietly', 'face');
     await fake.createInvite();
     await fake.markRead(thread, 1, null);
     expect(fake.broadcast.log).toEqual([]);
@@ -955,12 +992,12 @@ describe('the account', () => {
     expect(await fake.wallet()).toEqual({ balance: 300, cap: 600 });
   });
   test('seed.turn asks a Turn as its player, waiting for the settlement, and is refused in the server\'s words', async () => {
-    const { fake, bo, anaFace, boFace } = world();
+    const { fake, bo, anaFace, boFace, thread } = world();
     fake.seed.nextSettlementAt(fake.clock.now() + 8 * 3_600_000);
-    fake.seed.turn(anaFace, 'heel', { loudness: 'announced', showFrom: true, showTo: false });
+    fake.seed.turn(anaFace, 'heel', { loudness: 'announced', showFrom: true, showTo: false, thread });
     const waiting = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
     expect(waiting.class).toBe('face');
-    expect(waiting.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: new Date(fake.clock.now() + 8 * 3_600_000).toISOString() });
+    expect(waiting.pendingTurn).toMatchObject({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: new Date(fake.clock.now() + 8 * 3_600_000).toISOString(), announced: { thread } });
     expect(() => fake.seed.turn(anaFace, 'face')).toThrow(/the seed was refused/);
     /* A character of another account is asked as its own player, whoever is signed in. */
     fake.seed.turn(boFace, 'lurker');
@@ -6954,7 +6991,7 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
     fake.signInAs(ana);
     return { fake, ana };
   };
-  const make = async (fake: ReturnType<typeof createFake>, name: string) => { const a = await fake.createCharacter(name, 'face', 'now', 'silent'); expect(a.ok).toBe(true); };
+  const make = async (fake: ReturnType<typeof createFake>, name: string) => { const a = await fake.createCharacter(name, 'face'); expect(a.ok).toBe(true); };
 
   test('a first character grants one sealed pack, whose cards reach no hand until it is opened', async () => {
     const { fake } = world();
@@ -7346,7 +7383,7 @@ describe('the card retirement seed', () => {
 
   test('opening a sealed pack refunds a withdrawn card with a withdrawn row and no copy, and pulls a renamed one under its new key', async () => {
     const { fake } = world();
-    expect((await fake.createCharacter('Ana Face', 'face', 'now', 'silent')).ok).toBe(true);
+    expect((await fake.createCharacter('Ana Face', 'face')).ok).toBe(true);
     const [sealedPack] = await fake.sealedPacks();
     const opened = must(await fake.openPack(sealedPack!.pack));
     expect(opened.contents).toEqual(['kept', 'bluff', 'collector']);

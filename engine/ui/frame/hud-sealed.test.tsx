@@ -15,7 +15,7 @@ import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const mine = (id: string, name: string): MyCharacter => ({
   id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: 'heel', classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
-  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
+  retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 
 function setup(sealedPacks: () => Promise<unknown[]> = async () => []) {
@@ -96,7 +96,7 @@ describe('the dot follows the rows', () => {
     fake.signInAs(fake.seed.account('ana'));
     function Make() {
       const { refresh } = usePlayer();
-      return <button type="button" onClick={async () => { await fake.createCharacter('Ana Face', 'face', 'now', 'silent'); await refresh(); }}>make</button>;
+      return <button type="button" onClick={async () => { await fake.createCharacter('Ana Face', 'face'); await refresh(); }}>make</button>;
     }
     renderIn(fake, <Frame><Make /></Frame>, { instance });
     const make = await screen.findByRole('button', { name: 'make' });

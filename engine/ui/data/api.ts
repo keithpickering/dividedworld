@@ -1341,9 +1341,8 @@ export interface MyCharacter {
   readonly classDueAt: string | null;
   /** When it may next Turn; null when it may now. */
   readonly turnOpensAt: string | null;
-  /** Null while it waits to debut at the next tally. */
+  /** Null while a staff persona waits for an office; every other character is active from its creation (0428), so it is never null for a player's. */
   readonly debutedAt: string | null;
-  readonly debutLoudness: 'silent' | 'announced' | 'with_class' | null;
   readonly retiredAt: string | null;
   readonly pendingTurn: PendingTurn | null;
   /** Hidden from "Who is online" and "Users browsing": listed nowhere, its player's switch in My characters. */
@@ -1377,6 +1376,11 @@ export interface PendingTurn {
   readonly showTo: boolean;
   /** When the next settlement applies it; null when no window is known yet ("at the next settlement"). */
   readonly takesEffectAt: string | null;
+  /**
+   * The announcement Act of a committed Turn (0427): written when the Turn was asked, in the thread named, `seq` its place there. A committed Turn stands until it
+   * takes effect and can be neither changed nor withdrawn; null for a silent one, which can still be announced later (`announceTurn`).
+   */
+  readonly announced: { readonly act: Id; readonly thread: Id; readonly seq: number } | null;
 }
 
 export interface Wallet {
@@ -2269,15 +2273,11 @@ export interface LogCosmetic {
 
 /* ------------------------------------------------------------------ actions ---- */
 
-export type DebutTiming = 'now' | 'tally';
-export type DebutLoudness = 'silent' | 'announced' | 'with_class';
-
+/** A character made: active at once, with no Act (0428). */
 export interface CreatedCharacter {
   readonly id: Id;
   readonly name: string;
   readonly class: string;
-  readonly waiting: boolean;
-  readonly loudness: DebutLoudness;
 }
 
 export interface TurnAsked {
@@ -2286,6 +2286,8 @@ export interface TurnAsked {
   readonly showFrom: boolean;
   readonly showTo: boolean;
   readonly takesEffectAt: string | null;
+  /** The announcement Act an announced Turn wrote at once, and its thread; null for a silent one. */
+  readonly announced: { readonly act: Id; readonly thread: Id } | null;
 }
 
 /** What an avatar upload sends: the two re-encoded WebP crops and their frames, never the original. */
@@ -3326,12 +3328,14 @@ export interface KayfaApi {
   surfaceActs(play: Id): Promise<SurfaceActs | null>;
   /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. `keepalive` asks the request to outlive the page (a tab closing). */
   react(act: Id, character: Id, kind: string, opts?: { readonly keepalive?: boolean }): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
-  turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
+  /** An announced Turn names its `thread` and is posted there at once; a silent one is posted nowhere and takes none. */
+  turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean, thread?: Id): Promise<Answer<TurnAsked>>;
+  /** Announces and commits a silent Turn that is waiting (`announce_turn`, 0427): where, and which of its classes it names. */
+  announceTurn(character: Id, thread: Id, showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;
   /** `pronouns` left out: the instance's default (`Settings.pronouns`), as the server takes it. */
-  createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Promise<Answer<CreatedCharacter>>;
-  setDebut(character: Id, timing: DebutTiming, loudness: DebutLoudness): Promise<Answer<{ readonly id: Id; readonly waiting: boolean; readonly loudness: DebutLoudness }>>;
+  createCharacter(name: string, cls: string, pronouns?: PronounSet): Promise<Answer<CreatedCharacter>>;
   /** `pronouns` left out: the stored set stays. */
   setProfile(character: Id, title: string, signature: string, pipStyle: string, pronouns?: PronounSet): Promise<Answer<Character>>;
   setAvatar(upload: AvatarUpload): Promise<Answer<Character>>;

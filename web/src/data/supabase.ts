@@ -598,6 +598,15 @@ function toStaffCard(r: Row): StaffCardPlay {
   };
 }
 
+/** The answer of turn and announce_turn (0427): the Turn as queued, with the announcement Act it wrote at once where it is announced. */
+function toTurnAsked(r: Row): TurnAsked {
+  const told = isObject(r['announcement']) ? r['announcement'] : null;
+  return {
+    class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null,
+    announced: told && told['id'] && told['thread'] ? { act: told['id'] as Id, thread: told['thread'] as Id } : null,
+  };
+}
+
 function toMyCharacter(r: Row): MyCharacter {
   const pending: PendingTurn | null = r['pending_class']
     ? {
@@ -606,6 +615,9 @@ function toMyCharacter(r: Row): MyCharacter {
         showFrom: r['pending_show_from'] === true,
         showTo: r['pending_show_to'] === true,
         takesEffectAt: r['takes_effect_at'] ?? null,
+        announced: r['pending_announce_act'] && r['pending_announce_thread']
+          ? { act: r['pending_announce_act'], thread: r['pending_announce_thread'], seq: Number(r['pending_announce_seq'] ?? 0) }
+          : null,
       }
     : null;
   return {
@@ -618,7 +630,6 @@ function toMyCharacter(r: Row): MyCharacter {
     classDueAt: r['class_due_at'] ?? null,
     turnOpensAt: r['turn_opens_at'] ?? null,
     debutedAt: r['debuted_at'] ?? null,
-    debutLoudness: r['debut_loudness'] ?? null,
     retiredAt: r['retired_at'] ?? null,
     pendingTurn: pending,
     presenceHidden: r['presence_hidden'] === true,
@@ -2407,13 +2418,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind, opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null }), opts?.keepalive === true),
-    turn: (character, to, loudness, showFrom, showTo) =>
-      act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
+    turn: (character, to, loudness, showFrom, showTo, thread) =>
+      act({ action: 'turn', character, class: to, loudness, showFrom, showTo, ...(thread === undefined ? {} : { thread }) }, toTurnAsked),
+    announceTurn: (character, thread, showFrom, showTo) => act({ action: 'announceTurn', character, thread, showFrom, showTo }, toTurnAsked),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),
     unmask: (character, thread, message) => act({ action: 'unmask', character, thread, message }, toAct),
-    createCharacter: (name, cls, timing, loudness, pronouns) =>
-      act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
-    setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
+    createCharacter: (name, cls, pronouns) =>
+      act({ action: 'createCharacter', name, class: cls, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'] })),
     async setProfile(character, title, signature, pipStyle, pronouns) {
       /* A null set keeps the stored one (set_profile, 0124). A set goes out normalized: the picker and the fake judge it trimmed and lowercased, as the act
          function sends createCharacter's, and set_profile lowers a set but refuses a space, in words that name no form. */

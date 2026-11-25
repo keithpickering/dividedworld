@@ -74,8 +74,7 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   assert.equal(again.status, 400, 'no card left, and the post carries one already');
 
   // A Turn, silent, waits for the settlement: nothing public, and nothing sent live. Bob
-  // may withdraw it until then. (An announced Turn is posted in a thread when it is asked and cannot be withdrawn: 0427; the action carries
-  // the thread from the client's Task 3.)
+  // may withdraw it until then.
   const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'silent' });
   assert.equal(turned.status, 200, JSON.stringify(turned));
   const { takes_effect_at: when, ...waiting } = turned.body as { takes_effect_at: string | null };
@@ -86,8 +85,28 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   assert.equal(withdrawn.status, 200, JSON.stringify(withdrawn));
   assert.equal(sql(`select count(*) from pending_turns where character = '${bob.character}'`), '0');
 
+  // An announced Turn names its thread (the act function carries it as `thread`), is posted there at once as the character's own announce Act, is heard live in that thread,
+  // and stands: the action refuses to withdraw it, to change it, or to announce it again (0427).
+  const told = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced', showFrom: true, showTo: true, thread: thread.id });
+  assert.equal(told.status, 200, JSON.stringify(told));
+  const announcement = (told.body as { announcement: { id: string; thread: string; payload: Record<string, unknown> } }).announcement;
+  assert.equal(announcement.thread, thread.id);
+  assert.equal(announcement.payload.what, 'turn');
+  assert.equal(announcement.payload.ahead, true);
+  assert.deepEqual(told.broadcasts, [{ topic: `thread:${thread.id}`, event: 'act', payload: announcement }]);
+  assert.equal(sql(`select announce_act = '${announcement.id}' from pending_turns where character = '${bob.character}'`), 't');
+  for (const request of [{ action: 'withdrawTurn', character: bob.character }, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'silent' }, { action: 'announceTurn', character: bob.character, thread: thread.id }]) {
+    const refused = await runAction(asBob, instance, request);
+    assert.ok(refused.status >= 400 && refused.status < 500, JSON.stringify(refused));
+    assert.match(String((refused.body as { error: string }).error), /announced/);
+  }
+  const noThread = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced' });
+  assert.equal(noThread.status, 400, 'an announced Turn with no thread is refused before the call');
+  assert.equal((noThread.body as { field?: string }).field, 'thread');
+  assert.equal(sql(`select count(*) from pending_turns where character = '${bob.character}'`), '1', 'it stands');
+
   // Nothing any action answered, or sent live, names a player.
-  for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again, turned]) {
+  for (const answer of [started, replied, edited, spun, reacted, own, bought, played, caster, notAuthor, again, turned, told]) {
     assert.ok(!JSON.stringify(answer).includes(ann.account) && !JSON.stringify(answer).includes(bob.account), 'an answer carried an account');
   }
 });

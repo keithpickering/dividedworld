@@ -31,8 +31,8 @@ function world(o: { hooTurns?: boolean } = {}) {
   const { thread } = seed.thread('general', pipe, 'a thread', 'Opening.', { at: at(27) });
   const p2 = seed.post(thread, pipe, 'Pipewrench speaks.', { at: at(28, 10) });
   seed.wallet(me, 290);
-  seed.turn(pipe, 'face', { loudness: 'announced', showFrom: true });
-  if (o.hooTurns) seed.turn(hoo, 'heel', { loudness: 'announced', showFrom: true });
+  seed.turn(pipe, 'face', { loudness: 'silent' });
+  if (o.hooTurns) seed.turn(hoo, 'heel', { loudness: 'silent' });
   seed.settle({
     at: at(29, 8, 17), debut: false, turns: true,
     ledger: [
@@ -138,7 +138,7 @@ describe('the settlement\'s summary', () => {
     const turn = screen.getByRole('region', { name: 'Turn' });
     expect(within(turn).getByText('Heel')).toBeInTheDocument();
     expect(within(turn).getByText('Face')).toBeInTheDocument();
-    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. Her own Promo announced it, with the old class, in Season 1: Who Turned.');
+    expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. It was announced in Season 1: Who Turned, with the old class.');
   });
 
   test('a they/them character\'s Turn line agrees with the plural: "they score as", never "they scores"', async () => {

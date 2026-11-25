@@ -51,7 +51,7 @@ function world() {
   seed.react(rival, glo, p2, 'tomato');
   seed.wallet(me, 200);
   seed.settle({ at: at(28, 8, 17), debut: false, sharesKept: false, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 50 }, { character: hoo, reason: 'face.cheered', amount: 40 }] });
-  seed.turn(pipe, 'face', { loudness: 'announced', showFrom: true });
+  seed.turn(pipe, 'face', { loudness: 'silent' });
   seed.settle({
     at: at(29, 8, 17), debut: false, turns: true,
     ledger: [

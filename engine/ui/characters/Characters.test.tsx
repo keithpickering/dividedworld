@@ -17,7 +17,7 @@ afterEach(() => { cleanup(); vi.useRealTimers(); vi.restoreAllMocks(); });
 const DAY = 86_400_000;
 const T0 = Date.parse('2026-10-01T12:00:00Z');
 
-/** The player's three characters: one free to Turn, one in its cooldown, one still waiting to debut. */
+/** The player's three characters: one free to Turn, one in its cooldown, one with nothing yet. */
 function world(options: { readonly per?: number; readonly instance?: Instance } = {}) {
   const per = options.per ?? 4;
   const fake = buildWorld({ charactersPerPlayer: per }, options.instance);
@@ -28,11 +28,11 @@ function world(options: { readonly per?: number; readonly instance?: Instance } 
   const other = fake.seed.account('other');
   const pipe = fake.seed.character(me, 'Pipewrench', 'face', { at: T0, pronouns: PRONOUN_PRESETS.she });
   const hoolie = fake.seed.character(me, 'Mrs. Hooligan', 'heel', { at: T0 + DAY });
-  const waiting = fake.seed.character(me, 'Spritey', 'heel', { debuted: false, loudness: 'announced', pronouns: PRONOUN_PRESETS.they });
+  const spritey = fake.seed.character(me, 'Spritey', 'heel', { pronouns: PRONOUN_PRESETS.they });
   const stranger = fake.seed.character(other, 'Stranger', 'heel', { at: T0 });
   fake.seed.settle({ at: T0 + 2 * DAY, debut: false, standings: { [pipe]: 1420, [hoolie]: 685, [stranger]: 100 } });
   fake.signInAs(me);
-  return { fake, me, other, pipe, hoolie, waiting, stranger, per };
+  return { fake, me, other, pipe, hoolie, spritey, stranger, per };
 }
 type World = ReturnType<typeof world>;
 
@@ -56,6 +56,13 @@ const ready = async () => { await screen.findByRole('heading', { level: 1, name:
 const pickThread = async (dialog: HTMLElement, typed: string, title: string) => {
   await userEvent.type(within(dialog).getByRole('combobox', { name: 'Thread' }), typed);
   await userEvent.click((await offered(dialog)).find((o) => o.textContent?.startsWith(title))!);
+};
+
+/** A thread on General that someone else began: where a Turn can be announced. */
+const generalThread = async (w: World) => {
+  const t = w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
+  const board = (await w.fake.boards()).find((b) => b.slug === 'general')!.id;
+  return { id: t.thread, title: 'The tea thread', board };
 };
 
 /** The thread options on offer: the list's, not the board filter's. */
@@ -103,7 +110,7 @@ describe('My characters', () => {
     const r = row('Pipewrench');
     expect(within(r).getByText('14.20')).toBeInTheDocument();
     expect(r).toHaveTextContent(/Posts\s*\d+ · joined/u);
-    expect(within(roster()).getAllByTestId('kb-roster-rank')).toHaveLength(2);
+    expect(within(roster()).getAllByTestId('kb-roster-rank')).toHaveLength(3);
     expect(document.querySelector('[aria-busy="true"]')).toBeNull();
     await act(async () => { await new Promise((resolve) => setTimeout(resolve, 20)); });
     expect(read).toEqual([]);
@@ -140,7 +147,7 @@ describe('My characters', () => {
     open(w);
     await ready();
     for (const a of document.querySelectorAll('a[href]')) {
-      for (const id of [w.pipe, w.hoolie, w.waiting]) expect(a.getAttribute('href')).not.toContain(id);
+      for (const id of [w.pipe, w.hoolie, w.spritey]) expect(a.getAttribute('href')).not.toContain(id);
     }
     expect(within(row('Pipewrench')).getByRole('link', { name: 'Edit profile' })).toHaveAttribute('href', '/characters/edit');
     await userEvent.click(within(row('Mrs. Hooligan')).getByRole('link', { name: 'Edit profile' }));
@@ -176,75 +183,6 @@ describe('My characters', () => {
     expect(within(r).queryByText(/^Available /u)).toBeNull();
   });
 
-  test('a new character is waiting to debut, offers Drop now and a change of how it debuts, and is in no public list', async () => {
-    const w = world();
-    open(w);
-    await ready();
-    const r = row('Spritey');
-    expect(within(r).getByText(/waiting to debut at the next settlement/iu)).toBeInTheDocument();
-    expect(within(r).getByText(/announced/iu)).toBeInTheDocument();
-    /* A they/them character: the verbs agree, and no "it" is left. */
-    expect(within(r).getByText('They will debut announced.', { exact: false })).toBeInTheDocument();
-    expect(within(r).getByText('They can Turn once they have debuted.')).toBeInTheDocument();
-    expect(within(r).getByText(/\(chosen when they were made\)/u)).toBeInTheDocument();
-    expect(within(r).getByRole('button', { name: 'Drop Spritey now…' })).toBeInTheDocument();
-    expect(within(r).getByRole('button', { name: 'Change how Spritey debuts…' })).toBeInTheDocument();
-    /* No aria-label: each is named by what is drawn on it (the label in the name, WCAG 2.5.3). */
-    expect(within(r).getByRole('button', { name: 'Drop Spritey now…' })).not.toHaveAttribute('aria-label');
-    expect(within(r).queryByRole('button', { name: /^Turn/u })).toBeNull();
-    expect(within(r).queryByRole('link', { name: 'Edit profile' })).toBeNull();
-    /* Absent from every public read. */
-    expect(await w.fake.characters([w.waiting])).toEqual([]);
-    expect((await w.fake.standingsPage(0, 1000)).map((s) => s.character)).not.toContain(w.waiting);
-    expect(await w.fake.standingPlace(w.waiting)).toBeNull();
-    expect(await w.fake.characterCounts(w.waiting)).toEqual({ posts: 0, spins: 0, cards: 0 });
-    const board = (await w.fake.boards()).find((b) => b.slug === 'general')!;
-    expect((await w.fake.threads(board.id, { offset: 0, limit: 20 })).threads.flatMap((t) => [t.firstCharacter, t.lastCharacter])).not.toContain(w.waiting);
-    expect((await w.fake.boards()).map((b) => b.lastCharacter)).not.toContain(w.waiting);
-  });
-
-  test('Save how it debuts is a busy button while the save is out: aria-busy, its name kept, and a second press saves once', async () => {
-    const w = world();
-    let release!: () => void;
-    const real = w.fake.setDebut.bind(w.fake);
-    const setDebut = vi.spyOn(w.fake, 'setDebut').mockImplementation((...args) => new Promise((resolve) => { release = () => resolve(real(...args)); }));
-    open(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
-    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
-    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
-    const save = within(dialog).getByRole('button', { name: 'Save how Spritey debuts' });
-    await userEvent.click(save);
-    expect(save).toHaveAttribute('aria-busy', 'true');
-    expect(within(dialog).getByRole('button', { name: 'Save how Spritey debuts' })).toBe(save);
-    await userEvent.click(save);
-    expect(setDebut).toHaveBeenCalledTimes(1);
-    release();
-    await waitFor(() => expect(within(row('Spritey')).getByText(/silently/iu)).toBeInTheDocument());
-  });
-
-  test('Drop now debuts it at once; Change how it debuts changes only the announcement', async () => {
-    const w = world();
-    const setDebut = vi.spyOn(w.fake, 'setDebut');
-    open(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
-    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
-    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
-    expect(within(dialog).getByText(/Nothing is posted/u)).toBeInTheDocument();
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Save how Spritey debuts' }));
-    await waitFor(() => expect(setDebut).toHaveBeenCalledWith(w.waiting, 'tally', 'silent'));
-    await waitFor(() => expect(within(row('Spritey')).getByText(/silently/iu)).toBeInTheDocument());
-    expect(await w.fake.characters([w.waiting])).toEqual([]);
-
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
-    const drop = await screen.findByRole('dialog', { name: /Spritey/u });
-    await userEvent.click(within(drop).getByRole('button', { name: 'Drop Spritey now' }));
-    await waitFor(() => expect(setDebut).toHaveBeenLastCalledWith(w.waiting, 'now', 'silent'));
-    await waitFor(() => expect(within(row('Spritey')).queryByText(/waiting to debut/iu)).toBeNull());
-    expect((await w.fake.characters([w.waiting])).map((c) => c.name)).toEqual(['Spritey']);
-  });
-
   test('a full roster says an admin can retire a character on request, and offers no New character', async () => {
     const w = world({ per: 3 });
     open(w);
@@ -268,14 +206,6 @@ describe('My characters', () => {
     open(w);
     await ready();
     expect(within(row('Pipewrench')).getByText('Retired. An admin can restore her.')).toBeInTheDocument();
-  });
-
-  test('a waiting they/them character announced with a class says the class is theirs', async () => {
-    const w = world();
-    w.fake.seed.character(w.me, 'Wobbly', 'face', { debuted: false, loudness: 'with_class', pronouns: PRONOUN_PRESETS.they });
-    open(w);
-    await ready();
-    expect(within(row('Wobbly')).getByText('They will debut announced, with their class.', { exact: false })).toBeInTheDocument();
   });
 
   test('a retired character says an admin can restore it, and offers nothing', async () => {
@@ -342,9 +272,10 @@ describe('the Turn', () => {
     const dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
     const preview = within(dialog).getByRole('group', { name: 'What everyone will see' });
-    expect(preview).toHaveTextContent('Pipewrench has Turned');
+    expect(preview).toHaveTextContent('Pipewrench has Turned. It takes effect at the next settlement.');
     expect(preview).not.toHaveTextContent(/Heel|Face/u);
-    expect(within(dialog).getByText(/takes effect at the next settlement/iu)).toBeInTheDocument();
+    expect(preview).toHaveTextContent(/At once, in the thread you choose/u);
+    expect(dialog.querySelector('.kb-turn-effect')).toHaveTextContent("Once announced, this Turn can't be changed or withdrawn. It takes effect at the next settlement.");
 
     await userEvent.click(within(dialog).getByRole('checkbox', { name: /Name the old class/u }));
     expect(preview).toHaveTextContent('Pipewrench has Turned, leaving Face.');
@@ -353,9 +284,13 @@ describe('the Turn', () => {
 
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     expect(preview).toHaveTextContent(/Nobody is told/u);
+    expect(preview).toHaveTextContent(/Nowhere: a silent Turn is posted nowhere/u);
     expect(preview).not.toHaveTextContent(/Heel|Face/u);
     expect(within(dialog).getByRole('checkbox', { name: /Name the old class/u })).toBeDisabled();
     expect(within(dialog).getByRole('checkbox', { name: /Name the old class/u })).not.toBeChecked();
+    /* A silent Turn is posted nowhere: no thread to pick, and the foot says it can be changed, withdrawn or announced. */
+    expect(within(dialog).queryByRole('combobox', { name: 'Thread' })).toBeNull();
+    expect(dialog.querySelector('.kb-turn-effect')).toHaveTextContent(/you can change this Turn, withdraw it or announce it/u);
   });
 
   test('holds the two names in one group under Announced, off while the Turn is silent', async () => {
@@ -410,22 +345,22 @@ describe('the Turn', () => {
 
     const old = within(dialog).getByRole('checkbox', { name: /^Name the old class/u });
     expect(posted()).not.toContain(quoted(old));
-    expect(quoted(old)).toBe('Pipewrench has Turned, leaving Face.');
+    expect(quoted(old)).toBe('Pipewrench has Turned, leaving Face. It takes effect at the next settlement.');
     await userEvent.click(old);
     expect(posted()).toEqual([quoted(old)]);
     await userEvent.click(old);
 
     const now = within(dialog).getByRole('checkbox', { name: /^Name the new class/u });
     expect(posted()).not.toContain(quoted(now));
-    expect(quoted(now)).toBe('Pipewrench has Turned to Heel.');
+    expect(quoted(now)).toBe('Pipewrench has Turned to Heel. It takes effect at the next settlement.');
     await userEvent.click(now);
     expect(posted()).toEqual([quoted(now)]);
     expect(now.closest('label')).toHaveTextContent(/reveals/u);
 
     /* With the other name on, each option quotes the line the post will carry once it is on too. */
-    expect(quoted(old)).toBe('Pipewrench has Turned from Face to Heel.');
+    expect(quoted(old)).toBe('Pipewrench has Turned from Face to Heel. It takes effect at the next settlement.');
     await userEvent.click(old);
-    expect(posted()).toEqual(['Pipewrench has Turned from Face to Heel.']);
+    expect(posted()).toEqual(['Pipewrench has Turned from Face to Heel. It takes effect at the next settlement.']);
   });
 
   test('cannot be confirmed until a class is chosen', async () => {
@@ -444,9 +379,10 @@ describe('the Turn', () => {
     await ready();
     let dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(turn).toHaveBeenCalledWith(w.pipe, 'heel', 'announced', false, false);
+    expect(turn).toHaveBeenCalledWith(w.pipe, 'heel', 'silent', false, false, undefined);
 
     const r = row('Pipewrench');
     expect(within(r).getByText(/Turn waiting/u)).toBeInTheDocument();
@@ -461,11 +397,10 @@ describe('the Turn', () => {
     await userEvent.click(within(r).getByRole('button', { name: 'Change Pipewrench\'s Turn' }));
     dialog = await screen.findByRole('dialog', { name: 'Change Pipewrench\'s Turn' });
     expect(within(dialog).getByRole('radio', { name: /^Heel/u })).toBeChecked();
-    expect(within(dialog).getByRole('radio', { name: /^Announced/u })).toBeChecked();
-    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
+    expect(within(dialog).getByRole('radio', { name: /^Silent/u })).toBeChecked();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Change the Turn' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(turn).toHaveBeenLastCalledWith(w.pipe, 'heel', 'silent', false, false);
+    expect(turn).toHaveBeenLastCalledWith(w.pipe, 'heel', 'silent', false, false, undefined);
     expect(within(row('Pipewrench')).getByText(/silent/iu)).toBeInTheDocument();
 
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));
@@ -473,6 +408,46 @@ describe('the Turn', () => {
     await waitFor(() => expect(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' })).toBeEnabled());
     expect(within(row('Pipewrench')).queryByText(/Turn waiting/u)).toBeNull();
     expect((await w.fake.myCharacters()).find((c) => c.id === w.pipe)!.pendingTurn).toBeNull();
+  });
+
+  test('a silent Turn waiting shows Change, Withdraw and Announce; Announce keeps the class, asks only what to name and where, and commits it', async () => {
+    const w = world();
+    const thread = await generalThread(w);
+    expect((await w.fake.turn(w.pipe, 'heel', 'silent', false, false)).ok).toBe(true);
+    const announce = vi.spyOn(w.fake, 'announceTurn');
+    open(w);
+    await ready();
+    const r = row('Pipewrench');
+    for (const name of ['Change Pipewrench\'s Turn', 'Withdraw Pipewrench\'s Turn', 'Announce Pipewrench\'s Turn']) expect(within(r).getByRole('button', { name })).toBeInTheDocument();
+    await userEvent.click(within(r).getByRole('button', { name: 'Announce Pipewrench\'s Turn' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Announce Pipewrench\'s Turn' });
+    /* The class is not asked again, and nor is how loud: only the names and the thread. */
+    expect(within(dialog).queryByRole('radio')).toBeNull();
+    expect(within(dialog).getByRole('checkbox', { name: /^Name the old class/u })).toBeEnabled();
+    const submit = within(dialog).getByRole('button', { name: 'Announce the Turn' });
+    expect(submit).toBeDisabled();
+    await pickThread(dialog, 'tea', thread.title);
+    expect(submit).toBeEnabled();
+    expect(within(dialog).getByRole('group', { name: 'What everyone will see' })).toHaveTextContent(`At once, in ${thread.title}`);
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: /^Name the old class/u }));
+    await userEvent.click(submit);
+    await waitFor(() => expect(announce).toHaveBeenCalledWith(w.pipe, thread.id, true, false));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(new RegExp(`Pipewrench's Turn is announced in ${thread.title}`, 'u'))).toBeInTheDocument();
+  });
+
+  test('a committed Turn shows no Change, Withdraw or Announce, only where it was announced and when it takes effect', async () => {
+    const w = world();
+    const thread = await generalThread(w);
+    expect((await w.fake.turn(w.pipe, 'heel', 'announced', true, false, thread.id)).ok).toBe(true);
+    open(w);
+    await ready();
+    const r = row('Pipewrench');
+    for (const name of [/^Change/u, /^Withdraw/u, /^Announce/u, /^Turn Pipewrench/u]) expect(within(r).queryByRole('button', { name })).toBeNull();
+    expect(within(r).getByText(/Turn announced/u)).toBeInTheDocument();
+    expect(within(r).getByText(/Announced in/u)).toHaveTextContent(/Takes effect /u);
+    expect(await within(r).findByRole('link', { name: thread.title })).toBeInTheDocument();
+    expect(within(card('Pipewrench')).getByText('Turn announced')).toBeInTheDocument();
   });
 
   test('focus ends on Change when the page\'s document lands after the dialog has closed, and on Turn after a withdrawal that lands late', async () => {
@@ -485,6 +460,7 @@ describe('the Turn', () => {
     const hold = () => vi.spyOn(w.fake, 'myCharactersPage').mockImplementationOnce(async () => { await new Promise<void>((resolve) => { land = resolve; }); return real(); });
     const dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     hold();
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
@@ -508,6 +484,7 @@ describe('the Turn', () => {
     await ready();
     const dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     const confirm = within(dialog).getByRole('button', { name: 'Confirm Turn' });
     await userEvent.click(confirm);
     expect(confirm).toHaveAttribute('aria-busy', 'true');
@@ -520,7 +497,7 @@ describe('the Turn', () => {
 
   test('Withdraw is a busy button while the withdrawal is out: aria-busy, its name kept, and a second press withdraws once', async () => {
     const w = world();
-    await w.fake.turn(w.pipe, 'heel', 'announced', false, false);
+    await w.fake.turn(w.pipe, 'heel', 'silent', false, false);
     let release!: () => void;
     const real = w.fake.withdrawTurn.bind(w.fake);
     const withdraw = vi.spyOn(w.fake, 'withdrawTurn').mockImplementation((id) => new Promise((resolve) => { release = () => resolve(real(id)); }));
@@ -542,6 +519,7 @@ describe('the Turn', () => {
     await ready();
     let dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(within(row('Pipewrench')).getByText(/Turn waiting/u)).toBeInTheDocument());
     expect(within(row('Pipewrench')).getByText('Takes effect at the next settlement.')).toBeInTheDocument();
@@ -567,6 +545,7 @@ describe('the Turn', () => {
     await ready();
     const dialog = await openTurn();
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('this character can Turn again at 2026-11-28T12:00:00Z');
     expect(screen.getByRole('dialog')).toBeInTheDocument();
@@ -659,12 +638,6 @@ describe('Reveal', () => {
     expect(await within(dialog).findByRole('alert')).toHaveTextContent('reveal once it has run, or withdraw the Turn');
   });
 
-  test('offers none to a character waiting to debut', async () => {
-    const w = world();
-    open(w);
-    await ready();
-    expect(within(row('Spritey')).queryByRole('button', { name: /^Reveal/u })).toBeNull();
-  });
 });
 
 describe('Reveal: choosing a thread', () => {
@@ -796,6 +769,7 @@ describe('My characters: stale words', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
   };
@@ -852,7 +826,7 @@ describe('A pending Turn and a reveal', () => {
 
   test('the row\'s note on a pending Turn says so, and the reveal dialog says it too', async () => {
     const w = world();
-    expect((await w.fake.turn(w.pipe, 'heel', 'announced', false, false)).ok).toBe(true);
+    expect((await w.fake.turn(w.pipe, 'heel', 'silent', false, false)).ok).toBe(true);
     open(w);
     await ready();
     expect(within(row('Pipewrench')).getByText(NOTE)).toBeInTheDocument();
@@ -865,7 +839,7 @@ describe('A pending Turn and a reveal', () => {
   test('the reveal dialog\'s pending-Turn line agrees with a they/them character: "the class they hold now"', async () => {
     const w = world();
     const wobbly = w.fake.seed.character(w.me, 'Wobbly', 'face', { at: T0, pronouns: PRONOUN_PRESETS.they });
-    expect((await w.fake.turn(wobbly, 'heel', 'announced', false, false)).ok).toBe(true);
+    expect((await w.fake.turn(wobbly, 'heel', 'silent', false, false)).ok).toBe(true);
     open(w);
     await ready();
     await userEvent.click(within(row('Wobbly')).getByRole('button', { name: 'Reveal Wobbly\'s class' }));
@@ -888,14 +862,14 @@ describe('My characters on the glass (the Roster board)', () => {
     open(w);
     await ready();
     expect(roster()).toHaveAccessibleName('Roster, 3 of 4 slots used');
-    /* In the order they joined, the one still waiting last. */
+    /* In the order they joined. */
     expect(within(roster()).getAllByRole('tab').map((b) => b.textContent)).toEqual([
       expect.stringMatching(/^Pipewrench/u), expect.stringMatching(/^Mrs\. Hooligan/u), expect.stringMatching(/^Spritey/u),
     ]);
     expect(within(card('Pipewrench')).getByText('Face')).toBeInTheDocument();
     expect(within(card('Pipewrench')).getByText('Turn ready')).toBeInTheDocument();
     expect(within(card('Mrs. Hooligan')).getByText(/^Next Turn opens Nov 28$/u)).toBeInTheDocument();
-    expect(within(card('Spritey')).getByText('Waiting to debut')).toBeInTheDocument();
+    expect(within(card('Spritey')).getByText('Turn ready')).toBeInTheDocument();
     /* New character is a link after the tabs (a link is no tab, so it stands beside the tablist), its line naming the open slots, and no empty slot is drawn. */
     const link = screen.getByRole('link', { name: 'New character' });
     expect(link).toHaveAttribute('href', '/characters/new');
@@ -1193,7 +1167,6 @@ describe('the panel\'s pip style (the Roster board)', () => {
     await userEvent.selectOptions(select, 'stars');
     await waitFor(() => expect(setProfile).toHaveBeenCalledWith(w.pipe, 'Champ', 'Belts and all.', 'stars'));
     await waitFor(() => expect(select).toHaveValue('stars'));
-    expect(within(row('Spritey')).queryByRole('combobox', { name: 'Pip style' })).toBeNull();
     cleanup();
     openTwo(w);
     await ready();
@@ -1266,43 +1239,6 @@ describe('the Reveal over My characters: its fields and its foot (the Reveal boa
     expect(foot.children[0]).toHaveTextContent('The reveal is checked by the game and posted at once.');
     expect(within(foot as HTMLElement).getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
     expect(within(foot as HTMLElement).getByRole('button', { name: 'Reveal Pipewrench as a Face' })).toBeInTheDocument();
-  });
-});
-
-describe('the Debut dialog\'s foot (the Debut boards)', () => {
-  const page = (w: World) => renderIn(w.fake, <Page surface="characters"><LoadedCharacters /></Page>, { path: '/characters', settings: { charactersPerPlayer: w.per } });
-
-  test('changing how it debuts says when it debuts, how far off, and that it can be dropped now', async () => {
-    const w = world();
-    w.fake.seed.nextSettlementAt(w.fake.clock.now() + (7 * 60 + 42) * 60_000);
-    page(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('They debut at the next settlement, in 7 h 42 min. Until then you can drop them now instead.');
-    /* How loud is the dialog\'s only choice, one row of three. */
-    expect(within(dialog).getAllByRole('radio')).toHaveLength(3);
-    expect(dialog.querySelector('fieldset.kb-choice-loud')).not.toBeNull();
-  });
-
-  test('with no settlement known it says so without a time', async () => {
-    const w = world();
-    w.fake.seed.nextSettlementAt(null);
-    page(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Change how Spritey debuts…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'How Spritey debuts' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent(/^They debut at the next settlement\. Until then you can drop them now instead\.$/u);
-  });
-
-  test('dropping it now says it goes on the board and can post at once', async () => {
-    const w = world();
-    page(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
-    const dialog = await screen.findByRole('dialog', { name: 'Drop Spritey now' });
-    expect(dialog.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('Spritey goes on the board at once and can post at once, instead of at the next settlement.');
-    expect(within(dialog.querySelector('.kb-glass-form-foot') as HTMLElement).getByRole('button', { name: 'Drop Spritey now' })).toBeInTheDocument();
   });
 });
 
@@ -1455,8 +1391,6 @@ describe('the panel\'s online status', () => {
     await waitFor(() => expect(hide).toHaveBeenCalledWith(w.pipe, true));
     await waitFor(() => expect(select).toHaveValue('hidden'));
     await waitFor(() => expect(screen.getByTestId('hud')).toHaveTextContent('Hidden: Pipewrench'));
-    /* A mask waiting to debut has no switch: it is listed nowhere already. */
-    expect(within(row('Spritey')).queryByRole('combobox', { name: 'Online status' })).toBeNull();
   });
 
   test('a refusal shows in the panel, and the select goes back to what is saved', async () => {
@@ -1491,12 +1425,6 @@ describe('the panel\'s online status', () => {
 });
 
 describe('the Reveal carried from a thread (the HUD reveal plan, Task 4)', () => {
-  const generalThread = async (w: World) => {
-    const t = w.fake.seed.thread('general', w.stranger, 'The tea thread', 'Who keeps reacting?');
-    const board = (await w.fake.boards()).find((b) => b.slug === 'general')!.id;
-    return { id: t.thread, title: 'The tea thread', board };
-  };
-
   test('arrived with a carried thread, nothing opens by itself, and "Reveal…" opens on it', async () => {
     const w = world();
     const thread = await generalThread(w);
@@ -1558,6 +1486,7 @@ describe('a write that landed whose page could not be read back', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     const confirm = within(dialog).getByRole('button', { name: 'Confirm Turn' });
     w.fake.seed.failNextRead('server');
     await userEvent.click(confirm);
@@ -1567,30 +1496,6 @@ describe('a write that landed whose page could not be read back', () => {
     expect(screen.queryByText(/could not be sent/u)).toBeNull();
   });
 
-  test('a debut that lands and whose refresh fails closes with the done line and the added sentence, sending once', async () => {
-    const w = world();
-    const setDebut = vi.spyOn(w.fake, 'setDebut');
-    open(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
-    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
-    w.fake.seed.failNextRead('server');
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(screen.getByRole('status')).toHaveTextContent(`Spritey has debuted.${sentence}`);
-    expect(setDebut).toHaveBeenCalledTimes(1);
-  });
-
-  test('a write that throws says the lost-answer words, and the dialog stays for another try', async () => {
-    const w = world();
-    vi.spyOn(w.fake, 'setDebut').mockRejectedValue(new Error('gone'));
-    open(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
-    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
-    expect(await within(dialog).findByRole('alert')).toHaveTextContent('no answer came back, so this may have gone through: look before you try again');
-  });
 });
 
 describe('a write that landed while its refresh is still out', () => {
@@ -1610,6 +1515,7 @@ describe('a write that landed while its refresh is still out', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     const release = hang(w);
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await waitFor(() => expect(turn).toHaveBeenCalledTimes(1));
@@ -1621,23 +1527,6 @@ describe('a write that landed while its refresh is still out', () => {
     expect(turn).toHaveBeenCalledTimes(1);
   });
 
-  test('a debut cannot be cancelled and sent again', async () => {
-    const w = world();
-    const setDebut = vi.spyOn(w.fake, 'setDebut');
-    open(w);
-    await ready();
-    await userEvent.click(within(row('Spritey')).getByRole('button', { name: 'Drop Spritey now…' }));
-    const dialog = await screen.findByRole('dialog', { name: /Spritey/u });
-    const release = hang(w);
-    await userEvent.click(within(dialog).getByRole('button', { name: 'Drop Spritey now' }));
-    await waitFor(() => expect(setDebut).toHaveBeenCalledTimes(1));
-    expect(within(dialog).getByRole('button', { name: 'Cancel' })).toBeDisabled();
-    await userEvent.keyboard('{Escape}');
-    expect(screen.getByRole('dialog')).toBeInTheDocument();
-    release();
-    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
-    expect(setDebut).toHaveBeenCalledTimes(1);
-  });
 });
 
 describe('a read-back that never answers', () => {
@@ -1648,6 +1537,7 @@ describe('a read-back that never answers', () => {
     await userEvent.click(within(row('Pipewrench')).getByRole('button', { name: 'Turn Pipewrench' }));
     const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
     await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Silent/u }));
     vi.spyOn(w.fake, 'wallet').mockImplementation(() => new Promise(() => {}));
     await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
     await vi.advanceTimersByTimeAsync(LOAD_LIMIT_MS - 1000);

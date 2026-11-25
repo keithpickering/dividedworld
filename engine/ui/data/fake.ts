@@ -16,7 +16,7 @@
  *  - A bar is not refused by post, start thread or spin (the database's `barred()` does); `myApologies` and `apologize` are, and `myCharacters` carries `bars`.
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
- *  - A debut dropped "now" writes no announcement Act; tests that need one seed it.
+ *  - A new character is active at once and writes no Act (0428); a seed makes a waiting staff persona with `debuted: false`.
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
@@ -52,8 +52,8 @@ import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
   AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
-  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, DebutLoudness, EffectState, PlayMoment, Rewind, PageOrigin,
-  DebutTiming, Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
+  Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, EffectState, PlayMoment, Rewind, PageOrigin,
+  Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
   SurfaceActs, SurfaceNow, SurfaceWritten, SurfaceAct, Ballot, Poll, PollBallotsPage, PollCounts, PollEvent, PollVoter, PollWritten,
   AdminAward, AdminKind, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyCursor, TrophyItem, TrophyPage, WardrobeItem,
@@ -101,7 +101,7 @@ export interface Seed {
   /** An account that has not accepted the current code of conduct. */
   unaccepted(account: Id): void;
   /** A character of an account; debuted unless said otherwise. */
-  character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; loudness?: DebutLoudness; at?: number; pronouns?: PronounSet }): Id;
+  character(account: Id, name: string, cls: string, options?: { debuted?: boolean; retired?: boolean; at?: number; pronouns?: PronounSet }): Id;
   retire(character: Id): void;
   /** A thread with its first Act; a null character is The System's, on its board only. */
   thread(board: string, character: Id | null, title: string, body?: string, options?: SeedAct): { thread: Id; act: Id };
@@ -209,7 +209,7 @@ export interface Seed {
    */
   slot(item: { readonly card: string } | { readonly pack: string }, change: { availability?: 'onSale' | 'soldOut' | 'hidden'; price?: number; move?: SlotMove | null }): void;
   /** A character's Turn asked by its player, waiting for the next settlement; refused in the server's words like any other. */
-  turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean }): void;
+  turn(character: Id, to: string, options?: { loudness?: 'silent' | 'announced'; showFrom?: boolean; showTo?: boolean; /** Where an announced Turn is posted, at once. */ thread?: Id }): void;
   /** What the account's next estimate holds; its times are the ask's. */
   estimate(account: Id, estimate: { entries?: Estimate['entries']; lines?: readonly EstimateLine[]; crowd?: Estimate['crowd'] }): void;
   /** A character's unmask Act in a thread, as its player's reveal (`via` 'act') or a debut's or a Turn's. */
@@ -224,7 +224,7 @@ export interface Seed {
    * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
    * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
    */
-  announce(character: Id, what: 'debut' | 'turn', options?: { was?: string; class?: string; at?: number }): Id;
+  announce(character: Id, what: 'debut' | 'turn', options?: { was?: string; class?: string; ahead?: boolean; at?: number }): Id;
   /**
    * A season's results as they landed (`season_results`, 0099): one frozen row per character, `name` as it was then (else the character's now),
    * dated `at` (else now). The fake never ends a season itself; this is the state its end would have left. Written once: a second call for the
@@ -460,9 +460,8 @@ interface CharRec {
   readonly createdAt: number;
   debutedAt: number | null;
   retiredAt: number | null;
-  loudness: DebutLoudness;
   /** Each class it has held and when it began; `dueAt`, where a reveal made that class's Turn wait past the settlement it was due at (0074). */
-  readonly history: { cls: string; at: number; dueAt?: number }[];
+  readonly history: { cls: string; at: number; dueAt?: number; /** The announcement Act a committed Turn wrote ahead (class_history.announce_act, 0427). */ announce?: Id }[];
   /** `dueAt`: the first settlement that passed the Turn over (0074); a Turn asked again is a new one, with none. */
   pending: (PendingTurn & { asked: number; dueAt?: number }) | null;
   /** Hidden from every presence box (presence_hidden, 0041). */
@@ -549,7 +548,7 @@ const WRITES: ReadonlySet<string> = new Set(Object.keys({
   setPreferences: true, meetCard: true, seeWelcome: true, seeTip: true, skipTips: true, resumeTips: true, restoreTips: true, replayTour: true,
   seeAlerts: true, donate: true, seeSettlement: true, follow: true, createInvite: true, reissueInvite: true, startThread: true, post: true, edit: true, castBallot: true, closePoll: true, closePollAsAdmin: true, pollBallots: true, spin: true,
   apologize: true, buyCard: true, buyPack: true, openPack: true, playCard: true, setCard: true, takeBack: true, useCard: true, releaseEffect: true, saveEffect: true, draw: true, wash: true,
-  react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, setDebut: true, setProfile: true, setAvatar: true,
+  react: true, turn: true, withdrawTurn: true, unmask: true, createCharacter: true, announceTurn: true, setProfile: true, setAvatar: true,
   acceptConduct: true, reportPost: true, decideReport: true, decide: true,
   wardrobe: true, setOutfit: true, beltLineage: true, showTrophies: true, randomEvent: true, grantGear: true, awardTrophy: true, reverseAward: true, makeTrophy: true,
   trophyAwardFailures: true, giveFailedAward: true, adminAwards: true, adminCharacterNamed: true,
@@ -838,7 +837,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const persona = options.instance.anonymous ?? DEFAULT_ANONYMOUS;
     const at = now();
     standInRec = {
-      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: (persona.tagline ?? '').slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
       pronouns: persona.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [], staff: { key: ANONYMOUS_STAFF_KEY, office: 'anonymous' },
@@ -1250,7 +1249,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const persona = options.instance.developer ?? DEFAULT_DEVELOPER;
     const at = now();
     const c: CharRec = {
-      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+      id: uuid(), owner: '', name: persona.name, createdAt: at, debutedAt: at, retiredAt: null, history: [{ cls: '', at }], pending: null, presenceHidden: false,
       title: persona.tagline.slice(0, 40), signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
       pronouns: persona.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [], staff: { key: 'developer', office: 'developer' },
@@ -3173,6 +3172,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(original));
   }
 
+  /**
+   * When an Act makes a class public (class_reveals, 0427): its own time, except an announcement written ahead of its Turn, which counts from the moment the Turn took effect
+   * (its class_history row's start) and not at all while the Turn has not landed, or never will.
+   */
+  const revealedAt = (a: ActRec): number | null => {
+    if (a.kind !== 'announce' || a.payload.ahead !== true) return a.at;
+    const landed = a.character === null ? undefined : characters.get(a.character)?.history.find((h) => h.announce === a.id);
+    return landed === undefined ? null : landed.at;
+  };
+
   /** When the character's current class was made public: the latest of its unmask Acts and class-carrying announces of that class, at or after the class began (the filter `classReveals` uses). */
   function classShownAt(c: CharRec): number | null {
     const now = classNow(c);
@@ -3181,7 +3190,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (a.character !== c.id || a.at < now.at) continue;
       if (a.kind !== 'unmask' && !(a.kind === 'announce' && typeof a.payload.class === 'string')) continue;
       if (a.payload.class !== now.cls) continue;
-      if (latest === null || a.at > latest) latest = a.at;
+      const shownAt = revealedAt(a);
+      if (shownAt === null) continue;
+      if (latest === null || shownAt > latest) latest = shownAt;
     }
     return latest;
   }
@@ -3200,17 +3211,58 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  function turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Answer<{ class: string; loudness: 'silent' | 'announced'; showFrom: boolean; showTo: boolean; takesEffectAt: string | null }> {
-    const bad = request({ action: 'turn', character, class: to, loudness, showFrom, showTo });
+  type TurnAnswer = { class: string; loudness: 'silent' | 'announced'; showFrom: boolean; showTo: boolean; takesEffectAt: string | null; announced: { act: Id; thread: Id } | null };
+  const stands = () => `that Turn was announced, so it stands until it takes effect at ${takesEffectAt() ?? 'the next settlement'}`;
+
+  /** turn_thread_checks (0427): the thread an announcement is posted in is one a reveal could be (unmask's checks). */
+  function turnThreadRefusal(thread: Id): Refusal | null {
+    const found = threadAndBoard(thread);
+    if (isRefusal(found)) return found;
+    return found.board.isSystem ? refuse(SYSTEM_BOARD) : null;
+  }
+
+  /** write_announce with `ahead` (0427): the character's own announce Act of a Turn, written when it is asked; the class it Turns from is named only where `showFrom`, the class it takes only where `showTo`. */
+  function writeAhead(c: CharRec, thread: Id, to: string, showFrom: boolean, showTo: boolean): Act {
+    const payload: Record<string, unknown> = { what: 'turn', ahead: true };
+    if (showFrom) payload.was = classNow(c).cls;
+    if (showTo) payload.class = to;
+    const written = write({ character: c.id, kind: 'announce', thread, payload });
+    sendAct(written);
+    return publicAct(written);
+  }
+
+  function turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean, thread?: Id): Answer<TurnAnswer> {
+    const bad = request({ action: 'turn', character, class: to, loudness, showFrom, showTo, ...(thread === undefined ? {} : { thread }) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
+    if (c.pending?.announced) return refuse(stands());
     if (classNow(c).cls === to) return refuse(c.pending ? 'this character already is one: withdraw its waiting Turn to keep it' : 'this character already is one');
     const opens = turnOpens(c);
     if (opens !== null) return refuse(`this character can Turn again at ${iso(opens).replace(/\.\d+Z$/, 'Z')}`);
-    // Asked again before the settlement, it is the same Turn, changed.
-    c.pending = { class: to, loudness, showFrom, showTo, takesEffectAt: null, asked: now() };
-    return ok({ class: to, loudness, showFrom, showTo, takesEffectAt: takesEffectAt() });
+    if (loudness === 'announced') {
+      const barred = turnThreadRefusal(thread!);
+      if (barred) return barred;
+    }
+    // Asked again before the settlement, it is the same Turn, changed (unless announced: that stands).
+    let told: Act | null = null;
+    if (loudness === 'announced') told = writeAhead(c, thread!, to, showFrom, showTo);
+    c.pending = { class: to, loudness, showFrom, showTo, takesEffectAt: null, announced: told === null ? null : { act: told.id, thread: thread!, seq: told.seq ?? 0 }, asked: now() };
+    return ok({ class: to, loudness, showFrom, showTo, takesEffectAt: takesEffectAt(), announced: told === null ? null : { act: told.id, thread: thread! } });
+  }
+
+  function announceTurn(character: Id, thread: Id, showFrom: boolean, showTo: boolean): Answer<TurnAnswer> {
+    const bad = request({ action: 'announceTurn', character, thread, showFrom, showTo });
+    if (bad) return bad;
+    const c = acting(character);
+    if (isRefusal(c)) return c;
+    if (!c.pending) return refuse('no Turn of that character is waiting');
+    if (c.pending.announced) return refuse('that Turn was announced already');
+    const barred = turnThreadRefusal(thread);
+    if (barred) return barred;
+    const told = writeAhead(c, thread, c.pending.class, showFrom, showTo);
+    c.pending = { ...c.pending, loudness: 'announced', showFrom, showTo, announced: { act: told.id, thread, seq: told.seq ?? 0 } };
+    return ok({ class: c.pending.class, loudness: 'announced', showFrom, showTo, takesEffectAt: takesEffectAt(), announced: { act: told.id, thread } });
   }
 
   function withdrawTurn(character: Id): Answer<{ withdrawn: true }> {
@@ -3219,6 +3271,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const c = acting(character);
     if (isRefusal(c)) return c;
     if (!c.pending) return refuse('no Turn of that character is waiting');
+    if (c.pending.announced) return refuse(stands());
     c.pending = null;
     return ok({ withdrawn: true });
   }
@@ -3229,35 +3282,24 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   const ownedCount = (account: Id) => [...characters.values()].filter((c) => c.owner === account && c.retiredAt === null).length;
 
-  function createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Answer<CreatedCharacter> {
-    const bad = request({ action: 'createCharacter', name, class: cls, timing, loudness });
+  function createCharacter(name: string, cls: string, pronouns?: PronounSet): Answer<CreatedCharacter> {
+    const bad = request({ action: 'createCharacter', name, class: cls });
     if (bad) return bad;
     const account = me()!;
     const named = name.replace(/^ +| +$/g, '');
     if (ownedCount(account.id) >= settings.charactersPerPlayer) return refuse(`a player runs at most ${settings.charactersPerPlayer} characters`);
     if ([...characters.values()].some((c) => sameName(c.name, named))) return refuse('that name is taken');
     if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
-    const c = addCharacter(account.id, named, cls, { debuted: timing === 'now', loudness, ...(pronouns === undefined ? {} : { pronouns: normalizePronouns(pronouns) }) });
+    // Active at once, and no Act (0428): nothing announces a new character.
+    const c = addCharacter(account.id, named, cls, { debuted: true, ...(pronouns === undefined ? {} : { pronouns: normalizePronouns(pronouns) }) });
     grantWelcomePack(account);
-    return ok({ id: c.id, name: c.name, class: cls, waiting: timing === 'tally', loudness });
+    return ok({ id: c.id, name: c.name, class: cls });
   }
 
-  function setDebut(character: Id, timing: DebutTiming, loudness: DebutLoudness): Answer<{ id: Id; waiting: boolean; loudness: DebutLoudness }> {
-    const bad = request({ action: 'setDebut', character, timing, loudness });
-    if (bad) return bad;
-    const c = characters.get(character);
-    if (!c || c.owner !== me()!.id) return refuse('you do not play that character');
-    if (c.debutedAt !== null) return refuse('it has debuted');
-    if (c.retiredAt !== null) return refuse('that character is retired; an admin can restore it');
-    c.loudness = loudness;
-    if (timing === 'now') c.debutedAt = now();
-    return ok({ id: c.id, waiting: timing === 'tally', loudness });
-  }
-
-  function addCharacter(owner: Id, name: string, cls: string, o: { debuted: boolean; loudness: DebutLoudness; retired?: boolean; at?: number; pronouns?: PronounSet }): CharRec {
+  function addCharacter(owner: Id, name: string, cls: string, o: { debuted: boolean; retired?: boolean; at?: number; pronouns?: PronounSet }): CharRec {
     const at = o.at ?? now();
     const c: CharRec = {
-      id: uuid(), owner, name, createdAt: at, debutedAt: o.debuted ? at : null, retiredAt: o.retired ? at : null, loudness: o.loudness,
+      id: uuid(), owner, name, createdAt: at, debutedAt: o.debuted ? at : null, retiredAt: o.retired ? at : null,
       history: [{ cls, at }], pending: null, presenceHidden: false, title: '', signature: '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
       pronouns: o.pronouns ?? settings.pronouns,
       square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [],
@@ -4776,17 +4818,17 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     standingsPage: (offset, limit) => ranking().slice(Math.max(0, Math.floor(offset)), Math.max(0, Math.floor(offset)) + Math.max(0, Math.min(Math.floor(limit), 1000))),
     standingsCount: () => [...characters.values()].filter((c) => c.debutedAt !== null).length,
     lastSettledAt: () => (lastSettled === null ? null : iso(lastSettled)),
-    classReveals: (ids) => [...acts.values()].filter((a) => a.character !== null && ids.includes(a.character) && (a.kind === 'unmask' || (a.kind === 'announce' && typeof a.payload.class === 'string')))
-      .sort((a, b) => a.at - b.at || a.order - b.order)
+    classReveals: (ids) => [...acts.values()].filter((a) => a.character !== null && ids.includes(a.character) && (a.kind === 'unmask' || (a.kind === 'announce' && typeof a.payload.class === 'string')) && revealedAt(a) !== null)
+      .sort((a, b) => revealedAt(a)! - revealedAt(b)! || a.order - b.order)
       .map((a): ClassReveal => ({
-        act: a.id, character: a.character!, class: String(a.payload.class), at: iso(a.at), via: (a.kind === 'announce' ? a.payload.what : a.payload.via) as ClassReveal['via'], thread: a.thread,
+        act: a.id, character: a.character!, class: String(a.payload.class), at: iso(revealedAt(a)!), via: (a.kind === 'announce' ? a.payload.what : a.payload.via) as ClassReveal['via'], thread: a.thread,
       })),
     turnsAnnounced(ids) {
       /* The old tallies' Turns beside the announce Acts that are Turns (0100), in the order they were written. */
       const out: { at: number; order: number; turn: TurnAnnounced }[] = [];
       for (const a of acts.values()) {
-        if (a.kind === 'announce' && a.payload.what === 'turn' && a.character !== null && ids.includes(a.character)) {
-          out.push({ at: a.at, order: a.order, turn: { act: a.id, character: a.character, at: iso(a.at), was: typeof a.payload.was === 'string' ? a.payload.was : null } });
+        if (a.kind === 'announce' && a.payload.what === 'turn' && a.character !== null && ids.includes(a.character) && revealedAt(a) !== null) {
+          out.push({ at: revealedAt(a)!, order: a.order, turn: { act: a.id, character: a.character, at: iso(revealedAt(a)!), was: typeof a.payload.was === 'string' ? a.payload.was : null } });
         }
         if (a.kind !== 'tally') continue;
         const turns = Array.isArray(a.payload.turns) ? (a.payload.turns as readonly Record<string, unknown>[]) : [];
@@ -4810,8 +4852,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         return {
           id: c.id, name: c.name, pronouns: c.pronouns, class: classNow(c).cls, classSince: iso(classNow(c).at), classShownAt: shown === null ? null : iso(shown), classDueAt: classNow(c).dueAt === undefined ? null : iso(classNow(c).dueAt!),
           turnOpensAt: opens === null ? null : iso(opens),
-          debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), debutLoudness: c.loudness, retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
-          pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt() } : null,
+          debutedAt: c.debutedAt === null ? null : iso(c.debutedAt), retiredAt: c.retiredAt === null ? null : iso(c.retiredAt),
+          pendingTurn: c.pending ? { class: c.pending.class, loudness: c.pending.loudness, showFrom: c.pending.showFrom, showTo: c.pending.showTo, takesEffectAt: takesEffectAt(), announced: c.pending.announced } : null,
           presenceHidden: c.presenceHidden,
           ...(bannedUntilOf(c.id) !== null ? { bannedUntil: iso(bannedUntilOf(c.id)!) } : {}),
           ...(barsOf(c.id).length > 0 ? { bars: barsOf(c.id) } : {}),
@@ -5437,7 +5479,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     createInvite, reissueInvite,
 
-    startThread, post: lossy(post), edit: lossy(edit), castBallot: lossy(castBallot), closePoll: lossy(closePoll), closePollAsAdmin: lossy(closePollAsAdmin), pollBallots, spin: lossy(spin), react, turn, withdrawTurn, unmask, createCharacter, setDebut,
+    startThread, post: lossy(post), edit: lossy(edit), castBallot: lossy(castBallot), closePoll: lossy(closePoll), closePollAsAdmin: lossy(closePollAsAdmin), pollBallots, spin: lossy(spin), react, turn, announceTurn, withdrawTurn, unmask, createCharacter,
     setProfile(character, title, signature, pipStyle, pronouns) {
       const c = acting(character);
       if (isRefusal(c)) return c;
@@ -5751,7 +5793,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     mailWaiting(n) { conductWaiting = n; conductAddress = false; },
     character(account, name, cls, o) {
       if (!accounts.has(account)) throw new Error(`no such account ${account}`);
-      return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, loudness: o?.loudness ?? 'announced', retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;
+      return addCharacter(account, name, cls, { debuted: o?.debuted ?? true, retired: o?.retired, at: o?.at, ...(o?.pronouns === undefined ? {} : { pronouns: o.pronouns }) }).id;
     },
     /** Copies of gear the account holds (`gear_ledger`): the state a seed starts from, past the Random Events and grants that would have made it. */
     gear(account, held) {
@@ -5829,7 +5871,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
             c.pending.dueAt ??= at;
             continue;
           }
-          c.history.push(c.pending.dueAt === undefined ? { cls: c.pending.class, at } : { cls: c.pending.class, at, dueAt: c.pending.dueAt });
+          c.history.push({ cls: c.pending.class, at, ...(c.pending.dueAt === undefined ? {} : { dueAt: c.pending.dueAt }), ...(c.pending.announced ? { announce: c.pending.announced.act } : {}) });
           c.pending = null;
         }
       }
@@ -5942,7 +5984,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (change.price !== undefined) rec.price = change.price;
       if (change.move !== undefined) rec.move = change.move;
     },
-    turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false))); },
+    turn(character, to, o) { accepted(as(ownerOf(character), () => turn(character, to, o?.loudness ?? 'silent', o?.showFrom ?? false, o?.showTo ?? false, o?.thread))); },
     estimate(account, e) {
       const a = accounts.get(account)!;
       a.estimate = { entries: e.entries ?? [], lines: e.lines ?? [], crowd: e.crowd ?? null };
@@ -5979,6 +6021,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const payload: Record<string, unknown> = { what };
       if (o.was !== undefined) payload.was = o.was;
       if (o.class !== undefined) payload.class = o.class;
+      if (o.ahead === true) payload.ahead = true;
       return write({ character, kind: 'announce', thread, payload, at }).id;
     },
     seasonResults(season, rows, o = {}) {
@@ -5993,7 +6036,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if ([...characters.values()].some((c) => c.staff?.key === key)) throw new Error(`staff member ${key} exists`);
       const at = o?.at ?? now();
       const c: CharRec = {
-        id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, loudness: 'silent', history: [{ cls: '', at }], pending: null, presenceHidden: false,
+        id: uuid(), owner: '', name, createdAt: at, debutedAt: o?.debuted === false ? null : at, retiredAt: null, history: [{ cls: '', at }], pending: null, presenceHidden: false,
         title: o?.title ?? '', signature: o?.signature ?? '', pipStyle: options.instance.pipStyles[0]?.key ?? 'default',
         pronouns: o?.pronouns ?? options.instance.system.roster.find((r) => r.key === key)?.pronouns ?? settings.pronouns,
         square: null, portrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], shown: [], staff: { key, office },

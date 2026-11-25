@@ -16,7 +16,7 @@ const SETTLEMENT_IN = (7 * 60 + 42) * 60_000;
 /** One character that has not debuted yet, announced: the Debut dialogs' world. */
 const waiting: World = (fake, instance) => {
   const me = fake.seed.account('story-player');
-  fake.seed.character(me, 'Waiting Wanda', instance.classes[0]!.key, { debuted: false, loudness: 'announced' });
+  fake.seed.character(me, 'Waiting Wanda', instance.classes[0]!.key, { debuted: false });
   fake.seed.nextSettlementAt(Date.now() + SETTLEMENT_IN);
   fake.signInAs(me);
 };

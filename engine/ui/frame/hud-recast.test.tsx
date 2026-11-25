@@ -35,7 +35,7 @@ vi.mock('motion/react', async (importOriginal) => ({
 
 const mine = (id: string, name: string, cls: string): MyCharacter => ({
   id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
-  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
+  retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 
 function setup(faces: (ids: readonly string[]) => Promise<readonly Character[]> = async () => []) {

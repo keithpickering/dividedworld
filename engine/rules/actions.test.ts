@@ -212,21 +212,33 @@ test('ending a card names the play, a uuid, and is the player\'s own call (the d
   assert.match(refusal({ action: 'reverseCard', play: 'not-a-uuid' }) ?? '', /^play:/);
 });
 
-test('a Turn names the character, a class the instance has, how loud it is, and which of its classes it names', () => {
+test('a Turn names the character, a class the instance has, how loud it is, and which of its classes it names; announced names its thread', () => {
   assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'silent' }, instance),
     { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'silent', show_from: false, show_to: false } });
-  assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'announced', showFrom: true, showTo: true }, instance),
-    { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'announced', show_from: true, show_to: true } });
-  assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'announced', showTo: true }, instance),
-    { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'announced', show_from: false, show_to: true } });
-  // An older client's "revealed" is announced, naming the class it Turns from.
-  assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'revealed' }, instance),
-    { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'announced', show_from: true, show_to: false } });
+  assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'announced', showFrom: true, showTo: true, thread: other }, instance),
+    { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'announced', show_from: true, show_to: true, in_thread: other } });
+  assert.deepEqual(decide({ action: 'turn', character: id, class: 'a', loudness: 'announced', showTo: true, thread: other }, instance),
+    { ok: true, rpc: 'turn', args: { through: id, to_class: 'a', loudness: 'announced', show_from: false, show_to: true, in_thread: other } });
+  // An announced Turn is posted at once, so it names where: refused before the call, as an unmask is.
+  assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'announced', showTo: true }) ?? '', /^thread:/);
+  assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'announced', thread: 'x' }) ?? '', /^thread:/);
+  // A silent Turn is posted nowhere.
+  assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'silent', thread: other }) ?? '', /^thread: a silent Turn is posted nowhere/);
   assert.match(refusal({ action: 'turn', character: id, class: 'ghost', loudness: 'silent' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'whispered' }) ?? '', /^loudness:/);
   assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'silent', showTo: true }) ?? '', /^showTo: a silent Turn names no class/);
   assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'silent', showFrom: true }) ?? '', /^showFrom: a silent Turn names no class/);
-  assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'announced', showTo: 'yes' }) ?? '', /^showTo:/);
+  assert.match(refusal({ action: 'turn', character: id, class: 'a', loudness: 'announced', thread: other, showTo: 'yes' }) ?? '', /^showTo:/);
+});
+
+test('a silent Turn waiting is announced by naming its character, a thread and what to name', () => {
+  assert.deepEqual(decide({ action: 'announceTurn', character: id, thread: other, showFrom: true }, instance),
+    { ok: true, rpc: 'announce_turn', args: { through: id, in_thread: other, show_from: true, show_to: false } });
+  assert.deepEqual(decide({ action: 'announceTurn', character: id, thread: other }, instance),
+    { ok: true, rpc: 'announce_turn', args: { through: id, in_thread: other, show_from: false, show_to: false } });
+  assert.match(refusal({ action: 'announceTurn', character: id }) ?? '', /^thread:/);
+  assert.match(refusal({ action: 'announceTurn', thread: other }) ?? '', /^character:/);
+  assert.match(refusal({ action: 'announceTurn', character: id, thread: other, showTo: 'yes' }) ?? '', /^showTo:/);
 });
 
 test('a waiting Turn is withdrawn by naming its character', () => {
@@ -234,28 +246,19 @@ test('a waiting Turn is withdrawn by naming its character', () => {
   assert.match(refusal({ action: 'withdrawTurn' }) ?? '', /^character:/);
 });
 
-test('a character drops now or debuts at the tally, silent or announced; a waiting one is dropped or its loudness changed', () => {
+test('a character is made with a name, a class and pronouns only: no debut, no timing, no loudness', () => {
+  assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a' }, instance),
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', pronouns: null } });
+  // An older client's debut fields are not sent on.
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'silent', pronouns: null } });
-  assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'later' }) ?? '', /^timing:/);
-  assert.match(refusal({ action: 'createCharacter', name: 'Dropped', class: 'a', loudness: 'revealed' }) ?? '', /^loudness: a debut is silent, announced, or announced with its class/);
-  assert.deepEqual(decide({ action: 'createCharacter', name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', timing: 'now', loudness: 'with_class', pronouns: null } });
-  assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'tally', loudness: 'with_class' }, instance),
-    { ok: true, rpc: 'set_debut', args: { through: id, timing: 'tally', loudness: 'with_class' } });
-  assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' }, instance),
-    { ok: true, rpc: 'set_debut', args: { through: id, timing: 'now', loudness: 'announced' } });
-  assert.deepEqual(decide({ action: 'setDebut', character: id, timing: 'tally', loudness: 'silent' }, instance),
-    { ok: true, rpc: 'set_debut', args: { through: id, timing: 'tally', loudness: 'silent' } });
-  assert.match(refusal({ action: 'setDebut', character: id, loudness: 'silent' }) ?? '', /^timing:/);
-  assert.match(refusal({ action: 'setDebut', character: id, timing: 'now' }) ?? '', /^loudness:/);
-  assert.match(refusal({ action: 'setDebut', timing: 'now', loudness: 'silent' }) ?? '', /^character:/);
+    { ok: true, rpc: 'create_character', args: { name: 'Dropped', class: 'a', pronouns: null } });
+  assert.match(refusal({ action: 'setDebut', character: id, timing: 'now', loudness: 'silent' }) ?? '', /^action:/);
 });
 
 test('a character is made with pronouns the way they are stored: lowered, or refused plainly', () => {
   const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, subject: ' SHE ' } }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Hers', class: 'a', timing: 'now', loudness: 'announced', pronouns: she } });
+    { ok: true, rpc: 'create_character', args: { name: 'Hers', class: 'a', pronouns: she } });
   assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, subject: 'abcdefghijklm' } }) ?? '', /^pronouns: the subject has 13 characters; at most 12/);
   assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: { ...she, object: '' } }) ?? '', /^pronouns: the object is empty/);
   assert.match(refusal({ action: 'createCharacter', name: 'Hers', class: 'a', pronouns: 'she/her' }) ?? '', /^pronouns: the pronouns are not an object/);
@@ -263,7 +266,7 @@ test('a character is made with pronouns the way they are stored: lowered, or ref
 
 test('a character is made with a name and one of the instance\'s classes; invites are made, sent again and spent', () => {
   assert.deepEqual(decide({ action: 'createCharacter', name: 'Masked One', class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', timing: 'now', loudness: 'announced', pronouns: null } });
+    { ok: true, rpc: 'create_character', args: { name: 'Masked One', class: 'a', pronouns: null } });
   assert.match(refusal({ action: 'createCharacter', name: 'Masked One', class: 'z' }) ?? '', /^class:/);
   assert.match(refusal({ action: 'createCharacter', name: ' \u200b ', class: 'a' }) ?? '', /^name: is empty/);
   assert.match(refusal({ action: 'createCharacter', name: 'n'.repeat(41), class: 'a' }) ?? '', /^name: is longer than 40/);
@@ -277,7 +280,7 @@ test('a character is made with a name and one of the instance\'s classes; invite
   assert.match(refusal({ action: 'openAccount', invite: 7 }) ?? '', /^invite:/);
   // Trimmed as the database trims it, and held to the same hidden characters.
   assert.deepEqual(decide({ action: 'createCharacter', name: ` ${'n'.repeat(40)}  `, class: 'a' }, instance),
-    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', timing: 'now', loudness: 'announced', pronouns: null } });
+    { ok: true, rpc: 'create_character', args: { name: 'n'.repeat(40), class: 'a', pronouns: null } });
   for (const name of ['Mas\u200bk', 'Mask\u00a01', 'Mask  1', 'Mask\u202e1', 'Mask\t1', 'Mask\ufeff1', 'Mask\u3164', 'Mask\u{e0041}', 'Mask\u2800', 'Mask\u{1d173}']) {
     assert.match(refusal({ action: 'createCharacter', name, class: 'a' }) ?? '', /^name: can hold/, JSON.stringify(name));
   }

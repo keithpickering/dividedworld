@@ -19,7 +19,7 @@ import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
   id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
-  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
+  retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({
   id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members',
@@ -1091,6 +1091,23 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     await waitFor(() => expect(unmask).toHaveBeenCalledWith(w.pipe, w.thread, ''));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText(/Pipewrench revealed as Face in The tea thread\./u)).toBeInTheDocument();
+  });
+
+  test('on a thread, the HUD opens the Turn dialog on that thread: an announced Turn is posted there, with no picker', async () => {
+    const w = RevealWorld();
+    await onThread(w);
+    await userEvent.click(await screen.findByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    expect(within(dialog).getByText('It will be posted in this thread.')).toBeInTheDocument();
+    expect(within(dialog).queryByRole('combobox', { name: 'Thread' })).toBeNull();
+    const turn = vi.spyOn(w.fake, 'turn');
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await waitFor(() => expect(turn).toHaveBeenCalledWith(w.pipe, 'heel', 'announced', false, false, w.thread));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(/Pipewrench's Turn is announced in The tea thread\./u)).toBeInTheDocument();
+    /* A Turn waiting, announced or not, is My characters' to show: the opener is gone from the HUD. */
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Turn Pipewrench' })).toBeNull());
   });
 
   test('off a thread, the Board and Thread start empty', async () => {

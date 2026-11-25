@@ -6,10 +6,10 @@
  * panel holds everything a character offers: its class marked "only you" and since when, what it
  * was where a Turn said so in public, its rank and standing and pips, the wallet, its posts and the
  * month it joined, its pip style (the profile's, saved as it is chosen), and its Turn: the button,
- * the date it opens, or a pending Turn with Change and Withdraw. A character waiting to debut says
- * so, and offers to drop it now or change how it debuts.
+ * the date it opens, a silent pending Turn with Change, Withdraw and Announce, or a committed (announced) Turn,
+ * which stands and offers nothing but the thread it was announced in.
  *
- * Nothing here is public: a waiting character is in no list anyone else reads, and every class is
+ * Nothing here is public: every class is
  * drawn from the player's own rows to the player alone ("A response never proves a private fact").
  * Which card is selected is the page's own: it opens on the character a navigation carried in
  * history.state (New character's, the profile editor's), else on the HUD's, and no address names it.
@@ -28,13 +28,13 @@ import { PageHead } from '../glass/PageHead.tsx';
 import { SignInPrompt } from '../mini.tsx';
 import { usePlayer } from '../player.tsx';
 import { Pips } from '../postbit/Postbit.tsx';
+import { pageOf, threadHref } from '../thread/pages.ts';
 import { monthYear, shortDate } from '../postbit/dates.ts';
 import { useLocation, useRouterInternals } from '../router.tsx';
 import { isSignedOutDoc, type ScreenDoc } from '../screen-docs.ts';
 import { useFaces } from './faces.ts';
 import { GlassLink } from '../glass/Link.tsx';
 import { ClassChip } from './ClassChip.tsx';
-import { DebutDialog } from './DebutDialog.tsx';
 import { Portrait } from './Portrait.tsx';
 import { dayAndTime, figure, inDays, spanWords } from './format.ts';
 import { readBack } from './readBack.ts';
@@ -45,9 +45,7 @@ import { CalmRegion } from '../glass/Calm.tsx';
 import { Layers } from '../glass/layer.tsx';
 
 type Dialog =
-  | { readonly kind: 'turn' | 'reveal' | 'drop' | 'debut'; readonly id: Id };
-
-const LOUD = (their: string) => ({ silent: 'silently', announced: 'announced', with_class: `announced, with ${their} class` }) as const;
+  | { readonly kind: 'turn' | 'reveal' | 'announce'; readonly id: Id };
 
 /** Where focus goes when the control that opened a dialog has been replaced by the dialog's own result. */
 const returnTo = (id: Id) => () => document.querySelector<HTMLElement>(`[data-kb-character="${id}"] [data-kb-return]`);
@@ -60,7 +58,7 @@ function PanelRegion({ id, ...props }: ComponentProps<'section'>) {
 /** The panel as a motion element: it is the tabpanel itself, directly after the roster, so a swap adds no wrapper between them. */
 const MotionPanel = motion.create(PanelRegion);
 
-/** The order they joined, a character still waiting to debut after every one that has. */
+/** The order they joined (a character with no joining date, a staff persona's, after every one that has). */
 const joined = (a: MyCharacter, b: MyCharacter) => (a.debutedAt ?? '￿').localeCompare(b.debutedAt ?? '￿') || a.name.localeCompare(b.name);
 
 /** The character a navigation carried in history.state, if it named one. */
@@ -111,6 +109,16 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   const [picked, setPicked] = useState<Id | null>(() => carried(location.state));
 
   const mine = useMemo(() => [...page.characters].sort(joined), [page.characters]);
+  /* The title of each thread a committed Turn was announced in, read once each: the line links to it by name. */
+  const [threadTitles, setThreadTitles] = useState<ReadonlyMap<Id, string>>(new Map());
+  const announcedIn = useMemo(() => [...new Set(page.characters.flatMap((c) => (c.pendingTurn?.announced ? [c.pendingTurn.announced.thread] : [])))].sort(), [page.characters]);
+  useEffect(() => {
+    let live = true;
+    for (const id of announcedIn) {
+      void api.thread(id).then((t) => { if (live && t) setThreadTitles((m) => new Map(m).set(id, t.title)); }, () => {});
+    }
+    return () => { live = false; };
+  }, [api, announcedIn]);
   const selected = mine.find((c) => c.id === picked) ?? mine.find((c) => c.id === player.hudCharacter?.id) ?? mine[0] ?? null;
 
   /* Another character chosen: the panel swaps (motion.ts `swap`), the old one leaving upward when the one chosen is after it in the roster's order, downward when before. */
@@ -221,15 +229,29 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   /* A card's last line: where its Turn stands, in a few words. */
   const cardTurn = (c: MyCharacter) => {
     if (c.retiredAt !== null) return <span className="kb-roster-turn">Retired</span>;
-    if (c.debutedAt === null) return <span className="kb-roster-turn" data-kb-state="waiting">Waiting to debut</span>;
-    if (c.pendingTurn) return <span className="kb-roster-turn" data-kb-state="ready">Turn waiting</span>;
+    if (c.pendingTurn) return <span className="kb-roster-turn" data-kb-state="ready">{c.pendingTurn.announced ? 'Turn announced' : 'Turn waiting'}</span>;
     if (c.turnOpensAt) return <span className="kb-roster-turn">Next Turn opens {shortDate(c.turnOpensAt)}</span>;
     return <span className="kb-roster-turn" data-kb-state="ready">Turn ready</span>;
   };
 
   const turnCell = (c: MyCharacter) => {
     if (c.retiredAt !== null) return <p className="kb-roster-line">Retired. An admin can restore {words(c.pronouns).them}.</p>;
-    if (c.debutedAt === null) return <p className="kb-roster-line">{words(c.pronouns).They} can Turn once {words(c.pronouns).they} {words(c.pronouns).has} debuted.</p>;
+    if (c.pendingTurn?.announced) {
+      /* A committed Turn stands (0427): its announcement is written, so there is nothing to change or withdraw, and no button. */
+      const p = c.pendingTurn;
+      const when = p.takesEffectAt ?? next;
+      const told = p.announced!;
+      const where = threadTitles.get(told.thread);
+      return (
+        <div className="kb-roster-pending">
+          <p className="kb-turn-pending"><b>Turn announced</b>: to {className(p.class)}.</p>
+          <p className="kb-roster-line kb-turn-when">
+            Announced in <GlassLink to={threadHref(told.thread, pageOf(told.seq, settings.postsPerPage), told.seq)}>{where ?? 'its thread'}</GlassLink>. Takes effect {when ? dayAndTime(when) : 'at the next settlement'}.
+          </p>
+          <p className="kb-roster-line kb-turn-note">It stands until then: it can&apos;t be changed or withdrawn.</p>
+        </div>
+      );
+    }
     if (c.pendingTurn) {
       const p = c.pendingTurn;
       const when = p.takesEffectAt ?? next;
@@ -241,6 +263,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <p className="kb-roster-line kb-turn-note">If the settlement is due, a reveal waits until it has run.</p>
           <ButtonRow>
             <GlassButton data-kb-return="" aria-label={`Change ${c.name}'s Turn`} onClick={() => show({ kind: 'turn', id: c.id })}>Change</GlassButton>
+            <GlassButton aria-label={`Announce ${c.name}'s Turn`} onClick={() => show({ kind: 'announce', id: c.id })}>Announce</GlassButton>
             <GlassButton aria-label={`Withdraw ${c.name}'s Turn`} busy={busy === c.id} onClick={() => void withdraw(c)}>Withdraw</GlassButton>
           </ButtonRow>
           {problem?.id === c.id && !problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
@@ -279,7 +302,6 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
 
   const panel = (c: MyCharacter) => {
     const face = faces.get(c.id);
-    const waiting = c.debutedAt === null && c.retiredAt === null;
     const live = c.debutedAt !== null && c.retiredAt === null;
     const posts = page.counts[c.id]?.posts ?? null;
     const before = was.get(c.id);
@@ -290,18 +312,6 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <h2 className="kb-roster-panel-name kb-glass-display">{c.name}</h2>
           {face?.title && <p className="kb-roster-line kb-character-sub">{face.title}</p>}
         </div>
-        {waiting && (
-          <div className="kb-character-waiting">
-            <p className="kb-roster-line">
-              <span>Waiting to debut at the next settlement{next ? `, ${dayAndTime(next)}` : ''}.</span>
-              <span> {words(c.pronouns).They} will debut {LOUD(words(c.pronouns).their)[c.debutLoudness ?? 'announced']}.</span>
-            </p>
-            <ButtonRow>
-              <GlassButton data-kb-return="" onClick={() => show({ kind: 'drop', id: c.id })}>Drop {c.name} now…</GlassButton>
-              <GlassButton onClick={() => show({ kind: 'debut', id: c.id })}>Change how {c.name} debuts…</GlassButton>
-            </ButtonRow>
-          </div>
-        )}
         <dl className="kb-roster-facts">
           <dt>Class</dt>
           <dd>
@@ -410,10 +420,9 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
       </div>
 
       <Layers>
+      {dialog && target && dialog.kind === 'announce' && <TurnDialog key={`announce-${opening}`} announce character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'turn' && <TurnDialog key={`turn-${opening}`} character={target} face={faces.get(target.id)} standing={standings[target.id]} nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
       {dialog && target && dialog.kind === 'reveal' && <RevealOverlay key={`reveal-${opening}`} kicker="My characters › Reveal" character={target} at={thread} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(message) => { if (opening === current.current) { setFlash(message); reload(); } }} returnFocusTo={() => document.querySelector<HTMLElement>(`[data-kb-character="${target.id}"] [data-kb-revealed]`) ?? returnTo(target.id)()} />}
-      {dialog && target && dialog.kind === 'drop' && <DebutDialog key={`drop-${opening}`} character={target} timing="now" nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
-      {dialog && target && dialog.kind === 'debut' && <DebutDialog key={`debut-${opening}`} character={target} timing="tally" nextSettlement={next} onClose={() => { if (opening === current.current) setDialog(null); }} onDone={(m) => done(m, opening)} returnFocusTo={returnTo(target.id)} />}
       </Layers>
     </div>
   );

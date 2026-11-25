@@ -762,17 +762,18 @@ describe('reads and their rows', () => {
   });
 
   it('maps my_characters, with a pending Turn only when one is waiting', async () => {
-    const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', debut_loudness: 'silent', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false, class_due_at: null };
-    const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00' }]));
+    const base = { name: 'Bea', class: 'face', class_since: '2026-09-01T00:00:00+00:00', turn_opens_at: null, debuted_at: '2026-09-02T00:00:00+00:00', retired_at: null, pending_class: null, pending_loudness: null, pending_show_from: null, pending_show_to: null, takes_effect_at: null, presence_hidden: false, class_due_at: null };
+    const h = harness(() => rows([{ id: B, ...base, pronouns: PRONOUN_PRESETS.she }, { id: A, ...base, name: 'Al', presence_hidden: true, class_due_at: '2026-10-31T00:00:00+00:00', pending_class: 'heel', pending_loudness: 'announced', pending_show_from: true, pending_show_to: false, takes_effect_at: '2026-11-01T00:00:00+00:00', pending_announce_act: A, pending_announce_thread: T, pending_announce_seq: 4 }]));
     const mine = await h.api.myCharacters();
     expect(h.rest().map((r) => r.url.pathname)).toEqual(['/rest/v1/my_characters']);
-    expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false });
+    expect(mine[0]).toEqual({ id: B, name: 'Bea', pronouns: PRONOUN_PRESETS.she, class: 'face', classSince: '2026-09-01T00:00:00+00:00', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-09-02T00:00:00+00:00', retiredAt: null, pendingTurn: null, presenceHidden: false });
     expect(mine[1]?.presenceHidden).toBe(true);
     // A character with no profile row has no set to say: the engine's it/its.
     expect(mine[1]?.pronouns).toEqual(ENGINE_DEFAULT_PRONOUNS);
     // When a Turn that waited past a reveal was due (0074): a wiring no other test holds (#179).
     expect(mine[1]?.classDueAt).toBe('2026-10-31T00:00:00+00:00');
-    expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00' });
+    expect(mine[1]?.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: '2026-11-01T00:00:00+00:00', announced: { act: A, thread: T, seq: 4 } });
+    expect(mine[0]?.pendingTurn).toBeNull();
   });
 
   it('reads the wallet from my_wallet and the cap from settings when there is no row', async () => {
@@ -998,8 +999,8 @@ describe('failures', () => {
 
   it('sends the pronouns with createCharacter and set_profile, and nothing when none is given', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({ character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she }) : json({ id: B, name: 'Bea', class: 'face', waiting: true, loudness: 'announced', announcement: null })));
-    await h.api.createCharacter('Bea', 'face', 'tally', 'announced', PRONOUN_PRESETS.she);
-    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'createCharacter', name: 'Bea', class: 'face', timing: 'tally', loudness: 'announced', pronouns: PRONOUN_PRESETS.she }]);
+    await h.api.createCharacter('Bea', 'face', PRONOUN_PRESETS.she);
+    expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'createCharacter', name: 'Bea', class: 'face', pronouns: PRONOUN_PRESETS.she }]);
     const set = await h.api.setProfile(B, 'T', 's', 'default', PRONOUN_PRESETS.she);
     await h.api.setProfile(B, 'T', 's', 'default');
     expect(h.to('rpc/set_profile').map((r) => r.body)).toEqual([
@@ -1263,27 +1264,28 @@ describe('writes through the act function', () => {
   });
 
   it('maps the Turn, character and invite answers', async () => {
+    const told = { id: A, thread: T, kind: 'announce' };
     const h = harness((r) => {
       const a = (r.body as { action: string }).action;
-      if (a === 'turn') return json({ pending: true, class: 'heel', loudness: 'announced', show_from: true, show_to: false, takes_effect_at: null });
-      if (a === 'createCharacter') return json({ id: B, name: 'Bea', class: 'face', waiting: true, loudness: 'announced', announcement: null });
-      if (a === 'setDebut') return json({ id: B, waiting: false, loudness: 'silent', announcement: null });
+      if (a === 'turn') return json({ pending: true, class: 'heel', loudness: 'announced', show_from: true, show_to: false, takes_effect_at: null, announcement: told });
+      if (a === 'announceTurn') return json({ pending: true, class: 'heel', loudness: 'announced', show_from: false, show_to: true, takes_effect_at: '2026-11-01T00:00:00+00:00', announcement: told });
+      if (a === 'createCharacter') return json({ id: B, name: 'Bea', class: 'face' });
       if (a === 'withdrawTurn') return json({ withdrawn: true });
       if (a === 'createInvite' || a === 'reissueInvite') return json({ invite: 7, code: 'abc' });
       if (a === 'openAccount') return json({ account: A, opened: true });
       return json(ACT_ROW);
     });
-    expect(await h.api.turn(B, 'heel', 'announced', true, false)).toEqual({ ok: true, value: { class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: null } });
-    expect(await h.api.createCharacter('Bea', 'face', 'tally', 'announced')).toEqual({ ok: true, value: { id: B, name: 'Bea', class: 'face', waiting: true, loudness: 'announced' } });
-    expect(await h.api.setDebut(B, 'now', 'silent')).toEqual({ ok: true, value: { id: B, waiting: false, loudness: 'silent' } });
+    expect(await h.api.turn(B, 'heel', 'announced', true, false, T)).toEqual({ ok: true, value: { class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: null, announced: { act: A, thread: T } } });
+    expect(await h.api.announceTurn(B, T, false, true)).toEqual({ ok: true, value: { class: 'heel', loudness: 'announced', showFrom: false, showTo: true, takesEffectAt: '2026-11-01T00:00:00+00:00', announced: { act: A, thread: T } } });
+    expect(await h.api.createCharacter('Bea', 'face')).toEqual({ ok: true, value: { id: B, name: 'Bea', class: 'face' } });
     expect(await h.api.withdrawTurn(B)).toEqual({ ok: true, value: { withdrawn: true } });
     expect(await h.api.createInvite()).toEqual({ ok: true, value: { invite: 7, code: 'abc' } });
     expect(await h.api.reissueInvite(7)).toEqual({ ok: true, value: { invite: 7, code: 'abc' } });
     expect(await h.api.openAccount('code')).toEqual({ ok: true, value: { opened: true } });
     expect(act(h).map((r) => r.body)).toEqual([
-      { action: 'turn', character: B, class: 'heel', loudness: 'announced', showFrom: true, showTo: false },
-      { action: 'createCharacter', name: 'Bea', class: 'face', timing: 'tally', loudness: 'announced' },
-      { action: 'setDebut', character: B, timing: 'now', loudness: 'silent' },
+      { action: 'turn', character: B, class: 'heel', loudness: 'announced', showFrom: true, showTo: false, thread: T },
+      { action: 'announceTurn', character: B, thread: T, showFrom: false, showTo: true },
+      { action: 'createCharacter', name: 'Bea', class: 'face' },
       { action: 'withdrawTurn', character: B },
       { action: 'createInvite' },
       { action: 'reissueInvite', invite: 7 },
