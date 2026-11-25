@@ -731,7 +731,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const inArea = (p: { x: number; y: number; width: number; height: number; size: number }) => ({ ...p, x: p.x + off.left, y: p.y + off.top });
   const earlierOf = (i: number) => shown.slice(0, i).map((d, j) => ({ play: d.play, box: inArea(prims[j]!) }));
   /* The dents are capped against the ones before them in `shown` (the order they landed in), in one space: the content area's px. */
-  const images = shown.map((d, i) => dentImages(d.play, inArea(prims[i]!), density, earlierOf(i)));
+  const images = shown.map((d, i) => dentImages(d.play, inArea(prims[i]!), density, earlierOf(i), undefined, objectOf(d.play)));
   const filterOn = trusted && shown.length > 0 && geo !== null && images.every((m) => m.bend !== '');
   /* What the engine is asked to bend with, from the two filters' ids. */
   const bend = useMemo<Bend | null>(

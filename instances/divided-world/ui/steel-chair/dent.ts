@@ -1,5 +1,5 @@
 import { ROOM_HEIGHT } from './chair.ts';
-import type { ThrownObject } from './objects.ts';
+import { objectOf, type ThrownObject } from './objects.ts';
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
@@ -76,7 +76,8 @@ export interface DentShape {
   readonly ry: number;
   readonly turn: number;
   readonly waves: readonly { readonly amp: number; readonly phase: number }[];
-  readonly lobes: readonly { readonly u: number; readonly v: number; readonly radius: number; readonly depth: number }[];
+  /** A lobe is round (`radius`) unless it has an `across`: then it is a ridge, `across` wide along `u` and `radius` along `v` (the ladder's rung). */
+  readonly lobes: readonly { readonly u: number; readonly v: number; readonly radius: number; readonly depth: number; readonly across?: number }[];
   readonly crumple: readonly number[];
 }
 
@@ -127,6 +128,8 @@ export function dentShape(playId: string, object: ThrownObject = 'chair'): DentS
     const dist = 0.3 * rand(), angle = rand() * 2 * Math.PI;
     const radius = k.radius[0] + k.radius[1] * rand();
     const depth = k.depth[0] + k.depth[1] * rand();
+    // the ladder's one lobe is a rung's ridge across its long axis (`ry`, the v direction): centered along it, stretched along u
+    if (k.aspect === 'long') return { u: 0, v: (dist / 0.3 - 0.5) * 0.2, radius: radius * 0.6, depth, across: 0.55 + 0.4 * (angle / (2 * Math.PI)) };
     return { u: dist * Math.cos(angle), v: dist * Math.sin(angle), radius, depth };
   });
   const crumple = Array.from({ length: 81 }, () => -k.crumple + 2 * k.crumple * rand());
@@ -236,7 +239,7 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
   const lattice = shape.crumple;
   const amp = shape.waves.map((w) => w.amp), phase = shape.waves.map((w) => w.phase);
   const lobeU = shape.lobes.map((l) => l.u), lobeV = shape.lobes.map((l) => l.v);
-  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
+  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeA2 = shape.lobes.map((l) => (l.across ?? l.radius) ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
   const lobes = shape.lobes.length;
   const us = new Float64Array(width);
   for (let x = 0; x < width; x++) us[x] = ((x + 0.5) / width) * 2 - 1;
@@ -256,7 +259,7 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
       for (let i = 0; i < 3; i++) wave += amp[i]! * Math.cos(ks[i]! * a + phase[i]!);
       const r0 = 0.5 * (1 + wave);
       let h = -Math.exp(-2.2 * (rho / r0) ** 2);
-      for (let i = 0; i < lobes; i++) h -= lobeDepth[i]! * Math.exp(-(((u - lobeU[i]!) ** 2 + (v - lobeV[i]!) ** 2) / lobeR2[i]!));
+      for (let i = 0; i < lobes; i++) h -= lobeDepth[i]! * Math.exp(-((u - lobeU[i]!) ** 2 / lobeA2[i]! + (v - lobeV[i]!) ** 2 / lobeR2[i]!));
       const n = u * sinT - v * cosT, t = u * cosT + v * sinT;
       h -= 0.15 * Math.exp(-((n / 0.08) ** 2)) * Math.exp(-((t / 0.4) ** 2));
       h += 0.12 * Math.exp(-(((rho - 1.05 * r0) / 0.09) ** 2));
@@ -526,11 +529,11 @@ function sample(map: Uint8Array, width: number, height: number, gx: number, gy: 
 }
 
 /** A play's images at a size and density, made once and kept (the three addresses and the two gray maps). */
-function keptOf(play: string, w: number, h: number, density: number, toUrl: typeof pixelsUrl): Kept {
-  const key = `${play}|${w}|${h}|${density}`;
+function keptOf(play: string, w: number, h: number, density: number, toUrl: typeof pixelsUrl, object: ThrownObject): Kept {
+  const key = `${play}|${object}|${w}|${h}|${density}`;
   const kept = imageCache.get(key);
   if (kept) return kept;
-  const shape = dentShape(play);
+  const shape = dentShape(play, object);
   const sw = Math.round(w * density), sh = Math.round(h * density);
   const bendMap = dentHeight(shape, w, h);
   const map = sw === w && sh === h ? bendMap : dentHeight(shape, sw, sh);
@@ -560,20 +563,21 @@ function keptOf(play: string, w: number, h: number, density: number, toUrl: type
  */
 export function dentImages(
   play: string, box: DentPrimitive, density: number,
-  earlier: readonly { readonly play: string; readonly box: DentBox }[] = [], toUrl: typeof pixelsUrl = pixelsUrl,
+  earlier: readonly { readonly play: string; readonly box: DentBox; readonly object?: ThrownObject }[] = [], toUrl: typeof pixelsUrl = pixelsUrl,
+  object: ThrownObject = objectOf(play),
 ): DentImages {
   const w = Math.round(box.width), h = Math.round(box.height);
   // a box under 1 px on a side (not yet measured, or a very narrow post) has no image to make: `new ImageData` would throw on it
   if (w < 1 || h < 1) return { bend: '', shade: '', light: '' };
-  const own = keptOf(play, w, h, density, toUrl);
+  const own = keptOf(play, w, h, density, toUrl, object);
   const near = earlier.filter((e) => Math.round(e.box.width) >= 1 && Math.round(e.box.height) >= 1 && intersects(box, e.box));
   if (near.length === 0) return { bend: own.bend, shade: own.shade, light: own.light };
   const step = (v: number) => Math.round(v * density) / density;
-  const key = `${play}|${w}|${h}|${density}|` + near.map((e) => `${e.play}@${step(e.box.x - box.x)},${step(e.box.y - box.y)}:${Math.round(e.box.width)}x${Math.round(e.box.height)}`).join('|');
+  const key = `${play}|${object}|${w}|${h}|${density}|` + near.map((e) => `${e.play}|${e.object ?? objectOf(e.play)}@${step(e.box.x - box.x)},${step(e.box.y - box.y)}:${Math.round(e.box.width)}x${Math.round(e.box.height)}`).join('|');
   const hit = cappedCache.get(key);
   if (hit) return hit;
   const others: CapDent[] = near.map((e) => {
-    const k = keptOf(e.play, Math.round(e.box.width), Math.round(e.box.height), density, toUrl);
+    const k = keptOf(e.play, Math.round(e.box.width), Math.round(e.box.height), density, toUrl, e.object ?? objectOf(e.play));
     return { box: e.box, width: k.sw, height: k.sh, shade: k.shadeMap, light: k.lightMap };
   });
   const out = capped({ box, width: own.sw, height: own.sh, shade: own.shadeMap, light: own.lightMap }, others);

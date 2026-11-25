@@ -735,7 +735,7 @@ describe('dentShape: each object has its own dent', () => {
   };
   test('the ladder is long and narrow (rx 0.35 to 0.45 of ry) with one ridge lobe', () => {
     for (const id of IDS200) {
-      const s = lobesOk(id, 'ladder', [1, 1], [0.12, 0.22], [0.3, 0.6]);
+      const s = lobesOk(id, 'ladder', [1, 1], [0.072, 0.132], [0.3, 0.6]);
       assert.ok(within(s.rx / s.ry, 0.35, 0.45), `${id} ${s.rx / s.ry}`);
       assert.ok(within(s.ry, AXIS_MIN, AXIS_MAX));
     }
@@ -763,5 +763,48 @@ describe('dentShape: each object has its own dent', () => {
   });
   test('the same id and object give the same dent', () => {
     for (const o of ['can', 'ladder', 'extinguisher'] as const) assert.deepEqual(dentShape('x', o), dentShape('x', o));
+  });
+});
+
+describe('the ladder\'s ridge lies across its long axis', () => {
+  test('the one lobe is centered along the long axis (ry) and reaches farther across it than along it', () => {
+    for (let i = 0; i < 200; i++) {
+      const s = dentShape(`ridge-${i}`, 'ladder');
+      assert.ok(s.ry > s.rx, 'ry is the long axis');
+      const [l] = s.lobes;
+      assert.equal(s.lobes.length, 1);
+      assert.equal(l!.u, 0);
+      assert.ok(Math.abs(l!.v) <= 0.1, `${l!.v}`);
+      assert.ok((l!.across ?? l!.radius) >= 3 * l!.radius, `across ${l!.across} radius ${l!.radius}`);
+    }
+  });
+  test('its height map is deeper along the ridge than the same way along the long axis', () => {
+    const s = dentShape('ridge-map', 'ladder');
+    const flat = { ...s, lobes: [], crumple: s.crumple.map(() => 0) };
+    const w = 120, h = 120, l = s.lobes[0]!;
+    const withR = dentHeight({ ...flat, lobes: s.lobes }, w, h), without = dentHeight(flat, w, h);
+    const at = (u: number, v: number) => {
+      const x = Math.floor(((u * 1.5 + 1) / 2) * w), y = Math.floor(((v * 1.5 + 1) / 2) * h);
+      return withR[y * w + x]! - without[y * w + x]!;
+    };
+    const d = 0.3;
+    assert.ok(at(d, l.v) < at(0, l.v + d) - 0.01, `${at(d, l.v)} vs ${at(0, l.v + d)}`);
+  });
+});
+
+describe('dentImages draws each object\'s own dent', () => {
+  const box = { x: 0, y: 0, size: 100, width: 100, height: 100 };
+  const toUrl = (px: Uint8ClampedArray) => Array.from(px).join(',');
+  // a play id whose object is a chair, and the same id drawn as a ladder
+  test('a ladder\'s images differ from a chair\'s for the same id', () => {
+    const chair = dentImages('obj-same-id', box, 1, [], toUrl as never, 'chair');
+    const ladder = dentImages('obj-same-id', box, 1, [], toUrl as never, 'ladder');
+    assert.notEqual(ladder.shade, chair.shade);
+    assert.notEqual(ladder.light, chair.light);
+  });
+  test('a chair\'s images are the images of dentShape(id, "chair")', () => {
+    const made = dentImages('obj-chair', box, 1, [], toUrl as never, 'chair');
+    const want = dentShade(dentHeight(dentShape('obj-chair'), 100, 100), 100, 100);
+    assert.equal(made.shade, toUrl(want as never));
   });
 });
