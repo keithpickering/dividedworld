@@ -464,7 +464,7 @@ do $$
 begin
   perform tests.commit($sql$
     set local session_replication_role = replica;
-    -- Each move the tick landed for il-boss opened a staff thread of its own (0429), titled by the move and not by this file; they are marked as this file's so the deletes below take them, with the reversals written in them.
+    -- Each move the tick landed for il-boss opened a staff thread of its own (0437), titled by the move and not by this file; they are marked as this file's so the deletes below take them, with the reversals written in them.
     update threads set title = 'Il ' || title where staff_placed and id in (select a.thread from acts a join characters c on c.id = a.character where c.staff = 'il-boss' and a.kind = 'move') and title not like 'Il %';
     delete from post_search where thread in (select id from threads where title like 'Il %');
     alter table thread_departures disable trigger thread_departures_fixed;

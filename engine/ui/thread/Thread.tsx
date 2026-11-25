@@ -136,7 +136,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
      so a clock never moves a mark (cards/billing.ts). */
   const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
-  /* The board cards written in this thread (they sit on no post; thread_page's `boardCards`, 0430), by id, from every page read; each is drawn as a line under the newest post before it. */
+  /* The board cards written in this thread (they sit on no post; thread_page's `boardCards`, 0438), by id, from every page read; each is drawn as a line under the newest post before it. */
   const [boardCards, setBoardCards] = useState<ReadonlyMap<Id, Act>>(() => new Map(doc.boardCards.map((c) => [c.id, c])));
   const effects = useMemo(() => effectCards(ui), [ui]);
   const rewinding = useMemo(() => rewindCards(instance.cards), [instance.cards]);

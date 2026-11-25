@@ -100,7 +100,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
-  /* A board card is written in a thread on its board, chosen here: the thread the player has open when it is on that board, else none until one is picked (SQL: 0430). */
+  /* A board card is written in a thread on its board, chosen here: the thread the player has open when it is on that board, else none until one is picked (SQL: 0438). */
   const open = useOpenThread();
   const [picked, setPicked] = useState<ChosenThread | null | undefined>(undefined);
   /* Only a play on a board is a board card. */

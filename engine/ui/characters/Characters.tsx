@@ -227,7 +227,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
   const turnCell = (c: MyCharacter) => {
     if (c.retiredAt !== null) return <p className="kb-roster-line">Retired. An admin can restore {words(c.pronouns).them}.</p>;
     if (c.pendingTurn?.announced) {
-      /* A committed Turn stands (0427): its announcement is written, so there is nothing to change or withdraw, and no button. */
+      /* A committed Turn stands (0435): its announcement is written, so there is nothing to change or withdraw, and no button. */
       const p = c.pendingTurn;
       const when = p.takesEffectAt ?? next;
       const told = p.announced!;

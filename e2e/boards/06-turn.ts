@@ -30,7 +30,7 @@
  *    only The System's name is compared.
  *  - The footer's sentence says the settlement's time in the reader's zone where the board counts
  *    down ("in 7 h 42 min"), so it is left out. An announced Turn is also written at once and stands (the staff board threads design,
- *    0427): the build's footer says it can't be changed or withdrawn, and a thread picker (Board, Thread, shared with Reveal) stands between
+ *    0435): the build's footer says it can't be changed or withdrawn, and a thread picker (Board, Thread, shared with Reveal) stands between
  *    the two names and the preview, which the board does not draw, so everything under the names stands lower and is compared by size only.
  *  - The post's line ends "It takes effect at the next settlement.", which the name tiles and the preview quote.
  *  - The board's portrait is a placeholder; the build's is the character's, so it is not compared.
@@ -38,7 +38,7 @@
 import type { BoardManifest } from '../board-match.ts';
 
 /**
- * An announced Turn is always written ahead of its settlement (0427), so the line the post carries ends with the sentence that says when it takes
+ * An announced Turn is always written ahead of its settlement (0435), so the line the post carries ends with the sentence that says when it takes
  * effect (announceWords, engine/ui/thread/lines.tsx), and the dialog's checkbox quotes it whole.
  */
 const OLD_NAMED = 'Name the old class. Adds “Pipewrench has Turned, leaving Heel. It takes effect at the next settlement.” to the post.';

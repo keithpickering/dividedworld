@@ -111,7 +111,7 @@ describe('the play form of a locked-out mask, beyond a post', () => {
     await waitFor(() => expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled());
   });
 
-  /* A board card is written in a thread on its board (0430), and the lockout holds in that thread: the thread the player has open is the one offered, and it is this one. */
+  /* A board card is written in a thread on its board (0438), and the lockout holds in that thread: the thread the player has open is the one offered, and it is this one. */
   test('a board reach is written in the open thread, so the lockout there blocks it', async () => {
     const form = await reach('board');
     expect(await within(form).findByText(/is locked out of this thread until/u)).toBeInTheDocument();

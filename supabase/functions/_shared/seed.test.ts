@@ -20,9 +20,9 @@ test('the seed carries every setting, class, reaction, card and board of the ins
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
-  assert.equal('announcementsTitle' in seed.system, false, 'no announcements thread is made from the seed: a move lands in its own staff thread (0429)');
-  assert.deepEqual(seed.settings.systemThreadTitles, instance.system.threadTitles, 'the titles of a move\'s thread, by kind, where move_thread_title reads them (0429)');
-  assert.deepEqual(seed.settings.copy, { ...instance.copy, handoverThreadTitle: instance.system.handoverThreadTitle }, 'the handover\'s title is read from copy (0429, hand_over)');
+  assert.equal('announcementsTitle' in seed.system, false, 'no announcements thread is made from the seed: a move lands in its own staff thread (0437)');
+  assert.deepEqual(seed.settings.systemThreadTitles, instance.system.threadTitles, 'the titles of a move\'s thread, by kind, where move_thread_title reads them (0437)');
+  assert.deepEqual(seed.settings.copy, { ...instance.copy, handoverThreadTitle: instance.system.handoverThreadTitle }, 'the handover\'s title is read from copy (0437, hand_over)');
   assert.deepEqual(seed.settings.seasonLength, instance.settings.seasonLength);
   assert.deepEqual(seed.classes, instance.classes.map((c) => ({ key: c.key, name: c.name })));
   assert.deepEqual(seed.reactions, instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })));

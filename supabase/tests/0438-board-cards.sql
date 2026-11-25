@@ -1,4 +1,4 @@
--- A board card lands in a thread on its board (supabase/migrations/0430_board_cards_on_their_board.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 5; the design, section 7).
+-- A board card lands in a thread on its board (supabase/migrations/0438_board_cards_on_their_board.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 5; the design, section 7).
 --
 -- 1. play_card and place_cast of a board card take the thread to play it in. It must be a thread on the target board; with none, or with a thread on another board, the card is refused in the words below, and
 --    a board with no thread at all says to start one. A board card on the system board is allowed, in a thread on it.

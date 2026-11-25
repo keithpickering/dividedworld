@@ -507,7 +507,7 @@ export async function runMeeting(
         // The Boss's last words, in character, and its note out of character (0337): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
         ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
         ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
-        // The minutes (0431): posted by the database as the Boss, in the season's Staff Meetings thread, once with the meeting; absent where the answer gave none.
+        // The minutes (0439): posted by the database as the Boss, in the season's Staff Meetings thread, once with the meeting; absent where the answer gave none.
         ...(repaired.minutes !== null ? { minutes: repaired.minutes } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
         // The talking points: one line for each persona that posts, kept by the database beside the orders, in the same transaction.

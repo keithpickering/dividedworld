@@ -76,7 +76,7 @@ begin
   insert into threads (board, title) values (b1, 'St One Thread') returning id into th1;
   insert into threads (board, title) values (b2, 'St Two Thread') returning id into th2;
   ann_acts := (select count(*) from acts x where x.thread = ann);
-  -- place_cast of a board card writes the play in a thread on the board (0430), and lay_sprung too: neither writes in the announcements thread.
+  -- place_cast of a board card writes the play in a thread on the board (0438), and lay_sprung too: neither writes in the announcements thread.
   placed := place_cast(a, 'stquake', b1, '{}', '', 'board', null, owner, 0, '{}', th1);
   if placed ->> 'thread' is distinct from th1::text then raise exception 'a board card was not written in the thread named: %', placed; end if;
   laid := lay_sprung(a, 'stquake', '{}', b2, 'board', gen_random_uuid(), null);

@@ -176,7 +176,7 @@ declare
                            'post_play_ids(uuid[])', 'post_kind_counts(uuid[])', 'play_rider_ids(uuid[])',
                            -- The live rewind plays of a list of posts (0413): the definer behind thread_page's `rewinds`, the ids of face-up plays on public posts from the kept rows, the same for every caller; granted as post_play_ids is.
                            'post_rewind_plays(uuid[])',
-                           -- The board cards written in a thread within a page's span (0430): the definer behind thread_page's `boardCards`, ids alone from the kept Acts, the same for every caller; granted as post_play_ids is, because thread_page is a security invoker.
+                           -- The board cards written in a thread within a page's span (0438): the definer behind thread_page's `boardCards`, ids alone from the kept Acts, the same for every caller; granted as post_play_ids is, because thread_page is a security invoker.
                            'board_card_ids(uuid,integer,integer,integer)',
                            -- A page of a kind's plays that are over on a post (0410): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
                            'kind_play_ids(uuid,text,timestampwithtimezone,uuid,integer)',
@@ -250,7 +250,7 @@ begin
   loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
   if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
 
-  -- The Roster Report's tables (0432) are insert-only and no client's: guards firing always, and no grant to an API role (the service role reaches them through its functions).
+  -- The Roster Report's tables (0440) are insert-only and no client's: guards firing always, and no grant to an API role (the service role reaches them through its functions).
   for r in select t.tgname from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
   if (select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and t.tgname ~ '_no_(update|delete|truncate)$') is distinct from 6 then

@@ -115,7 +115,7 @@ begin
   -- A class held and a silent Turn taken, and nothing made public.
   insert into class_history (character, class_key, started_at) values (quiet, 'beta', now() - interval '2 days');
   perform tests.become(ann);
-  -- Queued as before turns were announced at once (0427): the settlement writes their announcements the old way.
+  -- Queued as before turns were announced at once (0435): the settlement writes their announcements the old way.
   perform tests.queue_old_turn(loud, 'beta');
   perform tests.queue_old_turn(told, 'beta', true, false);
   perform tests.unbecome();

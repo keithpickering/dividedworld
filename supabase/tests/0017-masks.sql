@@ -68,7 +68,7 @@ begin
     raise exception 'an Act by a waiting character was written past every action';
   end if;
 
-  -- A settlement debuts no one (0428: a character is made active, and only an office debuts a waiting staff persona), and announces no debut.
+  -- A settlement debuts no one (0436: a character is made active, and only an office debuts a waiting staff persona), and announces no debut.
   settled := pg_temp.settle_day();
   if (select debuted_at from characters where id = fresh) is not null then raise exception 'a settlement debuted a waiting character'; end if;
   if exists (select 1 from acts where kind = 'announce' and character = fresh) then raise exception 'a settlement announced a debut: %', (select jsonb_agg(to_jsonb(a)) from acts a where a.kind = 'announce' and a.character = fresh); end if;
@@ -103,7 +103,7 @@ begin
   perform tests.become(ann);
   said := turn(loud, 'beta', 'silent', false, false);
   if not (said ->> 'pending')::boolean then raise exception 'a Turn waits for the settlement: %', said; end if;
-  -- Changed before it takes effect: louder, and the change is the Turn. (Queued as before turns were announced at once, 0427: a Turn announced now writes its Act then and cannot be changed.)
+  -- Changed before it takes effect: louder, and the change is the Turn. (Queued as before turns were announced at once, 0435: a Turn announced now writes its Act then and cannot be changed.)
   perform tests.queue_old_turn(loud, 'beta', true, false);
   -- "revealed", from an older client, waits as announced naming the class it Turns from (0028).
   if (select (loudness, show_from) from pending_turns where character = loud) is distinct from ('announced'::text, true) then raise exception 'a waiting Turn is changed'; end if;
@@ -172,7 +172,7 @@ declare
   due jsonb;
   tallies integer;
 begin
-  -- An announced Turn queued before Turns were announced at once (0427) takes effect in the window and is announced by the settlement, the one announcement here.
+  -- An announced Turn queued before Turns were announced at once (0435) takes effect in the window and is announced by the settlement, the one announcement here.
   perform tests.queue_old_turn(tests.character(ann, 'Outboxed', 'alpha', now() - interval '60 days'), 'beta', false, true);
   update pending_turns set asked_at = start_at + interval '1 hour' where character = (select id from characters where name = 'Outboxed');
   delete from broadcasts_due;
@@ -317,7 +317,7 @@ declare
   said jsonb;
   words jsonb := (select value from settings where key = 'copy');
 begin
-  -- An announced Turn queued before Turns were announced at once (0427): the settlement writes it the old way, which names the Promos thread with the instance's words.
+  -- An announced Turn queued before Turns were announced at once (0435): the settlement writes it the old way, which names the Promos thread with the instance's words.
   waiting := tests.character(ann, 'Stuck Turner', 'alpha', now() - interval '60 days');
   perform tests.queue_old_turn(waiting, 'beta', false, true);
   update pending_turns set asked_at = start_at + interval '1 hour' where character = waiting;

@@ -1,6 +1,6 @@
 /**
  * New character: a name, a class from the class cards and pronouns. The character is on the board
- * as soon as it is made, and nothing announces it (0428). A full roster says so, and that an admin
+ * as soon as it is made, and nothing announces it (0436). A full roster says so, and that an admin
  * can retire a character on request.
  *
  * It is a glass page in the Roster board's look (My characters' own), and the menu bar's Back and

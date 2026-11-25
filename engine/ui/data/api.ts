@@ -1341,7 +1341,7 @@ export interface MyCharacter {
   readonly classDueAt: string | null;
   /** When it may next Turn; null when it may now. */
   readonly turnOpensAt: string | null;
-  /** Null while a staff persona waits for an office; every other character is active from its creation (0428), so it is never null for a player's. */
+  /** Null while a staff persona waits for an office; every other character is active from its creation (0436), so it is never null for a player's. */
   readonly debutedAt: string | null;
   readonly retiredAt: string | null;
   readonly pendingTurn: PendingTurn | null;
@@ -1377,7 +1377,7 @@ export interface PendingTurn {
   /** When the next settlement applies it; null when no window is known yet ("at the next settlement"). */
   readonly takesEffectAt: string | null;
   /**
-   * The announcement Act of a committed Turn (0427): written when the Turn was asked, in the thread named, `seq` its place there. A committed Turn stands until it
+   * The announcement Act of a committed Turn (0435): written when the Turn was asked, in the thread named, `seq` its place there. A committed Turn stands until it
    * takes effect and can be neither changed nor withdrawn; null for a silent one, which can still be announced later (`announceTurn`).
    */
   readonly announced: { readonly act: Id; readonly thread: Id; readonly seq: number; /** The thread's title, so the link to it needs no read of its own. */ readonly title: string } | null;
@@ -1849,7 +1849,7 @@ export type SeasonNewsKind = 'results' | 'tally' | 'roster' | 'bossArrived' | 'b
  * `seq` name the Act to link (a landing's first announce Act, or the Boss's post, which is null where the instance wrote no line for it). A `results`
  * item has none of the three: a season's results are rows, not an Act, and the item opens the glass's Rankings of its season.
  * `results` carries the top three and `count`, the characters ranked; `tally` (a landing of announcements, or an old tally Act) its debuts and Turns,
- * at most 20 names with `count` the whole; `roster` (0432) a Roster Report entry that named Turns taking effect, its first 20 in `turns` and `count` the whole, `act`, `thread` and `seq` the entry's first post;
+ * at most 20 names with `count` the whole; `roster` (0440) a Roster Report entry that named Turns taking effect, its first 20 in `turns` and `count` the whole, `act`, `thread` and `seq` the entry's first post;
  * a Boss row its `name` and the `quote` of its post.
  */
 export interface SeasonNewsItem {
@@ -2274,7 +2274,7 @@ export interface LogCosmetic {
 
 /* ------------------------------------------------------------------ actions ---- */
 
-/** A character made: active at once, with no Act (0428). */
+/** A character made: active at once, with no Act (0436). */
 export interface CreatedCharacter {
   readonly id: Id;
   readonly name: string;
@@ -2580,7 +2580,7 @@ export interface ThreadPage {
   readonly page: number;
   /** `acts(thread, first, last)` of the page. */
   readonly acts: readonly Act[];
-  /** The board cards written in this thread (`board_card_ids`, 0430), which sit on no post: from the page's first Act up to the next page's first (the last page, to the end), oldest first. */
+  /** The board cards written in this thread (`board_card_ids`, 0438), which sit on no post: from the page's first Act up to the next page's first (the last page, to the end), oldest first. */
   readonly boardCards: readonly Act[];
   /** The authors and casters on the page. */
   readonly people: readonly ThreadPerson[];
@@ -3333,7 +3333,7 @@ export interface KayfaApi {
   react(act: Id, character: Id, kind: string, opts?: { readonly keepalive?: boolean }): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
   /** An announced Turn names its `thread` and is posted there at once; a silent one is posted nowhere and takes none. */
   turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean, thread?: Id): Promise<Answer<TurnAsked>>;
-  /** Announces and commits a silent Turn that is waiting (`announce_turn`, 0427): where, and which of its classes it names. */
+  /** Announces and commits a silent Turn that is waiting (`announce_turn`, 0435): where, and which of its classes it names. */
   announceTurn(character: Id, thread: Id, showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;

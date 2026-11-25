@@ -16,7 +16,7 @@
  *  - A bar is not refused by post, start thread or spin (the database's `barred()` does); `myApologies` and `apologize` are, and `myCharacters` carries `bars`.
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
- *  - A new character is active at once and writes no Act (0428); `seed.character(..., { debuted: false })` still makes a waiting character of any kind, which the server makes only for a staff persona.
+ *  - A new character is active at once and writes no Act (0436); `seed.character(..., { debuted: false })` still makes a waiting character of any kind, which the server makes only for a staff persona.
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';
@@ -142,7 +142,7 @@ export interface Seed {
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
   /**
    * A change of Boss at a season's roll-over, or (`cause: 'departure'`) when the outgoing Boss left the instance's roster mid-season (a `season_handovers` row, 0051; 0403 adds its id and cause, ids from 1 in the order seeded): the outgoing Boss (null at the first) and the arriving one, by staff key,
-   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the handover's own thread (0429), which this opens on the staff board
+   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the handover's own thread (0437), which this opens on the staff board
    * (titled by `handoverThreadTitle`) and returns; `farewell` and `arrival` are the outgoing and arriving Boss's words in it, in that order; a remark elsewhere is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
    * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0337). The season is the next number: the first season is the seed's, and each handover opens the one after.
@@ -225,13 +225,13 @@ export interface Seed {
    */
   announce(character: Id, what: 'turn', options?: { was?: string; class?: string; ahead?: boolean; at?: number }): Id;
   /**
-   * A debut announce Act as the database still holds those written before 0428, in the Roster Report thread of the season open at `at` (else now): history, read as it always
+   * A debut announce Act as the database still holds those written before 0436, in the Roster Report thread of the season open at `at` (else now): history, read as it always
    * was (the board's line, the class reveal a `class` makes). Nothing writes one now, so this is no writer a test can reach by the game's own means; a character made now
    * writes no Act.
    */
   debutHistory(character: Id, options?: { class?: string; at?: number }): Id;
   /**
-   * A Roster Report entry that names Turns taking effect (`write_roster_entry`, 0432): `post` is the entry's first post (a staff post the seed has written), `turns` the first of the Turns taking effect as the entry's record
+   * A Roster Report entry that names Turns taking effect (`write_roster_entry`, 0440): `post` is the entry's first post (a staff post the seed has written), `turns` the first of the Turns taking effect as the entry's record
    * holds them, `count` how many took effect (the turns' number where unsaid). Season News lists it as one `roster` item linking the post, dated `at` (else now).
    */
   rosterEntry(post: Id, turns: readonly TallyName[], options?: { at?: number; count?: number }): void;
@@ -471,7 +471,7 @@ interface CharRec {
   debutedAt: number | null;
   retiredAt: number | null;
   /** Each class it has held and when it began; `dueAt`, where a reveal made that class's Turn wait past the settlement it was due at (0074). */
-  readonly history: { cls: string; at: number; dueAt?: number; /** The announcement Act a committed Turn wrote ahead (class_history.announce_act, 0427). */ announce?: Id }[];
+  readonly history: { cls: string; at: number; dueAt?: number; /** The announcement Act a committed Turn wrote ahead (class_history.announce_act, 0435). */ announce?: Id }[];
   /** `dueAt`: the first settlement that passed the Turn over (0074); a Turn asked again is a new one, with none. */
   pending: (PendingTurn & { asked: number; dueAt?: number }) | null;
   /** Hidden from every presence box (presence_hidden, 0041). */
@@ -1197,7 +1197,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const named = m.demand.params['board'];
     return { kind: m.demand.kind, params: { ...m.demand.params, ...(typeof named === 'string' ? { board: boards.find((b) => b.slug === named)?.id ?? named } : {}) } };
   };
-  /** The words a thread title's tokens take (`move_thread_title`, 0429): a board's, a character's, a group's and a trophy's name for the id or key a move's params hold; any other param as it stands. */
+  /** The words a thread title's tokens take (`move_thread_title`, 0437): a board's, a character's, a group's and a trophy's name for the id or key a move's params hold; any other param as it stands. */
   const titleToken = (token: string, params: Readonly<Record<string, unknown>>): string => {
     const named = (v: unknown): string => (typeof v === 'string' ? v : '');
     switch (token) {
@@ -1208,7 +1208,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       default: return named(params[token]);
     }
   };
-  /** A staff thread for a landed move: titled by the instance's `threadTitles` for its kind (a kind with none, by its plain words), the move written at seq 1; a bundle's later parts land in the first part's thread (0429). */
+  /** A staff thread for a landed move: titled by the instance's `threadTitles` for its kind (a kind with none, by its plain words), the move written at seq 1; a bundle's later parts land in the first part's thread (0437). */
   const bundleThreads = new Map<string, Id>();
   function moveThread(kind: string, params: Readonly<Record<string, unknown>>, at: number, bundle?: string): Id {
     const held = bundle === undefined ? undefined : bundleThreads.get(bundle);
@@ -1346,7 +1346,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
   }
   /* ------------------------------------------------------------------ season news ---- */
-  /** The Roster Report entries that named Turns taking effect (`news_landed` kind `roster`, 0432), as the seed wrote them. */
+  /** The Roster Report entries that named Turns taking effect (`news_landed` kind `roster`, 0440), as the seed wrote them. */
   const rosterNews: { readonly post: Id; readonly turns: readonly TallyName[]; readonly count: number; readonly at: number }[] = [];
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
   const handovers: { readonly id: number; readonly cause: 'rollover' | 'departure'; readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts; readonly thread: Id }[] = [];
@@ -1432,7 +1432,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     /* A landing is the announce Acts of one thread at one instant (news_landed, 0100): its item names the first, counts them all and lists the first 20 names, debuts then Turns. */
     const landings = new Map<string, ActRec[]>();
-    /* An announcement written ahead of its Turn makes no item (news_announce, 0432): the Turn is news when it takes effect, in the Roster Report's entry that names it. */
+    /* An announcement written ahead of its Turn makes no item (news_announce, 0440): the Turn is news when it takes effect, in the Roster Report's entry that names it. */
     for (const a of [...acts.values()].filter((x) => x.kind === 'announce' && x.payload['ahead'] !== true).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order)) {
       const key = `${a.thread}|${a.at}`;
       landings.set(key, [...(landings.get(key) ?? []), a]);
@@ -3018,7 +3018,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     } else {
       const board = boards.find((b) => b.id === target);
       if (!board) return refuse('there is no such board', 'target');
-      /* A board card is written in a thread on the board, the one named (place_cast, 0430): none named, or one of another board, is asked for again; a board with no thread says to start one. */
+      /* A board card is written in a thread on the board, the one named (place_cast, 0438): none named, or one of another board, is asked for again; a board with no thread says to start one. */
       if (boardThread === undefined || threads.get(boardThread)?.board !== target) {
         if (![...threads.values()].some((t) => t.board === target)) return refuse(`start a thread on ${board.name} first`);
         return refuse(`pick a thread on ${board.name} to play it in`);
@@ -3046,7 +3046,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const banned = bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
-    /* Every reach asks the thread it is written in (place_cast), a board card too (0430). */
+    /* Every reach asks the thread it is written in (place_cast), a board card too (0438). */
     {
       const lockedOut = lockedOutRefusal(character, thread);
       if (lockedOut) return lockedOut;
@@ -3216,7 +3216,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   /**
-   * When an Act makes a class public (class_reveals, 0427): its own time, except an announcement written ahead of its Turn, which counts from the moment the Turn took effect
+   * When an Act makes a class public (class_reveals, 0435): its own time, except an announcement written ahead of its Turn, which counts from the moment the Turn took effect
    * (its class_history row's start) and not at all while the Turn has not landed, or never will.
    */
   const revealedAt = (a: ActRec): number | null => {
@@ -3255,11 +3255,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   }
 
   type TurnAnswer = { class: string; loudness: 'silent' | 'announced'; showFrom: boolean; showTo: boolean; takesEffectAt: string | null; announced: { act: Id; thread: Id } | null };
-  /** committed_turn_refusal (0427): a Turn a settlement passed over (`dueAt`, masks_change's unmask backstop) takes effect at the first later window it can, which no time names. */
+  /** committed_turn_refusal (0435): a Turn a settlement passed over (`dueAt`, masks_change's unmask backstop) takes effect at the first later window it can, which no time names. */
   const stands = (c: CharRec) => `that Turn was announced, so it stands until it takes effect at ${c.pending?.dueAt !== undefined ? 'the next settlement it can' : takesEffectAt() ?? 'the next settlement'}`;
 
   /**
-   * turn_thread_checks (0427), in its order and the SQL's words: not_banned, the thread exists, not the System's board, not_locked_out, not_closed, not_barred.
+   * turn_thread_checks (0435), in its order and the SQL's words: not_banned, the thread exists, not the System's board, not_locked_out, not_closed, not_barred.
    * The fake carries every one of them; a bar is the fake's `barsOf`, a conferGroup move's, so it is refused only where such a move is in force.
    */
   function turnThreadRefusal(c: CharRec, thread: Id): Refusal | null {
@@ -3281,7 +3281,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return null;
   }
 
-  /** write_announce with `ahead` (0427): the character's own announce Act of a Turn, written when it is asked; the class it Turns from is named only where `showFrom`, the class it takes only where `showTo`. */
+  /** write_announce with `ahead` (0435): the character's own announce Act of a Turn, written when it is asked; the class it Turns from is named only where `showFrom`, the class it takes only where `showTo`. */
   function writeAhead(c: CharRec, thread: Id, to: string, showFrom: boolean, showTo: boolean): Act {
     const payload: Record<string, unknown> = { what: 'turn', ahead: true };
     if (showFrom) payload.was = classNow(c).cls;
@@ -3350,7 +3350,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (ownedCount(account.id) >= settings.charactersPerPlayer) return refuse(`a player runs at most ${settings.charactersPerPlayer} characters`);
     if ([...characters.values()].some((c) => sameName(c.name, named))) return refuse('that name is taken');
     if (pronouns !== undefined && !pronounsHold(pronouns)) return refuse(PRONOUNS_REFUSAL);
-    // Active at once, and no Act (0428): nothing announces a new character.
+    // Active at once, and no Act (0436): nothing announces a new character.
     const c = addCharacter(account.id, named, cls, { debuted: true, ...(pronouns === undefined ? {} : { pronouns: normalizePronouns(pronouns) }) });
     grantWelcomePack(account);
     return ok({ id: c.id, name: c.name, class: cls });
@@ -5092,7 +5092,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order).slice(0, 100)
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }));
       const played = [...plays, ...above.map((p) => p.act), ...kept.map((p) => p.act)];
-      /* The board cards written in this thread (they sit on no post; thread_page, 0430): from the page's first Act up to the next page's first (the first page from the start, the last to the end), oldest first, at most 100. */
+      /* The board cards written in this thread (they sit on no post; thread_page, 0438): from the page's first Act up to the next page's first (the first page from the start, the last to the end), oldest first, at most 100. */
       const atSeq = (seq: number): number | undefined => [...acts.values()].find((a) => a.thread === thread && a.seq === seq)?.at;
       const from = page === 1 ? -Infinity : atSeq((page - 1) * perPage + 1) ?? -Infinity;
       const until = atSeq(page * perPage + 1) ?? Infinity;
@@ -5993,7 +5993,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
-      /* The handover's own staff thread (0429): titled by the instance's handoverThreadTitle, holding the outgoing Boss's farewell and then the arriving Boss's words, where the seed gives them. */
+      /* The handover's own staff thread (0437): titled by the instance's handoverThreadTitle, holding the outgoing Boss's farewell and then the arriving Boss's words, where the seed gives them. */
       const system = boards.find((b) => b.isSystem);
       if (!system) throw new Error('the instance has no System board');
       const when = h.at ?? now();
@@ -6306,7 +6306,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       } else if (reach === 'thread') {
         thread = target; on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
       } else {
-        /* A board card is written in a thread on its board (0430): the one given, else the board's first. */
+        /* A board card is written in a thread on its board (0438): the one given, else the board's first. */
         const home = o?.thread ?? [...threads.values()].find((t) => t.board === target && t.id !== updatesThreadId)?.id;
         if (home === undefined) throw new Error(`a board play needs a thread on its board: seed one on ${target} or pass \`thread\``);
         thread = home; on = null;

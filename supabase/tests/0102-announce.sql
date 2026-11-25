@@ -1,6 +1,6 @@
 -- An announced Turn is the character's own Act (supabase/migrations/0100_announce.sql; docs/plans/2026-11-06-season-end-design.md, sections 4 and 5):
 -- one `announce` Act per announcement, written in the season's Promos thread when the change takes effect, with what the player chose to make public
--- (since 0427 a Turn is announced when it is asked, and the Turns queued before that are written this way; since 0428 there is no debut, so the settlement writes only Turns);
+-- (since 0435 a Turn is announced when it is asked, and the Turns queued before that are written this way; since 0436 there is no debut, so the settlement writes only Turns);
 -- no tally and no separate unmask. Its class is a verified reveal (class_reveals), its Turn is read by turns_announced, and Season News keeps one item
 -- per landing. Every block runs: the harness stops a file at its first error, so each block names its own accounts and its own window.
 
@@ -40,7 +40,7 @@ begin
   t_to := tests.character(z, 'An Names What It Is', 'alpha', now() - interval '60 days');
   t_both := tests.character(x, 'An Names Both', 'alpha', now() - interval '60 days');
   t_silent := tests.character(y, 'An Silent Turn', 'alpha', now() - interval '60 days');
-  -- The announced ones are queued as before turns were announced at once (0427): with no announcement written, so the settlement writes them the old way.
+  -- The announced ones are queued as before turns were announced at once (0435): with no announcement written, so the settlement writes them the old way.
   perform tests.queue_old_turn(t_plain, 'beta'); perform tests.queue_old_turn(t_both, 'beta', true, true);
   perform tests.queue_old_turn(t_from, 'beta', true, false);
   perform tests.become(y); perform turn(t_silent, 'beta', 'silent', false, false); perform tests.unbecome();

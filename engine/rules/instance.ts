@@ -1260,13 +1260,13 @@ function arcProblems(who: string, p: Persona, authoredMostParts: number | null):
 }
 
 /**
- * The copy's two season titles (0431, 0432; the meetings one is optional): each has its words and names its season, and fills no other token, since copy_of fills `{season}` alone.
+ * The copy's two season titles (0439, 0440; the meetings one is optional): each has its words and names its season, and fills no other token, since copy_of fills `{season}` alone.
  */
 function copyProblems(copy: Instance['copy']): string[] {
   const out: string[] = [];
   for (const key of ['rosterThreadTitle', 'meetingsThreadTitle'] as const) {
     const title = (copy as unknown as Partial<Record<string, unknown>> | undefined)?.[key];
-    // The meetings title is optional (Copy.meetingsThreadTitle?; 0431 posts no minutes without it): absent is whole, present is held to the same words.
+    // The meetings title is optional (Copy.meetingsThreadTitle?; 0439 posts no minutes without it): absent is whole, present is held to the same words.
     if (key === 'meetingsThreadTitle' && (title === undefined || title === null)) continue;
     if (typeof title !== 'string' || title.trim() === '') { out.push(`the instance has no copy for ${key}`); continue; }
     if (!title.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
@@ -1276,7 +1276,7 @@ function copyProblems(copy: Instance['copy']): string[] {
 }
 
 /**
- * What a move's thread title may fill, exactly what system_line_fill (0429) fills: the Boss and the move's plain words, the Boss's pronoun forms, the rule move's `{rule}`, a board's name
+ * What a move's thread title may fill, exactly what system_line_fill (0437) fills: the Boss and the move's plain words, the Boss's pronoun forms, the rule move's `{rule}`, a board's name
  * (`{board}`, where the move always has one: it is its required board, or `every board` for a rule), the kind's derived names, and its required params that are not a uuid (a number is
  * written as its digits). A uuid param is a raw id, and an optional one may be absent: neither is words, and a token for one would stay as written.
  */
@@ -1297,7 +1297,7 @@ function threadTitleTokens(kind: { key: string; params: unknown; uuids?: readonl
 }
 
 /**
- * The words the staff board is titled with (0429, Task 8): each move kind's title names only a kind the engine has, is not blank, and fills only the tokens that kind is given; the
+ * The words the staff board is titled with (0437, Task 8): each move kind's title names only a kind the engine has, is not blank, and fills only the tokens that kind is given; the
  * handover's title fills `{boss}` and `{season}` alone; each heading and the stock heading are said.
  */
 function threadWordProblems(sys: SystemContent): string[] {

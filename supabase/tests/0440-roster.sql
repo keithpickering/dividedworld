@@ -1,4 +1,4 @@
--- The Roster Report (supabase/migrations/0432_roster_report.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 7; the design, section 5).
+-- The Roster Report (supabase/migrations/0440_roster_report.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 7; the design, section 5).
 --
 -- Each settlement with something to report gets one entry in the season's thread (seasons.turns_thread), written by the Boss. The list is built from what the public reads: roster_facts(window_end) reads acts_public,
 -- characters_public and class_history, never `acts` or `reactions`; write_roster_entry writes the Boss's posts, the characters it listed (roster_seen) and the entry (roster_entries); roster_due() names the applied
@@ -367,7 +367,7 @@ end $$;
 
 -- ---- 10. The changeover: what existed before the migration is not reported ----
 -- The migration ran its statements once, on the instance as it was; here an instance as it was is laid out (a window settled, a character that acted, and no entry or seen row for either) and its two statements are
--- copied and run again, as 0428's changeover test does. No function of it is left in the schema.
+-- copied and run again, as 0436's changeover test does. No function of it is left in the schema.
 do $$
 declare
   ann uuid := tests.account('rr-old');
@@ -521,7 +521,7 @@ begin
 end $$;
 
 -- ---- The season's copy word is rosterThreadTitle (Task 8): the check asks for it and refuses the old key alone; promos_thread titles the season's thread with it; the migration's
--- data step moves an instance's old key to it. The step below is 0432's own statement, run here on a copy that still has the old key: at replay the copy row is not there yet, so the step
+-- data step moves an instance's old key to it. The step below is 0440's own statement, run here on a copy that still has the old key: at replay the copy row is not there yet, so the step
 -- is a no-op and this copy is what proves it.
 do $$
 declare why text; sid bigint; open_no integer; p record;

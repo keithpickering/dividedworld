@@ -17,7 +17,7 @@ const lines: readonly { readonly what: 'debut' | 'turn'; readonly ahead?: boolea
   { what: 'turn', was: 'heel', says: 'Spritey has Turned, leaving Heel.' },
   { what: 'turn', class: 'face', says: 'Spritey has Turned to Face.' },
   { what: 'turn', was: 'heel', class: 'face', says: 'Spritey has Turned from Heel to Face.' },
-  // A Turn announced ahead of its settlement (0427) says when it takes effect; every sentence older Acts read is the same.
+  // A Turn announced ahead of its settlement (0435) says when it takes effect; every sentence older Acts read is the same.
   { what: 'turn', ahead: true, says: 'Spritey has Turned. It takes effect at the next settlement.' },
   { what: 'turn', ahead: true, was: 'heel', says: 'Spritey has Turned, leaving Heel. It takes effect at the next settlement.' },
   { what: 'turn', ahead: true, class: 'face', says: 'Spritey has Turned to Face. It takes effect at the next settlement.' },
@@ -36,7 +36,7 @@ describe('the announce line', () => {
     const fake = buildWorld();
     const owner = fake.seed.account('o');
     const spritey = fake.seed.character(owner, 'Spritey', 'face');
-    /* A debut is history (0428 wrote the last of them): only the seed for old Acts writes one. */
+    /* A debut is history (0436 wrote the last of them): only the seed for old Acts writes one. */
     const act = what === 'debut' ? fake.seed.debutHistory(spritey, { class: cls }) : fake.seed.announce(spritey, what, { was, class: cls, ahead });
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/' });
     await waitFor(() => expect(screen.getByText(says)).toBeInTheDocument());

@@ -423,7 +423,7 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A departure in the same season (0403): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
       insert into season_handovers (season, outgoing, boss, how, cause) select (select id from seasons where ends_at is null), 'exp-bot', 'exp-boss', 'rotation', 'departure';
       insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
-      -- The staff-board threads (0429): a staff thread (the flag on a threads row), the departure's handover recording it (season_handovers.thread), and the open season's Staff Meetings thread (seasons.meetings_thread), so the three new columns round-trip.
+      -- The staff-board threads (0437): a staff thread (the flag on a threads row), the departure's handover recording it (season_handovers.thread), and the open season's Staff Meetings thread (seasons.meetings_thread), so the three new columns round-trip.
       declare staff_thread uuid; meetings uuid;
       begin
         staff_thread := open_staff_thread('exp-boss', 'Exported handover thread');
@@ -432,7 +432,7 @@ test('an instance exported and imported into a fresh database is the same instan
         update seasons set meetings_thread = meetings where ends_at is null;
         assert (select count(*) from threads where staff_placed and id in (staff_thread, meetings)) = 2, 'the fixture holds its two staff threads';
       end;
-      -- The Roster Report (0432): a settled window's entry holding the Boss's post, and a character it listed as new, so the two insert-only tables round-trip with their links to a settlement and an Act.
+      -- The Roster Report (0440): a settled window's entry holding the Boss's post, and a character it listed as new, so the two insert-only tables round-trip with their links to a settlement and an Act.
       declare roster_window timestamptz := now() - interval '40 days'; roster_post uuid;
       begin
         insert into settlements (starts_at, ends_at, season) select roster_window - interval '1 day', roster_window, id from seasons where ends_at is null;

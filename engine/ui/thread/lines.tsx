@@ -202,7 +202,7 @@ export function announceWords(what: string, was: string, to: string, className: 
     : was !== '' ? `has Turned, leaving ${className(was)}.`
     : to !== '' ? `has Turned to ${className(to)}.`
     : 'has Turned.';
-  /* A Turn announced ahead of its settlement (0427) says so; one written at a settlement, an older Act, says only what happened. */
+  /* A Turn announced ahead of its settlement (0435) says so; one written at a settlement, an older Act, says only what happened. */
   return ahead ? `${turned} It takes effect at the next settlement.` : turned;
 }
 

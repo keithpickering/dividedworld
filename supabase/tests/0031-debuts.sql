@@ -1,4 +1,4 @@
--- Debuts, retired (supabase/migrations/0024_debuts.sql, 0028_loud_classes.sql, 0067_debut_now.sql; ended by 0428_no_debuts.sql, whose test holds what is true now):
+-- Debuts, retired (supabase/migrations/0024_debuts.sql, 0028_loud_classes.sql, 0067_debut_now.sql; ended by 0436_no_debuts.sql, whose test holds what is true now):
 -- a character is made active and no debut is announced. What is left to hold here is what the old debut Acts still are, since the ones already written stay in the log:
 -- a class reveal, a character's own Act that others react to, spin and have settled; and a new character is in the season's results.
 
@@ -10,7 +10,7 @@ exception when others then
   return sqlerrm;
 end $$;
 
--- ---- An old debut announcement, written before 0428, is its character's own Act on The System's board, and a class reveal where it names a class ----
+-- ---- An old debut announcement, written before 0436, is its character's own Act on The System's board, and a class reveal where it names a class ----
 do $$
 declare
   ann uuid := tests.account('old-debut-ann');

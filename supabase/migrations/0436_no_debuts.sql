@@ -5,10 +5,10 @@
 -- (0082: its way out is an office, not a settlement), so `debuted_at is null` still means a waiting persona, and played_by's refusal of one stays.
 --
 --   1. the changeover     every player character still waiting is made active now; the staff personas keep what seeding and their offices gave them.
---   2. my_characters      (0427), without `debut_loudness` (dropped and made again, since a view cannot lose a column in place); its grants are as 0030 gave them. my_threads_moved (0423), which reads it, is dropped and made again as it was.
---   3. write_announce, acts_well_formed   (0427), without the `kayfabb.debut_writer` setting 0427 added so the settlement's debut writer passed the new refusal of a debut announcement: the writers are gone,
+--   2. my_characters      (0435), without `debut_loudness` (dropped and made again, since a view cannot lose a column in place); its grants are as 0030 gave them. my_threads_moved (0423), which reads it, is dropped and made again as it was.
+--   3. write_announce, acts_well_formed   (0435), without the `kayfabb.debut_writer` setting 0435 added so the settlement's debut writer passed the new refusal of a debut announcement: the writers are gone,
 --      so the refusal is absolute. The debut Acts already written stay as they were; they are history, read as they always were.
---   4. masks_change       (0427), without its debut half (the characters made before the window's end and waiting, and the owed announcements, `debut_announcement_due`); the Turns half is as 0427 wrote it.
+--   4. masks_change       (0435), without its debut half (the characters made before the window's end and waiting, and the owed announcements, `debut_announcement_due`); the Turns half is as 0435 wrote it.
 --   5. create_character   (0377's five-argument form dropped), `create_character(name, class, pronouns jsonb default null)`, grants as 0124 gave them; the answer is { id, name, class }.
 --   6. dropped            set_debut (0028), debut_options (0028), announce_drop (0100), and characters.debut_loudness and characters.debut_announcement_due (with the index and the check on them).
 --      Nothing else reads the columns: the latest definition of every function that did is re-created above (grep of supabase/migrations/ for each), and the export and import tools
@@ -82,7 +82,7 @@ grant select on my_threads_moved to authenticated;
 
 -- ---- 3. write_announce, acts_well_formed ----
 
--- write_announce (0427), without the setting for a debut's insert: it writes a debut no more, and the guard below refuses one from anyone. Everything else as 0427 wrote it.
+-- write_announce (0435), without the setting for a debut's insert: it writes a debut no more, and the guard below refuses one from anyone. Everything else as 0435 wrote it.
 create or replace function write_announce(of_character uuid, in_thread uuid, what text, was text, cls text, at timestamptz, ahead boolean default false) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare written uuid;
@@ -97,7 +97,7 @@ begin
 end $$;
 revoke execute on function write_announce(uuid, uuid, text, text, text, timestamptz, boolean) from public, anon, authenticated;
 
--- acts_well_formed (0427): a debut announcement is refused from anyone, without the exception for the settlement's writer; everything else as 0427 wrote it.
+-- acts_well_formed (0435): a debut announcement is refused from anyone, without the exception for the settlement's writer; everything else as 0435 wrote it.
 create or replace function public.acts_well_formed()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -237,7 +237,7 @@ end $function$;
 
 -- ---- 4. masks_change ----
 
--- masks_change (0427), without the debut half: a settlement debuts no one and names no debut. The Turns half is as 0427 wrote it, including a Turn announced and queued before 0427, written the old way
+-- masks_change (0435), without the debut half: a settlement debuts no one and names no debut. The Turns half is as 0435 wrote it, including a Turn announced and queued before 0435, written the old way
 -- in the Promos thread (the changeover of that migration).
 create or replace function masks_change(window_end timestamptz) returns uuid
 language plpgsql security definer set search_path = public, pg_temp as $$

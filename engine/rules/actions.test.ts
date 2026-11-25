@@ -7,7 +7,7 @@ import { systemSettings, testCosmeticsContent, testSystem, testGroups } from './
 const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
 const sparkle = { ...splat, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 1 } };
-// A board card, written in a thread on its board (0430).
+// A board card, written in a thread on its board (0438).
 const quake = { ...splat, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 1 } };
 const instance: Instance = {
   key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat, sparkle, quake], withdrawn: [],

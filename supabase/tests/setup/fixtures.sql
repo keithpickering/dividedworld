@@ -52,7 +52,7 @@ insert into settings (key, value) values
   ('reachLasts', '{"character": {"unit": "day", "count": 7}, "thread": {"unit": "day", "count": 1}, "board": {"unit": "day", "count": 1}}'),
   ('cardSettings', '{"whoops.clean": 95}'),
   ('economy', '{}'),
-  -- The season thread's title is the word The System needs (0432 renamed it rosterThreadTitle; 0099 made it the one word). The older keys stay in this row because the e2e files that load it
+  -- The season thread's title is the word The System needs (0440 renamed it rosterThreadTitle; 0099 made it the one word). The older keys stay in this row because the e2e files that load it
   -- onto the migrations before 0099 (e2e/0008, 0010, 0014) meet the check those migrations kept; 0099 stops asking for them.
   ('copy', '{"rosterThreadTitle": "Season {season}: Promos", "announcementsThreadTitle": "Season {season}: Promos", "turnsThreadTitle": "Season {season}: Turns", "revealTitle": "Season {season}: The Reveal", "revealBody": "Every mask, season {season}."}');
 insert into class_kinds (key, name) values ('alpha', 'Alpha'), ('beta', 'Beta');
@@ -127,7 +127,7 @@ create function tests.act(by_character uuid, kind text, in_thread uuid, payload 
   insert into acts (character, kind, thread, payload, target_act_id, created_at) values (by_character, kind, in_thread, payload, target, at) returning id
 $$;
 
--- A debut announcement as the settlement wrote one before 0428: an old Act, read as a reveal, a clue and a post's author's. Nothing writes one now (acts_well_formed refuses it), so a test
+-- A debut announcement as the settlement wrote one before 0436: an old Act, read as a reveal, a clue and a post's author's. Nothing writes one now (acts_well_formed refuses it), so a test
 -- that needs an old one stands the trigger down for the insert, which a rollback gives back. Standing the trigger down skips every acts_well_formed check for that insert, and `alter table` takes a lock that
 -- keeps acts locked until the transaction ends. Answers the Act's projection, as write_announce does.
 create function tests.old_debut(of_character uuid, in_thread uuid, cls text default null, at timestamptz default now()) returns jsonb language plpgsql as $$
@@ -268,7 +268,7 @@ begin
 end $$;
 grant execute on all functions in schema tests to anon, authenticated, service_role;
 
--- A pending announced Turn as it was queued before turns were announced at once (0427): announced, naming what its player chose, with no announcement
+-- A pending announced Turn as it was queued before turns were announced at once (0435): announced, naming what its player chose, with no announcement
 -- written (announce_act null), so the settlement writes it the old way, in the season's Promos thread. As turn() wrote the row then.
 create function tests.queue_old_turn(c uuid, to_class text, show_from boolean default false, show_to boolean default false) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$

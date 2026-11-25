@@ -2,7 +2,7 @@
  * The Roster Report's words (docs/plans/2026-11-24-staff-board-threads-plan.md, Task 7; the design, section 5), as a pure module: the list the code builds from the
  * public facts of one settlement window, as BBCode posts for the Boss to post in the season's thread, and the one light-tier call that writes the commentary above it.
  *
- * **The list is the code's and is exact.** `roster_facts` (supabase/migrations/0432_roster_report.sql) reads what the public reads and names each item's character, the Act it
+ * **The list is the code's and is exact.** `roster_facts` (supabase/migrations/0440_roster_report.sql) reads what the public reads and names each item's character, the Act it
  * links and, for a Turn, the class its announcement named (none where it named none). This module only sets those facts down: a heading for each non-empty list, one line for each item,
  * each name a link to its Act, split into as many posts as `postMaxLength` needs. It adds nothing the facts do not say, so a line shows no more than the Act it links.
  *
@@ -17,7 +17,7 @@ import { cutAtWord, type Rule, type Trim } from './validate.ts';
 
 /** The most characters of commentary: one or two lines. */
 export const COMMENTARY_MOST = 280;
-/** The most items of each list, in the posts and in the commentary call alike (the rest are a count, "and N more"): a busy day's report must not grow with it. roster_facts (0432) cuts its lists at the same number. */
+/** The most items of each list, in the posts and in the commentary call alike (the rest are a count, "and N more"): a busy day's report must not grow with it. roster_facts (0440) cuts its lists at the same number. */
 export const ITEMS_MOST = 25;
 
 /** One line of the list: a character, the Act it links, and for a Turn what its announcement named. */

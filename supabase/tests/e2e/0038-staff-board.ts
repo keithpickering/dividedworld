@@ -1,7 +1,7 @@
 /**
  * End to end: a day on the staff's board (docs/plans/2026-11-24-staff-board-threads-plan.md, Task 11), across the act function's own core (supabase/functions/act/core.ts), the meeting's core
  * (supabase/functions/meet/core.ts), the tick (system_tick) and the settlement's core (supabase/functions/settle/core.ts, with the Roster Report it runs after the windows), against the real
- * migrations on the scratch database (0427 to 0432), with the real model adapters over a fake `fetch`. What is asserted is what a player or a caller sees: the answers, the threads and the posts in them.
+ * migrations on the scratch database (0435 to 0440), with the real model adapters over a fake `fetch`. What is asserted is what a player or a caller sees: the answers, the threads and the posts in them.
  *
  * The day (invented words; the instance's own copy keys, as the seed writes them):
  *   a. A player makes a character: it is active at once and wrote no Act. It posts in a thread: that is its first public Act, and it is a newcomer.

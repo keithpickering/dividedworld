@@ -73,7 +73,7 @@ begin
     raise exception 'the season''s end answers its season and the rows it wrote: %', rolled;
   end if;
   insert into pg_temp.sr values (sprit, pipe, gloom, hooli, in_season, before_threads, ended);
-  -- A season's end opens no thread of its own; the handover it rolls over opens its one staff thread, where the instance has lines to say in it (0429).
+  -- A season's end opens no thread of its own; the handover it rolls over opens its one staff thread, where the instance has lines to say in it (0437).
   if (select count(*) from threads) - before_threads is distinct from (select count(*) from season_handovers h where h.landed_at = now() and h.thread is not null) then raise exception 'a season''s end opens no thread of its own: % new', (select count(*) from threads) - before_threads; end if;
   if (select count(*) from acts where kind = 'reveal') is distinct from before_reveals then raise exception 'a season''s end writes no reveal Act'; end if;
   if (select reveal_act from seasons where id = in_season) is not null then raise exception 'the season points at no reveal Act'; end if;
@@ -336,7 +336,7 @@ begin
   end;
 end $$;
 
--- ---- The words The System needs: the season thread's title (rosterThreadTitle, 0432) ----
+-- ---- The words The System needs: the season thread's title (rosterThreadTitle, 0440) ----
 do $$
 declare why text;
 begin

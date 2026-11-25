@@ -358,7 +358,7 @@ describe('Turns', () => {
     expect((await fake.turnsAnnounced([anaFace])).map((t) => ({ was: t.was, at: t.at }))).toEqual([{ was: 'face', at: new Date(landed).toISOString() }]);
     expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
   });
-  test('an announced Turn meets the checks of turn_thread_checks (0427), in the SQL\'s words (a ban; a closed board has no threads left to name, closing moves them)', async () => {
+  test('an announced Turn meets the checks of turn_thread_checks (0435), in the SQL\'s words (a ban; a closed board has no threads left to name, closing moves them)', async () => {
     const { fake, anaFace, thread, opener } = world();
     const until = fake.clock.now() + 3 * DAY;
     fake.seed.ban(anaFace, until, { infraction: fake.seed.infraction(fake.seed.visit(fake.seed.staff('mod', 'Mod Bot', 'mod'), opener)) });
@@ -3200,7 +3200,7 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.useCard('selfie', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('Selfie is used on your own character'));
     must(await fake.useCard('selfie', anaFace, anaFace, {}, '', 'character', mine));
     const board = (await fake.thread(thread))!.board;
-    /* A board card is written in a thread on the board, named by the caster (0430): none named is asked for again. */
+    /* A board card is written in a thread on the board, named by the caster (0438): none named is asked for again. */
     expect(await fake.playCard('quake', anaFace, board, {}, '', 'board')).toEqual(refused('pick a thread on General to play it in'));
     const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board', undefined, undefined, undefined, thread));
     expect(shook.targetActId).toBeNull();
@@ -3922,7 +3922,7 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).threads.map((t) => t.id)).not.toContain(rows[0]!.thread);
     expect(await w.fake.thread(rows[0]!.thread)).toBeNull();
     expect(before).toBe(0);
-    // Each landed move opens its own staff thread on that board (0429), the move at seq 1: two moves are two threads, and the updates thread is still none of them.
+    // Each landed move opens its own staff thread on that board (0437), the move at seq 1: two moves are two threads, and the updates thread is still none of them.
     w.fake.seed.staff('boss', 'The Boss', 'boss');
     const first = w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
     w.fake.seed.move('boss', { board: 'general', name: 'Renamed again' });
@@ -8033,7 +8033,7 @@ describe('an ask or an answer as an origin', () => {
   });
 });
 
-describe('the staff board holds a thread for each decision and each handover (0429)', () => {
+describe('the staff board holds a thread for each decision and each handover (0437)', () => {
   const titled = { ...instance, system: { ...testSystem, threadTitles: { renameBoard: '{board} is now {name}', conferGroup: 'Welcome to {groupName}' }, handoverThreadTitle: '{boss} takes the chair' } };
   const staffThreads = async (fake: ReturnType<typeof createFake>) => {
     const system = (await fake.boards()).find((b) => b.isSystem)!;

@@ -281,14 +281,14 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
     const showFrom = flag(r, 'showFrom');
     const showTo = flag(r, 'showTo');
     if (loudness === 'silent' && (showFrom || showTo)) throw new Refused(showFrom ? 'showFrom' : 'showTo', 'a silent Turn names no class');
-    // An announced Turn is posted at once (supabase/migrations/0427), so it names its thread; a silent one is posted nowhere.
+    // An announced Turn is posted at once (supabase/migrations/0435), so it names its thread; a silent one is posted nowhere.
     if (loudness === 'silent') {
       if (r.thread !== undefined && r.thread !== null) throw new Refused('thread', 'a silent Turn is posted nowhere');
       return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness, show_from: showFrom, show_to: showTo } };
     }
     return { rpc: 'turn', args: { through: id(r, 'character'), to_class: to, loudness, show_from: showFrom, show_to: showTo, in_thread: id(r, 'thread') } };
   },
-  // A silent Turn waiting is announced and committed (0427 announce_turn): where, and which of its classes it names.
+  // A silent Turn waiting is announced and committed (0435 announce_turn): where, and which of its classes it names.
   announceTurn: (r) => ({ rpc: 'announce_turn', args: { through: id(r, 'character'), in_thread: id(r, 'thread'), show_from: flag(r, 'showFrom'), show_to: flag(r, 'showTo') } }),
   withdrawTurn: (r) => ({ rpc: 'withdraw_turn', args: { through: id(r, 'character') } }),
   // A reveal of the character's own class (supabase/migrations/0027_unmask.sql): the class is read

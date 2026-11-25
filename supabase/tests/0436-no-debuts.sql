@@ -1,4 +1,4 @@
--- No debuts: a character is made active (supabase/migrations/0428_no_debuts.sql;
+-- No debuts: a character is made active (supabase/migrations/0436_no_debuts.sql;
 -- docs/plans/2026-11-24-staff-board-threads-plan.md, Task 2): create_character(name, class, pronouns) makes a character that has debuted,
 -- at its creation, and writes no Act; set_debut, debut_options and announce_drop are gone, with the two columns only they read
 -- (characters.debut_loudness, characters.debut_announcement_due); a settlement debuts and names no one; nothing writes a debut announcement,
@@ -96,7 +96,7 @@ begin
 end $$;
 
 -- ---- The changeover leaves no player character waiting, retired or not ----
--- The changeover statement of 0428, copied: a migration's statement runs once against the rows there were, so the test runs it again against rows made here. A retired waiting character is made
+-- The changeover statement of 0436, copied: a migration's statement runs once against the rows there were, so the test runs it again against rows made here. A retired waiting character is made
 -- active as well: restore_character (0043) only clears retired_at, and nothing debuts a character now, so one left waiting would never act again. A waiting staff persona is left as it is (0082).
 do $$
 declare

@@ -54,7 +54,7 @@ function world(places: readonly [number | null, number | null, number | null, nu
     { character: mrs, place: places[2], standing: unplacedAt(2, 795) },
     { character: pipe, place: places[3], standing: unplacedAt(3, 100) },
   ], { at: at(28) });
-  /* Season 1's Roster Report: an old debut (written before 0428), then a Turn announced with its old class. */
+  /* Season 1's Roster Report: an old debut (written before 0436), then a Turn announced with its old class. */
   seed.debutHistory(thwomp, { at: at(26, 8) });
   const turned = seed.announce(pipe, 'turn', { at: at(27, 8), was: 'heel' });
   seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });

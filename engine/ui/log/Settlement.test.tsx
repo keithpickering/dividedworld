@@ -150,7 +150,7 @@ describe('the settlement\'s summary', () => {
     const { thread } = seed.thread('general', pipe, 'Where the Turn is said', 'Opening.', { at: at(27) });
     seed.wallet(me, 290);
     fake.signInAs(me);
-    /* The announcement is written now, ahead of the settlement; nothing writes another when the Turn lands (0427). */
+    /* The announcement is written now, ahead of the settlement; nothing writes another when the Turn lands (0435). */
     expect((await fake.turn(pipe, 'face', 'announced', true, false, thread)).ok).toBe(true);
     seed.settle({ at: at(29, 8, 17), turns: true, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 100 }] });
     await openSummary(fake, me, pipe);

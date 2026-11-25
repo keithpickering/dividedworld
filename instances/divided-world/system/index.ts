@@ -26,7 +26,7 @@ export const system: SystemContent = Object.freeze({
   roster: deepFreeze([fangame, ontopic, qualityControl]),
   firstBoss: fangame.key,
   offices,
-  // The title of each staff thread a landed move opens, by kind (0429); a kind not named is titled by its plain words.
+  // The title of each staff thread a landed move opens, by kind (0437); a kind not named is titled by its plain words.
   threadTitles: Object.freeze({
     renameBoard: '{board} is now {name}', nameSuccessor: 'On the matter of succession', setRule: 'New rule in {board}', conferGroup: 'Welcome to {groupName}',
     pullSlot: 'Machine notice: a card is pulled', repriceSlot: 'Machine notice: new prices', flashSale: 'Flash sale!', createBoard: 'New board: {name}',

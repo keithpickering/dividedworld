@@ -122,7 +122,7 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   // An apology is the spin of a move's Act (0130), and is heard as one.
   apologize: (a) => [...thread(a.thread), ...act(a.act)],
   unmask: (a) => act(a),
-  // A silent Turn waits for the settlement and is posted nowhere; an announced one writes its announcement Act at once (0427), heard in its thread as a reveal is.
+  // A silent Turn waits for the settlement and is posted nowhere; an announced one writes its announcement Act at once (0435), heard in its thread as a reveal is.
   turn: (a) => act(a.announcement),
   announce_turn: (a) => act(a.announcement),
   withdraw_turn: () => [],
@@ -136,7 +136,7 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   donate: (a) => act(a.gift),
   buy_card: () => [],
   buy_pack: () => [],
-  // A player's own: a character is active at once and writes no Act (0428), so it appears on the next
+  // A player's own: a character is active at once and writes no Act (0436), so it appears on the next
   // load of who is here, and an invite or an account is nobody else's to hear of.
   create_character: () => [],
   create_invite: () => [],

@@ -243,7 +243,7 @@ begin
   select * into s2 from seasons where ends_at is null;
   perform tests.old_debut((select id from characters where name = 'Gloomba'), (promos_thread(s2.id)).in_thread, null, s2.starts_at + interval '1 hour');
   perform reveal_season(s2.starts_at + interval '1 day');
-  -- The settlement made its thread and the roll-over's handover opened its own (a listed staff thread, 0429): two threads, both listed.
+  -- The settlement made its thread and the roll-over's handover opened its own (a listed staff thread, 0437): two threads, both listed.
   if (select count(*) from thread_open where board = sys) is distinct from before_all + 2 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from before_list + 2 then raise exception 'the new threads are listed'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from (select threads from board_counts where board = sys) then raise exception 'the counter follows the list'; end if;

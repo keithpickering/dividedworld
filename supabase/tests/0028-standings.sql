@@ -35,7 +35,7 @@ begin
   end if;
   if (select count(*) from information_schema.columns where table_name = 'season_standings') is distinct from 4::bigint then raise exception 'the standings say only a character, its name, its standing and its place'; end if;
 
-  -- A settlement debuts no one (0428); a character is listed from the moment something debuts it (an office, for a staff persona; here the update).
+  -- A settlement debuts no one (0436); a character is listed from the moment something debuts it (an office, for a staff persona; here the update).
   perform set_config('role', 'service_role', true);
   perform apply_settlement(s, s + interval '1 day', '[]');
   perform tests.unbecome();

@@ -2,7 +2,7 @@
 -- system_threads() is the threads the instance itself makes (the announcements thread, the Updates thread and each season's Turns thread). thread_place and thread_places_computed
 -- put every one of them on system_board(), whichever board the thread was started on and whatever a move says, so moving the flag moves them.
 
--- Staff threads (0429) that earlier files committed are unflagged here, so the set and what the seed places are exactly this file's three (this file's transaction is rolled back).
+-- Staff threads (0437) that earlier files committed are unflagged here, so the set and what the seed places are exactly this file's three (this file's transaction is rolled back).
 update threads set staff_placed = false where staff_placed;
 -- Two boards, `a` flagged. The fixture's own system board is unflagged first (boards_one_system allows one).
 update boards set is_system = false where is_system;
@@ -28,7 +28,7 @@ declare
   want uuid[] := array[(select id from threads where title = 'Announcements'), (select id from threads where title = 'Updates'), (select id from threads where title = 'Turns')];
   got uuid[];
 begin
-  -- Staff threads (0429) are in system_threads() too, and an earlier file may have left some committed: instance_threads() is the three alone, the set this file is about.
+  -- Staff threads (0437) are in system_threads() too, and an earlier file may have left some committed: instance_threads() is the three alone, the set this file is about.
   select array_agg(x order by x) into got from instance_threads() x;
   if got is distinct from (select array_agg(w order by w) from unnest(want) w) then
     raise exception 'system_threads should answer the announcements, Updates and Turns threads, got %', got;

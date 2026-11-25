@@ -1500,7 +1500,7 @@ describe('buying and playing a card', () => {
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([
       { action: 'playCard', card: 'whoops', character: B, target: A, config: { color: 'magenta' }, message: 'you dropped your ink' },
     ]);
-    /* A board card names the thread it is written in (0430). */
+    /* A board card names the thread it is written in (0438). */
     const board = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
     await board.api.playCard('quake', B, A, {}, '', 'board', undefined, undefined, undefined, C);
     expect(board.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'playCard', card: 'quake', character: B, target: A, config: {}, message: '', reach: 'board', boardThread: C }]);
@@ -3273,7 +3273,7 @@ describe('a screen in one call', () => {
     expect((await once('thread_page', { ...DOC, rewinds: null }).api.threadPage(T, { page: 1 }, 20, []))?.rewinds).toEqual([]);
   });
 
-  it('thread_page maps `boardCards` to Acts, asks their tallies, and reads none where the document has none (0430)', async () => {
+  it('thread_page maps `boardCards` to Acts, asks their tallies, and reads none where the document has none (0438)', async () => {
     const DOC = { summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [] };
     const card = { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: null, payload: { card: 'quake', reach: 'board', board: A, targetName: 'Help' }, current_payload: { card: 'quake', reach: 'board', board: A, targetName: 'Help' } };
     const page = await once('thread_page', { ...DOC, boardCards: [card] }).api.threadPage(T, { page: 1 }, 20, []);

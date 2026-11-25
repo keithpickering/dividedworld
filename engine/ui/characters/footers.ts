@@ -8,7 +8,7 @@
  */
 import { words, type PronounSet } from '../../rules/pronouns.ts';
 
-/** New character's line: what making the character does. It is on the board at once and nobody is told (0428: there is no debut to choose). */
+/** New character's line: what making the character does. It is on the board at once and nobody is told (0436: there is no debut to choose). */
 export function newCharacterFooter(o: { readonly name: string; readonly pronouns: PronounSet }): string {
   const w = words(o.pronouns);
   const who = o.name.trim() || 'Your character';

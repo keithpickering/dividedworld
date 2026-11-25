@@ -68,11 +68,11 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
     // The tick (0048) reads the stock lines and the moves' plain words from settings, so SQL names no instance and no kind.
     settings: {
       ...instance.settings,
-      // The handover's title is read from copy (0429, hand_over), beside the season's words.
+      // The handover's title is read from copy (0437, hand_over), beside the season's words.
       copy: { ...instance.copy, handoverThreadTitle: instance.system.handoverThreadTitle },
       systemLines: instance.system.stockLines,
       systemMoveWords: Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])),
-      // A landed move's thread is titled by its kind (0429, move_thread_title); the kinds with none are titled by their plain words.
+      // A landed move's thread is titled by its kind (0437, move_thread_title); the kinds with none are titled by their plain words.
       systemThreadTitles: instance.system.threadTitles,
       // The code of conduct's version and section keys (0340), from the instance's UI content, so SQL names no section.
       conductVersion: conduct.version,

@@ -16,7 +16,7 @@ end $$;
 create function pg_temp.turning(label text, loudness text default 'silent') returns uuid language plpgsql as $$
 declare ann uuid := tests.account(label); a uuid := tests.character(ann, label, 'alpha', now() - interval '60 days');
 begin
-  -- An announced one is queued as before turns were announced at once (0427, which commits a Turn announced now): the settlement writes it the old way.
+  -- An announced one is queued as before turns were announced at once (0435, which commits a Turn announced now): the settlement writes it the old way.
   if loudness = 'announced' then
     perform tests.queue_old_turn(a, 'beta', false, true);
   else

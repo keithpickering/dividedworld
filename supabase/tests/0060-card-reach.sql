@@ -121,7 +121,7 @@ begin
   if pl ->> 'thread' <> t::text or pl ->> 'target_act_id' <> p::text then raise exception 'a thread play sits on its first post: %', pl; end if;
   if (select ends_at from play_reach where play = (pl ->> 'id')::uuid) > now() + interval '1 day' then raise exception 'a thread play ends within a day'; end if;
 
-  -- A board play sits in the thread on its board that the caster names, pointing at no post (supabase/migrations/0430_board_cards_on_their_board.sql).
+  -- A board play sits in the thread on its board that the caster names, pointing at no post (supabase/migrations/0438_board_cards_on_their_board.sql).
   why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'quake', pipe, general, '{}', '', 'board'));
   if why is distinct from 'pick a thread on General to play it in' then raise exception 'a board play needs a thread on its board, said %', why; end if;
   pl := play_card(ann, 'quake', pipe, general, '{}', 0, '', 'board', null, null, null, null, '{}', t);

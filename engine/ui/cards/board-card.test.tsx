@@ -1,5 +1,5 @@
 /**
- * The play form of a board card (supabase/migrations/0430_board_cards_on_their_board.sql): a board card is written in a thread on its board, so the form asks for one, limited to that board, and offers
+ * The play form of a board card (supabase/migrations/0438_board_cards_on_their_board.sql): a board card is written in a thread on its board, so the form asks for one, limited to that board, and offers
  * the thread the player has open when it is on that board. Without one it cannot be sent. The cards are the engine's own test cards.
  */
 import { useEffect } from 'react';

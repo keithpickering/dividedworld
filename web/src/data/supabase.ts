@@ -598,7 +598,7 @@ function toStaffCard(r: Row): StaffCardPlay {
   };
 }
 
-/** The answer of turn and announce_turn (0427): the Turn as queued, with the announcement Act it wrote at once where it is announced. */
+/** The answer of turn and announce_turn (0435): the Turn as queued, with the announcement Act it wrote at once where it is announced. */
 function toTurnAsked(r: Row): TurnAsked {
   const told = isObject(r['announcement']) ? r['announcement'] : null;
   return {
@@ -1974,7 +1974,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const under = rowsOf(d['under']).map((u) => ({ parent: u['parent'] as Id, play: u['play'] as Id, act: toAct(u['act']) }));
       const cut = rowsOf(d['cut']).map((c) => ({ seq: num(c['seq']), parentSeq: num(c['parent_seq']) }));
       const kept = rowsOf(d['kept']).map(toPlayAbove);
-      /* The board cards written in the thread (0430); a document without the key reads as none. */
+      /* The board cards written in the thread (0438); a document without the key reads as none. */
       const boardCards = rowsOf(d['boardCards']).map(toAct);
       const summary = toThread(d['summary'] as Row);
       /* The origin of a spun thread, on the page that holds its first Act (0372); a document without the key, or with a null one, has none. */

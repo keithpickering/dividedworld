@@ -8,7 +8,7 @@ import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => localStorage.clear());
 
-/** The Director's staff threads: a post, then a move in force, a move that was reversed (with its end), as the tick and an admin leave them, each move in a thread of its own (0429). */
+/** The Director's staff threads: a post, then a move in force, a move that was reversed (with its end), as the tick and an admin leave them, each move in a thread of its own (0437). */
 function announcements() {
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance);
@@ -41,7 +41,7 @@ describe('the Boss on The System\'s board', () => {
     expect(await within(post).findByRole('button', { name: /^Fire, 9\./u })).toBeInTheDocument();
   });
 
-  /* Each landed move has a staff thread of its own (0429), so its end is read in that thread. */
+  /* Each landed move has a staff thread of its own (0437), so its end is read in that thread. */
   test('a move\'s end is a plain line in the move\'s own thread, never in the Boss\'s voice', async () => {
     const { fake, w } = announcements();
     const moveThread = (await fake.act(w.reversed))!.thread;

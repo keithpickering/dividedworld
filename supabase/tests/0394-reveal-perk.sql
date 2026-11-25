@@ -89,7 +89,7 @@ begin
   end if;
 end $$;
 
--- A Turn announced ahead (in a thread, with its new class named) is a reveal only once the settlement lands it, and the perk starts at the landing, not at the announcement's write time (0427).
+-- A Turn announced ahead (in a thread, with its new class named) is a reveal only once the settlement lands it, and the perk starts at the landing, not at the announcement's write time (0435).
 do $$
 declare
   ann uuid := tests.account('rv-ahead-ann');

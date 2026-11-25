@@ -364,7 +364,7 @@ test('the staff board\'s titles and the Roster Report\'s words are the owner\'s,
   assert.equal(system.handoverThreadTitle, '{boss} takes the chair');
   assert.deepEqual(system.rosterHeadings, { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' });
   assert.equal(system.rosterStockHeading, 'The roster, as of the last settlement.');
-  assert.equal('announcementsTitle' in system, false, 'no announcements thread is made from the system (0429)');
+  assert.equal('announcementsTitle' in system, false, 'no announcements thread is made from the system (0437)');
 });
 
 test('the copy holds the Roster Report\'s and the Staff Meetings\' titles, each with its season', () => {

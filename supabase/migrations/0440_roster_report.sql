@@ -20,7 +20,7 @@
 --   roster_due          the applied windows with no entry, oldest first: the open season's, and the last window of the season closed just before it (reveal_season closes the season in the settlement's own transaction).
 --   news_announce       0100's, making no Season News item for an ahead announcement (a Turn announced at once is news when it takes effect, in the entry that names it).
 --   news_landed.kind    gains `roster`: written by write_roster_entry when its window had Turns taking effect, on the entry's first post.
---   season_news         0429's, reading a `roster` landing as one item (kind `roster`): the first 20 Turns taking effect and a count, linked to the entry's first post. Old items read as before.
+--   season_news         0437's, reading a `roster` landing as one item (kind `roster`): the first 20 Turns taking effect and a count, linked to the entry's first post. Old items read as before.
 --   The changeover      (statements of the migration, run once) the windows already settled get an entry that says so (record.skipped), so only later windows are due; the characters that already have a public Act are written down as seen, so the first
 --                       entry does not list the whole cast as new.
 --
@@ -78,7 +78,7 @@ alter table news_landed add constraint news_landed_kind_check check (kind in ('t
 
 -- ---- the changeover ----
 
--- Run once, as statements of this migration (the test copies them, as 0428's does). What a Roster Report would list as new is what the public has not yet seen: a character that has a public Act already was announced
+-- Run once, as statements of this migration (the test copies them, as 0436's does). What a Roster Report would list as new is what the public has not yet seen: a character that has a public Act already was announced
 -- by the old ways (its debut, or its first words). Written down as seen, at the last window settled (or now, where none was).
 insert into roster_seen (character, window_end, act)
 select p.id, coalesce((select max(s.ends_at) from settlements s), now()), f.id
@@ -351,7 +351,7 @@ begin
   return new;
 end $$;
 
--- season_news (0429), reading a roster landing as one item: kind `roster`, the first 20 Turns taking effect (the entry's record) and their count, linked to the entry's first post. Everything else as 0429 wrote it.
+-- season_news (0437), reading a roster landing as one item: kind `roster`, the first 20 Turns taking effect (the entry's record) and their count, linked to the entry's first post. Everything else as 0437 wrote it.
 create or replace function public.season_news(before timestamp with time zone DEFAULT NULL::timestamp with time zone, most integer DEFAULT 20)
  returns setof season_news_row
  language plpgsql
@@ -472,7 +472,7 @@ begin
 end $$;
 
 -- settings_copy_complete (0099), asking for rosterThreadTitle where it asked for announcementsThreadTitle. meetingsThreadTitle is not asked for: an instance that gives none posts no
--- minutes (0431), and a copy without it must still be savable, the data step below included.
+-- minutes (0439), and a copy without it must still be savable, the data step below included.
 create or replace function settings_copy_complete() returns trigger
 language plpgsql set search_path = public, pg_temp as $$
 declare missing text;

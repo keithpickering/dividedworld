@@ -3158,7 +3158,7 @@ describe('a reply cut in under its post', () => {
   });
 });
 
-/* A board card played in a thread (0430) is no post: its Act sits in the thread on no number, and the page carries it (`boardCards`) from its first Act to the next page's first, so a line in the log's words is drawn under the newest post before it. */
+/* A board card played in a thread (0438) is no post: its Act sits in the thread on no number, and the page carries it (`boardCards`) from its first Act to the next page's first, so a line in the log's words is drawn under the newest post before it. */
 describe('a board card played in this thread', () => {
   const HOUR = 3_600_000;
   const quake: CardRules = { key: 'bcquake', name: 'Bc Quake', alignment: 'salty', rarity: 'legendary', reaches: ['board'], lasts: { unit: 'day', count: 1 }, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(quake, t, e, now) };

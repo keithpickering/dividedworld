@@ -441,13 +441,13 @@ test('an instance says the copy the Roster Report and the Staff Meetings are tit
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: 'Staff Meetings' } }).join('\n'), /meetingsThreadTitle does not say which season/);
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: ' ' } }).join('\n'), /no copy for meetingsThreadTitle/);
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: 'Season {season}: {boss} Report' } }).join('\n'), /copy for rosterThreadTitle uses \{boss\}/);
-  // meetingsThreadTitle is optional (Copy.meetingsThreadTitle?, and 0431 skips the minutes without it): its absence is no problem, a blank one is.
+  // meetingsThreadTitle is optional (Copy.meetingsThreadTitle?, and 0439 skips the minutes without it): its absence is no problem, a blank one is.
   const { meetingsThreadTitle: _m, ...noMeetings } = good.copy!;
   assert.deepEqual(instanceProblems({ ...good, copy: noMeetings }), [], 'an instance with no meetings title is whole');
   assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
   // A copy written before 0099 holds only the old keys, and so lacks the one now asked for (unknown keys are not refused).
   assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
-  // The key it was called before the Roster Report (0432) no longer counts.
+  // The key it was called before the Roster Report (0440) no longer counts.
   assert.match(instanceProblems({ ...good, copy: { announcementsThreadTitle: 'Season {season}: Promos', meetingsThreadTitle: 'Season {season}: Staff Meetings' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
   assert.deepEqual(instanceProblems(good), []);
 });
@@ -632,7 +632,7 @@ test('a persona in each office\'s frame: every posting office has a premise and 
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
   assert.match(said(withSystem({ nameStyleBrief: ' ' })), /nameStyleBrief/);
-  assert.doesNotMatch(said(withSystem({ nameStyleBrief: 'x' })), /announcementsTitle/, 'no announcements thread is named by the system (0429)');
+  assert.doesNotMatch(said(withSystem({ nameStyleBrief: 'x' })), /announcementsTitle/, 'no announcements thread is named by the system (0437)');
 });
 
 test('nameStyle must be a function', () => {

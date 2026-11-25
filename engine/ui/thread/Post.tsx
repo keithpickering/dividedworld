@@ -349,7 +349,7 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
 });
 
 /**
- * A board card played in this thread (thread_page's `boardCards`, 0430): one line in the log's words, "Spritey played Fog on Help", under the newest post written before it, with its reactions and a Spin from it. It sits
+ * A board card played in this thread (thread_page's `boardCards`, 0438): one line in the log's words, "Spritey played Fog on Help", under the newest post written before it, with its reactions and a Spin from it. It sits
  * on no post and takes no number, so it is no article of the feed: a line between two posts. A card's effect on the board is drawn where the board is, never here.
  */
 export function BoardCardLine({ card }: { readonly card: Act }) {

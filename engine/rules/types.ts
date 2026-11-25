@@ -859,7 +859,7 @@ export interface ClassRules {
 export interface Copy {
   /** The title of a season's Roster Report thread, with `{season}` where the season's number goes (the season's thread, `seasons.turns_thread`). */
   readonly rosterThreadTitle: string;
-  /** The title of a season's Staff Meetings thread, with `{season}` (`seasons.meetings_thread`). Where it is left out, the minutes are not posted (0431). */
+  /** The title of a season's Staff Meetings thread, with `{season}` (`seasons.meetings_thread`). Where it is left out, the minutes are not posted (0439). */
   readonly meetingsThreadTitle?: string;
 }
 
@@ -1017,7 +1017,7 @@ export interface SystemContent {
   /** What each office that posts is: set around a persona's own words by the engine (`personaPrompt`). */
   readonly offices: Readonly<Record<PostingOffice, OfficeFrame>>;
   /**
-   * The title of the staff thread a landed move opens, by move kind (0429), with the tokens that kind fills: its parameters, its derived names, `{boss}` and `{move}`. A kind
+   * The title of the staff thread a landed move opens, by move kind (0437), with the tokens that kind fills: its parameters, its derived names, `{boss}` and `{move}`. A kind
    * with none is titled by its plain words. The seed carries these as the setting `systemThreadTitles`.
    */
   readonly threadTitles: Partial<Record<string, string>>;

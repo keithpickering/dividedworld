@@ -16,7 +16,7 @@
 -- Copied from the latest definitions: place_cast 0413_rewind (the plan said 0413:1002), play_card 0374_cards_on_a_spun_thread, spring_facts 0411_post_effects, spring_traps 0413_rewind (the plan did not name it: the `lands` test
 -- that needed the announcements thread is there, not in spring_facts), lay_sprung 0360_setting_thread, thread_page 0413_rewind (the plan said 0396_poll_reads).
 -- Cost at a busy instance: a play reads one row of threads by key (the named thread, and its board), or one probe of threads_board when it is refused; a spring one probe of threads_board_last_at; a page one probe of
--- acts_board_cards and two of acts' (thread, seq) key. None grows with the threads, boards or Acts an instance holds (supabase/tests/0430-board-cards.sql counts the reads of threads). Ways out: no state is added; the
+-- acts_board_cards and two of acts' (thread, seq) key. None grows with the threads, boards or Acts an instance holds (supabase/tests/0438-board-cards.sql counts the reads of threads). Ways out: no state is added; the
 -- refusals each say what to do, and a card's end is the card's own. Masks: a thread's place and its board's threads are public, and the words are the same for every caller; nothing private is read.
 
 create index acts_board_cards on acts (thread, created_at, id) where kind = 'card' and payload ->> 'reach' = 'board';

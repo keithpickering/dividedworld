@@ -7,7 +7,7 @@
  *
  * Departures by decision:
  *  - The board draws a "When it debuts" choice, "How loud" with Silent, Announced and Announced, with its class, and a "What everyone will see" preview; the build has
- *    none of them (a new character is on the board at once and nobody is told, 0428), so they are not compared, and the footer's one line is the build's words.
+ *    none of them (a new character is on the board at once and nobody is told, 0436), so they are not compared, and the footer's one line is the build's words.
  *  - The page head (engine/ui/glass/PageHead.tsx) is the roster pages' 96px title where the board draws 112px, and it leaves 36px under the lead
  *    (the glass polish, design section 2), so the title is compared by its type at 96 and everything under it by its place from the form's own
  *    corner (`origin`), which the head's height does not move.

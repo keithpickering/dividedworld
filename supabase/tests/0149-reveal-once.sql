@@ -101,7 +101,7 @@ declare
   elsewhere uuid := tests.thread('Already out');
 begin
   insert into threads (board, title) values (system_board(), 'The System announces') returning id into on_system;
-  -- An old debut announcement, as the settlement wrote it (a new one is refused by acts_well_formed, 0427, 0428; tests.old_debut stands the guard down for the one).
+  -- An old debut announcement, as the settlement wrote it (a new one is refused by acts_well_formed, 0435, 0436; tests.old_debut stands the guard down for the one).
   perform tests.old_debut(a, on_system, 'alpha', now() - interval '1 hour');
   insert into class_history (character, class_key, started_at) values (b, 'beta', now() - interval '2 days');
   perform tests.act(b, 'announce', on_system, '{"what": "turn", "class": "beta"}', null, now() - interval '1 day');
@@ -180,7 +180,7 @@ begin
   end;
 end $$;
 
--- ---- An announcement ahead of its Turn (0427) makes the new class public only when the Turn lands: until then the class is not shown, and a reveal of the class held is still its player's to make ----
+-- ---- An announcement ahead of its Turn (0435) makes the new class public only when the Turn lands: until then the class is not shown, and a reveal of the class held is still its player's to make ----
 do $$
 declare
   ann uuid := tests.account('shown-ahead');

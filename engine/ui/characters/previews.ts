@@ -23,7 +23,7 @@ export interface Preview {
 
 /** A class is previewed by the name the player sees on its card, which is the key `announceWords` is given. */
 const named = (name: string) => name;
-/** An announced Turn is always written ahead of its settlement (0427), so its line carries the sentence that says when it takes effect. */
+/** An announced Turn is always written ahead of its settlement (0435), so its line carries the sentence that says when it takes effect. */
 const own = (name: string, was: string, to: string): PreviewLine => ({ by: name, text: `${name} ${announceWords('turn', was, to, named, true)}` });
 
 /**

@@ -205,7 +205,7 @@ declare
   u acts%rowtype;
 begin
   perform tests.become(ann);
-  -- Queued as before turns were announced at once (0427), with no announcement written: the settlement writes these the old way. (turn()'s own answer and its announcement: 0427-turns-announced-at-once.sql.)
+  -- Queued as before turns were announced at once (0435), with no announcement written: the settlement writes these the old way. (turn()'s own answer and its announcement: 0435-turns-announced-at-once.sql.)
   perform tests.queue_old_turn(plain, 'beta', false, false);
   perform tests.queue_old_turn(from_only, 'beta', true, false);
   perform tests.queue_old_turn(to_only, 'beta', false, true);

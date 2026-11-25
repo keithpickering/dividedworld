@@ -12,7 +12,7 @@ exception when others then
 end $$;
 
 -- Settle the next window, a day long, as the job does, as the service: from where the last one
--- ended, which an earlier file's committed race may have moved. A character with an announced Turn queued before Turns were announced at once (0427)
+-- ended, which an earlier file's committed race may have moved. A character with an announced Turn queued before Turns were announced at once (0435)
 -- has it take effect there, announced in the season's Promos thread.
 create function pg_temp.settle_day_with_turn(owner uuid, name text) returns jsonb language plpgsql as $$
 declare

@@ -1,4 +1,4 @@
--- A Turn announced at once and committed (supabase/migrations/0427_turns_announced_at_once.sql;
+-- A Turn announced at once and committed (supabase/migrations/0435_turns_announced_at_once.sql;
 -- docs/plans/2026-11-24-staff-board-threads-plan.md, Task 1): turn() takes the thread an announced Turn is posted in and writes the
 -- character's own `announce` Act there then, with `ahead`; the Turn is committed, so it stands until it takes effect; a silent Turn
 -- is announced later by announce_turn(); the settlement writes no Act for a committed Turn and links its class_history row to the
@@ -339,7 +339,7 @@ begin
   if why is not null then raise exception 'an ahead announcement naming the pending class: %', why; end if;
   why := pg_temp.refusal(format('select tests.act(%L, ''announce'', %L, ''{"what": "turn", "was": "alpha", "ahead": true}'')', a, t));
   if why is not null then raise exception 'an ahead announcement naming no class needs no Turn: %', why; end if;
-  -- No debut is written by anyone now (0428 removes the writers and the setting that let them past this refusal; its test shows it).
+  -- No debut is written by anyone now (0436 removes the writers and the setting that let them past this refusal; its test shows it).
 end $$;
 
 -- ---- A retired character's committed Turn is deleted, its announcement stays, and it is never a reveal ----

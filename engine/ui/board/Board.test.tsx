@@ -805,7 +805,7 @@ describe('pinned threads and the banner', () => {
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     await user.click(await within(banner).findByRole('button', { name: 'Play Rumble on General' }));
     const dialog = await screen.findByRole('dialog', { name: /Rumble/u });
-    /* A board card is written in a thread on its board (0430): the form asks which, and cannot be sent until one is picked. */
+    /* A board card is written in a thread on its board (0438): the form asks which, and cannot be sent until one is picked. */
     expect(within(dialog).getByRole('button', { name: /^Play as / })).toBeDisabled();
     await user.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'Thread');
     await user.click(await screen.findByRole('option', { name: /Thread 002/u }));

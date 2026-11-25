@@ -1,4 +1,4 @@
--- Each decision in a thread of its own, on the staff's board (supabase/migrations/0429_move_threads.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 4; the design, section 6).
+-- Each decision in a thread of its own, on the staff's board (supabase/migrations/0437_move_threads.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 4; the design, section 6).
 --
 -- 1. A seed that names no announcements thread makes none, and an instance that has one keeps it, still in system_thread_rows(); it takes nothing new.
 -- 2. A landed move opens a staff thread on the system board (staff_placed), the move at seq 1, titled by `systemThreadTitles` for its kind and by its plain words where it has none.

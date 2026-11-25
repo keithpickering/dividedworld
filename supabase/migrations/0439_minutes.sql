@@ -3,11 +3,11 @@
 -- The Boss's last meeting part may carry `minutes`: a few lines in its voice on the meeting just held. apply_meeting posts them, as the Boss, in the season's Staff Meetings thread, after the
 -- moves are queued. They are words only: nothing reads them as a move, and a held or reversed move they mention is not changed by them.
 --
---   seasons.meetings_thread   added by 0429 (so the staff-thread set could name it); nothing to add here.
+--   seasons.meetings_thread   added by 0437 (so the staff-thread set could name it); nothing to add here.
 --   meetings_thread(season)   the season's Staff Meetings thread, opened on the system board where the season holds none, titled by the instance's `meetingsThreadTitle`. Written as promos_thread
 --                             (0100) is: the season's row is locked, so two writers at once open one thread between them. It is listed on the board and counted by the ordinary thread
 --                             trigger, as the Promos thread is since 0099 (0063's netting of turns_thread went with that), so it nets nothing. The thread follows the system board's flag
---                             through instance_threads() (0429).
+--                             through instance_threads() (0437).
 --   apply_meeting             0424's, with the minutes posted when given (within postMaxLength) and the record's `minutesPosted`. A meeting already applied returns before it, so it posts nothing again.
 --
 -- A season with no meetings that carry minutes never makes the thread. The minutes decide nothing, so a failure to post them never fails the meeting: an instance that gives no `meetingsThreadTitle`
@@ -113,7 +113,7 @@ declare
   pt_skipped integer := 0;
   pt_trimmed integer := 0;
   rr jsonb := jsonb_build_object('spent', 0, 'rulings', '[]'::jsonb, 'skipped', '[]'::jsonb);
-  -- The minutes (0431): the Boss's words on the meeting, posted as written; a blank one, or a value that is not text, is none.
+  -- The minutes (0439): the Boss's words on the meeting, posted as written; a blank one, or a value that is not text, is none.
   minutes_txt text := nullif(btrim(case when jsonb_typeof(payload -> 'minutes') = 'string' then payload ->> 'minutes' end, E' \t\n\r\f\v'), '');
   minutes_posted boolean := false;
   minutes_skipped text;

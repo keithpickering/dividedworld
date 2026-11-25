@@ -1,4 +1,4 @@
--- The meeting's minutes (supabase/migrations/0431_minutes.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 6; the design, section 8).
+-- The meeting's minutes (supabase/migrations/0439_minutes.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 6; the design, section 8).
 --
 -- The Boss's last part of a meeting may carry `minutes`: a few lines in its voice, which apply_meeting posts as the Boss in the season's Staff Meetings thread (seasons.meetings_thread), opened
 -- on the system board by meetings_thread(season) the first time any are posted. Words only: nothing reads them as a move.

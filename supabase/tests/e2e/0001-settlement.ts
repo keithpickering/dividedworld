@@ -179,7 +179,7 @@ test('the settlement of a season\'s last window announces its old Turns and ends
     with u as (insert into auth.users (email) values ('e2e-tally@test.invalid') returning id),
     a as (insert into accounts (id) select id from u returning id)
     select json_build_object('account', (select id from u))`));
-  // A character with an announced Turn queued before Turns were announced at once (0427), which takes effect at the window's end and is announced then; the season's length runs out there.
+  // A character with an announced Turn queued before Turns were announced at once (0435), which takes effect at the window's end and is announced then; the season's length runs out there.
   const made = sql(`insert into characters (owner, name, created_at, debuted_at) values ('${ids.account}', 'Debutante', '${at(-48)}', '${at(-48)}') returning id`);
   sql(`insert into class_history (character, class_key, started_at) values ('${made}', 'face', '${at(-48)}')`);
   sql(`insert into pending_turns (character, class_key, loudness, show_from, show_to, asked_at) values ('${made}', 'heel', 'announced', false, false, '${at(2)}')`);

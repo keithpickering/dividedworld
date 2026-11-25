@@ -86,7 +86,7 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   assert.equal(sql(`select count(*) from pending_turns where character = '${bob.character}'`), '0');
 
   // An announced Turn names its thread (the act function carries it as `thread`), is posted there at once as the character's own announce Act, is heard live in that thread,
-  // and stands: the action refuses to withdraw it, to change it, or to announce it again (0427).
+  // and stands: the action refuses to withdraw it, to change it, or to announce it again (0435).
   const told = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced', showFrom: true, showTo: true, thread: thread.id });
   assert.equal(told.status, 200, JSON.stringify(told));
   const announcement = (told.body as { announcement: { id: string; thread: string; payload: Record<string, unknown> } }).announcement;
