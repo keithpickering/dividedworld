@@ -1,8 +1,9 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
-import { roomHeightOf } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { FLOOR_DEPTH, roomHeightOf } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { inflateSync } from 'node:zlib';
 import { pageViolations } from './axe.ts';
+import { watchPuff } from './puff-watch.ts';
 import { settled } from './settled.ts';
 import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
 
@@ -392,7 +393,7 @@ const REST_MS = 10_000;
 /** The first seed is the one e2e/steel-chair.spec.ts pins for its own throw; the others are two of its other pins. Where a chair lands depends on the area's measured size and the words' rects, so each run's geometry is measured on the layout it ran on, and none is a number found on one machine. */
 const CHAIR_SEEDS = [101, 104, 113];
 
-async function openChair(page: Page, name: string, seed: number) {
+async function openChair(page: Page, name: string, seed: number, timeout = REST_MS) {
   /* A run's seed is the one value read as `getRandomValues(new Uint32Array(1))`, as e2e/steel-chair.spec.ts replaces it; any other read is the page's own. */
   await page.addInitScript((given: number) => {
     const w = window as unknown as { __seed: number };
@@ -410,14 +411,19 @@ async function openChair(page: Page, name: string, seed: number) {
   await expect.poll(() => page.evaluate(() => {
     const groups = [...document.querySelectorAll('.kb-origin .dw-chair-group')];
     return groups.length === 1 && groups.every((g) => g.hasAttribute('data-rest'));
-  }), { timeout: REST_MS, message: 'one chair drawn and asleep' }).toBe(true);
+  }), { timeout, message: 'one chair drawn and asleep' }).toBe(true);
 }
 
-for (const name of ['chair', 'chair-short', 'chair-landed'] as const) {
-  for (const seed of CHAIR_SEEDS) {
+/* The ladder (Task 12) rests with the others' checks and its own room; a ladder takes longer to sleep than a chair, so its wait is the longer one. */
+for (const name of ['chair', 'chair-short', 'chair-landed', 'ladder'] as const) {
+  for (const seed of name === 'ladder' ? [101] : CHAIR_SEEDS) {
     test(`7. Steel Chair's floor and walls are the box's, and its room is the area's (${name}, seed ${seed})`, async ({ page }) => {
       /* Poison: the room put back as `[data-kb-content-area]:has(.dw-chair)::after` (it is then drawn on the opening post's body, which holds the chair by descent, and not on the box's area). */
-      await openChair(page, name, seed);
+      test.setTimeout(name === 'ladder' ? 60_000 : 30_000);
+      await openChair(page, name, seed, name === 'ladder' ? 30_000 : REST_MS);
+      const ROOM = name === 'ladder' ? roomHeightOf(['ladder']) : ROOM_HEIGHT;
+      /* Poison `room` (the ladder's): the room is the chair's again. */
+      if (POISON === 'room') await page.addStyleTag({ content: '[data-dw-chair-room]::after { height: 77px !important; }' });
       const m = await page.evaluate(() => {
         const b = document.querySelector<HTMLElement>('.kb-origin-area')!;
         const r = b.getBoundingClientRect();
@@ -453,15 +459,15 @@ for (const name of ['chair', 'chair-short', 'chair-landed'] as const) {
         expect(c.top, `chair ${i} top`).toBeGreaterThanOrEqual(m.area.top - 0.5);
         expect(c.bottom, `chair ${i} bottom: no lower than the area's bottom`).toBeLessThanOrEqual(m.area.bottom + 0.5);
         /* On the floor: no higher than the room above the bottom border. */
-        expect(m.area.bottom - c.top, `chair ${i}: top above the area's bottom, the room being ${ROOM_HEIGHT}`).toBeLessThanOrEqual(ROOM_HEIGHT + 1);
+        expect(m.area.bottom - c.top, `chair ${i}: top above the area's bottom, the room being ${ROOM}`).toBeLessThanOrEqual(ROOM + 1);
         /* Overlap by more than a pixel: a line's rect and a piece's meet at an edge by a rounding, and a font's own leading differs. */
         const covered = m.lines.filter((l) => l.left < c.right - 1 && l.right > c.left + 1 && l.top < c.bottom - 1 && l.bottom > c.top + 1);
         expect(covered, `no word is under the chair's box ${JSON.stringify(c)}`).toEqual([]);
       }
       expect.soft(m.room.display, 'the area\'s ::after is the room (a block)').toBe('block');
-      expect.soft(m.room.height, 'the room is ROOM_HEIGHT tall').toBeCloseTo(ROOM_HEIGHT, 0);
+      expect.soft(m.room.height, 'the room is the object\'s tall').toBeCloseTo(ROOM, 0);
       /* And last: at least the room's height is left between the area's last box and the end of its content (e2e/steel-chair.spec.ts `roomIsLast`). */
-      expect.soft(m.room.gap, 'room left between the last box and the end of the area\'s content').toBeGreaterThanOrEqual(ROOM_HEIGHT - 1);
+      expect.soft(m.room.gap, 'room left between the last box and the end of the area\'s content').toBeGreaterThanOrEqual(ROOM - 1);
       expect.soft(m.opening.content, `the opening post's .kb-act-main has no ::after of its own (${m.opening.height}px tall)`).toMatch(/^(none|normal)$/u);
     });
   }
@@ -1022,44 +1028,18 @@ async function openObject(page: Page, name: string, seed = OBJECT_SEED) {
   await area(page).scrollIntoViewIfNeeded();
 }
 
-/** The puff's tiles in the box: how many, their union, the area's padding box, and the alpha of the tile pixel at the area's middle. */
-const puffIn = (page: Page) => page.evaluate(() => {
-  const a = document.querySelector<HTMLElement>('.kb-origin-area:has(.dw-chair)')!;
-  const r = a.getBoundingClientRect();
-  const inner = { left: r.left + a.clientLeft, top: r.top + a.clientTop, right: r.left + a.clientLeft + a.clientWidth, bottom: r.top + a.clientTop + a.clientHeight };
-  const tiles = [...document.querySelectorAll<HTMLCanvasElement>('canvas.dw-chair-puff')].filter((c) => c.width > 0 && c.getBoundingClientRect().width > 0);
-  const inArea = tiles.filter((c) => a.contains(c));
-  const rects = inArea.map((c) => c.getBoundingClientRect());
-  let seen = 0;
-  const mx = (inner.left + inner.right) / 2, my = (inner.top + inner.bottom) / 2;
-  const c = inArea.find((q) => { const b = q.getBoundingClientRect(); return mx >= b.left && mx < b.right && my >= b.top && my < b.bottom; });
-  if (c) {
-    const b = c.getBoundingClientRect(), k = c.width / b.width;
-    const x = Math.round((mx - b.left) * k), y = Math.round((my - b.top) * k);
-    seen = c.getContext('2d')!.getImageData(Math.max(0, x - 2), Math.max(0, y - 2), 5, 5).data[3]!;
-  }
-  return {
-    all: tiles.length, tiles: inArea.length, area: inner, seen,
-    union: rects.length ? { left: Math.min(...rects.map((b) => b.left)), top: Math.min(...rects.map((b) => b.top)), right: Math.max(...rects.map((b) => b.right)), bottom: Math.max(...rects.map((b) => b.bottom)) } : null,
-  };
-});
-
-test('20. the extinguisher\'s puff is drawn in the box\'s area, border to border, and is gone within its fade and 500 ms', async ({ page }) => {
-  test.setTimeout(45_000);
+test('20. the extinguisher\'s puff is drawn in the box\'s area from its floor contact, fills it border to border, and is gone within its life and 500 ms', async ({ page }) => {
+  test.setTimeout(30_000 + PUFF_MS + 500 + 20_000);
   if (POISON === 'nopuff') await page.addInitScript(() => { const draw = CanvasRenderingContext2D.prototype.drawImage; CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...a: Parameters<typeof draw>) { if (!this.canvas.classList.contains('dw-chair-puff')) draw.apply(this, a); } as typeof draw; });
   await openObject(page, 'extinguisher');
-  let filled: Awaited<ReturnType<typeof puffIn>> | null = null;
-  const began = Date.now();
-  while (Date.now() - began < 20_000) {
-    const p = await puffIn(page);
-    const u = p.union;
-    if (u && p.seen > 100 && u.left <= p.area.left + 1 && u.right >= p.area.right - 1 && u.top <= p.area.top + 1 && u.bottom >= p.area.bottom - 1) { filled = p; break; }
-    await page.waitForTimeout(25);
-  }
-  expect(filled, 'the puff is drawn in the box\'s area and its tiles fill it border to border').not.toBeNull();
-  /* Every tile of the puff on the page is in the box's area: none is in the opening post's body. */
-  expect((await puffIn(page)).all, 'no puff tile outside the box\'s area').toBe((await puffIn(page)).tiles);
-  await expect.poll(async () => (await puffIn(page)).all, { timeout: PUFF_MS + 500, intervals: [100], message: 'gone within billow, hold and fade, and 500 ms' }).toBe(0);
+  const w = await watchPuff(page, '.kb-origin-area:has(.dw-chair)', 30_000, PUFF_MS + 1500);
+  console.log(`origin puff: lowest point ${w.liftAtStart.toFixed(0)} px above the area's floor border at its start, filled ${w.filledAfter.toFixed(0)} ms in, gone ${w.goneAfter.toFixed(0)} ms in`);
+  expect(w.started, 'a puff was drawn').toBe(true);
+  expect(w.liftAtStart, 'the extinguisher is on the floor when the puff starts').toBeLessThanOrEqual(FLOOR_DEPTH + 30);
+  expect(w.filledAfter, 'the puff\'s tiles fill the box\'s area border to border, with fog').toBeGreaterThanOrEqual(0);
+  expect(w.tilesOutside, 'no puff tile outside the box\'s area').toBe(0);
+  expect(w.goneAfter, 'gone, within billow, hold and fade, and 500 ms of its first tile').toBeGreaterThan(0);
+  expect(w.goneAfter).toBeLessThanOrEqual(PUFF_MS + 500);
 });
 
 test('21. the can\'s lid leaves the box\'s area and is seen outside it', async ({ page }) => {

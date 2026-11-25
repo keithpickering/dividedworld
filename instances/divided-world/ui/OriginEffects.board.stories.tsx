@@ -38,6 +38,8 @@ const CHAIR_PLAY = '00000000-0000-4000-8000-000000000001';
 const CAN_PLAY = 'play-6';
 /** A play id that rolls a fire extinguisher: its puff fills the box's area and is gone in about 5 s (e2e/origin-effects.spec.ts). */
 const EXTINGUISHER_PLAY = 'play-93';
+/** A play id that rolls a ladder (e2e/origin-effects.spec.ts holds it to the box's floor and walls). */
+const LADDER_PLAY = 'play-2';
 
 declare global {
   interface Window {
@@ -59,7 +61,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'can' | 'extinguisher' | 'mixed' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'can' | 'extinguisher' | 'ladder' | 'mixed' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
 
 const DAY = 86_400_000;
 const MINUTE = 60_000;
@@ -103,7 +105,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const board = instance.boards.find((b) => !b.system)!.slug;
   const made = fake.seed.thread(board, author, 'Ranking every Mario Kart', 'Ranking every Mario Kart, worst to best.');
   const now = fake.clock.now();
-  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'can' || shown === 'extinguisher' || shown === 'mixed' || shown === 'chair-whoops' ? THREE
+  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'can' || shown === 'extinguisher' || shown === 'ladder' || shown === 'mixed' || shown === 'chair-whoops' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'chair-landed' ? BANG
         : shown === 'bright' ? QUOTED
@@ -197,7 +199,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
     })());
     return;
   }
-  if (shown === 'chair' || shown === 'chair-short' || shown === 'can' || shown === 'extinguisher') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: shown === 'can' ? CAN_PLAY : shown === 'extinguisher' ? EXTINGUISHER_PLAY : CHAIR_PLAY });
+  if (shown === 'chair' || shown === 'chair-short' || shown === 'can' || shown === 'extinguisher' || shown === 'ladder') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: shown === 'can' ? CAN_PLAY : shown === 'extinguisher' ? EXTINGUISHER_PLAY : shown === 'ladder' ? LADDER_PLAY : CHAIR_PLAY });
   /* A chair, a can and a fire extinguisher from three characters on the one post: the room is the tallest of the three's, and the puff fills the area. */
   if (shown === 'mixed') {
     [CHAIR_PLAY, CAN_PLAY, EXTINGUISHER_PLAY].forEach((id, i) => {
@@ -307,6 +309,8 @@ export const Chair: Story = of('chair');
 export const Can: Story = of('can');
 /** A fire extinguisher on a three-line post, live: its puff fills the box's area and is gone in about 5 s. */
 export const Extinguisher: Story = of('extinguisher');
+/** A ladder on a three-line post, live. */
+export const Ladder: Story = of('ladder');
 /** A chair, a can and a fire extinguisher on the one post, live. */
 export const MixedThree: Story = of('mixed');
 /** Steel Chair on one short line, live. */

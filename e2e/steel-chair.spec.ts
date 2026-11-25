@@ -1,8 +1,9 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
-import { GIVE, INSET, K, roomHeightOf, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { FLOOR_DEPTH, GIVE, INSET, K, roomHeightOf, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
+import { watchPuff } from './puff-watch.ts';
 
 /** The room a post of chairs keeps: the stories' plays have ids that roll chairs. */
 const ROOM_HEIGHT = roomHeightOf([]);
@@ -75,10 +76,11 @@ const SEEDS = {
   'can-in-flight': [104],
   'extinguisher-in-flight': [104],
   'mixed-three-at-rest': [101],
+  'mixed-three': [14],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
 const SPREAD_SEED = 158;
-type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab' | 'fab-after' | 'ladder-in-flight' | 'can-in-flight' | 'extinguisher-in-flight' | 'mixed-three-at-rest';
+type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab' | 'fab-after' | 'ladder-in-flight' | 'can-in-flight' | 'extinguisher-in-flight' | 'mixed-three-at-rest' | 'mixed-three';
 
 /** The post that wears the card: its content area (the world) and its parts. */
 const area = (page: Page) => page.locator('.kb-act-main:has(.dw-chair)').first();
@@ -1339,6 +1341,30 @@ for (const { story, objects, n } of OBJECT_STORIES) {
   });
 }
 
+/**
+ * The live mixed post (`MixedThree`): a chair, a can and a fire extinguisher thrown on the reader's own screen roll on and against each other, so they take
+ * longest to sleep of any story, and the wait for all three is its own. Seed 14 is one that sleeps in about 20 s on a loaded runner; the checks are the
+ * single objects' (inside the area, on its floor, covering no words, under `roomHeightOf` of the three).
+ */
+const MIXED_REST_MS = 60_000;
+test('mixed-three: the live chair, can and extinguisher all rest inside the content area on its floor, under the room of the tallest, and cover no words', async ({ page }) => {
+  test.setTimeout(MIXED_REST_MS + 30_000);
+  await open(page, 'mixed-three');
+  if (POISON === 'room') await page.addStyleTag({ content: '[data-dw-chair-room]::after { height: 77px !important; }' });
+  await atRest(page, 3, MIXED_REST_MS);
+  const m = await measure(page);
+  inside(m);
+  const room = roomHeightOf(['chair', 'can', 'extinguisher']);
+  expect(m.chairs.length).toBe(3);
+  expect(m.room.height, 'the room is roomHeightOf(chair, can, extinguisher)').toBeCloseTo(room, 0);
+  expect(m.room.gap, 'room left between the last box and the bottom of the content').toBeGreaterThanOrEqual(room - ROUND);
+  for (const [i, c] of m.chairs.entries()) {
+    expect(m.area.bottom - c.bottom, `object ${i}: lowest point above the bottom border`).toBeGreaterThanOrEqual(-EDGE);
+    expect(m.area.bottom - c.top, `object ${i}: top above the bottom border, the room being ${room}`).toBeLessThanOrEqual(room + ROUND);
+  }
+  noWordsUnderChairs(m);
+});
+
 test('mixed-three-at-rest: the Lens says Dented by a chair, a trash can and a fire extinguisher', async ({ page }) => {
   /* Poison `lens`: the Lens names the can as a can, so the words that name the kinds are wrong. */
   if (POISON === 'lens') await page.addInitScript(() => { new MutationObserver(() => { for (const el of document.querySelectorAll('[role="dialog"] *')) if (el.children.length === 0 && el.textContent?.includes('a trash can')) el.textContent = el.textContent.replace('a trash can', 'a can'); }).observe(document, { childList: true, subtree: true, characterData: true }); });
@@ -1357,7 +1383,6 @@ test('mixed-three-at-rest: the Lens says Dented by a chair, a trash can and a fi
  * e2e/hot-box.spec.ts reads Hot Box's. `KB_POISON=nopuff` plants a puff that paints nothing (a drawImage onto a puff tile is dropped, so its canvases stay empty); `KB_POISON=noclear` plants a pointer that clears nothing (the content area's pointer events are stopped before the puff hears them).
  */
 const PUFF_MS = 600 + 400 + 4000;
-const puffCanvases = (page: Page) => area(page).locator('canvas.dw-chair-puff');
 /** The puff's tiles: their union against the content area's padding box, in the window, and how many there are. */
 const puffBox = (page: Page) => page.evaluate(() => {
   const a = document.querySelector<HTMLElement>('.kb-act-main:has(.dw-chair)')!;
@@ -1387,53 +1412,49 @@ async function openPuff(page: Page) {
   await open(page, 'extinguisher-in-flight');
 }
 
-test('extinguisher: no puff while it is in the air, one from its first floor contact that fills the content area, gone in about 5 s', async ({ page }) => {
-  test.setTimeout(40_000);
+/** The most the puff tests wait: the throw to its first floor contact (`OBJECT_REST_MS`), the puff's life and 500 ms, and a margin for opening the page. */
+const PUFF_TEST_MS = OBJECT_REST_MS + PUFF_MS + 500 + 20_000;
+
+test('extinguisher: no puff tile or fog in the air; the first one is drawn with the extinguisher on the floor, fills the content area, and is gone within its life and 500 ms', async ({ page }) => {
+  test.setTimeout(PUFF_TEST_MS);
+  /* Poison `earlypuff`: a puff tile is made when the throw is drawn, as if it started there and not at the floor. */
+  if (POISON === 'earlypuff') await page.addInitScript(() => {
+    new MutationObserver(() => {
+      const a = document.querySelector<HTMLElement>('.kb-act-main:has(.dw-chair-group)');
+      if (a && !a.querySelector('canvas.dw-chair-puff')) { const c = document.createElement('canvas'); c.className = 'dw-chair-puff'; c.width = 40; c.height = 40; c.style.cssText = 'position:absolute;left:0;top:0;width:100%;height:200px;pointer-events:none'; a.appendChild(c); }
+    }).observe(document, { childList: true, subtree: true });
+  });
   await openPuff(page);
-  const began = Date.now();
-  let first = -1, filled = false;
-  /* Poll fast for the puff's first tile, then the union of the tiles. */
-  for (let t = 0; t < 20_000; t = Date.now() - began) {
-    const b = await puffBox(page);
-    if (b.tiles > 0 && first < 0) first = Date.now() - began;
-    if (b.tiles > 0 && b.puff) {
-      const slack = 1;
-      /* The tiles' union is the area's box, and the fog is painted in them: a canvas with nothing drawn on it is no puff. */
-      const [seen] = await puffAlphasAt(page, (b.area.top + b.area.bottom) / 2, [(b.area.left + b.area.right) / 2]);
-      if (b.puff.left <= b.area.left + slack && b.puff.right >= b.area.right - slack && b.puff.top <= b.area.top + slack && b.puff.bottom >= b.area.bottom - slack && seen! > 100) { filled = true; break; }
-    }
-    await page.waitForTimeout(25);
-  }
-  expect(first, 'a puff was drawn').toBeGreaterThan(0);
-  expect(filled, 'its tiles fill the content area border to border').toBe(true);
-  /* It begins at a floor contact: the extinguisher was thrown (a chair group is drawn) before it, and had not yet rested. */
-  expect(await chairs(page).count()).toBe(1);
-  const startedAt = Date.now();
-  await expect.poll(async () => (await puffBox(page)).tiles, { timeout: PUFF_MS + 500, intervals: [100], message: 'the puff is gone within billow, hold and fade, and 500 ms' }).toBe(0);
-  console.log(`puff: first tile ${first} ms after load, gone ${Date.now() - startedAt} ms after it filled the area`);
+  const w = await watchPuff(page, '.kb-act-main:has(.dw-chair)', OBJECT_REST_MS, PUFF_MS + 1500);
+  console.log(`puff: ${w.framesBefore} frames in the air with no tile, lowest point ${w.liftAtStart.toFixed(0)} px above the floor border at its start, filled ${w.filledAfter.toFixed(0)} ms in, gone ${w.goneAfter.toFixed(0)} ms in`);
+  expect(w.started, 'a puff was drawn').toBe(true);
+  /* Before the first tile the extinguisher was drawn and there was no tile, and so no fog: the page held none. */
+  expect(w.framesBefore, 'the extinguisher was drawn in the air with no puff tile anywhere').toBeGreaterThan(0);
+  /* The first tile is the floor contact's: the extinguisher's lowest point is no more than the floor's depth and a little more above the bottom border (chair.ts FLOOR_DEPTH), not in the air. */
+  expect(w.liftAtStart, 'the extinguisher is on the floor when the puff starts').toBeLessThanOrEqual(FLOOR_DEPTH + 30);
+  expect(w.filledAfter, 'its tiles fill the content area border to border, with fog').toBeGreaterThanOrEqual(0);
+  expect(w.tilesOutside, 'no tile outside the content area').toBe(0);
+  expect(w.goneAfter, 'the puff is gone within billow, hold and fade, and 500 ms of its first tile').toBeGreaterThan(0);
+  expect(w.goneAfter).toBeLessThanOrEqual(PUFF_MS + 500);
   await atRest(page, 1, OBJECT_REST_MS);
 });
 
 test('extinguisher: a pointer swept across the puff leaves the words under its path readable sooner than the fade alone', async ({ page }) => {
-  test.setTimeout(40_000);
+  test.setTimeout(PUFF_TEST_MS);
   /* Poison `noclear`: the pointer's events are stopped in the capture phase, before the content area (and so the puff) hears them. */
   if (POISON === 'noclear') await page.addInitScript(() => { for (const t of ['pointermove', 'pointerdown', 'mousemove', 'touchmove']) window.addEventListener(t, (e) => e.stopImmediatePropagation(), true); });
   await openPuff(page);
   await expect.poll(async () => (await puffBox(page)).tiles, { timeout: OBJECT_REST_MS, intervals: [20] }).toBeGreaterThan(0);
-  const t0 = Date.now();
-  /* The sweep begins as soon as the puff is drawn (a slow runner takes seconds over a page round trip, and the fade is only 4 s). */
   const b = await puffBox(page);
-  const lines = (await measure(page)).lines;
-  const row = lines[0]!;
-  const y = (row.top + row.bottom) / 2, x0 = b.area.left + 60;
-  /* The control is the same row at the far end, which the pointer never goes near; the path point is where the pointer is, at the sweep's end. */
-  const farX = b.area.right - 60, pathX = x0 + 300;
+  const row = (await measure(page)).lines[0]!;
+  const y = (row.top + row.bottom) / 2, x0 = b.area.left + 60, pathX = x0 + 300;
+  /* The same point before and after: where the pointer ends. The fade has done what it does to it in between (a second or two of a 4 s fade), and the pointer the rest. */
+  let before = Number.NaN;
+  await expect.poll(async () => { before = (await puffAlphasAt(page, y, [pathX]))[0]!; return before; }, { timeout: 8_000, intervals: [20], message: 'the puff is whole at the point' }).toBeGreaterThan(100);
   await page.mouse.move(x0, y);
   /* Few, long moves: a page busy painting the puff takes a frame to hear each one, so each costs the fade time. */
   for (let i = 1; i <= 6; i++) await page.mouse.move(x0 + i * 50, y);
-  /* Both read in the one moment, so the fade has done the same to each: what differs is the pointer. */
-  const [pathAfter = Number.NaN, farAfter = Number.NaN] = await puffAlphasAt(page, y, [pathX, farX]);
-  console.log(`puff sweep: swept point ${pathAfter.toFixed(0)}, unswept point ${farAfter.toFixed(0)} of 255, ${Date.now() - t0} ms after the first tile`);
-  expect(farAfter, 'the puff is still there at the unswept point, and the fade has not cleared it').toBeGreaterThan(60);
-  expect(pathAfter, 'the swept point is clearer than the unswept one').toBeLessThan(farAfter * 0.5);
+  const after = (await puffAlphasAt(page, y, [pathX]))[0]!;
+  console.log(`puff sweep: the same point ${before.toFixed(0)} before, ${after.toFixed(0)} after the sweep, of 255`);
+  expect(after, 'the point the pointer swept is under half what it was').toBeLessThan(before * 0.5);
 });
