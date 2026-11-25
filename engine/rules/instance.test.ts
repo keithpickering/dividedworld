@@ -75,6 +75,7 @@ const settings: Settings = {
   bundleAuthoredMostParts: 8,
   digestExcerpts: 8,
   digestConversations: 6,
+  digestPolls: 5, digestSpins: 5, digestPlays: 5, digestStandoutDays: 7,
   digestExcerptChars: 280,
   memoryOpinions: 40,
   memoryGrudges: 20,
@@ -663,6 +664,23 @@ test('digestConversations is a whole number from 0 to the digest\'s ceiling', ()
   for (const v of [-1, 1.5, '6', null, DIGEST_MOST.conversations + 1]) assert.match(bad(v), /digestConversations/, String(v));
   for (const v of [0, DIGEST_MOST.conversations]) assert.equal(bad(v), '');
   assert.equal(DIGEST_MOST.conversations, 12);
+});
+
+test('the digest\'s polls, spins, plays and standout days are whole numbers from 1 to their ceilings', () => {
+  const ceilings = { digestPolls: DIGEST_MOST.polls, digestSpins: DIGEST_MOST.spins, digestPlays: DIGEST_MOST.plays, digestStandoutDays: DIGEST_MOST.standoutDays } as const;
+  for (const key of Object.keys(ceilings) as (keyof typeof ceilings)[]) {
+    const most = ceilings[key];
+    const bad = (v: unknown) => settingsProblems({ ...settings, [key]: v } as unknown as Settings).join('\n');
+    const { [key]: _gone, ...without } = settings;
+    assert.match(settingsProblems(without as Settings).join('\n'), new RegExp(`setting "${key}" is missing`));
+    for (const v of [0, -1, 1.5, '5', null, true, most + 1]) assert.match(bad(v), new RegExp(key), `${key} = ${String(v)}`);
+    for (const v of [1, most]) assert.equal(bad(v), '', `${key} = ${v}`);
+  }
+  assert.equal(DIGEST_MOST.polls, 20);
+  assert.equal(DIGEST_MOST.spins, 20);
+  assert.equal(DIGEST_MOST.plays, 20);
+  assert.equal(DIGEST_MOST.standoutDays, 30);
+  assert.equal(DIGEST_MOST.standouts, 3);
 });
 
 test('a persona\'s habits are held like the pool\'s sessions: an hour favored once, whole, from 0 to 23', () => {

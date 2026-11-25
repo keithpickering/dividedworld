@@ -125,9 +125,9 @@ test('a due patrol is judged once on the patrolJudge duty, light tier, as the Mo
   assert.match(c.system, /Crack down on bumping in Games\./, 'the Boss\'s order');
   assert.match(c.messages[0]!.content, /Talk about games\./);
   assert.match(c.messages[0]!.content, new RegExp(P1));
-  assert.match(c.messages[0]!.content, /by Bob \(they\/them\): "Odyssey/, 'an author is written with the pronouns the sample gave');
+  assert.match(c.messages[0]!.content, /by Bob \(they\/them\):\n"Odyssey/, 'an author is written with the pronouns the sample gave');
   const def = dividedWorld.settings.pronouns;
-  assert.ok(c.messages[0]!.content.includes(`by Ann (${def.object === def.subject ? `${def.subject}/${def.determiner}` : `${def.subject}/${def.object}`}): "Hello."`), 'an author with no profile row takes the instance default');
+  assert.ok(c.messages[0]!.content.includes(`by Ann (${def.object === def.subject ? `${def.subject}/${def.determiner}` : `${def.subject}/${def.object}`}):\n"Hello."`), 'an author with no profile row takes the instance default');
   assert.match(c.system, /Your pronouns are/, 'the Mod is told its own');
   assert.deepEqual(d.state.visits.map((v) => [v.post, v.staff, v.charge.cause, v.charge.patrol_id]), [[P1, MON, 'patrol', 1], [P3, MON, 'patrol', 1]]);
   assert.deepEqual(d.state.visits[0]!.charge, { rule_number: 2, board: GAMES, band: 'moderate', cause: 'patrol', about_act: P1, predicate: 'noDoublePost', rule: 'Rule 2: no double posting', patrol_id: 1 });
@@ -135,6 +135,29 @@ test('a due patrol is judged once on the patrolJudge duty, light tier, as the Mo
   assert.deepEqual(d.state.patrolRows.get(1)!.sampled, [P1, P2, P3]);
   assert.equal(d.state.patrolRows.get(1)!.outcome.visits, 2);
   assert.deepEqual(out.patrols.map((p) => [p.patrol, p.status, p.findings, p.visits]), [[1, 'judged', 2, 2]]);
+});
+
+test('a sample over readMost is read whole newest first and what does not fit is neither shown nor recorded as sampled, so a finding naming it starts no visit', async () => {
+  const d = fakeDb({ sample: [post(P1, 'Bob', 'a'.repeat(700)), post(P2, 'Ann', 'b'.repeat(700)), post(P3, 'Cy', 'c'.repeat(700))] });
+  const m = fakeModels(() => ({ findings: [find(P1), find(P3)] }));
+  const small: Instance = { ...dividedWorld, settings: { ...dividedWorld.settings, pool: { ...dividedWorld.settings.pool, readMost: 1000 } } };
+  await run(d, m, small);
+  const text = m.chats[0]!.messages[0]!.content;
+  assert.ok(text.includes('a'.repeat(700)) && !text.includes('…'), 'the newest is whole');
+  assert.ok(!text.includes('c'.repeat(700)) && !text.includes(P3), 'the post that did not fit is not shown');
+  assert.deepEqual(d.state.visits.map((v) => v.post), [P1], 'no visit on a post never read');
+  assert.deepEqual(d.state.patrolRows.get(1)!.sampled, [P1]);
+});
+
+test('a post that does not fit ends the patrol\'s reading: a tiny post behind it is not shown, judged or recorded as sampled', async () => {
+  const d = fakeDb({ sample: [post(P1, 'Bob', 'a'.repeat(300)), post(P2, 'Ann', 'b'.repeat(1500)), post(P3, 'Cy', 'c'.repeat(5))] });
+  const m = fakeModels(() => ({ findings: [find(P1), find(P3)] }));
+  const small: Instance = { ...dividedWorld, settings: { ...dividedWorld.settings, pool: { ...dividedWorld.settings.pool, readMost: 1000 } } };
+  await run(d, m, small);
+  const text = m.chats[0]!.messages[0]!.content;
+  assert.ok(!text.includes('b'.repeat(1500)) && !text.includes('c'.repeat(5)) && !text.includes(P3), 'neither the big second nor the tiny third is shown');
+  assert.deepEqual(d.state.visits.map((v) => v.post), [P1], 'no visit on the tiny post never read');
+  assert.deepEqual(d.state.patrolRows.get(1)!.sampled, [P1]);
 });
 
 test('the call\'s record is kept against the patrol, before any visit starts', async () => {
