@@ -22,35 +22,33 @@ const manifest: BoardManifest = {
   size: { width: 1440, height: 1120 },
   build: { moment: '01-board-toasts' },
   landmarks: [
-    { id: 'hud', role: 'region', name: 'Game HUD', type: false, buildShift: { y: -12, height: 12 } },
-    { id: 'hud-name', role: 'text', name: 'Pipewrench', within: 'hud', buildShift: { y: -12 } },
-    { id: 'hud-class', role: 'text', name: 'Heel', within: 'hud', buildShift: { y: -12 } },
-    { id: 'hud-secret', role: 'text', name: 'Only you see this', within: 'hud', buildShift: { y: -12 } },
-    { id: 'hud-swap', role: 'combobox', name: 'Swap mask', within: 'hud', buildShift: { y: 20 } },
+    { id: 'hud', role: 'region', name: 'Game HUD', type: false },
+    { id: 'hud-name', role: 'text', name: 'Pipewrench', within: 'hud' },
+    { id: 'hud-class', role: 'text', name: 'Heel', within: 'hud' },
+    { id: 'hud-secret', role: 'text', name: 'Only you see this', within: 'hud' },
+    { id: 'hud-swap', role: 'combobox', name: 'Swap mask', within: 'hud' },
     { id: 'hud-orbs', role: 'img', name: 'Aura: 4.62 of 6.00 settled, about 0.30 more estimated', buildName: 'Wallet 4.62 of 6 orbs, 0.30 pending until the next settlement (estimate)', within: 'hud', type: false },
     { id: 'hud-estimate', role: 'text', name: '+0.30 est.', within: 'hud' },
     /*
      * The right side's restyle (PR #951, the owner's): the clock and Alerts over Menu and Hand are one step apart, the pair of rows centered on the
      * plate and the lower row stood left by the glass's lean, so Hand's edge carries on from Alerts' and Menu's from the clock (engine/ui/frame/frame.css,
-     * `--kb-hud-lean`). Each part that moved is held to where it stands now: the clock 26px right and 1px down, over Menu's leaning edge; Alerts 1px
-     * down; Menu, its word and its key cap 29px up and 3.3px right (the row's width now sets its left); Hand 29px up and 12.7px left by the lean. All of these
-     * stand 12px higher than they did, and the HUD is 12px taller, for the Turn opener the HUD gained (the staff board threads plan, Task 3: a Turn from the HUD,
-     * in the open thread): it stands on the name's row, and Swap mask, under it, stands 20px lower. The clock's label is "Next settle", the owner's
+     * `--kb-hud-lean`). Each part that moved is held to where it stands now: the clock 26px right and 13px down, over Menu's leaning edge; Alerts 13px
+     * down; Menu, its word and its key cap 17px up and 3.3px right (the row's width now sets its left); Hand 17px up and 12.7px left by the lean. The clock's label is "Next settle", the owner's
      * old-video-game shortening, so it holds one line beside Alerts at 125% text and clears the hand's first card at 100%.
      */
-    { id: 'hud-clock', role: 'text', name: 'Next settlement', buildName: 'Next settle', within: 'hud', box: 'position', buildShift: { x: 26, y: 1 } },
+    { id: 'hud-clock', role: 'text', name: 'Next settlement', buildName: 'Next settle', within: 'hud', box: 'position', buildShift: { x: 26, y: 13 } },
 
     /* Alerts: the bell (named "Alerts 5 new" in the build, without the comma, so its visible words "Alerts 5" are inside its name: WCAG 2.5.3),  its word and its gold count, above Hand and beside the clock. Its word and count are each compared by their own type. */
-    { id: 'hud-alerts', role: 'link', name: 'Alerts, 5 new', buildName: 'Alerts 5 new', within: 'hud', type: false, buildShift: { y: 1 } },
-    { id: 'hud-alerts-word', role: 'text', name: 'Alerts', within: 'hud-alerts', buildShift: { y: 1 } },
+    { id: 'hud-alerts', role: 'link', name: 'Alerts, 5 new', buildName: 'Alerts 5 new', within: 'hud', type: false, buildShift: { y: 13 } },
+    { id: 'hud-alerts-word', role: 'text', name: 'Alerts', within: 'hud-alerts', buildShift: { y: 13 } },
     /* The count's ink is the instance's ink-ready (#1a1403) where the board draws #14100a, so its box is compared and not its color. */
-    { id: 'hud-alerts-count', role: 'text', name: '5', within: 'hud-alerts', type: false, buildShift: { y: 1 } },
+    { id: 'hud-alerts-count', role: 'text', name: '5', within: 'hud-alerts', type: false, buildShift: { y: 13 } },
 
-    { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud', type: false, buildShift: { x: 3.3, y: -29 } },
-    { id: 'hud-menu-word', role: 'text', name: 'Menu', within: 'hud-menu', buildShift: { x: 3.3, y: -29 } },
-    { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud', buildShift: { x: 3.3, y: -29 } },
+    { id: 'hud-menu', role: 'button', name: 'Menu', within: 'hud', type: false, buildShift: { x: 3.3, y: -17 } },
+    { id: 'hud-menu-word', role: 'text', name: 'Menu', within: 'hud-menu', buildShift: { x: 3.3, y: -17 } },
+    { id: 'hud-esc', role: 'text', name: 'ESC', within: 'hud', buildShift: { x: 3.3, y: -17 } },
     /* Hand, closed: where the Main board's manifest presses it open, this board draws it unopened, three postcards in it. */
-    { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud', buildShift: { x: -12.7, y: -29 } },
+    { id: 'hud-hand', role: 'button', name: 'Hand, 3 postcards', within: 'hud', buildShift: { x: -12.7, y: -17 } },
 
     /*
      * The column of toasts. The board's toasts say less than the build's, which holds the words of the Alerts row (so a toast and its row say the same
