@@ -19,4 +19,4 @@ export const jimmy = () => cards.find((c) => c.key === 'jimmy-wails')!;
 export const surf = graffiti.surface!;
 
 /** What a card's `seen` says of a play, as the reader calls it: a play by Wario two days ago with no config and no saved state, unless `over` says otherwise. */
-export const seenOf = (key: string, over: Partial<SeenPlay> = {}): string => by(key).seen!({ config: {}, state: null, by: 'Wario', ago: '2 days ago', amountWords, ...over });
+export const seenOf = (key: string, over: Partial<SeenPlay> = {}): string => by(key).seen!({ config: {}, state: null, text: null, covered: null, by: 'Wario', ago: '2 days ago', amountWords, ...over });

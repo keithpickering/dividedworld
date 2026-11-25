@@ -343,6 +343,10 @@ export type LockoutOutcome = { readonly kind: 'lockout'; readonly hours: number 
 export interface SeenPlay {
   readonly config: unknown;
   readonly state: unknown;
+  /** The play's public words as the board shows them (a tail, a caption), null where the card has none. */
+  readonly text: string | null;
+  /** The share of the play's surface that is covered, from 0 to 1, as the board shows it; null where the card has none. */
+  readonly covered: number | null;
   readonly by: string | null;
   readonly ago: string;
   readonly amountWords: (share: number) => string;

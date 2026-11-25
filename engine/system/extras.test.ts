@@ -9,7 +9,7 @@ const H = 3_600_000;
 const D = 24 * H;
 
 const poll = (o: Partial<ReadPoll> = {}): ReadPoll => ({
-  question: 'Best kart in the series?', options: ['Mach 8', 'Blue Falcon'], pick: 2, secret: true, endsAt: plus(2 * H), closed: false, closedBy: null, counts: [5, 7], voters: 9, ...o,
+  question: 'Best kart in the series?', options: ['Mach 8', 'Blue Falcon'], pick: 2, secret: true, endsAt: plus(2 * H), closed: false, closedBy: null, closedAt: null, counts: [5, 7], voters: 9, ...o,
 });
 
 test('an open poll: question, rules, time left, each option with its count and share, and how many characters voted', () => {
@@ -24,8 +24,9 @@ test('an open poll: question, rules, time left, each option with its count and s
 
 test('a poll closed by its time, by its author and by an admin; public one-pick; an option at 0; one voter; none', () => {
   assert.equal(pollLines(poll({ closed: true, endsAt: minus(180 * D) }), NOW)[1], '  Closed 6 months ago.');
-  assert.equal(pollLines(poll({ closed: true, endsAt: plus(3 * D), closedBy: 'author' }), NOW)[1], '  Closed early, by its author.');
-  assert.equal(pollLines(poll({ closed: true, endsAt: plus(3 * D), closedBy: 'admin' }), NOW)[1], '  Closed early, by an admin.');
+  assert.equal(pollLines(poll({ closed: true, endsAt: plus(3 * D), closedBy: 'author', closedAt: minus(3 * D) }), NOW)[1], '  Closed 3 days ago, early, by its author.');
+  assert.equal(pollLines(poll({ closed: true, endsAt: plus(3 * D), closedBy: 'admin', closedAt: minus(3 * D) }), NOW)[1], '  Closed 3 days ago, early, by an admin.');
+  assert.equal(pollLines(poll({ closed: true, endsAt: minus(180 * D), closedAt: minus(2 * D) }), NOW)[1], '  Closed 2 days ago.', 'a timed close reads closedAt when given');
   const open = pollLines(poll({ pick: 1, secret: false, counts: [0, 3], voters: 1 }), NOW);
   assert.equal(open[0], '[poll on this post] "Best kart in the series?" (pick one)');
   assert.deepEqual(open.slice(2), ['  1. Mach 8: 0 (0%)', '  2. Blue Falcon: 3 (100%)', '  1 character voted.']);
@@ -38,7 +39,7 @@ test('pollShort: open, tied, closed, early, and no votes', () => {
   assert.equal(pollShort(q, NOW), '[poll: "Rename this board?", Yes leads 9 to 4, closes in 2 hours]');
   assert.equal(pollShort({ ...q, counts: [6, 6] }, NOW), '[poll: "Rename this board?", Yes and No tied at 6, closes in 2 hours]');
   assert.equal(pollShort({ ...q, closed: true, endsAt: minus(3 * D) }, NOW), '[poll: "Rename this board?", Yes won 9 to 4, closed 3 days ago]');
-  assert.equal(pollShort({ ...q, closed: true, closedBy: 'admin', endsAt: plus(D) }, NOW), '[poll: "Rename this board?", Yes won 9 to 4, closed early by an admin]');
+  assert.equal(pollShort({ ...q, closed: true, closedBy: 'admin', closedAt: minus(3 * D), endsAt: plus(D) }, NOW), '[poll: "Rename this board?", Yes won 9 to 4, closed 3 days ago, early, by an admin]');
   assert.equal(pollShort({ ...q, counts: [0, 0] }, NOW), '[poll: "Rename this board?", no votes yet, closes in 2 hours]');
 });
 
@@ -56,7 +57,7 @@ test('reactions: most first then by kind, as the instance names them; none is no
 });
 
 test('a play: the instance\'s sentence when it has one, else the card\'s name, else a face-down card', () => {
-  const play: ReadPlay = { play: 'p1', card: 'whoops', at: minus(2 * D), by: 'Wario', config: {}, state: {} };
+  const play: ReadPlay = { play: 'p1', card: 'whoops', at: minus(2 * D), by: 'Wario', config: {}, state: {}, text: null, covered: null };
   const cardName = (k: string): string | undefined => (k === 'whoops' ? 'Whoops!' : undefined);
   assert.equal(playLine(play, { now: NOW, seen: 'Wario covered this post in goop, 2 days ago.', cardName }), '[Wario covered this post in goop, 2 days ago.]');
   assert.equal(playLine(play, { now: NOW, seen: null, cardName }), '[Whoops! was played on this post, 2 days ago.]');
@@ -104,4 +105,20 @@ test('the origin line: when it was spun and when the origin happened; "as it sto
   assert.equal(originLine(named, NOW), '(This thread was spun 3 days ago from Wario\'s post #4 in "Best kart?", written 6 months ago.)');
   const m: ReadOrigin = { ...o, kind: 'card', place: { kind: 'play', card: 'whoops', on: post(4) }, moment: true };
   assert.equal(originLine(m, NOW, { cardName: () => 'Whoops!' }), '(This thread was spun 3 days ago from Whoops! on post #4 in "Best kart?", 6 months ago, as it stood when it was spun.)');
+});
+
+test('SQL-shaped input never throws: a poll with null counts or options, a place with no on, asker or character, an unknown on kind, an update origin with null author and seq', () => {
+  const bad = poll({ counts: null as unknown as number[] });
+  assert.equal(pollLines(bad, NOW)[2], '  1. Mach 8: 0 (0%)');
+  assert.match(pollShort(bad, NOW), /no votes yet/);
+  const none = poll({ options: null as unknown as string[], counts: null as unknown as number[] });
+  assert.doesNotThrow(() => { pollLines(none, NOW); pollShort(none, NOW); });
+  const cards = { cardName: () => undefined };
+  const q = { kind: 'post', thread: 't', title: 'T', seq: 1 } as const;
+  assert.doesNotMatch(placeWords({ kind: 'poll', question: 'Q?', on: null } as unknown as ReadPlace, cards), /null|undefined/);
+  assert.doesNotMatch(placeWords({ kind: 'ballot', character: null, question: 'Q?', on: q } as unknown as ReadPlace, cards), /null|undefined/);
+  assert.doesNotMatch(placeWords({ kind: 'ballot', character: { id: 'c', name: 'Wario' }, question: 'Q?', on: null } as unknown as ReadPlace, cards), /null|undefined/);
+  assert.doesNotMatch(placeWords({ kind: 'answer', spun: 'ask', ask: 'report', asker: null, staff: null, punishment: null, group: null, on: null } as unknown as ReadPlace, cards), /null|undefined/);
+  assert.doesNotMatch(placeWords({ kind: 'play', card: 'x', on: { kind: 'nope' } } as unknown as ReadPlace, cards), /null|undefined/);
+  assert.equal(placeWords({ kind: 'play', card: null, on: { kind: 'nope' } } as unknown as ReadPlace, cards), 'a face-down card on somewhere on the board');
 });

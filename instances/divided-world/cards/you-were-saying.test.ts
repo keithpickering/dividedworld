@@ -391,7 +391,7 @@ test('it draws an effect, and the version in its state is the one it is cleared 
 test('You Were Saying? carries its tail\'s words where the reader gives them, and says when the author erased it', () => {
   assert.equal(seenOf('you-were-saying', { config: { steps: 1 } }), 'Wario woke the old voice on this post, 2 days ago, and it rambled on past the end of the author\'s words in a tail of green terminal text.');
   assert.match(seenOf('you-were-saying', { by: null }), /^Someone woke the old voice/);
-  assert.match(seenOf('you-were-saying', { state: { tail: 'and another thing about the shells' } }), /terminal text: “and another thing about the shells”$/);
+  assert.match(seenOf('you-were-saying', { text: 'and another thing about the shells' }), /terminal text: “and another thing about the shells”$/);
   assert.match(seenOf('you-were-saying', { state: { cleared: 'v1' } }), /The author has erased the tail\.$/);
-  assert.match(seenOf('you-were-saying', { state: { tail: 'x'.repeat(900) } }), /“x{400}…”/, 'a long tail is cut');
+  assert.match(seenOf('you-were-saying', { text: 'x'.repeat(900) }), /“x{400}…”/, 'a long tail is cut');
 });

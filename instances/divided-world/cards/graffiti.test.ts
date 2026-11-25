@@ -146,10 +146,11 @@ test('Graffiti says what is drawn and, where the reader gives it, how much of th
   assert.equal(seenOf('graffiti'), 'Wario turned this post into a wall, 2 days ago: any character can spray it, and its own character can scrub it.');
   assert.match(seenOf('graffiti', { by: null }), /^Someone turned this post into a wall/);
   assert.equal(seenOf('graffiti', { config: { stencil: 'crown', can: 'pink', spot: 4 } }), 'Wario sprayed a crown in pink spray paint across this post, 2 days ago; any character can add to the wall, and its own character can scrub it.');
-  const covered = (cells: number) => seenOf('graffiti', { state: { covered: cells } });
+  const covered = (cells: number) => seenOf('graffiti', { covered: cells / 10_000 });
   assert.doesNotMatch(covered(0), /covered in paint/, 'none says nothing');
   for (const [cells, words] of [[500, 'A bit'], [2000, 'Some'], [5000, 'About half'], [7000, 'Most'], [9500, 'Almost all'], [10_000, 'All']] as const) {
     assert.match(covered(cells), new RegExp(`${words} of the wall is covered in paint\\.$`), words);
   }
+  assert.doesNotMatch(seenOf('graffiti', { covered: null }), /covered in paint/, 'no share says nothing');
   assert.doesNotMatch(seenOf('graffiti', { config: { stencil: 'nope', can: 'pink' } }), /undefined/, 'an unknown stencil falls back');
 });

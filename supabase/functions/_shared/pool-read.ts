@@ -18,7 +18,7 @@ export interface PoolRead {
     readonly poll?: ReadPoll | null; readonly plays?: readonly ReadPlay[]; readonly reactions?: Reactions; readonly rewoundTo?: string | null;
   }[];
   /** What a spun thread was spun from; null for a thread that was not. The origin post carries its own poll, plays and reactions. */
-  readonly origin?: (Omit<ReadOrigin, 'post'> & { readonly post: (Omit<ReadOriginPost, 'pronouns'> & { readonly pronouns?: PronounSet | null }) | null }) | null;
+  readonly origin?: (Omit<ReadOrigin, 'post'> & { readonly post: (Omit<ReadOriginPost, 'pronouns' | 'poll' | 'plays' | 'reactions' | 'rewoundTo'> & { readonly pronouns?: PronounSet | null; readonly poll?: ReadPoll | null; readonly plays?: readonly ReadPlay[]; readonly reactions?: Reactions; readonly rewoundTo?: string | null }) | null }) | null;
 }
 
 /**
@@ -44,7 +44,7 @@ export function readOf(pr: PoolRead, fallback: PronounSet, must: readonly string
   const byKey = new Map(ctx.cards.map((c) => [c.key, c]));
   const emoji = new Map(ctx.reactions.map((r) => [r.key, r.emoji]));
   const origin: ReadOrigin | null = pr.origin === undefined || pr.origin === null ? null
-    : { ...pr.origin, post: pr.origin.post === null ? null : { ...pr.origin.post, pronouns: pronounsOr(pr.origin.post.pronouns, fallback) } };
+    : { ...pr.origin, post: pr.origin.post === null || pr.origin.post === undefined ? null : { ...pr.origin.post, pronouns: pronounsOr(pr.origin.post.pronouns, fallback), poll: pr.origin.post.poll ?? null, plays: pr.origin.post.plays ?? [], reactions: pr.origin.post.reactions ?? {}, rewoundTo: pr.origin.post.rewoundTo ?? null } };
   return readThread(cands, { self: pr.self, must }, {
     readMost, now: ctx.now, origin,
     // A card with no `seen`, a card the instance lacks and a back with no card are all null: the reader says what is known of them.

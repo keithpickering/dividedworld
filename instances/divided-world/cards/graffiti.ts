@@ -137,9 +137,9 @@ export const graffiti: CardRules<GraffitiConfig> = {
     const stencil = field(p.config, 'stencil'), can = field(p.config, 'can');
     const mark = typeof stencil === 'string' && typeof can === 'string' ? `${STENCIL_NOUNS[stencil as StencilKey] ?? 'a drawing'} in ${can} spray paint` : null;
     const first = mark === null ? `${who(p)} turned this post into a wall, ${p.ago}: any character can spray it, and its own character can scrub it.` : `${who(p)} sprayed ${mark} across this post, ${p.ago}; any character can add to the wall, and its own character can scrub it.`;
-    const covered = field(p.state, 'covered');
+    const covered = p.covered;
     // The wall's cover is the surface's own (a count of the 100 x 100 cells it holds), which the reader gives where it has it.
-    const share = typeof covered === 'number' && Number.isFinite(covered) ? Math.min(1, Math.max(0, covered / (GRID * GRID))) : null;
+    const share = typeof covered === 'number' && Number.isFinite(covered) ? Math.min(1, Math.max(0, covered)) : null;
     return share === null || p.amountWords(share) === 'none' ? first : `${first} ${capital(p.amountWords(share))} of the wall is covered in paint.`;
   },
   playPrice: () => 0,

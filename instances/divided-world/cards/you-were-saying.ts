@@ -62,7 +62,7 @@ export const youWereSaying: CardRules<YouWereSayingConfig> = {
     frame: youWereSayingFrame,
   },
   seen: (p) => {
-    const tail = textField(p.state, 'tail', 400) ?? textField(p.config, 'tail', 400);
+    const tail = textField({ text: p.text }, 'text', 400);
     const gone = typeof field(p.state, 'cleared') === 'string';
     const head = `${who(p)} woke the old voice on this post, ${p.ago}, and it rambled on past the end of the author's words in a tail of green terminal text`;
     return tail === null ? `${head}.${gone ? ' The author has erased the tail.' : ''}` : `${head}: “${tail}”${gone ? ' The author has erased the tail.' : ''}`;

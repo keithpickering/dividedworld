@@ -19,6 +19,8 @@ export interface ReadPoll {
   readonly endsAt: string;
   readonly closed: boolean;
   readonly closedBy: 'author' | 'admin' | null;
+  /** When it closed: the close Act's time if closed early, the end time if its time ran out, null while open. */
+  readonly closedAt: string | null;
   /** Each option's count, in the options' order. */
   readonly counts: readonly number[];
   /** The number of characters whose ballots count. */
@@ -34,6 +36,10 @@ export interface ReadPlay {
   readonly by: string | null;
   readonly config: unknown;
   readonly state: unknown;
+  /** The play's public words (from `card_texts`), where the card has some. */
+  readonly text: string | null;
+  /** The share of the play's surface that is covered, from 0 to 1, where the card has one. */
+  readonly covered: number | null;
 }
 
 /** Public reaction counts by kind (`{}` for none). */
@@ -84,7 +90,8 @@ export interface ReadOriginPost extends Extras {
   readonly act: string;
   readonly seq?: number | null;
   readonly at: string;
-  readonly author: string;
+  /** Null for an Updates post. */
+  readonly author: string | null;
   readonly name: string;
   readonly pronouns?: PronounSet | null;
   readonly body: string;
@@ -114,9 +121,10 @@ const count = (n: number, one: string, many: string): string => `${n} ${n === 1 
 
 /** The options at the top count, and that count. */
 function leaders(poll: ReadPoll): { names: string[]; top: number; second: number } {
-  const counts = poll.options.map((_, i) => poll.counts[i] ?? 0);
+  const options = poll.options ?? [];
+  const counts = options.map((_, i) => poll.counts?.[i] ?? 0);
   const top = counts.reduce((m, c) => Math.max(m, c), 0);
-  const names = poll.options.filter((_, i) => counts[i] === top);
+  const names = options.filter((_, i) => counts[i] === top);
   const second = counts.reduce((m, c) => (c < top ? Math.max(m, c) : m), 0);
   return { names, top, second };
 }
@@ -127,11 +135,13 @@ const joinAnd = (xs: readonly string[]): string => (xs.length <= 2 ? xs.join(' a
 export function pollLines(poll: ReadPoll, now: number): string[] {
   const rules = [poll.pick === 1 ? 'pick one' : `pick up to ${poll.pick}`, ...(poll.secret ? ['secret ballots'] : [])].join('; ');
   const state = !poll.closed ? `Open: ends ${until(poll.endsAt, now)}.`
-    : poll.closedBy === null ? `Closed ${ago(poll.endsAt, now)}.`
-    : `Closed early, by ${poll.closedBy === 'author' ? 'its author' : 'an admin'}.`;
-  const total = poll.options.reduce((s, _, i) => s + (poll.counts[i] ?? 0), 0);
-  const options = poll.options.map((o, i) => {
-    const c = poll.counts[i] ?? 0;
+    : poll.closedBy === null ? `Closed ${ago(poll.closedAt ?? poll.endsAt, now)}.`
+    : `Closed ${ago(poll.closedAt ?? poll.endsAt, now)}, early, by ${poll.closedBy === 'author' ? 'its author' : 'an admin'}.`;
+  const opts = poll.options ?? [];
+  const counts = poll.counts ?? [];
+  const total = opts.reduce((s, _, i) => s + (counts[i] ?? 0), 0);
+  const options = opts.map((o, i) => {
+    const c = counts[i] ?? 0;
     return `  ${i + 1}. ${o}: ${c} (${total === 0 ? 0 : Math.round((100 * c) / total)}%)`;
   });
   const voted = poll.voters === 0 ? 'No one has voted.' : `${count(poll.voters, 'character', 'characters')} voted.`;
@@ -146,8 +156,8 @@ export function pollShort(poll: ReadPoll, now: number): string {
     : tied ? `${joinAnd(names)} tied at ${top}`
     : `${names[0]} ${poll.closed ? 'won' : 'leads'} ${top} to ${second}`;
   const time = !poll.closed ? `closes ${until(poll.endsAt, now)}`
-    : poll.closedBy === null ? `closed ${ago(poll.endsAt, now)}`
-    : `closed early by ${poll.closedBy === 'author' ? 'its author' : 'an admin'}`;
+    : poll.closedBy === null ? `closed ${ago(poll.closedAt ?? poll.endsAt, now)}`
+    : `closed ${ago(poll.closedAt ?? poll.endsAt, now)}, early, by ${poll.closedBy === 'author' ? 'its author' : 'an admin'}`;
   return `[poll: "${poll.question}", ${standing}, ${time}]`;
 }
 
@@ -175,12 +185,14 @@ export function rewoundLine(rewoundTo: string | null | undefined, now: number): 
 const postWords = (p: { readonly seq: number; readonly title: string }): string => `post #${p.seq} in "${p.title}"`;
 
 function onWords(on: PlaceOn): string {
+  if (on === null || typeof on !== 'object') return 'somewhere on the board';
   switch (on.kind) {
     case 'post': return postWords(on);
     case 'update': return `the Updates post "${on.title}"`;
     case 'character': return on.name ?? 'a character';
     case 'thread': return `the thread "${on.title}"`;
     case 'board': return `the board ${on.name}`;
+    default: return 'somewhere on the board';
   }
 }
 
@@ -190,11 +202,11 @@ export function placeWords(place: ReadPlace | null, names: PlaceNames = {}): str
   switch (place.kind) {
     case 'post': return postWords(place);
     case 'update': return `the Updates post "${place.title}"`;
-    case 'poll': return `the poll "${clip(place.question, 60)}" on ${postWords(place.on)}`;
-    case 'ballot': return `${place.character.name}'s ballot in the poll "${clip(place.question, 60)}" on ${postWords(place.on)}`;
+    case 'poll': return `the poll "${clip(place.question ?? '', 60)}"${place.on ? ` on ${postWords(place.on)}` : ''}`;
+    case 'ballot': return `${place.character ? `${place.character.name}'s ballot` : 'a ballot'} in the poll "${clip(place.question ?? '', 60)}"${place.on ? ` on ${postWords(place.on)}` : ''}`;
     case 'play': {
       const card = place.card === null ? 'a face-down card' : names.cardName?.(place.card) ?? 'a card';
-      if (place.on === null) return card;
+      if (place.on === null || place.on === undefined) return card;
       if (place.on.kind !== 'character') return `${card} on ${onWords(place.on)}`;
       const at = place.at ?? null;
       const from = place.from ?? null;
@@ -207,8 +219,8 @@ export function placeWords(place: ReadPlace | null, names: PlaceNames = {}): str
       const what = !appeal ? post
         : place.punishment === 'move' ? `the move into ${place.group === null ? 'a group' : names.groupName?.(place.group) ?? place.group}`
         : `${place.punishment === 'ban' ? 'the ban from' : 'the warn points from'} ${post}`;
-      const lead = place.spun === 'answer' && place.staff !== null ? `${place.staff.name}'s ${appeal ? 'ruling on ' : 'verdict on '}` : '';
-      return `${lead}${place.asker.name}'s ${appeal ? 'appeal of ' : 'report of '}${what}`;
+      const lead = place.spun === 'answer' && place.staff ? `${place.staff.name}'s ${appeal ? 'ruling on ' : 'verdict on '}` : '';
+      return `${lead}${place.asker ? `${place.asker.name}'s` : 'A player\'s'} ${appeal ? 'appeal of ' : 'report of '}${what}`;
     }
     default: return 'somewhere on the board';
   }

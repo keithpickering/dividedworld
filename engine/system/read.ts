@@ -158,7 +158,7 @@ function extraLines(c: Extras, o: ReadOptions): { before: string[]; after: strin
   };
 }
 
-const seenOf = (p: ReadPlay, o: ReadOptions): SeenPlay => ({ config: p.config, state: p.state, by: p.by, ago: ago(p.at, o.now), amountWords });
+const seenOf = (p: ReadPlay, o: ReadOptions): SeenPlay => ({ config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, o.now), amountWords });
 
 /** The origin's lines: its one line, then its post, headed `<name> [origin, post #<seq> in "<title>"]` (`[origin, the Updates post "<title>"]` with no seq), with its words, poll, plays and reactions. */
 function originBlock(origin: ReadOrigin, o: ReadOptions): string[] {

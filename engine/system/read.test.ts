@@ -296,13 +296,13 @@ const DAY = 24 * HOUR;
 const ago = (ms: number): string => new Date(NOW - ms).toISOString();
 const later = (ms: number): string => new Date(NOW + ms).toISOString();
 const aPoll = (o: Partial<NonNullable<ReadCandidate['poll']>> = {}): NonNullable<ReadCandidate['poll']> => ({
-  question: 'Rename this board?', options: ['Yes', 'No'], pick: 1, secret: false, endsAt: later(2 * HOUR), closed: false, closedBy: null, counts: [9, 4], voters: 13, ...o,
+  question: 'Rename this board?', options: ['Yes', 'No'], pick: 1, secret: false, endsAt: later(2 * HOUR), closed: false, closedBy: null, closedAt: null, counts: [9, 4], voters: 13, ...o,
 });
 const names = { cardName: (k: string) => (k === 'whoops' ? 'Whoops!' : undefined), reactionName: (k: string) => ({ heart: '❤', laugh: '😂' })[k as 'heart'] ?? k };
 const one = (c: ReadCandidate, o: Partial<ReadOptions> = {}) => readLines(rt([c], { self: null, must: [] }, 100_000, { ...names, ...o }));
 
 test('a post reads its body, then its poll, its plays and its reactions last', () => {
-  const play = { play: 'p1', card: 'whoops', at: ago(2 * DAY), by: 'Wario', config: { color: 'teal' }, state: { washed: 0.2 } };
+  const play = { play: 'p1', card: 'whoops', at: ago(2 * DAY), by: 'Wario', config: { color: 'teal' }, state: { washed: 0.2 }, text: null, covered: null };
   const c = cand(1, 'a', 'Which?', { name: 'Ann', poll: aPoll(), plays: [play], reactions: { laugh: 1, heart: 3 } });
   const lines = one(c, { seen: (card, p) => (card === 'whoops' ? `Wario covered this post in teal goop, ${p.ago}. ${p.amountWords(0.2)} of it is scrubbed.` : null) });
   assert.deepEqual(lines, [
@@ -314,7 +314,7 @@ test('a post reads its body, then its poll, its plays and its reactions last', (
 });
 
 test('a play with no sentence reads as the card\'s name, a back as a face-down card', () => {
-  const c = cand(1, 'a', 'Hi', { name: 'Ann', plays: [{ play: 'p1', card: 'whoops', at: ago(HOUR), by: null, config: null, state: null }, { play: 'p2', card: null, at: ago(3 * HOUR), by: null, config: null, state: null }] });
+  const c = cand(1, 'a', 'Hi', { name: 'Ann', plays: [{ play: 'p1', card: 'whoops', at: ago(HOUR), by: null, config: null, state: null, text: null, covered: null }, { play: 'p2', card: null, at: ago(3 * HOUR), by: null, config: null, state: null, text: null, covered: null }] });
   assert.deepEqual(one(c).slice(2), ['[Whoops! was played on this post, an hour ago.]', '[A card set face down was played on this post, 3 hours ago.]']);
 });
 
@@ -365,6 +365,8 @@ test('a play spin says it stands as it was when it was spun; an update origin ha
   const lines = readLines(rt([opener], { self: ME, must: [] }, 10_000, { origin: upd }));
   assert.equal(lines[0], '(This thread was spun 3 days ago from the Updates post "New board", written 6 months ago.)');
   assert.equal(lines[1], 'Wario (he/him) [origin, the Updates post "New board"]');
+  const noName = origin({ kind: 'update', place: { kind: 'update', act: 'u1', title: 'New board' }, post: { ...origin().post!, seq: null, author: null, title: 'New board' } });
+  assert.doesNotMatch(readLines(rt([opener], { self: ME, must: [] }, 10_000, { origin: noName })).join('\n'), /null|undefined/, 'an update origin has no author or seq');
   const bare = readLines(rt([opener], { self: ME, must: [] }, 10_000, { origin: origin({ post: null }) }));
   assert.deepEqual(bare.slice(1), ['Toad [post #1]', 'Hi']);
 });
@@ -388,4 +390,11 @@ test('a spun thread\'s opener ranks in tier 2, an unspun one in tier 3', () => {
   const cs = [cand(1, 'o', 'open'), cand(2, 'x', 'other')];
   assert.equal(rt(cs, { self: ME, must: [] }, 10_000).posts[0]!.tier, 3);
   assert.equal(rt(cs, { self: ME, must: [] }, 10_000, { origin: origin({ post: null }) }).posts[0]!.tier, 2);
+});
+
+test('a play\'s public text and covered share reach the instance\'s seen sentence', () => {
+  const play = { play: 'p1', card: 'g', at: ago(DAY), by: 'Wario', config: {}, state: null, text: 'and another thing', covered: 0.5 };
+  const got: unknown[] = [];
+  one(cand(1, 'a', 'Hi', { plays: [play] }), { seen: (_c, p) => { got.push([p.text, p.covered]); return null; } });
+  assert.deepEqual(got, [['and another thing', 0.5]]);
 });
