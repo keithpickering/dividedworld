@@ -485,7 +485,7 @@ declare
   v uuid := tests.character(av, 'Dx7 Vee'); xa uuid := tests.character(axa, 'Dx7 Xa'); xb uuid := tests.character(axb, 'Dx7 Xb'); xc uuid := tests.character(axc, 'Dx7 Xc'); r uuid := tests.character(ar, 'Dx7 Aa');
   t uuid := tests.thread('Dx7 Main');
   px1 uuid; px2 uuid; px3 uuid; pv uuid; vplay uuid; po1 uuid; po2 uuid; po3 uuid; vb1 uuid; vb2 uuid;
-  wr uuid; sc uuid; sp uuid; stand uuid; d jsonb; x jsonb; ck text;
+  wr uuid; sc uuid; sp uuid; cast_ uuid; stand uuid; d jsonb; x jsonb; ck text;
 begin
   insert into settings (key, value) values ('digestExcerptChars', '30'), ('digestExcerpts', '20'), ('digestThreads', '20'), ('digestConversations', '4'),
     ('digestPolls', '20'), ('digestSpins', '20'), ('digestPlays', '20'), ('digestStandoutDays', '7')
@@ -531,7 +531,9 @@ begin
   insert into card_write_refunds (play, amount) values (wr, 0);
   -- a back that caught a cast: its spring carries `caught` and is a real spring, so Xc's set on her own post is a play and the spring counts once as a card and once received
   sc := pg_temp.back(xc, axc, t, px3, 21, base - interval '5 hours');
-  sp := tests.act(xc, 'spring', t, jsonb_build_object('set', sc::text, 'card', 'exback', 'trigger', 'cast', 'did', 'caught', 'caught', 'x'), px3, base - interval '4 hours');
+  -- as place_cast writes it (0054:352, 0148:287): the cast that was caught is a card Act carrying `caught` = its set, and the spring's `caught` (and `by`) is that cast Act's id
+  cast_ := tests.act(xb, 'card', t, jsonb_build_object('card', 'exwink', 'reach', 'post', 'caught', sc::text), px3, base - interval '4 hours 30 minutes');
+  sp := tests.act(xc, 'spring', t, jsonb_build_object('set', sc::text, 'card', 'exback', 'trigger', 'cast', 'did', 'caught', 'by', cast_::text, 'caught', cast_::text), px3, base - interval '4 hours');
 
   d := pg_temp.digest(base - interval '1 day', base);
   x := d -> 'plays';
@@ -552,6 +554,38 @@ begin
     perform pg_temp.expect(pg_temp.top(d, ck) = pg_temp.plain_top(ck, base - interval '7 days', base) and pg_temp.top(d, ck) <> '',
       '7 the standouts drifted from acts_public in ' || ck || ' under a veil: digest ' || pg_temp.top(d, ck) || ', acts_public ' || pg_temp.plain_top(ck, base - interval '7 days', base));
   end loop;
+end $$;
+
+-- ---- 8. digest_origin of a set whose spring names it but targets another post
+-- A spring Act is written on the post of the set it springs (0054:350: target = face_down.post), so a spring that names a set and targets a different post is not that set's spring: the board shows no origin for the set, and
+-- digest_origin answers nothing (its branch `sp.target_act_id = o.target_act_id`). A set with a spring on its own post is shown, whatever else names it. The standouts' `spun` and the spins read the same predicate, never play_post.sprung
+-- (which is true for any spring naming the set): a thread spun from the mis-sprung set is neither a spin nor a standout.
+do $$
+declare
+  base timestamptz := '2052-03-12T12:00:00Z';
+  a1 uuid := tests.account('dx8-xa'); c1 uuid := tests.character(a1, 'Dx8 Xa');
+  t uuid := tests.thread('Dx8 Main');
+  pa uuid; pb uuid; s_ok uuid; s_bad uuid; th uuid; d jsonb;
+begin
+  insert into settings (key, value) values ('digestSpins', '20'), ('digestStandoutDays', '7') on conflict (key) do update set value = excluded.value;
+  pa := tests.post(c1, t, 'Dx8 A', base - interval '10 hours');
+  pb := tests.post(c1, t, 'Dx8 B', base - interval '10 hours' + interval '1 minute');
+  s_ok := pg_temp.back(c1, a1, t, pa, 31, base - interval '9 hours');
+  perform pg_temp.spring(c1, s_ok, t, pa, base - interval '8 hours');
+  s_bad := pg_temp.back(c1, a1, t, pa, 32, base - interval '9 hours' + interval '1 minute');
+  -- acts_well_formed refuses such a spring, so the row is forced past its trigger (this transaction's own role setting), and play_post is refreshed as the app's trigger would for a spring naming the set: sprung there, where the board shows nothing
+  set local session_replication_role = replica;
+  perform pg_temp.spring(c1, s_bad, t, pb, base - interval '8 hours' + interval '1 minute');
+  set local session_replication_role = origin;
+  perform refresh_play_post(s_bad);
+  perform pg_temp.expect((select p.sprung from play_post p where p.play = s_bad), '8 the fixture: play_post.sprung is true for the mis-targeted spring');
+  perform pg_temp.expect((select o.kind from digest_origin(s_ok) o) = 'set', '8 digest_origin of a set sprung on its own post');
+  perform pg_temp.expect(not exists (select 1 from digest_origin(s_bad)), '8 digest_origin of a set whose spring names it but targets another post');
+  th := pg_temp.spin(c1, s_bad, 'Dx8 spun from the mis-sprung set', base - interval '7 hours');
+  perform pg_temp.expect(not exists (select 1 from digest_spins(base - interval '1 day', base, 20) x where x.thread = th), '8 digest_spins lists a thread whose origin the board does not show');
+  perform pg_temp.expect(not exists (select 1 from digest_standouts(base - interval '1 day', base) x where x.category = 'spun' and x."character" = c1), '8 a thread spun from a set the board does not show counts as spun');
+  perform pg_temp.spin(c1, s_ok, 'Dx8 spun from the sprung set', base - interval '6 hours');
+  perform pg_temp.expect((select x.n from digest_standouts(base - interval '1 day', base) x where x.category = 'spun' and x."character" = c1) = 1, '8 the thread spun from the sprung set is not the character''s one spun');
 end $$;
 
 -- ---- 5. the security

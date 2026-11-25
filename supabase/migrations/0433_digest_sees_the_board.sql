@@ -190,7 +190,7 @@ end $function$;
 -- holds the reviewed list of the functions that role may run, and digest_origin is on it beside the others. Each carries the settings 0426's
 -- helpers run under (no sequential scan, no bitmap scan), and each Act is read through a key. At a busy instance's scale (a week of thousands of plays, polls with many voters):
 --   digest_standouts   reads the Acts of the span by kind: the cards, springs, ballots and polls of the span, each from a partial index of its own ordered by time (`include` holding the id, the character and the target: the plays' and the ballots' read is of the index alone, the polls' also reads the heap for `removed`), one probe of the target
---                      post for each play (received), one of a ballot's poll for each (poll, character) pair that voted (secret?), one of the origin Act for each spin of the span. It reads no Act outside the span and no post.
+--                      post for each play (received), one of a ballot's poll for each (poll, character) pair that voted (secret?), one digest_origin (the origin Act and, for a set, its spring) for each spin of the span. It reads no Act outside the span and no post.
 --   digest_polls       the polls created in the last pollLastsMax and the window (acts_digest_polls_at), each with one probe of its close (acts_one_poll_close), its newest poll (acts_polls) and its post through acts_public (hidden, kind): the polls of a few weeks, never their ballots
 --                      (the ballots are poll_counts' own read, one pass over a poll's voters for the polls kept after the cut to the window's, each).
 --   digest_origin      one probe of an origin Act and, for a set, of the spring Act that names it (acts_target): the one predicate of whether the board shows an origin, asked by digest_spins and by system_digest.
@@ -257,7 +257,7 @@ begin
     union all
     select 'spun', o.ch, count(*)
     from threads t cross join lateral (select x."character" as ch from acts x where x.id = t.origin_act_id and x."character" is not null
-                                         and (x.kind <> 'set' or exists (select 1 from play_post sp where sp.play = x.id and sp.sprung))
+                                         and exists (select 1 from digest_origin(x.id))
                                          and not exists (select 1 from post_veil_cover c join post_veils_live v on v.play = c.play and v.veil = 'author' where c.act = x.id)) o
     where t.origin_act_id is not null and t.created_at >= from_at and t.created_at < to_at
     group by o.ch
@@ -301,6 +301,9 @@ language sql stable security definer set search_path = public, pg_temp set jit =
     and (o.kind <> 'set' or exists (select 1 from acts sp where sp.kind = 'spring' and sp.target_act_id = o.target_act_id and sp.payload ->> 'set' = o.id::text))
 $$;
 
+-- digest_plays gates on play_post.sprung (`p.kind <> '' or p.sprung`, the partial index's own predicate), not on digest_origin: a play listed is a play the board's own play_post draws, and play_post is that board's list of plays. It agrees with
+-- digest_origin because 0408 (play_row) derives `sprung` from the same Act, a spring naming the set, and a spring is written only on the set's own post by the one who set it (acts_well_formed refuses any other, so a spring naming a set
+-- but targeting another post cannot exist outside a test that forces one past the trigger: supabase/tests/0433-digest-sees-the-board.sql section 8). digest_origin's extra clause on the spring's target is that same fact, asked of the Act.
 -- The threads created in [since, until) whose origin Act the board shows (digest_origin), in the order the digest lists them (replies, newest), unlisted threads left out, `most` of them.
 create function digest_spins(since timestamptz, until timestamptz, most integer) returns table (thread uuid)
 language sql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off set enable_bitmapscan = off as $$

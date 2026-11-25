@@ -3,7 +3,7 @@
 -- The guarantee: the four helpers system_digest reads the Acts through read the rows of the span and the window, by an index ordered by time for their kind, and nothing outside it. The fixture is a week of a busy instance (until the 8th at noon, a window of
 -- the last day, the standouts' span of seven days): 60 posts and 6,000 replies, 2,400 plays (a third of them in the window), 30 polls open in the window with 120 voters each (3,600 ballots), 20 spun threads, and 300 older threads, 8,000 older posts
 -- and 3,000 older plays, ballots and polls outside the span. It is written with the triggers off for this transaction (the runner rolls it back); the kept tables are filled as the migrations' triggers fill them, and analyzed.
---  1. digest_standouts reads rows of `acts` at most 2 x (plays + springs of the span) + ballots + 3 x polls + 2 x spun + 20: the plays once from the index and once for the target post, the ballots once, a probe of each poll voted on (not of each
+--  1. digest_standouts reads rows of `acts` at most 2 x (plays + springs of the span) + ballots + 3 x polls + 3 x spun + 20: the plays once from the index and once for the target post, the ballots once, a probe of each poll voted on (not of each
 --     voter), one of each spin's origin. Not one older Act, one reply post.
 --  2. digest_polls is planned over acts_digest_polls_at and reads at most 6 x (the polls created in the 14 days and the window) + 20 rows of `acts`; digest_spins at most 2 x its spins + 20 rows of `threads` and `acts`; digest_plays at most 5 x its cap + 10 rows of `acts`, and rows of
 --     play_post that are those played in the window (less than a third of the table) and no more, and is planned over play_post_digest_at.
@@ -159,7 +159,7 @@ declare
   n bigint; bound bigint; n2 bigint; pp bigint; w bigint; before bigint; after bigint; idef text;
 begin
   -- 1. digest_standouts
-  bound := 2 * cards + ballots + 3 * 31 + 2 * 20 + 20;
+  bound := 2 * cards + ballots + 3 * 31 + 3 * 20 + 20; -- a spin: its origin Act, digest_origin's read of it and the spring probe for a set
   n := pg_temp.reads('acts', format('select * from digest_standouts(%L, %L)', span_at, until_at));
   raise notice '1 digest_standouts read % rows of acts (bound %) in a week of % plays and % ballots, with 14,000 older Acts and 6,000 replies about', n, bound, cards, ballots;
   perform pg_temp.expect(n <= bound, '1 digest_standouts read ' || n || ' rows of acts, over ' || bound);
@@ -187,12 +187,12 @@ begin
   drop index acts_digest_plays_at;
   n := pg_temp.reads('acts', format('select * from digest_standouts(%L, %L)', span_at, until_at));
   raise notice '4 digest_standouts without acts_digest_plays_at read % rows of acts', n;
-  perform pg_temp.expect(n > 2 * cards + ballots + 3 * 31 + 2 * 20 + 20, '4 the bound of 1 does not go red without acts_digest_plays_at: ' || n);
+  perform pg_temp.expect(n > 2 * cards + ballots + 3 * 31 + 3 * 20 + 20, '4 the bound of 1 does not go red without acts_digest_plays_at: ' || n);
   execute idef;
   drop index acts_digest_ballots_at;
   n := pg_temp.reads('acts', format('select * from digest_standouts(%L, %L)', span_at, until_at));
   raise notice '4 digest_standouts without acts_digest_ballots_at read % rows of acts', n;
-  perform pg_temp.expect(n > 2 * cards + ballots + 3 * 31 + 2 * 20 + 20, '4 the bound of 1 does not go red without acts_digest_ballots_at: ' || n);
+  perform pg_temp.expect(n > 2 * cards + ballots + 3 * 31 + 3 * 20 + 20, '4 the bound of 1 does not go red without acts_digest_ballots_at: ' || n);
   drop index acts_digest_polls_at;
   raise notice '4 digest_polls without acts_digest_polls_at is planned over it: %', pg_temp.plan_uses('digest_polls(timestamptz, timestamptz)'::regprocedure, 'acts_digest_polls_at');
   perform pg_temp.expect(not pg_temp.plan_uses('digest_polls(timestamptz, timestamptz)'::regprocedure, 'acts_digest_polls_at'), '4 the plan check of 2 does not go red without acts_digest_polls_at');
