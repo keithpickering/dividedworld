@@ -5,8 +5,8 @@
  * (engine/ui/rankings/Rankings.board.stories.tsx) once the owner approved it (issue #50), so it is
  * compared in full: the menu bar with Rankings current, the heading and the season's line, the lead,
  * the table's heads, and every row's name, place, rank and standing, the player's own three marked
- * Yours, and the classes, with both ways a stranger's class shows (Gloomba's reveal; Thwompson's,
- * Turned since).
+ * Yours, and the classes: Gloomba's reveal shows, and Thwompson's, revealed on Oct 8, is cleared by its
+ * announced Turn (the Turn-clears-reveal departure below).
  *
  * Departure by the glass polish (docs/plans/2026-11-04-glass-polish-design.md, the owner's answer of 2026-11-04): the table's text starts at the page's
  * left edge (the first column has no left padding, and an own row's neon band is drawn outside the table), so the Place and Character columns
@@ -22,6 +22,18 @@
  * board's. The place dash is not compared with the board: it takes the place column's size and weight, as the number it stands for does, in the
  * class dash's quieter color, and the board draws nothing it could be held to (its "6" is the cell's own text, so not even its place lines up).
  *
+ * Departure by the Turn-clears-reveal design (docs/plans/2026-11-25-turn-clears-reveal-design.md): the board, a record, draws Thwompson's
+ * class as the Lurker chip with "Revealed Oct 8" and "Has Turned since Oct 30" under it. An announced Turn now clears a shown class, so the
+ * build draws Thwompson's class cell as the dash, like any stranger's. `class-thwompson`, `revealed-thwompson` and `turned-thwompson` are gone,
+ * and a `none-thwompson` landmark takes their place: the board draws no dash in that cell, so it is found by the build's dash order (`buildNth`,
+ * the build's first dash, before the four Ringside rows' place and class dashes) and not compared with the board (`box: 'none'`), as the place
+ * dashes are. The four Ringside class dashes' `buildNth` shift by one for the same reason. The board's Thwompson row is two lines tall in the
+ * class column (the Revealed and Turned lines each take a line) and the build's is one, 32px shorter, so every landmark from Thwompson's row
+ * down is 32px higher in the build. Thwompson's row and its place, rank and standing cells are compared by their x and y (`position`), the
+ * height being the one thing that changed. Rows 6 to 9 (Ringside 1 to 4) are compared by their size, and each of their cells and class dashes
+ * from the row's own corner (`origin` its row), so a cell is still held to its place in its row; the glass polish's 16px puts a row's left edge 16px left of the
+ * board's, so those cells carry a `buildShift` of x 16 and the row of width 16 (Thwompson's row, held by its x, of x -16). Nothing above Thwompson's row changed mode.
+ *
  * The season's line and the dates are in the reader's own time; the board draws them in UTC, and the
  * board match opens both pages in UTC (e2e/boards.spec.ts), whatever the machine's zone.
  */
@@ -29,25 +41,30 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
 
 /** How many cells of each text the rows before have: a cell is found in the table by its text and its place among those. */
 const seen = new Map<string, number>();
-const cell = (id: string, name: string, box?: Landmark['box']): Landmark => {
+const cell = (id: string, name: string, box?: Landmark['box'], origin = 'table', buildShift?: Landmark['buildShift']): Landmark => {
   const nth = seen.get(name) ?? 0;
   seen.set(name, nth + 1);
-  return { id, role: 'cell', name, within: 'table', nth, origin: 'table', ...(box ? { box } : {}) };
+  return { id, role: 'cell', name, within: 'table', nth, origin, ...(box ? { box } : {}), ...(buildShift ? { buildShift } : {}) };
 };
 
 /** A row: its header (the name, with Yours on the player's own), its link, and its place, rank and standing. */
 function row(n: number, name: string, place: string, rank: string, standing: string, own: boolean, buildPlace?: string): Landmark[] {
   const id = `row-${n}`;
-  const placeCell = cell(`${id}-place`, place, 'height');
+  /* Thwompson's row (5) is 32px shorter in the build, so it is held by its place, not its height, and the rows below it (6 and on) rise by 32px: each is held by its size, and its cells from its own corner (the header). */
+  const below = n > 5;
+  const origin = below ? id : 'table';
+  /* The glass polish's 16px (the header) puts a row's own left edge 16px left of the board's, so a cell held from its row's corner stands 16px further from it. */
+  const fromRow = below ? { x: 16 } : undefined;
+  const placeCell = cell(`${id}-place`, place, n === 5 ? 'position' : 'height', origin);
   return [
-    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: 'height' },
-    { id: `${id}-name`, role: 'link', name, within: id, origin: 'table', box: 'height' },
+    { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: below ? 'size' : n === 5 ? 'position' : 'height', ...(below ? { buildShift: { width: 16 } } : n === 5 ? { buildShift: { x: -16 } } : {}) },
+    { id: `${id}-name`, role: 'link', name, within: id, origin, box: 'height' },
     ...(own ? [{ id: `${id}-yours`, role: 'text', name: 'Yours', within: id, origin: 'table', box: 'height' as const }] : []),
     /* The board's "6" cells are the build's "Unplaced" ones, in the same order, so the place among them (`nth`) holds on both sides. */
     /* Its word is hidden from the eye and its dash from a reader, so it has no type to read; the board draws no dash to hold the dash's own type to (the header). */
     buildPlace === undefined ? placeCell : { ...placeCell, buildName: buildPlace, type: false },
-    cell(`${id}-rank`, rank),
-    cell(`${id}-standing`, standing),
+    cell(`${id}-rank`, rank, n === 5 ? 'position' : undefined, origin, fromRow),
+    cell(`${id}-standing`, standing, n === 5 ? 'position' : undefined, origin, fromRow),
   ];
 }
 
@@ -114,20 +131,19 @@ const manifest: BoardManifest = {
     ...row(8, 'Ringside 3', '6', 'Jobber', '0.00', false, 'Unplaced'),
     ...row(9, 'Ringside 4', '6', 'Jobber', '0.00', false, 'Unplaced'),
 
-    /* The classes, by their words in the table: the player's own filled, the two said in public outlined with their dates. */
+    /* The classes, by their words in the table: the player's own filled, Gloomba's said in public outlined with its date; Thwompson's was cleared by its announced Turn (the header). */
     { id: 'class-spritey', role: 'text', name: 'Jabroni', within: 'table', origin: 'table' },
     { id: 'class-hooligan', role: 'text', name: 'Face', within: 'table', nth: 0, origin: 'table' },
     { id: 'class-pipewrench', role: 'text', name: 'Face', within: 'table', nth: 1, origin: 'table' },
     { id: 'class-gloomba', role: 'text', name: 'Heel', within: 'table', origin: 'table' },
     { id: 'revealed-gloomba', role: 'text', name: 'Revealed Oct 30', within: 'table', origin: 'table' },
-    { id: 'class-thwompson', role: 'text', name: 'Lurker', within: 'table', origin: 'table' },
-    { id: 'revealed-thwompson', role: 'text', name: 'Revealed Oct 8', within: 'table', origin: 'table' },
-    { id: 'turned-thwompson', role: 'text', name: 'Has Turned since Oct 30', within: 'table', origin: 'table' },
     /*
-     * No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so each dash is compared by its box and type. In the
-     * build each Ringside row's place dash (#492, the header) comes before its class dash, so the class dashes are the build's second, fourth, sixth and eighth.
+     * No class for the rest: the dash is hidden from a reader and "Not revealed" from the eye, so each dash is compared by its box and type. Thwompson's
+     * class dash is the build's first dash and the board draws none there, so its box is not compared (the header). In the build each Ringside
+     * row's place dash (#492, the header) comes before its class dash, so the class dashes are the build's third, fifth, seventh and ninth.
      */
-    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, buildNth: 2 * n - 1, origin: 'table' })),
+    { id: 'none-thwompson', role: 'text', name: '—', within: 'table', nth: 0, buildNth: 0, origin: 'table', box: 'none' },
+    ...[1, 2, 3, 4].map((n): Landmark => ({ id: `none-ringside-${n}`, role: 'text', name: '—', within: 'table', nth: n - 1, buildNth: 2 * n, origin: `row-${n + 5}`, buildShift: { x: 16 } })),
   ],
 };
 
