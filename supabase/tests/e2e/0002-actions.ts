@@ -122,7 +122,7 @@ test('a barred player apologizes through the action rules: an empty body is refu
     begin
       perform set_config('kayfabb.staff_writer', 'on', true);
       made := tests.act((select id from characters where staff = '${instance.system.firstBoss}'), 'move',
-        (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'),
+        open_staff_thread('${instance.system.firstBoss}', 'Moved: a trial membership'),
         jsonb_build_object('kind', 'conferGroup', 'body', 'Moved.',
           'params', jsonb_build_object('character', '${character}', 'group', 'trialMembers', 'board', (select id::text from boards where slug = 'general')),
           'demand', jsonb_build_object('kind', 'apologyAccepted', 'params', '{}'::jsonb),

@@ -65,7 +65,7 @@ $$;
 create function pg_temp.row(q bigint) returns queued_moves language sql as $$ select * from queued_moves where id = q $$;
 create table pg_temp.ids (name text primary key, id bigint);
 create function pg_temp.said_count() returns bigint language sql as $$
-  select count(*) from acts a where a.kind = 'post' and a.thread = (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements')
+  select count(*) from acts a where a.kind = 'post' and a.thread in (select sh.thread from season_handovers sh where sh.thread is not null)
 $$;
 
 -- ---- 1. A Boss with a waiting mergeBoard, a waiting nameSuccessor and a held renameBoard; each Mod with a waiting setRule ----

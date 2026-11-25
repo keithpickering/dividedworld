@@ -42,6 +42,8 @@ begin
 end $$;
 
 create function pg_temp.ann() returns uuid language sql as $$ select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements' $$;
+-- The thread the latest real handover opened (season_handovers.thread).
+create function pg_temp.hth() returns uuid language sql as $$ select thread from season_handovers where thread is not null order by id desc limit 1 $$;
 
 -- ---- A season played, an announced debut and an old tally, a reveal and a handover ----
 do $$
@@ -112,12 +114,13 @@ begin
   end if;
   if exists (select 1 from pg_temp.sn() x where x.kind = 'tally' and not exists (select 1 from acts a where a.id = x.act and a.kind in ('tally', 'announce'))) then raise exception 'a tally item links its tally or announce Act'; end if;
 
-  -- The Boss: the arrival quotes its first words and links its post in the announcements thread; so does the departure.
-  select a.id into b_post from acts a join characters c on c.id = a.character where c.staff = 'sn-b' and a.kind = 'post' and a.thread = pg_temp.ann();
-  select a.id into a_post from acts a join characters c on c.id = a.character where c.staff = 'sn-a' and a.kind = 'post' and a.thread = pg_temp.ann();
+  -- The Boss: the arrival quotes its first words and links its post in the thread the handover opened (a staff thread, not the announcements thread, which takes nothing new); so does the departure.
+  if not exists (select 1 from threads t where t.id = pg_temp.hth() and t.staff_placed and t.id is distinct from pg_temp.ann()) then raise exception 'the handover opened no staff thread of its own'; end if;
+  select a.id into b_post from acts a join characters c on c.id = a.character where c.staff = 'sn-b' and a.kind = 'post' and a.thread = pg_temp.hth();
+  select a.id into a_post from acts a join characters c on c.id = a.character where c.staff = 'sn-a' and a.kind = 'post' and a.thread = pg_temp.hth();
   select * into n from pg_temp.sn() where kind = 'bossArrived';
   if n.seq is distinct from (select seq from acts where id = b_post) then raise exception 'the arrival names its post''s place in the thread'; end if;
-  if n.act is distinct from b_post or n.thread is distinct from pg_temp.ann() or n.name is distinct from 'Sn B' or n.quote is distinct from 'Hello from Sn B.' or n.season is distinct from 2 then
+  if n.act is distinct from b_post or n.thread is distinct from pg_temp.hth() or n.name is distinct from 'Sn B' or n.quote is distinct from 'Hello from Sn B.' or n.season is distinct from 2 then
     raise exception 'the arrival: %', to_jsonb(n);
   end if;
   select * into n from pg_temp.sn() where kind = 'bossLeft';
@@ -240,8 +243,9 @@ begin
   select * into s2 from seasons where ends_at is null;
   perform tests.old_debut((select id from characters where name = 'Gloomba'), (promos_thread(s2.id)).in_thread, null, s2.starts_at + interval '1 hour');
   perform reveal_season(s2.starts_at + interval '1 day');
-  if (select count(*) from thread_open where board = sys) is distinct from before_all + 1 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
-  if (select count(*) from thread_list where board = sys) is distinct from before_list + 1 then raise exception 'the new thread is listed'; end if;
+  -- The settlement made its thread and the roll-over's handover opened its own (a listed staff thread, 0429): two threads, both listed.
+  if (select count(*) from thread_open where board = sys) is distinct from before_all + 2 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
+  if (select count(*) from thread_list where board = sys) is distinct from before_list + 2 then raise exception 'the new threads are listed'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from (select threads from board_counts where board = sys) then raise exception 'the counter follows the list'; end if;
 end $$;
 
