@@ -151,5 +151,41 @@
     "lufs": -18.9,
     "peak": -3.1,
     "sha256": "ea2a4884f8f062284240af1ab370006119f25454fc44f568d1161734bbe34209"
+  },
+  {
+    "file": "its-curtains-drumroll.mp3",
+    "source": "ElevenLabs Sound Effects",
+    "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
+    "maker": "Divided World",
+    "lufs": -13.8,
+    "peak": -1.8,
+    "sha256": "b5af3f9369d45bc7a6569f092c9d9621de038d7b6aa1cff1a3e5597adf8a682c"
+  },
+  {
+    "file": "its-curtains-crash.mp3",
+    "source": "ElevenLabs Sound Effects",
+    "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
+    "maker": "Divided World",
+    "lufs": -23.8,
+    "peak": -2,
+    "sha256": "fda172bb3e97046b4f3254bc8a484449b28c38486176405e774ef65e7d4bcd21"
+  },
+  {
+    "file": "its-curtains-whoosh.mp3",
+    "source": "ElevenLabs Sound Effects",
+    "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
+    "maker": "Divided World",
+    "lufs": -18.3,
+    "peak": -1.8,
+    "sha256": "c8061b1774ac31cd7887646e30f69972a02359b504b339b244b90f95a4795adf"
+  },
+  {
+    "file": "its-curtains-tada.mp3",
+    "source": "ElevenLabs Sound Effects",
+    "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
+    "maker": "Divided World",
+    "lufs": -11.3,
+    "peak": -1.3,
+    "sha256": "672a85cf041726cfe31e4622cc60a5cf8ad30c490e34e9da86604cbc66b37f9f"
   }
 ]

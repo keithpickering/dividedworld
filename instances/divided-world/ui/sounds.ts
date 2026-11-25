@@ -1,5 +1,5 @@
 /**
- * Divided World's sounds: the audience's laugh track and Steel Chair's, each with its caption and the ink of its dot.
+ * Divided World's sounds: the audience's laugh track, Steel Chair's and It's Curtains', each with its caption and the ink of its dot.
  * The files are in `sounds/`, listed in `sounds/sounds.json` (tools/check-sounds.mjs holds the two to each other).
  * The engine plays them on the game bus (engine/ui/audio/types.ts), each with the `gain` that brings its measured
  * loudness (the manifest's `lufs` and `peak`, written by tools/measure-sounds.mjs) to the same level.
@@ -23,6 +23,10 @@ import steelChairSettle1 from './sounds/steel-chair-settle-1.mp3?url';
 import steelChairSettle2 from './sounds/steel-chair-settle-2.mp3?url';
 import steelChairSettle3 from './sounds/steel-chair-settle-3.mp3?url';
 import steelChairSettle4 from './sounds/steel-chair-settle-4.mp3?url';
+import itsCurtainsDrumroll from './sounds/its-curtains-drumroll.mp3?url';
+import itsCurtainsCrash from './sounds/its-curtains-crash.mp3?url';
+import itsCurtainsWhoosh from './sounds/its-curtains-whoosh.mp3?url';
+import itsCurtainsTada from './sounds/its-curtains-tada.mp3?url';
 
 const LAUGH = 'The audience laughs';
 const CHEER = 'The audience cheers';
@@ -66,6 +70,10 @@ export const sounds: SoundsUi = Object.freeze({
     slot('steel-chair.settle-2', 'steel-chair-settle-2.mp3', steelChairSettle2, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-3', 'steel-chair-settle-3.mp3', steelChairSettle3, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-4', 'steel-chair-settle-4.mp3', steelChairSettle4, CLATTER, 'var(--kb-salty)'),
+    slot('its-curtains.drumroll', 'its-curtains-drumroll.mp3', itsCurtainsDrumroll, 'Drumroll', 'var(--kb-pepperoni)', true),
+    slot('its-curtains.crash', 'its-curtains-crash.mp3', itsCurtainsCrash, 'Cymbal crash', 'var(--kb-pepperoni)'),
+    slot('its-curtains.whoosh', 'its-curtains-whoosh.mp3', itsCurtainsWhoosh, 'Curtain whooshes open', 'var(--kb-pepperoni)'),
+    slot('its-curtains.tada', 'its-curtains-tada.mp3', itsCurtainsTada, 'Ta-da!', 'var(--kb-pepperoni)'),
   ]),
   preview: Object.freeze({ game: 'laugh-track.laugh-1' }),
 });

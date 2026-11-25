@@ -1415,10 +1415,14 @@ describe('Divided World\'s sounds', () => {
     { key: 'steel-chair.settle-2', file: 'steel-chair-settle-2.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-3', file: 'steel-chair-settle-3.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-4', file: 'steel-chair-settle-4.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'its-curtains.drumroll', file: 'its-curtains-drumroll.mp3', caption: 'Drumroll', ink: 'var(--kb-pepperoni)', loop: true },
+    { key: 'its-curtains.crash', file: 'its-curtains-crash.mp3', caption: 'Cymbal crash', ink: 'var(--kb-pepperoni)' },
+    { key: 'its-curtains.whoosh', file: 'its-curtains-whoosh.mp3', caption: 'Curtain whooshes open', ink: 'var(--kb-pepperoni)' },
+    { key: 'its-curtains.tada', file: 'its-curtains-tada.mp3', caption: 'Ta-da!', ink: 'var(--kb-pepperoni)' },
   ];
   const slots = instanceUi.sounds?.slots ?? [];
 
-  test('there are exactly the seventeen slots of the design, in order, with their keys, captions, inks and loops', () => {
+  test('there are exactly the twenty-one slots of the design, in order, with their keys, captions, inks and loops', () => {
     expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
     for (const row of TABLE) {
       const slot = slots.find((s) => s.key === row.key);
@@ -1427,7 +1431,7 @@ describe('Divided World\'s sounds', () => {
       expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
       expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
     }
-    expect(slots).toHaveLength(17);
+    expect(slots).toHaveLength(21);
   });
   test('every slot plays on the game bus', () => {
     for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');
