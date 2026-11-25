@@ -8,6 +8,7 @@ import { landsOn, type CardRules } from '../../../engine/rules/cards.ts';
 import { localReaction } from '../../../engine/rules/emoji.ts';
 import type { Quadrant, Hundredths } from '../../../engine/rules/types.ts';
 import { reactions } from '../reactions.ts';
+import { textField, who } from './seen-words.ts';
 
 export const overreaction: CardRules<{ emoji: string; quadrant: Quadrant }> = {
   key: 'overreaction',
@@ -16,6 +17,10 @@ export const overreaction: CardRules<{ emoji: string; quadrant: Quadrant }> = {
   rarity: 'common',
   stack: 3,
   reaction: true,
+  seen: (p) => {
+    const emoji = textField(p.config, 'emoji', 16);
+    return `${who(p)} added ${emoji !== null ? `a ${emoji} reaction` : 'a reaction of their own'} to this post's picker, ${p.ago}; it is on offer here and nowhere else.`;
+  },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(overreaction, target, effects, now),
   validateConfig: (config) => localReaction(config, reactions),

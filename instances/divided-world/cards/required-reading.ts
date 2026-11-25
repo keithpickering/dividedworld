@@ -6,6 +6,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const requiredReading: CardRules<Record<string, never>> = {
   key: 'required-reading',
@@ -15,6 +16,7 @@ export const requiredReading: CardRules<Record<string, never>> = {
   play: 'use',
   gimmick: { kind: 'earn', quadrants: ['calmPositive'], flat: 1 },
   lasts: { unit: 'week', count: 1 },
+  seen: (p) => `${who(p)} marked this post Required Reading, ${p.ago}: for a week a calm thumbs-up on it earns its author a little extra.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(requiredReading, target, effects, now),
   validateConfig: () => ok({}),

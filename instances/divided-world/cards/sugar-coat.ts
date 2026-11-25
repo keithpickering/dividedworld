@@ -5,6 +5,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const sugarCoat: CardRules<Record<string, never>> = {
   key: 'sugar-coat',
@@ -14,6 +15,7 @@ export const sugarCoat: CardRules<Record<string, never>> = {
   play: 'use',
   gimmick: { kind: 'ward', flavors: ['salty', 'pepperoni'] },
   lasts: { unit: 'day', count: 7 },
+  seen: (p) => `${who(p)} glazed this post in Sugar Coat, ${p.ago}: for a week, Salty and Pepperoni cards slide right off it.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(sugarCoat, target, effects, now),
   validateConfig: () => ok({}),

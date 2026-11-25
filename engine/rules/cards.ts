@@ -336,10 +336,31 @@ export type RideOutcome = { readonly kind: 'ride'; readonly share: number; reado
 /** A trap's lockout: the Move that springs the trap lands as usual, and its character is locked out of that post's thread for `hours` (a whole number from 1 to 168). */
 export type LockoutOutcome = { readonly kind: 'lockout'; readonly hours: number };
 
+/**
+ * What a reader of the board can see of one play, handed to `CardRules.seen`: the play's configuration as the board shows it, its public effect state, its caster's name as the board names it
+ * (null where it names none), how long ago it was played ("2 days ago"), and the engine's `amountWords`, which says a share from 0 to 1 as none, a bit, some, about half, most, almost all or all.
+ */
+export interface SeenPlay {
+  readonly config: unknown;
+  readonly state: unknown;
+  /** The play's public words as the board shows them (a tail, a caption), null where the card has none. */
+  readonly text: string | null;
+  /** The share of the play's surface that is covered, from 0 to 1, as the board shows it; null where the card has none. */
+  readonly covered: number | null;
+  readonly by: string | null;
+  readonly ago: string;
+  readonly amountWords: (share: number) => string;
+}
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
   readonly alignment: Alignment;
+  /**
+   * What a reader of the board sees of one play of this card on a post, in one or two sentences in the fiction's voice, read by a model (never shown to a player; the post's own words stay the post's).
+   * Never a number a player cannot see: an amount is said through `amountWords`. `by` may be null, and the sentence must read without it.
+   */
+  readonly seen?: (p: SeenPlay) => string;
   readonly rarity: Rarity;
   /**
    * Out of print: nothing gives out a new copy (a pack, the machine, a Random Event), while every copy already out stays fully playable.

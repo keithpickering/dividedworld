@@ -10,6 +10,7 @@
  */
 import { landsOn, ok, quadrantFree, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { QUADRANTS, type Quadrant, type Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export type MoochConfig = { readonly quadrant: Quadrant };
 
@@ -21,6 +22,7 @@ export const mooch: CardRules<MoochConfig> = {
   skim: { share: 0.1 },
   lasts: { unit: 'week', count: 1 },
   stack: 4,
+  seen: (p) => `${who(p)} is mooching off this post, ${p.ago}: for a week they skim a little off the reactions it draws.`,
   playPrice: () => 0,
   canApply: (target, effects, config, now) => {
     const lands = landsOn(mooch, target, effects, now);

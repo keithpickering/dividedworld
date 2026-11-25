@@ -35,6 +35,7 @@ import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } 
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
 import { instanceSet, judgedRead, learnMod, pronounsOfCharacter, said } from './core.ts';
+import { readContext } from '../_shared/pool-read.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type AppealAnswer = DoorAnswer;
@@ -131,7 +132,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
 
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
   // A group move is announced in the Announcements thread and is about no post: there is nothing there for the hearer to read.
-  const heard = opened.post === null ? null : await judgedRead(db, settings, opened.thread, opened.staff, opened.post);
+  const heard = opened.post === null ? null : await judgedRead(db, settings, opened.thread, opened.staff, opened.post, readContext(tuned, Date.now()));
   // A punishment of a post (an infraction or a ban) is never ruled on without the post read: nothing is judged, and the appeal is refunded as any appeal no one could hear is. A move is about no post.
   if (opened.kind !== 'move' && !heard?.judged) throw new Error('the punished post cannot be read');
   const fallback = instanceSet(settings);

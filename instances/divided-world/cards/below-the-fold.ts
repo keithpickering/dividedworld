@@ -8,6 +8,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const belowTheFold: CardRules<Record<string, never>> = {
   key: 'below-the-fold',
@@ -16,6 +17,7 @@ export const belowTheFold: CardRules<Record<string, never>> = {
   name: 'Below the Fold',
   alignment: 'salty',
   rarity: 'common',
+  seen: (p) => `${who(p)} folded this post up into a single bar, ${p.ago}: a reader has to press the bar to open it, and can fold it shut again.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(belowTheFold, target, effects, now),
   validateConfig: () => ok({}),

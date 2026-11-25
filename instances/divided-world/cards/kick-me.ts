@@ -7,6 +7,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const kickMe: CardRules<Record<string, never>> = {
   key: 'kick-me',
@@ -20,6 +21,7 @@ export const kickMe: CardRules<Record<string, never>> = {
   gimmick: { kind: 'earn', quadrants: ['excitedNegative', 'boredNegative'], flat: 1 },
   refunds: { flavors: ['salty'], count: 3 },
   lasts: { unit: 'day', count: 3 },
+  seen: (p) => `${who(p)} taped a “Kick Me” sign to this post, ${p.ago}: for a few days it begs to be kicked, and every boo and groan it draws is worth extra to its author.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(kickMe, target, effects, now),
   validateConfig: () => ok({}),

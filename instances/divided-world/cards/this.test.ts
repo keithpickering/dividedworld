@@ -7,7 +7,7 @@ import { WORDS, thisCard } from './this.ts';
 import { characters } from './phrase-bound.ts';
 import { postTarget } from '../../../engine/rules/cards.ts';
 import { defaults as settings } from '../settings.ts';
-import { on } from './test-kit.ts';
+import { on, seenOf } from './test-kit.ts';
 
 /* ---- THIS (docs/plans/2026-11-13-this-plan.md, Task 3) ---- */
 const thisConfig = (phrase: unknown, words?: unknown) => thisCard.validateConfig(words === undefined ? { phrase } : { phrase, words });
@@ -79,4 +79,10 @@ test('THIS\'s persona options: the words are trimmed to 60 characters at a word\
   assert.equal(thisCard.canApply(on('I like Mario a lot'), [], (verdict as { value: { phrase: string; words: string } }).value, new Date()).ok, false);
   assert.deepEqual(repair({ phrase: 'ab', words: 'x' }), { config: { phrase: 'ab', words: 'x' }, trims: [] });
   assert.deepEqual(repair('nonsense'), { config: 'nonsense', trims: [] });
+});
+
+test('THIS says which words the arrow points at and what it says of them', () => {
+  assert.equal(seenOf('this', { config: { phrase: 'Wiggler sprites', words: 'so true' } }), 'Wario pointed an arrow at “Wiggler sprites”, 2 days ago, with a note: “THIS so true”.');
+  assert.match(seenOf('this', { config: { phrase: 'Wiggler sprites', words: '' }, by: null }), /^Someone pointed an arrow at “Wiggler sprites”, 2 days ago, with a note: “THIS”\.$/);
+  assert.match(seenOf('this'), /some of the words in this post/);
 });

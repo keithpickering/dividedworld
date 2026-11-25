@@ -8,6 +8,7 @@
  */
 import { ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const popSteal: CardRules<Record<string, never>> = {
   key: 'pop-steal',
@@ -16,6 +17,7 @@ export const popSteal: CardRules<Record<string, never>> = {
   rarity: 'common',
   play: 'set',
   trap: { trigger: { on: 'cast' }, match: { flavors: ['sweet'], upTo: 'common' } },
+  seen: (p) => `${who(p)}'s Pop Steal sprang on this post, ${p.ago}: a sweet little card played here was snatched out of the air, did nothing, and ended up in the thief's pocket.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

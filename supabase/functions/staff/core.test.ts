@@ -46,6 +46,8 @@ interface World {
   /** Visits the tick files while the model is thinking (the race). */
   tickFiles?: string[];
   /** When set, pool_read reports this many long posts (Poster0 oldest, the inspected post last) instead of the one short one. */
+  /** What `pool_read` adds (0426): the inspected post's poll, plays and reactions, and the thread's origin. */
+  extras?: { post?: Record<string, unknown>; origin?: Record<string, unknown> };
   /** The whole body `pool_read` gives the inspected post. */
   postBody?: string;
   /** `pool_read` does not hold the inspected post. */
@@ -99,7 +101,7 @@ function fakeDb(w: World = {}) {
           const at = '2026-11-04T09:00:00.000Z';
           if (w.unreadable) return { title: 'Best Mario game?', self: null, posts: [] } as T;
           if (w.longThread) return { title: 'Best Mario game?', self: null, posts: Array.from({ length: w.longThread }, (_, i) => ({ act: i === w.longThread! - 1 ? v.post : `x${i}`, seq: i + 1, at, author: `poster-${i}`, name: `Poster${i}`, pronouns: null, body: `post ${i} ${'the quick brown fox jumps over a lazy dog '.repeat(8)}`, replyTo: null, quotes: [] })) } as T;
-          return { title: 'Best Mario game?', self: null, posts: [{ act: v.post, seq: 1, at, author: 'bob', name: 'Bob', pronouns: null, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
+          return { title: 'Best Mario game?', self: null, posts: [{ act: v.post, seq: 1, at, author: 'bob', name: 'Bob', pronouns: null, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [], ...w.extras?.post }], ...(w.extras?.origin ? { origin: w.extras.origin } : {}) } as T;
         }
         case 'apply_mod_move': {
           const staffKey = String(args.staff);
@@ -667,4 +669,25 @@ test('a filing on a 5,000-character post passes it whole; one whose post cannot 
   assert.equal(filed.filings[0]!.line, 'stock');
   assert.match(filed.filings[0]!.why!, /cannot be read/);
   assert.equal(gone.of('file_visit').length, 1, 'the visit is filed all the same');
+});
+
+// ---- Reads see the board (docs/plans/2026-11-25-reads-see-the-board-plan.md, Task 5) ----
+
+const POLL = { question: 'Best kart?', options: ['Standard', 'Bike'], pick: 1, secret: false, endsAt: '2099-01-01T00:00:00.000Z', closed: false, closedBy: null, closedAt: null, counts: [3, 1], voters: 4 };
+const PLAY = (play: string) => ({ play, card: null, at: '2026-11-04T09:30:00.000Z', by: null, config: null, state: null, text: null, covered: null });
+const ORIGIN = { kind: 'post', place: { kind: 'post', seq: 4, title: 'Best kart?' }, at: '2026-05-01T00:00:00.000Z', spunAt: '2026-11-03T00:00:00.000Z', moment: false,
+  post: { act: 'origin-act', seq: 4, at: '2026-05-01T00:00:00.000Z', author: 'wario', name: 'Wario', pronouns: null, body: 'The origin words.', title: 'Best kart?', poll: null, plays: [], reactions: {} } };
+
+test('a filing is sent the judged post\'s poll, plays and reactions and the thread\'s origin, rendered at the run\'s clock', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)], extras: { post: { poll: POLL, plays: [PLAY('play-1'), PLAY('play-2')], reactions: { [dividedWorld.reactions[0]!.key]: 3 } }, origin: ORIGIN } });
+  const m = fakeModels(() => ({ words: 'Noted.' }));
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.ok(message.includes('[poll on this post] "Best kart?" (pick one)'), 'the poll');
+  assert.ok(message.includes('Open: ends in '), 'its end is read against the run\'s clock (the slot, 2026), not a later one');
+  assert.equal(message.split('was played on this post').length - 1, 2, 'both plays');
+  assert.ok(message.includes(`[Reactions: ${dividedWorld.reactions[0]!.emoji} 3]`), 'the reactions');
+  assert.ok(message.includes('(This thread was spun '), 'the origin line');
+  assert.ok(message.includes('The origin words.'), 'the origin block');
 });

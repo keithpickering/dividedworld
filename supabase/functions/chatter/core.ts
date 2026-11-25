@@ -116,7 +116,7 @@ import {
 } from '../../../engine/system/pool.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
-import { readOf, type PoolRead } from '../_shared/pool-read.ts';
+import { readContext, readOf, type PoolRead } from '../_shared/pool-read.ts';
 import { readModGroups, type Standing } from '../_shared/mod-groups.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, requestRefused, SchemaRefused } from '../_shared/models/index.ts';
@@ -722,7 +722,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     ]);
     // A turn answers the replies the reader took, newest first while they fit `readMost` (the newest is always taken); a reply it did not take is not named, and stays waiting. A reply that cannot be read is not answered either
     // (the database would find it no longer waiting).
-    const read = readOf(pooled, instanceSet, planned.answers, settings.pool.readMost);
+    const read = readOf(pooled, instanceSet, planned.answers, settings.pool.readMost, readContext(tuned, Date.now()));
     const answers = read.answered;
     if (answers.length === 0) return skip('none of the waiting replies can be read');
     const quoting = answers.at(-1)!;
@@ -851,7 +851,7 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       ? await db.rpc<PoolRead>('pool_read', { in_thread: p.thread, staff_key: p.staff, named: quotes === null ? [] : [quotes], window: READ_WINDOW })
       : null;
     // A spin start reads the origin's thread as no one in it: the persona's own posts and what answers them are not part of what it reads (no marks, no tiers by relation to it); only the origin is named.
-    const read = pooled === null ? null : readOf(spins ? { ...pooled, self: null } : pooled, instanceSet, quotes === null ? [] : [quotes], settings.pool.readMost);
+    const read = pooled === null ? null : readOf(spins ? { ...pooled, self: null } : pooled, instanceSet, quotes === null ? [] : [quotes], settings.pool.readMost, readContext(tuned, Date.now()));
     const quotedPost = read && quotes ? (read.posts.find((x) => x.act === quotes) ?? null) : null;
 
     // The cards on offer: a Cast needs a post to land on (the post it replies to, which it was shown), a Set lands on its own new post. Only

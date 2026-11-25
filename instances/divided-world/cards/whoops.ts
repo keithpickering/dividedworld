@@ -23,6 +23,8 @@ import { decodePoints, encodePoints } from './whoops/points.ts';
 import type { Drops } from './whoops/scrub.ts';
 import { color, economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { capital, colorWord, who } from './seen-words.ts';
+import { washedShare } from './whoops/seen.ts';
 
 export const STROKES = { most: 200, points: 500, totalPoints: 40_000, widest: 1, deepest: 1 } as const;
 const tenThousandth = (n: number) => Math.round(n * 10_000) / 10_000;
@@ -41,6 +43,12 @@ export const whoops: CardRules<{ color: string }> = {
   rarity: 'common',
   stack: 3,
   seeded: true,
+  seen: (p) => {
+    const ink = colorWord(p.config);
+    const washed = washedShare(p.config, p.state);
+    const rest = washed >= 1 ? ' It has all been scrubbed away.' : washed > 0 && p.amountWords(washed) !== 'none' ? ` ${capital(p.amountWords(washed))} of it has been scrubbed away.` : '';
+    return `${who(p)} covered this post in a big ${ink === null ? '' : `${ink} `}splat of goop, ${p.ago}.${rest}`;
+  },
   /** A layer counts as washed clean at this share of it, in whole percent (the effect's, read by the screens). */
   screenReads: [{ key: 'whoops.clean', whole: true, min: 1, max: 100 }],
   reads: [{ key: 'whoops.perLength', whole: true, min: 0 }, { key: 'whoops.lengthStep', whole: true, min: 1 }, { key: 'whoops.mostAdded', whole: true, min: 1 }],

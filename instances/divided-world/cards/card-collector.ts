@@ -10,6 +10,7 @@
  */
 import { ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export type CardCollectorConfig = { readonly card: string };
 
@@ -25,6 +26,7 @@ export const cardCollector: CardRules<CardCollectorConfig> = {
   play: 'set',
   trap: { trigger: { on: 'cast' } },
   catches: (config) => config.card,
+  seen: (p) => `${who(p)}'s Card Collector sprang on this post, ${p.ago}: the card played here was caught and swept into the collector's hand.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: (config) => {

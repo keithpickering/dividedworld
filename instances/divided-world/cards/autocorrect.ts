@@ -32,6 +32,7 @@ import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/
 import { occurrences, sameWords } from './autocorrect/match.ts';
 import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
 import type { Hundredths, Settings } from '../../../engine/rules/types.ts';
+import { field, textField, who } from './seen-words.ts';
 
 export const REPLACEMENT = { most: 100 } as const;
 /**
@@ -63,6 +64,14 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     { key: 'autocorrect.peekSettle', whole: true, min: 20, max: 2000 },
   ],
   reads: [{ key: 'autocorrect.perVolume', whole: true, min: 0 }, { key: 'autocorrect.volumeStep', whole: true, min: 1 }, { key: 'autocorrect.mostAdded', whole: true, min: 1 }, { key: 'autocorrect.holdHours', whole: true, min: 0, max: 168 }],
+  seen: (p) => {
+    const phrase = textField(p.config, 'phrase', 80), replacement = textField(p.config, 'replacement', 80);
+    const tape = phrase !== null && replacement !== null ? `every “${phrase}” in this post in masking tape with “${replacement}” scrawled across it in marker` : 'the words it names in this post in strips of masking tape with other words scrawled across them in marker';
+    const peeled = field(p.state, 'peeled'), stuck = field(p.state, 'stuck');
+    const loose = Array.isArray(peeled) ? peeled.length : 0, half = typeof stuck === 'object' && stuck !== null ? Object.keys(stuck).length : 0;
+    const rest = field(p.state, 'clean') === true ? ' Every strip has been peeled away.' : loose > 0 ? ' Some of the tape has been peeled off, leaving the words under it bare.' : half > 0 ? ' A strip has been half peeled, and hangs by a corner.' : '';
+    return `${who(p)} taped over ${tape}, ${p.ago}.${rest}`;
+  },
   playPrice: (settings, target, config) => {
     if (target.reach !== 'post') return 0;
     const room = economyOf(settings, 'autocorrect.mostAdded');

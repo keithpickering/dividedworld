@@ -5,6 +5,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const lastWord: CardRules<Record<string, never>> = {
   key: 'last-word',
@@ -14,6 +15,7 @@ export const lastWord: CardRules<Record<string, never>> = {
   play: 'use',
   gimmick: { kind: 'noQuote' },
   lasts: { unit: 'day', count: 7 },
+  seen: (p) => `${who(p)} had the Last Word on this post, ${p.ago}: it has no Quote link for a week, so nobody can quote it.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(lastWord, target, effects, now),
   validateConfig: () => ok({}),

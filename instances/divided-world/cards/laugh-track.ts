@@ -19,6 +19,7 @@ import { occurrences, sameWords } from '../../../engine/bbcode/phrase.ts';
 import type { Stretch } from '../../../engine/bbcode/visible.ts';
 import { boundedPhrase } from './phrase-bound.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { field, textField, who } from './seen-words.ts';
 
 export type Sound = 'laugh' | 'cheer' | 'boo';
 export interface Cue { readonly phrase: string; readonly sound: Sound }
@@ -149,6 +150,14 @@ export const laughTrack: CardRules<LaughTrackConfig> = {
     { key: 'laughTrack.markMost', whole: true, min: 0, max: 100 },
   ],
   reads: [{ key: 'laughTrack.perPlace', whole: true, min: 0 }, { key: 'laughTrack.freePlaces', whole: true, min: 0 }, { key: 'laughTrack.mostAdded', whole: true, min: 1 }],
+  seen: (p) => {
+    const cues = Array.isArray(field(p.config, 'cues')) ? (field(p.config, 'cues') as unknown[]) : [];
+    const heard = cues.flatMap((c) => {
+      const phrase = textField(c, 'phrase', 60), sound = field(c, 'sound');
+      return phrase !== null && (sound === 'laugh' || sound === 'cheer' || sound === 'boo') ? [`${sound === 'laugh' ? 'a laugh' : sound === 'cheer' ? 'a cheer' : 'a boo'} at “${phrase}”`] : [];
+    }).slice(0, 5);
+    return `${who(p)} wired this post for sound, ${p.ago}: ${heard.length === 0 ? 'an audience is listening for particular words in it' : `a studio audience gives ${heard.join(', ')}`} when a reader points at the cued words.`;
+  },
   playPrice: (settings, target, config) => {
     if (target.reach !== 'post') return 0;
     const room = economyOf(settings, 'laughTrack.mostAdded');

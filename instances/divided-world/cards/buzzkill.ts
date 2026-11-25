@@ -5,6 +5,7 @@
  */
 import { landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 /** An id, as the engine's own checks read one (engine/rules/actions.ts holds the same pattern, unexported). */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -16,6 +17,7 @@ export const buzzkill: CardRules<{ readonly play: string }> = {
   rarity: 'rare',
   reaches: ['post', 'character'],
   cuts: { upTo: 'rare' },
+  seen: (p) => `${who(p)} played Buzzkill here, ${p.ago}, and tore down a Gimmick that was up.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(buzzkill, target, effects, now),
   validateConfig: (config) => {

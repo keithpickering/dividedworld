@@ -7,7 +7,7 @@ import { PEELS, autocorrect, heldUntil } from './autocorrect.ts';
 import { decidePlay, postTarget, type CardRules } from '../../../engine/rules/cards.ts';
 import { instanceProblems, withOverrides } from '../../../engine/rules/instance.ts';
 import { defaults as settings } from '../settings.ts';
-import { on } from './test-kit.ts';
+import { on, seenOf } from './test-kit.ts';
 import { instance } from '../index.ts';
 
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
@@ -226,4 +226,15 @@ test('it draws an effect, and tape washed clean (the state\'s clean is true) sto
   assert.equal(cleared({ peeled: [], clean: false }), false);
   assert.equal(cleared({ peeled: [] }), false);
   for (const odd of [{}, null, 'clean', undefined, [], 1]) assert.equal(cleared(odd), false, JSON.stringify(odd));
+});
+
+test('Autocorrect says what is taped over what, and how much of the tape has been peeled', () => {
+  const config = { phrase: 'Mario Kart', replacement: 'Wario Kart' };
+  assert.equal(seenOf('autocorrect', { config }), 'Wario taped over every “Mario Kart” in this post in masking tape with “Wario Kart” scrawled across it in marker, 2 days ago.');
+  assert.match(seenOf('autocorrect', { config, by: null }), /^Someone taped over every “Mario Kart”/);
+  assert.match(seenOf('autocorrect', { config: {} }), /^Wario taped over the words it names in this post/, 'a play whose words are missing still reads');
+  assert.doesNotMatch(seenOf('autocorrect', { config, state: { peeled: [] } }), /peeled/, 'nothing peeled says nothing');
+  assert.match(seenOf('autocorrect', { config, state: { peeled: [0] } }), /2 days ago\. Some of the tape has been peeled off/);
+  assert.match(seenOf('autocorrect', { config, state: { peeled: [], stuck: { 1: [[0, 0.5, 2]] } } }), /half peeled/);
+  assert.match(seenOf('autocorrect', { config, state: { peeled: [0, 1], clean: true } }), /Every strip has been peeled away\.$/);
 });
