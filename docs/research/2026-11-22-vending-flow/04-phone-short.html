@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=390">
+<title>Short of solid Aura, on a phone: the Vending Machine flow board</title>
+<!-- A board of the Vending Machine flow design session (docs/plans/2026-11-22-vending-machine-flow-design.md), written by
+     gen.mjs in this folder. A reference for the look and the layout, not code to copy. -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Anton&amp;family=Barlow+Condensed:ital,wght@0,500;0,600;0,700;0,800;1,700;1,800&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0;background:#07050d}
+a{color:inherit}
+*{box-sizing:border-box}
+button{font:inherit;color:inherit}
+a:focus-visible,button:focus-visible{outline:3px solid #fff;outline-offset:3px}
+.orb{position:relative;width:40px;height:40px;border-radius:50%;overflow:hidden;flex:none;background:radial-gradient(circle at 50% 60%,#1c1533,#07060c 72%);box-shadow:inset 0 0 0 1.5px rgba(255,255,255,.22)}
+.orb .liq,.orb .spend{position:absolute;left:0;right:0}.orb .liq{bottom:0}
+.orb .spend{background:repeating-linear-gradient(135deg,rgba(255,61,127,.95) 0 2px,rgba(255,61,127,.15) 2px 5px)}
+.orb .gloss{position:absolute;left:17%;top:8%;width:48%;height:30%;border-radius:50%;background:radial-gradient(ellipse at 50% 40%,rgba(255,255,255,.9),rgba(255,255,255,0) 70%)}
+.c1{background:radial-gradient(circle at 38% 30%,#ead6ff,#b46cff 52%,#3d1475)}
+.c2{background:radial-gradient(circle at 38% 30%,#d6e9ff,#3d9bff 52%,#0c3275)}
+.c3{background:radial-gradient(circle at 38% 30%,#d6fff0,#2ef0a0 52%,#08603f)}
+.c4{background:radial-gradient(circle at 38% 30%,#fff7d6,#ffd93d 52%,#7a5c06)}
+.c5{background:radial-gradient(circle at 38% 30%,#ffe7d6,#ff9a3d 52%,#7a3406)}
+.tab{display:flex;align-items:center;min-height:52px;padding:0 15px;transform:skewX(-10deg);text-decoration:none;font:800 21px 'Barlow Condensed',sans-serif;letter-spacing:2px;color:#e4def7;white-space:nowrap}
+.tab b{display:inline-block;transform:skewX(10deg);font-weight:800}
+.label{font:800 20px 'Barlow Condensed',sans-serif;letter-spacing:3px;color:#e4def7;text-transform:uppercase}
+.fine{margin:0;font:500 21px/1.5 'Barlow Condensed',sans-serif;color:#e4def7}
+.frame{position:absolute;inset:0;clip-path:polygon(0 0, calc(100% - 18px) 0, 100% 18px, 100% 100%, 18px 100%, 0 calc(100% - 18px))}
+.flicker{animation:flicker 6s steps(1) infinite}
+@keyframes flicker{0%,100%{opacity:1}47%{opacity:1}48%{opacity:.55}49%{opacity:1}83%{opacity:1}84%{opacity:.7}85%{opacity:1}}
+@media (prefers-reduced-motion: reduce){.flicker{animation:none}}
+</style>
+</head>
+<body>
+<div style="width:390px;height:844px;position:relative;overflow:hidden;background:#07050d;color:#f1ecff;font-family:'Barlow Condensed',sans-serif">
+  
+  <nav aria-label="Menu" style="position:absolute;left:0;right:0;top:0;height:64px;z-index:5;display:flex;align-items:center;gap:6px;padding:0 12px;background:rgba(7,5,13,.94);border-bottom:1px solid #9ef4ff;box-shadow:0 1px 10px rgba(25,227,255,.35);overflow:hidden">
+    <a href="#" class="tab" style="border:1px solid #fff;color:#fff;min-height:44px;padding:0 14px;font-size:20px"><b>‹ BACK</b></a>
+    <a href="#" class="tab" aria-current="page" style="background:rgba(25,227,255,.16);box-shadow:inset 0 -3px 0 #19e3ff;color:#fff;min-height:44px;padding:0 14px;font-size:20px"><b>VENDING MACHINE</b></a>
+    <a href="#" class="tab" style="min-height:44px;padding:0 14px;font-size:20px"><b>MY CHARACTERS</b></a>
+  </nav>
+  
+  <svg aria-hidden="true" width="390" height="844" style="position:absolute;left:0;top:0">
+    <defs>
+      <filter id="vA" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0022 0.004" numOctaves="5" seed="71"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 0.55  0 0 0 0 0.14  0 0 0 0 0.98  1.8 0 0 0 -0.78"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="vB" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.003 0.005" numOctaves="4" seed="19"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0.17  0 0 0 0 0.84  0 2 0 0 -1.05"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="vC" x="-10%" y="-10%" width="120%" height="120%"><feTurbulence type="fractalNoise" baseFrequency="0.0034 0.006" numOctaves="4" seed="3"></feTurbulence><feColorMatrix type="matrix" values="0 0 0 0 1  0 0 0 0 0.85  0 0 0 0 0.24  0 0 2 0 -1.15"></feColorMatrix><feGaussianBlur stdDeviation="18"></feGaussianBlur></filter>
+      <filter id="vSoft" x="-30%" y="-30%" width="160%" height="160%"><feGaussianBlur stdDeviation="60"></feGaussianBlur></filter>
+      <mask id="vCalm" maskUnits="userSpaceOnUse" x="0" y="0" width="390" height="844">
+        <rect width="390" height="844" fill="#fff"></rect>
+        <rect x="0" y="64" width="390" height="140" fill="#000" opacity="0.85" filter="url(#vSoft)"></rect>
+      </mask>
+    </defs>
+    <g mask="url(#vCalm)">
+      <rect width="390" height="844" filter="url(#vA)" opacity="0.85"></rect>
+      <rect width="390" height="844" filter="url(#vB)" opacity="0.45"></rect>
+      <rect width="390" height="844" filter="url(#vC)" opacity="0.3"></rect>
+    </g>
+  </svg>
+
+  <!-- the compact head: a one-line title and a one-row wallet (design, 10) -->
+  <div style="position:absolute;left:16px;right:16px;top:76px">
+    <h1 style="margin:0;font:36px/1 Anton,Impact,sans-serif;letter-spacing:1px;color:#ffd93d;text-shadow:0 0 18px rgba(255,217,61,.35)">VENDING MACHINE</h1>
+    <section aria-label="Your wallet" style="display:flex;align-items:center;gap:6px;margin-top:10px">
+      <div role="img" aria-label="Wallet: 1.62 of 6.00 solid" style="display:flex;gap:4px"><div class="orb" style="width:26px;height:26px"><div class="liq c1" style="height:100%"></div><div class="gloss"></div></div><div class="orb" style="width:26px;height:26px"><div class="liq c2" style="height:62%"></div><div class="gloss"></div></div><div class="orb" style="width:26px;height:26px"><div class="gloss"></div></div><div class="orb" style="width:26px;height:26px"><div class="gloss"></div></div><div class="orb" style="width:26px;height:26px"><div class="gloss"></div></div><div class="orb" style="width:26px;height:26px"><div class="gloss"></div></div></div>
+      <span style="margin-left:6px;white-space:nowrap;font:600 20px 'Barlow Condensed',sans-serif"><b style="font:22px Anton,Impact,sans-serif;font-weight:400">1.62</b> <span style="color:#e4def7">of 6.00 solid</span></span>
+      <button aria-label="About the wallet" style="margin-left:auto;width:44px;height:44px;border:0;background:transparent;display:flex;align-items:center;justify-content:center"><svg aria-hidden="true" width="26" height="26" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+    </section>
+  </div>
+
+  <!-- the machine, starting on the first screen -->
+  <div role="group" aria-label="Vending Machine" style="position:absolute;left:12px;right:12px;top:188px;height:1100px">
+    
+      <div aria-hidden="true" style="position:absolute;inset:0;clip-path:polygon(0 0, calc(100% - 28px) 0, 100% 28px, 100% 100%, 28px 100%, 0 calc(100% - 28px));background:#ff3d7f;filter:drop-shadow(0 0 22px rgba(255,61,127,.45))"></div>
+      <div aria-hidden="true" style="position:absolute;inset:2px;clip-path:polygon(0 0, calc(100% - 27px) 0, 100% 27px, 100% 100%, 27px 100%, 0 calc(100% - 27px));background:#0d0819"></div>
+      <div aria-hidden="true" style="position:absolute;inset:12px;clip-path:polygon(0 0, calc(100% - 22px) 0, 100% 22px, 100% 100%, 22px 100%, 0 calc(100% - 22px));background:rgba(25,227,255,.45)"></div>
+      <div aria-hidden="true" style="position:absolute;inset:13px;clip-path:polygon(0 0, calc(100% - 21px) 0, 100% 21px, 100% 100%, 21px 100%, 0 calc(100% - 21px));background:#120b22"></div>
+      <div aria-hidden="true" style="position:absolute;left:30px;right:30px;top:26px;height:54px;clip-path:polygon(0 0, calc(100% - 14px) 0, 100% 14px, 100% 100%, 14px 100%, 0 calc(100% - 14px));background:rgba(255,217,61,.45)"></div>
+      <div aria-hidden="true" style="position:absolute;left:31px;right:31px;top:27px;height:52px;clip-path:polygon(0 0, calc(100% - 13px) 0, 100% 13px, 100% 100%, 13px 100%, 0 calc(100% - 13px));background:#07040e;display:flex;align-items:center;justify-content:center">
+        <span class="flicker" style="font:34px/1 Anton,Impact,sans-serif;letter-spacing:3px;color:#fff4c4;text-shadow:0 0 6px #ffd93d,0 0 18px #ffd93d,0 0 36px rgba(255,154,61,.8)">FRESH BEEF</span>
+      </div>
+    <div role="radiogroup" aria-label="Slots" style="position:absolute;left:14px;top:96px;display:grid;grid-template-columns:repeat(2,163px);gap:12px">
+        <div style="position:relative;width:163px;height:196px;filter:drop-shadow(0 0 10px rgba(255,61,127,.6))">
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:#ff3d7f"></div>
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));inset:2px;background:rgba(40,6,20,.96)"></div>
+          <button role="radio" aria-checked="true" aria-label="Booster, 3.00 orbs" tabindex="0" style="position:absolute;inset:0;padding:0;border:0;background:transparent;cursor:pointer">
+            <span style="position:absolute;left:50%;top:12px;width:91px;height:136px;margin-left:-45.5px;overflow:hidden;box-shadow:0 0 0 1.5px #ffd93d,0 0 14px #ffd93d66;clip-path:polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));background:#0b0914">
+              <span style="position:absolute;inset:0;background:linear-gradient(135deg,#fff3b0,#ffd93d 30%,#b46cff 60%,#2ee6ff);display:flex;align-items:center;justify-content:center"><span style="font:20px/1 Anton,Impact,sans-serif;letter-spacing:1px;color:#1a1200;transform:rotate(-8deg);background:rgba(255,255,255,.7);padding:4px 6px">BOOSTER</span></span>
+              
+            </span>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;bottom:10px;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:1px;background:#ffd93d;color:#1a1200;padding:3px 7px">A1 · 3.00</span>
+          </button>
+          <button aria-label="About Booster" tabindex="0" style="position:absolute;right:4px;top:4px;width:44px;height:44px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+        </div>
+        <div style="position:relative;width:163px;height:196px;">
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:rgba(201,248,255,.38)"></div>
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));inset:1.5px;background:rgba(10,8,22,.94)"></div>
+          <button role="radio" aria-checked="false" aria-label="Autocorrect, 1.00 orb" tabindex="-1" style="position:absolute;inset:0;padding:0;border:0;background:transparent;cursor:pointer">
+            <span style="position:absolute;left:50%;top:12px;width:91px;height:136px;margin-left:-45.5px;overflow:hidden;box-shadow:0 0 0 1.5px #d24a2c,0 0 14px #d24a2c66;clip-path:polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));background:#0b0914">
+              <img alt="" src="../../../instances/divided-world/ui/cards/autocorrect/art.webp" style="width:100%;height:100%;object-fit:cover;display:block">
+              <span style="position:absolute;left:0;right:0;bottom:0;padding:3px 4px;background:rgba(7,5,13,.82);font:12px/1 Anton,Impact,sans-serif;letter-spacing:.5px;color:#fff;text-transform:uppercase;text-align:left">Autocorrect</span>
+            </span>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;bottom:10px;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:1px;background:#d24a2c;color:#0d0301;padding:3px 7px">A2 · 1.00</span>
+          </button>
+          <button aria-label="About Autocorrect" tabindex="-1" style="position:absolute;right:4px;top:4px;width:44px;height:44px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+        </div>
+        <div style="position:relative;width:163px;height:196px;">
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:rgba(201,248,255,.38)"></div>
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));inset:1.5px;background:rgba(10,8,22,.94)"></div>
+          <button role="radio" aria-checked="false" aria-label="Below the Fold, 1.00 orb" tabindex="-1" style="position:absolute;inset:0;padding:0;border:0;background:transparent;cursor:pointer">
+            <span style="position:absolute;left:50%;top:12px;width:91px;height:136px;margin-left:-45.5px;overflow:hidden;box-shadow:0 0 0 1.5px #ff3d7f,0 0 14px #ff3d7f66;clip-path:polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));background:#0b0914">
+              <img alt="" src="../../../instances/divided-world/ui/cards/below-the-fold/art.webp" style="width:100%;height:100%;object-fit:cover;display:block">
+              <span style="position:absolute;left:0;right:0;bottom:0;padding:3px 4px;background:rgba(7,5,13,.82);font:12px/1 Anton,Impact,sans-serif;letter-spacing:.5px;color:#fff;text-transform:uppercase;text-align:left">Below the Fold</span>
+            </span>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;bottom:10px;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:1px;background:#ff3d7f;color:#14030a;padding:3px 7px">B1 · 1.00</span>
+          </button>
+          <button aria-label="About Below the Fold" tabindex="-1" style="position:absolute;right:4px;top:4px;width:44px;height:44px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+        </div>
+        <div style="position:relative;width:163px;height:196px;">
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:rgba(201,248,255,.38)"></div>
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));inset:1.5px;background:rgba(10,8,22,.94)"></div>
+          <button role="radio" aria-checked="false" aria-label="Feelin' Fab, 0.20 orbs" tabindex="-1" style="position:absolute;inset:0;padding:0;border:0;background:transparent;cursor:pointer">
+            <span style="position:absolute;left:50%;top:12px;width:91px;height:136px;margin-left:-45.5px;overflow:hidden;box-shadow:0 0 0 1.5px #2ee6ff,0 0 14px #2ee6ff66;clip-path:polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));background:#0b0914">
+              <img alt="" src="../../../instances/divided-world/ui/cards/feelin-fab/art.webp" style="width:100%;height:100%;object-fit:cover;display:block">
+              <span style="position:absolute;left:0;right:0;bottom:0;padding:3px 4px;background:rgba(7,5,13,.82);font:12px/1 Anton,Impact,sans-serif;letter-spacing:.5px;color:#fff;text-transform:uppercase;text-align:left">Feelin' Fab</span>
+            </span>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;bottom:10px;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:1px;background:#2ee6ff;color:#03141a;padding:3px 7px">B2 · 0.20</span>
+          </button>
+          <button aria-label="About Feelin' Fab" tabindex="-1" style="position:absolute;right:4px;top:4px;width:44px;height:44px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+        </div>
+        <div style="position:relative;width:163px;height:196px;">
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:rgba(201,248,255,.38)"></div>
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));inset:1.5px;background:rgba(10,8,22,.94)"></div>
+          <button role="radio" aria-checked="false" aria-label="Hype-Up, 1.00 orb" tabindex="-1" style="position:absolute;inset:0;padding:0;border:0;background:transparent;cursor:pointer">
+            <span style="position:absolute;left:50%;top:12px;width:91px;height:136px;margin-left:-45.5px;overflow:hidden;box-shadow:0 0 0 1.5px #2ee6ff,0 0 14px #2ee6ff66;clip-path:polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));background:#0b0914">
+              <img alt="" src="../../../instances/divided-world/ui/cards/hype-up/art.webp" style="width:100%;height:100%;object-fit:cover;display:block">
+              <span style="position:absolute;left:0;right:0;bottom:0;padding:3px 4px;background:rgba(7,5,13,.82);font:12px/1 Anton,Impact,sans-serif;letter-spacing:.5px;color:#fff;text-transform:uppercase;text-align:left">Hype-Up</span>
+            </span>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;bottom:10px;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:1px;background:#2ee6ff;color:#03141a;padding:3px 7px">C1 · 1.00</span>
+          </button>
+          <button aria-label="About Hype-Up" tabindex="-1" style="position:absolute;right:4px;top:4px;width:44px;height:44px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+        </div>
+        <div style="position:relative;width:163px;height:196px;">
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:rgba(201,248,255,.38)"></div>
+          <div class="frame" aria-hidden="true" style="clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));inset:1.5px;background:rgba(10,8,22,.94)"></div>
+          <button role="radio" aria-checked="false" aria-label="Overreaction, 1.00 orb" tabindex="-1" style="position:absolute;inset:0;padding:0;border:0;background:transparent;cursor:pointer">
+            <span style="position:absolute;left:50%;top:12px;width:91px;height:136px;margin-left:-45.5px;overflow:hidden;box-shadow:0 0 0 1.5px #d24a2c,0 0 14px #d24a2c66;clip-path:polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 6px 100%, 0 calc(100% - 6px));background:#0b0914">
+              <img alt="" src="../../../instances/divided-world/ui/cards/overreaction/art.webp" style="width:100%;height:100%;object-fit:cover;display:block">
+              <span style="position:absolute;left:0;right:0;bottom:0;padding:3px 4px;background:rgba(7,5,13,.82);font:12px/1 Anton,Impact,sans-serif;letter-spacing:.5px;color:#fff;text-transform:uppercase;text-align:left">Overreaction</span>
+            </span>
+            <span style="position:absolute;left:50%;transform:translateX(-50%);white-space:nowrap;bottom:10px;font:800 20px/1 'Barlow Condensed',sans-serif;letter-spacing:1px;background:#d24a2c;color:#0d0301;padding:3px 7px">C2 · 1.00</span>
+          </button>
+          <button aria-label="About Overreaction" tabindex="-1" style="position:absolute;right:4px;top:4px;width:44px;height:44px;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center;cursor:pointer"><svg aria-hidden="true" width="28" height="28" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="rgba(7,5,13,.85)" stroke="#c9f8ff" stroke-width="1.8"></circle><circle cx="12" cy="7.4" r="1.5" fill="#c9f8ff"></circle><rect x="10.8" y="10.2" width="2.4" height="7.6" rx=".4" fill="#c9f8ff"></rect></svg></button>
+        </div>
+    </div>
+  </div>
+  
+  <!-- the purchase bar: risen on the pick, docked to the window's foot (design, 1) -->
+  <section aria-label="Your pick" style="position:absolute;left:0;right:0;bottom:0;z-index:6;padding:14px 16px 16px;background:#07050d;border-top:1px solid #9ef4ff;box-shadow:0 -1px 12px rgba(25,227,255,.35)">
+    <button aria-label="Clear the pick" style="position:absolute;right:8px;top:6px;width:44px;height:44px;border:0;background:transparent;color:#e4def7;font:34px/1 Anton,Impact,sans-serif;cursor:pointer">×</button>
+    <div style="display:flex;gap:12px;align-items:stretch;padding-right:40px">
+      <div role="status" style="position:relative;width:100%;padding:12px 16px;clip-path:polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 12px 100%, 0 calc(100% - 12px));background:rgba(255,61,127,.08);box-shadow:inset 0 0 0 1.5px rgba(255,61,127,.7)">
+            <div class="label" style="color:#ffb3cd;font-size:18px">A1 · Booster</div>
+            <div style="font:40px/1.05 Anton,Impact,sans-serif;color:#ff3d7f;text-shadow:0 0 18px rgba(255,61,127,.45)">3.00</div>
+            <div id="need" style="font:800 19px 'Barlow Condensed',sans-serif;letter-spacing:1px;color:#ffb3cd">NEED 3.00 · HAVE 1.62 SOLID</div>
+          </div>
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin:10px 0">
+      <span style="font:600 21px 'Barlow Condensed',sans-serif"><span style="color:#e4def7">Wallet</span> 1.62 <span style="color:#e4def7">solid</span></span>
+      <div style="display:flex;align-items:center;gap:10px">
+              <span class="label" style="font-size:18px;color:#ff3d7f">Your hand</span>
+              <span style="font:22px/1 Anton,Impact,sans-serif;color:#f1ecff;background:#14030a;box-shadow:0 0 0 1.5px #ff3d7f;padding:4px 10px">2</span>
+            </div>
+    </div>
+    <button aria-disabled="true" aria-describedby="need" style="display:flex;flex-direction:row;align-items:center;justify-content:center;gap:12px;width:100%;min-height:60px;padding:0 18px;border:1.5px dashed rgba(228,222,247,.4);transform:skewX(-10deg);background:rgba(228,222,247,.10);color:#b7afd6;cursor:pointer;">
+            <span style="transform:skewX(10deg);font:32px/1 Anton,Impact,sans-serif;letter-spacing:1px">BUY</span>
+          </button>
+  </section>
+</div>
+</body>
+</html>
