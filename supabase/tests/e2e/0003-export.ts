@@ -403,9 +403,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'card.skim', 7, jsonb_build_object('card', 'expskim', 'share', 0.1) from settlements;
       -- A share of that card-naming row (0290): its owner's my_ledger_shares reads the card it was paid by.
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 7 from ledger where reason = 'card.skim' and params ->> 'card' = 'expskim';
-      -- A ledger line with the numbers its words state (0073), and a settle run's claim on a window long settled.
+      -- A ledger line with the numbers its words state (0073).
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
-      insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
       -- A model call in the ledger (0042): the instance's own bookkeeping, carried across with the rest.
@@ -451,6 +450,8 @@ test('an instance exported and imported into a fresh database is the same instan
         insert into roster_entries (window_end, season, acts, record) select roster_window, id, array[roster_post], '{"commentary": "Carried across.", "landedCount": 0, "landed": []}' from seasons where ends_at is null;
         insert into roster_seen (character, window_end, act) select (select id from characters where staff = 'exp-boss'), roster_window, roster_post;
       end;
+      -- A settle run's claim on a window long settled (0073). Written after every settlement of the fixture: writing a settlement deletes the claims that begin before its end (0074), and the roster's window above ends later than this one.
+      insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The chattier staff's tables (0415), insert-only and no client's: a round's claim on its slot, the day's kept pick, a session of the Boss's, a turn in it with the reply it answered (the Boss's own post quoting Ann's), and the meeting's talking point.

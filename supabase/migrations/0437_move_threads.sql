@@ -645,8 +645,10 @@ begin
   -- Every staff Act is stamped with the clock and not the transaction. A move must be: each landed move opens a thread of its own, so the seq that once ordered two moves of one tick (they shared a thread) no longer does,
   -- and two moveThreads of one thread landed in one tick must still read in the order they landed (thread_place takes the latest). The rest follow, so that the Acts of one transaction (a move, its end, the Boss's line
   -- that says it) are dated in the order they were written, and a line is never dated before the end it follows.
-  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (who, kind, write_staff_act.thread, target, stamped, clock_timestamp()) returning id, target_act_id into written, kept;
+  -- A caller that computed a time from the clock (a visit's end, a window from its start) names that instant in kayfabb.staff_act_at, and the Act is dated by it, so that what it computed from and the Act agree to the microsecond.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (who, kind, write_staff_act.thread, target, stamped, coalesce(nullif(current_setting('kayfabb.staff_act_at', true), '')::timestamptz, clock_timestamp())) returning id, target_act_id into written, kept;
   perform set_config('kayfabb.staff_writer', '', true);
+  perform set_config('kayfabb.staff_act_at', '', true);
   -- Only a post that still has its target springs: one whose quote is doctored was written with none (acts_forged_quotes).
   if quoting and kept is not null then sprung := spring_traps('quote', kept, written, held => locked); end if;
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
@@ -1097,4 +1099,81 @@ begin
 
   return jsonb_build_object('landed', landed, 'met', met, 'expired', expired, 'superseded', superseded, 'unmet', unmet, 'failed', failed, 'checked', checked, 'visits', filed, 'beats', arcs, 'budget', out_of_time,
     'awardsFailed', awards_failed, 'requestsLapsed', lapsed_n);
+end $$;
+
+-- start_visit (0401), its end drawn from the instant its Act is dated by (write_staff_act dates a staff Act by the clock, above). Everything else as 0401 wrote it.
+create or replace function start_visit(post_act uuid, staff text, charge jsonb) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  p record;
+  ch jsonb;
+  open_visit uuid;
+  held jsonb;
+  top text;
+  same boolean;
+  ends timestamptz;
+  at timestamptz;
+  written uuid;
+  joined uuid;
+  sprung jsonb;
+  cap jsonb;
+  patrol bigint;
+begin
+  select a.id, a.thread, t.board, a.character as author, c.staff is not null as by_staff into p
+  from acts a join threads t on t.id = a.thread join characters c on c.id = a.character where a.id = post_act and a.kind in ('post', 'spin') for share of a;
+  if not found then raise exception 'there is no such post to visit' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  if p.by_staff then return jsonb_build_object('visit', null, 'staff', true); end if;
+  -- No Mod Bot visits a post while its author is hidden: a visit names the author in its record and its filing, which is a read carrying the author. The same as a staff post: nothing written.
+  if author_veiled(post_act) then return jsonb_build_object('visit', null, 'veiled', true); end if;
+  if jsonb_typeof(charge) is distinct from 'object' or charge ->> 'band' is null or charge ->> 'band' not in ('minor', 'moderate', 'severe') or charge ->> 'cause' is null or charge ->> 'cause' not in ('rule', 'report', 'patrol', 'tail', 'backfire') then
+    raise exception 'a charge names its band and its cause' using errcode = '22023';
+  end if;
+  ch := jsonb_strip_nulls(jsonb_build_object('predicate', charge -> 'predicate', 'rule', charge -> 'rule')) || jsonb_build_object(
+    'rule_number', coalesce(charge -> 'rule_number', 'null'::jsonb), 'board', coalesce(charge ->> 'board', p.board::text), 'band', charge ->> 'band', 'cause', charge ->> 'cause',
+    'about_act', coalesce(charge ->> 'about_act', post_act::text));
+  -- One decision per post at a time: two charges drawn at once meet here, and the second joins.
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb.visit:' || post_act::text, 0));
+  -- The targeting cap (the Mod Bots design, section 8): a patrol's finding is refused for a character that staff has already punished `cap.punishments` times in `cap.days`
+  -- (staff_punishments, from public Acts: patrol findings and backfires that landed or are still open). Nothing is shown to anyone; the drop is recorded on the patrol's
+  -- row, once per post. Only a patrol's choice meets it: a rule break, a player's report and a tail are never refused. The character's own lock makes the count and the
+  -- visit one decision, so two patrols at once do not both pass a cap with room for one.
+  if ch ->> 'cause' = 'patrol' then
+    perform pg_advisory_xact_lock(hashtextextended('kayfabb.cap:' || p.author::text, 0));
+    cap := mod_cap();
+    if staff_punishments(p.author, (cap ->> 'days')::integer) >= (cap ->> 'punishments')::integer then
+      if charge ->> 'patrol_id' ~ '^[0-9]{1,18}$' then
+        patrol := (charge ->> 'patrol_id')::bigint;
+        update patrols x set dropped = x.dropped || jsonb_build_array(jsonb_build_object('post', post_act, 'why', 'cap', 'staff', start_visit.staff))
+        where x.id = patrol and not x.dropped @> jsonb_build_array(jsonb_build_object('post', post_act::text, 'why', 'cap'));
+      end if;
+      return jsonb_build_object('visit', null, 'capped', true);
+    end if;
+  end if;
+  -- The open row is taken for update: a filing (or any end) holding it makes this wait, and then it finds the visit gone and decides afresh, never joining a visit that
+  -- has ended.
+  select o.visit_act into open_visit from visits_open o where o.post = post_act for update;
+  same := visit_charge_repeats(post_act, ch);
+  if same then
+    return case when open_visit is not null then jsonb_build_object('visit', open_visit, 'joined', false) else jsonb_build_object('visit', null, 'repeat', true) end;
+  end if;
+  if open_visit is not null then
+    -- A second charge joins; the band the visit holds is the highest of its charges.
+    held := visit_charges(open_visit);
+    top := (select c ->> 'band' from jsonb_array_elements(held || jsonb_build_array(ch)) c
+            order by case c ->> 'band' when 'severe' then 3 when 'moderate' then 2 else 1 end desc limit 1);
+    joined := (write_staff_act(staff, 'visit_join', p.thread, open_visit, jsonb_build_object('charge', ch, 'band', top)) ->> 'id')::uuid;
+    return jsonb_build_object('visit', open_visit, 'joined', true, 'join', joined);
+  end if;
+  -- The visit is dated by the clock (write_staff_act), so its end is drawn from the same instant: its window is exactly the one drawn.
+  at := clock_timestamp();
+  ends := at + visit_window(post_act, staff);
+  perform set_config('kayfabb.staff_act_at', at::text, true);
+  written := (write_staff_act(staff, 'visit', p.thread, post_act, jsonb_build_object(
+    'charges', jsonb_build_array(ch), 'ends_at', ends, 'challenge', visit_challenge(post_act, staff), 'line', visit_line('visitArrived', staff, jsonb_build_array(ch)))) ->> 'id')::uuid;
+  -- A trap set on the post springs when a visit starts on it, and the sprung trap ends the visit (trapped, by the spring): its Acts stay.
+  sprung := spring_traps('visit', post_act, written);
+  if sprung is not null then
+    perform end_visit(written, 'trapped', (sprung ->> 'id')::uuid, 'A trap set on this post sprang as the visit began, and the visit ended.');
+  end if;
+  return jsonb_build_object('visit', written, 'joined', false, 'ends_at', ends) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
 end $$;

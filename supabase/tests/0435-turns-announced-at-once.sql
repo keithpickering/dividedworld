@@ -4,6 +4,7 @@
 -- is announced later by announce_turn(); the settlement writes no Act for a committed Turn and links its class_history row to the
 -- announcement; class_reveals and turns_announced read an ahead announcement only once its Turn has landed. Every block runs: the
 -- harness stops a file at its first error, so each block names its own accounts.
+-- kayfabb-sql: alone
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin

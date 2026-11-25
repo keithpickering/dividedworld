@@ -175,7 +175,11 @@ begin
   -- one fresh batch; so it is flushed, as that would. Left in place, the plan depends on what VACUUM last saw:
   -- with the index's statistics from an earlier VACUUM (any file before this one can leave them), the
   -- pending pages price each probe above a walk of every tally, and the check below goes red at random.
-  perform gin_clean_pending_list('acts_tally_turns');
+  -- A busy instance holds thousands of reveals and Turn announcements too, which is what keeps a read of them by time (the
+  -- roster report's window, acts_unmasks_at and acts_announces_at, 0440) from being priced as cheap as a probe by character:
+  -- with none here, a walk of those tiny partial indexes ties the probe and wins it by a cost point.
+  insert into acts (character, kind, thread, payload) select poster, 'unmask', posts_in, '{"class": "alpha", "via": "act"}' from generate_series(1, 3000);
+  insert into acts (character, kind, thread, payload) select poster, 'announce', posts_in, '{"class": "alpha", "what": "turn"}' from generate_series(1, 3000);
   analyze acts;
   set local enable_seqscan = off;
   p := pg_temp.plan_of('select * from class_reveals where character in ' || page);
