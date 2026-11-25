@@ -289,7 +289,8 @@ export interface Seed {
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
-   * moments were snapshotted (0072): its moment is not taken.
+   * moments were snapshotted (0072): its moment is not taken. With `id`, the play's Act has that id instead of a fresh one (refused
+   * where an Act already has it), so a story or a test can choose what an id-seeded effect rolls.
    */
   card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; instant?: boolean; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string; id?: string }): Id;
   /**
