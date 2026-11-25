@@ -89,10 +89,12 @@ language sql stable security definer set search_path = public, pg_temp set jit =
   -- or a play on a hidden post gives nothing, nor does the moment of an id that is no card the board shows (a set's) or no spin; and its words are read only for a layer that passed. Each probe is by id (a lateral subquery behind `offset 0`).
   select l.layer, l.state, (select ct.text from card_texts ct where ct.play = l.layer and ct.text is not null order by ct.created_at desc, ct.id desc limit 1)
   from (
+    -- the play itself, asked for by its id: not one whose write was refunded (the board shows no such play); a recorded moment's layers stay as the page shows them
     select extras_layers.id as layer, null::jsonb as state where extras_layers.via = 'play'
+      and not exists (select 1 from card_write_refunds r where r.play = extras_layers.id)
     union all
     select l.layer, l.state from play_moment_layers l where extras_layers.via = 'play' and l.play = extras_layers.id
-      and exists (select 1 from acts_public s where s.id = extras_layers.id and s.kind = 'card' and not (s.payload ? 'caught'))
+      and exists (select 1 from acts_public s where s.id = extras_layers.id and s.kind = 'card' and not (s.payload ? 'caught') and s.untaken is not true)
     union all
     select l.layer, l.state from spin_moment_layers l where extras_layers.via = 'spin' and l.spin = extras_layers.id
       and exists (select 1 from acts_public s where s.id = extras_layers.id and s.kind = 'spin' and s.hidden is not true)

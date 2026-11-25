@@ -330,7 +330,7 @@ begin
   perform pg_temp.expect(o ->> 'kind' = 'post' and o -> 'post' = 'null'::jsonb and o::text !~ 'Hidden words', 'a hidden origin post: ' || o::text);
 
   -- ---- the digest role asks for what the board does not show: a hidden post's poll, plays and a writing play's words; a secret ballot; an unsprung back ----
-  declare hp uuid; hpoll uuid; hplay uuid; hplay2 uuid; shown_text text; tp uuid; got jsonb; n integer;
+  declare hp uuid; hpoll uuid; hplay uuid; hplay2 uuid; refunded uuid; shown_text text; tp uuid; got jsonb; n integer;
   begin
     hp := tests.post(b, t, 'Hidden with extras.', base + interval '14 minutes');
     hpoll := pg_temp.mkpoll(t, hp, b, at => base + interval '15 minutes');
@@ -338,6 +338,10 @@ begin
     insert into card_texts (play, version, text) values (hplay, hp, 'SECRET TAIL ON HIDDEN POST');
     hplay2 := tests.act(c, 'card', t, jsonb_build_object('card', 'exsplat', 'reach', 'post'), hp, base + interval '17 minutes');
     insert into reaction_tallies (act, kind, count) values (hp, 'up', 4);
+    -- a writing play on a post the board shows, whose write was refunded: the board shows no such play, and its words are not for the digest role to read by its id
+    refunded := tests.act(a, 'card', t, jsonb_build_object('card', 'exwink', 'reach', 'post'), pg_temp.f('shown_post'), base + interval '16 minutes 30 seconds');
+    insert into card_texts (play, version, text) values (refunded, pg_temp.f('shown_post'), 'REFUNDED WORDS');
+    insert into card_write_refunds (play) values (refunded);
     insert into conduct_decisions (version_act, post, admin, outcome) values (hp, hp, adm, 'hide');
     -- post_extras, asked for the hidden post directly, says nothing of it (an entry for it all the same, so one entry stays one post asked for, in the order asked)
     got := post_extras(array[pg_temp.f('shown_post'), hp, pg_temp.f('p_react')]);
@@ -346,7 +350,7 @@ begin
       'post_extras beside a hidden post still reads the others: ' || got::text);
     perform pg_temp.expect(pg_temp.ex(hp) -> 'poll' = 'null'::jsonb, 'a hidden post''s poll');
     -- extras_layers, run as the digest role (the role is set around each call alone: it has no right to the session's temp schema)
-    foreach hplay in array array[hplay, hplay2, pg_temp.f('sec_ballot'), pg_temp.f('unsprung'), gen_random_uuid()] loop
+    foreach hplay in array array[hplay, hplay2, refunded, pg_temp.f('sec_ballot'), pg_temp.f('unsprung'), gen_random_uuid()] loop
       perform set_config('role', 'kayfabb_digest', true);
       select count(*) into n from extras_layers('play', hplay);
       reset role;
@@ -420,6 +424,19 @@ begin
   return th;
 end $$;
 
+-- A post (in a thread of its own) with `m` plays landed one after another; the post's id and the last play's.
+create function pg_temp.layered_post(m integer) returns uuid[] language plpgsql as $$
+declare
+  t uuid := tests.thread('Ex Layered ' || m); ch uuid[] := array[pg_temp.f('a'), pg_temp.f('b'), pg_temp.f('c')];
+  kinds text[] := array['exsplat', 'exsweet', 'exblot', 'exwink']; p uuid; pl uuid; i integer; base timestamptz := now() - interval '3 days';
+begin
+  p := tests.act(ch[1], 'post', t, jsonb_build_object('body', 'Layered post'), null, base);
+  for i in 1..m loop
+    pl := tests.act(ch[1 + i % 3], 'card', t, jsonb_build_object('card', kinds[1 + i % 4], 'reach', 'post'), p, base + i * interval '1 minute');
+  end loop;
+  return array[p, pl];
+end $$;
+
 create function pg_temp.ex_thread(n integer, bal integer, title text) returns uuid language plpgsql as $$
 declare
   ot uuid := tests.thread(title || ' origin');
@@ -465,6 +482,14 @@ begin
   insert into fx values ('big', pg_temp.ex_thread(400, 5, 'Ex Bound 400'));
   insert into fx values ('ballots', pg_temp.ex_thread(200, 40, 'Ex Bound 200 ballots'));
   -- for each kind of origin of section 2, a thread of plain posts spun from it at two sizes (the origins are those the section made)
+  -- what the origin read does depend on: the plays on the origin post (2 or 9), read live for a post origin and as a moment's recorded layers (1 + 1, or 1 + 8) for a play origin
+  insert into fx select 'o_post2', (pg_temp.layered_post(2))[1];
+  insert into fx select 'o_play2', (pg_temp.layered_post(2))[2];
+  insert into fx select 'o_post9', (pg_temp.layered_post(9))[1];
+  insert into fx select 'o_play9', (pg_temp.layered_post(9))[2];
+  foreach k in array array['post2', 'post9', 'play2', 'play9'] loop
+    insert into fx values ('k_' || k || '_200', pg_temp.kind_thread(k, 200));
+  end loop;
   foreach k in array array['post', 'poll', 'ballot', 'play', 'char', 'board', 'update', 'report', 'verdict', 'appeal', 'ruling'] loop
     insert into fx values ('k_' || k || '_200', pg_temp.kind_thread(k, 200)), ('k_' || k || '_400', pg_temp.kind_thread(k, 400));
   end loop;
@@ -516,6 +541,24 @@ begin
   raise notice '[%] rows of acts by kind of origin (200 / 400 posts):%, worst %', label, line, worst;
 end $$;
 
+-- The origin read grows with the layers of the origin post, by key, and by a stated allowance for each: a post origin with 9 plays against 2, a play origin whose moment lists 9 layers (itself and 8 recorded) against 2.
+create function pg_temp.measure_layers(label text, bound bigint, per_layer bigint) returns void language plpgsql as $$
+declare
+  k text; c0 bigint; rows bigint[] := '{}'; r jsonb; n integer; want integer;
+begin
+  perform set_config('track_functions', 'all', true);
+  foreach k in array array['post2', 'post9', 'play2', 'play9'] loop
+    c0 := pg_temp.acts_read(); r := pool_read(pg_temp.f('k_' || k || '_200'), 'ex-boss', null, 60); rows := rows || (pg_temp.acts_read() - c0);
+    n := jsonb_array_length(r -> 'origin' -> 'post' -> 'plays');
+    want := case k when 'post2' then 2 when 'post9' then 9 when 'play2' then 2 else 9 end;
+    if n is distinct from want then raise exception '[%] the origin of the % thread carries % plays: %', label, k, n, r -> 'origin' -> 'post' -> 'plays'; end if;
+  end loop;
+  perform set_config('track_functions', 'none', true);
+  if greatest(rows[1], rows[2], rows[3], rows[4]) > bound then raise exception '[%] pool_read reads % rows of acts with plays on the origin post: more than %', label, greatest(rows[1], rows[2], rows[3], rows[4]), bound; end if;
+  if rows[2] - rows[1] > per_layer * 7 or rows[4] - rows[3] > per_layer * 7 then raise exception '[%] 7 more plays on the origin post cost % rows of acts as a post origin and % as a moment: more than % for each', label, rows[2] - rows[1], rows[4] - rows[3], per_layer; end if;
+  raise notice '[%] rows of acts with 2 / 9 plays on the origin post: post origin %, % and play origin %, %', label, rows[1], rows[2], rows[3], rows[4];
+end $$;
+
 do $$
 begin
   delete from pg_statistic where starelid = 'acts'::regclass;
@@ -524,9 +567,11 @@ begin
 end $$;
 select pg_temp.measure('empty statistics', 4000, 50);
 select pg_temp.measure_kinds('empty statistics', 600);
+select pg_temp.measure_layers('empty statistics', 700, 10);
 set local plan_cache_mode = force_generic_plan;
 select pg_temp.measure('empty statistics, generic plans', 4000, 50);
 select pg_temp.measure_kinds('empty statistics, generic plans', 600);
+select pg_temp.measure_layers('empty statistics, generic plans', 700, 10);
 reset plan_cache_mode;
 
 -- ---- 4. the bound can fail: the plays of 200 posts read by a join over `acts`, as a first draft would ----
@@ -544,3 +589,4 @@ end $$;
 analyze acts;
 select pg_temp.measure('true statistics', 4000, 50);
 select pg_temp.measure_kinds('true statistics', 600);
+select pg_temp.measure_layers('true statistics', 700, 10);
