@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
+  addThrow, boxShape, bodies, CHAIR, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, probe, prismShape, rng, separation, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
 } from './body.ts';
 
@@ -711,6 +711,147 @@ test('the chair rests where it rested before shapes', () => {
       const got = [b.position.x, b.position.y, b.position.z, b.quaternion.w, b.quaternion.x, b.quaternion.y, b.quaternion.z];
       const want = [...r.p, ...r.q];
       for (const [k, v] of got.entries()) assert.ok(Math.abs(v - (want[k] as number)) < 1e-9, `seed ${seed} body ${i} value ${k}: ${v} against ${want[k]}`);
+    }
+  }
+});
+
+/* ---------- shapes ---------- */
+
+/**
+ * Today's chair constants, as the body held them before shapes: copied here, from the code on main, so that a box that drifts from them fails
+ * (the build of the chair's shape is the one under test, so it cannot be the reference for itself).
+ */
+const WAS_CORNERS: V3[] = [];
+for (let k = 0; k < 8; k++) WAS_CORNERS.push([k & 4 ? HALF[0] : -HALF[0], k & 2 ? HALF[1] : -HALF[1], k & 1 ? HALF[2] : -HALF[2]]);
+const WAS_SAMPLES: V3[] = [...WAS_CORNERS];
+for (const sz of [-1, 1]) {
+  for (const sx of [-1, 1]) for (let k = 1; k < 6; k++) WAS_SAMPLES.push([sx * HALF[0], -HALF[1] + (k * 2 * HALF[1]) / 6, sz * HALF[2]]);
+  for (const sy of [-1, 1]) for (let k = 1; k < 3; k++) WAS_SAMPLES.push([-HALF[0] + (k * 2 * HALF[0]) / 3, sy * HALF[1], sz * HALF[2]]);
+}
+const WAS_INERTIA: V3 = (() => {
+  const [w, h, d] = [HALF[0] * 2, HALF[1] * 2, HALF[2] * 2];
+  return [(h * h + d * d) / 12, (w * w + d * d) / 12, (w * w + h * h) / 12];
+})();
+
+test('the chair\'s shape is the box of today\'s constants: the same samples in the same order, corners and inertia', () => {
+  const shape = boxShape(HALF, true);
+  assert.deepEqual(shape.points, WAS_SAMPLES);
+  assert.deepEqual(shape.corners, WAS_CORNERS);
+  assert.deepEqual(shape.inertia, WAS_INERTIA);
+  assert.equal(shape.points.length, 36);
+  assert.equal(shape.reach, Math.hypot(...HALF));
+  assert.equal(shape.restRise, REST_RISE);
+  assert.deepEqual(CHAIR.points, WAS_SAMPLES);
+  assert.equal(CHAIR.hinge, true);
+  assert.equal(CHAIR.sleepsUpright, false);
+});
+
+/** A body as the geometry reads it: a place, a rotation and a shape. */
+function placed2(shape: typeof CHAIR, pos: V3, R: number[]): Parameters<typeof separation>[0] {
+  return { pos, R, shape } as unknown as Parameters<typeof separation>[0];
+}
+function rotationOf(q: number[]): number[] {
+  const [w, x, y, z] = q as [number, number, number, number];
+  const len = Math.hypot(w, x, y, z);
+  const [a, b, c, d] = [w / len, x / len, y / len, z / len];
+  return [
+    1 - 2 * (c * c + d * d), 2 * (b * c - d * a), 2 * (b * d + c * a),
+    2 * (b * c + d * a), 1 - 2 * (b * b + d * d), 2 * (c * d - b * a),
+    2 * (b * d - c * a), 2 * (c * d + b * a), 1 - 2 * (b * b + c * c),
+  ];
+}
+
+/** Today's separating axis test of two boxes, as it stood on main (the fifteen axes, the three faces of each and the nine crossed edges). */
+function wasSeparation(a: { pos: V3; R: number[] }, b: { pos: V3; R: number[] }): { n: V3; depth: number; reach: number } {
+  const A = a.R as number[], B = b.R as number[];
+  const t = [a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]];
+  let best = Infinity, n: V3 = [0, 1, 0], reach = 0;
+  const overlap = (x: number, y: number, z: number, edge: boolean): number => {
+    const len = Math.hypot(x, y, z);
+    if (len < 1e-6) return Infinity;
+    const ax = x / len, ay = y / len, az = z / len;
+    const ra = HALF[0] * Math.abs(A[0]! * ax + A[3]! * ay + A[6]! * az) + HALF[1] * Math.abs(A[1]! * ax + A[4]! * ay + A[7]! * az) +
+      HALF[2] * Math.abs(A[2]! * ax + A[5]! * ay + A[8]! * az);
+    const rb = HALF[0] * Math.abs(B[0]! * ax + B[3]! * ay + B[6]! * az) + HALF[1] * Math.abs(B[1]! * ax + B[4]! * ay + B[7]! * az) +
+      HALF[2] * Math.abs(B[2]! * ax + B[5]! * ay + B[8]! * az);
+    const dist = t[0]! * ax + t[1]! * ay + t[2]! * az;
+    const depth = ra + rb - Math.abs(dist);
+    if (depth < best - (edge ? 1e-3 : 0)) {
+      best = depth;
+      const sign = dist >= 0 ? 1 : -1;
+      n = [ax * sign, ay * sign, az * sign];
+      reach = ra;
+    }
+    return depth;
+  };
+  for (let k = 0; k < 3; k++) if (overlap(A[k]!, A[3 + k]!, A[6 + k]!, false) <= 0) return { n: [0, 1, 0], depth: -1, reach: 0 };
+  for (let k = 0; k < 3; k++) if (overlap(B[k]!, B[3 + k]!, B[6 + k]!, false) <= 0) return { n: [0, 1, 0], depth: -1, reach: 0 };
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const ux = A[i]!, uy = A[3 + i]!, uz = A[6 + i]!, vx = B[j]!, vy = B[3 + j]!, vz = B[6 + j]!;
+    overlap(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, true);
+  }
+  return { n, depth: best, reach };
+}
+
+test('the separation of two boxes is today\'s, on 1000 seeded pairs (overlapping, touching and apart)', () => {
+  const rand = rng(77);
+  let overlapping = 0, apartPairs = 0;
+  for (let i = 0; i < 1000; i++) {
+    const q = (): number[] => [rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1];
+    const reach = 1 + 99 * rand();
+    const a = placed2(CHAIR, [0, 0, 0], rotationOf(q()));
+    const b = placed2(CHAIR, [(rand() * 2 - 1) * reach, (rand() * 2 - 1) * reach, (rand() * 2 - 1) * reach], rotationOf(q()));
+    const now = separation(a, b), was = wasSeparation(a as never, b as never);
+    assert.deepEqual(now, was, `pair ${i}`);
+    if (was.depth > 0) overlapping++; else apartPairs++;
+  }
+  assert.ok(overlapping > 100 && apartPairs > 100, `the pairs must be both kinds: ${overlapping} overlapping, ${apartPairs} apart`);
+});
+
+test('a prism reaches its apothem along each side normal, its half height along its axis, and its radius along a corner', () => {
+  const [radius, height, sides] = [15, 40, 12];
+  const prism = prismShape(radius, height, sides);
+  const apothem = radius * Math.cos(Math.PI / sides);
+  assert.equal(prism.faces.length, sides / 2 + 1);
+  assert.equal(prism.edges.length, sides / 2 + 1);
+  for (const f of prism.faces.slice(0, sides / 2)) {
+    assert.ok(Math.abs(Math.hypot(...f) - 1) < 1e-12);
+    assert.ok(Math.abs(prism.support(f) - apothem) < 1e-9, `${f}: ${prism.support(f)} against ${apothem}`);
+  }
+  assert.ok(Math.abs(prism.support([0, 1, 0]) - height / 2) < 1e-12);
+  assert.ok(Math.abs(prism.support([1, 0, 0]) - radius) < 1e-9);
+  assert.equal(prism.corners.length, 2 * sides);
+  assert.deepEqual(prism.points.slice(0, 2 * sides), prism.corners);
+  assert.ok(prism.points.length > prism.corners.length);
+  // the inertia of a solid cylinder of mass 1
+  assert.ok(Math.abs((prism.inertia[1] as number) - radius * radius / 2) < 1e-9);
+  assert.ok(Math.abs((prism.inertia[0] as number) - (3 * radius * radius + height * height) / 12) < 1e-9);
+});
+
+test('a point just inside a prism\'s face probes out along that face, whichever way the prism is turned', () => {
+  const prism = prismShape(15, 40, 12);
+  const apothem = 15 * Math.cos(Math.PI / 12);
+  const owner = placed2(CHAIR, [0, 0, 0], rotationOf([1, 0, 0, 0]));
+  for (const angle of [0, 30, 77]) {
+    const c = Math.cos(angle * Math.PI / 180), s = Math.sin(angle * Math.PI / 180);
+    const R = [c, 0, s, 0, 1, 0, -s, 0, c];
+    const where: V3 = [100, 200, 5];
+    const box = placed2(prism, where, R);
+    for (const [k, f] of prism.faces.entries()) {
+      const reach = k < prism.faces.length - 1 ? apothem : 20;
+      const world: V3 = [R[0]! * f[0] + R[1]! * f[1] + R[2]! * f[2], R[3]! * f[0] + R[4]! * f[1] + R[5]! * f[2], R[6]! * f[0] + R[7]! * f[1] + R[8]! * f[2]];
+      for (const sign of [1, -1]) {
+        // a point 0.5 px inside the face, over its middle
+        const p: V3 = [where[0] + sign * world[0] * (reach - 0.5), where[1] + sign * world[1] * (reach - 0.5), where[2] + sign * world[2] * (reach - 0.5)];
+        owner.pos = p;
+        const hit = probe(owner, [0, 0, 0], box);
+        assert.ok(hit, `angle ${angle} face ${k} sign ${sign}: not inside`);
+        assert.ok(Math.abs(hit.depth - 0.5) < 1e-9, `depth ${hit.depth}`);
+        for (let i = 0; i < 3; i++) assert.ok(Math.abs((hit.n[i] as number) - sign * (world[i] as number)) < 1e-9, `angle ${angle} face ${k}: normal ${hit.n} against ${world}`);
+        // and a point 0.5 px outside is not inside
+        owner.pos = [where[0] + sign * world[0] * (reach + 0.5), where[1] + sign * world[1] * (reach + 0.5), where[2] + sign * world[2] * (reach + 0.5)];
+        assert.equal(probe(owner, [0, 0, 0], box), null);
+      }
     }
   }
 });
