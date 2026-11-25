@@ -98,8 +98,10 @@ interface World {
   ruleRefusal?: string;
   /** `rule_request` turns a fulfill into a confer for this reason (the guard refused the move). */
   moveRefused?: string;
-  /** `rule_request` loses its connection (a transport failure). */
+  /** The ruling written with the turn (`write_staff_turn`'s `in_ruling`) loses its connection (a transport failure): nothing of the turn is committed. */
   ruleTransport?: boolean;
+  /** The season `pool_context` reports, in place of the usual one (a malformed one: a number that is not finite). */
+  season?: { startsAt: number; endsAt: number } | null;
 }
 type Spend = { day: string; staff: string; trigger: string; post_act: string; card_act: string | null; started_thread: boolean; record: any; chars?: number };
 
@@ -113,6 +115,16 @@ function fakeDb(w: World = {}) {
     attempts: [] as { staff: string; session: number; thread: string; answers: string[]; outcome: string; paid: boolean; chars?: number }[],
     requests: [] as { staff: string; request: string; turn: string; ruling: string; move: unknown }[], callRecords: [] as { cause_act: string; duty: string; staff: string; record: any }[], sessionCalls: 0, answered: new Set<string>(), claimed: new Set<string>(), lost: Boolean(w.lostTurnAnswer), held: false, acts: [] as { id: string; staff: string; kind: string; thread: string | null; target: string | null; payload: any }[], spends: [] as Spend[], notes: [] as { staff: string; post: string; body: string }[], n: 0 };
   const failing = { ...(w.failOn ?? {}) };
+  // rule_request as the database answers it; write_staff_turn calls it for the ruling it is given, in the turn's own transaction (`in_ruling`), and a refusal there is returned, never raised.
+  const ruleIt = (args: Record<string, any>) => {
+    if (w.ruleRefusal) throw new DatabaseError('rule_request: refused', w.ruleRefusal, 400, 'a request is ruled fulfill, reject or confer');
+    const had = state.requests.find((x) => x.staff === args.staff_key && x.request === args.request_act);
+    if (had) return { request: state.requests.indexOf(had) + 1, ruling: had.ruling, move: had.move, existing: true };
+    const became = args.ruling === 'fulfill' && w.moveRefused ? 'confer' : String(args.ruling);
+    const move = became === 'fulfill' ? { queued: true, structural: ['renameBoard', 'createBoard', 'mergeBoard'].includes((args.move as any).kind) } : null;
+    state.requests.push({ staff: String(args.staff_key), request: String(args.request_act), turn: String(args.turn_act), ruling: became, move });
+    return { request: state.requests.length, ruling: became, move, existing: false, ...(became !== args.ruling ? { asked: 'fulfill', reason: w.moveRefused } : {}) };
+  };
   const named = w.named ?? [SIGH, CLERK, MON];
   const threads = [T1, T2, T3];
   const quotes = [Q1, Q2, Q3];
@@ -190,27 +202,26 @@ function fakeDb(w: World = {}) {
           state.acts.push({ id: post, staff: String(args.staff_key), kind: 'post', thread: args.in_thread as string, target: args.quoting as string, payload: { body: args.body } });
           state.turns.push({ staff: String(args.staff_key), session: Number(args.in_session), thread: String(args.in_thread), post, answers, quoting: String(args.quoting), body: String(args.body), chars: Number(args.in_chars) });
           for (const a of answers) state.answered.add(a);
+          // The ruling is written in the turn's transaction: a transport failure there loses the whole turn (nothing is committed), and a refusal is returned beside the post.
+          let ruled: Record<string, unknown> = {};
+          const given = args.in_ruling as Record<string, any> | null | undefined;
+          if (given) {
+            if (w.ruleTransport) { state.turns.pop(); state.acts.pop(); for (const a of answers) state.answered.delete(a); throw new TransportError('the connection dropped'); }
+            try { ruled = { ruling: ruleIt({ staff_key: args.staff_key, request_act: given.reply, turn_act: post, ruling: given.ruling, move: given.move ?? null }) }; }
+            catch (e) { if (!(e instanceof DatabaseError)) throw e; ruled = { refused: { code: e.code, message: e.reason } }; }
+          }
           if (state.lost) { state.lost = false; throw new TransportError('the answer was lost'); }
-          return { turn: state.turns.length, post: { id: post } } as T;
+          return { turn: state.turns.length, post: { id: post }, ...ruled } as T;
         }
         case 'thread_place': return GENERAL as T;
         case 'mod_standing': return { office: 'mod', allowance: w.standing?.allowance ?? 0, order: null, beat: w.standing?.beat ?? [] } as T;
         case 'mod_group_context': return { conferred: [], characters: [] } as T;
         case 'bank_now': return (w.bank ?? 3) as T;
-        case 'rule_request': {
-          if (w.ruleTransport) throw new TransportError('the connection dropped');
-          if (w.ruleRefusal) throw new DatabaseError('rule_request: refused', w.ruleRefusal, 400, 'a request is ruled fulfill, reject or confer');
-          const had = state.requests.find((x) => x.staff === args.staff_key && x.request === args.request_act);
-          if (had) return { request: state.requests.indexOf(had) + 1, ruling: had.ruling, move: had.move, existing: true } as T;
-          const became = args.ruling === 'fulfill' && w.moveRefused ? 'confer' : String(args.ruling);
-          const move = became === 'fulfill' ? { queued: true, structural: ['renameBoard', 'createBoard', 'mergeBoard'].includes((args.move as any).kind) } : null;
-          state.requests.push({ staff: String(args.staff_key), request: String(args.request_act), turn: String(args.turn_act), ruling: became, move });
-          return { request: state.requests.length, ruling: became, move, existing: false, ...(became !== args.ruling ? { asked: 'fulfill', reason: w.moveRefused } : {}) } as T;
-        }
+        case 'rule_request': return ruleIt(args) as T;
         case 'record_staff_call': { state.callRecords.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record as any }); return { recorded: true, attempt: state.callRecords.length } as T; }
         case 'claim_pool_run': return (state.held ? null : 'run-0001') as T;
         case 'pool_context':
-          return { season: { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') }, boss: HYPE, predecessor: null,
+          return { season: w.season === undefined ? { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') } : w.season, boss: HYPE, predecessor: null,
             offices: { [CLERK]: 'member', [HYPE]: 'boss', [SIGH]: 'mod', [MON]: 'mod' }, characters: { [SIGH]: 'char-sigh' }, boards: w.boards ?? { [GENERAL]: 'general' }, ...(w.lockouts ? { lockouts: w.lockouts } : {}) } as T;
         case 'pool_week': {
           const today = state.spends.filter((s) => s.day === args.today);
@@ -2171,20 +2182,19 @@ const CLERK_NOW = { staff: CLERK, start: min('17:30'), end: min('18:15') };
 const moveThread = { kind: 'moveThread', params: { thread: T1, board: OTHER }, expires_in_hours: 0, why: 'They asked, and it fits.' };
 const ruling = (request: unknown) => fakeModels((r) => ({ words: `Decided, said ${r.staff}.`, request }));
 
-test('a Mod\'s turn that grants a thread move queues it through rule_request and writes the request after the post', async () => {
+test('a Mod\'s turn that grants a thread move hands the ruling to write_staff_turn, which writes it with the post', async () => {
   const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 2, beat: BEAT } });
   const m = ruling({ reply: R1, ruling: 'fulfill', move: moveThread });
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
   assert.equal(d.count('write_staff_turn'), 1);
-  assert.equal(d.count('rule_request'), 1);
-  const asked = d.of('rule_request')[0]!;
-  assert.deepEqual([asked.staff_key, asked.request_act, asked.ruling], [SIGH, R1, 'fulfill']);
-  assert.equal(asked.turn_act, d.state.turns[0]!.post, 'the ruling is tied to the turn\'s post');
+  assert.equal(d.count('rule_request'), 0, 'no separate write of the ruling: it travels with the post');
+  const asked = d.of('write_staff_turn')[0]!.in_ruling;
+  assert.deepEqual([asked.reply, asked.ruling], [R1, 'fulfill']);
   assert.equal((asked.move as any).kind, 'moveThread');
   assert.ok(!('weekly_moves' in asked), 'a Mod passes no phase numbers');
+  assert.equal(d.state.requests[0]!.turn, d.state.turns[0]!.post, 'the ruling is tied to the turn\'s post');
   assert.deepEqual(d.state.requests.map((x) => [x.ruling, x.move]), [['fulfill', { queued: true, structural: false }]]);
-  assert.ok(d.calls.findIndex((c) => c.fn === 'rule_request') > d.calls.findIndex((c) => c.fn === 'write_staff_turn'), 'after the post');
   assert.ok(m.chats[0]!.system.includes('rule on it in "request"') && (m.chats[0]!.schema as any).properties.request, 'the prompt and the schema offer the ruling');
   const t = out.turns[0]!;
   assert.equal(t.status, 'taken');
@@ -2199,8 +2209,8 @@ test('a Boss\'s turn that grants renameBoard queues it structural, with the phas
   const m = ruling({ reply: R1, ruling: 'fulfill', move: rename });
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
-  assert.equal(d.count('rule_request'), 1);
-  const asked = d.of('rule_request')[0]!;
+  assert.equal(d.count('rule_request'), 0);
+  const asked = d.of('write_staff_turn')[0]!.in_ruling;
   assert.equal(typeof asked.weekly_moves, 'number');
   assert.equal(typeof asked.bank_cap, 'number');
   assert.equal((asked.move as any).kind, 'renameBoard');
@@ -2216,6 +2226,7 @@ test('a member\'s turn given a request block writes none, and the trim says it w
   assert.ok(out.status === 'ok');
   assert.equal(d.count('write_staff_turn'), 1, 'the post is written');
   assert.equal(d.count('rule_request'), 0);
+  assert.equal(d.of('write_staff_turn')[0]!.in_ruling, undefined, 'no ruling travels with a member\'s post');
   assert.equal(d.count('record_staff_call'), 0);
   assert.ok(!('request' in (m.chats[0]!.schema as any).properties) && !m.chats[0]!.system.includes('rule on it'), 'a member is offered no ruling');
   assert.ok(out.turns[0]!.trims.some((t) => t.path === 'request' && t.predicate === 'notAsked'));
@@ -2239,7 +2250,7 @@ test('a ruling the repair cannot keep passes up as a confer and names every trim
   const out = await run(d, ruling({ reply: R1, ruling: 'fulfill', move: moveThread }));
   assert.ok(out.status === 'ok');
   assert.deepEqual(d.state.requests.map((x) => x.ruling), ['confer']);
-  assert.equal(d.of('rule_request')[0]!.move, null);
+  assert.equal(d.of('write_staff_turn')[0]!.in_ruling.move, null);
   const trims = d.state.callRecords[0]!.record.trims as { path: string; predicate: string }[];
   assert.ok(trims.some((t) => t.predicate === 'fulfillToConfer') && trims.some((t) => t.predicate === 'allowance'), JSON.stringify(trims));
 });
@@ -2248,29 +2259,42 @@ test('a ruling on a reply the turn did not answer is dropped, writes no request 
   const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }] });
   const out = await run(d, ruling({ reply: R4, ruling: 'reject' }));
   assert.ok(out.status === 'ok');
-  assert.equal(d.count('rule_request'), 0);
+  assert.equal(d.of('write_staff_turn')[0]!.in_ruling, undefined, 'a dropped ruling travels with nothing');
   assert.equal(out.turns[0]!.status, 'taken');
   assert.equal(d.state.callRecords.length, 1);
   assert.equal(d.state.callRecords[0]!.record.dropped, 'the ruling could not be repaired');
   assert.ok((d.state.callRecords[0]!.record.trims as { predicate: string }[]).some((t) => t.predicate === 'answering'));
 });
 
-test('a turn that is retried writes one request', async () => {
-  // The first write of the post fails (a database error, nothing written): the reply waits, the next round writes the turn and its one request.
+test('a turn that is retried writes one post and one request', async () => {
+  // The first write fails (a database error, nothing written, the ruling with it): the reply waits, the next round writes the turn and its one request.
   const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 1, beat: BEAT }, failOn: { write_staff_turn: 1 } });
   const m = ruling({ reply: R1, ruling: 'reject' });
   const first = await run(d, m);
   assert.ok(first.status === 'ok');
   assert.equal(first.turns[0]!.status, 'failed');
-  assert.equal(d.count('rule_request'), 0, 'no post, so no ruling');
+  assert.equal(d.state.requests.length, 0, 'no post, so no ruling');
   const again = await run(d, m, dividedWorld, at('17:52'));
   assert.ok(again.status === 'ok');
   assert.equal(again.turns[0]!.status, 'taken');
-  assert.equal(d.count('rule_request'), 1);
+  assert.equal(d.count('rule_request'), 0);
   assert.equal(d.state.requests.length, 1);
-  // The same request ruled again (the same persona and request post) is the first row, as the database holds it.
-  const replay = await d.db.rpc<{ existing: boolean }>('rule_request', { staff_key: SIGH, request_act: R1, turn_act: 'x', ruling: 'confer', move: null });
-  assert.equal(replay.existing, true);
+  // The same turn written again (the replies are answered) is refused whole, and writes neither a second post nor a second request.
+  await assert.rejects(() => d.db.rpc('write_staff_turn', { staff_key: SIGH, in_session: 1, in_thread: T1, quoting: R1, answers: [R1], body: 'Again.', in_chars: 0, in_ruling: { reply: R1, ruling: 'confer', move: null } }), DatabaseError);
+  assert.equal(d.state.requests.length, 1);
+  assert.equal(d.state.turns.length, 1);
+});
+
+test('a turn whose answer is lost after the post and its ruling were written keeps the ruling, and the next round writes neither again (Review focus 3)', async () => {
+  // The ruling is in the post's transaction, so there is no window between the two: the run dies on the lost answer with both written, and the next round finds the reply answered.
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 1, beat: BEAT }, lostTurnAnswer: true });
+  const m = ruling({ reply: R1, ruling: 'reject' });
+  await assert.rejects(() => run(d, m), TransportError);
+  assert.equal(d.state.turns.length, 1, 'the post was written');
+  assert.deepEqual(d.state.requests.map((x) => [x.request, x.ruling, x.turn]), [[R1, 'reject', d.state.turns[0]!.post]], 'and its ruling with it');
+  const again = await run(d, m, dividedWorld, at('17:52'));
+  assert.ok(again.status === 'ok');
+  assert.equal(d.count('write_staff_turn'), 1, 'the reply is answered, so no second turn is written');
   assert.equal(d.state.requests.length, 1);
 });
 
@@ -2282,13 +2306,37 @@ test('a database refusal of the ruling never takes the post back: the reason is 
   assert.equal(d.state.turns.length, 1, 'the post stands');
   assert.equal(d.state.requests.length, 0);
   assert.equal(d.count('record_turn_attempt'), 0, 'the turn is not failed');
-  assert.ok(out.turns[0]!.ruling?.refused?.includes('rule_request'), 'the turn says why');
-  assert.ok(String(d.state.callRecords[0]!.record.refused).includes('rule_request: refused'), 'the call record says why');
+  assert.equal(d.count('rule_request'), 0);
+  assert.ok(out.turns[0]!.ruling?.refused?.startsWith('22023: '), 'the turn says why, with the refusal\'s code');
+  assert.ok(String(d.state.callRecords[0]!.record.refused).startsWith('22023: '), 'the call record says why');
   assert.equal(d.state.callRecords[0]!.record.ruling, 'fulfill');
 });
 
-test('a transport failure of rule_request stops the run as any other does', async () => {
+test('a transport failure of the turn that carries a ruling stops the run as any other does, and commits nothing', async () => {
   const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], ruleTransport: true });
   await assert.rejects(() => run(d, ruling({ reply: R1, ruling: 'reject' })), TransportError);
-  assert.equal(d.state.turns.length, 1, 'the post was written');
+  assert.equal(d.state.turns.length, 0, 'the post and its ruling are one transaction');
+  assert.equal(d.state.requests.length, 0);
+});
+
+test('a Boss\'s turn whose season is not a number is offered no ruling, and the post is written; the turn says why', async () => {
+  // phaseAt throws a plain Error for a season that is not finite: that costs the turn its ruling only, never the run.
+  const d = fakeDb({ sessions: [HYPE_NOW], waiting: [{ staff: HYPE, thread: T1, replies: [reply(R1)] }], bank: 2, season: { startsAt: Number.NaN, endsAt: Date.parse('2026-12-30T00:00:00Z') } });
+  const m = ruling({ reply: R1, ruling: 'reject' });
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.equal(out.turns[0]!.status, 'taken');
+  assert.equal(d.state.turns.length, 1, 'the post stands');
+  assert.ok(!('request' in (m.chats[0]!.schema as any).properties) && !m.chats[0]!.system.includes('rule on it'), 'no ruling is offered');
+  assert.equal(d.of('write_staff_turn')[0]!.in_ruling, undefined);
+  assert.ok(out.turns[0]!.rulingUnoffered?.includes('finite'), String(out.turns[0]!.rulingUnoffered));
+});
+
+test('a Boss\'s turn in a round with no season is offered no ruling', async () => {
+  const d = fakeDb({ sessions: [HYPE_NOW], waiting: [{ staff: HYPE, thread: T1, replies: [reply(R1)] }], bank: 2, season: null });
+  const m = ruling({ reply: R1, ruling: 'reject' });
+  const out = await run(d, m);
+  assert.equal(out.status, 'no season');
+  assert.equal(m.chats.length, 0, 'nothing is offered, nothing is asked');
+  assert.equal(d.count('write_staff_turn'), 0);
 });

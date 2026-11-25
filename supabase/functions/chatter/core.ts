@@ -26,7 +26,11 @@
  *      the duty `conversation` (a chat call, or a raw completion for the old voice), repairs it as a pick's is (no card, no title), writes it whole with `write_staff_turn` and leaves its note. A refusal of `write_staff_turn` skips the turn;
  *      a failed or rejected call whose answer was not paid for spends nothing and its replies wait.
  *   5. The outcome lists the picks written, the turns taken, skipped and failed, and the personas whose picks were kept.
- * **A staff turn's ruling (the staff requests design, Task 4).** A chat-voice Boss's or Mod's turn is offered a `request` block (`readRuling`: office, allowance and beat or bank, the thread's board, the group catalog), repaired with the turn's other bounds, and written with `rule_request` after `write_staff_turn`; a database refusal never takes the post back and is on the turn's `staff_call_records` row (duty `ruling`). A member's turn is offered none. If `write_staff_turn`'s answer is lost, the next round finds the replies answered and the ruling is not written (the request lapses by itself, as any unruled one does).
+ * **A staff turn's ruling (the staff requests design, Task 4).** A chat-voice Boss's or Mod's turn is offered a `request` block (`readRuling`: office, allowance and beat or bank, the thread's board, the group catalog) and repaired with the turn's other bounds.
+ *   The repaired ruling travels to the database inside `write_staff_turn` (`in_ruling`), which writes it in the post's own transaction with `rule_request`: there is no moment where the post stands and the ruling is lost, and a turn retried, replayed
+ *   or rolled back writes the post and the ruling once or not at all. A ruling the database refuses as bad input is returned beside the post (`refused`), never takes the post back, and is on the turn's `staff_call_records` row (duty `ruling`).
+ *   That record is written after the turn: if it is lost, the ruling still stands in `staff_requests` and only the record of what the model said is missing. A request the turn did not rule on waits for a later turn or lapses by the tick. A member's turn is offered none.
+ *   A ruling that cannot be offered (a season that is not a number, a read the database cannot answer) costs the turn its ruling only, and `rulingUnoffered` says why.
  * **A crash between a turn's call and `write_staff_turn` spends nothing and loses nothing** (the call is a ledger row; the replies are still waiting); **an answer from `write_staff_turn` lost on
  * the way back** is a transport error, which stops the round, and the next round finds the replies answered (`pool_answered`) and writes no second turn: the write is never repeated on a guess (handler.ts).
  *
@@ -198,15 +202,17 @@ export interface TurnRecord {
   readonly chars?: number;
   /** A staff turn's ruling on a request, as the database wrote it, or why it did not (the post stands either way). */
   readonly ruling?: RulingRecord;
+  /** Why a Boss's or Mod's turn was offered no ruling, when it could have been (a season that is not a number, a read the database could not answer); the post is written all the same. */
+  readonly rulingUnoffered?: string;
 }
 
 /** What became of a ruling: the reply and the ruling the repair settled on, what `rule_request` answered (the move it queued, or why a fulfill became a confer), or the refusal that wrote nothing. */
 export interface RulingRecord {
   readonly reply: string;
   readonly ruling: ChatterRequest['ruling'];
-  /** `rule_request`'s answer: set when the database took the ruling. */
+  /** `rule_request`'s answer, as `write_staff_turn` returned it: set when the database took the ruling. */
   readonly written?: { readonly ruling: string; readonly move: unknown; readonly existing: boolean; readonly asked?: string; readonly reason?: string };
-  /** The database's reason for taking no ruling; the post stands. */
+  /** The database's reason (its code and words) for taking no ruling; the post stands. */
   readonly refused?: string;
   /** Whether the turn's call record was kept (it is only lost to a database error; a transport failure stops the run). */
   readonly recorded: boolean;
@@ -531,9 +537,9 @@ interface RulingRead {
 /**
  * What a staff persona's turn needs to rule: its office (the round's `pool_context`), and for a Mod its standing (`mod_standing`: allowance and beat) and group catalog (`readModGroups`, as a judgment reads
  * it), for the Boss its bank now (`bank_now` over the phase's numbers); and the board the thread is on (`thread_place`), for a `moveThread`. A member, and an office that is not the persona's now, are offered
- * nothing. A read the database cannot answer costs the turn its ruling only (the post stands); a transport failure stops the run as everywhere.
+ * nothing. A read the database cannot answer, or a season that is not a number, costs the turn its ruling only (the post stands, and the answer says why); a transport failure stops the run as everywhere.
  */
-async function readRuling(r: TurnRun, answering: readonly string[]): Promise<RulingRead | null> {
+async function readRuling(r: TurnRun, answering: readonly string[]): Promise<RulingRead | { readonly unoffered: string } | null> {
   const { db, tuned, persona, planned } = r;
   const settings = tuned.settings;
   if (r.office !== 'boss' && r.office !== 'mod') return null;
@@ -553,7 +559,9 @@ async function readRuling(r: TurnRun, answering: readonly string[]): Promise<Rul
       };
     }
     if (!r.context.season) return null;
-    const phase = phaseAt(r.context.season, r.slotAt, settings, persona);
+    // A season that is not a number (phaseAt throws a plain Error for it) is a fact about this ruling and not about the run.
+    let phase: ReturnType<typeof phaseAt>;
+    try { phase = phaseAt(r.context.season, r.slotAt, settings, persona); } catch (e) { return { unoffered: said(e) }; }
     const { weeklyMoves, bankCap } = phase.numbers;
     const bank = Math.floor(Number(await db.rpc<number>('bank_now', { staff: planned.staff, weekly_moves: weeklyMoves, bank_cap: bankCap })));
     const moveExpiryMostDays = Math.min(phase.numbers.moveExpiryMostDays, settings.moveExpiryMostDays);
@@ -565,35 +573,36 @@ async function readRuling(r: TurnRun, answering: readonly string[]): Promise<Rul
     };
   } catch (e) {
     if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
-    return null;
+    return { unoffered: said(e) };
   }
 }
 
+/** What `write_staff_turn` answered of the ruling it was handed: `rule_request`'s answer, or the refusal (code and words) that left the post alone. */
+interface RulingResult {
+  readonly ruling?: { readonly ruling: string; readonly move: unknown; readonly existing: boolean; readonly asked?: string; readonly reason?: string };
+  readonly refused?: { readonly code: string; readonly message: string };
+}
+
+/** The ruling `write_staff_turn` is handed (`in_ruling`): the repaired request block and, for the Boss, the phase's numbers `rule_request` needs for its bank. Null for a turn that rules on nothing. */
+function rulingToWrite(answer: ChatterAnswer, read: RulingRead | null): Record<string, unknown> | null {
+  const request = answer.request;
+  if (!request || !read) return null;
+  return { reply: request.reply, ruling: request.ruling, move: request.move ?? null, ...(read.numbers ? { weekly_moves: read.numbers.weeklyMoves, bank_cap: read.numbers.bankCap } : {}) };
+}
+
 /**
- * After the turn's post: the repaired ruling written with `rule_request` (one transaction, idempotent on the persona and the request post), and the turn's call record (duty `ruling`, keyed by the post)
- * naming the ruling, the move queued or why a fulfill became a confer, the request's trims and drops. A database error of either never takes the post back: the reason is on the record (or, if the record
- * itself cannot be written, on the returned one). A transport failure or an unwritten ledger stops the run.
+ * After the turn: what the database did with the ruling (written in the post's transaction, see `rulingToWrite`), and the turn's call record (duty `ruling`, keyed by the post) naming the ruling, the move queued or why a fulfill
+ * became a confer, a refusal of the ruling, and the request's trims and drops. The record is written after the turn and may be lost to a database error without taking the ruling back. A transport failure or an unwritten ledger stops the run.
  */
-async function ruleTheRequest(r: TurnRun, post: string, quoting: string, raw: unknown, answer: ChatterAnswer, trims: readonly Trim[], read: RulingRead): Promise<RulingRecord | undefined> {
+async function recordTheRuling(r: TurnRun, post: string, quoting: string, raw: unknown, answer: ChatterAnswer, trims: readonly Trim[], result: RulingResult): Promise<RulingRecord | undefined> {
   const { db, planned } = r;
   const given = typeof raw === 'object' && raw !== null && (raw as Record<string, unknown>)['request'] != null;
   const own = trims.filter((t) => t.path === 'request' || t.path.startsWith('request.'));
   const request = answer.request;
   if (!request && !given && own.length === 0) return undefined;
-  let written: RulingRecord['written'];
-  let refused: string | undefined;
-  if (request) {
-    try {
-      const out = await db.rpc<{ ruling: string; move: unknown; existing: boolean; asked?: string; reason?: string }>('rule_request', {
-        staff_key: planned.staff, request_act: request.reply, turn_act: post, ruling: request.ruling, move: request.move ?? null,
-        ...(read.numbers ? { weekly_moves: read.numbers.weeklyMoves, bank_cap: read.numbers.bankCap } : {}),
-      });
-      written = { ruling: out.ruling, move: out.move ?? null, existing: out.existing === true, ...(out.asked ? { asked: out.asked } : {}), ...(out.reason ? { reason: out.reason } : {}) };
-    } catch (e) {
-      if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
-      refused = said(e);
-    }
-  }
+  const out = result.ruling;
+  const written: RulingRecord['written'] = out ? { ruling: out.ruling, move: out.move ?? null, existing: out.existing === true, ...(out.asked ? { asked: out.asked } : {}), ...(out.reason ? { reason: out.reason } : {}) } : undefined;
+  const refused = result.refused ? clip(`${result.refused.code}: ${result.refused.message}`, 500) : undefined;
   const dropped = request ? undefined : given ? 'the ruling could not be repaired' : undefined;
   const record = { quoting, ...(request ? { reply: request.reply, ruling: request.ruling } : {}), ...(written ? { written } : {}), ...(refused ? { refused } : {}), ...(dropped ? { dropped } : {}), trims: own };
   let recorded = false;
@@ -701,7 +710,8 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     const limits = limitsOf(settings);
     const { career, memory, notes, faces } = reads;
     // A staff persona's turn may rule on a request among the replies it answers (a chat voice: the old voice writes words only); a member's, and a pick's, never.
-    const ruling = persona.voice === 'oldVoice' ? null : await readRuling(r, answers);
+    const offered = persona.voice === 'oldVoice' ? null : await readRuling(r, answers);
+    const ruling = offered && !('unoffered' in offered) ? offered : null;
 
     let raw: unknown;
     try {
@@ -743,11 +753,14 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
 
     // The turn, whole: the post, the turn's row and each reply's answered row, in one transaction. A refusal writes nothing; the replies wait.
     let post: string;
+    let result: RulingResult = {};
     try {
-      const written = await db.rpc<{ turn: number; post: { id: string } }>('write_staff_turn', {
-        staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, quoting, answers, body: answer.words, in_chars: sender.sent(),
+      const inRuling = rulingToWrite(answer, ruling);
+      const written = await db.rpc<{ turn: number; post: { id: string } } & RulingResult>('write_staff_turn', {
+        staff_key: planned.staff, in_session: planned.session, in_thread: planned.thread, quoting, answers, body: answer.words, in_chars: sender.sent(), ...(inRuling ? { in_ruling: inRuling } : {}),
       });
       post = written.post.id;
+      result = { ...(written.ruling ? { ruling: written.ruling } : {}), ...(written.refused ? { refused: written.refused } : {}) };
     } catch (e) {
       if (stopsTheRun(e)) throw e;
       // The call was paid though nothing was written, and the database takes no row for a refusal (record_turn_attempt would change whether the replies wait), so the pacer is charged in memory only.
@@ -765,9 +778,9 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
         if (stopsTheRun(e)) throw e;
       }
     }
-    // The ruling, last of the writes that can fail: the post stands whatever the database says of it.
-    const ruled = ruling ? await ruleTheRequest(r, post, quoting, raw, answer, trims, ruling) : undefined;
-    return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent(), ...(ruled ? { ruling: ruled } : {}) };
+    // The ruling was written with the post; what remains is its call record, and the post stands whatever becomes of that.
+    const ruled = ruling ? await recordTheRuling(r, post, quoting, raw, answer, trims, result) : undefined;
+    return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent(), ...(ruled ? { ruling: ruled } : {}), ...(offered && 'unoffered' in offered ? { rulingUnoffered: offered.unoffered } : {}) };
   } catch (e) {
     if (stopsTheRun(e)) throw e;
     if (e instanceof DatabaseError) return fail('failed', sender.answered() > 0, said(e), planned.answers, []);
