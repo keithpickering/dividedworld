@@ -39,6 +39,7 @@ function Host({ o }: { o: Options }) {
   const [plays, set] = useState(o.plays ?? [play()]);
   setPlays = set;
   const props: EffectProps = {
+    covered: false,
     post, plays, states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: o.place ?? 'thread', reach: 'post', still: false, moment: null,
     show: () => {}, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: vi.fn(), release: vi.fn(), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p data-kb-words>The words of the post.</p>,

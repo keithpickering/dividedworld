@@ -56,6 +56,7 @@ function mount(o: Options = {}) {
     set = (next) => setLive((was) => ({ ...was, ...next }));
     return (
       <YouWereSayingEffect
+        covered={false}
         post={post} plays={plays} states={live.states} released={new Set()} written={new Map(Object.entries(live.written))} {...(live.version === null ? {} : { version: live.version })}
         reader={{ author: o.author ?? false, caster: false }} place="thread" reach="post" still={o.still ?? false} moment={o.moment ? { at: Date.parse('2026-11-07T10:30:00Z') } : null} save={save}
         release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}

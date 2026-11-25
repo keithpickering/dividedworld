@@ -173,6 +173,7 @@ function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, ne
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const release = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const props: EffectProps = {
+    covered: false,
     post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post. <a href="https://example.com/">A link</a></p>, ...over,

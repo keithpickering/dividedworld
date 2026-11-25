@@ -90,7 +90,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
   /* The Lens's heading for a card with no live view: a short status, never a sentence (cards/lens-words.ts). */
   for (const card of ui.cards ?? []) {
     for (const sound of card.sounds ?? []) if (!slotKeys.has(sound)) out.push(`the card "${card.key}" names the sound "${sound}", which the instance's sounds do not have`);
-    out.push(...drawnByProblems(card, ui.cards ?? []), ...foldsRowProblems(card), ...drawsEffectProblems(card, instance.cards?.find((c) => c.key === card.key)));
+    out.push(...drawnByProblems(card, ui.cards ?? []), ...foldsRowProblems(card), ...coversRowProblems(card), ...drawsEffectProblems(card, instance.cards?.find((c) => c.key === card.key)));
     if (card.status === undefined) out.push(`the card "${card.key}" has no status, so its Lens heading would be a sentence`);
     else for (const words of statusWords(card.status, instance.cards?.find((c) => c.key === card.key)?.stack ?? 1)) out.push(...wordsProblems('status', words).map((p) => `the card "${card.key}": ${p}`));
   }
@@ -135,6 +135,21 @@ function foldsRowProblems(card: CardUi): string[] {
   const who = `the card "${card.key}"`;
   if (card.Effect === undefined) out.push(`${who} folds the row and has no Effect to draw the fold where a post has no row`);
   if (card.takeover) out.push(`${who} folds the row and is a takeover, which lifts the post out of the row the fold hides`);
+  return out;
+}
+
+/**
+ * A card that covers the row (`CardUi.coversRow`) has the `Cover` the engine mounts over the row and an `Effect` that covers the content area where a post has no row, is no
+ * takeover (which lifts the post out of the row the cover hides), and does not also fold: a post's row is hidden one way or the other.
+ */
+function coversRowProblems(card: CardUi): string[] {
+  if (card.coversRow === undefined) return [];
+  const out: string[] = [];
+  const who = `the card "${card.key}"`;
+  if (card.Cover === undefined) out.push(`${who} covers the row and has no Cover to draw over it`);
+  if (card.Effect === undefined) out.push(`${who} covers the row and has no Effect to cover the content area where a post has no row`);
+  if (card.takeover) out.push(`${who} covers the row and is a takeover, which lifts the post out of the row the cover hides`);
+  if (card.foldsRow !== undefined) out.push(`${who} covers the row and also folds it; a card does one or the other`);
   return out;
 }
 

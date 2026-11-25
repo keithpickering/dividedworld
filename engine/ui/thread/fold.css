@@ -159,3 +159,14 @@
   opacity: var(--kb-fold-shade, 0);
   pointer-events: none;
 }
+
+/* A post's cover (cover.tsx): the host the engine draws first in the grid, over the whole row, the postbit included. The card's `Cover` fills it; the row under it is `inert`. */
+.kb-act-grid:has(> .kb-row-cover) {
+  position: relative;
+}
+
+.kb-act-grid > .kb-row-cover {
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+}
