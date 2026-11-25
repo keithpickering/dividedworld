@@ -12,6 +12,11 @@ $$;
 create temp table fx (k text primary key, v uuid);
 grant all on fx to public;
 create function pg_temp.f(k text) returns uuid language sql as $$ select v from fx where fx.k = f.k $$;
+-- The rows of the veils' tables read (as 0426 counts them): each table's own scans and every index entry its indexes return. A probe of one Act reads its own cover rows by key, never the table.
+create function pg_temp.veils_read() returns bigint language sql as $$
+  select coalesce((select sum(t.seq_tup_read) from pg_stat_xact_all_tables t where t.relname in ('post_veils', 'post_veil_cover')), 0)::bigint
+       + coalesce((select sum(pg_stat_get_xact_tuples_returned(i.indexrelid)) from pg_index i where i.indrelid in ('post_veils'::regclass, 'post_veil_cover'::regclass)), 0)::bigint
+$$;
 
 -- ---- the fixture ----
 -- The plain post and the planted veils alone, as the files before a guard left them on main's CI, where the planner hashed them (6 live veils, 9 card_end Acts): the posts of section 2, which stand a veil in each other way (ended,
@@ -33,19 +38,23 @@ end $$;
 -- each probe through `execute`, so that it is planned in the state it is measured in; with no sequential scan, as every bounded read of `acts` runs (pool_probe, staff_request_shown, the pool's and the extras' reads): a
 -- table this small is cheaper read whole, which a busy instance's never is, and that is not what is measured here
 create function pg_temp.measure(label text) returns void language plpgsql as $$
-declare c0 bigint; c_view bigint; c_probe bigint; r record; k text;
+declare c0 bigint; c_view bigint; c_probe bigint; r record; k text; v0 bigint; v bigint;
 begin
   perform set_config('track_functions', 'all', true);
   perform set_config('enable_seqscan', 'off', true);
   foreach k in array array['plain', 'veiled'] loop
+    v0 := pg_temp.veils_read();
     c0 := pg_temp.acts_read(); execute 'select x.id, x."character", x.current_payload from acts_public x where x.id = $1' using pg_temp.f(k) into r; c_view := pg_temp.acts_read() - c0;
     if r.id is distinct from pg_temp.f(k) then raise exception '[%] the % post was not read', label, k; end if;
     c0 := pg_temp.acts_read(); execute 'select * from pool_probe($1)' using pg_temp.f(k) into r; c_probe := pg_temp.acts_read() - c0;
+    v := pg_temp.veils_read() - v0;
+    -- the two probes read the Act's own cover rows and veils by key (a covered Act's: one cover row and its veil, twice); a scan of the cover table, or of the veils, for each Act is what grows with the instance
+    if v > 10 then raise exception '[%] two probes of the % post read % rows of post_veils and post_veil_cover: more than their own cover rows and veils', label, k, v; end if;
     if r.ok is not true then raise exception '[%] pool_probe did not read the % post', label, k; end if;
     if c_view > 5 or c_probe > 5 then
       raise exception '[%] one probe of the % post reads % rows of acts through acts_public and % through pool_probe, with the veils and card_end Acts planted: more than 5', label, k, c_view, c_probe;
     end if;
-    raise notice '[%] rows of acts for one probe of the % post: % (acts_public), % (pool_probe)', label, k, c_view, c_probe;
+    raise notice '[%] rows of acts for one probe of the % post: % (acts_public), % (pool_probe); rows of the veils'' tables: %', label, k, c_view, c_probe, v;
   end loop;
   perform set_config('track_functions', 'none', true);
   perform set_config('enable_seqscan', 'on', true);
@@ -67,6 +76,9 @@ begin
   perform pg_temp.measure(size || ', empty statistics, generic plans');
   perform set_config('plan_cache_mode', 'auto', true);
 end $$;
+-- A first read of acts_public in this session with sequential scans on, as any reader's may be: a function's plans are made at its first call in a session and kept, and the veils' tables are small, so a check planned
+-- now (a plpgsql statement keeps a generic plan after its fifth call; this reads every Act of the planted thread) and used later, under a caller with no sequential scan, would scan them for each Act it is asked about (CI's full suite: 234,112 rows of post_veil_cover for 0426's reads).
+select count(*) >= 0 from acts_public x where x.thread = (select a.thread from acts a where a.id = pg_temp.f('veiled'));
 select pg_temp.states('8 live author veils, 10 card_ends');
 -- and with the card_end Acts many and the veils still few, which a planner prices differently (Postgres 16 hashed them at 200 card_ends where it did not at 10)
 select tests.plant_live_veils(0, 190) is not null;

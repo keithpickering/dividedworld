@@ -52,11 +52,14 @@ $$;
 -- No API role runs it: author_veil_covers, a security definer, calls it as its owner.
 revoke execute on function card_end_written(uuid) from public, anon, authenticated, service_role;
 
--- Priced as what it is, an index probe for each row (cost 1000, about one random page read at the default costs; a plpgsql function is priced 100 unless it says, which is a tenth of that): priced at 100, the planner read
+-- Both functions below run with no sequential scan: a plpgsql function keeps a generic plan for each of its statements after its fifth call, made under whatever setting its caller had then, so a first reader that let the
+-- planner scan the small veils' tables left every later Act's check a scan of them (CI's full suite: 234,112 rows of post_veil_cover for 0426's reads, in a session whose first reads of acts_public scanned). With the
+-- setting on each function its plans are its own, and its reads of post_veil_cover, post_veils and card_write_refunds are probes by key whatever the caller allows.
+-- Both are priced as what they are, an index probe for each row (cost 1000, about one random page read at the default costs; a plpgsql function is priced 100 unless it says, which is a tenth of that): priced at 100, the planner read
 -- pool_signals' `tops` (0420) by the thread alone through acts_thread_seq_key and filtered the window, where at its true price it narrows to the window's posts first (acts_patrol_posts by thread and created_at), as 0420's test asks.
 -- Whether the veil play `play` is a live author veil: post_veils_live's rule for one veil (an author veil whose time has not passed, that no card_end Act ended and whose write was not refunded), each part read by its key.
 create function author_veil_live(play uuid) returns boolean
-language plpgsql stable cost 1000 security definer set search_path = public, pg_temp as $$
+language plpgsql stable cost 1000 security definer set search_path = public, pg_temp set enable_seqscan = off as $$
 begin
   if author_veil_live.play is null then return false; end if;
   if not exists (select 1 from post_veils v where v.play = author_veil_live.play and v.veil = 'author' and v.ends_at > now()) then return false; end if;
@@ -68,7 +71,7 @@ grant execute on function author_veil_live(uuid) to authenticated, service_role,
 
 -- Whether a live author veil covers the Act `act`: author_veil_live for each veil post_veil_cover lists for it, read by its key (act, play). acts_public's first two selects ask it of each Act they read.
 create function author_veil_covers(act uuid) returns boolean
-language plpgsql stable cost 1000 security definer set search_path = public, pg_temp as $$
+language plpgsql stable cost 1000 security definer set search_path = public, pg_temp set enable_seqscan = off as $$
 declare
   pl uuid;
 begin
