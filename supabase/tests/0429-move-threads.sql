@@ -148,6 +148,10 @@ begin
   perform pg_temp.expect((select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act) >= (select m.created_at from acts m where m.id = act),
     'a move''s end is dated before the move it ends: ' || (select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act) || ' < ' || (select m.created_at from acts m where m.id = act));
   perform pg_temp.expect((select count(*) from acts a where a.thread = t and a.kind = 'post' and a.payload ->> 'body' like 'Reversed: %') = 1, 'the move''s end was not said in its thread');
+  -- And the Boss's end line, written after the end in the same transaction, is dated no earlier than it: every staff Act is stamped by the clock, so one transaction's Acts read in the order they were written.
+  perform pg_temp.expect((select l.created_at from acts l where l.thread = t and l.kind = 'post' and l.payload ->> 'body' like 'Reversed: %')
+    >= (select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act),
+    'the Boss''s end line is dated before the move''s end: ' || (select l.created_at from acts l where l.thread = t and l.kind = 'post' and l.payload ->> 'body' like 'Reversed: %') || ' < ' || (select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act));
   perform pg_temp.expect((select count(*) from acts a where a.thread = t) = 3, 'the move''s thread holds ' || (select count(*) from acts a where a.thread = t) || ' Acts, not the move, its end and the line');
 end $$;
 

@@ -493,7 +493,7 @@ create or replace view season_boss_changes as
   from season_handovers h join seasons s on s.id = h.season
   where h.boss is not null and h.boss is distinct from h.outgoing and h.how in ('nomination', 'rotation');
 
--- season_news (0403_departed_personas.sql), a Boss's quote read from the thread its handover opened (season_handovers.thread), the announcements thread for a handover recorded before there was one. Everything else as 0403 wrote it.
+-- season_news (0403_departed_personas.sql), a Boss's quote read from the thread its handover opened (season_handovers.thread), the announcements thread for a handover recorded before there was one. A handover's own thread holds only its two Bosses' posts, so a Boss's line there is found by the Boss and the thread, not by the instant (staff Acts are stamped by the clock, the handover's landed_at by the transaction); the announcements thread still matches by the instant. Everything else as 0403 wrote it.
 create or replace function public.season_news(before timestamp with time zone DEFAULT NULL::timestamp with time zone, most integer DEFAULT 20)
  returns setof season_news_row
  language plpgsql
@@ -569,7 +569,7 @@ begin
     left join lateral (
       select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id), a.id) ->> 'body' as body
       from characters ch join acts a on a.character = ch.id
-      where ch.staff = c.who and a.created_at = c.at and a.kind = 'post' and a.thread = coalesce(c.handover_thread, (select thread from ann))
+      where ch.staff = c.who and (c.handover_thread is not null or a.created_at = c.at) and a.kind = 'post' and a.thread = coalesce(c.handover_thread, (select thread from ann))
         and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
       order by a.seq limit 1
     ) p on true
@@ -631,9 +631,10 @@ begin
     if write_staff_act.thread is not null and kind = 'post' then perform not_locked_out(who, write_staff_act.thread); end if;
   end if;
   perform set_config('kayfabb.staff_writer', 'on', true);
-  -- A move is stamped with the clock and not the transaction: each landed move opens a thread of its own, so the seq that once ordered two moves of one tick (they shared a thread) no longer does, and two moveThreads of
-  -- one thread landed in one tick must still read in the order they landed (thread_place takes the latest).
-  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (who, kind, write_staff_act.thread, target, stamped, case when kind = 'move' then clock_timestamp() else now() end) returning id, target_act_id into written, kept;
+  -- Every staff Act is stamped with the clock and not the transaction. A move must be: each landed move opens a thread of its own, so the seq that once ordered two moves of one tick (they shared a thread) no longer does,
+  -- and two moveThreads of one thread landed in one tick must still read in the order they landed (thread_place takes the latest). The rest follow, so that the Acts of one transaction (a move, its end, the Boss's line
+  -- that says it) are dated in the order they were written, and a line is never dated before the end it follows.
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (who, kind, write_staff_act.thread, target, stamped, clock_timestamp()) returning id, target_act_id into written, kept;
   perform set_config('kayfabb.staff_writer', '', true);
   -- Only a post that still has its target springs: one whose quote is doctored was written with none (acts_forged_quotes).
   if quoting and kept is not null then sprung := spring_traps('quote', kept, written, held => locked); end if;
