@@ -1,5 +1,6 @@
 /**
- * The extinguisher's puff as a model (docs/plans/2026-11-23-steel-chair-objects-design.md, section 4; the numbers wait on the bench,
+ * The extinguisher's puff as a model (docs/plans/2026-11-23-steel-chair-objects-design.md, section 4, and its
+ * addendum of 2026-11-25: the owner approved these numbers, the bench's starting ones,
  * docs/research/2026-11-23-steel-chair-objects/01-puff.html). White smoke jets from the spout, billows out to fill the post's content area border
  * to border, holds, and fades. Pure: no DOM and no clock; the caller says how many ms have passed since the puff began. The drawing is
  * `hot-box/fog.ts`'s field, which this gives its floor (`puffTarget`) and its opacity (`puffAlpha`) at each moment.
