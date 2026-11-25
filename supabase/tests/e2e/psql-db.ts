@@ -16,7 +16,7 @@ import type { Instance } from '../../../engine/rules/types.ts';
 
 // A variable specifier: TypeScript does not resolve it, so the .mjs needs no declaration file.
 const runnerFile = '../../../tools/test-sql.mjs';
-const { cloneSql, migrationFiles } = (await import(runnerFile)) as { cloneSql(template: string, clone: string, url: string): string; migrationFiles(): string[] };
+const { FILE_TIMEOUT_MS, cloneSql, migrationFiles } = (await import(runnerFile)) as { FILE_TIMEOUT_MS: number; cloneSql(template: string, clone: string, url: string): string; migrationFiles(): string[] };
 
 export function scratchUrl(): string {
   const url = process.env.KAYFABB_SCRATCH_URL;
@@ -43,7 +43,7 @@ function cloneOfSnapshot(key: string, suffix: string): { url: string; drop: () =
   const name = `${scratch.pathname.slice(1)}_${suffix}`;
   const server = new URL(scratch);
   server.pathname = '/postgres';
-  const onServer = (text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', server.toString(), '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  const onServer = (text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', server.toString(), '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
   // The settings a database starts with do not travel with a clone, so cloneSql gives the clone its own, scratch_url naming it.
   onServer(cloneSql(snapshot, name, server.toString()));
   const url = new URL(scratch);

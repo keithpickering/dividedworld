@@ -128,7 +128,7 @@ if (/^begin;\\n/.test(sql)) {
  * One run of the suite with the recording psql. `pattern` limits it to the files whose names match; `hang`, `fail` and `drift` plant what is above.
  * A run is made ready (its state directory, its environment), run (here, or beforehand and side by side: see prelaunch), and read.
  */
-const ready = ({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '1500', e2eDir = '', workers = '', shard = '', report = '', extraEnv = {} } = {}) => {
+const ready = ({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '60000', e2eDir = '', workers = '', shard = '', report = '', extraEnv = {} } = {}) => {
   const state = fs.mkdtempSync(path.join(bounded, 'run-'));
   const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, KAYFABB_STATE: state, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep, KAYFABB_SQL_WORKERS: workers, CALLS: '', ...(e2eDir ? { KAYFABB_SQL_E2E_DIR: e2eDir } : {}), ...extraEnv };
   const args = ['tools/test-sql.mjs', ...(pattern ? [pattern] : []), ...(shard ? [`--shard=${shard}`] : []), ...(report ? [`--report=${report}`] : [])];
@@ -207,7 +207,7 @@ const planted = {
 const reportFile = path.join(bounded, 'report.json');
 const runs = {
   full: {},
-  hang: { pattern: small, hang: true, workers: '1' },
+  hang: { pattern: small, hang: true, workers: '1', timeoutMs: '1500' },
   fail: { pattern: small, fail: true, workers: '1' },
   kept: { pattern: small, fail: true, keep: 'failed', workers: '1' },
   drifted: { pattern: small, workers: '1', drift: '00000000-0000-4000-8000-0000000000d1|a play with no row' },
@@ -294,6 +294,7 @@ const full = boundedSuite(runs.full);
   check('the files\' lines carry their seconds', new RegExp(`PASS  ${first.replace('.', '\\.')}  \\d+\\.\\ds`).test(r.out), r.out.split('\n').filter((l) => l.includes(first)).join(' | '));
   const slowest = /slowest[^\n]*\n((?:\s+\d+\.\ds  \S+\n?)+)/.exec(r.out)?.[1].trim().split('\n') ?? [];
   check('and the summary lists the ten slowest, longest first', slowest.length === 10 && slowest.every((l, i) => i === 0 || parseFloat(slowest[i - 1]) >= parseFloat(l)), slowest.join(' | '));
+  check('no file of the whole run was killed by a bound (a killed file\'s clone is rightly not read, so a kill under load would hide a read)', !/was killed/.test(r.out), r.out.split('\n').filter((l) => /was killed/.test(l)).slice(0, 2).join(' | '));
   check('a whole run compares in this process: every file against the files on disk, and the client reads', /PASS  coverage/.test(r.out) && !/FAIL  coverage/.test(r.out), r.out.split('\n').filter((l) => /coverage/.test(l)).join(' | '));
   check('no drift row from the stand-in: no file fails its drift read, and every assertion file passes', !/differs from the Acts/.test(r.out) && assertionFiles.every((f) => new RegExp(`PASS  ${f.replace('.', '\\.')}  `).test(r.out)), r.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 3).join(' | '));
 }
@@ -439,6 +440,8 @@ const full = boundedSuite(runs.full);
   check('shard totals that differ are named', gf(totals).some((m) => /disagree/.test(m)), gf(totals).join(' | '));
   const lone = [good()[0]];
   check('a missing shard number is named', gf(lone).some((m) => /shard 2\/2 has no report/.test(m)), gf(lone).join(' | '));
+  const stale = good(); stale[1].files.push({ name: 'e2e/0099-gone.ts', outcome: 'passed', seconds: 1 });
+  check('a report that names a file not on disk is named, so a stale or foreign report does not pass', gf(stale).some((m) => m.includes('e2e/0099-gone.ts') && /not on disk/.test(m)), gf(stale).join(' | '));
   check('no report at all fails', gf([]).length > 0);
   check('a report with no shard fails', gf([{ files: [] }, ...good()]).some((m) => /no shard/.test(m)));
   check('a shard that ran nothing, with its files in no report, fails', gf([report(1, 2, []), report(2, 2, [disk[1], disk[3]])]).length > 0);
@@ -478,6 +481,39 @@ const full = boundedSuite(runs.full);
   const summed = gathered();
   check('and passes when another shard called it: the sum is what is compared', summed.status === 0, summed.out.slice(0, 300));
   fs.rmSync(dir, { recursive: true, force: true });
+}
+
+/* ---- a run that is interrupted leaves nothing on the server ---- */
+{
+  const { state, env, args } = ready({ pattern: small, e2eDir: emptyDir, workers: '1', extraEnv: { SLEEP_MS: '60000' } });
+  const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { out += d; });
+  const exited = new Promise((resolve) => child.on('close', (code, signal) => resolve({ code, signal })));
+  const began = Date.now();
+  const files = () => (fs.existsSync(path.join(state, 'calls')) ? fs.readFileSync(path.join(state, 'calls'), 'utf8').split('\x1e\n').filter((x) => x.trim()) : []);
+  /* Until a file is running on its clone: its psql is sleeping, so the run is in the middle of the pool. */
+  while (Date.now() - began < 240_000 && !files().some(isFile)) await new Promise((r) => setTimeout(r, 100));
+  child.kill('SIGINT');
+  const result = await Promise.race([exited, new Promise((r) => setTimeout(() => r({ code: 'still running', signal: null }), 30_000))]);
+  if (result.code === 'still running') child.kill('SIGKILL');
+  const recs = files();
+  const tmplName = recs.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean) ?? '';
+  const sweep = recs.find((c) => dbOf(c) === 'postgres' && /drop database if exists %I with \(force\)/.test(bodyOf(c)) && bodyOf(c).includes(`datname = '${tmplName}'`) && bodyOf(c).includes(`like '${tmplName}\\_%'`));
+  check('SIGINT during a run exits 130, not by the signal and not left running', result.code === 130, `${JSON.stringify(result)}`);
+  check('and drops the template and every database named `<template>_%` (clones, their sub-databases, snapshots) in one sweep', Boolean(tmplName) && Boolean(sweep), `${tmplName}: ${recs.length} calls`);
+  check('and the in-flight psql is killed with it, not waited out', Date.now() - began < 200_000 && result.code !== 'still running');
+  /* psql missing: exit 2 at once, with the same cleanup path (which cannot itself need psql in a loop). */
+  const lost = spawnSync(process.execPath, ['tools/test-sql.mjs', small], { env: { ...process.env, KAYFABB_PSQL_SHIM: '', PATH: '/nonexistent', DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres' }, encoding: 'utf8', timeout: 60_000 });
+  check('psql not found exits 2 and says so', lost.status === 2 && /not found/.test(lost.stdout + lost.stderr), `status ${lost.status}: ${(lost.stdout + lost.stderr).slice(0, 200)}`);
+}
+
+/* The end-to-end helper's own psql calls are bounded, so a stuck clone cannot hang a file past the runner's bound. */
+{
+  const helper = fs.readFileSync('supabase/tests/e2e/psql-db.ts', 'utf8');
+  const onServer = /const onServer = [^\n]*/.exec(helper)?.[0] ?? '';
+  check('psql-db.ts\'s onServer has a timeout that kills', /timeout: FILE_TIMEOUT_MS/.test(onServer) && /killSignal: 'SIGKILL'/.test(onServer), onServer.slice(0, 200));
 }
 
 /* ---- the end-to-end files: snapshots of the replay, and what a file may not do ---- */

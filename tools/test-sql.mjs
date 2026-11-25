@@ -157,12 +157,34 @@ const withDatabase = (url, db) => { const u = new URL(url); u.pathname = `/${db}
    is never run on Windows, where the real psql.exe further down PATH answers instead. */
 const PSQL = process.env.KAYFABB_PSQL_SHIM ? { file: process.execPath, args: [process.env.KAYFABB_PSQL_SHIM] } : { file: 'psql', args: [] };
 
+/**
+ * How a run ends when it cannot reach its `finally` blocks (a signal, or a program that is not there): kill every child still running, drop every
+ * database the run made, and exit. What the run made is named from its template (`<template>`, and `<template>_%`: the clones, the databases a
+ * file makes from a snapshot, the snapshots), so one sweep covers it, and a run killed with a clone half-made leaves nothing on the server.
+ * `sweep` is set once the template is named. A second call (the sweep's own psql missing) only exits.
+ */
+const children = new Set();
+/** @type {{ url: string, template: string } | null} */
+let sweep = null;
+let leaving = false;
+function leave(code) {
+  if (leaving) process.exit(code);
+  leaving = true;
+  for (const c of children) { try { c.kill('SIGKILL'); } catch { /* already gone */ } }
+  if (sweep) {
+    const t = sweep.template;
+    const err = psql(sweep.url, `select format('drop database if exists %I with (force)', datname) from pg_database where datname = '${t}' or datname like '${t}\\_%' \\gexec`);
+    if (err) console.error(`  test-sql: could not drop what is named for ${t}: ${err}`);
+  }
+  process.exit(code);
+}
+
 function psql(url, sql) {
   try {
     execFileSync(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
     return null;
   } catch (err) {
-    if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); process.exit(2); }
+    if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); leave(2); }
     if (timedOut(err)) return killedWhy();
     return (err.stderr || err.stdout || String(err)).trim();
   }
@@ -174,7 +196,7 @@ function psqlLines(url, sql) {
     const out = execFileSync(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', '-A', '-t', '-F', '|', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
     return { lines: String(out).split('\n'), error: null };
   } catch (err) {
-    if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); process.exit(2); }
+    if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); leave(2); }
     return { lines: [], error: timedOut(err) ? killedWhy() : (err.stderr || err.stdout || String(err)).trim() };
   }
 }
@@ -196,16 +218,17 @@ function psqlRows(url, sql) {
 function exec(file, args, { input, env } = {}) {
   return new Promise((resolve) => {
     const child = spawn(file, args, { env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    children.add(child);
     let out = '';
     let err = '';
     let killed = false;
     let done = false;
     const timer = setTimeout(() => { killed = true; child.kill('SIGKILL'); }, FILE_TIMEOUT_MS);
-    const finish = (code) => { if (done) return; done = true; clearTimeout(timer); resolve({ code, killed, out, err }); };
+    const finish = (code) => { if (done) return; done = true; children.delete(child); clearTimeout(timer); resolve({ code, killed, out, err }); };
     child.stdout.setEncoding('utf8').on('data', (d) => { out += d; });
     child.stderr.setEncoding('utf8').on('data', (d) => { err += d; });
     child.on('error', (e) => {
-      if (e.code === 'ENOENT') { console.error(`\n  ${file} not found; run scripts/setup-container.sh`); process.exit(2); }
+      if (e.code === 'ENOENT') { console.error(`\n  ${file} not found; run scripts/setup-container.sh`); leave(2); }
       err += String(e);
       finish(null);
     });
@@ -492,7 +515,7 @@ export function parseShard(arg) {
 
 /**
  * Every way a set of shard reports fails to cover the files: a report with no shard to name, a different total of shards from one report to
- * another, a shard number with no report, a file in no report, a file in two, and a file that did not pass. `reports` are what `--report`
+ * another, a shard number with no report, a file in no report, a file in two, a file that did not pass, and a file in a report that is not on disk. `reports` are what `--report`
  * wrote (`{ shard: { i, n }, files: [{ name, outcome, seconds }], calls }`), `allFiles` the files on disk (suiteFiles). One message each; none is
  * an empty list. Pure, so tools/test-sql-refusal.mjs plants each.
  * @param {{ shard: { i: number, n: number }, files: { name: string, outcome: string }[] }[]} reports
@@ -510,6 +533,7 @@ export function gatherFailures(reports, allFiles) {
   /** @type {Map<string, { shard: string, outcome: string }[]>} */
   const seen = new Map();
   for (const r of named) for (const f of r.files) seen.set(f.name, [...(seen.get(f.name) ?? []), { shard: `${r.shard.i}/${r.shard.n}`, outcome: f.outcome }]);
+  for (const [name, ran] of seen) if (!allFiles.includes(name)) failures.push(`${name} is in a report (shard ${ran.map((x) => x.shard).join(', ')}) but not on disk: a stale or foreign report`);
   for (const name of allFiles) {
     const ran = seen.get(name) ?? [];
     if (!ran.length) failures.push(`${name} is in no report: no shard ran it`);
@@ -616,6 +640,11 @@ async function main() {
   const snapshots = {};
   const template = `kayfabb_scratch_${process.pid}_${Date.now()}`;
   const templateUrl = withDatabase(url, template);
+  /* An interrupt, or a terminate, ends the run here (the `finally` below is not reached by a signal): exit 130 or 143 after the sweep. A signal is
+     handled between the steps of the template's build, which are one psql each, and the terminal's own Ctrl-C reaches the psql running as well. */
+  sweep = { url, template };
+  process.on('SIGINT', () => leave(130));
+  process.on('SIGTERM', () => leave(143));
   const keepFailed = process.env.KAYFABB_SQL_KEEP === 'failed';
   const workers = workerCount();
   const step = (label, err) => {
