@@ -12,9 +12,9 @@ KayfaBB is free software under the GNU Affero General Public License, version 3 
 The full text is `LICENSE`. Anyone may use, change, share and sell it. Whoever receives a copy gets the source under the
 same license, and whoever runs a modified KayfaBB for users must offer those users its source (AGPL section 13).
 
-These paths are the engine: `engine/`, `supabase/`, `tools/`, `web/`, `e2e/`, `scripts/`, the root configuration files,
-and the repository's own documents and skills (`docs/`, `specs/`, `.claude/`, `CLAUDE.md`, `README.md`, `PRODUCT.md`,
-`spec.md`). The engine's own pictures, such as the card template, are under the same terms.
+These paths are the engine: `engine/`, `supabase/`, `tools/`, `web/`, `e2e/`, `scripts/`, the root configuration files
+and folders (`.github/`, `.storybook/`, `.impeccable/`), and the repository's own documents and skills (`docs/`, `specs/`,
+`.claude/`, `CLAUDE.md`, `README.md`, `PRODUCT.md`, `spec.md`). The engine's own pictures, such as the card template, are under the same terms.
 
 ## Divided World: AGPL-3.0-or-later or CC BY 4.0, your choice
 
@@ -30,11 +30,14 @@ New art may name its own terms in its `art.json`; art offered without other term
 
 Some files are not ours to license, or carry terms of their own: fonts, sounds, photographs from Wikimedia Commons,
 and some fan art. Where a file's terms differ from its layer's, they are declared beside it, in an `art.json`, a
-`sounds.json`, a `CREDITS.md` or a `licenses.json` (`engine/licenses.json`, `instances/divided-world/licenses.json`).
+`sounds.json`, a `CREDITS.md` or a `licenses.json` (`engine/licenses.json`, `instances/divided-world/licenses.json`). Two
+folders of code carry their own license file instead: `engine/system/tokenizers/gpt2/` (modified MIT, its `LICENSE`)
+and `.claude/skills/impeccable/` (Apache 2.0, its `LICENSE`).
 `tools/check-licenses.mjs` refuses a media file that none of them declares. Each instance's License & credits page, at
 `/license`, lists them for players.
 
-Fan art that uses Nintendo's characters or marks does not license those, and the Snuckles image grants no rights in the
+Divided World's sounds were made with ElevenLabs and are used here under ElevenLabs' terms; they are not offered for
+reuse. Fan art that uses Nintendo's characters or marks does not license those, and the Snuckles image grants no rights in the
 Snuckles character.
 
 ## What is not offered
