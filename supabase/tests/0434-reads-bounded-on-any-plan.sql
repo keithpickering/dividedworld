@@ -1,7 +1,8 @@
 -- A probe of one Act through acts_public reads `acts` by its key on any plan, however many veils are live and however many card_end Acts the instance holds (supabase/migrations/0434_reads_bounded_on_any_plan.sql, item 1).
 -- 0395's acts_public asked whether a live author veil covers each Act with an EXISTS a planner could hash: every live veil, and for each every card_end Act, read once for each statement, so that a probe of one post read
--- veils x card_ends rows of `acts`. With the 8 veils and 200 card_ends planted below, one probe of a post nobody veiled read 1604 rows of `acts` with true statistics and 402 with none, against Postgres 16, before 0434.
--- 1. the bound: one probe through acts_public, and one through pool_probe, under each statistics state (as planted, true, empty for `acts` with relallvisible 0, empty for the veil tables too, generic plans), reads at most 5 rows;
+-- veils x card_ends rows of `acts`. With the veils and card_ends planted below, one probe of a post nobody veiled read 4424 rows of `acts` through acts_public, against Postgres 16, before 0434.
+-- 1. the bound: one probe through acts_public, and one through pool_probe, under each statistics state (as planted, true, empty for `acts` with relallvisible 0, empty for the veil tables too, generic plans), with the card_end Acts
+--    few and then many, reads at most 5 rows;
 -- 2. the check is post_veils_live's rule: author_veil_covers answers as 0395's EXISTS did, for a live veil, one ended by a card_end, one refunded, one over by its time, a totals veil, and an Act no veil covers.
 
 create function pg_temp.acts_read() returns bigint language sql as $$
@@ -21,7 +22,7 @@ declare
   base timestamptz := now() - interval '1 hour';
   p uuid; play uuid; k text;
 begin
-  perform tests.plant_live_veils(8, 200);
+  -- as many as the files before a guard left on main's CI, where the planner hashed them (6 veils, 9 card_end Acts); section 1 adds 190 more card_end Acts after its first round
   insert into fx values ('plain', tests.act(a, 'post', t, '{"body": "Nobody veiled this."}'::jsonb, null, base));
   -- one post for each way a veil can stand: live, ended by a card_end, refunded, over by its time; a totals veil; each covering its post (post_veil_cover)
   foreach k in array array['live', 'ended', 'refunded', 'over', 'totals'] loop
@@ -38,46 +39,52 @@ begin
     if k = 'refunded' then insert into card_write_refunds (play, amount) values (play, 1); end if;
     insert into fx values (k, p);
   end loop;
+  perform tests.plant_live_veils(8, 10);
   if not exists (select 1 from post_veil_cover c where c.act = pg_temp.f('live')) or not exists (select 1 from post_veil_cover c where c.act = pg_temp.f('ended')) then raise exception 'the veils cover nothing'; end if;
 end $$;
 
 -- ---- 1. the bound, under each state ----
--- each probe through `execute`, so that it is planned in the state it is measured in
+-- each probe through `execute`, so that it is planned in the state it is measured in; with no sequential scan, as every bounded read of `acts` runs (pool_probe, staff_request_shown, the pool's and the extras' reads): a
+-- table this small is cheaper read whole, which a busy instance's never is, and that is not what is measured here
 create function pg_temp.measure(label text) returns void language plpgsql as $$
 declare c0 bigint; c_view bigint; c_probe bigint; r record; k text;
 begin
   perform set_config('track_functions', 'all', true);
+  perform set_config('enable_seqscan', 'off', true);
   foreach k in array array['plain', 'live'] loop
     c0 := pg_temp.acts_read(); execute 'select x.id, x."character", x.current_payload from acts_public x where x.id = $1' using pg_temp.f(k) into r; c_view := pg_temp.acts_read() - c0;
     if r.id is distinct from pg_temp.f(k) then raise exception '[%] the % post was not read', label, k; end if;
     c0 := pg_temp.acts_read(); execute 'select * from pool_probe($1)' using pg_temp.f(k) into r; c_probe := pg_temp.acts_read() - c0;
     if r.ok is not true then raise exception '[%] pool_probe did not read the % post', label, k; end if;
     if c_view > 5 or c_probe > 5 then
-      raise exception '[%] one probe of the % post reads % rows of acts through acts_public and % through pool_probe, with 8 live veils and 200 card_end Acts in the instance: more than 5', label, k, c_view, c_probe;
+      raise exception '[%] one probe of the % post reads % rows of acts through acts_public and % through pool_probe, with the veils and card_end Acts planted: more than 5', label, k, c_view, c_probe;
     end if;
     raise notice '[%] rows of acts for one probe of the % post: % (acts_public), % (pool_probe)', label, k, c_view, c_probe;
   end loop;
   perform set_config('track_functions', 'none', true);
+  perform set_config('enable_seqscan', 'on', true);
 end $$;
 
-select pg_temp.measure('as planted');
-analyze acts; analyze post_veils; analyze post_veil_cover; analyze card_write_refunds;
-select pg_temp.measure('true statistics');
-do $$
+-- Each state in turn, the statistics of `acts` and of the veils' tables forged as each says; `size` names the planting.
+create function pg_temp.states(size text) returns void language plpgsql as $$
 begin
+  perform pg_temp.measure(size || ', as planted');
+  analyze acts; analyze post_veils; analyze post_veil_cover; analyze card_write_refunds;
+  perform pg_temp.measure(size || ', true statistics');
   delete from pg_statistic where starelid = 'acts'::regclass;
   update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid = 'acts'::regclass;
-end $$;
-select pg_temp.measure('empty statistics');
-do $$
-begin
+  perform pg_temp.measure(size || ', empty statistics');
   delete from pg_statistic where starelid in ('post_veils'::regclass, 'post_veil_cover'::regclass, 'card_write_refunds'::regclass);
   update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid in ('post_veils'::regclass, 'post_veil_cover'::regclass, 'card_write_refunds'::regclass);
+  perform pg_temp.measure(size || ', empty statistics, the veils'' tables too');
+  perform set_config('plan_cache_mode', 'force_generic_plan', true);
+  perform pg_temp.measure(size || ', empty statistics, generic plans');
+  perform set_config('plan_cache_mode', 'auto', true);
 end $$;
-select pg_temp.measure('empty statistics, the veils'' tables too');
-set local plan_cache_mode = force_generic_plan;
-select pg_temp.measure('empty statistics, generic plans');
-reset plan_cache_mode;
+select pg_temp.states('9 live author veils, 11 card_ends');
+-- and with the card_end Acts many and the veils still few, which a planner prices differently (Postgres 16 hashed them at 200 card_ends where it did not at 10)
+select tests.plant_live_veils(0, 190) is not null;
+select pg_temp.states('9 live author veils, 201 card_ends');
 
 -- ---- 2. the check is post_veils_live's rule ----
 do $$

@@ -142,7 +142,7 @@ end $$;
 
 -- What the files before this one leave committed, planted so that every run measures in it (0434_reads_bounded_on_any_plan.sql): live author veils and card_end Acts elsewhere in the instance, which made each probe of a post
 -- through acts_public a hashed read of all of them (CI on main at 7d8a255: `pool_read reads 1924 rows of acts in a 4,000-post thread`).
-select tests.plant_live_veils(8, 200) is not null;
+select tests.plant_live_veils(8, 10) is not null;
 -- And the dead rows the files before this one leave in `acts`' indexes (a rolled-back file's index entries stay until a vacuum reclaims them, and an index never shrinks): 20,000 posts written and rolled back. Under the empty
 -- statistics below they make acts_patrol_posts the index the planner prices lowest for 0425's helpers, which read the thread's posts through it (issue #1080: 84,833 rows of `acts` here for 0425's helpers, against Postgres 16).
 savepoint pad;

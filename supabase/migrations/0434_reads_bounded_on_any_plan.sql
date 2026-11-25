@@ -21,7 +21,7 @@
 --      desc) where kind <> 'edit'. acts_patrol_posts, acts_character and acts_created each lack a column of it and cost a sort, a disabled node. No other index of `acts` is implied by kind = 'post'. The rows read are the rows returned.
 --      Same signatures, owner, settings, grants and result as 0425's.
 --
--- The tests: supabase/tests/0434-reads-bounded-on-any-plan.sql plants the veils and card_end Acts that make the hash cheap (tests.plant_live_veils, supabase/tests/setup/fixtures.sql) and counts one probe under each statistics
+-- The tests: supabase/tests/0434-reads-bounded-on-any-plan.sql plants the veils and card_end Acts that make the hash cheap (tests.plant_live_veils, supabase/tests/setup/fixtures.sql: few, as CI had them, then many) and counts one probe under each statistics
 -- state; 0424's, 0425's and 0426's guards now measure in the states that failed, on every run rather than on the runs whose earlier files left them: all three plant the veils and card_ends, 0425 and 0426 forge relallvisible 0
 -- with their empty statistics, and 0425 leaves 20,000 rolled-back posts' dead entries in `acts`' indexes first. Each was run red against the definitions before this file.
 -- Ways out: no state is added. Masks: author_veil_covers answers what acts_public already shows every reader of it (whether an Act is shown under the stand-in), reads no owner, class or reaction, and is executable by the roles that

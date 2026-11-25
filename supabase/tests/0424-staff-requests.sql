@@ -765,7 +765,7 @@ begin
   analyze characters;
   -- What the files before this one leave committed, planted so that every run measures in it (0434_reads_bounded_on_any_plan.sql): live author veils and card_end Acts elsewhere in the instance, which made each probe of a post
   -- through acts_public a hashed read of all of them (CI on main at 7d8a255: `requests_waiting(1) read 438 tuples of acts for 50 hidden rows and 1 shown`).
-  perform tests.plant_live_veils(8, 200);
+  perform tests.plant_live_veils(8, 10);
 
   foreach state in array array['as the suite leaves it', 'random_page_cost 100'] loop
     if state = 'random_page_cost 100' then

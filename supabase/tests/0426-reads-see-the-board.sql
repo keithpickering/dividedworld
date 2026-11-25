@@ -574,7 +574,7 @@ end $$;
 
 -- What the files before this one leave committed, planted so that every run measures in it (0434_reads_bounded_on_any_plan.sql): live author veils and card_end Acts elsewhere in the instance, which made each probe of an Act
 -- through acts_public a hashed read of all of them (CI on main at 7d8a255: `pool_read reads 4814 rows of acts: more than 4000`).
-select tests.plant_live_veils(8, 200) is not null;
+select tests.plant_live_veils(8, 10) is not null;
 do $$
 begin
   -- relallvisible 0 as well: a visibility map that counts no page all-visible, as 0425's states set it

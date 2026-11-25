@@ -148,6 +148,8 @@ begin
       perform set_config('kayfabb.card_end_writer', '', true);
     end if;
   end loop;
+  -- analyzed, as the files before a guard leave them (each file runs after a `vacuum (analyze)`): the planner then knows the veils are few, which is when it hashes them
+  analyze post_veils; analyze post_veil_cover; analyze card_write_refunds;
   return t;
 end $$;
 
