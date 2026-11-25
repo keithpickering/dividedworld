@@ -41,7 +41,7 @@ Model: sonnet
 - **Engine constants** (exported from `engine/system/beats.ts`): `ANNOUNCE_MOST = 2000`, `PITCH_MOST = 200`,
   `RECAP_MOST = 300`, `PUSH_MOST = 300`, `MOOD_MOST = 300`, `LEAD_IN_BRIEF_MOST = 1000`.
 - **Conditions:** `phase` takes `daysIntoPhase` (whole, 0 to `DAYS_BEFORE_END_MOST`), only with `phase`, never with
-  `daysBeforeEnd` in the same condition. `beatLanded` takes `of?: 'predecessor'`. A board ref `{role, beat}` takes
+  `daysBeforeEnd` in the same condition. `beatLanded` takes `of?: 'predecessor'` and `not?: true`. A board ref `{role, beat}` takes
   `of?: 'predecessor'` (`isBoardTarget`). The catalog's plain words in `CONDITIONS` say so.
 - **`arcProblems`** adds, each naming its predicate:
   - an `announce` with a blank field, a `defaultTitle` over `titleMaxLength` (`atMost`), a `defaultBody` over
@@ -52,6 +52,9 @@ Model: sonnet
   - in `aftermath`, a `beatLanded` or ref with `of: 'predecessor'` naming no beat of this persona's own `arc` or
     `miniArcs` (`beatOfPersona`), and a ref's role that beat's bundle never makes (`roleOfBeat`);
   - an aftermath beat with `due` (`noDueOnAftermath`) or `repeatable` (`miniArcOnly`);
+  - a beat's `unlock`, or a lead-in's, whose every condition is a `beatLanded` with `not` (`notAllNegated`): it would
+    hold from the season's first day;
+  - `not` with any value but `true` (`isTrue`);
   - the beat count bound (`ARC_BEATS_MOST`) counts aftermath beats with the rest.
 
 **Tests first**, each red before the change: `conditionProblem` accepts `{kind:'phase', phase:'honeymoon',
@@ -75,7 +78,7 @@ to `supabase/tests/0186-arcs.sql`; `supabase/functions/_shared/seed.ts`.
   reads it). No row: none.
 - **`beat_condition_holds`** (latest 0333): `phase` with `daysIntoPhase` holds once that many days of the phase have
   passed (`arc_season_span`'s phase start); `beatLanded` with `of = 'predecessor'` reads the predecessor's beat in its
-  season, with the same landed rule (the 2026-11-12 amendment). **`arc_board`** and **`beat_role_board`** (0332) resolve
+  season, with the same landed rule (the 2026-11-12 amendment); with `not = true`, the negation of that answer. **`arc_board`** and **`beat_role_board`** (0332) resolve
   `{role, beat, of: 'predecessor'}` the same way.
 - **`arc_pass`** (latest 0333): beside the Boss's own beats, the aftermath beats of its predecessor's persona
   (`persona_arcs.aftermath`), evaluated and recorded under the current Boss with key `after:<pred>:<key>`, as optional
@@ -90,7 +93,9 @@ to `supabase/tests/0186-arcs.sql`; `supabase/functions/_shared/seed.ts`.
 **Tests first.** A lead-in shows in the honeymoon's second week and not its first, and stops once its beat unlocks; an
 aftermath beat unlocks for the successor only when the predecessor's named beat landed, and never for a successor whose
 predecessor's beat was held; its role resolves to the predecessor's board; a departure mid-season reads the departed
-Boss's beats in the same season; the masks grep in `0186-arcs.sql` walks the new and changed functions, and is driven red
+Boss's beats in the same season; with FanGaME's two aftermath beats, a predecessor whose Split landed and whose
+Everything is World -1 did not unlocks only `unfinished`, one whose both landed only `restore`, and one whose Split never
+landed neither; the masks grep in `0186-arcs.sql` walks the new and changed functions, and is driven red
 on a planted `owner` read.
 
 ## Task 3. Announcements, the staff pin and the recap in SQL
@@ -188,11 +193,16 @@ Model: sonnet
   `after:<pred>:<key>`). `recordLines` renders "The plot so far" (last season, then initiatives, each with its thread
   id), then, for the Boss alone, "What you are pushing" and "How you have been feeling lately". Each line is cut as the
   record's lines are.
+- **A former Boss reads its own past in the second person** (the design, section 8a): where the calling persona's key
+  is `plot.last.boss`, the line reads "Last season you were the Boss. This is how you summed it up: <recap>" (or the
+  fallback after "Last season you were the Boss:"); an initiative whose `boss` is the caller, and the caller is not the
+  sitting Boss, reads "You announced this: <title>. <pitch>" with no push. `recordLines` takes the caller's key.
 - **The completion voice** (`chatterCompletion`, `oldVoice` personas) carries the plot so far as one line and nothing
   else.
 
 **Tests first.** A Mod's prompt carries the initiatives and no push or mood; the Boss's carries all three; a member's
-carries the plot so far; a mood key the persona file lacks is dropped silently; the payload carries announcements with
+carries the plot so far; the former Boss, now a member, reads last season in the second person and a Mod reads it in
+the third; a mood key the persona file lacks is dropped silently; the payload carries announcements with
 push. Red first.
 
 ## Task 6. The sticky on the board, and an admin's unpin (engine UI)
@@ -281,9 +291,29 @@ these strings exactly; the owner approves them in review.
     - push: "You announced the restoration. When a thread is in World -1 that clearly belongs somewhere else, you mention
       it, and you ask people where they would like it to go."
 
+- **`aftermath`, a second beat**, key `unfinished`:
+  - unlock: `[{ kind: 'beatLanded', beat: 'split', of: 'predecessor' }, { kind: 'beatLanded', beat: 'everything', of:
+    'predecessor', not: true }, { kind: 'phase', phase: 'honeymoon' }]`
+  - brief: "Your predecessor, FanGaME, made a board called World -1 for everything that was not about Mario fangames, and
+    a fangame board beside it, and spent the season moving threads into World -1. He never finished. You want to be
+    liked, and the kind thing is to start putting things back: move threads out of World -1 to the boards they belong
+    on, a few at a time, each with a reason in your own words. His fangame board is yours to judge: if people use it,
+    it can stay; if nobody does, you may merge it away, kindly."
+  - no bundle.
+  - announce:
+    - titleHint: "your plan to sort out World -1, in your own voice"
+    - defaultTitle: "Sorting out World -1"
+    - defaultBody: "Hello, everyone. Last season left us a board called World -1, full of threads that used to live
+      elsewhere.\n\nWe are going to start moving them back where they make sense, a few at a time. The fangame board
+      stays for now; if you use it, it will keep staying.\n\nIf a thread of yours is somewhere it should not be, say so
+      here."
+    - defaultPitch: "Moving threads out of World -1 and back where they belong, a few at a time."
+    - push: "You announced the sorting. When a thread is in World -1 that clearly belongs somewhere else, you mention it,
+      and you ask people where they would like it to go."
+
 **Tests first.** `instances/divided-world/system/system.test.ts`: the instance passes `instanceProblems`; FanGaME's
 `split` has a lead-in and an announcement, `everything` an announcement, `restore` an aftermath beat naming
-`everything` of the predecessor. Red first.
+`everything` of the predecessor, and `unfinished` one naming `split` landed and `everything` not. Red first.
 
 ## Task 9. End to end: a season of FanGaME, and the next honeymoon
 
@@ -299,6 +329,9 @@ Model: sonnet
 - Everything is World -1 lands; the season rolls over; the new Boss's meeting shows the recap and the `restore` beat;
   playing it opens its own pinned thread; the old season's pins are gone; after the honeymoon's days the recap leaves
   the plot so far and the initiative stays.
+- FanGaME, now a member, reads last season in the second person in his pool call.
+- A second run where Everything is World -1 is held: the season rolls over, and the new Boss is shown `unfinished` and
+  never `restore`.
 
 ## Ways out of the states this adds
 
@@ -317,6 +350,10 @@ Model: sonnet
   No response differs with who owns any character. `staff_stickies` and `board_page`'s stickies read staff threads only.
 
 ## Review focus
+
+- `beatLanded` with `not` in a Boss's own arc: a beat that pairs it with a positive condition must not unlock early
+  when the positive one is a phase that has already begun.
+- The second-person plot for a former Boss who is benched, or who left the roster and came back.
 
 - What the change does to an instance that already holds a played Split: no announcement is written retroactively, and
   `system_tick` for its bundle's later parts still finds the move thread the staff board threads build opened.

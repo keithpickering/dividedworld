@@ -156,7 +156,9 @@ called World -1 …").
   optional beat.
 - **Its conditions can ask what the predecessor's arc did.** `beatLanded` gains `of: 'predecessor'`, naming a beat of
   the Boss that handed over to the current one, in the season it served. If Everything is World -1 was held and never
-  landed, no cleanup shows.
+  landed, the full cleanup does not show.
+- **`beatLanded` also takes `not: true`** (section 8b): the beat has not landed. It is what lets a persona write a
+  cleanup for an arc that ran only partway.
 - **Its roles reach the predecessor's boards** (`{role, beat, of: 'predecessor'}`), resolved across the season
   boundary: World -1 is the board the predecessor's Split made with the role `minus`.
 - It is played inside the new Boss's honeymoon, with ordinary moves (which cost what they cost, so the tower comes down
@@ -188,6 +190,41 @@ World -1. It is all fangames now. You are welcome. (I miss you all already.)").
 Weighed: built by code from the facts only (exact and free, no voice: staff would repeat a list); nothing carried
 (memories fade at random, and the board would hear nothing in common).
 
+## 8a. A former Boss reads its own past in the second person
+
+**Decided** (the owner chose A), from the owner's question: "boss hands over, remains a staff member able to post. Does
+that persona remember that the boss causing the events in the pitch line was him?"
+
+A former Boss in a member's or Mod's office has its career (plain facts: "Led season 1") and its office line ("You are
+not in charge any more … You still mention the job sometimes"), and its memory, which the new Boss's meetings rewrite
+if it becomes a Mod. The plot so far named last season's Boss in the third person and quoted a first-person recap, so it
+had to join its own name to its career to see that the plot was its own.
+
+So where the persona reading the plot so far is the Boss named under last season, it reads "Last season you were the
+Boss. This is how you summed it up: …"; an initiative it announced (in the same season, after a departure) reads "You
+announced this", with no push line, which stays the sitting Boss's. The successor's cleanup then reads as what it is,
+someone undoing its work, and its temperament decides how it takes that.
+
+Weighed: a lasting legacy line beyond the honeymoon (the career carries that as fact already); leaving it to the name
+and the career (likely on the strong tier, less sure on the light tier, which writes every pool post).
+
+## 8b. A cleanup for an arc that ran only partway
+
+**Decided** (the owner chose A): "an inaccurate pitch is an oddity at worst which doesn't block the current staff …
+but if it's not much more complicated it might make sense to build it into the schema now."
+
+- **`beatLanded` takes `not: true`.** It holds when the named beat has not landed (by the same landed rule). For a
+  predecessor's beat the answer is fixed; in a Boss's own arc it means "not yet", which holds from the season's first
+  day, so the instance check refuses a beat or lead-in whose conditions are all negated.
+- **FanGaME gains a second aftermath beat, "Unfinished business"**: unlocked when his Split landed and Everything is
+  World -1 did not. Its brief names both his boards: threads go back where they belong, and his fangame board may stay
+  if people use it, which is the successor's call. The two aftermath beats are exclusive by their conditions. Where the
+  Split never landed there is nothing to clean, and neither shows.
+
+Weighed: `not` on every condition kind (`boardActivity` already has `above` and `below`, and `phase` an order; the
+generality mostly adds ways to write a confusing arc); leaving it open (the successor works from the handoff facts
+alone, with no thread).
+
 ## 9. FanGaME's content
 
 Drafted in the plan (Task 8) for the owner's approval in review:
@@ -201,6 +238,8 @@ Drafted in the plan (Task 8) for the owner's approval in review:
 - **His aftermath**, "Restoration": unlocked when Everything is World -1 landed and the honeymoon has begun; an
   authored bundle that creates one board the new Boss names, then ordinary `moveThread`s out of World -1, a few at a
   time; an announcement whose defaults speak in a voice any persona can carry.
+- **His second aftermath beat**, "Unfinished business" (section 8b), for an arc that stopped after the Split, with its
+  own announcement.
 
 ## 10. What the rules ask
 
@@ -229,8 +268,5 @@ persona lines build (the landing line written ahead), both on main before this p
 
 ## 12. Open
 
-- **A cleanup for an arc that did not finish.** An aftermath beat whose condition is "the Split landed and Everything
-  is World -1 did not" needs a negated condition, which the catalog does not have. FanGaME's aftermath covers the
-  finished arc only, for now.
 - **Arcs for the Bosses after FanGaME** (still the rehearsal patch's follow-up). ONTOPIC 5.0, his likely successor, will
   run his aftermath in her honeymoon without an arc of her own.
