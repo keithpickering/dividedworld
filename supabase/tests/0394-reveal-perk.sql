@@ -40,7 +40,7 @@ begin
   cy := tests.character(ann, 'Rv Cy'); di := tests.character(bob, 'Rv Di');
   cy_at := w0 + interval '90 minutes'; di_at := w0 + interval '1 hour';
   update class_history set started_at = first_at - interval '1 day' where character in (cy, di);
-  perform write_announce(cy, t, 'debut', null, 'alpha', cy_at);
+  perform tests.old_debut(cy, t, 'alpha', cy_at);
   insert into class_history (character, class_key, started_at) values (di, 'beta', di_at);
   perform write_announce(di, t, 'turn', 'alpha', 'beta', di_at);
   if (select count(*) from class_reveals where character in (cy, di)) is distinct from 2 then raise exception 'the setup: class_reveals does not hold the debut and the Turn'; end if;
@@ -95,7 +95,8 @@ declare
   ann uuid := tests.account('rv-ahead-ann');
   e uuid := tests.character(ann, 'Rv Ahead', 'alpha', now() - interval '60 days');
   t uuid := tests.thread('Rv ahead thread');
-  w0 timestamptz := (select max(ends_at) from settlements);
+  -- Not past now(): where earlier files settled windows ahead of it, the announcement (written now) would fall before the window's start and the character be in no input.
+  w0 timestamptz := least((select max(ends_at) from settlements), now() - interval '1 hour');
   landing timestamptz := now() + interval '10 minutes';
   between_ timestamptz := now() + interval '5 minutes';
   after_ timestamptz := now() + interval '20 minutes';

@@ -38,7 +38,7 @@ begin
   perform tests.unbecome();
   perform write_announce(who[56], tests.thread('Sp turns'), 'turn', 'alpha', null, now() - interval '10 days');
   -- A news item.
-  insert into characters (owner, name, created_at, debut_loudness) values (tests.account('sp-debut'), 'Sp Debut', now() - interval '2 hours', 'announced') returning id into c;
+  insert into characters (owner, name, created_at, debuted_at) values (tests.account('sp-debut'), 'Sp Debut', now() - interval '2 hours', now() - interval '2 hours') returning id into c;
   insert into class_history (character, class_key, started_at) values (c, 'alpha', now() - interval '2 hours');
   perform masks_change(now() - interval '1 hour');
   -- A finished season whose table has the sixty, the 55th at index 54: page 2.

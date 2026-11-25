@@ -334,8 +334,8 @@ begin
   end;
 end $$;
 
--- The reveals masks_change writes itself, at this window's end, hold back no Turn in the same settlement: a character that debuts
--- with its class and has a Turn waiting takes the Turn, and its debut names the class it took.
+-- The reveals masks_change writes itself, at this window's end, hold back no Turn in the same settlement: a character whose Turn waits
+-- takes it, and a Turn queued the old way that names its new class (written in the Promos thread at this window's end) holds back no other.
 do $$
 declare
   w1 timestamptz := now() - interval '1 hour';
@@ -343,16 +343,16 @@ declare
   a uuid; b uuid;
 begin
   begin
-    insert into characters (owner, name, created_at, debut_loudness) values (ann, 'Backstop Debut', now() - interval '1 day', 'with_class') returning id into a;
+    insert into characters (owner, name, created_at, debuted_at) values (ann, 'Backstop Debut', now() - interval '1 day', now() - interval '1 day') returning id into a;
     insert into class_history (character, class_key, started_at) values (a, 'alpha', now() - interval '1 day');
     insert into pending_turns (character, class_key, loudness, show_from, show_to, asked_at) values (a, 'beta', 'silent', false, false, now() - interval '2 hours');
     -- And another character whose Turn names its new class, so masks_change writes its reveal at this window's end too.
     b := pg_temp.turning('backstop-loud', 'announced');
     perform masks_change(w1);
-    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'a debut''s own reveal does not hold back its Turn'; end if;
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'another Turn''s own reveal does not hold back a Turn'; end if;
     if (select class_key from class_now(b, 'infinity')) is distinct from 'beta' then raise exception 'a Turn''s own reveal does not hold back its Turn'; end if;
-    if not exists (select 1 from acts x where x.character = a and x.kind = 'announce' and x.created_at = w1 and x.payload = '{"what": "debut", "class": "beta"}'::jsonb) then
-      raise exception 'the debut names the class the Turn took';
+    if not exists (select 1 from acts x where x.character = b and x.kind = 'announce' and x.created_at = w1 and x.payload ->> 'class' = 'beta') then
+      raise exception 'the announcement names the class the Turn took';
     end if;
     if exists (select 1 from pending_turns p where p.character in (a, b)) then raise exception 'both Turns landed'; end if;
     -- Neither landed late: no record says either was due earlier.

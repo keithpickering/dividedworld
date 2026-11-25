@@ -332,8 +332,7 @@ begin
   if why is not null then raise exception 'an ahead announcement naming the pending class: %', why; end if;
   why := pg_temp.refusal(format('select tests.act(%L, ''announce'', %L, ''{"what": "turn", "was": "alpha", "ahead": true}'')', a, t));
   if why is not null then raise exception 'an ahead announcement naming no class needs no Turn: %', why; end if;
-  -- A debut announcement already written is untouched, and the settlement's own debut writer still writes one while the debut half stays (Task 2 removes it).
-  if write_announce(a, t, 'debut', null, null, now()) is null then raise exception 'the debut writer still writes'; end if;
+  -- No debut is written by anyone now (0428 removes the writers and the setting that let them past this refusal; its test shows it).
 end $$;
 
 -- ---- A retired character's committed Turn is deleted, its announcement stays, and it is never a reveal ----

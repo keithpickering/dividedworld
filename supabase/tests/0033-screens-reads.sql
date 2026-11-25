@@ -70,7 +70,7 @@ begin
 
   -- Waiting and retired, and nothing pending yet.
   select * into r from my_characters where id = waiting;
-  if r.debuted_at is not null or r.debut_loudness is distinct from 'announced' or r.retired_at is not null then raise exception 'a waiting character has not debuted: %', to_jsonb(r); end if;
+  if r.debuted_at is not null or r.retired_at is not null then raise exception 'a waiting character has not debuted: %', to_jsonb(r); end if;
   select * into r from my_characters where id = gone;
   if r.retired_at is distinct from retired or r.debuted_at is null then raise exception 'a retired character shows when: %', to_jsonb(r); end if;
   if exists (select 1 from my_characters where pending_class is not null or pending_loudness is not null or pending_show_from is not null
@@ -97,7 +97,7 @@ begin
 
   -- The columns are exactly these: nothing the tables withhold (banned_until reads public ban Acts, 0111; pronouns is the character's public set, 0125; group reads public facts, 0128; bars reads bars_now, public, 0133; class_shown_at reads class_reveals by the caller's own characters, 0147; lockouts reads the caller's own characters' live lockout springs through lockout_ends, 0402; the pending_announce columns read the announcement Act of the caller's own characters' committed Turn, 0427).
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_characters')
-     is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'debut_loudness', 'retired_at', 'pending_class', 'pending_loudness',
+     is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'retired_at', 'pending_class', 'pending_loudness',
                             'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden', 'class_due_at', 'banned_until', 'pronouns', 'group', 'bars', 'class_shown_at', 'lockouts',
                             'pending_announce_act', 'pending_announce_thread', 'pending_announce_seq'] then
     raise exception 'my_characters shows more or less than it should';

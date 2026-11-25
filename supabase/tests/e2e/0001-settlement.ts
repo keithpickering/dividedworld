@@ -171,7 +171,7 @@ test('two missed days settle as two windows through the real migrations, the hal
   assert.equal(Number(sql(`select sum(amount) from ledger where character = '${characters['Missed Heel']}' and reason = 'heel.drewHeat'`)), 40, 'a whole vote each day, never halved across the two');
 });
 
-test('the settlement of a season\'s last window announces its debuts and ends in results, and sends both live', async () => {
+test('the settlement of a season\'s last window announces its old Turns and ends in results, and sends both live', async () => {
   const db = psqlDb();
   const start = sql(`select to_jsonb(max(ends_at))#>>'{}' from settlements`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
@@ -179,15 +179,16 @@ test('the settlement of a season\'s last window announces its debuts and ends in
     with u as (insert into auth.users (email) values ('e2e-tally@test.invalid') returning id),
     a as (insert into accounts (id) select id from u returning id)
     select json_build_object('account', (select id from u))`));
-  // A character made in the window, which debuts at its end; the season's length runs out there.
-  const made = sql(`insert into characters (owner, name, created_at) values ('${ids.account}', 'Debutante', '${at(2)}') returning id`);
-  sql(`insert into class_history (character, class_key, started_at) values ('${made}', 'face', '${at(2)}')`);
+  // A character with an announced Turn queued before Turns were announced at once (0427), which takes effect at the window's end and is announced then; the season's length runs out there.
+  const made = sql(`insert into characters (owner, name, created_at, debuted_at) values ('${ids.account}', 'Debutante', '${at(-48)}', '${at(-48)}') returning id`);
+  sql(`insert into class_history (character, class_key, started_at) values ('${made}', 'face', '${at(-48)}')`);
+  sql(`insert into pending_turns (character, class_key, loudness, show_from, show_to, asked_at) values ('${made}', 'heel', 'announced', false, false, '${at(2)}')`);
   sql(`update settings set value = jsonb_build_object('unit', 'day', 'count', (select extract(day from ('${at(24)}'::timestamptz - starts_at))::integer from seasons where ends_at is null)) where key = 'seasonLength'`);
   const sent: { topic: string; event: string; payload: { kind?: string; id?: string } }[] = [];
   const out = await runSettlement(db, instance, at(24), { deliver: async (m) => { sent.push(...(m as typeof sent)); return 'sent' as const; } });
   assert.equal(out.status, 'applied', JSON.stringify(out));
-  const tally = sql(`select id from acts where kind = 'announce' and character = '${made}' and payload = '{"what": "debut"}'`);
-  assert.ok(tally, 'the debut is announced as the character\'s own Act');
+  const tally = sql(`select id from acts where kind = 'announce' and character = '${made}' and payload = '{"what": "turn"}'`);
+  assert.ok(tally, 'the Turn is announced as the character\'s own Act');
   assert.ok(sent.some((m) => m.event === 'act' && m.payload.id === tally), 'the announcement is sent live');
   // The season's end writes no Act and opens no thread: its results are rows, and the news of them is sent live.
   assert.equal(sql(`select count(*) from acts where kind = 'reveal' and created_at = '${at(24)}'`), '0', 'a season\'s end writes no reveal Act');

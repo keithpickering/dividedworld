@@ -64,7 +64,7 @@ begin
   insert into standings (character, season, amount) values (sprit, in_season, 650), (gloom, in_season, 400), (hooli, in_season, 300), (pipe, in_season, 100)
   on conflict (season, character) do update set amount = excluded.amount;
   -- One announcement is a debut; an old tally names a Turn announced with its old class.
-  perform write_announce(hooli, (promos_thread(in_season)).in_thread, 'debut', null, null, t0 + interval '3 hours');
+  perform tests.old_debut(hooli, (promos_thread(in_season)).in_thread, null, t0 + interval '3 hours');
   -- An old tally, as an instance written before the announce Act holds it.
   perform tests.act(null, 'tally', (promos_thread(in_season)).in_thread, jsonb_build_object('season', 1, 'part', 1, 'of', 1, 'debuts', '[]'::jsonb,
     'turns', jsonb_build_array(jsonb_build_object('character', pipe, 'name', 'Pipewrench', 'loudness', 'revealed', 'was', 'alpha', 'since', t0))), null, t0 + interval '4 hours');
@@ -238,7 +238,7 @@ declare
   s2 seasons%rowtype;
 begin
   select * into s2 from seasons where ends_at is null;
-  perform write_announce((select id from characters where name = 'Gloomba'), (promos_thread(s2.id)).in_thread, 'debut', null, null, s2.starts_at + interval '1 hour');
+  perform tests.old_debut((select id from characters where name = 'Gloomba'), (promos_thread(s2.id)).in_thread, null, s2.starts_at + interval '1 hour');
   perform reveal_season(s2.starts_at + interval '1 day');
   if (select count(*) from thread_open where board = sys) is distinct from before_all + 1 then raise exception 'a Turns thread was made, and no reveal thread'; end if;
   if (select count(*) from thread_list where board = sys) is distinct from before_list + 1 then raise exception 'the new thread is listed'; end if;

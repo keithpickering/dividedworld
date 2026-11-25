@@ -35,11 +35,13 @@ begin
   end if;
   if (select count(*) from information_schema.columns where table_name = 'season_standings') is distinct from 4::bigint then raise exception 'the standings say only a character, its name, its standing and its place'; end if;
 
-  -- Its first settlement debuts it, and from then it is listed.
+  -- A settlement debuts no one (0428); a character is listed from the moment something debuts it (an office, for a staff persona; here the update).
   perform set_config('role', 'service_role', true);
   perform apply_settlement(s, s + interval '1 day', '[]');
   perform tests.unbecome();
-  if (select standing from season_standings where character = waiting) is distinct from 0 then raise exception 'a character is listed from the settlement that debuts it'; end if;
+  if exists (select 1 from season_standings where character = waiting) then raise exception 'a settlement listed a character that has not debuted'; end if;
+  update characters set debuted_at = now() where id = waiting;
+  if (select standing from season_standings where character = waiting) is distinct from 0 then raise exception 'a character is listed from the moment it debuts'; end if;
   -- Between seasons, the season that ended last, as it stood.
   update seasons set ends_at = greatest(now(), starts_at + interval '1 second') where id = open_season;
   if (select standing from season_standings where character = a) is distinct from 2000000000 then raise exception 'between seasons the last season''s standings are shown'; end if;

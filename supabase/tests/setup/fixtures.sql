@@ -91,11 +91,21 @@ begin
   return id;
 end $$;
 
--- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; create_character(name, class, 'tally') makes one that waits.
+-- A character of a player's, with its first class. It has debuted, as one a settlement has passed since; a character made by create_character is active at once, as this one is.
 create function tests.character(owner uuid, name text, class_key text default 'alpha', at timestamptz default now()) returns uuid language plpgsql as $$
 declare id uuid;
 begin
   insert into characters (owner, name, created_at, debuted_at) values (owner, name, at, at) returning characters.id into id;
+  insert into class_history (character, class_key, started_at) values (id, class_key, at);
+  return id;
+end $$;
+
+-- A character that has not debuted: the state a staff persona waits in until an office debuts it (0082), and the one no player character is made in. Nothing debuts it but an office, so a test
+-- of what a waiting character cannot do makes one here.
+create function tests.waiting(owner uuid, name text, class_key text default 'alpha', at timestamptz default now()) returns uuid language plpgsql as $$
+declare id uuid;
+begin
+  insert into characters (owner, name, created_at) values (owner, name, at) returning characters.id into id;
   insert into class_history (character, class_key, started_at) values (id, class_key, at);
   return id;
 end $$;
@@ -116,6 +126,19 @@ $$;
 create function tests.act(by_character uuid, kind text, in_thread uuid, payload jsonb default '{}', target uuid default null, at timestamptz default now()) returns uuid language sql as $$
   insert into acts (character, kind, thread, payload, target_act_id, created_at) values (by_character, kind, in_thread, payload, target, at) returning id
 $$;
+
+-- A debut announcement as the settlement wrote one before 0428: an old Act, read as a reveal, a clue and a post's author's. Nothing writes one now (acts_well_formed refuses it), so a test
+-- that needs an old one stands the trigger down for the insert, which a rollback gives back. Answers the Act's projection, as write_announce does.
+create function tests.old_debut(of_character uuid, in_thread uuid, cls text default null, at timestamptz default now()) returns jsonb language plpgsql as $$
+declare written uuid;
+begin
+  alter table acts disable trigger acts_well_formed;
+  insert into acts (character, kind, thread, payload, created_at)
+  values (of_character, 'announce', in_thread, jsonb_build_object('what', 'debut') || case when cls is not null then jsonb_build_object('class', cls) else '{}'::jsonb end, at)
+  returning id into written;
+  alter table acts enable trigger acts_well_formed;
+  return act_projection(written);
+end $$;
 
 create function tests.post(by_character uuid, in_thread uuid, body text default 'Hello.', at timestamptz default now()) returns uuid language sql as $$
   select tests.act(by_character, 'post', in_thread, jsonb_build_object('body', body), null, at)
