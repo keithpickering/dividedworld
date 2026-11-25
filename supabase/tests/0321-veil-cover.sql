@@ -520,7 +520,7 @@ begin
   analyze acts;
   -- The plans this session cached while `acts` held a handful of rows (play_row's lookup of an Act by id was planned as a sequential scan, the cheapest
   -- plan of one page) survive the analyze, and read every Act three times a landing: they are dropped so that every statement is planned on the
-  -- analyzed table. Run after the files before it, the file inherited an `acts` large enough to plan an index lookup from its first use.
+  -- analyzed table.
   discard plans;
   fetched_before := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
   perform pg_temp.veil(p2, t, a, b, bob);

@@ -68,7 +68,7 @@ end $$;
 
 -- ---- The next window: from the last settled end, a whole length, in step with the run ----
 -- The settlement it reads is the file's own: a fresh instance has settled nothing, and a season may not end where it
--- began, so the first window is written here (a settlement committed by another file used to stand in).
+-- began, so the first window is written here.
 insert into settlements (starts_at, ends_at, season) select starts_at, starts_at + interval '1 day', id from seasons where number = 1;
 do $$
 declare
