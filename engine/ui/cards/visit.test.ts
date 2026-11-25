@@ -3,7 +3,7 @@ import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
 import { PRONOUN_PRESETS } from '../../rules/pronouns.ts';
 import type { VisitCharge, VisitOutcome } from '../data/api.ts';
-import { markLabel, markText, noticeWords, tabName, tryTerms } from './visit.ts';
+import { markIcon, markLabel, noticeWords, tabName, tryTerms } from './visit.ts';
 
 const NOW = Date.parse('2026-11-11T12:00:00Z');
 const ENDS = '2026-11-11T14:41:00Z';
@@ -12,9 +12,8 @@ const charge = (over: Partial<VisitCharge> = {}): VisitCharge => ({ rule: 'Rule 
 
 describe('a visit ended each way, in words', () => {
   const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed', 'dropped'];
-  test('the mark says how it ended', () => {
-    assert.deepEqual(OUTCOMES.map((o) => markText(o, ENDS, NOW)), ['Filed', 'Talked down', 'Trapped', 'Ended', 'Dropped']);
-    assert.equal(markText('open', ENDS, NOW), '2:41');
+  test('the mark draws an icon for how it ended', () => {
+    assert.deepEqual(['open', ...OUTCOMES].map(markIcon), ['watch', 'bang', 'slash', 'teeth', 'stop', 'dashed']);
   });
   test('the Lens tab says how it ended', () => {
     assert.deepEqual(OUTCOMES.map(tabName), ['Filed', 'Talked down', 'Trapped', 'Ended', 'Dropped']);

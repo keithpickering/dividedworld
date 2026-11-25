@@ -1,9 +1,9 @@
 /**
  * Holds the glass's words for how a visit ended to the outcomes the database allows ("Two lists that must agree are one list"). The
- * list is the latest `end_visit` check in supabase/migrations; the words are engine/ui/cards/visit.ts (`markText`, `tabName`,
- * `markLabel`, `noticeWords`) and engine/ui/profile/modlog.ts (`endedModWords`). It refuses:
+ * list is the latest `end_visit` check in supabase/migrations; the words are engine/ui/cards/visit.ts (`tabName`, `markLabel`,
+ * `noticeWords`; `markIcon` holds icons, not words, and is held to the list all the same) and engine/ui/profile/modlog.ts (`endedModWords`). It refuses:
  *
- *   1. an outcome the SQL allows with no words in one of the four places, or words for an outcome the SQL does not allow;
+ *   1. an outcome the SQL allows with no words (or, for `markIcon`, no icon) in one of the four places, or words for an outcome the SQL does not allow;
  *   2. words that say "admin" for an outcome some SQL writer ends with a null `by_act` and no writer names an Act for: nobody did that.
  *      (An outcome no writer ends at all may say admin; its words wait for the admin function that will write it.)
  *   3. a `noticeWords` that doubles the rule's number ("Rule 1: House Rule 1: x") for a rule that already says "Rule 1: x" or
@@ -93,7 +93,7 @@ export async function visitWordFaults({ sqlText, visitText, modlogText }) {
   const allowed = [...list[1].matchAll(/'(\w+)'/g)].map((m) => m[1]);
 
   const places = {
-    markText: region(visitText, 'markText') === null ? null : wordsByOutcome(region(visitText, 'markText'), 'case'),
+    markIcon: region(visitText, 'markIcon') === null ? null : wordsByOutcome(region(visitText, 'markIcon'), 'case'),
     tabName: region(visitText, 'tabName') === null ? null : wordsByOutcome(region(visitText, 'tabName'), 'case'),
     markLabel: region(visitText, 'markLabel') === null ? null : wordsByOutcome(region(visitText, 'markLabel'), 'key'),
     'modlog.ts endedModWords': region(modlogText, 'endedModWords') === null ? null : wordsByOutcome(region(modlogText, 'endedModWords').split("r.kind === 'report'")[0], 'case'),
