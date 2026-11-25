@@ -90,6 +90,15 @@
  * database, so the refusal of one does not apply to it. A run with no `--shard` and no pattern is the whole suite and makes the same comparison in this
  * process, on its own report, so `npm run test:sql` is one command that runs everything; a shard or a pattern runs part and says `skipped`.
  *
+ * Files that hold a wall-clock budget run alone (#1099). Design §5 says that what files running together change is how long a statement takes, "which no
+ * guard reads"; that is not so. 15 of the assertion files measure a time with `clock_timestamp()` and raise when it is over a budget or a bound
+ * (0393-forged-quotes-scale: `post()` on its body took 0.33 s over a budget of 0.25 s with three other files on a four-CPU runner, and not one at a time), and 42
+ * more only use the clock as a value. A file that holds a budget says so itself, in a line of its own, `-- kayfabb-sql: alone` (carriesAloneMarker): the file is the
+ * one list, and the runner keeps no table. The pool runs every other file first and then each marked file by itself, one at a time, with nothing else of this runner in
+ * flight. A file is refused before it runs if it holds a budget without the marker, or carries the marker without a budget, so the marker means what it says
+ * (holdsClockBudget: a `raise exception`, an `assert` or a raising helper whose condition reads `clock_timestamp()` directly or through an elapsed time; a clock that is
+ * printed, waited for or written as a value does not count, nor do the end-to-end files, which assert no duration). tools/test-sql-refusal.mjs drives both on planted files.
+ *
  * Each file's line carries its seconds, and the summary lists the slowest, since a file that grows is otherwise found by a CI
  * run that takes longer.
  *
@@ -115,6 +124,8 @@ const migrationsDir = path.join(repoRoot, 'supabase/migrations');
 const testsDir = path.join(repoRoot, 'supabase/tests');
 const shim = path.join(testsDir, 'setup/auth-shim.sql');
 const fixtures = path.join(testsDir, 'setup/fixtures.sql');
+/* Where the assertion files are: supabase/tests/, or another directory KAYFABB_SQL_TESTS_DIR names, for tools/test-sql-refusal.mjs to plant files in. */
+const suiteDir = () => process.env.KAYFABB_SQL_TESTS_DIR || testsDir;
 
 /**
  * The SQL a database is built from, in order: the shim, then every migration by name. One list: this harness and the rehearsal
@@ -423,6 +434,92 @@ export function uncalledReads(stableNames, callRows) {
   return stableNames.filter((n) => !((calls.get(n) ?? 0) > 0)).sort();
 }
 
+/**
+ * SQL with its comments blanked and its single-quoted strings emptied, in one pass that knows which it is in: a `--` inside a string (a URL's
+ * `xn--`) is not a comment, and a quote inside a comment is not a string. Dollar-quoted bodies are code and are left as they are. Pure.
+ * @param {string} sql
+ */
+export function codeOnly(sql) {
+  let out = '';
+  for (let i = 0; i < sql.length;) {
+    const two = sql.slice(i, i + 2);
+    if (two === '--') { const nl = sql.indexOf('\n', i); i = nl < 0 ? sql.length : nl; out += ' '; }
+    else if (two === '/*') { const end = sql.indexOf('*/', i + 2); i = end < 0 ? sql.length : end + 2; out += ' '; }
+    else if (sql[i] === "'") {
+      const escaped = /[eE]$/.test(out) && !/\w[eE]$/.test(out);
+      let j = i + 1;
+      for (; j < sql.length; j++) {
+        if (escaped && sql[j] === '\\') j++;
+        else if (sql[j] === "'") { if (sql[j + 1] === "'") j++; else break; }
+      }
+      out += "''"; i = j + 1;
+    } else out += sql[i++];
+  }
+  return out;
+}
+
+/**
+ * The marker a file carries to run alone on its runner (#1099): a line comment, on a line of its own, `-- kayfabb-sql: alone`, spelled exactly. A
+ * marker inside a block comment, or misspelled, is not one. The file is the one list of what runs alone; the runner keeps no table.
+ * @param {string} sql
+ */
+export const ALONE_MARKER = /^[ \t]*--[ \t]*kayfabb-sql:[ \t]*alone[ \t]*$/m;
+export const carriesAloneMarker = (sql) => ALONE_MARKER.test(sql.replace(/\/\*[\s\S]*?\*\//g, ' '));
+
+/**
+ * Whether an assertion file holds a wall-clock budget: a `raise exception` (an `if … then raise exception`, or an `assert`) whose condition reads the
+ * clock, directly (`clock_timestamp()` in the condition) or through an elapsed time (a variable that a statement assigned from `clock_timestamp()`
+ * less a start that was itself assigned `clock_timestamp()`, or from another elapsed variable). That is a time measured and compared to a budget
+ * or an interval, which what else runs on the machine changes. Not that: `clock_timestamp()` as a value (an id, a `slot`, `expires_at`, a timestamp
+ * a row is written with), printed in a NOTICE, or waited for (`pg_sleep`), none of which a slow machine turns into a failure. Comments and the text of
+ * strings are not read. Conservative where it must be (a SQL string built for another session is read as code), so a file it flags that is not timed
+ * can be told apart by its condition; the rule is the tools/test-sql-refusal.mjs survey of every file. Pure.
+ * @param {string} sql
+ */
+export function holdsClockBudget(sql) {
+  const code = codeOnly(sql);
+  const clock = /\bclock_timestamp\s*\(\s*\)/i;
+  /* `name := expr;` and the declaration `name type := expr;`. */
+  const assigns = [...code.matchAll(/\b([a-z_]\w*)\s*:=\s*([^;]*);|\b([a-z_]\w*)\s+(?:timestamptz|timestamp|interval|numeric|bigint|integer|int|double\s+precision|real|float8|text|date)\b[^;:=]*:=\s*([^;]*);/gi)]
+    .map((m) => ({ name: (m[1] ?? m[3]).toLowerCase(), expr: m[2] ?? m[4] }));
+  const starts = new Set(assigns.filter((a) => /^\s*clock_timestamp\s*\(\s*\)\s*$/i.test(a.expr)).map((a) => a.name));
+  const mentions = (text, names) => [...names].some((n) => new RegExp(`\\b${n}\\b`, 'i').test(text));
+  const elapsed = new Set();
+  for (let grew = true; grew;) {
+    grew = false;
+    for (const a of assigns) {
+      if (elapsed.has(a.name) || starts.has(a.name)) continue;
+      if ((clock.test(a.expr) && mentions(a.expr, starts)) || mentions(a.expr, elapsed)) { elapsed.add(a.name); grew = true; }
+    }
+  }
+  const readsClock = (cond) => clock.test(cond) || mentions(cond, elapsed);
+  /* `if` and `elsif`: the condition runs to the `then` outside any parenthesis or CASE, and counts when the branch begins with `raise exception`. */
+  for (const m of code.matchAll(/\b(?:if|elsif)\b/gi)) {
+    /* Only an `if` that begins a statement: not `end if`, nor the `if exists` of a `drop` or `create`. */
+    if (m[0].toLowerCase() === 'if' && !/(?:^|[;$]|\b(?:begin|then|else|loop))\s*$/i.test(code.slice(0, m.index))) continue;
+    let depth = 0;
+    let cases = 0;
+    let at = m.index + m[0].length;
+    for (const w of code.slice(at).matchAll(/[()]|\b(?:case|end|then)\b/gi)) {
+      const t = w[0].toLowerCase();
+      if (t === '(') depth++;
+      else if (t === ')') depth--;
+      else if (t === 'case') cases++;
+      else if (t === 'end') cases--;
+      else if (depth <= 0 && cases <= 0) {
+        const cond = code.slice(at, at + w.index);
+        if (/^\s*raise\s+exception\b/i.test(code.slice(at + w.index + 4)) && readsClock(cond)) return true;
+        break;
+      }
+    }
+  }
+  if ([...code.matchAll(/\bassert\b([^;]*);/gi)].some((m) => readsClock(m[1]))) return true;
+  /* A helper this file defines that raises (`pg_temp.expect(cond, message)`), called with a condition that reads the clock. */
+  const raisers = [...code.matchAll(/\bcreate\s+(?:or\s+replace\s+)?function\s+(?:\w+\.)?(\w+)\s*\([\s\S]*?\$(\w*)\$([\s\S]*?)\$\2\$/gi)]
+    .filter((m) => /\braise\s+exception\b/i.test(m[3])).map((m) => m[1]);
+  return raisers.some((n) => [...code.matchAll(new RegExp(`\\b(?:\\w+\\.)?${n}\\s*\\(([^;]*)\\)\\s*;`, 'gi'))].some((m) => readsClock(m[1])));
+}
+
 /** An end-to-end file: four digits, a hyphen, a name. */
 export const E2E_FILE = /^\d{4}-[\w.-]+\.ts$/;
 
@@ -484,7 +581,7 @@ const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
  */
 export function suiteFiles(e2eDir = path.join(testsDir, 'e2e')) {
   const numberOf = (f) => Number(ASSERTION_FILE.exec(f)?.[1] ?? Number.NaN);
-  const assertion = fs.readdirSync(testsDir).filter((f) => f.endsWith('.sql'))
+  const assertion = fs.readdirSync(suiteDir()).filter((f) => f.endsWith('.sql'))
     .sort((a, b) => (numberOf(a) - numberOf(b)) || (a < b ? -1 : a > b ? 1 : 0));
   const e2e = fs.existsSync(e2eDir) ? fs.readdirSync(e2eDir).filter((f) => E2E_FILE.test(f)).sort() : [];
   return { names: [...assertion, ...e2e.map((f) => `e2e/${f}`)], e2e };
@@ -656,13 +753,17 @@ async function main() {
   const refused = (name) => {
     if (name.startsWith('e2e/')) return { why: e2eRefusal(fs.readFileSync(path.join(e2eDir, name.slice(4)), 'utf8')) };
     if (!ASSERTION_FILE.test(name)) return { why: 'an .sql file in supabase/tests/ that is not NNNN-*.sql would never run; rename it or move it under setup/' };
-    const sql = fs.readFileSync(path.join(testsDir, name), 'utf8');
+    const sql = fs.readFileSync(path.join(suiteDir(), name), 'utf8');
     const code = withoutComments(sql);
     if (!/raise\s+exception/i.test(code)) return { why: 'asserts nothing: no `raise exception` outside a comment in this file' };
     if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(withoutDollarQuotes(code))) return { why: 'ends its own transaction, which would escape the rollback around it' };
     const blind = nullBlind(code);
     if (blind.length) return { why: `passes when its select finds no row; use \`is distinct from\`:\n          ${blind.join('\n          ')}` };
-    return { why: null, sql };
+    const timedFile = holdsClockBudget(sql);
+    const marked = carriesAloneMarker(sql);
+    if (timedFile && !marked) return { why: 'holds a wall-clock budget (a time measured with clock_timestamp() and compared in a raise), which another file on the runner can make it miss: add the line `-- kayfabb-sql: alone` near the top, so that it runs with nothing beside it (#1099)' };
+    if (marked && !timedFile) return { why: 'carries `-- kayfabb-sql: alone` but holds no wall-clock budget, and the marker means what it says: take it off, or add the budget it is for (#1099)' };
+    return { why: null, sql, alone: marked };
   };
 
   /**
@@ -755,11 +856,19 @@ async function main() {
     if (!step('vacuum (analyze)', psql(templateUrl, 'vacuum (analyze);'))) return 1;
 
     console.log(`\nsql: ${selected.length} file(s)${pattern ? ` matching "${pattern}"` : ''}${shardN > 1 ? `, shard ${shardI}/${shardN}` : ''}, ${Math.min(workers, selected.length)} at a time`);
-    const results = await pool(selected.map((name, at) => ({ name, place: at + 1 })), workers, async ({ name, place }) => {
+    /* A file that runs alone (its marker, `-- kayfabb-sql: alone`) is held to the end: every other file runs in the pool first, then each marked file on its
+       own, one at a time, with nothing else of this runner in flight. One pass at the end is the simplest schedule that is right, and it keeps the pool full for
+       as long as there are other files, where waiting for a drain at each marked file's turn would leave workers idle each time. */
+    const items = selected.map((name, at) => ({ name, place: at + 1, alone: Boolean(refused(name).alone) }));
+    const runItem = async ({ name, place }) => {
       const r = await runFile(name, place);
       console.log(r.text);
       return r;
-    });
+    };
+    const pooledResults = await pool(items.filter((i) => !i.alone), workers, runItem);
+    const aloneResults = await pool(items.filter((i) => i.alone), 1, runItem);
+    /* The report lists the files in the one list's order, however they were scheduled. */
+    const results = selected.map((name) => [...pooledResults, ...aloneResults].find((r) => r.name === name));
     const failed = results.filter((r) => r.outcome !== 'passed').length;
     const report = { shard: { i: shardI, n: shardN }, files: results.map((r) => ({ name: r.name, outcome: r.outcome, seconds: r.seconds })), calls: sumCalls(results.map((r) => r.calls)) };
     if (flags.has('report')) fs.writeFileSync(flags.get('report'), `${JSON.stringify(report, null, 1)}\n`);

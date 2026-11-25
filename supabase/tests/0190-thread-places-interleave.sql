@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- Place writers wait for each other, and every thread insert meets one guard (supabase/migrations/0339_thread_places_at_scale.sql, with 0320, 0322, 0326, 0329, 0334 and 0338; final review of PR #450, findings F7 and F9;
 -- delta review F11 to F15).
 --

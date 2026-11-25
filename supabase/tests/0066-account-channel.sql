@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- The private channels: an account hears its own `account:<id>` topic and no one else's, and every signed-in player hears
 -- `reach`, where a play beyond a post is sent (supabase/migrations/0061_account_channel.sql). Realtime authorizes a listener
 -- by reading realtime.messages under the policies, with the topic it joined set; the shim stands in for that table.

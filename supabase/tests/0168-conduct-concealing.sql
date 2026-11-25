@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- Quotes of hidden posts, concealed as a layer (supabase/migrations/0340_conduct.sql; the conduct plan, Task 2, amended 2026-11-12): the database does not read BBCode. quote_refs records what a
 -- body names after `[quote=`; a decision that changes what is hidden, and the writing of a post that quotes a hidden one, ask for a layer; the conceal job (engine/bbcode/conceal.ts's concealQuotes,
 -- supabase/functions/conceal) records it; acts_public serves the layer made for the hidden set of now, and until then withholds the body behind `concealing`. The reading of BBCode itself is the

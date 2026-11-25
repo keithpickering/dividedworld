@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- What the origin of a spun thread's page reads at a busy instance's scale (supabase/migrations/0372_origin_in_page.sql, Task 3 of docs/plans/2026-11-14-origin-in-page-plan.md; design docs/plans/2026-11-14-origin-in-page-design.md, section 6).
 --
 -- thread_page now carries an `origin` key on the page that holds a spun thread's first Act. The reads behind it (o_on, o_act, o_ids, o_all, o_plays, o_shown, o_ends, o_cast) must cost what the origin's plays in force and

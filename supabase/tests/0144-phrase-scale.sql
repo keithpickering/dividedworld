@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- phrase_norm (supabase/migrations/0144_quote_conditions.sql) runs on the quoting post's whole text for every back that post could spring (phrase_probe), and a post's length has no upper bound, so its
 -- cost must grow with the text and not with its square, whatever the text is made of. The runs of characters that are not letters or digits are where a pattern can rescan: a run with no line
 -- break, one with a break at its end, and one that alternates. Each body is made at n and at 4n units and timed: a linear walk takes about four times as long at 4n, a quadratic one sixteen, and the bound

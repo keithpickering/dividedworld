@@ -120,7 +120,7 @@ if (/^begin;\\n/.test(sql)) {
   if (process.env.SLEEP_MS) {
     const began = Date.now();
     await new Promise((r) => setTimeout(r, Number(process.env.SLEEP_MS)));
-    fs.appendFileSync(STATE + '/spans', began + ' ' + Date.now() + '\\n');
+    fs.appendFileSync(STATE + '/spans', began + ' ' + Date.now() + (/kayfabb-sql: alone/.test(sql) ? ' alone' : ' pooled') + '\\n');
   }
 }
 `);
@@ -140,7 +140,7 @@ const read = (state, status, out) => {
   /* How long the hung psql lived: from its start to the start of the next psql, which the suite runs once the hung one is killed. */
   const hungAt = fs.existsSync(path.join(state, 'hung')) ? Number(fs.readFileSync(path.join(state, 'hung'), 'utf8')) : NaN;
   const after = lines(path.join(state, 'starts')).map(Number).find((t) => t > hungAt);
-  const spans = lines(path.join(state, 'spans')).map((l) => l.split(' ').map(Number));
+  const spans = lines(path.join(state, 'spans')).map((l) => { const [a, b, kind] = l.split(' '); return [Number(a), Number(b), kind]; });
   return { status, out, records, spans, hungMs: after === undefined ? NaN : after - hungAt };
 };
 /* The suite's own end-to-end files would try a clone this psql never made; a bound keeps a slip here from hanging the
@@ -205,6 +205,25 @@ const planted = {
   unpointed: plantedDir({ '0909-x-across-.ts': '' }),
 };
 const reportFile = path.join(bounded, 'report.json');
+/** A planted directory of assertion files: the runner reads it in place of supabase/tests/ (KAYFABB_SQL_TESTS_DIR). */
+const raises = "do $$ begin raise exception 'x'; end $$;\n";
+const timedBody = "do $$ declare t0 timestamptz; begin t0 := clock_timestamp(); if clock_timestamp() - t0 > interval '1 second' then raise exception 'slow'; end if; end $$;\n";
+const aloneLine = '-- kayfabb-sql: alone\n';
+const testsPlanted = {
+  timed: plantedDir({
+    '0001-timed-unmarked.sql': timedBody,
+    '0002-marker-in-a-block-comment.sql': '/* ' + aloneLine + ' */\n' + timedBody,
+    '0003-marker-misspelled.sql': '-- kayfabb-sql: alon\n-- kayfabb sql: alone\n--kayfabb-sql: alonee\n' + timedBody,
+    '0004-marker-on-an-untimed-file.sql': aloneLine + raises,
+    '0005-timed-and-marked.sql': aloneLine + timedBody,
+    '0006-clock-as-a-value.sql': "do $$ declare id timestamptz := clock_timestamp(); begin raise notice 'at %', clock_timestamp(); if id is null then raise exception 'x'; end if; end $$;\n",
+  }),
+  alone: plantedDir({
+    ...Object.fromEntries(['0001', '0002', '0003', '0004', '0005', '0006'].map((n) => [`${n}-pooled.sql`, raises])),
+    '0007-alone-a.sql': aloneLine + timedBody,
+    '0008-alone-b.sql': aloneLine + timedBody,
+  }),
+};
 const runs = {
   full: {},
   hang: { pattern: small, hang: true, workers: '1', timeoutMs: '1500' },
@@ -228,6 +247,8 @@ const runs = {
   dupe: { pattern: 'e2e/090', e2eDir: planted.dupe },
   unpointed: { pattern: '0909', e2eDir: planted.unpointed },
   noE2e: { pattern: first },
+  timed: { e2eDir: emptyDir, workers: '1', extraEnv: { KAYFABB_SQL_TESTS_DIR: testsPlanted.timed } },
+  aloneFiles: { e2eDir: emptyDir, workers: '3', extraEnv: { KAYFABB_SQL_TESTS_DIR: testsPlanted.alone, SLEEP_MS: '700' } },
 };
 await prelaunch(Object.values(runs).flat());
 
@@ -483,6 +504,52 @@ const full = boundedSuite(runs.full);
   fs.rmSync(dir, { recursive: true, force: true });
 }
 
+/* ---- a file that holds a wall-clock budget runs alone (#1099) ---- */
+{
+  const mostAtOnce = (spans) => Math.max(0, ...spans.flatMap(([from]) => [spans.filter(([a, b]) => a <= from && from < b).length]));
+  const timed = (text) => (typeof runner.holdsClockBudget === 'function' ? runner.holdsClockBudget(text) : null);
+  const wrap = (body) => `do $$ declare t0 timestamptz; spent interval; begin ${body} end $$;`;
+  check('an elapsed time compared in an `if … then raise exception` is a budget', timed(wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; if spent > interval '1 second' then raise exception 'slow'; end if;")) === true);
+  check('and so is the clock itself in the condition', timed(wrap("if (select claimed_until - clock_timestamp() from t) > interval '1 minute' then raise exception 'x'; end if;")) === true);
+  check('and an assert on an elapsed time', timed(wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; assert spent < interval '1 s', 'slow';")) === true);
+  check('and a helper that raises, called with an elapsed time', timed("create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$ begin if not ok then raise exception '%', what; end if; end $$;\n" + wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; perform pg_temp.expect(spent < interval '1 s', 'slow');")) === true);
+  check('an elapsed time kept in a variable of a declaration counts as well', timed("do $$ declare t0 timestamptz := clock_timestamp(); begin if extract(epoch from clock_timestamp() - t0) > 2 then raise exception 'slow'; end if; end $$;") === true);
+  check('the clock as an id or a timestamp a row is written with is not a budget', timed("insert into meetings (slot) values (clock_timestamp());\ndo $$ begin if (select count(*) from meetings) <> 1 then raise exception 'x'; end if; end $$;") === false);
+  check('nor the clock printed in a NOTICE, or a time measured and only printed', timed(wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; raise notice 'took %', spent;")) === false);
+  check('nor a comment or a string that says so', timed("-- if clock_timestamp() - t0 > 1 then raise exception 'slow'; end if;\ndo $$ begin raise exception 'a clock_timestamp() then raise exception'; end $$;") === false);
+  check('an `end if` and an `if exists` are not conditions', timed(wrap("drop table if exists t; t0 := clock_timestamp(); if true then null; end if; if clock_timestamp() > t0 then null; end if; raise exception 'x';")) === false);
+  const carries = (text) => (typeof runner.carriesAloneMarker === 'function' ? runner.carriesAloneMarker(text) : null);
+  check('the marker is `-- kayfabb-sql: alone` on a line of its own', carries('-- why\n-- kayfabb-sql: alone\nselect 1;') === true);
+  check('inside a block comment it does not count', carries('/*\n-- kayfabb-sql: alone\n*/\nselect 1;') === false);
+  check('misspelled, it does not count', ['-- kayfabb-sql: alon', '-- kayfabb sql: alone', '--kayfabb-sql: alonee', '-- kayfabb-sql: alone now', 'select 1; -- kayfabb-sql: alone'].every((t) => carries(t) === false));
+
+  /* Every real file says what it is: a file holds a budget exactly when it carries the marker. */
+  const mismatched = assertionFiles.filter((f) => { const t = fs.readFileSync(path.join('supabase/tests', f), 'utf8'); return timed(t) !== carries(t); });
+  check('every assertion file carries the marker if and only if it holds a wall-clock budget', typeof runner.holdsClockBudget === 'function' && mismatched.length === 0, mismatched.join(', '));
+
+  /* The runner refuses what the check names, on planted files; it runs a marked file. */
+  const t = boundedSuite(runs.timed);
+  const lineOf = (name) => new RegExp(`^ {2}(PASS|FAIL)  ${name.replace('.', '\\.')}[^\n]*(?:\n {8}[^\n]*)*`, 'm').exec(t.out)?.[0] ?? '';
+  check('a timed file with no marker is refused, saying what to add', /FAIL/.test(lineOf('0001-timed-unmarked.sql')) && /wall-clock budget/.test(lineOf('0001-timed-unmarked.sql')) && /-- kayfabb-sql: alone/.test(lineOf('0001-timed-unmarked.sql')), lineOf('0001-timed-unmarked.sql'));
+  check('a marker inside a block comment does not save it', /FAIL/.test(lineOf('0002-marker-in-a-block-comment.sql')) && /wall-clock budget/.test(lineOf('0002-marker-in-a-block-comment.sql')), lineOf('0002-marker-in-a-block-comment.sql'));
+  check('nor does a marker that is misspelled', /FAIL/.test(lineOf('0003-marker-misspelled.sql')) && /wall-clock budget/.test(lineOf('0003-marker-misspelled.sql')), lineOf('0003-marker-misspelled.sql'));
+  check('a marker on a file that holds no budget is refused too: the marker means what it says', /FAIL/.test(lineOf('0004-marker-on-an-untimed-file.sql')) && /holds no wall-clock budget/.test(lineOf('0004-marker-on-an-untimed-file.sql')), lineOf('0004-marker-on-an-untimed-file.sql'));
+  check('a timed file with its marker runs and passes', /PASS/.test(lineOf('0005-timed-and-marked.sql')), lineOf('0005-timed-and-marked.sql'));
+  check('and a file that only uses the clock as a value is not asked for one', /PASS/.test(lineOf('0006-clock-as-a-value.sql')), lineOf('0006-clock-as-a-value.sql'));
+  check('the refused files get no clone, and the run fails', t.status === 1 && t.records.map(createdClone).filter(Boolean).length === 2, `${t.records.map(createdClone).filter(Boolean).length} clones, status ${t.status}`);
+
+  /* The pool, with a file that runs alone: nothing is in flight beside it, and it waits for the others to end. */
+  const a = boundedSuite(runs.aloneFiles);
+  const spans = a.spans;
+  const overlaps = (x, y) => x[0] < y[1] && y[0] < x[1];
+  const aloneSpans = spans.filter((x) => x[2] === 'alone');
+  const pooledSpans = spans.filter((x) => x[2] === 'pooled');
+  check('both marked files and all the others ran and passed', aloneSpans.length === 2 && pooledSpans.length === 6 && a.status === 0, `${aloneSpans.length} alone, ${pooledSpans.length} pooled, status ${a.status}`);
+  check('while a file that runs alone is in flight, the count in flight is 1', aloneSpans.every((x) => spans.filter((y) => y !== x && overlaps(x, y)).length === 0), JSON.stringify(spans));
+  check('it waits for every other file to end, and starts none after it begins', aloneSpans.every((x) => pooledSpans.every((y) => y[1] <= x[0])), JSON.stringify(spans));
+  check('and the others still ran together, three at a time', mostAtOnce(pooledSpans) === 3, `${mostAtOnce(pooledSpans)} at once`);
+}
+
 /* ---- a run that is interrupted leaves nothing on the server ---- */
 {
   const { state, env, args } = ready({ pattern: small, e2eDir: emptyDir, workers: '1', extraEnv: { SLEEP_MS: '60000' } });
@@ -593,7 +660,7 @@ const full = boundedSuite(runs.full);
   check('two files naming one point fail the run before any psql is called', dupe.status === 1 && /0907-a-across-0003\.ts/.test(dupe.out) && /0908-b-across-0003\.ts/.test(dupe.out) && dupe.records.length === 0, `status ${dupe.status}, ${dupe.records.length} calls`);
   const unpointed = boundedSuite(runs.unpointed);
   check('and so does a name with -across- and no point', unpointed.status === 1 && /0909-x-across-\.ts/.test(unpointed.out) && unpointed.records.length === 0, `status ${unpointed.status}`);
-  for (const d of [...Object.values(planted), emptyDir]) fs.rmSync(d, { recursive: true, force: true });
+  for (const d of [...Object.values(planted), ...Object.values(testsPlanted), emptyDir]) fs.rmSync(d, { recursive: true, force: true });
 
   /* The real files: every upgrade test is named for its point, and no file replays the migrations on its own. */
   const real = have ? (() => { try { return runner.snapshotPoints(e2eFiles, allMigrations); } catch (e) { return String(e.message); } })() : 'no snapshotPoints';

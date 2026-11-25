@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- A real quote past the cap is read, never text (docs/plans/2026-11-13-quote-cut-plan.md, Tasks 1 and 3). bbcode_walk is the SQL port of engine/bbcode/parse.ts; a quote the parser reads at any depth is
 -- read here, and what stands inside one that is past the cap is in none of the reads: not `plain` (search, Says), not `unquoted` (own_words, rule_breaks, spring_facts), not an `excerpt`; its Act is
 -- in `quotes` (so No-quote sees it).
