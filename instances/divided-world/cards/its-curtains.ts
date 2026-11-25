@@ -41,7 +41,7 @@ export const itsCurtains: CardRules<{ fabric: Fabric }> = {
     { key: 'itsCurtains.thirdAdd', whole: true, min: 0 },
   ],
   staffConfigs: (Object.keys(FABRICS) as Fabric[]).map((fabric) => ({ fabric })),
-  seen: (p) => `${who(p)} hid this post behind a curtain, ${p.ago}: it opens to reveal another curtain, and another behind that.`,
+  seen: (p) => `${who(p)} hid this post behind a curtain, ${p.ago}: each reader opens it with a press to see the post, and its author.`,
   playPrice: (settings, target, _config, effects) => {
     if (target.reach !== 'post') return 0;
     const up = effects.filter((e) => (e.reach === undefined || e.reach === 'post') && e.card === 'its-curtains' && isLive(e)).length;
