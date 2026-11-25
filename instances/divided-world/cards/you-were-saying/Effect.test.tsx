@@ -44,19 +44,19 @@ const tick = (ms: number) => act(async () => { vi.advanceTimersByTime(ms); });
 
 interface Options {
   readonly plays?: CardPlay[]; readonly written?: Record<string, Written>; readonly states?: Record<string, EffectState>;
-  readonly version?: string | null; readonly author?: boolean; readonly still?: boolean; readonly moment?: boolean; readonly save?: EffectProps['save'];
+  readonly version?: string | null; readonly author?: boolean; readonly still?: boolean; readonly moment?: boolean; readonly covered?: boolean; readonly save?: EffectProps['save'];
 }
-interface Live { written: Record<string, Written>; states: Record<string, EffectState>; version: string | null }
+interface Live { written: Record<string, Written>; states: Record<string, EffectState>; version: string | null; covered: boolean }
 function mount(o: Options = {}) {
   const save = vi.fn(o.save ?? (ok as unknown as EffectProps['save']));
   const plays = o.plays ?? [playOf(1)];
   let set: (next: Partial<Live>) => void = () => {};
   function Host() {
-    const [live, setLive] = useState<Live>({ written: o.written ?? { y1: text(SIXTY) }, states: o.states ?? {}, version: o.version === undefined ? 'v1' : o.version });
+    const [live, setLive] = useState<Live>({ written: o.written ?? { y1: text(SIXTY) }, states: o.states ?? {}, version: o.version === undefined ? 'v1' : o.version, covered: o.covered ?? false });
     set = (next) => setLive((was) => ({ ...was, ...next }));
     return (
       <YouWereSayingEffect
-        covered={false}
+        covered={live.covered}
         post={post} plays={plays} states={live.states} released={new Set()} written={new Map(Object.entries(live.written))} {...(live.version === null ? {} : { version: live.version })}
         reader={{ author: o.author ?? false, caster: false }} place="thread" reach="post" still={o.still ?? false} moment={o.moment ? { at: Date.parse('2026-11-07T10:30:00Z') } : null} save={save}
         release={async (play) => ({ ok: true, value: { play, releasedAt: '' } })} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'Spritey'} give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
@@ -280,6 +280,25 @@ describe('the tail', () => {
     expect(block()!.getAttribute('aria-label')).toBe(name);
     await tick(3000);
     expect(block()!.getAttribute('aria-label')).toBe(name);
+  });
+});
+
+describe('a shut curtain', () => {
+  test('a covered post types nothing in view, and types in once, from the start, when the curtain opens', async () => {
+    const { change } = mount({ covered: true });
+    await see(true);
+    /* Unseen is at rest, whole, with no timer: nothing typed behind the curtain for the reveal to find finished. */
+    expect(vi.getTimerCount()).toBe(0);
+    expect(shownText()).toBe(SIXTY);
+    await change({ covered: false });
+    expect(vi.getTimerCount()).toBe(1);
+    expect(shownText()).toBe('');
+    await tick(250);
+    expect(shownText()).toBe(SIXTY.slice(0, 10));
+    await tick(2000);
+    expect(shownText()).toBe(SIXTY);
+    await tick(3000);
+    expect(shownText()).toBe(SIXTY);
   });
 });
 
