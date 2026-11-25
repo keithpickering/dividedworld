@@ -41,8 +41,9 @@ export function puffFront(spout: PuffPoint, box: PuffBox, ms: number): number {
 
 /** A `FogInput` target: 0 (no fog) for a point outside the front, 1 (all of it) for a point inside. */
 export function puffTarget(spout: PuffPoint, box: PuffBox, ms: number): (x: number, y: number) => number {
-  const front = puffFront(spout, box, ms);
-  return (x, y) => (Math.hypot(x - spout.x, y - spout.y) <= front && front > 0 ? 1 : 0);
+  const front = puffFront(spout, box, ms), reach = front * front, sx = spout.x, sy = spout.y;
+  /* Asked of every cell of the held rows every frame: the squared distance against the squared front, so no root and no `hypot` is taken per cell. */
+  return front > 0 ? (x, y) => { const dx = x - sx, dy = y - sy; return dx * dx + dy * dy <= reach ? 1 : 0; } : () => 0;
 }
 
 /** The whole fog's opacity: `full` until the hold ends, then a straight line to 0 over `fadeMs`. */

@@ -32,6 +32,12 @@ describe('puffTarget', () => {
     assert.equal(t(s.x + front * 1.1, s.y), 0);
     assert.equal(t(s.x, s.y - front * 1.1), 0);
   });
+  test('is the front\'s disc: the same answer as a distance taken with hypot, at every point of a grid', () => {
+    for (const s of SPOUTS) for (const ms of [1, 100, 300, PUFF.billowMs]) {
+      const front = puffFront(s, BOX, ms), t = puffTarget(s, BOX, ms);
+      for (let x = -20; x <= BOX.width + 20; x += 7) for (let y = -20; y <= BOX.height + 20; y += 7) assert.equal(t(x, y), Math.hypot(x - s.x, y - s.y) <= front ? 1 : 0);
+    }
+  });
   test('is clear everywhere at 0 ms away from the spout, and full everywhere once the billow is done', () => {
     const s = { x: 0, y: 0 };
     assert.equal(puffTarget(s, BOX, 0)(300, 40), 0);

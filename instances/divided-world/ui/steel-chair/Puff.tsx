@@ -50,6 +50,8 @@ const JET_PX_S = 900;
  * the ladder lowers it further, and never raises it.
  */
 const START_LEVEL = 2;
+/** How far past the window's top and bottom the field is stepped, CSS px: a few frames of a fast scroll, so a row is stepped before it is seen. */
+export const STEP_MARGIN = 96;
 
 /** The spout, in the content area's px. */
 export interface PuffSpout { readonly x: number; readonly y: number }
@@ -65,6 +67,26 @@ export interface PuffProps {
 
 /** What the painter keeps between frames: the field, the rung, when it last stepped, which tiles it has painted in the frame it is in, and the ladder's count of frames at its last paint. */
 interface Painter { field: FogField | null; level: number; steppedAt: number; stamp: number | null; seen: Set<number>; paintedIn: number }
+
+/**
+ * The rows (the box's px) a frame's step is for: what the window shows of the tiles the layer holds, and `STEP_MARGIN` more each side. The layer holds the tiles within 256 px of the window, which
+ * is twice the window's rows on a phone and a third more on a desktop, and a row that is not seen costs a step as a row that is. A row outside it is resting fog until the window nears it, and is seeded
+ * from the puff's front when it is stepped first (`field.seed`), as a row the layer has not held is. Where no held tile is near the window, all of the held tiles' rows.
+ */
+function stepRows(layer: TileLayer | null): { top: number; bottom: number } | null {
+  let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY, from = top, to = bottom;
+  const vh = window.innerHeight;
+  for (const tile of layer?.held() ?? []) {
+    from = Math.min(from, tile.top); to = Math.max(to, tile.top + tile.h);
+    const r = tile.sheets[0]?.getBoundingClientRect();
+    if (!r || r.height <= 0) continue;
+    /* The tile's rows that lie in the window (and its margin), in the box's px. */
+    const a = Math.max(tile.top, tile.top + (-STEP_MARGIN - r.top)), b = Math.min(tile.top + tile.h, tile.top + (vh + STEP_MARGIN - r.top));
+    if (b > a) { top = Math.min(top, a); bottom = Math.max(bottom, b); }
+  }
+  if (bottom > top) return { top, bottom };
+  return to > from ? { top: from, bottom: to } : null;
+}
 
 const a4 = (n: number): number => Number(n.toFixed(4));
 const COLOR = rgbOf(PUFF.color);
@@ -116,14 +138,13 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
       ...(c === mover ? { vx: v.x, vy: v.y } : {}),
       burst: c === m.touch && t - c.openedAt < FOG.burst.ms,
     }));
-    /* Only what the layer holds is stepped: the rows of its tiles, which are the ones near the window. */
-    let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY;
-    for (const tile of layer?.held() ?? []) { top = Math.min(top, tile.top); bottom = Math.max(bottom, tile.top + tile.h); }
+    /* Only what the window shows (and a margin) of the layer's tiles is stepped. */
+    const view = stepRows(layer);
     const floor = puffTarget(at, { width: box.w, height: box.h }, ms), cover = coverageOf(clearings, radius, t, false, m.trail);
     field.seed = floor;
     stepField(field, dt, {
       clearings: fog, trail: m.trail, radius, rounds, whole: true, fill: FILL_MS,
-      ...(bottom > top ? { view: { top, bottom } } : {}),
+      ...(view ? { view } : {}),
       /* The puff's front is the floor, the reader's clearing cuts it: the least of the two, as the bench's. */
       target: (x, y) => Math.min(floor(x, y), cover(x, y)),
       ...(ms < PUFF.jetMs ? { jet: { x: at.x, y: at.y, speed: (1 - ms / PUFF.jetMs) * JET_PX_S, reach: Math.max(radius * FOG.reach, puffFront(at, { width: box.w, height: box.h }, ms)) } } : {}),
@@ -144,9 +165,7 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
     if (!p.field || p.field.width !== w || p.field.height !== h || p.field.cell !== rung.cell) {
       /* Made from the puff as it stands, so a field made again at a new rung (or a new size) is not empty in the middle of the puff. A field with no store is all that a direct rung needs. */
       const front = puffTarget(at, size, ms);
-      let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY;
-      for (const tile of layerRef.current?.held() ?? []) { top = Math.min(top, tile.top); bottom = Math.max(bottom, tile.top + tile.h); }
-      p.field = direct ? makeField(w, h, rung.cell) : emptyField(w, h, rung.cell, { from: front, view: bottom > top ? { top, bottom } : { top: draw.top, bottom: draw.top + draw.h } });
+      p.field = direct ? makeField(w, h, rung.cell) : emptyField(w, h, rung.cell, { from: front, view: stepRows(layerRef.current) ?? { top: draw.top, bottom: draw.top + draw.h } });
     }
     const field = p.field, radius = holeRadius(w);
     if (draw.frame !== null && (draw.frame !== p.stamp || p.seen.has(draw.index))) {

@@ -14,7 +14,7 @@ import { FOG, emptyField, fogAt, stepField, type FogField } from '../hot-box/fog
 import { FOG_BUDGET_MS, forceFogLevel, ladder, resetFogLadder, spend } from '../hot-box/ladder.ts';
 import { holeRadius } from '../hot-box/smoke.ts';
 import { PUFF, puffDone } from './puff.ts';
-import { Puff, forgetScratch, type PuffProps } from './Puff.tsx';
+import { Puff, STEP_MARGIN, forgetScratch, type PuffProps } from './Puff.tsx';
 
 vi.mock('../../../../engine/ui/cards/tiles.ts', async (orig) => {
   const real = await orig<typeof import('../../../../engine/ui/cards/tiles.ts')>();
@@ -34,6 +34,8 @@ let frames = new Map<number, FrameRequestCallback>();
 let frameId = 0;
 let forced = false;
 let clock = 0;
+/** How far the window is scrolled over the area, CSS px: a canvas's rect is its place in the area less this. */
+let scrolled = 0;
 const rects = new WeakMap<HTMLCanvasElement, { clears: number; draws: number }>();
 
 function stubWindow() {
@@ -46,7 +48,12 @@ function stubWindow() {
   })) as unknown as typeof window.matchMedia;
   globalThis.ResizeObserver = class { observe() {} unobserve() {} disconnect() {} } as unknown as typeof ResizeObserver;
   HTMLElement.prototype.getBoundingClientRect = function (this: HTMLElement) {
-    return { ...AREA, x: AREA.left, y: AREA.top, right: AREA.width, bottom: AREA.height, toJSON: () => AREA } as DOMRect;
+    const top = AREA.top - scrolled, r = { ...AREA, top };
+    return { ...r, x: AREA.left, y: top, right: AREA.width, bottom: top + AREA.height, toJSON: () => r } as DOMRect;
+  };
+  HTMLCanvasElement.prototype.getBoundingClientRect = function (this: HTMLCanvasElement) {
+    const top = (Number.parseFloat(this.style.top) || 0) - scrolled, height = Number.parseFloat(this.style.height) || 0, r = { left: 0, top, width: AREA.width, height };
+    return { ...r, x: 0, y: top, right: AREA.width, bottom: top + height, toJSON: () => r } as DOMRect;
   };
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return AREA.width; } });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return AREA.height; } });
@@ -95,7 +102,7 @@ const lastStep = () => vi.mocked(stepField).mock.calls.at(-1)!;
 const fieldNow = (): FogField => lastStep()[0];
 
 beforeEach(() => {
-  frames = new Map(); frameId = 0; forced = false; clock = 0;
+  frames = new Map(); frameId = 0; forced = false; clock = 0; scrolled = 0; AREA.height = 400;
   vi.mocked(makeTileLayer).mockClear(); vi.mocked(stepField).mockClear(); vi.mocked(emptyField).mockClear();
   forgetScratch();
   resetFogLadder();
@@ -111,6 +118,7 @@ afterEach(() => {
   delete (window as { matchMedia?: unknown }).matchMedia;
   delete (globalThis as { ResizeObserver?: unknown }).ResizeObserver;
   delete (HTMLElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
+  delete (HTMLCanvasElement.prototype as { getBoundingClientRect?: unknown }).getBoundingClientRect;
   delete (HTMLElement.prototype as { clientWidth?: unknown }).clientWidth;
   delete (HTMLElement.prototype as { clientHeight?: unknown }).clientHeight;
 });
@@ -178,6 +186,22 @@ describe('its field', () => {
     pass(PUFF.billowMs + 200);
     expect(fogAt(fieldNow(), 20, 20).d, 'the far corner is whole fog once the front has passed').toBeGreaterThan(0.95);
     expect(fogAt(fieldNow(), 300, 200).d).toBeGreaterThan(0.95);
+  });
+
+  test('steps only the rows the window shows and a margin of them, not every row of the tiles the layer holds', () => {
+    /* A tall post: 5,000 px, the window's top at 1,500 of it. The layer holds the tiles within 256 px of the window (three or four of 512 px); a frame's step is for what is seen. */
+    AREA.height = 5000;
+    scrolled = 1500;
+    window.scrollY = 1500;
+    setup({ spout: { x: 300, y: 2500 } });
+    pass(PUFF.billowMs + 100);
+    const view = lastStep()[2].view!;
+    const held = vi.mocked(makeTileLayer).mock.results[0]!.value.held() as { top: number; h: number }[];
+    expect(held.length, 'the layer holds more than the window').toBeGreaterThan(Math.ceil(window.innerHeight / 512));
+    expect(view.top).toBeGreaterThanOrEqual(1500 - STEP_MARGIN);
+    expect(view.bottom).toBeLessThanOrEqual(1500 + window.innerHeight + STEP_MARGIN);
+    expect(view.bottom, 'and it reaches the window\'s bottom edge').toBeGreaterThanOrEqual(1500 + window.innerHeight);
+    expect(view.top, 'and its top edge').toBeLessThanOrEqual(1500);
   });
 
   test('the jet runs for jetMs and no longer', () => {
