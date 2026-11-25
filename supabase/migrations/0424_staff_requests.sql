@@ -380,7 +380,7 @@ end $$;
 --   Masks. Nothing here reads who owns a character, a class or who reacted. A request's asker is read for its public name through acts_public, so a veiled author shows as the anonymous character; the staff's own state
 --   (office, bank, allowance, beat) and the boards decide every ruling and refusal, never an owner: a confer, a refusal and when they happen are the same whoever is behind a request.
 --   Ways out. A waiting request lapses by itself at lapses_at (the tick), or when its post is hidden at the next tick, or is ruled at a meeting. Nothing else is added.
---   Cost. requests_waiting is one statement driven by the queue's oldest rows, each joined by key to its public post, thread, board and names, stopping at `most` shown (a row whose post is not public, which the tick lapses, is passed at one tuple); requests_waiting_total counts the queue the same way, for the digest's "N more wait"; the tick's pass reads the queue, one public post
+--   Cost. requests_waiting is one statement driven by the queue's oldest rows, each joined by key to its public post, thread, board and names, stopping at `most` shown (a row whose post is not public, which the tick lapses, is passed at its post's reads and one lookup of the asker's name, which the join to characters_public costs; its thread, board and persona are not looked up); requests_waiting_total counts the same rows, both reading the view staff_requests_shown, for the digest's "N more wait"; the tick's pass reads the queue, one public post
 --   per waiting request, which the days a request waits (daysMost) bound, `cap` of them at most, and a row that failed or was held by a meeting goes behind the rest (failed_at), so one row cannot hold a slot for good;
 --   rule_request and apply_boss_move are one request's reads and writes. Nothing here grows with the requests ruled in the past.
 --   The digest. requests_waiting is owned by kayfabb_digest (0045), which Task 5's system_digest calls it from: it reads public relations only (acts_public, characters_public, thread_list, boards_now), the queue, and
@@ -499,6 +499,17 @@ create view staff_requests_now as
          case when o.request is not null then q.at + make_interval(days => staff_request_days()) end as lapses_at
   from staff_requests q left join staff_request_rulings g on g.request = q.id left join staff_requests_open o on o.request = q.id;
 revoke all on staff_requests_now from public, anon, authenticated;
+
+-- staff_requests_shown: the waiting requests the meeting may be shown, in the queue's order: a request in the queue (staff_requests_open) whose post is public (not hidden) and whose asker is a public character. The one
+-- place that filter is written; requests_waiting lists from it and requests_waiting_total counts it, so the count can never pass what the list can show. Read by the digest's functions only (kayfabb_digest).
+create view staff_requests_shown as
+  select q.id, q.request_act, q.thread, q.staff, q.turn_act, o.at, k.name as asker_name, coalesce(a.current_payload ->> 'body', '') as body
+  from staff_requests_open o
+  join staff_requests q on q.id = o.request
+  join acts_public a on a.id = q.request_act and a.hidden is not true
+  join characters_public k on k.id = a.character;
+revoke all on staff_requests_shown from public, anon, authenticated;
+grant select on staff_requests_shown to kayfabb_digest;
 
 -- ---- the Boss's move ----
 
@@ -710,22 +721,19 @@ declare
 begin
   if cap = 0 then return '[]'::jsonb; end if;
   -- One statement: the queue in order drives it, each row's request, its public post and author, its thread, board and conferring persona are joined by key, and a row whose post is not public is not a row, so `limit` stops
-  -- the scan at the `cap`th request that is shown (it reads the queue's rows up to there, and a hidden one it passes is one tuple, never a lookup of its thread or names).
+  -- the scan at the `cap`th request that is shown (it reads the queue's rows up to there; a hidden one it passes costs its post's reads and the asker's name through staff_requests_shown, never a lookup of its thread, board or persona). The filter is that view's, shared with requests_waiting_total.
   select coalesce(jsonb_agg(jsonb_build_object(
       'id', w.id, 'requestAct', w.request_act, 'thread', w.thread, 'title', coalesce(w.title, ''), 'board', w.board, 'boardName', coalesce(w.board_name, ''),
       'askerName', w.asker_name, 'staff', w.staff, 'staffName', coalesce(w.staff_name, ''), 'body', w.body, 'at', w.at, 'lapsesAt', w.at + make_interval(days => days)) order by w.at, w.id), '[]'::jsonb)
   into out
   from (
-    select q.id, q.request_act, q.thread, q.staff, o.at, t.title, t.board, b.name as board_name, k.name as asker_name, coalesce(a.current_payload ->> 'body', '') as body, tk.name as staff_name
-    from staff_requests_open o
-    join staff_requests q on q.id = o.request
-    join acts_public a on a.id = q.request_act and a.hidden is not true
-    join characters_public k on k.id = a.character
+    select q.id, q.request_act, q.thread, q.staff, q.at, t.title, t.board, b.name as board_name, q.asker_name, q.body, tk.name as staff_name
+    from staff_requests_shown q
     left join thread_list t on t.id = q.thread
     left join boards_now b on b.id = t.board
     left join acts_public ta on ta.id = q.turn_act
     left join characters_public tk on tk.id = ta.character
-    order by o.at, o.request
+    order by q.at, q.id
     limit cap
   ) w;
   return out;
@@ -736,13 +744,11 @@ revoke create on schema public from kayfabb_digest;
 revoke execute on function requests_waiting(integer) from public, anon, authenticated;
 grant execute on function requests_waiting(integer) to service_role, kayfabb_digest;
 
--- requests_waiting_total: how many requests wait in all (the queue's rows whose post is public, as requests_waiting lists them), so the digest can say how many more wait than it holds. Read from the queue, which holds the
+-- requests_waiting_total: how many requests wait in all (the rows of staff_requests_shown, the one filter requests_waiting lists from: a post that is public and an asker who is a public character), so the digest can say how many more wait than it holds. Read from the queue, which holds the
 -- requests that wait and no other, so it is as long as the waiting set; owned by the digest role as requests_waiting is.
 create function requests_waiting_total() returns integer
 language sql stable security definer set search_path = public, pg_temp as $$
-  select count(*)::integer from staff_requests_open o
-  join staff_requests q on q.id = o.request
-  join acts_public a on a.id = q.request_act and a.hidden is not true
+  select count(*)::integer from staff_requests_shown
 $$;
 grant create on schema public to kayfabb_digest;
 alter function requests_waiting_total() owner to kayfabb_digest;

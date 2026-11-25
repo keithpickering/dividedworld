@@ -714,6 +714,71 @@ begin
   if used > 40 then raise exception 'the tick read % tuples of the record tables for 3 waiting requests with % ruled behind them: it walks the history', used, history; end if;
 end $$;
 
+-- ---- 8c. What the list reads for the rows it passes ----
+-- Fifty requests at the queue's head have their posts hidden; three behind them are shown. requests_waiting(1) passes the fifty and lists the first shown one. Measured by the tuples this transaction reads of each table
+-- (pg_stat_xact_user_tables): the one statement reads `characters` (behind characters_public, the names) about once for each row it passes, a per-row lookup of the asker's name and the conferring persona's for each row
+-- (the first shape of requests_waiting, a loop) read it some eight times as often, and the bound below holds the one and refuses the other. `threads` and `boards` are a few either way (a hidden post is dropped before
+-- they are joined in both shapes), so they are bounded only as a sanity check, and `acts` is read once for each row passed in both (to know whether its post is public), so it is not bounded here.
+-- requests_waiting_total counts the same rows the list can show, and a waiting request the list cannot show is not counted.
+create function pg_temp.table_reads() returns jsonb language sql as $$
+  select coalesce(jsonb_object_agg(relname, coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), '{}') from pg_stat_xact_user_tables where relname in ('acts', 'threads', 'boards', 'characters')
+$$;
+
+do $$
+declare
+  t uuid := pg_temp.thread_on('mm-games', 'Hidden head');
+  p0 uuid;
+  tn uuid;
+  r uuid;
+  i integer;
+  shown bigint[];
+  before jsonb;
+  used jsonb;
+  got jsonb;
+  total_before integer := requests_waiting_total();
+  ghost uuid;
+begin
+  p0 := (write_staff_act('mm-m1', 'post', t, null, '{"body": "Staff opener, head."}') ->> 'id')::uuid;
+  tn := (write_staff_act('mm-m1', 'post', t, p0, '{"body": "Turn reply, head."}') ->> 'id')::uuid;
+  for i in 1..53 loop
+    r := tests.act(pg_temp.poster(), 'post', t, jsonb_build_object('body', 'Head request ' || i), p0, now() - interval '1 hour' + i * interval '1 second');
+    insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values (r, t, pg_temp.poster(), 'mm-m1', tn, 'confer', 'mod', now() - interval '1 hour' + i * interval '1 second');
+    if i <= 50 then
+      perform tests.become((select u.id from auth.users u where u.email = 'mm-admin@test.invalid'));
+      perform decide(null, r, 'hide', null, 'hidden');
+      perform tests.unbecome();
+    end if;
+  end loop;
+  shown := array(select q.id from staff_requests q where q.thread = t order by q.id offset 50);
+  if cardinality(shown) is distinct from 3 or (select count(*) from staff_requests_now v where v.thread = t and v.waiting) is distinct from 53 then raise exception 'the head is not as planted'; end if;
+  analyze staff_requests;
+  analyze staff_requests_open;
+  analyze threads;
+  analyze boards;
+  analyze characters;
+
+  before := pg_temp.table_reads();
+  got := requests_waiting(1);
+  used := (select jsonb_object_agg(k, (pg_temp.table_reads() ->> k)::bigint - coalesce((before ->> k)::bigint, 0)) from jsonb_object_keys(pg_temp.table_reads()) k);
+  if jsonb_array_length(got) is distinct from 1 or (got -> 0 ->> 'id')::bigint is distinct from shown[1] then raise exception 'requests_waiting(1) did not skip fifty hidden heads: %', got; end if;
+
+  if (used ->> 'characters')::bigint > 150 then raise exception 'requests_waiting(1) read % tuples of characters for 50 hidden rows and 1 shown: it looks names up more than once for each row it passes (%)', used ->> 'characters', used; end if;
+  if (used ->> 'threads')::bigint > 40 or (used ->> 'boards')::bigint > 40 then raise exception 'requests_waiting(1) read too many threads or boards for 50 hidden rows and 1 shown: %', used; end if;
+
+  -- The total is the list's count: 3 are shown; a waiting request the list cannot show (its asker is not a public character) is not counted.
+  if requests_waiting_total() - total_before is distinct from 3 then raise exception 'the total is % more than before, not the 3 that are shown', requests_waiting_total() - total_before; end if;
+  if jsonb_array_length(requests_waiting(500)) is distinct from requests_waiting_total() then raise exception 'the total (%) is not what the list holds (%)', requests_waiting_total(), jsonb_array_length(requests_waiting(500)); end if;
+  -- A request whose post's author is not a public character (not debuted) is waiting but the list cannot show it, so the total does not count it either.
+  perform tests.account('mm-ghost');
+  perform tests.character((select id from auth.users where email = 'mm-ghost@test.invalid'), 'Mm Ghost');
+  ghost := tests.act((select id from characters where name = 'Mm Ghost'), 'post', t, '{"body": "A request by a character the list cannot show."}', p0, now() - interval '30 minutes');
+  update characters set debuted_at = null where name = 'Mm Ghost';
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values (ghost, t, (select id from characters where name = 'Mm Ghost'), 'mm-m1', tn, 'confer', 'mod', now() - interval '30 minutes');
+  if not exists (select 1 from staff_requests_now v where v.request_act = ghost and v.waiting) then raise exception 'the ghost request is not waiting'; end if;
+  if requests_waiting_total() - total_before is distinct from 3 then raise exception 'the total counts a waiting request the list cannot show: % more than before', requests_waiting_total() - total_before; end if;
+  if requests_waiting_total() is distinct from jsonb_array_length(requests_waiting(500)) then raise exception 'the total (%) is not what the list holds (%)', requests_waiting_total(), jsonb_array_length(requests_waiting(500)); end if;
+end $$;
+
 -- ---- 9. requests_ruled ----
 do $$
 declare
