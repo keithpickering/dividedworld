@@ -1853,6 +1853,16 @@ test('a fulfill that loses its move (none, a kind outside a request\'s, a thread
   assert.ok(elsewhere.trims.some((t) => t.path === 'requests[0].move.params.thread' && t.predicate === 'knownThread'), JSON.stringify(elsewhere.trims));
 });
 
+test('a fulfill\'s move names its own request\'s thread only: another shown request\'s thread is dropped with ownRequestThread, and its own is kept', () => {
+  const ctxTwo = requestsCtx({ requests: { shown: new Map([[7, { thread: R_THREAD, board: OTHER_BOARD }], [8, { thread: OTHER_THREAD, board: OTHER_BOARD }]]), postMaxLength: 120 } });
+  const move = (thread: string) => ({ kind: 'moveThread', params: { thread, board: BOARD, into: '', name: '', premise: '' }, expires_in_hours: 0, why: 'x' });
+  const across = repairAnswer(withRequests([grant(7, { move: move(OTHER_THREAD) })]), ctxTwo);
+  assert.ok(across.ok && across.requests[0]!.ruling === 'reject' && across.requests[0]!.move === null, JSON.stringify(across));
+  assert.ok(across.trims.some((t) => t.path === 'requests[0].move.params.thread' && t.predicate === 'ownRequestThread'), JSON.stringify(across.trims));
+  const own = repairAnswer(withRequests([grant(7, { move: move(R_THREAD) }), grant(8, { move: move(OTHER_THREAD) })]), ctxTwo);
+  assert.ok(own.ok && own.requests.map((r) => r.ruling).join() === 'fulfill,fulfill', JSON.stringify(own));
+});
+
 test('a reject that carries a move has it dropped (noMove)', () => {
   const r = repairAnswer(withRequests([grant(7, { ruling: 'reject' })]), requestsCtx());
   assert.ok(r.ok && r.requests[0]!.ruling === 'reject' && r.requests[0]!.move === null, JSON.stringify(r));

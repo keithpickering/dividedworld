@@ -203,6 +203,7 @@ export const REQUEST_LIMITS: RequestLimits = { readMost: 40_000, meetingMost: 10
 export function shownRequests(all: readonly DigestRequest[], o: RequestLimits = REQUEST_LIMITS): { readonly shown: readonly DigestRequest[]; readonly leftOut: number } {
   let shown = all.slice(0, Math.max(0, Math.min(Math.trunc(o.meetingMost), 500)));
   let total = shown.reduce((n, r) => n + r.body.length, 0);
+  // `shown.length > 1`: the last request left is kept even if its body alone passes readMost (a body is never cut); unreachable while postMaxLength < readMost, as a request post is at most postMaxLength long.
   while (shown.length > 1 && total > o.readMost) {
     let at = 0;
     shown.forEach((r, i) => { if (r.body.length >= shown[at]!.body.length) at = i; });
