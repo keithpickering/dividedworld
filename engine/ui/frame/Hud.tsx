@@ -676,14 +676,14 @@ export function Hud() {
                             /* Defensive: the HUD's mask is always a live one (player.tsx canAct), so this is never drawn today. */
                             <span className="kb-hud-secret"><SecretLock />Only you see this</span>
                           )}
-                          {/* A Turn from here is posted in the thread being read (`at`), or in one the player picks; it opens only where the character may Turn now and has no Turn waiting (My characters changes, withdraws or announces a waiting one). */}
-                          {hud.retiredAt === null && hud.debutedAt !== null && hud.pendingTurn === null && hud.turnOpensAt === null && (
-                            <button ref={turnButton} type="button" className="kb-hud-secret" aria-label={`Turn ${hud.name}`} onClick={() => setTurning(true)}>Turn</button>
-                          )}
                           {wide && hiddenMark}
                         </span>
                         <span role="status" className="kb-hud-flash">{done}</span>
                       </span>
+                      {/* A Turn from here, under the avatar (the class line has no room for it, and a wrapped line makes the HUD taller): it is posted in the thread being read (`at`), or in one the player picks; it opens only where the character may Turn now and has no Turn waiting (My characters changes, withdraws or announces a waiting one). */}
+                      {hud.retiredAt === null && hud.debutedAt !== null && hud.pendingTurn === null && hud.turnOpensAt === null && (
+                        <button ref={turnButton} type="button" className="kb-hud-secret kb-hud-turn" aria-label={`Turn ${hud.name}`} onClick={() => setTurning(true)}>Turn</button>
+                      )}
                       {turning && <TurnDialog kicker="Turn" character={hud} face={face ?? undefined} nextSettlement={null} at={openThread} onClose={() => setTurning(false)} onDone={(m) => { setDone(m); setTurning(false); }} returnFocusTo={() => turnButton.current ?? picker.current} />}
                       {revealing && <RevealOverlay kicker="Reveal" character={hud} at={openThread} onClose={() => setRevealing(false)} onDone={setDone} returnFocusTo={() => secret.current ?? revealedLine.current} />}
                       <CalmRegion as="span" calm={!wide} className="kb-hud-swap">

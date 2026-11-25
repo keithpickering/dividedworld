@@ -657,6 +657,17 @@ button.kb-hud-secret:focus-visible {
   outline-offset: 3px;
 }
 
+/* The Turn's opener stands under the avatar, in the plate's left column (the class line is full: a Turn there wrapped to a line of its own and made the HUD 12px taller). Its place is in rem, as the avatar's is, so it keeps its column at every text size; the phone's HUD has no name plate, and My characters opens the Turn there. */
+:where(:root:not([data-kb-layout='phone'])) .kb-hud-turn {
+  position: absolute;
+  left: 22px;
+  top: calc(1.9375rem + 5.25rem + 0.5rem);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-hud-turn {
+  display: none;
+}
+
 /* The Reveal's done line, in the plate under the class line; empty, it takes no room. */
 .kb-hud-flash {
   font-size: var(--kb-glass-size-label);
