@@ -6,8 +6,8 @@
  *
  * Its class is shown only as its player made it public, as of its date ("Revealed: Heel (Oct 3)"),
  * and not at all once a Turn is announced after it; a Turn announced with its old class names that
- * class in the record because it was announced. Nothing else about a class is read or drawn here. A character waiting
- * to debut, and one that does not exist, are the same "No such character".
+ * class in the record because it was announced. Nothing else about a class is read or drawn here.
+ * A character waiting to debut, and one that does not exist, are the same "No such character".
  *
  * Out of character and plain.
  */

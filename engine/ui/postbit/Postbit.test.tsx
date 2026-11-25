@@ -195,7 +195,7 @@ describe('dates', () => {
 
   test('a reveal date is the reader\'s local date, like every time in a thread', () => {
     expect(shortDate('2026-10-04T03:00:00Z')).toBe('Oct 3');
-    show(person({ revealed: { class: 'heel', at: '2026-10-04T03:00:00Z' }}));
+    show(person({ revealed: { class: 'heel', at: '2026-10-04T03:00:00Z' } }));
     expect(screen.getByRole('group')).toHaveTextContent('Revealed: Heel (Oct 3)');
   });
 
