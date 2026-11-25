@@ -46,9 +46,9 @@ def cpos(side, t, z, phase=0.0):
     """A point on the curtain on `side` (-1 left, 1 right): t is 0 at its inner edge, 1 at the outer; z its height."""
     xin = smooth(KEYS, z); w = smooth(WIDTH, z, 0.3)
     drop = (ZT - z) / (ZT - ZB)
-    fold = 0.11 + 0.17 * min(1.0, max(0.0, 1.0 - abs(z - TIE) / 3.2)) + 0.07 * drop
-    y = -0.45 - 0.14 * t + fold * (math.cos(math.tau * 7 * t + phase + 0.8 * math.sin(z * 1.3)) - 0.4 * math.cos(math.tau * 3.5 * t + 0.6))
-    x = xin + w * t + 0.05 * math.sin(z * 4.0 + t * 7)
+    fold = 0.3 + 0.5 * min(1.0, max(0.0, 1.0 - abs(z - TIE) / 3.2)) + 0.06 * drop
+    y = -0.45 - 0.14 * t + fold * (math.cos(math.pi * 3.6 * t + phase + 0.35 * math.sin(z * 0.7)) - 0.25 * math.cos(math.pi * 7.2 * t + 1.0))
+    x = xin + w * t + 0.03 * math.sin(z * 1.5 + t * 3)
     return (side * x, y, z)
 vm, vn, vl, vb = rig.material('velvet')
 vb.inputs['Base Color'].default_value = (*rig.hexrgb('#b80610'), 1); vb.inputs['Roughness'].default_value = 0.55
@@ -75,9 +75,9 @@ deep = rig.plastic('goldDeep', rig.hexrgb('#b8860b'), rough=0.3, metallic=0.9, e
 for side in (-1, 1):                     # the tiebacks: a gold band round the curtain, and a tassel off its inner edge
     for dz, r, mat in ((0.0, 0.08, gold), (0.2, 0.05, deep), (-0.2, 0.05, deep)):
         pts = [cpos(side, t, TIE + dz) for t in np.linspace(-0.02, 0.62, 36)]
-        pts = [(p[0], p[1] - 0.13, p[2]) for p in pts]
+        pts = [(p[0], p[1] - 0.34, p[2]) for p in pts]
         rig.tube('band', pts, r, mat, 5)
-    ix, iy, iz = cpos(side, -0.02, TIE); ix += -side * 0.02; iy -= 0.2
+    ix, iy, iz = cpos(side, -0.02, TIE); ix += -side * 0.02; iy -= 0.42
     rig.ball((ix, iy, iz), 0.14, gold, 'knot', 20)
     rig.ball((ix, iy - 0.02, iz - 0.3), 0.08, deep, 'neck', 14)
     rig.cone((ix, iy, iz - 0.34), (ix, iy, iz - 1.0), 0.12, 0.2, gold, 20)
@@ -102,7 +102,7 @@ P(rig.ball((0, -0.62, 1.2), 0.36, fm, 'head', 40))
 for sx in (-1, 1):                       # wings folded on the sides
     w = P(rig.ball((sx * 0.62, 0.0, 0.1), 0.5, fm, 'wing', 32, scale=(0.22, 0.95, 0.72))); w.rotation_euler = (math.radians(-12), 0, sx * math.radians(-6))
 for a, s in ((-26, 0.5), (-8, 0.62), (10, 0.6), (28, 0.48)):                                    # tail feathers fanned up behind
-    t = P(rig.ball((math.sin(math.radians(a)) * 0.5, 0.68, 0.75 + math.cos(math.radians(a)) * 0.3), s, fm, 'tail', 28, scale=(0.14, 0.3, 1.0)))
+    t = P(rig.ball((math.sin(math.radians(a)) * 0.45, 0.5, 0.45 + math.cos(math.radians(a)) * 0.3), s, fm, 'tail', 28, scale=(0.14, 0.3, 1.0)))
     t.rotation_euler = (math.radians(-12), 0, math.radians(-a * 0.6))
 for x, z, s in ((-0.2, 1.58, 0.15), (-0.07, 1.64, 0.17), (0.07, 1.65, 0.16), (0.19, 1.59, 0.14)):   # the comb
     P(rig.ball((x * 0.9, -0.58, z), s, red, 'comb', 20, scale=(0.5, 1.0, 1.0)))
@@ -113,18 +113,18 @@ for sx in (-1, 1):
     P(rig.ball((sx * 0.2, -0.88, 1.27), 0.065, inkm, 'eye', 16))
     P(rig.ball((sx * 0.22, -0.935, 1.3), 0.017, rig.glow('glint', (1, 1, 1), 4.0), 'glint', 8))
 for sx in (-1, 1):                       # legs and three-toed feet
-    P(rig.tube('leg', [(sx * 0.26, -0.15, -0.55), (sx * 0.26, -0.15, -1.15)], 0.05, legm, 6))
+    P(rig.tube('leg', [(sx * 0.26, -0.15, -0.55), (sx * 0.26, -0.15, -0.85)], 0.05, legm, 6))
     for ang in (-34, 0, 34):
         tx = math.sin(math.radians(ang)) * 0.28; ty = -math.cos(math.radians(ang)) * 0.3
-        P(rig.tube('toe', [(sx * 0.26, -0.15, -1.15), (sx * 0.26 + tx, -0.15 + ty, -1.19)], 0.035, legm, 5))
-    P(rig.tube('toe', [(sx * 0.26, -0.15, -1.15), (sx * 0.26, 0.05, -1.19)], 0.03, legm, 5))
-rig.group(parts, loc=(0.0, 1.9, G + 1.43), rot=(0, 0, -26), scale=1.2)
+        P(rig.tube('toe', [(sx * 0.26, -0.15, -0.85), (sx * 0.26 + tx, -0.15 + ty, -0.89)], 0.035, legm, 5))
+    P(rig.tube('toe', [(sx * 0.26, -0.15, -0.85), (sx * 0.26, 0.05, -0.89)], 0.03, legm, 5))
+rig.group(parts, loc=(0.0, 1.9, G + 0.7), rot=(0, 0, -26), scale=0.7)
 
 # ---- light ---------------------------------------------------------------------------------------------
 beam = rig.glow('beam', rig.hexrgb('#fff2d0'), 0.9, alpha=0.012)               # the spotlight's cone, from above the stage
 rig.cone((0.2, 1.4, 6.6), (0.0, 1.9, G), 0.12, 1.6, beam, 48)
 pool = rig.glow('pool', rig.hexrgb('#ffe9b8'), 0.7, alpha=0.07)                 # and its pool on the boards
-bpy.ops.mesh.primitive_circle_add(vertices=64, radius=1.9, fill_type='NGON', location=(0, 1.9, G + 0.006)); po = bpy.context.object; po.data.materials.append(pool)
+bpy.ops.mesh.primitive_circle_add(vertices=64, radius=1.6, fill_type='NGON', location=(0, 1.9, G + 0.006)); po = bpy.context.object; po.data.materials.append(pool)
 bpy.ops.object.light_add(type='SPOT', location=(0.6, -1.5, 7.6)); spot = bpy.context.object
 spot.data.energy = 9000; spot.data.spot_size = math.radians(21); spot.data.spot_blend = 0.55; spot.data.color = (1.0, 0.93, 0.78)
 spot.rotation_euler = (Vector((0, 1.9, G + 0.8)) - spot.location).to_track_quat('-Z', 'Y').to_euler()
