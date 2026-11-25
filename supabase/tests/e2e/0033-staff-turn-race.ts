@@ -7,38 +7,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { sql, scratchUrl } from './psql-db.ts';
-
-/** One held-open psql connection: statements go in, and `done()` waits for everything sent so far. */
-function session() {
-  const child: ChildProcessWithoutNullStreams = spawn('psql', ['-X', '-q', '-tA', scratchUrl()], { stdio: ['pipe', 'pipe', 'pipe'] });
-  let out = '';
-  let err = '';
-  let n = 0;
-  child.stdout.on('data', (d) => { out += d; });
-  child.stderr.on('data', (d) => { err += d; });
-  const waitFor = async (mark: string, ms: number) => {
-    const until = Date.now() + ms;
-    while (!out.includes(mark)) {
-      if (Date.now() > until) throw new Error(`no ${mark} in ${ms} ms; out ${out}; err ${err}`);
-      await new Promise((r) => setTimeout(r, 25));
-    }
-  };
-  return {
-    send(text: string) { child.stdin.write(text + '\n'); },
-    /** True when everything sent so far has answered, within `ms`. */
-    async settled(ms: number) {
-      const mark = `<<${++n}>>`;
-      child.stdin.write(`\\echo ${mark}\n`);
-      try { await waitFor(mark, ms); return true; } catch { return false; }
-    },
-    async done(ms = 15_000) { assert.ok(await this.settled(ms), `a statement never answered; err ${err}`); },
-    get out() { return out; },
-    get err() { return err; },
-    close() { child.stdin.end(); child.kill(); },
-  };
-}
+import { sql, session } from './psql-db.ts';
 
 const waiting = () => Number(sql(`select count(*) from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%write_staff_turn(%'`));
 async function until(what: string, ok: () => boolean) {

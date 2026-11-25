@@ -301,6 +301,44 @@ describe('a Mod Bot\'s moderation log lists its visits, the reports it judged an
   });
 });
 
+describe('a staff member\'s moderation log lists the requests it ruled on (staff requests design, section 5)', () => {
+  test('each says what was done in the glass\'s words, links its thread and post, and a request passed on says how it ended; it has no Spin thread', async () => {
+    open('bot', (fake) => {
+      const { seed } = fake;
+      const poster = seed.character(seed.account('asker'), 'Asker', 'face');
+      const { thread } = seed.thread('general', poster, 'Best Mario game', 'post 1');
+      const day = 86_400_000;
+      const granted = seed.post(thread, poster, 'Move this please', { at: Date.now() - 5 * day });
+      const refused = seed.post(thread, poster, 'Move this too', { at: Date.now() - 4 * day });
+      const waiting = seed.post(thread, poster, 'And this', { at: Date.now() - 3 * day });
+      const ruled = seed.post(thread, poster, 'And that', { at: Date.now() - 2 * day });
+      const lapsed = seed.post(thread, poster, 'And those', { at: Date.now() - day });
+      seed.staffRequest('hall-monitor', granted, { ruling: 'fulfill', at: Date.now() - 5 * day });
+      seed.staffRequest('hall-monitor', refused, { ruling: 'reject', at: Date.now() - 4 * day });
+      seed.staffRequest('hall-monitor', waiting, { ruling: 'confer', at: Date.now() - 3 * day });
+      seed.staffRequest('hall-monitor', ruled, { ruling: 'confer', ruled: 'fulfill', at: Date.now() - 2 * day });
+      seed.staffRequest('hall-monitor', lapsed, { ruling: 'confer', lapsed: true, at: Date.now() - day });
+    });
+    await waitFor(async () => expect((await rows()).length).toBe(5));
+    /* Each row is a date, what was done, and how it ended: the last two cells are compared apart. */
+    const cells = (await rows()).map((r) => within(r).getAllByRole('cell').slice(-2).map((c) => c.textContent!.replace(/\s+/gu, ' ').trim()));
+    expect(cells[0]![0]).toMatch(/^Passed a request in Best Mario game \(post #\d+\) to the Boss$/u);
+    expect(cells[0]![1]).toBe('lapsed');
+    expect(cells[1]![0]).toMatch(/^Passed a request in Best Mario game \(post #\d+\) to the Boss$/u);
+    expect(cells[1]![1]).toBe('ruled: granted');
+    expect(cells[2]![0]).toMatch(/^Passed a request in Best Mario game \(post #\d+\) to the Boss$/u);
+    expect(cells[2]![1]).toMatch(/^waiting, lapses [A-Z][a-z]{2} \d+$/u);
+    expect(cells[3]![0]).toMatch(/^Rejected a request in Best Mario game \(post #\d+\)$/u);
+    expect(cells[3]![1]).toBe('');
+    expect(cells[4]![0]).toMatch(/^Granted a request in Best Mario game \(post #\d+\): moved a thread$/u);
+    expect(cells[4]![1]).toBe('');
+    const first = within((await rows())[4]!);
+    expect(first.getByRole('link', { name: 'Best Mario game' })).toHaveAttribute('href', expect.stringMatching(/^\/t\/.+\?page=1$/u));
+    expect(first.getByRole('link', { name: /^post #\d+$/u })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /Spin thread/u })).not.toBeInTheDocument();
+  });
+});
+
 describe('Spin thread in a Mod Bot\'s moderation log', () => {
   test('a report row and an appeal row have it, labeled by the Mod\'s name; a visit row has none; it opens the spin form from the verdict\'s Act', async () => {
     open('bot', (fake, world) => {

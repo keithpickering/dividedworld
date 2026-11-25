@@ -29,7 +29,7 @@ export const testCosmeticsContent: Pick<Instance, 'gear' | 'trophies' | 'events'
   events: { lines: [] },
 };
 
-export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'systemEnabled' | 'oldVoice' | 'startingPack' | 'cardWriteSettleSeconds' | 'oldVoiceWindow' | 'oldVoiceTokenizer' | 'oldVoicePromptFloor' | 'cardWriteFullShare' | 'cardWriteTopUps' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestConversations' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
+export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 'conduct' | 'staffRequests' | 'systemEnabled' | 'oldVoice' | 'startingPack' | 'cardWriteSettleSeconds' | 'oldVoiceWindow' | 'oldVoiceTokenizer' | 'oldVoicePromptFloor' | 'cardWriteFullShare' | 'cardWriteTopUps' | 'pronouns' | 'meetingCron' | 'phases' | 'inheritanceGraceDays' | 'rosterRecentExcluded' | 'structuralHoldHours' | 'microEventDailyCalls' | 'digestThreads' | 'digestBoards' | 'digestBoardDays' | 'movedStubDays' | 'farewellWindowHours' | 'bundleMostParts' | 'bundleAuthoredMostParts' | 'digestExcerpts' | 'digestConversations' | 'digestExcerptChars' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'pool' | 'boardNameMaxLength' | 'moveExpiryMostDays' | 'moveExpiryLeastHours' | 'demandCheckMinutes' | 'demandChecksPerTick' | 'modelTiers' | 'cosmetics'> = {
   systemEnabled: false,
   oldVoice: true,
   startingPack: null,
@@ -40,6 +40,7 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
   cardWriteFullShare: 0.9,
   cardWriteTopUps: 3,
   conduct: { openReportsMost: 3, adminAddress: null },
+  staffRequests: { daysMost: 3, meetingMost: 10 },
   pronouns: PRONOUN_PRESETS.it,
   meetingCron: '23 9 * * *',
   phases: {

@@ -5,7 +5,8 @@
  * arguments are passed as one JSON value and each is cast to the type pg_proc says its
  * parameter takes, by name, as PostgREST does.
  */
-import { execFileSync } from 'node:child_process';
+import assert from 'node:assert/strict';
+import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { DatabaseError, type Db } from '../../functions/_shared/rpc.ts';
 import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { conduct } from '../../../instances/divided-world/ui/conduct.ts';
@@ -97,5 +98,35 @@ export function psqlDb(as?: string): Db {
         throw new DatabaseError(`${fn}: ${message}`, '', 400, message, hint);
       }
     },
+  };
+}
+
+/** One held-open psql connection: statements go in, and `done()` waits for everything sent so far. */
+export function session() {
+  const child: ChildProcessWithoutNullStreams = spawn('psql', ['-X', '-q', '-tA', scratchUrl()], { stdio: ['pipe', 'pipe', 'pipe'] });
+  let out = '';
+  let err = '';
+  let n = 0;
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { err += d; });
+  const waitFor = async (mark: string, ms: number) => {
+    const until = Date.now() + ms;
+    while (!out.includes(mark)) {
+      if (Date.now() > until) throw new Error(`no ${mark} in ${ms} ms; out ${out}; err ${err}`);
+      await new Promise((r) => setTimeout(r, 25));
+    }
+  };
+  return {
+    send(text: string) { child.stdin.write(text + '\n'); },
+    /** True when everything sent so far has answered, within `ms`. */
+    async settled(ms: number) {
+      const mark = `<<${++n}>>`;
+      child.stdin.write(`\\echo ${mark}\n`);
+      try { await waitFor(mark, ms); return true; } catch { return false; }
+    },
+    async done(ms = 15_000) { assert.ok(await this.settled(ms), `a statement never answered; err ${err}`); },
+    get out() { return out; },
+    get err() { return err; },
+    close() { child.stdin.end(); child.kill(); },
   };
 }

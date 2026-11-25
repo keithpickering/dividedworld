@@ -176,6 +176,7 @@ export const defaults: Settings = deepFreeze<Settings>({
    * address, where replies to a moderation email go so an appeal reaches a person, is the owner's to set when the instance deploys: null until then.
    */
   conduct: { openReportsMost: 3, adminAddress: null },
+  staffRequests: { daysMost: 3, meetingMost: 10 },
   /**
    * The cosmetics (the cosmetics design): a character wears up to twelve pieces, each reaching up to 0.4 of the portrait's width past an
    * edge; a postbit shows three trophies; a Random Event gets one chance per character in a 15-minute window and at most four in a rolling

@@ -97,6 +97,12 @@ interface World {
   predecessor?: unknown | null;
   /** The offices pool_context() lists, by persona key (boss, mod, member, waiting, benched); absent: none listed. */
   offices?: Record<string, string>;
+  /** The requests system_digest() lists as waiting (0424); absent: none, or an older database that does not. */
+  requests?: { id: number; requestAct: string; thread: string; title: string; board: string | null; boardName: string; askerName: string; staff: string; staffName: string; body: string; at: string; lapsesAt: string }[];
+  /** The request threads where requests_ruled had no reply to write (no line given, no stock line set): no post, and no failure. */
+  replySilent?: string[];
+  /** The request threads whose reply apply_meeting could not write (requests_ruled keeps the ruling and says why, in `replyFailed`). */
+  replyFails?: string[];
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -117,7 +123,7 @@ function fakeDb(w: World = {}) {
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}), ...(w.nomination !== undefined ? { nomination: w.nomination } : {}) } as T;
         case 'pool_context': return { season: null, boss: w.boss ?? BOSS, predecessor: null, offices: w.offices ?? {}, characters: {}, boards: {}, lockouts: [] } as T;
         case 'system_digest':
-          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], conversations: [], characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
+          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], conversations: [], ...(w.requests ? { requests: w.requests } : {}), characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
@@ -133,7 +139,11 @@ function fakeDb(w: World = {}) {
           state.applied.push(args);
           state.closed = true;
           const pl = args.payload as any;
-          return { status: 'applied', queued: (pl.moves as unknown[]).length + ((pl.bundles ?? []) as any[]).reduce((n, b) => n + b.parts.length, 0), beats_played: ((pl.bundles ?? []) as any[]).filter((b) => b.beat).map((b) => b.beat) } as T;
+          return { status: 'applied', queued: (pl.moves as unknown[]).length + ((pl.bundles ?? []) as any[]).reduce((n, b) => n + b.parts.length, 0), beats_played: ((pl.bundles ?? []) as any[]).filter((b) => b.beat).map((b) => b.beat),
+            ...(pl.requests ? { requests: (pl.requests as any[]).map((r) => { const q = w.requests!.find((x) => x.id === r.id)!; return { id: r.id, requestAct: q.requestAct, thread: q.thread, staff: q.staff, ruling: r.ruling, move: r.ruling === 'fulfill' ? 9 : null, reason: null, postAct: (w.replyFails ?? []).includes(q.thread) || (w.replySilent ?? []).includes(q.thread) ? null : `reply-${r.id}`, replyFailed: (w.replyFails ?? []).includes(q.thread) ? 'the Boss is locked out of this thread' : null }; }) } : {}) } as T;
+        case 'write_staff_act':
+        case 'record_staff_call':
+          throw new Error(`${fn}: the meeting writes no reply itself; requests_ruled does, in apply_meeting's transaction`);
         default: throw new Error(`the fake database has no ${fn}`);
       }
     },
@@ -1248,4 +1258,87 @@ test('a meeting with no Mods on staff still asks the staff part for points and s
   assert.ok(m.chats[0]!.system.includes('Do not answer with orders or patrols.'));
   assert.deepEqual(d.state.applied[0]!.payload.points, [{ staff: MEMBER_A, line: 'Hold the line.' }]);
   assert.deepEqual(d.state.applied[0]!.payload.orders, []);
+});
+
+
+/* ------------------------------------------------------------------ the requests (staff requests plan, Task 5) ---- */
+
+const REQ_ACT = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee01';
+const REQ_ACT2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02';
+const REQ_THREAD = '55555555-5555-4555-8555-555555555555';
+const REQ_THREAD2 = '66666666-6666-4666-8666-666666666666';
+const waiting = (id: number, over: Record<string, unknown> = {}) => ({
+  id, requestAct: id === 12 ? REQ_ACT : REQ_ACT2, thread: id === 12 ? REQ_THREAD : REQ_THREAD2, title: `Thread ${id}`, board: BOARD, boardName: 'Mario Fan Games', askerName: `Asker ${id}`, staff: 'sigh', staffName: 'Sigh Bot',
+  body: `Please move thread ${id} to Off Topic, whole and unabridged.`, at: '2026-10-31T09:00:00.000Z', lapsesAt: '2026-11-03T09:00:00.000Z', ...over,
+});
+const grantMove = (thread: string) => ({ kind: 'moveThread', params: { thread, board: BOARD2, into: '', name: '', premise: '' }, expires_in_hours: 0, why: 'It belongs there.' });
+const posts = (d: ReturnType<typeof fakeDb>) => d.calls.filter((c) => c.fn === 'write_staff_act');
+
+test('the digest\'s waiting requests reach the prompt whole with their ids, and the part is named only then; with none waiting neither the section nor the field is', async () => {
+  const d = fakeDb({ requests: [waiting(12), waiting(13)] });
+  const m = fakeModels(answer());
+  await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  const first = m.chats[0]!;
+  assert.match(first.messages[0]!.content, /## Requests waiting for your ruling/);
+  assert.ok(first.messages[0]!.content.includes('Request 12 in "Thread 12"') && first.messages[0]!.content.includes('> Please move thread 13 to Off Topic, whole and unabridged.'), first.messages[0]!.content);
+  assert.match(first.system, /"requests"/);
+  assert.match(first.system, /the "staff" part \([^)]*requests/);
+  const none = fakeModels(answer());
+  await run(fakeDb().db, none.models, quiet, SLOT, clock, noFeeds);
+  assert.doesNotMatch(none.chats[0]!.messages[0]!.content, /Requests waiting/);
+  assert.doesNotMatch(none.chats[0]!.system, /"requests"/);
+});
+
+test('the answer\'s rulings go to apply_meeting repaired with their lines, and the meeting posts nothing itself: the replies are the database\'s, written in its transaction', async () => {
+  const d = fakeDb({ requests: [waiting(12), waiting(13)] });
+  const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'fulfill', line: 'Granted, with ceremony.', move: grantMove(REQ_THREAD) }, { id: 13, ruling: 'reject', line: '' }, { id: 99, ruling: 'reject', line: 'Who?' }] }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const sent = d.state.applied[0]!.payload.requests;
+  assert.deepEqual(sent, [
+    { id: 12, ruling: 'fulfill', line: 'Granted, with ceremony.', move: { kind: 'moveThread', params: { thread: REQ_THREAD, board: BOARD2 }, expires_in_hours: 0, why: 'It belongs there.' } },
+    { id: 13, ruling: 'reject', line: null },
+  ]);
+  assert.ok(out.trims.some((t: any) => t.path === 'requests[2].id' && t.predicate === 'shownRequest'), JSON.stringify(out.trims));
+  assert.equal(posts(d).length, 0, 'no reply is posted after the commit');
+  assert.equal(d.calls.filter((c) => c.fn === 'record_staff_call').length, 0);
+  assert.deepEqual(out.requests, [{ id: 12, ruling: 'fulfill', posted: true }, { id: 13, ruling: 'reject', posted: true }]);
+  assert.deepEqual(out.notes.filter((n: string) => /request \d+/.test(n)), []);
+});
+
+test('a ruling with no reply posted and no failure (no line, no stock line) is told in the notes, with why', async () => {
+  const d = fakeDb({ requests: [waiting(12), waiting(13)], replySilent: [REQ_THREAD] });
+  const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'reject', line: '' }, { id: 13, ruling: 'reject', line: '' }] }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.deepEqual(out.requests.map((r: any) => r.posted), [false, true]);
+  assert.ok(!out.notes.some((n: string) => /request 13/.test(n)), JSON.stringify(out.notes));
+  assert.ok(out.notes.some((n: string) => /request 12/.test(n) && /no reply was posted/.test(n) && /no line/.test(n)), JSON.stringify(out.notes));
+});
+
+test('a reply the database could not write is told in the notes from what apply_meeting returned; the meeting is still the applied one and the ruling stands', async () => {
+  const d = fakeDb({ requests: [waiting(12), waiting(13)], replyFails: [REQ_THREAD] });
+  const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'reject', line: 'No.' }, { id: 13, ruling: 'reject', line: 'Also no.' }] }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  assert.equal(d.state.failed.length, 0, 'the meeting is not closed failed');
+  assert.deepEqual(out.requests, [{ id: 12, ruling: 'reject', posted: false }, { id: 13, ruling: 'reject', posted: true }]);
+  assert.ok(out.notes.some((n: string) => /request 12/.test(n) && /not posted/.test(n) && /locked out/.test(n)), JSON.stringify(out.notes));
+  assert.ok(!out.notes.some((n: string) => /request 13/.test(n)), JSON.stringify(out.notes));
+  assert.equal(posts(d).length, 0);
+});
+
+test('a granted rename gets the stock description, as a rename among the moves does; a meeting with no ruling writes no reply', async () => {
+  const d = fakeDb({ requests: [waiting(12)] });
+  const move = { kind: 'renameBoard', params: { thread: '', board: BOARD, into: '', name: NAMES[0], premise: 'Everything about puns.' }, expires_in_hours: 72, why: 'The board changed.' };
+  const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'fulfill', line: 'Renamed.', move }] }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const sent = d.state.applied[0]!.payload.requests[0];
+  assert.equal(sent.ruling, 'fulfill');
+  assert.equal(typeof sent.move.params.description, 'string');
+  assert.ok(sent.move.params.description.length > 0);
+  const quietRun = fakeDb({ requests: [waiting(12)] });
+  await run(quietRun.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(posts(quietRun).length, 0);
 });

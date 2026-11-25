@@ -253,6 +253,20 @@ function apologyRule(v: unknown): string | null {
   return null;
 }
 
+/**
+ * The staff requests' settings (`Settings.staffRequests`): exactly daysMost and meetingMost, each a whole number of at least 1. Mirrors
+ * `setting_staffrequests` in supabase/migrations/0424_staff_requests.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
+ */
+const STAFF_REQUESTS_KEYS = ['daysMost', 'meetingMost'] as const;
+function staffRequestsRule(v: unknown): string | null {
+  const shape = 'an object giving daysMost (the most days a request waits for a ruling) and meetingMost (the most waiting requests one meeting rules on), each a whole number, at least 1';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(STAFF_REQUESTS_KEYS as readonly string[]).includes(k));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const k of STAFF_REQUESTS_KEYS) if (!isWhole((v as Record<string, unknown>)[k], 1)) return `${shape}; "${k}" is not`;
+  return null;
+}
+
 /** The code of conduct's numbers (`Settings.conduct`): the most open reports an account holds, and the admin address replies go to (null until the owner sets it). */
 const CONDUCT_KEYS = ['openReportsMost', 'adminAddress'] as const;
 function conductRule(v: unknown): string | null {
@@ -396,6 +410,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   warnBar: warnBarRule,
   apology: apologyRule,
   conduct: conductRule,
+  staffRequests: staffRequestsRule,
   boardNameMaxLength: whole(1, 'characters'),
   moveExpiryMostDays: whole(1, 'days'),
   moveExpiryLeastHours: whole(1, 'hours'),

@@ -1,6 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EXCERPT_WORDS } from './excerpt.ts';
+import { READ_WORDS } from './read.ts';
 import { CLIPS, DIGEST_MOST, renderDigest, type Digest, type DigestConversation } from './digest.ts';
 import type { Memory } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
@@ -245,4 +246,66 @@ test('a quote mark inside a quoted post or title cannot close the quote early', 
   const row = text.split('\n').find((l) => l.startsWith('1. Modly'))!;
   assert.equal((row.match(/"/g) ?? []).length, 6, row);
   assert.ok(row.includes("The 'big' one") && row.includes("I said 'no' twice") && row.includes("He said 'yes' first"), row);
+});
+
+/* ------------------------------------------------------------------ the requests (staff requests plan, Task 5) ---- */
+
+const request = (n: number, body: string, at = '2026-10-30T12:00:00Z'): import('./digest.ts').DigestRequest => ({
+  id: n, requestAct: id(100 + n), thread: id(1), title: 'Who ate the pie', board: id(60), boardName: 'General', askerName: `Asker ${n}`, staff: 'sigh', staffName: 'Sigh Bot', body, at, lapsesAt: '2026-11-02T12:00:00Z',
+});
+
+test('the requests section reads each waiting request with its id, where, who asked, who passed it, how long it waited and when it lapses, and the post whole', () => {
+  const body = 'Please move this thread to Off Topic.\n\nIt is not about games, and it never was.';
+  const text = renderDigest({ ...small, requests: [request(12, body)] }, null, []);
+  assert.ok(text.includes('## Requests waiting for your ruling'), text);
+  assert.ok(text.includes('Request 12 in "Who ate the pie" on General: Asker 12 asked, and Sigh Bot passed it to you'), text);
+  assert.ok(text.includes('waiting 12 hours'), 'the wait is the window\'s end less when it was conferred (2026-10-31T00:00 less 2026-10-30T12:00)');
+  assert.ok(text.includes('lapses 2026-11-02T12:00:00Z'));
+  assert.ok(text.includes('> Please move this thread to Off Topic.\n> \n> It is not about games, and it never was.'), `the post whole, every line: ${text}`);
+  assert.ok(text.includes(READ_WORDS), 'the whole-posts line, once');
+  assert.equal(text.split(READ_WORDS).length - 1, 1);
+});
+
+test('no section and no whole-posts line when no request waits (or the digest is from a database that has none)', () => {
+  for (const d of [small, { ...small, requests: [] }]) {
+    const text = renderDigest(d, null, []);
+    assert.ok(!text.includes('Requests waiting'), text);
+    assert.ok(!text.includes(READ_WORDS));
+  }
+});
+
+test('when more wait than the read held, the section says how many more, from the total the database counted', () => {
+  const d = { ...small, requests: [request(1, 'one'), request(2, 'two'), request(3, 'three')], requestsWaiting: 14 };
+  const text = renderDigest(d, null, [], { readMost: 10_000, meetingMost: 3 });
+  assert.ok(text.includes('(11 more requests wait and are not shown here; they stay waiting.)'), text);
+  // A total that is not more than the list (or absent) adds nothing.
+  const same = renderDigest({ ...d, requestsWaiting: 3 }, null, [], { readMost: 10_000, meetingMost: 3 });
+  assert.ok(!same.includes('not shown here'), same);
+  assert.ok(!renderDigest({ ...d, requestsWaiting: undefined }, null, [], { readMost: 10_000, meetingMost: 3 }).includes('not shown here'));
+  // Left out by the ceiling and by the total are both counted, once each.
+  const both = renderDigest({ ...d, requests: [request(1, 'short'), request(2, 'z'.repeat(900)), request(3, 'short')], requestsWaiting: 5 }, null, [], { readMost: 500, meetingMost: 3 });
+  assert.ok(both.includes('(3 more requests wait'), both);
+});
+
+test('requests are bounded by meetingMost and then by readMost over the bodies: the longest is dropped first, the count is said, and no body is ever cut', () => {
+  const big = 'x'.repeat(900);
+  const d = { ...small, requests: [request(1, 'short one'), request(2, big), request(3, 'short two'), request(4, 'y'.repeat(500))] };
+  const text = renderDigest(d, null, [], { readMost: 500, meetingMost: 3 });
+  // meetingMost 3 leaves requests 1 to 3 (oldest first); over 500 characters, the longest (2) goes.
+  assert.ok(text.includes('Request 1 ') && text.includes('Request 3 '), text);
+  assert.ok(!text.includes('Request 2 ') && !text.includes('Request 4 '), text);
+  assert.ok(!text.includes(big.slice(0, 50)));
+  assert.ok(text.includes('(2 more requests wait and are not shown here; they stay waiting.)'), text);
+  const whole = renderDigest(d, null, [], { readMost: 10_000, meetingMost: 10 });
+  assert.ok(whole.includes(big) && whole.includes('y'.repeat(500)), 'under the ceiling every body is whole');
+  assert.ok(!whole.includes('not shown here'));
+  // The oldest, alone over the ceiling, is still read whole: a request must not starve behind its own size.
+  const alone = renderDigest({ ...small, requests: [request(5, big)] }, null, [], { readMost: 500, meetingMost: 10 });
+  assert.ok(alone.includes(big) && !alone.includes('not shown here'));
+});
+
+test('the requests section is outside the excerpt budget: it does not touch the excerpts', () => {
+  const text = renderDigest({ ...small, requests: [request(1, 'a'.repeat(3_000))] }, null, [], { readMost: 40_000, meetingMost: 10 });
+  assert.ok(text.includes('a'.repeat(3_000)));
+  assert.ok(text.includes('It was me all along'));
 });

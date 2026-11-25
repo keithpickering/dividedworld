@@ -413,7 +413,7 @@ export const CREATE_BOARD: MoveKind = {
 /** The Boss moves one thread to another board. A second move of the same thread supersedes the first; reversing one returns the thread to where the one before it put it. */
 export const MOVE_THREAD: MoveKind = {
   key: 'moveThread',
-  offices: ['boss'],
+  offices: ['boss', 'mod'],
   structural: false,
   shapesBoard: false,
   lasting: true,
@@ -489,6 +489,18 @@ export const ASKABLE_MOVE_KINDS: readonly MoveKind[] = MOVE_KINDS.filter((k) => 
 
 export function moveKind(key: string): MoveKind | undefined {
   return MOVE_KINDS.find((k) => k.key === key);
+}
+
+/**
+ * A model's params as the kind reads them: a kind's own optional field left as empty text is absent (a rule's board, a conferral's board and check time, a board's fallback), and a
+ * `description` that is missing or blank is not the model's to lose a move over, so `blankDescription` says to check with a placeholder and leave it out, the stock one standing in later.
+ * The meeting and a staff turn's request both read their params this way. A copy: nothing given is changed.
+ */
+export function readBlankOptionals(kind: MoveKind, given: Readonly<Record<string, unknown>>): { readonly params: Record<string, unknown>; readonly blankDescription: boolean } {
+  const params = { ...given };
+  for (const [name, rule] of Object.entries((kind.params as { fields: Record<string, Rule> }).fields)) if (rule.optional && params[name] === '') delete params[name];
+  const blankDescription = typeof params['description'] !== 'string' || params['description'].trim() === '';
+  return { params, blankDescription };
 }
 
 /**
