@@ -103,6 +103,8 @@ interface World {
   replySilent?: string[];
   /** The request threads whose reply apply_meeting could not write (requests_ruled keeps the ruling and says why, in `replyFailed`). */
   replyFails?: string[];
+  /** Fields the digest adds over the default one (0433: polls, plays, standouts and the rest), spread over it. */
+  digest?: Record<string, unknown>;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -123,7 +125,7 @@ function fakeDb(w: World = {}) {
           return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}), ...(w.nomination !== undefined ? { nomination: w.nomination } : {}) } as T;
         case 'pool_context': return { season: null, boss: w.boss ?? BOSS, predecessor: null, offices: w.offices ?? {}, characters: {}, boards: {}, lockouts: [] } as T;
         case 'system_digest':
-          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], conversations: [], ...(w.requests ? { requests: w.requests } : {}), characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }] } as T;
+          return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], conversations: [], ...(w.requests ? { requests: w.requests } : {}), characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }], ...(w.digest ?? {}) } as T;
         case 'character_groups': return (args.ids as string[]).map((id) => ({ id, group: id === ANN ? 'Trial Members' : 'Members' })) as T;
         case 'staff_notes_recent': return (w.notes ?? []) as T;
         case 'staff_career': return (w.career ?? { led: [], offices: [] }) as T;
@@ -1341,4 +1343,20 @@ test('a granted rename gets the stock description, as a rename among the moves d
   const quietRun = fakeDb({ requests: [waiting(12)] });
   await run(quietRun.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds);
   assert.equal(posts(quietRun).length, 0);
+});
+
+test('the digest is rendered at the meeting\'s slot, not the clock nor the window\'s end, and with the instance\'s cards', async () => {
+  const slot = Date.parse(SLOT);
+  const poll = { question: 'Rename this board?', options: ['Yes', 'No'], pick: 1, secret: false, endsAt: new Date(slot + 2 * 3_600_000).toISOString(), closed: false, closedBy: null, closedAt: null, counts: [9, 4], voters: 13 };
+  const card = dividedWorld.cards.find((c) => c.seen === undefined)!;
+  const d = fakeDb({ digest: {
+    until: new Date(slot - 3 * 86_400_000).toISOString(),
+    polls: [{ poll: 'p1', post: 'x1', thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', extras: { poll, plays: [], reactions: {}, rewoundTo: null } }],
+    plays: [{ play: 'y1', card: card.key, at: new Date(slot - 3_600_000).toISOString(), by: null, config: null, state: null, text: null, covered: null, post: 'x1', thread: HOT, title: 'Pineapple', seq: 2 }],
+  } });
+  const m = fakeModels(answer());
+  await run(d.db, m.models, quiet, SLOT, () => slot + 5 * 86_400_000, noFeeds);
+  const sent = m.chats[0]!.messages[0]!.content;
+  assert.match(sent, /Open: ends in 2 hours\./, 'the poll\'s time is told from the slot');
+  assert.ok(sent.includes(`[${card.name} was played on this post, an hour ago.]`), `the card is named from the instance's list: ${sent.split('Cards on the board')[1]?.slice(0, 200)}`);
 });

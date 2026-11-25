@@ -385,8 +385,13 @@ test('standingWords: one, two and three names, from each count\'s share of the l
   assert.equal(standingWords([10, 4, 1]), '{1}, by far; then {2} and {3}.');
   assert.equal(standingWords([10, 10, 2]), '{1} and {2}, neck and neck; {3} behind.');
   assert.equal(standingWords([10, 9, 8]), '{1} and {2}, neck and neck; {3} close behind.');
-  assert.equal(standingWords([10, 8, 7]), '{1}, with {2} close behind; {3} close behind.');
+  assert.equal(standingWords([10, 8, 7]), '{1}, with {2} and {3} neck and neck close behind.');
   assert.equal(standingWords([10, 6, 3]), '{1}, with {2} behind; {3} behind.');
+  assert.equal(standingWords([10, 7, 5]), '{1}, with {2} close behind; {3} behind.', 'the third is measured against the leader: five is half of ten');
+  assert.equal(standingWords([10, 7, 6]), '{1}, with {2} and {3} neck and neck behind.', 'a pair neck and neck is as far behind as the lower of them');
+  assert.equal(standingWords([10, 5, 5]), '{1}, with {2} and {3} neck and neck behind.', 'two within a tenth are neck and neck wherever they stand');
+  assert.equal(standingWords([10, 4, 4]), '{1}, by far; then {2} and {3}, neck and neck.');
+  assert.equal(standingWords([10, 10, 10]), '{1}, {2} and {3}, neck and neck.');
   assert.equal(standingWords([3, 10, 4]), standingWords([10, 4, 3]), 'order does not matter');
 });
 

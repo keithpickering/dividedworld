@@ -281,7 +281,8 @@ const record = (v: unknown): Readonly<Record<string, unknown>> => (typeof v === 
 
 /**
  * How a standout category's counts stand, as a sentence with the names left as slots `{1}`, `{2}`, `{3}` (best first), so the words never say a number: from each count's share of the leader's,
- * "by far" where the second is under half the first, "neck and neck" where two are within a tenth, "close behind" under a third apart, "behind" otherwise.
+ * "by far" where the second is under half the first, "neck and neck" where two are within a tenth of the leader's count (the second and third too), "close behind" where one is under a third
+ * below the leader, "behind" otherwise.
  * Order does not matter; zero or negative counts are ignored, and no counts say nothing.
  */
 export function standingWords(counts: readonly number[]): string {
@@ -289,10 +290,14 @@ export function standingWords(counts: readonly number[]): string {
   if (c.length === 0) return '';
   if (c.length === 1) return '{1}, the only one.';
   const [a, b] = [c[0]!, c[1]!];
-  const behind = (hi: number, lo: number): string => ((hi - lo) / hi < 1 / 3 ? 'close behind' : 'behind');
-  if (b < a / 2) return c.length === 2 ? '{1}, by far; then {2}.' : '{1}, by far; then {2} and {3}.';
-  const lead = a - b <= a / 10 ? '{1} and {2}, neck and neck' : `{1}, with {2} ${behind(a, b)}`;
-  return c.length === 2 ? `${lead}.` : `${lead}; {3} ${behind(b, c[2]!)}.`;
+  // Every gap is a share of the leader's count: two are neck and neck within a tenth of it, close behind under a third of it.
+  const neck = (hi: number, lo: number): boolean => hi - lo <= a / 10;
+  const behind = (lo: number): string => ((a - lo) / a < 1 / 3 ? 'close behind' : 'behind');
+  if (c.length === 2) return b < a / 2 ? '{1}, by far; then {2}.' : neck(a, b) ? '{1} and {2}, neck and neck.' : `{1}, with {2} ${behind(b)}.`;
+  const third = c[2]!;
+  if (b < a / 2) return neck(b, third) ? '{1}, by far; then {2} and {3}, neck and neck.' : '{1}, by far; then {2} and {3}.';
+  if (neck(a, b)) return neck(a, third) ? '{1}, {2} and {3}, neck and neck.' : `{1} and {2}, neck and neck; {3} ${behind(third)}.`;
+  return neck(b, third) ? `{1}, with {2} and {3} neck and neck ${behind(third)}.` : `{1}, with {2} ${behind(b)}; {3} ${behind(third)}.`;
 }
 
 const SMALL = ['zero', 'one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine', 'ten', 'eleven', 'twelve', 'thirteen', 'fourteen', 'fifteen', 'sixteen', 'seventeen', 'eighteen', 'nineteen', 'twenty'];
