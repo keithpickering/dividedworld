@@ -1048,6 +1048,12 @@ describe('what a list row shows', () => {
     expect([plain?.originThread, plain?.origin]).toEqual([null, null]);
   });
 
+  test('seed.card with an id makes a play of that id, and a second play of an id in use throws', () => {
+    const { fake, anaFace, opener } = world();
+    expect(fake.seed.card(anaFace, opener, 'whoops', { id: 'abc' })).toBe('abc');
+    expect(() => fake.seed.card(anaFace, opener, 'whoops', { id: 'abc' })).toThrow('an Act abc already exists');
+  });
+
   test('a thread spun from a play has the place the SQL gives it: a play, with its card and where it landed (0079)', async () => {
     const { fake, anaFace, boFace, opener, thread } = world();
     const place = async (origin: string) => (await fake.thread(must(await fake.spin(origin, anaFace, 'Spun', 'b')).thread.id))?.origin;
