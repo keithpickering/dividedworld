@@ -3,6 +3,7 @@
  * shape from its play's id, which dents overlap, and the hit zone a short post's throws aim at (owner's answers of 2026-11-15, see dent.ts).
  */
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { rng, throwOf } from './body.ts';
 import {
@@ -705,5 +706,17 @@ describe("zoneHeight: the area less the chairs' room, where that leaves a dent a
     assert.equal(zoneHeight(157), 80);
     assert.equal(zoneHeight(156), 156);
     assert.equal(zoneHeight(0), 0);
+  });
+});
+
+describe('dentShape: the chair keeps its recorded dents (dent-record.json, taken before the objects)', () => {
+  const record = JSON.parse(readFileSync(new URL('./dent-record.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+  test('50 ids, with no object and with chair, equal the record', () => {
+    const ids = Object.keys(record);
+    assert.equal(ids.length, 50);
+    for (const id of ids) {
+      assert.deepEqual(dentShape(id), record[id], id);
+      assert.deepEqual(dentShape(id, 'chair'), record[id], id);
+    }
   });
 });
