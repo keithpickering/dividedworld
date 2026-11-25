@@ -32,14 +32,14 @@ export interface RowCovering {
 /**
  * Whether a post covers its row and the reader's state of it, for a thread's post. It covers while the post wears a live play, on its own reach, of a card that covers the row;
  * an admin's ending of one lowers `total` when the post next renders. The state is the number this reader has opened, never more than `total`: it is clamped as `total` falls, so a
- * play ended after the reader opened it leaves nothing shut, never a count below none, and a play landing later raises `total` above it, so the new curtain is shut. While any is
- * shut, every child of the grid but the host is made `inert`, so nothing under the curtain can be focused or pressed.
+ * play ended after the reader opened it leaves nothing shut, never a count below none, and a play landing later raises `total` above it, so the new cover is shut. While any is
+ * shut, every child of the grid but the host is made `inert`, so nothing under the cover can be focused or pressed.
  */
 export function useRowCovering({ plays, actId, eligible, now, cards, grid, post }: {
   readonly plays: Plays; readonly actId: string; readonly eligible: boolean; readonly now: number; readonly cards: readonly CardUi[]; readonly grid: RefObject<HTMLElement | null>; readonly post: string;
 }): RowCovering {
   const own = usePlays(plays, actId).plays;
-  /* Latest first: the outermost curtain is the latest play. */
+  /* Latest first: the outermost cover is the latest play. */
   const covering = eligible ? livePlays(own, now).filter((p) => !p.reach && cards.find((c) => c.key === p.card)?.coversRow === true).reverse() : [];
   const total = covering.length;
   const [kept, setKept] = useState(0);
