@@ -32,10 +32,12 @@ import { cardOf, type World } from '../../../engine/ui/story.tsx';
 import { packStroke } from '../cards/whoops/points.ts';
 import { BRUSH_PX, brushOf } from '../cards/whoops/scrub.ts';
 
-/** A play id that rolls a chair (steel-chair/objects.ts), so that the stories' Steel Chair is the chair e2e/origin-effects.spec.ts measures. */
-const CHAIR_PLAY = 'play-0';
+/** A play id that rolls a chair (steel-chair/objects.ts), so that the stories' Steel Chair is the chair e2e/origin-effects.spec.ts measures. It is an id's shape, since a thread is spun from this play and a spin names its origin by a UUID (engine/rules/actions.ts). */
+const CHAIR_PLAY = '00000000-0000-4000-8000-000000000001';
 /** A play id that rolls a trash can (steel-chair/objects.ts): the lid comes off it at the hit and leaves the box (e2e/steel-chair.spec.ts). */
 const CAN_PLAY = 'play-6';
+/** A play id that rolls a fire extinguisher: its puff fills the box's area and is gone in about 5 s (e2e/origin-effects.spec.ts). */
+const EXTINGUISHER_PLAY = 'play-93';
 
 declare global {
   interface Window {
@@ -57,7 +59,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'can' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'can' | 'extinguisher' | 'mixed' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
 
 const DAY = 86_400_000;
 const MINUTE = 60_000;
@@ -101,7 +103,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const board = instance.boards.find((b) => !b.system)!.slug;
   const made = fake.seed.thread(board, author, 'Ranking every Mario Kart', 'Ranking every Mario Kart, worst to best.');
   const now = fake.clock.now();
-  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'can' || shown === 'chair-whoops' ? THREE
+  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'can' || shown === 'extinguisher' || shown === 'mixed' || shown === 'chair-whoops' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'chair-landed' ? BANG
         : shown === 'bright' ? QUOTED
@@ -195,7 +197,14 @@ const worldOf = (shown: Case): World => (fake, instance) => {
     })());
     return;
   }
-  if (shown === 'chair' || shown === 'chair-short' || shown === 'can') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: shown === 'can' ? CAN_PLAY : CHAIR_PLAY });
+  if (shown === 'chair' || shown === 'chair-short' || shown === 'can' || shown === 'extinguisher') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: shown === 'can' ? CAN_PLAY : shown === 'extinguisher' ? EXTINGUISHER_PLAY : CHAIR_PLAY });
+  /* A chair, a can and a fire extinguisher from three characters on the one post: the room is the tallest of the three's, and the puff fills the area. */
+  if (shown === 'mixed') {
+    [CHAIR_PLAY, CAN_PLAY, EXTINGUISHER_PLAY].forEach((id, i) => {
+      const who = i === 0 ? caster : fake.seed.character(fake.seed.account(`thrower-${i}`), ['Spritey', 'Gloomba', 'Bob-omb Bill'][i]!, (i % 2 === 0 ? first : (second ?? first))!.key);
+      fake.seed.card(who, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id });
+    });
+  }
   spun(post);
 };
 
@@ -296,6 +305,10 @@ export const HotBox: Story = of('hotbox');
 export const Chair: Story = of('chair');
 /** Steel Chair rolling a trash can on a three-line post, live: its lid comes off at the hit and leaves the box. */
 export const Can: Story = of('can');
+/** A fire extinguisher on a three-line post, live: its puff fills the box's area and is gone in about 5 s. */
+export const Extinguisher: Story = of('extinguisher');
+/** A chair, a can and a fire extinguisher on the one post, live. */
+export const MixedThree: Story = of('mixed');
 /** Steel Chair on one short line, live. */
 export const ChairShort: Story = of('chair-short');
 /** Steel Chair on a post that reads `!`, the thread spun from the play: the box shows the play's moment, with the cards met so no tip covers it (issue #768). */

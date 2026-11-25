@@ -104,3 +104,7 @@ export const ExtinguisherAtRest: Story = { args: { mode: 'light', reduced: true 
 export const ExtinguisherInFlight: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, false, [ID.extinguisher]) } };
 /** A chair, a ladder and a can on the one post, at rest: the room is the tallest of the three's. */
 export const MixedAtRest: Story = { args: { mode: 'light', reduced: true }, parameters: { world: worldOf(WORDS, 3, false, [ID.chair, ID.ladder, ID.can]) } };
+/** A chair, a can and a fire extinguisher from three characters on the one post, at rest: the room is the tallest of the three's (chair.ts `roomHeightOf`), and the Lens names all three. */
+export const MixedThreeAtRest: Story = { args: { mode: 'light', reduced: true }, parameters: { world: worldOf(WORDS, 3, false, [ID.chair, ID.can, ID.extinguisher]) } };
+/** The same three, thrown on the reader's own screen: the extinguisher's puff starts at its first floor contact. */
+export const MixedThree: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 3, false, [ID.chair, ID.can, ID.extinguisher]) } };

@@ -993,3 +993,138 @@ for (const name of ['chair-landed', 'chair-landed-phone'] as const) {
     expect(await pageViolations(page)).toEqual([]);
   });
 }
+
+/* ------------------------------------------------------------------------------------------ 20. the objects ---- */
+
+/**
+ * Case 20 to 22 are Task 12 of docs/plans/2026-11-23-steel-chair-objects-design.md: a fire extinguisher's puff (Puff.tsx) fills the ORIGIN box's area, border to border,
+ * and is gone in `billowMs + holdMs + fadeMs` and 500 ms (20); a can's lid leaves the area and is seen outside it (21, the walk of e2e/steel-chair.spec.ts's lid
+ * tests, here on the stories `Can` and `Extinguisher`); and a chair, a can and an extinguisher on the box's post make the room of the tallest (22). The seed is
+ * a single pinned value, as `openChair`'s. Poisons (`KB_POISON` in the environment): `nopuff` (20: a drawImage onto a puff tile is dropped, so its canvases stay
+ * empty), `lidclip` (21: the area gets `overflow: hidden`), `room` (22: the room is the chair's again).
+ */
+const POISON = process.env.KB_POISON ?? '';
+const PUFF_MS = 600 + 400 + 4000;
+const OBJECT_SEED = 104;
+
+async function openObject(page: Page, name: string, seed = OBJECT_SEED) {
+  await page.addInitScript((given: number) => {
+    const real = crypto.getRandomValues.bind(crypto);
+    crypto.getRandomValues = ((a: ArrayBufferView) => {
+      if (a instanceof Uint32Array && a.length === 1) { a[0] = given; return a; }
+      return real(a as Uint8Array);
+    }) as typeof crypto.getRandomValues;
+  }, seed);
+  await page.goto(STORY(name));
+  await expect(box(page)).toBeVisible({ timeout: 20_000 });
+  await expect(page.locator('.dw-chair').first()).toBeAttached();
+  await page.evaluate(() => document.fonts.ready);
+  await area(page).scrollIntoViewIfNeeded();
+}
+
+/** The puff's tiles in the box: how many, their union, the area's padding box, and the alpha of the tile pixel at the area's middle. */
+const puffIn = (page: Page) => page.evaluate(() => {
+  const a = document.querySelector<HTMLElement>('.kb-origin-area:has(.dw-chair)')!;
+  const r = a.getBoundingClientRect();
+  const inner = { left: r.left + a.clientLeft, top: r.top + a.clientTop, right: r.left + a.clientLeft + a.clientWidth, bottom: r.top + a.clientTop + a.clientHeight };
+  const tiles = [...document.querySelectorAll<HTMLCanvasElement>('canvas.dw-chair-puff')].filter((c) => c.width > 0 && c.getBoundingClientRect().width > 0);
+  const inArea = tiles.filter((c) => a.contains(c));
+  const rects = inArea.map((c) => c.getBoundingClientRect());
+  let seen = 0;
+  const mx = (inner.left + inner.right) / 2, my = (inner.top + inner.bottom) / 2;
+  const c = inArea.find((q) => { const b = q.getBoundingClientRect(); return mx >= b.left && mx < b.right && my >= b.top && my < b.bottom; });
+  if (c) {
+    const b = c.getBoundingClientRect(), k = c.width / b.width;
+    const x = Math.round((mx - b.left) * k), y = Math.round((my - b.top) * k);
+    seen = c.getContext('2d')!.getImageData(Math.max(0, x - 2), Math.max(0, y - 2), 5, 5).data[3]!;
+  }
+  return {
+    all: tiles.length, tiles: inArea.length, area: inner, seen,
+    union: rects.length ? { left: Math.min(...rects.map((b) => b.left)), top: Math.min(...rects.map((b) => b.top)), right: Math.max(...rects.map((b) => b.right)), bottom: Math.max(...rects.map((b) => b.bottom)) } : null,
+  };
+});
+
+test('20. the extinguisher\'s puff is drawn in the box\'s area, border to border, and is gone within its fade and 500 ms', async ({ page }) => {
+  test.setTimeout(45_000);
+  if (POISON === 'nopuff') await page.addInitScript(() => { const draw = CanvasRenderingContext2D.prototype.drawImage; CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...a: Parameters<typeof draw>) { if (!this.canvas.classList.contains('dw-chair-puff')) draw.apply(this, a); } as typeof draw; });
+  await openObject(page, 'extinguisher');
+  let filled: Awaited<ReturnType<typeof puffIn>> | null = null;
+  const began = Date.now();
+  while (Date.now() - began < 20_000) {
+    const p = await puffIn(page);
+    const u = p.union;
+    if (u && p.seen > 100 && u.left <= p.area.left + 1 && u.right >= p.area.right - 1 && u.top <= p.area.top + 1 && u.bottom >= p.area.bottom - 1) { filled = p; break; }
+    await page.waitForTimeout(25);
+  }
+  expect(filled, 'the puff is drawn in the box\'s area and its tiles fill it border to border').not.toBeNull();
+  /* Every tile of the puff on the page is in the box's area: none is in the opening post's body. */
+  expect((await puffIn(page)).all, 'no puff tile outside the box\'s area').toBe((await puffIn(page)).tiles);
+  await expect.poll(async () => (await puffIn(page)).all, { timeout: PUFF_MS + 500, intervals: [100], message: 'gone within billow, hold and fade, and 500 ms' }).toBe(0);
+});
+
+test('21. the can\'s lid leaves the box\'s area and is seen outside it', async ({ page }) => {
+  test.setTimeout(45_000);
+  await page.setViewportSize({ width: 1280, height: 900 });
+  await page.addInitScript((given: number) => {
+    const real = crypto.getRandomValues.bind(crypto);
+    crypto.getRandomValues = ((a: ArrayBufferView) => {
+      if (a instanceof Uint32Array && a.length === 1) { a[0] = given; return a; }
+      return real(a as Uint8Array);
+    }) as typeof crypto.getRandomValues;
+  }, 101);
+  await page.goto(STORY('can'));
+  if (POISON === 'lidclip') await page.addStyleTag({ content: '.kb-origin-area { overflow: hidden; }' });
+  await expect(page.locator('.dw-chair').first()).toBeAttached();
+  await page.evaluate(() => document.fonts.ready);
+  await area(page).scrollIntoViewIfNeeded();
+  const seen = await page.evaluate(() => new Promise<{ lids: number; outside: number; seen: number; gone: boolean }>((resolve) => {
+    const a = document.querySelector<HTMLElement>('.kb-origin-area:has(.dw-chair)')!;
+    const out = { lids: 0, outside: 0, seen: 0, gone: false };
+    const started = performance.now();
+    const clips = (el: Element): boolean => { const s = getComputedStyle(el); return s.overflowX !== 'visible' || s.overflowY !== 'visible' || /paint|strict|content/.test(s.contain) || s.clipPath !== 'none'; };
+    const tick = (): void => {
+      const lid = a.querySelector<HTMLElement>('.dw-chair-lid');
+      if (lid) {
+        out.lids++;
+        const rects = [...lid.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+        if (rects.length) {
+          const lb = { left: Math.min(...rects.map((r) => r.left)), top: Math.min(...rects.map((r) => r.top)), right: Math.max(...rects.map((r) => r.right)), bottom: Math.max(...rects.map((r) => r.bottom)) };
+          const r = a.getBoundingClientRect();
+          const ab = { left: r.left + a.clientLeft, top: r.top + a.clientTop, right: r.left + a.clientLeft + a.clientWidth, bottom: r.top + a.clientTop + a.clientHeight };
+          if (lb.right <= ab.left || lb.left >= ab.right || lb.bottom <= ab.top || lb.top >= ab.bottom) {
+            out.outside++;
+            /* Seen: what is left of its box after every clipping ancestor's padding box still has area. */
+            let kept = { ...lb };
+            for (let el = lid.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+              if (!clips(el)) continue;
+              const q = el.getBoundingClientRect();
+              kept = { left: Math.max(kept.left, q.left + el.clientLeft), top: Math.max(kept.top, q.top + el.clientTop), right: Math.min(kept.right, q.left + el.clientLeft + el.clientWidth), bottom: Math.min(kept.bottom, q.top + el.clientTop + el.clientHeight) };
+            }
+            if (kept.right - kept.left > 1 && kept.bottom - kept.top > 1) out.seen++;
+          }
+        }
+      } else if (out.lids > 0) { out.gone = true; resolve(out); return; }
+      if (performance.now() - started > 20_000) { resolve(out); return; }
+      requestAnimationFrame(tick);
+    };
+    requestAnimationFrame(tick);
+  }));
+  console.log(`origin can: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.seen} of them seen`);
+  expect(seen.lids, 'a lid was drawn').toBeGreaterThan(0);
+  expect(seen.outside, 'the lid was wholly outside the box\'s area at some frame').toBeGreaterThan(0);
+  expect(seen.seen, 'and seen there, cut away by no ancestor').toBeGreaterThan(0);
+  expect(seen.gone, 'and gone when its arc is done').toBe(true);
+});
+
+test('22. a chair, a can and an extinguisher on the box\'s post: the area\'s room is the tallest\'s', async ({ page }) => {
+  await openObject(page, 'mixed-three', 101);
+  await expect.poll(() => page.evaluate(() => document.querySelectorAll('.kb-origin-area .dw-chair-group').length), { timeout: 20_000, message: 'the three objects are drawn' }).toBe(3);
+  if (POISON === 'room') await page.addStyleTag({ content: '[data-dw-chair-room]::after { height: 77px !important; }' });
+  const room = await page.evaluate(() => {
+    const a = document.querySelector<HTMLElement>('.kb-origin-area:has(.dw-chair)')!;
+    return { marked: a.hasAttribute('data-dw-chair-room'), height: parseFloat(getComputedStyle(a, '::after').height), groups: a.querySelectorAll('.dw-chair-group').length };
+  });
+  expect(room.marked, 'the box\'s area carries the room').toBe(true);
+  expect(room.groups, 'three objects are drawn').toBe(3);
+  expect(room.height, 'the room is roomHeightOf(chair, can, extinguisher)').toBeCloseTo(roomHeightOf(['chair', 'can', 'extinguisher']), 0);
+});

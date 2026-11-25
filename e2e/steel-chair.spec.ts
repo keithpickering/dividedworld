@@ -71,10 +71,14 @@ const SEEDS = {
   phone: [113],
   'with-fab': [101],
   'fab-after': [101],
+  'ladder-in-flight': [101],
+  'can-in-flight': [104],
+  'extinguisher-in-flight': [104],
+  'mixed-three-at-rest': [101],
 } as const;
 /** The short-three layout's second pinned seed: the spread case. */
 const SPREAD_SEED = 158;
-type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab' | 'fab-after';
+type Story = 'one-light' | 'one-dark' | 'reduced' | 'short-post' | 'short-three' | 'three' | 'with-fab' | 'fab-after' | 'ladder-in-flight' | 'can-in-flight' | 'extinguisher-in-flight' | 'mixed-three-at-rest';
 
 /** The post that wears the card: its content area (the world) and its parts. */
 const area = (page: Page) => page.locator('.kb-act-main:has(.dw-chair)').first();
@@ -1208,6 +1212,7 @@ const CAN_STORIES = [
 
 for (const { name, url, area: areaSelector } of CAN_STORIES) {
   test(`can ${name}: the lid leaves the content area and is seen outside it, clipped by nothing`, async ({ page }) => {
+    test.setTimeout(60_000);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.addInitScript((given: number) => {
       const real = crypto.getRandomValues.bind(crypto);
@@ -1220,7 +1225,8 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
     if (POISON === 'lidclip') await page.addStyleTag({ content: '.kb-act-main, .kb-origin-area { overflow: hidden; }' });
     await expect(page.locator('.dw-chair').first()).toBeAttached();
     await page.evaluate(() => document.fonts.ready);
-    await page.locator(areaSelector).first().scrollIntoViewIfNeeded();
+    /* Centered, so that the lid has room above the post: at the top of the window it flies under the frame's header, which covers it. */
+    await page.locator(areaSelector).first().evaluate((el) => el.scrollIntoView({ block: 'center' }));
     const seen = await page.evaluate((selector) => new Promise<{
       lids: number; frames: number; outside: number; visible: number; painted: number; clippers: string[]; gone: boolean; canPieces: number;
     }>((resolve) => {
@@ -1292,6 +1298,142 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
     expect(seen.gone, 'the lid group is removed when its arc is done').toBe(true);
     expect(seen.canPieces, 'the can is left with its own pieces, no lid').toBeGreaterThan(0);
     /* The can goes on to rest, and the loop with it. */
-    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('.dw-chair-group')].every((g) => g.hasAttribute('data-rest'))), { timeout: REST_MS }).toBe(true);
+    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('.dw-chair-group')].every((g) => g.hasAttribute('data-rest'))), { timeout: OBJECT_REST_MS }).toBe(true);
   });
 }
+
+/**
+ * The objects (docs/plans/2026-11-23-steel-chair-objects-design.md, Task 12). Each one thrown alone comes to rest inside the content area, on its floor, under
+ * its own room, and covers no words; a chair, a can and a fire extinguisher on one post make the room of the tallest of them (`--dw-chair-room` is
+ * `roomHeightOf` of the plays' objects) and the Lens names all three. The stories' ids roll the objects (Chair.board.stories.tsx `ID`).
+ */
+/** A can or an extinguisher rolls before it sleeps: on a slow runner it takes about 13 s of the page's time, so the wait is longer than a chair's. The mixed post is read at rest, motion reduced (drawn where it settles at once): three bodies rolling on each other take over 25 s of a slow runner's time, and the room and the Lens are what it is for. */
+const OBJECT_REST_MS = 30_000;
+const OBJECT_STORIES = [
+  { story: 'ladder-in-flight', objects: ['ladder'], n: 1 },
+  { story: 'can-in-flight', objects: ['can'], n: 1 },
+  { story: 'extinguisher-in-flight', objects: ['extinguisher'], n: 1 },
+  { story: 'mixed-three-at-rest', objects: ['chair', 'can', 'extinguisher'], n: 3 },
+] as const;
+for (const { story, objects, n } of OBJECT_STORIES) {
+  test(`${story}: every object rests inside the content area on its floor, under the room of ${objects.join(', ')}, and covers no words`, async ({ page }) => {
+    test.setTimeout(60_000);
+    await open(page, story);
+    /* Poisons: `room` puts the chair's room back for every object (the ::after is a fixed 77 px); `float` lifts the objects' layer over the words. */
+    if (POISON === 'room') await page.addStyleTag({ content: '[data-dw-chair-room]::after { height: 77px !important; }' });
+    if (POISON === 'float') await page.addStyleTag({ content: '.dw-chair-layer { transform: translateY(-260px) !important; }' });
+    await atRest(page, n, OBJECT_REST_MS);
+    const m = await measure(page);
+    inside(m);
+    /* The room is this post's objects' (chair.ts `roomHeightOf`), not the chair's, and no object's top is above it. */
+    const room = roomHeightOf([...objects]);
+    expect(m.chairs.length).toBe(n);
+    expect(m.room.display).toBe('block');
+    expect(m.room.height, `the room is roomHeightOf(${objects.join(', ')})`).toBeCloseTo(room, 0);
+    expect(m.room.gap, 'room left between the last box and the bottom of the content').toBeGreaterThanOrEqual(room - ROUND);
+    for (const [i, c] of m.chairs.entries()) {
+      expect(m.area.bottom - c.bottom, `object ${i}: lowest point above the bottom border`).toBeGreaterThanOrEqual(-EDGE);
+      expect(m.area.bottom - c.top, `object ${i}: top above the bottom border, the room being ${room}`).toBeLessThanOrEqual(room + ROUND);
+    }
+    noWordsUnderChairs(m);
+  });
+}
+
+test('mixed-three-at-rest: the Lens says Dented by a chair, a trash can and a fire extinguisher', async ({ page }) => {
+  /* Poison `lens`: the Lens names the can as a can, so the words that name the kinds are wrong. */
+  if (POISON === 'lens') await page.addInitScript(() => { new MutationObserver(() => { for (const el of document.querySelectorAll('[role="dialog"] *')) if (el.children.length === 0 && el.textContent?.includes('a trash can')) el.textContent = el.textContent.replace('a trash can', 'a can'); }).observe(document, { childList: true, subtree: true, characterData: true }); });
+  await open(page, 'mixed-three-at-rest');
+  await atRest(page, 3);
+  await page.getByRole('button', { name: /Steel Chair/u }).first().click();
+  const lens = page.getByRole('dialog');
+  await expect(lens).toBeVisible();
+  await expect(lens.getByText('Dented by a chair, a trash can and a fire extinguisher')).toBeVisible();
+});
+
+/**
+ * The extinguisher's puff (Task 11, Puff.tsx; puff.ts says when). It starts at the first floor contact, so it is not there while the extinguisher is
+ * in the air; fills the content area border to border (its tile canvases' union is the area's box); and is gone within `billowMs + holdMs + fadeMs`
+ * and 500 ms. A pointer across it clears what it passes over sooner than the fade alone would: the canvas's own pixels along the path are read, as
+ * e2e/hot-box.spec.ts reads Hot Box's. `KB_POISON=nopuff` plants a puff that paints nothing (a drawImage onto a puff tile is dropped, so its canvases stay empty); `KB_POISON=noclear` plants a pointer that clears nothing (the content area's pointer events are stopped before the puff hears them).
+ */
+const PUFF_MS = 600 + 400 + 4000;
+const puffCanvases = (page: Page) => area(page).locator('canvas.dw-chair-puff');
+/** The puff's tiles: their union against the content area's padding box, in the window, and how many there are. */
+const puffBox = (page: Page) => page.evaluate(() => {
+  const a = document.querySelector<HTMLElement>('.kb-act-main:has(.dw-chair)')!;
+  const r = a.getBoundingClientRect();
+  const cs = [...a.querySelectorAll<HTMLCanvasElement>('canvas.dw-chair-puff')].map((c) => c.getBoundingClientRect()).filter((b) => b.width > 0 && b.height > 0);
+  return {
+    tiles: cs.length,
+    area: { left: r.left + a.clientLeft, top: r.top + a.clientTop, right: r.left + a.clientLeft + a.clientWidth, bottom: r.top + a.clientTop + a.clientHeight },
+    puff: cs.length ? { left: Math.min(...cs.map((b) => b.left)), top: Math.min(...cs.map((b) => b.top)), right: Math.max(...cs.map((b) => b.right)), bottom: Math.max(...cs.map((b) => b.bottom)) } : null,
+  };
+});
+/** The puff's alpha (0 to 255) at each of `xs` on the row `y`: the mean of a 5 px square of the tile's canvas there, NaN where no tile holds the point. Read in one moment. */
+const puffAlphasAt = (page: Page, y: number, xs: readonly number[]) => page.evaluate(([py, ...qs]) => qs.map((qx) => {
+  const c = [...document.querySelectorAll<HTMLCanvasElement>('canvas.dw-chair-puff')].find((q) => { const r = q.getBoundingClientRect(); return q.width > 0 && qx! >= r.left && qx! < r.right && py! >= r.top && py! < r.bottom; });
+  if (!c) return Number.NaN;
+  const r = c.getBoundingClientRect(), k = c.width / r.width;
+  const cx = Math.round((qx! - r.left) * k), cy = Math.round((py! - r.top) * k), x1 = Math.max(0, cx - 2), y1 = Math.max(0, cy - 2);
+  const d = c.getContext('2d')!.getImageData(x1, y1, Math.min(c.width - x1, 5), Math.min(c.height - y1, 5)).data;
+  let sum = 0;
+  for (let i = 3; i < d.length; i += 4) sum += d[i]!;
+  return sum / (d.length / 4);
+}), [y, ...xs] as const);
+
+/** Opens the extinguisher alone with no chair-asleep wait (the puff is the subject), the page's clock running. */
+async function openPuff(page: Page) {
+  if (POISON === 'nopuff') await page.addInitScript(() => { const draw = CanvasRenderingContext2D.prototype.drawImage; CanvasRenderingContext2D.prototype.drawImage = function (this: CanvasRenderingContext2D, ...a: Parameters<typeof draw>) { if (!this.canvas.classList.contains('dw-chair-puff')) draw.apply(this, a); } as typeof draw; });
+  await open(page, 'extinguisher-in-flight');
+}
+
+test('extinguisher: no puff while it is in the air, one from its first floor contact that fills the content area, gone in about 5 s', async ({ page }) => {
+  test.setTimeout(40_000);
+  await openPuff(page);
+  const began = Date.now();
+  let first = -1, filled = false;
+  /* Poll fast for the puff's first tile, then the union of the tiles. */
+  for (let t = 0; t < 20_000; t = Date.now() - began) {
+    const b = await puffBox(page);
+    if (b.tiles > 0 && first < 0) first = Date.now() - began;
+    if (b.tiles > 0 && b.puff) {
+      const slack = 1;
+      /* The tiles' union is the area's box, and the fog is painted in them: a canvas with nothing drawn on it is no puff. */
+      const [seen] = await puffAlphasAt(page, (b.area.top + b.area.bottom) / 2, [(b.area.left + b.area.right) / 2]);
+      if (b.puff.left <= b.area.left + slack && b.puff.right >= b.area.right - slack && b.puff.top <= b.area.top + slack && b.puff.bottom >= b.area.bottom - slack && seen! > 100) { filled = true; break; }
+    }
+    await page.waitForTimeout(25);
+  }
+  expect(first, 'a puff was drawn').toBeGreaterThan(0);
+  expect(filled, 'its tiles fill the content area border to border').toBe(true);
+  /* It begins at a floor contact: the extinguisher was thrown (a chair group is drawn) before it, and had not yet rested. */
+  expect(await chairs(page).count()).toBe(1);
+  const startedAt = Date.now();
+  await expect.poll(async () => (await puffBox(page)).tiles, { timeout: PUFF_MS + 500, intervals: [100], message: 'the puff is gone within billow, hold and fade, and 500 ms' }).toBe(0);
+  console.log(`puff: first tile ${first} ms after load, gone ${Date.now() - startedAt} ms after it filled the area`);
+  await atRest(page, 1, OBJECT_REST_MS);
+});
+
+test('extinguisher: a pointer swept across the puff leaves the words under its path readable sooner than the fade alone', async ({ page }) => {
+  test.setTimeout(40_000);
+  /* Poison `noclear`: the pointer's events are stopped in the capture phase, before the content area (and so the puff) hears them. */
+  if (POISON === 'noclear') await page.addInitScript(() => { for (const t of ['pointermove', 'pointerdown', 'mousemove', 'touchmove']) window.addEventListener(t, (e) => e.stopImmediatePropagation(), true); });
+  await openPuff(page);
+  await expect.poll(async () => (await puffBox(page)).tiles, { timeout: OBJECT_REST_MS, intervals: [20] }).toBeGreaterThan(0);
+  const t0 = Date.now();
+  /* The sweep begins as soon as the puff is drawn (a slow runner takes seconds over a page round trip, and the fade is only 4 s). */
+  const b = await puffBox(page);
+  const lines = (await measure(page)).lines;
+  const row = lines[0]!;
+  const y = (row.top + row.bottom) / 2, x0 = b.area.left + 60;
+  /* The control is the same row at the far end, which the pointer never goes near; the path point is where the pointer is, at the sweep's end. */
+  const farX = b.area.right - 60, pathX = x0 + 300;
+  await page.mouse.move(x0, y);
+  /* Few, long moves: a page busy painting the puff takes a frame to hear each one, so each costs the fade time. */
+  for (let i = 1; i <= 6; i++) await page.mouse.move(x0 + i * 50, y);
+  /* Both read in the one moment, so the fade has done the same to each: what differs is the pointer. */
+  const [pathAfter = Number.NaN, farAfter = Number.NaN] = await puffAlphasAt(page, y, [pathX, farX]);
+  console.log(`puff sweep: swept point ${pathAfter.toFixed(0)}, unswept point ${farAfter.toFixed(0)} of 255, ${Date.now() - t0} ms after the first tile`);
+  expect(farAfter, 'the puff is still there at the unswept point, and the fade has not cleared it').toBeGreaterThan(60);
+  expect(pathAfter, 'the swept point is clearer than the unswept one').toBeLessThan(farAfter * 0.5);
+});
