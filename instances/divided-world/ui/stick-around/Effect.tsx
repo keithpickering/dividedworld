@@ -57,7 +57,7 @@ function stateOf({ author, caster, over, away }: { author: boolean; caster: bool
 /** The Lens's way out of the hold (HoldView's `WAYS_OUT` is the view's own, in the same ways: change one, change both), said only while it holds the reader (a reader it does not hold has nothing to get out of). */
 export const LENS_ENDS = 'Ends when you check the caster\'s sentence, scroll past either end of the post, or press Break free.';
 
-export function StickAroundEffect({ post, plays, released, reader, release, show, holdScreen, marks, children }: EffectProps) {
+export function StickAroundEffect({ post, plays, released, reader, release, show, holdScreen, marks, covered, children }: EffectProps) {
   const stage = useContext(HoldStage);
   const away = useSyncExternalStore(subscribe, () => escaped.has(post.id), () => false);
   /* The first play the reader has not certified: its caster's sentence is the one they are asked to check. */
@@ -103,7 +103,9 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
     lens.close();
     setLifted(true);
   }, [lens]);
-  useTakeover(post.id, () => body.current, () => escaped.has(post.id), held && !lifted && stage.mode === 'live', take);
+  /* A post under a curtain is out of view: the page does not watch it, so nothing pulls the reader to it. Opened, it joins the watch as a post
+     that had just scrolled in, and the page's settle takes it over if it is on screen. */
+  useTakeover(post.id, () => body.current, () => escaped.has(post.id), held && !lifted && stage.mode === 'live' && !covered, take);
 
   const breakFree = useCallback((pushed: number) => {
     const el = body.current;

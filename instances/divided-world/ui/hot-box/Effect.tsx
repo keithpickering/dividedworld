@@ -496,7 +496,7 @@ export function HotBoxEffect(props: EffectProps) {
  */
 interface Painter { field: FogField | null; level: number; steppedAt: number; stamp: number | null; seen: Set<number>; live: { readonly top: number; readonly bottom: number } | 'all' | null; paintedIn: number }
 
-function Smoke({ place, play, moment, show, met, children }: EffectProps & { readonly play: CardPlay }) {
+function Smoke({ place, play, moment, show, met, covered, children }: EffectProps & { readonly play: CardPlay }) {
   const { api } = useKayfa();
   const reduced = useMotionReduced();
   const forced = useForcedColors();
@@ -515,7 +515,9 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
   /* The content area's element as the last measure found it (the post body, the ORIGIN box's area, or the host where there is none): the observers and listeners are bound to it, and move when it is replaced. */
   const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
   /* Whether the post's content area is on screen, as the observer last said: `met` waits for the first sight, the forced-colors mask's timer runs only while it is in view, and a post that leaves the view is given its rungs back. */
-  const [inView, setInView] = useState(false);
+  const [areaSeen, setInView] = useState(false);
+  /* A post under a curtain is out of view whatever the observer says: nothing is met, rested or animated until it opens, and then the post is seen as if it had just scrolled in. */
+  const inView = areaSeen && !covered;
 
   const playedAt = Date.parse(play.playedAt);
   const ends = play.ends === undefined ? Number.NaN : Date.parse(play.ends);

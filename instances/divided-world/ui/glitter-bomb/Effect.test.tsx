@@ -232,6 +232,21 @@ describe('Glitter Bomb', () => {
     expect(burst.mock.calls.filter(([f]) => f !== first && f.flying > 0)).toHaveLength(0);
   });
 
+  test('a covered post in view bursts nothing, under reduced motion too; uncovered, it arms and bursts once as if it had just scrolled in', () => {
+    const view = render(<GlitterBombEffect {...props()} covered />);
+    see(1); aim(true); frames(30);
+    expect(burst.mock.calls.length, 'no burst while covered').toBe(0);
+    document.documentElement.setAttribute('data-kb-motion', 'reduced');
+    frames(30, 600);
+    expect(burst.mock.calls.length, 'reduced motion places the flakes at once, but not under a curtain').toBe(0);
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    view.rerender(<GlitterBombEffect {...props()} covered={false} />);
+    frames(10, 1000);
+    expect(burst.mock.calls.length, 'the 300 ms wait starts at the opening, not before').toBe(0);
+    frames(30, 1200);
+    expect(burst.mock.calls.length).toBe(1);
+  });
+
   test('the point the burst watches stands on the burst point, and is watched against the middle of the view', () => {
     render(<GlitterBombEffect {...props()} />);
     see(1); frames(2);

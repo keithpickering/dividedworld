@@ -28,6 +28,7 @@ const hub = vi.hoisted(() => ({
   set: undefined as unknown as (on: boolean) => void,
   sound: { play: undefined as unknown as ReturnType<typeof import('vitest').vi.fn>, loop: undefined as unknown, caption: undefined as unknown },
   setPlays: (() => {}) as (plays: CardPlay[]) => void,
+  setCovered: (() => {}) as (covered: boolean) => void,
   /* What the mocked body.ts saw: the steps run, and the world the last run built. */
   steps: 0,
   world: null as import('./body.ts').World | null,
@@ -121,13 +122,15 @@ const arm = () => { aim(true); act(() => { vi.advanceTimersByTime(300); }); };
 /** The post's middle comes into view; a run begins and the world goes on to rest. */
 const run = () => { see(true); arm(); settled(); };
 
-interface Options { plays?: CardPlay[]; moment?: EffectProps['moment']; still?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' | 'beside' }
+interface Options { plays?: CardPlay[]; moment?: EffectProps['moment']; still?: boolean; covered?: boolean; place?: 'thread' | 'origin'; reader?: EffectProps['reader']; wrapped?: boolean | 'area' | 'beside' }
 const made = { show: vi.fn<(view: CardView | null) => void>(), met: vi.fn(), save: vi.fn(), release: vi.fn() };
 function Host({ o }: { o: Options }) {
   const [plays, setPlays] = useState(o.plays ?? [play(1)]);
   hub.setPlays = setPlays;
+  const [covered, setCovered] = useState(o.covered ?? false);
+  hub.setCovered = setCovered;
   const props: EffectProps = {
-    covered: false,
+    covered,
     post, plays, states: {}, released: new Set(), written: new Map(), reader: o.reader ?? { author: false, caster: false }, place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, moment: o.moment ?? null,
     show: made.show, met: made.met, ink: NO_INK, holdScreen: () => {}, marks: null, save: made.save, release: made.release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <div data-kb-words-box><p data-kb-words>The words of the post.</p></div>,
@@ -1733,5 +1736,40 @@ describe('the bend, set on the content area', () => {
     mount();
     run();
     expect(areaEl().getAttribute('style') ?? '').not.toContain('--kb-bend');
+  });
+});
+
+describe('a curtain over the post (covered)', () => {
+  test('a covered post in view arms and throws nothing; uncovered, it throws once as if it had just scrolled in', () => {
+    mount({ covered: true });
+    run();
+    expect(groups(), 'no chair while covered').toHaveLength(0);
+    expect(dents(), 'no dent while covered').toHaveLength(0);
+    expect(hub.steps, 'no world was stepped while covered').toBe(0);
+    act(() => { hub.setCovered(false); });
+    run();
+    expect(groups()).toHaveLength(1);
+    expect(dents()).toHaveLength(1);
+  });
+
+  test('Throw again is not offered while covered, and does nothing if it is run', () => {
+    mount({ covered: true });
+    run();
+    expect(lastView().controls.map((c) => c.label)).toEqual(['Game sounds']);
+    act(() => { hub.setCovered(false); });
+    run();
+    expect(lastView().controls.map((c) => c.label)).toEqual(['Throw again', 'Game sounds']);
+  });
+
+  test('a run that stands when the curtain shuts is cleared, and starts again when it opens', () => {
+    mount();
+    run();
+    expect(groups()).toHaveLength(1);
+    act(() => { hub.setCovered(true); });
+    settled();
+    expect(groups()).toHaveLength(0);
+    act(() => { hub.setCovered(false); });
+    run();
+    expect(groups()).toHaveLength(1);
   });
 });
