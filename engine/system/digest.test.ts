@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { EXCERPT_WORDS } from './excerpt.ts';
 import { READ_WORDS } from './read.ts';
-import { CLIPS, DIGEST_MOST, renderDigest, type Digest, type DigestConversation } from './digest.ts';
+import { CLIPS, DIGEST_MOST, renderDigest, standingWords, type Digest, type DigestConversation } from './digest.ts';
 import type { Memory } from './memory.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
 
@@ -309,3 +309,127 @@ test('the requests section is outside the excerpt budget: it does not touch the 
   assert.ok(text.includes('a'.repeat(3_000)));
   assert.ok(text.includes('It was me all along'));
 });
+
+// ---- the digest sees the board (docs/plans/2026-11-25-digest-sees-the-board-plan.md, Task 3) ----
+const NOW = Date.parse('2026-11-25T12:00:00Z');
+const hoursAgo = (h: number): string => new Date(NOW - h * 3_600_000).toISOString();
+const seeOpts = { now: NOW, seen: (card: string | null, p: { by: string | null }) => (card === 'splat' ? `Wario splatted this post ${p.by === null ? '' : 'by hand'}`.trim() : null), cardName: (k: string) => (k === 'splat' ? 'Splat' : undefined) };
+const poll = { question: 'Rename this board?', options: ['Yes', 'No'], pick: 1, secret: false, endsAt: hoursAgo(-2), closed: false, closedBy: null, closedAt: null, counts: [9, 4], voters: 13 };
+const play = (n: number, card: string | null = 'splat') => ({ play: id(500 + n), card, at: hoursAgo(3), by: 'Wario', config: null, state: null, text: null, covered: null });
+const origin = { kind: 'post', place: { kind: 'post' as const, thread: id(1), title: 'Best kart?', seq: 4 }, at: hoursAgo(24 * 30), spunAt: hoursAgo(72), moment: false, post: null };
+const withExtras = { poll, plays: [play(1), play(2)], reactions: {}, rewoundTo: null };
+
+test('an excerpt carries its poll in short form, each play as the instance says it, and the origin of a spun opener', () => {
+  const d: Digest = { ...small, excerpts: [{ ...small.excerpts[0]!, extras: withExtras, origin }] };
+  const row = renderDigest(d, memory, [], undefined, seeOpts).split('\n').find((l) => l.startsWith('Luigi (they/them), 7 reactions'))!;
+  assert.ok(row.includes('It was me all along [poll: "Rename this board?", Yes leads 9 to 4, closes in 2 hours]'), row);
+  assert.equal(row.split('[Wario splatted this post by hand]').length, 3, 'both plays');
+  assert.ok(row.includes('(This thread was spun 3 days ago from post #4 in "Best kart?", written 30 days ago.)'), row);
+});
+
+test('the Boss\'s reaction shows the post\'s excerpt and its extras; both sides of an exchange show theirs', () => {
+  const d: Digest = {
+    ...small,
+    bossReactions: [{ act: id(9), thread: id(1), total: 5, tally: { fire: 4, skull: 1 }, text: 'my own hot take', extras: { ...withExtras, plays: [play(1)] } }],
+    conversations: [{ thread: id(1), title: 'T', persona: { staff: 's', character: id(2) }, with: [], turns: 1, reactions: 2,
+      exchange: { text: 'persona line', extras: { ...withExtras, poll: null, plays: [play(3, null)] }, reply: { character: id(3), text: 'asker line', extras: { ...withExtras, plays: [] } } } }],
+  };
+  const text = renderDigest(d, memory, [], undefined, seeOpts);
+  const boss = text.split('\n').find((l) => l.startsWith('5 in all: fire 4, skull 1.'))!;
+  assert.ok(boss.includes('my own hot take') && boss.includes('[Wario splatted this post by hand]') && boss.includes('[poll:'), boss);
+  const conv = text.split('\n').find((l) => l.includes(' in "T": 1 turn'))!;
+  assert.ok(/asker line" \[poll: .*\] and Mario .* answered "persona line" \[A card set face down was played on this post, 3 hours ago\.\]/.test(conv), conv);
+});
+
+test('an old digest, without the new fields, renders exactly as before: no new section at all', () => {
+  const text = renderDigest(small, memory, ['A feed item']);
+  for (const h of ['Polls', 'Spins', 'Cards on the board', 'Standouts']) assert.ok(!text.includes(`## ${h}`), h);
+  assert.equal(text, renderDigest(small, memory, ['A feed item'], undefined, seeOpts));
+});
+
+const standout = (c: string, n: number, count: number) => ({ character: id(70 + n), name: c, count });
+const board: Digest = {
+  ...small,
+  polls: [{ poll: id(80), post: id(81), thread: id(1), title: 'Who ate the pie', board: 'General', extras: { poll, plays: [], reactions: {}, rewoundTo: null } }],
+  spins: [{ thread: id(2), title: 'Best kart?', origin }],
+  plays: [{ ...play(7), post: id(82), thread: id(1), title: 'Who ate the pie', seq: 3 }, { ...play(8, null), post: id(83), thread: id(1), title: 'Who ate the pie', seq: null }],
+  standouts: { days: 7, cards: [standout('Wario', 1, 9), standout('Toad', 2, 3), standout('Peach', 3, 2)], received: [standout('Mario', 4, 5)], polls: [], ballots: [], spun: [], exchanges: [] },
+};
+
+test('each new section reads in full form after Top posts', () => {
+  const text = renderDigest(board, memory, [], undefined, seeOpts);
+  assert.ok(text.indexOf('## Top posts') < text.indexOf('## Polls') && text.indexOf('## Polls') < text.indexOf('## Spins') && text.indexOf('## Spins') < text.indexOf('## Cards on the board') && text.indexOf('## Cards on the board') < text.indexOf('## Standouts'));
+  assert.ok(text.includes('On "Who ate the pie" (General):\n[poll on this post] "Rename this board?" (pick one)'), 'poll in full form with where');
+  assert.ok(text.includes('  1. Yes: 9 (69%)'));
+  assert.ok(text.includes('"Best kart?": (This thread was spun 3 days ago from post #4 in "Best kart?", written 30 days ago.)'), 'spin');
+  assert.ok(text.includes('[Wario splatted this post by hand] on post #3 in "Who ate the pie".'), 'card');
+  assert.ok(text.includes('[A card set face down was played on this post, 3 hours ago.] on a post in "Who ate the pie".'), 'card with no seq');
+  assert.ok(text.includes('Most cards played this week: Wario, by far; then Toad and Peach.'), text);
+  assert.ok(text.includes('Most cards received this week: Mario, the only one.'));
+  assert.ok(!text.includes('Most polls'), 'a category with no one is left out');
+});
+
+test('each new section says none when its field is present and empty', () => {
+  const text = renderDigest({ ...small, polls: [], spins: [], plays: [], standouts: { days: 7, cards: [], received: [], polls: [], ballots: [], spun: [], exchanges: [] } }, memory, [], undefined, seeOpts);
+  for (const none of ['No poll was open or ran in the window.', 'No thread was spun in the window.', 'No card was played in the window.', 'Nobody stood out this week.']) assert.ok(text.includes(none), none);
+});
+
+test('standingWords: one, two and three names, from each count\'s share of the leader\'s', () => {
+  assert.equal(standingWords([]), '');
+  assert.equal(standingWords([4]), '{1}, the only one.');
+  assert.equal(standingWords([10, 4]), '{1}, by far; then {2}.');
+  assert.equal(standingWords([10, 5]), '{1}, with {2} behind.', 'half is not under half');
+  assert.equal(standingWords([10, 9]), '{1} and {2}, neck and neck.');
+  assert.equal(standingWords([10, 8]), '{1}, with {2} close behind.');
+  assert.equal(standingWords([10, 6]), '{1}, with {2} behind.');
+  assert.equal(standingWords([10, 4, 1]), '{1}, by far; then {2} and {3}.');
+  assert.equal(standingWords([10, 10, 2]), '{1} and {2}, neck and neck; {3} behind.');
+  assert.equal(standingWords([10, 9, 8]), '{1} and {2}, neck and neck; {3} close behind.');
+  assert.equal(standingWords([10, 8, 7]), '{1}, with {2} close behind; {3} close behind.');
+  assert.equal(standingWords([10, 6, 3]), '{1}, with {2} behind; {3} behind.');
+  assert.equal(standingWords([3, 10, 4]), standingWords([10, 4, 3]), 'order does not matter');
+});
+
+test('the Standouts section never contains a digit, whatever the days or the names', () => {
+  for (const days of [1, 7, 14, 30, 11, 99]) {
+    const text = renderDigest({ ...board, standouts: { ...board.standouts!, days } }, null, [], undefined, seeOpts);
+    const section = text.split('## Standouts\n')[1]!.split('\n\n')[0]!;
+    assert.ok(!/\d/.test(section), `${days}: ${section}`);
+  }
+});
+
+test('the new lists stop at their ceilings and every free string is clipped; the length bound holds', () => {
+  const { polls: P, spins: S, plays: L, standouts: O } = DIGEST_MOST;
+  const OVER = 3;
+  const long = (n: number): string => 'x'.repeat(n);
+  const lists = (n: number) => Array.from({ length: n }, (_, i) => i);
+  const bigPoll = { ...poll, question: long(5000), options: lists(40).map(() => long(5000)), counts: lists(40).map(() => 99999999), voters: 99999999 };
+  const ex = { poll: bigPoll, plays: lists(30).map((i) => ({ ...play(i), by: long(5000) })), reactions: {}, rewoundTo: null };
+  const bigOrigin = { ...origin, place: { kind: 'post' as const, thread: id(1), title: long(5000), seq: 99999999 } };
+  const wide = (n: number) => ({ character: id(1), name: long(5000), count: n });
+  const d: Digest = {
+    ...small,
+    excerpts: [{ ...small.excerpts[0]!, extras: ex, origin: bigOrigin }],
+    polls: lists(P + OVER).map((i) => ({ poll: id(i), post: id(i), thread: id(i), title: long(5000), board: long(5000), extras: { ...ex } })),
+    spins: lists(S + OVER).map((i) => ({ thread: id(i), title: long(5000), origin: bigOrigin })),
+    plays: lists(L + OVER).map((i) => ({ ...play(i), post: id(i), thread: id(i), title: long(5000), seq: 99999999 })),
+    standouts: { days: 99999999, cards: lists(O + OVER).map(wide), received: lists(O + OVER).map(wide), polls: lists(O + OVER).map(wide), ballots: lists(O + OVER).map(wide), spun: lists(O + OVER).map(wide), exchanges: lists(O + OVER).map(wide) },
+  };
+  const opts = { now: NOW, seen: () => long(5000), cardName: () => long(5000) };
+  const text = renderDigest(d, null, [], undefined, opts);
+  const sect = (h: string): string[] => text.split(`## ${h}\n`)[1]!.split('\n\n')[0]!.split('\n');
+  assert.equal(sect('Cards on the board').length, L);
+  assert.equal(sect('Spins').length, S);
+  assert.equal(sect('Polls').filter((l) => l.startsWith('On "')).length, P);
+  assert.ok(sect('Standouts').every((l) => !/\d/.test(l)));
+  assert.equal(sect('Standouts').length, 6, 'six categories');
+  assert.ok(sect('Standouts').every((l) => l.split(', ').length <= 3 + 2), 'at most three names');
+  assert.ok(sect('Standouts').every((l) => l.length <= 4 * CLIPS.name + 200));
+  // The new sections' bound, from the constants: each row's free strings at their clips.
+  const pollMost = DIGEST_MOST.pollOptions * (CLIPS.option + 60) + CLIPS.question + 300;
+  const newBound = P * (CLIPS.title + CLIPS.board + pollMost + 100) + S * (CLIPS.title + CLIPS.origin + 100) + L * (CLIPS.title + CLIPS.play + 100) + 6 * (O * CLIPS.name + 300) + 1000;
+  const withNew = text.length - renderDigest({ ...d, polls: undefined, spins: undefined, plays: undefined, standouts: undefined }, null, [], undefined, opts).length;
+  assert.ok(withNew <= newBound + (DIGEST_MOST.excerpts + DIGEST_MOST.conversations + DIGEST_MOST.excerpts) * extraBound(), `${withNew} > ${newBound}`);
+  assert.equal(text.length, renderDigest({ ...d, polls: d.polls!.map((p) => ({ ...p, title: long(50000) })) }, null, [], undefined, opts).length, 'longer free text does not make it longer');
+});
+function extraBound(): number { return CLIPS.pollShort + DIGEST_MOST.postPlays * CLIPS.play + CLIPS.origin + 10; }
