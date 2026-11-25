@@ -1,6 +1,6 @@
 -- The Roster Report (docs/plans/2026-11-24-staff-board-threads-plan.md, Task 7; the design, section 5).
 --
--- The season's thread (seasons.turns_thread) takes the Boss's entries: at each settlement with something to report, one entry holding a list built by the code, exact and complete, under a line of commentary.
+-- The season's thread (seasons.turns_thread) takes the Boss's entries: at each settlement with something to report, one entry holding a list built by the code, exact, under a line of commentary. Each list shows its first 25 and counts the rest ("and N more"); a newcomer only counted is written down as seen all the same, so a crowd of new faces is never listed by name later.
 -- The list is the public's: new faces (a character's first public Act, listed once in its life), Turns announced in the window, Turns taking effect at the settlement (announced ones only), and reveals.
 --
 --   roster_entries      one row for each settlement window that has been looked at (primary key window_end, a foreign key to settlements.ends_at): its season, when it was written, the posts it holds (acts[]) and a
