@@ -8,7 +8,7 @@
 --
 --   1. columns            pending_turns.announce_act, class_history.announce_act (granted beside class_history's other public columns); the backfill for the Turns announced before this.
 --   2. write_announce     (0100), taking `ahead`; a debut it writes is allowed past the guard below by a setting that lasts its statement (Task 2 removes debuts and this with them).
---      turn()'s `was` reads class_now(through, now()) as the plan says, where 0074 read 'infinity'; the two are equal, since no class_history row starts in the future.
+--      turn()'s `was` reads class_now(through, 'infinity') as 0074 did, not now() as the plan wrote: a window's end may lie ahead of now() (a settlement run early, and the tests' days), and the class a Turn leaves is the one it holds after every landing so far.
 --   3. turn               (0074, 0028's three-argument shim and 0074's five-argument form dropped), taking the thread and announcing in it; refuses a change of a committed Turn.
 --   4. announce_turn      new: announces and commits a silent pending Turn.
 --   5. withdraw_turn      (0007), refusing a committed Turn in the change's words.
@@ -128,7 +128,7 @@ begin
   perform 1 from characters where id = through for no key update;
   -- A committed Turn stands until it takes effect.
   perform committed_turn_refusal(through);
-  select class_key into was from class_now(through, now());
+  select class_key into was from class_now(through, 'infinity');
   if was = to_class then
     if exists (select 1 from pending_turns where character = through) then
       raise exception 'this character already is one: withdraw its waiting Turn to keep it' using hint = 'kayfabb.refusal', errcode = '22023';
@@ -180,7 +180,7 @@ begin
   if p.announce_act is not null then raise exception 'that Turn was announced already' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
   if in_thread is null then raise exception 'an announced Turn is posted in a thread' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   perform turn_thread_checks(through, in_thread);
-  select class_key into was from class_now(through, now());
+  select class_key into was from class_now(through, 'infinity');
   posted := write_announce(through, in_thread, 'turn', case when show_from then was end, case when show_to then p.class_key end, clock_timestamp(), true);
   update pending_turns set loudness = 'announced', show_from = announce_turn.show_from, show_to = announce_turn.show_to, announce_act = (posted ->> 'id')::uuid where character = through;
   return jsonb_build_object('pending', true, 'class', p.class_key, 'loudness', 'announced', 'show_from', show_from, 'show_to', show_to,

@@ -96,7 +96,6 @@ declare
   settled jsonb;
   window_end timestamptz;
   seen text;
-  other_class text;
 begin
   perform tests.become(bob);
   seen := (select coalesce(jsonb_agg(a order by a.id), '[]')::text from acts_public a);
@@ -156,11 +155,10 @@ begin
   if (select thread from acts where id = (settled ->> 'tally')::uuid) is distinct from (select turns_thread from seasons where ends_at is null) then raise exception 'the announcement is in the season''s Promos thread'; end if;
   if (pg_temp.settle_day() ->> 'tally') is not null then raise exception 'a settlement with no debut and no loud Turn announces nothing'; end if;
 
-  -- The cooldown runs from when a Turn took effect. (Asked for the class not held now: this window's end may lie ahead of now(), and turn() reads the class held now.)
-  other_class := (select case x.class_key when 'alpha' then 'beta' else 'alpha' end from class_now(loud, now()) x);
+  -- The cooldown runs from when a Turn took effect.
   perform tests.become(ann);
-  if substring(pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', loud, other_class, 'silent')) from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz is distinct from window_end + interval '30 days' then
-    raise exception 'the cooldown runs from the settlement the Turn took effect at: %', pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', loud, other_class, 'silent'));
+  if substring(pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', loud, 'alpha', 'silent')) from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz is distinct from window_end + interval '30 days' then
+    raise exception 'the cooldown runs from the settlement the Turn took effect at: %', pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', loud, 'alpha', 'silent'));
   end if;
   perform tests.unbecome();
 end $$;
