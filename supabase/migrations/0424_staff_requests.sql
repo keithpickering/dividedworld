@@ -735,14 +735,40 @@ revoke create on schema public from kayfabb_digest;
 revoke execute on function requests_waiting(integer) from public, anon, authenticated;
 grant execute on function requests_waiting(integer) to service_role, kayfabb_digest;
 
+-- boss_request_reply: the Boss's reply to a request post, in its thread as a post quoting it (write_staff_act), shared by the meeting's rulings (requests_ruled) and the tick's lapse. `own_line` is the Boss's own words, used
+-- as they are; with none, the stock line `stock` of settings systemLines, one of the key's lines chosen at random, with {boss} and {asker} (the asker as the request post's public author shows, so a veiled one is the anonymous
+-- name) and the Boss's pronouns filled. Returns the post's id, or null where there is nothing to say (no line and no stock line); a post that cannot be written raises, and the caller says what happens then (a subtransaction
+-- of its own, so the writes of a failed reply are undone).
+create function boss_request_reply(boss text, in_thread uuid, request_act uuid, stock text, own_line text) returns uuid
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  lines jsonb;
+  body text := nullif(btrim(coalesce(own_line, ''), E' \t\n\r\f\v'), '');
+  boss_name text;
+  boss_id uuid;
+  asker text;
+begin
+  if body is null then
+    lines := (select s.value -> boss_request_reply.stock from settings s where s.key = 'systemLines');
+    if jsonb_typeof(lines) is distinct from 'array' or jsonb_array_length(lines) = 0 or jsonb_typeof(lines -> 0) is distinct from 'string' then return null; end if;
+    select c.name, c.id into boss_name, boss_id from characters c where c.staff = boss_request_reply.boss;
+    select k.name into asker from acts_public a join characters_public k on k.id = a.character where a.id = boss_request_reply.request_act;
+    body := fill_tokens(lines ->> floor(random() * jsonb_array_length(lines))::integer,
+      jsonb_build_object('boss', coalesce(boss_name, ''), 'asker', coalesce(asker, '')) || pronoun_tokens('boss', boss_id));
+  end if;
+  return (write_staff_act(boss_request_reply.boss, 'post', in_thread, boss_request_reply.request_act, jsonb_build_object('body', body)) ->> 'id')::uuid;
+end $$;
+revoke execute on function boss_request_reply(text, uuid, uuid, text, text) from public, anon, authenticated;
+
 -- requests_ruled: what apply_meeting (Task 5) calls, inside its transaction and holding its locks, for the meeting's `requests` answers [{id, ruling: fulfill | reject, move?, line?}], `id` being staff_requests.id as
 -- requests_waiting gives it. Answers are read in order, at most staffRequests.meetingMost of them (the rest are skipped), each at most once: an answer for a request that is not waiting, whose post is not public, or
 -- whose ruling is neither word is skipped with its reason. A fulfill's move is queued as the Boss's others are (boss_move_queue, filed under `in_meeting`, a structural one held for admins) while `room` moves remain
 -- in the bank (what the meeting still has to spend after its own moves); one the bank cannot pay, or the queue refuses, is a reject with the reason recorded (staff_request_rulings.reason). The meeting charges `spent`
--- to its bank itself: it writes the balance at its end, so this never touches move_bank. Each ruling is one row; its words are the Boss's, posted after the meeting commits: `post` says where (the thread, as a
--- reply to `replyTo`), the Boss's line (trimmed, cut to postMaxLength, or null where it gave none) and the stock line that stands where there is none (requestGranted or requestRefused).
--- The ruling row cannot name that post (it is written later, and no row is updated); the log finds the Boss's reply to the request post after the ruling's time.
--- Returns {spent, rulings: [{id, requestAct, thread, staff, ruling, move, reason, post: {thread, replyTo, line, stock}}], skipped: [{id, why}]}.
+-- to its bank itself: it writes the balance at its end, so this never touches move_bank. Each ruling is one row, and the Boss's reply is written with it, in this transaction, before the row (boss_request_reply): in the thread
+-- as a post quoting the request post, in the Boss's own line (trimmed, cut to postMaxLength) or, where it gave none, the stock line requestGranted or requestRefused; the row names it (post_act). The reply is written in a
+-- subtransaction: one that cannot be written (the Boss locked out of the thread, say) leaves the ruling, with no post_act and the reason on the row (`reason`, after the reason for a reject, if any), and is returned as
+-- `replyFailed`, so the ruling is never lost to its reply and the reply is never lost to a process that died after the commit. A rolled-back meeting leaves neither; a retried one is not run twice.
+-- Returns {spent, rulings: [{id, requestAct, thread, staff, ruling, move, reason, postAct, replyFailed}], skipped: [{id, why}]}.
 -- A wait. Each answer's key (`kayfabb.request.<id>`) is taken blocking, so it may wait for the tick's transaction while that pass holds the key of a request it is lapsing (it commits with the tick, which is bounded by
 -- the budget). It is no cycle: the tick only try-locks that key and never waits on a meeting, and a meeting holds the keys in the order of its answers and takes nothing the tick holds after them.
 create function requests_ruled(in_meeting bigint, answers jsonb, room integer) returns jsonb
@@ -761,6 +787,8 @@ declare
   result jsonb;
   made bigint;
   why text;
+  said uuid;
+  unsaid text;
   spent integer := 0;
   out jsonb := '[]';
   skipped jsonb := '[]';
@@ -815,9 +843,19 @@ begin
         end if;
       end if;
     end if;
-    insert into staff_request_rulings (request, ruling, move, meeting, reason) values (rid, decided, made, requests_ruled.in_meeting, left(why, 500));
+    said := null;
+    unsaid := null;
+    begin
+      said := boss_request_reply(boss, rq.thread, rq.request_act, case when decided = 'fulfill' then 'requestGranted' else 'requestRefused' end, line);
+    exception when others then
+      said := null;
+      unsaid := 'the Boss''s reply was not posted: ' || sqlerrm;
+      raise warning 'requests_ruled: the reply to request % was not posted: % (%)', rid, sqlerrm, sqlstate;
+    end;
+    insert into staff_request_rulings (request, ruling, move, meeting, post_act, reason)
+    values (rid, decided, made, requests_ruled.in_meeting, said, left(nullif(concat_ws('; ', why, unsaid), ''), 500));
     out := out || jsonb_build_array(jsonb_build_object('id', rid, 'requestAct', rq.request_act, 'thread', rq.thread, 'staff', rq.staff, 'ruling', decided, 'move', made, 'reason', why,
-      'post', jsonb_build_object('thread', rq.thread, 'replyTo', rq.request_act, 'line', line, 'stock', case when decided = 'fulfill' then 'requestGranted' else 'requestRefused' end)));
+      'postAct', said, 'replyFailed', unsaid));
   end loop;
   return jsonb_build_object('spent', spent, 'rulings', out, 'skipped', skipped);
 end $$;
@@ -1038,11 +1076,6 @@ declare
   resolved uuid;
   lapsed_n integer := 0;
   rq record;
-  rq_lines jsonb;
-  rq_line text;
-  rq_asker text;
-  rq_boss_name text;
-  rq_boss_id uuid;
   rq_post uuid;
   rq_public boolean;
 begin
@@ -1342,7 +1375,7 @@ begin
   -- hidden, or gone, lapses at the next tick. Whatever the switch says, as a visit is filed: a state's way out is time, so a request does not wait on The System being on. The oldest first, at most `demandChecksPerTick`
   -- (the tick's one count for work per run), and none once the budget is spent. Where the post is still public and The System is on, the Boss replies in the thread to the request post with the stock line
   -- `requestLapsed` ({boss}, {asker}: the asker as the post's public author shows, so a veiled one is the anonymous name); an instance with no such line says nothing, and a post that cannot be written is
-  -- a warning, never a request left waiting. The reply is written before its ruling row (which names it), so the request's key is held first: try-locked, never waited on, so a meeting ruling the same
+  -- a warning, never a request left waiting (boss_request_reply writes it, as requests_ruled's replies are). The reply is written before its ruling row (which names it), so the request's key is held first: try-locked, never waited on, so a meeting ruling the same
   -- request (requests_ruled holds the same key) and this pass cannot wait on each other; one it holds is left to the next tick. It reads the queue (staff_requests_open), the requests that wait and no other, so a row is read per
   -- waiting request, which the days they wait bound, and never one per request ruled in the past. As visits are (4 above), a request that failed to lapse, or was held by a meeting, goes behind the rest by its last
   -- failure (failed_at, then the oldest first), so one request that keeps raising or keeps being held never holds a slot of the pass from the others; it is still read when the others have been, and a meeting can rule it.
@@ -1363,19 +1396,12 @@ begin
       rq_post := null;
       rq_public := exists (select 1 from acts_public a where a.id = rq.request_act and a.hidden is not true);
       if rq_public and enabled and boss is not null then
-        rq_lines := (select s.value -> 'requestLapsed' from settings s where s.key = 'systemLines');
-        if jsonb_typeof(rq_lines) = 'array' and jsonb_array_length(rq_lines) > 0 and jsonb_typeof(rq_lines -> 0) = 'string' then
-          select c.name, c.id into rq_boss_name, rq_boss_id from characters c where c.staff = boss;
-          select k.name into rq_asker from acts_public a join characters_public k on k.id = a.character where a.id = rq.request_act;
-          rq_line := fill_tokens(rq_lines ->> floor(random() * jsonb_array_length(rq_lines))::integer,
-            jsonb_build_object('boss', coalesce(rq_boss_name, ''), 'asker', coalesce(rq_asker, '')) || pronoun_tokens('boss', rq_boss_id));
-          begin
-            rq_post := (write_staff_act(boss, 'post', rq.thread, rq.request_act, jsonb_build_object('body', rq_line)) ->> 'id')::uuid;
-          exception when others then
-            rq_post := null;
-            raise warning 'system_tick: the lapse of request % was not said: % (%)', rq.id, sqlerrm, sqlstate;
-          end;
-        end if;
+        begin
+          rq_post := boss_request_reply(boss, rq.thread, rq.request_act, 'requestLapsed', null);
+        exception when others then
+          rq_post := null;
+          raise warning 'system_tick: the lapse of request % was not said: % (%)', rq.id, sqlerrm, sqlstate;
+        end;
       end if;
       insert into staff_request_rulings (request, ruling, post_act) values (rq.id, 'lapsed', rq_post);
       lapsed_n := lapsed_n + 1;
@@ -1464,7 +1490,7 @@ grant execute on function write_staff_turn(text, bigint, uuid, uuid, uuid[], tex
 
 -- ===================================================================================== 3. the meeting's rules for requests ====
 -- apply_meeting (0415_chattier_staff.sql), ruling on the requests the answer names: `payload.requests` is handed to requests_ruled with what the bank can still pay after the Boss's own moves and its bundle (the staff requests design, section 3;
--- the plan's Task 5). The rulings are written in the transaction that closes the meeting, once (a retry finds it closed), and returned as `requests` for the Edge function to post the Boss's replies after the commit; what they spent is charged
+-- the plan's Task 5). The rulings are written in the transaction that closes the meeting, once (a retry finds it closed), and returned as `requests`, each with the Boss's reply, which requests_ruled wrote in the same transaction (the Edge function posts nothing, and reports the replies that could not be written); what they spent is charged
 -- to the balance written at the end. Two more changes: the Boss's bank lock (`kayfabb.bank.<boss>`) is taken before the bank is read, as apply_boss_move takes it, so a turn's debit is never overwritten by a meeting that read the bank
 -- earlier; and a lasting move a request carries takes the places lock with the rest. Everything else as 0415_chattier_staff.sql wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb
@@ -2278,3 +2304,4 @@ end $$;
 
 revoke execute on function system_digest(timestamptz, timestamptz) from public, anon, authenticated;
 grant execute on function system_digest(timestamptz, timestamptz) to service_role;
+

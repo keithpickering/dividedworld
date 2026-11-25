@@ -30,7 +30,6 @@ import type { Instance } from '../../../engine/rules/types.ts';
 import { shownBeats, type ArcRead } from '../../../engine/system/beats.ts';
 import type { Career } from '../../../engine/system/career.ts';
 import { DIGEST_MOST, renderDigest, shownRequests, withPronouns, type RawDigest, type RequestLimits } from '../../../engine/system/digest.ts';
-import { fillStockLine } from '../../../engine/system/stock.ts';
 import { ENGINE_DEFAULT_PRONOUNS, pronounsOr, taggedName } from '../../../engine/rules/pronouns.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
 import { feedTitles } from '../../../engine/system/feed.ts';
@@ -138,11 +137,12 @@ interface Context {
   };
 }
 
-/** What `apply_meeting` returns for each request it ruled on (0424, requests_ruled): the ruling, and where and what the Boss posts. */
+/** What `apply_meeting` returns for each request it ruled on (0424, requests_ruled): the ruling, the Boss's reply it wrote in the same transaction (`postAct`, null where there was none to write or it failed) and why a reply failed. */
 interface RuledRequest {
   readonly id: number;
   readonly ruling: 'fulfill' | 'reject';
-  readonly post: { readonly thread: string; readonly replyTo: string; readonly line: string | null; readonly stock: 'requestGranted' | 'requestRefused' };
+  readonly postAct: string | null;
+  readonly replyFailed: string | null;
 }
 
 /** The (trophy, character) pairs the answer's awardTrophy moves name, for the one read of what stands (`trophy_award_facts`). A pair that is not a string and a uuid is left for the repair to refuse. */
@@ -520,8 +520,8 @@ export async function runMeeting(
       },
     });
     if (applied.status === 'already applied') return { status: 'already applied', meeting };
-    // The Boss's replies to the requests it ruled on, after the commit: the rulings stand whatever becomes of a post, so a reply that fails is recorded and the meeting is still the applied one (nothing below may throw).
-    const replied = await postRequestReplies(db, tuned, bossKey, personaSet(boss.pronouns), meeting, applied.requests ?? [], new Map(shownReqs.map((r) => [r.id, r.askerName])), notes);
+    // The Boss's replies were written with the rulings, in the meeting's transaction; this only says which ones could not be.
+    const replied = reportRequestReplies(applied.requests ?? [], notes);
     return {
       status: 'ok',
       meeting,
@@ -549,35 +549,14 @@ export async function runMeeting(
 }
 
 /**
- * The Boss's reply in the thread to each request it ruled on (`write_staff_act`, a post quoting the request post): its own line, else the stock line `requestGranted` or `requestRefused` with `{boss}` and `{asker}` filled (and
- * the Boss's pronouns), chosen by the request's id so a retry writes what the first would have. An instance with no such line, and no line from the Boss, says nothing. A post that cannot be written (a locked thread, a
- * transport failure that may or may not have run) is recorded, in the outcome's notes and in a call record of its own (`record_staff_call`, duty `ruling`, the request post as its cause and the Boss as its staff, naming the meeting:
- * a meeting's own row is written once as it closes, and is closed by now), and the others are still tried; the ruling is written and stands. Nothing here throws: the meeting is applied and closed, and a failure after that must
- * never close it failed.
+ * What the meeting reports of the requests it ruled on: the Boss's reply to each is written by the database in the meeting's own transaction (`requests_ruled`, 0424), so a retry after a process death finds both the ruling
+ * and its reply, and nothing here posts. A reply the database could not write (a thread the Boss is locked out of, say) is in the ruling's `replyFailed`; it is told in the notes, and the ruling stands.
  */
-async function postRequestReplies(
-  db: Db, instance: Instance, boss: string, bossPronouns: Parameters<typeof fillStockLine>[3], meeting: number, ruled: readonly RuledRequest[], askers: ReadonlyMap<number, string>, notes: string[],
-): Promise<{ id: number; ruling: 'fulfill' | 'reject'; posted: boolean }[]> {
-  const bossName = instance.system.roster.find((b) => b.key === boss)?.name ?? '';
-  const out: { id: number; ruling: 'fulfill' | 'reject'; posted: boolean }[] = [];
-  for (const r of ruled) {
-    const body = r.post.line ?? fillStockLine(instance.system.stockLines[r.post.stock] ?? [], r.id, { boss: bossName, asker: askers.get(r.id) ?? '' }, bossPronouns);
-    if (body === null) { out.push({ id: r.id, ruling: r.ruling, posted: false }); continue; }
-    let error: string | undefined;
-    try {
-      await db.rpc('write_staff_act', { staff_key: boss, kind: 'post', thread: r.post.thread, target: r.post.replyTo, payload: { body } });
-    } catch (e) {
-      error = said(e);
-      notes.push(`request ${r.id}: the Boss's reply was not posted (${clip(error, 200)}); the ruling stands.`);
-    }
-    out.push({ id: r.id, ruling: r.ruling, posted: error === undefined });
-    try {
-      await db.rpc('record_staff_call', { cause_act: r.post.replyTo, duty: 'ruling', staff: boss, record: { meeting, request: r.id, ruling: r.ruling, posted: error === undefined, ...(error === undefined ? {} : { error }) } });
-    } catch (e) {
-      notes.push(`request ${r.id}: the Boss's reply to it could not be recorded (${clip(said(e), 200)}).`);
-    }
-  }
-  return out;
+function reportRequestReplies(ruled: readonly RuledRequest[], notes: string[]): { id: number; ruling: 'fulfill' | 'reject'; posted: boolean }[] {
+  return ruled.map((r) => {
+    if (r.replyFailed) notes.push(`request ${r.id}: the Boss's reply was not posted (${clip(r.replyFailed, 200)}); the ruling stands.`);
+    return { id: r.id, ruling: r.ruling, posted: r.postAct !== null };
+  });
 }
 
 /** A move with its params complete: a rename keeps the Boss's own description, or takes the instance's stock one when the Boss gave none. `at` names the move in the notes (`moves[2]`). */

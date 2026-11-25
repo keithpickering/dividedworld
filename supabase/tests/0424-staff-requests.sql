@@ -724,17 +724,21 @@ begin
     jsonb_build_object('id', x4, 'ruling', 'fulfill', 'move', pg_temp.mt((s4 ->> 'thread')::uuid, (select board from threads where id = (s4 ->> 'thread')::uuid)), 'line', '')), 1);
   if (r ->> 'spent')::integer is distinct from 1 then raise exception 'the meeting is told to charge % moves, not 1: %', r ->> 'spent', r; end if;
   one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x1);
-  if one ->> 'ruling' is distinct from 'fulfill' or one ->> 'move' is null or (one #>> '{post,line}') is distinct from 'Done, and done well.' or one #>> '{post,stock}' is distinct from 'requestGranted'
-     or one #>> '{post,replyTo}' is distinct from s1 ->> 'request' or one #>> '{post,thread}' is distinct from s1 ->> 'thread' then
+  if one ->> 'ruling' is distinct from 'fulfill' or one ->> 'move' is null or one ->> 'postAct' is null or one ->> 'replyFailed' is not null then
     raise exception 'the granted ruling is not as the Boss posts it: %', one;
   end if;
+  if (select (a.kind, a.thread, a.target_act_id, a.payload ->> 'body', a.character) from acts a where a.id = (one ->> 'postAct')::uuid)
+     is distinct from row('post'::text, (s1 ->> 'thread')::uuid, (s1 ->> 'request')::uuid, 'Done, and done well.'::text, (select c.id from characters c where c.staff = 'mm-boss')) then
+    raise exception 'the Boss''s reply is not its line, in the thread, quoting the request post: %', (select to_jsonb(a) from acts a where a.id = (one ->> 'postAct')::uuid);
+  end if;
+  if (select g.post_act from staff_request_rulings g where g.request = x1) is distinct from (one ->> 'postAct')::uuid then raise exception 'the ruling row does not name the Boss''s reply'; end if;
   if (select (q.staff, q.meeting, q.cause_act) from queued_moves q where q.id = (one ->> 'move')::bigint) is distinct from row('mm-boss'::text, m, (s1 ->> 'request')::uuid) then raise exception 'the granted move is not the Boss''s for this meeting and cause'; end if;
   one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x2);
-  if one ->> 'ruling' is distinct from 'reject' or one ->> 'move' is not null or one ->> 'reason' is null or one #>> '{post,stock}' is distinct from 'requestRefused' then raise exception 'the fulfill the bank could not pay is not a reject with its reason: %', one; end if;
+  if one ->> 'ruling' is distinct from 'reject' or one ->> 'move' is not null or one ->> 'reason' is null or one ->> 'postAct' is null then raise exception 'the fulfill the bank could not pay is not a reject with its reason, replied to in the Boss''s line: %', one; end if;
   one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x3);
-  if one ->> 'ruling' is distinct from 'reject' or one #>> '{post,line}' is distinct from 'No.' or one ->> 'reason' is not null then raise exception 'the reject is not as the Boss posts it: %', one; end if;
+  if one ->> 'ruling' is distinct from 'reject' or (select a.payload ->> 'body' from acts a where a.id = (one ->> 'postAct')::uuid) is distinct from 'No.' or one ->> 'reason' is not null then raise exception 'the reject is not as the Boss posts it: %', one; end if;
   one := (select e from jsonb_array_elements(r -> 'rulings') e where (e ->> 'id')::bigint = x4);
-  if one ->> 'ruling' is distinct from 'reject' or one ->> 'reason' is null or one #> '{post,line}' is distinct from 'null'::jsonb then raise exception 'a refused fulfill with a blank line is not a reject with no line (the stock line stands): %', one; end if;
+  if one ->> 'ruling' is distinct from 'reject' or one ->> 'reason' is null or one ->> 'postAct' is not null or one ->> 'replyFailed' is not null then raise exception 'a refused fulfill with a blank line, in an instance with no stock line, is not a reject with no reply: %', one; end if;
   if (select count(*) from queued_moves) is distinct from rows_before + 1 then raise exception 'the meeting''s requests queued % moves, not 1', (select count(*) from queued_moves) - rows_before; end if;
   -- A fulfill that moves a thread to the board it is on is a reject with those words, with the room to pay for it (the bank is not charged: spent stays 0).
   one := requests_ruled(m, jsonb_build_array(jsonb_build_object('id', x6, 'ruling', 'fulfill', 'move', pg_temp.mt((s6 ->> 'thread')::uuid, (select board from threads where id = (s6 ->> 'thread')::uuid)), 'line', 'Moved.')), 5);
@@ -746,7 +750,7 @@ begin
     raise exception 'the rulings written are %', (select array_agg(g.ruling order by g.request) from staff_request_rulings g where g.request in (x1, x2, x3, x4));
   end if;
   if (select (g.move is not null, g.meeting) from staff_request_rulings g where g.request = x1) is distinct from row(true, m) then raise exception 'the granted ruling does not name its move and its meeting'; end if;
-  if (select g.reason from staff_request_rulings g where g.request = x2) is null then raise exception 'the cut fulfill''s reason is not recorded'; end if;
+  if (select g.reason from staff_request_rulings g where g.request = x2) is null or (select g.post_act from staff_request_rulings g where g.request = x2) is null then raise exception 'the cut fulfill''s reason is not recorded'; end if;
   if (select v.waiting from staff_requests_now v where v.id = x5) is distinct from true or (select v.waiting from staff_requests_now v where v.id = x1) is distinct from false then raise exception 'what the meeting left out is not waiting, or what it ruled is'; end if;
   -- A ruled request is ruled once: the same answers again queue nothing, spend nothing, write nothing, and say why they skipped.
   again := requests_ruled(m, jsonb_build_array(jsonb_build_object('id', x1, 'ruling', 'fulfill', 'move', pg_temp.mt((s1 ->> 'thread')::uuid, offtopic), 'line', 'Again.'),
@@ -759,7 +763,7 @@ begin
     jsonb_build_object('id', x5, 'ruling', 'confer', 'line', 'Hm.'),
     jsonb_build_object('id', x5, 'ruling', 'reject', 'line', 'First.'),
     jsonb_build_object('id', x5, 'ruling', 'reject', 'line', 'Again.')), 5);
-  if jsonb_array_length(again -> 'rulings') is distinct from 1 or again #>> '{rulings,0,post,line}' is distinct from 'First.' or jsonb_array_length(again -> 'skipped') is distinct from 2 then raise exception 'the answers are not read as one ruling and two skips: %', again; end if;
+  if jsonb_array_length(again -> 'rulings') is distinct from 1 or (select a.payload ->> 'body' from acts a where a.id = (again #>> '{rulings,0,postAct}')::uuid) is distinct from 'First.' or jsonb_array_length(again -> 'skipped') is distinct from 2 then raise exception 'the answers are not read as one ruling and two skips: %', again; end if;
   if requests_ruled(m, '[]'::jsonb, 5) is distinct from jsonb_build_object('spent', 0, 'rulings', '[]'::jsonb, 'skipped', '[]'::jsonb) then raise exception 'no answers are not a quiet result'; end if;
 end $$;
 
@@ -1052,7 +1056,7 @@ end $$;
 
 -- ---- 15. The meeting rules on requests (Task 5: migration section 3) ----
 -- apply_meeting hands payload.requests to requests_ruled with the room the bank has left after the Boss's own moves, writes the rulings in its own transaction, charges what they spent in the one write of the balance, returns the rulings for the
--- Edge function to post after the commit, and takes the Boss's bank lock before it reads the bank. A retry of the closed meeting writes, queues and charges nothing. system_digest returns the waiting requests, bounded by meetingMost.
+-- Edge function, each with the Boss's reply written in the same transaction, and takes the Boss's bank lock before it reads the bank. A retry of the closed meeting writes, queues and charges nothing. system_digest returns the waiting requests, bounded by meetingMost.
 do $$
 declare
   m bigint;
@@ -1113,7 +1117,7 @@ begin
   if jsonb_array_length(r -> 'requests') is distinct from 3 then raise exception 'the meeting did not return 3 rulings to post: %', r -> 'requests'; end if;
   if (select e ->> 'ruling' from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x1) is distinct from 'fulfill'
      or (select e ->> 'ruling' from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x2) is distinct from 'reject'
-     or (select e #>> '{post,line}' from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x2) is distinct from 'Also done.' then
+     or (select a.payload ->> 'body' from jsonb_array_elements(r -> 'requests') e join acts a on a.id = (e ->> 'postAct')::uuid where (e ->> 'id')::bigint = x2) is distinct from 'Also done.' then
     raise exception 'the rulings are not as answered, the cut fulfill a reject keeping its line: %', r -> 'requests';
   end if;
   if (select count(*) from queued_moves) is distinct from queued_before + 2 then raise exception 'the meeting queued % moves, the Boss''s own and the granted request''s', (select count(*) from queued_moves) - queued_before; end if;
@@ -1131,3 +1135,99 @@ begin
   -- The same answers for a later meeting do not rule on a ruled request again.
   if requests_ruled(m, payload -> 'requests', 5) -> 'rulings' <> '[]'::jsonb then raise exception 'a ruled request was ruled again'; end if;
 end $$;
+
+-- ---- 15b. The Boss's reply is written with the ruling, in the meeting's transaction ----
+-- A ruling's reply is a post quoting the request in its thread, written before the ruling row, which names it (post_act): the Boss's own line when it gave one, else the stock line (requestGranted or requestRefused, filled and
+-- one of the key's lines); one that cannot be written (here: a refusal by a trigger) leaves the ruling with no post_act and the reason on the row; a rolled-back meeting leaves no ruling and no reply; a retried meeting writes no second one.
+create function pg_temp.refuse_reply() returns trigger language plpgsql as $$
+begin
+  if new.payload ->> 'body' = 'FAILME' then raise exception 'test: the reply was refused'; end if;
+  return new;
+end $$;
+do $$
+declare
+  m bigint;
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  boss_id uuid := (select c.id from characters c where c.staff = 'mm-boss');
+  s1 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'bm1');
+  s2 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'bm2');
+  s3 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'bm3');
+  s4 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'bm4');
+  s5 jsonb := pg_temp.scene('mm-m1', 'mm-games', 'bm5');
+  x1 bigint; x2 bigint; x3 bigint; x4 bigint; x5 bigint;
+  r jsonb;
+  one jsonb;
+  payload jsonb;
+  posts_before bigint;
+  acts_before bigint;
+  body text;
+begin
+  insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer') returning id into x5;
+  update settings set value = value || jsonb_build_object('requestGranted', jsonb_build_array('{boss} grants {asker}.'), 'requestRefused', jsonb_build_array('{boss} refuses {asker}.')) where key = 'systemLines';
+  create trigger zz_refuse_reply before insert on acts for each row execute function pg_temp.refuse_reply();
+
+  -- A fulfill with no line (the stock line, granted), a reject with the Boss's own line, a reject with none (the stock line, refused), and a reject whose reply is refused.
+  perform pg_temp.bank(5);
+  m := (begin_meeting('2031-06-01T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
+  payload := jsonb_build_object('boss', 'mm-boss', 'weekly_moves', 0, 'bank_cap', 5, 'memory', pg_temp.memory('wrestling'),
+    'profile', jsonb_build_object('interests', jsonb_build_array('pie'), 'favorites', '[]'::jsonb, 'mood', 'smug', 'signature', 'It is decided.'),
+    'moves', '[]'::jsonb,
+    'requests', jsonb_build_array(
+      jsonb_build_object('id', x1, 'ruling', 'fulfill', 'move', pg_temp.mt((s1 ->> 'thread')::uuid, offtopic)),
+      jsonb_build_object('id', x2, 'ruling', 'reject', 'line', 'Own words.'),
+      jsonb_build_object('id', x3, 'ruling', 'reject'),
+      jsonb_build_object('id', x4, 'ruling', 'reject', 'line', 'FAILME')),
+    'record', '{}'::jsonb);
+  r := apply_meeting(m, payload);
+  if r ->> 'status' is distinct from 'applied' then raise exception 'the meeting was not applied: %', r; end if;
+  one := (select e from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x1);
+  body := (select a.payload ->> 'body' from acts a where a.id = (one ->> 'postAct')::uuid);
+  if body is distinct from 'Mm Boss grants Mm Asker.' and body is distinct from (select c.name from characters c where c.staff = 'mm-boss') || ' grants ' || (select k.name from characters k where k.id = (select a.character from acts a where a.id = (s1 ->> 'request')::uuid)) || '.' then
+    raise exception 'the granted ruling with no line is not replied to with the stock line, filled: %', body;
+  end if;
+  if (select (a.kind, a.thread, a.target_act_id, a.character) from acts a where a.id = (one ->> 'postAct')::uuid) is distinct from row('post'::text, (s1 ->> 'thread')::uuid, (s1 ->> 'request')::uuid, boss_id) then
+    raise exception 'the reply is not the Boss''s post in the thread quoting the request post';
+  end if;
+  if (select g.post_act from staff_request_rulings g where g.request = x1) is distinct from (one ->> 'postAct')::uuid then raise exception 'the ruling row does not name the reply'; end if;
+  one := (select e from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x2);
+  if (select a.payload ->> 'body' from acts a where a.id = (one ->> 'postAct')::uuid) is distinct from 'Own words.' then raise exception 'the Boss''s own line was not used'; end if;
+  one := (select e from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x3);
+  body := (select a.payload ->> 'body' from acts a where a.id = (one ->> 'postAct')::uuid);
+  if body is null or body !~ ' refuses ' or body ~ '[{}]' then raise exception 'a reject with no line is not replied to with the stock line, filled: %', body; end if;
+  -- The reply that is refused: the ruling stands, with no post_act, no reply in the thread, the reason on the row and in the result.
+  one := (select e from jsonb_array_elements(r -> 'requests') e where (e ->> 'id')::bigint = x4);
+  if one ->> 'ruling' is distinct from 'reject' or one ->> 'postAct' is not null or one ->> 'replyFailed' not like 'the Boss''s reply was not posted: %test: the reply was refused%' then
+    raise exception 'a reply that is refused did not leave the ruling alone, with its reason: %', one;
+  end if;
+  if (select (g.ruling, g.post_act is null, g.reason like 'the Boss''s reply was not posted:%') from staff_request_rulings g where g.request = x4) is distinct from row('reject'::text, true, true) then
+    raise exception 'the ruling row of the refused reply is not a reject with no post_act and the reason';
+  end if;
+  if exists (select 1 from acts a where a.thread = (s4 ->> 'thread')::uuid and a.payload ->> 'body' = 'FAILME') then raise exception 'the refused reply was written anyway'; end if;
+  if (select v.waiting from staff_requests_now v where v.id = x4) then raise exception 'a ruled request whose reply failed is still waiting'; end if;
+
+  -- A retry writes no second reply, ruling or charge.
+  acts_before := (select count(*) from acts a where a.character = boss_id);
+  if apply_meeting(m, payload) ->> 'status' is distinct from 'already applied' or (select count(*) from acts a where a.character = boss_id) is distinct from acts_before then raise exception 'a retried meeting wrote a second reply'; end if;
+  if (select count(*) from staff_request_rulings g where g.request in (x1, x2, x3, x4)) is distinct from 4 then raise exception 'a retried meeting wrote a second ruling'; end if;
+
+  -- A meeting rolled back after it ruled leaves neither the ruling nor the reply, and the request still waits.
+  perform pg_temp.bank(5);
+  m := (begin_meeting('2031-06-08T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
+  acts_before := (select count(*) from acts a where a.character = boss_id);
+  posts_before := (select count(*) from staff_request_rulings);
+  begin
+    perform apply_meeting(m, jsonb_set(payload, '{requests}', jsonb_build_array(jsonb_build_object('id', x5, 'ruling', 'reject', 'line', 'Rolled back.'))));
+    if (select count(*) from acts a where a.character = boss_id) is distinct from acts_before + 1 then raise exception 'the world: the reply was not written'; end if;
+    raise exception 'the meeting died' using errcode = 'P0001';
+  exception when sqlstate 'P0001' then null;
+  end;
+  if (select count(*) from acts a where a.character = boss_id) is distinct from acts_before or (select count(*) from staff_request_rulings) is distinct from posts_before
+     or (select v.waiting from staff_requests_now v where v.id = x5) is distinct from true then raise exception 'a rolled-back meeting left a ruling or a reply'; end if;
+  drop trigger zz_refuse_reply on acts;
+end $$;
+

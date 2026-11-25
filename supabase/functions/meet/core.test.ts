@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { runMeeting } from './core.ts';
-import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
+import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
@@ -99,12 +99,8 @@ interface World {
   offices?: Record<string, string>;
   /** The requests system_digest() lists as waiting (0424); absent: none, or an older database that does not. */
   requests?: { id: number; requestAct: string; thread: string; title: string; board: string | null; boardName: string; askerName: string; staff: string; staffName: string; body: string; at: string; lapsesAt: string }[];
-  /** The request posts (by thread) the Boss's reply to cannot be written for: write_staff_act throws a database error for them. */
-  postFails?: string[];
-  /** write_staff_act throws a transport failure for every post. */
-  postTransport?: boolean;
-  /** record_staff_call throws. */
-  recordFails?: boolean;
+  /** The request threads whose reply apply_meeting could not write (requests_ruled keeps the ruling and says why, in `replyFailed`). */
+  replyFails?: string[];
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
@@ -142,14 +138,10 @@ function fakeDb(w: World = {}) {
           state.closed = true;
           const pl = args.payload as any;
           return { status: 'applied', queued: (pl.moves as unknown[]).length + ((pl.bundles ?? []) as any[]).reduce((n, b) => n + b.parts.length, 0), beats_played: ((pl.bundles ?? []) as any[]).filter((b) => b.beat).map((b) => b.beat),
-            ...(pl.requests ? { requests: (pl.requests as any[]).map((r) => { const q = w.requests!.find((x) => x.id === r.id)!; return { id: r.id, requestAct: q.requestAct, thread: q.thread, staff: q.staff, ruling: r.ruling, move: r.ruling === 'fulfill' ? 9 : null, reason: null, post: { thread: q.thread, replyTo: q.requestAct, line: r.line ?? null, stock: r.ruling === 'fulfill' ? 'requestGranted' : 'requestRefused' } }; }) } : {}) } as T;
+            ...(pl.requests ? { requests: (pl.requests as any[]).map((r) => { const q = w.requests!.find((x) => x.id === r.id)!; return { id: r.id, requestAct: q.requestAct, thread: q.thread, staff: q.staff, ruling: r.ruling, move: r.ruling === 'fulfill' ? 9 : null, reason: null, postAct: (w.replyFails ?? []).includes(q.thread) ? null : `reply-${r.id}`, replyFailed: (w.replyFails ?? []).includes(q.thread) ? 'the Boss is locked out of this thread' : null }; }) } : {}) } as T;
         case 'write_staff_act':
-          if (w.postTransport) throw new TransportError('write_staff_act: the connection dropped');
-          if ((w.postFails ?? []).includes(String(args.thread))) throw new DatabaseError('write_staff_act: the thread is locked', '55000', 400);
-          return { id: `act-${calls.length}` } as T;
         case 'record_staff_call':
-          if (w.recordFails) throw new DatabaseError('record_staff_call: refused', '55000', 400);
-          return { recorded: true, attempt: 1 } as T;
+          throw new Error(`${fn}: the meeting writes no reply itself; requests_ruled does, in apply_meeting's transaction`);
         default: throw new Error(`the fake database has no ${fn}`);
       }
     },
@@ -1295,7 +1287,7 @@ test('the digest\'s waiting requests reach the prompt whole with their ids, and 
   assert.doesNotMatch(none.chats[0]!.system, /"requests"/);
 });
 
-test('the answer\'s rulings go to apply_meeting repaired, and the Boss posts each in its thread beneath the request, with its line or a stock line filled with the Boss and the asker', async () => {
+test('the answer\'s rulings go to apply_meeting repaired with their lines, and the meeting posts nothing itself: the replies are the database\'s, written in its transaction', async () => {
   const d = fakeDb({ requests: [waiting(12), waiting(13)] });
   const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'fulfill', line: 'Granted, with ceremony.', move: grantMove(REQ_THREAD) }, { id: 13, ruling: 'reject', line: '' }, { id: 99, ruling: 'reject', line: 'Who?' }] }));
   const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
@@ -1306,38 +1298,22 @@ test('the answer\'s rulings go to apply_meeting repaired, and the Boss posts eac
     { id: 13, ruling: 'reject', line: null },
   ]);
   assert.ok(out.trims.some((t: any) => t.path === 'requests[2].id' && t.predicate === 'shownRequest'), JSON.stringify(out.trims));
-  const written = posts(d);
-  assert.equal(written.length, 2);
-  assert.deepEqual([written[0]!.args.staff_key, written[0]!.args.kind, written[0]!.args.thread, written[0]!.args.target, written[0]!.args.payload], [BOSS, 'post', REQ_THREAD, REQ_ACT, { body: 'Granted, with ceremony.' }]);
-  assert.deepEqual([written[1]!.args.thread, written[1]!.args.target], [REQ_THREAD2, REQ_ACT2]);
-  const stock = (quiet.system.stockLines.requestRefused as readonly string[]).map((l) => l.replaceAll('{asker}', 'Asker 13'));
-  assert.ok(stock.includes((written[1]!.args.payload as { body: string }).body), `the stock line stands, its asker filled: ${JSON.stringify(written[1]!.args.payload)}`);
-  assert.ok(!/[{}]/.test((written[1]!.args.payload as { body: string }).body));
-  assert.ok(d.calls.findIndex((c) => c.fn === 'apply_meeting') < d.calls.findIndex((c) => c.fn === 'write_staff_act'), 'after the meeting commits');
+  assert.equal(posts(d).length, 0, 'no reply is posted after the commit');
+  assert.equal(d.calls.filter((c) => c.fn === 'record_staff_call').length, 0);
+  assert.deepEqual(out.requests, [{ id: 12, ruling: 'fulfill', posted: true }, { id: 13, ruling: 'reject', posted: true }]);
+  assert.deepEqual(out.notes.filter((n: string) => /request \d+/.test(n)), []);
 });
 
-test('a reply that cannot be written is recorded in a call record naming the meeting and does not fail the meeting; the others are still written and the ruling stands', async () => {
-  const d = fakeDb({ requests: [waiting(12), waiting(13)], postFails: [REQ_THREAD] });
+test('a reply the database could not write is told in the notes from what apply_meeting returned; the meeting is still the applied one and the ruling stands', async () => {
+  const d = fakeDb({ requests: [waiting(12), waiting(13)], replyFails: [REQ_THREAD] });
   const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'reject', line: 'No.' }, { id: 13, ruling: 'reject', line: 'Also no.' }] }));
   const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
   assert.equal(out.status, 'ok', JSON.stringify(out));
   assert.equal(d.state.failed.length, 0, 'the meeting is not closed failed');
-  assert.equal(posts(d).length, 2, 'the second is tried after the first fails');
-  const recorded = d.calls.filter((c) => c.fn === 'record_staff_call').map((c) => c.args);
-  assert.deepEqual(recorded, [
-    { cause_act: REQ_ACT, duty: 'ruling', staff: BOSS, record: { meeting: 7, request: 12, ruling: 'reject', posted: false, error: 'write_staff_act: the thread is locked' } },
-    { cause_act: REQ_ACT2, duty: 'ruling', staff: BOSS, record: { meeting: 7, request: 13, ruling: 'reject', posted: true } },
-  ]);
-  assert.ok(out.notes.some((n: string) => /request 12/.test(n) && /not posted/.test(n)), JSON.stringify(out.notes));
-});
-
-test('a transport failure while posting, and a record that cannot be written, are said and never turn an applied meeting into a failed one', async () => {
-  const d = fakeDb({ requests: [waiting(12)], postTransport: true, recordFails: true });
-  const m = fakeModels(answer([], { requests: [{ id: 12, ruling: 'reject', line: 'No.' }] }));
-  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
-  assert.equal(out.status, 'ok', JSON.stringify(out));
-  assert.equal(d.state.failed.length, 0);
-  assert.ok(out.notes.some((n: string) => /request 12/.test(n)), JSON.stringify(out.notes));
+  assert.deepEqual(out.requests, [{ id: 12, ruling: 'reject', posted: false }, { id: 13, ruling: 'reject', posted: true }]);
+  assert.ok(out.notes.some((n: string) => /request 12/.test(n) && /not posted/.test(n) && /locked out/.test(n)), JSON.stringify(out.notes));
+  assert.ok(!out.notes.some((n: string) => /request 13/.test(n)), JSON.stringify(out.notes));
+  assert.equal(posts(d).length, 0);
 });
 
 test('a granted rename gets the stock description, as a rename among the moves does; a meeting with no ruling writes no reply', async () => {
@@ -1353,5 +1329,4 @@ test('a granted rename gets the stock description, as a rename among the moves d
   const quietRun = fakeDb({ requests: [waiting(12)] });
   await run(quietRun.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds);
   assert.equal(posts(quietRun).length, 0);
-  assert.equal(quietRun.calls.filter((c) => c.fn === 'record_staff_call').length, 0);
 });
