@@ -23,6 +23,7 @@ import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
+import { gainOf } from './sounds.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
@@ -1394,10 +1395,10 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
 
 describe('Divided World\'s sounds', () => {
   const soundsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sounds');
-  const manifest = JSON.parse(fs.readFileSync(path.join(soundsDir, 'sounds.json'), 'utf8')) as { file: string }[];
+  const manifest = JSON.parse(fs.readFileSync(path.join(soundsDir, 'sounds.json'), 'utf8')) as { file: string; lufs: number; peak: number }[];
   const manifestFiles = manifest.map((m) => m.file);
   /* The table the design gives, one row per slot, in order. */
-  const TABLE = [
+  const TABLE: readonly { key: string; file: string; caption: string; ink: string; loop?: true; level?: number }[] = [
     { key: 'laugh-track.laugh-1', file: 'laugh-1.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
     { key: 'laugh-track.laugh-2', file: 'laugh-2.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
     { key: 'laugh-track.laugh-3', file: 'laugh-3.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
@@ -1415,10 +1416,10 @@ describe('Divided World\'s sounds', () => {
     { key: 'steel-chair.settle-2', file: 'steel-chair-settle-2.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-3', file: 'steel-chair-settle-3.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-4', file: 'steel-chair-settle-4.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
-    { key: 'its-curtains.drumroll', file: 'its-curtains-drumroll.mp3', caption: 'Drumroll', ink: 'var(--kb-pepperoni)', loop: true },
+    { key: 'its-curtains.drumroll', file: 'its-curtains-drumroll.mp3', caption: 'Drumroll', ink: 'var(--kb-pepperoni)', loop: true, level: 0.8 },
     { key: 'its-curtains.crash', file: 'its-curtains-crash.mp3', caption: 'Cymbal crash', ink: 'var(--kb-pepperoni)' },
-    { key: 'its-curtains.whoosh', file: 'its-curtains-whoosh.mp3', caption: 'Curtain whooshes open', ink: 'var(--kb-pepperoni)' },
-    { key: 'its-curtains.tada', file: 'its-curtains-tada.mp3', caption: 'Ta-da!', ink: 'var(--kb-pepperoni)' },
+    { key: 'its-curtains.whoosh', file: 'its-curtains-whoosh.mp3', caption: 'Curtain whooshes open', ink: 'var(--kb-pepperoni)', level: 0.9 },
+    { key: 'its-curtains.tada', file: 'its-curtains-tada.mp3', caption: 'Ta-da!', ink: 'var(--kb-pepperoni)', level: 0.9 },
   ];
   const slots = instanceUi.sounds?.slots ?? [];
 
@@ -1432,6 +1433,14 @@ describe('Divided World\'s sounds', () => {
       expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
     }
     expect(slots).toHaveLength(21);
+  });
+  /* The owner's mix for It's Curtains (2026-11-25): a level is a multiplier on the loudness the manifest brings a sound to. */
+  test('every slot\'s gain is its manifest loudness times the level the design gives it', () => {
+    for (const row of TABLE) {
+      const slot = slots.find((s) => s.key === row.key)!;
+      const m = manifest.find((e) => e.file === row.file)!;
+      expect(slot.gain, `${row.key}'s gain`).toBeCloseTo(gainOf(m) * (row.level ?? 1), 10);
+    }
   });
   test('every slot plays on the game bus', () => {
     for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');
