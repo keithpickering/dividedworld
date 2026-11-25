@@ -166,6 +166,8 @@
 }
 
 .kb-act-grid > .kb-row-cover {
+  /* `.kb-act-grid > *` gives every cell the post's row color; the cover is drawn over the post and must not hide it while its curtain parts. A cover's own pieces hide the post while shut. */
+  background: none;
   position: absolute;
   inset: 0;
   z-index: 6;

@@ -43,6 +43,13 @@
   pointer-events: none;
 }
 
+/* The next curtain of the stack lies under the button: its halves carry z-index 1 and 2 and its sheen 30, which would climb into the row cover's stacking context and paint over
+   the outermost button (and take its press). Its own stacking context keeps them inside it, and it presses nothing. */
+.dw-curtain-under {
+  isolation: isolate;
+  pointer-events: none;
+}
+
 .dw-curtain-art {
   position: absolute;
   inset: 0;

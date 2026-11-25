@@ -158,6 +158,37 @@ test('three stacked: three presses, each showing the next fabric, and the third 
   await opened(page);
 });
 
+test('the post shows through the gap while the halves part', async ({ page }) => {
+  await openInApp(page);
+  const box = (await curtain(page).boundingBox())!;
+  await curtain(page).click();
+  /* Hold the open at 250 ms of its 500: every running animation and transition of the cover is paused there. */
+  await page.waitForFunction(() => document.querySelector('.kb-row-cover .dw-curtain-button[data-dw-opening]') !== null);
+  await page.evaluate(() => {
+    for (const a of document.getAnimations()) if (a.effect?.target && (a.effect.target as Element).closest('.kb-row-cover')) { a.pause(); a.currentTime = 250; }
+  });
+  await page.waitForTimeout(100);
+  const at = await page.evaluate(([x, y]) => {
+    const g = document.querySelector('.kb-row-cover')!;
+    const halves = [...g.querySelectorAll('.dw-curtain-button [data-dw-half]')].map((h) => h.getBoundingClientRect());
+    const gap = { left: halves[0]!.right, right: halves[1]!.left };
+    const hit = document.elementsFromPoint(x!, y!).map((e) => e.tagName + '.' + e.className);
+    return { gap, hit };
+  }, [box.x + box.width / 2, box.y + box.height / 2] as const);
+  expect(at.gap.right - at.gap.left, 'the halves have parted').toBeGreaterThan(40);
+  /* Nothing of the cover paints a backdrop at the gap's center: its topmost opaque layer would hide the post. */
+  const covered = await page.evaluate(([x, y]) => {
+    const out: string[] = [];
+    for (const e of document.elementsFromPoint(x!, y!)) {
+      const cs = getComputedStyle(e);
+      if (e.closest('.kb-row-cover') && cs.backgroundColor !== 'rgba(0, 0, 0, 0)' && cs.backgroundColor !== 'transparent') out.push(e.className + ' ' + cs.backgroundColor);
+      if (e.closest('.kb-row-cover') && cs.backgroundImage !== 'none') out.push(e.className + ' ' + cs.backgroundImage.slice(0, 60));
+    }
+    return out;
+  }, [box.x + box.width / 2, box.y + box.height / 2] as const);
+  expect(covered, 'what of the cover paints at the gap\'s center').toEqual([]);
+});
+
 test('keyboard alone: Tab to the curtain, then Enter opens it', async ({ page }) => {
   await openInApp(page);
   await page.locator('body').click({ position: { x: 1, y: 1 } });
