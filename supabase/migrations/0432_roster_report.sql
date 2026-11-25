@@ -486,5 +486,12 @@ end $$;
 
 -- The data step: an instance's copy that still holds announcementsThreadTitle gets its word under the new name, once, in one statement, so the check above sees a complete copy.
 -- A copy with the new name already is left as it is. At replay the copy is not there yet, so this changes nothing on a fresh database.
-update settings set value = (value - 'announcementsThreadTitle') || jsonb_build_object('rosterThreadTitle', value -> 'announcementsThreadTitle')
-where key = 'copy' and value ? 'announcementsThreadTitle' and not (value ? 'rosterThreadTitle');
+-- A migration's write is a seed's: kayfabb.seeding is on, so settings_tuned (0355) leaves tuned_at as it was.
+do $$
+declare was text := current_setting('kayfabb.seeding', true);
+begin
+  perform set_config('kayfabb.seeding', 'on', true);
+  update settings set value = (value - 'announcementsThreadTitle') || jsonb_build_object('rosterThreadTitle', value -> 'announcementsThreadTitle')
+  where key = 'copy' and value ? 'announcementsThreadTitle' and not (value ? 'rosterThreadTitle');
+  perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
+end $$;

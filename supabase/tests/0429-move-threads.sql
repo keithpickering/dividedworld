@@ -489,7 +489,7 @@ declare
   paramsets jsonb := jsonb_build_object(
     'renameBoard', jsonb_build_object('board', gen, 'name', 'Lodge'), 'nameSuccessor', jsonb_build_object('successor', 'mt-mod'),
     'setRule', jsonb_build_object('board', gen, 'predicate', 'maxLength', 'param', '100'), 'conferGroup', jsonb_build_object('group', 'knights', 'groupName', 'Knights'),
-    'pullSlot', jsonb_build_object('slot', 'one'), 'repriceSlot', jsonb_build_object('slot', 'one', 'price', 5), 'flashSale', jsonb_build_object('percent', 50),
+    'pullSlot', jsonb_build_object('slot', 'one'), 'repriceSlot', jsonb_build_object('slot', 'one', 'percent', 5), 'flashSale', jsonb_build_object('slot', 'one', 'hours', 6),
     'createBoard', jsonb_build_object('name', 'Lodge'), 'moveThread', jsonb_build_object('thread', gen, 'board', gen), 'mergeBoard', jsonb_build_object('board', gen, 'into', gen),
     'awardTrophy', jsonb_build_object('trophy', 'mop', 'trophyName', 'Golden Mop', 'character', 'mt-boss', 'characterName', 'Mt Boss'));
   k text;
@@ -505,4 +505,19 @@ begin
       perform pg_temp.expect(position(w in said) > 0, 'the title of ' || k || ' does not show "' || w || '": ' || said);
     end loop;
   end loop;
+end $$;
+
+-- ---- 12. A number or a boolean param fills a title as its digits or its word, and a param left out leaves nothing the test did not ask for ----
+do $$
+declare said text;
+begin
+  update settings set value = '{"repriceSlot": "Prices cut {percent}%", "flashSale": "Flash sale for {hours} hours: {slot}", "pullSlot": "Pulled {on}"}'::jsonb where key = 'systemThreadTitles';
+  said := move_thread_title('repriceSlot', '{"slot": "one", "percent": 25}'::jsonb, 'mt-boss');
+  perform pg_temp.expect(said = 'Prices cut 25%', 'a number fills a title as its digits: ' || coalesce(said, 'null'));
+  said := move_thread_title('repriceSlot', '{"slot": "one", "percent": 12.5}'::jsonb, 'mt-boss');
+  perform pg_temp.expect(said = 'Prices cut 12.5%', 'a fraction fills as written: ' || coalesce(said, 'null'));
+  said := move_thread_title('flashSale', '{"slot": "one", "hours": 6}'::jsonb, 'mt-boss');
+  perform pg_temp.expect(said like 'Flash sale for 6 hours: %', 'the number is filled: ' || coalesce(said, 'null'));
+  said := move_thread_title('pullSlot', '{"slot": "one", "on": true}'::jsonb, 'mt-boss');
+  perform pg_temp.expect(said = 'Pulled true', 'a boolean fills as its word: ' || coalesce(said, 'null'));
 end $$;

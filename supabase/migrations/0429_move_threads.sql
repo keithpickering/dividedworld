@@ -259,7 +259,8 @@ begin
   select c.name, c.id into boss_name, boss_id from characters c where c.staff = staff_key;
   if template is null then return words; end if;
   -- The move's own names fill the template too (its parameters, and the names derived above), so a title can say a board's new name or a trophy's; the Boss, the board, the move and the rule are given below them.
-  return fill_tokens(template, (case when jsonb_typeof(params) = 'object' then params else '{}'::jsonb end) || jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words) || pronoun_tokens('boss', boss_id));
+  -- fill_tokens fills strings only, so a number or a boolean is written as its text first (a percent as 25, a flag as true); an object, an array and a null have no words and stay out.
+  return fill_tokens(template, (case when jsonb_typeof(params) = 'object' then (select coalesce(jsonb_object_agg(e.key, to_jsonb(e.value #>> '{}')) filter (where jsonb_typeof(e.value) in ('string', 'number', 'boolean')), '{}'::jsonb) from jsonb_each(params) e) else '{}'::jsonb end) || jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words) || pronoun_tokens('boss', boss_id));
 end $$;
 revoke execute on function system_line_fill(text, text, jsonb, text) from public, anon, authenticated;
 grant execute on function system_line_fill(text, text, jsonb, text) to service_role;

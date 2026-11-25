@@ -1,8 +1,8 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { handle } from './handler.ts';
-import { instance as dividedWorld } from '../_shared/instance.ts';
 import { DEFAULT_ROSTER_COPY } from '../../../engine/system/roster.ts';
+import { instance as dividedWorld } from '../_shared/instance.ts';
 import type { JobDeps } from '../_shared/handler.ts';
 import { KEY, SLOT, TIERS, fakeDeps, post, refusals } from '../_shared/handler-test-kit.ts';
 
@@ -80,22 +80,14 @@ test('settle: the instance\'s roster headings reach the run (rosterCopyOf(instan
       default: throw new Error(`the fake database has no ${fn}`);
     }
   }, { broadcaster: (() => ({ deliver: async () => 'sent', send: async () => true })) as unknown as JobDeps['broadcaster'] });
-  // Divided World's headings equal the engine's defaults, so the defaults are made different for this test (and put back): the report's bodies carry the instance's words only if the handler passes rosterCopyOf(instance.system).
-  const words = dividedWorld.system;
-  const saved = { stock: DEFAULT_ROSTER_COPY.stockHeading, headings: { ...DEFAULT_ROSTER_COPY.headings } };
-  DEFAULT_ROSTER_COPY.stockHeading = 'ENGINE DEFAULT STOCK';
-  for (const k of Object.keys(DEFAULT_ROSTER_COPY.headings) as (keyof typeof saved.headings)[]) DEFAULT_ROSTER_COPY.headings[k] = `ENGINE DEFAULT ${k}`;
-  let bodies: string;
-  try {
-    assert.equal((await handle(post({ until: SLOT }), d.deps)).status, 200);
-    bodies = (d.calls.find((c) => c.fn === 'write_roster_entry')!.args.bodies as string[]).join('\n');
-  } finally {
-    DEFAULT_ROSTER_COPY.stockHeading = saved.stock;
-    Object.assign(DEFAULT_ROSTER_COPY.headings, saved.headings);
-  }
+  // Divided World's headings equal the engine's defaults, so the handler is handed an instance whose words differ: the report's bodies carry them only if the handler passes rosterCopyOf(instance.system).
+  const words = { ...dividedWorld.system, rosterStockHeading: 'THIS INSTANCE STOCK', rosterHeadings: { ...dividedWorld.system.rosterHeadings, newcomers: 'THIS INSTANCE NEWCOMERS' } };
+  const instance = { ...dividedWorld, system: words } as typeof dividedWorld;
+  assert.equal((await handle(post({ until: SLOT }), d.deps, () => instance)).status, 200);
+  const bodies = (d.calls.find((c) => c.fn === 'write_roster_entry')!.args.bodies as string[]).join('\n');
   assert.ok(bodies.includes(words.rosterStockHeading), `the instance's stock heading is the report's: ${bodies}`);
   assert.ok(bodies.includes(words.rosterHeadings.newcomers), `the instance's newcomers heading is the report's: ${bodies}`);
-  assert.ok(!bodies.includes('ENGINE DEFAULT'), `the engine's defaults are not: ${bodies}`);
+  assert.ok(!bodies.includes(DEFAULT_ROSTER_COPY.stockHeading) || words.rosterStockHeading === DEFAULT_ROSTER_COPY.stockHeading, `the engine's default stock heading is not: ${bodies}`);
 });
 
 test('settle: with no entry due, no model is built', async () => {

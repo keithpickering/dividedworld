@@ -1260,12 +1260,14 @@ function arcProblems(who: string, p: Persona, authoredMostParts: number | null):
 }
 
 /**
- * The copy's two season titles (0431, 0432): each has its words and names its season, and fills no other token, since copy_of fills `{season}` alone.
+ * The copy's two season titles (0431, 0432; the meetings one is optional): each has its words and names its season, and fills no other token, since copy_of fills `{season}` alone.
  */
 function copyProblems(copy: Instance['copy']): string[] {
   const out: string[] = [];
   for (const key of ['rosterThreadTitle', 'meetingsThreadTitle'] as const) {
     const title = (copy as unknown as Partial<Record<string, unknown>> | undefined)?.[key];
+    // The meetings title is optional (Copy.meetingsThreadTitle?; 0431 posts no minutes without it): absent is whole, present is held to the same words.
+    if (key === 'meetingsThreadTitle' && (title === undefined || title === null)) continue;
     if (typeof title !== 'string' || title.trim() === '') { out.push(`the instance has no copy for ${key}`); continue; }
     if (!title.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
     for (const [, token] of title.matchAll(/\{([^{}]*)\}/g)) if (token !== 'season') out.push(`the copy for ${key} uses {${token}}, which that title is never given (it may use {season})`);
@@ -1273,10 +1275,25 @@ function copyProblems(copy: Instance['copy']): string[] {
   return out;
 }
 
-/** The tokens a move's thread title may fill: its parameters, its derived names, and the Boss and the move's plain words (system_line_fill, 0429). */
-function threadTitleTokens(kind: { params: unknown; derived?: readonly string[] }): string[] {
-  const fields = Object.keys((kind.params as { fields?: Record<string, unknown> }).fields ?? {});
-  return [...new Set([...fields, ...(kind.derived ?? []), 'boss', 'move'])];
+/**
+ * What a move's thread title may fill, exactly what system_line_fill (0429) fills: the Boss and the move's plain words, the Boss's pronoun forms, the rule move's `{rule}`, a board's name
+ * (`{board}`, where the move always has one: it is its required board, or `every board` for a rule), the kind's derived names, and its required params that are not a uuid (a number is
+ * written as its digits). A uuid param is a raw id, and an optional one may be absent: neither is words, and a token for one would stay as written.
+ */
+function threadTitleTokens(kind: { key: string; params: unknown; uuids?: readonly string[]; derived?: readonly string[] }): { fills: Set<string>; raw: Map<string, string>; optional: Set<string> } {
+  const fields = (kind.params as { fields?: Record<string, { optional?: boolean }> }).fields ?? {};
+  const uuids = new Set(kind.uuids ?? []);
+  const fills = new Set<string>(['boss', 'move', ...(kind.derived ?? [])]);
+  const raw = new Map<string, string>();
+  const optional = new Set<string>();
+  for (const [name, rule] of Object.entries(fields)) {
+    if (name === 'board') { if (rule.optional && kind.key !== 'setRule') optional.add(name); else fills.add(name); continue; }
+    if (rule.optional) optional.add(name);
+    else if (uuids.has(name)) raw.set(name, name === 'character' && (kind.derived ?? []).includes('characterName') ? ' (use {characterName})' : '');
+    else fills.add(name);
+  }
+  if (kind.key === 'setRule') { fills.add('board'); fills.add('rule'); }
+  return { fills, raw, optional };
 }
 
 /**
@@ -1291,9 +1308,15 @@ function threadWordProblems(sys: SystemContent): string[] {
     const move = MOVE_KINDS.find((m) => m.key === kind);
     if (!move) { out.push(`system.threadTitles names "${kind}", which is not a move kind`); continue; }
     if (typeof title !== 'string' || title.trim() === '') { out.push(`the thread title for "${kind}" is blank`); continue; }
-    const given = threadTitleTokens(move);
+    const { fills, raw, optional } = threadTitleTokens(move);
     for (const [, token] of title.matchAll(/\{([^{}]*)\}/g)) {
-      if (!given.includes(token!)) out.push(`the thread title for "${kind}" uses {${token}}, which that move's title is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})`);
+      const t = token!;
+      if (fills.has(t)) continue;
+      const form = t.startsWith('boss.') ? t.slice('boss.'.length) : undefined;
+      if (form !== undefined && (PRONOUN_FORMS as readonly string[]).includes(form)) continue;
+      if (raw.has(t)) out.push(`the thread title for "${kind}" uses {${t}}, which is a raw id that reads as nothing${raw.get(t)}`);
+      else if (optional.has(t)) out.push(`the thread title for "${kind}" uses {${t}}, which that move may not carry, so the token would stay as written`);
+      else out.push(`the thread title for "${kind}" uses {${t}}, which that move's title is never given (it may use ${[...fills].map((x) => `{${x}}`).join(', ')}, and {boss.they} and the Boss's other pronoun forms)`);
     }
   }
   if (typeof sys.handoverThreadTitle !== 'string' || sys.handoverThreadTitle.trim() === '') out.push('system.handoverThreadTitle is empty; a handover opens its thread with it');

@@ -12,7 +12,8 @@ import { tokenCounter } from '../../../engine/system/tokens.ts';
 import { rosterCopyOf } from '../../../engine/system/roster.ts';
 import type { JobDeps } from '../_shared/handler.ts';
 
-export async function handle(request: Request, deps: JobDeps): Promise<Response> {
+/** `choose` is the instance-choosing seam (a test hands it an instance with its own words); deployed, it is the composition root's. */
+export async function handle(request: Request, deps: JobDeps, choose: typeof chooseInstance = chooseInstance): Promise<Response> {
   const env = environment(deps.env);
   if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'the settlement is run by the service');
   const body = (await request.json().catch(() => ({}))) as { until?: unknown };
@@ -21,7 +22,7 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
   const until = body.until;
   try {
     const db = deps.db(env);
-    const instance = chooseInstance(deps.env('KAYFABB_PROFILE'));
+    const instance = choose(deps.env('KAYFABB_PROFILE'));
     const outcome = await runSettlement(db, instance, until, {
       deliver: deps.broadcaster({ url: env.url, key: env.secret, fetch: deps.fetch }).deliver,
       // The Roster Report's commentary (the staff-board threads plan, Task 7): the models are built as the meeting builds them, from the tiers the database holds, and only when an entry has something to report.

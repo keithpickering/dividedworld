@@ -537,9 +537,15 @@ begin
   end if;
   alter table settings disable trigger settings_copy_complete;
   update settings set value = (value - 'rosterThreadTitle') || '{"announcementsThreadTitle": "Season {season}: Promos"}' where key = 'copy';
+  update settings set tuned_at = null where key = 'copy';
+  perform set_config('kayfabb.seeding', 'on', true);
   update settings set value = (value - 'announcementsThreadTitle') || jsonb_build_object('rosterThreadTitle', value -> 'announcementsThreadTitle')
   where key = 'copy' and value ? 'announcementsThreadTitle' and not (value ? 'rosterThreadTitle');
+  perform set_config('kayfabb.seeding', 'off', true);
   alter table settings enable trigger settings_copy_complete;
+  if (select tuned_at from settings where key = 'copy') is not null then
+    raise exception 'the data step is a migration''s write, not an admin''s: the copy row''s tuned_at stays null (a seed keeps writing the code''s copy)';
+  end if;
   if (select value ->> 'rosterThreadTitle' from settings where key = 'copy') is distinct from 'Season {season}: Promos' or (select value ? 'announcementsThreadTitle' from settings where key = 'copy') then
     raise exception 'the data step moves an instance''s old key to rosterThreadTitle: %', (select value from settings where key = 'copy');
   end if;

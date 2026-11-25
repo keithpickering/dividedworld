@@ -441,6 +441,9 @@ test('an instance says the copy the Roster Report and the Staff Meetings are tit
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: 'Staff Meetings' } }).join('\n'), /meetingsThreadTitle does not say which season/);
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: ' ' } }).join('\n'), /no copy for meetingsThreadTitle/);
   assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: 'Season {season}: {boss} Report' } }).join('\n'), /copy for rosterThreadTitle uses \{boss\}/);
+  // meetingsThreadTitle is optional (Copy.meetingsThreadTitle?, and 0431 skips the minutes without it): its absence is no problem, a blank one is.
+  const { meetingsThreadTitle: _m, ...noMeetings } = good.copy!;
+  assert.deepEqual(instanceProblems({ ...good, copy: noMeetings }), [], 'an instance with no meetings title is whole');
   assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
   // A copy written before 0099 holds only the old keys, and so lacks the one now asked for (unknown keys are not refused).
   assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
@@ -460,6 +463,25 @@ test('each thread title is a move kind the engine has, and fills only the tokens
   assert.match(said(withSystem({ handoverThreadTitle: ' ' })), /handoverThreadTitle is empty/);
   assert.match(said(withSystem({ handoverThreadTitle: '{boss} takes the chair, {board}' })), /handoverThreadTitle uses \{board\}/);
   assert.deepEqual(instanceProblems(withSystem({ handoverThreadTitle: 'Season {season}: {boss} takes the chair' })), [], 'the season and the Boss are what a handover is given');
+});
+
+test('a thread title fills only tokens the database fills: strings, a readable board, the Boss and its pronouns, never a raw uuid or an optional field', () => {
+  const titled = (threadTitles: Record<string, string>) => said(withSystem({ threadTitles }));
+  // Numbers are filled (system_line_fill writes a number as its digits), so these are good.
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { repriceSlot: 'Prices cut {percent}%', flashSale: 'Flash sale for {hours} hours' } })), []);
+  // The pronoun forms of the Boss, and {rule} on the rule move, are filled.
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { setRule: '{boss} makes {boss.their} rule: {rule}', moveThread: '{boss.They} moved a thread to {board}' } })), []);
+  assert.match(titled({ setRule: '{boss.nonsense} rule' }), /thread title for "setRule" uses \{boss\.nonsense\}/);
+  assert.match(titled({ createBoard: '{rule} for {name}' }), /thread title for "createBoard" uses \{rule\}/, 'only the rule move is given a rule');
+  // A raw uuid is no words: the message points at the readable form.
+  assert.match(titled({ moveThread: 'Moved {thread}' }), /uses \{thread\}, which is a raw id/);
+  assert.match(titled({ mergeBoard: '{board} into {into}' }), /uses \{into\}, which is a raw id/);
+  assert.match(titled({ awardTrophy: '{trophyName} to {character}' }), /uses \{character\}, which is a raw id.*\{characterName\}/);
+  assert.match(titled({ pullSlot: 'Pulled {slot}' }), /uses \{slot\}, which is a raw id/);
+  // An optional field may be absent, and a token for it would stay as written.
+  assert.match(titled({ setRule: 'Rule for {predicate}: {param}' }), /uses \{param\}, which that move may not carry/);
+  assert.match(titled({ conferGroup: 'Welcome to {groupName} in {board}' }), /uses \{board\}, which that move may not carry/);
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { setRule: 'New rule in {board}' } })), [], 'a rule move always has a board name (every board where it has none)');
 });
 
 test('the staff board\'s headings and stock heading are said for each list the Roster Report has', () => {
