@@ -9,9 +9,18 @@
 --     is no other index a cost estimate could prefer. The seeds, the window, the named posts, the persona's own, the replies, the quoted posts and the page are each a loop of those probes over a list bounded by a constant;
 --   - the newest `window` posts are found by number: pool_seq_ids probes the unique key acts_thread_seq_key (thread, seq) once for each of the thread's last 2 x window + 60 numbers (at most 460), newest first;
 --   - a post's quotes are the rows of quote_refs for its act (the primary key's leading column), each quoted post probed by id (pool_quoted) and the newest 10 kept in the function: quote_refs is never joined to the view;
---   - the persona's newest posts and the replies to a post are still the two ordered, limited, single-table index reads of 0421 (pool_own_post_ids, pool_reply_ids), unchanged.
+--   - the persona's newest posts and the replies to a post are the two ordered, limited, single-table index reads of 0421 (pool_own_post_ids, pool_reply_ids), redefined below so that one index is the only plan that does not cost
+--     a disabled node. 0421's versions were bounded only while the planner priced them well: where the persona dominates `acts` (30,000 posts in another thread, 60 old posts among 4,600 in this one) and the table's statistics or the
+--     price of a random read tipped the estimate, it took acts_created or acts_character backward with a filter on thread and kind (30,581 rows of `acts` for 40 ids in 0425's test), or the whole table in a sort.
 -- Same signature, same security (security definer, owned by kayfabb_digest, the service role's only, search_path = public, pg_temp, jit off) and the same result as 0421's pool_read; 0421's test passes unchanged, and
 -- supabase/tests/0425-pool-read-bounded.sql sets the statistics that made it fail and shows this one bounded (and 0421's definition, kept there as a copy, failing).
+-- The exact guarantee of the two helpers: each runs with enable_seqscan, enable_bitmapscan, enable_sort and enable_incremental_sort off. The newest n by (created_at desc, id desc) can then be had in order without a disabled node
+-- only from the index whose key is that order under the query's equalities: acts_thread_posts (thread, character, created_at, id) where kind = 'post' for the persona's posts, acts_target (target_act_id, kind, created_at desc, id desc)
+-- where kind <> 'edit' for the replies. Every other path (a table scan, a bitmap scan, acts_created, acts_character, acts_posts_by_time, each of which can serve the filter only by reading what it then discards and sorting
+-- what it kept) costs a disabled node, which Postgres 16 prices at +1e10 (a path with no such node wins unless its own estimate is past that, which a limit of at most 100 rows is not), so the planner takes the ordered index on any statistics,
+-- on empty ones, and on a generic plan with the limit unknown. The rows of `acts` read are then the rows returned, n at most 100 (and, for replies, the post's replies in other threads that sit before them in the index, of which
+-- the game makes none: a reply is made in its post's thread). It is a guarantee over the two indexes as 0004 and 0421 define them: an instance without one has no ordered path, and the helper then reads what it must, which a build or
+-- drift check of the indexes would show and is not part of this file.
 -- Ways out: no state is added. Masks: the same Acts and characters are read through the same views as before; nothing here reads an owner, a class or who reacted.
 
 -- The ids of the Acts numbered lo..hi in a thread, newest number first, and nothing else (as pool_own_post_ids: the digest role has no column of `acts`). One probe of the unique key (thread, seq) for each number, at most 500.
@@ -32,6 +41,17 @@ begin
 end $$;
 revoke execute on function pool_seq_ids(uuid, integer, integer) from public, anon, authenticated, service_role;
 grant execute on function pool_seq_ids(uuid, integer, integer) to kayfabb_digest;
+
+-- 0421's two helpers, same signatures, owner and grants (create or replace keeps them), the n newest ids by (created_at desc, id desc) as before, with the settings above: see the guarantee in this file's header.
+-- enable_indexscan stays on because the ordered index is an index scan.
+create or replace function pool_own_post_ids(in_thread uuid, by_character uuid, n integer) returns uuid[]
+language sql stable security definer set search_path = public, pg_temp set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+  select coalesce(array(select y.id from acts y where y.thread = in_thread and y.kind = 'post' and y.character = by_character order by y.created_at desc, y.id desc limit least(greatest(coalesce(n, 0), 0), 100)), '{}'::uuid[])
+$$;
+create or replace function pool_reply_ids(in_thread uuid, to_act uuid, n integer) returns uuid[]
+language sql stable security definer set search_path = public, pg_temp set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+  select coalesce(array(select y.id from acts y where y.target_act_id = to_act and y.thread = in_thread and y.kind = 'post' order by y.created_at desc, y.id desc limit least(greatest(coalesce(n, 0), 0), 100)), '{}'::uuid[])
+$$;
 
 grant create on schema public to kayfabb_digest;
 
@@ -72,7 +92,7 @@ end $$;
 
 -- The rows of pool_read's `posts`, in no order: the seeds and the one hop, each with its quotes.
 create function pool_read_rows(in_thread uuid, staff_key text, named uuid[], "window" integer)
-returns table (act uuid, seq integer, at timestamptz, author uuid, name text, pronouns text, body text, reply_to uuid, quotes jsonb)
+returns table (act uuid, seq integer, at timestamptz, author uuid, name text, pronouns jsonb, body text, reply_to uuid, quotes jsonb)
 language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
 declare
   me uuid := (select c.id from characters_public c where c.staff = pool_read_rows.staff_key);
@@ -153,7 +173,7 @@ begin
       chars := chars || jsonb_build_object(p.author::text, case when who.n is null then null else jsonb_build_object('name', who.n, 'pronouns', who.pr) end);
     end if;
     continue when jsonb_typeof(chars -> p.author::text) is distinct from 'object';
-    act := x; seq := p.seq; at := p.created_at; author := p.author; name := chars -> p.author::text ->> 'name'; pronouns := chars -> p.author::text ->> 'pronouns';
+    act := x; seq := p.seq; at := p.created_at; author := p.author; name := chars -> p.author::text ->> 'name'; pronouns := chars -> p.author::text -> 'pronouns';
     body := p.body; reply_to := p.target;
     quotes := coalesce((select jsonb_agg(to_jsonb(o.q) order by o.n) from unnest(qs) with ordinality as o(q, n)), '[]'::jsonb);
     return next;
@@ -167,7 +187,7 @@ begin
     end if;
     continue when jsonb_typeof(chars -> p.author::text) is distinct from 'object';
     qs := pool_quoted(in_thread, p.ref);
-    act := x; seq := p.seq; at := p.created_at; author := p.author; name := chars -> p.author::text ->> 'name'; pronouns := chars -> p.author::text ->> 'pronouns';
+    act := x; seq := p.seq; at := p.created_at; author := p.author; name := chars -> p.author::text ->> 'name'; pronouns := chars -> p.author::text -> 'pronouns';
     body := p.body; reply_to := p.target;
     quotes := coalesce((select jsonb_agg(to_jsonb(o.q) order by o.n) from unnest(qs) with ordinality as o(q, n)), '[]'::jsonb);
     return next;

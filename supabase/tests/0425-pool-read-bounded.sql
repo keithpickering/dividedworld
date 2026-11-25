@@ -163,9 +163,125 @@ begin
   if (select count(*) from jsonb_array_elements(old -> 'posts') x where jsonb_array_length(x -> 'quotes') > 0) = 0 then raise exception 'the compared read has no quotes in it'; end if;
 end $$;
 
+-- ... and over the paths a big thread of plain posts does not take: the persona's own post hidden, edited and veiled, replies to its post that are hidden, edited and veiled, edits that move a quote, a post named that is hidden.
+do $$
+declare
+  a uuid := (select id from characters where name = 'Wp Len Ann');
+  boss uuid := (select id from characters where staff = 'wp-boss');
+  adm uuid := tests.account('wp-paths-admin');
+  t uuid := tests.thread('Wp Paths');
+  base timestamptz := now() - interval '1 day';
+  ids uuid[] := '{}'; stand uuid; play uuid; i integer; w integer; seen integer := 0; old jsonb; new jsonb;
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into admins (account) values (adm);
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('wpveil2', 'Wp Veil Two', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1);
+  select c.id into stand from characters c where c.staff_kind = 'anonymous';
+  if stand is null then
+    insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now()) returning id into stand;
+    insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
+  end if;
+  for i in 1..40 loop
+    ids := ids || tests.act(case when i in (2, 4, 5, 6, 20) then boss else a end, 'post', t,
+      jsonb_build_object('body', case when i = 4 then format('Path post 4 [quote="%s" user=%s]Path post 3[/quote]', ids[3], a) else 'Path post ' || i end),
+      case when i between 7 and 11 or i = 14 then ids[4] when i = 15 then ids[20 - 20 + 2] end, base + i * interval '1 minute');
+  end loop;
+  -- the persona's 4 is edited (its quotes move to 3) and its 5 is hidden; its 6 is veiled to a stand-in
+  perform tests.act(boss, 'edit', t, jsonb_build_object('body', format('Four, edited [quote="%s" user=%s]Path post 1[/quote]', ids[1], a)), ids[4], base + interval '4 minutes 30 seconds');
+  insert into conduct_decisions (version_act, post, admin, outcome) values (ids[5], ids[5], adm, 'hide');
+  play := tests.act(a, 'card', t, jsonb_build_object('card', 'wpveil2', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '1 day'), ids[6], base + interval '51 minutes');
+  insert into post_veils (play, post, veil, author, ends_at) values (play, ids[6], 'author', boss, now() + interval '1 day');
+  -- replies to the persona's 4: 8 is hidden, 9 is edited, 10 is veiled (its author's, a)
+  insert into conduct_decisions (version_act, post, admin, outcome) values (ids[8], ids[8], adm, 'hide');
+  perform tests.act(a, 'edit', t, jsonb_build_object('body', format('Nine, edited [quote="%s" user=%s]Path post 13[/quote]', ids[13], a)), ids[9], base + interval '9 minutes 30 seconds');
+  play := tests.act(boss, 'card', t, jsonb_build_object('card', 'wpveil2', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '1 day'), ids[10], base + interval '53 minutes');
+  insert into post_veils (play, post, veil, author, ends_at) values (play, ids[10], 'author', a, now() + interval '1 day');
+  foreach w in array array[0, 5, 60] loop
+    old := pg_temp.pool_read_0421(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], w); new := pool_read(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], w);
+    if old is distinct from new then raise exception 'the path thread, window %, is not 0421''s: % posts in 0421''s, % in this one', w, jsonb_array_length(old -> 'posts'), jsonb_array_length(new -> 'posts'); end if;
+    seen := seen + jsonb_array_length(new -> 'posts');
+  end loop;
+  new := pool_read(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], 5);
+  if new::text ~ ids[5]::text or new::text ~ ids[8]::text then raise exception 'a hidden post is in the read'; end if;
+  if not exists (select 1 from jsonb_array_elements(new -> 'posts') x where (x ->> 'act')::uuid = ids[4] and x -> 'quotes' = jsonb_build_array(ids[1])) then raise exception 'the persona''s edited post is not read by its edited quotes: %', (select jsonb_agg(x - 'body' - 'pronouns') from jsonb_array_elements(new -> 'posts') x); end if;
+  if not exists (select 1 from jsonb_array_elements(new -> 'posts') x where (x ->> 'author')::uuid = stand) then raise exception 'no veiled post is read under its stand-in'; end if;
+  if seen < 20 then raise exception 'the path thread was read as % posts', seen; end if;
+end $$;
+
 -- ---- 1. (continued) true statistics ----
 analyze acts;
 select pg_temp.measure('true statistics', 1500);
+
+-- ---- 4. the two ordered helpers, and pool_read over them, on any plan ----
+-- pool_own_post_ids and pool_reply_ids are one ordered, limited read each, and a cost estimate is again all that kept them short: where the persona dominates `acts` (30,000 posts in another thread) and has 60 old posts among 4,600 in this
+-- one, true statistics price acts_created backward (a filter on thread, kind and character, an incremental sort) below the persona's own index, and that plan reads rows of the table until it has found 40 (37,600 removed by the filter).
+-- The reply side is a post with 400 replies and 300 cards played on it (the 4,000-post thread's). Each helper, and pool_read over them, reads about as many rows of `acts` as it returns, in each state.
+-- (the helpers are called through `execute`, so that each state is planned afresh: a plpgsql expression keeps the plan of a SQL function it called earlier in the transaction, and the first state's plan would answer for all of them.
+-- track_functions is on while counting, as in measure: the table's counts of a statement run inside a function are not seen from the caller without it)
+create function pg_temp.helper_reads(label text, bound bigint) returns void language plpgsql as $$
+declare
+  d uuid := (select f.dom from fixture f); ds uuid := (select f.dom_small from fixture f); t uuid := (select f.big from fixture f);
+  target uuid := (select a.id from acts a where a.thread = (select f.big from fixture f) and a.payload ->> 'body' = 'Long post 3920');
+  boss uuid := (select id from characters where staff = 'wp-boss');
+  c0 bigint; c_own bigint; c_rep bigint; c_dom bigint; c_dom_small bigint; got_own integer; got_rep integer; r_dom jsonb; r_small jsonb;
+begin
+  perform set_config('track_functions', 'all', true);
+  c0 := pg_temp.acts_read(); execute 'select cardinality(pool_own_post_ids($1, $2, 40))' using d, boss into got_own; c_own := pg_temp.acts_read() - c0;
+  c0 := pg_temp.acts_read(); execute 'select cardinality(pool_reply_ids($1, $2, 20))' using t, target into got_rep; c_rep := pg_temp.acts_read() - c0;
+  if got_own <> 40 or got_rep <> 20 then raise exception '[%] the helpers returned % and % ids', label, got_own, got_rep; end if;
+  if c_own > bound then raise exception '[%] pool_own_post_ids reads % rows of acts for 40 ids: more than %', label, c_own, bound; end if;
+  if c_rep > bound then raise exception '[%] pool_reply_ids reads % rows of acts for 20 ids: more than %', label, c_rep, bound; end if;
+  c0 := pg_temp.acts_read(); execute 'select pool_read($1, ''wp-boss'', null, 60)' using d into r_dom; c_dom := pg_temp.acts_read() - c0;
+  c0 := pg_temp.acts_read(); execute 'select pool_read($1, ''wp-boss'', null, 60)' using ds into r_small; c_dom_small := pg_temp.acts_read() - c0;
+  perform set_config('track_functions', 'none', true);
+  if jsonb_array_length(r_dom -> 'posts') < 60 then raise exception '[%] the dominated thread''s read has % posts', label, jsonb_array_length(r_dom -> 'posts'); end if;
+  if c_dom > c_dom_small + 20 then raise exception '[%] pool_read reads % rows of acts where the persona dominates the table and % where it does not: it grows with the table', label, c_dom, c_dom_small; end if;
+  if c_dom > 1500 then raise exception '[%] pool_read reads % rows of acts where the persona dominates the table: more than 1500', label, c_dom; end if;
+  raise notice '[%] rows of acts: % (own posts), % (replies), % (pool_read, dominating persona), % (without)', label, c_own, c_rep, c_dom, c_dom_small;
+end $$;
+alter table fixture add column dom uuid;
+alter table fixture add column dom_small uuid;
+do $$
+declare
+  boss uuid := (select id from characters where staff = 'wp-boss');
+  a uuid := (select id from characters where name = 'Wp Len Ann');
+  d uuid := tests.thread('Wp Dominated'); ds uuid := tests.thread('Wp Not Dominated'); other uuid := tests.thread('Wp Dominating');
+  base timestamptz := now() - interval '10 days';
+begin
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  -- 4,600 posts, the persona's 60 the oldest of them; the same 60 among 200 in a thread of their own; and 30,000 posts of the persona's in another thread, newer than all of them. They are written in no order of time, as
+  -- a restored or imported instance's rows are, so that no index of `acts` is read in the order of its heap.
+  insert into acts (character, kind, thread, payload, created_at)
+  select q.c, 'post', q.t, jsonb_build_object('body', q.b), q.at from (
+    select case when i <= 60 then boss else a end as c, d as t, 'Old ' || i as b, base + i * interval '1 second' as at from generate_series(1, 4600) i
+    union all
+    select case when i <= 60 then boss else a end, ds, 'Small ' || i, base + i * interval '1 second' from generate_series(1, 200) i
+    union all
+    select boss, other, 'Elsewhere ' || i, base + interval '1 day' + i * interval '1 second' from generate_series(1, 30000) i) q
+  order by md5(q.b);
+  update fixture set dom = d, dom_small = ds;
+end $$;
+-- every row is sampled, so that the statistics, and with them the plans below, are the same on every run
+alter table acts alter column thread set statistics 1000;
+alter table acts alter column "character" set statistics 1000;
+alter table acts alter column created_at set statistics 1000;
+alter table acts alter column kind set statistics 1000;
+analyze acts;
+select pg_temp.helper_reads('true statistics, a dominating persona', 200);
+-- A planner that prices a random read dear (a database on a disk that seeks slowly, a setting nobody revisited) takes the whole table in a sort, or acts_created or acts_character backward with a filter, where it has a choice.
+-- Which of those it takes under a given set of statistics is a matter of a few percent of cost (the helpers' limit is a parameter, so the estimate is a tenth of the rows they could return), so the test names the price.
+set local random_page_cost = 100;
+select pg_temp.helper_reads('true statistics, random_page_cost 100', 200);
+reset random_page_cost;
+do $$
+begin
+  delete from pg_statistic where starelid = 'acts'::regclass;
+  update pg_class set relpages = 0, reltuples = 0 where oid = 'acts'::regclass;
+end $$;
+select pg_temp.helper_reads('empty statistics', 200);
+set local plan_cache_mode = force_generic_plan;
+select pg_temp.helper_reads('empty statistics, generic plans', 200);
+reset plan_cache_mode;
 
 -- ---- 3. the same security ----
 do $$
