@@ -447,3 +447,11 @@ test('a jet pushes fog outward from its point, and a point outside its reach is 
   assert.ok(right.u > 0 && left.u < 0, `pushed away from the point (right ${right.u}, left ${left.u})`);
   assert.ok(Math.abs(far.u) < Math.abs(right.u) / 20, 'not beyond its reach');
 });
+
+test('an empty field stores only the rows it is given, and a field made again in the middle of a puff starts from the model, not from nothing', () => {
+  const tall = emptyField(W, 20000, FOG.cell, { view: { top: 9000, bottom: 9600 } });
+  assert.ok(tall.store && tall.store.rows < 200, `a tall post stores the rows it shows (${tall.store?.rows} of ${tall.gh})`);
+  assert.equal(fogAt(tall, 100, 9300).d, 0, 'empty in its rows');
+  const seeded = emptyField(W, H, FOG.cell, { from: (x) => (x < W / 2 ? 1 : 0) });
+  assert.ok(fogAt(seeded, 100, 100).d === 1 && fogAt(seeded, W - 100, 100).d === 0, 'seeded from the model');
+});

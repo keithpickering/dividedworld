@@ -37,8 +37,8 @@ export const FOG_SHARE: readonly number[] = [1, 0.59, 0.44, 0.42, 0.25];
 /** How many painter frames the mean has before it is judged: a slow device paints few frames a second, and waits on no more than this. */
 export const LADDER_FIRST = 8;
 
-/** A smoked post on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
-export interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void }
+/** A smoked post, or a puff (`transient`), on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
+export interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void; readonly transient?: boolean }
 /* One budget for the page: every smoked post's painter adds its time to the frame it ran in, and the mean of the last frames decides. */
 export const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, painted: false, kept: [] as number[], frames: 0, skipping: false };
 /* Each smoked post's own name in the ladder's frames: the same play can be shown twice on a page (in its thread and in an ORIGIN box), so the play's id is not one. */
@@ -63,7 +63,8 @@ function closeFrame(): void {
   if (mean <= FOG_BUDGET_MS) return;
   /* Only a post that painted in the frames the mean is over can take its cost off it: one that holds no tile near the window is never stepped down. */
   const open = [...ladder.rungs].filter((r) => r.level() < FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
-  const next = open.find((r) => !r.pointed()) ?? open[0];
+  /* A transient fog (a puff, which is gone in 5 s) steps down first: it is the cheaper to degrade, and a smoked post that lasts three days never goes down a rung for it. */
+  const next = open.find((r) => r.transient === true) ?? open.find((r) => !r.pointed()) ?? open[0];
   if (!next) return;
   /* It goes to the first rung whose expected cost fits (the mean as the rungs' shares scale it), at least one down, and to the last where none does. */
   const from = next.level();
