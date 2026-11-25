@@ -93,7 +93,7 @@ $$;
 create function pg_temp.plain_top(cat text, from_at timestamptz, to_at timestamptz) returns text language sql as $$
   with pl as (
     select a.id, a."character" as ch, a.target_act_id as tgt from acts_public a
-    where a.kind in ('card', 'spring') and not (a.payload ? 'caught') and a.untaken is not true and a.created_at >= from_at and a.created_at < to_at and a."character" is not null
+    where a.kind in ('card', 'spring') and (a.kind = 'spring' or not (a.payload ? 'caught')) and a.untaken is not true and a.created_at >= from_at and a.created_at < to_at and a."character" is not null
   ), counts as (
     select 'cards'::text as category, p.ch, count(*) as n from pl p group by p.ch
     union all
@@ -475,11 +475,90 @@ begin
   perform pg_temp.expect(pg_temp.top(d, 'spun') = 'Dx6 Bob:1,Dx6 Cat:1', '4 a sprung set''s spin is not counted: ' || pg_temp.top(d, 'spun'));
 end $$;
 
+-- ---- 7. what the quality review found: the standouts' own reading of `acts` agrees with acts_public's under an author veil, with a refunded write and with a spring that carries `caught`
+-- A veil (post_veils; the cover rows its triggers write) hides the author V of a post PV: every Act of V's on it, the post itself and the spins from it are the stand-in's, a staff character that never stands out. The ballots are covered by a cover
+-- row written by hand (no trigger covers a ballot: the live ones reach it only by a veil on the poll's own id), so the helper's clause for them is driven too.
+do $$
+declare
+  base timestamptz := '2050-03-10T12:00:00Z';
+  av uuid := tests.account('dx7-vee'); axa uuid := tests.account('dx7-xa'); axb uuid := tests.account('dx7-xb'); axc uuid := tests.account('dx7-xc'); ar uuid := tests.account('dx7-aa');
+  v uuid := tests.character(av, 'Dx7 Vee'); xa uuid := tests.character(axa, 'Dx7 Xa'); xb uuid := tests.character(axb, 'Dx7 Xb'); xc uuid := tests.character(axc, 'Dx7 Xc'); r uuid := tests.character(ar, 'Dx7 Aa');
+  t uuid := tests.thread('Dx7 Main');
+  px1 uuid; px2 uuid; px3 uuid; pv uuid; vplay uuid; po1 uuid; po2 uuid; po3 uuid; vb1 uuid; vb2 uuid;
+  wr uuid; sc uuid; sp uuid; stand uuid; d jsonb; x jsonb; ck text;
+begin
+  insert into settings (key, value) values ('digestExcerptChars', '30'), ('digestExcerpts', '20'), ('digestThreads', '20'), ('digestConversations', '4'),
+    ('digestPolls', '20'), ('digestSpins', '20'), ('digestPlays', '20'), ('digestStandoutDays', '7')
+  on conflict (key) do update set value = excluded.value;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  -- the stand-in, as seed_instance makes it
+  select c.id into stand from characters c where c.staff_kind = 'anonymous';
+  if stand is null then
+    insert into characters (name, staff, staff_kind, debuted_at) values ('Anonymous', 'anonymous', 'anonymous', now()) returning characters.id into stand;
+    insert into character_profiles (character, title, signature) values (stand, 'Could be anyone.', '');
+  end if;
+  px1 := tests.post(xa, t, 'Xa''s post', base - interval '20 hours');
+  px2 := tests.post(xb, t, 'Xb''s post', base - interval '19 hours');
+  px3 := tests.post(xc, t, 'Xc''s post', base - interval '18 hours');
+  pv := tests.post(v, t, 'Vee''s post, which will be veiled', base - interval '17 hours');
+  -- the veil: Xa's cast on PV, an author veil live for a month
+  vplay := tests.act(xa, 'card', t, '{"card": "exsplat", "reach": "post"}', pv, base - interval '16 hours');
+  insert into post_veils (play, post, veil, author, caster_account, ends_at) values (vplay, pv, 'author', v, axa, now() + interval '30 days');
+  -- what Vee does on the veiled post (covered), what others do to it, and what is spun from it
+  perform tests.act(v, 'card', t, '{"card": "exsweet", "reach": "post"}', pv, base - interval '15 hours');
+  perform tests.act(v, 'card', t, '{"card": "exblot", "reach": "post"}', pv, base - interval '15 hours' + interval '1 minute');
+  perform tests.act(xa, 'card', t, '{"card": "exwink", "reach": "post"}', pv, base - interval '14 hours');
+  perform tests.act(xa, 'card', t, '{"card": "exwink", "reach": "post"}', pv, base - interval '14 hours' + interval '1 minute');
+  perform pg_temp.mkpoll(t, pv, v, false, base + interval '2 days', base - interval '13 hours');
+  perform pg_temp.mkpoll(t, pv, v, false, base + interval '2 days', base - interval '13 hours' + interval '1 minute');
+  perform pg_temp.spin(xb, pv, 'Dx7 spun from the veiled post', base - interval '12 hours');
+  perform pg_temp.spin(xc, pv, 'Dx7 spun again from it', base - interval '12 hours' + interval '1 minute');
+  -- the others' plain play: a card each, a poll each, a ballot each, a thread spun from their own post each
+  perform tests.act(xa, 'card', t, '{"card": "exsplat", "reach": "post"}', px2, base - interval '11 hours');
+  perform tests.act(xb, 'card', t, '{"card": "exsweet", "reach": "post"}', px3, base - interval '11 hours' + interval '1 minute');
+  perform tests.act(xc, 'card', t, '{"card": "exblot", "reach": "post"}', px1, base - interval '11 hours' + interval '2 minutes');
+  po1 := pg_temp.mkpoll(t, px1, xa, false, base + interval '2 days', base - interval '10 hours');
+  po2 := pg_temp.mkpoll(t, px2, xb, false, base + interval '2 days', base - interval '10 hours' + interval '1 minute');
+  po3 := pg_temp.mkpoll(t, px3, xc, false, base + interval '2 days', base - interval '10 hours' + interval '2 minutes');
+  perform pg_temp.vote(po2, xa, base - interval '9 hours'); perform pg_temp.vote(po3, xb, base - interval '9 hours' + interval '1 minute'); perform pg_temp.vote(po1, xc, base - interval '9 hours' + interval '2 minutes');
+  vb1 := pg_temp.vote(po1, v, base - interval '8 hours'); vb2 := pg_temp.vote(po2, v, base - interval '8 hours' + interval '1 minute');
+  insert into post_veil_cover (act, play) values (vb1, vplay), (vb2, vplay);
+  perform pg_temp.spin(xa, px1, 'Dx7 Xa spins', base - interval '7 hours');
+  perform pg_temp.spin(xb, px2, 'Dx7 Xb spins', base - interval '7 hours' + interval '1 minute');
+  perform pg_temp.spin(xc, px3, 'Dx7 Xc spins', base - interval '7 hours' + interval '2 minutes');
+  -- a writing card whose write was refunded (0149: the row in card_write_refunds is what acts_public calls `untaken`): no play, never counted
+  wr := tests.act(r, 'card', t, '{"card": "exsplat", "reach": "post"}', px1, base - interval '6 hours');
+  insert into card_write_refunds (play, amount) values (wr, 0);
+  -- a back that caught a cast: its spring carries `caught` and is a real spring, so Xc's set on her own post is a play and the spring counts once as a card and once received
+  sc := pg_temp.back(xc, axc, t, px3, 21, base - interval '5 hours');
+  sp := tests.act(xc, 'spring', t, jsonb_build_object('set', sc::text, 'card', 'exback', 'trigger', 'cast', 'did', 'caught', 'caught', 'x'), px3, base - interval '4 hours');
+
+  d := pg_temp.digest(base - interval '1 day', base);
+  x := d -> 'plays';
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(x) p where p ->> 'play' = wr::text), '7 a play whose write was refunded is listed: ' || x::text);
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(x) p where p ->> 'play' = sc::text and p ->> 'card' = 'exback' and p ->> 'by' = 'Dx7 Xc'), '7 a back that caught a cast is not a play naming its card: ' || x::text);
+  perform pg_temp.expect(d::text !~ wr::text, '7 a refunded play''s id is in the digest');
+  perform pg_temp.expect(pg_temp.top(d, 'cards') = 'Dx7 Xa:4,Dx7 Xc:2,Dx7 Xb:1', '7 cards played: ' || pg_temp.top(d, 'cards'));
+  perform pg_temp.expect(pg_temp.top(d, 'received') = 'Dx7 Xc:2,Dx7 Xa:1,Dx7 Xb:1', '7 received: ' || pg_temp.top(d, 'received'));
+  perform pg_temp.expect(pg_temp.top(d, 'polls') = 'Dx7 Xa:1,Dx7 Xb:1,Dx7 Xc:1', '7 polls: ' || pg_temp.top(d, 'polls'));
+  perform pg_temp.expect(pg_temp.top(d, 'ballots') = 'Dx7 Xa:1,Dx7 Xb:1,Dx7 Xc:1', '7 ballots: ' || pg_temp.top(d, 'ballots'));
+  perform pg_temp.expect(pg_temp.top(d, 'spun') = 'Dx7 Xa:1,Dx7 Xb:1,Dx7 Xc:1', '7 spun: ' || pg_temp.top(d, 'spun'));
+  perform pg_temp.expect((d #>> '{standouts}') !~ v::text and (d #>> '{standouts}') !~ stand::text, '7 the veiled author or the stand-in stands out: ' || (d -> 'standouts')::text);
+  -- digest_origin, the one predicate of whether the board shows an origin: a post, always; a set, once a spring Act names it (the spring's `caught` changes nothing); a set nobody has sprung, never
+  perform pg_temp.expect((select count(*) from digest_origin(px1)) = 1 and (select o.kind from digest_origin(px1) o) = 'post' and (select o.made_at from digest_origin(px1) o) = base - interval '20 hours', '7 digest_origin of a post');
+  perform pg_temp.expect((select o.kind from digest_origin(sc) o) = 'set', '7 digest_origin of a set that sprang');
+  perform pg_temp.expect(not exists (select 1 from digest_origin(pg_temp.back(xb, axb, t, px2, 22, base - interval '3 hours'))), '7 digest_origin of a set that has not sprung');
+  foreach ck in array array['cards', 'received', 'polls', 'ballots', 'spun'] loop
+    perform pg_temp.expect(pg_temp.top(d, ck) = pg_temp.plain_top(ck, base - interval '7 days', base) and pg_temp.top(d, ck) <> '',
+      '7 the standouts drifted from acts_public in ' || ck || ' under a veil: digest ' || pg_temp.top(d, ck) || ', acts_public ' || pg_temp.plain_top(ck, base - interval '7 days', base));
+  end loop;
+end $$;
+
 -- ---- 5. the security
 do $$
 declare f text; r text;
 begin
-  foreach f in array array['digest_standouts(timestamptz,timestamptz)', 'digest_polls(timestamptz,timestamptz)', 'digest_spins(timestamptz,timestamptz,integer)', 'digest_plays(timestamptz,timestamptz,integer)'] loop
+  foreach f in array array['digest_standouts(timestamptz,timestamptz)', 'digest_polls(timestamptz,timestamptz)', 'digest_origin(uuid)', 'digest_spins(timestamptz,timestamptz,integer)', 'digest_plays(timestamptz,timestamptz,integer)'] loop
     perform pg_temp.expect(has_function_privilege('kayfabb_digest', f, 'execute'), f || ' is not the digest role''s to run');
     foreach r in array array['anon', 'authenticated', 'service_role'] loop
       perform pg_temp.expect(not has_function_privilege(r, f, 'execute'), r || ' can run ' || f);
