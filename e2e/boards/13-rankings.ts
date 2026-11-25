@@ -43,10 +43,10 @@ import type { BoardManifest, Landmark } from '../board-match.ts';
 
 /** How many cells of each text the rows before have: a cell is found in the table by its text and its place among those. */
 const seen = new Map<string, number>();
-const cell = (id: string, name: string, box?: Landmark['box'], origin = 'table', buildShift?: Landmark['buildShift']): Landmark => {
+const cell = (id: string, name: string, box?: Landmark['box'], buildShift?: Landmark['buildShift']): Landmark => {
   const nth = seen.get(name) ?? 0;
   seen.set(name, nth + 1);
-  return { id, role: 'cell', name, within: 'table', nth, origin, ...(box ? { box } : {}), ...(buildShift ? { buildShift } : {}) };
+  return { id, role: 'cell', name, within: 'table', nth, origin: 'table', ...(box ? { box } : {}), ...(buildShift ? { buildShift } : {}) };
 };
 
 /** A row: its header (the name, with Yours on the player's own), its link, and its place, rank and standing. */
@@ -54,7 +54,7 @@ function row(n: number, name: string, place: string, rank: string, standing: str
   const id = `row-${n}`;
   /* Thwompson's row (5) is 32px shorter in the build, so its landmarks are 32px shorter (`height`), and every row below it (6 and on) stands 32px higher (`y`); the header says why. */
   const shift: Landmark['buildShift'] | undefined = n === 5 ? { height: -32 } : n > 5 ? { y: -32 } : undefined;
-  const placeCell = cell(`${id}-place`, place, 'height', 'table', shift);
+  const placeCell = cell(`${id}-place`, place, 'height', shift);
   return [
     { id, role: 'rowheader', name: own ? `${name} Yours` : name, within: 'table', type: false, origin: 'table', box: 'height', ...(shift ? { buildShift: shift } : {}) },
     { id: `${id}-name`, role: 'link', name, within: id, origin: 'table', box: 'height', ...(n > 5 ? { buildShift: shift } : {}) },
@@ -62,8 +62,8 @@ function row(n: number, name: string, place: string, rank: string, standing: str
     /* The board's "6" cells are the build's "Unplaced" ones, in the same order, so the place among them (`nth`) holds on both sides. */
     /* Its word is hidden from the eye and its dash from a reader, so it has no type to read; the board draws no dash to hold the dash's own type to (the header). */
     buildPlace === undefined ? placeCell : { ...placeCell, buildName: buildPlace, type: false },
-    cell(`${id}-rank`, rank, undefined, 'table', shift),
-    cell(`${id}-standing`, standing, undefined, 'table', shift),
+    cell(`${id}-rank`, rank, undefined, shift),
+    cell(`${id}-standing`, standing, undefined, shift),
   ];
 }
 
