@@ -414,7 +414,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               <p className="kb-play-label">Play it in a thread on {beyond?.name ?? 'this board'}</p>
               {/* Keyed by the open thread, which may be published a moment after the form opens: the field then starts on it. */}
               <ThreadPicker key={open?.id ?? ''} only={boardTarget} value={boardThread} onChange={setPicked} />
-              {/* Mounted with the picker so a screen reader hears its text arrive, and the send button names it as the reason it waits. */}
+              {/* Kept mounted so a screen reader hears its text when it comes back after a pick is cleared; the send button names it as the reason it waits. */}
               <p className="kb-play-fine" id={`${id}-thread`} role="status" aria-label="Where to play it">{boardThread === null ? 'Pick the thread to play it in. The card is written there, and the board shows it too.' : ''}</p>
             </div>
           )}
