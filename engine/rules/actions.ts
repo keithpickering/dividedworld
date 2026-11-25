@@ -246,6 +246,14 @@ const drawing = (r: Fields): unknown => {
   return r.input;
 };
 
+/** A spin's or an apology's board (docs/plans/2026-11-25-spin-board-plan.md, Task 2): absent or null sends none, so the server's default holds; else a slug, in startThread's words. */
+const boardSlug = (r: Fields): { board_slug?: string } => {
+  const board = r.board;
+  if (board === undefined || board === null) return {};
+  if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
+  return { board_slug: board };
+};
+
 /** Each action: the SQL function that writes it, and its arguments from the request. */
 const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   startThread: (r, { settings }) => {
@@ -263,12 +271,12 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   spin: (r, { settings }) => ({
     rpc: 'spin',
-    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), at_post: optionalId(r, 'at'), ...framing(r) },
+    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), at_post: optionalId(r, 'at'), ...framing(r), ...boardSlug(r) },
   }),
   // A barred character's apology (supabase/migrations/0130_bars_apologies.sql): the spin of the move's Act that bars it, with words of its own that the judge reads.
   apologize: (r, { settings }) => ({
     rpc: 'apologize',
-    args: { in_move: id(r, 'move'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r) },
+    args: { in_move: id(r, 'move'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...boardSlug(r) },
   }),
   react: (r, { reactions }) => {
     const kind = r.kind;

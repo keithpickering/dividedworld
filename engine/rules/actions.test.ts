@@ -383,3 +383,17 @@ test('a poll that is not a draft, and picks that are not option numbers, are ref
   assert.match(refusal({ action: 'castBallot', poll: 'x', character: id, picks: [0] })!, /^poll: /);
   assert.match(refusal({ action: 'closePoll', poll: other })!, /^character: /);
 });
+
+// A spin and an apology may name their board (docs/plans/2026-11-25-spin-board-plan.md, Task 2): absent or null sends
+// no board_slug, so the server's default (spin_board) holds; a slug is sent as board_slug; anything else is refused in
+// startThread's words.
+test('a spin and an apology may name a board by its slug', () => {
+  for (const [action, base] of [['spin', { origin: other, title: 'Spun', body: '' }], ['apologize', { move: other, title: 'Sorry', body: 'B' }]] as const) {
+    const sent = (request: object) => { const d = decide({ action, character: id, ...base, ...request }, instance); return d.ok ? d.args as { board_slug?: unknown } : `${d.field}: ${d.why}`; };
+    assert.equal(typeof sent({}) === 'object' && 'board_slug' in (sent({}) as object), false, `${action}: absent sends none`);
+    assert.equal(typeof sent({ board: null }) === 'object' && 'board_slug' in (sent({ board: null }) as object), false, `${action}: null sends none`);
+    assert.equal((sent({ board: 'off-topic' }) as { board_slug?: unknown }).board_slug, 'off-topic', `${action}: a slug is sent`);
+    assert.equal(sent({ board: 'Off Topic!' }), 'board: is not a board', `${action}: a bad slug`);
+    assert.equal(sent({ board: 7 }), 'board: is not a board', `${action}: a number`);
+  }
+});
