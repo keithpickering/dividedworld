@@ -8,7 +8,7 @@
 --    by the Boss; the record says minutesPosted true.
 -- 3. The next day's meeting posts in the same thread: one thread, two posts, in order.
 -- 4. A second apply of an applied meeting posts nothing again.
--- 5. Minutes longer than postMaxLength are cut to it.
+-- 5. Minutes longer than postMaxLength are cut to it, and the cut is on the meeting's record (minutesTrims, shaped as handoffTrims).
 -- 6. The thread is one of the instance's own (instance_threads()), so it follows the system board's flag.
 -- 7. The minutes are words that decide nothing: with the instance's `meetingsThreadTitle` missing, a meeting that carries minutes still applies (its moves and points land), the record says
 --    minutesPosted false and minutesSkipped names the missing word, and no thread is opened (the sub-block rolled its own insert back).
@@ -37,7 +37,6 @@ declare
   threads_before integer;
   r jsonb;
   t uuid;
-  posts integer;
 begin
   select id into general from boards where slug = 'general';
   insert into characters (name, staff, staff_kind, debuted_at) values ('Mn Boss', 'mn-boss', 'persona', now());
@@ -94,6 +93,8 @@ begin
   m6 := (begin_meeting('2031-04-06T09:00:00Z') ->> 'meeting')::bigint;
   perform apply_meeting(m6, pg_temp.payload(general, 'Six', jsonb_build_object('minutes', repeat('m', 100))));
   perform pg_temp.expect((select length(a.payload ->> 'body') from acts a where a.thread = t and a.kind = 'post' order by a.seq desc limit 1) = 30, 'minutes over postMaxLength were not cut to it');
+  perform pg_temp.expect((select record -> 'minutesTrims' from meetings where id = m6) = jsonb_build_array(jsonb_build_object('path', 'minutes', 'predicate', 'maxLength(30)', 'before', 100, 'after', 30)), 'the cut of the minutes is not on the record: ' || coalesce((select (record -> 'minutesTrims')::text from meetings where id = m6), 'null'));
+  perform pg_temp.expect((select record -> 'minutesTrims' from meetings where id = m4) = '[]'::jsonb, 'a meeting whose minutes were not cut recorded a trim');
   update settings set value = '20000' where key = 'postMaxLength';
 
   -- 6. The thread is one of the instance's own.

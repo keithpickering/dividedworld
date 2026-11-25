@@ -117,6 +117,7 @@ declare
   minutes_txt text := nullif(btrim(case when jsonb_typeof(payload -> 'minutes') = 'string' then payload ->> 'minutes' end, E' \t\n\r\f\v'), '');
   minutes_posted boolean := false;
   minutes_skipped text;
+  minutes_trims jsonb := '[]';
 begin
   perform pg_advisory_xact_lock(hashtextextended('kayfabb.meeting.' || apply_meeting.meeting, 0));
   if not exists (select 1 from meetings x where x.id = apply_meeting.meeting) then
@@ -478,7 +479,10 @@ begin
 
   -- The minutes, after the moves are queued: the Boss's post in the season's Staff Meetings thread, within postMaxLength (the engine already trimmed them to its own bound). An applied meeting returned above, so a retry never posts them again.
   if minutes_txt is not null then
-    if hf_post_most is not null and char_length(minutes_txt) > hf_post_most then minutes_txt := left(minutes_txt, hf_post_most); end if;
+    if hf_post_most is not null and char_length(minutes_txt) > hf_post_most then
+      minutes_trims := jsonb_build_array(jsonb_build_object('path', 'minutes', 'predicate', 'maxLength(' || hf_post_most || ')', 'before', char_length(minutes_txt), 'after', hf_post_most));
+      minutes_txt := left(minutes_txt, hf_post_most);
+    end if;
     -- The minutes are words that decide nothing: a thread the instance has no word for, a benched Boss or a Boss locked out of the thread must not fail a meeting whose paid answer is
     -- being applied. The sub-block rolls back its own thread insert and season update, and the record says why (as `bundlesSkipped` does).
     begin
@@ -507,6 +511,7 @@ begin
       'bundlesSkipped', bundles_skipped,
       'handoffTrims', hf_trims,
       'handoffSkipped', hf_skipped,
+      'minutesTrims', minutes_trims,
       'minutesPosted', minutes_posted,
       'minutesSkipped', to_jsonb(minutes_skipped),
       'patrolsWritten', jsonb_build_object('written', pat_n, 'skipped', pat_skipped),
