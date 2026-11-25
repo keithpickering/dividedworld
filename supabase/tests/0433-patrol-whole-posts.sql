@@ -1,7 +1,7 @@
 -- The patrol reads whole posts (supabase/migrations/0433_digest_sees_the_board.sql, the patrol_sample section; docs/plans/2026-11-25-digest-sees-the-board-plan.md, Task 4).
 -- patrol_sample returns, for each sampled post, its words whole (a 2,000-character post is not cut), its post_extras (poll, plays, reactions, rewoundTo, and the rewound body), and for a post that opens a spun thread its
 -- origin as pool_read gives it. A secret ballot's voter, an unsprung set and an account never appear; the sample's draw is the same, and its door and owner are what 0362 left.
--- The rows are this file's own (pws...).
+-- The rows are this file's own (pws...), on a board of its own that the sample reads alone: the suite runs every file on one database, so a sample drawn from General would see the posts other files committed (CI: 50 where this file wrote 9).
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
 begin if ok is not true then raise exception '%', what; end if; end $$;
@@ -19,14 +19,15 @@ do $$
 declare
   aa uuid := tests.account('pws-ann'); ab uuid := tests.account('pws-bob'); ac uuid := tests.account('pws-cat'); ad uuid := tests.account('pws-dee'); ae uuid := tests.account('pws-eve');
   a uuid := tests.character(aa, 'Pws Ann'); b uuid := tests.character(ab, 'Pws Bob'); c uuid := tests.character(ac, 'Pws Cat'); d uuid := tests.character(ad, 'Pws Dee'); e5 uuid := tests.character(ae, 'Pws Eve');
-  t uuid := tests.thread('Pws Main');
-  board uuid := (select th.board from threads th where th.id = t);
+  board uuid; t uuid;
   base timestamptz := now() - interval '3 days';
   long text := repeat('Whole words that go on. ', 84) || 'THE END.';
   p_long uuid; p_poll uuid; p_sec uuid; p_play uuid; p_rw uuid; p_plain uuid; pl uuid; spl uuid; secret_ballot uuid; w uuid; us uuid; made jsonb; sth uuid; opener uuid; mth uuid; mopener uuid; p_eve uuid; p_eve2 uuid; mod_c uuid;
   r jsonb; x jsonb; o jsonb; txt text; n integer;
 begin
   perform set_config('kayfabb.staff_writer', 'on', true);
+  insert into boards (slug, name) values ('pws-board', 'Pws Board') returning id into board;
+  insert into threads (board, title) values (board, 'Pws Main') returning id into t;
   p_long := tests.post(a, t, long, base);
   p_plain := tests.post(a, t, 'Plain.', base + interval '1 minute');
   -- a public poll with votes

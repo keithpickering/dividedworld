@@ -11,8 +11,12 @@
 --  2. digest_polls is planned over acts_digest_polls_at and reads at most 6 x (the polls created in the 14 days and the window) + 20 rows of `acts`; digest_spins is planned over threads_created_at and reads at most 2 x the threads created in the window + 20 rows of
 --     `threads` and of `acts` (every thread of the window is read, the spun ones kept: the index is a plain one by time, because a partial one on origin_act_id is implied by every probe by origin_act_id, and a planner with no statistics read it whole for
 --     0135's spring reads); digest_plays at most 5 x its cap + 10 rows of `acts`, and rows of play_post that are those played in the window (less than a third of the table) and no more, and is planned over play_post_digest_at.
---  3. system_digest reads no more than 1.5 x the Acts created in the span (about 12,000: each Act of the span once and half again; the standouts alone are held to 2 x the plays + the ballots + a few hundred, the window's posts, polls, plays and persona turns to
---     what is left), and as many rows of `acts` with 10,000 more Acts outside the span (older posts, plays and ballots) as it did without them, to within 2%, in each regime. The fixture holds 70 turns of a persona (210 answered replies), which the
+--  3. system_digest reads no more rows of `acts` than the sum of its parts' own bounds, each stated from what the part reads: digest_standouts' bound of 1 (its span's plays, ballots, polls and spins); the three other helpers' bounds of 2; the posts of the board lines'
+--     range (board_posts reads each post of the `digestBoardDays` days before the window's end once, by acts_posts_by_time, through acts_public: P = 6,130 here) twice over (2 x P: a plan that reads a post's row and the Act beside it, as true statistics did on
+--     Postgres 17 where Postgres 16 read about 1.4 x P); and 4 x (W + T + R) for the reads by key of the window's posts W (the posts and excerpts), of a persona's turns T and the replies they answered R (the conversations and the exchanges' pairs: acts_public by
+--     id, at most twice each by turn_r, conv_with, conv_best and so_pairs). No part reads an Act outside the span or the board lines' range, so the bound has no term in the older Acts; the number of them is the growth check's: the same digest reads as many rows of `acts`
+--     with 10,000 more Acts outside the span (older posts, plays and ballots) as it did without them, to within 2%, in each regime. That check, not the bound, is what shows a read that grows with history. Each regime's two readings (the fixture, and with the older Acts)
+--     are taken and printed before any of 3's assertions, so a log always shows both. The fixture holds 70 turns of a persona (210 answered replies), which the
 --     exchanges' standouts and the conversations read through acts_public: a read of it that hashes the view whole (as the first so_x did: 36,000 rows) goes over both, as does a plan that walks acts_public in time order to find the moves in force (open_m) or
 --     joins every character to the exchanges' replies (so_x), or to every thread of a board (a quadrant move's credit), which a plan on empty statistics took.
 --  4. The poison, on true statistics: with acts_digest_plays_at dropped (and again with acts_digest_ballots_at dropped) digest_standouts goes over its bound (it reads the span's replies); with every one of the five indexes dropped the whole digest reads more than the bound of 3;
@@ -122,7 +126,11 @@ begin
                         ('polls_all', (select count(*) from acts where kind = 'poll' and created_at >= until_at - interval '16 days')),
                         ('plays_window', (select count(*) from play_post where played_at >= since_at and played_at < until_at)),
                         ('play_post', (select count(*) from play_post)), ('threads', (select count(*) from threads)),
-                        ('threads_window', (select count(*) from threads where created_at >= since_at and created_at < until_at));
+                        ('threads_window', (select count(*) from threads where created_at >= since_at and created_at < until_at)),
+                        ('posts_board', (select count(*) from acts where kind = 'post' and created_at >= until_at - interval '21 days' and created_at < until_at)),
+                        ('posts_window', (select count(*) from acts where kind = 'post' and created_at >= since_at and created_at < until_at)),
+                        ('turns', (select count(*) from pool_turns where at >= span_at and at < until_at)),
+                        ('answered', (select count(*) from pool_answered where turn in (select id from pool_turns where at >= span_at and at < until_at)));
   if (select v from sc where k = 'cards') < 2400 or (select v from sc where k = 'ballots') < 3600 then raise exception 'the fixture is not a busy week'; end if;
 end $$;
 
@@ -188,12 +196,10 @@ begin
   perform pg_temp.expect(n <= 5 * 5 + 10 and pp <= w and pp * 3 < (select v from sc where k = 'play_post'), '[' || label || '] 2 digest_plays read ' || n || ' rows of acts and ' || pp || ' of play_post');
   perform pg_temp.expect((select count(*) from digest_plays(since_at, until_at, 5)) = 5, '[' || label || '] 2 digest_plays did not fill its cap');
   perform pg_temp.expect(pg_temp.plan_uses('digest_plays(timestamptz, timestamptz, integer)'::regprocedure, 'play_post_digest_at'), '[' || label || '] 2 digest_plays is not planned over play_post_digest_at');
-  -- 3. the whole digest, before the older Acts are added (the second reading, after them, is below)
+  -- 3. the whole digest, before the older Acts are added (its second reading, after them, is below; both are asserted at the end)
   n := pg_temp.whole(since_at, until_at);
-  raise notice '[%] 3 system_digest read % rows of acts (the bound: % = 1.5 x the % Acts of the span)', label, n, (1.5 * span_acts)::bigint, span_acts;
-  perform pg_temp.expect(n <= 1.5 * span_acts, '[' || label || '] 3 system_digest read ' || n || ' rows of acts, over 1.5 x the ' || span_acts || ' Acts of the span');
+  raise notice '[%] 3 system_digest read % rows of acts (the Acts of the span: %)', label, n, span_acts;
   insert into sc values ('whole_' || label, n) on conflict (k) do update set v = excluded.v;
-  insert into sc values ('whole_bound', (1.5 * span_acts)::bigint) on conflict (k) do update set v = excluded.v;
 end $$;
 
 -- 1 to 3 in each regime, before the older Acts
@@ -226,9 +232,8 @@ create function pg_temp.grown(label text) returns void language plpgsql as $$
 declare n1 bigint := (select v from sc where k = 'whole_' || label); n2 bigint;
 begin
   n2 := pg_temp.whole('2050-01-07T12:00:00Z', '2050-01-08T12:00:00Z');
+  insert into sc values ('grown_' || label, n2) on conflict (k) do update set v = excluded.v;
   raise notice '[%] 3 system_digest read % rows of acts, and % with 10,000 more Acts outside the span', label, n1, n2;
-  perform pg_temp.expect(n2 <= (select v from sc where k = 'whole_bound') * 1.0, '[' || label || '] 3 system_digest read ' || n2 || ' rows of acts with 10,000 more Acts, over the bound');
-  perform pg_temp.expect(abs(n2 - n1) <= n1 * 0.02, '[' || label || '] 3 system_digest read ' || n1 || ' rows of acts, then ' || n2 || ' with 10,000 more Acts outside the span');
 end $$;
 select pg_temp.regime_empty();
 select pg_temp.grown('empty statistics');
@@ -238,6 +243,28 @@ select pg_temp.grown('empty statistics, generic plans');
 reset plan_cache_mode;
 select pg_temp.regime_true();
 select pg_temp.grown('true statistics');
+
+-- 3. the assertions, with every reading printed above: each regime's reading, with and without the older Acts, is within the bound stated from the digest's parts and changes by no more than 2% with 10,000 more Acts outside the span.
+create function pg_temp.whole_bound() returns bigint language sql as $$
+  select (2 * (select v from sc where k = 'cards') + (select v from sc where k = 'ballots') + 3 * 31 + 3 * 20 + 20)   -- digest_standouts (1)
+       + (6 * (select v from sc where k = 'polls_all') + 20) + (2 * (select v from sc where k = 'threads_window') + 20) + (5 * 5 + 10)   -- digest_polls, digest_spins, digest_plays (2)
+       + 2 * (select v from sc where k = 'posts_board')                                                                  -- board_posts, read at most twice through acts_public
+       + 4 * ((select v from sc where k = 'posts_window') + (select v from sc where k = 'turns') + (select v from sc where k = 'answered'))   -- the reads by key of the window's posts, the turns and the replies they answered
+$$;
+do $$
+declare label text; n1 bigint; n2 bigint; bound bigint := pg_temp.whole_bound();
+begin
+  raise notice '3 the bound: % (standouts + the other helpers + 2 x % posts of the board range + 4 x (% window posts + % turns + % answered replies))', bound,
+    (select v from sc where k = 'posts_board'), (select v from sc where k = 'posts_window'), (select v from sc where k = 'turns'), (select v from sc where k = 'answered');
+  foreach label in array array['empty statistics', 'empty statistics, generic plans', 'true statistics'] loop
+    n1 := (select v from sc where k = 'whole_' || label); n2 := (select v from sc where k = 'grown_' || label);
+    raise notice '[%] 3 system_digest: % rows of acts, % with 10,000 more Acts, bound %', label, n1, n2, bound;
+    perform pg_temp.expect(n1 <= bound, '[' || label || '] 3 system_digest read ' || n1 || ' rows of acts, over the bound of ' || bound || ' stated from its parts');
+    perform pg_temp.expect(n2 <= bound, '[' || label || '] 3 system_digest read ' || n2 || ' rows of acts with 10,000 more Acts, over the bound of ' || bound);
+    perform pg_temp.expect(abs(n2 - n1) <= n1 * 0.02, '[' || label || '] 3 system_digest read ' || n1 || ' rows of acts, then ' || n2 || ' with 10,000 more Acts outside the span');
+  end loop;
+  insert into sc values ('whole_bound', bound);
+end $$;
 
 -- 4. the poison, with true statistics: each index withheld in turn sends its read over its bound (the drops are this transaction's own)
 do $$
