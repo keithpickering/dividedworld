@@ -317,7 +317,9 @@ export const settingsSql = (db, url) => [boundsSql(db), trackSql(db), clientRpcs
  * The SQL, run on the server's own database, that makes one clone of the template and gives it its settings. `alter database … set`
  * is stored for the database it names and is not copied by `create database … template`, so the clone first gets, by `\gexec`, one
  * `alter database` for each setting stored for its source with no role (`setrole = 0`; names read from the catalog, none listed here, values
- * quoted whole so that one with commas survives), then the runner's own, which come last so the clone's `scratch_url` names the clone.
+ * quoted whole so that a scalar one with commas, such as `kayfabb.client_rpcs`, survives), then the runner's own, which come last so
+ * the clone's `scratch_url` names the clone. A list-valued setting such as `search_path` would arrive as one element, since its stored
+ * form is the list already joined; no migration stores one at the database, and one that does needs this copy to learn the difference.
  * All of it is sent before anything connects to the clone.
  */
 export const cloneSql = (template, clone, url) => `create database ${clone} template ${template};
