@@ -287,6 +287,9 @@ export const defaults: Settings = deepFreeze<Settings>({
     'youWereSaying.stepTokens': 50,
     'youWereSaying.stepPrice': 25,
     'youWereSaying.mostTokens': 300,
+    /** It's Curtains: the second curtain on a post costs 1.00 on top of its price at the machine, the third 2.00. */
+    'itsCurtains.secondAdd': 100,
+    'itsCurtains.thirdAdd': 200,
     /** Jimmy Wails's drive: the four amounts a gift may be, in hundredths (0.10, 0.25, 0.50 and 1.00). */
     'jimmyWails.gift1': 10,
     'jimmyWails.gift2': 25,

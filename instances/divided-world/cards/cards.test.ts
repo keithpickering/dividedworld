@@ -51,6 +51,7 @@ test('the instance sells its cards at their prices', () => {
     ['heat-magnet', 'salty', 100],
     ['hot-box', 'salty', 100],
     ['hype-up', 'sweet', 100],
+    ['its-curtains', 'pepperoni', 150],
     ['jimmy-wails', 'sweet', 200],
     ['kick-me', 'pepperoni', 100],
     ['last-word', 'salty', 150],
@@ -427,7 +428,8 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.ok(Math.abs([...chance.values()].reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the hit pull\'s odds sum to 1');
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
   // Pay It Forward (uncommon, Refund Outcome, Task 6) joined them, so twenty-one share the 74. Cheap Shot (uncommon, pierce, the Cheap Shot plan's Task 6) makes twenty-two.
-  assert.equal(uncommons.length, 22);
+  // It's Curtains (uncommon, the its-curtains plan's Task 4) makes twenty-three.
+  assert.equal(uncommons.length, 23);
   assert.equal(chance.has('hype-up'), false, 'Hype-Up is a common, so the hit pull leaves it out');
   for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / uncommons.length) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + rares.length + legendaries.length);
