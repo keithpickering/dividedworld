@@ -2337,6 +2337,19 @@ describe('moves, a staff member and the admin queue', () => {
     expect((await fake.board('general'))?.name).toBe('General');
   });
 
+  test('a waiting request in a staff member\'s log lapses staffRequests.daysMost days after it was conferred, not a fixed three', async () => {
+    const at = Date.UTC(2026, 8, 1);
+    for (const daysMost of [3, 5]) {
+      const fake = createFake({ instance: { ...instance, settings: { ...instance.settings, staffRequests: { daysMost, meetingMost: 10 } } } });
+      const asker = fake.seed.character(fake.seed.account('asker'), 'Asker', 'face');
+      const { act: post } = fake.seed.thread('general', asker, 'Hello', 'Please');
+      fake.seed.staff('hall-monitor', 'Hall Monitor', 'mod');
+      fake.seed.staffRequest('hall-monitor', post, { ruling: 'confer', at });
+      const row = (await fake.movesLog('hall-monitor')).rows.find((r) => r.kind === 'request');
+      expect(row?.params['lapses_at']).toBe(new Date(at + daysMost * 86_400_000).toISOString());
+    }
+  });
+
   test('a staff member\'s moves are paged newest first by the keyset of the last row', async () => {
     const { fake } = world();
     for (let i = 0; i < 24; i++) fake.seed.move('director', { board: 'general', name: `N${i}`, at: Date.UTC(2026, 8, 1) + i * 60_000 });

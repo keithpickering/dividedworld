@@ -381,7 +381,7 @@ test('the prompt shows each Mod: its name, career, beat preferences, pet rules, 
   }
   assert.match(text, /setRule[^\n]*Made by the Boss or a Mod Bot/);
   assert.match(text, /renameBoard[^\n]*Made by the Boss\./);
-  assert.match(text, /\(setRule, conferGroup punishments; every other kind stays yours\)/);
+  assert.match(text, /\(setRule, conferGroup punishments, moveThread; every other kind stays yours\)/);
   assert.match(text, /a rule a Mod sets lasts at most 7 days/);
   assert.match(text, /at most 6 patrols/);
   assert.ok(!/owner|class|reactor/i.test(text.slice(text.indexOf('Your Mod Bots.'), text.indexOf('Answer only'))), 'nothing about who owns a mask, a class or a reactor');
@@ -771,7 +771,7 @@ test('the prompt lists the conferred groups with their tones and the rules for c
   assert.match(text, /A punishment may name one board[^\n]*accepted apology/);
   assert.match(text, /A favor bars nothing[^\n]*it names a checkAt[^\n]*demand/);
   assert.match(text, /capped \(punished[^\n]*or held \(already in a group move\) cannot be chosen/);
-  assert.match(text, /a Mod may be handed setRule and conferGroup punishments on its beat/);
+  assert.match(text, /a Mod may be handed setRule, conferGroup punishments and moveThread \(both boards on its beat\) on its beat/);
   assert.ok(!/Group moves\./.test(meetingSystemPrompt(facts)), 'no conferred groups, no section');
 });
 
@@ -1362,7 +1362,7 @@ const tally = (schema: any): { properties: number; optional: number; unions: num
 
 test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
   assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
-  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols', 'points'], ['memory', 'profile', 'beats', 'farewell', 'handoff']]);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited', 'successor'], ['bundle'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'beats', 'farewell', 'handoff']]);
   const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
   assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
   assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
@@ -1407,9 +1407,10 @@ test('a successor naming the Boss\'s standing nominee is dropped as no new nomin
 });
 
 // The moves part is 40 of the provider's 40, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own.
-// The staff part is 26 of the provider's 40: the orders and patrols, and the talking points' list with its two fields (points, staff, line).
-const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 26, self: 28 } as const;
-const OPTIONAL = { moves: 1, bundle: 1, staff: 8, self: 4 } as const;
+// The staff part is 40 of the provider's 40: the orders and patrols, the talking points' list with its two fields (points, staff, line), and the requests' ruling (staff requests plan, Task 5): requests, its item's id, ruling, line and move,
+// the move's kind, params, expires_in_hours and why, and five params (thread, board, into, name, premise; a rename's description is left to the stock one, the fallback to none: the provider's 40 allows no more).
+const DESIGN_PROPERTIES = { moves: 40, bundle: 37, staff: 40, self: 28 } as const;
+const OPTIONAL = { moves: 1, bundle: 1, staff: 10, self: 4 } as const;
 for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
   test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
@@ -1590,8 +1591,8 @@ test('a present but broken memory still rejects, naming the path', () => {
 test('the system prompt says the meeting is answered in four turns, and names each part once, from the parts', () => {
   const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /The meeting is answered in four turns/);
-  // The beats, the farewell and the handoff are named only to a meeting that has any to answer (the next two tests).
-  for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff'].includes(f)).join(', ')})`).length - 1, 1, p.key);
+  // The beats, the farewell, the handoff and the requests are named only to a meeting that has any to answer (the next two tests).
+  for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff', 'requests'].includes(f)).join(', ')})`).length - 1, 1, p.key);
   assert.equal(MEETING_PARTS.length, 4);
   const told = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, farewell: { postMaxLength: 500 }, beats: shownSplit });
   assert.ok(told.includes('the "self" part (memory, profile, beats, farewell, handoff)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
@@ -1763,4 +1764,158 @@ test('a meeting with no Mods on staff is still asked for points, and still does 
   assert.ok(prompt.includes('"points"') && prompt.includes(P_MEMBER) && prompt.includes(P_BOSS), 'the staff section still asks for points');
   const r = repairAnswer(withPoints([{ staff: P_MEMBER, line: 'Hold the line.' }]), { ...ctx(), posting: new Set([P_MEMBER]) });
   assert.ok(r.ok && r.points.length === 1 && r.orders.length === 0, JSON.stringify(r));
+});
+
+
+/* ------------------------------------------------------------------ the requests (staff requests plan, Task 5) ---- */
+
+const R_THREAD = THREAD;
+const requestsCtx = (extra: Partial<RepairContext> = {}): RepairContext => ({
+  ...ctx(),
+  requests: { shown: new Map([[7, { thread: R_THREAD, board: OTHER_BOARD }], [8, { thread: R_THREAD, board: OTHER_BOARD }], [9, { thread: R_THREAD, board: OTHER_BOARD }]]), postMaxLength: 120 },
+  boards: new Set([BOARD, OTHER_BOARD]),
+  ...extra,
+});
+const grant = (id: number, extra: Record<string, unknown> = {}) => ({
+  id, ruling: 'fulfill', line: 'Fine. Done.',
+  move: { kind: 'moveThread', params: { thread: R_THREAD, board: BOARD, into: '', name: '', premise: '' }, expires_in_hours: 0, why: 'The meeting says yes.' },
+  ...extra,
+});
+const withRequests = (requests: unknown, extra: Record<string, unknown> = {}) => ({ ...answer(null), moves: [], requests, ...extra });
+
+test('the staff part asks for requests: an id, a ruling of fulfill or reject, a line, and a move with five params; optional, so a meeting with none waiting leaves it out', () => {
+  const schema = partSchema('staff') as any;
+  const item = schema.properties.requests.items;
+  assert.deepEqual([...item.required].sort(), ['id', 'line', 'ruling']);
+  assert.deepEqual(item.properties.ruling.enum, ['fulfill', 'reject']);
+  assert.deepEqual(Object.keys(item.properties.move.properties.params.properties).sort(), ['board', 'into', 'name', 'premise', 'thread']);
+  assert.ok(!schema.required.includes('requests'));
+});
+
+test('a fulfill of a shown request keeps its move (a Boss request move, repaired as the turn repairs it) and its line; a reject keeps its line and no move', () => {
+  const r = repairAnswer(withRequests([grant(7), { id: 8, ruling: 'reject', line: 'No.' }]), requestsCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.requests, [
+    { id: 7, ruling: 'fulfill', move: { kind: 'moveThread', params: { thread: R_THREAD, board: BOARD }, expires_in_hours: 0, why: 'The meeting says yes.' }, line: 'Fine. Done.' },
+    { id: 8, ruling: 'reject', move: null, line: 'No.' },
+  ]);
+});
+
+test('an id the meeting was not shown is dropped as shownRequest, and a second answer for one id is dropped as uniqueRequest', () => {
+  const r = repairAnswer(withRequests([grant(99), grant(7), grant(7)]), requestsCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.requests.map((x) => x.id), [7]);
+  assert.ok(r.trims.some((t) => t.path === 'requests[0].id' && t.predicate === 'shownRequest'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'requests[2].id' && t.predicate === 'uniqueRequest'), JSON.stringify(r.trims));
+  const none = repairAnswer(withRequests([grant(7)]), ctx());
+  assert.ok(none.ok && none.requests.length === 0, 'a meeting that was shown no request keeps none');
+});
+
+test('a ruling other than fulfill or reject (confer) is dropped, naming the choices; the request stays waiting', () => {
+  const r = repairAnswer(withRequests([{ id: 7, ruling: 'confer', line: 'Later.' }, { id: 8, ruling: 'reject', line: 'No.' }]), requestsCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.requests.map((x) => x.id), [8]);
+  assert.ok(r.trims.some((t) => t.path === 'requests[0].ruling' && t.predicate === 'oneOf(fulfill, reject)'), JSON.stringify(r.trims));
+});
+
+test('a fulfill is counted against the bank after the Boss\'s own moves and its bundle, cut from the end: one the bank cannot pay becomes a reject, with both trims named and its grant line dropped (the stock refusal stands)', () => {
+  // Bank 2: the Boss's own move takes one; the first fulfill takes the last; the second fulfill is cut.
+  const r = repairAnswer({ ...withRequests([grant(7), grant(8, { line: 'Also fine.' })]), moves: [move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })] }, requestsCtx({ bank: 2 }));
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 1);
+  assert.deepEqual(r.requests.map((x) => [x.id, x.ruling, x.move === null, x.line]), [[7, 'fulfill', false, 'Fine. Done.'], [8, 'reject', true, null]]);
+  assert.ok(r.trims.some((t) => t.path === 'requests[1].line' && t.predicate === 'grantLineNotPosted'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'requests[1].move' && t.predicate === 'withinBank'), JSON.stringify(r.trims));
+  assert.ok(r.trims.some((t) => t.path === 'requests[1].ruling' && t.predicate === 'fulfillToReject'), JSON.stringify(r.trims));
+  // The bank spent by the Boss's own moves alone: every fulfill is a reject.
+  const spent = repairAnswer({ ...withRequests([grant(7)]), moves: [move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })] }, requestsCtx({ bank: 1 }));
+  assert.ok(spent.ok && spent.requests[0]!.ruling === 'reject' && spent.requests[0]!.move === null, JSON.stringify(spent));
+});
+
+test('a Mod\'s allowance is cut after the requests are paid: they come out of the bank before the allowances do', () => {
+  const orders = [{ mod: 'mod-key', boards: [], order: 'Watch.', allowance: 2 }];
+  const r = repairAnswer({ ...withRequests([grant(7)]), orders }, requestsCtx({ bank: 2, mods: new Set(['mod-key']) }));
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.requests[0]!.ruling, 'fulfill');
+  assert.equal(r.orders[0]!.allowance, 1, 'the bank holds 2, the request spends 1');
+  assert.ok(r.trims.some((t) => t.path === 'orders[0].allowance' && t.predicate === 'withinBank'));
+});
+
+test('a fulfill that loses its move (none, a kind outside a request\'s, a thread not shown) becomes a reject with fulfillToReject and the reason of the drop', () => {
+  const none = repairAnswer(withRequests([{ id: 7, ruling: 'fulfill', line: 'Yes.' }]), requestsCtx());
+  assert.ok(none.ok && none.requests[0]!.ruling === 'reject' && none.requests[0]!.move === null, JSON.stringify(none));
+  assert.ok(none.trims.some((t) => t.path === 'requests[0].ruling' && t.predicate === 'fulfillToReject'));
+  assert.ok(none.trims.some((t) => t.path === 'requests[0].move' && t.predicate === 'required'), JSON.stringify(none.trims));
+  const other = repairAnswer(withRequests([grant(7, { move: { kind: 'setRule', params: { board: BOARD, thread: '', into: '', name: '', premise: '' }, expires_in_hours: 0, why: 'x' } })]), requestsCtx());
+  assert.ok(other.ok && other.requests[0]!.ruling === 'reject', JSON.stringify(other));
+  assert.ok(other.trims.some((t) => t.path === 'requests[0].move.kind' && /^oneOf\(/.test(t.predicate)), JSON.stringify(other.trims));
+  const elsewhere = repairAnswer(withRequests([grant(7, { move: { kind: 'moveThread', params: { thread: OTHER_THREAD, board: BOARD, into: '', name: '', premise: '' }, expires_in_hours: 0, why: 'x' } })]), requestsCtx());
+  assert.ok(elsewhere.ok && elsewhere.requests[0]!.ruling === 'reject');
+  assert.ok(elsewhere.trims.some((t) => t.path === 'requests[0].move.params.thread' && t.predicate === 'knownThread'), JSON.stringify(elsewhere.trims));
+});
+
+test('a fulfill\'s move names its own request\'s thread only: another shown request\'s thread is dropped with ownRequestThread, and its own is kept', () => {
+  const ctxTwo = requestsCtx({ requests: { shown: new Map([[7, { thread: R_THREAD, board: OTHER_BOARD }], [8, { thread: OTHER_THREAD, board: OTHER_BOARD }]]), postMaxLength: 120 } });
+  const move = (thread: string) => ({ kind: 'moveThread', params: { thread, board: BOARD, into: '', name: '', premise: '' }, expires_in_hours: 0, why: 'x' });
+  const across = repairAnswer(withRequests([grant(7, { move: move(OTHER_THREAD) })]), ctxTwo);
+  assert.ok(across.ok && across.requests[0]!.ruling === 'reject' && across.requests[0]!.move === null, JSON.stringify(across));
+  assert.ok(across.trims.some((t) => t.path === 'requests[0].move.params.thread' && t.predicate === 'ownRequestThread'), JSON.stringify(across.trims));
+  const own = repairAnswer(withRequests([grant(7, { move: move(R_THREAD) }), grant(8, { move: move(OTHER_THREAD) })]), ctxTwo);
+  assert.ok(own.ok && own.requests.map((r) => r.ruling).join() === 'fulfill,fulfill', JSON.stringify(own));
+});
+
+test('a reject that carries a move has it dropped (noMove)', () => {
+  const r = repairAnswer(withRequests([grant(7, { ruling: 'reject' })]), requestsCtx());
+  assert.ok(r.ok && r.requests[0]!.ruling === 'reject' && r.requests[0]!.move === null, JSON.stringify(r));
+  assert.ok(r.trims.some((t) => t.path === 'requests[0].move' && t.predicate === 'noMove'));
+});
+
+test('the line is cut to postMaxLength at a sentence and the trim is named; a blank line is null, so the stock line stands', () => {
+  const long = 'The first sentence is here, and it is long enough to be kept. Second sentence is also here, and it runs long enough to pass the bound by a good margin, which is why it is cut away.';
+  const r = repairAnswer(withRequests([grant(7, { line: long }), { id: 8, ruling: 'reject', line: '   ' }, { id: 9, ruling: 'reject', line: '' }]), requestsCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.requests[0]!.line, 'The first sentence is here, and it is long enough to be kept.');
+  assert.ok(r.trims.some((t) => t.path === 'requests[0].line' && t.predicate === 'maxLength(120)'), JSON.stringify(r.trims));
+  assert.equal(r.requests[1]!.line, null);
+  assert.equal(r.requests[2]!.line, null);
+  assert.ok(!r.trims.some((t) => /line$/.test(t.path) && t.predicate === 'nonBlank'), 'a blank line is fine by the prompt, so it is no drop');
+});
+
+test('a fulfill whose move is lost for any reason drops its grant line too, and a reject keeps its own line', () => {
+  const r = repairAnswer(withRequests([{ id: 7, ruling: 'fulfill', line: 'Granted!' }, { id: 8, ruling: 'reject', line: 'No.' }]), requestsCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.requests.map((x) => [x.ruling, x.line]), [['reject', null], ['reject', 'No.']]);
+});
+
+test('the bank the requests pay from counts the Boss\'s moves, its bundle, the fulfills answered before, and then the Mods\' allowances take what is left', () => {
+  // Bank 5: 1 own move + a 2-part bundle + 1 fulfill = 4, so the order's allowance of 3 is cut to 1; a second fulfill (needs 1) still fits before the orders are cut? It does: bank after own and bundle is 2, two fulfills use it.
+  const orders = [{ mod: 'mod-key', boards: [], order: 'Watch.', allowance: 3 }];
+  const bundle = { name: 'Pair', parts: [1, 2].map((i) => ({ kind: 'createBoard', role: `r${i}`, params: { name: `Pirate Puns Palace ${i}`, premise: 'p', description: 'd' }, why: 'Part.' })) };
+  const r = repairAnswer({ ...withRequests([grant(7)]), moves: [move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })], bundle, orders }, requestsCtx({ bank: 5, mods: new Set(['mod-key']) }));
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 1);
+  assert.equal(r.bundles.length, 1, JSON.stringify(r.bundles));
+  assert.equal(r.bundles[0]!.cost, 2);
+  assert.equal(r.requests[0]!.ruling, 'fulfill');
+  assert.equal(r.orders[0]!.allowance, 1, 'bank 5 less 1 move, 2 bundle, 1 fulfill leaves 1');
+  const total = r.moves.length + r.bundles.reduce((n, b) => n + b.cost, 0) + r.requests.filter((x) => x.ruling === 'fulfill').length + r.orders.reduce((n, o) => n + o.allowance, 0);
+  assert.equal(total, 5);
+});
+
+test('a malformed requests answer never costs the answer: a non-list, a non-object entry and a non-number id are dropped', () => {
+  const a = repairAnswer(withRequests('nope'), requestsCtx());
+  assert.ok(a.ok && a.requests.length === 0 && a.trims.some((t) => t.path === 'requests' && t.predicate === 'isList'), JSON.stringify(a));
+  const b = repairAnswer(withRequests([5, { id: '7', ruling: 'reject', line: 'No.' }, null]), requestsCtx());
+  assert.ok(b.ok && b.requests.length === 0, JSON.stringify(b));
+});
+
+test('the prompt tells the Boss of the requests only when one waits, and the part\'s field list names requests only then', () => {
+  const none = meetingSystemPrompt(promptFacts({}));
+  assert.ok(!/requests?\b.*\bfulfill/s.test(none) && !none.includes('"requests"'), none);
+  assert.ok(!/the "staff" part \([^)]*requests/.test(none));
+  const waiting = meetingSystemPrompt(promptFacts({ requestsWaiting: 2 }));
+  assert.ok(waiting.includes('"requests"') && waiting.includes('fulfill') && waiting.includes('reject'), waiting);
+  assert.ok(/the "staff" part \([^)]*requests/.test(waiting), waiting);
+  assert.ok(waiting.includes('A request you leave out stays waiting'), 'what leaving one out does');
+  assert.ok(waiting.includes('waits') && waiting.includes('admin'), 'a structural kind waits for admins');
 });

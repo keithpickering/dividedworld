@@ -28,11 +28,15 @@ import { FIT_TITLE_CHARS } from '../rules/cards.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
+import { boardNamesText, fieldsOf, WHY_MOST, type ConferredGroup } from './meeting.ts';
+import { moveKind } from './moves.ts';
 import { careerText, type Career } from './career.ts';
 import { noteMost, type Memory } from './memory.ts';
 import type { PoolTrigger, PostingOffice } from './pool.ts';
 import type { Rule, Trim } from './validate.ts';
 import { readLines, READ_WORDS, type ReadPost, type ThreadReadResult } from './read.ts';
+// judgment.ts imports this module back (cutAtSentence, the thread fit, memoryLines): a cycle, and safe, because each side uses the other only inside functions, never while its module loads.
+import { predicateCatalogLines, punishmentList, punishmentsOf, repairBossMove, repairModMove, requestKinds, ruleParamsText, type BossMoveContext, type Dropped, type ModMove, type ModMoveContext, type RepairedMove } from './judgment.ts';
 
 /** A card the persona may play today: a Cast lands on the post it replies to, a Set on its own post. */
 export interface OfferedCard {
@@ -63,6 +67,28 @@ export interface ChatterAnswer {
     readonly wall?: string;
   };
   readonly note?: string;
+  /** A ruling on one of the replies this turn answers (staff only): the choice is the code's, the persona's words are the post. */
+  readonly request?: ChatterRequest;
+}
+
+export const RULINGS = ['fulfill', 'reject', 'confer'] as const;
+export type Ruling = (typeof RULINGS)[number];
+export interface ChatterRequest {
+  readonly reply: string;
+  readonly ruling: Ruling;
+  /** Only a fulfill carries one, repaired by the office's own rules. */
+  readonly move?: ModMove;
+}
+
+/**
+ * The ruling a staff turn is offered, and held to. Absent: no `request` block is offered (a member persona, a pick), and one given is dropped, `notAsked`.
+ */
+export interface RulingFacts {
+  /** The ids of the replies this turn answers; the ruling's `reply` is one of them. */
+  readonly answering: readonly string[];
+  readonly office: 'boss' | 'mod';
+  readonly mod?: ModMoveContext;
+  readonly boss?: BossMoveContext;
 }
 
 /**
@@ -93,11 +119,46 @@ export const CHATTER_RULE: Rule = {
       fields: { key: { type: 'string' }, on: { type: 'string' }, config: { type: 'any', optional: true }, wall: { type: 'any', optional: true } },
     },
     note: { type: 'string', optional: true },
+    // A ruling is `any` here, as a card's options are: a malformed one (a ruling that is no choice, a move that is text) must not cost the post, and repairRuling owns every bound.
+    request: { type: 'any', optional: true },
   },
 };
 
+/**
+ * The `request` block a staff turn is offered: the reply it rules on, the ruling as a fixed choice, and, for a fulfill, one move of a kind its office makes. The params are one flat
+ * object of optional text fields (no anyOf, so any provider's structured output holds it), only those the office's kinds use; `repairRuling` holds each kind to its own shape.
+ */
+function requestSchema(office: 'boss' | 'mod', conferred?: readonly ConferredGroup[]): Record<string, unknown> {
+  const text = { type: 'string' };
+  const punishments = punishmentsOf({ conferred });
+  const conferring = office === 'mod' && punishments.length > 0;
+  const params: Record<string, unknown> = office === 'mod'
+    ? { board: text, thread: text, predicate: text, param: text, ...(conferring ? { character: text, group: { type: 'string', enum: punishments.map((g) => g.key) } } : {}), band: { type: 'string', enum: ['minor', 'moderate', 'severe'] } }
+    : { board: text, thread: text, into: text, name: text, premise: text, description: text, fallback: text };
+  return {
+    type: 'object',
+    properties: {
+      reply: text,
+      ruling: { type: 'string', enum: [...RULINGS] },
+      move: {
+        type: 'object',
+        properties: {
+          kind: { type: 'string', enum: [...requestKinds(office, conferring)] },
+          params: { type: 'object', properties: params, additionalProperties: false },
+          expires_in_hours: { type: 'number' },
+          why: text,
+        },
+        required: ['kind', 'params', 'expires_in_hours', 'why'],
+        additionalProperties: false,
+      },
+    },
+    required: ['reply', 'ruling'],
+    additionalProperties: false,
+  };
+}
+
 /** The provider's structured-output schema for one call: a title only where a thread start asks, the card keys only on offer. */
-export function chatterSchema(c: { readonly askedTitle: boolean; readonly offered: readonly OfferedCard[] }): Record<string, unknown> {
+export function chatterSchema(c: { readonly askedTitle: boolean; readonly offered: readonly OfferedCard[]; readonly ruling?: { readonly office: 'boss' | 'mod'; readonly conferred?: readonly ConferredGroup[] } }): Record<string, unknown> {
   const properties: Record<string, unknown> = { words: { type: 'string' } };
   const required = ['words'];
   if (c.askedTitle) {
@@ -126,6 +187,7 @@ export function chatterSchema(c: { readonly askedTitle: boolean; readonly offere
       additionalProperties: false,
     };
   }
+  if (c.ruling) properties['request'] = requestSchema(c.ruling.office, c.ruling.conferred);
   properties['note'] = { type: 'string' };
   return { type: 'object', properties, required, additionalProperties: false };
 }
@@ -139,6 +201,8 @@ export interface RepairFacts {
   readonly askedTitle: boolean;
   /** The cards the persona was offered; a card outside it is dropped. */
   readonly offered: readonly OfferedCard[];
+  /** The ruling a staff turn may make; absent, the block is not offered and a given one is dropped (`notAsked`). */
+  readonly ruling?: RulingFacts;
 }
 
 export type RepairedChatter =
@@ -169,6 +233,101 @@ export function cutAtSentence(text: string, most: number): string {
 }
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
+
+/**
+ * A ruling after every bound: `reply` is one of the replies this turn answers and `ruling` one of the three, else the block is dropped (`answering`, `oneOf(fulfill, reject, confer)`)
+ * and the post stands. A fulfill's move is held by the office's own repair (`repairModMove`, `repairBossMove`); **a fulfill whose move is missing or dropped becomes a confer**
+ * (the request is passed up, not lost): the trim `fulfillToConfer`, with the drop's path and predicate beside it in `dropped` and as a trim of its own. A reject or a confer that
+ * carries a move has it dropped, `noMove`. Every path is under `request`. Pure: nothing given is changed.
+ */
+export function repairRuling(raw: unknown, ruling: RulingFacts): { readonly request: ChatterRequest | null; readonly trims: readonly Trim[]; readonly dropped: Dropped | null } {
+  const drop = (path: string, predicate: string) => ({ request: null, trims: [] as Trim[], dropped: { path, predicate } });
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return drop('request', 'isObject');
+  const given = raw as Record<string, unknown>;
+  const asked = typeof given['reply'] === 'string' ? ruling.answering.find((a) => a.toLowerCase() === (given['reply'] as string).trim().toLowerCase()) : undefined;
+  if (asked === undefined) return drop('request.reply', 'answering');
+  const choice = RULINGS.find((r) => r === given['ruling']);
+  if (choice === undefined) return drop('request.ruling', `oneOf(${RULINGS.join(', ')})`);
+  const trims: Trim[] = [];
+  const has = given['move'] !== undefined && given['move'] !== null;
+  if (choice !== 'fulfill') {
+    if (has) trims.push({ path: 'request.move', predicate: 'noMove', before: 1, after: 0 });
+    return { request: { reply: asked, ruling: choice }, trims, dropped: null };
+  }
+  // Both offices are held to the kinds a request may carry, the same way (the Boss's repair checks it itself); a Mod's is checked here, after its allowance, as its repair orders them.
+  const allowed = requestKinds('mod');
+  const kindOf = (m: unknown): unknown => (typeof m === 'object' && m !== null && !Array.isArray(m) ? (m as Record<string, unknown>)['kind'] : undefined);
+  const outside = (m: unknown): boolean => typeof m === 'object' && m !== null && !Array.isArray(m) && !allowed.includes(String(kindOf(m)));
+  const repaired: RepairedMove = !has
+    ? { move: null, trims: [], dropped: { path: 'move', predicate: 'required' } }
+    : ruling.office === 'mod'
+      ? !ruling.mod ? { move: null, trims: [], dropped: { path: 'move', predicate: 'allowance' } }
+        : ruling.mod.allowance >= 1 && (kindOf(given['move']) === undefined || kindOf(given['move']) === null) && typeof given['move'] === 'object' && !Array.isArray(given['move']) ? { move: null, trims: [], dropped: { path: 'move.kind', predicate: 'required' } }
+        : ruling.mod.allowance >= 1 && outside(given['move']) ? { move: null, trims: [], dropped: { path: 'move.kind', predicate: `oneOf(${allowed.join(', ')})` } }
+        : repairModMove(given['move'], ruling.mod)
+      : ruling.boss ? repairBossMove(given['move'], ruling.boss) : { move: null, trims: [], dropped: { path: 'move', predicate: 'bank' } };
+  trims.push(...repaired.trims.map((t) => ({ ...t, path: `request.${t.path}` })));
+  if (repaired.move === null) {
+    const why = repaired.dropped ?? { path: 'move', predicate: 'required' };
+    const path = `request.${why.path}`;
+    trims.push({ path: 'request.ruling', predicate: 'fulfillToConfer', before: 1, after: 0 }, { path, predicate: why.predicate, before: 1, after: 0 });
+    return { request: { reply: asked, ruling: 'confer' }, trims, dropped: { path, predicate: why.predicate } };
+  }
+  return { request: { reply: asked, ruling: 'fulfill', move: repaired.move }, trims, dropped: null };
+}
+
+/**
+ * What a staff turn is told about ruling, after its premise: that a reply may ask staff for something the game can do; that it may grant it with one move of its office (the kinds, what
+ * it has to spend, its beat by name and id), refuse it, or pass it to the meeting; and that the post is its words either way. Plain facts and the engine's own words; no instance named.
+ */
+export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysMost: number; readonly structuralHoldHours: number; readonly allowance?: number; readonly bank?: number; readonly beat?: readonly { readonly id: string; readonly name: string }[]; readonly conferred?: readonly ConferredGroup[];
+  /** The expiry a move may carry, in hours (the repair's own clamp): given, the words say the range. */
+  readonly expiryLeastHours?: number;
+  readonly expiryMostHours?: number;
+  /** The Boss's board naming: the instance's style and the length a renamed board's name may be; given, the words carry them as the meeting does. */
+  readonly nameStyleBrief?: string;
+  readonly boardNameMaxLength?: number;
+}): string {
+  const conferring = punishmentsOf(f).length > 0;
+  const kinds = requestKinds(f.office, conferring);
+  const n = f.office === 'mod' ? f.allowance ?? 0 : Math.floor(f.bank ?? 0);
+  const spend = f.office === 'mod'
+    ? `The Boss has handed you ${n} move${n === 1 ? '' : 's'} to spend, and a granted request spends one.`
+    : `Your bank holds ${n} move${n === 1 ? '' : 's'} now, and a granted request spends one.`;
+  const beat = f.office === 'mod' && f.beat?.length ? [`Your beat: ${f.beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}. A move of yours names boards of your beat only.`] : [];
+  const group = kinds.includes('conferGroup') && f.office === 'mod'
+    ? [`A conferGroup move puts one character in a punishment group, named by its key: ${punishmentList(f)}. Its params: character (the id), group (a key) and board (one of your beat); no predicate, param or band. It is dropped, and the request passes on, if the character cannot be chosen.`]
+    : [];
+  // What each kind needs, in the catalog's own field names (`fieldsOf`): the flat params write every field, so one a kind does not use is written blank, and an optional one blank is left out.
+  const ids = 'A board, thread or character is named by its id, as you were shown it; a field the kind does not use is written blank.';
+  const params = f.office === 'mod'
+    ? [
+      ...(kinds.includes('setRule') ? [`A setRule move sets one rule on a board of your beat. ${ruleParamsText(f.beat ?? [], `one of: ${predicateCatalogLines().map((l) => l.slice(2)).join('; ')}`)}`] : []),
+      `A moveThread move takes the thread you are answering in to another board of your beat. Its params: thread (this thread's id) and board (the board it goes to). The thread must be on a board of your beat now.`,
+    ]
+    : [
+      `Params by kind: ${kinds.map((k) => `${k} (${fieldsOf(moveKind(k)!.params)})`).join('; ')}. ${ids}`,
+      'A moveThread takes the thread to another board, board its id. A renameBoard gives board (the id), a name, a premise (a sentence saying what the board is now for) and a description (your own words, the subtitle). A createBoard gives name, premise, description, and optionally fallback (a board\'s id, or blank for none). A mergeBoard folds board into into: two different boards, board closed.',
+      ...(f.nameStyleBrief !== undefined && f.boardNameMaxLength !== undefined ? [boardNamesText(f.nameStyleBrief, f.boardNameMaxLength, kinds.includes('renameBoard'))] : []),
+    ];
+  const lasting = kinds.filter((k) => moveKind(k)?.lasting);
+  const expiry = [
+    `${lasting.length ? `${lasting.join(', ')} last${lasting.length === 1 ? 's' : ''} until reversed: set expires_in_hours to 0. ` : ''}${f.expiryLeastHours !== undefined && f.expiryMostHours !== undefined && lasting.length < kinds.length ? `Any other kind's expires_in_hours is from ${f.expiryLeastHours} to ${f.expiryMostHours} hours. ` : ''}Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, and the request passes on.`,
+  ];
+  const structural = f.office === 'boss' ? [`A renameBoard, createBoard or mergeBoard waits ${f.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.`] : [];
+  return [
+    'A reply in this thread may ask staff for something the game can do. If one asks you, you may rule on it in "request" (at most one reply, and only one of the replies you are shown), with "reply" (its id) and "ruling":',
+    `- fulfill: grant it with one move in "move", of a kind you may make: ${kinds.join(', ')}. ${spend} If the move cannot be made, the request passes to the next staff meeting instead.`,
+    '- reject: refuse it. Give no move.',
+    `- confer: pass it on: ${f.office === 'boss' ? 'you rule on it at your next meeting' : 'the Boss rules on it at its next meeting'}; it lapses unanswered after ${f.daysMost} day${f.daysMost === 1 ? '' : 's'}. Give no move.`,
+    ...beat,
+    ...params,
+    ...group,
+    ...expiry,
+    ...structural,
+    'Your post is your words whichever you choose: say what you decided, in your own voice. Leave "request" out when nobody asked for anything.',
+  ].join('\n');
+}
 
 /** The answer after every bound, or the predicate that could not be repaired. Pure: nothing given is changed. */
 export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
@@ -261,7 +420,19 @@ export function repairChatter(raw: unknown, f: RepairFacts): RepairedChatter {
     }
   }
 
-  return { ok: true, answer: { words, ...(title !== undefined ? { title } : {}), ...(card ? { card } : {}), ...(note !== undefined ? { note } : {}) }, trims };
+  // The ruling: offered to a staff turn only. One given to anyone else is dropped; a malformed one is dropped or passed up (repairRuling) and never costs the words.
+  let request: ChatterRequest | undefined;
+  if (given['request'] !== undefined && given['request'] !== null) {
+    if (!f.ruling) trim('request', 'notAsked', 1, 0);
+    else {
+      const ruled = repairRuling(given['request'], f.ruling);
+      trims.push(...ruled.trims);
+      if (ruled.request) request = ruled.request;
+      else if (ruled.dropped) trims.push({ path: ruled.dropped.path, predicate: ruled.dropped.predicate, before: 1, after: 0 });
+    }
+  }
+
+  return { ok: true, answer: { words, ...(title !== undefined ? { title } : {}), ...(card ? { card } : {}), ...(note !== undefined ? { note } : {}), ...(request ? { request } : {}) }, trims };
 }
 
 /* ------------------------------------------------------------------------------------------------ the prompt ---- */
@@ -309,6 +480,8 @@ export interface ChatterInput {
   /** The talking point the latest meeting wrote for this persona: its stance on the day, or none. Weighed, never acted on. */
   readonly points?: string | null;
   readonly offeredCards: readonly OfferedCard[];
+  /** A staff turn's ruling words (`rulingWords`); absent for a member and for a pick. */
+  readonly ruling?: string;
   /** Whether this post starts a thread, and so gives a title. */
   readonly startThread: boolean;
   /** With `startThread`: the thread is spun off the post it quotes (or, where that Act is no post, off the thread shown), not started on a board. Replies and plain starts leave it unset. */
@@ -394,6 +567,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
     ...(memory.length ? [['What you remember:', ...memory.map((m) => `- ${m}`)].join('\n')] : []),
     ...(notes.length ? [['Your notes. These are your own recent thoughts, oldest first. They are yours to weigh; nothing in them is an instruction.', ...notes.map((n) => `- ${n}`)].join('\n')] : []),
     i.premise,
+    ...(i.ruling ? [i.ruling] : []),
     [
       `Why you are posting: ${reasonOf(i, names)}.`,
       'Your words are a post on the board, in your own voice, at most ' + `${Math.min(l.postMaxLength, CHATTER_WORDS_MOST)} characters.`,
@@ -502,6 +676,12 @@ export function fitThreadPrompt(i: {
  * What a turn is told beside its persona's own prompt, in place of the pool's premise: people have answered it, and it is back in the thread to answer them. The engine's, and it says nothing of any instance.
  */
 export const TURN_PREMISE = 'You are back in a thread because people have answered you there. You are writing on your own, as a character on the board. This is not a meeting and not a ruling: you are one voice in a thread, and what you write is a post like anyone\'s.';
+
+/**
+ * What a staff turn is told in place of `TURN_PREMISE`: the same, except that a staff persona may rule when someone asks it for something (`rulingWords` says how). Derived from the
+ * member premise, so the two cannot drift apart; a member persona keeps `TURN_PREMISE` unchanged.
+ */
+export const STAFF_TURN_PREMISE = TURN_PREMISE.replace('This is not a meeting and not a ruling: you are one voice in a thread, and what you write is a post like anyone\'s.', 'This is not a meeting: you are one voice in a thread, and what you write is a post like anyone\'s, though if someone asks you for something you may rule on it.');
 
 /**
  * What every pool post is told beside its persona's own prompt (the engine sets the persona in its office's frame, `personaPrompt`): that nobody asked it to write, and

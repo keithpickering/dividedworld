@@ -35,10 +35,11 @@ import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
 import { careerText, type Career } from './career.ts';
+// chatter.ts imports this module's repairs and kind helpers back: a cycle, and safe, because each side uses the other only inside functions, never while its module loads.
 import { cutAtSentence, fitThreadPrompt, memoryLines, type PromptFit } from './chatter.ts';
 import { groupMoveBar, WHY_MOST, type ConferredGroup } from './meeting.ts';
 import { noteMost, type Memory } from './memory.ts';
-import { BANDS, MOVE_KINDS, moveKind, moveParamsProblems } from './moves.ts';
+import { BANDS, MOVE_KINDS, moveKind, moveParamsProblems, readBlankOptionals } from './moves.ts';
 import type { Rule, Trim } from './validate.ts';
 import { excerpt, EXCERPT_WORDS } from './excerpt.ts';
 import { READ_WORDS, readLines, type ReadPost, type ThreadReadResult } from './read.ts';
@@ -80,6 +81,11 @@ export interface ModMoveContext {
     readonly capped: ReadonlySet<string>;
     readonly held: ReadonlySet<string>;
   };
+  /**
+   * Thread id (lowercase) to the id of the board it is on now (lowercase), for the threads the call may name: the one a judgment reads. A `moveThread` names a thread in
+   * this map, whose board and whose destination are both on the Mod's beat. Absent, or a thread not in it: a `moveThread` is dropped, `knownThread`.
+   */
+  readonly threadBoards?: ReadonlyMap<string, string>;
 }
 
 export interface RepairedMove {
@@ -126,6 +132,48 @@ function capLength(text: string, most: number): string {
   return last >= 0xd800 && last <= 0xdbff ? cut.slice(0, -1) : cut;
 }
 
+/** A move's why: one line, required, cut at `WHY_MOST` with the trim named. The drop, or the line. */
+function readWhy(raw: unknown, trims: Trim[]): { readonly why: string } | Dropped {
+  if (raw === undefined || raw === null) return { path: 'move.why', predicate: 'required' };
+  if (typeof raw !== 'string') return { path: 'move.why', predicate: 'isString' };
+  let why = oneLine(raw);
+  if (why === '') return { path: 'move.why', predicate: 'nonEmpty' };
+  if (why.length > WHY_MOST) {
+    const cut = capLength(why, WHY_MOST).trimEnd();
+    trims.push({ path: 'move.why', predicate: `maxLength(${WHY_MOST})`, before: why.length, after: cut.length });
+    why = cut;
+  }
+  return { why };
+}
+
+/** Digits given as text are the number they spell; anything else is as it was given. */
+const digitsAsNumber = (raw: unknown): unknown => (typeof raw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(raw) ? Number(raw) : raw);
+
+/**
+ * A move's expiry in whole hours. A lasting kind stays until reversed or superseded: the code sets it to 0 and a value given is dropped with the trim `lastingHasNoExpiry`.
+ * Any other is required, digits given as text are the number they spell (`asNumber`), and it is rounded and clamped into `least` to `most` hours with a trim.
+ */
+function readHours(raw: unknown, lasting: boolean, least: number, most: number, trims: Trim[]): number | Dropped {
+  if (lasting) {
+    const given = digitsAsNumber(raw);
+    if (typeof given === 'number' && Number.isFinite(given) && given !== 0) trims.push({ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: given, after: 0 });
+    return 0;
+  }
+  let hoursRaw = digitsAsNumber(raw);
+  if (typeof raw === 'string' && typeof hoursRaw === 'number') trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: raw.length, after: hoursRaw });
+  if (hoursRaw === undefined || hoursRaw === null) return { path: 'move.expires_in_hours', predicate: 'required' };
+  if (typeof hoursRaw !== 'number' || !Number.isFinite(hoursRaw)) return { path: 'move.expires_in_hours', predicate: 'isNumber' };
+  let hours = Math.round(hoursRaw);
+  if (hours > most) {
+    trims.push({ path: 'move.expires_in_hours', predicate: `atMost(${most})`, before: hoursRaw, after: most });
+    hours = most;
+  } else if (hours < least) {
+    trims.push({ path: 'move.expires_in_hours', predicate: `atLeast(${least})`, before: hoursRaw, after: least });
+    hours = least;
+  }
+  return hours;
+}
+
 /** The kinds a Mod's office may make. */
 const modKinds = (): string[] => MOVE_KINDS.filter((k) => k.offices.includes('mod')).map((k) => k.key);
 
@@ -134,7 +182,8 @@ const modKinds = (): string[] => MOVE_KINDS.filter((k) => k.offices.includes('mo
  * allowance (checked first, so the reason is the allowance), when its kind is none the Mod's office makes, when its params do not hold against the kind
  * (the predicate catalog, the parameter's bounds, the band), when its board is none of its beat (a Mod makes no house rule), and when its expiry or its why
  * is missing. An expiry is rounded to whole hours and clamped into `expiryLeastHours` to `ruleDaysMost` days, with a trim; a why past its bound is cut,
- * with a trim.
+ * with a trim. A lasting kind (`moveThread`) takes no expiry: the code sets it to 0, and a given one is dropped with the trim `lastingHasNoExpiry`. A `moveThread`'s
+ * thread is one the call was given (`threadBoards`), on a board of the Mod's beat, and the board it goes to is on the beat too.
  */
 export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   if (raw === undefined || raw === null) return { move: null, trims: [], dropped: null };
@@ -147,7 +196,7 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   if (!kind.offices.includes('mod')) return no('move.kind', 'office');
 
   if (!isObject(raw['params'])) return no('move.params', 'isObject');
-  const params: Record<string, unknown> = { ...raw['params'] };
+  const params: Record<string, unknown> = readBlankOptionals(kind, raw['params']).params;
   // A model gives a number as digits and "no parameter" as empty text: both are the same choice, so they are read as the predicate wants them.
   const read = typeof params['predicate'] === 'string' ? readParam(params['predicate'], params['param']) : { value: params['param'] };
   if (read.trim || read.value !== params['param']) params['param'] = read.value;
@@ -169,42 +218,36 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
     if (tone !== 'punishment') return no(under('group'), 'punishmentOnly', trims);
   }
 
+  // A Mod moving a thread names a thread the call was given, on a board of its beat; the board it goes to is checked below like any other.
+  const onBeat = (id: string): boolean => ctx.beat.some((b) => b.toLowerCase() === id);
+  const moving = kind.key === 'moveThread';
+  let thread: string | null = null;
+  let threadNow: string | null = null;
+  if (moving) {
+    thread = typeof given['thread'] === 'string' ? given['thread'].toLowerCase() : null;
+    const from = thread === null ? undefined : ctx.threadBoards?.get(thread);
+    if (from === undefined) return no(under('thread'), 'knownThread', trims);
+    if (!onBeat(from.toLowerCase())) return no(under('thread'), 'onBeat', trims);
+    threadNow = from.toLowerCase();
+  }
+
   // A Mod's rule is on a board of its beat: the board is named, and it is one it watches.
   const board = typeof given['board'] === 'string' ? given['board'].toLowerCase() : null;
   if (board === null) return no(under('board'), 'required', trims);
-  if (!ctx.beat.some((b) => b.toLowerCase() === board)) return no(under('board'), 'onBeat', trims);
+  if (!onBeat(board)) return no(under('board'), 'onBeat', trims);
+  // Moving a thread to the board it is on changes nothing, and would spend an allowance to do it.
+  if (threadNow !== null && board === threadNow) return no(under('board'), 'notAlreadyThere', trims);
 
   // The why: the admins read it.
-  const whyRaw = raw['why'];
-  if (whyRaw === undefined || whyRaw === null) return no('move.why', 'required', trims);
-  if (typeof whyRaw !== 'string') return no('move.why', 'isString', trims);
-  let why = oneLine(whyRaw);
-  if (why === '') return no('move.why', 'nonEmpty', trims);
-  if (why.length > WHY_MOST) {
-    const cut = capLength(why, WHY_MOST).trimEnd();
-    trims.push({ path: 'move.why', predicate: `maxLength(${WHY_MOST})`, before: why.length, after: cut.length });
-    why = cut;
-  }
+  const whyRead = readWhy(raw['why'], trims);
+  if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);
+  const why = whyRead.why;
 
-  // How long it runs: whole hours, from the fewest any move lasts to the most days a Mod's rule may.
-  let hoursRaw = raw['expires_in_hours'];
-  // Digits given as text are the number they spell, as a count's parameter is: coerced, with the trim named.
-  if (typeof hoursRaw === 'string' && /^\s*\d+(\.\d+)?\s*$/.test(hoursRaw)) {
-    const as = Number(hoursRaw);
-    trims.push({ path: 'move.expires_in_hours', predicate: 'asNumber', before: hoursRaw.length, after: as });
-    hoursRaw = as;
-  }
-  if (hoursRaw === undefined || hoursRaw === null) return no('move.expires_in_hours', 'required', trims);
-  if (typeof hoursRaw !== 'number' || !Number.isFinite(hoursRaw)) return no('move.expires_in_hours', 'isNumber', trims);
-  const most = ctx.ruleDaysMost * 24;
-  let hours = Math.round(hoursRaw);
-  if (hours > most) {
-    trims.push({ path: 'move.expires_in_hours', predicate: `atMost(${most})`, before: hoursRaw, after: most });
-    hours = most;
-  } else if (hours < ctx.expiryLeastHours) {
-    trims.push({ path: 'move.expires_in_hours', predicate: `atLeast(${ctx.expiryLeastHours})`, before: hoursRaw, after: ctx.expiryLeastHours });
-    hours = ctx.expiryLeastHours;
-  }
+  // How long it runs: a lasting kind has none; any other is whole hours, from the fewest any move lasts to the most days a Mod's rule may.
+  const hoursRead = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.ruleDaysMost * 24, trims);
+  if (typeof hoursRead !== 'number') return no(hoursRead.path, hoursRead.predicate, trims);
+  const hours = hoursRead;
+  if (kind.lasting) return { move: { kind: kind.key, params: { ...given, ...(thread === null ? {} : { thread }), board }, expires_in_hours: 0, why }, trims, dropped: null };
 
   if (!conferring) return { move: { kind: kind.key, params: { ...given, board }, expires_in_hours: hours, why }, trims, dropped: null };
 
@@ -221,6 +264,68 @@ export function repairModMove(raw: unknown, ctx: ModMoveContext): RepairedMove {
   const wrote = isObject(raw['demand']) ? raw['demand']['kind'] : undefined;
   if (wrote !== 'apologyAccepted') trims.push({ path: 'move.demand', predicate: 'setByCode(apologyAccepted)', before: 0, after: 1 });
   return { move: { kind: kind.key, params: params2, expires_in_hours: hours, why, demand: { kind: 'apologyAccepted', params: {} } }, trims, dropped: null };
+}
+
+/** What a Boss's request fulfill is held to: the numbers the database holds again in `apply_boss_move`. */
+export interface BossMoveContext {
+  /** Whole moves the bank can pay now (`bank_now`, floored); below one drops any move, `bank`. */
+  readonly bank: number;
+  /** Thread id (lowercase) to the id of the board it is on now, for the threads the call may name; a `moveThread` names one of them, else `knownThread`. */
+  readonly threadBoards?: ReadonlyMap<string, string>;
+  /** The fewest hours a move lasts (`moveExpiryLeastHours`). */
+  readonly expiryLeastHours: number;
+  /** The most days a move of this phase lasts: the phase's number under the setting's (`moveExpiryMostDays`). */
+  readonly moveExpiryMostDays: number;
+  /** The hours a structural move waits in the admin queue before it lands (`structuralHoldHours`); the database sets it, the prompt says it. */
+  readonly structuralHoldHours: number;
+}
+
+/**
+ * The kinds a persona may make to fulfill a request: the catalog's kinds of its office that need no context a turn does not hold (a group's catalog, the machine's slots, a
+ * trophy, a demand, a successor). A Mod's: its whole office (setRule, conferGroup, moveThread); a conferGroup is held against the group context the turn carries (`ModMoveContext.groups`), and dropped without it, so `conferring` false leaves it out of what a turn is offered. The Boss's: the four that shape a board or move a thread (a rule it makes at a meeting).
+ */
+export function requestKinds(office: 'boss' | 'mod', conferring = true): readonly string[] {
+  const keys = office === 'mod' ? ['setRule', ...(conferring ? ['conferGroup'] : []), 'moveThread'] : ['moveThread', 'renameBoard', 'createBoard', 'mergeBoard'];
+  return MOVE_KINDS.filter((k) => keys.includes(k.key) && k.offices.includes(office)).map((k) => k.key);
+}
+
+/**
+ * The Boss's one move in a request, held as the meeting holds one: a kind in the catalog the Boss's office makes (and one a request may carry, `requestKinds`), params that hold
+ * against the kind (`moveParamsProblems`), a thread the call was given, a why, an expiry clamped into the phase (a lasting kind takes none: 0, trimmed `lastingHasNoExpiry`), and a
+ * bank of at least one. What cannot be repaired without inventing content is dropped, naming the predicate. A board's name against the instance's style, and a board that exists, the
+ * database holds again; a refusal there becomes a confer.
+ */
+export function repairBossMove(raw: unknown, ctx: BossMoveContext): RepairedMove {
+  if (raw === undefined || raw === null) return { move: null, trims: [], dropped: null };
+  const no = (path: string, pred: string, trims: readonly Trim[] = []): RepairedMove => ({ move: null, trims, dropped: { path, predicate: pred } });
+  if (!isObject(raw)) return no('move', 'isObject');
+  if (!(ctx.bank >= 1)) return no('move', 'bank');
+  const kind = typeof raw['kind'] === 'string' ? moveKind(raw['kind']) : undefined;
+  const allowed = requestKinds('boss');
+  if (!kind || !allowed.includes(kind.key)) return no('move.kind', `oneOf(${allowed.join(', ')})`);
+  if (!kind.offices.includes('boss')) return no('move.kind', 'office');
+  if (!isObject(raw['params'])) return no('move.params', 'isObject');
+  // The flat request schema writes every param as text, so a field the kind does not use or leaves optional arrives blank: read as the meeting reads it (`readBlankOptionals`).
+  const { params, blankDescription } = readBlankOptionals(kind, raw['params']);
+  const under = (path: string): string => `move.params.${path}`;
+  const checked = moveParamsProblems(kind.key, blankDescription ? { ...params, description: '-' } : params);
+  const trims: Trim[] = checked.trims.map((t) => ({ ...t, path: under(t.path) }));
+  if (!checked.ok) return no(under(checked.path), checked.predicate, trims);
+  const given: Record<string, unknown> = { ...(checked.value as Record<string, unknown>) };
+  if (blankDescription) delete given['description'];
+  if (kind.key === 'moveThread') {
+    const thread = String(given['thread']).toLowerCase();
+    const threadNow = ctx.threadBoards?.get(thread);
+    if (threadNow === undefined) return no(under('thread'), 'knownThread', trims);
+    given['thread'] = thread;
+    // Moving a thread to the board it is on changes nothing, and would spend a move of the bank to do it (the database refuses it too, in `boss_move_queue`).
+    if (typeof given['board'] === 'string' && given['board'].toLowerCase() === threadNow.toLowerCase()) return no(under('board'), 'notAlreadyThere', trims);
+  }
+  const whyRead = readWhy(raw['why'], trims);
+  if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);
+  const hours = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.moveExpiryMostDays * 24, trims);
+  if (typeof hours !== 'number') return no(hours.path, hours.predicate, trims);
+  return { move: { kind: kind.key, params: given, expires_in_hours: hours, why: whyRead.why }, trims, dropped: null };
 }
 
 /** A move-only answer (an old voice's second call): the answer must be an object, and its `move` is repaired as any other. */
@@ -303,18 +408,40 @@ export interface ModPromptInput {
   readonly rulesShown?: boolean;
   /** The groups the instance confers (`mod_group_context()`); only the punishments are listed to a Mod. Absent or with none: no conferGroup is offered. */
   readonly conferred?: readonly ConferredGroup[];
+  /** The id of the thread the call reads and a Mod may move (`moveThread`), where the call reads one: absent, no moveThread is offered. */
+  readonly thread?: string;
 }
 
 /** The punishments a Mod may confer. */
-const punishmentsOf = (i: Pick<ModPromptInput, 'conferred'>): ConferredGroup[] => (i.conferred ?? []).filter((g) => g.tone === 'punishment');
+export const punishmentsOf = (i: Pick<ModPromptInput, 'conferred'>): ConferredGroup[] => (i.conferred ?? []).filter((g) => g.tone === 'punishment');
+
+/** The punishment groups a Mod may confer, by key with its name (`key (Name); key (Name)`), as the judgment prompt and a chatter turn's ruling words list them. */
+export const punishmentList = (i: Pick<ModPromptInput, 'conferred'>): string => punishmentsOf(i).map((g) => `${g.key} (${clip(g.name, 60)})`).join('; ');
 
 const clip = (s: string, n: number): string => {
   const line = oneLine(s);
   return line.length <= n ? line : `${capLength(line, n).trimEnd()}…`;
 };
 
+/** The sentence naming the kinds of move a Mod may make in this call. */
+const moveKindsText = (i: Pick<ModPromptInput, 'conferred' | 'thread'>): string => {
+  const conferring = punishmentsOf(i).length > 0;
+  const moving = i.thread !== undefined;
+  if (!conferring && !moving) return 'The only kind of move you may make is setRule: a rule on one board of your beat.';
+  const kinds = ['setRule (a rule on one board of your beat)', ...(conferring ? ['conferGroup (below)'] : []), ...(moving ? ['moveThread (a thread on your beat to another board of your beat, below)'] : [])];
+  return `The kinds of move you may make are ${kinds.length === 2 ? kinds.join(' and ') : `${kinds.slice(0, -1).join(', ')} and ${kinds[kinds.length - 1]}`}.`;
+};
+
 const PARAM_WORDS = (p: (typeof PREDICATES)[number]): string =>
   p.param === 'none' ? 'no parameter' : p.param === 'count' ? `a whole number ${p.bounds!.least} to ${p.bounds!.most}` : p.param === 'word' ? `one word of ${p.bounds!.least} to ${p.bounds!.most} characters` : 'a BBCode tag';
+
+/** A setRule move's params as a Mod is told them, in its judgment prompt and in a staff turn's ruling: the beat by name and id, the predicate, its param as text, and the band. */
+export function ruleParamsText(beat: ModPromptInput['beat'], predicateWords: string): string {
+  return `Its params: board (one of your beat: ${beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}), predicate (${predicateWords}), param (${PREDICATES.map((p) => `${p.key}: ${PARAM_WORDS(p)}`).join('; ')}; as text, a number as its digits, left out where there is none), band (${BANDS.join(', ')}: how serious breaking it is).`;
+}
+
+/** The catalog of predicates a rule may set, one line each, as a Mod is told it. */
+export const predicateCatalogLines = (): string[] => PREDICATES.map((p) => `- ${p.key} (${PARAM_WORDS(p)}): ${p.plain('N')}`);
 
 /** Whether a move is on offer: the Mod has something to spend and a board to spend it on. */
 const offersMove = (i: Pick<ModPromptInput, 'allowance' | 'beat'>): boolean => i.allowance >= 1 && i.beat.length > 0;
@@ -333,14 +460,17 @@ export function modPrompt(i: ModPromptInput): string {
     ? 'You make no move with this call.'
     : offersMove(i)
     ? [
-      `You may make at most one move with this call. The Boss has handed you ${i.allowance} move${i.allowance === 1 ? '' : 's'} to spend, and this would spend one. ${punishmentsOf(i).length ? 'The kinds of move you may make are setRule (a rule on one board of your beat) and conferGroup (below).' : 'The only kind of move you may make is setRule: a rule on one board of your beat.'} Leave the move out unless it would really help.`,
-      `Its params: board (one of your beat: ${i.beat.map((b) => `${clip(b.name, 60)} (${b.id})`).join('; ')}), predicate (one of the catalog above), param (${PREDICATES.map((p) => `${p.key}: ${PARAM_WORDS(p)}`).join('; ')}; as text, a number as its digits, left out where there is none), band (${BANDS.join(', ')}: how serious breaking it is).`,
+      `You may make at most one move with this call. The Boss has handed you ${i.allowance} move${i.allowance === 1 ? '' : 's'} to spend, and this would spend one. ${moveKindsText(i)} Leave the move out unless it would really help.`,
+      ruleParamsText(i.beat, 'one of the catalog above'),
       ...(punishmentsOf(i).length
         ? [
-          `A conferGroup move puts one character in a punishment group, named by its key: ${punishmentsOf(i).map((g) => `${g.key} (${clip(g.name, 60)})`).join('; ')}. Its params: character (the id of the character), group (a key above) and board (one of your beat, as above; no predicate, param or band). The rule: one board, on your beat, and an apology you will judge. The character cannot post on that board until you accept an apology or the move runs out. The code sets its demand to the apology whatever you write. Characters who were punished as often as staff may be, or who are in a group move already, cannot be chosen: a move that names one is dropped.`,
+          `A conferGroup move puts one character in a punishment group, named by its key: ${punishmentList(i)}. Its params: character (the id of the character), group (a key above) and board (one of your beat, as above; no predicate, param or band). The rule: one board, on your beat, and an apology you will judge. The character cannot post on that board until you accept an apology or the move runs out. The code sets its demand to the apology whatever you write. Characters who were punished as often as staff may be, or who are in a group move already, cannot be chosen: a move that names one is dropped.`,
         ]
         : []),
-      `Its expires_in_hours is from ${i.expiryLeastHours} to ${days * 24} hours: a rule you set lasts at most ${days} days. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, not corrected.`,
+      ...(i.thread !== undefined
+        ? [`A moveThread move takes this thread, ${i.thread}, to another board. Its params: thread (${i.thread}) and board (the board it goes to, one of your beat above). The thread must be on a board of your beat now. It has no expiry: set expires_in_hours to 0. The thread stays where you put it until the move is reversed or another move takes it elsewhere.`]
+        : []),
+      `${i.thread !== undefined ? 'For any other kind, its' : 'Its'} expires_in_hours is from ${i.expiryLeastHours} to ${days * 24} hours: a rule you set lasts at most ${days} days. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it. A move that does not hold is dropped, not corrected.`,
     ].join('\n')
     : 'You have no allowance left from the Boss, so you make no move this time: do not answer with a move.';
   return [
@@ -358,7 +488,7 @@ export function modPrompt(i: ModPromptInput): string {
       : i.rules.length
       ? ['The rules in force where you are looking (a rule never refuses a post; breaking one draws a visit):', ...i.rules.map((r) => `- ${ruleWords(r)}`)].join('\n')
       : 'No rule is in force where you are looking.',
-    ['The rules a rule may set (the catalog; anything else is no rule):', ...PREDICATES.map((p) => `- ${p.key} (${PARAM_WORDS(p)}): ${p.plain('N')}`)].join('\n'),
+    ['The rules a rule may set (the catalog; anything else is no rule):', ...predicateCatalogLines()].join('\n'),
     move,
     'You cannot know who is behind any character; do not guess aloud at who owns a mask.',
   ].join('\n\n');
@@ -380,16 +510,17 @@ export interface FilingInput extends ModPromptInput {
   readonly said?: string;
 }
 
-const MOVE_SCHEMA = (i: Pick<ModPromptInput, 'beat' | 'conferred'>): Record<string, unknown> => {
+const MOVE_SCHEMA = (i: Pick<ModPromptInput, 'beat' | 'conferred' | 'thread'>): Record<string, unknown> => {
   const punishments = punishmentsOf(i);
   return {
   type: 'object',
   properties: {
-    kind: { type: 'string', enum: punishments.length ? modKinds() : modKinds().filter((k) => k !== 'conferGroup') },
+    kind: { type: 'string', enum: modKinds().filter((k) => (k !== 'conferGroup' || punishments.length > 0) && (k !== 'moveThread' || i.thread !== undefined)) },
     params: {
       type: 'object',
       properties: {
         board: { type: 'string', enum: i.beat.map((b) => b.id) },
+        ...(i.thread !== undefined ? { thread: { type: 'string', enum: [i.thread] } } : {}),
         predicate: { type: 'string', enum: PREDICATES.map((p) => p.key) },
         // One text field for every kind of parameter: no anyOf, so any provider's structured output holds it. repairModMove reads it as the predicate wants.
         param: { type: 'string' },

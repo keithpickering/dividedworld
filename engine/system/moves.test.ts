@@ -260,10 +260,10 @@ const thread = '22222222-2222-4222-8222-222222222222';
 const other = '33333333-3333-4333-8333-333333333333';
 const create = { name: 'Toast Corner', premise: 'Toast, and only toast.', description: 'A new board.' };
 
-test('the three lasting board moves are the Boss\'s, askable, with no demand; two are structural and shape a board', () => {
-  for (const [key, structural] of [['createBoard', true], ['moveThread', false], ['mergeBoard', true]] as const) {
+test('the three lasting board moves are askable, with no demand; two are structural and shape a board; the Boss makes all three and a Mod the thread move', () => {
+  for (const [key, structural, offices] of [['createBoard', true, ['boss']], ['moveThread', false, ['boss', 'mod']], ['mergeBoard', true, ['boss']]] as const) {
     const k = moveKind(key)!;
-    assert.deepEqual([k.lasting, k.structural, k.shapesBoard, k.askable, k.offices, k.demand({})], [true, structural, structural, true, ['boss'], 'none'], key);
+    assert.deepEqual([k.lasting, k.structural, k.shapesBoard, k.askable, k.offices, k.demand({})], [true, structural, structural, true, offices, 'none'], key);
   }
   assert.deepEqual([moveKind('createBoard')!.label, moveKind('moveThread')!.label, moveKind('mergeBoard')!.label], ['Created a board', 'Moved a thread', 'Merged a board']);
 });

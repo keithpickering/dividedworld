@@ -40,7 +40,8 @@ import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
 import { pronounsOr, type PronounSet } from '../../../engine/rules/pronouns.ts';
-import { RUN_BUDGET_MS, instanceSet, learnMod, readModGroups, said, stopsTheRun } from './core.ts';
+import { RUN_BUDGET_MS, instanceSet, learnMod, said, stopsTheRun } from './core.ts';
+import { readModGroups } from '../_shared/mod-groups.ts';
 
 /** The most patrols one run judges. The meeting schedules at most `patrolsPerDay` (6) a day, so a run rarely meets more than a few; the rest are the next run's. */
 export const PATROLS_PER_RUN = 10;

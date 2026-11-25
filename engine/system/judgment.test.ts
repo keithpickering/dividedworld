@@ -83,7 +83,55 @@ test('a kind the Mod\'s office may not make is dropped, naming why', () => {
   const unknown = repairModMove({ ...good, kind: 'burnItDown' }, ctx);
   assert.equal(unknown.move, null);
   assert.equal(unknown.dropped?.path, 'move.kind');
-  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule, conferGroup\)$/);
+  assert.match(unknown.dropped?.predicate ?? '', /^oneOf\(setRule, conferGroup, moveThread\)$/);
+});
+
+const T1 = '33333333-3333-4333-8333-333333333333';
+const MORE = '44444444-4444-4444-8444-444444444444';
+const moveCtx: ModMoveContext = { ...ctx, beat: [GAMES, MORE], threadBoards: new Map([[T1, GAMES]]) };
+const moving = { kind: 'moveThread', params: { thread: T1, board: MORE }, why: 'It belongs in More.' };
+
+test('a Mod\'s moveThread with both boards on its beat is kept with expiry 0', () => {
+  const out = repairModMove(moving, moveCtx);
+  assert.equal(out.dropped, null);
+  assert.deepEqual(out.move, { kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' });
+  assert.deepEqual(out.trims, []);
+});
+
+test('a moveThread whose thread is on a board off the beat drops move.params.thread onBeat', () => {
+  const out = repairModMove(moving, { ...moveCtx, threadBoards: new Map([[T1, OTHER]]) });
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.thread', predicate: 'onBeat' });
+});
+
+test('a moveThread to a board off the beat drops move.params.board onBeat', () => {
+  const out = repairModMove({ ...moving, params: { thread: T1, board: OTHER } }, moveCtx);
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.board', predicate: 'onBeat' });
+});
+
+test('a moveThread to the board the thread is on already drops move.params.board notAlreadyThere', () => {
+  const out = repairModMove({ ...moving, params: { thread: T1, board: GAMES } }, moveCtx);
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.board', predicate: 'notAlreadyThere' });
+  const upper = repairModMove({ ...moving, params: { thread: T1, board: GAMES.toUpperCase() } }, moveCtx);
+  assert.deepEqual(upper.dropped, { path: 'move.params.board', predicate: 'notAlreadyThere' }, 'ids compare in lowercase');
+});
+
+test('a moveThread naming a thread the call was not given drops knownThread', () => {
+  const out = repairModMove(moving, { ...moveCtx, threadBoards: new Map() });
+  assert.equal(out.move, null);
+  assert.deepEqual(out.dropped, { path: 'move.params.thread', predicate: 'knownThread' });
+  const { threadBoards: _given, ...unmapped } = moveCtx;
+  const none = repairModMove(moving, unmapped);
+  assert.deepEqual(none.dropped, { path: 'move.params.thread', predicate: 'knownThread' });
+});
+
+test('an expiry given on a lasting kind is dropped with the trim lastingHasNoExpiry and set to 0', () => {
+  const out = repairModMove({ ...moving, expires_in_hours: 48 }, moveCtx);
+  assert.equal(out.dropped, null);
+  assert.equal(out.move?.expires_in_hours, 0);
+  assert.deepEqual(out.trims, [{ path: 'move.expires_in_hours', predicate: 'lastingHasNoExpiry', before: 48, after: 0 }]);
 });
 
 test('a board off the beat, or no board at all, is dropped', () => {
@@ -176,6 +224,32 @@ test('the Mod\'s prompt lists the conferred punishments by key and name, with th
   assert.deepEqual(schema.properties.move.properties.kind.enum, ['setRule', 'conferGroup']);
   const plain = filingPrompt(filing()).schema as any;
   assert.deepEqual(plain.properties.move.properties.kind.enum, ['setRule']);
+});
+
+test('a Mod\'s prompt and schema offer moveThread, and its thread param, only where the call names a thread', () => {
+  const kinds = (schema: unknown) => (schema as any).properties.move.properties.kind.enum;
+  const withThread = [['a filing', filingPrompt(filing({ thread: T1 }))], ['a report', reportPrompt(report({ thread: T1 }))]] as const;
+  for (const [name, p] of withThread) {
+    assert.match(p.system, /moveThread/, `${name}: the prompt names the kind`);
+    assert.ok(p.system.includes(`this thread, ${T1}, to another board`), `${name}: the prompt names the thread`);
+    assert.ok(kinds(p.schema).includes('moveThread'), `${name}: the schema offers the kind`);
+    assert.deepEqual((p.schema as any).properties.move.properties.params.properties.thread, { type: 'string', enum: [T1] }, `${name}: the schema offers the thread param`);
+  }
+  const without = [['a filing', filingPrompt(filing())], ['a report', reportPrompt(report())], ['a patrol', patrolPrompt(patrol())]] as const;
+  for (const [name, p] of without) {
+    assert.ok(!p.system.includes('moveThread'), `${name}: no thread, no moveThread in the prompt`);
+    assert.ok(!kinds(p.schema).includes('moveThread'), `${name}: no thread, no moveThread in the schema`);
+    assert.equal((p.schema as any).properties.move.properties.params.properties.thread, undefined, `${name}: no thread param`);
+  }
+  assert.ok(!modPrompt(base).includes('moveThread'), 'the bare Mod prompt offers none');
+  assert.ok(!appealPrompt(appeal()).system.includes('moveThread'), 'an appeal makes no move');
+});
+
+test('the Mod prompt scopes the expiry range to the kinds that take one, where moveThread is offered', () => {
+  const p = reportPrompt(report({ thread: T1 })).system;
+  assert.match(p, /set expires_in_hours to 0/);
+  assert.match(p, /For any other kind, its expires_in_hours is from/);
+  assert.ok(!/\nIts expires_in_hours is from/.test(p), 'the range is no longer stated for every kind');
 });
 
 test('an expiry given as digits is read as a number, with a recorded trim', () => {

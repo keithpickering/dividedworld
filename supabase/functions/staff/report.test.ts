@@ -175,6 +175,21 @@ test('the Mod\'s one move rides on the verdict, caused by the report, after the 
   assert.equal(e.state.refunds, 0);
 });
 
+test('a report passes its thread to the prompt and its board to the repair: a Mod\'s moveThread of the reported thread queues, one of any other thread is dropped', async () => {
+  const MORE = '55555555-5555-4555-8555-555555555555';
+  const standing = { office: 'mod', allowance: 2, order: null, beat: [{ id: GAMES, name: 'Games' }, { id: MORE, name: 'More' }] };
+  const mt = (thread: string) => ({ verdict: 'dismissed', line: 'No.', move: { kind: 'moveThread', params: { thread, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' } });
+  const d = fakeDbs({ standing });
+  const m = fakeModels(() => mt(THREAD));
+  assert.equal((await go(d, m)).status, 200);
+  assert.ok(m.chats[0]!.system!.includes(`this thread, ${THREAD}, to another board`), 'the prompt names the reported thread');
+  assert.deepEqual((m.chats[0]!.schema as any).properties.move.properties.params.properties.thread, { type: 'string', enum: [THREAD] });
+  assert.deepEqual(d.state.moves.map((a) => a.move), [{ kind: 'moveThread', params: { thread: THREAD, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' }]);
+  const other = fakeDbs({ standing });
+  assert.equal((await go(other, fakeModels(() => mt('99999999-9999-4999-8999-999999999999')))).status, 200);
+  assert.equal(other.state.moves.length, 0, 'a thread the call was not given is dropped');
+});
+
 test('a failed judgment refunds the report: a failed call, a rejected answer, a verdict that is none, a Mod who is gone', async () => {
   const cases: [string, World, () => unknown][] = [
     ['the call failed', {}, () => new Error('the provider is down')],

@@ -199,6 +199,23 @@ test('a filing with a move queues it as the Mod\'s, caused by the visit, then fi
   assert.deepEqual(props['move'].properties.params.properties.board.enum, [GAMES]);
 });
 
+test('a filing passes its thread to the prompt and its board to the repair: a Mod\'s moveThread of the visit\'s thread queues, one of any other thread is dropped', async () => {
+  const MORE = '55555555-5555-4555-8555-555555555555';
+  const standing = { [MON]: mod(2, { beat: [{ id: GAMES, name: 'Games' }, { id: MORE, name: 'More' }] }) };
+  const mt = (thread: string) => ({ words: 'Moved.', move: { kind: 'moveThread', params: { thread, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' } });
+  const d = fakeDb({ visits: [due(V1, P1)], standing });
+  const m = fakeModels(() => mt(T1));
+  assert.ok((await run(d, m)).status === 'ok');
+  assert.ok(m.chats[0]!.system!.includes(`this thread, ${T1}, to another board`), 'the prompt names the visit\'s thread');
+  assert.deepEqual((m.chats[0]!.schema as any).properties.move.properties.params.properties.thread, { type: 'string', enum: [T1] });
+  assert.deepEqual(d.of('apply_mod_move').map((a) => a.move), [{ kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' }]);
+  const other = fakeDb({ visits: [due(V1, P1)], standing });
+  const out = await run(other, fakeModels(() => mt('99999999-9999-4999-8999-999999999999')));
+  assert.ok(out.status === 'ok');
+  assert.equal(other.of('apply_mod_move').length, 0);
+  assert.deepEqual(out.filings[0]!.dropped, [{ path: 'move.params.thread', predicate: 'knownThread' }]);
+});
+
 test('an expiry past ruleDaysMost is clamped with a trim on the record; a board off the beat drops the move, the predicate named, and the line still files', async () => {
   const d = fakeDb({ visits: [due(V1, P1), due(V3, P3)] });
   const m = fakeModels((r) => ({ words: `Line for ${r.messages[0]!.content.length}.`, move: move(r.messages[0]!.content.includes('Odyssey') && d.state.moves.length === 0 ? { expires_in_hours: 900 } : { params: { board: OTHER, predicate: 'noAllCaps', band: 'minor' } }) }));

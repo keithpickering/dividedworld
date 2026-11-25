@@ -152,7 +152,7 @@ function CareerList({ staff, pronouns }: { readonly staff: string; readonly pron
 /** A staff key no public name resolves: a persona that has not debuted stays unnamed. */
 const UNINTRODUCED = 'a Boss who has not been introduced';
 
-/** A visit, a report judged or an appeal heard (`moves_log`, 0111): what it did, linked to the post, and how it ended. */
+/** A visit, a report judged, an appeal heard or a request ruled on (`moves_log`, 0111, 0424): what it did, linked to the post (and, for a request, to its thread), and how it ended. */
 function ModActCells({ row, perPage, name, onSpin }: { readonly row: MoveLogRow; readonly perPage: number; readonly name: string; readonly onSpin: (act: string, label: string, opener: HTMLElement) => void }) {
   const seq = postOf(row);
   const words = didWords(row);
@@ -160,12 +160,13 @@ function ModActCells({ row, perPage, name, onSpin }: { readonly row: MoveLogRow;
     <>
       <td role="cell">
         {words.before}
+        {words.thread !== undefined && <><Link to={threadHref(row.thread, 1)}>{words.thread}</Link>{words.between}</>}
         {seq === null ? 'a post' : <Link to={threadHref(row.thread, pageOf(seq, perPage), seq)}>post #{seq}</Link>}
         {words.after}
       </td>
       <td role="cell" className="kb-small kb-muted">
         {endedModWords(row)}
-        {row.kind !== 'visit' && (
+        {row.kind !== 'visit' && row.kind !== 'request' && (
           <>
             {' '}
             <button type="button" className="kb-link-button" aria-label={`Spin thread from ${name}'s ${row.kind === 'report' ? 'verdict' : 'ruling'}`} onClick={(e) => onSpin(row.act, `${name}'s ${row.kind === 'report' ? 'verdict' : 'ruling'}`, e.currentTarget)}>Spin thread</button>

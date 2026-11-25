@@ -85,6 +85,7 @@ const settings: Settings = {
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   conduct: { openReportsMost: 3, adminAddress: null },
+  staffRequests: { daysMost: 3, meetingMost: 10 },
   boardNameMaxLength: 60,
   moveExpiryMostDays: 42,
   demandCheckMinutes: 5,
@@ -751,6 +752,18 @@ test('the conduct settings: openReportsMost a whole number of at least 1, adminA
   assert.match(bad('conduct', { openReportsMost: 3 }), /conduct.*"adminAddress" is not/);
   assert.match(bad('conduct', 'x'), /conduct/);
   assert.match(bad('conduct', null), /conduct/);
+});
+
+test('the staff requests settings: daysMost and meetingMost whole numbers of at least 1, and nothing else in the object', () => {
+  const bad = (v: unknown) => settingsProblems({ ...settings, staffRequests: v } as unknown as Settings).join('\n');
+  const gs = settings.staffRequests;
+  for (const k of ['daysMost', 'meetingMost'] as const) {
+    for (const v of [0, -1, 1.5, '3', null, true, 9007199254740992]) assert.match(bad({ ...gs, [k]: v }), new RegExp(`staffRequests.*"${k}" is not`), `${k} = ${JSON.stringify(v)}`);
+    for (const v of [1, 3]) assert.deepEqual(settingsProblems({ ...settings, staffRequests: { ...gs, [k]: v } }), [], `${k} may be ${v}`);
+  }
+  assert.match(bad({ ...gs, other: 1 }), /staffRequests.*"other" is not one of its fields/);
+  assert.match(bad({ daysMost: 3 }), /staffRequests.*"meetingMost" is not/);
+  for (const v of ['x', [], null]) assert.match(bad(v), /staffRequests/, JSON.stringify(v));
 });
 
 test('a bot voice that is neither chat nor oldVoice is a problem', () => {

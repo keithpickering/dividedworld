@@ -20,7 +20,8 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import type { Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { said, stopsTheRun, type Standing } from './core.ts';
+import { said, stopsTheRun } from './core.ts';
+import type { Standing } from '../_shared/mod-groups.ts';
 import type { PostingOffice } from '../../../engine/system/pool.ts';
 
 interface Pending {
