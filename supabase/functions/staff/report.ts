@@ -34,7 +34,8 @@ import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } from '../_shared/rpc.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
-import { instanceSet, judgedRead, learnMod, pronounsOfCharacter, readModGroups, said } from './core.ts';
+import { instanceSet, judgedRead, learnMod, pronounsOfCharacter, said } from './core.ts';
+import { readModGroups } from '../_shared/mod-groups.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type ReportAnswer = DoorAnswer;

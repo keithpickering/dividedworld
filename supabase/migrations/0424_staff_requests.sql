@@ -8,7 +8,8 @@
 --
 --   2. The tables, the writes and the reads (Task 3): staff_requests, staff_request_rulings, apply_boss_move, rule_request, requests_waiting, requests_ruled, staffRequests' validator, and the tick's lapse (see section 2's own header).
 --
---   2b. The turn's call record (Task 4): staff_call_records takes the duty `ruling`, a staff turn's ruling on a request, keyed by the turn's post (the chatter Edge Function writes it with record_staff_call).
+--   2b. The turn's ruling and its call record (Task 4): staff_call_records takes the duty `ruling`, a staff turn's ruling on a request, keyed by the turn's post (the chatter Edge Function writes it with record_staff_call);
+--      and write_staff_turn takes the ruling (a trailing `in_ruling`) and writes it with the post, in the turn's one transaction, so a turn retried or lost between the two cannot lose its ruling.
 --
 -- Masks. Nothing here reads an owner, a class or a reactor; a board and a thread are public. Ways out. A moveThread is lasting and ends as 0320 wrote it: reversed by an admin, or superseded by a later move of the thread.
 -- Cost: one thread_place call for a Mod's moveThread, and none for any other kind.
@@ -1394,3 +1395,68 @@ end $$;
 -- `ruling`; its cause is the turn's post. Nothing else changes: the table is still append-only and no client reads it.
 alter table staff_call_records drop constraint staff_call_records_duty_check;
 alter table staff_call_records add constraint staff_call_records_duty_check check (duty in ('filing', 'reportJudge', 'patrolJudge', 'appeal', 'ruling'));
+
+-- write_staff_turn writes the turn's ruling with the post (Task 4 fix). A ruling written after the turn's transaction could be lost for good: the post is committed and its replies are answered, so a run that died, or a
+-- transport error, between the two left a request nobody ruled on and nothing to write it again. So the ruling travels in the turn's own transaction: `in_ruling` {reply, ruling, move, weekly_moves, bank_cap} (the
+-- repaired request block; null for a turn that rules on nothing) is handed to rule_request once the post is written, with the new post as its turn.
+-- A ruling the database refuses as bad input (22023, the refusals rule_request and the moves raise; 23514 and 22P02 for a value outside its checks or a reply that is no id) is caught in a subtransaction of its own: whatever
+-- the ruling began (a debit, a queued move) is undone with it, the post and the turn stand, and the result says `refused` {code, message}. Any other error is not bad input and takes the whole turn back, as ever.
+-- Idempotent as write_staff_turn always was: a reply is answered once (pool_answered's key, and the persona's lock before it), so a replay is refused whole and writes neither a second post nor a second ruling; rule_request
+-- is itself idempotent on (staff, request post). A turn rolled back after its post leaves no ruling, and a ruling is never written without its post.
+-- Returns {turn, post} and, for a ruling, {ruling: rule_request's answer} or {refused: {code, message}}.
+drop function write_staff_turn(text, bigint, uuid, uuid, uuid[], text, integer);
+create function write_staff_turn(staff_key text, in_session bigint, in_thread uuid, quoting uuid, answers uuid[], body text, in_chars integer, in_ruling jsonb default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  who uuid;
+  sess staff_sessions;
+  wanted uuid[];
+  written jsonb;
+  made bigint;
+  out jsonb;
+  ruled jsonb;
+begin
+  select c.id into who from characters c where c.staff = staff_key and c.staff_kind = 'persona';
+  if who is null then raise exception 'there is no persona "%"', staff_key using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+  perform pg_advisory_xact_lock(hashtextextended('kayfabb-staff-turn:' || staff_key, 0));
+  select * into sess from staff_sessions s where s.id = in_session;
+  if sess.id is null or sess.staff is distinct from staff_key then
+    raise exception 'that session is not %''s', staff_key using hint = 'kayfabb.refusal', errcode = '42501';
+  end if;
+  if not (sess.starts_at <= now() and now() < sess.ends_at) then
+    raise exception 'that session is not open now' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  select coalesce(array_agg(distinct x), '{}') into wanted from unnest(answers) x;
+  if cardinality(wanted) = 0 or write_staff_turn.quoting is null or not (write_staff_turn.quoting = any (wanted)) then
+    raise exception 'a turn quotes one of the replies it answers' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  -- A reply is answered once. Two guards: the persona's lock above serializes its turns, so the second of two racing turns finds the first's pool_answered rows here; and pool_answered's primary key (reply) refuses a
+  -- duplicate whatever got past this read, rolling the whole turn back.
+  if exists (select 1 from pool_answered p where p.reply = any (wanted)) then
+    raise exception 'a reply is answered once' using hint = 'kayfabb.refusal', errcode = '55000';
+  end if;
+  -- Each answer is waiting now, by the very read that finds waiting replies (pool_waiting_in_thread): a public reply by a character that is not staff to a post of this persona in this thread, within the wait, not under an
+  -- author veil, not in a thread the persona is locked out of.
+  if (select count(*) from pool_waiting_in_thread(in_thread, array[staff_key], now() - coalesce(((select g.value from settings g where g.key = 'pool') -> 'turns' ->> 'waitHours')::integer, 48) * interval '1 hour') w
+      where w.act = any (wanted)) is distinct from cardinality(wanted) then
+    raise exception 'a turn answers the replies waiting on its own posts in its thread' using hint = 'kayfabb.refusal', errcode = '22023';
+  end if;
+  perform within('body', body, 'postMaxLength');
+  written := write_staff_act(staff_key, 'post', in_thread, write_staff_turn.quoting, jsonb_build_object('body', body));
+  insert into pool_turns (day, staff, session, thread, post_act, quoting, chars)
+  values (sess.day, staff_key, in_session, in_thread, (written ->> 'id')::uuid, write_staff_turn.quoting, in_chars) returning id into made;
+  insert into pool_answered (reply, turn) select x, made from unnest(wanted) x;
+  out := jsonb_build_object('turn', made, 'post', written);
+  if in_ruling is not null and in_ruling <> 'null'::jsonb then
+    begin
+      ruled := rule_request(staff_key, (in_ruling ->> 'reply')::uuid, (written ->> 'id')::uuid, in_ruling ->> 'ruling', nullif(in_ruling -> 'move', 'null'::jsonb),
+        (in_ruling ->> 'weekly_moves')::numeric, (in_ruling ->> 'bank_cap')::numeric);
+      out := out || jsonb_build_object('ruling', ruled);
+    exception when invalid_parameter_value or check_violation or invalid_text_representation then
+      out := out || jsonb_build_object('refused', jsonb_build_object('code', sqlstate, 'message', sqlerrm));
+    end;
+  end if;
+  return out;
+end $$;
+revoke execute on function write_staff_turn(text, bigint, uuid, uuid, uuid[], text, integer, jsonb) from public, anon, authenticated;
+grant execute on function write_staff_turn(text, bigint, uuid, uuid, uuid[], text, integer, jsonb) to service_role;

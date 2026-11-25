@@ -113,7 +113,7 @@ import {
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { readOf, type PoolRead } from '../_shared/pool-read.ts';
-import { readModGroups, type Standing } from '../staff/core.ts';
+import { readModGroups, type Standing } from '../_shared/mod-groups.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed, PromptTooLong, requestRefused, SchemaRefused } from '../_shared/models/index.ts';
 

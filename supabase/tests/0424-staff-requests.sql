@@ -22,6 +22,8 @@
 -- Section 2b (Task 4: the turn's call record).
 -- 12. record_staff_call keeps a `ruling` duty keyed by a post, a second one is the next attempt, and a duty outside the list is still refused.
 -- 13. The Boss's turn holds kinds back by the season it is now, not the one its latest meeting was held in.
+-- 14. write_staff_turn writes the turn's ruling in its own transaction: post and request together; a refused ruling leaves the post and returns the refusal; a replay writes neither a second post nor a second request; a turn
+--     rolled back after the post leaves neither; a turn with no ruling is as it was.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -966,4 +968,84 @@ begin
   insert into arc_beat_events (season, staff, beat, event) values (new_season, 'mm-boss', 'opened', 'unlocked');
   r := apply_boss_move('mm-boss', pg_temp.mt(t, offtopic), pg_temp.cause('s2'), 0, 20);
   if (r ->> 'queued')::boolean is not true then raise exception 'a kind this season has unlocked was refused: %', r; end if;
+end $$;
+
+-- ---- 14. The turn and its ruling are one transaction ----
+create function pg_temp.waiting(staff text, label text) returns jsonb language plpgsql as $$
+declare
+  t uuid := pg_temp.thread_on('mm-games', 'Turn ' || label);
+  p0 uuid := (write_staff_act(staff, 'post', t, null, jsonb_build_object('body', 'Staff opener ' || label)) ->> 'id')::uuid;
+  r uuid := tests.act(pg_temp.poster(), 'post', t, jsonb_build_object('body', 'Please, ' || label), p0, now() - interval '1 hour');
+begin
+  return jsonb_build_object('thread', t, 'reply', r);
+end $$;
+
+do $$
+declare
+  sid bigint;
+  sc jsonb;
+  got jsonb;
+  seen text;
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  posts bigint;
+  reqs bigint;
+  turns bigint;
+begin
+  perform write_sessions((now() at time zone 'UTC')::date, '[{"staff": "mm-m1", "start": 0, "end": 1440}]');
+  sid := (select s.id from staff_sessions s where s.staff = 'mm-m1' order by s.id desc limit 1);
+  if (select count(*) from pg_proc where proname = 'write_staff_turn') is distinct from 1 then raise exception 'write_staff_turn has more than one signature'; end if;
+
+  -- A turn with no ruling is as it was: no ruling and no refusal in its answer, no request.
+  sc := pg_temp.waiting('mm-m1', 'none');
+  got := write_staff_turn('mm-m1', sid, (sc ->> 'thread')::uuid, (sc ->> 'reply')::uuid, array[(sc ->> 'reply')::uuid], 'A turn.', 0);
+  if got ? 'ruling' or got ? 'refused' or got -> 'post' ->> 'id' is null then raise exception 'a turn with no ruling answers a ruling: %', got; end if;
+  if exists (select 1 from staff_requests where request_act = (sc ->> 'reply')::uuid) then raise exception 'a turn with no ruling wrote a request'; end if;
+
+  -- A turn with a ruling writes the post and the request together; the request's turn is the new post.
+  sc := pg_temp.waiting('mm-m1', 'confer');
+  got := write_staff_turn('mm-m1', sid, (sc ->> 'thread')::uuid, (sc ->> 'reply')::uuid, array[(sc ->> 'reply')::uuid], 'A turn that confers.', 0,
+    jsonb_build_object('reply', sc ->> 'reply', 'ruling', 'confer', 'move', null));
+  if got -> 'ruling' ->> 'ruling' is distinct from 'confer' or got ? 'refused' then raise exception 'the ruling was not written with the turn: %', got; end if;
+  if (select q.turn_act from staff_requests q where q.request_act = (sc ->> 'reply')::uuid and q.staff = 'mm-m1') is distinct from (got -> 'post' ->> 'id')::uuid then raise exception 'the request does not name the new post as its turn: %', got; end if;
+  if not exists (select 1 from pool_turns t where t.post_act = (got -> 'post' ->> 'id')::uuid) then raise exception 'the turn has no row'; end if;
+
+  -- A refused ruling leaves the post and the turn, writes no request, and returns the refusal: a ruling outside the three (22023), and a reply that is no id (22P02).
+  sc := pg_temp.waiting('mm-m1', 'refused');
+  got := write_staff_turn('mm-m1', sid, (sc ->> 'thread')::uuid, (sc ->> 'reply')::uuid, array[(sc ->> 'reply')::uuid], 'A turn whose ruling is refused.', 0,
+    jsonb_build_object('reply', sc ->> 'reply', 'ruling', 'grant', 'move', null));
+  if got -> 'refused' ->> 'code' is distinct from '22023' or got -> 'refused' ->> 'message' is null or got ? 'ruling' then raise exception 'a refused ruling was not returned as the refusal: %', got; end if;
+  if not exists (select 1 from acts a where a.id = (got -> 'post' ->> 'id')::uuid and a.kind = 'post') or not exists (select 1 from pool_turns t where t.post_act = (got -> 'post' ->> 'id')::uuid)
+     or not exists (select 1 from pool_answered x where x.reply = (sc ->> 'reply')::uuid) then raise exception 'a refused ruling took the post back: %', got; end if;
+  if exists (select 1 from staff_requests where request_act = (sc ->> 'reply')::uuid) then raise exception 'a refused ruling wrote a request'; end if;
+  sc := pg_temp.waiting('mm-m1', 'noid');
+  got := write_staff_turn('mm-m1', sid, (sc ->> 'thread')::uuid, (sc ->> 'reply')::uuid, array[(sc ->> 'reply')::uuid], 'A turn whose ruling names no reply.', 0,
+    jsonb_build_object('reply', 'not an id', 'ruling', 'reject', 'move', null));
+  if got -> 'refused' ->> 'code' is distinct from '22P02' or got -> 'post' ->> 'id' is null then raise exception 'a ruling with no id for its reply took the post or was not returned: %', got; end if;
+
+  -- A replay writes neither a second post nor a second request: the replies are answered, and the turn is refused whole.
+  sc := pg_temp.waiting('mm-m1', 'replay');
+  got := write_staff_turn('mm-m1', sid, (sc ->> 'thread')::uuid, (sc ->> 'reply')::uuid, array[(sc ->> 'reply')::uuid], 'A turn to replay.', 0,
+    jsonb_build_object('reply', sc ->> 'reply', 'ruling', 'reject', 'move', null));
+  select count(*) into posts from acts where thread = (sc ->> 'thread')::uuid;
+  select count(*) into reqs from staff_requests;
+  select count(*) into turns from pool_turns;
+  seen := pg_temp.refusal(format('select write_staff_turn(%L, %s, %L, %L, %L::uuid[], %L, 0, %L::jsonb)', 'mm-m1', sid, sc ->> 'thread', sc ->> 'reply', array[sc ->> 'reply'], 'A turn to replay.',
+    jsonb_build_object('reply', sc ->> 'reply', 'ruling', 'reject', 'move', null)));
+  if seen is null or seen not like '55000%answered once%' then raise exception 'a replayed turn was not refused: %', seen; end if;
+  if (select count(*) from acts where thread = (sc ->> 'thread')::uuid) is distinct from posts or (select count(*) from staff_requests) is distinct from reqs or (select count(*) from pool_turns) is distinct from turns then
+    raise exception 'a replayed turn wrote a second post, turn or request'; end if;
+
+  -- A transaction rolled back after the post leaves neither the post nor the request.
+  sc := pg_temp.waiting('mm-m1', 'rollback');
+  select count(*) into posts from acts where thread = (sc ->> 'thread')::uuid;
+  select count(*) into reqs from staff_requests;
+  begin
+    perform write_staff_turn('mm-m1', sid, (sc ->> 'thread')::uuid, (sc ->> 'reply')::uuid, array[(sc ->> 'reply')::uuid], 'A turn that dies.', 0,
+      jsonb_build_object('reply', sc ->> 'reply', 'ruling', 'reject', 'move', null));
+    if (select count(*) from staff_requests) is distinct from reqs + 1 then raise exception 'the world: the ruling was not written'; end if;
+    raise exception 'the run died' using errcode = 'P0001';
+  exception when sqlstate 'P0001' then null;
+  end;
+  if (select count(*) from acts where thread = (sc ->> 'thread')::uuid) is distinct from posts or (select count(*) from staff_requests) is distinct from reqs
+     or exists (select 1 from pool_answered x where x.reply = (sc ->> 'reply')::uuid) then raise exception 'a turn rolled back after its post left a post, a request or an answered reply'; end if;
 end $$;
