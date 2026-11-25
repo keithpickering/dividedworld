@@ -23,6 +23,7 @@ import { instanceUi, REASON_KEYS, settingsRead, wordsRead } from './index.ts';
 import { cardsUi, spanWords } from './cards.ts';
 import { webpSize } from '../../../engine/ui/profile-edit/webp.ts';
 import { gearUi } from './cosmetics.ts';
+import { gainOf } from './sounds.ts';
 import { mooch } from '../cards/mooch.ts';
 import { toll } from '../cards/toll.ts';
 import { lineCutter } from '../cards/line-cutter.ts';
@@ -556,7 +557,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.canApply(post('abcd'), [audience], config, new Date())).toEqual({ ok: false, why: 'this post already has an audience' });
     expect(said).toContain('It costs more to play the more places its phrases cover.');
     const free = e['laughTrack.freePlaces']!;
-    const priceAt = (places: number) => laughTrack.playPrice!(instance.settings, post('abcd '.repeat(places)), config);
+    const priceAt = (places: number) => laughTrack.playPrice!(instance.settings, post('abcd '.repeat(places)), config, []);
     expect(priceAt(free)).toBe(0);
     expect(priceAt(free + 1)).toBe(e['laughTrack.perPlace']);
     expect(priceAt(free + 2)).toBeGreaterThan(priceAt(free + 1));
@@ -1402,10 +1403,10 @@ describe('Mooch, Toll, 4D Chess, Off Day and Rope Break in plain words (card not
 
 describe('Divided World\'s sounds', () => {
   const soundsDir = path.join(path.dirname(fileURLToPath(import.meta.url)), 'sounds');
-  const manifest = JSON.parse(fs.readFileSync(path.join(soundsDir, 'sounds.json'), 'utf8')) as { file: string }[];
+  const manifest = JSON.parse(fs.readFileSync(path.join(soundsDir, 'sounds.json'), 'utf8')) as { file: string; lufs: number; peak: number }[];
   const manifestFiles = manifest.map((m) => m.file);
   /* The table the design gives, one row per slot, in order. */
-  const TABLE = [
+  const TABLE: readonly { key: string; file: string; caption: string; ink: string; loop?: true; level?: number }[] = [
     { key: 'laugh-track.laugh-1', file: 'laugh-1.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
     { key: 'laugh-track.laugh-2', file: 'laugh-2.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
     { key: 'laugh-track.laugh-3', file: 'laugh-3.mp3', caption: 'The audience laughs', ink: 'var(--kb-pepperoni)' },
@@ -1431,10 +1432,14 @@ describe('Divided World\'s sounds', () => {
     { key: 'steel-chair.extinguisher-settle-1', file: 'steel-chair-extinguisher-settle-1.mp3', caption: 'A fire extinguisher clunks to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.extinguisher-settle-2', file: 'steel-chair-extinguisher-settle-2.mp3', caption: 'A fire extinguisher clunks to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.extinguisher-hiss', file: 'steel-chair-extinguisher-hiss.mp3', caption: 'A fire extinguisher hisses', ink: 'var(--kb-salty)' },
+    { key: 'its-curtains.drumroll', file: 'its-curtains-drumroll.mp3', caption: 'Drumroll', ink: 'var(--kb-pepperoni)', loop: true, level: 0.8 },
+    { key: 'its-curtains.crash', file: 'its-curtains-crash.mp3', caption: 'Cymbal crash', ink: 'var(--kb-pepperoni)' },
+    { key: 'its-curtains.whoosh', file: 'its-curtains-whoosh.mp3', caption: 'Curtain whooshes open', ink: 'var(--kb-pepperoni)', level: 0.9 },
+    { key: 'its-curtains.tada', file: 'its-curtains-tada.mp3', caption: 'Ta-da!', ink: 'var(--kb-pepperoni)', level: 0.9 },
   ];
   const slots = instanceUi.sounds?.slots ?? [];
 
-  test('there are exactly the twenty-five slots of the designs, in order, with their keys, captions, inks and loops', () => {
+  test('there are exactly the twenty-nine slots of the designs, in order, with their keys, captions, inks and loops', () => {
     expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
     for (const row of TABLE) {
       const slot = slots.find((s) => s.key === row.key);
@@ -1443,7 +1448,15 @@ describe('Divided World\'s sounds', () => {
       expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
       expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
     }
-    expect(slots).toHaveLength(25);
+    expect(slots).toHaveLength(29);
+  });
+  /* The owner's mix for It's Curtains (2026-11-25): a level is a multiplier on the loudness the manifest brings a sound to. */
+  test('every slot\'s gain is its manifest loudness times the level the design gives it', () => {
+    for (const row of TABLE) {
+      const slot = slots.find((s) => s.key === row.key)!;
+      const m = manifest.find((e) => e.file === row.file)!;
+      expect(slot.gain, `${row.key}'s gain`).toBeCloseTo(gainOf(m) * (row.level ?? 1), 10);
+    }
   });
   test('every slot plays on the game bus', () => {
     for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');

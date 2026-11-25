@@ -81,7 +81,7 @@ function standInLayout(): void {
 const drawn = instanceUi.cards.filter((c) => c.Effect && (c.key === 'glitter-bomb' || playsInMoment(instance.cards.find((r) => r.key === c.key), c)));
 
 test('the cards a moment draws are these, Stick Around, Graffiti and Jimmy Wails are not among them, and Glitter Bomb is held to the same contract', () => {
-  expect(drawn.map((c) => c.key).sort()).toEqual(['autocorrect', 'below-the-fold', 'blind-study', 'feelin-fab', 'glitter-bomb', 'hot-box', 'kick-me', 'laugh-track', 'steel-chair', 'this', 'time-machine', 'whodunnit', 'whoops', 'you-were-saying']);
+  expect(drawn.map((c) => c.key).sort()).toEqual(['autocorrect', 'below-the-fold', 'blind-study', 'feelin-fab', 'glitter-bomb', 'hot-box', 'its-curtains', 'kick-me', 'laugh-track', 'steel-chair', 'this', 'time-machine', 'whodunnit', 'whoops', 'you-were-saying']);
   for (const key of ['stick-around', 'graffiti', 'jimmy-wails']) expect(drawn.map((c) => c.key)).not.toContain(key);
 });
 
@@ -101,6 +101,7 @@ test.each(drawn.map((c) => [c.key, c] as const))('%s, drawn in a moment, saves, 
   const Effect = card.Effect!;
   /* The engine hands a moment's effect `{ author: false, caster: false }`; this holds the effect to the contract even when told otherwise. */
   const props: EffectProps = {
+    covered: false,
     post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: true, caster: true }, place: 'thread', reach: 'post', still: false, moment: { at: AT },
     show: (v) => { view = v; }, met, holdScreen, ink: NO_INK, marks: null, save, release, nameOf: () => 'Spritey', give, moreGifts: async () => {}, wallet: null, children: key === 'autocorrect' ? <BbCode text="hi" /> : <p>hi</p>,
   };
@@ -171,7 +172,7 @@ const unreactive = instanceUi.cards.filter((c) => c.Effect && !WRITING.includes(
 
 test('the writing cards are the one left out of the still comparison, with the two that wait for issue #774', () => {
   expect(instance.cards.filter((r) => r.writes !== undefined).map((r) => r.key)).toEqual(WRITING);
-  expect(unreactive.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'autocorrect', 'feelin-fab', 'this', 'hot-box', 'steel-chair', 'whodunnit', 'blind-study', 'below-the-fold', 'laugh-track', 'glitter-bomb', 'stick-around']));
+  expect(unreactive.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'autocorrect', 'feelin-fab', 'this', 'hot-box', 'steel-chair', 'whodunnit', 'blind-study', 'below-the-fold', 'laugh-track', 'glitter-bomb', 'stick-around', 'its-curtains']));
 });
 
 test.each(unreactive.map((c) => [c.key, c] as const))('%s draws the same markup with still true and with still false', async (key, card) => {
@@ -179,6 +180,7 @@ test.each(unreactive.map((c) => [c.key, c] as const))('%s draws the same markup 
   const Effect = card.Effect!;
   const draw = async (still: boolean) => {
     const props: EffectProps = {
+      covered: false,
       post: POST, plays, states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still, moment: null,
       show: () => {}, met: () => {}, holdScreen: () => {}, ink: NO_INK, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
     };
@@ -200,6 +202,7 @@ test.each(['whodunnit', 'blind-study'])('%s, in a moment with an end behind the 
   const Effect = card.Effect!;
   const shown: string[] = [];
   const props: EffectProps = {
+    covered: false,
     post: POST, plays: [{ id: `${key}-1`, card: key, layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-03T12:00:00.000Z', post: POST.id, ends: '2026-11-06T12:00:00.000Z' }], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: { at: AT },
     show: (view) => { if (view) shown.push(view.state); }, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>hi</p>,
   };

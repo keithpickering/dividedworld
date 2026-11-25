@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, rewindWords, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
+import { RARITIES, quadrantFree, faceUpOnly, instant, cuttable, OLD_VOICE_OFF, DISCIPLINE_KINDS, openDrive, giftSplit, wardTurnsAway, matchWords, SET_PHRASE_MOST, atOrBelow, refusalTime, spanMs, decidePlay, isLive, decideSet, decideDraw, decideWash, decideUse, effectsOnTarget, landsOn, noQuoteWords, quoteStop, ok, staffConfigOf, staffDrawOf, staffOffers, fallsOn, castOnPost, postTarget, refuse, effectsUp, postFullWords, roomOnPost, writeTokensMost, WRITE_TOKENS_MOST, rewindWords, type Writes, type CardEffect, type CardRules, type CardTarget } from './cards.ts';
 import { isPost, type ActKind, type Settings } from './types.ts';
 
 // The engine's own test cards: no instance's names (the engine/instance boundary).
@@ -36,6 +36,15 @@ test('the rarities are in order, and atOrBelow reads that order', () => {
   // A rarity that is not one of the four is below nothing and covers nothing.
   assert.equal(atOrBelow('mythic' as never, 'legendary'), false);
   assert.equal(atOrBelow('common', 'mythic' as never), false);
+});
+
+test('a card is priced from the effects already on its target: its own live plays, and not an ended one', () => {
+  const counting: CardRules = { ...cast('counting', 'common'), canApply: () => ok(undefined), playPrice: (_s, _t, _c, effects) => 100 * effects.filter((e) => e.card === 'counting' && isLive(e)).length };
+  const play = (act: string, ends?: string): CardEffect => ({ card: 'counting', act, ...(ends === undefined ? {} : { ends }) });
+  const priced = (effects: CardEffect[]) => { const d = decidePlay(counting, settings, post, effects, {}, ''); assert.equal(d.ok, true); return d.ok ? d.value.price : -1; };
+  assert.equal(priced([]), 0);
+  assert.equal(priced([play('a', soon), play('b', soon)]), 200);
+  assert.equal(priced([play('a', soon), play('b', soon), play('c', gone)]), 200, 'an ended play is not counted');
 });
 
 test('a ward that came in with a malformed end still holds, and one whose card is not named is called a ward', () => {

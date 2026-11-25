@@ -51,6 +51,7 @@ test('the instance sells its cards at their prices', () => {
     ['heat-magnet', 'salty', 100],
     ['hot-box', 'salty', 100],
     ['hype-up', 'sweet', 100],
+    ['its-curtains', 'pepperoni', 150],
     ['jimmy-wails', 'sweet', 200],
     ['kick-me', 'pepperoni', 100],
     ['last-word', 'salty', 150],
@@ -94,11 +95,11 @@ test('the cards are listed in key order, so a new card has one place to go', () 
 
 test('what a play adds is a setting: an override reaches what it costs to play', () => {
   const tuned = withOverrides(settings, { economy: { 'whoops.perLength': 50, 'whoops.mostAdded': 300 } });
-  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.lengthStep': 250 } }), post(500), { color: 'red' }), 50, 'the step is a setting too');
-  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostAdded': 0 } }), post(6000), { color: 'red' }), 0, 'a cap of nothing adds nothing');
+  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.lengthStep': 250 } }), post(500), { color: 'red' }, []), 50, 'the step is a setting too');
+  assert.equal(whoops.playPrice(withOverrides(settings, { economy: { 'whoops.mostAdded': 0 } }), post(6000), { color: 'red' }, []), 0, 'a cap of nothing adds nothing');
   assert.match(instanceProblems({ ...instance, settings: withOverrides(settings, { economy: { 'whoops.lengthStep': 0 } }) }).join('\n'), /whoops\.lengthStep/);
-  assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }), 100);
-  assert.equal(whoops.playPrice(tuned, post(1_000_000), { color: 'red' }), 300);
+  assert.equal(whoops.playPrice(tuned, post(1000), { color: 'red' }, []), 100);
+  assert.equal(whoops.playPrice(tuned, post(1_000_000), { color: 'red' }, []), 300);
 });
 
 test('the machine sells every card, and no card carries a price of its own', () => {
@@ -202,11 +203,11 @@ test('Glitter Bomb is an uncommon Pepperoni Cast on a character, for a week; Mai
   assert.deepEqual(glitterBomb.canApply(character, [{ card: 'glitter-bomb', act: 'g', reach: 'character', ends: new Date(Date.now() + 1e6).toISOString() }]), { ok: false, why: 'this character already carries that card' });
   assert.equal(mainEvent.canApply({ reach: 'thread', thread: 't1' }, []).ok, true);
   assert.deepEqual(mainEvent.canApply(post(10), []), { ok: false, why: 'this card lands on a thread' });
-  assert.equal(glitterBomb.playPrice(settings, character, {}), 0);
+  assert.equal(glitterBomb.playPrice(settings, character, {}, []), 0);
   /* The posts written in its week keep it (docs/plans/2026-11-12-glitter-keeps-design.md); the whole instance still passes the rules' checks. */
   assert.equal(glitterBomb.keeps, true);
   assert.deepEqual(instanceProblems(instance), []);
-  assert.equal(mainEvent.playPrice(settings, { reach: 'thread', thread: 't1' }, {}), 0);
+  assert.equal(mainEvent.playPrice(settings, { reach: 'thread', thread: 't1' }, {}, []), 0);
   assert.ok(cards.some((c) => c.key === 'glitter-bomb') && cards.some((c) => c.key === 'main-event'));
 });
 
@@ -222,8 +223,8 @@ test("Feelin' Fab is a common Sweet Cast on a post, three to a post, that lasts 
   assert.deepEqual([feelinFab.key, feelinFab.name, feelinFab.alignment, feelinFab.rarity, feelinFab.play ?? 'cast', feelinFab.reaches, feelinFab.stack, feelinFab.lasts], ['feelin-fab', "Feelin' Fab", 'sweet', 'common', 'cast', ['post'], 3, undefined]);
   assert.equal(priceOf('feelin-fab'), 20);
   assert.ok(priceOf('feelin-fab') < priceOf('whoops'), 'below a common Move');
-  assert.equal(feelinFab.playPrice(settings, post(6000), {}), 0);
-  assert.equal(feelinFab.playPrice(settings, post(10), {}), 0);
+  assert.equal(feelinFab.playPrice(settings, post(6000), {}, []), 0);
+  assert.equal(feelinFab.playPrice(settings, post(10), {}, []), 0);
   assert.equal(feelinFab.validateConfig({ anything: 1 }).ok, true);
   assert.ok(cards.some((c) => c.key === 'feelin-fab'));
 });
@@ -234,8 +235,8 @@ test('Below the Fold is a common Salty Cast on a post, one to a post, that costs
   const { belowTheFold } = await import('./below-the-fold.ts');
   assert.deepEqual([belowTheFold.key, belowTheFold.name, belowTheFold.alignment, belowTheFold.rarity, belowTheFold.play ?? 'cast', belowTheFold.reaches, belowTheFold.stack, belowTheFold.lasts], ['below-the-fold', 'Below the Fold', 'salty', 'common', 'cast', undefined, undefined, undefined]);
   assert.equal(priceOf('below-the-fold'), 100);
-  assert.equal(belowTheFold.playPrice(settings, post(6000), {}), 0);
-  assert.equal(belowTheFold.playPrice(settings, post(10), {}), 0);
+  assert.equal(belowTheFold.playPrice(settings, post(6000), {}, []), 0);
+  assert.equal(belowTheFold.playPrice(settings, post(10), {}, []), 0);
   assert.deepEqual(belowTheFold.validateConfig({ anything: 1 }), { ok: true, value: {} });
   assert.deepEqual(belowTheFold.validateConfig(undefined), { ok: true, value: {} });
   const listed = cards.find((c) => c.key === 'below-the-fold');
@@ -254,8 +255,8 @@ test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, t
   const whodunnitSlot = instance.machine.find((m) => 'card' in m.item && m.item.card === 'whodunnit')!;
   assert.deepEqual([whodunnitSlot.availability, whodunnitSlot.price], ['hidden', 300]);
   for (const c of [whodunnit, blindStudy]) {
-    assert.equal(c.playPrice(settings, post(6000), {}), 0);
-    assert.equal(c.playPrice(settings, post(10), {}), 0);
+    assert.equal(c.playPrice(settings, post(6000), {}, []), 0);
+    assert.equal(c.playPrice(settings, post(10), {}, []), 0);
     assert.deepEqual(c.validateConfig({ anything: 1 }), { ok: true, value: {} });
     assert.equal(c.canApply(post(10), []).ok, true);
     assert.deepEqual(c.canApply(post(10), [{ card: c.key, act: 'v1', reach: 'post' as const }]), { ok: false, why: 'this post already carries that card' });
@@ -275,7 +276,7 @@ test('Whodunnit? and Blind Study are Pepperoni Moves on a post for three days, t
 test('Overreaction is a common Pepperoni Move on a post, three to a post, that adds a reaction of its own and does not end', async () => {
   const { overreaction } = await import('./overreaction.ts');
   assert.deepEqual([overreaction.key, overreaction.name, overreaction.alignment, overreaction.rarity, overreaction.play ?? 'cast', overreaction.reaches, overreaction.stack, overreaction.lasts, overreaction.reaction, overreaction.veil], ['overreaction', 'Overreaction', 'pepperoni', 'common', 'cast', undefined, 3, undefined, true, undefined]);
-  assert.equal(overreaction.playPrice(settings, post(6000), { emoji: '🦀', quadrant: 'calmPositive' }), 0);
+  assert.equal(overreaction.playPrice(settings, post(6000), { emoji: '🦀', quadrant: 'calmPositive' }, []), 0);
   const up = (n: number) => Array.from({ length: n }, (_, i) => ({ card: 'overreaction', act: `o${i}`, reach: 'post' as const }));
   assert.equal(overreaction.canApply(post(10), up(2)).ok, true);
   assert.deepEqual(overreaction.canApply(post(10), up(3)), { ok: false, why: 'this post already carries 3 of that card, the most it takes' });
@@ -396,7 +397,7 @@ test('Card Collector catches the card it names, and Hall Pass is a Reversal on a
   assert.deepEqual([pass.alignment, pass.rarity, pass.play, priceOf('hall-pass')], ['sweet', 'uncommon', 'set', 150]);
   assert.deepEqual(pass.trap, { trigger: { on: 'visit' } });
   assert.equal(pass.catches, undefined, 'a visit Gimmick names no card');
-  assert.equal(pass.playPrice(settings, post(10), {}), 0);
+  assert.equal(pass.playPrice(settings, post(10), {}, []), 0);
   assert.deepEqual(instanceProblems(instance), []);
 });
 
@@ -427,7 +428,8 @@ test('the Booster\'s hit pull gives uncommon 74, rare 24 and legendary 2, shared
   assert.ok(Math.abs([...chance.values()].reduce((a, b) => a + b, 0) - 1) < 1e-9, 'the hit pull\'s odds sum to 1');
   const uncommons = cards.filter((c) => c.rarity === 'uncommon');
   // Pay It Forward (uncommon, Refund Outcome, Task 6) joined them, so twenty-one share the 74. Cheap Shot (uncommon, pierce, the Cheap Shot plan's Task 6) makes twenty-two.
-  assert.equal(uncommons.length, 22);
+  // It's Curtains (uncommon, the its-curtains plan's Task 4) makes twenty-three.
+  assert.equal(uncommons.length, 23);
   assert.equal(chance.has('hype-up'), false, 'Hype-Up is a common, so the hit pull leaves it out');
   for (const c of uncommons) assert.ok(Math.abs(chance.get(c.key)! - 0.74 / uncommons.length) < 1e-9, `${c.key} at ${chance.get(c.key)}`);
   assert.equal(chance.size, uncommons.length + rares.length + legendaries.length);
@@ -553,7 +555,7 @@ test('Jimmy Wails is a Sweet uncommon Cast on a post, sold for 2.00, with a driv
   assert.deepEqual(j.drive, { lasts: { unit: 'day', count: 7 }, gifts: ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4'], overhead: 'jimmyWails.overhead' });
   assert.deepEqual(['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead'].map((k) => settings.economy[k]), [10, 25, 50, 100, 25]);
   assert.equal(giftSplit(10, settings.economy['jimmyWails.overhead']!).overhead, 3, 'a 0.10 gift keeps 0.03 of overhead');
-  assert.equal(j.playPrice(settings, post(100), {}), 0, 'a play costs nothing beyond the machine\'s price');
+  assert.equal(j.playPrice(settings, post(100), {}, []), 0, 'a play costs nothing beyond the machine\'s price');
   assert.equal(j.needsMessage, 'an appeal needs a sob story');
   assert.deepEqual(instanceProblems(instance), []);
   assert.deepEqual((j.reads ?? []).map((r) => (typeof r === 'string' ? r : r.key)), ['jimmyWails.gift1', 'jimmyWails.gift2', 'jimmyWails.gift3', 'jimmyWails.gift4', 'jimmyWails.overhead']);
@@ -631,7 +633,7 @@ test('Line Cutter lands on a post, once, never under a reply that cut in, and co
   assert.deepEqual(cutter.canApply(thread, []), { ok: false, why: 'this card lands on a post' });
   assert.deepEqual(cutter.canApply(post(10), [{ card: 'line-cutter', act: 'k1' }]), { ok: false, why: 'this post already carries that card' });
   assert.deepEqual(decidePlay(cutter, settings, { reach: 'post', act: 'p1', kind: 'post', length: 10, text: '', links: [], under: 'p0' }, [], {}, ''), { ok: false, why: 'a reply drawn under a post takes no reply under it' });
-  assert.equal(cutter.playPrice(settings, post(10), {}), 0);
+  assert.equal(cutter.playPrice(settings, post(10), {}, []), 0);
   assert.equal(castOnPost(cutter), true, 'Card Collector may name it');
   assert.equal(staffOffers(cutter), false, 'a persona has no reply to carry');
   assert.deepEqual(decideSet(cutter, settings, post(10), [], {}, cards), { ok: false, why: 'Line Cutter carries a reply, so it is played face up and never set face down' });
@@ -695,7 +697,7 @@ test('the hearts land on a character and are refused on an empty bar or a mask t
     assert.deepEqual(maybe(k)?.canApply(post(10), []), { ok: false, why: 'this card lands on a character' }, k);
     assert.deepEqual(maybe(k) && decidePlay(maybe(k)!, settings, chara({ warnPoints: 0 }), [], {}, '', context), { ok: false, why: "this character's warn bar is empty" }, k);
     assert.equal(maybe(k) && decidePlay(maybe(k)!, settings, chara({ warnPoints: 3 }), [], {}, '', context).ok, true, k);
-    assert.equal(maybe(k)?.playPrice(settings, chara(), {}), 0, k);
+    assert.equal(maybe(k)?.playPrice(settings, chara(), {}, []), 0, k);
   }
   const ultra = maybe('ultra-happy-heart');
   assert.deepEqual(ultra && decidePlay(ultra, settings, chara({ bannedUntil: null }), [], {}, '', context), { ok: false, why: 'this character is not banned' });

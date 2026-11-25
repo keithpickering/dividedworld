@@ -26,7 +26,7 @@ vi.mock('./place.ts', async (original) => {
   return { ...real, placesOf: ((...a: Parameters<typeof real.placesOf>) => { searches.n++; return real.placesOf(...a); }) as typeof real.placesOf };
 });
 /* Laugh Track's watcher and sound are not under test here. */
-vi.mock('../laugh-track/watch.ts', async (original) => ({ ...(await original<typeof import('../laugh-track/watch.ts')>()), register: () => Object.assign(() => {}, { refresh: () => {}, pin: () => {} }) }));
+vi.mock('../laugh-track/watch.ts', async (original) => ({ ...(await original<typeof import('../laugh-track/watch.ts')>()), register: () => Object.assign(() => {}, { refresh: () => {}, pin: () => {}, cover: () => {} }) }));
 vi.mock('../../../../engine/ui/audio/useGameSound.ts', () => ({ useGameSound: () => ({ on: false, set: () => {} }) }));
 
 const BODY = 'Okay, hot take time. People blame the engine because it is easier. I played forty entries. Stop asking for slopes. Done.';

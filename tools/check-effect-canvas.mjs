@@ -63,6 +63,7 @@ export const CANVASES = {
   'instances/divided-world/cards/whoops/ConfigForm.tsx': { count: 1, why: 'the ink\'s preview in the card\'s config form, a fixed small box (PREVIEW_BOX)' },
   'instances/divided-world/cards/whoops/cursor.ts': { count: 2, why: 'the bench\'s drop, a 24 by 36 sprite drawn once, and the one fixed overlay for the drips, sized to the window and shared by the whole page' },
   'instances/divided-world/ui/hot-box/paint.ts': { count: 1, why: "the fog's scratch canvas, one for the page: a tile's rows of fog are put on it a cell to a pixel (a field's width by a tile's rows, never a post's size) and drawn from it onto the tile; the fog itself is on the layer" },
+  'instances/divided-world/ui/its-curtains/confetti.ts': { count: 1, why: "the confetti's one canvas for the page: fixed over the window with no pointer events, the window's size and never a post's, shared by every throw and removed when the last piece lands" },
   'instances/divided-world/ui/steel-chair/dent.ts': { count: 1, why: 'a dent\'s height-map images (its bend, and its shade and light as alpha images), each at most 320 px square, drawn once per play and kept as URLs in a cache of 32 plays, and again, capped against the dents it overlaps, in a cache of 8' },
   /* ---- wait: an effect not yet on the layer, with the step (design, section 7) that moves it ---- */
   'instances/divided-world/cards/graffiti/Compose.tsx': { count: 1, why: 'the wall\'s ink canvas while composing, laid over the post\'s whole area', until: 'step 2' },
