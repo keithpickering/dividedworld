@@ -209,6 +209,8 @@ export function prismPiecesOf(radius: number, height: number, sides: number, ext
 }
 
 const CAN = { radius: 15, height: 40, sides: 12 } as const;
+/** Where the can's lid stands on it: the lid's middle, in the can's frame (y down), which the lid's arc turns about (lid.ts, Effect.tsx). */
+export const LID_TOP = -CAN.height / 2 - 0.5;
 
 /**
  * The trash can: the galvanized barrel (a little inside the body's own 15 px rim, so its bands, which stand proud of it, are not outside
@@ -228,7 +230,7 @@ export function canPiecesOf(lidOn: boolean): Piece[] {
   ];
   if (lidOn) {
     const lid = { color: GALVANIZED, lid: true as const };
-    const top = -height / 2 - 0.5;
+    const top = LID_TOP;
     out.push(
       { ...capOf('lid-cap', radius + 0.4, sides, top, lid) },
       ...tube('lid-handle', 12, mul(translate(0, top - 3.5, 0), rotateZ(90)), { color: BLACK, lid: true }, 2),

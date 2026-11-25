@@ -34,6 +34,8 @@ import { BRUSH_PX, brushOf } from '../cards/whoops/scrub.ts';
 
 /** A play id that rolls a chair (steel-chair/objects.ts), so that the stories' Steel Chair is the chair e2e/origin-effects.spec.ts measures. */
 const CHAIR_PLAY = 'play-0';
+/** A play id that rolls a trash can (steel-chair/objects.ts): the lid comes off it at the hit and leaves the box (e2e/steel-chair.spec.ts). */
+const CAN_PLAY = 'play-6';
 
 declare global {
   interface Window {
@@ -55,7 +57,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'can' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
 
 const DAY = 86_400_000;
 const MINUTE = 60_000;
@@ -99,7 +101,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const board = instance.boards.find((b) => !b.system)!.slug;
   const made = fake.seed.thread(board, author, 'Ranking every Mario Kart', 'Ranking every Mario Kart, worst to best.');
   const now = fake.clock.now();
-  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'chair-whoops' ? THREE
+  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'can' || shown === 'chair-whoops' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'chair-landed' ? BANG
         : shown === 'bright' ? QUOTED
@@ -193,7 +195,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
     })());
     return;
   }
-  if (shown === 'chair' || shown === 'chair-short') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: CHAIR_PLAY });
+  if (shown === 'chair' || shown === 'chair-short' || shown === 'can') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: shown === 'can' ? CAN_PLAY : CHAIR_PLAY });
   spun(post);
 };
 
@@ -292,6 +294,8 @@ export const GlitterOverWhoopsPhone: Story = { ...of('glitter-whoops'), globals:
 export const HotBox: Story = of('hotbox');
 /** Steel Chair on a three-line post, live. */
 export const Chair: Story = of('chair');
+/** Steel Chair rolling a trash can on a three-line post, live: its lid comes off at the hit and leaves the box. */
+export const Can: Story = of('can');
 /** Steel Chair on one short line, live. */
 export const ChairShort: Story = of('chair-short');
 /** Steel Chair on a post that reads `!`, the thread spun from the play: the box shows the play's moment, with the cards met so no tip covers it (issue #768). */

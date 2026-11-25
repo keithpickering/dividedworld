@@ -18,10 +18,11 @@ import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
-import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ladderPiecesOf, piecesFor, roomHeightOf, Z_FRONT } from './chair.ts';
+import { canPiecesOf, depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ladderPiecesOf, piecesFor, roomHeightOf, Z_FRONT } from './chair.ts';
 import { objectOf } from './objects.ts';
 import { DENT_SCALE, FULL_DENT } from './dent.ts';
 import { LATE_MS, SteelChairEffect, VOICES } from './Effect.tsx';
+import { LID_SECONDS } from './lid.ts';
 
 const hub = vi.hoisted(() => ({
   trusted: true,
@@ -1273,6 +1274,55 @@ describe('each object is drawn as itself, in the room it needs', () => {
     expect(roomOf()).toBe(`${roomHeightOf(['chair', 'can'])}px`);
     act(() => { hub.setPlays([play(1)]); });
     expect(roomOf()).toBe('77px');
+  });
+
+  describe('the can\'s lid', () => {
+    const lidsNow = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-layer .dw-chair-lid')];
+    const canGroup = () => document.querySelector<HTMLElement>('.dw-chair-group[data-play="play-6"]')!;
+
+    test('at the hit the lid\'s group leaves the can\'s, flies on the same frame loop, and is gone after the arc\'s time, the can drawn without it', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      see(true); arm();
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(true).length);
+      let seen = 0;
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) { frame(); }
+      expect(lidsNow(), 'the lid comes off at the hit').toHaveLength(1);
+      const first = clock;
+      const lid = lidsNow()[0]!;
+      expect(lid.querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(true).length - canPiecesOf(false).length);
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(false).length);
+      frame(); frame();
+      expect(lid.style.transform, 'it follows the arc').toMatch(/^translate3d\(.*\) matrix3d\(/);
+      const before = lid.style.transform;
+      expect(queue.size, 'the loop stays up while a lid flies').toBeGreaterThan(0);
+      frame();
+      expect(lid.style.transform).not.toBe(before);
+      for (let i = 0; i < 200 && clock - first < (LID_SECONDS + 0.2) * 1000; i++) { frame(); if (lidsNow().length === 0) seen++; }
+      expect(lidsNow(), 'the lid\'s group is removed once it is done').toHaveLength(0);
+      expect(seen).toBeGreaterThan(0);
+      expect(canGroup().querySelectorAll('.dw-chair-piece'), 'the can\'s pieces no longer include the lid').toHaveLength(canPiecesOf(false).length);
+      settled();
+      expect(queue.size, 'and the loop comes to rest').toBe(0);
+    });
+
+    test('a can drawn at rest under reduced motion has no lid, and no lid group ever stands', () => {
+      document.documentElement.setAttribute('data-kb-motion', 'reduce');
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      run();
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(false).length);
+      expect(lidsNow()).toHaveLength(0);
+    });
+
+    test('Throw again puts a whole can on the layer again, and its lid comes off again', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      run();
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(false).length);
+      const press = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+      act(() => { press.run(); });
+      expect(canGroup().querySelectorAll('.dw-chair-piece'), 'a fresh run starts from the whole can').toHaveLength(canPiecesOf(true).length);
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) frame();
+      expect(lidsNow()).toHaveLength(1);
+    });
   });
 
   test('a clipped cap carries its clip-path', () => {

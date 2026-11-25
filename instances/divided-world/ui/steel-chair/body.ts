@@ -167,7 +167,7 @@ export const HALF: Vec3 = [23, 45, 4];
  */
 export const REST_RISE = 3 * 2 * HALF[2] + 2 * HALF[2] + 2 * 0.5;
 
-const GRAVITY = 1900;
+export const GRAVITY = 1900;
 const LINEAR_DAMPING = 0.1;
 const ANGULAR_DAMPING = 0.6;
 const FLOOR_BOUNCE = 0.35;

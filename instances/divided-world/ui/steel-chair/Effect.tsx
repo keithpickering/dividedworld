@@ -71,6 +71,21 @@
  * sound. Three limits keep a thread from being a wall of clangs: the group's cap of `VOICES` sounds at once across the page (a newer clang
  * fades out the oldest past it), the limiter the engine puts on every sound, and the 300 ms a post must be in view before a run starts. A
  * sound that would start later than `LATE_MS` after its hit or settle is skipped.
+ *
+ * The can's lid (lid.ts; docs/plans/2026-11-23-steel-chair-objects-design.md, section 3). A can is drawn with its lid among its pieces (the list's
+ * last) and, at its hit, the lid's nodes leave the can's group for a group of their own (`.dw-chair-lid`) on the chairs' layer, which follows `lidAt`
+ * on the same frame loop (the loop stays up while one flies) from where the lid stood on the can, turned as the can was, and is removed when the arc
+ * is done; the can is the lidless list from the hit on. A can drawn at rest under reduced motion is the lidless list from the start (`BARE`), and
+ * throws no lid. The lid's generator is its own, seeded from the run's seed and the play's id, so that no number any throw draws is moved by it. The
+ * nodes of a spent lid go back into their can's group when the run is cleared, so React's group is whole for the next run.
+ *
+ * What clips the lid on its way out of the content area. The lid leaves the area, which is the joke, so every ancestor between the chairs' layer
+ * (overflow visible) and the page was walked in a thread post (`.kb-act-main`) and in an ORIGIN box (`.kb-origin-area`), looking for `overflow` other
+ * than visible, `contain: paint` and `clip-path` (e2e/steel-chair.spec.ts walks the same ancestors in the browser, on the can's stories, and prints
+ * them). Neither the post's content area, its post, the thread's list, the ORIGIN box nor the box's area clips; the only two that do are the page's
+ * own: `.kb-frame` (`overflow-x: clip`, engine/ui/frame/frame.css, so that a phone does not widen) and `body`, which cut the lid where the screen's
+ * left and right edges are, as they cut everything. So the lid needs no layer of its own placed from the area's rect: it is drawn on the chairs'
+ * layer, and the spec holds that a frame has it wholly outside the area and seen (red with `KB_POISON=lidclip`, an `overflow: hidden` on the area).
  */
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
@@ -87,7 +102,8 @@ import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
-import { depthOf, INSET, piecesFor, project, roomHeightOf, shadeOf, transformOf, type Piece } from './chair.ts';
+import { depthOf, INSET, LID_TOP, piecesFor, project, roomHeightOf, shadeOf, transformOf, type Piece } from './chair.ts';
+import { lidArcOf, lidAt, type LidArc } from './lid.ts';
 import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, zoneHeight, type DentShape } from './dent.ts';
 import { objectOf, type ThrownObject } from './objects.ts';
 import { dentedBy } from '../cards/steel-chair/dented.ts';
@@ -195,7 +211,12 @@ interface Control { replay(): void; sync(): void; rebend(): void }
 /** What a chair's group remembers between frames, so a style is written only when it changed. */
 interface Cache {
   pieces: HTMLElement[]; object: ThrownObject; list: readonly Piece[]; fold: number; transform: string; depth: string; nudges: number; matrices: string[]; applied: string[]; shades: string[];
+  /** Whether the can still has its lid on its group (the lid's pieces are the list's last). */
+  lidOn: boolean;
 }
+
+/** A can's lid in flight (or just spent): its own group on the chairs' layer, the nodes it took from the can's group, and where they go back. */
+interface Lid { group: HTMLElement; nodes: HTMLElement[]; list: readonly Piece[]; home: HTMLElement; arc: LidArc; m0: number[]; age: number; shades: string[]; done: boolean }
 
 /** How far a dent's circle (center in the content area's px, `radius`) reaches past the box's borders, in px: 0 where it lies inside. */
 const overshoot = (d: { x: number; y: number }, radius: number, b: BodyBox): number =>
@@ -257,6 +278,17 @@ const OPEN: Record<ThrownObject, readonly Piece[]> = {
   ladder: piecesFor('ladder', 1, true),
   extinguisher: piecesFor('extinguisher', 1, true),
 };
+/** The same without the can's lid: what a can drawn at rest is (reduced motion), and what it is after its hit. The other objects have no lid. */
+const BARE: Record<ThrownObject, readonly Piece[]> = { ...OPEN, can: piecesFor('can', 1, false) };
+
+/** The lid's z-index: over every chair, since it leaves the post. */
+const LID_Z = '1000000';
+/** Two 3 by 3 rotations as column-major matrix3d numbers, `a` applied after `b`. */
+function compose(a: readonly number[], b: readonly number[]): number[] {
+  const out = [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1];
+  for (let c = 0; c < 3; c++) for (let r = 0; r < 3; r++) out[c * 4 + r] = a[r]! * b[c * 4]! + a[4 + r]! * b[c * 4 + 1]! + a[8 + r]! * b[c * 4 + 2]!;
+  return out;
+}
 /**
  * The px the oblique view draws a chair at the hit (z = 0) above its world y: the throw aims this much lower so the drawn chair meets the
  * dent.
@@ -361,6 +393,12 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     let steps = 0;
     const growing = new Map<string, number | null>();
     const caches = new Map<string, Cache>();
+    /* The lids in flight, and the ones spent: a spent lid's nodes wait outside the DOM to go back to their can's group when the run is cleared, so
+       that the group React drew is whole for the next run (React's own children are never left out of the group it put them in). */
+    const lids = new Map<string, Lid>();
+    const spent = new Map<string, Lid>();
+    /* The lid's own generator: from the run's seed and the play's id, so that none of the numbers a throw draws (this can's or any other's) is moved. */
+    let lidSeed = 0;
 
     /* The room is the body's, marked on it and on the host (steel-chair.css): the nearest content area the host is in, so a chair in the ORIGIN
        box makes room in the box and not in the opening post's body around it. One effect draws all of a post's chairs, so the mark has one
@@ -440,7 +478,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       const group = groups.current.get(play);
       if (!group) return null;
       c = {
-        pieces: [...group.children] as HTMLElement[], object: objectOf(play), list: OPEN[objectOf(play)], fold: -1, transform: '', depth: '', nudges: -1, matrices: [], applied: [], shades: [],
+        pieces: [...group.children] as HTMLElement[], object: objectOf(play), list: (reduced ? BARE : OPEN)[objectOf(play)], fold: -1, transform: '', depth: '', nudges: -1, matrices: [], applied: [], shades: [], lidOn: !reduced,
       };
       caches.set(play, c);
       return c;
@@ -467,7 +505,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         const depth = String(depthOf(v.position.z));
         if (depth !== c.depth) { group.style.zIndex = depth; c.depth = depth; }
         if (Math.abs(v.fold - c.fold) > 0.002) {
-          c.list = piecesFor(c.object, v.fold, true);
+          c.list = piecesFor(c.object, v.fold, c.lidOn);
           c.fold = v.fold;
           c.matrices = c.list.map((p) => `matrix3d(${p.matrix.map((n) => +n.toFixed(5)).join(', ')})`);
         }
@@ -519,10 +557,64 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x + INSET, y: e.at.y - HIT_LIFT, full: false }]));
         growing.set(play, null);
         shake();
+        if (objectOf(play) === 'can') throwLid(play, e);
         if (loud) void latest.current.sound.play(SOUNDS[objectOf(play)].hit, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       } else if (e.kind === 'floor' && loud) {
         const sounds = SOUNDS[objectOf(play)];
         void latest.current.sound.play(`${sounds.settle}-${1 + Math.floor(soundRand() * sounds.settles)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
+      }
+    };
+
+    /* The lid comes off at the can's hit: its pieces (the list's last) leave the can's group for one of their own on the chairs' layer, which
+       follows `lidAt` from where the lid stood on the can, turned as the can was. The can's list is the lidless one from here on. */
+    const throwLid = (play: string, e: Extract<BodyEvent, { kind: 'hit' }>): void => {
+      const home = groups.current.get(play), c = cacheOf(play), v = world ? bodies(world).find((b) => b.id === e.id) : undefined;
+      if (!home || !c || !v || !c.lidOn || lids.has(play)) return;
+      const list = c.list.filter((p) => p.lid);
+      if (list.length === 0) return;
+      const nodes = c.pieces.splice(c.list.length - list.length, list.length);
+      c.list = c.list.filter((p) => !p.lid);
+      c.matrices.length = c.applied.length = c.shades.length = c.list.length;
+      c.lidOn = false; c.fold = -1;
+      list.forEach((p, i) => { nodes[i]!.style.transform = `matrix3d(${p.matrix.map((n) => +n.toFixed(5)).join(', ')})`; });
+      const group = document.createElement('div');
+      group.className = 'dw-chair-lid';
+      group.style.transformOrigin = `0px ${LID_TOP}px`;
+      group.style.zIndex = LID_Z;
+      for (const n of nodes) group.appendChild(n);
+      chairLayer.appendChild(group);
+      const m0 = rotation(v.quaternion);
+      const lidRand = rng(seedOfIds([String(lidSeed), play, 'lid']));
+      /* The lid stands LID_TOP up the can's own y axis, turned as the can is: the arc starts there. */
+      const at = { x: e.at.x + INSET + m0[4]! * LID_TOP, y: e.at.y - HIT_LIFT + m0[5]! * LID_TOP };
+      const arc = lidArcOf(lidRand, at, { width: box.w, height: box.h });
+      lids.set(play, { group, nodes, list, home, arc, m0, age: 0, shades: [], done: false });
+    };
+    const putLidsBack = (play?: string): void => {
+      for (const from of [lids, spent]) {
+        for (const [id, l] of [...from]) {
+          if (play !== undefined && id !== play) continue;
+          l.group.remove();
+          if (l.home.isConnected) for (const n of l.nodes) l.home.appendChild(n);
+          from.delete(id);
+        }
+      }
+    };
+    /* One frame of every lid in flight: where `lidAt` has it, its shade turned with it, and gone (its group removed) once the arc is done. */
+    const flyLids = (dt: number): void => {
+      for (const [play, l] of lids) {
+        l.age += dt;
+        const s = lidAt(l.arc, l.age);
+        if (s.done) { l.group.remove(); lids.delete(play); spent.set(play, l); continue; }
+        const m = compose(s.matrix, l.m0);
+        l.group.style.transform = `translate3d(${s.position.x.toFixed(2)}px, ${(s.position.y - LID_TOP).toFixed(2)}px, 0px) matrix3d(${m.map((n) => n.toFixed(5)).join(', ')})`;
+        l.group.style.opacity = s.opacity.toFixed(3);
+        l.list.forEach((p, i) => {
+          const shade = shadeOf(turned(m, p.normal), p.color);
+          if (l.shades[i] === shade) return;
+          l.shades[i] = shade;
+          if (p.kind === 'frame') l.nodes[i]!.style.borderColor = shade; else l.nodes[i]!.style.background = shade;
+        });
       }
     };
 
@@ -540,8 +632,9 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       }
       if (n === MOST_STEPS) acc = 0;
       grow(t);
+      flyLids(dt);
       const awake = paint();
-      if (awake || growing.size > 0 || due.length > 0) raf = requestAnimationFrame(tick); else lastT = 0;
+      if (awake || growing.size > 0 || due.length > 0 || lids.size > 0) raf = requestAnimationFrame(tick); else lastT = 0;
     };
     const wake = (): void => { if (!raf && world) raf = requestAnimationFrame(tick); };
 
@@ -638,6 +731,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       running = true;
       loud = !reduced;
       const seed = freshSeed();
+      lidSeed = seed;
       rand = rng(seed);
       soundRand = rng(seedOfIds([String(seed), 'settle']));
       world = createWorld(box.w - 2 * INSET, box.h - INSET, box.h - INSET);
@@ -658,6 +752,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       raf = 0; lastT = 0; acc = 0;
       due = []; steps = 0;
       growing.clear();
+      putLidsBack();
       caches.clear();
       bodyOfPlay.clear(); playOfBody.clear();
       world = null;
@@ -678,6 +773,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         const ids = new Set(plays.map((p) => p.id));
         for (const [play, id] of [...bodyOfPlay]) {
           if (ids.has(play)) continue;
+          putLidsBack(play);
           remove(world, id);
           bodyOfPlay.delete(play); playOfBody.delete(id); growing.delete(play); caches.delete(play);
         }
@@ -834,8 +930,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       </div>
       <div ref={layer} className="dw-chair-layer" data-kb-effect-ink="" aria-hidden="true">
         {chairs.filter((id) => live.some((p) => p.id === id)).map((id) => (
-          <div key={id} className="dw-chair-group" data-play={id} ref={groupRef(id)}>
-            {OPEN[objectOf(id)].map((p) => (
+          <div key={reduced ? `${id}|bare` : id} className="dw-chair-group" data-play={id} ref={groupRef(id)}>
+            {(reduced ? BARE : OPEN)[objectOf(id)].map((p) => (
               <div
                 key={p.name} className="dw-chair-piece" data-kind={p.kind}
                 style={{ width: p.width, height: p.height, left: p.left, top: p.top, ...(p.clip ? { clipPath: p.clip } : {}) }}

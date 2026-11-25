@@ -76,8 +76,10 @@
    are the content area's borders at every depth and nothing is drawn below its bottom border. Each chair has a mild perspective of its own, in
    its group's transform (chair.ts `transformOf`), about its own center; the effect sets each group's z-index so a nearer chair paints over a farther. */
 
-/* One chair: a zero-size group at its projected position, each piece a child placed by its own matrix. */
-.dw-chair-group {
+/* One chair: a zero-size group at its projected position, each piece a child placed by its own matrix. A can's lid in flight is a group of its
+   own on the same layer (`.dw-chair-lid`, made by the effect at the can's hit: its transform, opacity and z-index are the frame loop's). */
+.dw-chair-group,
+.dw-chair-lid {
   position: absolute;
   top: 0;
   left: 0;

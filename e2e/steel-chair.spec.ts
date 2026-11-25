@@ -1191,3 +1191,90 @@ test.describe('at a phone\'s width', () => {
     expect(wide.scroll, 'the page\'s width').toBeLessThanOrEqual(wide.client);
   });
 });
+
+/**
+ * The can's lid (docs/plans/2026-11-23-steel-chair-objects-design.md, section 3, Task 6). At the can's hit the lid leaves the can's group for one of
+ * its own on the chairs' layer and flies out of the content area, which is the joke, so nothing between the layer and the page may clip it: the
+ * layer is `overflow: visible`, and the ancestors in a thread post and in an ORIGIN box were walked (header of Effect.tsx). This is the test that
+ * the browser draws what that walk found: at some frame the lid's box is wholly outside the content area's and still seen, which is to say that it
+ * is not cut away by any ancestor that clips (`overflow` other than visible, `contain: paint`, `clip-path`, `clip`) and has opacity. The page's frames
+ * are watched from inside it (`requestAnimationFrame`), since a lid is gone in 1.2 s. `KB_POISON=lidclip` plants the defect by hand (the content area gets
+ * `overflow: hidden`) and the test is red; the ancestors found clipping are printed on every run (none, in a thread post and in an ORIGIN box alike).
+ */
+const CAN_STORIES = [
+  { name: 'in a thread post', url: STORY('can-in-flight'), area: '.kb-act-main:has(.dw-chair)' },
+  { name: 'in an ORIGIN box', url: '/?fixture=boards&story=boards-26-origin-effects--can', area: '.kb-origin-area:has(.dw-chair)' },
+] as const;
+
+for (const { name, url, area: areaSelector } of CAN_STORIES) {
+  test(`can ${name}: the lid leaves the content area and is seen outside it, clipped by nothing`, async ({ page }) => {
+    await page.setViewportSize({ width: 1280, height: 900 });
+    await page.addInitScript((given: number) => {
+      const real = crypto.getRandomValues.bind(crypto);
+      crypto.getRandomValues = ((a: ArrayBufferView) => {
+        if (a instanceof Uint32Array && a.length === 1) { a[0] = given; return a; }
+        return real(a as Uint8Array);
+      }) as typeof crypto.getRandomValues;
+    }, 101);
+    await page.goto(url);
+    if (process.env.KB_POISON === 'lidclip') await page.addStyleTag({ content: '.kb-act-main, .kb-origin-area { overflow: hidden; }' });
+    await expect(page.locator('.dw-chair').first()).toBeAttached();
+    await page.evaluate(() => document.fonts.ready);
+    await page.locator(areaSelector).first().scrollIntoViewIfNeeded();
+    const seen = await page.evaluate((selector) => new Promise<{
+      lids: number; frames: number; outside: number; visible: number; clippers: string[]; gone: boolean; canPieces: number;
+    }>((resolve) => {
+      const area = document.querySelector<HTMLElement>(selector)!;
+      const out = { lids: 0, frames: 0, outside: 0, visible: 0, clippers: [] as string[], gone: false, canPieces: -1 };
+      const started = performance.now();
+      const clips = (el: Element): boolean => {
+        const s = getComputedStyle(el);
+        return s.overflowX !== 'visible' || s.overflowY !== 'visible' || /paint|strict|content/.test(s.contain) || s.clipPath !== 'none' || (s.clip !== 'auto' && s.clip !== '');
+      };
+      const tick = (): void => {
+        const lid = area.querySelector<HTMLElement>('.dw-chair-lid');
+        if (lid) {
+          out.lids++;
+          const rects = [...lid.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
+          if (rects.length) {
+            const lidBox = { left: Math.min(...rects.map((r) => r.left)), top: Math.min(...rects.map((r) => r.top)), right: Math.max(...rects.map((r) => r.right)), bottom: Math.max(...rects.map((r) => r.bottom)) };
+            const a = area.getBoundingClientRect();
+            const areaBox = { left: a.left + area.clientLeft, top: a.top + area.clientTop, right: a.left + area.clientLeft + area.clientWidth, bottom: a.top + area.clientTop + area.clientHeight };
+            const wholly = lidBox.right <= areaBox.left || lidBox.left >= areaBox.right || lidBox.bottom <= areaBox.top || lidBox.top >= areaBox.bottom;
+            if (wholly) {
+              out.outside++;
+              /* What is left of the lid's box after every clipping ancestor's padding box: positive area and opacity, or it is not seen. */
+              let box = { ...lidBox };
+              for (let el = lid.parentElement; el && el !== document.documentElement; el = el.parentElement) {
+                if (!clips(el)) continue;
+                const r = el.getBoundingClientRect();
+                const inner = { left: r.left + el.clientLeft, top: r.top + el.clientTop, right: r.left + el.clientLeft + el.clientWidth, bottom: r.top + el.clientTop + el.clientHeight };
+                box = { left: Math.max(box.left, inner.left), top: Math.max(box.top, inner.top), right: Math.min(box.right, inner.right), bottom: Math.min(box.bottom, inner.bottom) };
+                const tag = `${el.tagName.toLowerCase()}.${[...el.classList].join('.')}`;
+                if (!out.clippers.includes(tag)) out.clippers.push(tag);
+              }
+              if (box.right - box.left > 1 && box.bottom - box.top > 1 && Number(lid.style.opacity || '1') > 0.2) out.visible++;
+            }
+          }
+        } else if (out.lids > 0) {
+          out.gone = true;
+          out.canPieces = area.querySelector('.dw-chair-group')?.querySelectorAll('.dw-chair-piece').length ?? -1;
+          resolve(out);
+          return;
+        }
+        out.frames++;
+        if (performance.now() - started > 15_000) { resolve(out); return; }
+        requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    }), areaSelector);
+    console.log(`${name}: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.visible} of them seen; clipping ancestors: ${seen.clippers.join(', ') || 'none'}`);
+    expect(seen.lids, 'a lid group was drawn').toBeGreaterThan(0);
+    expect(seen.outside, `the lid was wholly outside the content area at some frame (clipping ancestors on the way up: ${seen.clippers.join(', ') || 'none'})`).toBeGreaterThan(0);
+    expect(seen.visible, `and seen there (not cut away by ${seen.clippers.join(', ') || 'any ancestor'})`).toBeGreaterThan(0);
+    expect(seen.gone, 'the lid group is removed when its arc is done').toBe(true);
+    expect(seen.canPieces, 'the can is left with its own pieces, no lid').toBeGreaterThan(0);
+    /* The can goes on to rest, and the loop with it. */
+    await expect.poll(() => page.evaluate(() => [...document.querySelectorAll('.dw-chair-group')].every((g) => g.hasAttribute('data-rest'))), { timeout: REST_MS }).toBe(true);
+  });
+}
