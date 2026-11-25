@@ -8,7 +8,7 @@
 --
 --   2. The tables, the writes and the reads (Task 3): staff_requests, staff_request_rulings, apply_boss_move, rule_request, requests_waiting, requests_ruled, staffRequests' validator, and the tick's lapse (see section 2's own header).
 --
---   4. The turn's call record (Task 4): staff_call_records takes the duty `ruling`, a staff turn's ruling on a request, keyed by the turn's post (the chatter Edge Function writes it with record_staff_call).
+--   2b. The turn's call record (Task 4): staff_call_records takes the duty `ruling`, a staff turn's ruling on a request, keyed by the turn's post (the chatter Edge Function writes it with record_staff_call).
 --
 -- Masks. Nothing here reads an owner, a class or a reactor; a board and a thread are public. Ways out. A moveThread is lasting and ends as 0320 wrote it: reversed by an admin, or superseded by a later move of the thread.
 -- Cost: one thread_place call for a Mod's moveThread, and none for any other kind.
@@ -365,8 +365,12 @@ end $$;
 -- Task 3 of the plan (docs/plans/2026-11-24-staff-requests-plan.md; design sections 2 to 5).
 --
 --   tables      staff_requests (a persona's first ruling on a request: fulfill, reject or confer) and staff_request_rulings (the one later ruling a waiting request gets: a meeting's, or a lapse): both append-only by
---               staff_rows_append_only (0415) firing always, RLS on and no client's grant. A waiting request is one whose first ruling is a confer and which has no later row, and is ruled once (unique (request)); a row
---               for a request that is not a confer is refused. staff_requests_now reads each request's latest ruling and, while it waits, when it lapses (`at` + staffRequests.daysMost days).
+--               staff_rows_append_only (0415) firing always, RLS on and no client's grant. A request is ruled once (unique (request)), and a row for a request that is not a confer is refused. Beside them is the QUEUE,
+--               staff_requests_open (request, at, failed_at, attempts): one row for each request that waits, and nothing else. It is not a record (the records are the two tables above, which stay as they are written):
+--               a trigger on staff_requests puts a confer in it, and a trigger on staff_request_rulings takes the request out in the same transaction, so a request waits exactly while it is in the queue. That is
+--               what keeps a read of what waits to the waiting set, however many requests have been ruled since the game began: no index over the records could, since a ruled confer keeps its ruling in staff_requests.
+--               RLS on, no client's grant; the instance's export carries it as it carries every table, and an import's replica write carries its rows as they were.
+--               staff_requests_now reads each request's latest ruling and, while it waits, when it lapses (`at` + staffRequests.daysMost days, staff_request_days()).
 --   functions   apply_boss_move (the Boss's side of apply_mod_move: the Boss's bank pays), rule_request (the turn's ruling: one transaction, idempotent on (staff, request post)), requests_waiting (the meeting's read of
 --               what waits), requests_ruled (what apply_meeting calls for the meeting's answers; Task 5), setting_staffrequests, and settings_held (0416) and system_tick (0403) re-created.
 --   The bank. A turn's fulfill and a meeting both spend the Boss's bank, and apply_meeting writes the balance it read at its start. apply_boss_move therefore takes the lock a meeting takes (`kayfabb.meeting.<id>`, for each
@@ -375,8 +379,11 @@ end $$;
 --   Masks. Nothing here reads who owns a character, a class or who reacted. A request's asker is read for its public name through acts_public, so a veiled author shows as the anonymous character; the staff's own state
 --   (office, bank, allowance, beat) and the boards decide every ruling and refusal, never an owner: a confer, a refusal and when they happen are the same whoever is behind a request.
 --   Ways out. A waiting request lapses by itself at lapses_at (the tick), or when its post is hidden at the next tick, or is ruled at a meeting. Nothing else is added.
---   Cost. requests_waiting reads the oldest waiting rows (a partial index) and one public post for each, at most `most` of them; the tick's pass reads one public post per waiting request, which daysMost bounds;
---   rule_request and apply_boss_move are one request's reads and writes.
+--   Cost. requests_waiting reads the queue's oldest rows and one public post for each, at most `most` of them (and the rows whose post is not public, which the tick lapses); the tick's pass reads the queue, one public post
+--   per waiting request, which the days a request waits (daysMost) bound, `cap` of them at most, and a row that failed or was held by a meeting goes behind the rest (failed_at), so one row cannot hold a slot for good;
+--   rule_request and apply_boss_move are one request's reads and writes. Nothing here grows with the requests ruled in the past.
+--   The digest. requests_waiting is owned by kayfabb_digest (0045), which Task 5's system_digest calls it from: it reads public relations only (acts_public, characters_public, thread_list, boards_now), the queue, and
+--   the columns of staff_requests that are public (id, request_act, thread, staff, turn_act, at; never `asker`, which is a post's real author even where it is veiled), each by a policy and a grant of its own.
 
 create table staff_requests (
   id bigint generated always as identity primary key,
@@ -392,8 +399,6 @@ create table staff_requests (
   check ((ruling = 'fulfill') = (move is not null)),
   unique (staff, request_act)
 );
--- What waits, oldest first: the meeting's read and the tick's, the rows still conferred, however many requests have been ruled.
-create index staff_requests_confer on staff_requests (at, id) where ruling = 'confer';
 
 create table staff_request_rulings (
   id bigint generated always as identity primary key,
@@ -420,6 +425,38 @@ end $$;
 revoke execute on function staff_request_rulings_guard() from public, anon, authenticated;
 create trigger staff_request_rulings_guard before insert on staff_request_rulings for each row execute function staff_request_rulings_guard();
 
+-- The queue of requests that wait. A row is never a ruling and never a record of one: it says only that the request waits, and goes when the request is ruled. `failed_at` and `attempts` are the tick's own, as
+-- visits_open's are: a row the tick could not lapse (a failure, or a meeting holding it) goes behind the others by its last failure, so it never holds a slot of the pass for good.
+create table staff_requests_open (
+  request bigint primary key references staff_requests (id),
+  at timestamptz not null,
+  failed_at timestamptz,
+  attempts integer not null default 0 check (attempts >= 0)
+);
+-- The meeting's read (oldest first) and the tick's (failures last, then oldest first).
+create index staff_requests_open_at on staff_requests_open (at, request);
+create index staff_requests_open_tick on staff_requests_open (failed_at nulls first, at, request);
+
+-- A confer waits: it joins the queue in the transaction that wrote it, whoever wrote it. A request that is ruled is taken out in the transaction that rules it. (An import writes both tables as a replica, which fires no
+-- trigger, and carries the queue's rows as they were.)
+create function staff_requests_enqueue() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  if new.ruling = 'confer' then insert into staff_requests_open (request, at) values (new.id, new.at); end if;
+  return null;
+end $$;
+revoke execute on function staff_requests_enqueue() from public, anon, authenticated;
+create trigger staff_requests_enqueue after insert on staff_requests for each row execute function staff_requests_enqueue();
+
+create function staff_requests_dequeue() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  delete from staff_requests_open where request = new.request;
+  return null;
+end $$;
+revoke execute on function staff_requests_dequeue() from public, anon, authenticated;
+create trigger staff_requests_dequeue after insert on staff_request_rulings for each row execute function staff_requests_dequeue();
+
 do $$
 declare t text;
 begin
@@ -432,15 +469,30 @@ begin
     execute format('alter table %I enable always trigger %I', t, t || '_no_truncate');
   end loop;
 end $$;
+alter table staff_requests_open enable row level security;
+revoke all on staff_requests_open from public, anon, authenticated;
 
--- Each request with its latest ruling and, while it waits, when it lapses (daysMost is staffRequests.daysMost, 3 where the setting is not there yet). No client reads it: the log's reads (Task 7) are functions of their own.
+-- The digest role reads what the digest may: the queue, and the public columns of staff_requests (not the asker, a veiled post's real author, nor the move).
+grant select on staff_requests_open to kayfabb_digest;
+create policy digest_reads on staff_requests_open for select to kayfabb_digest using (true);
+grant select (id, request_act, thread, staff, turn_act, at) on staff_requests to kayfabb_digest;
+create policy digest_reads on staff_requests for select to kayfabb_digest using (true);
+
+-- How many days a request waits for a ruling (staffRequests.daysMost; 3 where the setting is not there yet).
+create function staff_request_days() returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select coalesce((select (s.value ->> 'daysMost')::integer from settings s where s.key = 'staffRequests'), 3)
+$$;
+revoke execute on function staff_request_days() from public, anon, authenticated;
+grant execute on function staff_request_days() to kayfabb_digest;
+
+-- Each request with its latest ruling and, while it waits (it is in the queue), when it lapses (daysMost is staffRequests.daysMost, 3 where the setting is not there yet). No client reads it: the log's reads (Task 7) are functions of their own.
 create view staff_requests_now as
   select q.id, q.request_act, q.thread, q.asker, q.staff, q.turn_act, q.at, q.ruling as first_ruling,
          coalesce(g.ruling, q.ruling) as ruling, coalesce(g.move, q.move) as move, g.meeting, g.post_act, g.reason, g.at as ruled_at,
-         (g.id is null and q.ruling = 'confer') as waiting,
-         case when g.id is null and q.ruling = 'confer'
-              then q.at + make_interval(days => coalesce((select (s.value ->> 'daysMost')::integer from settings s where s.key = 'staffRequests'), 3)) end as lapses_at
-  from staff_requests q left join staff_request_rulings g on g.request = q.id;
+         (o.request is not null) as waiting,
+         case when o.request is not null then q.at + make_interval(days => staff_request_days()) end as lapses_at
+  from staff_requests q left join staff_request_rulings g on g.request = q.id left join staff_requests_open o on o.request = q.id;
 revoke all on staff_requests_now from public, anon, authenticated;
 
 -- ---- the Boss's move ----
@@ -448,8 +500,9 @@ revoke all on staff_requests_now from public, anon, authenticated;
 -- The queue's side of a Boss's move, shared by a turn's fulfill (apply_boss_move) and a meeting's (requests_ruled): the checks the meeting makes of each of the Boss's moves (a kind held back, a rule, a machine move or a lasting
 -- board move the queue would never land) as refusals with their words, then the insert, which the guard decides the rest of. It takes no lock and spends nothing: whoever calls it holds the bank. A structural kind goes
 -- live structuralHoldHours out, to wait for admins; a lasting kind is queued with no expiry, and any other with the hours it was given (the engine's repair has clamped them to the phase, as it does a meeting's).
--- A refusal is a reason and no row; a raise is a failure of the database and not a verdict on the move.
-create function boss_move_queue(staff text, move jsonb, cause_act uuid, in_meeting bigint) returns jsonb
+-- A refusal is a reason and no row; a raise is a failure of the database and not a verdict on the move. A moveThread to the board its thread is on now is refused ("the thread is already on that board"), as a Mod's is
+-- (queued_moves_guard): it would change nothing and spend a move to do it. `in_season` is the season whose arc holds kinds back (held_back_kinds); a meeting's own is its slot's (meeting_season), which a turn does not have.
+create function boss_move_queue(staff text, move jsonb, cause_act uuid, in_meeting bigint, in_season bigint default null) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   kind text;
@@ -459,7 +512,7 @@ declare
   hours numeric;
   hold interval := ((setting('structuralHoldHours')) #>> '{}')::numeric * interval '1 hour';
   kind_row move_kinds%rowtype;
-  season_id bigint := coalesce(meeting_season(boss_move_queue.in_meeting), (select x.id from seasons x where x.ends_at is null));
+  season_id bigint := coalesce(boss_move_queue.in_season, meeting_season(boss_move_queue.in_meeting), (select x.id from seasons x where x.ends_at is null));
   problem text;
   lives timestamptz := now();
   check_at timestamptz;
@@ -488,6 +541,7 @@ begin
         demand, lives, case when jsonb_typeof(move -> 'expires_in_hours') = 'number' then lives + (move ->> 'expires_in_hours')::numeric * interval '1 hour' end, false);
     elsif kind in ('createBoard', 'moveThread', 'mergeBoard') then
       problem := case when demand is not null then 'a lasting move carries no demand' else lasting_move_problem(kind, params) end;
+      if problem is null and kind = 'moveThread' and thread_place(safe_uuid(params ->> 'thread')) = safe_uuid(params ->> 'board') then problem := 'the thread is already on that board'; end if;
     end if;
     if problem is null and demand is not null then
       if not exists (select 1 from demand_kinds d where d.key = demand ->> 'kind') then problem := 'there is no such demand kind';
@@ -530,11 +584,12 @@ begin
   end;
   return jsonb_build_object('move', made, 'queued', true, 'existing', false);
 end $$;
-revoke execute on function boss_move_queue(text, jsonb, uuid, bigint) from public, anon, authenticated;
+revoke execute on function boss_move_queue(text, jsonb, uuid, bigint, bigint) from public, anon, authenticated;
 
 -- apply_boss_move: apply_mod_move for the Boss (0136, as section 1 re-created it). The Boss pays from its bank: one move, taken in the transaction that queues it. Idempotent on (staff, cause_act), as a Mod's is, so a
 -- retried turn never spends twice. `weekly_moves` and `bank_cap` are the phase's numbers, which only the engine computes (phaseAt, with the Boss's own overrides), as the meeting passes them to bank_now.
--- The move is filed under the latest meeting that has finished (queued_moves.meeting is not null; apply_mod_move files a Mod's under its order's).
+-- The move is filed under the latest meeting that has finished (queued_moves.meeting is not null; apply_mod_move files a Mod's under its order's), but the kinds the Boss holds back are those of the season it is now (the
+-- season that covers this instant, as the newest one if two do), which a meeting held at the end of the one before would not see: a beat unlocked since then lets its kind through, and one this season has not unlocked holds it back.
 -- The locks, in the meeting's order: every meeting still open (the lock apply_meeting takes first), then the Boss's bank lock; bank_now is read under both.
 create function apply_boss_move(staff text, move jsonb, cause_act uuid, weekly_moves numeric, bank_cap numeric) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -543,6 +598,7 @@ declare
   existing bigint;
   bal numeric;
   filed bigint;
+  season_now bigint;
   made jsonb;
 begin
   if apply_boss_move.cause_act is null or not exists (select 1 from acts a where a.id = apply_boss_move.cause_act) then
@@ -564,7 +620,8 @@ begin
   if bal < 1 then return jsonb_build_object('move', null, 'queued', false, 'reason', 'the Boss has no move left to spend'); end if;
   select x.id into filed from meetings x where x.finished_at is not null order by x.id desc limit 1;
   if filed is null then return jsonb_build_object('move', null, 'queued', false, 'reason', 'no meeting has been held'); end if;
-  made := boss_move_queue(apply_boss_move.staff, apply_boss_move.move, apply_boss_move.cause_act, filed);
+  select s.id into season_now from seasons s where s.starts_at <= now() and (s.ends_at is null or s.ends_at > now()) order by s.starts_at desc limit 1;
+  made := boss_move_queue(apply_boss_move.staff, apply_boss_move.move, apply_boss_move.cause_act, filed, season_now);
   if (made ->> 'queued')::boolean then
     insert into move_bank (staff, balance, as_of) values (apply_boss_move.staff, bal - 1, now())
     on conflict on constraint move_bank_pkey do update set balance = excluded.balance, as_of = excluded.as_of;
@@ -637,36 +694,44 @@ grant execute on function rule_request(text, uuid, uuid, text, jsonb, numeric, n
 -- requests_waiting: the waiting requests, oldest conferral first, at most `most` (none for a null or less than 1; never more than 500), each with its id, thread, title, board's name, the asker's public name (as the post
 -- shows its author, so a veiled one is the anonymous character), the conferring staff's key and name, the request post and its current public body, whole (as pool_read reads a post: acts_public's current payload, a
 -- hidden one not read at all). A request whose post is not public is left out, and the tick lapses it. [{id, requestAct, thread, title, boardName, askerName, staff, staffName, body, at, lapsesAt}]
+-- Read from the queue (staff_requests_open), which holds the requests that wait and no other, so the read is as long as the waiting set and never as long as the requests ruled before it. Owned by kayfabb_digest, since
+-- the digest calls it: it reads public relations only, and the name of the persona that conferred is the name of the author of its turn's post (acts_public, characters_public), never a read of `characters`.
 create function requests_waiting(most integer) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
+  o record;
   q record;
   p record;
   out jsonb := '[]';
   n integer := 0;
   cap integer := least(greatest(coalesce(requests_waiting.most, 0), 0), 500);
+  days integer := staff_request_days();
 begin
   if cap = 0 then return out; end if;
-  for q in
-    select v.id, v.request_act, v.thread, v.staff, v.at, v.lapses_at from staff_requests_now v where v.waiting order by v.at, v.id
-  loop
+  -- The queue in order, and each request by its key: one lookup for each row the loop reads, whatever the planner thinks of a join's cost on the record table.
+  for o in select x.request, x.at from staff_requests_open x order by x.at, x.request loop
+    select r.id, r.request_act, r.thread, r.staff, r.turn_act, o.at into q from staff_requests r where r.id = o.request;
     select a.id, coalesce(a.current_payload ->> 'body', '') as body, k.name as asker_name into p
     from acts_public a join characters_public k on k.id = a.character
     where a.id = q.request_act and a.hidden is not true;
     continue when not found;
     out := out || jsonb_build_array(jsonb_build_object(
       'id', q.id, 'requestAct', q.request_act, 'thread', q.thread,
-      'title', coalesce((select t.title from thread_list t where t.id = q.thread), (select t.title from threads t where t.id = q.thread), ''),
-      'boardName', coalesce((select b.name from boards_now b where b.id = thread_place(q.thread)), ''),
-      'askerName', p.asker_name, 'staff', q.staff, 'staffName', (select c.name from characters c where c.staff = q.staff),
-      'body', p.body, 'at', q.at, 'lapsesAt', q.lapses_at));
+      'title', coalesce((select t.title from thread_list t where t.id = q.thread), ''),
+      'boardName', coalesce((select b.name from thread_list t join boards_now b on b.id = t.board where t.id = q.thread), ''),
+      'askerName', p.asker_name, 'staff', q.staff,
+      'staffName', coalesce((select k.name from acts_public a join characters_public k on k.id = a.character where a.id = q.turn_act), ''),
+      'body', p.body, 'at', q.at, 'lapsesAt', q.at + make_interval(days => days)));
     n := n + 1;
     exit when n >= cap;
   end loop;
   return out;
 end $$;
+grant create on schema public to kayfabb_digest;
+alter function requests_waiting(integer) owner to kayfabb_digest;
+revoke create on schema public from kayfabb_digest;
 revoke execute on function requests_waiting(integer) from public, anon, authenticated;
-grant execute on function requests_waiting(integer) to service_role;
+grant execute on function requests_waiting(integer) to service_role, kayfabb_digest;
 
 -- requests_ruled: what apply_meeting (Task 5) calls, inside its transaction and holding its locks, for the meeting's `requests` answers [{id, ruling: fulfill | reject, move?, line?}], `id` being staff_requests.id as
 -- requests_waiting gives it. Answers are read in order, at most staffRequests.meetingMost of them (the rest are skipped), each at most once: an answer for a request that is not waiting, whose post is not public, or
@@ -676,6 +741,8 @@ grant execute on function requests_waiting(integer) to service_role;
 -- reply to `replyTo`), the Boss's line (trimmed, cut to postMaxLength, or null where it gave none) and the stock line that stands where there is none (requestGranted or requestRefused).
 -- The ruling row cannot name that post (it is written later, and no row is updated); the log finds the Boss's reply to the request post after the ruling's time.
 -- Returns {spent, rulings: [{id, requestAct, thread, staff, ruling, move, reason, post: {thread, replyTo, line, stock}}], skipped: [{id, why}]}.
+-- A wait. Each answer's key (`kayfabb.request.<id>`) is taken blocking, so it may wait for the tick's transaction while that pass holds the key of a request it is lapsing (it commits with the tick, which is bounded by
+-- the budget). It is no cycle: the tick only try-locks that key and never waits on a meeting, and a meeting holds the keys in the order of its answers and takes nothing the tick holds after them.
 create function requests_ruled(in_meeting bigint, answers jsonb, room integer) returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1274,15 +1341,22 @@ begin
   -- (the tick's one count for work per run), and none once the budget is spent. Where the post is still public and The System is on, the Boss replies in the thread to the request post with the stock line
   -- `requestLapsed` ({boss}, {asker}: the asker as the post's public author shows, so a veiled one is the anonymous name); an instance with no such line says nothing, and a post that cannot be written is
   -- a warning, never a request left waiting. The reply is written before its ruling row (which names it), so the request's key is held first: try-locked, never waited on, so a meeting ruling the same
-  -- request (requests_ruled holds the same key) and this pass cannot wait on each other; one it holds is left to the next tick. A row is read per waiting request, which the time they wait bounds.
+  -- request (requests_ruled holds the same key) and this pass cannot wait on each other; one it holds is left to the next tick. It reads the queue (staff_requests_open), the requests that wait and no other, so a row is read per
+  -- waiting request, which the days they wait bound, and never one per request ruled in the past. As visits are (4 above), a request that failed to lapse, or was held by a meeting, goes behind the rest by its last
+  -- failure (failed_at, then the oldest first), so one request that keeps raising or keeps being held never holds a slot of the pass from the others; it is still read when the others have been, and a meeting can rule it.
   for rq in
-    select v.id, v.request_act, v.thread from staff_requests_now v
-    where v.waiting and (v.lapses_at <= now() or not exists (select 1 from acts_public a where a.id = v.request_act and a.hidden is not true))
-    order by v.at, v.id limit cap
+    select o.request as id, r.request_act, r.thread
+    from staff_requests_open o cross join lateral (select x.request_act, x.thread from staff_requests x where x.id = o.request limit 1) r
+    where o.at + make_interval(days => staff_request_days()) <= now() or not exists (select 1 from acts_public a where a.id = r.request_act and a.hidden is not true)
+    order by o.failed_at nulls first, o.at, o.request limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     begin
-      if not pg_try_advisory_xact_lock(hashtextextended('kayfabb.request.' || rq.id, 0)) then continue; end if;
+      if not pg_try_advisory_xact_lock(hashtextextended('kayfabb.request.' || rq.id, 0)) then
+        -- A meeting holds it (the row may be one its transaction has already ruled): behind the others, and never waited for (skip locked), so the tick does not wait on that transaction either.
+        update staff_requests_open set failed_at = now() where request = (select x.request from staff_requests_open x where x.request = rq.id for update skip locked);
+        continue;
+      end if;
       if exists (select 1 from staff_request_rulings g where g.request = rq.id) then continue; end if;
       rq_post := null;
       rq_public := exists (select 1 from acts_public a where a.id = rq.request_act and a.hidden is not true);
@@ -1306,6 +1380,8 @@ begin
     exception when others then
       failed := failed + 1;
       raise warning 'system_tick: request % did not lapse: % (%)', rq.id, sqlerrm, sqlstate;
+      -- Recorded and sent behind the others (the order above). The block's own writes are undone, so this is the one write left; a row a meeting is ruling is not waited for.
+      update staff_requests_open set failed_at = now(), attempts = attempts + 1 where request = (select x.request from staff_requests_open x where x.request = rq.id for update skip locked);
     end;
   end loop;
 
@@ -1313,7 +1389,7 @@ begin
     'noThread', enabled and ann is null, 'awardsFailed', awards_failed, 'requestsLapsed', lapsed_n);
 end $$;
 
--- ===================================================================================== 4. The turn's call record ====
+-- ===================================================================================== 2b. The turn's call record ====
 -- A staff turn that rules on a request keeps what it did beside the post: the ruling, the move queued or why a fulfill became a confer, a refusal of the ruling and every trim (record_staff_call, 0106). The duty is
 -- `ruling`; its cause is the turn's post. Nothing else changes: the table is still append-only and no client reads it.
 alter table staff_call_records drop constraint staff_call_records_duty_check;

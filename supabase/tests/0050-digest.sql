@@ -94,7 +94,9 @@ begin
       -- What acts_public calls as its reader (0340): whether a version is hidden, what its quoting body's layer comes to and what a payload shows of it, so a digest never reads a hidden version's words.
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
       -- And whether a ballot's poll is secret (0395): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
-      'ballot_secret(uuid)']) x) then
+      'ballot_secret(uuid)',
+      -- The waiting staff requests the meeting reads (0424), owned by the role: it reads the queue and the public columns of staff_requests, and the days a request waits, which is the one function the role is granted beside it.
+      'requests_waiting(integer)', 'staff_request_days()']) x) then
     raise exception 'the functions the digest role may execute are not the reviewed ones: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
@@ -154,7 +156,9 @@ begin
       -- Who a met demand credits (0206), reading the same public Acts and their public tallies; never `reactions`.
       'demand_contributors(uuid)',
     'pool_signals(timestamp with time zone,timestamp with time zone)', 'pool_named(timestamp with time zone,timestamp with time zone)',
-    'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'pool_read(uuid,text,uuid[],integer)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)']);
+    'pool_thread(uuid,integer,integer,uuid)', 'pool_thread(uuid,integer,integer,uuid,uuid[])', 'pool_read(uuid,text,uuid[],integer)', 'character_faces(jsonb)', 'patrol_sample(uuid[],integer,integer,bigint)',
+    -- The waiting staff requests (0424): the queue's read, owned by the role like pool_read.
+    'requests_waiting(integer)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';

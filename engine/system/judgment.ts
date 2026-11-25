@@ -315,8 +315,11 @@ export function repairBossMove(raw: unknown, ctx: BossMoveContext): RepairedMove
   if (blankDescription) delete given['description'];
   if (kind.key === 'moveThread') {
     const thread = String(given['thread']).toLowerCase();
-    if (ctx.threadBoards?.get(thread) === undefined) return no(under('thread'), 'knownThread', trims);
+    const threadNow = ctx.threadBoards?.get(thread);
+    if (threadNow === undefined) return no(under('thread'), 'knownThread', trims);
     given['thread'] = thread;
+    // Moving a thread to the board it is on changes nothing, and would spend a move of the bank to do it (the database refuses it too, in `boss_move_queue`).
+    if (typeof given['board'] === 'string' && given['board'].toLowerCase() === threadNow.toLowerCase()) return no(under('board'), 'notAlreadyThere', trims);
   }
   const whyRead = readWhy(raw['why'], trims);
   if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);

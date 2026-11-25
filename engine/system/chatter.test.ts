@@ -745,6 +745,15 @@ test('a Boss fulfill of a thread move is kept; with bank 0 it becomes a confer n
   assert.deepEqual(none.dropped, { path: 'request.move', predicate: 'bank' });
 });
 
+test('a Boss fulfill that moves a thread to the board it is on drops move.params.board notAlreadyThere (a move it would spend for nothing)', () => {
+  const same = repairRuling(rule('fulfill', { move: { ...moveThread, params: { thread: T1, board: B1 } } }), bossRuling());
+  assert.equal(same.request?.ruling, 'confer', 'a dropped move leaves a confer');
+  assert.deepEqual(same.dropped, { path: 'request.move.params.board', predicate: 'notAlreadyThere' });
+  const upper = repairRuling(rule('fulfill', { move: { ...moveThread, params: { thread: T1, board: B1.toUpperCase() } } }), bossRuling());
+  assert.deepEqual(upper.dropped, { path: 'request.move.params.board', predicate: 'notAlreadyThere' }, 'ids compare in lowercase');
+  assert.equal(repairRuling(rule('fulfill', { move: moveThread }), bossRuling()).dropped, null, 'another board is kept');
+});
+
 test('a Boss fulfill: an unknown thread drops knownThread, a kind outside its office drops the kind, the expiry is clamped to the phase', () => {
   const unknown = repairRuling(rule('fulfill', { move: { ...moveThread, params: { thread: B3, board: B2 } } }), bossRuling());
   assert.deepEqual(unknown.dropped, { path: 'request.move.params.thread', predicate: 'knownThread' });
