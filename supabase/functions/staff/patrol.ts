@@ -9,7 +9,8 @@
  *   3. The day's judgment budget (`modBots.judgmentsPerDay`, the same instance-wide count a report is held to: `judgment_load_today`) is read before every claim; a spent day claims
  *      nothing, so the patrol waits for the next one rather than being skipped.
  *   4. A patrol whose Mod has left the staff, or has no beat, or whose beat has no post to look at, is skipped: recorded on the patrol's row, with no call.
- *   5. The sample (`patrol_sample`, owned by the digest role: public play only) is `patrolSample` posts drawn from the newest `patrolPool` posts by players on the Mod's beat, not under a visit: a weighted draw (a Tattle-Tale on a character multiplies its weight), seeded by the patrol's id so a patrol that runs again draws the same posts. One light-tier call
+ *   5. The sample (`patrol_sample`, owned by the digest role: public play only) is `patrolSample` posts drawn from the newest `patrolPool` posts by players on the Mod's beat, not under a visit: a weighted draw (a Tattle-Tale on a character multiplies its weight), seeded by the patrol's id so a patrol that runs again draws the same posts. Each drawn post comes with its extras (poll, plays, reactions, a rewind, a spun opener's origin), and the Mod reads them whole, newest
+ *      first: the newest always, each other while the posts stay within `pool.readMost` (patrolShown); a post that does not fit is neither shown, judged nor recorded as sampled. One light-tier call
  *      (duty `patrolJudge`, with `staff` set so it is a ledger row) in the Mod's voice judges them against each board's premise and the rules in force there, and answers findings
  *      [{post, charge}] and, optionally, the Mod's one move.
  *   6. The answer is repaired (repairPatrol): a finding naming a post that is not in the sample is dropped and named; a charge naming no rule in force is the premise at the minor
