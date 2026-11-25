@@ -33,7 +33,7 @@ describe('the preview of a Turn', () => {
     expect(text(turnPreview({ ...base, loudness: 'announced', showFrom: true, showTo: true }).lines)).toEqual([`Pipewrench has Turned from Heel to Face.${NEXT}`]);
   });
 
-  test('is posted at once, in the thread chosen, or the one the player will choose; never in a season\'s Promos', () => {
+  test('is posted at once, in the thread chosen, or the one the player will choose; never in a season\'s Roster Report', () => {
     expect(turnPreview({ ...base, loudness: 'announced', showFrom: false, showTo: false, threadTitle: 'The tea thread' }).where).toBe('At once, in The tea thread');
     expect(turnPreview({ ...base, loudness: 'announced', showFrom: false, showTo: false }).where).toBe('At once, in the thread you choose');
     expect(JSON.stringify(turnPreview({ ...base, loudness: 'announced', showFrom: false, showTo: false }))).not.toMatch(/Promo/u);

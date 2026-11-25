@@ -24,18 +24,17 @@ const news: World = (fake, instance) => {
   const pipewrench = seed.character(player, 'Pipewrench', cls(1), { at: utc(10, 3) });
   const gloomba = seed.character(rival, 'Gloomba', cls(1), { at: utc(10, 4) });
   const thwompson = seed.character(rival, 'Thwompson', cls(0), { at: utc(11, 2) });
-  const lady = seed.staff('story-lady-ledger', 'Lady Ledger', 'boss', { at: utc(10, 1) });
-  const mister = seed.staff('story-mister-spreadsheet', 'Mister Spreadsheet', 'boss', { at: utc(10, 1) });
+  seed.staff('story-lady-ledger', 'Lady Ledger', 'boss', { at: utc(10, 1) });
+  seed.staff('story-mister-spreadsheet', 'Mister Spreadsheet', 'boss', { at: utc(10, 1) });
 
   const board = instance.boards.find((b) => !b.system) ?? instance.boards[0]!;
   const system = instance.boards.find((b) => b.system) ?? board;
-  const announcements = seed.thread(system.slug, null, 'Announcements', 'The board is open.', { at: utc(10, 1) });
   const said = seed.thread(board.slug, spritey, 'for the record', 'Here it is.', { at: utc(10, 12) });
   const revealed = seed.reveal(spritey, said.thread, { at: utc(10, 12, 9), class: cls(0) });
   const hooliganSaid = seed.thread(board.slug, hooligan, 'lurkers rule', 'Quiet.', { at: utc(10, 14) });
   const hooliganRevealed = seed.reveal(hooligan, hooliganSaid.thread, { at: utc(10, 14, 1), class: cls(2) });
   const shown = (act: string, at: number, cls_: string) => [{ kind: 'reveal' as const, act, at: new Date(at).toISOString(), class: cls_, was: null }];
-  const turns = seed.thread(system.slug, null, 'Season 2: Promos', 'Every debut and Turn, as its player announced it.', { at: utc(11, 1) });
+  const turns = seed.thread(system.slug, null, 'Season 2: Roster Report', 'Every new face and Turn, as its player announced it.', { at: utc(11, 1) });
   seed.season({ number: 1, endsAt: new Date(utc(11, 1)).toISOString() });
   seed.season({ number: 2, startsAt: new Date(utc(11, 1)).toISOString(), turnsThread: turns.thread });
   seed.seasonResults(1, [
@@ -43,9 +42,7 @@ const news: World = (fake, instance) => {
     { character: gloomba, place: 2, standing: 840 },
     { character: hooligan, place: 3, standing: 795, shown: shown(hooliganRevealed, utc(10, 14, 1), cls(2)) },
   ], { at: utc(11, 1) });
-  seed.staffPost(lady, announcements.thread, 'The ledger is closed. Balance carried forward.', { at: utc(11, 1, 8, 20) });
-  seed.staffPost(mister, announcements.thread, 'Efficiency is a virtue. So is fear. I have reviewed your posting cadence.', { at: utc(11, 1, 8, 21) });
-  seed.handover({ outgoing: 'story-lady-ledger', boss: 'story-mister-spreadsheet', at: utc(11, 1) });
+  seed.handover({ outgoing: 'story-lady-ledger', boss: 'story-mister-spreadsheet', at: utc(11, 1), farewell: 'The ledger is closed. Balance carried forward.', arrival: 'Efficiency is a virtue. So is fear. I have reviewed your posting cadence.' });
   seed.announce(thwompson, 'debut', { at: utc(11, 2) });
   seed.announce(pipewrench, 'turn', { at: utc(11, 2), was: cls(1) });
   fake.signInAs(player);

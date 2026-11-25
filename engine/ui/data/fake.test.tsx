@@ -35,7 +35,7 @@ const settings: Settings = {
 const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test', withdrawn: [],
-  copy: { rosterThreadTitle: 'Promos {season}' },
+  copy: { rosterThreadTitle: 'Season {season}: Roster Report' },
   packs: [], machine: [], ...testCosmeticsContent,
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
   cards: [],
@@ -2011,7 +2011,7 @@ describe('a finished season\'s results and its announcements', () => {
     expect((await w.fake.profilePage(w.anaHeel))?.seasons).toEqual([{ season: 1, place: null, standing: -30, at: new Date(at(28, 12)).toISOString() }]);
   });
 
-  test('seed.announce writes the character\'s own announce Act in the season\'s Promos thread, which a board lists', async () => {
+  test('seed.announce writes the character\'s own announce Act in the season\'s Roster Report thread, which a board lists', async () => {
     const { fake, anaFace, boFace } = world();
     const first = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
     const second = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
@@ -2019,7 +2019,7 @@ describe('a finished season\'s results and its announcements', () => {
     expect(a).toMatchObject({ kind: 'announce', character: anaFace, payload: { what: 'debut', class: 'face' } });
     expect((await fake.act(second))!.thread).toBe(a.thread);
     expect((await fake.act(second))!.payload).toEqual({ what: 'turn', was: 'heel', class: 'face' });
-    expect((await fake.thread(a.thread))?.title).toBe('Promos 1');
+    expect((await fake.thread(a.thread))?.title).toBe('Season 1: Roster Report');
     expect((await fake.season())?.turnsThread).toBe(a.thread);
     const board = (await fake.boards()).find((b) => b.slug === 'announcements')!;
     expect((await fake.threads(board.id, { offset: 0, limit: 20 })).threads.map((t) => t.id)).toContain(a.thread);
@@ -3923,12 +3923,14 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).threads.map((t) => t.id)).not.toContain(rows[0]!.thread);
     expect(await w.fake.thread(rows[0]!.thread)).toBeNull();
     expect(before).toBe(0);
-    // The announcements thread (a Boss's moves) is still the first thread of that board, however the updates came first.
+    // Each landed move opens its own staff thread on that board (0429), the move at seq 1: two moves are two threads, and the updates thread is still none of them.
     w.fake.seed.staff('boss', 'The Boss', 'boss');
-    w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
+    const first = w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
+    w.fake.seed.move('boss', { board: 'general', name: 'Renamed again' });
     const after = (await w.fake.boards()).find((b) => b.isSystem)!;
-    expect(after.threadCount).toBe(1);
-    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).total).toBe(1);
+    expect(after.threadCount).toBe(2);
+    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).total).toBe(2);
+    expect(await w.fake.act(first)).toMatchObject({ kind: 'move', seq: 1 });
   });
 
   test('only an admin posts one, as the developer; a refusal is in the server\'s words and leaves nothing', async () => {
@@ -6433,9 +6435,9 @@ describe('a card that replies, and a play that keeps (0348_post_under.sql and th
     /* A reply carried by a card that cannot write has no end of its own to fail: only an admin's end (above) or the play's reversal un-nests it, as an untaken play is a writing card's alone. */
   });
 
-  /** A post of The System's own board: the announcements thread's, where no card's reply may be written. */
+  /** A post of The System's own board, where no card's reply may be written. */
   function fake0System(w: ReturnType<typeof replyWorld>): Id {
-    const made = w.fake.seed.thread('announcements', null, 'Promos', 'The System speaks.', { kind: 'post' });
+    const made = w.fake.seed.thread('announcements', null, 'Roster Report', 'The System speaks.', { kind: 'post' });
     return made.act;
   }
 
@@ -8029,5 +8031,58 @@ describe('an ask or an answer as an origin', () => {
     }
     await expect(d.fake.exchange(d.opener)).rejects.toThrow();
     await expect(d.fake.exchange('nothing')).rejects.toThrow();
+  });
+});
+
+describe('the staff board holds a thread for each decision and each handover (0429)', () => {
+  const titled = { ...instance, system: { ...testSystem, threadTitles: { renameBoard: '{board} is now {name}', conferGroup: 'Welcome to {groupName}' }, handoverThreadTitle: '{boss} takes the chair' } };
+  const staffThreads = async (fake: ReturnType<typeof createFake>) => {
+    const system = (await fake.boards()).find((b) => b.isSystem)!;
+    return (await fake.threads(system.id, { offset: 0, limit: 50 })).threads;
+  };
+
+  test('a landed move opens its own thread, titled by the instance\'s threadTitles, with the move at seq 1', async () => {
+    const fake = createFake({ instance: titled });
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const id = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
+    const act = (await fake.act(id))!;
+    expect(act).toMatchObject({ kind: 'move', seq: 1 });
+    expect((await fake.thread(act.thread))!.title).toBe('General is now Toast Palace');
+    const other = fake.seed.move('boss', { board: 'general', name: 'Crumb Hall' });
+    expect((await fake.act(other))!.thread).not.toBe(act.thread);
+    expect((await staffThreads(fake)).map((t) => t.title).sort()).toEqual(['General is now Crumb Hall', 'General is now Toast Palace']);
+  });
+
+  test('a kind the instance gives no title is titled by its plain words, and a trophy and a group move open threads too', async () => {
+    const fake = createFake({ instance });
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const ana = fake.seed.character(fake.seed.account('ana'), 'Ana Face', 'face');
+    const move = (await fake.act(fake.seed.move('boss', { board: 'general', name: 'Toast Palace' })))!;
+    const group = (await fake.act(fake.seed.groupMove('boss', { character: ana, group: 'trialMembers' })))!;
+    expect(new Set([move.thread, group.thread]).size).toBe(2);
+    expect([move.seq, group.seq]).toEqual([1, 1]);
+    expect((await fake.thread(move.thread))!.title).toBe('Rename board');
+  });
+
+  test('a bundle\'s later parts land in the first part\'s thread', async () => {
+    const fake = createFake({ instance });
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const a = (await fake.act(fake.seed.move('boss', { board: 'general', name: 'One', bundle: { id: 'b1', name: 'Both' } })))!;
+    const b = (await fake.act(fake.seed.move('boss', { board: 'general', name: 'Two', bundle: { id: 'b1', name: 'Both' } })))!;
+    expect(b.thread).toBe(a.thread);
+    expect([a.seq, b.seq]).toEqual([1, 2]);
+    expect(await staffThreads(fake)).toHaveLength(1);
+  });
+
+  test('a handover opens its own thread, titled by the instance\'s handoverThreadTitle, holding the farewell and then the arrival', async () => {
+    const fake = createFake({ instance: titled });
+    fake.seed.staff('first', 'First Boss', 'boss');
+    fake.seed.staff('second', 'Second Boss', 'boss');
+    fake.signInAs(fake.seed.account('ana'));
+    const thread = fake.seed.handover({ outgoing: 'first', boss: 'second', at: Date.UTC(2026, 10, 2), farewell: 'So long.', arrival: 'Hello.' });
+    expect((await fake.thread(thread))!.title).toBe('Second Boss takes the chair');
+    const posts = (await fake.threadPage(thread, { page: 1 }, 20, []))!.acts;
+    expect(posts.map((a) => [a.seq, (a.payload as { body?: string }).body])).toEqual([[1, 'So long.'], [2, 'Hello.']]);
+    expect(await staffThreads(fake)).toHaveLength(1);
   });
 });

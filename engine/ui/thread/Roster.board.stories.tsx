@@ -1,9 +1,9 @@
 /**
- * The Promos thread (the season-end design, sections 4 and 5), drawn as a story for the owner: the season's thread on The System's board, where
+ * The Roster Report thread (the season-end design, sections 4 and 5; the staff board's threads design), drawn as a story for the owner: the season's thread on The System's board, where
  * each character's announce Act reads as a line in the characters' own words, with the reactions every Act can take. The six lines are the
- * design's table: a debut that names no class, a debut as a class, a Turn from one class to another, a Turn leaving a class, a Turn to a class,
+ * design's table: a new face that names no class, a new face as a class, a Turn from one class to another, a Turn leaving a class, a Turn to a class,
  * and a Turn that names neither. The classes are the instance's, by their place in its list. The page is the thread screen itself, as the route
- * /t/:thread draws it, signed in as the player. Held by e2e/boards/14-promos.ts.
+ * /t/:thread draws it, signed in as the player. Compared with no manifest.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect, useState } from 'react';
@@ -16,10 +16,10 @@ const T0 = Date.UTC(2026, 10, 2, 8, 17);
 const MIN = 60_000;
 
 /**
- * The season's Promos thread on The System's board, by the title the instance's copy gives it: a story cannot know the id its world gives it.
+ * The season's Roster Report thread on The System's board, by the title the instance's copy gives it: a story cannot know the id its world gives it.
  * A world that made no such thread says so on the page, never a page left loading.
  */
-function PromosThread() {
+function RosterThread() {
   const { api, instance } = useKayfa();
   const [id, setId] = useState<string | null | 'missing'>(null);
   useEffect(() => {
@@ -32,11 +32,11 @@ function PromosThread() {
       setId('missing');
     })();
   }, [api, instance]);
-  if (id === 'missing') return <p role="alert">The story's world has no thread titled for Season {SEASON}'s Promos.</p>;
+  if (id === 'missing') return <p role="alert">The story's world has no thread titled for Season {SEASON}'s Roster Report.</p>;
   return id ? <LoadedThread thread={id} /> : <div aria-busy="true" />;
 }
 
-const promos: World = (fake, instance) => {
+const roster: World = (fake, instance) => {
   const cls = (i: number) => (instance.classes[i] ?? instance.classes[0]!).key;
   const { seed } = fake;
   const player = seed.account('player');
@@ -61,19 +61,19 @@ const promos: World = (fake, instance) => {
   fake.signInAs(player);
 };
 
-const meta: Meta<typeof PromosThread> = {
-  title: 'Boards/14 Promos',
-  component: PromosThread,
-  parameters: { world: promos, path: '/t/x', layout: 'fullscreen' },
+const meta: Meta<typeof RosterThread> = {
+  title: 'Boards/14 Roster Report',
+  component: RosterThread,
+  parameters: { world: roster, path: '/t/x', layout: 'fullscreen' },
 };
 export default meta;
 
-type Story = StoryObj<typeof PromosThread>;
+type Story = StoryObj<typeof RosterThread>;
 
 /** The six lines, with reactions, on the Main board's layout, at 1440 wide. */
-export const Promos: Story = {};
+export const Roster: Story = {};
 /** The same thread on the Phone board's layout, at 390 by 844. */
-export const PromosPhone: Story = {
-  name: 'Promos, phone 390 × 844',
+export const RosterPhone: Story = {
+  name: 'Roster Report, phone 390 × 844',
   globals: { viewport: { value: 'glassPhone390', isRotated: false } },
 };

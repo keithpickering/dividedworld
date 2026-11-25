@@ -8,6 +8,7 @@
  * "9 days ago" for a while and then a date; the manifest names no time.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { useKayfa } from '../context.tsx';
 import { Frame } from '../frame/Frame.tsx';
 import { LoadedBoard } from '../loaded.tsx';
 import type { World } from '../story.tsx';
@@ -97,3 +98,33 @@ export const Board: Story = {};
 
 /** The list with a spun thread (one reply, a long-named last poster) and a thread with a long title; compared with no manifest. */
 export const Spun: Story = { parameters: { world: spunWorld } };
+
+/**
+ * The staff's board (staff-board-threads design): a thread for each decision, each handover, the season's Roster Report and the Staff Meetings' minutes.
+ * Two moves each open a thread of their own, a handover opens one holding the farewell and then the arrival, and the Roster Report and the Staff
+ * Meetings are the season's. Compared with no manifest.
+ */
+const staffWorld: World = (fake, instance) => {
+  const [first] = instance.classes;
+  const me = fake.seed.account('story-player', { seasoned: true });
+  fake.seed.character(me, 'Pipewrench', first!.key, { at: OCT(1) });
+  const general = instance.boards.find((b) => !b.system)!.slug;
+  const system = instance.boards.find((b) => b.system)!.slug;
+  fake.seed.staff('story-lady-ledger', 'Lady Ledger', 'boss', { at: OCT(1) });
+  fake.seed.staff('story-mister-spreadsheet', 'Mister Spreadsheet', 'boss', { at: OCT(1) });
+  fake.seed.move('story-lady-ledger', { board: general, name: 'Pointless Toast Palace', at: OCT(24) });
+  fake.seed.move('story-lady-ledger', { board: general, name: 'Crumb Hall', at: OCT(26) });
+  fake.seed.handover({ outgoing: 'story-lady-ledger', boss: 'story-mister-spreadsheet', at: OCT(27), farewell: 'The ledger is closed. Balance carried forward.', arrival: 'Efficiency is a virtue. So is fear.' });
+  const roster = fake.seed.thread(system, null, 'Season 1: Roster Report', 'Every new face and Turn, as its player announced it.', { at: OCT(1) });
+  fake.seed.season({ number: 1, turnsThread: roster.thread });
+  fake.seed.thread(system, null, 'Staff Meetings', 'The minutes of each meeting, in the order they were held.', { at: OCT(1) });
+  fake.signInAs(me);
+};
+
+function StaffBoardStory() {
+  const { instance } = useKayfa();
+  return <Frame><LoadedBoard slug={instance.boards.find((b) => b.system)!.slug} /></Frame>;
+}
+
+/** The staff's board: two move threads, a handover thread, the Roster Report and the Staff Meetings; compared with no manifest. */
+export const StaffBoard: Story = { render: () => <StaffBoardStory />, parameters: { world: staffWorld, path: '/b/staff' } };

@@ -6,6 +6,8 @@
  * and Make the character.
  *
  * Departures by decision:
+ *  - The board draws a "When it debuts" choice, "How loud" with Silent, Announced and Announced, with its class, and a "What everyone will see" preview; the build has
+ *    none of them (a new character is on the board at once and nobody is told, 0428), so they are not compared, and the footer's one line is the build's words.
  *  - The page head (engine/ui/glass/PageHead.tsx) is the roster pages' 96px title where the board draws 112px, and it leaves 36px under the lead
  *    (the glass polish, design section 2), so the title is compared by its type at 96 and everything under it by its place from the form's own
  *    corner (`origin`), which the head's height does not move.
@@ -60,14 +62,7 @@ const manifest: BoardManifest = {
     at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { buildName: 'Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.', within: 'classes', box: 'none', type: false }),
     at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { type: false, origin: 'classes', originEdge: 'bottom', buildShift: { y: 0 } }),
 
-    at('when', 'group', 'When it debuts', { type: false, box: 'none' }),
-    at('loud', 'group', 'How loud', { type: false, box: 'none' }),
-    at('silent', 'text', 'SILENT', { buildName: 'Silent.', within: 'loud', origin: 'loud', buildShift: { y: -9 } }),
-    at('announced', 'text', 'ANNOUNCED', { buildName: 'Announced.', within: 'loud', origin: 'loud', buildShift: { y: -9 } }),
-    at('with-class', 'text', 'ANNOUNCED, WITH ITS CLASS', { buildName: 'Announced, with its class.', within: 'loud', origin: 'loud', buildShift: { y: -9 } }),
-    at('preview-head', 'text', 'What everyone will see', { box: 'none', type: false }),
-
-    at('foot-line', 'text', 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', { buildName: 'Waiting Wanda is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.', box: 'none' }),
+    at('foot-line', 'text', 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', { buildName: 'Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.', box: 'none' }),
     at('cancel', 'button', 'CANCEL', { buildName: 'Cancel', buildRole: 'link', type: false, box: 'none' }),
     at('make', 'button', 'MAKE THE CHARACTER', { buildName: 'Make the character', type: false, box: 'none' }),
   ],
@@ -92,8 +87,8 @@ export default manifest;
  *  - Edit profile on the board is the head, the lead, Title, Signature and the save button; the build adds the character's select above Title, and the pip style,
  *    the avatar and the preview under the save, so Title and what follows stand lower by the select's height.
  *  - The build's New character and Edit profile each carry the pronoun picker (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board
- *    predates: on New character it stands between the class note and When it debuts, so When it debuts and Drop now stand 472.8px lower from the note;
- *    on Edit profile it stands above the save, which stands 472.5px lower again.
+ *    predates: on New character it stands under the class note, where the board's When it debuts and Drop now stood (gone: a character is on the board when it is made);
+ *    on Edit profile it stands above the save, which stands 472.5px lower.
  *  - The Face's hurt says when stolen thunder is not charged (docs/plans/2026-11-18-face-thunder-design.md, section 3), a longer sentence than the board's, which wraps
  *    onto more lines in the phone's narrow card, and a line count that also moves with how a browser breaks it. The class note and what is held from it stand lower
  *    by those lines, so the note is held from the bottom of the Face's hurt (`origin`, `originEdge: 'bottom'`) and not from the CLASS label, and `face-hurt` holds the
@@ -130,8 +125,6 @@ export const phone: BoardManifest = {
     { id: 'face-hurt', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildName: 'Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.', type: false, box: 'none' },
     { id: 'row', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildRole: 'group', buildName: 'Class', type: false, box: 'none' },
     held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { x: 20, y: -20 }, { origin: 'row', originEdge: 'bottom' }),
-    held('class-label', 'when', 'text', 'WHEN IT DEBUTS', { y: 486.8 }, { origin: 'note', originEdge: 'bottom' }),
-    held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],
   also: [
     {
@@ -149,7 +142,7 @@ export const phone: BoardManifest = {
         held('menu', 'title-count', 'text', '29 of 40', { y: 75.6 }),
         held('menu', 'signature-label', 'text', 'SIGNATURE', { y: 90.1 }),
         held('menu', 'signature-count', 'text', '34 of 500', { y: 106.7 }),
-        held('menu', 'save', 'button', 'SAVE THE PROFILE', { y: 711.7 }, { buildName: 'Save the profile' }),
+        held('menu', 'save', 'button', 'SAVE THE PROFILE', { y: 698 }, { buildName: 'Save the profile' }),
       ],
     },
     {

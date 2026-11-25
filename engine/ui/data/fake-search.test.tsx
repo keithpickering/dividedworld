@@ -18,7 +18,7 @@ const settings: Settings = {
 };
 const earn = () => [];
 const instance: Instance = {
-  key: 'test', name: 'Test', withdrawn: [], copy: { rosterThreadTitle: 'Promos {season}' },
+  key: 'test', name: 'Test', withdrawn: [], copy: { rosterThreadTitle: 'Season {season}: Roster Report' },
   classes: [{ key: 'face', name: 'Face', earn }],
   cards: [], packs: [], machine: [], ...testCosmeticsContent,
   reactions: [{ key: 'fire', emoji: 'F', quadrant: 'excitedPositive' }],

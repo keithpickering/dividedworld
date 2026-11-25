@@ -142,12 +142,12 @@ export interface Seed {
   alert(account: Id, alert: { kind: WrittenKind; act: Id; character?: Id; sub?: string; at?: number }): void;
   /**
    * A change of Boss at a season's roll-over, or (`cause: 'departure'`) when the outgoing Boss left the instance's roster mid-season (a `season_handovers` row, 0051; 0403 adds its id and cause, ids from 1 in the order seeded): the outgoing Boss (null at the first) and the arriving one, by staff key,
-   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the announcements thread dated
-   * at exactly `at` (`staffPost`), as the server finds it; a later remark is not its words. A change of Boss is also a to-do in the admin queue
+   * dated `at` (else now). Season news then holds the Boss's arrival and departure, quoting the first post each wrote in the handover's own thread (0429), which this opens on the staff board
+   * (titled by `handoverThreadTitle`) and returns; `farewell` and `arrival` are the outgoing and arriving Boss's words in it, in that order; a remark elsewhere is not its words. A change of Boss is also a to-do in the admin queue
    * (`how` rotation unless said, `bossWas` the new Boss's office before, `outgoingOffice` member unless said), until an update is seeded or posted
    * after `at` or an admin dismisses it. The to-do carries the outgoing Boss's handoff `note` (null: none) and the season's `facts` (empty lists unless said), as admin_queue does (0337). The season is the next number: the first season is the seed's, and each handover opens the one after.
    */
-  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts>; cause?: 'rollover' | 'departure' }): void;
+  handover(handover: { outgoing?: string | null; boss: string; at?: number; how?: 'nomination' | 'rotation'; bossWas?: string | null; outgoingOffice?: string | null; note?: string | null; facts?: Partial<HandoffFacts>; cause?: 'rollover' | 'departure'; farewell?: string; arrival?: string }): Id;
   /**
    * An update by the developer persona (what `post_update` writes, 0062), dated `at` (else now): the developer character is made on its first
    * update, from the instance's persona (else the engine's plain one), and so is the updates thread on The System's board. Returns the Act.
@@ -220,7 +220,7 @@ export interface Seed {
    */
   announceTurn(character: Id, thread: Id, options?: { was?: string; class?: string; since?: string; at?: number }): Id;
   /**
-   * A character's announce Act (0100) in the Promos thread of the season open at `at` (else now), which this opens on the staff board where the
+   * A character's announce Act (0100) in the Roster Report thread of the season open at `at` (else now), which this opens on the staff board where the
    * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
    * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
    */
@@ -1192,12 +1192,30 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const named = m.demand.params['board'];
     return { kind: m.demand.kind, params: { ...m.demand.params, ...(typeof named === 'string' ? { board: boards.find((b) => b.slug === named)?.id ?? named } : {}) } };
   };
-  /** The first thread of The System's board, made when there is none: where the Boss's moves are written. */
-  function announcements(): Id {
+  /** The words a thread title's tokens take (`move_thread_title`, 0429): a board's, a character's, a group's and a trophy's name for the id or key a move's params hold; any other param as it stands. */
+  const titleToken = (token: string, params: Readonly<Record<string, unknown>>): string => {
+    const named = (v: unknown): string => (typeof v === 'string' ? v : '');
+    switch (token) {
+      case 'board': return boards.find((x) => x.id === named(params['board']) || x.slug === named(params['board']))?.name ?? '';
+      case 'characterName': return characters.get(named(params['character']))?.name ?? '';
+      case 'groupName': return instance.groups.conferred.find((g) => g.key === named(params['group']))?.name ?? named(params['group']);
+      case 'trophyName': return instance.trophies.kinds.find((k) => k.key === named(params['trophy']))?.name ?? named(params['trophy']);
+      default: return named(params[token]);
+    }
+  };
+  /** A staff thread for a landed move: titled by the instance's `threadTitles` for its kind (a kind with none, by its plain words), the move written at seq 1; a bundle's later parts land in the first part's thread (0429). */
+  const bundleThreads = new Map<string, Id>();
+  function moveThread(kind: string, params: Readonly<Record<string, unknown>>, at: number, bundle?: string): Id {
+    const held = bundle === undefined ? undefined : bundleThreads.get(bundle);
+    if (held !== undefined) return held;
     const board = boards.find((b) => b.isSystem);
     if (!board) throw new Error('the instance has no System board');
-    const found = [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId);
-    return found ? found.id : openThread(board.id, 'Announcements', null).id;
+    const template = instance.system.threadTitles[kind];
+    const plain = kind.replace(/([A-Z])/gu, ' $1').toLowerCase();
+    const title = template === undefined ? plain.charAt(0).toUpperCase() + plain.slice(1) : template.replace(/\{(\w+)\}/gu, (_, token: string) => titleToken(token, params));
+    const made = openThread(board.id, title, null, at).id;
+    if (bundle !== undefined) bundleThreads.set(bundle, made);
+    return made;
   }
   const staffId = (key: string): Id => {
     const c = [...characters.values()].find((x) => x.staff?.key === key);
@@ -1271,7 +1289,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     updatesThreadId = openThread(board.id, 'Updates', null).id;
     return threads.get(updatesThreadId)!;
   }
-  /* A board's list leaves out the updates thread and an old season's reveal thread (thread_list, 0063, 0099); the Promos thread is listed. thread() opens any of them by id (thread_open). */
+  /* A board's list leaves out the updates thread and an old season's reveal thread (thread_list, 0063, 0099); the Roster Report thread is listed. thread() opens any of them by id (thread_open). */
   const seasonThreads = (): Set<Id> => new Set(seasons.map((s) => (s.revealAct === null ? null : acts.get(s.revealAct)?.thread ?? null)).filter((x): x is Id => x !== null));
   const listed = (t: ThreadRec) => t.id !== updatesThreadId && !seasonThreads().has(t.id);
   /** `within` (0005): text that is something and no longer than the setting, in the server's words. */
@@ -1326,7 +1344,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The Roster Report entries that named Turns taking effect (`news_landed` kind `roster`, 0432), as the seed wrote them. */
   const rosterNews: { readonly post: Id; readonly turns: readonly TallyName[]; readonly count: number; readonly at: number }[] = [];
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
-  const handovers: { readonly id: number; readonly cause: 'rollover' | 'departure'; readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
+  const handovers: { readonly id: number; readonly cause: 'rollover' | 'departure'; readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts; readonly thread: Id }[] = [];
   /** The handovers whose to-do an admin dismissed (`handover_dismissals`), by the handover's id. */
   const dismissedTodos = new Set<number>();
   /** The season a handover belongs to: a roll-over opens the one after the roll-overs before it, a departure happens in the one open then (the first season is the seed's). */
@@ -1372,13 +1390,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }).reverse();
   }
   const staffByKey = (key: string) => [...characters.values()].find((c) => c.staff?.key === key);
-  /** The first post of a staff member in the announcements thread dated at the handover's instant: what the Boss said as it came or went (a later remark is not it). */
-  function bossPost(key: string, at: number): ActRec | undefined {
+  /** The first post of a staff member in the handover's own thread: what the Boss said as it came or went (a later remark elsewhere is not it). */
+  function bossPost(key: string, thread: Id): ActRec | undefined {
     const who = staffByKey(key);
     if (!who) return undefined;
-    const board = boards.find((b) => b.isSystem);
-    const home = board ? [...threads.values()].find((t) => t.board === board.id && t.id !== updatesThreadId && !seasonThreads().has(t.id)) : undefined;
-    return [...acts.values()].filter((a) => a.kind === 'post' && a.character === who.id && a.thread === home?.id && a.at === at).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0))[0];
+    return [...acts.values()].filter((a) => a.kind === 'post' && a.character === who.id && a.thread === thread).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0))[0];
   }
   const names = (v: unknown): TallyName[] => (Array.isArray(v) ? (v as Record<string, unknown>[]) : []).map((e) => ({
     character: String(e['character']), name: String(e['name']), class: typeof e['class'] === 'string' ? e['class'] : null, was: typeof e['was'] === 'string' ? e['was'] : null }));
@@ -1432,10 +1448,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const h of handovers) {
       if (h.boss === h.outgoing) continue;
       const number = [...seasons].filter((s) => Date.parse(s.startsAt) <= h.at).sort((x, y) => y.number - x.number)[0]?.number ?? 1;
-      const arrived = bossPost(h.boss, h.at);
+      const arrived = bossPost(h.boss, h.thread);
       out.push({ ...base, kind: 'bossArrived', act: arrived?.id ?? null, thread: arrived?.thread ?? null, seq: arrived?.seq ?? null, at: iso(h.at), season: number, name: staffByKey(h.boss)?.name ?? h.boss, quote: arrived ? String(arrived.payload['body'] ?? '') : null });
       if (h.outgoing !== null) {
-        const left = bossPost(h.outgoing, h.at);
+        const left = bossPost(h.outgoing, h.thread);
         out.push({ ...base, kind: 'bossLeft', act: left?.id ?? null, thread: left?.thread ?? null, seq: left?.seq ?? null, at: iso(h.at), season: h.cause === 'departure' ? number : number - 1, name: staffByKey(h.outgoing)?.name ?? h.outgoing, quote: left ? String(left.payload['body'] ?? '') : null });
       }
     }
@@ -5953,8 +5969,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     handover(h) {
       if (h.outgoing !== null && h.outgoing !== undefined) staffId(h.outgoing);
       staffId(h.boss);
+      /* The handover's own staff thread (0429): titled by the instance's handoverThreadTitle, holding the outgoing Boss's farewell and then the arriving Boss's words, where the seed gives them. */
+      const system = boards.find((b) => b.isSystem);
+      if (!system) throw new Error('the instance has no System board');
+      const when = h.at ?? now();
+      const season = seasons.filter((x) => Date.parse(x.startsAt) <= when).sort((x, y) => y.number - x.number)[0] ?? seasons[0]!;
+      const thread = openThread(system.id, instance.system.handoverThreadTitle.replace('{boss}', characters.get(staffId(h.boss))?.name ?? '').replace('{season}', String(season.number)), null, when).id;
+      if (h.farewell !== undefined && h.outgoing != null) write({ character: staffId(h.outgoing), kind: 'post', thread, payload: { body: h.farewell }, at: when });
+      if (h.arrival !== undefined) write({ character: staffId(h.boss), kind: 'post', thread, payload: { body: h.arrival }, at: when });
       handovers.push({ id: handovers.length + 1, cause: h.cause ?? 'rollover', outgoing: h.outgoing ?? null, boss: h.boss, at: h.at ?? now(), how: h.how ?? 'rotation', bossWas: h.bossWas ?? null, outgoingOffice: h.outgoingOffice ?? 'member',
-        note: h.note ?? null, facts: { created: [], merged: [], closed: [], beats: [], moves: [], busiest: [], quietest: [], ...h.facts } });
+        note: h.note ?? null, facts: { created: [], merged: [], closed: [], beats: [], moves: [], busiest: [], quietest: [], ...h.facts }, thread });
       /* A change of Boss is two items of news, as news_announce (0063) queues them: the one who left, where there was one, and the one who arrived. */
       const at = iso(h.at ?? now());
       if (h.outgoing != null && h.outgoing !== h.boss) {
@@ -5965,6 +5989,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         const arrived = { kind: 'seasonNews' as const, sub: 'bossArrived', act: null, at };
         send('reach', 'news', () => { for (const l of [...reachListeners]) l.onNews?.(arrived); });
       }
+      return thread;
     },
     update(u) {
       const wrote = writeUpdate(u.title, u.body, u.changes ?? [], u.at);
@@ -6118,7 +6143,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     trophyMove(staff, m) {
       const at = m.at ?? now();
       return write({
-        character: staffId(staff), kind: 'move', thread: announcements(),
+        character: staffId(staff), kind: 'move', thread: moveThread('awardTrophy', { character: m.character, trophy: m.trophy }, at),
         payload: { kind: 'awardTrophy', office: 'boss', body: m.body ?? 'Behold, a trophy.', params: { character: m.character, trophy: m.trophy }, expires_at: iso(at + 3 * DAY) }, at,
       }).id;
     },
@@ -6129,7 +6154,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const board = m.board === undefined ? undefined : boards.find((b) => b.slug === m.board)?.id;
       if (m.board !== undefined && !board) throw new Error(`no board ${m.board}`);
       return write({
-        character: staffId(staff), kind: 'move', thread: announcements(),
+        character: staffId(staff), kind: 'move', thread: moveThread('conferGroup', { character: m.character, group: m.group, ...(board ? { board } : {}) }, at),
         payload: {
           kind: 'conferGroup', ...(office ? { office } : {}), body: m.body ?? 'You have been moved.', params: { character: m.character, group: m.group, ...(board ? { board } : {}) },
           ...(m.demand === false ? {} : { demand: { kind: 'apologyAccepted', params: {} } }), ...(m.expiresAt === null ? {} : { expires_at: iso(m.expiresAt ?? at + 3 * DAY) }),
@@ -6150,7 +6175,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const boss = staffId(staff);
       const demand = moveDemand(m);
       const id = write({
-        character: boss, kind: 'move', thread: announcements(),
+        character: boss, kind: 'move', thread: moveThread(m.lasting?.kind ?? 'renameBoard', m.lasting ? lastingParams(m.lasting.params) : moveParams(m), at, m.bundle?.id),
         payload: m.lasting
           ? { kind: m.lasting.kind, body: m.body ?? 'It is done.', params: lastingParams(m.lasting.params) }
           : { kind: 'renameBoard', body: m.body ?? 'This board has a new name.', params: moveParams(m), ...(demand ? { demand } : {}), expires_at: iso(m.expiresAt ?? at + 3 * DAY) }, at,
