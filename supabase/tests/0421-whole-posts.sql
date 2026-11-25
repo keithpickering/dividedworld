@@ -81,7 +81,7 @@ begin
   foreach f in array array['record_pool_spend(date,text,text,uuid,uuid,boolean,jsonb)', 'write_staff_turn(text,bigint,uuid,uuid,uuid[],text)', 'record_turn_attempt(text,bigint,uuid,uuid[],text,boolean)'] loop
     if to_regprocedure(f) is not null then raise exception 'the old signature % is still there', f; end if;
   end loop;
-  foreach f in array array['record_pool_spend(date,text,text,uuid,uuid,boolean,jsonb,integer)', 'write_staff_turn(text,bigint,uuid,uuid,uuid[],text,integer)',
+  foreach f in array array['record_pool_spend(date,text,text,uuid,uuid,boolean,jsonb,integer)', 'write_staff_turn(text,bigint,uuid,uuid,uuid[],text,integer,jsonb)',
                            'record_turn_attempt(text,bigint,uuid,uuid[],text,boolean,integer)', 'pool_chars_today(date)', 'pool_turns_today(date)'] loop
     if to_regprocedure(f) is null then raise exception '% is missing', f; end if;
     if has_function_privilege('anon', to_regprocedure(f), 'execute') or has_function_privilege('authenticated', to_regprocedure(f), 'execute')

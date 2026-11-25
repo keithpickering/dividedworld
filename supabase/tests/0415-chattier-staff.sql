@@ -635,7 +635,7 @@ do $$
 declare
   fns regprocedure[] := array[
     'claim_pool_round(timestamptz, interval)', 'write_sessions(date, jsonb, boolean)', 'sessions_awake(timestamptz)', 'sessions_day(date)', 'pool_day_started(date)', 'keep_pick(date, text, jsonb)', 'kept_picks(date)',
-    'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text, integer)', 'pool_chars_today(date)',
+    'pool_waiting_rows(text[], timestamptz)', 'pool_waiting_in_thread(uuid, text[], timestamptz)', 'pool_waiting_in_board(uuid, text[], timestamptz)', 'pool_waiting(text[], timestamptz)', 'pool_turns_today(date)', 'write_staff_turn(text, bigint, uuid, uuid, uuid[], text, integer, jsonb)', 'pool_chars_today(date)',
     'pool_conversation(text, uuid, integer, integer, integer)', 'pool_record(uuid, text)', 'staff_points_latest(text)', 'staff_rows_append_only()']::regprocedure[];
   found text[];
 begin
