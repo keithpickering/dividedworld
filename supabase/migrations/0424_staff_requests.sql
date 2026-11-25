@@ -373,14 +373,14 @@ end $$;
 --               RLS on, no client's grant; the instance's export carries it as it carries every table, and an import's replica write carries its rows as they were.
 --               staff_requests_now reads each request's latest ruling and, while it waits, when it lapses (`at` + staffRequests.daysMost days, staff_request_days()).
 --   functions   apply_boss_move (the Boss's side of apply_mod_move: the Boss's bank pays), rule_request (the turn's ruling: one transaction, idempotent on (staff, request post)), requests_waiting (the meeting's read of
---               what waits), requests_ruled (what apply_meeting calls for the meeting's answers; Task 5), setting_staffrequests, and settings_held (0416) and system_tick (0403) re-created.
+--               what waits, each request by key through staff_request_shown), staff_requests_due (the tick's pick of what lapses, each post by key through staff_request_post_public), requests_ruled (what apply_meeting calls for the meeting's answers; Task 5), setting_staffrequests, and settings_held (0416) and system_tick (0403) re-created.
 --   The bank. A turn's fulfill and a meeting both spend the Boss's bank, and apply_meeting writes the balance it read at its start. apply_boss_move therefore takes the lock a meeting takes (`kayfabb.meeting.<id>`, for each
 --   meeting still open) and then the Boss's own bank lock (`kayfabb.bank.<boss>`), and reads bank_now under both: a turn and a meeting at one minute are one after the other, and the second reads what the first left. Task 5's
 --   apply_meeting takes `kayfabb.bank.<boss>` right after its own meeting lock, so a meeting begun after a turn read its meetings is held too.
 --   Masks. Nothing here reads who owns a character, a class or who reacted. A request's asker is read for its public name through acts_public, so a veiled author shows as the anonymous character; the staff's own state
 --   (office, bank, allowance, beat) and the boards decide every ruling and refusal, never an owner: a confer, a refusal and when they happen are the same whoever is behind a request.
 --   Ways out. A waiting request lapses by itself at lapses_at (the tick), or when its post is hidden at the next tick, or is ruled at a meeting. Nothing else is added.
---   Cost. requests_waiting is one statement driven by the queue's oldest rows, each joined by key to its public post, thread, board and names, stopping at `most` shown (a row whose post is not public, which the tick lapses, is passed at its post's reads and at most one lookup of the asker's name, which the join to characters_public costs; its thread, board and persona are not looked up); requests_waiting_total counts the same rows, both reading the view staff_requests_shown, for the digest's "N more wait"; the tick's pass reads the queue, one public post
+--   Cost. requests_waiting walks the queue's oldest rows and reads each by key (staff_request_shown: its request, its post, and its asker's name only where the post is public), then its thread, board and persona's name, each one statement for one id, stopping at `most` shown (a row whose post is not public, which the tick lapses, is passed at its request's row and its post's reads); requests_waiting_total counts the same rows through the same function, for the digest's "N more wait"; the tick's pass reads the queue, one public post
 --   per waiting request, which the days a request waits (daysMost) bound, `cap` of them at most, and a row that failed or was held by a meeting goes behind the rest (failed_at), so one row cannot hold a slot for good;
 --   rule_request and apply_boss_move are one request's reads and writes. Nothing here grows with the requests ruled in the past.
 --   The digest. requests_waiting is owned by kayfabb_digest (0045), which Task 5's system_digest calls it from: it reads public relations only (acts_public, characters_public, thread_list, boards_now), the queue, and
@@ -500,16 +500,53 @@ create view staff_requests_now as
   from staff_requests q left join staff_request_rulings g on g.request = q.id left join staff_requests_open o on o.request = q.id;
 revoke all on staff_requests_now from public, anon, authenticated;
 
--- staff_requests_shown: the waiting requests the meeting may be shown, in the queue's order: a request in the queue (staff_requests_open) whose post is public (not hidden) and whose asker is a public character. The one
--- place that filter is written; requests_waiting lists from it and requests_waiting_total counts it, so the count can never pass what the list can show. Read by the digest's functions only (kayfabb_digest).
-create view staff_requests_shown as
-  select q.id, q.request_act, q.thread, q.staff, q.turn_act, o.at, k.name as asker_name, coalesce(a.current_payload ->> 'body', '') as body
-  from staff_requests_open o
-  join staff_requests q on q.id = o.request
-  join acts_public a on a.id = q.request_act and a.hidden is not true
-  join characters_public k on k.id = a.character;
-revoke all on staff_requests_shown from public, anon, authenticated;
-grant select on staff_requests_shown to kayfabb_digest;
+-- staff_request_shown: one request of the queue as the meeting may be shown it, read by key: a request whose post is public (not hidden) and whose asker is a public character (ok), with what the list says of it; ok
+-- is false for any other. The one place that filter is written; requests_waiting lists from it and requests_waiting_total counts it, so the count can never pass what the list can show. Each read is one equality on a
+-- primary key, one statement for one id, as pool_probe (0425) reads a post: the request (staff_requests), its post (acts_public by id, the post's own reads) and, only for a post that is public, the asker's name
+-- (characters_public by id). A join of the queue to those views was left to the planner, which on Postgres 17 with a table it had priced small walked `acts` for every row of the queue (81,327 rows of `acts` and 469 of
+-- `characters` for a list of one, in CI); a function called once for each row cannot be joined, so no estimate can turn a lookup into a scan. Owned by kayfabb_digest (below), as its two callers are.
+create function staff_request_shown(in_request bigint, out ok boolean, out id bigint, out request_act uuid, out thread uuid, out staff text, out turn_act uuid, out asker_name text, out body text)
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+declare
+  q record;
+  a record;
+begin
+  ok := false;
+  if in_request is null then return; end if;
+  select r.id, r.request_act, r.thread, r.staff, r.turn_act into q from staff_requests r where r.id = in_request;
+  if q.id is null then return; end if;
+  select x."character" as author, x.hidden, x.current_payload into a from acts_public x where x.id = q.request_act;
+  if not found or a.hidden is true then return; end if;
+  select k.name into asker_name from characters_public k where k.id = a.author;
+  if not found then asker_name := null; return; end if;
+  ok := true; id := q.id; request_act := q.request_act; thread := q.thread; staff := q.staff; turn_act := q.turn_act; body := coalesce(a.current_payload ->> 'body', '');
+end $$;
+grant create on schema public to kayfabb_digest;
+alter function staff_request_shown(bigint) owner to kayfabb_digest;
+revoke create on schema public from kayfabb_digest;
+revoke execute on function staff_request_shown(bigint) from public, anon, authenticated, service_role;
+
+-- staff_request_post_public: whether a request's post is public and not hidden, read by its key (acts_public by id, one statement for one id), for the tick's pass over the queue. A function called once for each row,
+-- for the reason staff_request_shown is: the tick's `not exists` over acts_public, left to the planner, was an anti join that read `acts` whole for each row of the queue (78,552 rows of `acts` for 53 waiting requests
+-- in 0424's test after the files before it, on Postgres 17). Read by staff_requests_due, below, and by the pass for each request it lapses.
+create function staff_request_post_public(in_act uuid) returns boolean
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+begin
+  return exists (select 1 from acts_public a where a.id = in_act and a.hidden is not true);
+end $$;
+revoke execute on function staff_request_post_public(uuid) from public, anon, authenticated, service_role;
+
+-- staff_requests_due: the requests the tick's pass lapses next, at most `most`: in the queue's tick order (failures last, then the oldest first: staff_requests_open_tick), those whose days are up or whose post is not public.
+-- Each row's request and post are read by key (staff_requests' primary key, staff_request_post_public), so the pass reads the queue's rows up to the `most`th due one and one post for each, never `acts` whole.
+create function staff_requests_due(most integer) returns table (id bigint, request_act uuid, thread uuid)
+language sql stable security definer set search_path = public, pg_temp as $$
+  select o.request, r.request_act, r.thread
+  from staff_requests_open o cross join lateral (select x.request_act, x.thread from staff_requests x where x.id = o.request limit 1) r
+  where o.at + make_interval(days => staff_request_days()) <= now() or not staff_request_post_public(r.request_act)
+  order by o.failed_at nulls first, o.at, o.request
+  limit greatest(coalesce(most, 0), 0)
+$$;
+revoke execute on function staff_requests_due(integer) from public, anon, authenticated, service_role;
 
 -- ---- the Boss's move ----
 
@@ -713,29 +750,37 @@ grant execute on function rule_request(text, uuid, uuid, text, jsonb, numeric, n
 -- Read from the queue (staff_requests_open), which holds the requests that wait and no other, so the read is as long as the waiting set and never as long as the requests ruled before it. Owned by kayfabb_digest, since
 -- the digest calls it: it reads public relations only, and the name of the persona that conferred is the name of the author of its turn's post (acts_public, characters_public), never a read of `characters`.
 create function requests_waiting(most integer) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
 declare
   cap integer := least(greatest(coalesce(requests_waiting.most, 0), 0), 500);
   days integer := staff_request_days();
-  out jsonb;
+  out jsonb := '[]'::jsonb;
+  n integer := 0;
+  o record;
+  s record;
+  t record;
+  board_name text;
+  staff_author uuid;
+  staff_name text;
 begin
-  if cap = 0 then return '[]'::jsonb; end if;
-  -- One statement: the queue in order drives it, each row's request, its public post and author, its thread, board and conferring persona are joined by key, and a row whose post is not public is not a row, so `limit` stops
-  -- the scan at the `cap`th request that is shown (it reads the queue's rows up to there; a hidden one it passes costs its post's reads and at most the asker's name through staff_requests_shown, never a lookup of its thread, board or persona). The filter is that view's, shared with requests_waiting_total.
-  select coalesce(jsonb_agg(jsonb_build_object(
-      'id', w.id, 'requestAct', w.request_act, 'thread', w.thread, 'title', coalesce(w.title, ''), 'board', w.board, 'boardName', coalesce(w.board_name, ''),
-      'askerName', w.asker_name, 'staff', w.staff, 'staffName', coalesce(w.staff_name, ''), 'body', w.body, 'at', w.at, 'lapsesAt', w.at + make_interval(days => days)) order by w.at, w.id), '[]'::jsonb)
-  into out
-  from (
-    select q.id, q.request_act, q.thread, q.staff, q.at, t.title, t.board, b.name as board_name, q.asker_name, q.body, tk.name as staff_name
-    from staff_requests_shown q
-    left join thread_list t on t.id = q.thread
-    left join boards_now b on b.id = t.board
-    left join acts_public ta on ta.id = q.turn_act
-    left join characters_public tk on tk.id = ta.character
-    order by q.at, q.id
-    limit cap
-  ) w;
+  if cap = 0 then return out; end if;
+  -- The queue in order (staff_requests_open_at is that order), each row by key (staff_request_shown), stopping at the `cap`th request that is shown. A row whose post
+  -- is not public is passed at its request's row and its post's reads, never a lookup of a name, its thread, board or persona. Each lookup below is one statement for one id, never a join the planner could turn into a scan.
+  for o in select x.request, x.at from staff_requests_open x order by x.at, x.request loop
+    select * into s from staff_request_shown(o.request);
+    continue when not s.ok;
+    select l.title, l.board into t from thread_list l where l.id = s.thread;
+    board_name := null;
+    if t.board is not null then select b.name into board_name from boards_now b where b.id = t.board; end if;
+    staff_author := null; staff_name := null;
+    select a."character" into staff_author from acts_public a where a.id = s.turn_act;
+    if staff_author is not null then select k.name into staff_name from characters_public k where k.id = staff_author; end if;
+    out := out || jsonb_build_array(jsonb_build_object(
+      'id', s.id, 'requestAct', s.request_act, 'thread', s.thread, 'title', coalesce(t.title, ''), 'board', t.board, 'boardName', coalesce(board_name, ''),
+      'askerName', s.asker_name, 'staff', s.staff, 'staffName', coalesce(staff_name, ''), 'body', s.body, 'at', o.at, 'lapsesAt', o.at + make_interval(days => days)));
+    n := n + 1;
+    exit when n >= cap;
+  end loop;
   return out;
 end $$;
 grant create on schema public to kayfabb_digest;
@@ -744,12 +789,19 @@ revoke create on schema public from kayfabb_digest;
 revoke execute on function requests_waiting(integer) from public, anon, authenticated;
 grant execute on function requests_waiting(integer) to service_role, kayfabb_digest;
 
--- requests_waiting_total: how many requests wait in all (the rows of staff_requests_shown, the one filter requests_waiting lists from: a post that is public and an asker who is a public character), so the digest can say how many more wait than it holds. Read from the queue, which holds the
+-- requests_waiting_total: how many requests wait in all (the requests staff_request_shown passes, the one filter requests_waiting lists from: a post that is public and an asker who is a public character), so the digest can say how many more wait than it holds. Read from the queue, which holds the
 -- requests that wait and no other, so it is as long as the waiting set; owned by the digest role as requests_waiting is.
 create function requests_waiting_total() returns integer
-language sql stable security definer set search_path = public, pg_temp as $$
-  select count(*)::integer from staff_requests_shown
-$$;
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+declare
+  n integer := 0;
+  r bigint;
+begin
+  for r in select x.request from staff_requests_open x loop
+    if (select s.ok from staff_request_shown(r) s) then n := n + 1; end if;
+  end loop;
+  return n;
+end $$;
 grant create on schema public to kayfabb_digest;
 alter function requests_waiting_total() owner to kayfabb_digest;
 revoke create on schema public from kayfabb_digest;
@@ -1402,11 +1454,7 @@ begin
   -- request (requests_ruled holds the same key) and this pass cannot wait on each other; one it holds is left to the next tick. It reads the queue (staff_requests_open), the requests that wait and no other, so a row is read per
   -- waiting request, which the days they wait bound, and never one per request ruled in the past. As visits are (4 above), a request that failed to lapse, or was held by a meeting, goes behind the rest by its last
   -- failure (failed_at, then the oldest first), so one request that keeps raising or keeps being held never holds a slot of the pass from the others; it is still read when the others have been, and a meeting can rule it.
-  for rq in
-    select o.request as id, r.request_act, r.thread
-    from staff_requests_open o cross join lateral (select x.request_act, x.thread from staff_requests x where x.id = o.request limit 1) r
-    where o.at + make_interval(days => staff_request_days()) <= now() or not exists (select 1 from acts_public a where a.id = r.request_act and a.hidden is not true)
-    order by o.failed_at nulls first, o.at, o.request limit cap
+  for rq in select d.id, d.request_act, d.thread from staff_requests_due(cap) d
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     begin
@@ -1417,7 +1465,7 @@ begin
       end if;
       if exists (select 1 from staff_request_rulings g where g.request = rq.id) then continue; end if;
       rq_post := null;
-      rq_public := exists (select 1 from acts_public a where a.id = rq.request_act and a.hidden is not true);
+      rq_public := staff_request_post_public(rq.request_act);
       if rq_public and enabled and boss is not null then
         begin
           rq_post := boss_request_reply(boss, rq.thread, rq.request_act, 'requestLapsed', null);

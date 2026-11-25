@@ -716,9 +716,12 @@ end $$;
 
 -- ---- 8c. What the list reads for the rows it passes ----
 -- Fifty requests at the queue's head have their posts hidden; three behind them are shown. requests_waiting(1) passes the fifty and lists the first shown one. Measured by the tuples this transaction reads of each table
--- (pg_stat_xact_user_tables): the one statement reads `characters` (behind characters_public, the names) about once for each row it passes, a per-row lookup of the asker's name and the conferring persona's for each row
--- (the first shape of requests_waiting, a loop) read it some eight times as often, and the bound below holds the one and refuses the other. `threads` and `boards` are a few either way (a hidden post is dropped before
--- they are joined in both shapes), so they are bounded only as a sanity check, and `acts` is read once for each row passed in both (to know whether its post is public), so it is not bounded here.
+-- (pg_stat_xact_user_tables), under two states the planner can be left in: the statistics as the suite leaves them (`acts` analyzed before this file, with this file's rows on top), and `acts` analyzed with them and a
+-- random read priced high (random_page_cost 100). Each row passed is read by key (staff_request_shown): its request, its post, and never a name, a thread or a board for a hidden one. The bounds are per row passed, with a margin:
+-- `acts` at most 6 for each, `characters` 3. A single statement that joined the queue to acts_public and characters_public, leaving the plan to the planner, read `acts` once for every row of the table for each row
+-- passed (81,752 rows of `acts` and 469 of `characters` for this list of one, on Postgres 17 after the files before this one; 37,722 of `acts` here under the second state on a fresh database), and a loop that
+-- joined the post to its author's name read `characters` some eight times for each row; the bounds refuse both. `threads` and `boards` are read for the one row shown, a sanity check. The tick's pick of what is due
+-- (staff_requests_due) is bounded the same way, at 6 rows of `acts` for each request in the queue: its `not exists` over acts_public, left to the planner, read 78,552 rows of `acts` for 53 here after the files before it.
 -- requests_waiting_total counts the same rows the list can show, and a waiting request the list cannot show is not counted.
 create function pg_temp.table_reads() returns jsonb language sql as $$
   select coalesce(jsonb_object_agg(relname, coalesce(seq_tup_read, 0) + coalesce(idx_tup_fetch, 0)), '{}') from pg_stat_xact_user_tables where relname in ('acts', 'threads', 'boards', 'characters')
@@ -737,6 +740,10 @@ declare
   got jsonb;
   total_before integer := requests_waiting_total();
   ghost uuid;
+  state text;
+  queued bigint;
+  due bigint;
+  page_cost text := current_setting('random_page_cost');
 begin
   p0 := (write_staff_act('mm-m1', 'post', t, null, '{"body": "Staff opener, head."}') ->> 'id')::uuid;
   tn := (write_staff_act('mm-m1', 'post', t, p0, '{"body": "Turn reply, head."}') ->> 'id')::uuid;
@@ -757,13 +764,29 @@ begin
   analyze boards;
   analyze characters;
 
-  before := pg_temp.table_reads();
-  got := requests_waiting(1);
-  used := (select jsonb_object_agg(k, (pg_temp.table_reads() ->> k)::bigint - coalesce((before ->> k)::bigint, 0)) from jsonb_object_keys(pg_temp.table_reads()) k);
-  if jsonb_array_length(got) is distinct from 1 or (got -> 0 ->> 'id')::bigint is distinct from shown[1] then raise exception 'requests_waiting(1) did not skip fifty hidden heads: %', got; end if;
-
-  if (used ->> 'characters')::bigint > 150 then raise exception 'requests_waiting(1) read % tuples of characters for 50 hidden rows and 1 shown: it looks names up more than once for each row it passes (%)', used ->> 'characters', used; end if;
-  if (used ->> 'threads')::bigint > 40 or (used ->> 'boards')::bigint > 40 then raise exception 'requests_waiting(1) read too many threads or boards for 50 hidden rows and 1 shown: %', used; end if;
+  foreach state in array array['as the suite leaves it', 'random_page_cost 100'] loop
+    if state = 'random_page_cost 100' then
+      -- `acts` analyzed with this file's rows, which also drops the plans the first call cached (they read `acts`), so the second call is planned under this state.
+      perform set_config('random_page_cost', '100', true);
+      analyze acts;
+      analyze staff_requests_open;
+    end if;
+    before := pg_temp.table_reads();
+    got := requests_waiting(1);
+    used := (select jsonb_object_agg(k, (pg_temp.table_reads() ->> k)::bigint - coalesce((before ->> k)::bigint, 0)) from jsonb_object_keys(pg_temp.table_reads()) k);
+    if jsonb_array_length(got) is distinct from 1 or (got -> 0 ->> 'id')::bigint is distinct from shown[1] then raise exception '[%] requests_waiting(1) did not skip fifty hidden heads: %', state, got; end if;
+    if (used ->> 'acts')::bigint > 6 * 51 then raise exception '[%] requests_waiting(1) read % tuples of acts for 50 hidden rows and 1 shown: it does not read each post by its key (%)', state, used ->> 'acts', used; end if;
+    if (used ->> 'characters')::bigint > 3 * 51 then raise exception '[%] requests_waiting(1) read % tuples of characters for 50 hidden rows and 1 shown: it looks names up more than once for each row it passes (%)', state, used ->> 'characters', used; end if;
+    if (used ->> 'threads')::bigint > 40 or (used ->> 'boards')::bigint > 40 then raise exception '[%] requests_waiting(1) read too many threads or boards for 50 hidden rows and 1 shown: %', state, used; end if;
+    -- The tick's pass picks what it lapses the same way: the fifty hidden heads are due, each read by key.
+    queued := (select count(*) from staff_requests_open);
+    before := pg_temp.table_reads();
+    due := (select count(*) from staff_requests_due(500));
+    used := (select jsonb_object_agg(k, (pg_temp.table_reads() ->> k)::bigint - coalesce((before ->> k)::bigint, 0)) from jsonb_object_keys(pg_temp.table_reads()) k);
+    if due < 50 then raise exception '[%] the tick finds % requests due, not the fifty hidden heads', state, due; end if;
+    if (used ->> 'acts')::bigint > 6 * queued then raise exception '[%] staff_requests_due read % tuples of acts for % queued requests: it does not read each post by its key (%)', state, used ->> 'acts', queued, used; end if;
+  end loop;
+  perform set_config('random_page_cost', page_cost, true);
 
   -- The total is the list's count: 3 are shown; a waiting request the list cannot show (its asker is not a public character) is not counted.
   if requests_waiting_total() - total_before is distinct from 3 then raise exception 'the total is % more than before, not the 3 that are shown', requests_waiting_total() - total_before; end if;
