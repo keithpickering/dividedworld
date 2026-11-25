@@ -161,7 +161,7 @@ export function Hud() {
   const secret = useRef<HTMLButtonElement>(null);
   /* A reveal replaces the button with the Revealed line before the overlay closes, so focus returns to the line. */
   const revealedLine = useRef<HTMLSpanElement>(null);
-  /* A Turn written takes the Turn button away (it is My characters' to show from then): focus returns to the status line that says it was done. */
+  /* A Turn written takes the Turn button away (it is My characters' to show from then): focus returns to the Swap mask picker, which stays (the status line that says it was done empties). */
   /* The Reveal's done line, in a status region of the HUD's own. It puts itself away, where My characters' flash stays until the player's next action: the HUD has no next action on its own surface to clear it. */
   useEffect(() => {
     if (!done) return undefined;
