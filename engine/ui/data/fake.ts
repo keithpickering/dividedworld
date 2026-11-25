@@ -16,7 +16,7 @@
  *  - A bar is not refused by post, start thread or spin (the database's `barred()` does); `myApologies` and `apologize` are, and `myCharacters` carries `bars`.
  *  - A month is thirty days (a cooldown, a lifetime); the server counts calendar months.
  *  - A name is taken by the engine's own `sameName` (case and look-alike folding, as the database's).
- *  - A new character is active at once and writes no Act (0428); a seed makes a waiting staff persona with `debuted: false`.
+ *  - A new character is active at once and writes no Act (0428); `seed.character(..., { debuted: false })` still makes a waiting character of any kind, which the server makes only for a staff persona.
  *  - A card's seeded settings are not drawn (a play carries no `seed`); a saved effect is kept as the post's author sent it, unchecked by the card's rules; and there is no check that a Turn's settlement is now due.
  */
 import { isPost, type Instance, type Quadrant, type Settings, type Span } from '../../rules/types.ts';

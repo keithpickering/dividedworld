@@ -106,7 +106,7 @@ const manifest: BoardManifest = {
      * `--kb-hud-lean`). Each part that moved is held to where it stands now: the clock 26px right and 1px down, over Menu's leaning edge; Alerts 1px
      * down; Menu, its word and its key cap 29px up and 3.3px right (the row's width now sets its left); Hand 29px up and 12.7px left by the lean. All of these
      * stand 12px higher than they did, and the HUD is 12px taller, for the Turn opener the HUD gained (the staff board threads plan, Task 3: a Turn from the HUD,
-     * in the open thread): it stands on the name's row, and Swap mask, under it, stands 20px lower. The clock's label is "Next settle", the owner's
+     * in the open thread): it wraps to a row of its own under the class line, so the HUD is 12px taller and Swap mask, under it, stands 20px lower. The clock's label is "Next settle", the owner's
      * old-video-game shortening, so it holds one line beside Alerts at 125% text and clears the hand's first card at 100%.
      */
     { id: 'hud-clock', role: 'text', name: 'Next settlement', buildName: 'Next settle', within: 'hud', box: 'position', buildShift: { x: 26, y: 1 } },
