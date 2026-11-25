@@ -5,6 +5,10 @@
  */
 .kb-mark.kb-visit-mark {
   --kb-mark-ink: var(--kb-visit-ink);
+}
+
+/* Only the open tile is wide, to hold its time; an ended one is a stopwatch alone, so it keeps the meta tile's own padding and width, a card mark's size. */
+.kb-mark.kb-visit-mark[data-kb-visit="open"] {
   padding-inline: 0.55rem;
 }
 
@@ -19,6 +23,29 @@
   stroke-width: 2;
   stroke-linecap: round;
   stroke-linejoin: round;
+}
+
+/* The "!" stopwatch's dot, filled in the visit's ink like the hand above it. */
+.kb-visit-dot {
+  fill: var(--kb-visit-ink);
+  stroke: none;
+}
+
+/* What marks an ended visit over its stopwatch (the slash, the teeth), in the glass's bright text so it reads against the ink. */
+.kb-visit-over {
+  stroke: var(--kb-glass-text-hi);
+  stroke-width: 2;
+}
+
+/* The talked-down slash is a little heavier, the longest stroke on the face. */
+.kb-visit-slash {
+  stroke-width: 2.4;
+}
+
+/* The stopped stopwatch's square, solid in the glass's bright text. */
+.kb-visit-stop {
+  fill: var(--kb-glass-text-hi);
+  stroke: none;
 }
 
 .kb-visit-time {
@@ -115,6 +142,16 @@
 @media (forced-colors: active) {
   .kb-visit-watch {
     stroke: ButtonText;
+  }
+
+  /* Every stroke and fill of the face is ButtonText, so each icon still tells its outcome apart by shape alone. */
+  .kb-visit-over {
+    stroke: ButtonText;
+  }
+
+  .kb-visit-dot,
+  .kb-visit-stop {
+    fill: ButtonText;
   }
 }
 
