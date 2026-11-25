@@ -314,6 +314,8 @@ export interface Shape {
   sleepsUpright: boolean;
   /** The highest a corner of a sleeping body of this shape may be above the floor, px. */
   restRise: number;
+  /** Where a fire extinguisher's spout is, local (its top; y is negative up as the chair's frame has it). Only the extinguisher has one. */
+  spout?: Vec3;
   /** A box's half extents: the exact distance to a box is known from them (a prism's is bounded by its face planes instead). */
   half?: Vec3;
 }
@@ -390,11 +392,38 @@ export function prismShape(radius: number, height: number, sides: number): Shape
 /** The folding chair. */
 export const CHAIR: Shape = boxShape(HALF, true);
 
+/** How thick a shape is lying on its thinnest face, px: a box's thinnest side, a prism's width across two parallel side faces. */
+function lyingThickness(shape: Shape): number {
+  return Math.min(...shape.faces.map((f) => 2 * shape.support(f)));
+}
+
 /**
- * The shape of each thrown object. Every entry is the chair for now (Record needs all four to be a Shape): the can, the ladder and the
- * extinguisher get their own in the task that builds them.
+ * The highest a corner of a sleeping shape reaches, worked out as the chair's REST_RISE comment does it, but over the thickest object that
+ * can lie under it: it lies on two more of that thickness (the effect keeps three live objects), plus one more of its own thickness for lying
+ * across the edge of the stack, or its own height for one that stands on its end, and 1 px for the 0.5 px (TOUCH) of each of two contacts.
  */
-export const SHAPES: Record<ThrownObject, Shape> = { chair: CHAIR, can: CHAIR, ladder: CHAIR, extinguisher: CHAIR };
+function restRiseOver(shape: Shape, thickest: number): number {
+  const lying = 2 * thickest + 2 * lyingThickness(shape);
+  const standing = shape.sleepsUpright ? 2 * thickest + 2 * shape.support([0, 1, 0]) : 0;
+  return Math.max(lying, standing) + 2 * 0.5;
+}
+
+const CAN = prismShape(15, 40, 12);
+const LADDER = boxShape([15, 48, 3], true);
+const EXTINGUISHER = { ...prismShape(7.5, 50, 12), spout: [0, -25, 0] as Vec3 };
+/** The thickest any object lies, px: what one object may lie under two of. */
+const THICKEST = Math.max(...[CHAIR, CAN, LADDER, EXTINGUISHER].map(lyingThickness));
+
+/**
+ * The shape of each thrown object. The chair keeps the rest it had before shapes (REST_RISE, which chair.ts's room is made from); the other
+ * three are worked out over the thickest object that can lie under them (restRiseOver).
+ */
+export const SHAPES: Record<ThrownObject, Shape> = {
+  chair: CHAIR,
+  can: { ...CAN, restRise: restRiseOver(CAN, THICKEST) },
+  ladder: { ...LADDER, restRise: restRiseOver(LADDER, THICKEST) },
+  extinguisher: { ...EXTINGUISHER, restRise: restRiseOver(EXTINGUISHER, THICKEST) },
+};
 
 /** The corners of a body as the view shows it (a box's eight, in the order a bit pattern of (x, y, z) signs counts). */
 export function cornersOf(b: BodyView, shape: Shape = CHAIR): Vec3[] {

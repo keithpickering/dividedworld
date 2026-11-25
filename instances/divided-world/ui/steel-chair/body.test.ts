@@ -12,9 +12,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  addThrow, boxShape, bodies, CHAIR, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, probe, prismShape, rng, separation, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
+  addThrow, boxShape, bodies, CHAIR, SHAPES, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, probe, prismShape, rng, separation, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
 } from './body.ts';
+import { Z_FRONT } from './chair.ts';
+import type { ThrownObject } from './objects.ts';
 
 const SEEDS = 200;
 /** How far past the glass or the back wall the middle of a chair may be pushed by a hard knock before the spring turns it. */
@@ -853,5 +855,124 @@ test('a point just inside a prism\'s face probes out along that face, whichever 
         assert.equal(probe(owner, [0, 0, 0], box), null);
       }
     }
+  }
+});
+
+/* ---------- the four objects ---------- */
+
+const OBJECT_LIST: ThrownObject[] = ['chair', 'can', 'ladder', 'extinguisher'];
+/** The most a point may be inside another body and still be a touching contact (body.ts TOUCH). */
+const TOUCH_PX = 0.5;
+const REST_WORDS: Box = { left: 40, top: 30, width: 520, height: 330 };
+
+test('no shape reaches farther than the chair, which is what holds chair.ts K for every post', () => {
+  const chair = Math.hypot(...HALF);
+  for (const o of OBJECT_LIST) assert.ok(SHAPES[o].reach <= chair + 1e-9, `${o} reaches ${SHAPES[o].reach} against the chair's ${chair}`);
+});
+
+test('the four shapes are the ladder, the can and the extinguisher the design names', () => {
+  assert.equal(SHAPES.chair, CHAIR);
+  assert.deepEqual(SHAPES.ladder.half, [15, 48, 3]);
+  assert.equal(SHAPES.ladder.hinge, true);
+  assert.equal(SHAPES.ladder.sleepsUpright, false);
+  assert.equal(SHAPES.can.name, 'prism12');
+  assert.equal(SHAPES.can.sleepsUpright, true);
+  assert.ok(Math.abs(SHAPES.can.support([0, 1, 0]) - 20) < 1e-12);
+  assert.ok(Math.abs(SHAPES.can.support([1, 0, 0]) - 15) < 1e-9);
+  assert.equal(SHAPES.extinguisher.sleepsUpright, true);
+  assert.ok(Math.abs(SHAPES.extinguisher.support([0, 1, 0]) - 25) < 1e-12);
+  assert.ok(Math.abs(SHAPES.extinguisher.support([1, 0, 0]) - 7.5) < 1e-9);
+  assert.deepEqual(SHAPES.extinguisher.spout, [0, -25, 0]);
+  for (const o of ['chair', 'can', 'ladder'] as const) assert.equal(SHAPES[o].spout, undefined);
+  assert.equal(SHAPES.chair.restRise, REST_RISE);
+});
+
+/** The throws of one seed: each object alone, or three drawn uniformly from the seed (so each object is present often enough to mean something). */
+function throwsOf(seed: number, mode: ThrownObject | 'mixed'): ThrownObject[] {
+  if (mode !== 'mixed') return [mode, mode, mode];
+  const draw = rng(90000 + seed);
+  return [0, 1, 2].map(() => OBJECT_LIST[Math.floor(draw() * OBJECT_LIST.length)] as ThrownObject);
+}
+
+/** The rest of one run of throws into a roomy post, with what the rest test asserts measured. */
+function restOf(seed: number, objects: ThrownObject[]) {
+  const world = createWorld(600, 400, 400);
+  const rand = rng(seed);
+  for (const [i, o] of objects.entries()) {
+    addThrow(world, throwOf(rand, REST_WORDS, o));
+    if (i < objects.length - 1) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+  }
+  const slept = settle(world, SETTLE_S);
+  const now = bodies(world);
+  const list = now.map((b, i) => {
+    const shape = SHAPES[objects[i] as ThrownObject];
+    const corners = cornersOf(b, shape);
+    const rise = 400 - Math.min(...corners.map((c) => c[1]));
+    const past = Math.max(...corners.map((c) => Math.abs(c[2])));
+    const R = rotationOf([b.quaternion.w, b.quaternion.x, b.quaternion.y, b.quaternion.z]);
+    const axisY = R[4] as number;
+    // standing on an end: the axis within 5 degrees of the vertical and the lower end's corners on the floor
+    const side = axisY > 0 ? 1 : -1;
+    const onEnd = shape.sleepsUpright && Math.abs(axisY) >= Math.cos(5 * DEG) &&
+      cornersOf(b, shape).filter((_, k) => (shape.corners[k] as V3)[1] * side > 0).every((c) => Math.abs(400 - c[1]) <= TOUCH_PX);
+    return { b, shape, rise, past, onEnd, R };
+  });
+  let deepest = 0;
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i]!, c = list[j]!;
+    const A = placed2(a.shape, [a.b.position.x, a.b.position.y, a.b.position.z], a.R);
+    const C = placed2(c.shape, [c.b.position.x, c.b.position.y, c.b.position.z], c.R);
+    deepest = Math.max(deepest, separation(A, C).depth);
+  }
+  return { slept, list, deepest, now };
+}
+
+function assertRest(seed: number, objects: ThrownObject[], label: string): void {
+  const r = restOf(seed, objects);
+  const where = `${label} seed ${seed} (${objects.join(', ')})`;
+  assert.ok(r.slept, `${where}: still moving after ${SETTLE_S} s`);
+  for (const [i, body] of r.list.entries()) {
+    assert.ok(body.b.asleep, `${where}: body ${i} awake`);
+    assert.equal(body.b.wedged, false, `${where}: body ${i} was let sleep wedged`);
+    assert.ok(body.past <= Z_FRONT, `${where}: body ${i} reaches z ${body.past}, past Z_FRONT ${Z_FRONT}`);
+    assert.ok(body.rise <= body.shape.restRise || body.onEnd, `${where}: body ${i} sleeps ${body.rise} px up, past its restRise ${body.shape.restRise}, and not on its end`);
+  }
+  assert.ok(r.deepest <= TOUCH_PX + 1e-6, `${where}: two bodies overlap by ${r.deepest}`);
+}
+
+for (const object of OBJECT_LIST) {
+  test(`${object}: three of them thrown alone from seeds 0 to 199 all sleep inside the room, no higher than restRise, none inside another`, () => {
+    const t0 = Date.now();
+    for (let seed = 0; seed < SEEDS; seed++) assertRest(seed, throwsOf(seed, object), object);
+    console.log(`# ${object} x3: ${Date.now() - t0} ms for ${SEEDS} seeds`);
+  });
+}
+
+test('three throws of objects drawn from the seed (each present at least 30 times in 200 seeds) all sleep as the single ones do', () => {
+  const count = new Map<ThrownObject, number>();
+  const t0 = Date.now();
+  for (let seed = 0; seed < SEEDS; seed++) {
+    const objects = throwsOf(seed, 'mixed');
+    for (const o of objects) count.set(o, (count.get(o) ?? 0) + 1);
+    assertRest(seed, objects, 'mixed');
+  }
+  for (const o of OBJECT_LIST) assert.ok((count.get(o) ?? 0) >= 30, `${o} is present ${count.get(o)} times`);
+  console.log(`# mixed: ${Date.now() - t0} ms; counts ${OBJECT_LIST.map((o) => `${o} ${count.get(o)}`).join(', ')}`);
+});
+
+/** Found by scanning seeds 0 to 199 of a lone can: 38 of them land on a base (1, 2, 10, 16, ...) and none is nudged. */
+const CAN_STANDING_SEED = 1;
+test('a can that lands on its base sleeps standing, and it is not nudged over', () => {
+  const r = restOf(CAN_STANDING_SEED, ['can']);
+  const [body] = r.list;
+  assert.ok(body && body.b.asleep);
+  assert.ok(body.onEnd, 'the can is not standing on an end');
+  assert.equal(body.b.nudges, 0);
+});
+
+test('the object draws no number: a throw of any object is the chair\'s throw apart from `object`', () => {
+  for (const seed of [0, 1, 7, 99, 150]) {
+    const chair = throwOf(rng(seed), WORDS);
+    for (const o of OBJECT_LIST) assert.deepEqual(throwOf(rng(seed), WORDS, o), { ...chair, object: o }, `${o} seed ${seed}`);
   }
 });
