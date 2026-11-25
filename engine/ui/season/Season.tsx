@@ -150,10 +150,11 @@ function Names({ names, own, verb, className, total = names.length }: { readonly
 /** A Roster Report entry that named Turns taking effect: the Turns as a tally lists them, and a link to the entry's first post, where the whole report is. */
 function RosterTurns({ item, own, className, perPage }: { readonly item: SeasonNewsItem; readonly own: ReadonlySet<Id>; readonly className: (key: string) => string; readonly perPage: number }) {
   const entry = item.act !== null && item.thread !== null && item.seq !== null ? threadHref(item.thread, pageOf(item.seq, perPage), item.seq) : null;
+  const total = Math.max(item.count ?? item.turns.length, item.turns.length);
   return (
     <>
-      <Names names={item.turns} own={own} verb="turned" className={className} total={item.count ?? item.turns.length} />
-      {entry !== null && <p><GlassLink className="kb-season-link" to={entry}>Read the Roster Report entry</GlassLink></p>}
+      <Names names={item.turns} own={own} verb="turned" className={className} total={total} />
+      {entry !== null && <p><GlassLink className="kb-season-link" to={entry}>{`Read the Roster Report entry of ${dayAndTime(item.at)}, ${total} ${total === 1 ? 'Turn' : 'Turns'}`}</GlassLink></p>}
     </>
   );
 }

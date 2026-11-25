@@ -1,12 +1,14 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMMENTARY_MOST, postHref, rosterBodies, rosterIsEmpty, rosterPrompt, rosterCommentary, type RosterCopy, type RosterFacts, type RosterItem } from './roster.ts';
+import { COMMENTARY_MOST, DEFAULT_ROSTER_COPY, ITEMS_MOST, postHref, rosterBodies, rosterIsEmpty, rosterPrompt, rosterCommentary, type RosterCopy, type RosterFacts, type RosterItem } from './roster.ts';
 import { parse, type BbNode } from '../bbcode/parse.ts';
 import { threadHref, pageOf } from '../ui/thread/pages.ts';
 
 const copy: RosterCopy = {
   headings: { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' },
-  stockHeading: 'The roster, as of this morning\'s settlement.',
+  stockHeading: 'The roster, as of the last settlement.',
+  verbs: { announced: 'will Turn', landed: 'has Turned', revealed: 'revealed' },
+  more: 'and {n} more',
 };
 const T = '0a1b2c3d-0000-4000-8000-0000000000aa';
 const item = (n: number, more: Partial<RosterItem> = {}): RosterItem => ({ character: `c${n}`, name: `Name ${n}`, act: `a${n}`, thread: T, seq: n, ...more });
@@ -65,13 +67,13 @@ test('the commentary, or the stock heading, opens the first post', () => {
 });
 
 test('a long list splits across as many posts as postMaxLength needs, each within it, each item once, in order, each continued under its heading', () => {
-  const facts: RosterFacts = { ...empty, newcomers: names(60), reveals: [item(90, { class: 'heel' })] };
+  const facts: RosterFacts = { ...empty, newcomers: names(25), landed: Array.from({ length: 25 }, (_, i) => item(i + 26)), reveals: [item(90, { class: 'heel' })] };
   const bodies = rosterBodies(facts, copy, 600, { ...opts, commentary: 'A big day.' });
   assert.ok(bodies.length > 2, `split: ${bodies.length}`);
   for (const b of bodies) assert.ok(b.length <= 600, `a post of ${b.length}`);
   const all = bodies.join('\n');
   const found = [...all.matchAll(/Name (\d+)\[/g)].map((m) => Number(m[1]));
-  assert.deepEqual(found, [...Array.from({ length: 60 }, (_, i) => i + 1), 90], 'every item once, in order');
+  assert.deepEqual(found, [...Array.from({ length: 50 }, (_, i) => i + 1), 90], 'every item once, in order');
   assert.ok(bodies[0]!.startsWith('A big day.\n'), 'only the first opens with the commentary');
   assert.ok(bodies.slice(1).every((b) => !b.includes('A big day.')));
   assert.ok(bodies.slice(1).every((b) => b.startsWith('[b]')), 'each later post says what its list is');
@@ -111,4 +113,41 @@ test('the prompt holds the Boss\'s persona and the list, and nothing else', () =
   assert.deepEqual(p.rules, { type: 'object', fields: { commentary: { type: 'string', maxLength: 280 } } });
   assert.ok(p.maxTokens > 0);
   assert.match(p.message, /280/);
+});
+
+test('the stock heading does not say when the settlement ran, and the defaults carry every word the report says', () => {
+  assert.equal(DEFAULT_ROSTER_COPY.stockHeading, 'The roster, as of the last settlement.');
+  assert.deepEqual(DEFAULT_ROSTER_COPY.verbs, { announced: 'will Turn', landed: 'has Turned', revealed: 'revealed' });
+});
+
+test('the verbs and the section titles are the instance\'s, in the posts and in the prompt alike', () => {
+  const mine: RosterCopy = {
+    headings: { newcomers: 'Fresh Blood', announced: 'Coming Turns', landed: 'Done Turns', reveals: 'Unmaskings' },
+    stockHeading: 'Stock.',
+    verbs: { announced: 'is about to flip', landed: 'flipped', revealed: 'unmasked' },
+    more: '{n} further',
+  };
+  const facts: RosterFacts = { ...empty, newcomers: [item(1)], announced: [item(2, { was: 'heel', class: 'face' })], landed: [item(3)], reveals: [item(4, { class: 'heel' })] };
+  const body = rosterBodies(facts, mine, 5000, opts).join('\n');
+  for (const w of ['Name 2]', 'is about to flip from heel into face', 'flipped', 'unmasked as heel']) assert.ok(body.includes(w) || body.includes(w.replace(']', '[/url]')), `${w} in ${body}`);
+  assert.ok(!/will Turn|has Turned|revealed/.test(body), body);
+  const p = rosterPrompt(system, persona, facts, (k) => k, mine);
+  for (const w of ['Fresh Blood:', 'Coming Turns:', 'Done Turns:', 'Unmaskings:', 'is about to flip', 'flipped', 'unmasked']) assert.ok(p.message.includes(w), `${w} in ${p.message}`);
+  assert.ok(!/New faces|Turns announced|will Turn|has Turned|revealed/.test(p.message), p.message);
+});
+
+test('a list is cut at ITEMS_MOST, and says how many more there are, those the facts left out too', () => {
+  const facts: RosterFacts = { ...empty, newcomers: names(ITEMS_MOST + 5), reveals: [item(900)], more: { newcomers: 10, announced: 0, landed: 0, reveals: 0 } };
+  const body = rosterBodies(facts, copy, 100000, opts).join('\n');
+  assert.equal((body.match(/\[url=/g) ?? []).length, ITEMS_MOST + 1, 'the cap on newcomers, and the one reveal');
+  assert.ok(body.includes(`and ${15} more`), body);
+  assert.ok(!body.includes(`Name ${ITEMS_MOST + 1}[/url]`));
+  const none = rosterBodies({ ...empty, announced: names(3) }, copy, 5000, opts).join('\n');
+  assert.ok(!/ more/.test(none), 'nothing is said where nothing is left out');
+  assert.equal(ITEMS_MOST, 25);
+});
+
+test('the prompt counts the facts\' own left-out items, as the posts do', () => {
+  const facts: RosterFacts = { ...empty, landed: names(ITEMS_MOST), more: { newcomers: 0, announced: 0, landed: 40, reveals: 0 } };
+  assert.ok(rosterPrompt(system, persona, facts).message.includes('and 40 more'));
 });

@@ -30,7 +30,7 @@ import { settle, shareEntries } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
 import { DUTY_SPECS, staffFor } from '../../../engine/system/duties.ts';
 import type { Models } from '../../../engine/system/model.ts';
-import { DEFAULT_ROSTER_COPY, rosterBodies, rosterCommentary, rosterIsEmpty, rosterPrompt, type RosterCopy, type RosterFacts } from '../../../engine/system/roster.ts';
+import { COMMENTARY_MOST, DEFAULT_ROSTER_COPY, rosterBodies, rosterCommentary, rosterIsEmpty, rosterPrompt, type RosterCopy, type RosterFacts } from '../../../engine/system/roster.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
 import { LedgerWriteFailed } from '../_shared/models/index.ts';
@@ -152,7 +152,7 @@ const said = (e: unknown): string => (e instanceof Error ? e.message : String(e)
 /** What the commentary call came to: its words (none where it failed or said nothing), the bounds it overshot, and why it has none where that is a failure. */
 interface Commentary { readonly text: string | null; readonly trims: readonly Trim[]; readonly failed?: string }
 
-async function commentary(db: Db, tuned: Instance, models: () => Promise<Models>, facts: RosterFacts): Promise<Commentary> {
+async function commentary(db: Db, tuned: Instance, models: () => Promise<Models>, facts: RosterFacts, copy: RosterCopy): Promise<Commentary> {
   // Nothing is asked of a System that is off, or of a season with no Boss: the database writes such an entry with no posts, and says why.
   if (!tuned.settings.systemEnabled) return { text: null, trims: [] };
   const boss = await db.rpc<string | null>('current_boss', {});
@@ -164,7 +164,7 @@ async function commentary(db: Db, tuned: Instance, models: () => Promise<Models>
   if (assigned !== 'boss') return { text: null, trims: [], failed: `the roster duty is assigned to ${assigned}, and only the Boss writes the report` };
   const className = (key: string) => tuned.classes.find((c) => c.key === key)?.name ?? key;
   try {
-    const frame = rosterPrompt(tuned.system, persona, facts, className);
+    const frame = rosterPrompt(tuned.system, persona, facts, className, copy);
     const out = await (await models()).chat({ duty: 'roster', tier: DUTY_SPECS.roster.tier, staff: boss, system: frame.system, messages: frame.messages, schema: frame.schema, rules: frame.rules, maxTokens: frame.maxTokens });
     const answer = rosterCommentary(out.value);
     const trims = [...out.trims, ...answer.trims];
@@ -185,16 +185,34 @@ async function runRoster(db: Db, tunedNow: () => Promise<Instance>, roster: Rost
     const facts = await db.rpc<RosterFacts>('roster_facts', { window_end: end });
     const record: Record<string, unknown> = { counts: { newcomers: facts.newcomers.length, announced: facts.announced.length, landed: facts.landed.length, reveals: facts.reveals.length } };
     let bodies: string[] = [];
+    let listed = facts.newcomers.map((n) => n.character);
     if (!rosterIsEmpty(facts)) {
       const tuned = await tunedNow();
-      const answer = await commentary(db, tuned, async () => (models ??= await roster.models(tuned)), facts);
+      const copy = roster.copy ?? DEFAULT_ROSTER_COPY;
       const className = (key: string) => tuned.classes.find((c) => c.key === key)?.name ?? key;
-      bodies = rosterBodies(facts, roster.copy ?? DEFAULT_ROSTER_COPY, tuned.settings.postMaxLength, { postsPerPage: tuned.settings.postsPerPage, commentary: answer.text, className });
-      record.commentary = answer.text;
-      if (answer.trims.length) record.trims = answer.trims;
-      if (answer.failed !== undefined) record.commentaryFailed = answer.failed;
+      const words = { postsPerPage: tuned.settings.postsPerPage, className };
+      // Before anything is paid for: the posts must be buildable with the longest commentary the call may give. A limit that cannot hold them is a fact about the instance, and it never changes with the answer, so the
+      // window is written skipped, and says why, and no later run asks again for a call it cannot use.
+      let unbuildable: string | undefined;
+      try {
+        rosterBodies(facts, copy, tuned.settings.postMaxLength, { ...words, commentary: 'x'.repeat(COMMENTARY_MOST) });
+      } catch (e) {
+        if (!(e instanceof RangeError)) throw e;
+        unbuildable = said(e);
+      }
+      if (unbuildable === undefined) {
+        const answer = await commentary(db, tuned, async () => (models ??= await roster.models(tuned)), facts, copy);
+        bodies = rosterBodies(facts, copy, tuned.settings.postMaxLength, { ...words, commentary: answer.text });
+        record.commentary = answer.text;
+        if (answer.trims.length) record.trims = answer.trims;
+        if (answer.failed !== undefined) record.commentaryFailed = answer.failed;
+      } else {
+        record.skipped = unbuildable;
+        listed = [];
+      }
     }
-    await db.rpc('write_roster_entry', { window_end: end, newcomers: facts.newcomers.map((n) => n.character), bodies, record });
+    // What was not listed is not written down as seen: it is listed at a later entry.
+    await db.rpc('write_roster_entry', { window_end: end, newcomers: listed, bodies, record });
   }
 }
 

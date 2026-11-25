@@ -408,10 +408,25 @@ describe('the News tab', () => {
     expect(names[0]).toHaveTextContent('Gloomba was a Face, now a Heel');
     expect(names[1]).not.toHaveTextContent(/was a|now a/u);
     expect(item).toHaveTextContent('and 21 more');
-    expect(within(item).getByRole('link', { name: 'Read the Roster Report entry' }).getAttribute('href')).toMatch(new RegExp(`^/t/${w.announcements.thread}\\?page=1#post-\\d+$`, 'u'));
+    expect(within(item).getByRole('link', { name: /^Read the Roster Report entry/u }).getAttribute('href')).toMatch(new RegExp(`^/t/${w.announcements.thread}\\?page=1#post-\\d+$`, 'u'));
     expect(screen.queryByRole('heading', { level: 3, name: /Mrs\. Hooligan/u })).toBeNull();
     const heads = within(feed()).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
     expect(heads.filter((h) => /turned/u.test(h ?? ''))).toEqual(['23 characters turned', 'Pipewrench turned']);
+  });
+
+  test('two Roster Report entries link under names that tell them apart: each says its own day and its Turns', async () => {
+    const w = world();
+    const boss = w.fake.seed.staff('roster-boss', 'Roster Boss', 'boss', { at: at(1) });
+    const first = w.fake.seed.staffPost(boss, w.announcements.thread, 'The Turns are in.', { at: at(27, 9) });
+    w.fake.seed.rosterEntry(first, [{ character: w.gloomba, name: 'Gloomba', class: 'heel', was: 'face' }], { at: at(27, 9), count: 1 });
+    const second = w.fake.seed.staffPost(boss, w.announcements.thread, 'More Turns.', { at: at(29, 9) });
+    w.fake.seed.rosterEntry(second, [{ character: w.pipe, name: 'Pipewrench', class: null, was: null }], { at: at(29, 9), count: 7 });
+    show(w.fake);
+    await waitFor(() => itemOf('7 characters turned'));
+    const names = within(feed()).getAllByRole('link', { name: /^Read the Roster Report entry/u }).map((l) => l.getAttribute('aria-label') ?? l.textContent);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size, `each link has a name of its own: ${names.join(' | ')}`).toBe(2);
+    expect(names.some((n) => /7 Turns/u.test(n ?? ''))).toBe(true);
   });
 
   test('each item is one seasonNews alert, the same for every player', async () => {

@@ -17,8 +17,8 @@ import { cutAtWord, type Rule, type Trim } from './validate.ts';
 
 /** The most characters of commentary: one or two lines. */
 export const COMMENTARY_MOST = 280;
-/** The most items of each list the commentary call is shown (the rest are a count): a busy day's list must not make the call grow with it. */
-export const PROMPT_ITEMS_MOST = 25;
+/** The most items of each list, in the posts and in the commentary call alike (the rest are a count, "and N more"): a busy day's report must not grow with it. roster_facts (0432) cuts its lists at the same number. */
+export const ITEMS_MOST = 25;
 
 /** One line of the list: a character, the Act it links, and for a Turn what its announcement named. */
 export interface RosterItem {
@@ -39,25 +39,43 @@ export interface RosterFacts {
   readonly announced: readonly RosterItem[];
   readonly landed: readonly RosterItem[];
   readonly reveals: readonly RosterItem[];
+  /** How many more each list holds than `roster_facts` sent (it sends at most `ITEMS_MOST` of each). Absent is none. */
+  readonly more?: Readonly<Record<RosterList, number>>;
 }
 
 export type RosterList = 'newcomers' | 'announced' | 'landed' | 'reveals';
 const LISTS: readonly RosterList[] = ['newcomers', 'announced', 'landed', 'reveals'];
 
-/** The instance's words for the report: a heading for each list and the heading an entry opens under when its commentary could not be written. */
+/** The verb of each line that has one: a Turn announced ahead, a Turn taking effect, a reveal. */
+export interface RosterVerbs {
+  readonly announced: string;
+  readonly landed: string;
+  readonly revealed: string;
+}
+
+/** The instance's words for the report: a heading for each list, the heading an entry opens under when its commentary could not be written, the verb of each line and the line that counts what a list leaves out (`{n}` is the count). */
 export interface RosterCopy {
   readonly headings: Readonly<Record<RosterList, string>>;
   readonly stockHeading: string;
+  readonly verbs: RosterVerbs;
+  readonly more: string;
 }
 
 /**
- * The words the report is given until the instance gives its own (the plan's Task 8 moves them into the instance's copy, `rosterHeadings` and `rosterStockHeading`, and the run reads them from there):
- * the headings of the four lists and the heading an entry opens under when its commentary could not be written.
+ * The words the report is given until the instance gives its own (the plan's Task 8 moves them into the instance's copy, and the run reads them from there):
+ * the headings of the four lists, the heading an entry opens under when its commentary could not be written, the verbs of the lines and the count of what a list leaves out.
  */
 export const DEFAULT_ROSTER_COPY: RosterCopy = {
   headings: { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' },
-  stockHeading: 'The roster, as of this morning\'s settlement.',
+  stockHeading: 'The roster, as of the last settlement.',
+  verbs: { announced: 'will Turn', landed: 'has Turned', revealed: 'revealed' },
+  more: 'and {n} more',
 };
+
+/** What a list leaves out, said in the instance's words. */
+const moreLine = (copy: RosterCopy, n: number): string => copy.more.replace('{n}', String(n));
+/** How many items a list leaves out: those past the cap in its own array, and those the facts left out before it. */
+const leftOut = (facts: RosterFacts, list: RosterList): number => Math.max(0, facts[list].length - ITEMS_MOST) + (facts.more?.[list] ?? 0);
 
 export const rosterIsEmpty = (facts: RosterFacts): boolean => LISTS.every((l) => facts[l].length === 0);
 
@@ -79,14 +97,15 @@ export interface RosterWords {
   readonly className?: (key: string) => string;
 }
 
-function line(list: RosterList, i: RosterItem, w: RosterWords): string {
+function line(list: RosterList, i: RosterItem, copy: RosterCopy, w: RosterWords): string {
   const name = (k: string) => cover((w.className ?? ((x) => x))(k));
   const who = `[url=${postHref(i.thread, i.seq, w.postsPerPage)}]${cover(i.name)}[/url]`;
+  const was = i.was !== undefined ? ` from ${name(i.was)}` : '';
   switch (list) {
     case 'newcomers': return who;
-    case 'announced': return `${who}: will Turn${i.was !== undefined ? ` from ${name(i.was)}` : ''}${i.class !== undefined ? ` into ${name(i.class)}` : ''}`;
-    case 'landed': return `${who}: has Turned${i.was !== undefined ? ` from ${name(i.was)}` : ''}${i.class !== undefined ? ` into ${name(i.class)}` : ''}`;
-    case 'reveals': return `${who}: revealed${i.class !== undefined ? ` as ${name(i.class)}` : ''}`;
+    case 'announced': return `${who}: ${copy.verbs.announced}${was}${i.class !== undefined ? ` into ${name(i.class)}` : ''}`;
+    case 'landed': return `${who}: ${copy.verbs.landed}${was}${i.class !== undefined ? ` into ${name(i.class)}` : ''}`;
+    case 'reveals': return `${who}: ${copy.verbs.revealed}${i.class !== undefined ? ` as ${name(i.class)}` : ''}`;
   }
 }
 
@@ -108,8 +127,8 @@ export function rosterBodies(facts: RosterFacts, copy: RosterCopy, postMaxLength
   cur.push(open);
   for (const list of LISTS) {
     const heading = `[b]${copy.headings[list]}[/b]`;
-    for (const item of facts[list]) {
-      const text = line(list, item, words);
+    const texts = [...facts[list].slice(0, ITEMS_MOST).map((item) => line(list, item, copy, words)), ...(leftOut(facts, list) > 0 ? [moreLine(copy, leftOut(facts, list))] : [])];
+    for (const text of texts) {
       if (!fits([heading, text])) throw tooSmall('a heading and one item');
       const sameList = shown === list;
       const add = sameList ? [text] : [...(cur.length ? [''] : []), heading, text];
@@ -140,10 +159,8 @@ export function rosterCommentary(answer: unknown): { readonly text: string | nul
   return { text: cut, trims: [{ path: 'commentary', predicate: `maxLength(${COMMENTARY_MOST})`, before: trimmed.length, after: cut.length }] };
 }
 
-const SECTION_TITLES: Readonly<Record<RosterList, string>> = { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' };
-
 /**
- * The commentary call's system prompt (the Boss's persona in the boss office's frame, nothing else), its message (the facts, as names and classes, each list shown to `PROMPT_ITEMS_MOST` items and then
+ * The commentary call's system prompt (the Boss's persona in the boss office's frame, nothing else), its message (the facts, as names and classes, each list shown to `ITEMS_MOST` items and then
  * a count), its schema and the rule its answer is repaired against. The names are what players chose, so the message says they are data.
  */
 export function rosterPrompt(
@@ -151,19 +168,19 @@ export function rosterPrompt(
   boss: Pick<Persona, 'selfPrompt' | 'officeLines'>,
   facts: RosterFacts,
   className: (key: string) => string = (k) => k,
+  copy: RosterCopy = DEFAULT_ROSTER_COPY,
 ): { readonly system: string; readonly message: string; readonly messages: readonly { readonly role: 'user'; readonly content: string }[]; readonly schema: Record<string, unknown>; readonly rules: Rule; readonly maxTokens: number } {
   const shown = (list: RosterList, i: RosterItem): string => {
     switch (list) {
       case 'newcomers': return i.name;
-      case 'announced': return `${i.name}: will Turn${i.was !== undefined ? ` from ${className(i.was)}` : ''}${i.class !== undefined ? ` into ${className(i.class)}` : ''}`;
-      case 'landed': return `${i.name}: has Turned${i.was !== undefined ? ` from ${className(i.was)}` : ''}${i.class !== undefined ? ` into ${className(i.class)}` : ''}`;
-      case 'reveals': return `${i.name}: revealed${i.class !== undefined ? ` as ${className(i.class)}` : ''}`;
+      case 'announced': return `${i.name}: ${copy.verbs.announced}${i.was !== undefined ? ` from ${className(i.was)}` : ''}${i.class !== undefined ? ` into ${className(i.class)}` : ''}`;
+      case 'landed': return `${i.name}: ${copy.verbs.landed}${i.was !== undefined ? ` from ${className(i.was)}` : ''}${i.class !== undefined ? ` into ${className(i.class)}` : ''}`;
+      case 'reveals': return `${i.name}: ${copy.verbs.revealed}${i.class !== undefined ? ` as ${className(i.class)}` : ''}`;
     }
   };
   const sections = LISTS.filter((l) => facts[l].length > 0).map((l) => {
-    const items = facts[l];
-    const more = items.length - PROMPT_ITEMS_MOST;
-    return [`${SECTION_TITLES[l]}:`, ...items.slice(0, PROMPT_ITEMS_MOST).map((i) => `- ${shown(l, i)}`), ...(more > 0 ? [`- and ${more} more`] : [])].join('\n');
+    const more = leftOut(facts, l);
+    return [`${copy.headings[l]}:`, ...facts[l].slice(0, ITEMS_MOST).map((i) => `- ${shown(l, i)}`), ...(more > 0 ? [`- ${moreLine(copy, more)}`] : [])].join('\n');
   });
   const message = [
     'A settlement has just closed. This is the public record of it, the list that will be posted under your words exactly as it stands:',

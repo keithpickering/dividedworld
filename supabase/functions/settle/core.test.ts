@@ -376,13 +376,15 @@ const facts = (more: Partial<RosterFacts> = {}): RosterFacts => ({
 const BOSS = instance.system.firstBoss;
 
 /** The settlement's database with the roster's functions beside it: a due window, its facts, the Boss, and a writer that records what it is given. */
-function withRoster(opts: { facts?: RosterFacts; due?: string[]; boss?: string | null; writeFails?: boolean } = {}) {
-  const base = fakeDb();
+function withRoster(opts: { facts?: RosterFacts; due?: string[]; boss?: string | null; writeFails?: boolean; settings?: Record<string, unknown> } = {}) {
+  const base = fakeDb(undefined, { economy: instance.settings.economy, ...opts.settings });
   const written: Record<string, unknown>[] = [];
   const rosterCalls: string[] = [];
   const due = opts.due ?? [W_END];
   const db: Db = {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+      // One list of every call, the settlement's and the roster's, in the order they were made.
+      if (/^(roster_|current_boss|write_roster_entry)/.test(fn)) base.calls.push({ fn, args });
       if (fn === 'roster_due') { rosterCalls.push(fn); return (due.filter((d) => !written.some((w) => w.window_end === d))) as T; }
       if (fn === 'roster_facts') { rosterCalls.push(fn); return (opts.facts ?? facts()) as T; }
       if (fn === 'current_boss') { rosterCalls.push(fn); return (opts.boss === undefined ? BOSS : opts.boss) as T; }
@@ -411,7 +413,7 @@ const until = new Date(TO).toISOString();
 test('the Roster Report: after the windows, a due window with something to report is read, commented on by one light chat call in the Boss\'s name, and written', async () => {
   const { db, written, calls } = withRoster();
   const { models, asked } = fakeModels(() => ({ commentary: 'Fresh meat, everyone.' }));
-  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  await runSettlement(db, instance, until, { roster: { models: () => models }, deliver: async () => 'sent' as const });
   assert.equal(asked.length, 1);
   assert.equal(asked[0]!.duty, 'roster');
   assert.equal(asked[0]!.tier, 'light');
@@ -425,7 +427,10 @@ test('the Roster Report: after the windows, a due window with something to repor
   assert.equal((written[0]!.record as { commentary: string }).commentary, 'Fresh meat, everyone.');
   // After the settlement's own work, before the outbox is sent.
   const order = calls.map((c) => c.fn);
-  assert.ok(order.lastIndexOf('apply_settlement') < order.length);
+  const write = order.indexOf('write_roster_entry');
+  assert.ok(write >= 0, `the entry is written: ${order.join(', ')}`);
+  assert.ok(write > order.lastIndexOf('apply_settlement'), `after the last settlement: ${order.join(', ')}`);
+  assert.ok(order.includes('due_broadcasts') && write < order.indexOf('due_broadcasts'), `before the outbox is sent: ${order.join(', ')}`);
 });
 
 test('the commentary call is given the Boss\'s persona and the list, and nothing else: no id, no link, no player', async () => {
@@ -491,6 +496,28 @@ test('a failed write never fails the settlement, and the window is still due at 
   const next = await runSettlement(db, instance, new Date(FROM).toISOString(), { roster: { models: () => models } });
   assert.equal(next.status, 'nothing to settle');
   assert.equal(written.length, 1, 'a run with nothing to settle still writes the entries that are due');
+});
+
+test('a limit too small for the report is found before the paid call: no call, and the entry is written skipped with the reason, so no later run repeats anything', async () => {
+  const { db, written } = withRoster({ settings: { postMaxLength: 30 } });
+  const { models, asked } = fakeModels(() => ({ commentary: 'x' }));
+  const out = await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.equal(out.status, 'applied');
+  assert.equal(asked.length, 0, 'no model call is paid for a report that cannot be posted');
+  assert.equal(written.length, 1);
+  assert.deepEqual(written[0]!.bodies, []);
+  assert.match(String((written[0]!.record as { skipped?: string }).skipped), /postMaxLength 30/);
+  assert.deepEqual(written[0]!.newcomers, [], 'what was not listed is not written down as seen');
+});
+
+test('the bodies are built to the limit with the longest commentary a call may give, so the answer cannot break them after it is paid for', async () => {
+  // The stock heading fits, a full commentary does not: the check is against the longest the call may write.
+  const { db, written } = withRoster({ settings: { postMaxLength: 150 } });
+  const { models, asked } = fakeModels(() => ({ commentary: 'w'.repeat(280) }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.equal(asked.length, 0);
+  assert.equal(written.length, 1);
+  assert.ok((written[0]!.record as { skipped?: string }).skipped);
 });
 
 test('a roster that cannot read its due windows never fails the run', async () => {

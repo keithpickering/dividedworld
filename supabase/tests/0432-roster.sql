@@ -15,7 +15,10 @@
 --  7. No Boss, or the System off: the entry is written with no posts and its record says why; the newcomers are not marked seen.
 --  8. Season News: an entry that names Turns taking effect lands one `roster` item (first 20 and a count, linked to the entry's first post); an ahead announcement lands no `announcements` item of its own.
 --  9. The season's last window: due after reveal_season closes its season, reported in the closed season's thread and Season News; the closed season's older windows and earlier seasons are not due.
--- 10. The changeover: a settlement and a character from before the migration are neither due nor listed as new.
+-- 10. The changeover (the migration's own statements, copied): a settlement and a character from before the migration are neither due nor listed as new; no function of it is left in the schema.
+-- 11. A planted deadlock (40P01) in the Boss's post propagates and leaves the window due; a post past postMaxLength is a skip, not an error.
+-- 12. Newcomers follow the window's activity: a character whose only Act is from before the last entry is not listed, a veil that ends in a later window lists its author there, a list stops at 25 and counts the rest
+--     (and all of them are written down as seen).
 -- (Poison: roster_facts reading the class_history row's class for a landed Turn, instead of what the announcement names, is red on section 3's "a landed Turn that named no class shows none".)
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -363,7 +366,8 @@ begin
 end $$;
 
 -- ---- 10. The changeover: what existed before the migration is not reported ----
--- The migration ran once, on the instance as it was (roster_changeover); here an instance as it was is laid out (a window settled, a character that acted, and no entry or seen row for either) and the step is run again.
+-- The migration ran its statements once, on the instance as it was; here an instance as it was is laid out (a window settled, a character that acted, and no entry or seen row for either) and its two statements are
+-- copied and run again, as 0428's changeover test does. No function of it is left in the schema.
 do $$
 declare
   ann uuid := tests.account('rr-old');
@@ -377,12 +381,22 @@ declare
   t uuid := (select v::uuid from rr where k = 't');
   f jsonb;
 begin
+  perform pg_temp.expect(to_regproc('roster_changeover') is null, 'the changeover is statements of the migration: no function of it is left in the schema');
   insert into settlements (starts_at, ends_at, season) values (w7, pre_end, osid);
   perform tests.post(oldie, t, 'Before the report existed.', w7 + interval '30 seconds');
   -- The state the migration found: the old window is due, and the old character would be listed as new.
   perform pg_temp.expect(pre_end in (select d from roster_due() d), 'before the changeover the old window is due');
   perform pg_temp.expect(pg_temp.ids(roster_facts(pre_end), 'newcomers') @> array[oldie], 'before the changeover the character that acted is a newcomer');
-  perform roster_changeover();
+  insert into roster_seen (character, window_end, act)
+  select p.id, coalesce((select max(s.ends_at) from settlements s), now()), f.id
+  from characters_public p
+  cross join lateral (select a.id from acts_public a where a."character" = p.id order by a.created_at, a.id limit 1) f
+  where p.staff is null
+  on conflict (character) do nothing;
+  insert into roster_entries (window_end, season, record)
+  select s.ends_at, s.season, jsonb_build_object('skipped', 'before the Roster Report')
+  from settlements s
+  on conflict (window_end) do nothing;
   perform pg_temp.expect(pre_end not in (select d from roster_due() d), 'a settlement from before the migration is not due');
   perform pg_temp.expect((select e.record ->> 'skipped' = 'before the Roster Report' and cardinality(e.acts) = 0 from roster_entries e where e.window_end = pre_end), 'its entry says it was before the Roster Report');
   perform pg_temp.expect(exists (select 1 from roster_seen s where s.character = oldie and s.act is not null), 'a character with a public Act is written down as seen');
@@ -394,8 +408,106 @@ begin
   f := roster_facts(post_end);
   perform pg_temp.expect(pg_temp.ids(f, 'newcomers') @> array[fresh] and not (pg_temp.ids(f, 'newcomers') @> array[oldie]), 'the first entry lists the new face and not the character that acted before');
   -- Run twice, it changes nothing more.
-  perform roster_changeover();
+  insert into roster_seen (character, window_end, act)
+  select p.id, coalesce((select max(s.ends_at) from settlements s), now()), f.id
+  from characters_public p
+  cross join lateral (select a.id from acts_public a where a."character" = p.id order by a.created_at, a.id limit 1) f
+  where p.staff is null
+  on conflict (character) do nothing;
+  insert into roster_entries (window_end, season, record)
+  select s.ends_at, s.season, jsonb_build_object('skipped', 'before the Roster Report')
+  from settlements s
+  on conflict (window_end) do nothing;
   perform pg_temp.expect((select count(*) from roster_entries e where e.window_end = pre_end) = 1, 'the changeover is run twice without harm');
+end $$;
+
+-- ---- 11. Only the game's own refusals are skips ----
+do $$
+declare
+  ann uuid := tests.account('rr-err');
+  post_end timestamptz := (select v::timestamptz from rr where k = 'w7') + interval '4 minutes';
+  c_end timestamptz := post_end + interval '10 hours';
+  d_end timestamptz := post_end + interval '11 hours';
+  osid bigint := (select id from seasons where ends_at is null);
+  t uuid := (select v::uuid from rr where k = 't');
+  most integer := (select (s.value #>> '{}')::integer from settings s where s.key = 'postMaxLength');
+  err text;
+  r jsonb;
+  posts bigint;
+begin
+  insert into settlements (starts_at, ends_at, season) values (post_end, c_end, osid), (c_end, d_end, osid);
+  -- A deadlock in the post is a fact about this attempt and not about the window: it reaches the caller, nothing is written, and the window stays due.
+  create function public.rr_plant() returns trigger language plpgsql as $f$ begin raise exception 'planted deadlock' using errcode = '40P01'; end $f$;
+  create trigger rr_plant before insert on acts for each row when (new.kind = 'post' and new.payload ->> 'body' = 'plant 40P01') execute function public.rr_plant();
+  err := pg_temp.refusal(format('select write_roster_entry(%L, %L, array[''plant 40P01''], ''{}''::jsonb)', c_end, '{}'::uuid[]));
+  drop trigger rr_plant on acts;
+  drop function public.rr_plant();
+  perform pg_temp.expect(err like '40P01%', 'a deadlock in the post propagates: ' || coalesce(err, 'nothing was raised'));
+  perform pg_temp.expect(not exists (select 1 from roster_entries e where e.window_end = c_end), 'and writes no entry');
+  perform pg_temp.expect(c_end in (select x from roster_due() x), 'so the window stays due');
+  -- The same window, written once the fault is gone.
+  r := write_roster_entry(c_end, '{}'::uuid[], array['Back again'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'written')::boolean and (r ->> 'posts')::integer = 1 and r -> 'skipped' is null, 'it is written with its post at the next run: ' || r::text);
+  -- A post past the limit is found before the insert and is a skip, with the reason on the entry, never an error.
+  select count(*) into posts from acts a where a.kind = 'post' and a.thread = (select turns_thread from seasons where id = osid);
+  r := write_roster_entry(d_end, '{}'::uuid[], array[repeat('x', most + 1)], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'written')::boolean and (r ->> 'posts')::integer = 0 and r ->> 'skipped' like '%postMaxLength%', 'a post past postMaxLength is skipped with its reason: ' || r::text);
+  perform pg_temp.expect((select count(*) from acts a where a.kind = 'post' and a.thread = (select turns_thread from seasons where id = osid)) = posts, 'and nothing is posted');
+end $$;
+
+-- ---- 12. Newcomers follow the window's activity ----
+do $$
+declare
+  ann uuid := tests.account('rr-act');
+  w7 timestamptz := (select v::timestamptz from rr where k = 'w7');
+  post_end timestamptz := w7 + interval '4 minutes';
+  d_end timestamptz := post_end + interval '11 hours';
+  osid bigint := (select id from seasons where ends_at is null);
+  t uuid := (select v::uuid from rr where k = 't');
+  stale uuid := tests.character(ann, 'Rr Stale Act', 'alpha', now() - interval '60 days');
+  dormant uuid := tests.character(ann, 'Rr Dormant', 'alpha', now() - interval '60 days');
+  vch uuid := tests.character(ann, 'Rr Veiled Later', 'alpha', now() - interval '60 days');
+  caster uuid := tests.character(ann, 'Rr Caster', 'alpha', now() - interval '60 days');
+  pv uuid;
+  play uuid;
+  f jsonb;
+  made uuid[] := '{}';
+  crowd uuid[] := '{}';
+  c uuid;
+begin
+  -- The first entries of the instance looked at everything before them (section 10's changeover wrote its windows); a character whose only Act is from before is not a candidate any more, and one that never acts never is.
+  perform tests.post(stale, t, 'An old Act, never listed.', w7 + interval '10 seconds');
+  -- Window A: thirty new faces and one posting under a veil (its author is no newcomer while the veil holds).
+  insert into settlements (starts_at, ends_at, season) values (d_end, d_end + interval '2 hours', osid);
+  for i in 0..5 loop crowd := crowd || tests.account('rr-crowd-' || i::text); end loop;
+  for i in 1..30 loop
+    c := tests.character(crowd[1 + (i - 1) / 5], 'Rr Crowd ' || lpad(i::text, 2, '0'), 'alpha', now() - interval '60 days');
+    made := made || c;
+    perform tests.post(c, t, 'Crowd words ' || i, d_end + interval '1 hour 1 minute' + i * interval '1 second');
+  end loop;
+  pv := tests.post(vch, t, 'Under a veil.', d_end + interval '1 hour 10 minutes');
+  play := tests.act(caster, 'card', t, jsonb_build_object('card', 'rrveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '3 days'), pv, d_end + interval '1 hour 11 minutes');
+  insert into post_veils (play, post, veil, author, caster_account, ends_at) values (play, pv, 'author', vch, null, now() + interval '3 days');
+  f := roster_facts(d_end + interval '2 hours');
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[stale]), 'a character whose only Act is from before the last entry is not a newcomer of this window');
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[dormant]), 'a character that never acts is never one');
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[vch]), 'a post under a live veil makes no newcomer of its author');
+  perform pg_temp.expect(jsonb_array_length(f -> 'newcomers') = 25, 'a list holds at most 25: ' || jsonb_array_length(f -> 'newcomers'));
+  perform pg_temp.expect((f -> 'more' ->> 'newcomers')::integer = 6, 'and counts the rest (the thirty and the caster of the card, less the 25 shown): ' || (f -> 'more')::text);
+  perform pg_temp.expect((f -> 'more' ->> 'announced')::integer = 0 and (f -> 'more' ->> 'landed')::integer = 0 and (f -> 'more' ->> 'reveals')::integer = 0, 'where there is no more, none is said');
+  -- The entry lists 25 and writes all thirty down as seen.
+  perform write_roster_entry(d_end + interval '2 hours', (select array_agg((e ->> 'character')::uuid) from jsonb_array_elements(f -> 'newcomers') e), array['Thirty-one faces'], '{}'::jsonb);
+  perform pg_temp.expect((select count(*) from roster_seen s where s.character = any(made)) = 30, 'the 25 listed and those counted are all written down as seen');
+  -- The veil ends in a later window: its author is listed there, with the post it wrote, though the post is older than the last entry.
+  insert into settlements (starts_at, ends_at, season) values (d_end + interval '2 hours', d_end + interval '3 hours', osid);
+  perform pg_temp.expect(not (pg_temp.ids(roster_facts(d_end + interval '3 hours'), 'newcomers') @> array[vch]), 'while the veil holds the author is still not listed');
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', t, play, '{"why": "reversed", "by": "admin"}', d_end + interval '2 hours 30 minutes');
+  perform set_config('kayfabb.card_end_writer', '', true);
+  f := roster_facts(d_end + interval '3 hours');
+  perform pg_temp.expect(pg_temp.ids(f, 'newcomers') = array[vch], 'the author of a post whose veil ended in the window is listed in it, and only it: ' || f::text);
+  perform pg_temp.expect((pg_temp.item(f, 'newcomers', vch) ->> 'act')::uuid = pv, 'with the post it wrote');
+  perform pg_temp.expect((select p.prosrc !~* 'from\s+characters_public\s+p\s+cross join lateral' from pg_proc p where p.proname = 'roster_facts' and p.pronamespace = 'public'::regnamespace), 'roster_facts no longer probes each character');
 end $$;
 
 -- ---- Put the instance back ----
