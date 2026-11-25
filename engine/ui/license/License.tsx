@@ -24,7 +24,7 @@ function Credit({ credit }: { readonly credit: LicenseCredit }) {
     <li className="kb-license-credit">
       <span className="kb-license-work">{credit.work}</span> by {credit.maker}. Terms: {credit.termsUrl ? <a href={credit.termsUrl} rel="noopener noreferrer">{credit.terms}</a> : credit.terms}.
       {credit.source && <> <a href={credit.source} rel="noopener noreferrer">Source</a>.</>}
-      {credit.note && <> <span className="kb-license-note">{credit.note}</span></>}
+      {credit.note && <> {credit.note}</>}
     </li>
   );
 }
@@ -35,7 +35,7 @@ export function License() {
   const blocks = useMemo(() => parse(terms), [terms]);
   const fill: Fill = { settings, path: LICENSE_PATH, marker: () => null };
   return (
-    <div className="kb-acct kb-license">
+    <div className="kb-acct">
       <PageHead title="License & credits" />
       <CalmRegion className="kb-acct-panel">
         <section id="kayfabb" className="kb-license-section" aria-labelledby="kayfabb-title">

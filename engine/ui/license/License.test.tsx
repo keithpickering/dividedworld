@@ -61,7 +61,7 @@ describe('the license and credits page, at /license', () => {
     expect(bare?.textContent).toContain('by B. Maker');
     expect(bare?.textContent).toContain('Public domain');
     expect(within(bare as HTMLElement).queryAllByRole('link')).toEqual([]);
-    expect(bare?.querySelector('.kb-license-note')).toBeNull();
+    expect(bare?.textContent).toBe('Bare work by B. Maker. Terms: Public domain.');
   });
 
   test('with no credits there is no Credits section', () => {
