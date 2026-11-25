@@ -50,6 +50,11 @@
  * report and gathers them (`node tools/test-sql.mjs --gather=<dir>`), which fails unless every file on disk ran. Without
  * it a gap in the list, or a shard that never reported, loses files and stays green.
  *
+ * R16 also holds: the shards' job `if` is exactly the draft-skip condition, `sql-total`'s is exactly `always() && (<draft-skip>)`
+ * (parentheses required), the upload's is exactly `always()` with `if-no-files-found: error`, `continue-on-error` appears nowhere
+ * in sql.yml, the result step's run is exactly `[ "$SHARDS" = success ]`, and both jobs' `timeout-minutes` is present and at most 30,
+ * so the limit cannot creep back up unnoticed.
+ *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
  *
@@ -283,6 +288,11 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
   // R16: sql.yml's shards are one list, and sql-total gathers every report.
   const sqlDoc = docs[`${WORKFLOWS}/sql.yml`];
   if (sqlDoc) {
+    // An `if` compared as written less its `${{ }}` wrapper and extra whitespace.
+    const normIf = (v) => String(v ?? '').trim().replace(/^\$\{\{\s*([\s\S]*?)\s*\}\}$/, '$1').replace(/\s+/g, ' ').trim();
+    const DRAFT_SKIP = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+    const hasContinue = (v) => JSON.stringify(v ?? {}).includes('"continue-on-error"');
+    if (hasContinue(sqlDoc)) out.push(`${WORKFLOWS}/sql.yml: R16 continue-on-error appears; a failed job or step must stay failed`);
     const path = `${WORKFLOWS}/sql.yml`;
     const isSuite = (s) => /npm run test:sql/.test(String(s?.run ?? ''));
     const jobsOf = isObj(sqlDoc.jobs) ? sqlDoc.jobs : {};
@@ -298,6 +308,8 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
       if (keys.includes('shard') && !(Array.isArray(shard) && shard.length >= 1 && shard.every((v, i) => v === i + 1))) {
         bad16.push(`the shard list must be the integers 1 to n in order, with no gap or repeat (it is ${JSON.stringify(shard)})`);
       }
+      if (normIf(job.if) !== DRAFT_SKIP) bad16.push(`the shards' job (${shardJobName}) if must be exactly ${DRAFT_SKIP}`);
+      if (!(typeof job['timeout-minutes'] === 'number' && job['timeout-minutes'] <= 30)) bad16.push('timeout-minutes must be present and at most 30 on the shards');
       if (job.strategy?.['fail-fast'] !== false) bad16.push('fail-fast must be false, or one failed shard cancels the others before they report');
       for (const step of list(job.steps).filter(isSuite)) {
         const run = String(step.run).trim();
@@ -306,8 +318,8 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
         }
       }
       const uploads = list(job.steps).filter((st) => String(st?.uses ?? '').startsWith('actions/upload-artifact'));
-      if (!uploads.some((st) => st.with?.name === 'sql-report-${{ matrix.shard }}' && /\balways\(\)/.test(String(st.if ?? '')))) {
-        bad16.push('no upload-artifact step named sql-report-${{ matrix.shard }} with if: always(), so a failed shard would leave no report');
+      if (!uploads.some((st) => st.with?.name === 'sql-report-${{ matrix.shard }}' && normIf(st.if) === 'always()' && st.with?.['if-no-files-found'] === 'error')) {
+        bad16.push('no upload-artifact step named sql-report-${{ matrix.shard }} with if exactly always() and if-no-files-found: error, so a failed shard would leave no report, or an absent one would pass');
       }
       for (const st of list(job.steps).filter((x) => /test-sql-drift\.mjs/.test(String(x?.run ?? '')))) {
         if (!/matrix\.shard\s*==\s*1\b/.test(String(st.if ?? ''))) bad16.push('test-sql-drift.mjs must run in the first shard only (if: matrix.shard == 1)');
@@ -316,14 +328,12 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
       if (!isObj(total)) bad16.push('there is no sql-total job to gather the reports');
       else {
         if (!list(total.needs).includes(shardJobName)) bad16.push(`sql-total does not need ${shardJobName}, the shards' job (needs: ${JSON.stringify(total.needs ?? null)})`);
-        const cond = String(total.if ?? '');
-        if (!/\balways\(\)/.test(cond)) bad16.push('sql-total must run when a shard failed: its if must hold always()');
-        if (/\b(success|failure)\(\)/.test(cond)) bad16.push('sql-total must not hold success() or failure() in its if');
-        if (String(jobsOf[shardJobName].if ?? '').includes('draft') && !/draft/.test(cond)) {
-          bad16.push("sql-total must be skipped for a draft as the shards are (its if lacks the draft condition)");
-        }
-        if (!list(total.steps).some((st) => JSON.stringify(st ?? {}).includes(`needs.${shardJobName}.result`))) {
-          bad16.push(`sql-total never reads needs.${shardJobName}.result, so a cancelled or skipped shard would not turn it red`);
+        if (normIf(total.if) !== `always() && (${DRAFT_SKIP})`) bad16.push(`sql-total if must be exactly always() && (${DRAFT_SKIP}), with the parentheses, so it runs when a shard failed and not for a draft`);
+        if (!(typeof total['timeout-minutes'] === 'number' && total['timeout-minutes'] <= 30)) bad16.push('timeout-minutes must be present and at most 30 on sql-total');
+        const resultSteps = list(total.steps).filter((st) => JSON.stringify(st ?? {}).includes(`needs.${shardJobName}.result`));
+        if (!resultSteps.some((st) => String(st.run ?? '').trim() === '[ "$SHARDS" = success ]'
+          && st.if === undefined && normIf(st.env?.SHARDS) === `needs.${shardJobName}.result`)) {
+          bad16.push(`sql-total result step: a step with no if must run [ "$SHARDS" = success ] with SHARDS from needs.${shardJobName}.result, so a cancelled or skipped shard turns it red`);
         }
         const downloads = list(total.steps).filter((st) => String(st?.uses ?? '').startsWith('actions/download-artifact'));
         const dl = downloads.find((st) => st.with?.pattern === 'sql-report-*' && st.with?.['merge-multiple'] === true && typeof st.with?.path === 'string');

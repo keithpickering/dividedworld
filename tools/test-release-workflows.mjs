@@ -427,6 +427,36 @@ red('the shard job is no longer named by sql-total\'s needs', sqlRule((d) => {
   const name = sqlShardsOf(d);
   d.jobs.renamed = d.jobs[name]; delete d.jobs[name];
 }), /R16.*needs/);
+const DRAFT_SKIP = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+const upload = (d) => sqlJob(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+const sqlName = (d) => sqlShardsOf(d);
+red('the shards are skipped always', sqlRule((d) => { d.jobs[sqlName(d)].if = 'false'; }), /R16.*shards' job.*if/);
+red('the shards run for a draft too', sqlRule((d) => { d.jobs[sqlName(d)].if = 'true'; }), /R16.*shards' job.*if/);
+red('sql-total never runs (!always())', sqlRule((d) => { sqlTotal(d).if = `\${{ !always() && (${DRAFT_SKIP}) }}`; }), /R16.*sql-total.*if/);
+red('sql-total runs for any draft (always() || draft)', sqlRule((d) => { sqlTotal(d).if = 'always() || github.event.pull_request.draft'; }), /R16.*sql-total.*if/);
+red('sql-total\'s draft condition is dropped for a clause', sqlRule((d) => { sqlTotal(d).if = `always() && (${DRAFT_SKIP}) || true`; }), /R16.*sql-total.*if/);
+red('the upload\'s if is not exactly always()', sqlRule((d) => { upload(d).if = 'always() && false'; }), /R16.*upload/);
+red('the upload\'s if is a failure() only', sqlRule((d) => { upload(d).if = 'failure()'; }), /R16.*upload/);
+red('the upload ignores a missing report', sqlRule((d) => { upload(d).with['if-no-files-found'] = 'ignore'; }), /R16.*upload/);
+red('the upload names no if-no-files-found', sqlRule((d) => { delete upload(d).with['if-no-files-found']; }), /R16.*upload/);
+red('a step continues on error', sqlRule((d) => { sqlTotal(d).steps.find((s) => /--gather/.test(s.run ?? ''))['continue-on-error'] = true; }), /R16.*continue-on-error/);
+red('a job continues on error', sqlRule((d) => { sqlJob(d)['continue-on-error'] = true; }), /R16.*continue-on-error/);
+red('the shards\' own step continues on error', sqlRule((d) => { sqlStep(d)['continue-on-error'] = true; }), /R16.*continue-on-error/);
+red('the result step only echoes the result', sqlRule((d) => {
+  const st = sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+  st.run = 'echo "$SHARDS"';
+}), /R16.*result/);
+red('the result step compares to the wrong value', sqlRule((d) => {
+  const st = sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+  st.run = '[ "$SHARDS" != failure ]';
+}), /R16.*result/);
+red('the result step is skipped on failure', sqlRule((d) => {
+  const st = sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+  st.if = 'false';
+}), /R16.*result/);
+red('the shards have no timeout', sqlRule((d) => { delete sqlJob(d)['timeout-minutes']; }), /R16.*timeout/);
+red('the shards\' timeout crept up', sqlRule((d) => { sqlJob(d)['timeout-minutes'] = 75; }), /R16.*timeout/);
+red('sql-total\'s timeout crept up', sqlRule((d) => { sqlTotal(d)['timeout-minutes'] = 45; }), /R16.*timeout/);
 quiet('a conforming sql.yml passes', sqlRule(() => {}));
 
 /* ---- a file that does not parse ---- */
