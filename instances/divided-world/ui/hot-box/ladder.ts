@@ -40,7 +40,7 @@ export const LADDER_FIRST = 8;
 /** A smoked post, or a puff (`transient`), on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
 export interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void; readonly transient?: boolean }
 /* One budget for the page: every smoked post's painter adds its time to the frame it ran in, and the mean of the last frames decides. */
-export const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, painted: false, kept: [] as number[], frames: 0, skipping: false };
+export const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, spentT: 0, painted: false, kept: [] as number[], keptT: [] as number[], frames: 0, skipping: false };
 /* Each smoked post's own name in the ladder's frames: the same play can be shown twice on a page (in its thread and in an ORIGIN box), so the play's id is not one. */
 let painters = 0;
 /** A new painter's name in the ladder's frames. */
@@ -49,11 +49,13 @@ export const nextPainterId = (): number => ++painters;
 /** The frame before this one is over: its cost joins the mean, and a mean over the budget sends one post a rung down, a post nobody points at first. */
 function closeFrame(): void {
   /* The frame that straddled a step began at the old rung: it is not counted, so the new rung is judged on frames drawn at it. */
-  if (ladder.skipping) { ladder.skipping = false; ladder.spent = 0; ladder.painted = false; ladder.frames += 1; return; }
+  if (ladder.skipping) { ladder.skipping = false; ladder.spent = 0; ladder.spentT = 0; ladder.painted = false; ladder.frames += 1; return; }
   if (!ladder.painted) return;
   ladder.kept.push(ladder.spent);
-  if (ladder.kept.length > LADDER_FRAMES) ladder.kept.shift();
+  ladder.keptT.push(ladder.spentT);
+  if (ladder.kept.length > LADDER_FRAMES) { ladder.kept.shift(); ladder.keptT.shift(); }
   ladder.spent = 0;
+  ladder.spentT = 0;
   ladder.painted = false;
   ladder.frames += 1;
   if (ladder.kept.length < LADDER_FIRST) return;
@@ -64,27 +66,39 @@ function closeFrame(): void {
   /* Only a post that painted in the frames the mean is over can take its cost off it: one that holds no tile near the window is never stepped down. */
   const open = [...ladder.rungs].filter((r) => r.level() < FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
   /* A transient fog (a puff, which is gone in 5 s) steps down first: it is the cheaper to degrade, and a smoked post that lasts three days never goes down a rung for it. */
-  /* A transient fog already at the last rung holds: it has nowhere left to go, and the cost it adds is not a smoked post's to take off, so no smoked post goes down a rung it would not have taken alone. */
-  if (!open.some((r) => r.transient === true) && [...ladder.rungs].some((r) => r.transient === true && r.level() >= FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES)) return;
+  /*
+   * A transient fog (a puff) already at the last rung has nowhere left to go, so the post to step down is judged by its own cost: the mean less the transient time in the same frames
+   * (`keptT`, the time `spend` was told was a puff's). That is how a smoked post never goes down a rung for a puff's cost, and a smoked post over the budget on its own still does.
+   */
+  const floored = !open.some((r) => r.transient === true) && [...ladder.rungs].some((r) => r.transient === true && r.level() >= FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
+  let own = mean;
+  if (floored) {
+    let t = 0;
+    for (const ms of ladder.keptT) t += ms;
+    own = mean - t / ladder.keptT.length;
+    if (own <= FOG_BUDGET_MS) return;
+  }
   const next = open.find((r) => r.transient === true) ?? open.find((r) => !r.pointed()) ?? open[0];
   if (!next) return;
   /* It goes to the first rung whose expected cost fits (the mean as the rungs' shares scale it), at least one down, and to the last where none does. */
   const from = next.level();
   let to = from + 1;
-  while (to < FOG_LEVEL_MOST && (mean * FOG_SHARE[to]!) / FOG_SHARE[from]! > FOG_BUDGET_MS) to += 1;
+  while (to < FOG_LEVEL_MOST && (own * FOG_SHARE[to]!) / FOG_SHARE[from]! > FOG_BUDGET_MS) to += 1;
   next.lower(to);
   /* The mean starts again, so the rung just taken is judged on its own frames. */
   ladder.kept = [];
+  ladder.keptT = [];
   ladder.skipping = true;
 }
 
 /** A painter's time for one tile, in the frame `stamp` (a tile is painted once a frame, so a tile seen twice is a new frame even where the stamp is the same). */
-export function spend(key: string, stamp: number | null, ms: number): void {
+export function spend(key: string, stamp: number | null, ms: number, transient = false): void {
   if (stamp === null) return;
   if (stamp !== ladder.stamp || ladder.seen.has(key)) { closeFrame(); ladder.stamp = stamp; ladder.seen.clear(); }
   ladder.seen.add(key);
   if (ladder.skipping) return;
   ladder.spent += ms;
+  if (transient) ladder.spentT += ms;
   ladder.painted = true;
 }
 
@@ -97,7 +111,7 @@ export function forceFogLevel(level: number | null): void {
 }
 /** For tests: the ladder as a fresh page has it. */
 export function resetFogLadder(): void {
-  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.painted = false; ladder.kept = []; ladder.frames = 0; ladder.skipping = false;
+  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.spentT = 0; ladder.painted = false; ladder.kept = []; ladder.keptT = []; ladder.frames = 0; ladder.skipping = false;
   forcedLevel = null;
 }
 

@@ -250,7 +250,6 @@ function restRows(s: FogStore, gw: number, r0: number, r1: number): void {
   s.OY.fill(0, from, to);
 }
 
-
 /** Semi-Lagrangian: each cell of the box takes what the flow carried to it. `add` is what a unit of flow adds (the cloud's own offset moves with the fog). */
 function advect(s: FogStore, gw: number, dst: Float32Array, src: Float32Array, dt: number, B: CellBox, add: 0 | 1 | 2, cell: number): void {
   const yTop = s.y0, yMost = s.y0 + s.rows - 1.001, xMost = gw - 1.001, { U0, V0 } = s;

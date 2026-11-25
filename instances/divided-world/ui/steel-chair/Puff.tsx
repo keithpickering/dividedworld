@@ -177,7 +177,7 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
       ctx.imageSmoothingQuality = 'high';
       ctx.drawImage(sc.canvas, 0, 0, field.gw, n, o.x, o.y, field.gw * field.cell, n * field.cell);
     }
-    spend(`${own}:${draw.index}`, draw.frame, performance.now() - began);
+    spend(`${own}:${draw.index}`, draw.frame, performance.now() - began, true);
     if (draw.frame !== null) p.paintedIn = ladder.frames;
   }, [api, own, turn]);
 

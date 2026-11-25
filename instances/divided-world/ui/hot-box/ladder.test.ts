@@ -17,9 +17,10 @@ function post(o: { transient?: boolean; pointed?: boolean }): Rung & { to: numbe
 }
 
 /** Runs frames each costing `ms` until the ladder has judged, or a hundred have passed. */
-function overBudget(ms: number): void {
+function overBudget(ms: number, puffMs = 0): void {
   for (let frame = 1; frame <= 100 && !ladder.skipping; frame++) {
     spend('a:0', frame, ms);
+    if (puffMs > 0) spend('p:0', frame, puffMs, true);
     spend('a:0', frame, 0);
     if (frame > LADDER_FIRST + 2 && ladder.kept.length === 0) break;
   }
@@ -41,12 +42,22 @@ test('with no puff the order is as it was: a post nobody points at first, in the
   resetFogLadder();
 });
 
-test('a puff already at the last rung and still over the budget holds: no smoked post steps down in its place', () => {
+test('a puff already at the last rung, whose time is the whole of the cost over the budget, holds: no smoked post steps down in its place', () => {
   resetFogLadder();
   const smoked = post({});
   const puff = { to: null as number | null, level: () => 4, pointed: () => false, paintedIn: () => ladder.frames, lower(to: number) { puff.to = to; }, transient: true };
   ladder.rungs.add(puff);
-  overBudget(FOG_BUDGET_MS * 3);
+  overBudget(0.5, FOG_BUDGET_MS * 3);
   assert.equal(smoked.to, null, 'the smoked post was left alone');
+  resetFogLadder();
+});
+
+test('a smoked post whose own cost is over the budget still steps down while a puff sits at the last rung', () => {
+  resetFogLadder();
+  const smoked = post({});
+  const puff = { to: null as number | null, level: () => 4, pointed: () => false, paintedIn: () => ladder.frames, lower(to: number) { puff.to = to; }, transient: true };
+  ladder.rungs.add(puff);
+  overBudget(FOG_BUDGET_MS * 2, 1);
+  assert.ok(smoked.to !== null, 'the smoked post was lowered');
   resetFogLadder();
 });
