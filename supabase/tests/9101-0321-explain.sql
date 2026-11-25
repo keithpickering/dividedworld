@@ -1,4 +1,3 @@
-load 'auto_explain'; set auto_explain.log_analyze = on; set auto_explain.log_nested_statements = on; set auto_explain.log_timing = off; set auto_explain.log_min_duration = -1;
 -- The veil's cover is stored (supabase/migrations/0371_veil_cover.sql; docs/plans/2026-11-14-veil-cover-design.md, sections 5 and 6; docs/plans/2026-11-14-veil-cover-plan.md, Task 1).
 -- post_veil_cover (act, play) holds one row for each Act an author veil play covers, and acts_public reads it where 0357's derivation named fourteen subqueries. This file holds the stored cover to that derivation, Act by Act:
 -- pg_temp.derived_character below is 0357's second select as it stood, copied, and is the record of what the cover must equal; it lives in this test and in no view. The cards and rows are this file's own (vc...).
@@ -489,6 +488,7 @@ end $$;
 -- ---- 4. The cost of an insert: another character's Act reads post_veils not at all, and the author's own does ----
 -- Counted across the inserts by the transaction's own table statistics (pg_stat_xact_user_tables, scans of either kind). The thread holds some hundreds of Acts, analyzed, so a plan that read all of them would be seen.
 select tests.unbecome();
+load 'auto_explain'; set auto_explain.log_analyze = on; set auto_explain.log_nested_statements = on; set auto_explain.log_timing = off; set auto_explain.log_min_duration = 0;
 do $$
 declare
   ann uuid := tests.account('vk-ann'); bob uuid := tests.account('vk-bob');
@@ -520,13 +520,12 @@ begin
   perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Edited before the veil.'), p2);
   analyze acts;
   fetched_before := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
-  raise log 'Query Text: MARK-veil';
-  perform set_config('client_min_messages', 'log', true); perform set_config('auto_explain.log_min_duration', '0', true);
+  perform set_config('client_min_messages', 'log', true); raise log 'Query Text: MARK-veil';
   perform pg_temp.veil(p2, t, a, b, bob);
-  perform set_config('auto_explain.log_min_duration', '-1', true); perform set_config('client_min_messages', 'notice', true);
-  raise log 'Query Text: MARK-end';
+  raise log 'Query Text: MARK-end'; perform set_config('client_min_messages', 'notice', true);
   fetched_after := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
   raise notice 'acts rows fetched by an author veil landing: %', fetched_after - fetched_before;
   if fetched_after - fetched_before > 100 then raise exception 'an author veil landing fetched % rows of acts, with the author holding three thousand Acts elsewhere', fetched_after - fetched_before; end if;
   perform pg_temp.agree('the cost thread');
 end $$;
+set auto_explain.log_min_duration = -1; set client_min_messages = notice;
