@@ -14,6 +14,7 @@ import { pendingOf } from './forecast.ts';
 import { FILM_ORDER, PILE, playbook } from './stage-play.ts';
 import { postTarget, type CardEffect, type CardTarget } from '../../../../engine/rules/cards.ts';
 import { buildStage } from './stage-world.ts';
+import { objectOf } from '../steel-chair/objects.ts';
 
 /** The stage, seeded and ready, with the film's player signed in as `as` (Snuckles's player when none). */
 async function stage(as: string | null = null) {
@@ -206,6 +207,20 @@ describe('a spring on a post written another way', () => {
     const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
     expect((await fake.postPlays([wrote.value.id])).plays.filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
     expect((await fake.postPlays([made.acts['kind']!])).plays.find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+  });
+
+  test('every Steel Chair the stage seeds rolls a chair: the pile\'s three on Snuckles\'s first post, and the one a quote springs', async () => {
+    const { fake, made, play } = await stage();
+    for (const what of FILM_ORDER.n11.chairs) await play.pile(PILE.findIndex((p) => p.what === what));
+    const chairsOnFirst = (await fake.postPlays([made.acts['first']!])).plays.filter((a) => a.kind === 'card' && (a.payload as { card: string }).card === 'steel-chair');
+    expect(chairsOnFirst).toHaveLength(3);
+    expect(chairsOnFirst.map((a) => objectOf(a.id))).toEqual(['chair', 'chair', 'chair']);
+    fake.signInAs(made.viewer);
+    const quoted = (await fake.acts(made.thread, made.posts['kind']!, made.posts['kind']!))[0]!;
+    const wrote = await fake.post(made.thread, made.cast['Human Josh']!, 'to be fair, it is a good walk cycle.', quoted.id);
+    if (!wrote.ok) throw new Error(wrote.error);
+    const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
+    expect(objectOf(sprang.play)).toBe('chair');
   });
 });
 
