@@ -653,11 +653,11 @@ begin
     raise exception 'the thread card landed %', (select to_jsonb(k) from acts k where k.id = laid);
   end if;
 
-  -- The Board back lands on the quoting thread's board, written in the announcements thread, and a board holds one live card.
+  -- The Board back lands on the quoting thread's board, written in the thread its set was laid in, and a board holds one live card.
   made := pg_temp.quote(b, t, 'Quoting the board card.', p4);
   spring := (made -> 'sprung' ->> 'id')::uuid;
   select k.id into laid from acts k where k.kind = 'card' and k.payload ->> 'spring' = spring::text;
-  if (select (k.payload ->> 'reach', k.thread) from acts k where k.id = laid) is distinct from ('board'::text, (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'))
+  if (select (k.payload ->> 'reach', k.thread) from acts k where k.id = laid) is distinct from ('board'::text, t)
      or not exists (select 1 from play_reach r where r.play = laid and r.board = (select board from threads where id = t)) then
     raise exception 'the board card landed %', (select to_jsonb(k) from acts k where k.id = laid);
   end if;

@@ -2790,7 +2790,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     if (reach === 'board') fake.seed.reach(boFace, 'board', general.id, key);
     else must(await fake.useCard(key, boFace, reach === 'character' ? boFace : bothread.thread, {}, '', reach, reach === 'character' ? bos : undefined));
     fake.signInAs(ana);
-    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined);
+    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined, undefined, undefined, reach === 'board' ? bothread.thread : undefined);
     const landed = must(await cast());
     expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: key });
     expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
@@ -3201,12 +3201,14 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.useCard('selfie', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('Selfie is used on your own character'));
     must(await fake.useCard('selfie', anaFace, anaFace, {}, '', 'character', mine));
     const board = (await fake.thread(thread))!.board;
-    const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board'));
+    /* A board card is written in a thread on the board, named by the caster (0430): none named is asked for again. */
+    expect(await fake.playCard('quake', anaFace, board, {}, '', 'board')).toEqual(refused('pick a thread on General to play it in'));
+    const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board', undefined, undefined, undefined, thread));
     expect(shook.targetActId).toBeNull();
-    expect((await fake.thread(shook.thread))!.board).not.toBe(board);
+    expect(shook.thread).toBe(thread);
     /* Three days, cut to the board's day. */
     expect(Date.parse(String(shook.payload.ends)) - Date.parse(shook.createdAt)).toBe(86_400_000);
-    expect((await fake.playCard('quake', anaFace, board, {}, '', 'board')).ok).toBe(false);
+    expect((await fake.playCard('quake', anaFace, board, {}, '', 'board', undefined, undefined, undefined, thread)).ok).toBe(false);
   });
 
   test('effectsAbove answers the live plays on the characters, the thread and the board asked, and nothing on another mask', async () => {
@@ -5123,7 +5125,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await fake.setCard('lkback', boFace, mine, {})).toMatchObject({ ok: false, error: lockedWords(until) });
     });
 
-    test('a thread or character play in the locked thread is refused; a board play, an edit, a reaction and a quote from another thread are not', async () => {
+    test('a thread, character or board play in the locked thread is refused; a board play in another thread, an edit, a reaction and a quote from another thread are not', async () => {
       const { fake, bo, anaFace, boFace, thread, post, otherThread } = lk();
       const mine = fake.seed.post(thread, boFace, 'Mine');
       must(await fake.setCard('lkback', anaFace, post, {}));
@@ -5133,7 +5135,9 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await fake.playCard('lkwide', boFace, thread, {}, '', 'thread')).toMatchObject({ ok: false, error: lockedWords(until) });
       expect(await fake.playCard('lkwide', boFace, anaFace, {}, '', 'character', post)).toMatchObject({ ok: false, error: lockedWords(until) });
       const general = (await fake.boards()).find((b) => b.slug === 'general')!;
-      must(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board'));
+      /* A board card is written in a thread, and the lockout holds in that thread: in the locked one it is refused, in another it is not. */
+      expect(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board', undefined, undefined, undefined, thread)).toMatchObject({ ok: false, error: lockedWords(until) });
+      must(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board', undefined, undefined, undefined, otherThread));
       must(await fake.edit(mine, boFace, 'Mine, edited'));
       must(await fake.react(post, boFace, 'fire'));
       must(await fake.post(otherThread, boFace, `[quote=${post}]Post 1[/quote]over here`, post));

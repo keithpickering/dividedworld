@@ -48,7 +48,7 @@ do $$
 declare
   ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid();
   a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
-  brd uuid := gen_random_uuid();
+  brd uuid := gen_random_uuid(); thr uuid := gen_random_uuid();
   said text[];
 begin
   perform tests.commit(format($sql$
@@ -57,14 +57,15 @@ begin
     insert into characters (id, owner, name, created_at, debuted_at) values (%3$L, %1$L, 'Race Quaker A', now(), now()), (%4$L, %2$L, 'Race Quaker B', now(), now());
     insert into class_history (character, class_key, started_at) values (%3$L, 'alpha', now()), (%4$L, 'alpha', now());
     insert into boards (id, slug, name) values (%5$L, 'race-board', 'Race Board');
+    insert into threads (id, board, title) values (%6$L, %5$L, 'Race Thread');
     insert into card_kinds (key, name, alignment, rarity, reaches, lasts) values ('racequake', 'Race Quake', 'salty', 'legendary', '{board}', interval '1 day');
     insert into card_ledger (account, card, kind, price) values (%1$L, 'racequake', 'bought', 0), (%2$L, 'racequake', 'bought', 0);
     with t as (insert into threads (board, title) select id, 'Race Announcements' from boards where slug = 'the-system' returning id)
     insert into settings (key, value) select 'systemAnnouncements', to_jsonb(t.id::text) from t on conflict (key) do nothing;
-  $sql$, ann, bob, a, b, brd));
+  $sql$, ann, bob, a, b, brd, thr));
   said := tests.race_service(
-    format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'racequake', a, brd, '{}', '', 'board'),
-    format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', bob, 'racequake', b, brd, '{}', '', 'board'));
+    format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, null, null, null, null, %L, %L)', ann, 'racequake', a, brd, '{}', '', 'board', '{}', thr),
+    format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, null, null, null, null, %L, %L)', bob, 'racequake', b, brd, '{}', '', 'board', '{}', thr));
   if (select count(*) from unnest(said) s where s is null) is distinct from 1 then raise exception 'two board cards at once: exactly one lands, said %', said; end if;
   if (select count(*) from unnest(said) s where s like 'this board already carries a board card until % UTC') is distinct from 1 then
     raise exception 'the other is refused in plain words, said %', said;
@@ -120,13 +121,11 @@ begin
   if pl ->> 'thread' <> t::text or pl ->> 'target_act_id' <> p::text then raise exception 'a thread play sits on its first post: %', pl; end if;
   if (select ends_at from play_reach where play = (pl ->> 'id')::uuid) > now() + interval '1 day' then raise exception 'a thread play ends within a day'; end if;
 
-  -- A board play sits in The System's announcements thread, pointing at no post.
-  delete from settings where key = 'systemAnnouncements';
+  -- A board play sits in the thread on its board that the caster names, pointing at no post (supabase/migrations/0430_board_cards_on_their_board.sql).
   why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L)', ann, 'quake', pipe, general, '{}', '', 'board'));
-  if why is distinct from 'there is no announcements thread to play a board card in yet' then raise exception 'a board play needs the announcements thread, said %', why; end if;
-  perform pg_temp.announcements();
-  pl := play_card(ann, 'quake', pipe, general, '{}', 0, '', 'board');
-  if pl ->> 'thread' <> pg_temp.announcements()::text or pl ->> 'target_act_id' is not null then raise exception 'a board play sits in the announcements thread, on no post: %', pl; end if;
+  if why is distinct from 'pick a thread on General to play it in' then raise exception 'a board play needs a thread on its board, said %', why; end if;
+  pl := play_card(ann, 'quake', pipe, general, '{}', 0, '', 'board', null, null, null, null, '{}', t);
+  if pl ->> 'thread' <> t::text or pl ->> 'target_act_id' is not null then raise exception 'a board play sits in the thread named, on no post: %', pl; end if;
   -- The hand and the wallet are spent as any play's.
   if (select count(*) from card_ledger where account = ann and kind = 'played') is distinct from 4 then raise exception 'each play spends its card'; end if;
 end $$;
@@ -162,13 +161,13 @@ declare
   t uuid := tests.thread('Clamp'); mine uuid; theirs uuid; brd uuid; pl jsonb; why text;
 begin
   perform pg_temp.cards();
-  perform pg_temp.announcements();
   mine := tests.post(pipe, t, 'Mine.');
   theirs := tests.post(hoo, t, 'Theirs.');
   insert into boards (slug, name) values ('clamp-board', 'Clamp Board') returning id into brd;
+  insert into threads (board, title) values (brd, 'Clamp Board Thread');
   perform pg_temp.hand(ann, 'tremor', 'selfie', 'selfie');
   -- Tremor lasts 3 days; a board effect lasts at most a day (reachLasts.board).
-  pl := play_card(ann, 'tremor', pipe, brd, '{}', 0, '', 'board');
+  pl := play_card(ann, 'tremor', pipe, brd, '{}', 0, '', 'board', null, null, null, null, '{}', (select x.id from threads x where x.board = brd));
   if (select ends_at from play_reach where play = (pl ->> 'id')::uuid) is distinct from now() + interval '1 day' then raise exception 'a play ends at least(lasts, reachLasts)'; end if;
   why := pg_temp.refusal(format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, %L)', ann, 'selfie', pipe, hoo, '{}', '', 'character', theirs));
   if why is distinct from 'Selfie is used on your own character' then raise exception 'a Use on another''s character, said %', why; end if;
@@ -208,7 +207,7 @@ begin
   perform pg_temp.hand(ann, 'glint', 'marquee', 'quake');
   perform play_card(ann, 'glint', pipe, hoo, '{}', 0, '', 'character', p);
   perform play_card(ann, 'marquee', pipe, t, '{}', 0, '', 'thread');
-  perform play_card(ann, 'quake', pipe, general, '{}', 0, '', 'board');
+  perform play_card(ann, 'quake', pipe, general, '{}', 0, '', 'board', null, null, null, null, '{}', t);
   got := card_target_reach('post', p);
   if got ->> 'reach' <> 'post' or got ->> 'act' <> p::text or (got ->> 'length')::integer <> 5 then raise exception 'a post target as card_target reads it: %', got; end if;
   if got #>> '{above,character,0,card}' <> 'glint' or got #>> '{above,thread,0,card}' <> 'marquee' or got #>> '{above,board,0,card}' <> 'quake' then

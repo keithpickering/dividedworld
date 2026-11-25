@@ -33,6 +33,7 @@ import { SpunInto } from '../spin/SpunInto.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 import { lowerFirst } from '../copy-words.ts';
+import { cardNameOf } from '../../rules/card-names.ts';
 import { useKayfa } from '../context.tsx';
 import { ThreadCtx, useOwnerOf, useThread, type ThreadContext, type Under } from './context.ts';
 import { moveOffice } from '../board/move-words.ts';
@@ -346,6 +347,39 @@ const PostArticle = memo(function PostArticle({ act, person, layout, slid, cut }
     </AppealCtx.Provider>
   );
 });
+
+/**
+ * A board card played in this thread (thread_page's `boardCards`, 0430): one line in the log's words, "Spritey played Fog on Help", under the newest post written before it, with its reactions and a Spin from it. It sits
+ * on no post and takes no number, so it is no article of the feed: a line between two posts. A card's effect on the board is drawn where the board is, never here.
+ */
+export function BoardCardLine({ card }: { readonly card: Act }) {
+  const { tallies, mine, nameOf } = useThread();
+  const { instance } = useKayfa();
+  const drafts = useSpinDrafts();
+  const [spinning, setSpinning] = useState(false);
+  const button = useRef<HTMLButtonElement>(null);
+  const caster = card.character === null ? 'The staff' : nameOf(card.character);
+  const name = cardNameOf(instance, text(card.payload.card)) ?? 'a card';
+  const board = text(card.payload.targetName);
+  return (
+    <div className="kb-act-boardcard" data-kb-boardcard={card.id}>
+      <p className="kb-act-line">{caster} played {name}{board === '' ? ' on the board' : ` on ${board}`}.</p>
+      <Reactions act={card.id} author={card.character} authorName={caster} tallies={tallies} mine={mine} />
+      <div className="kb-act-links kb-small">
+        <button ref={button} type="button" className="kb-button" data-kb-size="small" aria-expanded={spinning} aria-controls={`spin-${card.id}`} onClick={() => setSpinning((s) => !s)}>Spin thread</button>
+      </div>
+      <div id={`spin-${card.id}`}>
+        {spinning && (
+          <SpinForm
+            key={card.id} origin={card.id} label={`${name} on ${board === '' ? 'the board' : board}`}
+            draft={drafts.get(card.id)} onDraft={(d) => drafts.set(card.id, d)}
+            onClose={() => { setSpinning(false); button.current?.focus(); }}
+          />
+        )}
+      </div>
+    </div>
+  );
+}
 
 /**
  * The thread's head: its title, the top pager, and the thread's own live plays as marks beside the title, with the armed thread card's

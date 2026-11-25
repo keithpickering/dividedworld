@@ -2579,6 +2579,8 @@ export interface ThreadPage {
   readonly page: number;
   /** `acts(thread, first, last)` of the page. */
   readonly acts: readonly Act[];
+  /** The board cards written in this thread (`board_card_ids`, 0430), which sit on no post: from the page's first Act up to the next page's first (the last page, to the end), oldest first. */
+  readonly boardCards: readonly Act[];
   /** The authors and casters on the page. */
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`postPlays`): those in force, each kind's newest and most-drawn play, and the Acts that end or spring them. */
@@ -3288,7 +3290,7 @@ export interface KayfaApi {
    * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    * A card that replies carries `reply`, the caster's post written with the play: it lands under the target while the play is in force, and a play without one is refused ("write the reply this card carries"). A cast that is caught writes none.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.

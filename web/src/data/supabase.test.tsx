@@ -1500,6 +1500,10 @@ describe('buying and playing a card', () => {
     expect(h.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([
       { action: 'playCard', card: 'whoops', character: B, target: A, config: { color: 'magenta' }, message: 'you dropped your ink' },
     ]);
+    /* A board card names the thread it is written in (0430). */
+    const board = harness((r) => (r.url.pathname === '/functions/v1/act' ? json(ACT_ROW) : undefined));
+    await board.api.playCard('quake', B, A, {}, '', 'board', undefined, undefined, undefined, C);
+    expect(board.log.filter((r) => r.url.pathname === '/functions/v1/act').map((r) => r.body)).toEqual([{ action: 'playCard', card: 'quake', character: B, target: A, config: {}, message: '', reach: 'board', boardThread: C }]);
     const refused = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ error: 'you hold no "whoops" card; the Vending Machine sells them' }, 400) : undefined));
     expect(await refused.api.playCard('whoops', B, A, {}, '')).toEqual({ ok: false, error: 'you hold no "whoops" card; the Vending Machine sells them' });
   });
@@ -3267,6 +3271,14 @@ describe('a screen in one call', () => {
     expect(page?.rewinds).toMatchObject([{ play: B, post: A, at: '2026-10-01T09:02:00+00:00', version: { id: A, currentPayload: { body: 'then' }, editedAt: '2026-10-01T09:05:00+00:00', shownEditedAt: '2026-10-01T09:05:00+00:00' } }]);
     expect((await once('thread_page', DOC).api.threadPage(T, { page: 1 }, 20, []))?.rewinds).toEqual([]);
     expect((await once('thread_page', { ...DOC, rewinds: null }).api.threadPage(T, { page: 1 }, 20, []))?.rewinds).toEqual([]);
+  });
+
+  it('thread_page maps `boardCards` to Acts, asks their tallies, and reads none where the document has none (0430)', async () => {
+    const DOC = { summary: THREAD_ROW, page: 1, acts: [ACT_ROW], plays: [], above: [], people: [], tallies: [] };
+    const card = { ...ACT_ROW, id: B, kind: 'card', seq: null, target_act_id: null, payload: { card: 'quake', reach: 'board', board: A, targetName: 'Help' }, current_payload: { card: 'quake', reach: 'board', board: A, targetName: 'Help' } };
+    const page = await once('thread_page', { ...DOC, boardCards: [card] }).api.threadPage(T, { page: 1 }, 20, []);
+    expect(page?.boardCards).toMatchObject([{ id: B, kind: 'card', targetActId: null, payload: { card: 'quake', reach: 'board', targetName: 'Help' } }]);
+    expect((await once('thread_page', DOC).api.threadPage(T, { page: 1 }, 20, []))?.boardCards).toEqual([]);
   });
 
   it('thread_page: maps `under`, `cut` and `kept`, and asks the tallies of the nested replies and the kept plays too', async () => {

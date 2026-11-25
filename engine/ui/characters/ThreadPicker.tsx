@@ -19,18 +19,20 @@ export interface ThreadPickerProps {
   readonly onChange: (thread: ChosenThread | null) => void;
   /** Which boards the filter offers: the default is every board but The System's. */
   readonly boards?: (board: Board) => boolean;
+  /** One board the threads are limited to (a board card is played in a thread on its board): the filter starts on it, has no All boards, and The System's board is offered if it is that one. */
+  readonly only?: Id;
   /** Called when the boards could not be read (only where boot is not there). */
   readonly onBoardsFailed?: () => void;
 }
 
-export function ThreadPicker({ value, onChange, boards: only = (b) => !b.isSystem, onBoardsFailed }: ThreadPickerProps) {
+export function ThreadPicker({ value, onChange, boards: offered = (b) => !b.isSystem, only: fixed, onBoardsFailed }: ThreadPickerProps) {
   const { api } = useKayfa();
   /* The boards are boot's, read once for the frame: the picker opens with them in its first render. Only where boot is not there (a story, a screen before boot) are they read. */
   const boot = useBoot();
   const [read, setRead] = useState<readonly Board[]>([]);
-  const boards = (boot ? boot.boards : read).filter(only);
+  const boards = (boot ? boot.boards : read).filter((b) => (fixed === undefined ? offered(b) : b.id === fixed));
   /* The optional filter: '' is All boards. The field is remounted when it changes, so a thread chosen under another filter is cleared. */
-  const [board, setBoard] = useState(value?.board ?? '');
+  const [board, setBoard] = useState(fixed ?? value?.board ?? '');
 
   const hasBoot = boot !== null;
   useEffect(() => {
@@ -42,7 +44,7 @@ export function ThreadPicker({ value, onChange, boards: only = (b) => !b.isSyste
 
   /* Empty, the newest threads; typed into, titles. The System's board is never offered, and each option names its board. */
   const source: ComboSource = async (query) => {
-    const found = await api.suggest(query, { kinds: ['threads'], excludeSystem: true, board: board || null, most: 10 });
+    const found = await api.suggest(query, { kinds: ['threads'], excludeSystem: fixed === undefined, board: board || null, most: 10 });
     return [{ key: 'threads', label: 'Threads', options: found.threads.map((t) => ({ id: t.id, label: t.title, detail: t.boardName })), empty: 'No threads found.' }];
   };
 
@@ -50,8 +52,8 @@ export function ThreadPicker({ value, onChange, boards: only = (b) => !b.isSyste
     <div className="kb-reveal-where">
       <label className="kb-glass-field">
         <span>Board</span>
-        <select className="kb-glass-select" aria-label="Board (optional)" value={board} onChange={(e) => { setBoard(e.target.value); onChange(null); }}>
-          <option value="">All boards</option>
+        <select className="kb-glass-select" aria-label={fixed === undefined ? 'Board (optional)' : 'Board'} value={board} onChange={(e) => { setBoard(e.target.value); onChange(null); }}>
+          {fixed === undefined && <option value="">All boards</option>}
           {boards.map((b) => <option key={b.id} value={b.id}>{b.name}</option>)}
         </select>
       </label>

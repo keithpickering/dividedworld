@@ -37,6 +37,8 @@ import { framingArgs } from '../composer/text.ts';
 import { LockedOutNote } from '../composer/LockedOutNote.tsx';
 import { useLockedOutUntil } from '../composer/lockout.ts';
 import { Orbs } from '../orbs/Orbs.tsx';
+import { ThreadPicker, type ChosenThread } from '../characters/ThreadPicker.tsx';
+import { useOpenThread } from '../thread/open.tsx';
 import { usePlayer } from '../player.tsx';
 import { Link } from '../router.tsx';
 import { newer } from '../thread/feed.ts';
@@ -98,6 +100,12 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
+  /* A board card is written in a thread on its board, chosen here: the thread the player has open when it is on that board, else none until one is picked (SQL: 0430). */
+  const open = useOpenThread();
+  const [picked, setPicked] = useState<ChosenThread | null | undefined>(undefined);
+  /* Only a play on a board is a board card. */
+  const boardTarget = target.reach?.reach === 'board' ? target.reach.target : null;
+  const boardThread: ChosenThread | null = boardTarget === null ? null : picked !== undefined ? picked : open !== null && open.board === boardTarget ? { id: open.id, title: open.title } : null;
   /* A Move's conditions (SetConditions.tsx): kept here so a closed group does not lose them, and sent only with a Set. `placed` is a refusal the server gave that belongs to a field. */
   const [draft, setDraft] = useState<ConditionsDraft>(noConditions);
   const [whenOpen, setWhenOpen] = useState(false);
@@ -173,7 +181,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const hud = player.hudCharacter;
   const wallet = player.wallet;
   /* A lockout holds one character in one thread: a play on a post there, on the thread, or on a character reached from a post there is refused; a play on a board is no part of a thread. */
-  const lockThread = beyond?.reach === 'board' ? null : beyond?.reach === 'thread' ? beyond.target : postThread;
+  const lockThread = beyond?.reach === 'board' ? boardThread?.id ?? null : beyond?.reach === 'thread' ? beyond.target : postThread;
   const lockedUntil = useLockedOutUntil(setting ? setter : hud, lockThread);
 
   const context = { cards: instance.cards, now: api.now(), postEffects: instance.settings.postEffects, states: homePlays.states, version, ...(pierce === undefined ? {} : { pierce }), ...(beyond?.above ? { above: beyond.above } : {}), ...(setting ? { faceDown: true as const } : {}) };
@@ -249,7 +257,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
   const replyMost = screen.postMaxLength;
   const unwritten = replying && (!/[\p{L}\p{N}]/u.test(reply) || [...reply].length > replyMost);
   const out = wasCaught && player.loaded && (player.cards.find((c) => c.card === card)?.held ?? 0) === 0;
-  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || unpicked || flawed || lockedUntil !== null;
+  const blocked = spent || out || unwritten || busy || !setter || (!setting && !wallet) || short || !lands.ok || unsettled || unpicked || flawed || lockedUntil !== null || (boardTarget !== null && how !== 'use' && boardThread === null);
   const nameOf = (who: string) => draft.who.find((c) => c.id === who)?.name ?? 'someone';
   /* What the Set does, in the form's one sentence: the conditions read back where there are any (a locked phrase is the card's Says), the card's plain sentence where there are none. */
   const springs = when || lockedSays ? `Springs ${conditionWords({ ...when, ...(lockedSays ? { says: lockedSays } : {}) }, nameOf)}, and lands on ${landsWords(rules)}.` : springWords(rules);
@@ -327,7 +335,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
       try {
         answer = beyond
           ? how === 'use' ? await api.useCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
-            : await api.playCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id)
+            : await api.playCard(card, hud.id, beyond.target, config ?? {}, message, beyond.reach, post?.id, undefined, undefined, boardThread?.id)
           : setting ? await (when ? api.setCard(card, setter.id, post!.id, config ?? {}, when) : api.setCard(card, setter.id, post!.id, config ?? {}))
           : how === 'use' ? await api.useCard(card, hud.id, post!.id, config ?? {}, message)
           : replying ? await api.playCard(card, hud.id, post!.id, config ?? {}, message, undefined, undefined, undefined, { body: reply, ...(framingArgs(reply).length > 0 ? { framing: framingArgs(reply)[0] } : {}) })
@@ -400,6 +408,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
               ? <>On <Link to={target.to} onClick={onClose}>{beyond?.name ?? target.title}</Link>{beyond?.reach === 'character' ? `, on every post of ${words(beyond.pronouns ?? ENGINE_DEFAULT_PRONOUNS).theirs}` : beyond?.reach === 'thread' ? ', the whole thread' : beyond?.reach === 'board' ? ', the whole board' : ''}, until its time is up.</>
               : <>On <Link to={target.to} onClick={onClose}>{target.author}'s post #{post.seq}</Link> in “{target.title}”, {length} {length === 1 ? 'character' : 'characters'} long.</>}
           </p>
+          {boardTarget !== null && how !== 'use' && (
+            <div className="kb-play-board-thread">
+              <p className="kb-play-label">Play it in a thread on {beyond?.name ?? 'this board'}</p>
+              {/* Keyed by the open thread, which may be published a moment after the form opens: the field then starts on it. */}
+              <ThreadPicker key={open?.id ?? ''} only={boardTarget} value={boardThread} onChange={setPicked} />
+              {boardThread === null && <p className="kb-play-fine" role="status">Pick the thread to play it in. The card is written there, and the board shows it too.</p>}
+            </div>
+          )}
           {ownBoth && !setting && <p className="kb-play-both">You play both. It costs the same; your log will say so.</p>}
           {setting && <p className="kb-play-sets" data-kb-sets>{springs}</p>}
           {rules.rewind !== undefined && post && !beyond && <RewindPoints post={post} plays={target.plays} id={id} config={config} onChange={setConfig} />}

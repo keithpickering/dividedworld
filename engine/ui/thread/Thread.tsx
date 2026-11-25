@@ -29,7 +29,7 @@
  * first appears live costs the same, once. Tallies live in a keyed store, so a storm of them
  * re-renders the posts it lands on and not the page.
  */
-import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
+import { Fragment, useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { lowerFirst } from '../copy-words.ts';
 import { billPost, drawnOf } from '../cards/billing.ts';
 import { CalloutProvider } from '../cards/Callout.tsx';
@@ -58,7 +58,7 @@ import { emptyFeed, endsVeil, feedReducer, isVeilPlay, newer, nextVeilEnd, order
 import { ActIndex, actLoader, type Located } from './locate.tsx';
 import { pageEndsThread, pageOf, pageRange, seqOfHash, threadHref } from './pages.ts';
 import { FollowControl } from './Follow.tsx';
-import { ActArticle, quoteStopped, ThreadHead } from './Post.tsx';
+import { ActArticle, BoardCardLine, quoteStopped, ThreadHead } from './Post.tsx';
 import { SelectionQuote } from './SelectionQuote.tsx';
 import { ThreadCtx, type ThreadContext, type Under, type Veiled } from './context.ts';
 import { text } from './lines.tsx';
@@ -136,6 +136,8 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
      so a clock never moves a mark (cards/billing.ts). */
   const billedAt = useRef(new Map<Id, number>());
   const [origin, setOrigin] = useState<PageOrigin | null>(() => doc.origin);
+  /* The board cards written in this thread (they sit on no post; thread_page's `boardCards`, 0430), by id, from every page read; each is drawn as a line under the newest post before it. */
+  const [boardCards, setBoardCards] = useState<ReadonlyMap<Id, Act>>(() => new Map(doc.boardCards.map((c) => [c.id, c])));
   const effects = useMemo(() => effectCards(ui), [ui]);
   const rewinding = useMemo(() => rewindCards(instance.cards), [instance.cards]);
   const effectList = useMemo(() => [...effects], [effects]);
@@ -357,10 +359,11 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     const under = page.under.map((u) => u.act);
     const posts = [...page.acts, ...under].filter((a) => isPost(a.kind)).map((a) => a.id);
     /* The origin's Act and its plays are Acts of the page's document too: their reactions and spins are the page's, which the box reads from the same stores. */
-    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...page.polls.map((x) => x.act.id), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
+    const ids = [...new Set([...page.acts.map((a) => a.id), ...under.map((a) => a.id), ...played.map((a) => a.id), ...page.boardCards.map((a) => a.id), ...(page.origin?.act ? [page.origin.act.id] : []), ...page.polls.map((x) => x.act.id), ...(page.origin?.plays ?? []).filter((a) => a.kind !== 'card_end').map((a) => a.id)])];
     for (const [id, t] of Object.entries(page.tallies)) tallies.merge(id, t);
     polls.take(page, ticket, posts);
     for (const id of ids) mine.merge(id, page.mine.filter((r) => r.act === id));
+    if (mounted.current && page.boardCards.length > 0) setBoardCards((held) => new Map([...held, ...page.boardCards.map((c): [Id, Act] => [c.id, c])]));
     const loader = spunLoader(api);
     const from = new Map<Id, ThreadSummary[]>();
     for (const t of page.spun) if (t.originActId !== null) from.set(t.originActId, [...(from.get(t.originActId) ?? []), t]);
@@ -989,6 +992,18 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     [thread, P, feed.summary, tallies, polls, mine, plays, origin, originPlays, originPolls, visits, veiled, underOf, nameOf, standIn, faceOf, pronounsOf, ensurePeople, reread, catchUp, observer, canReply, quote, changed],
   );
   const shown = useMemo(() => ordered(feed.shown), [feed.shown]);
+  /* Each board card goes under the newest shown Act written before it (the first, for one older than every Act shown). */
+  const cardsAfter = useMemo(() => {
+    const out = new Map<Id, Act[]>();
+    if (boardCards.size === 0 || shown.length === 0) return out;
+    for (const c of [...boardCards.values()].sort((x, y) => Date.parse(x.createdAt) - Date.parse(y.createdAt) || (x.id < y.id ? -1 : 1))) {
+      const at = Date.parse(c.createdAt);
+      let under = shown[0]!;
+      for (const a of shown) if (Date.parse(a.createdAt) <= at) under = a;
+      out.set(under.id, [...(out.get(under.id) ?? []), c]);
+    }
+    return out;
+  }, [boardCards, shown]);
   const quotableAt = useCallback((seq: number) => {
     /* A reply drawn under a post is a post of the screen as any, found by its own number. */
     const a = shown.find((x) => x.seq === seq) ?? [...nested.current.values()].find((u) => u.act.seq === seq)?.act;
@@ -1103,7 +1118,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
               )}
               {shown.map((a) => {
                 const under = nested.current.get(a.id);
-                return <ActArticle key={a.id} act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} nested={under} nestedPerson={under?.act.character ? people.current.get(under.act.character) : undefined} />;
+                return <Fragment key={a.id}><ActArticle act={a} person={a.character ? people.current.get(a.character) : undefined} layout={layout} slid={feed.slid.has(a.id)} nested={under} nestedPerson={under?.act.character ? people.current.get(under.act.character) : undefined} />{(cardsAfter.get(a.id) ?? []).map((c) => <BoardCardLine key={c.id} card={c} />)}</Fragment>;
               })}
             </div>
           </LensProvider>

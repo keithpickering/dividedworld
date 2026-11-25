@@ -125,10 +125,11 @@ begin
 
   -- A character play takes a moment of its cast-from post (0352), itself no layer of it; a thread and a board play take none.
   insert into boards (slug, name) values ('pm-board', 'Moments Board') returning id into brd;
+  insert into threads (board, title) values (brd, 'Moments Board Thread');
   before_moments := (select count(*) from play_moments);
   on_char := (play_card(bob, 'glint', b, a, '{}', 0, '', 'character', p_cast) ->> 'id')::uuid;
   on_thread := (play_card(bob, 'marquee', b, t, '{}', 0, '', 'thread') ->> 'id')::uuid;
-  on_board := (play_card(bob, 'quake', b, brd, '{}', 0, '', 'board') ->> 'id')::uuid;
+  on_board := (play_card(bob, 'quake', b, brd, '{}', 0, '', 'board', null, null, null, null, '{}', (select x.id from threads x where x.board = brd)) ->> 'id')::uuid;
   if (select post_version from play_moments where play = on_char) is distinct from p_cast then raise exception 'a play on a character takes a moment of its cast-from post'; end if;
   if exists (select 1 from play_moment_layers where layer in (on_char, on_thread, on_board)) then raise exception 'a play beyond a post is copied as a layer'; end if;
   if (select count(*) from play_moments) is distinct from before_moments + 1 or exists (select 1 from play_moments where play in (on_thread, on_board)) then

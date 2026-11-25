@@ -297,7 +297,7 @@ export interface Seed {
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
    * bound). Held and paid for nowhere. With `unrecorded`, a play on a character is one from before its moment was snapshotted (0352). Returns the play's Act.
    */
-  reach(character: Id, reach: BeyondPost, target: Id, card: string, options?: { post?: Id; at?: number; ends?: number; message?: string; config?: Readonly<Record<string, unknown>>; live?: boolean; unrecorded?: boolean }): Id;
+  reach(character: Id, reach: BeyondPost, target: Id, card: string, options?: { post?: Id; at?: number; ends?: number; message?: string; config?: Readonly<Record<string, unknown>>; live?: boolean; unrecorded?: boolean; thread?: Id }): Id;
   /**
    * A card set face down by a character on a post of its own (what `set_card` writes): a set Act naming no card, and the setter's own
    * record of which card it is. Returns the set Act.
@@ -2606,10 +2606,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
    * The Edge Function's reading of a play, then `play_card` (0016_cards_screens.sql): the post is read and priced by its card's rules
    * (`decidePlay`), then the character, the card in hand and the layer are the database's, in that order.
    */
-  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }): Answer<Act> {
-    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...(reply.framing ? { framing: reply.framing } : {}) }) });
+  function playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: Reach = 'post', fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id): Answer<Act> {
+    const bad = request({ action: 'playCard', card, character, target, config, message, ...(reach !== 'post' ? { reach, post: fromPost } : {}), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...(reply.framing ? { framing: reply.framing } : {}) }) });
     if (bad) return bad;
-    if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost);
+    if (reach !== 'post') return playBeyond('cast', card, character, target, config, message, reach, fromPost, boardThread);
     const on = acts.get(target);
     if (!on) return refuse('there is no such post', 'target');
     const rules = instance.cards.find((c) => c.key === card)!;
@@ -2950,10 +2950,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /**
    * `play_card` beyond a post (0055): the target is the character (played from one of its posts), the thread or the board; its rules
-   * see its own live plays and the ones above it; the Act sits in the post's thread, the thread, or The System's announcements thread,
+   * see its own live plays and the ones above it; the Act sits in the post's thread, the thread, or the thread on the board the player named,
    * and its play_reach row ends at least(the card's lasts, reachLasts).
    */
-  function playBeyond(play: 'cast' | 'use', card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: BeyondPost, fromPost: Id | undefined): Answer<Act> {
+  function playBeyond(play: 'cast' | 'use', card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach: BeyondPost, fromPost: Id | undefined, boardThread?: Id): Answer<Act> {
     const rules = instance.cards.find((c) => c.key === card)!;
     if (rules.cuts !== undefined && characters.get(character)?.staff !== undefined) return refuse('a staff character casts no card that ends a Gimmick');
     let thread: Id;
@@ -2983,8 +2983,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (play === 'use' && acts.get(on)?.character !== character) return refuse(`${rules.name} is used on a thread your own character started`);
       above = { board: reachEffects('board', boardOf(target)) };
     } else {
-      if (!boards.some((b) => b.id === target)) return refuse('there is no such board', 'target');
-      thread = announcements();
+      const board = boards.find((b) => b.id === target);
+      if (!board) return refuse('there is no such board', 'target');
+      /* A board card is written in a thread on the board, the one named (place_cast, 0430): none named, or one of another board, is asked for again; a board with no thread says to start one. */
+      if (boardThread === undefined || threads.get(boardThread)?.board !== target) {
+        if (![...threads.values()].some((t) => t.board === target)) return refuse(`start a thread on ${board.name} first`);
+        return refuse(`pick a thread on ${board.name} to play it in`);
+      }
+      thread = boardThread;
       on = null;
       above = {};
     }
@@ -3007,8 +3013,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const banned = bannedUntilOf(character);
       if (banned !== null) return refuse(`this character is banned until ${iso(banned)}; the ban ends by itself then`);
     }
-    /* A board card is written in the announcements thread and asks nothing; every other reach asks the thread it is written in (place_cast). */
-    if (reach !== 'board') {
+    /* Every reach asks the thread it is written in (place_cast), a board card too (0430). */
+    {
       const lockedOut = lockedOutRefusal(character, thread);
       if (lockedOut) return lockedOut;
     }
@@ -3042,7 +3048,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     /* A scored-as play lasts until its window closes, not a time from now, and names where the window starts. */
     const endsAt = window ? window.closes : at + Math.min(rules.lasts ? span(rules.lasts) : bound, bound);
     const wardPassed = shot === null ? undefined : passedWard(rules, effects, reach, shot.upTo, at);
-    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(window ? { starts: iso(window.opens) } : {}), ends: iso(endsAt) } });
+    const written = write({ character, kind: 'card', thread, target: on, at, payload: { card, message: decided.value.message, config: decided.value.config, reach, [reach]: target, ...(reach === 'board' ? { targetName: boards.find((b) => b.id === target)?.name ?? null } : {}), ...(shot === null ? {} : { pierce: { by: shot.play, card: shot.card, ...(wardPassed === undefined ? {} : { ward: wardPassed }) } }), ...(window ? { starts: iso(window.opens) } : {}), ends: iso(endsAt) } });
     reachPlays.set(written.id, { reach, target, endsAt });
     if (shot !== null) spentPierces.add(shot.play);
     spend(account, decided.value.price, 'play', written.id);
@@ -5053,6 +5059,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         .sort(([a], [b]) => acts.get(a)!.at - acts.get(b)!.at || acts.get(a)!.order - acts.get(b)!.order).slice(0, 100)
         .map(([play, r]) => ({ play, reach: r.reach, target: r.target, endsAt: iso(r.endsAt), act: publicAct(acts.get(play)!) }));
       const played = [...plays, ...above.map((p) => p.act), ...kept.map((p) => p.act)];
+      /* The board cards written in this thread (they sit on no post; thread_page, 0430): from the page's first Act up to the next page's first (the first page from the start, the last to the end), oldest first, at most 100. */
+      const atSeq = (seq: number): number | undefined => [...acts.values()].find((a) => a.thread === thread && a.seq === seq)?.at;
+      const from = page === 1 ? -Infinity : atSeq((page - 1) * perPage + 1) ?? -Infinity;
+      const until = atSeq(page * perPage + 1) ?? Infinity;
+      const boardCards = [...acts.values()].filter((a) => a.thread === thread && a.kind === 'card' && a.payload.reach === 'board' && !('caught' in a.payload) && a.at >= from && a.at < until)
+        .sort((x, y) => x.at - y.at || x.order - y.order).slice(0, 100).map((a) => publicAct(a));
       /* The origin of a spun thread rides the page that holds the thread's first Act (thread_page, 0372): what the box read in pieces, its Act and its first 20 plays with their ends, whether there are more, the
          moment as the box chooses it (the spin's where a play on a character was pressed at a post, else the play's), the post a play is on, and the characters it names. */
       const origin = ((): PageOrigin | null => {
@@ -5084,14 +5096,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       })();
       const originPlays = origin === null ? [] : origin.plays.filter((a) => a.kind !== 'card_end');
       const wanted = [...played, ...originPlays].filter((a) => typeof a.payload.card === 'string' && effectCards.includes(a.payload.card)).map((a) => a.id);
-      const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
+      const ids = [...shownActs, ...under.map((u) => u.act), ...played, ...boardCards, ...(origin?.act ? [origin.act] : []), ...originPlays].map((a) => a.id);
       const pagePolls = pollParts(posts.map((a) => a.id));
       const visits = visitsOn(shownActs.filter((a) => a.kind === 'post' || a.kind === 'spin').concat(under.map((u) => u.act)).map((a) => a.id));
       /* A visit's Mod is named on the page (`who` in thread_page, 0108), though it has no post there. */
-      const who = [...new Set([...shownActs, ...under.map((u) => u.act), ...played].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
+      const who = [...new Set([...shownActs, ...under.map((u) => u.act), ...played, ...boardCards].flatMap((a) => (a.character === null ? [] : [a.character])).concat(visits.map((v) => v.mod)))].sort();
       const [chars, stats, standings, reveals, turns] = [core.characters(who), core.characterStats(who), core.standingAmounts(who), core.classReveals(who), core.turnsAnnounced(who)];
       return {
-        thread: summary, page, acts: shownActs,
+        thread: summary, page, acts: shownActs, boardCards,
         people: chars.map((character): ThreadPerson => ({
           character: ((until) => (until === null ? character : { ...character, lockedUntil: iso(until) }))(lockedOutUntil(character.id, thread)), posts: stats[character.id]?.posts ?? 0, standing: standings[character.id] ?? 0,
           reveals: reveals.filter((r) => r.character === character.id), turns: turns.filter((t) => t.character === character.id),
@@ -6241,10 +6253,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         thread = from.thread; on = from.id;
       } else if (reach === 'thread') {
         thread = target; on = [...acts.values()].find((a) => a.thread === target && a.seq === 1)?.id ?? null;
-      } else { thread = announcements(); on = null; }
+      } else { thread = o?.thread ?? announcements(); on = null; }
       const bound = span(settings.reachLasts[reach]);
       const endsAt = o?.ends ?? at + Math.min(rules?.lasts ? span(rules.lasts) : bound, bound);
-      const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ends: iso(endsAt) } }));
+      const written = asAt(ownerOf(character), at, () => write({ character, kind: 'card', thread, target: on, at, payload: { card, message: o?.message ?? '', config: o?.config ?? {}, reach, [reach]: target, ...(reach === 'board' ? { targetName: boards.find((b) => b.id === target)?.name ?? null } : {}), ends: iso(endsAt) } }));
       reachPlays.set(written.id, { reach, target, endsAt });
       if (o?.unrecorded) moments.delete(written.id);
       if (o?.live) { sendAct(written); sendReach(written); }

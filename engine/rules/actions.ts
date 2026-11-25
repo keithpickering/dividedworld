@@ -122,7 +122,9 @@ const reached = (r: Fields, instance: Instance, key: string, play: Exclude<Play,
   const lands = reachesOf(instance.cards.find((c) => c.key === key)!);
   if (!lands.includes(reach)) throw new Refused('reach', `this card lands on ${listed(lands)}`);
   if (reach === 'post') return {};
-  return { reach, ...(reach === 'character' ? { from_post: id(r, 'post') } : {}) };
+  /* A board card is written in a thread on its board: the one named, if any (SQL says what to do when none is: it has the board's name). */
+  const thread = reach === 'board' && play === 'cast' && r.boardThread !== undefined && r.boardThread !== null ? { in_board_thread: id(r, 'boardThread') } : {};
+  return { reach, ...(reach === 'character' ? { from_post: id(r, 'post') } : {}), ...thread };
 };
 
 /** The words a play of a card that replies is refused in when it carries no reply; play_card says the same of a reply with no letter or digit. */

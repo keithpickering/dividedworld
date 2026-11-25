@@ -1723,7 +1723,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A card that replies sends its reply as `body` and `framing`, as a post does; the function names them for the play. */
     /* The answer of a play that carried a reply names it too (`under`, as the broadcast does): it is handed to the thread's listeners here, as the broadcast would, so the caster's own screen nests it
        even where the broadcast is slow or lost; a screen that hears both ignores the second. */
-    playCard: (card, character, target, config, message, reach, fromPost, first, reply) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, (row) => {
+    playCard: (card, character, target, config, message, reach, fromPost, first, reply, boardThread) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, (row) => {
       const { under, ...card } = row;
       if (isObject(under) && typeof card['thread'] === 'string') for (const l of [...(topics.get(`thread:${card['thread']}`)?.listeners ?? [])]) l('under', under);
       return toAct(card);
@@ -1974,6 +1974,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const under = rowsOf(d['under']).map((u) => ({ parent: u['parent'] as Id, play: u['play'] as Id, act: toAct(u['act']) }));
       const cut = rowsOf(d['cut']).map((c) => ({ seq: num(c['seq']), parentSeq: num(c['parent_seq']) }));
       const kept = rowsOf(d['kept']).map(toPlayAbove);
+      /* The board cards written in the thread (0430); a document without the key reads as none. */
+      const boardCards = rowsOf(d['boardCards']).map(toAct);
       const summary = toThread(d['summary'] as Row);
       /* The origin of a spun thread, on the page that holds its first Act (0372); a document without the key, or with a null one, has none. */
       const o = d['origin'];
@@ -1987,12 +1989,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         : null;
       /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them, the nested replies and the kept plays, and the origin's Act and plays (the plays' ends are no plays). */
       const asked = [
-        ...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id),
+        ...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id), ...boardCards.map((a) => a.id),
         ...(origin === null ? [] : [...(origin.act === null ? [] : [origin.act.id]), ...origin.plays.filter((a) => a.kind !== 'card_end').map((a) => a.id)]),
       ];
       const reading: Record<Id, number> = typeof d['reading'] === 'number' ? { [thread]: d['reading'] } : {};
       return {
-        thread: summary, page: num(d['page'], 1), acts,
+        thread: summary, page: num(d['page'], 1), acts, boardCards,
         people: rowsOf(d['people']).map((p): ThreadPerson => ({
           character: toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined), posts: num(p['posts']), standing: num(p['standing']),
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),

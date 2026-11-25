@@ -7,8 +7,10 @@ import { systemSettings, testCosmeticsContent, testSystem, testGroups } from './
 const splat = { key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }) };
 // A card beyond a post (docs/plans/2026-11-01-card-reach-plan.md, Task 3).
 const sparkle = { ...splat, key: 'sparkle', name: 'Sparkle', rarity: 'uncommon' as const, reaches: ['character' as const, 'thread' as const], lasts: { unit: 'day' as const, count: 1 } };
+// A board card, written in a thread on its board (0430).
+const quake = { ...splat, key: 'quake', name: 'Quake', rarity: 'legendary' as const, reaches: ['board' as const], lasts: { unit: 'day' as const, count: 1 } };
 const instance: Instance = {
-  key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat, sparkle], withdrawn: [],
+  key: 'test-world', name: 'Test World', system: testSystem, classes: [{ key: 'a', name: 'A', earn: () => [] }], cards: [splat, sparkle, quake], withdrawn: [],
   reactions: [{ key: 'fire', emoji: '🔥', quadrant: 'excitedPositive' }],
   settings: {
     walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, postEffects: 8, crowdPayEach: 2, crowdFloor: 2, crowdPayMost: 10, charactersPerPlayer: 6, settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', invitesPerPlayer: 3, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
@@ -310,6 +312,16 @@ test('a play beyond a post names its reach and its target, and a character play 
     { ok: true, rpc: 'play_card', args: { card: 'sparkle', through: id, target: other, config: {}, message: '', reach: 'thread' }, asService: true, needsTarget: true, play: 'cast' });
   assert.match(refusal({ action: 'playCard', card: 'sparkle', character: id, reach: 'character', target: other }) ?? '', /^post: is not an id/);
   assert.match(refusal({ action: 'useCard', card: 'sparkle', character: id, reach: 'thread', target: 'x' }) ?? '', /^target:/);
+});
+
+test('a board card names the thread it is played in, and a malformed one is refused before SQL', () => {
+  const thread = '44444444-4444-4444-8444-444444444444';
+  assert.deepEqual(decide({ action: 'playCard', card: 'quake', character: id, reach: 'board', target: other, boardThread: thread }, instance),
+    { ok: true, rpc: 'play_card', args: { card: 'quake', through: id, target: other, config: {}, message: '', reach: 'board', in_board_thread: thread }, asService: true, needsTarget: true, play: 'cast' });
+  // None named is the database's to refuse, in words that name the board.
+  assert.deepEqual(decide({ action: 'playCard', card: 'quake', character: id, reach: 'board', target: other }, instance),
+    { ok: true, rpc: 'play_card', args: { card: 'quake', through: id, target: other, config: {}, message: '', reach: 'board' }, asService: true, needsTarget: true, play: 'cast' });
+  assert.match(refusal({ action: 'playCard', card: 'quake', character: id, reach: 'board', target: other, boardThread: 'x' }) ?? '', /^boardThread: is not an id/);
 });
 
 test('a request with a reach the card lacks is refused before SQL', () => {
