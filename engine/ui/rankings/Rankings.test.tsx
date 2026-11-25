@@ -316,15 +316,16 @@ describe('Rankings', () => {
     expect(row).not.toHaveTextContent(/Face|Heel/u);
   });
 
-  test('a revealed class shows with the reveal\'s date, and a later announced Turn says so', async () => {
+  test('a revealed class shows with the reveal\'s date, and a later announced Turn clears it', async () => {
     const w = world();
     w.fake.signInAs(w.me);
     renderIn(w.fake, <RankingsScreen />, { path: '/rankings' });
     await screen.findByRole('table');
     const spritey = rowOf('Spritey');
-    expect(spritey).toHaveTextContent('Face');
-    expect(within(spritey).getByText('Revealed Oct 3')).toBeInTheDocument();
-    expect(within(spritey).getByText('Has Turned since Oct 20')).toBeInTheDocument();
+    expect(within(spritey).getByText('Not revealed')).toBeInTheDocument();
+    expect(spritey).not.toHaveTextContent('Face');
+    expect(spritey).not.toHaveTextContent('Revealed Oct 3');
+    expect(spritey).not.toHaveTextContent('Has Turned');
     const gloomba = rowOf('Gloomba');
     expect(gloomba).toHaveTextContent('Heel');
     expect(within(gloomba).getByText('Revealed Oct 5')).toBeInTheDocument();

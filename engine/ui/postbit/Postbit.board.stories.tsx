@@ -83,7 +83,7 @@ function Band() {
     squareFrame: { x: 0, y: 0, w: 1, h: 0.5 }, portraitFrame: null, portraitTallness: 2, outfit: PIPEWRENCH, trophies: [{ award: 'story-belt', trophy: 'hardcore-belt', name: 'The Hardcore Belt', art: null, belt: true, held: true }], pipStyle: instance.pipStyles[0]?.key ?? 'default',
     pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members',
   };
-  return <Postbit person={{ character, posts: 212, standing: 650, revealed: null, turnedAt: null }} layout="stacked" />;
+  return <Postbit person={{ character, posts: 212, standing: 650, revealed: null }} layout="stacked" />;
 }
 
 function PostbitStory() {

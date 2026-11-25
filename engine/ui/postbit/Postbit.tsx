@@ -157,7 +157,6 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
         {scored && person.revealed && (
           <span className="kb-postbit-class kb-small">
             <span>Revealed: {className(person.revealed.class)} ({shortDate(person.revealed.at)})</span>
-            {person.turnedAt && <span>Has Turned since ({shortDate(person.turnedAt)})</span>}
           </span>
         )}
       </div>

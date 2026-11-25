@@ -203,7 +203,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
           const statement = said.get(c.id);
           people.current.set(c.id, {
             character: c, posts: stats[c.id]?.posts ?? 0, standing: standings[c.id] ?? null,
-            revealed: statement?.revealed ?? null, turnedAt: statement?.turnedAt ?? null,
+            revealed: statement?.revealed ?? null,
           });
         }
         bump((n) => n + 1);
@@ -218,7 +218,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
     let moved = false;
     for (const c of cast) {
       if (people.current.has(c.id)) continue;
-      people.current.set(c.id, { character: c, posts: 0, standing: null, revealed: null, turnedAt: null });
+      people.current.set(c.id, { character: c, posts: 0, standing: null, revealed: null });
       moved = true;
     }
     if (moved) bump((n) => n + 1);
@@ -304,7 +304,7 @@ function ThreadView({ thread, doc }: { readonly thread: Id; readonly doc: Thread
       const { lockedUntil: _page, ...unlocked } = p.character;
       const person: PostbitPerson = {
         character: lockedUntil === undefined ? unlocked : { ...unlocked, lockedUntil }, posts: p.posts, standing: p.standing,
-        revealed: statement?.revealed ?? null, turnedAt: statement?.turnedAt ?? null,
+        revealed: statement?.revealed ?? null,
       };
       /* A person read again who is as they were stays the same object, so a page read again redraws no post for it. */
       const held = people.current.get(p.character.id);

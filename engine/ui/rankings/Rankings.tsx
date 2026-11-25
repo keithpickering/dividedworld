@@ -3,8 +3,8 @@
  * section 8): the season's public standings in their order, each with its place, its rank and its
  * standing; the player's own characters marked "Yours" and shown with their classes in their own
  * colors, from the player's own rows; and another character's class only as its player made it
- * public (`class_reveals`), with its date, and "Has Turned since" when an announced Turn came after
- * it. A character with no reveal shows no class. Nothing else about anyone's class is read here.
+ * public (`class_reveals`), with its date, and none once an announced Turn came after it. A
+ * character with no reveal shows no class. Nothing else about anyone's class is read here.
  *
  * `Rankings` is the view: it is handed what `standingsPage`, `classReveals` and `turnsAnnounced`
  * return and the player's own rows (`myCharacters`), and draws them. Its order is the standings'
@@ -80,7 +80,6 @@ function ClassCell({ own, stated, className }: { readonly own: MyCharacter | und
     <span className="kb-rankings-stated">
       <ClassChip cls={stated.revealed.class} name={className(stated.revealed.class)} kind="revealed" />
       <span className="kb-rankings-when">Revealed {shortDate(stated.revealed.at)}</span>
-      {stated.turnedAt && <span className="kb-rankings-when">Has Turned since {shortDate(stated.turnedAt)}</span>}
     </span>
   );
 }
