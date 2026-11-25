@@ -7,6 +7,7 @@
  */
 import { color, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { colorWord, who } from './seen-words.ts';
 
 export const HOT_BOX_LASTS = { unit: 'day', count: 3 } as const;
 
@@ -18,6 +19,10 @@ export const hotBox: CardRules<{ color: string }> = {
   alignment: 'salty',
   rarity: 'common',
   lasts: HOT_BOX_LASTS,
+  seen: (p) => {
+    const smoke = colorWord(p.config);
+    return `${who(p)} filled this post with thick ${smoke === null ? '' : `${smoke} `}smoke, ${p.ago}: a reader has to wave it away to read through, and it thins out as the days pass.`;
+  },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(hotBox, target, effects, now),
   /** The smoke colors code falls back on when a persona gives none (staffConfigOf): lime green, medium purple, hot pink,

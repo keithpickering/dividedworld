@@ -34,6 +34,8 @@ interface World {
   postBody?: string;
   /** `pool_read` does not hold the reported post (hidden since the report). */
   unreadable?: boolean;
+  /** What `pool_read` adds (0426): the judged post's poll, plays and reactions, and the thread's origin. */
+  extras?: { post?: Record<string, unknown>; origin?: Record<string, unknown> };
 }
 
 function fakeDbs(w: World = {}) {
@@ -62,7 +64,7 @@ function fakeDbs(w: World = {}) {
         case 'staff_memory_at': return null as T;
         case 'staff_notes_recent': return [] as T;
         case 'character_faces': return Object.fromEntries((args.ids as string[]).map((id) => [id, { name: 'Ann', pronouns: { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false } }])) as T;
-        case 'pool_read': return { title: 'Best Mario game?', self: null, posts: w.unreadable ? [] : [{ act: POST, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'bob', name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [] }] } as T;
+        case 'pool_read': return { title: 'Best Mario game?', self: null, posts: w.unreadable ? [] : [{ act: POST, seq: 1, at: '2026-11-04T09:00:00.000Z', author: 'bob', name: 'Bob', pronouns: { subject: 'they', object: 'them', determiner: 'their', possessive: 'theirs', reflexive: 'themself', plural: true }, body: w.postBody ?? 'Odyssey. Odyssey.', replyTo: null, quotes: [], ...w.extras?.post }], ...(w.extras?.origin ? { origin: w.extras.origin } : {}) } as T;
         case 'record_staff_call': { state.records.push(args); return { recorded: true } as T; }
         case 'close_report': {
           state.closed.push(args);
@@ -368,4 +370,25 @@ test('a report whose post cannot be read is judged by no one: no call is made, n
   assert.equal(d.state.closed.length, 0);
   assert.equal(d.state.refunds, 1);
   assert.match(String(out.body['error']), /refunded/);
+});
+
+const POLL = { question: 'Best kart?', options: ['Standard', 'Bike'], pick: 1, secret: false, endsAt: '2099-01-01T00:00:00.000Z', closed: false, closedBy: null, closedAt: null, counts: [3, 1], voters: 4 };
+const PLAY = (play: string) => ({ play, card: null, at: '2026-11-04T09:30:00.000Z', by: null, config: null, state: null, text: null, covered: null });
+const ORIGIN = { kind: 'post', place: { kind: 'post', seq: 4, title: 'Best kart?' }, at: '2026-05-01T00:00:00.000Z', spunAt: '2026-11-03T00:00:00.000Z', moment: false,
+  post: { act: 'origin-act', seq: 4, at: '2026-05-01T00:00:00.000Z', author: 'wario', name: 'Wario', pronouns: null, body: 'The origin words.', title: 'Best kart?', poll: null, plays: [], reactions: {} } };
+const EXTRAS = { post: { poll: POLL, plays: [PLAY('play-1'), PLAY('play-2')], reactions: { [dividedWorld.reactions[0]!.key]: 3 } }, origin: ORIGIN };
+const seesTheBoard = (message: string) => {
+  assert.ok(message.includes('[poll on this post] "Best kart?" (pick one)'), 'the poll');
+  assert.equal(message.split('was played on this post').length - 1, 2, 'both plays');
+  assert.ok(message.includes(`[Reactions: ${dividedWorld.reactions[0]!.emoji} 3]`), 'the reactions');
+  assert.ok(message.includes('(This thread was spun '), 'the origin line');
+  assert.ok(message.includes('The origin words.'), 'the origin block');
+};
+
+test('the judge of a report is sent the post\'s poll, plays, reactions and the thread\'s origin, rendered', async () => {
+  const d = fakeDbs({ extras: EXTRAS });
+  const m = fakeModels(() => ({ verdict: 'visit', line: 'Rule 2, I think.', charge: { rule: 'Rule 2', band: 'minor' } }));
+  const out = await go(d, m);
+  assert.equal(out.status, 200, JSON.stringify(out.body));
+  seesTheBoard(m.chats[0]!.messages[0]!.content);
 });

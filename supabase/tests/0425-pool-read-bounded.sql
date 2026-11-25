@@ -7,6 +7,11 @@
 -- 2. the test can fail: 0421's pool_read, kept here as a copy, reads more than that bound under the empty statistics, and returns the same posts where it does.
 -- 3. the same security: the owner, the service role's only, the helpers with no caller.
 
+-- 0426 added keys to pool_read (an origin, and each post's poll, plays, reactions and rewoundTo); 0421's read, kept below, has none, so the comparisons strip them.
+create function pg_temp.strip(r jsonb) returns jsonb language sql as $$
+  select (r - 'origin') || jsonb_build_object('posts', (select coalesce(jsonb_agg(x - 'poll' - 'plays' - 'reactions' - 'rewoundTo'), '[]'::jsonb) from jsonb_array_elements(r -> 'posts') x))
+$$;
+
 create function pg_temp.acts_read() returns bigint language sql as $$
   select coalesce(sum(seq_tup_read + idx_tup_fetch), 0)::bigint from pg_stat_xact_all_tables where relname = 'acts'
 $$;
@@ -158,8 +163,8 @@ begin
   if c_big <= 1500 then raise exception '0421''s pool_read read only % rows of acts under empty statistics: this test cannot tell the bounded read from it', c_big; end if;
   raise notice '0421 pool_read under empty statistics: % rows of acts', c_big;
   -- and it returns the same posts, in the same shape, where it returns at all
-  if old is distinct from pool_read(big, 'wp-boss', null, 60) then raise exception 'the 4,000-post thread''s read is not 0421''s'; end if;
-  if pg_temp.pool_read_0421(small, 'wp-boss', null, 60) is distinct from pool_read(small, 'wp-boss', null, 60) then raise exception 'the 1,000-post thread''s read is not 0421''s'; end if;
+  if old is distinct from pg_temp.strip(pool_read(big, 'wp-boss', null, 60)) then raise exception 'the 4,000-post thread''s read is not 0421''s'; end if;
+  if pg_temp.pool_read_0421(small, 'wp-boss', null, 60) is distinct from pg_temp.strip(pool_read(small, 'wp-boss', null, 60)) then raise exception 'the 1,000-post thread''s read is not 0421''s'; end if;
   if (select count(*) from jsonb_array_elements(old -> 'posts') x where jsonb_array_length(x -> 'quotes') > 0) = 0 then raise exception 'the compared read has no quotes in it'; end if;
 end $$;
 
@@ -197,7 +202,7 @@ begin
   play := tests.act(boss, 'card', t, jsonb_build_object('card', 'wpveil2', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '1 day'), ids[10], base + interval '53 minutes');
   insert into post_veils (play, post, veil, author, ends_at) values (play, ids[10], 'author', a, now() + interval '1 day');
   foreach w in array array[0, 5, 60] loop
-    old := pg_temp.pool_read_0421(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], w); new := pool_read(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], w);
+    old := pg_temp.pool_read_0421(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], w); new := pg_temp.strip(pool_read(t, 'wp-boss', array[ids[5], ids[6], ids[8], ids[12]], w));
     if old is distinct from new then raise exception 'the path thread, window %, is not 0421''s: % posts in 0421''s, % in this one', w, jsonb_array_length(old -> 'posts'), jsonb_array_length(new -> 'posts'); end if;
     seen := seen + jsonb_array_length(new -> 'posts');
   end loop;

@@ -6,6 +6,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const blindStudy: CardRules<Record<string, never>> = {
   key: 'blind-study',
@@ -16,6 +17,7 @@ export const blindStudy: CardRules<Record<string, never>> = {
   rarity: 'uncommon',
   lasts: { unit: 'day', count: 3 },
   veil: 'totals',
+  seen: (p) => `${who(p)} drew a veil over this post's reaction totals, ${p.ago}: for a few days readers react blind, without seeing how it is doing.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(blindStudy, target, effects, now),
   validateConfig: () => ok({}),

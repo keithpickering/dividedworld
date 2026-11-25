@@ -7,6 +7,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const lineCutter: CardRules<Record<string, never>> = {
   key: 'line-cutter',
@@ -14,6 +15,7 @@ export const lineCutter: CardRules<Record<string, never>> = {
   alignment: 'pepperoni',
   rarity: 'rare',
   replies: true,
+  seen: (p) => `${who(p)} cut the line, ${p.ago}: their reply sits right under this post instead of waiting its turn.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(lineCutter, target, effects, now),
   validateConfig: () => ok({}),

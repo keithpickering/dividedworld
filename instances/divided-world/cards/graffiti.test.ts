@@ -6,7 +6,7 @@ import assert from 'node:assert/strict';
 import { CANS, CAPS, graffiti } from './graffiti.ts';
 import { STENCILS } from './graffiti/stencils.ts';
 import { GRID, cellsOf, count, type Cells } from '../../../engine/rules/surface.ts';
-import { surf } from './test-kit.ts';
+import { seenOf, surf } from './test-kit.ts';
 
 /* Graffiti (docs/plans/2026-11-11-graffiti-plan.md, Task 7). */
 const draw = (input: unknown) => surf.validateDraw(input);
@@ -140,4 +140,17 @@ test('Graffiti: every stencil at the last spot fits 64 KiB as Postgres writes it
   for (let y = 0; y < 34; y++) for (let x = 0; x < 34; x++) inTopLeft ||= covered(cells, x, y);
   assert.equal(inTopLeft, true);
   assert.equal(covered(cells, 50, 50), false);
+});
+
+test('Graffiti says what is drawn and, where the reader gives it, how much of the wall is covered', () => {
+  assert.equal(seenOf('graffiti'), 'Wario turned this post into a wall, 2 days ago: any character can spray it, and its own character can scrub it.');
+  assert.match(seenOf('graffiti', { by: null }), /^Someone turned this post into a wall/);
+  assert.equal(seenOf('graffiti', { config: { stencil: 'crown', can: 'pink', spot: 4 } }), 'Wario sprayed a crown in pink spray paint across this post, 2 days ago; any character can add to the wall, and its own character can scrub it.');
+  const covered = (cells: number) => seenOf('graffiti', { covered: cells / 10_000 });
+  assert.doesNotMatch(covered(0), /covered in paint/, 'none says nothing');
+  for (const [cells, words] of [[500, 'A bit'], [2000, 'Some'], [5000, 'About half'], [7000, 'Most'], [9500, 'Almost all'], [10_000, 'All']] as const) {
+    assert.match(covered(cells), new RegExp(`${words} of the wall is covered in paint\\.$`), words);
+  }
+  assert.doesNotMatch(seenOf('graffiti', { covered: null }), /covered in paint/, 'no share says nothing');
+  assert.doesNotMatch(seenOf('graffiti', { config: { stencil: 'nope', can: 'pink' } }), /undefined/, 'an unknown stencil falls back');
 });

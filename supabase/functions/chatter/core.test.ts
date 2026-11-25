@@ -90,6 +90,8 @@ interface World {
   effectsUp?: number;
   /** `pool_read` does not report the pick's Act among the thread's posts (the Act is a move's end, keep or arrival, not a post). */
   originNotPost?: boolean;
+  /** What `pool_read` adds (0426): the first post's poll, plays and reactions, and the thread's origin. */
+  extras?: { post?: Record<string, unknown>; origin?: Record<string, unknown> };
   /** A Mod's `mod_standing` (allowance and beat); none: no move to spend and an empty beat. */
   standing?: { allowance: number; beat: { id: string; name: string }[] };
   /** `record_staff_call` cannot write (a database error). */
@@ -264,7 +266,9 @@ function fakeDb(w: World = {}) {
               push({ act: r.act, at: r.at, author: r.author, name: `Player ${r.author}`, pronouns: null, body: w.bodies?.[r.act] ?? `Reply ${r.act} says hello.`, replyTo: r.old ? null : `own-${args.in_thread}`, quotes: [] });
             }
           }
-          return { title: `Thread ${at}`, self: `self-${staff}`, posts } as T;
+          const extraPost = w.extras?.post;
+          const shown = extraPost ? posts.map((p, i) => (i === 0 ? { ...p, ...extraPost } : p)) : posts;
+          return { title: `Thread ${at}`, self: `self-${staff}`, posts: shown, ...(w.extras?.origin ? { origin: w.extras.origin } : {}) } as T;
         }
         case 'pool_orphans': {
           // Every marked post of the week up to `through` that no spend names (the earliest for a persona and a day), with the card marked
@@ -2174,6 +2178,45 @@ test('a call that was not paid is recorded as spending no characters', async () 
   await run(d, fakeModels(() => new PromptTooLong(9, 3)), dividedWorld, at('17:52'));
   assert.deepEqual(d.state.attempts.map((a) => [a.paid, a.chars]), [[false, 0], [false, 0]]);
   assert.equal(await d.db.rpc('pool_chars_today', { on_day: DAY }), 0);
+});
+
+// ---- Reads see the board (docs/plans/2026-11-25-reads-see-the-board-plan.md, Task 5): the extras and the origin reach the prompt, and are charged ----
+
+const POLL = { question: 'Best kart?', options: ['Standard', 'Bike'], pick: 1, secret: false, endsAt: '2099-01-01T00:00:00.000Z', closed: false, closedBy: null, closedAt: null, counts: [3, 1], voters: 4 };
+const PLAY = (play: string) => ({ play, card: null, at: '2026-11-04T09:30:00.000Z', by: null, config: null, state: null, text: null, covered: null });
+const ORIGIN = { kind: 'post', place: { kind: 'post', seq: 4, title: 'Best kart?' }, at: '2026-05-01T00:00:00.000Z', spunAt: '2026-11-03T00:00:00.000Z', moment: false,
+  post: { act: 'origin-act', seq: 4, at: '2026-05-01T00:00:00.000Z', author: 'wario', name: 'Wario', pronouns: null, body: 'The origin words.', title: 'Best kart?', poll: null, plays: [], reactions: {} } };
+
+test('a turn reading a post with a poll, two plays, reactions and an origin is sent each rendered line, and is charged their size', async () => {
+  const reactions = { [dividedWorld.reactions[0]!.key]: 3 };
+  const extras = { post: { poll: POLL, plays: [PLAY('play-1'), PLAY('play-2')], reactions }, origin: ORIGIN };
+  const waiting = [{ staff: SIGH, thread: T1, replies: [reply(R1)] }];
+  const bare = turnModels();
+  const bareOut = await run(fakeDb({ sessions: [SIGH_NOW], waiting }), bare);
+  assert.ok(bareOut.status === 'ok');
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting, extras });
+  const m = turnModels();
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  assert.deepEqual(out.turns.map((t) => t.status), ['taken']);
+  const message = m.chats[0]!.messages[0]!.content;
+  assert.ok(message.includes('[poll on this post] "Best kart?" (pick one)'), 'the poll');
+  assert.equal(message.split('was played on this post').length - 1, 2, 'both plays');
+  assert.ok(message.includes(`[Reactions: ${dividedWorld.reactions[0]!.emoji} 3]`), 'the reactions');
+  assert.ok(message.includes('(This thread was spun '), 'the origin line');
+  assert.ok(message.includes('The origin words.'), 'the origin block');
+  const wrote = d.of('write_staff_turn')[0]!;
+  assert.equal(wrote.in_chars, sizeOf(m.chats[0]!), 'charged the prompt it sent');
+  assert.ok((wrote.in_chars as number) > sizeOf(bare.chats[0]!) + 200, 'the extras\' rendered size is in the charge');
+});
+
+test('a pick reading a post with extras is sent the rendered lines', async () => {
+  const d = fakeDb({ sessions: [SIGH_EARLIER], kept: [keptPick(SIGH, T1, Q1)], extras: { post: { poll: POLL, plays: [PLAY('p1')], reactions: { [dividedWorld.reactions[0]!.key]: 2 } }, origin: ORIGIN } });
+  const m = fakeModels(normal);
+  const out = await run(d, m);
+  assert.ok(out.status === 'ok');
+  const all = m.chats.map((c) => c.messages[0]!.content).join('\n');
+  assert.ok(all.includes('[poll on this post]') && all.includes('was played on this post') && all.includes('[Reactions: ') && all.includes('(This thread was spun '));
 });
 
 /* ------------------------------------------------------------------------------------ a staff turn's ruling (staff requests, Task 4) ---- */

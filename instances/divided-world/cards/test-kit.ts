@@ -5,7 +5,8 @@
  */
 import { cards } from './index.ts';
 import { graffiti } from './graffiti.ts';
-import { postTarget, type CardTarget } from '../../../engine/rules/cards.ts';
+import { postTarget, type CardTarget, type SeenPlay } from '../../../engine/rules/cards.ts';
+import { amountWords } from '../../../engine/system/when.ts';
 
 export const post = (length: number): CardTarget => ({ reach: 'post', act: 'p1', kind: 'post', length, text: '', links: [] });
 
@@ -16,3 +17,6 @@ export const by = (key: string) => cards.find((c) => c.key === key)!;
 export const jimmy = () => cards.find((c) => c.key === 'jimmy-wails')!;
 
 export const surf = graffiti.surface!;
+
+/** What a card's `seen` says of a play, as the reader calls it: a play by Wario two days ago with no config and no saved state, unless `over` says otherwise. */
+export const seenOf = (key: string, over: Partial<SeenPlay> = {}): string => by(key).seen!({ config: {}, state: null, text: null, covered: null, by: 'Wario', ago: '2 days ago', amountWords, ...over });

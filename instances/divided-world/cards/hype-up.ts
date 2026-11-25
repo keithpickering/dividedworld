@@ -7,6 +7,7 @@
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import { HYPE, PUBLICITY_LASTS } from './publicity.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const hypeUp: CardRules<Record<string, never>> = {
   key: 'hype-up',
@@ -16,6 +17,7 @@ export const hypeUp: CardRules<Record<string, never>> = {
   reaches: ['post'],
   gimmick: HYPE,
   lasts: PUBLICITY_LASTS,
+  seen: (p) => `${who(p)} hyped this post up, ${p.ago}: for a few days every excited or calm positive vote it draws is worth a little extra to its author.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(hypeUp, target, effects, now),
   validateConfig: () => ok({}),

@@ -10,6 +10,7 @@
  */
 import { ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
 import { QUADRANTS, type Quadrant, type Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export type FourDChessConfig = { readonly card: string; readonly quadrant: Quadrant };
 
@@ -23,6 +24,7 @@ export const fourDChess: CardRules<FourDChessConfig> = {
   play: 'set',
   trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } },
   catches: (config) => config.card,
+  seen: (p) => `${who(p)}'s 4D Chess back flipped over on this post, ${p.ago}, when a particular move was played here: the setter now earns from the votes that move draws in the reactions the setter named.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: (config) => {

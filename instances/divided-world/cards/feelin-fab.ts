@@ -5,6 +5,7 @@
  */
 import { landsOn, ok, type CardRules } from '../../../engine/rules/cards.ts';
 import type { Hundredths } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const feelinFab: CardRules<Record<string, never>> = {
   key: 'feelin-fab',
@@ -15,6 +16,7 @@ export const feelinFab: CardRules<Record<string, never>> = {
   rarity: 'common',
   reaches: ['post'],
   stack: 3,
+  seen: (p) => `${who(p)} set this post glowing in a rainbow under its words, ${p.ago}, with a Feelin' Fab.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(feelinFab, target, effects, now),
   validateConfig: () => ok({}),

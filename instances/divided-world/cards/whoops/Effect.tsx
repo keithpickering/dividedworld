@@ -73,7 +73,8 @@ import {
   BRUSH_PX, LayerInk, type LiveLine, PEN_PX, ROW_PX, SWEEP_BRUSH_ROWS, SWEEP_PX_S, bandsOf, brushOf, coveredLines, fits, fitStroke, minStepOf, sweepStep, topLayer,
   type Drops, type Pt, type Stroke, type Sweep, type TextLine,
 } from './scrub.ts';
-import { decodePoints, packStroke } from './points.ts';
+import { packStroke } from './points.ts';
+import { savedOf } from './saved.ts';
 import { luminance, makeSplat, type Box, type Splat } from './splat.ts';
 import * as suds from './suds.ts';
 import './whoops.css';
@@ -88,7 +89,7 @@ const DEFAULT_CLEAN = 95;
 const FADE_MS = 700;
 /** How often the model's published numbers and covered lines are recomputed while a sweep runs. */
 const REFRESH_MS = 150;
-export { HOLD_MS, SLOP_PX };
+export { HOLD_MS, SLOP_PX, savedOf };
 /** The ink of a play whose config carries none we can draw (the server keeps one, so this is a safeguard). */
 const FALLBACK_INK = '#ff2bd6';
 /** A band of a post's pictures is this many CSS px tall (`round(BAND_PX * q)` points of its lattice), and is held while it lies within `BAND_NEAR` of the viewport (an IntersectionObserver `rootMargin`: half a screen above and below). */
@@ -123,35 +124,6 @@ function seedOf(play: CardPlay): number {
   let h = 7;
   for (const ch of play.id) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0;
   return h;
-}
-
-/**
- * A play's saved state, read defensively: the server checked it, but a state is data from outside. Points are packed (points.ts). A stroke saved before strokes kept
- * their proportions (no `aspect`), in the old array shape, or with a point that does not decode, is dropped, as a malformed one is.
- */
-export function savedOf(saved: unknown): { strokes: Stroke[]; clean: boolean } {
-  const state = typeof saved === 'object' && saved !== null ? (saved as Record<string, unknown>) : undefined;
-  const raw = state?.strokes;
-  const strokes: Stroke[] = [];
-  if (Array.isArray(raw)) {
-    for (const s of raw as Record<string, unknown>[]) {
-      if (typeof s !== 'object' || s === null || typeof s.width !== 'number' || !(s.width > 0) || typeof s.aspect !== 'number' || !(s.aspect > 0) || !Number.isFinite(s.aspect)) continue;
-      const points = typeof s.points === 'string' ? decodePoints(s.points) : null;
-      if (!points) continue;
-      const before = strokes[strokes.length - 1];
-      const start = points[0]!;
-      /* A piece is joined to the one kept before it only where that one is the line it continues (a dropped stroke between them leaves it a line of its own). */
-      const joins = s.continues === true && before !== undefined && before.tool === s.tool && before.width === s.width && before.aspect === s.aspect
-        && (s.tool !== 'ink' || (before.tool === 'ink' && before.color === s.color))
-        && before.points[before.points.length - 1]![0] === start[0] && before.points[before.points.length - 1]![1] === start[1]
-        /* Only a line's last piece throws drops (the card refuses a piece that goes on after them), so a piece after drops starts a line of its own. */
-        && !(before.tool === 'ink' && before.drops !== undefined);
-      const more = joins ? { continues: true as const } : null;
-      if (s.tool === 'wash') strokes.push({ tool: 'wash', width: s.width, aspect: s.aspect, points, ...more });
-      else if (s.tool === 'ink' && typeof s.color === 'string') strokes.push({ tool: 'ink', color: s.color, width: s.width, aspect: s.aspect, points, ...more, ...(s.drops === 0 || s.drops === 1 || s.drops === 2 || s.drops === 3 ? { drops: s.drops } : null) });
-    }
-  }
-  return { strokes, clean: state?.clean === true };
 }
 
 /** A saved state as one string, whatever order the server's copy lists its keys in, to tell a copy of what was just sent from a different state. */

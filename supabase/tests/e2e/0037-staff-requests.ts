@@ -60,7 +60,10 @@ test('a Mod grants a request on its beat; one off its beat is conferred and the 
     where not exists (select 1 from pool_round_claims c where c.slot = s) order by s limit 1`);
   assert.ok(slot, 'a minute in the next hour is unclaimed');
   const today = slot.slice(0, 10);
-  sql(`select write_sessions('${today}'::date, '[{"staff": "${MOD.key}", "start": 0, "end": 1440}]')`);
+  // The session is this file's own: it starts a minute in, so it is a row of its own beside the all-day sessions (start 0) that 0033, 0034 and 0035 wrote for this persona on the same UTC day (write_sessions
+  // keeps a row per day, persona and start), and its turns are counted from none. A session holds `perSession` turns (4) for the whole day, spent by every round that used it, and this round makes three.
+  // Sharing the earlier files' session left it 4 - 1 (0034) - 1 (0035) = 2 turns, and the round's third request got no turn.
+  sql(`select write_sessions('${today}'::date, '[{"staff": "${MOD.key}", "start": 1, "end": 1440}]')`);
 
   // ---- Three boards of this file's own (A and B the Mod's beat, C not) and a thread each for the three requests. ----
   const tag = Date.now().toString(36);

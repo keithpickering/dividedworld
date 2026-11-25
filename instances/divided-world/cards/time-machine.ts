@@ -8,6 +8,7 @@
 import { landsOn, type CardRules } from '../../../engine/rules/cards.ts';
 import { rewindConfig } from '../../../engine/rules/rewind.ts';
 import type { Hundredths, Span } from '../../../engine/rules/types.ts';
+import { who } from './seen-words.ts';
 
 export const TIME_MACHINE_LASTS: Span = { unit: 'day', count: 3 };
 
@@ -22,6 +23,7 @@ export const timeMachine: CardRules<{ to: string }> = {
   reaches: ['post'],
   lasts: TIME_MACHINE_LASTS,
   rewind: { upTo: 'rare' },
+  seen: (p) => `${who(p)} sent this post back in time with a Time Machine, ${p.ago}: it is showing how it looked a while ago, and nothing much can be played on it meanwhile.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(timeMachine, target, effects, now),
   validateConfig: rewindConfig,
