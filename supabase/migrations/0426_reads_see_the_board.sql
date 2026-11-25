@@ -107,18 +107,17 @@ grant execute on function extras_layers(text, uuid) to kayfabb_digest;
 grant execute on function spin_answer_place(uuid) to kayfabb_digest;
 
 -- ---------------------------------------------------------------------------------------------------- post_extras ----
-create function post_extras(posts uuid[]) returns jsonb
+-- The extras of `posts`, for the posts in `shown` (the ones the board shows: any other post given gets an entry of nothing). post_extras finds `shown` itself; pool_read, whose posts are all ones its own read already
+-- found shown, passes them, so that no post is read again for it (CI, 0425's dominating-persona thread: each post pool_read returns cost two rows of `acts` more than its own read, and the thread that returns 81 posts read 24 more than the one that returns 76).
+create function post_extras_rows(posts uuid[], shown uuid[]) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp set jit = off
   set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
   ids uuid[];
-  vis uuid[];
+  vis uuid[] := coalesce(post_extras_rows.shown, '{}'::uuid[]);
 begin
-  if cardinality(post_extras.posts) > 200 then raise exception 'ask for at most 200 posts at a time' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
-  ids := coalesce(array(select u.p from (select g.p, min(g.n) as n from unnest(post_extras.posts) with ordinality g(p, n) where g.p is not null group by g.p) u order by u.n), '{}'::uuid[]);
-  -- Only a post the board shows has extras: one acts_public gives no row for, or gives as hidden, is answered with an entry of nothing (so an answer is still one entry for each post asked about, in the order asked, and
-  -- a caller that names a hidden post, as the digest will, learns no more than a reader of the board).
-  vis := coalesce(array(select v.id from acts_public v where v.id = any (ids) and v.hidden is not true and v.kind in ('post', 'spin', 'update')), '{}'::uuid[]);
+  if cardinality(post_extras_rows.posts) > 200 then raise exception 'ask for at most 200 posts at a time' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  ids := coalesce(array(select u.p from (select g.p, min(g.n) as n from unnest(post_extras_rows.posts) with ordinality g(p, n) where g.p is not null group by g.p) u order by u.n), '{}'::uuid[]);
   return coalesce((
     with given as materialized (select u.p as post, u.n from unnest(ids) with ordinality u(p, n)),
     x as materialized (select * from extras_ids(vis)),
@@ -160,6 +159,19 @@ begin
       || coalesce((select jsonb_build_object('body', w.body) from rw w where w.post = g.post), '{}'::jsonb)
       order by g.n)
     from given g), '[]'::jsonb);
+end $$;
+
+create function post_extras(posts uuid[]) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+declare
+  ids uuid[];
+begin
+  if cardinality(post_extras.posts) > 200 then raise exception 'ask for at most 200 posts at a time' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
+  ids := coalesce(array(select u.p from (select g.p, min(g.n) as n from unnest(post_extras.posts) with ordinality g(p, n) where g.p is not null group by g.p) u order by u.n), '{}'::uuid[]);
+  -- Only a post the board shows has extras: one acts_public gives no row for, or gives as hidden, is answered with an entry of nothing (so an answer is still one entry for each post asked about, in the order asked, and
+  -- a caller that names a hidden post, as the digest will, learns no more than a reader of the board).
+  return post_extras_rows(ids, coalesce(array(select v.id from acts_public v where v.id = any (ids) and v.hidden is not true and v.kind in ('post', 'spin', 'update')), '{}'::uuid[]));
 end $$;
 
 -- ---------------------------------------------------------------------------------------------------- pool_read_origin ----
@@ -252,7 +264,8 @@ begin
   if oid is not null and not (oid = any (ids)) then ids := ids || oid; end if;
   i := 1;
   while i <= cardinality(ids) loop
-    ex := ex || post_extras(ids[i : i + 199]);
+    -- every post here was found shown by pool_read_rows or pool_read_origin, so none is probed again
+    ex := ex || post_extras_rows(ids[i : i + 199], ids[i : i + 199]);
     i := i + 200;
   end loop;
   select coalesce(jsonb_object_agg(e.x ->> 'post', e.x - 'post'), '{}'::jsonb) into ex_by from jsonb_array_elements(ex) e(x);
@@ -274,10 +287,11 @@ begin
     'origin', org);
 end $$;
 
+alter function post_extras_rows(uuid[], uuid[]) owner to kayfabb_digest;
 alter function post_extras(uuid[]) owner to kayfabb_digest;
 alter function pool_read_origin(uuid) owner to kayfabb_digest;
 alter function pool_read(uuid, text, uuid[], integer) owner to kayfabb_digest;
 revoke create on schema public from kayfabb_digest;
-revoke execute on function post_extras(uuid[]), pool_read_origin(uuid), pool_read(uuid, text, uuid[], integer) from public, anon, authenticated, service_role;
+revoke execute on function post_extras_rows(uuid[], uuid[]), post_extras(uuid[]), pool_read_origin(uuid), pool_read(uuid, text, uuid[], integer) from public, anon, authenticated, service_role;
 grant execute on function post_extras(uuid[]) to service_role;
 grant execute on function pool_read(uuid, text, uuid[], integer) to service_role;

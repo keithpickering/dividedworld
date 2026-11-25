@@ -373,6 +373,9 @@ end $$;
 do $$
 declare f text; bad text;
 begin
+  if has_function_privilege('service_role', 'post_extras_rows(uuid[], uuid[])'::regprocedure, 'execute') or has_function_privilege('authenticated', 'post_extras_rows(uuid[], uuid[])'::regprocedure, 'execute') or has_function_privilege('anon', 'post_extras_rows(uuid[], uuid[])'::regprocedure, 'execute') then
+    raise exception 'post_extras_rows is callable by a client role';
+  end if;
   foreach f in array array['post_extras(uuid[])', 'pool_read(uuid, text, uuid[], integer)'] loop
     if (select pg_get_userbyid(proowner) from pg_proc where oid = f::regprocedure) is distinct from 'kayfabb_digest'
        or not has_function_privilege('service_role', f::regprocedure, 'execute') or has_function_privilege('authenticated', f::regprocedure, 'execute') or has_function_privilege('anon', f::regprocedure, 'execute')
@@ -401,7 +404,7 @@ begin
   if not has_table_privilege('kayfabb_digest', 'poll_counts', 'select') or not has_table_privilege('kayfabb_digest', 'reaction_tallies_open', 'select') then raise exception 'the digest role lost a view it had'; end if;
   -- every definer function of the migration pins its search_path
   select string_agg(p.oid::regprocedure::text, ', ') into bad from pg_proc p
-  where p.proname in ('extras_ids', 'extras_layers', 'pool_read_origin', 'post_extras', 'pool_read') and p.prosecdef
+  where p.proname in ('extras_ids', 'extras_layers', 'pool_read_origin', 'post_extras', 'post_extras_rows', 'pool_read') and p.prosecdef
     and not exists (select 1 from unnest(p.proconfig) c where c like 'search_path=%pg_temp');
   if bad is not null then raise exception 'unpinned: %', bad; end if;
 end $$;
@@ -531,6 +534,12 @@ begin
   foreach k in array array['post', 'poll', 'ballot', 'play', 'char', 'board', 'update', 'report', 'verdict', 'appeal', 'ruling'] loop
     c0 := pg_temp.acts_read(); r := pool_read(pg_temp.f('k_' || k || '_200'), 'ex-boss', null, 60); lo := pg_temp.acts_read() - c0;
     c0 := pg_temp.acts_read(); r := pool_read(pg_temp.f('k_' || k || '_400'), 'ex-boss', null, 60); hi := pg_temp.acts_read() - c0;
+    -- a thread whose origin is no post (a board's play) and whose posts carry no poll, play, edit or tally: what pool_read adds to the posts' own read (pool_read_rows) is a few rows (at most 20: the origin's and the thread's), whatever the number of posts it returns, not a probe of every post
+    -- again (0425's dominating-persona thread returns 81 posts and the same persona-free one 76, and CI saw each extra post cost the read rows it already had)
+    if k = 'board' then
+      c0 := pg_temp.acts_read(); perform count(*) from pool_read_rows(pg_temp.f('k_board_400'), 'ex-boss', null, 60); lo := pg_temp.acts_read() - c0;
+      if hi - lo > 20 then raise exception '[%] pool_read reads % rows of acts for the extras of 60 plain posts beyond the % of their own read: it reads each post again', label, hi - lo, lo; end if;
+    end if;
     if r -> 'origin' is null or r -> 'origin' = 'null'::jsonb or r -> 'origin' ->> 'kind' is null then raise exception '[%] the thread spun from a % has no origin', label, k; end if;
     if hi > lo + 20 then raise exception '[%] pool_read reads % rows of acts in a thread of 400 posts spun from a % and % in one of 200: it grows', label, hi, k, lo; end if;
     if hi > bound then raise exception '[%] pool_read reads % rows of acts in a thread spun from a %: more than %', label, hi, k, bound; end if;
