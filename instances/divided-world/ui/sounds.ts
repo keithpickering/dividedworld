@@ -45,8 +45,8 @@ export function gainOf(m: { lufs: number; peak: number }): number {
 
 const measured = new Map(manifest.map((e) => [e.file, e]));
 
-/* `level` is a mix the design sets on top of the loudness the manifest brings a sound to: It's Curtains' drumroll sits under its hit, as the owner tuned it (2026-11-25). */
-const slot = (key: string, file: string, src: string, caption: string, ink: string, loop?: true, level = 1): SoundSlot => {
+/* `level` is a mix the design sets on top of the loudness the manifest brings a sound to, as the owner tuned It's Curtains' four (2026-11-25). */
+const slot = (key: string, file: string, src: string, caption: string, ink: string, { loop, level = 1 }: { readonly loop?: true; readonly level?: number } = {}): SoundSlot => {
   const m = measured.get(file);
   if (!m) throw new Error(`sounds/sounds.json has no entry for ${file} (tools/check-sounds.mjs holds that there is one)`);
   return Object.freeze({ key, src, bus: 'game', caption, ink, gain: gainOf(m) * level, ...(loop ? { loop } : {}) });
@@ -63,18 +63,18 @@ export const sounds: SoundsUi = Object.freeze({
     slot('laugh-track.boo-1', 'boo-1.mp3', boo1, BOO, 'var(--kb-salty)'),
     slot('laugh-track.boo-2', 'boo-2.mp3', boo2, BOO, 'var(--kb-salty)'),
     slot('laugh-track.boo-3', 'boo-3.mp3', boo3, BOO, 'var(--kb-salty)'),
-    slot('laugh-track.titter', 'titter.mp3', titter, 'The audience titters', 'var(--kb-pepperoni)', true),
-    slot('laugh-track.ooh', 'ooh.mp3', ooh, 'The audience goes “ooh”', 'var(--kb-sweet)', true),
-    slot('laugh-track.grumble', 'grumble.mp3', grumble, 'A grumble rises', 'var(--kb-salty)', true),
+    slot('laugh-track.titter', 'titter.mp3', titter, 'The audience titters', 'var(--kb-pepperoni)', { loop: true }),
+    slot('laugh-track.ooh', 'ooh.mp3', ooh, 'The audience goes “ooh”', 'var(--kb-sweet)', { loop: true }),
+    slot('laugh-track.grumble', 'grumble.mp3', grumble, 'A grumble rises', 'var(--kb-salty)', { loop: true }),
     slot('steel-chair.hit', 'steel-chair-hit.mp3', steelChairHit, 'A steel chair clangs', 'var(--kb-salty)'),
     slot('steel-chair.settle-1', 'steel-chair-settle-1.mp3', steelChairSettle1, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-2', 'steel-chair-settle-2.mp3', steelChairSettle2, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-3', 'steel-chair-settle-3.mp3', steelChairSettle3, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-4', 'steel-chair-settle-4.mp3', steelChairSettle4, CLATTER, 'var(--kb-salty)'),
-    slot('its-curtains.drumroll', 'its-curtains-drumroll.mp3', itsCurtainsDrumroll, 'Drumroll', 'var(--kb-pepperoni)', true, 0.8),
+    slot('its-curtains.drumroll', 'its-curtains-drumroll.mp3', itsCurtainsDrumroll, 'Drumroll', 'var(--kb-pepperoni)', { loop: true, level: 0.8 }),
     slot('its-curtains.crash', 'its-curtains-crash.mp3', itsCurtainsCrash, 'Cymbal crash', 'var(--kb-pepperoni)'),
-    slot('its-curtains.whoosh', 'its-curtains-whoosh.mp3', itsCurtainsWhoosh, 'Curtain whooshes open', 'var(--kb-pepperoni)', undefined, 0.9),
-    slot('its-curtains.tada', 'its-curtains-tada.mp3', itsCurtainsTada, 'Ta-da!', 'var(--kb-pepperoni)', undefined, 0.9),
+    slot('its-curtains.whoosh', 'its-curtains-whoosh.mp3', itsCurtainsWhoosh, 'Curtain whooshes open', 'var(--kb-pepperoni)', { level: 0.9 }),
+    slot('its-curtains.tada', 'its-curtains-tada.mp3', itsCurtainsTada, 'Ta-da!', 'var(--kb-pepperoni)', { level: 0.9 }),
   ]),
   preview: Object.freeze({ game: 'laugh-track.laugh-1' }),
 });
