@@ -15,7 +15,7 @@ export const soVeryHappy: CardRules<Record<string, never>> = {
   rarity: 'rare',
   play: 'set',
   trap: { trigger: { on: 'cast' }, match: { flavors: ['salty', 'pepperoni'], upTo: 'rare' }, outcome: { kind: 'lockout', hours: 24 } },
-  seen: (p) => `${who(p)}'s SoVeryHappy sprang on this post, ${p.ago}: the move played here landed, and its player was locked out of this thread for a while, with a very big smile on the post.`,
+  seen: (p) => `${who(p)}'s SoVeryHappy sprang on this post, ${p.ago}: the move played here landed as usual, and whoever played it has been locked out of this thread for a day.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: () => ok({}),

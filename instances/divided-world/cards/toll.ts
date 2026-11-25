@@ -19,7 +19,7 @@ export const toll: CardRules<Record<string, never>> = {
   play: 'use',
   gimmick: { kind: 'ride', share: 0.5 },
   lasts: { unit: 'week', count: 1 },
-  seen: (p) => `${who(p)} set up a toll booth on this post, ${p.ago}: for a week, every card played here pays its author a cut of the votes it draws.`,
+  seen: (p) => `${who(p)} set up a toll booth on this post, ${p.ago}: for a week, every card played here pays this post's author a cut of the votes it draws.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(toll, target, effects, now),
   validateConfig: () => ok({}),

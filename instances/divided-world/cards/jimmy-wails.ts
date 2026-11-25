@@ -38,7 +38,7 @@ export const jimmyWails: CardRules<Record<string, never>> = {
     { key: 'jimmyWails.overhead', whole: true, min: 0, max: 100 },
   ],
   needsMessage: 'an appeal needs a sob story',
-  seen: (p) => `${who(p)} hung a Jimmy Wails appeal banner on this post, ${p.ago}, with a sob story and a collection tin anyone can drop orbs in.`,
+  seen: (p) => `${who(p)} hung a Jimmy Wails appeal banner on this post, ${p.ago}, with a collection tin anyone can give to.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now = new Date()) => {
     // landsOn's reach and kind checks without its stack count, which would count the post's closed drives too: a drive is full by its own plays.

@@ -24,7 +24,7 @@ export const fourDChess: CardRules<FourDChessConfig> = {
   play: 'set',
   trap: { trigger: { on: 'cast' }, outcome: { kind: 'ride', share: 1 } },
   catches: (config) => config.card,
-  seen: (p) => `${who(p)}'s 4D Chess back flipped over on this post, ${p.ago}: they had seen that exact move coming several turns ago, and it paid off.`,
+  seen: (p) => `${who(p)}'s 4D Chess back flipped over on this post, ${p.ago}, when a particular move was played here: the setter now earns from every vote that move draws.`,
   playPrice: () => 0,
   canApply: () => ok(undefined),
   validateConfig: (config) => {

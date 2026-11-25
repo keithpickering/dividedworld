@@ -24,7 +24,8 @@ export const stickAround: CardRules<{ sentence: string }> = {
   rarity: 'common',
   seen: (p) => {
     const sentence = textField(p.config, 'sentence', 200);
-    return `${who(p)} made this post stick to readers, ${p.ago}: it pulls them in and fills their screen, and they have to ${sentence === null ? 'check the caster\'s sentence' : `check a box swearing “${sentence}”`} to be let go.`;
+    const check = sentence === null ? 'check the box under it' : `check a box swearing “${sentence}”`;
+    return `${who(p)} made this post stick to readers, ${p.ago}: it pulls them in and fills their screen, and a reader gets away only by ${check}, by scrolling hard past either end of a draining bar, or by pressing Break free.`;
   },
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(stickAround, target, effects, now),

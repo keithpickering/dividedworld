@@ -818,3 +818,29 @@ test('every seen sentence reads for a bare play, a play with no caster, and a pl
     }
   }
 });
+
+test('seen sentences stay true to their cards', () => {
+  const said = (key: string, over = {}) => seenOf(key, over);
+  assert.doesNotMatch(said('whoopee-cushion'), /pfff|thread heard/i, 'the PFFFT! is the sprung caster\'s glass line, not on the board');
+  assert.match(said('whoopee-cushion'), /pays .* setter|setter .*earn/i);
+  assert.doesNotMatch(said('so-very-happy'), /smile|its player/);
+  assert.match(said('so-very-happy'), /whoever played it|its caster/);
+  const stick = said('stick-around', { config: { sentence: 'I read it all' } });
+  assert.match(stick, /“I read it all”/);
+  assert.match(stick, /scroll/);
+  assert.match(stick, /break free/i);
+  assert.match(said('stick-around', { config: {} }), /scroll/, 'the fallback names the exits too');
+  assert.doesNotMatch(said('stick-around', { config: {} }), /caster's sentence/);
+  assert.match(said('toll'), /this post's author/);
+  assert.match(said('force-field'), /no rarer/);
+  assert.doesNotMatch(said('force-field'), /lesser/);
+  assert.doesNotMatch(said('4d-chess'), /several turns|paid off/);
+  assert.match(said('4d-chess'), /earns? from every vote/);
+  assert.doesNotMatch(said('jimmy-wails'), /sob story/);
+  assert.match(said('hype-up'), /calm/);
+  // One specific assertion each for the cards that say a configured word.
+  assert.match(said('hot-box', { config: { color: 'orange' } }), /thick orange smoke/);
+  assert.match(said('overreaction', { config: { emoji: '🦆', quadrant: 'excitedPositive' } }), /a 🦆 reaction/);
+  assert.match(said('stick-around', { config: { sentence: 'I swear' } }), /swearing “I swear”/);
+  assert.match(said('jimmy-wails'), /Jimmy Wails appeal banner/);
+});
