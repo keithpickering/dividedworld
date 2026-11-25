@@ -873,6 +873,18 @@ test('a sample over readMost keeps the newest post and what fits behind it, drop
   assert.deepEqual(patrolShown(shown, reading).map((x) => x.act), [P1, P2]);
 });
 
+test('a patrol stops at the first post that does not fit: a small post behind a big one is not read, though it would fit', () => {
+  const body = (n: number, size: number) => ({ ...sample[0]!, act: sample[n]!.act, body: `post ${n} ${'x'.repeat(size)}` });
+  // newest small, second big (does not fit), third tiny (would fit): the third is not shown, as an older post is never read past one that was not
+  const posts = [body(0, 20), body(1, 400), body(2, 5)];
+  const reading = { ...patrol().reading, readMost: 250 };
+  assert.deepEqual(patrolShown(posts, reading).map((x) => x.act), [P1], 'the tiny third post is not read past the big second');
+  const p = patrolPrompt(patrol({ sample: posts, reading }));
+  assert.ok(!p.message.includes(`[${P2}]`) && !p.message.includes(`[${P3}]`), 'neither is in the prompt');
+  assert.deepEqual((p.schema as any).properties.findings.items.properties.post.enum, [P1]);
+  assert.ok(p.message.includes('(2 more posts were left out for space.)'));
+});
+
 test('a sampled post\'s poll, plays, reactions and rewind are in the prompt, and a spun opener\'s origin', () => {
   const poll = { question: 'Best kart?', options: ['Pipe Frame', 'Badwagon'], pick: 1, secret: true, endsAt: new Date(NOW + 2 * 3600_000).toISOString(), closed: false, closedBy: null, closedAt: null, counts: [3, 1], voters: 4 };
   const play = { play: 'pl1', card: 'splat', at: new Date(NOW - 86_400_000).toISOString(), by: 'Wario', config: null, state: null, text: null, covered: null };

@@ -1033,7 +1033,7 @@ function patrolPostLines(p: PatrolSamplePost, reading: Omit<ReadOptions, 'origin
 
 /**
  * The posts of a sample a patrol reads, newest first (as the sample is): the newest always, however long, and each other while the sample's rendered text (the words whole, and the lines under them) stays within `reading.readMost`,
- * counted in characters as the reader counts. The first that does not fit ends it, so no older post is read past one left out. A post left out is not read, so a finding cannot name it (`patrolPrompt` shows these and the caller's context holds these).
+ * counted in characters as the reader counts. The first that does not fit ends it, so no older post is read past one left out. This differs from the reader (read.ts skips a post that does not fit and goes on to the next): the patrol reads a stretch of the newest posts, never an older post past one it did not read. A post left out is not read, so a finding cannot name it (`patrolPrompt` shows these and the caller's context holds these).
  */
 export function patrolShown(sample: readonly PatrolSamplePost[], reading: Omit<ReadOptions, 'origin'>): readonly PatrolSamplePost[] {
   const shown: PatrolSamplePost[] = [];

@@ -149,6 +149,17 @@ test('a sample over readMost is read whole newest first and what does not fit is
   assert.deepEqual(d.state.patrolRows.get(1)!.sampled, [P1]);
 });
 
+test('a post that does not fit ends the patrol\'s reading: a tiny post behind it is not shown, judged or recorded as sampled', async () => {
+  const d = fakeDb({ sample: [post(P1, 'Bob', 'a'.repeat(300)), post(P2, 'Ann', 'b'.repeat(1500)), post(P3, 'Cy', 'c'.repeat(5))] });
+  const m = fakeModels(() => ({ findings: [find(P1), find(P3)] }));
+  const small: Instance = { ...dividedWorld, settings: { ...dividedWorld.settings, pool: { ...dividedWorld.settings.pool, readMost: 1000 } } };
+  await run(d, m, small);
+  const text = m.chats[0]!.messages[0]!.content;
+  assert.ok(!text.includes('b'.repeat(1500)) && !text.includes('c'.repeat(5)) && !text.includes(P3), 'neither the big second nor the tiny third is shown');
+  assert.deepEqual(d.state.visits.map((v) => v.post), [P1], 'no visit on the tiny post never read');
+  assert.deepEqual(d.state.patrolRows.get(1)!.sampled, [P1]);
+});
+
 test('the call\'s record is kept against the patrol, before any visit starts', async () => {
   const d = fakeDb();
   const m = fakeModels(() => ({ findings: [find(P1)] }));
