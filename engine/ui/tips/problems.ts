@@ -162,7 +162,6 @@ function conductMailProblems(mail: unknown): string[] {
   return out;
 }
 
-/** The code of conduct: a positive whole version, sections with unique keys, and a title and words in each. */
 /** AGPL section 13 needs a source a user can reach, so a fork must name its own: an https URL, and the instance's terms in words. */
 function licensingProblems(licensing: unknown): string[] {
   if (typeof licensing !== 'object' || licensing === null) return ['the instance UI has no licensing'];
@@ -177,6 +176,7 @@ function licensingProblems(licensing: unknown): string[] {
   return out;
 }
 
+/** The code of conduct: a positive whole version, sections with unique keys, and a title and words in each. */
 function conductProblems(conduct: unknown): string[] {
   if (typeof conduct !== 'object' || conduct === null) return ['the instance UI has no conduct'];
   const { version, sections, mail } = conduct as { version?: unknown; sections?: unknown; mail?: unknown };
