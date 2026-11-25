@@ -217,7 +217,7 @@ end $$;
 
 -- ----------------------------------------------------------------------------------------------- the words ----
 
--- system_line (0209) is split in two: system_line_fill fills a template with the tokens system_line fills ({boss}, {board}, {move}, {rule} and the Boss's pronouns), and system_line picks a stock line
+-- system_line (0209) is split in two: system_line_fill fills a template with the tokens system_line fills ({boss}, {board}, {move}, {rule} and the Boss's pronouns) and the move's own names (Task 8), and system_line picks a stock line
 -- and fills it. A template of null answers the move's plain words, as a kind with no stock line always has. Nothing changes for a caller of system_line.
 create function system_line_fill(template text, move_kind text, params jsonb, staff_key text) returns text
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -258,7 +258,8 @@ begin
   end if;
   select c.name, c.id into boss_name, boss_id from characters c where c.staff = staff_key;
   if template is null then return words; end if;
-  return fill_tokens(template, jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words) || pronoun_tokens('boss', boss_id));
+  -- The move's own names fill the template too (its parameters, and the names derived above), so a title can say a board's new name or a trophy's; the Boss, the board, the move and the rule are given below them.
+  return fill_tokens(template, (case when jsonb_typeof(params) = 'object' then params else '{}'::jsonb end) || jsonb_build_object('boss', coalesce(boss_name, ''), 'board', board_name, 'move', words, 'rule', rule_words) || pronoun_tokens('boss', boss_id));
 end $$;
 revoke execute on function system_line_fill(text, text, jsonb, text) from public, anon, authenticated;
 grant execute on function system_line_fill(text, text, jsonb, text) to service_role;

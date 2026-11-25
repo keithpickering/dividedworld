@@ -18,7 +18,7 @@ const instance: Instance = {
     postMaxLength: 50, pollOptionsMax: 10, pollQuestionMax: 200, pollOptionMax: 100, pollLastsMin: { unit: 'hour', count: 1 }, pollLastsMax: { unit: 'day', count: 14 }, titleMaxLength: 10, postsPerPage: 20, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
   },
   ranks: [{ name: 'Rookie', from: 0 }], groups: testGroups, pipStyles: [{ key: 'default', name: 'Default', full: '●', empty: '○' }], boards: [{ slug: 'general', name: 'General', description: '' }],
-  copy: { announcementsThreadTitle: 'S{season} Promos' },
+  copy: { rosterThreadTitle: 'S{season} Promos' },
   packs: [], machine: [{ item: { card: 'splat' }, availability: 'onSale', price: 100 }], ...testCosmeticsContent,
 };
 const id = '11111111-1111-4111-8111-111111111111';

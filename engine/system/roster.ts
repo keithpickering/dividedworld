@@ -72,6 +72,14 @@ export const DEFAULT_ROSTER_COPY: RosterCopy = {
   more: 'and {n} more',
 };
 
+/**
+ * The report's copy from the instance's own words: its headings and its stock heading. The verbs and the count's line are the engine's plain ones (DEFAULT_ROSTER_COPY),
+ * until an instance gives its own.
+ */
+export function rosterCopyOf(words: { readonly rosterHeadings: Readonly<Record<RosterList, string>>; readonly rosterStockHeading: string }): RosterCopy {
+  return { headings: words.rosterHeadings, stockHeading: words.rosterStockHeading, verbs: DEFAULT_ROSTER_COPY.verbs, more: DEFAULT_ROSTER_COPY.more };
+}
+
 /** What a list leaves out, said in the instance's words. */
 const moreLine = (copy: RosterCopy, n: number): string => copy.more.replace('{n}', String(n));
 /** How many items a list leaves out: those past the cap in its own array, and those the facts left out before it. */

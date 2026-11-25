@@ -26,7 +26,15 @@ export const system: SystemContent = Object.freeze({
   roster: deepFreeze([fangame, ontopic, qualityControl]),
   firstBoss: fangame.key,
   offices,
-  announcementsTitle: 'Official Announcements',
+  // The title of each staff thread a landed move opens, by kind (0429); a kind not named is titled by its plain words.
+  threadTitles: Object.freeze({
+    renameBoard: '{board} is now {name}', nameSuccessor: 'On the matter of succession', setRule: 'New rule in {board}', conferGroup: 'Welcome to {groupName}',
+    pullSlot: 'Machine notice: a card is pulled', repriceSlot: 'Machine notice: new prices', flashSale: 'Flash sale!', createBoard: 'New board: {name}',
+    moveThread: 'A thread moves to {board}', mergeBoard: '{board} is closing', awardTrophy: '{trophyName} goes to {characterName}',
+  }),
+  handoverThreadTitle: '{boss} takes the chair',
+  rosterHeadings: Object.freeze({ newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' }),
+  rosterStockHeading: 'The roster, as of the last settlement.',
   firstStaff: Object.freeze([ontopic.key, qualityControl.key]),
   // The Boss's own duties stay the season's Boss's; a visit's filing, a report's verdict and a patrol's finding are the Mod on the board's beat, and an appeal is
   // the Mod that filed (the Mod Bots plan, Task 7).

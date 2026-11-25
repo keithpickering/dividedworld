@@ -91,7 +91,7 @@ begin
   insert into rr values ('boss_before', coalesce(boss_before, '')), ('enabled_before', coalesce(enabled_before::text, 'null'));
   update seasons set boss = 'rr-boss' where ends_at is null;
   insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do update set value = 'true';
-  update settings set value = value || jsonb_build_object('announcementsThreadTitle', 'Season {season}: Roster Report') where key = 'copy';
+  update settings set value = value || jsonb_build_object('rosterThreadTitle', 'Season {season}: Roster Report') where key = 'copy';
   select id into sid from seasons where ends_at is null;
   insert into settlements (starts_at, ends_at, season) values (base - interval '3 days', base - interval '2 days', sid), (base - interval '2 days', base - interval '1 day', sid), (base - interval '1 day', base + interval '1 minute', sid);
   insert into rr values ('w1', (base - interval '2 days')::text), ('w2', (base - interval '1 day')::text), ('w3', (base + interval '1 minute')::text), ('base', base::text), ('t', t::text), ('sid', sid::text);
@@ -518,4 +518,29 @@ declare
 begin
   update seasons set boss = nullif(was, '') where ends_at is null;
   if was_enabled = 'null' then delete from settings where key = 'systemEnabled'; else update settings set value = was_enabled::jsonb where key = 'systemEnabled'; end if;
+end $$;
+
+-- ---- The season's copy word is rosterThreadTitle (Task 8): the check asks for it and refuses the old key alone; promos_thread titles the season's thread with it; the migration's
+-- data step moves an instance's old key to it. The step below is 0432's own statement, run here on a copy that still has the old key: at replay the copy row is not there yet, so the step
+-- is a no-op and this copy is what proves it.
+do $$
+declare why text; sid bigint; open_no integer; p record;
+begin
+  why := pg_temp.refusal($q$update settings set value = (value - 'rosterThreadTitle') || '{"announcementsThreadTitle": "Season {season}: Promos"}' where key = 'copy'$q$);
+  if why is null or why not like '%rosterThreadTitle%' then raise exception 'a copy with only the old key is refused, naming the new one: %', why; end if;
+  update settings set value = value || '{"announcementsThreadTitle": "Old {season}", "rosterThreadTitle": "Roster {season}"}'::jsonb where key = 'copy';
+  select id, number into sid, open_no from seasons where ends_at is null;
+  update seasons set turns_thread = null where id = sid;
+  select * into p from promos_thread(sid);
+  if (select title from threads where id = p.in_thread) is distinct from 'Roster ' || open_no::text then
+    raise exception 'the season thread is titled by rosterThreadTitle: %', (select title from threads where id = p.in_thread);
+  end if;
+  alter table settings disable trigger settings_copy_complete;
+  update settings set value = (value - 'rosterThreadTitle') || '{"announcementsThreadTitle": "Season {season}: Promos"}' where key = 'copy';
+  update settings set value = (value - 'announcementsThreadTitle') || jsonb_build_object('rosterThreadTitle', value -> 'announcementsThreadTitle')
+  where key = 'copy' and value ? 'announcementsThreadTitle' and not (value ? 'rosterThreadTitle');
+  alter table settings enable trigger settings_copy_complete;
+  if (select value ->> 'rosterThreadTitle' from settings where key = 'copy') is distinct from 'Season {season}: Promos' or (select value ? 'announcementsThreadTitle' from settings where key = 'copy') then
+    raise exception 'the data step moves an instance''s old key to rosterThreadTitle: %', (select value from settings where key = 'copy');
+  end if;
 end $$;

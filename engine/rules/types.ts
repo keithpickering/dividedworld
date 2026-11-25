@@ -857,8 +857,10 @@ export interface ClassRules {
  * number goes. In character, so they may bluff ("The fiction may lie; the log never does").
  */
 export interface Copy {
-  /** The thread a season's announced debuts and Turns are posted in. */
-  readonly announcementsThreadTitle: string;
+  /** The title of a season's Roster Report thread, with `{season}` where the season's number goes (the season's thread, `seasons.turns_thread`). */
+  readonly rosterThreadTitle: string;
+  /** The title of a season's Staff Meetings thread, with `{season}` (`seasons.meetings_thread`). Where it is left out, the minutes are not posted (0431). */
+  readonly meetingsThreadTitle?: string;
 }
 
 /**
@@ -1014,8 +1016,17 @@ export interface SystemContent {
   readonly firstBoss: string;
   /** What each office that posts is: set around a persona's own words by the engine (`personaPrompt`). */
   readonly offices: Readonly<Record<PostingOffice, OfficeFrame>>;
-  /** The title of the one thread on The System's board where landed moves and their ends are written; the seed makes it once. */
-  readonly announcementsTitle: string;
+  /**
+   * The title of the staff thread a landed move opens, by move kind (0429), with the tokens that kind fills: its parameters, its derived names, `{boss}` and `{move}`. A kind
+   * with none is titled by its plain words. The seed carries these as the setting `systemThreadTitles`.
+   */
+  readonly threadTitles: Partial<Record<string, string>>;
+  /** The title of a handover's thread, with `{boss}` (the arriving Boss's name) and `{season}` (the new season's number). The seed carries it in `copy`. */
+  readonly handoverThreadTitle: string;
+  /** The Roster Report's heading for each of its four lists (engine/system/roster.ts). */
+  readonly rosterHeadings: { readonly newcomers: string; readonly announced: string; readonly landed: string; readonly reveals: string };
+  /** The heading an entry opens under when its commentary could not be written. */
+  readonly rosterStockHeading: string;
   /** The roster keys on staff when the instance is seeded (never the first Boss). */
   readonly firstStaff: readonly string[];
   readonly duties: Readonly<Record<Duty, DutyAssignee>>;

@@ -14,14 +14,15 @@ import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 
 test('the seed carries every setting, class, reaction, card and board of the instance, in the shape seed_instance() reads', () => {
   const seed = instanceSeed(instance, conduct);
-  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'conductVersion', 'conductSections'].sort());
+  assert.deepEqual(Object.keys(seed.settings).sort(), [...Object.keys(instance.settings), 'copy', 'systemLines', 'systemMoveWords', 'systemThreadTitles', 'conductVersion', 'conductSections'].sort());
   assert.equal(seed.settings.conductVersion, conduct.version, 'the version an account must have accepted (0340)');
   assert.deepEqual(seed.settings.conductSections, conduct.sections.map((c) => c.key), 'the sections a report may name, by key (0340)');
   assert.deepEqual(seed.settings.conduct, instance.settings.conduct, 'the open-report limit and the admin address ride with the instance\'s settings');
   assert.deepEqual(seed.settings.systemLines, instance.system.stockLines, 'the tick (0048) fills these lines in SQL');
   assert.deepEqual(seed.settings.systemMoveWords, Object.fromEntries(MOVE_KINDS.map((m) => [m.key, m.plain])), '{move}, in plain words, by kind');
-  assert.equal(seed.system.announcementsTitle, instance.system.announcementsTitle, 'the thread where moves land is made from the seed');
-  assert.deepEqual(seed.settings.copy, instance.copy);
+  assert.equal('announcementsTitle' in seed.system, false, 'no announcements thread is made from the seed: a move lands in its own staff thread (0429)');
+  assert.deepEqual(seed.settings.systemThreadTitles, instance.system.threadTitles, 'the titles of a move\'s thread, by kind, where move_thread_title reads them (0429)');
+  assert.deepEqual(seed.settings.copy, { ...instance.copy, handoverThreadTitle: instance.system.handoverThreadTitle }, 'the handover\'s title is read from copy (0429, hand_over)');
   assert.deepEqual(seed.settings.seasonLength, instance.settings.seasonLength);
   assert.deepEqual(seed.classes, instance.classes.map((c) => ({ key: c.key, name: c.name })));
   assert.deepEqual(seed.reactions, instance.reactions.map((r) => ({ key: r.key, emoji: r.emoji, quadrant: r.quadrant })));

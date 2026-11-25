@@ -34,7 +34,7 @@ const earn = () => [];
 
 export const testInstance: Instance = {
   key: 'test', name: 'Test', withdrawn: [],
-  copy: { announcementsThreadTitle: 'Promos {season}' },
+  copy: { rosterThreadTitle: 'Promos {season}' },
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }],
   /* One salty card at 1.00, whose play costs nothing more: enough rules for a screen that prices a card (the HUD's hand, the Vending Machine). */
   cards: [{

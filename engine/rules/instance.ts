@@ -656,9 +656,7 @@ export function instanceProblems(instance: Instance): string[] {
     if (typeof p.key !== 'string' || !/^[a-z][a-z0-9-]*$/.test(p.key)) out.push(`pip style key "${p.key}" is not lowercase words joined by hyphens`);
     for (const part of ['name', 'full', 'empty'] as const) if (typeof p[part] !== 'string' || p[part].trim() === '') out.push(`pip style "${p.key}" has no ${part}`);
   }
-  const title = instance.copy?.announcementsThreadTitle;
-  if (typeof title !== 'string' || title.trim() === '') out.push('the instance has no copy for announcementsThreadTitle');
-  else if (!title.includes('{season}')) out.push('the copy for announcementsThreadTitle does not say which season ({season})');
+  out.push(...copyProblems(instance.copy));
   const settingsSay = settingsProblems(instance.settings);
   out.push(...settingsSay);
   // Every economy number a class or card reads is one the settings hold.
@@ -1261,6 +1259,55 @@ function arcProblems(who: string, p: Persona, authoredMostParts: number | null):
   return out;
 }
 
+/**
+ * The copy's two season titles (0431, 0432): each has its words and names its season, and fills no other token, since copy_of fills `{season}` alone.
+ */
+function copyProblems(copy: Instance['copy']): string[] {
+  const out: string[] = [];
+  for (const key of ['rosterThreadTitle', 'meetingsThreadTitle'] as const) {
+    const title = (copy as unknown as Partial<Record<string, unknown>> | undefined)?.[key];
+    if (typeof title !== 'string' || title.trim() === '') { out.push(`the instance has no copy for ${key}`); continue; }
+    if (!title.includes('{season}')) out.push(`the copy for ${key} does not say which season ({season})`);
+    for (const [, token] of title.matchAll(/\{([^{}]*)\}/g)) if (token !== 'season') out.push(`the copy for ${key} uses {${token}}, which that title is never given (it may use {season})`);
+  }
+  return out;
+}
+
+/** The tokens a move's thread title may fill: its parameters, its derived names, and the Boss and the move's plain words (system_line_fill, 0429). */
+function threadTitleTokens(kind: { params: unknown; derived?: readonly string[] }): string[] {
+  const fields = Object.keys((kind.params as { fields?: Record<string, unknown> }).fields ?? {});
+  return [...new Set([...fields, ...(kind.derived ?? []), 'boss', 'move'])];
+}
+
+/**
+ * The words the staff board is titled with (0429, Task 8): each move kind's title names only a kind the engine has, is not blank, and fills only the tokens that kind is given; the
+ * handover's title fills `{boss}` and `{season}` alone; each heading and the stock heading are said.
+ */
+function threadWordProblems(sys: SystemContent): string[] {
+  const out: string[] = [];
+  const titles: unknown = sys.threadTitles ?? {};
+  if (typeof titles !== 'object' || titles === null || Array.isArray(titles)) out.push('system.threadTitles is not an object of move kinds to titles');
+  else for (const [kind, title] of Object.entries(titles as Record<string, unknown>)) {
+    const move = MOVE_KINDS.find((m) => m.key === kind);
+    if (!move) { out.push(`system.threadTitles names "${kind}", which is not a move kind`); continue; }
+    if (typeof title !== 'string' || title.trim() === '') { out.push(`the thread title for "${kind}" is blank`); continue; }
+    const given = threadTitleTokens(move);
+    for (const [, token] of title.matchAll(/\{([^{}]*)\}/g)) {
+      if (!given.includes(token!)) out.push(`the thread title for "${kind}" uses {${token}}, which that move's title is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})`);
+    }
+  }
+  if (typeof sys.handoverThreadTitle !== 'string' || sys.handoverThreadTitle.trim() === '') out.push('system.handoverThreadTitle is empty; a handover opens its thread with it');
+  else for (const [, token] of sys.handoverThreadTitle.matchAll(/\{([^{}]*)\}/g)) {
+    if (token !== 'boss' && token !== 'season') out.push(`system.handoverThreadTitle uses {${token}}, which a handover is never given (it may use {boss} and {season})`);
+  }
+  for (const list of ['newcomers', 'announced', 'landed', 'reveals'] as const) {
+    const heading = (sys.rosterHeadings as unknown as Partial<Record<string, unknown>> | undefined)?.[list];
+    if (typeof heading !== 'string' || heading.trim() === '') out.push(`system.rosterHeadings has no heading for "${list}"`);
+  }
+  if (typeof sys.rosterStockHeading !== 'string' || sys.rosterStockHeading.trim() === '') out.push('system.rosterStockHeading is empty; an entry whose commentary fails opens under it');
+  return out;
+}
+
 function systemProblems(instance: Instance): string[] {
   const sys: SystemContent | undefined = instance.system;
   if (typeof sys !== 'object' || sys === null) return ['the instance has no system content (system)'];
@@ -1361,7 +1408,7 @@ function systemProblems(instance: Instance): string[] {
   for (const key of Object.keys(sys.stockLines ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`stock line "${key}" is for no standing order`);
   if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
-  if (typeof sys.announcementsTitle !== 'string' || sys.announcementsTitle.trim() === '') out.push('system.announcementsTitle is empty; the seed makes The System\'s announcements thread from it, and with none no move can land');
+  out.push(...threadWordProblems(sys));
   for (const key of ['feeds', 'realWorld', 'scrubWords', 'wheelhouse'] as const) if (!Array.isArray(sys[key])) out.push(`the instance has no system.${key} list`);
   if (Array.isArray(sys.scrubWords)) {
     for (const w of sys.scrubWords) {

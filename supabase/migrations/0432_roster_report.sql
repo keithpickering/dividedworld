@@ -257,8 +257,8 @@ begin
     elsif boss is null then skipped := 'the season has no Boss';
     elsif (select o.office from staff_office_now o where o.staff = boss) in ('waiting', 'benched') then skipped := 'the Boss is ' || (select o.office from staff_office_now o where o.staff = boss) || ' and writes nothing';
     elsif most is not null and exists (select 1 from unnest(texts) b where char_length(b) > most) then skipped := format('a roster post is longer than postMaxLength %s', most);
-    elsif (select s.turns_thread from seasons s where s.id = w.season) is null and coalesce(btrim((select s.value ->> 'announcementsThreadTitle' from settings s where s.key = 'copy')), '') = '' then
-      skipped := 'the instance gives no words for copy.announcementsThreadTitle';
+    elsif (select s.turns_thread from seasons s where s.id = w.season) is null and coalesce(btrim((select s.value ->> 'rosterThreadTitle' from settings s where s.key = 'copy')), '') = '' then
+      skipped := 'the instance gives no words for copy.rosterThreadTitle';
     else
       begin
         select p.in_thread, p.opened into th, opened from promos_thread(w.season) p;
@@ -453,3 +453,38 @@ begin
   order by m.at desc, m.kind, m.act nulls first;
 end
 $function$;
+
+-- ---- The season's copy word is rosterThreadTitle (Task 8). The Roster Report's thread is titled by it, where 0100's promos_thread read announcementsThreadTitle.
+
+-- promos_thread (0100), its season thread titled by the copy's rosterThreadTitle. Everything else as 0100 wrote it.
+create or replace function promos_thread(in_season bigint, out in_thread uuid, out opened boolean)
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  s seasons%rowtype;
+begin
+  select * into s from seasons where id = in_season for no key update;
+  in_thread := s.turns_thread;
+  opened := in_thread is null;
+  if opened then
+    insert into threads (board, title) values (system_board(), copy_of('rosterThreadTitle', s.number)) returning id into in_thread;
+    update seasons set turns_thread = in_thread where id = s.id;
+  end if;
+end $$;
+
+-- settings_copy_complete (0099), asking for rosterThreadTitle where it asked for announcementsThreadTitle. meetingsThreadTitle is not asked for: an instance that gives none posts no
+-- minutes (0431), and a copy without it must still be savable, the data step below included.
+create or replace function settings_copy_complete() returns trigger
+language plpgsql set search_path = public, pg_temp as $$
+declare missing text;
+begin
+  if new.key <> 'copy' then return new; end if;
+  select string_agg(k, ', ') into missing from unnest(array['rosterThreadTitle']) k
+  where jsonb_typeof(new.value -> k) is distinct from 'string' or btrim(new.value ->> k) = '';
+  if missing is not null then raise exception 'copy is missing %', missing using errcode = '23514'; end if;
+  return new;
+end $$;
+
+-- The data step: an instance's copy that still holds announcementsThreadTitle gets its word under the new name, once, in one statement, so the check above sees a complete copy.
+-- A copy with the new name already is left as it is. At replay the copy is not there yet, so this changes nothing on a fresh database.
+update settings set value = (value - 'announcementsThreadTitle') || jsonb_build_object('rosterThreadTitle', value -> 'announcementsThreadTitle')
+where key = 'copy' and value ? 'announcementsThreadTitle' and not (value ? 'rosterThreadTitle');

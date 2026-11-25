@@ -126,7 +126,10 @@ const system: SystemContent = {
   nameStyle: () => [],
   nameStyleBrief: 'any name',
   offices: { boss: { premise: 'B.', answerRules: 'Br.' }, mod: { premise: 'M.', answerRules: 'Mr.' }, member: { premise: 'E.', answerRules: 'Er.' } },
-  announcementsTitle: 'Announcements',
+  threadTitles: { setRule: 'New rule in {board}' },
+  handoverThreadTitle: '{boss} takes the chair',
+  rosterHeadings: { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' },
+  rosterStockHeading: 'The roster, as of the last settlement.',
 };
 
 const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
@@ -149,7 +152,7 @@ const good: Instance = {
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
   groups: testGroups,
-  copy: { announcementsThreadTitle: 'Season {season}: Promos' },
+  copy: { rosterThreadTitle: 'Season {season}: Roster Report', meetingsThreadTitle: 'Season {season}: Staff Meetings' },
   system,
   packs: [],
   machine: [],
@@ -432,12 +435,36 @@ test('deepFreeze reaches inside an object already frozen at the top, and survive
   assert.ok(Object.isFrozen(loop));
 });
 
-test('an instance says The System\'s words, each title naming its season', () => {
-  assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: ' ' } }).join('\n'), /no copy for announcementsThreadTitle/);
-  assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: 'Promos' } }).join('\n'), /announcementsThreadTitle does not say which season/);
-  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
+test('an instance says the copy the Roster Report and the Staff Meetings are titled with, each title naming its season and filling no other token', () => {
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: ' ' } }).join('\n'), /no copy for rosterThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: 'Roster Report' } }).join('\n'), /rosterThreadTitle does not say which season/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: 'Staff Meetings' } }).join('\n'), /meetingsThreadTitle does not say which season/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: ' ' } }).join('\n'), /no copy for meetingsThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: 'Season {season}: {boss} Report' } }).join('\n'), /copy for rosterThreadTitle uses \{boss\}/);
+  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
   // A copy written before 0099 holds only the old keys, and so lacks the one now asked for (unknown keys are not refused).
-  assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
+  // The key it was called before the Roster Report (0432) no longer counts.
+  assert.match(instanceProblems({ ...good, copy: { announcementsThreadTitle: 'Season {season}: Promos', meetingsThreadTitle: 'Season {season}: Staff Meetings' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
+  assert.deepEqual(instanceProblems(good), []);
+});
+
+test('each thread title is a move kind the engine has, and fills only the tokens that move carries', () => {
+  const titled = (threadTitles: Record<string, string>) => said(withSystem({ threadTitles }));
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { renameBoard: '{board} is now {name}', createBoard: 'New board: {name}', awardTrophy: '{trophyName} goes to {characterName}', conferGroup: 'Welcome to {groupName}', nameSuccessor: 'On the matter of succession' } })), []);
+  assert.match(titled({ nonsenseKind: 'A thread.' }), /threadTitles names "nonsenseKind", which is not a move kind/);
+  assert.match(titled({ setRule: 'New rule in {board}, {nonsense}' }), /thread title for "setRule" uses \{nonsense\}/);
+  assert.match(titled({ createBoard: 'New board: {board}' }), /thread title for "createBoard" uses \{board\}/, 'a board is not a parameter of making one');
+  assert.match(titled({ setRule: 'Season {season} rule' }), /thread title for "setRule" uses \{season\}/, 'the season is filled in the copy, not in a move\'s title');
+  assert.match(titled({ setRule: '   ' }), /thread title for "setRule" is blank/);
+  assert.match(said(withSystem({ handoverThreadTitle: ' ' })), /handoverThreadTitle is empty/);
+  assert.match(said(withSystem({ handoverThreadTitle: '{boss} takes the chair, {board}' })), /handoverThreadTitle uses \{board\}/);
+  assert.deepEqual(instanceProblems(withSystem({ handoverThreadTitle: 'Season {season}: {boss} takes the chair' })), [], 'the season and the Boss are what a handover is given');
+});
+
+test('the staff board\'s headings and stock heading are said for each list the Roster Report has', () => {
+  assert.match(said(withSystem({ rosterHeadings: { ...system.rosterHeadings, reveals: ' ' } })), /rosterHeadings has no heading for "reveals"/);
+  assert.match(said(withSystem({ rosterStockHeading: '' })), /rosterStockHeading is empty/);
 });
 
 /* ------------------------------------------------------------------------ The System's content ---- */
@@ -583,7 +610,7 @@ test('a persona in each office\'s frame: every posting office has a premise and 
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
   assert.match(said(withSystem({ nameStyleBrief: ' ' })), /nameStyleBrief/);
-  assert.match(said(withSystem({ announcementsTitle: ' ' })), /announcementsTitle/);
+  assert.doesNotMatch(said(withSystem({ nameStyleBrief: 'x' })), /announcementsTitle/, 'no announcements thread is named by the system (0429)');
 });
 
 test('nameStyle must be a function', () => {

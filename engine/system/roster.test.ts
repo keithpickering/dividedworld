@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { COMMENTARY_MOST, DEFAULT_ROSTER_COPY, ITEMS_MOST, postHref, rosterBodies, rosterIsEmpty, rosterPrompt, rosterCommentary, type RosterCopy, type RosterFacts, type RosterItem } from './roster.ts';
+import { COMMENTARY_MOST, DEFAULT_ROSTER_COPY, ITEMS_MOST, postHref, rosterBodies, rosterCopyOf, rosterIsEmpty, rosterPrompt, rosterCommentary, type RosterCopy, type RosterFacts, type RosterItem } from './roster.ts';
 import { parse, type BbNode } from '../bbcode/parse.ts';
 import { threadHref, pageOf } from '../ui/thread/pages.ts';
 
@@ -150,4 +150,9 @@ test('a list is cut at ITEMS_MOST, and says how many more there are, those the f
 test('the prompt counts the facts\' own left-out items, as the posts do', () => {
   const facts: RosterFacts = { ...empty, landed: names(ITEMS_MOST), more: { newcomers: 0, announced: 0, landed: 40, reveals: 0 } };
   assert.ok(rosterPrompt(system, persona, facts).message.includes('and 40 more'));
+});
+
+test('the report\'s copy is the instance\'s headings and stock heading, with the default verbs and count', () => {
+  const headings = { newcomers: 'N', announced: 'A', landed: 'L', reveals: 'R' };
+  assert.deepEqual(rosterCopyOf({ rosterHeadings: headings, rosterStockHeading: 'Stock.' }), { headings, stockHeading: 'Stock.', verbs: DEFAULT_ROSTER_COPY.verbs, more: DEFAULT_ROSTER_COPY.more });
 });

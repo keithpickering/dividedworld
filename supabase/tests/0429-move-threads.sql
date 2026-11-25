@@ -463,3 +463,11 @@ begin
     and not has_function_privilege('authenticated', 'say_farewell(text, bigint, boolean, uuid)', 'execute'), 'a title or a thread writer is executable by a client');
   perform pg_temp.expect(to_regprocedure('say_in_announcements(text, text)') is null, 'say_in_announcements is still there');
 end $$;
+
+-- ---- 10. A title takes its move's own parameters, as its words do (Task 8): a board made is named in its thread's title ----
+do $$
+begin
+  update settings set value = value || '{"createBoard": "New board: {name}", "awardTrophy": "{trophyName} goes to {characterName}"}'::jsonb where key = 'systemThreadTitles';
+  perform pg_temp.expect(move_thread_title('createBoard', '{"name": "Lodge"}'::jsonb, 'mt-boss') = 'New board: Lodge',
+    'a title fills its move''s parameters: ' || coalesce(move_thread_title('createBoard', '{"name": "Lodge"}'::jsonb, 'mt-boss'), 'null'));
+end $$;

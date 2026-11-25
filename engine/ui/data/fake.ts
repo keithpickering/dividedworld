@@ -6060,7 +6060,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (thread === null) {
         const board = boards.find((b) => b.isSystem);
         if (!board) throw new Error('the instance has no System board');
-        thread = openThread(board.id, (options.instance.copy?.announcementsThreadTitle ?? 'Season {season}: Promos').replace('{season}', String(season.number)), null, at).id;
+        thread = openThread(board.id, (options.instance.copy?.rosterThreadTitle ?? 'Season {season}: Roster Report').replace('{season}', String(season.number)), null, at).id;
         seasons.splice(seasons.indexOf(season), 1, { ...season, turnsThread: thread });
       }
       const payload: Record<string, unknown> = { what };

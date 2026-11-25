@@ -91,7 +91,7 @@ const staffTexts = (): [string, string][] => {
   const out: [string, string][] = [
     ['BOSS_PREMISE', BOSS_PREMISE], ['MOD_BOT_PREMISE', MOD_BOT_PREMISE], ['MEMBER_PREMISE', MEMBER_PREMISE],
     ['BOSS_ANSWER_RULES', BOSS_ANSWER_RULES], ['MOD_BOT_ANSWER_RULES', MOD_BOT_ANSWER_RULES], ['MEMBER_ANSWER_RULES', MEMBER_ANSWER_RULES],
-    ['announcementsTitle', system.announcementsTitle],
+    ['handoverThreadTitle', system.handoverThreadTitle], ['rosterStockHeading', system.rosterStockHeading],
   ];
   for (const p of [...system.roster, ontopic, qualityControl]) for (const o of ['boss', 'mod', 'member'] as const) out.push([`${p.key}:${o}`, personaPrompt(system, p, o)]);
   for (const [k, lines] of Object.entries(system.stockLines)) lines.forEach((l, i) => out.push([`${k}[${i}]`, l]));
@@ -353,4 +353,20 @@ test('ONTOPIC 5.0 may give five stars', () => {
 test('QC-1000\'s habits are occasional', () => {
   assert.match(qualityControl.selfPrompt ?? '', /one or two of these habits/);
   assert.doesNotMatch(qualityControl.selfPrompt ?? '', /You open a visit with/);
+});
+
+test('the staff board\'s titles and the Roster Report\'s words are the owner\'s, as the plan writes them (Task 8)', () => {
+  assert.deepEqual(system.threadTitles, {
+    renameBoard: '{board} is now {name}', nameSuccessor: 'On the matter of succession', setRule: 'New rule in {board}', conferGroup: 'Welcome to {groupName}',
+    pullSlot: 'Machine notice: a card is pulled', repriceSlot: 'Machine notice: new prices', flashSale: 'Flash sale!', createBoard: 'New board: {name}',
+    moveThread: 'A thread moves to {board}', mergeBoard: '{board} is closing', awardTrophy: '{trophyName} goes to {characterName}',
+  });
+  assert.equal(system.handoverThreadTitle, '{boss} takes the chair');
+  assert.deepEqual(system.rosterHeadings, { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' });
+  assert.equal(system.rosterStockHeading, 'The roster, as of the last settlement.');
+  assert.equal('announcementsTitle' in system, false, 'no announcements thread is made from the system (0429)');
+});
+
+test('the copy holds the Roster Report\'s and the Staff Meetings\' titles, each with its season', () => {
+  assert.deepEqual(instance.copy, { rosterThreadTitle: 'Season {season}: Roster Report', meetingsThreadTitle: 'Season {season}: Staff Meetings' });
 });

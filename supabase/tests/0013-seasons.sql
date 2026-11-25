@@ -178,11 +178,11 @@ end $$;
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($q$update settings set value = value - 'announcementsThreadTitle' where key = 'copy'$q$);
-  if why is null or why not like '%announcementsThreadTitle%' then raise exception 'copy lost a key: %', why; end if;
+  why := pg_temp.refusal($q$update settings set value = value - 'rosterThreadTitle' where key = 'copy'$q$);
+  if why is null or why not like '%rosterThreadTitle%' then raise exception 'copy lost a key: %', why; end if;
   if pg_temp.refusal($q$delete from settings where key = 'copy'$q$) is null then raise exception 'copy was deleted'; end if;
   alter table settings disable trigger settings_copy_kept;
   delete from settings where key = 'copy';
-  why := pg_temp.refusal('select copy_of(''announcementsThreadTitle'', 1)');
-  if why is null or why not like '%copy.announcementsThreadTitle%' then raise exception 'missing words should be named: %', why; end if;
+  why := pg_temp.refusal('select copy_of(''rosterThreadTitle'', 1)');
+  if why is null or why not like '%copy.rosterThreadTitle%' then raise exception 'missing words should be named: %', why; end if;
 end $$;

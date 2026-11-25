@@ -23,7 +23,7 @@ function PromosThread() {
   const { api, instance } = useKayfa();
   const [id, setId] = useState<string | null | 'missing'>(null);
   useEffect(() => {
-    const title = instance.copy.announcementsThreadTitle.replace('{season}', String(SEASON));
+    const title = instance.copy.rosterThreadTitle.replace('{season}', String(SEASON));
     void (async () => {
       for (const board of await api.boards()) {
         const found = (await api.threads(board.id, { offset: 0, limit: 200 })).threads.find((t) => t.title === title);

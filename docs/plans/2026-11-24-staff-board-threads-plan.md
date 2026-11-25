@@ -304,7 +304,7 @@ The strings (the owner approves them in review):
 - `rosterThreadTitle`: "Season {season}: Roster Report". `meetingsThreadTitle`: "Season {season}: Staff Meetings".
 - `handoverThreadTitle`: "{boss} takes the chair".
 - `rosterHeadings`: `{ newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals:
-  'Reveals' }`. `rosterStockHeading`: "The roster, as of this morning's settlement."
+  'Reveals' }`. `rosterStockHeading`: "The roster, as of the last settlement."
 - `threadTitles`: renameBoard "{board} is now {name}"; nameSuccessor "On the matter of succession"; setRule "New rule in
   {board}"; conferGroup "Welcome to {groupName}"; pullSlot "Machine notice: a card is pulled"; repriceSlot "Machine
   notice: new prices"; flashSale "Flash sale!"; createBoard "New board: {name}"; moveThread "A thread moves to
