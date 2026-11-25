@@ -208,7 +208,9 @@ grant create on schema public to kayfabb_digest;
 create index acts_digest_plays_at on acts (created_at) include (id, "character", target_act_id) where kind = 'spring' or (kind = 'card' and not (payload ? 'caught'));
 create index acts_digest_ballots_at on acts (created_at) include (id, "character", target_act_id) where kind = 'ballot';
 create index acts_digest_polls_at on acts (created_at) include ("character", target_act_id) where kind = 'poll';
-create index threads_digest_spun on threads (created_at) include (origin_act_id, replies) where origin_act_id is not null;
+-- Keyed by time alone, with no include: an include of origin_act_id made it an index-only scan the planner chose for a probe of threads by origin_act_id (0135's spring reads),
+-- reading it whole where threads_origin reads one key.
+create index threads_digest_spun on threads (created_at) where origin_act_id is not null;
 create index play_post_digest_at on play_post (played_at) include (post, drawn) where kind <> '' or sprung;
 
 -- The top three characters that are not staff for each of five categories over [from_at, to_at): `cards` (landed card Acts and springs: a face-down set is no play until its spring, and a caught play never landed, nor one whose write was
