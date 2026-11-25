@@ -1423,10 +1423,20 @@ describe('Divided World\'s sounds', () => {
     { key: 'steel-chair.settle-2', file: 'steel-chair-settle-2.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-3', file: 'steel-chair-settle-3.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-4', file: 'steel-chair-settle-4.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.can-hit', file: 'steel-chair-can-hit.mp3', caption: 'A trash can bangs', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.can-settle-1', file: 'steel-chair-can-settle-1.mp3', caption: 'A trash can clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.can-settle-2', file: 'steel-chair-can-settle-2.mp3', caption: 'A trash can clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.ladder-hit', file: 'steel-chair-ladder-hit.mp3', caption: 'A ladder clangs', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.ladder-settle-1', file: 'steel-chair-ladder-settle-1.mp3', caption: 'A ladder clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.ladder-settle-2', file: 'steel-chair-ladder-settle-2.mp3', caption: 'A ladder clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-hit', file: 'steel-chair-extinguisher-hit.mp3', caption: 'A fire extinguisher thunks', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-settle-1', file: 'steel-chair-extinguisher-settle-1.mp3', caption: 'A fire extinguisher clunks to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-settle-2', file: 'steel-chair-extinguisher-settle-2.mp3', caption: 'A fire extinguisher clunks to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-hiss', file: 'steel-chair-extinguisher-hiss.mp3', caption: 'A fire extinguisher hisses', ink: 'var(--kb-salty)' },
   ];
   const slots = instanceUi.sounds?.slots ?? [];
 
-  test('there are exactly the seventeen slots of the design, in order, with their keys, captions, inks and loops', () => {
+  test('there are exactly the twenty-seven slots of the designs, in order, with their keys, captions, inks and loops', () => {
     expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
     for (const row of TABLE) {
       const slot = slots.find((s) => s.key === row.key);
@@ -1435,7 +1445,7 @@ describe('Divided World\'s sounds', () => {
       expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
       expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
     }
-    expect(slots).toHaveLength(17);
+    expect(slots).toHaveLength(27);
   });
   test('every slot plays on the game bus', () => {
     for (const slot of slots) expect(slot.bus, `${slot.key}'s bus`).toBe('game');
