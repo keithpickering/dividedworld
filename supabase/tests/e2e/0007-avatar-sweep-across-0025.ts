@@ -3,7 +3,7 @@
  * file no profile names and written more than an hour ago is removed, the originals 0025 listed in
  * avatar_orphans first, and a file named, or stored a moment before its profile is written, is
  * kept. And 0025 itself, run on a database that already holds profiles with an original: each
- * original is listed for the sweep, and each profile keeps its crops. The clues plan, Task 4.
+ * original is listed for the sweep, and each profile keeps its crops (on a database from the runner's snapshot of the replay before 0025). The clues plan, Task 4.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -11,7 +11,7 @@ import { execFileSync, spawn } from 'node:child_process';
 import http from 'node:http';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl, sql } from './psql-db.ts';
+import { databaseBefore, scratchUrl, sql } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
 const STORAGE_KEY = 'sb_secret_sWeEp-kEy-for-storage';
@@ -122,19 +122,10 @@ test('the sweep removes each file no profile names that was written over an hour
 });
 
 test('0025 on a database holding profiles with an original lists each original for the sweep, and keeps each profile\'s crops; a sweep from a database naming no avatar is refused', async () => {
-  const from = new URL(scratchUrl());
-  const name = `${from.pathname.slice(1)}_avatars`;
-  const server = new URL(from);
-  server.pathname = '/postgres';
-  const db = new URL(from);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0025 left it, from the runner's snapshot of its replay; only the migrations from 0025 on are applied here.
+  const old = databaseBefore('0025', 'avatars');
+  const db = new URL(old.url);
   try {
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    const migrations = fs.readdirSync(path.join(root, 'supabase/migrations')).filter((f) => f.endsWith('.sql')).sort();
-    const at = migrations.indexOf('0025_avatars.sql');
-    assert.ok(at > 0);
-    for (const m of migrations.slice(0, at)) psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/migrations', m), 'utf8'));
     // Profiles as PR #9 wrote them: an original with two crops, and an original with a square alone.
     psqlOn(db.toString(), `
       insert into pip_styles (key, name, full_image, empty_image) values ('default', 'Default', 'f', 'e');
@@ -147,7 +138,7 @@ test('0025 on a database holding profiles with an original lists each original f
       insert into character_profiles (character, avatar_source, avatar_square, avatar_portrait, square_frame, portrait_frame) values
         ('00000000-0000-4000-8000-0000000000a1', 'src-1.webp', 'sq-1.webp', 'pt-1.webp', '{"x": 0, "y": 0, "w": 0.5, "h": 0.5}', '{"x": 0, "y": 0, "w": 0.5, "h": 1}'),
         ('00000000-0000-4000-8000-0000000000a2', 'src-2.webp', 'sq-2.webp', null, '{"x": 0, "y": 0, "w": 0.5, "h": 0.5}', null);`);
-    for (const m of migrations.slice(at)) psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/migrations', m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
     assert.equal(psqlOn(db.toString(), `select string_agg(key, ',' order by key) from avatar_orphans`), 'src-1.webp,src-2.webp', 'each original is listed for the sweep');
     assert.equal(psqlOn(db.toString(), `select string_agg(concat_ws('/', avatar_square, avatar_portrait), ',' order by avatar_square) from character_profiles`), 'sq-1.webp/pt-1.webp,sq-2.webp', 'each profile keeps its crops');
     assert.equal(psqlOn(db.toString(), `select count(*) from information_schema.columns where table_name = 'character_profiles' and column_name = 'avatar_source'`), '0', 'no profile names an original');
@@ -179,7 +170,7 @@ test('0025 on a database holding profiles with an original lists each original f
       await store.close();
     }
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });
 

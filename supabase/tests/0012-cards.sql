@@ -1,6 +1,9 @@
 -- Cards and the Vending Machine (supabase/migrations/0006_cards.sql), as the service role the
 -- act Edge Function calls them as. Plan Task 10.
 
+-- A race below debuts from two sessions: the shards of debuted_count are committed first, as tests.commit_debuted_shards says.
+select tests.commit_debuted_shards();
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;

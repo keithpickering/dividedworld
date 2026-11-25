@@ -102,7 +102,10 @@ declare
   plan text := '';
   ln record;
 begin
-  perform tests.character(tests.account(format('sp-%s', g)), format('Sp %s', lpad(g::text, 3, '0'))) from generate_series(1, 300) g;
+  -- A thousand characters, each with a standing row: on a few hundred rows the planner weighs a scan of the season's amount index
+  -- against the key's probes as nearly equal, and a fresh instance's statistics (this file's own rows, analyzed below) make the
+  -- scan win; the guard is about a page of a season that has players, where the probe is plainly cheaper.
+  perform tests.character(tests.account(format('sp-%s', g)), format('Sp %s', lpad(g::text, 4, '0'))) from generate_series(1, 1000) g;
   analyze standings;
   select array_agg(c.id) into ids from (select id from characters where name like 'Sp %' order by name limit 20) c;
   set local enable_seqscan = off;

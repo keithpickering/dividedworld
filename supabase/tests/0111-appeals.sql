@@ -85,7 +85,7 @@ create function pg_temp.banned(c uuid, t uuid) returns uuid language sql as $$ s
 do $$
 declare
   u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); ap uuid := gen_random_uuid();
-  inf uuid; tries integer := 0; said text[];
+  inf uuid; tries integer := 0; max_tries constant integer := 1200; said text[];
   ra text; rb text;
 begin
   perform tests.commit(format($sql$
@@ -131,9 +131,12 @@ begin
   perform extensions.dblink_send_query('apl_a', format('select /* apl_a */ refund_appeal(%L)', ap));
   perform extensions.dblink_send_query('apl_b', format('select /* apl_b */ close_appeal(%L, ''upheld'')', ap));
   loop
+    -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+    perform pg_stat_clear_snapshot();
     exit when (select count(*) from pg_stat_activity a where (a.query like '%/* apl_a */%' or a.query like '%/* apl_b */%') and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock') = 2;
     tries := tries + 1;
-    if tries > 400 then raise exception 'the refund and the close never both waited on the appeal''s lock'; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then raise exception 'the refund and the close never both waited on the appeal''s lock'; end if;
     perform pg_sleep(0.025);
   end loop;
   perform extensions.dblink_exec('apl_h', 'commit');

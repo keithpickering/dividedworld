@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- The queue, the texts and the refund of a card that writes (supabase/migrations/0149_card_writes.sql;
 -- the plan for the card that writes, Task 4; its design sections 3, 4, 6, 12, 14 and 15).
 --

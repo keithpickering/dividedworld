@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- Patrols and the targeting cap (supabase/migrations/0110_patrols.sql; the Mod Bots design, section 8, "A busy instance" and "What could slip a mask"; its plan, Task 11).
 --
 -- 1. apply_meeting writes the answer's patrols (kept on the meeting record, Task 4) into the `patrols` table: a Mod not on staff and a time that is no time are skipped, a time is

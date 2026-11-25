@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- Quotes of hidden posts, concealed as a layer (supabase/migrations/0340_conduct.sql; the conduct plan, Task 2, amended 2026-11-12): the database does not read BBCode. quote_refs records what a
 -- body names after `[quote=`; a decision that changes what is hidden, and the writing of a post that quotes a hidden one, ask for a layer; the conceal job (engine/bbcode/conceal.ts's concealQuotes,
 -- supabase/functions/conceal) records it; acts_public serves the layer made for the hidden set of now, and until then withholds the body behind `concealing`. The reading of BBCode itself is the
@@ -128,7 +130,7 @@ declare
   adm uuid := gen_random_uuid(); wr uuid := gen_random_uuid();
   ch uuid := gen_random_uuid(); th uuid := gen_random_uuid();
   p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); s uuid := gen_random_uuid();
-  layer_text text; shown text; said text; waited integer := 0; got bigint;
+  layer_text text; shown text; said text; waited integer := 0; max_waits constant integer := 600; got bigint;
   svc text := $c$do $d$ begin perform set_config('request.jwt.claims', '{"role": "service_role"}', true); perform set_config('role', 'service_role', true); end $d$ $c$;
 begin
   perform tests.commit(format($sql$
@@ -168,9 +170,12 @@ begin
     -- B records {P1, P2} (it began first), and waits on A.
     perform extensions.dblink_send_query('job_b', format('select record_layer(%L, %L, %L)', s, (select array_agg(x order by x) from unnest(array[p1, p2]) x), layer_text));
     loop
+      -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+      perform pg_stat_clear_snapshot();
       exit when exists (select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid());
       waited := waited + 1;
-      if waited > 200 then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
+      -- Gives up at 30 s (600 looks of 50 ms), past the 20 s lock wait the racer sets for itself: the pool runs several files at once, so a parked session can take seconds to show on a loaded runner. The loop leaves the moment the wait shows.
+      if waited > max_waits then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
       exit when extensions.dblink_is_busy('job_b') = 0;
       perform pg_sleep(0.05);
     end loop;

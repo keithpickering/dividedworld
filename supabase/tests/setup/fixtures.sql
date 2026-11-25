@@ -160,6 +160,15 @@ begin
   perform extensions.dblink_disconnect('tests_setup');
 end $$;
 
+-- Commits the four shards of debuted_count, empty, so a race test can debut characters from two sessions. A fresh instance
+-- holds no shard (characters_count_debuted() makes one on the first debut), and a file's open transaction that has debuted
+-- a character holds shard 0 uncommitted: a racer that debuts another then picks shard 0 too (none committed to skip) and
+-- waits on a transaction that ends only after the race. With all four committed, the open transaction locks one and the
+-- racer's `for update skip locked` takes another. Called before the file's own transaction debuts anyone.
+create function tests.commit_debuted_shards() returns void language sql as $$
+  select tests.commit('insert into debuted_count (shard, characters) values (0, 0), (1, 0), (2, 0), (3, 0) on conflict (shard) do nothing');
+$$;
+
 -- One racer: waits at the barrier, becomes `who` (an account, or null for the service role),
 -- runs one statement, and returns null, or the error it raised. One statement on the wire, so
 -- dblink returns this function's answer and nothing of the racer's is lost.
@@ -190,7 +199,7 @@ declare
   said text;
   conn text;
   waiting integer;
-  tries integer := 0;
+  tries integer := 0; max_tries constant integer := 1200;
 begin
   perform pg_advisory_lock(4242);
   begin
@@ -204,7 +213,8 @@ begin
       where l.locktype = 'advisory' and l.objid = 4242 and not l.granted and l.database = (select oid from pg_database where datname = current_database());
       exit when waiting >= 2;
       tries := tries + 1;
-      if tries > 400 then raise exception 'tests.race: the two sessions never both reached the barrier'; end if;
+      -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+      if tries > max_tries then raise exception 'tests.race: the two sessions never both reached the barrier'; end if;
       perform pg_sleep(0.025);
     end loop;
   exception when others then
