@@ -3222,12 +3222,36 @@ describe('an admin ends a card play (reverse_card)', () => {
     expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toMatchObject([{ act: ended.act, character: benMask, name: 'Ben Heel', thread }]);
     fake.signInAs(ana);
     expect((await fake.log()).ended).toMatchObject([{ ...row, side: 'onMine', character: anaFace }]);
-    expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toEqual([]);
+    /* The one it landed on is told as well (reverse_card's write_alert, sub onYours). */
+    expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toMatchObject([{ act: ended.act, sub: 'onYours', character: anaFace, name: 'Ana Face' }]);
     for (const other of [boss, cara]) {
       fake.signInAs(other);
       expect((await fake.log()).ended).toEqual([]);
       expect((await fake.alerts()).filter((a) => a.kind === 'cardEnded')).toEqual([]);
     }
+  });
+
+  test('an admin\'s end of a card on yours is heard live on account:<id> by the one it landed on (onYours) and by the caster, and no onYours for the caster\'s own other mask', async () => {
+    const { fake, boss, ana, anaFace, opener, thread } = setup();
+    const ben = fake.seed.account('ben');
+    const benMask = fake.seed.character(ben, 'Ben Heel', 'heel');
+    const benFace = fake.seed.character(ben, 'Ben Face', 'face');
+    const benPost = fake.seed.post(thread, benFace, 'a post of Ben\'s');
+    fake.seed.wallet(ben, 900);
+    fake.seed.cards(ben, { blot: 4 });
+    const heard = { ana: [] as { kind: string; sub: string | null; character: string | null }[], ben: [] as { kind: string; sub: string | null; character: string | null }[] };
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onAlert: (a) => heard.ana.push(a) });
+    fake.signInAs(ben);
+    fake.subscribeAccount({ onAlert: (a) => heard.ben.push(a) });
+    const onAna = must(await fake.playCard('blot', benMask, opener, {}, ''));
+    const onOwn = must(await fake.playCard('blot', benMask, benPost, {}, ''));
+    fake.signInAs(boss);
+    must(await fake.reverseCard(onAna.id));
+    must(await fake.reverseCard(onOwn.id));
+    await flush();
+    expect(heard.ana.filter((a) => a.kind === 'cardEnded')).toEqual([expect.objectContaining({ kind: 'cardEnded', sub: 'onYours', character: anaFace })]);
+    expect(heard.ben).toEqual([expect.objectContaining({ kind: 'cardEnded', sub: null, character: benMask }), expect.objectContaining({ kind: 'cardEnded', sub: null, character: benMask })]);
   });
 
   test('my_cards_ended.character files a character and a thread play under the mask it landed on, and the caster\'s own row under the caster', async () => {
@@ -4560,6 +4584,29 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     expect(must(await fake.donate(anaFace, drive, 10)).act.payload).toMatchObject({ amount: 10, overhead: 2, arrives: 8 });
   });
 
+  test('a gift is heard live as a gift by the drive post\'s author, and not by the giver, whose own other mask\'s drive tells no one', async () => {
+    const { fake, ana, bo, anaFace, boFace, thread, drive } = driveWorld();
+    const heard = { bo: [] as { kind: string; sub: string | null; character: string | null }[], ana: [] as { kind: string; sub: string | null; character: string | null }[] };
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onAlert: (a) => heard.bo.push(a) });
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onAlert: (a) => heard.ana.push(a) });
+    const given = must(await fake.donate(anaFace, drive, 10));
+    await flush();
+    expect(heard.bo).toEqual([expect.objectContaining({ kind: 'gift', sub: null, act: given.act.id, character: boFace })]);
+    expect(heard.ana).toEqual([]);
+    fake.signInAs(bo);
+    expect((await fake.alerts()).filter((a) => a.kind === 'gift')).toMatchObject([{ act: given.act.id, character: boFace }]);
+    const anaHeel = fake.seed.character(ana, 'Ana Heel', 'heel');
+    const own = fake.seed.post(thread, anaHeel, 'Ana\'s own post');
+    const ownDrive = fake.seed.card(anaHeel, own, 'appeal');
+    fake.signInAs(ana);
+    must(await fake.donate(anaFace, ownDrive, 10));
+    await flush();
+    expect(heard.ana).toEqual([]);
+    expect((await fake.alerts()).filter((a) => a.kind === 'gift')).toEqual([]);
+  });
+
   test('a gift is refused in the database\'s words: a closed drive, an amount not offered, a short wallet, no drive, a ban', async () => {
     const { fake, anaFace, opener, drive } = driveWorld(20);
     expect(await fake.donate(anaFace, drive, 12)).toEqual(refused('a gift here is one of 0.10, 0.25'));
@@ -4592,6 +4639,23 @@ describe('a drive and its gifts, refused and split as the database does', () => 
     const given = must(await fake.donate(anaFace, drive, 25));
     expect(given.act.payload).toMatchObject({ amount: 25, overhead: 25, arrives: 0 });
     expect(await walletOf(fake, ana)).toBe(75);
+  });
+
+  test('a gift to a drive on a staff post tells nobody', async () => {
+    const { fake, ana, bo, anaFace, thread } = driveWorld();
+    const staff = fake.seed.staff('boss', 'The Boss', 'boss');
+    const drive = fake.seed.card(staff, fake.seed.staffPost(staff, thread, 'Hello from the glass.'), 'appeal');
+    const heard: { kind: string }[] = [];
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(ana);
+    must(await fake.donate(anaFace, drive, 10));
+    await flush();
+    expect(heard).toEqual([]);
+    expect((await fake.alerts()).filter((a) => a.kind === 'gift')).toEqual([]);
+    fake.signInAs(bo);
+    expect((await fake.alerts()).filter((a) => a.kind === 'gift')).toEqual([]);
   });
 
   test('the answer is the same whether or not the author\'s wallet is full, and the overflow is lost without a word', async () => {
@@ -5267,6 +5331,46 @@ describe('a surface, as the server keeps it', () => {
       fake.seed.cards(ana, { slab: 2 });
       expect(await fake.setCard('slab', anaFace, post, {})).toMatchObject({ ok: false, error: expect.stringContaining('never set face down') });
     });
+  });
+
+  test('a draw on a wall is heard live as cardOnYours/drew by the wall post\'s author, and not by the drawer\'s own other mask', async () => {
+    const { fake, ana, bo, anaFace, anaHeel, boFace, play } = wall();
+    const heard = { ana: [] as { kind: string; sub: string | null; character: string | null }[], bo: [] as { kind: string; sub: string | null; character: string | null }[] };
+    fake.signInAs(ana);
+    fake.subscribeAccount({ onAlert: (a) => heard.ana.push(a) });
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onAlert: (a) => heard.bo.push(a) });
+    const drawn = must(await fake.draw(play, boFace, { strokes: [stroke(0.5, 0.25)] }));
+    await flush();
+    expect(heard.ana).toEqual([expect.objectContaining({ kind: 'cardOnYours', sub: 'drew', act: drawn.id, character: anaFace })]);
+    expect(heard.bo).toEqual([]);
+    fake.signInAs(ana);
+    expect((await fake.alerts()).filter((a) => a.sub === 'drew')).toMatchObject([{ sub: 'drew', act: drawn.id, character: anaFace }]);
+    must(await fake.draw(play, anaHeel, { strokes: [stroke(0.1, 0.1)] }));
+    await flush();
+    expect(heard.ana).toHaveLength(1);
+  });
+
+  test('a staff draw on a wall tells the wall post\'s author cardOnYours/drew', async () => {
+    const { fake, ana, anaFace, play } = wall();
+    const drawn = fake.seed.draw(null as unknown as string, play);
+    fake.signInAs(ana);
+    expect((await fake.alerts()).filter((a) => a.sub === 'drew')).toMatchObject([{ kind: 'cardOnYours', sub: 'drew', act: drawn, character: anaFace }]);
+  });
+
+  test('a wash tells nobody, the author\'s own and the caster\'s alike', async () => {
+    const { fake, ana, bo, anaFace, play } = wall();
+    const heard: { kind: string; sub: string | null }[] = [];
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(bo);
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    fake.signInAs(ana);
+    const washed = must(await fake.wash(play, anaFace, { strokes: [dab(0.5, 0.5, 0.02)] }));
+    await flush();
+    expect(heard).toEqual([]);
+    expect((await fake.alerts()).filter((a) => a.act === washed.id)).toEqual([]);
+    fake.signInAs(bo);
+    expect((await fake.alerts()).filter((a) => a.act === washed.id)).toEqual([]);
   });
 
   test('the limit\'s refusal says what the database says, with the same numbers', async () => {
@@ -6930,6 +7034,32 @@ describe('polls (0395, 0396)', () => {
     expect(await fake.post(thread, anaFace, 'No.', null, undefined, { ...draft, options: ['A', 'A'] })).toEqual(refused('no two options are the same', 'poll'));
     expect(await fake.post(thread, anaFace, 'No.', null, undefined, { ...draft, lasts: { unit: 'minute', count: 5 } })).toEqual(refused('a poll lasts from 1 hour to 14 days', 'poll'));
     expect(await fake.startThread('general', anaFace, 'T', 'b', undefined, { ...draft, pick: 9 })).toEqual(refused('a poll lets 1 to 3 options be picked', 'poll'));
+  });
+
+  test('an admin\'s close of a poll is a ruling/pollClosed alert, heard live and listed for the poll\'s account, about the close Act', async () => {
+    const { fake, ana, anaFace, id } = await poll();
+    const heard: { kind: string; sub: string | null; character: string | null; act: string | null }[] = [];
+    fake.subscribeAccount({ onAlert: (a) => heard.push(a) });
+    const boss = fake.seed.account('boss', { admin: true });
+    fake.signInAs(boss);
+    const close = must(await fake.closePollAsAdmin(id)).act;
+    await flush();
+    expect(heard).toEqual([expect.objectContaining({ kind: 'ruling', sub: 'pollClosed', act: close.id, character: anaFace })]);
+    fake.signInAs(ana);
+    expect((await fake.alerts()).filter((a) => a.kind === 'ruling')).toMatchObject([{ sub: 'pollClosed', act: close.id, character: anaFace }]);
+    fake.signInAs(boss);
+    expect((await fake.alerts()).filter((a) => a.kind === 'ruling')).toEqual([]);
+  });
+
+  test('an admin who closes a poll their own account owns is told too: close_poll_as_admin passes no acting account', async () => {
+    const { fake } = await poll();
+    const boss = fake.seed.account('boss', { admin: true });
+    const bossFace = fake.seed.character(boss, 'Boss Face', 'face');
+    fake.signInAs(boss);
+    const started = must(await fake.startThread('general', bossFace, 'Mine', 'Vote.', undefined, draft));
+    const mine = (await fake.threadPage(started.thread.id, { page: 1 }, null, []))!.polls[0]!.act.id;
+    const close = must(await fake.closePollAsAdmin(mine)).act;
+    expect((await fake.alerts()).filter((a) => a.kind === 'ruling')).toMatchObject([{ sub: 'pollClosed', act: close.id, character: bossFace }]);
   });
 
   test('a poll and a public ballot can be spun: the place names them, the page\'s origin carries the poll, and the refusals are the server\'s', async () => {

@@ -504,11 +504,19 @@ declare
 begin
   select count(*) into n from alerts where kind = 'cardEnded' and account = cast_acc;
   if n <> 4 then raise exception 'the caster has one cardEnded alert per reversed play (4), got %', n; end if;
-  select * into r from alerts where kind = 'cardEnded' and act = end_id;
-  if r.account is distinct from cast_acc or r.character is distinct from c1 or r.sub is not null then raise exception 'the alert is the caster''s, about the card_end: %', to_jsonb(r); end if;
-  if exists (select 1 from alerts where kind = 'cardEnded' and account in (tgt_acc, third_acc)) then raise exception 'neither the target''s author nor a third player is alerted'; end if;
-  if exists (select 1 from alerts a join acts e on e.id = a.act where a.kind = 'cardEnded' and e.target_act_id in (select id from acts where character = staff)) then
-    raise exception 'a staff caster''s reversed play writes no alert';
+  select * into r from alerts where kind = 'cardEnded' and act = end_id and sub is null;
+  if r.account is distinct from cast_acc or r.character is distinct from c1 then raise exception 'the alert is the caster''s, about the card_end: %', to_jsonb(r); end if;
+  -- An admin's end of a card now tells the target too (docs/plans/2026-11-23-rulings-and-missing-alerts-design.md, section 3, which revises this file's
+  -- "neither the target's author nor a third player is alerted"): the target's author has one cardEnded/onYours alert per reversed play on what is theirs
+  -- (the post, the character, the thread they started, and the staff persona's play on their post: 4), none on the caster's own post (the caster's
+  -- own other mask, so the caster's alert is the only one); 0423-rulings-alerts.sql tests the target's side in full. A third player hears nothing.
+  if (select count(*) from alerts where kind = 'cardEnded' and account = tgt_acc and sub = 'onYours' and character = (select id from characters where name = 'Ce4 Target')) is distinct from 4::bigint
+     or exists (select 1 from alerts where kind = 'cardEnded' and account = tgt_acc and sub is distinct from 'onYours')
+     or exists (select 1 from alerts where kind = 'cardEnded' and account = third_acc) then
+    raise exception 'the target''s author has one onYours alert per reversed play on theirs (4) and a third player none: %', (select jsonb_agg(to_jsonb(a)) from alerts a where a.kind = 'cardEnded' and a.account in (tgt_acc, third_acc));
+  end if;
+  if exists (select 1 from alerts a join acts e on e.id = a.act where a.kind = 'cardEnded' and a.sub is null and e.target_act_id in (select id from acts where character = staff)) then
+    raise exception 'a staff caster''s reversed play writes no caster''s alert';
   end if;
   perform tests.become(cast_acc);
   if (select count(*) from my_alerts() where kind = 'cardEnded') is distinct from 4::bigint then raise exception 'my_alerts lists the caster''s cardEnded alerts'; end if;

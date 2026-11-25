@@ -327,6 +327,14 @@ export interface Seed {
   lift(play: Id, ban: Id): void;
   /** The ban a full bar writes (`infract`): the character is banned until `until` (an Act of no character, as the server writes it), and its bar is emptied. */
   ban(character: Id, until: number, options?: { days?: number; infraction?: Id; at?: number }): Id;
+  /** A gift on a drive (the donation `donate` writes): the character gave `amount` hundredths; `arrives` is what reached the post's author after overhead (default: all of it). Returns the donation's Act. */
+  donation(character: Id, drive: Id, amount: number, options?: { arrives?: number; at?: number }): Id;
+  /** A draw on a wall (a card play of a surface card): the Act a drawing alert is about. Held and paid for nowhere. */
+  draw(character: Id, wall: Id, options?: { at?: number }): Id;
+  /** An admin's end of a card play (the card_end `reverse_card` writes): the Act a card-ended alert is about. */
+  cardEnd(play: Id, options?: { at?: number }): Id;
+  /** An admin's close of a poll (the poll_close `close_poll_as_admin` writes): the Act a poll-closed alert is about. */
+  pollClose(poll: Id, options?: { at?: number }): Id;
   /** What the next report or appeal is answered with (the Mod's judgment, which the fake does not make): a report's verdict, an appeal's ruling. The defaults are `dismissed` and `upheld`. */
   judging(answers: { readonly report?: ReportVerdict | 'failed'; readonly appeal?: AppealVerdict | 'failed'; /** Run once after the report's price is taken and before its verdict (the model call's window, in which a veil can land), then cleared. */ readonly meanwhile?: () => void }): void;
   /** A saved card effect on a thread's play, heard by its subscribers. */
@@ -722,28 +730,54 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     send(`thread:${act.thread}`, 'act', () => { for (const l of [...(threadListeners.get(act.thread) ?? [])]) l.onAct?.(shown); });
     /* The alert the write queued (write_alert, 0058), announced to the target's account alone: none for a staff or unowned target, or
        for the account that did it. */
-    const alert = derivedAlert(act);
-    if (alert === null) return;
-    const live = { id: crypto.randomUUID(), kind: alert.kind, sub: null, act: act.id, character: alert.character, at: iso(act.at) };
-    send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
+    sendAlerts(act);
+  };
+  const sendAlerts = (act: ActRec) => {
+    for (const alert of derivedAlert(act)) {
+      const live = { id: crypto.randomUUID(), kind: alert.kind, sub: alert.sub, act: act.id, character: alert.character, at: iso(act.at) };
+      send(`account:${alert.account}`, 'alert', () => { for (const l of [...(accountListeners.get(alert.account) ?? [])]) l.onAlert?.(live); });
+    }
   };
   /**
-   * The alert an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, or a card on a post, a character or a
-   * thread, for the owner of what it landed on. Null for a staff target, a spring, and a target of the Act's own account.
+   * The alerts an Act writes, read from the Act as `write_alert`'s callers do: a quote of a post, a card on a post, a character or a
+   * thread, a gift to a drive's post, a drawing on a wall, and a card an admin ended, for the owner of what it landed on (the caster's player too, for the card ended).
+   * Empty for a staff target, a spring, and a target of the Act's own account (a card's caster's, for the end of one).
    */
-  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours' | 'cardEnded'; character: Id } | null {
-    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert); none for a staff caster. */
+  function derivedAlert(a: ActRec): { account: Id; kind: 'quote' | 'cardOnYours' | 'cardEnded' | 'gift'; sub: 'drew' | 'onYours' | null; character: Id }[] {
+    const ownerOf = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
+    /* An admin ended a card: the alert is the caster's own player's, about the card_end (reverse_card's write_alert; none for a staff
+       caster), and the side it landed on's (onYours), none for the caster's own. */
     if (a.kind === 'card_end') {
-      const caster = a.target === null ? undefined : acts.get(a.target)?.character;
-      const owner = caster == null ? undefined : characters.get(caster)?.owner;
-      return caster == null || !owner ? null : { account: owner, kind: 'cardEnded', character: caster };
+      const play = a.target === null ? undefined : acts.get(a.target);
+      const caster = play?.character;
+      const out: { account: Id; kind: 'cardEnded'; sub: 'onYours' | null; character: Id }[] = [];
+      const casterOwner = ownerOf(caster);
+      if (caster != null && casterOwner) out.push({ account: casterOwner, kind: 'cardEnded', sub: null, character: caster });
+      if (play === undefined || (play.kind !== 'card' && play.kind !== 'spring')) return out;
+      const reach = (play.payload.reach ?? 'post') as string;
+      const target = play.kind === 'spring' ? (typeof play.payload.locks === 'string' ? play.payload.locks : undefined)
+        : reach === 'post' ? (play.target === null ? undefined : acts.get(play.target)?.character)
+        : reach === 'character' ? String(play.payload.character)
+        : reach === 'thread' ? [...acts.values()].find((x) => x.thread === play.payload.thread && x.seq === 1)?.character : undefined;
+      const owner = ownerOf(target);
+      if (target != null && owner && owner !== casterOwner) out.push({ account: owner, kind: 'cardEnded', sub: 'onYours', character: target });
+      return out;
     }
-    if (a.character === null) return null;
+    /* A drive's post's author is told of a gift, and a wall's of a drawing; a staff drawer (no character) tells the author as well. */
+    if (a.kind === 'donation' || a.kind === 'draw') {
+      const play = a.target === null ? undefined : acts.get(a.target);
+      const post = play?.target == null ? undefined : acts.get(play.target);
+      const author = post?.character;
+      const owner = ownerOf(author);
+      if (author == null || !owner || owner === ownerOf(a.character)) return [];
+      return [{ account: owner, kind: a.kind === 'donation' ? 'gift' : 'cardOnYours', sub: a.kind === 'draw' ? 'drew' : null, character: author }];
+    }
+    if (a.character === null) return [];
     let kind: 'quote' | 'cardOnYours';
     let target: Id | null | undefined;
     if (a.kind === 'post' && a.target !== null) {
       const quoted = acts.get(a.target);
-      if (quoted?.kind !== 'post') return null;
+      if (quoted?.kind !== 'post') return [];
       kind = 'quote'; target = quoted.character;
     } else if (a.kind === 'card' && a.target !== null && a.payload.spring === undefined) {
       const reach = (a.payload.reach ?? 'post') as string;
@@ -751,10 +785,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       target = reach === 'post' ? acts.get(a.target)?.character
         : reach === 'character' ? String(a.payload.character)
         : reach === 'thread' ? [...acts.values()].find((x) => x.thread === a.payload.thread && x.seq === 1)?.character : null;
-    } else return null;
-    const owner = target == null ? undefined : characters.get(target)?.owner;
-    if (owner == null || owner === characters.get(a.character)?.owner) return null;
-    return { account: owner, kind, character: target! };
+    } else return [];
+    const owner = ownerOf(target);
+    if (owner == null || owner === characters.get(a.character)?.owner) return [];
+    return [{ account: owner, kind, sub: null, character: target! }];
   }
   /* A play beyond a post is also heard on `reach` by every signed-in page (act/core.ts's BROADCASTS.play_card). */
   const sendReach = (act: ActRec) => {
@@ -1673,7 +1707,16 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (character !== null && p.character !== character) return refuse('only a poll\'s author can close it');
     const closed = pollRefusal(p);
     if (closed) return closed;
-    return wrote(write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } }), p);
+    const close = write({ character, kind: 'poll_close', thread: p.thread, target: p.id, payload: { by: character === null ? 'admin' : 'author' } });
+    /* An admin's close tells the poll's own player (close_poll_as_admin's write_alert, which passes no acting account):
+       ruling/pollClosed, about the close, the admin's own poll included; none for a staff one, which has no owner. */
+    const owner = character === null && p.character !== null ? characters.get(p.character)?.owner : undefined;
+    if (owner) {
+      const line = { account: owner, kind: 'ruling' as const, sub: 'pollClosed', act: close.id, character: p.character, at: close.at };
+      seededAlerts.push(line);
+      send(`account:${owner}`, 'alert', () => { for (const l of [...(accountListeners.get(owner) ?? [])]) l.onAlert?.({ id: crypto.randomUUID(), kind: line.kind, sub: line.sub, act: line.act, character: line.character, at: iso(line.at) }); });
+    }
+    return wrote(close, p);
   }
   function closePoll(poll: Id, character: Id): Answer<PollWritten> {
     const bad = request({ action: 'closePoll', poll, character });
@@ -2176,6 +2219,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const rec = write({ id: written, character, kind, thread: p.thread, target: play, payload: { ...sent, cells: decided.value.cells, ...(kind === 'wash' ? { uncovered: [...cut.values()].reduce((n, c) => n + c, 0), cut: [...cut].map(([draw, n]) => ({ draw, took: n })) } : {}) } });
     s.cells.set(written, cells);
     s.cover = next.cover; s.owners = next.owners; s.live = next.live;
+    if (kind === 'draw') sendAlerts(rec);
     const covered = count(next.cover);
     send(`thread:${p.thread}`, 'surface', () => { for (const l of [...(threadListeners.get(p.thread) ?? [])]) l.onSurface?.(play, covered); });
     return ok({ ...publicAct(rec), covered, live: [...next.live] });
@@ -5022,17 +5066,45 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     alertsPage(before): AlertsPage {
       const alerts = core.alerts(before);
       const acts = new Map<Id, Act>();
-      /* The rows' Acts, and the Acts those lead to, three links deep (alerts_page's chain). */
-      let next = alerts.flatMap((a) => (a.act === null ? [] : [a.act]));
-      for (let depth = 0; depth < 3 && next.length; depth++) {
-        const read = core.actsById(next.filter((id) => !acts.has(id)));
-        for (const a of read) acts.set(a.id, a);
-        next = read.flatMap((a) => (a.targetActId === null ? [] : [a.targetActId]));
+      /*
+       * The rows' Acts, and the Acts those lead to. The kinds that came before the rulings keep the fake's wide reading (three links, every author named); the new lines are held to alerts_page's own
+       * rules (0423, section 9), so a gap in what the real page loads shows here as it would there: two links for a ruling and a conduct row, three for a gift and a drawing, the people only the ones named below.
+       */
+      const isNew = (a: Alert) => a.kind === 'ruling' || a.kind === 'gift' || a.kind === 'conduct' || (a.kind === 'cardOnYours' && a.sub === 'drew');
+      const most = (a: Alert) => (!isNew(a) || a.kind === 'gift' || a.kind === 'cardOnYours' ? 3 : 2);
+      const wide = new Set<Id>();
+      const third = new Set<Id>();
+      for (const row of alerts) {
+        let id: Id | null = row.act;
+        for (let depth = 1; id !== null && depth <= most(row); depth++) {
+          const a: Act | undefined = acts.get(id) ?? core.actsById([id])[0];
+          if (!a) break;
+          acts.set(a.id, a);
+          if (!isNew(row)) wide.add(a.id);
+          else if (depth === 3) third.add(a.id);
+          id = a.targetActId;
+        }
       }
+      /* The post a ruling's infraction was filed on (`about_act`), a payload id and no link; and what the new lines name, each a public Act's own: the drawer, the character a fall landed on, the Mod a warning names by staff key, the board a move names. */
+      const named = (r: Alert) => (r.act === null ? undefined : acts.get(r.act));
+      const text = (v: unknown): Id | null => (typeof v === 'string' && v !== '' ? v : null);
+      const about = alerts.flatMap((r) => { const a = named(r); const id = r.kind === 'ruling' && a?.kind === 'infraction' ? text(a.payload['about_act']) : null; return id === null ? [] : [id]; });
+      for (const a of core.actsById(about.filter((id) => !acts.has(id)))) acts.set(a.id, a);
+      const authors = new Set([...acts.values()].filter((a) => wide.has(a.id) || third.has(a.id)).flatMap((a) => (a.character === null ? [] : [a.character])));
+      for (const r of alerts) {
+        const a = named(r);
+        if (r.kind === 'cardOnYours' && r.sub === 'drew' && a?.character) authors.add(a.character);
+        if (r.kind === 'ruling' && r.sub === 'fallTaken' && a?.kind === 'infraction') { const taker = text(a.payload['character']); if (taker !== null) authors.add(taker); }
+        if (r.kind === 'ruling' && r.sub === 'warning' && a?.kind === 'infraction') { const key = text(a.payload['staff']); for (const c of characters.values()) if (key !== null && c.staff?.key === key && c.debutedAt !== null) authors.add(c.id); }
+      }
+      const moved = alerts.flatMap((r) => { const a = named(r); const id = r.kind === 'ruling' && r.sub === 'threadMoved' && a?.kind === 'move' && typeof a.payload['params'] === 'object' && a.payload['params'] !== null ? text((a.payload['params'] as { board?: unknown }).board) : null; return id === null ? [] : [id]; });
+      const movedThreads = alerts.flatMap((r) => { const a = named(r); const id = r.kind === 'ruling' && r.sub === 'threadMoved' && a?.kind === 'move' && typeof a.payload['params'] === 'object' && a.payload['params'] !== null ? text((a.payload['params'] as { thread?: unknown }).thread) : null; return id === null ? [] : [id]; });
       const threads = [...new Set(alerts.flatMap((a) => (a.thread === null ? [] : [a.thread])))];
       return {
         alerts, seenAt: core.preferences().alertsSeenAt, openedAt: (() => { try { return core.accountOpenedAt(); } catch { return null; } })(), acts: [...acts.values()],
-        people: core.characters([...new Set([...acts.values()].flatMap((a) => (a.character === null ? [] : [a.character])))]), openings: core.openingActs(threads), reading: core.reading(threads),
+        people: core.characters([...authors]), openings: core.openingActs(threads), reading: core.reading(threads),
+        boards: core.boardNames().filter((b) => moved.includes(b.id)).map((b) => ({ id: b.id, name: b.name })),
+        threads: [...new Set(movedThreads)].flatMap((id) => { const t = core.thread(id); return t === null ? [] : [{ id, title: t.title }]; }),
       };
     },
     updatesPage(update, before, handover): UpdatesPage {
@@ -5606,9 +5678,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     const ownerOfCharacter = (c: Id | null | undefined) => (c == null ? undefined : characters.get(c)?.owner);
     const out: Alert[] = [];
     for (const a of acts.values()) {
-      if ((a.character === null && a.kind !== 'card_end') || ownerOfCharacter(a.character) === account.id) continue;
-      const derived = derivedAlert(a);
-      if (derived?.account === account.id) out.push(line({ kind: derived.kind, sub: null, act: a.id, character: derived.character, at: a.at }));
+      if ((a.character === null && a.kind !== 'card_end' && a.kind !== 'draw') || ownerOfCharacter(a.character) === account.id) continue;
+      for (const derived of derivedAlert(a)) if (derived.account === account.id) out.push(line({ kind: derived.kind, sub: derived.sub, act: a.id, character: derived.character, at: a.at }));
     }
     for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
     for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
@@ -5751,7 +5822,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     alert(account, a) {
       seeded(account);
-      if (!isWritten(a.kind) || a.kind === 'quote' || a.kind === 'cardOnYours' || a.kind === 'cardEnded') throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
+      /* A card on yours and a card an admin ended are read from the Acts that make them, but for the subs no Act of the fake's derives: a drawing, an admin's end of a card on yours, a card refunded. */
+      const subOnly = a.kind === 'cardOnYours' ? a.sub === 'drew' : a.kind === 'cardEnded' ? a.sub === 'onYours' || a.sub === 'refunded' : false;
+      if (!isWritten(a.kind) || a.kind === 'quote' || ((a.kind === 'cardOnYours' || a.kind === 'cardEnded') && !subOnly)) throw new Error(`a ${a.kind} alert is read from the Acts that make it, not seeded`);
       if (!acts.has(a.act)) throw new Error('an alert is about an Act that exists');
       if (a.character !== undefined && characters.get(a.character)?.owner !== account) throw new Error('an alert concerns a character of the account\'s');
       const line = { account, kind: a.kind, sub: a.sub ?? null, act: a.act, character: a.character ?? null, at: a.at ?? now() };
@@ -6178,6 +6251,27 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!inf) throw new Error('a ban follows an infraction that filled the bar');
       const at = o?.at ?? now();
       return write({ character: null, kind: 'ban', thread: inf.thread, at, payload: { character, days: o?.days ?? 1, until: iso(until), infraction_act: inf.id, season: 1 } }).id;
+    },
+    donation(character, drive, amount, o) {
+      const d = acts.get(drive);
+      if (!d || d.kind !== 'card') throw new Error(`no such drive ${drive}`);
+      const arrives = o?.arrives ?? amount;
+      return write({ character, kind: 'donation', thread: d.thread, target: drive, at: o?.at, payload: { amount, overhead: amount - arrives, arrives } }).id;
+    },
+    draw(character, wall, o) {
+      const w = acts.get(wall);
+      if (!w || w.kind !== 'card') throw new Error(`no such wall ${wall}`);
+      return write({ character, kind: 'draw', thread: w.thread, target: wall, at: o?.at, payload: { strokes: [{ width: 0.01, points: [[0.1, 0.1]] }], cells: '' } }).id;
+    },
+    pollClose(poll, o) {
+      const p = acts.get(poll);
+      if (!p || p.kind !== 'poll') throw new Error(`no such poll ${poll}`);
+      return write({ character: null, kind: 'poll_close', thread: p.thread, target: poll, at: o?.at, payload: { by: 'admin' } }).id;
+    },
+    cardEnd(play, o) {
+      const p = acts.get(play);
+      if (!p || p.kind !== 'card') throw new Error(`no such card play ${play}`);
+      return write({ character: null, kind: 'card_end', thread: p.thread, target: play, at: o?.at, payload: {} }).id;
     },
     judging(answers) {
       if (answers.report) judged.report = answers.report;

@@ -250,7 +250,6 @@ begin
     for ln in execute stmt loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
     if plan ~ 'Seq Scan on (alerts|ledger)' then raise exception '% never scans alerts or ledger: %', src, plan; end if;
     if plan !~ 'Index (Only )?Scan( Backward)? using alerts_by_account' then raise exception '%: written alerts are one range of (account, at): %', src, plan; end if;
-    if plan !~ '(Index (Only )?Scan( Backward)? using|Bitmap Index Scan on) ledger_account' then raise exception '%: settlements are found by ledger_account: %', src, plan; end if;
     bufs := (regexp_match(plan, 'Buffers: shared hit=(\d+)'))[1]::integer;
     -- The bound is what a page costs on an empty database plus slack, not a count of rows: the read plans the news (season_news, alerts_news) on each call,
     -- and planning opens every index of acts to read its root, so the figure grows with the indexes on acts (252 at 0100, 348 with the Mod Bots' twelve more) and
@@ -259,6 +258,20 @@ begin
     raise notice '% reads % buffers', src, bufs;
     execute format('deallocate plan_%s', src);
   end loop;
+  -- The settlements both reads list are found by settled_ids (0423), a language sql function the plans above call and do not show: its statement, planned
+  -- as they run it (its parameters by position), finds the ledger lines by ledger_account and the crowd pay by wallet_events_crowd, never by a scan, and its
+  -- buffers are inside the figures above. Run as the busy account's list runs it: every settlement before the cursor, a page of 30.
+  select regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(regexp_replace(p.prosrc, '\mwho\M', '$1', 'g'), '\mlo\M', '$2', 'g'), '\mhi\M', '$3', 'g'),
+           '\mafter\M', '$4', 'g'), '\mbefore\M', '$5', 'g'), '\mmost\M', '$6', 'g') into shown
+  from pg_proc p where p.proname = 'settled_ids' and p.pronamespace = 'public'::regnamespace;
+  if shown is null then raise exception 'settled_ids is a function with text to plan'; end if;
+  execute format('prepare plan_settled_ids(uuid, bigint, bigint, timestamptz, timestamptz, integer) as %s', shown);
+  plan := '';
+  for ln in execute format('explain (analyze, buffers) execute plan_settled_ids(%L, -9223372036854775808, 9223372036854775807, ''-infinity'', ''infinity'', 30)', hog) loop plan := plan || E'\n' || ln."QUERY PLAN"; end loop;
+  if plan ~ 'Seq Scan on (ledger|wallet_events)' then raise exception 'settled_ids never scans ledger or wallet_events: %', plan; end if;
+  if plan !~ '(Index (Only )?Scan( Backward)? using|Bitmap Index Scan on) ledger_account' then raise exception 'settled_ids: settlements are found by ledger_account: %', plan; end if;
+  if plan !~ '(Index (Only )?Scan( Backward)? using|Bitmap Index Scan on) wallet_events_crowd' then raise exception 'settled_ids: crowd pay is found by wallet_events_crowd: %', plan; end if;
+  deallocate plan_settled_ids;
   set local enable_seqscan = on;
   set local plan_cache_mode = auto;
   perform set_config('request.jwt.claims', '', true);

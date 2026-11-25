@@ -59,7 +59,7 @@ export type LineKind = 'estimate' | 'settlement' | 'turn' | 'rank' | 'bought' | 
   /* A surface (docs/plans/2026-11-11-graffiti-design.md, sections 3 and 11): a draw on one, and a wash of one. */
   | 'drew' | 'washed'
   /* The polls plan, Task 8: the player's own ballot (cast, changed or withdrawn) and an admin's close of their poll. */
-  | 'ballot' | 'pollClose';
+  | 'ballot' | 'pollClose' | 'threadMoved';
 
 /** One row of the log. */
 export interface LogRow {
@@ -419,7 +419,7 @@ export function logRows(data: LogData, words: Words, cap: number, tab: Id | null
   rows.push(...surfaceRows(data, words).filter((r) => inTab(r.characters)));
   rows.push(...pollRows(data, words).filter((r) => inTab(r.characters)));
 
-  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, retired: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4, ballot: 4, pollClose: 4 };
+  const ORDER: Record<LineKind, number> = { estimate: 0, settlement: 1, turn: 2, rank: 3, bought: 4, pack: 4, played: 4, returned: 4, retired: 4, onMine: 4, saved: 4, written: 4, set: 4, sprung: 4, payout: 4, setEnded: 4, caught: 4, struck: 4, gimmickEnded: 4, ended: 4, infraction: 4, ban: 4, fallTaken: 4, report: 4, appeal: 4, bribe: 4, grouped: 4, grant: 4, crowd: 4, found: 4, gearGranted: 4, trophy: 4, beltLost: 4, beltBack: 4, gift: 4, drew: 4, washed: 4, conduct: 4, ballot: 4, pollClose: 4, threadMoved: 4 };
   rows.sort((a, b) => micros(b.at) - micros(a.at) || ORDER[a.kind] - ORDER[b.kind]);
   return [...estimateRows(data, words, tab), ...rows];
 }
@@ -1440,6 +1440,14 @@ function pollRows(data: LogData, words: Words): LogRow[] {
     rows.push({
       key: `pollClose:${c.act}`, kind: 'pollClose', at: c.at, what: `An admin closed ${nameOf(c.character)}'s poll`, aura: 0, wallet: null, characters: [c.character],
       details: [`An admin closed ${nameOf(c.character)}'s `, { text: `poll \u201c${c.question}\u201d`, href: threadHref(c.place.thread, pageOf(c.place.seq, words.postsPerPage), c.place.seq) }, '.'],
+    });
+  }
+  for (const m of data.log.moved ?? []) {
+    if (!mine(m.character)) continue;
+    const what = `\u2018${m.title}\u2019 was moved to the ${m.toName ?? 'another'} board`;
+    rows.push({
+      key: `threadMoved:${m.move}`, kind: 'threadMoved', at: m.at, what, aura: 0, wallet: null, characters: [m.character],
+      details: [m.fromName === null ? `${what}.` : `${what}. It left the ${m.fromName} board.`],
     });
   }
   return rows;

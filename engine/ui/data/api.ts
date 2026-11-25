@@ -1925,6 +1925,19 @@ export interface LogBallot {
   readonly place: LogPlace;
 }
 
+/** A landed `moveThread` of a thread one of the caller's characters started (`my_threads_moved`): the board it left and the board it went to, and the names they and the thread have now. */
+export interface LogThreadMoved {
+  readonly move: Id;
+  readonly at: string;
+  readonly thread: Id;
+  readonly character: Id;
+  readonly from: Id;
+  readonly to: Id | null;
+  readonly title: string;
+  readonly fromName: string | null;
+  readonly toName: string | null;
+}
+
 /** An admin's close of a poll one of the caller's characters wrote (`my_poll_closes`). */
 export interface LogPollClose {
   readonly act: Id;
@@ -2211,6 +2224,8 @@ export interface Log {
   readonly ballots?: readonly LogBallot[];
   /** The admin closes of polls the player's characters wrote (`my_poll_closes`), by when each landed. Absent from a payload older than polls; read it as none. */
   readonly pollCloses?: readonly LogPollClose[];
+  /** The moves of threads the player's characters started, by when each landed (`my_threads_moved`). Absent from a payload older than the move line; read it as none. */
+  readonly moved?: readonly LogThreadMoved[];
   readonly saves: readonly EffectSaved[];
   /** The player's cards set face down that sprang or ended, by when. */
   readonly setEnds: readonly FaceDownEnd[];
@@ -2689,11 +2704,15 @@ export interface AlertsPage {
   readonly openedAt: Awaited<ReturnType<KayfaApi['accountOpenedAt']>>;
   /** The Acts the rows name and the ones those lead to (`actsById`). */
   readonly acts: Awaited<ReturnType<KayfaApi['actsById']>>;
-  /** The authors of those Acts (`characters(ids)`). */
+  /** The authors of the third link of those Acts, and the characters the new lines name: a drawing's drawer, the character a fall landed on, the Mod (by `staff` key) a warning names (`characters(ids)`). */
   readonly people: Awaited<ReturnType<KayfaApi['characters']>>;
   /** The first post of each followed thread among the rows (`openingActs`). */
   readonly openings: Awaited<ReturnType<KayfaApi['openingActs']>>;
   readonly reading: Awaited<ReturnType<KayfaApi['reading']>>;
+  /** The boards the rows' moves name (a thread moved): public names, by id. */
+  readonly boards: readonly { readonly id: Id; readonly name: string }[];
+  /** The threads those moves name (the thread that moved; the row's own thread is the move's): public titles, by id. */
+  readonly threads: readonly { readonly id: Id; readonly title: string }[];
 }
 
 /** The Updates page (updates_page, 0121): a page of Updates, the open one's reactions, and for an admin with a handover season the queue. */
