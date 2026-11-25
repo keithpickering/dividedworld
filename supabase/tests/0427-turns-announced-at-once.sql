@@ -113,6 +113,27 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- ---- A committed Turn passed over by a settlement (its due_at set) is refused in words that stay true: it lands at the next settlement it can ----
+do $$
+declare
+  ann uuid := tests.account('tao-d-ann');
+  a uuid := tests.character(ann, 'Tao Deferred', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Deferred here');
+  why text;
+begin
+  perform tests.become(ann);
+  perform turn(a, 'beta', 'announced', false, true, t);
+  perform tests.unbecome();
+  -- What masks_change does to a Turn it passes over (the unmask backstop): it stays pending, due since that window.
+  update pending_turns set due_at = now() - interval '1 hour' where character = a;
+  perform tests.become(ann);
+  why := pg_temp.refusal(format('select withdraw_turn(%L)', a));
+  if why is distinct from '42501: that Turn was announced, so it stands until it takes effect at the next settlement it can' then raise exception 'a deferred committed Turn names no time that has passed: %', why; end if;
+  why := pg_temp.refusal(format('select turn(%L, %L, %L, false, true, %L)', a, 'gamma', 'announced', t));
+  if why is distinct from '42501: that Turn was announced, so it stands until it takes effect at the next settlement it can' then raise exception 'a deferred committed Turn, changed: %', why; end if;
+  perform tests.unbecome();
+end $$;
+
 -- ---- A silent Turn changes and withdraws as it did; announce_turn announces and commits it ----
 do $$
 declare

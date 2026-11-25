@@ -8,6 +8,7 @@
 --
 --   1. columns            pending_turns.announce_act, class_history.announce_act (granted beside class_history's other public columns); the backfill for the Turns announced before this.
 --   2. write_announce     (0100), taking `ahead`; a debut it writes is allowed past the guard below by a setting that lasts its statement (Task 2 removes debuts and this with them).
+--      turn()'s `was` reads class_now(through, now()) as the plan says, where 0074 read 'infinity'; the two are equal, since no class_history row starts in the future.
 --   3. turn               (0074, 0028's three-argument shim and 0074's five-argument form dropped), taking the thread and announcing in it; refuses a change of a committed Turn.
 --   4. announce_turn      new: announces and commits a silent pending Turn.
 --   5. withdraw_turn      (0007), refusing a committed Turn in the change's words.
@@ -78,11 +79,13 @@ revoke execute on function turn_thread_checks(uuid, uuid) from public, anon, aut
 -- The refusal of any change to a committed Turn, in one place: turn, announce_turn's sibling withdraw_turn and the change all say it in the same words.
 create function committed_turn_refusal(of_character uuid) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
-declare asked timestamptz;
+declare asked timestamptz; passed_over timestamptz;
 begin
-  select p.asked_at into asked from pending_turns p where p.character = of_character and p.announce_act is not null;
+  select p.asked_at, p.due_at into asked, passed_over from pending_turns p where p.character = of_character and p.announce_act is not null;
   if not found then return; end if;
-  raise exception 'that Turn was announced, so it stands until it takes effect at %', coalesce(refusal_time(next_settlement_at(asked)), 'the next settlement')
+  -- A Turn a settlement passed over (masks_change sets due_at: the unmask backstop) takes effect at a later window, the first it can, which no time computed from asked_at names.
+  raise exception 'that Turn was announced, so it stands until it takes effect at %',
+    case when passed_over is not null then 'the next settlement it can' else coalesce(refusal_time(next_settlement_at(asked)), 'the next settlement') end
     using hint = 'kayfabb.refusal', errcode = '42501';
 end $$;
 revoke execute on function committed_turn_refusal(uuid) from public, anon, authenticated;
@@ -340,7 +343,7 @@ begin
     raise exception 'an edit is not answered; answer the post' using hint = 'kayfabb.refusal', errcode = '23514';
   end if;
   return new;
-end $function$;;
+end $function$;
 
 -- ---- 7. masks_change ----
 
