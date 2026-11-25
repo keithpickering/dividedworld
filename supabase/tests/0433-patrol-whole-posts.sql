@@ -23,7 +23,7 @@ declare
   board uuid := (select th.board from threads th where th.id = t);
   base timestamptz := now() - interval '3 days';
   long text := repeat('Whole words that go on. ', 84) || 'THE END.';
-  p_long uuid; p_poll uuid; p_sec uuid; p_play uuid; p_rw uuid; p_plain uuid; pl uuid; spl uuid; secret_ballot uuid; w uuid; us uuid; made jsonb; sth uuid; opener uuid; mth uuid; mopener uuid; p_eve uuid; mod_c uuid;
+  p_long uuid; p_poll uuid; p_sec uuid; p_play uuid; p_rw uuid; p_plain uuid; pl uuid; spl uuid; secret_ballot uuid; w uuid; us uuid; made jsonb; sth uuid; opener uuid; mth uuid; mopener uuid; p_eve uuid; p_eve2 uuid; mod_c uuid;
   r jsonb; x jsonb; o jsonb; txt text; n integer;
 begin
   perform set_config('kayfabb.staff_writer', 'on', true);
@@ -43,12 +43,13 @@ begin
   p_play := tests.post(b, t, 'Played on.', base + interval '4 minutes');
   w := tests.act(a, 'card', t, jsonb_build_object('card', 'pwsplat', 'config', jsonb_build_object('color', 'teal')), p_play, now() - interval '2 days');
   insert into effect_state (play, state, saved_by, saved_at) values (w, '{"strokes": [[1, 2]], "washed": 0.25}', a, now() - interval '1 day');
-  -- Eve authored one post, which is under a visit, so she authors nothing in the sample; she set a back on it
+  -- Eve has a post under a visit (never sampled) and a second, sampled post carrying her unsprung face-down set
   p_eve := tests.post(e5, t, 'Eve is under a visit.', base + interval '6 minutes');
   insert into characters (owner, name, staff, staff_kind, created_at, debuted_at) values (null, 'Pws Mod', 'pws-mod', 'persona', base, base) returning id into mod_c;
   perform tests.act(mod_c, 'visit', t, jsonb_build_object('charges', jsonb_build_array(jsonb_build_object('rule_number', null, 'board', board, 'band', 'minor', 'cause', 'patrol', 'about_act', p_eve::text, 'rule', 'the premise')), 'ends_at', now() + interval '1 day', 'challenge', '{"kind": "quiz"}'::jsonb, 'line', 'Hi.'), p_eve, now() - interval '30 hours');
-  us := tests.act(e5, 'set', t, '{}', p_eve, now() - interval '20 hours');
-  insert into face_down (play, account, card, post, thread, round, ends_at) values (us, ae, 'pwback', p_eve, t, 1, now() + interval '1 day');
+  p_eve2 := tests.post(e5, t, 'Eve is in the sample.', base + interval '7 minutes');
+  us := tests.act(e5, 'set', t, '{}', p_eve2, now() - interval '20 hours');
+  insert into face_down (play, account, card, post, thread, round, ends_at) values (us, ae, 'pwback', p_eve2, t, 1, now() + interval '1 day');
   -- a rewound post
   p_rw := tests.post(a, t, 'First words.', base + interval '5 minutes');
   perform tests.act(a, 'edit', t, '{"body": "Second words."}', p_rw, now() - interval '2 days');
@@ -64,7 +65,7 @@ begin
 
   r := patrol_sample(array[board], 50, 50, 1);
   n := jsonb_array_length(r);
-  perform pg_temp.expect(n = 8, 'the sample holds the 6 posts and the two spun openers: ' || n);
+  perform pg_temp.expect(n = 9, 'the sample holds the 7 posts and the two spun openers: ' || n);
   -- whole words
   x := (select e from jsonb_array_elements(r) e where e ->> 'act' = p_long::text);
   perform pg_temp.expect(x ->> 'body' = long and length(x ->> 'body') > 2000 and x ->> 'body' like '%THE END.', 'a long post is not whole: ' || length(x ->> 'body'));
@@ -81,7 +82,10 @@ begin
   -- the play, and no unsprung back
   x := (select e from jsonb_array_elements(r) e where e ->> 'act' = p_play::text);
   perform pg_temp.expect(jsonb_array_length(x -> 'plays') = 1 and x -> 'plays' -> 0 ->> 'card' = 'pwsplat' and x -> 'plays' -> 0 ->> 'by' = 'Pws Ann' and x -> 'plays' -> 0 -> 'state' = '{"strokes": [[1, 2]], "washed": 0.25}'::jsonb, 'the play: ' || x::text);
-  perform pg_temp.expect(r::text !~ 'pwback' and r::text !~ us::text and r::text !~ 'Pws Eve' and r::text !~ ae::text, 'an unsprung back is in the sample: ' || left(r::text, 1500));
+  perform pg_temp.expect(r::text !~ 'pwback' and r::text !~ us::text and r::text !~ ae::text, 'an unsprung back is in the sample: ' || left(r::text, 1500));
+  x := (select e from jsonb_array_elements(r) e where e ->> 'act' = p_eve2::text);
+  perform pg_temp.expect(x is not null and x ->> 'name' = 'Pws Eve', 'the post carrying the unsprung set is sampled: ' || coalesce(x::text, 'none'));
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(x -> 'plays') pp where pp ->> 'play' = us::text or pp::text ~ 'pwback') and x::text !~ us::text and x::text !~ 'pwback', 'the sampled post shows its unsprung set: ' || x::text);
   -- the rewound body
   x := (select e from jsonb_array_elements(r) e where e ->> 'act' = p_rw::text);
   perform pg_temp.expect(x ->> 'body' = 'Second words.' and x -> 'rewoundTo' <> 'null'::jsonb, 'the rewound post: ' || x::text);
@@ -101,8 +105,8 @@ begin
   perform pg_temp.expect(x ->> 'body' = 'Discuss the splat.' and o ->> 'kind' = 'card' and o -> 'moment' = 'true'::jsonb and o -> 'post' ->> 'act' = p_play::text, 'the moment origin: ' || coalesce(o::text, 'null'));
   perform pg_temp.expect(o -> 'post' ->> 'body' = 'Played on.' and o -> 'post' -> 'rewoundTo' = 'null'::jsonb and jsonb_array_length(o -> 'post' -> 'plays') = 1 and o -> 'post' -> 'plays' -> 0 ->> 'play' = w::text, 'the moment origin post: ' || o::text);
   perform pg_temp.expect(o = (pool_read(mth, 'pws-none', null, 5) -> 'origin'), 'the moment origin is pool_read''s: ' || o::text);
-  perform pg_temp.expect(o::text !~ 'Pws Eve' and o::text !~ 'pwback', 'the moment origin names the unsprung set or its caster');
-  -- a post under a visit is never sampled (and so its unsprung set and its caster are nowhere in the answer); a hidden (veiled) post is 0304-post-veils.sql's probe of patrol_sample, which this change leaves as it was
+  perform pg_temp.expect(o::text !~ 'pwback' and o::text !~ us::text, 'the moment origin names the unsprung set');
+  -- a post under a visit is never sampled; a hidden (veiled) post is 0304-post-veils.sql's probe of patrol_sample, which this change leaves as it was
   perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(r) e where e ->> 'act' = p_eve::text), 'a post under a visit is in the sample');
   -- the door and the owner
   perform pg_temp.expect((select pg_get_userbyid(proowner) from pg_proc where proname = 'patrol_sample') = 'kayfabb_digest', 'the owner');
