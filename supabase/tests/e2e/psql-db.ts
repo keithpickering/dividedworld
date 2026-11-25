@@ -16,7 +16,7 @@ import type { Instance } from '../../../engine/rules/types.ts';
 
 // A variable specifier: TypeScript does not resolve it, so the .mjs needs no declaration file.
 const runnerFile = '../../../tools/test-sql.mjs';
-const { FILE_TIMEOUT_MS, cloneSql, migrationFiles } = (await import(runnerFile)) as { FILE_TIMEOUT_MS: number; cloneSql(template: string, clone: string, url: string): string; migrationFiles(): string[] };
+const { FILE_TIMEOUT_MS, cloneSql, cloneSuffixError, migrationFiles } = (await import(runnerFile)) as { FILE_TIMEOUT_MS: number; cloneSql(template: string, clone: string, url: string): string; cloneSuffixError(clone: string, suffix: string): string | null; migrationFiles(): string[] };
 
 export function scratchUrl(): string {
   const url = process.env.KAYFABB_SCRATCH_URL;
@@ -40,7 +40,10 @@ function cloneOfSnapshot(key: string, suffix: string): { url: string; drop: () =
   const snapshot = snapshots()[key];
   if (!snapshot) throw new Error(`the runner made no snapshot for ${key} (it made ${Object.keys(snapshots()).join(', ')}); an upgrade test is named NNNN-<name>-across-MMMM.ts for the migration it crosses`);
   const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_${suffix}`;
+  const clone = scratch.pathname.slice(1);
+  const badSuffix = cloneSuffixError(clone, suffix);
+  if (badSuffix) throw new Error(badSuffix);
+  const name = `${clone}_${suffix}`;
   const server = new URL(scratch);
   server.pathname = '/postgres';
   const onServer = (text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', server.toString(), '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });

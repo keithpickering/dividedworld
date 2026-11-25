@@ -90,14 +90,9 @@
  * database, so the refusal of one does not apply to it. A run with no `--shard` and no pattern is the whole suite and makes the same comparison in this
  * process, on its own report, so `npm run test:sql` is one command that runs everything; a shard or a pattern runs part and says `skipped`.
  *
- * Files that hold a wall-clock budget run alone (#1099). Design §5 says that what files running together change is how long a statement takes, "which no
- * guard reads"; that is not so. 17 of the assertion files measure a time (with `clock_timestamp()`, or an EXPLAIN ANALYZE's "Execution Time") and raise when it is over a budget or a bound
- * (0393-forged-quotes-scale: `post()` on its body took 0.33 s over a budget of 0.25 s with three other files on a four-CPU runner, and not one at a time), and 42
- * more only use the clock as a value. A file that holds a budget says so itself, in a line of its own, `-- kayfabb-sql: alone` (carriesAloneMarker): the file is the
- * one list, and the runner keeps no table. The pool runs every other file first and then each marked file by itself, one at a time, with nothing else of this runner in
- * flight. A file is refused before it runs if it holds a budget without the marker, or carries the marker without a budget, so the marker means what it says
- * (holdsClockBudget: a `raise exception`, an `assert` or a raising helper whose condition reads `clock_timestamp()` directly or through an elapsed time, a value read from an EXPLAIN ANALYZE's Execution Time or Planning Time included; a clock that is
- * printed, waited for or written as a value does not count, nor do the end-to-end files, which assert no duration). tools/test-sql-refusal.mjs drives both on planted files.
+ * A file that holds a wall-clock budget says so itself, in a line of its own, `-- kayfabb-sql: alone` (carriesAloneMarker; #1099 has the why): the pool runs every
+ * other file first, then each marked file by itself, with nothing else of this runner in flight. A file is refused before it runs if it holds a budget without the
+ * marker, or carries the marker without one (holdsClockBudget). tools/test-sql-refusal.mjs drives both on planted files.
  *
  * Each file's line carries its seconds, and the summary lists the slowest, since a file that grows is otherwise found by a CI
  * run that takes longer.
@@ -199,23 +194,6 @@ function psql(url, sql) {
     if (timedOut(err)) return killedWhy();
     return (err.stderr || err.stdout || String(err)).trim();
   }
-}
-
-/** Like psql, but answers the lines of what its queries print, unaligned and `|`-separated, or the error. @returns {{ lines: string[], error: string | null }} */
-function psqlLines(url, sql) {
-  try {
-    const out = execFileSync(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', '-A', '-t', '-F', '|', url, '-f', '-'], { input: sql, stdio: ['pipe', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
-    return { lines: String(out).split('\n'), error: null };
-  } catch (err) {
-    if (err.code === 'ENOENT') { console.error('\n  psql not found; run scripts/setup-container.sh'); leave(2); }
-    return { lines: [], error: timedOut(err) ? killedWhy() : (err.stderr || err.stdout || String(err)).trim() };
-  }
-}
-
-/** The rows of one query as `name|count` pairs, or the error. @returns {{ rows: { name: string, calls: string }[], error: string | null }} */
-function psqlRows(url, sql) {
-  const { lines, error } = psqlLines(url, sql);
-  return { rows: lines.filter((l) => l.includes('|')).map((l) => { const [name, calls] = l.split('|'); return { name, calls }; }), error };
 }
 
 /**
@@ -394,20 +372,24 @@ export function sumCalls(perFile) {
   return [...sums].sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([name, calls]) => ({ name, calls }));
 }
 
-/** Why the drift check failed, or null: `rows` are the `{ name: play, calls: why }` pairs psqlRows read. Pure, so tools/test-sql-refusal.mjs drives it. */
+/** Why the drift check failed, or null: `rows` are the `{ name: play, calls: why }` pairs parseAfterFile made. Pure, so tools/test-sql-refusal.mjs drives it. */
 export function driftFailure(rows) {
   if (!rows.length) return null;
   return `play_post or post_kinds differs from the Acts (play_post_drift() names ${rows.length === DRIFT_ROWS ? `at least ${DRIFT_ROWS}` : rows.length} row(s)):\n${rows.map((r) => `${r.name}  ${r.calls}`).join('\n')}`;
 }
 
 /**
- * The drift check on one database: why it failed (the rows play_post_drift() names, or the error that stopped the query), or null.
- * tools/test-sql-drift.mjs drives it red against a real database whose trigger was disabled.
- * @param {string} url
+ * What the runner reads on a file's clone after the file, before the drop: afterFileSql through psqlLinesAsync, parseAfterFile, driftFailure. Answers the
+ * function counts and the `failure` that stopped the read or the drift it found (null when there is none). The one path a file takes, and the one
+ * tools/test-sql-drift.mjs runs against a real clone whose trigger was disabled, so a break here is seen there.
+ * @param {string} cloneUrl
+ * @returns {Promise<{ calls: { name: string, calls: string }[], failure: string | null }>}
  */
-export function driftCheck(url) {
-  const drifted = psqlRows(url, driftSql);
-  return drifted.error ? `could not run play_post_drift():\n${drifted.error}` : driftFailure(drifted.rows);
+export async function readAfterFile(cloneUrl) {
+  const after = await psqlLinesAsync(cloneUrl, afterFileSql);
+  if (after.error) return { calls: [], failure: `could not read the drift and the function statistics:\n${after.error}` };
+  const got = parseAfterFile(after.lines);
+  return { calls: got.calls, failure: driftFailure(got.drift) };
 }
 
 /**
@@ -460,12 +442,38 @@ export function codeOnly(sql) {
 }
 
 /**
- * The marker a file carries to run alone on its runner (#1099): a line comment, on a line of its own, `-- kayfabb-sql: alone`, spelled exactly. A
- * marker inside a block comment, or misspelled, is not one. The file is the one list of what runs alone; the runner keeps no table.
+ * SQL with its block comments blanked and everything else kept, in one pass that knows a line comment, a string and a block comment apart: a `/*` inside a
+ * `--` comment or a string opens nothing, and block comments nest, as Postgres's do. Pure.
  * @param {string} sql
  */
-export const ALONE_MARKER = /^[ \t]*--[ \t]*kayfabb-sql:[ \t]*alone[ \t]*$/m;
-export const carriesAloneMarker = (sql) => ALONE_MARKER.test(sql.replace(/\/\*[\s\S]*?\*\//g, ' '));
+export function withoutBlockComments(sql) {
+  let out = '';
+  for (let i = 0; i < sql.length;) {
+    const two = sql.slice(i, i + 2);
+    if (two === '--') { const nl = sql.indexOf('\n', i); const end = nl < 0 ? sql.length : nl; out += sql.slice(i, end); i = end; }
+    else if (two === '/*') {
+      let depth = 1;
+      let j = i + 2;
+      for (; j < sql.length && depth > 0; j++) {
+        if (sql.startsWith('/*', j)) { depth++; j++; } else if (sql.startsWith('*/', j)) { depth--; j++; }
+      }
+      out += ' '; i = j;
+    } else if (sql[i] === "'") {
+      let j = i + 1;
+      for (; j < sql.length; j++) if (sql[j] === "'") { if (sql[j + 1] === "'") j++; else break; }
+      out += sql.slice(i, j + 1); i = j + 1;
+    } else out += sql[i++];
+  }
+  return out;
+}
+
+/**
+ * The marker a file carries to run alone (#1099): a line comment, on a line of its own, `-- kayfabb-sql: alone`, spelled exactly, with LF or CRLF line
+ * ends. A marker inside a block comment, or misspelled, is not one. The file is the one list of what runs alone; the runner keeps no table.
+ * @param {string} sql
+ */
+export const ALONE_MARKER = /^[ \t]*--[ \t]*kayfabb-sql:[ \t]*alone[ \t]*\r?$/m;
+export const carriesAloneMarker = (sql) => ALONE_MARKER.test(withoutBlockComments(sql));
 
 /**
  * Whether an assertion file holds a wall-clock budget: a `raise exception` (an `if … then raise exception`, or an `assert`) whose condition reads the
@@ -538,15 +546,40 @@ export function snapshotPoints(e2eNames, migrationNames) {
   /** @type {Map<string, string>} */
   const named = new Map();
   for (const f of e2eNames) {
-    const at = f.indexOf('-across-');
-    if (at < 0) continue;
-    const point = /^(\d{4})\.ts$/.exec(f.slice(at + '-across-'.length))?.[1];
-    if (!point) throw new Error(`${f} says -across- but gives no point: an upgrade test is named NNNN-<name>-across-MMMM.ts for the migration MMMM it crosses`);
+    const point = pointOfFile(f);
+    if (point === null) continue;
     if (named.has(point)) throw new Error(`${named.get(point)} and ${f} both name the point ${point}; a point is one file's, since each file's snapshot is its own`);
     if (migrationNames && !migrationNames.some((m) => m.startsWith(`${point}_`))) throw new Error(`${f} names the point ${point}, and no migration in supabase/migrations/ begins ${point}_`);
     named.set(point, f);
   }
   return [...named.keys()].sort();
+}
+
+/**
+ * The one parse of an end-to-end file's name: the migration it crosses (`NNNN-<name>-across-MMMM.ts` gives `MMMM`), or null for a file that is not an upgrade
+ * test. Throws on a name that says `-across-` and gives no four-digit point, since the word is reserved for upgrade tests. Pure.
+ * @param {string} name
+ * @returns {string | null}
+ */
+export function pointOfFile(name) {
+  const at = name.indexOf('-across-');
+  if (at < 0) return null;
+  const point = /^(\d{4})\.ts$/.exec(name.slice(at + '-across-'.length))?.[1];
+  if (!point) throw new Error(`${name} says -across- but gives no point: the word is reserved for upgrade tests, which are named NNNN-<name>-across-MMMM.ts for the migration MMMM they cross`);
+  return point;
+}
+
+/**
+ * Why a suffix of a database made from a clone (`<clone>_<suffix>`, in supabase/tests/e2e/psql-db.ts) may not be used, or null: lowercase letters, digits and
+ * underscores only (the name goes into SQL unquoted), and short enough that the whole name stays within the 63 bytes Postgres keeps of an identifier. Pure.
+ * @param {string} clone
+ * @param {string} suffix
+ */
+export function cloneSuffixError(clone, suffix) {
+  if (!/^[a-z0-9_]+$/.test(suffix)) return `the suffix "${suffix}" must be lowercase letters, digits and underscores, at least one: it is part of a database name written into SQL`;
+  const name = `${clone}_${suffix}`;
+  if (Buffer.byteLength(name) > 63) return `the database name ${name} is ${Buffer.byteLength(name)} bytes, and Postgres keeps only 63 of an identifier: use a shorter suffix`;
+  return null;
 }
 
 /**
@@ -617,14 +650,27 @@ export function parseShard(arg) {
  * another, a shard number with no report, a file in no report, a file in two, a file that did not pass, and a file in a report that is not on disk. `reports` are what `--report`
  * wrote (`{ shard: { i, n }, files: [{ name, outcome, seconds }], calls }`), `allFiles` the files on disk (suiteFiles). One message each; none is
  * an empty list. Pure, so tools/test-sql-refusal.mjs plants each.
- * @param {{ shard: { i: number, n: number }, files: { name: string, outcome: string }[] }[]} reports
+ * @param {any[]} reports each `{ shard: { i, n }, files: [{ name, outcome, seconds }], calls }` as `--report` wrote it, or whatever a stale or foreign file held
  * @param {string[]} allFiles
  */
 export function gatherFailures(reports, allFiles) {
   if (!reports.length) return ['no shard report was found, so nothing says that any file ran'];
   const failures = [];
-  const named = reports.filter((r) => Number.isInteger(r?.shard?.i) && Number.isInteger(r?.shard?.n) && Array.isArray(r.files));
-  if (named.length !== reports.length) failures.push(`${reports.length - named.length} report(s) have no shard {i, n} or no file list`);
+  /* A report that cannot be read as one is named, by its place in the list, and left out of what follows: a null, no shard, a files list that is not a list or holds
+     a null, or no calls list (the summed reads need it). */
+  const named = [];
+  reports.forEach((r, k) => {
+    const problems = [];
+    if (!r || typeof r !== 'object') problems.push('it is not an object');
+    else {
+      if (!Number.isInteger(r.shard?.i) || !Number.isInteger(r.shard?.n)) problems.push('no shard {i, n}');
+      if (!Array.isArray(r.files)) problems.push('files is not a list');
+      else if (r.files.some((f) => !f || typeof f.name !== 'string')) problems.push('a file entry is not { name, outcome, seconds }');
+      if (!Array.isArray(r.calls)) problems.push('calls is not a list');
+    }
+    if (problems.length) failures.push(`report ${k + 1}${r?.shard ? ` (shard ${r.shard.i}/${r.shard.n})` : ''} is malformed: ${problems.join('; ')}`);
+    else named.push(r);
+  });
   const totals = [...new Set(named.map((r) => r.shard.n))].sort((a, b) => a - b);
   if (totals.length > 1) failures.push(`the reports disagree on how many shards there are: ${totals.join(' and ')}`);
   const n = Math.max(0, ...totals);
@@ -648,7 +694,8 @@ export function gatherFailures(reports, allFiles) {
  * @param {{ calls: { name: string, calls: number | string }[] }[]} reports
  */
 export function coverageFailure(reports) {
-  const summed = sumCalls(reports.map((r) => r.calls));
+  /* A report with no calls list is malformed, and named so by gatherFailures; it adds nothing here. */
+  const summed = sumCalls(reports.filter((r) => Array.isArray(r?.calls)).map((r) => r.calls));
   const uncalled = uncalledReads(summed.map((r) => r.name).filter((n) => !(n in UNCOUNTABLE_READS)), summed);
   return uncalled.length
     ? `${uncalled.length} client read(s) in ALLOWED_RPCS no test called: ${uncalled.join(', ')}\n`
@@ -703,6 +750,45 @@ export async function pool(items, limit, work) {
   return results;
 }
 
+/**
+ * The template, built the one way for the suite and for tools/test-sql-drift.mjs: create the database with its settings (one call, so a failure may leave it made:
+ * the caller drops it), the shim, every migration in name order with a snapshot of the replay before each of `points`, one `migrated` snapshot after the last
+ * migration and before the fixtures when `migrated`, the fixtures, then the one `vacuum (analyze)`. `step(label, error)` is told of each and answers whether to go
+ * on; `say(heading)` of the stretch of migrations. Answers `{ ok, snapshots, migrations, migrationFailed }`: `snapshots` maps each point, and `migrated`, to the
+ * database kept for it, and the caller drops them with the template.
+ * @param {string} url any URL on the server
+ * @param {string} template
+ * @param {{ points?: string[], migrated?: boolean, step?: (label: string, error: string | null) => boolean, say?: (heading: string) => void }} [options]
+ */
+export async function buildTemplate(url, template, { points = [], migrated = false, step = (_, error) => !error, say = () => {} } = {}) {
+  const templateUrl = withDatabase(url, template);
+  /** @type {Record<string, string>} */
+  const snapshots = {};
+  const result = (ok, extra = {}) => ({ ok, snapshots, migrations: [], migrationFailed: false, ...extra });
+  const run = async (label, target, sql) => step(label, (await psqlAsync(target, sql)).error);
+  if (!await run('create', url, `create database ${template};\n${settingsSql(template, url)}`)) return result(false);
+  const [shimFile, ...migrationPaths] = migrationFiles();
+  if (!await run('setup/auth-shim.sql', templateUrl, fs.readFileSync(shimFile, 'utf8'))) return result(false);
+  say('migrations, from zero');
+  const migrations = migrationPaths.map((f) => path.basename(f));
+  /* Each migration's psql has ended, so nothing is connected to the template and `create database … template` may read it. */
+  const snapshot = async (key, name) => {
+    if (!await run(`snapshot ${key}`, url, cloneSql(template, name, url))) return false;
+    snapshots[key] = name;
+    return true;
+  };
+  for (const m of migrations) {
+    const point = points.find((p) => m.startsWith(`${p}_`));
+    if (point && !await snapshot(point, `${template}_s${point}`)) return result(false, { migrations });
+    if (!await run(m, templateUrl, fs.readFileSync(path.join(migrationsDir, m), 'utf8'))) return result(false, { migrations, migrationFailed: true });
+  }
+  if (migrated && !await snapshot('migrated', `${template}_migrated`)) return result(false, { migrations });
+  if (!await run('setup/fixtures.sql', templateUrl, fs.readFileSync(fixtures, 'utf8'))) return result(false, { migrations });
+  /* Once, here: every clone starts from this analyzed state. */
+  if (!await run('vacuum (analyze)', templateUrl, 'vacuum (analyze);')) return result(false, { migrations });
+  return result(true, { migrations });
+}
+
 async function main() {
   const args = process.argv.slice(2);
   const flags = new Map();
@@ -733,12 +819,10 @@ async function main() {
   if (pattern && !selected.length) { console.error(`  test-sql: no file in supabase/tests/ or supabase/tests/e2e/ in shard ${shardI}/${shardN} has a name containing "${pattern}", so nothing ran`); return 1; }
   const selectedE2e = selected.filter((f) => f.startsWith('e2e/')).map((f) => f.slice(4));
   /* A snapshot of the replay for each point a selected file names, and the migrated one, are made while the template is built, and only then. */
-  const pointOf = (f) => (f.includes('-across-') ? f.slice(f.indexOf('-across-') + 8, f.indexOf('-across-') + 12) : null);
-  const points = allPoints.filter((p) => selectedE2e.some((f) => pointOf(f) === p));
+  const points = allPoints.filter((p) => selectedE2e.some((f) => pointOfFile(f) === p));
   /** @type {Record<string, string>} point to the database that holds the replay before it, and `migrated` */
   const snapshots = {};
   const template = `kayfabb_scratch_${process.pid}_${Date.now()}`;
-  const templateUrl = withDatabase(url, template);
   /* An interrupt, or a terminate, ends the run here (the `finally` below is not reached by a signal): exit 130 or 143 after the sweep. The template's build
      awaits each of its steps (one psql each), so the handler runs between them and kills the one in flight, the build included. */
   sweep = { url, template };
@@ -773,9 +857,8 @@ async function main() {
    * fail (kept, with its URL, when KAYFABB_SQL_KEEP=failed and the file failed). Answers the result as a value, with the block of text the file prints
    * when it ends, so lines of files running together never interleave. The clone's name is the template's and the file's place in the run.
    */
-  const runFile = async (name, place) => {
+  const runFile = async (name, place, read) => {
     const block = (err, ms, extra = '') => `  ${err ? 'FAIL' : 'PASS'}  ${name}${ms === undefined ? '' : `  ${seconds(ms)}`}${err ? `\n        ${err.split('\n').join('\n        ')}` : ''}${extra}`;
-    const read = refused(name);
     if (read.why) return { name, outcome: 'failed', seconds: 0, calls: [], text: block(read.why) };
     const clone = `${template}_${place}`;
     const cloneUrl = withDatabase(url, clone);
@@ -789,14 +872,8 @@ async function main() {
         err = name.startsWith('e2e/') ? await runE2e(name.slice(4), cloneUrl) : await runAssertion(read.sql, cloneUrl);
         /* Read after the file, before the drop, even from a file that failed: its calls count, and its drift is named if the file itself was fine.
            Not from a file that was killed: its backend may be the one that is stuck, and a read on its clone could wait out the file bound again. */
-        const after = wasKilled(err) ? null : await psqlLinesAsync(cloneUrl, afterFileSql);
-        if (after === null) { /* killed: its counts and drift are not read, and the drop below goes straight on */ }
-        else if (after.error) err ??= `could not read the drift and the function statistics:\n${after.error}`;
-        else {
-          const got = parseAfterFile(after.lines);
-          calls = got.calls;
-          err ??= driftFailure(got.drift);
-        }
+        const got = wasKilled(err) ? null : await readAfterFile(cloneUrl);
+        if (got) { calls = got.calls; err ??= got.failure; }
       }
       if (err && keepFailed) { kept = true; extra = `\n        kept: ${cloneUrl}`; }
     } finally {
@@ -826,44 +903,34 @@ async function main() {
   };
 
   console.log(`\nsql: template database ${template}`);
-  /* The creation and the settings are one call that may fail between the two, with the database made: so the drop below covers it, and a
-     failure here returns rather than exits, which would skip the drop. */
-  const made = (await psqlAsync(url, `create database ${template};\n${settingsSql(template, url)}`)).error;
   try {
-    if (!step('create', made)) return 1;
-    const [shimFile, ...migrationPaths] = migrationFiles();
-    if (!step('setup/auth-shim.sql', (await psqlAsync(templateUrl, fs.readFileSync(shimFile, 'utf8'))).error)) return 1;
-
-    console.log('\nsql: migrations, from zero');
-    const migrations = migrationPaths.map((f) => path.basename(f));
-    /* Before migration MMMM, a copy of the database as built so far, for the upgrade test that crosses it. Each migration's psql has
-       ended, so nothing is connected to the template and `create database … template` may read it. */
-    const snapshot = async (key, name) => {
-      if (!step(`snapshot ${key}`, (await psqlAsync(url, cloneSql(template, name, url))).error)) return false;
-      snapshots[key] = name;
-      return true;
-    };
-    for (const m of migrations) {
-      const point = points.find((p) => m.startsWith(`${p}_`));
-      if (point && !(await snapshot(point, `${template}_s${point}`))) return 1;
-      if (!step(m, (await psqlAsync(templateUrl, fs.readFileSync(path.join(migrationsDir, m), 'utf8'))).error)) {
-        console.error('\n  a migration failed; the schema is not replayable from zero');
-        return 1;
-      }
+    const built = await buildTemplate(url, template, {
+      points, migrated: selectedE2e.length > 0, step,
+      say: (what) => console.log(`\nsql: ${what}`),
+    });
+    Object.assign(snapshots, built.snapshots);
+    if (!built.ok) {
+      if (built.migrationFailed) console.error('\n  a migration failed; the schema is not replayable from zero');
+      return 1;
     }
-
-    if (selectedE2e.length && !(await snapshot('migrated', `${template}_migrated`))) return 1;
-    if (!step('setup/fixtures.sql', (await psqlAsync(templateUrl, fs.readFileSync(fixtures, 'utf8'))).error)) return 1;
-    /* Once, here: every clone starts from this analyzed state. */
-    if (!step('vacuum (analyze)', (await psqlAsync(templateUrl, 'vacuum (analyze);')).error)) return 1;
+    const migrations = built.migrations;
 
     console.log(`\nsql: ${selected.length} file(s)${pattern ? ` matching "${pattern}"` : ''}${shardN > 1 ? `, shard ${shardI}/${shardN}` : ''}, ${Math.min(workers, selected.length)} at a time`);
     /* A file that runs alone (its marker, `-- kayfabb-sql: alone`) is held to the end: every other file runs in the pool first, then each marked file on its
        own, one at a time, with nothing else of this runner in flight. One pass at the end is the simplest schedule that is right, and it keeps the pool full for
        as long as there are other files, where waiting for a drain at each marked file's turn would leave workers idle each time. */
-    const items = selected.map((name, at) => ({ name, place: at + 1, alone: Boolean(refused(name).alone) }));
-    const runItem = async ({ name, place }) => {
-      const r = await runFile(name, place);
+    const items = selected.map((name, at) => {
+      /* What a file is, read once: a file the runner cannot read fails its own line, and never the run. */
+      let read;
+      try { read = refused(name); } catch (err) { read = { why: `could not read the file: ${err.message}` }; }
+      return { name, place: at + 1, read, alone: Boolean(read.alone) };
+    });
+    /* The pool's contract is that `work` never rejects: whatever a file throws becomes that file's failed result. */
+    const runItem = async ({ name, place, read }) => {
+      let r;
+      try { r = await runFile(name, place, read); } catch (err) {
+        r = { name, outcome: 'failed', seconds: 0, calls: [], text: `  FAIL  ${name}\n        the runner failed on this file: ${err?.stack ?? err}` };
+      }
       console.log(r.text);
       return r;
     };

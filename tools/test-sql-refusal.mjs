@@ -38,7 +38,11 @@ function check(name, condition, detail = '') {
   else { failures.push(name + (detail ? '  <- ' + detail : '')); console.log('  FAIL  ' + name + (detail ? '  <- ' + detail : '')); }
 }
 
-const bin = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-psql-'));
+/* Every temporary directory is removed when this process ends, on a failure or a throw as well as on success. */
+const tmpDirs = [];
+process.on('exit', () => { for (const d of tmpDirs) fs.rmSync(d, { recursive: true, force: true }); });
+const tmpDir = (prefix) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), prefix)); tmpDirs.push(d); return d; };
+const bin = tmpDir('kayfabb-psql-');
 const marker = path.join(bin, 'called');
 const recorder = path.join(bin, 'psql.mjs');
 fs.writeFileSync(recorder, `import fs from 'node:fs';\nfs.appendFileSync(${JSON.stringify(marker)}, process.argv.slice(2).join(' ') + '\\n');\n`);
@@ -93,7 +97,7 @@ check('a select whose comparison is not right after it is not refused', nullBlin
 /* A psql that records its arguments and its SQL, one record per call, and succeeds. Planted behavior, each once and on the first
    assertion file's call (the harness wraps each in `begin;`): HANG never answers, as a backend stuck on a deadlock it cannot see
    would; FAIL answers an error; DRIFT answers the drift rows it names with the tag the after-file call reads. */
-const bounded = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-psql-bounds-'));
+const bounded = tmpDir('kayfabb-psql-bounds-');
 /* Each run of the suite has a directory of its own for what the psql records (KAYFABB_STATE), so runs may go side by side. */
 const hanger = path.join(bounded, 'psql.mjs');
 fs.writeFileSync(hanger, `import fs from 'node:fs';
@@ -187,24 +191,25 @@ const second = assertionFiles[1];
 /* Every run of the suite this file reads, laid out here and run side by side before the checks (prelaunch), so each check below reads its run by name. A run
    that plants a behavior does so on the first file, so those take one worker: with files in flight together, which file is first is not fixed. */
 const small = '000';
-const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-e2e-none-'));
+const emptyDir = tmpDir('kayfabb-e2e-none-');
 const sawIn = path.join(bounded, 'saw');
 const writesEnv = (file) => `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(file)}, JSON.stringify({ url: process.env.KAYFABB_SCRATCH_URL, snapshots: process.env.KAYFABB_SNAPSHOTS }));\n`;
 /** A planted end-to-end directory: the runner reads it in place of supabase/tests/e2e, so the planted names are the run's. */
-const plantedDir = (files) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-e2e-')); for (const [n, t] of Object.entries(files)) fs.writeFileSync(path.join(d, n), t); return d; };
+const plantedDir = (files) => { const d = tmpDir('kayfabb-e2e-'); for (const [n, t] of Object.entries(files)) fs.writeFileSync(path.join(d, n), t); return d; };
 const planted = {
   poison: plantedDir({
     '0901-replays-the-migrations.ts': "import fs from 'node:fs';\nfor (const m of fs.readdirSync('supabase/migrations')) console.log(m);\n",
     '0902-asks-the-list.ts': "import { migrationFiles } from '../../../tools/test-sql.mjs';\nmigrationFiles();\n",
     '0903-only-says-so.ts': writesEnv(sawIn + '3') + '// supabase/migrations and migrationFiles, in a comment\n',
   }),
-  told: plantedDir({ '0904-asks-where.ts': writesEnv(sawIn + '4') }),
-  pointed: plantedDir({ '0905-across-0003.ts': writesEnv(sawIn + '5') }),
+  /* One run serves what the file is told (0904) and the point a file names (0905). */
+  snaps: plantedDir({ '0904-asks-where.ts': writesEnv(sawIn + '4'), '0905-across-0003.ts': writesEnv(sawIn + '5') }),
   nowhere: plantedDir({ '0906-nowhere-across-9999.ts': '' }),
   dupe: plantedDir({ '0907-a-across-0003.ts': '', '0908-b-across-0003.ts': '' }),
   unpointed: plantedDir({ '0909-x-across-.ts': '' }),
 };
 const reportFile = path.join(bounded, 'report.json');
+/* A name the runner lists but cannot read as a file: it must fail that file's line, not the run. */
 /** A planted directory of assertion files: the runner reads it in place of supabase/tests/ (KAYFABB_SQL_TESTS_DIR). */
 const raises = "do $$ begin raise exception 'x'; end $$;\n";
 const timedBody = "do $$ declare t0 timestamptz; begin t0 := clock_timestamp(); if clock_timestamp() - t0 > interval '1 second' then raise exception 'slow'; end if; end $$;\n";
@@ -226,9 +231,11 @@ const testsPlanted = {
     '0008-alone-b.sql': aloneLine + timedBody,
   }),
 };
+fs.mkdirSync(path.join(testsPlanted.timed, '0009-a-directory.sql'));
 const runs = {
   full: {},
-  hang: { pattern: small, hang: true, workers: '1', timeoutMs: '1500' },
+  /* The bound applies to every psql of the run, the template's included: wide enough that load cannot kill a healthy one, the hang is a 60 s sleep. */
+  hang: { pattern: small, hang: true, workers: '1', timeoutMs: '8000' },
   fail: { pattern: small, fail: true, workers: '1' },
   kept: { pattern: small, fail: true, keep: 'failed', workers: '1' },
   drifted: { pattern: small, workers: '1', drift: '00000000-0000-4000-8000-0000000000d1|a play with no row' },
@@ -238,19 +245,17 @@ const runs = {
   none: { pattern: 'no-such-file-anywhere' },
   bad: ['3/2', '0/2', '1/0', '1/1.5', 'x'].map((shard) => ({ shard })),
   shard: { shard: '2/3' },
-  wide: { pattern: small, e2eDir: emptyDir, workers: '3', extraEnv: { SLEEP_MS: '800' }, timeoutMs: '60000' },
+  wide: { pattern: small, e2eDir: emptyDir, workers: '3', extraEnv: { SLEEP_MS: '2500' }, timeoutMs: '60000' },
   alone: { pattern: small, e2eDir: emptyDir, workers: '1', extraEnv: { SLEEP_MS: '200' }, timeoutMs: '60000' },
   failing: { pattern: small, e2eDir: emptyDir, workers: '3', extraEnv: { FAIL_N: '2', SLEEP_MS: '300' }, timeoutMs: '60000' },
   reported: { pattern: small, e2eDir: emptyDir, workers: '2', report: reportFile, extraEnv: { FAIL_N: '1', CALLS: 'thread_page|3' }, timeoutMs: '60000' },
   poison: { pattern: 'e2e/090', e2eDir: planted.poison },
-  told: { pattern: '0904', e2eDir: planted.told },
-  pointed: { pattern: '0905', e2eDir: planted.pointed },
+  snaps: { pattern: 'e2e/090', e2eDir: planted.snaps, workers: '1' },
   nowhere: { pattern: '0906', e2eDir: planted.nowhere },
   dupe: { pattern: 'e2e/090', e2eDir: planted.dupe },
   unpointed: { pattern: '0909', e2eDir: planted.unpointed },
-  noE2e: { pattern: first },
   timed: { e2eDir: emptyDir, workers: '1', extraEnv: { KAYFABB_SQL_TESTS_DIR: testsPlanted.timed } },
-  aloneFiles: { e2eDir: emptyDir, workers: '3', extraEnv: { KAYFABB_SQL_TESTS_DIR: testsPlanted.alone, SLEEP_MS: '700' } },
+  aloneFiles: { e2eDir: emptyDir, workers: '3', extraEnv: { KAYFABB_SQL_TESTS_DIR: testsPlanted.alone, SLEEP_MS: '2000' } },
 };
 await prelaunch(Object.values(runs).flat());
 
@@ -330,7 +335,7 @@ const full = boundedSuite(runs.full);
      it passed the 60s hang while the kill came at 1.5s. Half the hang leaves room for a slow Node start. */
   check('and is killed at the bound, not waited out', hang.hungMs < 30_000, `the hung psql lived ${hang.hungMs} ms`);
   check('and the failure names the file and says it was killed at the bound',
-    new RegExp(`FAIL  ${first.replace('.', '\\.')}  [\\d.]+s\\s+did not finish within 1\\.5s and was killed`).test(hang.out), hang.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
+    new RegExp(`FAIL  ${first.replace('.', '\\.')}  [\\d.]+s\\s+did not finish within 8s and was killed`).test(hang.out), hang.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
   check('and the files after it still run', /PASS  0001-/.test(hang.out), hang.out.slice(0, 400));
   const clonesOf = (r) => r.records.map(createdClone).filter(Boolean).map((m) => m[1]);
   check('and its clone is dropped', clonesOf(hang).length > 0 && clonesOf(hang).every((db) => hang.records.some((c) => droppedDb(c) === db)));
@@ -465,12 +470,19 @@ const full = boundedSuite(runs.full);
   check('a missing shard number is named', gf(lone).some((m) => /shard 2\/2 has no report/.test(m)), gf(lone).join(' | '));
   const stale = good(); stale[1].files.push({ name: 'e2e/0099-gone.ts', outcome: 'passed', seconds: 1 });
   check('a report that names a file not on disk is named, so a stale or foreign report does not pass', gf(stale).some((m) => m.includes('e2e/0099-gone.ts') && /not on disk/.test(m)), gf(stale).join(' | '));
+  const malformed = (what, mutate) => { const r = good(); mutate(r); const found = gf(r); return { found, ok: found.some((m) => /malformed/.test(m)) }; };
+  for (const [what, mutate] of [['a null entry in files', (r) => r[0].files.push(null)], ['no calls', (r) => { delete r[1].calls; }], ['calls null', (r) => { r[1].calls = null; }], ['a report that is null', (r) => r.push(null)], ['files not a list', (r) => { r[0].files = 'x'; }]]) {
+    let m;
+    try { m = malformed(what, mutate); } catch (e) { m = { found: [String(e)], ok: false }; }
+    check(`a malformed report (${what}) is named, and nothing throws`, m.ok, m.found.join(' | '));
+  }
+  check('coverageFailure skips a report with no calls array, and does not throw', (() => { try { return runner.coverageFailure([{ calls: null }, null, { calls: [{ name: 'a', calls: 1 }] }]) === null; } catch { return false; } })());
   check('no report at all fails', gf([]).length > 0);
   check('a report with no shard fails', gf([{ files: [] }, ...good()]).some((m) => /no shard/.test(m)));
   check('a shard that ran nothing, with its files in no report, fails', gf([report(1, 2, []), report(2, 2, [disk[1], disk[3]])]).length > 0);
 
   /* --gather: no database, no refusal; every report on disk against the files on disk, then the reads on the summed counts. */
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-gather-'));
+  const dir = tmpDir('kayfabb-gather-');
   const onDisk = typeof runner.suiteFiles === 'function' ? runner.suiteFiles().names : [];
   const halves = (mut = (x) => x) => {
     fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(path.join(dir, 'sql-shard-2'), { recursive: true }); fs.mkdirSync(path.join(dir, 'sql-shard-1'), { recursive: true });
@@ -497,6 +509,9 @@ const full = boundedSuite(runs.full);
   halves((r) => { r[0].files[0].outcome = 'failed'; return r; });
   const notPassed = gathered();
   check('--gather fails on a file that did not pass', notPassed.status === 1 && /did not pass/.test(notPassed.out), notPassed.out.slice(0, 300));
+  halves((r) => { delete r[0].calls; r[1].files.push(null); return r; });
+  const bad = gathered();
+  check('--gather names a malformed report and fails, without throwing', bad.status === 1 && /malformed/.test(bad.out) && !/TypeError/.test(bad.out), bad.out.slice(0, 300));
   halves((r) => { r[0].calls = [{ name: 'planted_read', calls: 0 }]; r[1].calls = []; return r; });
   const unread = gathered();
   check('--gather fails on a client read no shard called, on the counts summed over the shards', unread.status === 1 && /planted_read/.test(unread.out), unread.out.slice(0, 300));
@@ -526,6 +541,9 @@ const full = boundedSuite(runs.full);
   const carries = (text) => (typeof runner.carriesAloneMarker === 'function' ? runner.carriesAloneMarker(text) : null);
   check('the marker is `-- kayfabb-sql: alone` on a line of its own', carries('-- why\n-- kayfabb-sql: alone\nselect 1;') === true);
   check('inside a block comment it does not count', carries('/*\n-- kayfabb-sql: alone\n*/\nselect 1;') === false);
+  check('a marker after a `-- … /*` comment line is still found (a line comment does not open a block)', carries('-- see the note /* here\n-- kayfabb-sql: alone\nselect 1; /* a real comment later */') === true);
+  check('and a file with CRLF line ends is accepted', carries('-- why\r\n-- kayfabb-sql: alone\r\nselect 1;\r\n') === true);
+  check('a `/*` inside a string does not hide the marker either', carries("select '/*';\n-- kayfabb-sql: alone\nselect 1;") === true);
   check('misspelled, it does not count', ['-- kayfabb-sql: alon', '-- kayfabb sql: alone', '--kayfabb-sql: alonee', '-- kayfabb-sql: alone now', 'select 1; -- kayfabb-sql: alone'].every((t) => carries(t) === false));
 
   /* Every real file says what it is: a file holds a budget exactly when it carries the marker. */
@@ -544,6 +562,8 @@ const full = boundedSuite(runs.full);
   check('a timed file with its marker runs and passes', /PASS/.test(lineOf('0005-timed-and-marked.sql')), lineOf('0005-timed-and-marked.sql'));
   check('and a file that only uses the clock as a value is not asked for one', /PASS/.test(lineOf('0006-clock-as-a-value.sql')), lineOf('0006-clock-as-a-value.sql'));
   check('the refused files get no clone, and the run fails', t.status === 1 && t.records.map(createdClone).filter(Boolean).length === 3, `${t.records.map(createdClone).filter(Boolean).length} clones, status ${t.status}`);
+
+  check('a name the runner cannot read fails its own line and not the run: the others still ran', /FAIL/.test(lineOf('0009-a-directory.sql')) && /could not read/.test(lineOf('0009-a-directory.sql')) && /PASS/.test(lineOf('0005-timed-and-marked.sql')) && !/TypeError|at async|ERR_/.test(t.out.replace(lineOf('0009-a-directory.sql'), '')), lineOf('0009-a-directory.sql'));
 
   /* The pool, with a file that runs alone: nothing is in flight beside it, and it waits for the others to end. */
   const a = boundedSuite(runs.aloneFiles);
@@ -610,6 +630,13 @@ const full = boundedSuite(runs.full);
   check('a name that says -across- with no point is refused, naming the file', /0007-avatar-sweep-across-\.ts/.test(noPoint) && /point/.test(noPoint), noPoint);
   const noPoint2 = have ? throws(() => runner.snapshotPoints(['0007-x-across-25.ts'])) : '';
   check('and so is one whose point is not four digits', /0007-x-across-25\.ts/.test(noPoint2), noPoint2);
+  check('and the message says -across- is reserved for upgrade tests', /reserved for upgrade tests/.test(noPoint), noPoint);
+  check('pointOfFile is the one parse of a name: its point, or null for a file that is not an upgrade test', typeof runner.pointOfFile === 'function' && runner.pointOfFile('0007-avatar-sweep-across-0025.ts') === '0025' && runner.pointOfFile('0001-settlement.ts') === null);
+  const sfx = typeof runner.cloneSuffixError === 'function' ? runner.cloneSuffixError : () => 'no cloneSuffixError';
+  const clone63 = 'kayfabb_scratch_12345_1795629837595_12';
+  check('a clone suffix of lowercase letters, digits and underscores is accepted', sfx(clone63, 'before1') === null && sfx(clone63, 'spun_imported') === null && sfx(clone63, 'migrated2') === null);
+  check('and an upper-case, hyphenated, blank or empty one is refused with a reason', ['Upper', 'a-b', 'x y', '', 'a;b', 'a"b'].every((x) => typeof sfx(clone63, x) === 'string' && sfx(clone63, x).length > 10));
+  check('and so is one that takes `<clone>_<suffix>` past the 63 bytes Postgres keeps of a name', typeof sfx(clone63, 'x'.repeat(30)) === 'string' && sfx(clone63, 'x'.repeat(63 - clone63.length - 1)) === null && /63/.test(sfx(clone63, 'x'.repeat(30)) ?? ''));
   const twice = have ? throws(() => runner.snapshotPoints(['0007-a-across-0025.ts', '0009-b-across-0025.ts'])) : '';
   check('two files naming one point are refused, naming both', /0007-a-across-0025\.ts/.test(twice) && /0009-b-across-0025\.ts/.test(twice), twice);
   const missing = have ? throws(() => runner.snapshotPoints(['0007-a-across-0025.ts', '0008-b-across-9999.ts'], ['0024_x.sql', '0025_y.sql'])) : '';
@@ -631,13 +658,13 @@ const full = boundedSuite(runs.full);
   check('the refused files get no clone, and one that only mentions them in a comment still runs and passes', /PASS  e2e\/0903-only-says-so\.ts/.test(poison.out) && poison.records.map(createdClone).filter(Boolean).length === 1, `${poison.records.map(createdClone).filter(Boolean).length} clones`);
 
   /* What the file is told. */
-  const told = boundedSuite(runs.told);
+  const told = boundedSuite(runs.snaps);
   const saw = fs.existsSync(sawIn + '4') ? JSON.parse(fs.readFileSync(sawIn + '4', 'utf8')) : {};
   const cloneOf = told.records.map(createdClone).filter(Boolean)[0]?.[1];
   check('an end-to-end file is told its clone in KAYFABB_SCRATCH_URL', Boolean(cloneOf) && saw.url === `postgres://postgres:pg@localhost:5432/${cloneOf}`, JSON.stringify(saw));
   const snaps = saw.snapshots ? JSON.parse(saw.snapshots) : {};
   check('and the snapshots in KAYFABB_SNAPSHOTS: `migrated`, and a point for each file that names one', typeof snaps.migrated === 'string' && snaps.migrated.startsWith(tmplOf(told)), saw.snapshots);
-  const pointed = boundedSuite(runs.pointed);
+  const pointed = told;
   const sawPointed = fs.existsSync(sawIn + '5') ? JSON.parse(fs.readFileSync(sawIn + '5', 'utf8')) : {};
   const pointedSnaps = sawPointed.snapshots ? JSON.parse(sawPointed.snapshots) : {};
   check('a point a file names is in it, and its database is made from the template', /^kayfabb_scratch_\d+_\d+_/.test(pointedSnaps['0003'] ?? '') && pointed.records.some((c) => bodyOf(c).startsWith(`create database ${pointedSnaps['0003']} template ${tmplOf(pointed)};`)), sawPointed.snapshots);
@@ -661,7 +688,7 @@ const full = boundedSuite(runs.full);
   check('the snapshots are dropped, before the template', [snapOf, migrated].every((db) => Boolean(db) && droppedAt(pointed, db) > 0 && droppedAt(pointed, db) < droppedAt(pointed, tmplOf(pointed))));
 
   /* A run with no end-to-end file in it makes no snapshot. */
-  const noE2e = boundedSuite(runs.noE2e);
+  const noE2e = boundedSuite(runs.part);
   check('a pattern that selects no end-to-end file makes no snapshot', noE2e.records.length > 0 && !noE2e.records.some((c) => dbOf(c) === 'postgres' && /^create database \w+_(s\d+|migrated) /.test(bodyOf(c))), '');
 
   /* Whatever a file leaves named after its clone goes with the clone. */
@@ -675,7 +702,6 @@ const full = boundedSuite(runs.full);
   check('two files naming one point fail the run before any psql is called', dupe.status === 1 && /0907-a-across-0003\.ts/.test(dupe.out) && /0908-b-across-0003\.ts/.test(dupe.out) && dupe.records.length === 0, `status ${dupe.status}, ${dupe.records.length} calls`);
   const unpointed = boundedSuite(runs.unpointed);
   check('and so does a name with -across- and no point', unpointed.status === 1 && /0909-x-across-\.ts/.test(unpointed.out) && unpointed.records.length === 0, `status ${unpointed.status}`);
-  for (const d of [...Object.values(planted), ...Object.values(testsPlanted), emptyDir]) fs.rmSync(d, { recursive: true, force: true });
 
   /* The real files: every upgrade test is named for its point, and no file replays the migrations on its own. */
   const real = have ? (() => { try { return runner.snapshotPoints(e2eFiles, allMigrations); } catch (e) { return String(e.message); } })() : 'no snapshotPoints';
@@ -683,9 +709,7 @@ const full = boundedSuite(runs.full);
   const replaying = e2eFiles.filter((f) => runner.e2eRefusal?.(fs.readFileSync(path.join('supabase/tests/e2e', f), 'utf8')) != null);
   check('and no end-to-end file replays migrations on its own: the runner refuses none of them', typeof runner.e2eRefusal === 'function' && replaying.length === 0, replaying.join(', '));
 }
-fs.rmSync(bounded, { recursive: true, force: true });
 
-fs.rmSync(bin, { recursive: true, force: true });
 console.log(`\n  sql-refusal: ${pass} passed, ${failures.length} failed`);
 if (failures.length) {
   console.error('  test-sql-refusal: FAILED\n    ' + failures.join('\n    '));

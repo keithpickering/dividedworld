@@ -66,10 +66,12 @@ check('and client_rpcs too, which the counts are asked about', clone.includes(`a
 const afterAt = code.search(/psqlLinesAsync\(cloneUrl, afterFileSql\)/);
 const dropAt = code.search(/drop database if exists \$\{clone\} with \(force\)/);
 check('the counts are read from each clone before its drop', afterAt >= 0 && dropAt > afterAt, `read at ${afterAt}, drop at ${dropAt}`);
+const readCallAt = code.search(/await readAfterFile\(cloneUrl\)/);
+check('each file reads its clone through readAfterFile before the drop (the one path the drift test runs)', readCallAt >= 0 && dropAt > readCallAt && afterAt >= 0 && afterAt < readCallAt, `read at ${readCallAt}, drop at ${dropAt}`);
 check('and kept, one list for each file, into its report', /calls = got\.calls/.test(code) && /calls: sumCalls\(results\.map\(\(r\) => r\.calls\)\)/.test(code));
 const comparisons = [...code.matchAll(/\buncalledReads\(/g)].filter((m) => !/function\s+$/.test(code.slice(0, m.index))).map((m) => m.index);
 check('uncalledReads runs once', comparisons.length === 1, `${comparisons.length} calls`);
-check('on the sum of every report\'s counts, in the one function both the local run and --gather call', /sumCalls\(reports\.map\(\(r\) => r\.calls\)\)/.test(code) && code.search(/sumCalls\(reports\.map/) < (comparisons[0] ?? -1) && /function coverageFailure\(/.test(code));
+check('on the sum of every report\'s counts, in the one function both the local run and --gather call', /sumCalls\(reports\b[^;]*r\.calls\)\)/.test(code) && code.search(/sumCalls\(reports\b/) < (comparisons[0] ?? -1) && /function coverageFailure\(/.test(code));
 const callers = [...code.matchAll(/\bcoverageFailure\(/g)].filter((m) => !/function\s+$/.test(code.slice(0, m.index))).length;
 check('coverageFailure is called by the whole local run and by --gather, and nowhere else', callers === 2, `${callers} calls`);
 check('a whole run compares only without a pattern or a shard', /if \(pattern \|\| shardN > 1\) console\.log\([^\n]*skipped/.test(code));
