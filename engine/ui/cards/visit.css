@@ -16,8 +16,11 @@
   gap: 0.3rem;
 }
 
+/* The stopwatch sits in a card icon's box (marks.css, `.kb-mark-icon`), so an ended tile is exactly a card mark's width. */
 .kb-visit-watch {
   flex: none;
+  width: 1.45rem;
+  height: 1.45rem;
   fill: none;
   stroke: var(--kb-visit-ink);
   stroke-width: 2;
