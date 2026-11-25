@@ -34,7 +34,11 @@ jobs:
     # slow runner needs about 16 minutes; and the suite had doubled in five days. 45 is a little over twice the 20
     # minutes a slow runner is expected to need once PR #575's statistics step lands. Not the build's 30: that would
     # leave 10 minutes, and the suite gained 7 minutes or more in those five days.
-    timeout-minutes: 45
+    # Raised to 75 on 2026-11-25, on the owner's word, as a stopgap while #587 is designed and built: main's suite took
+    # 41 minutes (release run 45610008489) and PR #1088's first run was cancelled at 44 with about 2.5 minutes left.
+    # 75 gives the builds in flight room. #587 (a shorter suite, spread over runners after #579) is the fix; this
+    # number comes back down when it lands.
+    timeout-minutes: 75
     services:
       postgres:
         # Named by digest, not by the `postgres:17` tag: that tag moved to 17.12 on 2026-11-12 and every run failed
