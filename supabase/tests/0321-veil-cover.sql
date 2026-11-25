@@ -126,7 +126,7 @@ $$;
 
 -- As 0304's parked: waiting, finished or neither, for the racer whose statement carries /* tag */.
 create function pg_temp.parked(tag text, conn text) returns text language plpgsql as $$
-declare tries integer := 0;
+declare tries integer := 0; max_tries constant integer := 1200;
 begin
   loop
     -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that has begun to wait since the last look is not seen.
@@ -134,7 +134,8 @@ begin
     if exists (select 1 from pg_stat_activity a where a.query like '%/* ' || tag || ' */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock') then return 'waiting'; end if;
     if extensions.dblink_is_busy(conn) = 0 then return 'finished'; end if;
     tries := tries + 1;
-    if tries > 400 then return 'neither'; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then return 'neither'; end if;
     perform pg_sleep(0.025);
   end loop;
 end $$;
@@ -488,7 +489,6 @@ end $$;
 -- ---- 4. The cost of an insert: another character's Act reads post_veils not at all, and the author's own does ----
 -- Counted across the inserts by the transaction's own table statistics (pg_stat_xact_user_tables, scans of either kind). The thread holds some hundreds of Acts, analyzed, so a plan that read all of them would be seen.
 select tests.unbecome();
-load 'auto_explain'; set auto_explain.log_analyze = on; set auto_explain.log_nested_statements = on; set auto_explain.log_timing = off; set auto_explain.log_min_duration = 0;
 do $$
 declare
   ann uuid := tests.account('vk-ann'); bob uuid := tests.account('vk-bob');
@@ -519,13 +519,14 @@ begin
   insert into acts (character, kind, thread, payload, target_act_id) select a, 'post', t, jsonb_build_object('body', 'Quote ' || g), q from generate_series(1, 3000) g;
   perform tests.act(a, 'edit', t, jsonb_build_object('body', 'Edited before the veil.'), p2);
   analyze acts;
+  -- The plans this session cached while `acts` held a handful of rows (play_row's lookup of an Act by id was planned as a sequential scan, the cheapest
+  -- plan of one page) survive the analyze, and read every Act three times a landing: they are dropped so that every statement is planned on the
+  -- analyzed table.
+  discard plans;
   fetched_before := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
-  perform set_config('client_min_messages', 'log', true); raise log 'Query Text: MARK-veil';
   perform pg_temp.veil(p2, t, a, b, bob);
-  raise log 'Query Text: MARK-end'; perform set_config('client_min_messages', 'notice', true);
   fetched_after := (select coalesce(sum(x.idx_tup_fetch + x.seq_tup_read), 0) from pg_stat_xact_user_tables x where x.relname = 'acts');
   raise notice 'acts rows fetched by an author veil landing: %', fetched_after - fetched_before;
   if fetched_after - fetched_before > 100 then raise exception 'an author veil landing fetched % rows of acts, with the author holding three thousand Acts elsewhere', fetched_after - fetched_before; end if;
   perform pg_temp.agree('the cost thread');
 end $$;
-set auto_explain.log_min_duration = -1; set client_min_messages = notice;

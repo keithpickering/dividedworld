@@ -1,0 +1,180 @@
+-- A class is revealed once, and the server says when it became public (docs/plans/2026-11-06-hud-reveal-design.md, section 2).
+-- `my_characters.class_shown_at` is the latest date the character's current class was made public since it took that class: a reveal,
+-- a debut announced with its class, or a Turn announced with its new class. `unmask()` refuses a class that is already public, so the
+-- second reveal of a class is never an Act; after a Turn, the new class can be revealed.
+
+create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlerrm;
+end $$;
+
+-- ---- A class already public is not revealed again; after a Turn, the new class can be ----
+do $$
+declare
+  ann uuid := tests.account('once-ann');
+  a uuid := tests.character(ann, 'Once Revealed', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Said once');
+  said text;
+begin
+  perform tests.become(ann);
+  perform unmask(a, t, 'First.');
+  said := pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, 'Again.'));
+  if said is distinct from 'that character''s class is already public; after a Turn, the new class can be revealed' then raise exception 'a second reveal of the same class was taken or refused in other words: %', said; end if;
+  perform tests.unbecome();
+  if (select count(*) from acts where kind = 'unmask' and character = a) is distinct from 1::bigint then raise exception 'a refused reveal wrote an Act'; end if;
+  -- A Turn takes effect: the new class is not public, and can be revealed, once.
+  insert into class_history (character, class_key, started_at) values (a, 'beta', now() - interval '1 day');
+  perform tests.become(ann);
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, 'New mask.')) is not null then raise exception 'the class after a Turn could not be revealed'; end if;
+  said := pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, 'And again.'));
+  if said is distinct from 'that character''s class is already public; after a Turn, the new class can be revealed' then raise exception 'the class after a Turn was revealed twice: %', said; end if;
+  perform tests.unbecome();
+  if (select count(*) from acts where kind = 'unmask' and character = a) is distinct from 2::bigint then raise exception 'the two classes were revealed once each'; end if;
+end $$;
+
+-- ---- Another player's reveal gets the refusal acting() gave, whether or not the class is public ----
+do $$
+declare
+  ann uuid := tests.account('once-owner');
+  bob uuid := tests.account('once-other');
+  a uuid := tests.character(ann, 'Hidden Class', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Not yours');
+  before text;
+  after text;
+begin
+  perform tests.become(bob);
+  before := pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, ''));
+  perform tests.unbecome();
+  perform tests.become(ann);
+  perform unmask(a, t, '');
+  perform tests.unbecome();
+  perform tests.become(bob);
+  after := pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, ''));
+  perform tests.unbecome();
+  if before is distinct from 'you do not play that character' then raise exception 'another player''s reveal was refused in other words: %', before; end if;
+  if after is distinct from before then raise exception 'a refusal differs with whether the class is public: % / %', before, after; end if;
+  if (select count(*) from acts where kind = 'unmask' and character = a) is distinct from 1::bigint then raise exception 'another player''s reveal wrote an Act'; end if;
+end $$;
+
+-- ---- class_shown_at: when the current class was last made public since the character took it ----
+do $$
+declare
+  ann uuid := tests.account('shown-ann');
+  a uuid := tests.character(ann, 'Shown Maybe', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Shown');
+  first_reveal uuid;
+  shown timestamptz;
+begin
+  perform tests.become(ann);
+  if (select count(*) from my_characters where id = a) is distinct from 1::bigint then raise exception 'my_characters lists the caller''s character'; end if;
+  if (select class_shown_at from my_characters where id = a) is not null then raise exception 'class_shown_at is null before any reveal'; end if;
+  perform tests.unbecome();
+  -- A reveal, then a Turn: the new class was never shown; a Turn back is the first class taken again, and that old reveal predates it.
+  first_reveal := (write_unmask(a, t, 'act', now() - interval '3 days') ->> 'id')::uuid;
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is distinct from now() - interval '3 days' then raise exception 'class_shown_at is the reveal''s date'; end if;
+  perform tests.unbecome();
+  insert into class_history (character, class_key, started_at) values (a, 'beta', now() - interval '2 days');
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is not null then raise exception 'a Turn makes class_shown_at null again'; end if;
+  perform tests.unbecome();
+  insert into class_history (character, class_key, started_at) values (a, 'alpha', now() - interval '1 day');
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is not null then raise exception 'after a Turn back, the old reveal predates the class''s new start'; end if;
+  -- The reveal through unmask() is that Act's created_at.
+  first_reveal := (unmask(a, t, 'Again, now.') ->> 'id')::uuid;
+  shown := (select created_at from acts where id = first_reveal);
+  if (select class_shown_at from my_characters where id = a) is distinct from shown then raise exception 'class_shown_at is the Act''s created_at'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- A debut with its class, and a Turn announced with its new class, each set it ----
+do $$
+declare
+  ann uuid := tests.account('shown-announced');
+  a uuid := tests.character(ann, 'Debuted Loud', 'alpha', now() - interval '60 days');
+  b uuid := tests.character(ann, 'Turned Loud', 'alpha', now() - interval '60 days');
+  on_system uuid;
+  elsewhere uuid := tests.thread('Already out');
+begin
+  insert into threads (board, title) values (system_board(), 'The System announces') returning id into on_system;
+  perform tests.act(a, 'announce', on_system, '{"what": "debut", "class": "alpha"}', null, now() - interval '1 hour');
+  insert into class_history (character, class_key, started_at) values (b, 'beta', now() - interval '2 days');
+  perform tests.act(b, 'announce', on_system, '{"what": "turn", "class": "beta"}', null, now() - interval '1 day');
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is distinct from now() - interval '1 hour' then raise exception 'a debut announced with its class makes it public'; end if;
+  if (select class_shown_at from my_characters where id = b) is distinct from now() - interval '1 day' then raise exception 'a Turn announced with its new class makes it public'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, elsewhere, '')) is distinct from 'that character''s class is already public; after a Turn, the new class can be revealed' then raise exception 'a class made public by its debut was revealed'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- my_characters answers only for the caller's own characters ----
+do $$
+declare
+  ann uuid := tests.account('shown-private-ann');
+  bob uuid := tests.account('shown-private-bob');
+  a uuid := tests.character(ann, 'Ann''s Shown', 'alpha', now() - interval '60 days');
+begin
+  perform write_unmask(a, tests.thread('Private shown'), 'act', now() - interval '1 day');
+  perform tests.become(bob);
+  if (select count(*) from my_characters where id = a) is distinct from 0::bigint then raise exception 'another player''s character is in my_characters'; end if;
+  if (select count(class_shown_at) from my_characters) is distinct from 0::bigint then raise exception 'another player''s class_shown_at was read'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- The date compared is when the class started, not when it was due ----
+do $$
+declare
+  ann uuid := tests.account('shown-started');
+  a uuid := tests.character(ann, 'Started Late', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Started, not due');
+  said uuid;
+begin
+  -- A class row due two days ago that started an hour ago (its class held before it, so a reveal of that class a day ago names it);
+  -- the reveal is newer than the row's due date and older than its start.
+  insert into class_history (character, class_key, started_at, due_at) values (a, 'alpha', now() - interval '1 hour', now() - interval '2 days');
+  perform write_unmask(a, t, 'act', now() - interval '1 day');
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is not null then raise exception 'a reveal older than the class''s start (though newer than its due date) shows the class as public'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, 'Alpha again.')) is not null then raise exception 'a class started after its only reveal could not be revealed'; end if;
+  perform tests.unbecome();
+end $$;
+
+-- ---- A public class whose Turn is due is refused as public, before the Turn's own refusal ----
+-- The settle run's claim makes the Turn due (0074), as 0077-settle-claim.sql sets it up: the settlements moved a century back so the
+-- season's first window has no known end, then a claim on a window that ended an hour ago, which no settlement has applied. Undone
+-- with the block.
+do $$
+declare
+  ann uuid := tests.account('shown-due');
+  a uuid := tests.character(ann, 'Public And Due', 'alpha', now() - interval '60 days');
+  b uuid := tests.character(ann, 'Private And Due', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Due');
+  due text := 'this character''s Turn takes effect at the settlement now due; reveal once it has run, or withdraw the Turn';
+begin
+  begin
+    update settlements set starts_at = starts_at - interval '100 years', ends_at = ends_at - interval '100 years';
+    delete from settlement_claims;
+    perform write_unmask(a, t, 'act', now() - interval '1 day');
+    perform tests.become(ann);
+    perform turn(a, 'beta', 'silent');
+    perform turn(b, 'beta', 'silent');
+    perform tests.unbecome();
+    update pending_turns set asked_at = now() - interval '2 hours' where character in (a, b);
+    perform tests.become_service();
+    perform claim_settlement_window(now() - interval '1 day', now() - interval '1 hour');
+    perform tests.unbecome();
+    perform tests.become(ann);
+    -- The control: a Turn due refuses a class that is not public with the Turn's own words.
+    if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is distinct from due then raise exception 'the control: a due Turn refuses a reveal in its own words'; end if;
+    if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, '')) is distinct from 'that character''s class is already public; after a Turn, the new class can be revealed' then
+      raise exception 'a public class with a due Turn is refused as public';
+    end if;
+    perform tests.unbecome();
+    raise exception 'undone' using errcode = 'KB001';
+  exception when sqlstate 'KB001' then null;
+  end;
+end $$;

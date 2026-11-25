@@ -379,6 +379,101 @@ red('the Data API step spells --declared=<file>, which the tool refuses', edit(R
   st.run = st.run.replace(/--declared\s+/, '--declared=');
 }), /R15.*--declared <file>/);
 
+/* ---- R16: the SQL shards are one list, and sql-total gathers them ---- */
+const SQL_RUN = 'npm run test:sql -- --shard=${{ matrix.shard }}/${{ strategy.job-total }} --report=sql-report-${{ matrix.shard }}.json';
+const sqlJob = (d) => Object.values(d.jobs).find((j) => list(j.steps).some((s) => /npm run test:sql/.test(String(s.run ?? ''))));
+const sqlStep = (d) => sqlJob(d).steps.find((s) => /npm run test:sql/.test(String(s.run ?? '')));
+const sqlTotal = (d) => d.jobs['sql-total'];
+const gatherStep = (d) => sqlTotal(d).steps.find((s) => /--gather/.test(String(s.run ?? '')));
+const sqlShardsOf = (d) => Object.entries(d.jobs).find(([, j]) => j === sqlJob(d))[0];
+const sqlRule = (fn) => edit(SQL, fn);
+red('the SQL job has no matrix', sqlRule((d) => { delete sqlJob(d).strategy; }), /R16.*only key.*no matrix/);
+red('the SQL shard list has a gap', sqlRule((d) => { sqlJob(d).strategy.matrix.shard = [1, 2, 4]; }), /R16.*shard list/);
+red('the SQL shard list has a repeat', sqlRule((d) => { sqlJob(d).strategy.matrix.shard = [1, 2, 2, 3]; }), /R16.*shard list/);
+red('the SQL matrix has a second key', sqlRule((d) => { sqlJob(d).strategy.matrix.os = ['a', 'b']; }), /R16.*only key/);
+red('the SQL command has a literal total', sqlRule((d) => { sqlStep(d).run = SQL_RUN.replace('${{ strategy.job-total }}', '4'); }), /R16.*command/);
+red('the SQL command writes no report', sqlRule((d) => { sqlStep(d).run = SQL_RUN.replace(/ --report=\S+/, ''); }), /R16.*command/);
+red('the SQL shards do not stay running when one fails', sqlRule((d) => { delete sqlJob(d).strategy['fail-fast']; }), /R16.*fail-fast/);
+red('a shard does not upload its report when it failed', sqlRule((d) => {
+  const up = sqlJob(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+  delete up.if;
+}), /R16.*upload/);
+red('a shard uploads under a name other than sql-report-<shard>', sqlRule((d) => {
+  const up = sqlJob(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+  up.with.name = 'report-${{ matrix.shard }}';
+}), /R16.*upload/);
+red('there is no sql-total job', sqlRule((d) => { delete d.jobs['sql-total']; }), /R16.*no sql-total/);
+red('sql-total does not need the shards', sqlRule((d) => { sqlTotal(d).needs = []; }), /R16.*needs/);
+red('sql-total is skipped when a shard fails', sqlRule((d) => { delete sqlTotal(d).if; }), /R16.*always\(\)/);
+red('sql-total runs only on success', sqlRule((d) => { sqlTotal(d).if = 'success()'; }), /R16.*always\(\)/);
+red('sql-total never reads the shards\' result', sqlRule((d) => {
+  for (const s of sqlTotal(d).steps) { delete s.if; if (s.env) for (const k of Object.keys(s.env)) if (/needs\./.test(String(s.env[k]))) delete s.env[k]; }
+  sqlTotal(d).steps = sqlTotal(d).steps.filter((s) => !/\$SHARDS|needs\./.test(JSON.stringify(s)));
+}), /R16.*result/);
+red('sql-total gathers nothing', sqlRule((d) => { gatherStep(d).run = 'echo done'; }), /R16.*gather/);
+red('sql-total gathers from a directory it did not download to', sqlRule((d) => { gatherStep(d).run = 'node tools/test-sql.mjs --gather=elsewhere'; }), /R16.*gather/);
+red('sql-total downloads no reports', sqlRule((d) => {
+  sqlTotal(d).steps = sqlTotal(d).steps.filter((s) => !String(s.uses ?? '').startsWith('actions/download-artifact'));
+}), /R16.*download/);
+red('sql-total downloads only one shard\'s report', sqlRule((d) => {
+  const dl = sqlTotal(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/download-artifact'));
+  dl.with.pattern = 'sql-report-1';
+}), /R16.*download/);
+red('sql-total is not skipped for a draft the way the shards are', sqlRule((d) => { sqlTotal(d).if = 'always()'; }), /R16.*draft/);
+red('the drift check runs in every shard', sqlRule((d) => {
+  for (const s of sqlJob(d).steps) if (/test-sql-drift/.test(s.run ?? '')) delete s.if;
+}), /R16.*drift/);
+red('the shard job is no longer named by sql-total\'s needs', sqlRule((d) => {
+  const name = sqlShardsOf(d);
+  d.jobs.renamed = d.jobs[name]; delete d.jobs[name];
+}), /R16.*needs/);
+const DRAFT_SKIP = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
+const upload = (d) => sqlJob(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/upload-artifact'));
+const sqlName = (d) => sqlShardsOf(d);
+red('the shards are skipped always', sqlRule((d) => { d.jobs[sqlName(d)].if = 'false'; }), /R16.*shards' job.*if/);
+red('the shards run for a draft too', sqlRule((d) => { d.jobs[sqlName(d)].if = 'true'; }), /R16.*shards' job.*if/);
+red('sql-total never runs (!always())', sqlRule((d) => { sqlTotal(d).if = `\${{ !always() && (${DRAFT_SKIP}) }}`; }), /R16.*sql-total.*if/);
+red('sql-total runs for any draft (always() || draft)', sqlRule((d) => { sqlTotal(d).if = 'always() || github.event.pull_request.draft'; }), /R16.*sql-total.*if/);
+red('sql-total\'s draft condition is dropped for a clause', sqlRule((d) => { sqlTotal(d).if = `always() && (${DRAFT_SKIP}) || true`; }), /R16.*sql-total.*if/);
+red('the upload\'s if is not exactly always()', sqlRule((d) => { upload(d).if = 'always() && false'; }), /R16.*upload/);
+red('the upload\'s if is a failure() only', sqlRule((d) => { upload(d).if = 'failure()'; }), /R16.*upload/);
+red('the upload ignores a missing report', sqlRule((d) => { upload(d).with['if-no-files-found'] = 'ignore'; }), /R16.*upload/);
+red('the upload names no if-no-files-found', sqlRule((d) => { delete upload(d).with['if-no-files-found']; }), /R16.*upload/);
+red('a step continues on error', sqlRule((d) => { sqlTotal(d).steps.find((s) => /--gather/.test(s.run ?? ''))['continue-on-error'] = true; }), /R16.*continue-on-error/);
+red('a job continues on error', sqlRule((d) => { sqlJob(d)['continue-on-error'] = true; }), /R16.*continue-on-error/);
+red('the shards\' own step continues on error', sqlRule((d) => { sqlStep(d)['continue-on-error'] = true; }), /R16.*continue-on-error/);
+red('the result step only echoes the result', sqlRule((d) => {
+  const st = sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+  st.run = 'echo "$SHARDS"';
+}), /R16.*result/);
+red('the result step compares to the wrong value', sqlRule((d) => {
+  const st = sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+  st.run = '[ "$SHARDS" != failure ]';
+}), /R16.*result/);
+red('the result step is skipped on failure', sqlRule((d) => {
+  const st = sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+  st.if = 'false';
+}), /R16.*result/);
+red('the shards have no timeout', sqlRule((d) => { delete sqlJob(d)['timeout-minutes']; }), /R16.*timeout/);
+red('the shards\' timeout crept up', sqlRule((d) => { sqlJob(d)['timeout-minutes'] = 75; }), /R16.*timeout/);
+red('sql-total\'s timeout crept up', sqlRule((d) => { sqlTotal(d)['timeout-minutes'] = 45; }), /R16.*timeout/);
+const dlStep = (d) => sqlTotal(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/download-artifact'));
+const resStep = (d) => sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+red('the download step is skipped by an if', sqlRule((d) => { dlStep(d).if = 'false'; }), /R16.*sql-total step/);
+red('the gather step is skipped by an if', sqlRule((d) => { gatherStep(d).if = 'false'; }), /R16.*sql-total step/);
+red('the gather step runs in a shell that always passes', sqlRule((d) => { gatherStep(d).shell = 'echo {0}'; }), /R16.*sql-total step/);
+red('the result step runs in a shell that always passes', sqlRule((d) => { resStep(d).shell = 'echo {0}'; }), /R16.*sql-total step/);
+red('a sql-total step changes its working directory', sqlRule((d) => { gatherStep(d)['working-directory'] = 'supabase'; }), /R16.*sql-total step/);
+red('the checkout step is skipped by an if', sqlRule((d) => { sqlTotal(d).steps[0].if = 'false'; }), /R16.*sql-total step/);
+red('the workflow sets defaults', sqlRule((d) => { d.defaults = { run: { shell: 'bash' } }; }), /R16.*defaults/);
+red('a job sets defaults', sqlRule((d) => { sqlTotal(d).defaults = { run: { shell: 'echo {0}' } }; }), /R16.*defaults/);
+red('the gather step exits 0 on an earlier line', sqlRule((d) => { gatherStep(d).run = `exit 0\n${gatherStep(d).run}`; }), /R16.*gather/);
+red('the result step exits 0 on an earlier line', sqlRule((d) => { resStep(d).run = `exit 0\n${resStep(d).run}`; }), /R16.*result/);
+red('sql-total\'s if loses its parentheses', sqlRule((d) => { sqlTotal(d).if = `always() && ${DRAFT_SKIP}`; }), /R16.*sql-total.*if/);
+red('SHARDS is a constant, not the shards\' result', sqlRule((d) => { resStep(d).env.SHARDS = 'success'; }), /R16.*result/);
+red('sql-total has no timeout', sqlRule((d) => { delete sqlTotal(d)['timeout-minutes']; }), /R16.*timeout.*sql-total/);
+quiet('a conforming sql.yml passes', sqlRule(() => {}));
+
 /* ---- a file that does not parse ---- */
 red('a workflow that does not parse is named', { ...REAL, [BUILD]: 'on: [unclosed\n  - : :' }, /build\.yml/);
 
