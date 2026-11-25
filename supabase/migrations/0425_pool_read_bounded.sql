@@ -4,22 +4,24 @@
 -- for each seed: the hop and each post's `quotes` read ~4,400 rows of `acts` for every one of ~90 seeds in a 4,000-post thread, and the same shape over a larger table is every row of `acts`, once per seed. 0421's own test failed
 -- on exactly that in CI (`pool_read reads 1585819 rows of acts in a 4,000-post thread ...`) while passing on runs whose statistics happened to be fresh. A cost estimate is not a bound.
 --
--- It is rebuilt here so that no read of `acts` is larger than its key says, on any plan the planner might take:
+-- It is rebuilt here so that no read of `acts` is larger than its key says, on any plan the planner might take, save the one estimate named in the guarantee below (which would read a thread, never the table):
 --   - a post is read by its id: one equality on acts' primary key through acts_public, one statement for one id (pool_probe); the thread, the kind and the hidden flag are checked on the row it returns, not in the query, so there
 --     is no other index a cost estimate could prefer. The seeds, the window, the named posts, the persona's own, the replies, the quoted posts and the page are each a loop of those probes over a list bounded by a constant;
 --   - the newest `window` posts are found by number: pool_seq_ids probes the unique key acts_thread_seq_key (thread, seq) once for each of the thread's last 2 x window + 60 numbers (at most 460), newest first;
 --   - a post's quotes are the rows of quote_refs for its act (the primary key's leading column), each quoted post probed by id (pool_quoted) and the newest 10 kept in the function: quote_refs is never joined to the view;
 --   - the persona's newest posts and the replies to a post are the two ordered, limited, single-table index reads of 0421 (pool_own_post_ids, pool_reply_ids), redefined below so that one index is the only plan that does not cost
---     a disabled node. 0421's versions were bounded only while the planner priced them well: where the persona dominates `acts` (30,000 posts in another thread, 60 old posts among 4,600 in this one) and the table's statistics or the
---     price of a random read tipped the estimate, it took acts_created or acts_character backward with a filter on thread and kind (30,581 rows of `acts` for 40 ids in 0425's test), or the whole table in a sort.
+--     a disabled node. 0421's versions were bounded only while the planner priced them well: where the persona dominates `acts` (30,000 posts in another thread, 60 old posts among 4,600 in this one) and the price of a random
+--     read tipped the estimate, it took the whole table in a sort (40,600 rows of `acts` for 40 ids in 0425's test, at random_page_cost 100), and once, with another row layout, acts_created backward with a filter.
 -- Same signature, same security (security definer, owned by kayfabb_digest, the service role's only, search_path = public, pg_temp, jit off) and the same result as 0421's pool_read; 0421's test passes unchanged, and
 -- supabase/tests/0425-pool-read-bounded.sql sets the statistics that made it fail and shows this one bounded (and 0421's definition, kept there as a copy, failing).
 -- The exact guarantee of the two helpers: each runs with enable_seqscan, enable_bitmapscan, enable_sort and enable_incremental_sort off. The newest n by (created_at desc, id desc) can then be had in order without a disabled node
 -- only from the index whose key is that order under the query's equalities: acts_thread_posts (thread, character, created_at, id) where kind = 'post' for the persona's posts, acts_target (target_act_id, kind, created_at desc, id desc)
--- where kind <> 'edit' for the replies. Every other path (a table scan, a bitmap scan, acts_created, acts_character, acts_posts_by_time, each of which can serve the filter only by reading what it then discards and sorting
--- what it kept) costs a disabled node, which Postgres 16 prices at +1e10 (a path with no such node wins unless its own estimate is past that, which a limit of at most 100 rows is not), so the planner takes the ordered index on any statistics,
--- on empty ones, and on a generic plan with the limit unknown. The rows of `acts` read are then the rows returned, n at most 100 (and, for replies, the post's replies in other threads that sit before them in the index, of which
--- the game makes none: a reply is made in its post's thread). It is a guarantee over the two indexes as 0004 and 0421 define them: an instance without one has no ordered path, and the helper then reads what it must, which a build or
+-- where kind <> 'edit' for the replies. A table scan, a bitmap scan, acts_created, acts_character and acts_posts_by_time can serve the filter only by sorting what they kept, and each then costs a disabled node, which Postgres 16 prices
+-- at +1e10 (a path with no such node wins unless its own estimate is past that, which a limit of at most 100 rows is not). One other path has no disabled node: acts_patrol_posts (thread, created_at desc, id desc) where kind in
+-- ('post', 'spin') gives the thread's posts in the requested order with the character, or the target, as a filter, and reads the thread's posts until it has n. Between it and the ordered index the choice rests on the estimate,
+-- not on a disabled node: the ordered index is the cheaper by about a tenth in the spec review's measurements, and was taken under every setting tried (random_page_cost 0.01 to 100, cpu costs zeroed, empty statistics, a persona
+-- holding 99% of the table), but no setting forbids the other. Taken, it would read at most the thread's posts and spins, never the rest of `acts`. With the ordered index, the rows of `acts` read are the rows returned, n at most 100
+-- (and, for replies, the post's replies in other threads that sit before them in the index, of which the game makes none: a reply is made in its post's thread). It is a guarantee over the two indexes as 0004 and 0421 define them: an instance without one has no ordered path, and the helper then reads what it must, which a build or
 -- drift check of the indexes would show and is not part of this file.
 -- Ways out: no state is added. Masks: the same Acts and characters are read through the same views as before; nothing here reads an owner, a class or who reacted.
 

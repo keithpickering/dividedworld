@@ -214,7 +214,9 @@ select pg_temp.measure('true statistics', 1500);
 
 -- ---- 4. the two ordered helpers, and pool_read over them, on any plan ----
 -- pool_own_post_ids and pool_reply_ids are one ordered, limited read each, and a cost estimate is again all that kept them short: where the persona dominates `acts` (30,000 posts in another thread) and has 60 old posts among 4,600 in this
--- one, true statistics price acts_created backward (a filter on thread, kind and character, an incremental sort) below the persona's own index, and that plan reads rows of the table until it has found 40 (37,600 removed by the filter).
+-- one, a planner that prices a random read dear (random_page_cost 100 below) takes 0421's helpers through the whole table in a sort and reads 40,600 rows of `acts` for 40 ids; with 0421's helpers, that is the state that fails here.
+-- The other states pass for 0421's helpers on this fixture too; they are kept so that the fix is shown bounded under each, not because each catches 0421's. (A backward scan of acts_created or acts_character with a filter was
+-- seen once, with rows in random order and the default sample, and is not reproduced here.)
 -- The reply side is a post with 400 replies and 300 cards played on it (the 4,000-post thread's). Each helper, and pool_read over them, reads about as many rows of `acts` as it returns, in each state.
 -- (the helpers are called through `execute`, so that each state is planned afresh: a plpgsql expression keeps the plan of a SQL function it called earlier in the transaction, and the first state's plan would answer for all of them.
 -- track_functions is on while counting, as in measure: the table's counts of a statement run inside a function are not seen from the caller without it)
