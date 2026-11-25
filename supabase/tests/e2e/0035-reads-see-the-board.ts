@@ -31,7 +31,8 @@ test('a persona in session reads a spun thread\'s origin line, the origin post w
   sql(`update settings set value = value || '{"weekly": 1, "threadsWeekly": 0}'::jsonb where key = 'pool'`);
   sql(`update characters set debuted_at = coalesce(debuted_at, now() - interval '30 days') where staff = '${QC.key}'`);
   if (sql(`select office from staff_office_now where staff = '${QC.key}'`) !== 'mod') sql(`insert into staff_offices (staff, office, cause) values ('${QC.key}', 'mod', 'seed')`);
-  const today = sql(`select ((now() + interval '5 minutes') at time zone 'UTC')::date::text`);
+  // A slot of its own, two minutes after 0034's: a round's claim is by slot and holds for ten minutes, so the same slot would be refused as busy.
+  const today = sql(`select ((now() + interval '7 minutes') at time zone 'UTC')::date::text`);
   sql(`select write_sessions('${today}'::date, '[{"staff": "${QC.key}", "start": 0, "end": 1440}]')`);
 
   const tag = Date.now().toString(36);
@@ -77,7 +78,7 @@ test('a persona in session reads a spun thread\'s origin line, the origin post w
   const env = (name: string) => ({ ANTHROPIC_API_KEY: 'test-key', SYSTEM_COMPLETIONS_URL: 'https://completions.test' } as Record<string, string>)[name];
   const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (t: string) => t.length }, fetch: fake });
 
-  const slot = new Date(Math.floor(Date.now() / 60_000) * 60_000 + 5 * 60_000).toISOString();
+  const slot = new Date(Math.floor(Date.now() / 60_000) * 60_000 + 7 * 60_000).toISOString();
   const out = await runChatter(db, real, instance, slot);
   assert.equal(out.status, 'ok', JSON.stringify(out));
   const mine = out.turns.find((t) => t.thread === thread);
