@@ -117,6 +117,14 @@ export const defaults: Settings = deepFreeze<Settings>({
   digestExcerpts: 8,
   /** How many conversations with waiting replies the digest shows a pool persona (the chattier staff design): six. */
   digestConversations: 6,
+  /** A starting point: the digest shows five polls a day of its window, the most voted first. */
+  digestPolls: 5,
+  /** A starting point: the digest shows five spun threads a day of its window. */
+  digestSpins: 5,
+  /** A starting point: the digest shows five plays a day of its window. */
+  digestPlays: 5,
+  /** A starting point: the digest's standouts count the week before the meeting, whatever its window. */
+  digestStandoutDays: 7,
   /** A starting point: each quoted post is cut to 280 characters. */
   digestExcerptChars: 280,
   /** A starting point: a Boss remembers its forty strongest opinions of characters; the rest fade, which keeps its memory (read at every meeting) small. */
