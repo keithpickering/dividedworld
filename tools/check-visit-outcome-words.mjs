@@ -1,9 +1,11 @@
 /**
  * Holds the glass's words for how a visit ended to the outcomes the database allows ("Two lists that must agree are one list"). The
  * list is the latest `end_visit` check in supabase/migrations; the words are engine/ui/cards/visit.ts (`tabName`, `markLabel`,
- * `noticeWords`; `markIcon` holds icons, not words, and is held to the list all the same) and engine/ui/profile/modlog.ts (`endedModWords`). It refuses:
+ * `noticeWords`; `markIcon` holds icons, not words, and is held to the list all the same) and engine/ui/profile/modlog.ts
+ * (`endedModWords`). It refuses:
  *
- *   1. an outcome the SQL allows with no words (or, for `markIcon`, no icon) in one of the four places, or words for an outcome the SQL does not allow;
+ *   1. an outcome the SQL allows with no words (or, for `markIcon`, no icon) in one of the four places, or words for an
+ *      outcome the SQL does not allow;
  *   2. words that say "admin" for an outcome some SQL writer ends with a null `by_act` and no writer names an Act for: nobody did that.
  *      (An outcome no writer ends at all may say admin; its words wait for the admin function that will write it.)
  *   3. a `noticeWords` that doubles the rule's number ("Rule 1: House Rule 1: x") for a rule that already says "Rule 1: x" or
@@ -100,7 +102,7 @@ export async function visitWordFaults({ sqlText, visitText, modlogText }) {
   };
   for (const [place, found] of Object.entries(places)) {
     if (found === null) { faults.push(`${place} is not found, so its words for a visit's outcomes cannot be read`); continue; }
-    for (const o of allowed) if (!found.has(o)) faults.push(`the outcome ${o} (end_visit allows it) has no words in ${place}`);
+    for (const o of allowed) if (!found.has(o)) faults.push(`the outcome ${o} (end_visit allows it) has no ${place === 'markIcon' ? 'icon' : 'words'} in ${place}`);
     for (const o of found.keys()) if (!allowed.includes(o)) faults.push(`${place} has words for ${o}, which end_visit does not allow`);
   }
 
