@@ -157,9 +157,9 @@
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
     "maker": "Divided World",
-    "lufs": -13.8,
+    "lufs": -13.9,
     "peak": -1.8,
-    "sha256": "b5af3f9369d45bc7a6569f092c9d9621de038d7b6aa1cff1a3e5597adf8a682c"
+    "sha256": "0b40122a475ced2a801035d8575420392379d207b6d4805f81304b2fc64768af"
   },
   {
     "file": "its-curtains-crash.mp3",
@@ -175,9 +175,9 @@
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
     "maker": "Divided World",
-    "lufs": -18.3,
-    "peak": -1.8,
-    "sha256": "c8061b1774ac31cd7887646e30f69972a02359b504b339b244b90f95a4795adf"
+    "lufs": -18.2,
+    "peak": -2.1,
+    "sha256": "528af3dff3f31ac67f0a3167bdddc3fb01759823540ae0a873f0093cf434bb13"
   },
   {
     "file": "its-curtains-tada.mp3",
