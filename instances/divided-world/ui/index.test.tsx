@@ -1515,6 +1515,8 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
     expect(status(playAs('play-2', 'play-0', 'play-6'))).toBe('Dented by a ladder, a chair and a trash can');
     expect(status(playAs('play-0', 'play-2', 'play-6', 'play-93'))).toBe('Dented by a chair, a ladder, a trash can and a fire extinguisher');
     expect(status(playAs('play-6', 'play-0', 'play-1', 'play-93', 'play-6'))).toBe('Dented by 2 trash cans, 2 chairs and a fire extinguisher');
+    expect(status(playAs('play-0', 'play-6', 'play-10'))).toBe('Dented by a chair and 2 trash cans');
+    expect(status([])).toBe('Dented by a chair');
   });
 
   test('its words read the stack and the span from its rules', () => {

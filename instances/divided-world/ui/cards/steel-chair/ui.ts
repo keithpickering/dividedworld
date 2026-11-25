@@ -6,28 +6,7 @@ import steelChairCanvas from './art.webp?url';
 import steelChairMark from './mark.svg?url';
 import steelChairArt from './art.json';
 import { setMoveWords, spanWords } from '../words.ts';
-import { objectOf, type ThrownObject } from '../../steel-chair/objects.ts';
-
-/* Each object's name in a status: singular, then plural. */
-const NAMES: Record<ThrownObject, readonly [string, string]> = {
-  chair: ['chair', 'chairs'],
-  ladder: ['ladder', 'ladders'],
-  can: ['trash can', 'trash cans'],
-  extinguisher: ['fire extinguisher', 'fire extinguishers'],
-};
-
-/* "Dented by" and the objects that dented the post, counting repeats, each kind named once in the order its first play appears. */
-function dentedBy(plays: readonly { readonly id: string }[]): string {
-  const counts = new Map<ThrownObject, number>();
-  for (const play of plays) {
-    const object = objectOf(play.id);
-    counts.set(object, (counts.get(object) ?? 0) + 1);
-  }
-  const parts = [...counts].map(([object, n]) => (n === 1 ? `a ${NAMES[object][0]}` : `${n} ${NAMES[object][1]}`));
-  if (parts.length === 0) return 'Dented by a chair';
-  const list = parts.length === 1 ? parts[0]! : `${parts.slice(0, -1).join(', ')} and ${parts[parts.length - 1]}`;
-  return `Dented by ${list}`;
-}
+import { dentedBy } from './dented.ts';
 
 /* Loaded the first time a post wears it, as every card's effect is (engine/ui/cards/Effects.tsx draws it inside a Suspense). */
 const SteelChairEffect = lazy(() => import('../../steel-chair/Effect.tsx').then((m) => ({ default: m.SteelChairEffect })));
