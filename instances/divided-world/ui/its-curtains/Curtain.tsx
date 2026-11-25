@@ -145,7 +145,8 @@ function makeSpots(root: HTMLElement, spots: readonly HTMLElement[], glints: Gli
       const p = spotPose(phase, i, box, k, reduced() ? 0 : k);
       s.style.width = `${p.w}px`; s.style.height = `${p.h}px`;
       s.style.transform = `translate(${p.x - p.w / 2}px,${p.y - p.h / 2}px)`;
-      s.style.opacity = String(p.opacity);
+      /* Brightness rides a custom property, not inline opacity: a resting spotlight is no entrance, and e2e/settled.ts reads inline opacity as one. */
+      s.style.setProperty('--dw-spot-a', String(p.opacity));
       glints.grads[i]?.setAttribute('gradientTransform', `translate(${p.x.toFixed(1)} ${p.y.toFixed(1)}) scale(${(p.w * 0.5).toFixed(1)} ${(p.h * 0.5).toFixed(1)})`);
       glints.grps[i]?.setAttribute('opacity', Math.min(1, p.opacity * 1.15).toFixed(3));
     });

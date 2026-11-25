@@ -160,7 +160,7 @@
   pointer-events: none;
   border-radius: 50%;
   background: radial-gradient(closest-side, rgb(255 244 205 / 0.95), rgb(255 238 180 / 0.45) 55%, rgb(255 230 160 / 0));
-  opacity: 0;
+  opacity: var(--dw-spot-a, 0);
   will-change: transform, opacity;
 }
 

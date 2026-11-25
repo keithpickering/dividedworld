@@ -1,5 +1,6 @@
 import { expect, test, devices, type Page } from '@playwright/test';
 import type { E2eWindow } from './glass-screens.ts';
+import { settled } from './settled.ts';
 
 /**
  * It's Curtains in a browser (docs/plans/2026-11-23-its-curtains-plan.md, Task 8). The curtain's own parts are Vitest's (instances/divided-world/ui/its-curtains/*.test.tsx);
@@ -54,8 +55,7 @@ async function openInApp(page: Page, o: Opts = {}) {
   await page.evaluate((t) => { history.pushState(null, '', `/t/${t}`); window.dispatchEvent(new PopStateEvent('popstate')); }, thread);
   await expect(o.fold ? row(page).locator('.kb-fold-bar') : curtain(page)).toBeVisible({ timeout: 20_000 });
   await page.evaluate(() => document.fonts.ready);
-  /* e2e/settled.ts is not used: the spotlights rest at an inline opacity of 0.28, which it reads as an entrance that never ends. A short wait lets the entrances go instead. */
-  await page.waitForTimeout(500);
+  await settled(page, { loops: true });
   if (!o.fold) await curtain(page).evaluate((el) => el.closest('.kb-row-cover')!.scrollIntoView({ block: 'center', behavior: 'instant' }));
 }
 

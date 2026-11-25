@@ -395,14 +395,14 @@ describe('reduced motion', () => {
     const f = frames();
     mount();
     const spot = document.querySelector<HTMLElement>('.dw-curtain-spot')!;
-    const dim = spot.style.opacity;
+    const dim = spot.style.getPropertyValue('--dw-spot-a');
     fireEvent.pointerMove(label(), { clientX: 1, clientY: 1, pointerType: 'mouse' });
     fireEvent.pointerMove(label(), { clientX: 9, clientY: 1, pointerType: 'mouse' });
     expect(hub.loop).toHaveBeenCalledTimes(1);
     expect(f.raf).not.toHaveBeenCalled();
-    expect(spot.style.opacity).not.toBe(dim);
+    expect(spot.style.getPropertyValue('--dw-spot-a')).not.toBe(dim);
     fireEvent.pointerLeave(label(), { pointerType: 'mouse' });
-    expect(spot.style.opacity).toBe(dim);
+    expect(spot.style.getPropertyValue('--dw-spot-a')).toBe(dim);
   });
 });
 

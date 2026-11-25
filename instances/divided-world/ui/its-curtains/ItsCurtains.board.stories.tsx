@@ -116,7 +116,7 @@ function LoopButton() {
   };
   return (
     <p style={{ position: 'fixed', right: 16, bottom: 16, zIndex: 80, margin: 0 }}>
-      <button type="button" onClick={press} aria-pressed={on}>{on ? 'Stop the drumroll' : 'Loop the drumroll'}</button>
+      <button type="button" className="kb-button" data-kb-size="small" onClick={press} aria-pressed={on}>{on ? 'Stop the drumroll' : 'Loop the drumroll'}</button>
     </p>
   );
 }
