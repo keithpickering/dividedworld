@@ -104,7 +104,7 @@ function fit(): void {
   if (!canvas || !g) return;
   const dpr = window.devicePixelRatio || 1;
   const w = Math.round(window.innerWidth * dpr), h = Math.round(window.innerHeight * dpr);
-  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; }
+  if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; canvas.style.width = `${window.innerWidth}px`; canvas.style.height = `${window.innerHeight}px`; }
   g.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 

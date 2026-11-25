@@ -138,7 +138,7 @@ export interface Frame { readonly offset: number; readonly transform: string }
 /**
  * The fabric's lag on top of the half's own slide: transform-only keyframes, a pure function of (pleat index, pleat count, half size, duration, easing, lag,
  * direction). The pleats bunch toward the leading (outer) edge while the half moves, and the hem trails the top as a skewX about each strip's top, driven by an
- * underdamped spring on the half's speed, so it sways and settles. `i` counts from the pleat nearest the middle (0) to the outermost; `dir` is -1 for the left
+ * underdamped spring on the half's speed, so it sways and settles. `i` counts from the outermost pleat of the half (0) to the one nearest the middle (n - 1); `dir` is -1 for the left
  * half, 1 for the right. No lag is no keyframes.
  */
 export function fabricFrames(i: number, n: number, halfW: number, H: number, durMs: number, lag: number, dir: -1 | 1, ease: string): Frame[] {

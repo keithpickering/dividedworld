@@ -1,0 +1,237 @@
+/*
+ * It's Curtains (Curtain.tsx, Cover.tsx, Effect.tsx; docs/plans/2026-11-23-its-curtains-design.md; the plan's Task 6). The curtain is a game piece in its fabric, so its
+ * look is the cloth's and not the theme's: the fabric's three shades arrive as `--dw-dark`, `--dw-mid` and `--dw-light` on the curtain's face (the instance's FABRICS), and
+ * the numbers of its motion as `--dw-dur`, `--dw-ease`, `--dw-swag-h`, `--dw-tex` and `--dw-half` (tuning.ts). Nothing here blends with what is behind it: the nap of the velvet
+ * and the spotlights are plain alpha (tools/check-effect-blend.mjs).
+ *
+ * Two halves of pleats (each half `--dw-half` of the box wide, the right one over the left with a soft shadow), the swags along the top edge, two spotlights, and a label
+ * for a reader who does not see the cloth. The curtain fills its parent, which is positioned: the row cover the engine draws over a post's row, or the effect's overlay.
+ */
+.dw-curtain {
+  position: absolute;
+  inset: 0;
+}
+
+.dw-curtain-face {
+  position: absolute;
+  inset: 0;
+  display: block;
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  color: #fff;
+  font: inherit;
+  text-align: left;
+}
+
+/* The ORIGIN box and a post's body lift `data-kb-over-ink` things into a chip (`width: fit-content`, `position: relative`): the curtain's button is the whole box. */
+.dw-curtain .dw-curtain-button[data-kb-over-ink] {
+  position: absolute;
+  inset: 0;
+  z-index: auto;
+  width: auto;
+  max-width: none;
+  isolation: isolate;
+  cursor: pointer;
+}
+
+.dw-curtain-button[data-dw-opening] {
+  pointer-events: none;
+}
+
+.dw-curtain-art {
+  position: absolute;
+  inset: 0;
+  display: block;
+}
+
+/* The halves overlap by 2% at the middle, the right one lying over the left, and its inner pleat casts a soft shadow leftwards: a fold, not a gap. Each pleat is its own
+   strip so the fabric's lag can move it on its own (transform only). */
+.dw-curtain-half {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  width: var(--dw-half, 51%);
+  transition: transform var(--dw-dur, 500ms) var(--dw-ease, ease-in-out);
+  will-change: transform;
+}
+
+.dw-curtain-left {
+  left: 0;
+  z-index: 1;
+}
+
+.dw-curtain-right {
+  right: 0;
+  z-index: 2;
+}
+
+.dw-curtain-pleat {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 0;
+  transform-origin: 50% 0;
+  background: linear-gradient(90deg, var(--dw-dark) 0%, var(--dw-dark) 5%, var(--dw-mid) 24%, var(--dw-light) 50%, var(--dw-mid) 75%, var(--dw-dark) 95%, var(--dw-dark) 100%);
+  box-shadow: inset -1px 0 0 rgb(0 0 0 / 0.14);
+}
+
+/* The velvet's nap: one generated tile, a lighter and a darker streak layer, laid over each pleat. */
+.dw-curtain-pleat::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: var(--dw-noise);
+  background-size: 96px 192px;
+  opacity: var(--dw-tex, 0.35);
+}
+
+.dw-curtain-right .dw-curtain-pleat:first-child {
+  box-shadow: -4px 0 8px -2px rgb(0 0 0 / 0.42), inset -1px 0 0 rgb(0 0 0 / 0.14);
+}
+
+/* The light falls from above: darker at the top and at the hem. */
+.dw-curtain-half::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 30;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgb(0 0 0 / 0.42), rgb(0 0 0 / 0) 90px, rgb(0 0 0 / 0) 70%, rgb(0 0 0 / 0.22));
+}
+
+.dw-curtain-swags {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  z-index: 3;
+  height: var(--dw-swag-h, 64px);
+  transition: transform var(--dw-dur, 500ms) var(--dw-ease, ease-in-out);
+  will-change: transform;
+}
+
+.dw-curtain-swags svg {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: block;
+  overflow: visible;
+}
+
+.dw-curtain-swags-main {
+  filter: drop-shadow(0 3px 3px rgb(0 0 0 / 0.45));
+}
+
+.dw-curtain-swags-glint {
+  pointer-events: none;
+}
+
+.dw-curtain-button[data-dw-opening] .dw-curtain-left {
+  transform: translateX(calc(-102% - var(--dw-lagx, 0px)));
+}
+
+.dw-curtain-button[data-dw-opening] .dw-curtain-right {
+  transform: translateX(calc(102% + var(--dw-lagx, 0px)));
+}
+
+.dw-curtain-button[data-dw-opening] .dw-curtain-swags {
+  transform: translateY(-130%);
+}
+
+/* Two soft ellipses of light, over the swags and the halves. Their place, size and brightness are set a frame at a time (Curtain.tsx). */
+.dw-curtain-spot {
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: 4;
+  pointer-events: none;
+  border-radius: 50%;
+  background: radial-gradient(closest-side, rgb(255 244 205 / 0.95), rgb(255 238 180 / 0.45) 55%, rgb(255 230 160 / 0));
+  opacity: 0;
+  will-change: transform, opacity;
+}
+
+/* The label is the curtain's name for a reader who does not see the cloth. */
+.dw-curtain-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+/* The focus ring is inside the box, over the cloth: a blue band and a white one, readable on every fabric from Gold to Black. */
+.dw-curtain-button::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 40;
+  pointer-events: none;
+}
+
+.dw-curtain-button:focus-visible {
+  outline: none;
+}
+
+.dw-curtain-button:focus-visible::after {
+  box-shadow: inset 0 0 0 4px #0b57d0, inset 0 0 0 8px #fff;
+}
+
+/* The confetti's one canvas (confetti.ts): the window's size, over the page, pressing nothing. */
+.dw-confetti {
+  position: fixed;
+  top: 0;
+  left: 0;
+  z-index: 70;
+  pointer-events: none;
+}
+
+/* The effect's own cover where a post has no row (Effect.tsx): the host holds the words, the overlay is placed over the content area, border to border. */
+.dw-curtain-host {
+  position: relative;
+}
+
+.dw-curtain-overlay {
+  position: absolute;
+  z-index: 5;
+}
+
+/* Forced colors: a solid CanvasText panel with "Open the curtain" in Canvas, so the post stays hidden and the press is the same. */
+@media (forced-colors: active) {
+  .dw-curtain-face {
+    background: CanvasText;
+    color: Canvas;
+  }
+
+  .dw-curtain-under,
+  .dw-curtain-art,
+  .dw-curtain-spot {
+    display: none;
+  }
+
+  .dw-curtain-label {
+    position: static;
+    display: grid;
+    place-items: center;
+    width: 100%;
+    height: 100%;
+    overflow: visible;
+    clip-path: none;
+    font-weight: bold;
+    white-space: normal;
+    text-align: center;
+  }
+
+  .dw-curtain-button:focus-visible::after {
+    box-shadow: none;
+    outline: 4px solid Highlight;
+    outline-offset: -8px;
+  }
+}
