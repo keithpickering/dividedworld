@@ -75,6 +75,13 @@ const topAtMiddle = async (page: Page) => {
   }, [r.x + r.width / 2, r.y + r.height / 2] as const);
 };
 
+/** Resolves once scrollY has held still over several frames: a wait on a condition, where a fixed sleep guessed. */
+const scrollSettled = (page: Page) => page.evaluate(() => new Promise<void>((resolve) => {
+  let last = window.scrollY; let still = 0;
+  const tick = () => { if (window.scrollY === last) still++; else { still = 0; last = window.scrollY; } if (still >= 4) resolve(); else requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+}));
+
 const opened = async (page: Page) => {
   await expect(page.locator('.kb-row-cover')).toHaveCount(0, { timeout: 5000 });
   await expect(words(page).first()).toBeVisible();
@@ -121,7 +128,7 @@ test('with a mouse: the row is hidden under the curtain and Tab never reaches it
   await opened(page);
   await expect(row(page).locator('.kb-postbit').first()).toContainText(NAME);
   expect(await row(page).locator('.kb-act-grid').evaluate((el) => [...el.children].some((k) => k.hasAttribute('inert'))), 'nothing of the post is inert once open').toBe(false);
-  await expect(row(page).getByRole('button', { name: /^Quote$|^Reply$|Quote|React/u }).first()).toBeVisible();
+  await expect(row(page).getByRole('button', { name: 'Quote', exact: true }).first()).toBeVisible();
   const mid = await words(page).first().boundingBox();
   expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.kb-act-main') !== null, [mid!.x + mid!.width / 2, mid!.y + 8] as const), 'the words are what a press reaches').toBe(true);
   /* Encore in the Lens shuts it again. */
@@ -165,9 +172,11 @@ test('the post shows through the gap while the halves part', async ({ page }) =>
   /* Hold the open at 250 ms of its 500: every running animation and transition of the cover is paused there. */
   await page.waitForFunction(() => document.querySelector('.kb-row-cover .dw-curtain-button[data-dw-opening]') !== null);
   await page.evaluate(() => {
-    for (const a of document.getAnimations()) if (a.effect?.target && (a.effect.target as Element).closest('.kb-row-cover')) { a.pause(); a.currentTime = 250; }
+    for (const a of document.getAnimations()) {
+      const target = a.effect instanceof KeyframeEffect ? a.effect.target : null;
+      if (target?.closest('.kb-row-cover')) { a.pause(); a.currentTime = 250; }
+    }
   });
-  await page.waitForTimeout(100);
   const at = await page.evaluate(([x, y]) => {
     const g = document.querySelector('.kb-row-cover')!;
     const halves = [...g.querySelectorAll('.dw-curtain-button [data-dw-half]')].map((h) => h.getBoundingClientRect());
@@ -240,14 +249,18 @@ test('Below the Fold on the same post: the bar, then the curtain, then the post'
   await toggle.click();
   await expect(toggle).toHaveText(/Hide post/u);
   await expect(curtain(page)).toBeVisible();
-  const b = (await bar.boundingBox())!;
-  const c = (await curtain(page).boundingBox())!;
-  expect(c.y, 'the curtain is under the bar').toBeGreaterThanOrEqual(b.y + b.height - 1);
+  const under = await page.evaluate(() => document.querySelector('.kb-row-cover .dw-curtain-button')!.getBoundingClientRect().top - document.querySelector('.kb-fold-bar')!.getBoundingClientRect().bottom);
+  expect(under, 'the curtain is under the bar').toBeGreaterThanOrEqual(-1);
   expect(await topAtMiddle(page)).toMatchObject({ curtain: true, inPost: false });
   await curtain(page).click();
   await opened(page);
-  const after = (await words(page).first().boundingBox())!;
-  expect(after.y, 'the words are under the bar').toBeGreaterThan(b.y + b.height - 1);
+  /* Both boxes read in one evaluate, so a scroll between the reads cannot skew the comparison. */
+  const gap = await page.evaluate(() => {
+    const barBox = document.querySelector('.kb-fold-bar')!.getBoundingClientRect();
+    const wordsBox = [...document.querySelectorAll('.kb-act-main')].find((e) => e.textContent?.includes('THE-WORDS-UNDER-THE-CURTAIN'))!.getBoundingClientRect();
+    return wordsBox.top - barBox.bottom;
+  });
+  expect(gap, 'the words are under the bar').toBeGreaterThan(-1);
 });
 
 test.describe('on a phone', () => {
@@ -284,7 +297,7 @@ test.describe('on a phone', () => {
     await openInApp(page, { padding: 6, size: { width: 412, height: 915 } });
     /* Scrolled away from the curtain: no drumroll yet. */
     await scrollRowTo(page, 'above');
-    await page.waitForTimeout(300);
+    await scrollSettled(page);
     await expect(page.locator('.kb-captions-text').filter({ hasText: /drumroll/iu })).toHaveCount(0);
     /* Through the line: the drumroll's caption. */
     await scrollRowTo(page, 'across');
@@ -294,14 +307,14 @@ test.describe('on a phone', () => {
     const c = (await curtain(page).boundingBox())!;
     const y0 = await page.evaluate(() => window.scrollY);
     await swipe(page, c.x + c.width / 2, Math.min(c.y + c.height / 2, 700), -240);
-    await page.waitForTimeout(400);
+    await scrollSettled(page);
     const y1 = await page.evaluate(() => window.scrollY);
     expect(y1, 'the swipe scrolled the page').toBeGreaterThan(y0 + 50);
     await expect(page.locator('.kb-row-cover')).toHaveCount(1);
     expect(await confettiCanvas(page), 'nothing was thrown').toBe(0);
     /* A tap opens it. */
     await scrollRowTo(page, 'across');
-    await page.waitForTimeout(300);
+    await scrollSettled(page);
     const t = (await curtain(page).boundingBox())!;
     await page.touchscreen.tap(t.x + t.width / 2, Math.min(t.y + t.height / 2, 800));
     await opened(page);
