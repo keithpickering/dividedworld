@@ -13,7 +13,7 @@ import { useCovered } from '../../../../engine/ui/thread/cover.tsx';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { __stopConfetti } from './confetti.ts';
 import { __resetPointer } from './Curtain.tsx';
-import { ItsCurtainsEffect } from './Effect.tsx';
+import { ItsCurtainsEffect, stateOf } from './Effect.tsx';
 
 vi.mock('../../../../engine/ui/audio/sound.ts', async (original) => {
   const actual = await original<typeof import('../../../../engine/ui/audio/sound.ts')>();
@@ -127,11 +127,11 @@ describe('without a cover (the ORIGIN box, a moment, History)', () => {
 
   test('a stack is opened one at a time, outermost first, and the Lens counts them', () => {
     const { show } = mount({ plays: [play('a', 1, 'gold'), play('b', 2, 'royal-blue')] });
-    expect(last(show).state).toBe('1 of 2 shut for you');
+    expect(last(show).state).toBe('2 of 2 shut for you');
     expect(screen.getByRole('button', { name: 'Open the curtain, 1 of 2' })).toHaveAttribute('data-dw-fabric', 'royal-blue');
     fireEvent.click(screen.getByRole('button'), { detail: 1 });
     expect(screen.getByRole('button', { name: 'Open the curtain, 2 of 2' })).toHaveAttribute('data-dw-fabric', 'gold');
-    expect(last(show).state).toBe('2 of 2 shut for you');
+    expect(last(show).state).toBe('1 of 2 shut for you');
     expect(words()).toHaveAttribute('data-covered', 'true');
     fireEvent.click(screen.getByRole('button'), { detail: 1 });
     expect(last(show).state).toBe('Open for you');
@@ -155,5 +155,14 @@ describe('without a cover (the ORIGIN box, a moment, History)', () => {
     const { met } = mount();
     fireEvent.click(screen.getByRole('button'), { detail: 1 });
     expect(met).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('the Lens\'s state counts what is shut, not where the reader stands', () => {
+  test('3 shut of 3 says 3, and 1 shut of 3 says 1', () => {
+    expect(stateOf(3, 3)).toBe('3 of 3 shut for you');
+    expect(stateOf(1, 3)).toBe('1 of 3 shut for you');
+    expect(stateOf(0, 3)).toBe('Open for you');
+    expect(stateOf(1, 1)).toBe('Shut for you');
   });
 });

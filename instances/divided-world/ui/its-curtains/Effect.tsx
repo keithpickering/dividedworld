@@ -22,7 +22,7 @@ import { fabricOf } from './fabric.ts';
 export const LENS_ENDS = 'Ends when you press the curtain.';
 
 /** The Lens's state, a status of at most six words: which of a stack is shut, or that it is open. */
-export const stateOf = (shut: number, total: number): string => (shut === 0 ? 'Open for you' : total === 1 ? 'Shut for you' : `${total - shut + 1} of ${total} shut for you`);
+export const stateOf = (shut: number, total: number): string => (shut === 0 ? 'Open for you' : total === 1 ? 'Shut for you' : `${shut} of ${total} shut for you`);
 
 export function ItsCurtainsEffect({ plays, cover, show, met, moment, children }: EffectProps) {
   /* Latest (outermost) first. */
