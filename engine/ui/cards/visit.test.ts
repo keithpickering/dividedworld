@@ -13,7 +13,7 @@ const charge = (over: Partial<VisitCharge> = {}): VisitCharge => ({ rule: 'Rule 
 describe('a visit ended each way, in words', () => {
   const OUTCOMES: readonly VisitOutcome[] = ['filed', 'intercepted', 'trapped', 'reversed', 'dropped'];
   test('the mark draws an icon for how it ended', () => {
-    assert.deepEqual(['open', ...OUTCOMES].map(markIcon), ['watch', 'bang', 'slash', 'teeth', 'stop', 'dashed']);
+    assert.deepEqual((['open', ...OUTCOMES] as const).map(markIcon), ['watch', 'bang', 'slash', 'teeth', 'stop', 'dashed']);
   });
   test('the Lens tab says how it ended', () => {
     assert.deepEqual(OUTCOMES.map(tabName), ['Filed', 'Talked down', 'Trapped', 'Ended', 'Dropped']);
