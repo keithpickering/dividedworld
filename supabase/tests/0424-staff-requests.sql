@@ -24,6 +24,10 @@
 -- 13. The Boss's turn holds kinds back by the season it is now, not the one its latest meeting was held in.
 -- 14. write_staff_turn writes the turn's ruling in its own transaction: post and request together; a refused ruling leaves the post and returns the refusal; a replay writes neither a second post nor a second request; a turn
 --     rolled back after the post leaves neither; a turn with no ruling is as it was.
+--
+-- Section 4 (Task 7: the moderation log).
+-- 15. moves_log lists a request for the staff member that ruled on it and for no other: its thread, its title, the request post's number, the first ruling, the office that ruled and the move's kind, and how a request
+--     passed on ended (waiting with its lapse date, ruled by a meeting, lapsed); a Mod's confer and the Boss's are told apart; the row names no asker and nothing private.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -1231,3 +1235,69 @@ begin
   drop trigger zz_refuse_reply on acts;
 end $$;
 
+-- ---- 15. The moderation log lists requests ----
+do $$
+declare
+  offtopic uuid := pg_temp.board('mm-offtopic');
+  asker uuid := pg_temp.poster();
+  sg jsonb; sr jsonb; sc jsonb; sb jsonb; sl jsonb;
+  qid bigint;
+  r record;
+  n_before bigint := (select count(*) from moves_log where kind = 'request');
+begin
+  -- Five requests: the Boss's granted one, a Mod's refusal, its confer (ruled by a meeting later), a lapsed confer, and the Boss's confer (waiting).
+  perform pg_temp.bank(5);
+  sg := pg_temp.scene('mm-boss', 'mm-games', 'log granted');
+  perform rule_request('mm-boss', (sg ->> 'request')::uuid, (sg ->> 'turn')::uuid, 'fulfill', pg_temp.mt((sg ->> 'thread')::uuid, offtopic), 0, 20);
+  sr := pg_temp.scene('mm-m1', 'mm-games', 'log refused');
+  perform rule_request('mm-m1', (sr ->> 'request')::uuid, (sr ->> 'turn')::uuid, 'reject', null);
+  sc := pg_temp.scene('mm-m1', 'mm-games', 'log ruled');
+  perform rule_request('mm-m1', (sc ->> 'request')::uuid, (sc ->> 'turn')::uuid, 'confer', null);
+  sl := pg_temp.scene('mm-m1', 'mm-games', 'log lapsed');
+  perform rule_request('mm-m1', (sl ->> 'request')::uuid, (sl ->> 'turn')::uuid, 'confer', null);
+  sb := pg_temp.scene('mm-boss', 'mm-games', 'log boss');
+  perform rule_request('mm-boss', (sb ->> 'request')::uuid, (sb ->> 'turn')::uuid, 'confer', null);
+
+  if (select count(*) from moves_log where kind = 'request') is distinct from n_before + 5 then raise exception 'moves_log lists % new requests, not 5', (select count(*) from moves_log where kind = 'request') - n_before; end if;
+  -- Only for the staff member that ruled.
+  if exists (select 1 from moves_log where kind = 'request' and staff = 'mm-m2' and thread in ((sg ->> 'thread')::uuid, (sr ->> 'thread')::uuid, (sc ->> 'thread')::uuid, (sl ->> 'thread')::uuid)) then raise exception 'a request is listed for a Mod that did not rule on it'; end if;
+  if (select count(*) from moves_log where kind = 'request' and staff = 'mm-m1' and thread in ((sr ->> 'thread')::uuid, (sc ->> 'thread')::uuid, (sl ->> 'thread')::uuid)) is distinct from 3
+     or (select count(*) from moves_log where kind = 'request' and staff = 'mm-boss' and thread in ((sg ->> 'thread')::uuid, (sb ->> 'thread')::uuid)) is distinct from 2 then
+    raise exception 'the requests are not listed one for each, for their own staff member';
+  end if;
+
+  -- A granted one (the Boss's, whose seat it held): the request post's number, the thread's title, the first ruling, the office, the move's kind; nothing ended it.
+  select * into r from moves_log where id = (sg ->> 'request')::uuid and staff = 'mm-boss';
+  if r.kind is distinct from 'request' or r.thread is distinct from (sg ->> 'thread')::uuid or r.at is null or r.demand is not null or r.expires_at is not null or r.ended_why is not null or r.kept_by is not null
+     or r.params -> 'post' is distinct from to_jsonb((select seq from acts where id = (sg ->> 'request')::uuid))
+     or r.params ->> 'title' is distinct from 'Req log granted' or r.params ->> 'thread' is distinct from sg ->> 'thread'
+     or r.params ->> 'ruling' is distinct from 'fulfill' or r.params ->> 'by' is distinct from 'boss' or r.params ->> 'move_kind' is distinct from 'moveThread' or r.params ->> 'ruled' is distinct from 'fulfill' or r.params ->> 'lapses_at' is not null then
+    raise exception 'a granted request is wrong in the log: %', to_jsonb(r);
+  end if;
+  -- The row carries no private fact: its params are exactly these keys, and nothing in the row names the asker or its owner.
+  if (select array_agg(k order by k) from jsonb_object_keys(r.params) k) is distinct from array['by', 'lapses_at', 'move_kind', 'post', 'ruled', 'ruling', 'thread', 'title'] then raise exception 'a request row carries other keys: %', r.params; end if;
+  if to_jsonb(r)::text like '%' || asker::text || '%' or to_jsonb(r)::text like '%' || (select owner::text from characters where id = asker) || '%' then raise exception 'a request row names its asker or the asker''s account: %', to_jsonb(r); end if;
+  -- A refusal: no move, no end. A confer by a Mod passes it to the Boss; the Boss's takes it to the meeting.
+  select * into r from moves_log where id = (sr ->> 'request')::uuid and staff = 'mm-m1';
+  if r.params ->> 'ruling' is distinct from 'reject' or r.params ->> 'by' is distinct from 'mod' or r.params ->> 'move_kind' is not null or r.ended_why is not null or r.params ->> 'ruled' is distinct from 'reject' then raise exception 'a refused request is wrong in the log: %', to_jsonb(r); end if;
+  select * into r from moves_log where id = (sc ->> 'request')::uuid and staff = 'mm-m1';
+  if r.params ->> 'ruling' is distinct from 'confer' or r.params ->> 'by' is distinct from 'mod' or r.ended_why is not null or r.ended_at is not null or r.params ->> 'ruled' is not null
+     or (r.params ->> 'lapses_at')::timestamptz is distinct from (select v.lapses_at from staff_requests_now v where v.request_act = (sc ->> 'request')::uuid) then
+    raise exception 'a waiting confer is wrong in the log (waiting, with its lapse date): %', to_jsonb(r);
+  end if;
+  select * into r from moves_log where id = (sb ->> 'request')::uuid and staff = 'mm-boss';
+  if r.params ->> 'ruling' is distinct from 'confer' or r.params ->> 'by' is distinct from 'boss' or r.ended_why is not null then raise exception 'the Boss''s confer is wrong in the log: %', to_jsonb(r); end if;
+
+  -- A meeting's ruling and a lapse each end a confer, with a new row beside it.
+  qid := (select id from staff_requests where request_act = (sc ->> 'request')::uuid and staff = 'mm-m1');
+  insert into staff_request_rulings (request, ruling, move) values (qid, 'fulfill', (select max(id) from queued_moves));
+  select * into r from moves_log where id = (sc ->> 'request')::uuid and staff = 'mm-m1';
+  if r.ended_why is distinct from 'fulfill' or r.ended_at is null or r.params ->> 'ruling' is distinct from 'confer' or r.params ->> 'ruled' is distinct from 'fulfill' or r.params ->> 'lapses_at' is not null then raise exception 'a confer the meeting granted is wrong in the log: %', to_jsonb(r); end if;
+  qid := (select id from staff_requests where request_act = (sl ->> 'request')::uuid and staff = 'mm-m1');
+  insert into staff_request_rulings (request, ruling) values (qid, 'lapsed');
+  select * into r from moves_log where id = (sl ->> 'request')::uuid and staff = 'mm-m1';
+  if r.ended_why is distinct from 'lapsed' or r.params ->> 'ruled' is distinct from 'lapsed' or r.params ->> 'lapses_at' is not null then raise exception 'a lapsed confer is wrong in the log: %', to_jsonb(r); end if;
+
+  -- The clients read it, as every row of the log.
+  if not has_table_privilege('anon', 'moves_log', 'select') or not has_table_privilege('authenticated', 'moves_log', 'select') then raise exception 'moves_log is not readable by the clients'; end if;
+end $$;

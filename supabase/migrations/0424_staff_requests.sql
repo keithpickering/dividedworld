@@ -2305,3 +2305,69 @@ end $$;
 revoke execute on function system_digest(timestamptz, timestamptz) from public, anon, authenticated;
 grant execute on function system_digest(timestamptz, timestamptz) to service_role;
 
+
+-- ------------------------------------------------------------------------------------------------ 4. the moderation log ----
+
+-- Task 7 (design section 5). moves_log (0401_report_no_visit.sql) lists a staff member's requests too: a row of kind `request` for each request it ruled on (staff_requests_now), with the facts the screen words (the
+-- glass's own, never the persona's or the Boss's text). Columns, rows and grants as 0401 left them; the one new branch is below. Masks: the row is the request post's public number, its thread and title (public), the
+-- ruling, the office and the move's kind; never `asker`, which is a post's real author even where it is veiled, and nothing that reads who owns a character. At a busy instance's scale: one row per request the
+-- staff member ruled on, read for the staff key the screen asks (a page of 20 by keyset), like every other branch.
+create or replace view moves_log as
+  select a.id, c.staff, a.payload ->> 'kind' as kind, a.payload -> 'params' as params, a.payload -> 'demand' as demand,
+         move_expires_at(a.id) as expires_at, a.thread, a.created_at as at,
+         e.payload ->> 'why' as ended_why, e.payload ->> 'by' as ended_by, e.created_at as ended_at,
+         k.staff as kept_by, k.at as kept_at,
+         bq.bundle, bq.role
+  from characters c
+  cross join lateral (select x.* from acts x where x.character = c.id and x.kind = 'move') a
+  left join lateral (select x.* from acts x where x.kind = 'move_end' and x.target_act_id = a.id order by x.created_at desc, x.seq desc nulls last, x.id desc limit 1) e on true
+  left join lateral (
+    select kc.staff, ka.created_at as at from acts ka join characters kc on kc.id = ka.character
+    where ka.kind = 'move_keep' and ka.target_act_id = a.id order by ka.created_at desc, ka.id desc limit 1
+  ) k on true
+  left join queued_moves bq on bq.landed_act = a.id
+  where c.staff is not null
+  union all
+  select v.id, c.staff, 'visit'::text, jsonb_build_object('post', p.seq, 'rule', v.payload #>> '{charges,0,rule}', 'rule_number', v.payload #> '{charges,0,rule_number}', 'band', v.payload #>> '{charges,0,band}', 'cause', v.payload #>> '{charges,0,cause}'),
+         null::jsonb, (v.payload ->> 'ends_at')::timestamptz, v.thread, v.created_at,
+         case when e.payload ->> 'outcome' = 'reversed' and e.payload ->> 'by_act' is null then 'dropped' else e.payload ->> 'outcome' end, null::text, e.created_at, null::text, null::timestamptz, null::uuid, null::text
+  from characters c
+  join acts v on v.character = c.id and v.kind = 'visit'
+  join acts p on p.id = v.target_act_id
+  left join acts e on e.kind = 'visit_end' and e.target_act_id = v.id
+  where c.staff is not null
+  union all
+  select d.id, c.staff, 'report'::text, jsonb_build_object('post', p.seq, 'verdict', d.payload ->> 'verdict', 'visited', d.payload ? 'visit_act'),
+         null::jsonb, null::timestamptz, d.thread, d.created_at,
+         d.payload ->> 'verdict', null::text, d.created_at, null::text, null::timestamptz, null::uuid, null::text
+  from characters c
+  join acts d on d.character = c.id and d.kind = 'report_verdict'
+  join acts r on r.id = d.target_act_id
+  join acts p on p.id = r.target_act_id
+  where c.staff is not null
+  union all
+  select u.id, c.staff, 'appeal'::text,
+         jsonb_build_object('post', (select x.seq from acts x where x.id = case when pu.kind = 'infraction' then (pu.payload ->> 'about_act')::uuid else (select (i.payload ->> 'about_act')::uuid from acts i where i.id = (pu.payload ->> 'infraction_act')::uuid) end),
+                            'punishment', pu.kind, 'verdict', u.payload ->> 'verdict', 'points_delta', u.payload -> 'points_delta')
+           || case when pu.kind = 'move' then jsonb_build_object('group', pu.payload #>> '{params,group}', 'until', u.payload ->> 'until') else '{}'::jsonb end,
+         null::jsonb, null::timestamptz, u.thread, u.created_at,
+         u.payload ->> 'verdict', null::text, u.created_at, null::text, null::timestamptz, null::uuid, null::text
+  from characters c
+  join acts u on u.character = c.id and u.kind = 'appeal_ruling'
+  join acts ap on ap.id = u.target_act_id
+  join acts pu on pu.id = ap.target_act_id
+  where c.staff is not null
+  union all
+  -- A request the staff member ruled on (0424): what the code did with it, in facts. `post` is the request post's number in its thread, `title` the thread's, `ruling` the first ruling (fulfill, reject or confer), `by` the
+  -- office that ruled it then ('boss' where the persona held the open season's seat at that moment, else 'mod'), `move_kind` the kind of the move a grant made, `ruled` the ruling now (null while a confer waits)
+  -- and `lapses_at` when a waiting confer lapses. `ended_why` is the later ruling of a confer (fulfill, reject or lapsed), null while it waits and on a request ruled at once. Nothing a persona or the Boss wrote is here, and no asker.
+  select q.request_act, q.staff, 'request'::text,
+         jsonb_build_object('thread', q.thread, 'title', t.title, 'post', p.seq, 'ruling', q.first_ruling,
+                            'by', case when exists (select 1 from seasons s where s.boss = q.staff and s.starts_at <= q.at and (s.ends_at is null or s.ends_at > q.at)) then 'boss' else 'mod' end,
+                            'move_kind', (select m.kind from queued_moves m where m.id = q.move),
+                            'ruled', case when q.waiting then null else q.ruling end, 'lapses_at', q.lapses_at),
+         null::jsonb, null::timestamptz, q.thread, q.at,
+         case when q.first_ruling = 'confer' and not q.waiting then q.ruling end, null::text, case when q.first_ruling = 'confer' and not q.waiting then q.ruled_at end, null::text, null::timestamptz, null::uuid, null::text
+  from staff_requests_now q
+  join threads t on t.id = q.thread
+  join acts p on p.id = q.request_act;
