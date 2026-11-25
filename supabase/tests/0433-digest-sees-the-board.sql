@@ -4,6 +4,8 @@
 -- 3. spins, plays (no unsprung face-down set, one once it springs) and standouts (a secret ballot and an unsprung set never count, a staff character never stands out, only a character's public Acts).
 -- 4. the window's days: a two-day window doubles the top posts' cap and leaves moves', quotes' and the Boss's reactions' caps alone; each list is held to its ceiling.
 -- 5. the security: the helpers' owners, grants and search paths.
+-- 6. what the spec review found: a hidden post's poll and play never use up a list's cap; the plays are those played in the window whatever has become of them since; a set's origin is shown once the set has sprung; the standouts' own reading of
+--    `acts` agrees with acts_public's.
 -- The rows are this file's own (dx...), in two years no other file uses.
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -85,6 +87,28 @@ end $$;
 -- the standouts of one category as 'name:count' in order
 create function pg_temp.top(d jsonb, cat text) returns text language sql as $$
   select coalesce(string_agg((e ->> 'name') || ':' || (e ->> 'count'), ',' order by o), '') from jsonb_array_elements(d -> 'standouts' -> cat) with ordinality x(e, o)
+$$;
+
+-- The standouts as acts_public gives the Acts (the masks are the view's, not re-implemented): 'name:count' of the top three of one category over [from_at, to_at), most first then by name. digest_standouts reads `acts` itself for cost and must agree.
+create function pg_temp.plain_top(cat text, from_at timestamptz, to_at timestamptz) returns text language sql as $$
+  with pl as (
+    select a.id, a."character" as ch, a.target_act_id as tgt from acts_public a
+    where a.kind in ('card', 'spring') and not (a.payload ? 'caught') and a.untaken is not true and a.created_at >= from_at and a.created_at < to_at and a."character" is not null
+  ), counts as (
+    select 'cards'::text as category, p.ch, count(*) as n from pl p group by p.ch
+    union all
+    select 'received', x."character", count(*) from pl p join acts_public x on x.id = p.tgt and x.kind in ('post', 'spin') and x."character" is not null group by x."character"
+    union all
+    select 'polls', a."character", count(*) from acts_public a where a.kind = 'poll' and not (a.payload ? 'removed') and a.created_at >= from_at and a.created_at < to_at and a."character" is not null group by a."character"
+    union all
+    select 'ballots', b.ch, count(*) from (select distinct a.target_act_id, a."character" as ch from acts_public a where a.kind = 'ballot' and a.created_at >= from_at and a.created_at < to_at and a."character" is not null) b group by b.ch
+    union all
+    select 'spun', o."character", count(*) from threads t join acts_public o on o.id = t.origin_act_id and o."character" is not null and (o.kind <> 'set' or exists (select 1 from play_post pp where pp.play = o.id and pp.sprung))
+    where t.created_at >= from_at and t.created_at < to_at group by o."character"
+  ), named as (
+    select k.category, c.name, k.ch, k.n from counts k join characters_public c on c.id = k.ch and c.staff is null where k.category = cat
+  )
+  select coalesce(string_agg(r.name || ':' || r.n, ',' order by r.rn), '') from (select n.name, n.n, row_number() over (order by n.n desc, n.name, n.ch) as rn from named n) r where r.rn <= 3
 $$;
 
 create temp table fx (k text primary key, v uuid);
@@ -316,6 +340,12 @@ begin
   perform pg_temp.expect(exists (select 1 from jsonb_array_elements(d -> 'plays') p where p ->> 'play' = s1::text and p ->> 'card' = 'exback' and p ->> 'by' = 'Dx Ann'), 'the back that sprang is not a play: ' || (d -> 'plays')::text);
   update settings set value = '2' where key = 'digestPlays';
 
+  -- ---- digest_standouts reads `acts` directly (for cost) and re-implements acts_public's masks: on this fixture every category's top three is what a plain read through acts_public gives
+  foreach ck in array array['cards', 'received', 'polls', 'ballots', 'spun'] loop
+    perform pg_temp.expect(pg_temp.top(d, ck) = pg_temp.plain_top(ck, base - interval '7 days', base) and pg_temp.top(d, ck) <> '',
+      'the standouts drifted from acts_public in ' || ck || ': digest ' || pg_temp.top(d, ck) || ', acts_public ' || pg_temp.plain_top(ck, base - interval '7 days', base));
+  end loop;
+
   -- ---- a two-day window: the top posts' cap doubles (4), the conversations' (4 of 6) and threads' scale; moves', quotes' and the Boss's reactions' caps stay at the setting (2)
   d := pg_temp.digest(base - interval '2 days', base);
   perform pg_temp.expect(jsonb_array_length(d -> 'excerpts') = 4, 'a two-day window does not double the top posts: ' || jsonb_array_length(d -> 'excerpts'));
@@ -368,6 +398,81 @@ begin
   -- the polls' order: the most voters, then the newest
   perform pg_temp.expect((select bool_and((d -> 'polls' -> (n - 1) #>> '{extras,poll,voters}')::integer >= (d -> 'polls' -> n #>> '{extras,poll,voters}')::integer) from generate_series(1, 19) n), 'the polls are not in the order of their voters');
   perform pg_temp.expect((select max((el #>> '{extras,poll,voters}')::integer) from jsonb_array_elements(d -> 'polls') el) = 4, 'the polls with the most voters are not kept');
+end $$;
+
+-- ---- 6. what the spec review found
+do $$
+declare
+  base timestamptz := '2049-03-10T12:00:00Z';
+  aa uuid := tests.account('dx6-ann'); ab uuid := tests.account('dx6-bob'); ac uuid := tests.account('dx6-cat'); ad uuid := tests.account('dx6-dee'); adm uuid := tests.account('dx6-admin');
+  a uuid := tests.character(aa, 'Dx6 Ann'); b uuid := tests.character(ab, 'Dx6 Bob'); c uuid := tests.character(ac, 'Dx6 Cat'); dd uuid := tests.character(ad, 'Dx6 Dee');
+  t uuid := tests.thread('Dx6 Main');
+  hp uuid; p1 uuid; p2 uuid; p3 uuid; hq uuid; q1 uuid; q2 uuid; hw uuid; w1 uuid; w2 uuid; wend uuid; wcaught uuid; wfirst uuid;
+  ub uuid; sprung uuid; sloose uuid; ts uuid; tfrom uuid; d jsonb; x jsonb; e jsonb;
+begin
+  insert into settings (key, value) values ('digestExcerptChars', '30'), ('digestExcerpts', '20'), ('digestThreads', '20'), ('digestConversations', '4'),
+    ('digestPolls', '2'), ('digestSpins', '20'), ('digestPlays', '2'), ('digestStandoutDays', '7')
+  on conflict (key) do update set value = excluded.value;
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  hp := tests.post(a, t, 'A post an admin hides.', base - interval '10 hours');
+  p1 := tests.post(b, t, 'A post the board shows.', base - interval '9 hours');
+  p2 := tests.post(c, t, 'Another post the board shows.', base - interval '8 hours');
+  p3 := tests.post(a, t, 'Ann''s own post for a back.', base - interval '11 hours');
+  insert into admins (account) values (adm);
+  insert into conduct_decisions (version_act, post, admin, outcome) values (hp, hp, adm, 'hide');
+
+  -- ---- 1. a hidden post's poll and play use up none of a list's cap (digestPolls 2, digestPlays 2): the hidden post's poll has the most voters and its play the most drawn, so each would come first
+  hq := pg_temp.mkpoll(t, hp, a, false, base + interval '1 day', base - interval '10 hours' + interval '1 minute');
+  q1 := pg_temp.mkpoll(t, p1, b, false, base + interval '1 day', base - interval '9 hours' + interval '1 minute');
+  q2 := pg_temp.mkpoll(t, p2, c, false, base + interval '1 day', base - interval '8 hours' + interval '1 minute');
+  perform pg_temp.vote(hq, b, base - interval '7 hours'); perform pg_temp.vote(hq, c, base - interval '7 hours' + interval '1 minute'); perform pg_temp.vote(hq, dd, base - interval '7 hours' + interval '2 minutes');
+  perform pg_temp.vote(q1, a, base - interval '7 hours');
+  hw := tests.act(b, 'card', t, '{"card": "exsplat", "reach": "post"}', hp, base - interval '6 hours');
+  w1 := tests.act(c, 'card', t, '{"card": "exsweet", "reach": "post"}', p1, base - interval '5 hours');
+  w2 := tests.act(dd, 'card', t, '{"card": "exblot", "reach": "post"}', p2, base - interval '4 hours');
+  update play_post set drawn = 9 where play = hw; update play_post set drawn = 2 where play = w1; update play_post set drawn = 1 where play = w2;
+  d := pg_temp.digest(base - interval '1 day', base);
+  perform pg_temp.expect((select array_agg((el ->> 'poll')::uuid order by o) from jsonb_array_elements(d -> 'polls') with ordinality z(el, o)) = array[q1, q2], '1 a hidden post''s poll is listed or used up the cap: ' || (d -> 'polls')::text);
+  perform pg_temp.expect((select array_agg((el ->> 'play')::uuid order by o) from jsonb_array_elements(d -> 'plays') with ordinality z(el, o)) = array[w1, w2], '1 a hidden post''s play is listed or used up the cap: ' || (d -> 'plays')::text);
+
+  -- ---- 2. the plays are those played in the window, whatever became of them since (digestPlays 20): one that ended before the window's end, a back that sprang with no lockout, a back that sprang into one; not an unsprung back, a caught play, or the hidden post's
+  update settings set value = '20' where key = 'digestPlays';
+  wend := tests.act(c, 'card', t, '{"card": "exwink", "reach": "post", "config": {"k": 1}}', p2, base - interval '3 hours');
+  update play_post set over_at = base - interval '2 hours', ends_at = base - interval '2 hours', drawn = 4 where play = wend;
+  wcaught := tests.act(c, 'card', t, '{"card": "exwink", "reach": "post", "caught": "x"}', p2, base - interval '3 hours' + interval '1 minute');
+  ub := pg_temp.back(b, ab, t, p1, 11, base - interval '3 hours');
+  sloose := pg_temp.back(c, ac, t, p2, 12, base - interval '2 hours 30 minutes');
+  perform tests.act(c, 'spring', t, jsonb_build_object('set', sloose::text, 'card', 'exback', 'trigger', 'quote', 'did', 'landed'), p2, base - interval '2 hours');
+  sprung := pg_temp.back(a, aa, t, p3, 13, base - interval '2 hours');
+  perform pg_temp.spring(a, sprung, t, p3, base - interval '1 hour 30 minutes');
+  d := pg_temp.digest(base - interval '1 day', base);
+  x := d -> 'plays';
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(x) p where p ->> 'play' = wend::text and p ->> 'card' = 'exwink' and p ->> 'by' = 'Dx6 Cat' and p -> 'config' = '{"k": 1}'::jsonb), '2 a play that ended before the end of the window is not listed: ' || x::text);
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(x) p where p ->> 'play' = sloose::text and p ->> 'card' = 'exback' and p ->> 'by' = 'Dx6 Cat'), '2 a back that sprang with no lockout is not listed: ' || x::text);
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(x) p where p ->> 'play' = sprung::text and p ->> 'card' = 'exback'), '2 a back that sprang into a lockout is not listed: ' || x::text);
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(x) p where p ->> 'play' in (ub::text, wcaught::text, hw::text)), '2 an unsprung back, a caught play or a hidden post''s play is listed: ' || x::text);
+  perform pg_temp.expect(d::text !~ ub::text and d::text !~ wcaught::text, '2 an unsprung back''s or a caught play''s id is in the digest');
+  -- the order: the most drawn (the ended play drew 4, w1 2, w2 1, the rest 0), then newest
+  perform pg_temp.expect((x #>> '{0,play}')::uuid = wend and (x #>> '{1,play}')::uuid = w1 and (x #>> '{2,play}')::uuid = w2, '2 the plays are not most drawn first: ' || x::text);
+  e := x -> 0;
+  perform pg_temp.expect((select array_agg(k order by k) from jsonb_object_keys(e) k) = array['at', 'by', 'card', 'config', 'covered', 'play', 'post', 'seq', 'state', 'text', 'thread', 'title'] and e ->> 'post' = p2::text and e ->> 'title' = 'Dx6 Main'
+    and (e ->> 'seq')::integer = (select seq from acts where id = p2) and (e ->> 'at')::timestamptz = base - interval '3 hours', '2 the play row is ' || e::text);
+  -- it reads nothing against now(): the same window's plays are the same whenever it is read (these are in 2049, this transaction's now() is before them)
+  perform pg_temp.expect(jsonb_array_length(x) = 5, '2 the plays are not the five played in the window: ' || jsonb_array_length(x));
+  update settings set value = '2' where key = 'digestPlays';
+
+  -- ---- 4. a thread spun from a face-down set: not listed (nor counted) while the set has not sprung, listed with its origin and counted once it has (the spring is the set's reveal)
+  tfrom := pg_temp.spin(dd, p2, 'Dx6 from a post', base - interval '7 hours', 1);
+  ts := pg_temp.spin(c, ub, 'Dx6 from a set', base - interval '5 hours', 2);
+  d := pg_temp.digest(base - interval '1 day', base);
+  perform pg_temp.expect((select array_agg((el ->> 'thread')::uuid order by o) from jsonb_array_elements(d -> 'spins') with ordinality z(el, o)) = array[tfrom], '4 a thread spun from an unsprung set is listed: ' || (d -> 'spins')::text);
+  perform pg_temp.expect(pg_temp.top(d, 'spun') = 'Dx6 Cat:1', '4 an unsprung set''s spin is counted: ' || pg_temp.top(d, 'spun'));
+  perform pg_temp.spring(b, ub, t, p1, base - interval '1 hour');
+  d := pg_temp.digest(base - interval '1 day', base);
+  x := d -> 'spins';
+  perform pg_temp.expect((select array_agg((el ->> 'thread')::uuid order by o) from jsonb_array_elements(x) with ordinality z(el, o)) = array[ts, tfrom], '4 a thread spun from a set that sprang is not listed: ' || x::text);
+  perform pg_temp.expect(x #>> '{0,origin,kind}' = 'set' and x #>> '{0,origin,moment}' = 'true' and x #> '{0,origin,post}' = 'null'::jsonb and (x #>> '{0,origin,at}')::timestamptz = base - interval '3 hours', '4 the sprung set''s origin is ' || (x -> 0)::text);
+  perform pg_temp.expect(pg_temp.top(d, 'spun') = 'Dx6 Bob:1,Dx6 Cat:1', '4 a sprung set''s spin is not counted: ' || pg_temp.top(d, 'spun'));
 end $$;
 
 -- ---- 5. the security

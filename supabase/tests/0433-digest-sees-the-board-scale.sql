@@ -7,8 +7,10 @@
 --     voter), one of each spin's origin. Not one older Act, one reply post.
 --  2. digest_polls is planned over acts_digest_polls_at and reads at most 6 x (the polls created in the 14 days and the window) + 20 rows of `acts`; digest_spins at most 2 x its spins + 20 rows of `threads` and `acts`; digest_plays at most 5 x its cap + 10 rows of `acts`, and rows of
 --     play_post that are those played in the window (less than a third of the table) and no more, and is planned over play_post_digest_at.
---  3. system_digest reads as many rows of `acts` with 10,000 more Acts outside the span (older posts, plays and ballots) as it did without them, to within 2%.
---  4. The poison: with acts_digest_ballots_at dropped digest_standouts goes over its bound (it reads the span's replies); with acts_digest_polls_at dropped digest_polls is no longer planned over it (read from the plan: the entries it walks are not row counts); with play_post_digest_at dropped digest_plays is no longer planned over it (read from the plan, as the polls' are); with
+--  3. system_digest reads as many rows of `acts` with 10,000 more Acts outside the span (older posts, plays and ballots) as it did without them, to within 2%, and no more than 1.5 x the Acts created in the span (about 12,000: each Act of the
+--     span once and half again; the standouts alone are held to 2 x the plays + the ballots + a few hundred, the window's posts, polls, plays and persona turns to what is left). The fixture holds 70 turns of a persona (210 answered replies), which the
+--     exchanges' standouts and the conversations read through acts_public: a read of it that hashes the view whole (as the first so_x did: 36,000 rows) goes over both.
+--  4. The poison: with acts_digest_plays_at dropped (and again with acts_digest_ballots_at dropped) digest_standouts goes over its bound (it reads the span's replies); with every one of the five indexes dropped the whole digest reads more than the bound of 3; with acts_digest_polls_at dropped digest_polls is no longer planned over it (read from the plan: the entries it walks are not row counts); with play_post_digest_at dropped digest_plays is no longer planned over it (read from the plan, as the polls' are); with
 --     threads_digest_spun dropped digest_spins reads every thread.
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -91,11 +93,22 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload, created_at)
   select chars[g % 200 + 1], 'poll', told, (select id from acts where thread = told and seq = 100003 + g % 100), jsonb_build_object('question', 'Older', 'options', '["a", "b"]'::jsonb, 'pick', 1, 'secret', false, 'closes_at', until_at - interval '80 days'), until_at - interval '85 days' + g * interval '1 minute' from generate_series(1, 3000) g;
   insert into threads (board, title, origin_act_id, origin_board, created_at) select b.id, 'Dsc old spin ' || g, posts[1 + g % 60], b.id, until_at - interval '60 days' + g * interval '1 minute' from boards b cross join generate_series(1, 300) g where b.slug = 'general';
+  -- 70 turns of a persona in the week (one every two hours, each answering three of the week's replies, the first quoted): the exchanges' standouts and the conversations read them
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Dsc Mod', 'dsc-mod', 'persona', '2000-01-02');
+  insert into staff_sessions (day, staff, starts_at, ends_at) select (span_at + g * interval '1 day')::date, 'dsc-mod', (span_at + g * interval '1 day')::date, (span_at + g * interval '1 day')::date + 1 from generate_series(-1, 7) g;
+  insert into acts (character, kind, thread, payload, seq, created_at)
+  select (select id from characters where staff = 'dsc-mod'), 'post', t, jsonb_build_object('body', 'Turn ' || g), 20000 + g, span_at + g * interval '2 hours' from generate_series(1, 70) g;
+  insert into pool_turns (day, staff, session, thread, post_act, quoting, at)
+  select (p.created_at at time zone 'UTC')::date, 'dsc-mod', (select s.id from staff_sessions s where s.day = (p.created_at at time zone 'UTC')::date and s.staff = 'dsc-mod'), t, p.id,
+         (select r.id from acts r where r.thread = t and r.seq = 2000 + 3 * (p.seq - 20000)), p.created_at
+  from acts p where p.thread = t and p.seq between 20001 and 20070;
+  insert into pool_answered (reply, turn)
+  select r.id, pt.id from pool_turns pt join acts p on p.id = pt.post_act cross join generate_series(0, 2) k join acts r on r.thread = t and r.seq = 2000 + 3 * (p.seq - 20000) + k;
   alter table acts enable trigger user; alter table threads enable trigger user;
   update threads x set next_seq = coalesce((select max(a.seq) from acts a where a.thread = x.id), 0) + 1 where x.id in (t, told);
   insert into play_post select r.* from acts x cross join lateral play_row(x.id) r where x.kind in ('card', 'set') and x.target_act_id is not null and x.thread in (t, told);
   update play_post set drawn = (extract(epoch from played_at)::bigint % 29)::integer where post = any (posts);
-  analyze acts; analyze play_post; analyze threads; analyze poll_latest_ballots; analyze characters;
+  analyze acts; analyze play_post; analyze threads; analyze poll_latest_ballots; analyze pool_turns; analyze pool_answered; analyze characters;
   insert into settings (key, value) values ('digestExcerptChars', '30'), ('digestExcerpts', '8'), ('digestThreads', '5'), ('digestConversations', '6'),
     ('digestPolls', '5'), ('digestSpins', '5'), ('digestPlays', '5'), ('digestStandoutDays', '7') on conflict (key) do update set value = excluded.value;
   insert into sc values ('cards', (select count(*) from acts where kind = 'card' and created_at >= span_at and created_at < until_at)),
@@ -112,6 +125,7 @@ declare
   until_at timestamptz := '2050-01-08T12:00:00Z'; since_at timestamptz := '2050-01-07T12:00:00Z';
   told uuid := (select id from threads where title = 'Dsc old'); chars uuid[] := array(select id from characters where name like 'Dsc %' order by name);
   n1 bigint; n2 bigint; d jsonb; old_post uuid := (select id from acts where thread = told and seq = 100001);
+  span_acts bigint := (select count(*) from acts where created_at >= since_at - interval '6 days' and created_at < until_at);
 begin
   perform tests.become_service();
   perform system_digest(since_at, until_at);
@@ -132,6 +146,9 @@ begin
   n2 := pg_temp.reads('acts', format('select system_digest(%L, %L)', since_at, until_at));
   perform tests.unbecome();
   raise notice '3 system_digest read % rows of acts, and % with 10,000 more Acts outside the span', n1, n2;
+  perform pg_temp.expect(n1 <= 1.5 * span_acts, '3 system_digest read ' || n1 || ' rows of acts, over 1.5 x the ' || span_acts || ' Acts of the span');
+  insert into sc values ('whole_bound', (1.5 * span_acts)::bigint);
+  raise notice '3 the bound: % rows of acts (1.5 x the % Acts of the span)', (1.5 * span_acts)::bigint, span_acts;
   perform pg_temp.expect(abs(n2 - n1) <= n1 * 0.02, '3 system_digest read ' || n1 || ' rows of acts, then ' || n2 || ' with 10,000 more Acts outside the span');
 end $$;
 
@@ -139,7 +156,7 @@ do $$
 declare
   until_at timestamptz := '2050-01-08T12:00:00Z'; since_at timestamptz := '2050-01-07T12:00:00Z'; span_at timestamptz := '2050-01-01T12:00:00Z';
   cards bigint := (select v from sc where k = 'cards'); ballots bigint := (select v from sc where k = 'ballots'); polls_all bigint := (select v from sc where k = 'polls_all');
-  n bigint; bound bigint; n2 bigint; pp bigint; w bigint; before bigint; after bigint;
+  n bigint; bound bigint; n2 bigint; pp bigint; w bigint; before bigint; after bigint; idef text;
 begin
   -- 1. digest_standouts
   bound := 2 * cards + ballots + 3 * 31 + 2 * 20 + 20;
@@ -166,6 +183,12 @@ begin
   perform pg_temp.expect(pg_temp.plan_uses('digest_plays(timestamptz, timestamptz, integer)'::regprocedure, 'play_post_digest_at'), '2 digest_plays is not planned over play_post_digest_at');
 
   -- 4. the poison, first: each index withheld in turn sends its read over its bound (the drops are this transaction's own)
+  idef := pg_get_indexdef('acts_digest_plays_at'::regclass);
+  drop index acts_digest_plays_at;
+  n := pg_temp.reads('acts', format('select * from digest_standouts(%L, %L)', span_at, until_at));
+  raise notice '4 digest_standouts without acts_digest_plays_at read % rows of acts', n;
+  perform pg_temp.expect(n > 2 * cards + ballots + 3 * 31 + 2 * 20 + 20, '4 the bound of 1 does not go red without acts_digest_plays_at: ' || n);
+  execute idef;
   drop index acts_digest_ballots_at;
   n := pg_temp.reads('acts', format('select * from digest_standouts(%L, %L)', span_at, until_at));
   raise notice '4 digest_standouts without acts_digest_ballots_at read % rows of acts', n;
@@ -179,4 +202,10 @@ begin
   drop index threads_digest_spun;
   raise notice '4 digest_spins without threads_digest_spun is planned over it: %', pg_temp.plan_uses('digest_spins(timestamptz, timestamptz, integer)'::regprocedure, 'threads_digest_spun');
   perform pg_temp.expect(not pg_temp.plan_uses('digest_spins(timestamptz, timestamptz, integer)'::regprocedure, 'threads_digest_spun'), '4 the plan check of 2 does not go red without threads_digest_spun');
+  -- every one of the five is dropped now: the whole digest reads more than the bound of 3
+  perform tests.become_service();
+  n := pg_temp.reads('acts', format('select system_digest(%L, %L)', since_at, until_at));
+  perform tests.unbecome();
+  raise notice '4 system_digest without the five indexes read % rows of acts (the bound of 3 is %)', n, (select v from sc where k = 'whole_bound');
+  perform pg_temp.expect(n > (select v from sc where k = 'whole_bound'), '4 the bound of 3 does not go red without the indexes: ' || n);
 end $$;

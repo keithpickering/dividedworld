@@ -171,27 +171,28 @@ end $function$;
 -- system_digest (0424_staff_requests.sql), also returning, and keeping everything else as 0424 wrote it (its owner, its grants, its settings):
 --   * days: the window's days, rounded up, at least one. `threads`, the top posts (`excerpts`) and the `conversations` are capped at the setting times the days, held within the ceiling DIGEST_MOST holds (25, 20, 12); every other use of
 --     digestExcerpts (the standings, the moves, the quotes, the Boss's reactions) stays the setting.
---   * extras: one call of post_extras for every post the digest shows (the top posts, both sides of each exchange, the Boss's reacted posts, the polls' and the plays'), each answer joined to its post as `extras` (post_extras' entry without `post` and `body`),
+--   * extras: one call of post_extras for every post the digest shows (the top posts, both sides of each exchange, the Boss's reacted posts, the polls'), each answer joined to its post as `extras` (post_extras' entry without `post` and `body`),
 --     and `origin` (`{kind, place, at, spunAt, moment, post: null}`, as pool_read_origin reads it) for a shown post that opens a spun thread, else null.
 --   * the Boss's reactions gain `text` and `cut` (the post's words cut to digestExcerptChars, as the top posts are) where the Act has words.
 --   * `polls`: the polls open at any time in the window whose post the board shows, most voters (poll_counts) then newest, at most least(digestPolls x days, 20), each {poll, post, thread, title, board, seq, extras}.
 --     A removed poll and one a later poll on its post replaced are not listed.
---   * `spins`: the threads created in the window with an origin Act the board shows (a back is not one), most replies then newest, at most least(digestSpins x days, 20), each {thread, title, origin}.
---   * `plays`: the plays played in the window that the board draws now (post_extras' own rule: in force, or a sprung back whose lockout is live, and never a back that has not sprung), most drawn then newest, at most least(digestPlays x days, 20),
---     each {play, card, at, by, config, state, text, covered, post, thread, title, seq} as post_extras shapes the play; for a back that sprang `card` is the card the public spring Act names (#1071).
---     A play on the board is the digest's: one that has ended is not listed (the cards' standouts below count it).
+--   * `spins`: the threads created in the window with an origin Act the board shows (a set that has not sprung is not one: the board shows its origin once it has), most replies then newest, at most least(digestSpins x days, 20), each {thread, title, origin}.
+--   * `plays`: the plays played in the window that landed and that the board shows as plays (not a caught play, not one whose write was refunded, not a face-down set that has not sprung; a back that sprang is one), most drawn then newest, at most
+--     least(digestPlays x days, 20), each {play, card, at, by, config, state, text, covered, post, thread, title, seq}. The window is the only time it reads: a play that has ended since is listed, as the meeting that read the window would have seen it (nothing here
+--     is read against now()). The helper shapes each row from the play's own Act (read through acts_public: `by` is the public caster as the board gives it, an author veil's stand-in included), its saved state, the words a writing card made (card_texts, as the
+--     page's tails show them) and the share of a surface it covers; for a back that sprang `card` is the card the public spring Act names (#1071). A play on a hidden post or in an unlisted thread is left out in the helper, ahead of the cap.
 --   * `standouts`: over the span `until - digestStandoutDays`, for each of cards, received, polls, ballots, spun and exchanges, the three characters that are not staff with the most, each {character, name, count}. The counts are for the renderer's words.
--- Masks: every count is of public Acts. A secret ballot's character is hidden by acts_public and is never counted (the helper leaves out the ballots of a secret poll), a face-down set names its caster in `acts` and is never counted until it has sprung
+-- Masks: every count is of public Acts (digest_standouts reads `acts` itself and applies the view's masks by hand, for cost; supabase/tests/0433-digest-sees-the-board.sql compares each category with a plain read through acts_public). A secret ballot's character is hidden by acts_public and is never counted (the helper leaves out the ballots of a secret poll), a face-down set names its caster in `acts` and is never counted until it has sprung
 -- (a spring Act is the play), and an Act an author veil covers is left out as acts_public gives it the stand-in. Nothing reads a reactor or an owner.
 --
 -- The four helpers are owned by the migration's role, as 0426's extras_ids is (the digest role reads no column of `acts` and none of play_post), and return ids, times, names of public characters and counts, for the digest role alone. Each carries the settings 0426's
 -- helpers run under (no sequential scan, no bitmap scan), and each Act is read through a key. At a busy instance's scale (a week of thousands of plays, polls with many voters):
 --   digest_standouts   reads the Acts of the span by kind: the cards, springs, ballots and polls of the span, each from a partial index of its own ordered by time (`include` holding the character and the target, so the read is of the index), one probe of the target
 --                      post for each play (received), one of a ballot's poll for each (poll, character) pair that voted (secret?), one of the origin Act for each spin of the span. It reads no Act outside the span and no post.
---   digest_polls       the polls created in the last pollLastsMax and the window (acts_digest_polls_at), each with one probe of its close (acts_one_poll_close), its newest poll (acts_polls) and its post: the polls of a few weeks, never their ballots
+--   digest_polls       the polls created in the last pollLastsMax and the window (acts_digest_polls_at), each with one probe of its close (acts_one_poll_close), its newest poll (acts_polls) and its post through acts_public (hidden, kind): the polls of a few weeks, never their ballots
 --                      (the ballots are poll_counts' own read, one pass over a poll's voters for the polls kept after the cut to the window's, each).
 --   digest_spins       the spun threads created in the window (threads_digest_spun) and one probe of each origin Act.
---   digest_plays       the plays played in the window from play_post (play_post_digest_at), sorted by what they drew, then one probe of the Act and one of the post for each play kept, in order, until the cap is full.
+--   digest_plays       the plays played in the window from play_post (play_post_digest_at), sorted by what they drew, then one probe through acts_public of the Act and one of the post, and of its text, state and surface, for each play kept, in order, until the cap is full.
 -- New indexes, each added only because no existing one is ordered by time for its kind: acts_digest_plays_at, acts_digest_ballots_at, acts_digest_polls_at (acts_card_created holds cards alone, with no character, and nothing holds springs, ballots or polls by time:
 -- acts_created holds every kind, so a read by it is of every post of the span), threads_digest_spun and play_post_digest_at (play_post has no index by time). Each insert of those kinds writes one more entry; no Act is touched.
 -- supabase/tests/0433-digest-sees-the-board-scale.sql counts the rows of `acts` and `play_post` these read and goes red with an index withheld.
@@ -208,6 +209,10 @@ create index play_post_digest_at on play_post (played_at) include (post, drawn) 
 -- The top three characters that are not staff for each of five categories over [from_at, to_at): `cards` (landed card Acts and springs: a face-down set is no play until its spring, and a caught play never landed, nor one whose write was
 -- refunded), `received` (the same plays whose target post is the character's, as the board shows its author), `polls` (poll Acts that are not removals), `ballots` (the polls a character voted on publicly: a ballot of a secret poll never counts, and
 -- one character is counted once for each poll however often it changed its ballot) and `spun` (threads created in the span whose origin Act is the character's, not a back). Staff are left out, and so is any Act an author veil covers (acts_public shows the stand-in).
+-- Why this reads `acts` and not acts_public, and the masks it therefore re-implements: acts_public is a union of three selects over every Act, each with its own subqueries (ballot_secret, the veil cover, the conceal layers), so a read of the span's thousands of
+-- plays and ballots through it costs several rows of `acts` for each, and a plan the planner may take reads the whole view. Here each Act is read once, from a partial index by time, with the two masks the counts depend on written out: an author veil covers an Act
+-- (post_veil_cover under a live author veil: acts_public gives the stand-in character, and a staff one never stands out) and a secret poll's ballot has no character (acts_public gives it none: ballot_secret). The drift test in
+-- supabase/tests/0433-digest-sees-the-board.sql reads every category through acts_public on its fixture and compares; a change to either mask in acts_public must change both.
 create function digest_standouts(from_at timestamptz, to_at timestamptz) returns table (category text, "character" uuid, name text, n integer)
 language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off set enable_bitmapscan = off as $$
 begin
@@ -246,7 +251,8 @@ begin
     select 'ballots', b.ch, count(*) from bl b join open_polls pp on pp.poll = b.poll group by b.ch
     union all
     select 'spun', o.ch, count(*)
-    from threads t cross join lateral (select x."character" as ch from acts x where x.id = t.origin_act_id and x.kind <> 'set' and x."character" is not null
+    from threads t cross join lateral (select x."character" as ch from acts x where x.id = t.origin_act_id and x."character" is not null
+                                         and (x.kind <> 'set' or exists (select 1 from play_post sp where sp.play = x.id and sp.sprung))
                                          and not exists (select 1 from post_veil_cover c join post_veils_live v on v.play = c.play and v.veil = 'author' where c.act = x.id)) o
     where t.origin_act_id is not null and t.created_at >= from_at and t.created_at < to_at
     group by o.ch
@@ -270,14 +276,16 @@ begin
   return query
   select a.id, a.target_act_id, a.created_at
   from acts a
-  -- the post by its id, one probe for each poll (a lateral subquery behind `offset 0`: a planner that believes the posts many reads them all and merges)
-  cross join lateral (select 1 from acts p where p.id = a.target_act_id and p.kind in ('post', 'spin') offset 0) pk
+  -- the post by its id, one probe for each poll (a lateral subquery behind `offset 0`: a planner that believes the posts many reads them all and merges), through acts_public: a hidden post's poll, one on a thread that is unlisted and one on no post is left
+  -- out here, ahead of the caller's cap, as digest_spins leaves out the unlisted ones
+  cross join lateral (select p.thread from acts_public p where p.id = a.target_act_id and p.hidden is not true and p.kind in ('post', 'spin') offset 0) pk
   where a.kind = 'poll' and a.created_at >= digest_polls.since - lasts and a.created_at < digest_polls.until and not (a.payload ? 'removed')
     and least((a.payload ->> 'closes_at')::timestamptz, coalesce((select min(x.created_at) from acts x where x.kind = 'poll_close' and x.target_act_id = a.id), 'infinity')) > digest_polls.since
-    and not exists (select 1 from acts n where n.kind = 'poll' and n.target_act_id = a.target_act_id and (n.created_at, n.id) > (a.created_at, a.id));
+    and not exists (select 1 from acts n where n.kind = 'poll' and n.target_act_id = a.target_act_id and (n.created_at, n.id) > (a.created_at, a.id))
+    and not exists (select 1 from unlisted_threads u where u.thread = pk.thread);
 end $$;
 
--- The threads created in [since, until) with an origin Act that is not a back, in the order the digest lists them (replies, newest), unlisted threads left out, `most` of them. The caller checks that the origin Act is one the board shows.
+-- The threads created in [since, until) whose origin Act the board shows (a set shows its origin only once it has sprung: a spring Act names it), in the order the digest lists them (replies, newest), unlisted threads left out, `most` of them.
 create function digest_spins(since timestamptz, until timestamptz, most integer) returns table (thread uuid)
 language sql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off set enable_bitmapscan = off as $$
   select x.id
@@ -285,25 +293,35 @@ language sql stable security definer set search_path = public, pg_temp set jit =
         where t.origin_act_id is not null and t.created_at >= digest_spins.since and t.created_at < digest_spins.until
         order by t.replies desc, t.created_at desc, t.id) x
   where not exists (select 1 from unlisted_threads u where u.thread = x.id)
-    and exists (select 1 from acts o where o.id = x.origin_act_id and o.kind <> 'set')
+    and exists (select 1 from acts o where o.id = x.origin_act_id and (o.kind <> 'set' or exists (select 1 from play_post sp where sp.play = o.id and sp.sprung)))
   limit digest_spins.most
 $$;
 
--- The plays played in [since, until) that the board draws now, most drawn first, the post's kind checked, `most` of them: the rows of play_post by time, then each in order through one probe of its Act and of its post until the cap is full. `spring_card` is
--- the card the public spring Act of a back that sprang names (acts_layers finds it by the post), null for anything else. A back that has not sprung (a row kept out of the index) is never here.
-create function digest_plays(since timestamptz, until timestamptz, most integer) returns table (play uuid, post uuid, drawn integer, played_at timestamptz, spring_card text)
+-- The plays played in [since, until) that landed and that the board shows as plays, most drawn first, `most` of them, each shaped as the page's extras shape a play: the rows of play_post by time, then each in order through its Act (acts_public: a card or a
+-- set that is not caught and not refunded; the caster is the public one), its post (not hidden, a post or a spin, in a listed thread) and its saved state, words and surface, until the cap is full. A face-down set that has not sprung is never here
+-- (a row kept out of the index); a back that sprang is, `card` being the card the public spring Act names (acts_layers finds it by the post). Nothing is read against now(): a play that has ended since is a play of the window all the same.
+create function digest_plays(since timestamptz, until timestamptz, most integer)
+  returns table (play uuid, post uuid, drawn integer, played_at timestamptz, card text, made_at timestamptz, caster text, config jsonb, state jsonb, words text, covered double precision)
 language sql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off set enable_bitmapscan = off as $$
   select c.play, c.post, c.drawn, c.played_at,
-         case when c.kind = '' then (select s.payload ->> 'card' from acts s where s.kind = 'spring' and s.target_act_id = c.post and coalesce(s.payload ->> 'reach', 'post') = 'post' and s.payload ->> 'set' = c.play::text limit 1) end
-  from (select p.play, p.post, p.drawn, p.played_at, p.kind from play_post p
+         case when a.kind = 'card' then a.payload ->> 'card'
+              else (select s.payload ->> 'card' from acts s where s.kind = 'spring' and s.target_act_id = c.post and coalesce(s.payload ->> 'reach', 'post') = 'post' and s.payload ->> 'set' = c.play::text limit 1) end,
+         a.created_at, cn.name, a.payload -> 'config', es.state, t.text, sf.covered
+  from (select p.play, p.post, p.drawn, p.played_at from play_post p
         where p.played_at >= digest_plays.since and p.played_at < digest_plays.until and (p.kind <> '' or p.sprung)
-          and ((p.over_at is null and (p.ends_at is null or p.ends_at > now())) or p.lock_until > now())
         order by p.drawn desc, p.played_at desc, p.play desc) c
-  cross join lateral (select a.id from acts a where a.id = c.play and a.kind in ('card', 'set') and not (a.payload ? 'caught')
-                        and not exists (select 1 from card_write_refunds r where r.play = a.id) offset 0) ok
-  cross join lateral (select 1 from acts v where v.id = c.post and v.kind in ('post', 'spin') offset 0) pk
+  cross join lateral (select v.id, v.kind, v.created_at, v.payload, v."character" from acts_public v where v.id = c.play and v.kind in ('card', 'set') and not (v.payload ? 'caught') and v.untaken is not true offset 0) a
+  cross join lateral (select pv.thread from acts_public pv where pv.id = c.post and pv.hidden is not true and pv.kind in ('post', 'spin') offset 0) pk
+  left join lateral (select cp.name from characters_public cp where cp.id = a."character") cn on true
+  left join lateral (select e.state from effect_state e where e.play = c.play offset 0) es on true
+  -- the words a writing play made, as the page's tails (post_tails) show them to any reader: the text for the post's current version, else the latest text it has
+  left join lateral (select ct.text from card_texts ct where ct.play = c.play and ct.text is not null order by (ct.version = post_version(c.post)) desc, ct.created_at desc, ct.id desc limit 1) t on true
+  -- the share of a surface a play covers: bit_count of the cover over the grid's 100 x 100 cells (0317), a row for a surface card alone
+  left join lateral (select bit_count(x.cover)::double precision / 10000 as covered from surfaces x where x.play = c.play) sf on true
+  where not exists (select 1 from unlisted_threads u where u.thread = pk.thread)
   limit digest_plays.most
 $$;
+
 revoke execute on function digest_standouts(timestamptz, timestamptz), digest_polls(timestamptz, timestamptz), digest_spins(timestamptz, timestamptz, integer), digest_plays(timestamptz, timestamptz, integer)
   from public, anon, authenticated, service_role;
 grant execute on function digest_standouts(timestamptz, timestamptz), digest_polls(timestamptz, timestamptz), digest_spins(timestamptz, timestamptz, integer), digest_plays(timestamptz, timestamptz, integer) to kayfabb_digest;
@@ -638,7 +656,7 @@ begin
     cross join lateral (select l.title, l.board from thread_list l where l.id = ap.thread offset 0) tl
   ),
   play_v as (
-    select pr.play, pr.post, pr.drawn, pr.played_at, pr.spring_card, ap.thread, ap.seq, left(tl.title, 120) as title
+    select pr.play, pr.post, pr.drawn, pr.played_at, pr.card, pr.made_at, pr.caster, pr.config, pr.state, pr.words, pr.covered, ap.thread, ap.seq, left(tl.title, 120) as title
     from digest_plays(since, until, plays_cap) pr
     cross join lateral (select x.thread, x.seq from acts_public x where x.id = pr.post and x.hidden is not true and x.kind in ('post', 'spin') offset 0) ap
     cross join lateral (select l.title from thread_list l where l.id = ap.thread offset 0) tl
@@ -649,9 +667,8 @@ begin
     union select b.reply_act, b.reply_thread from conv_best b
     union select bt.act, bt.thread from boss_tally bt
     union select p.post, p.thread from poll_v p
-    union select p.post, p.thread from play_v p
   ),
-  -- One call of post_extras for all of them (at most 200: the caps' ceilings add up to 104), each answer keyed by its post, without the post and the body.
+  -- One call of post_extras for all of them (at most 200: the caps' ceilings add up to 84), each answer keyed by its post, without the post and the body.
   ex as materialized (select post_extras(array(select s.act from shown_ids s)) as j),
   ex_by as (
     select coalesce(jsonb_object_agg(e.x ->> 'post', e.x - 'post' - 'body'), '{}'::jsonb) as j from ex, jsonb_array_elements(ex.j) e(x)
@@ -661,7 +678,7 @@ begin
     select s.act, jsonb_build_object('kind', o.kind, 'place', tl.origin_place, 'at', o.created_at, 'spunAt', tl.created_at, 'moment', o.kind in ('card', 'set', 'spring'), 'post', null) as j
     from shown_ids s
     cross join lateral (select l.first_act, l.origin_act_id, l.origin_place, l.created_at from thread_list l where l.id = s.thread offset 0) tl
-    cross join lateral (select x.kind, x.created_at from acts_public x where x.id = tl.origin_act_id and x.kind <> 'set' offset 0) o
+    cross join lateral (select x.kind, x.created_at from acts_public x where x.id = tl.origin_act_id and (x.kind <> 'set' or exists (select 1 from acts_public sp where sp.kind = 'spring' and sp.target_act_id = x.target_act_id and sp.payload ->> 'set' = x.id::text offset 0)) offset 0) o
     where tl.first_act = s.act and tl.origin_act_id is not null
   ),
   see_by as (
@@ -673,7 +690,7 @@ begin
            jsonb_build_object('kind', o.kind, 'place', tl.origin_place, 'at', o.created_at, 'spunAt', tl.created_at, 'moment', o.kind in ('card', 'set', 'spring'), 'post', null) as origin
     from digest_spins(since, until, spins_cap) sp
     cross join lateral (select l.id, l.title, l.replies, l.created_at, l.origin_act_id, l.origin_place from thread_list l where l.id = sp.thread offset 0) tl
-    cross join lateral (select x.kind, x.created_at from acts_public x where x.id = tl.origin_act_id and x.kind <> 'set' offset 0) o
+    cross join lateral (select x.kind, x.created_at from acts_public x where x.id = tl.origin_act_id and (x.kind <> 'set' or exists (select 1 from acts_public sp where sp.kind = 'spring' and sp.target_act_id = x.target_act_id and sp.payload ->> 'set' = x.id::text offset 0)) offset 0) o
   ),
   -- The standouts: the helper counts the five categories of public Acts; the sixth, exchanges, is the repliers (public, not staff) whose replies a persona's turn in the span answered, read as the conversations read them.
   so_x as (
@@ -682,9 +699,11 @@ begin
       select z.character, z.name, z.n, row_number() over (order by z.n desc, z.name, z.character) as rn
       from (
         select a.character, cp.name, count(distinct pan.reply) as n
-        from pool_turns t join acts_public pa on pa.id = t.post_act
+        from pool_turns t
+        -- the turn's post and each reply by its id, one probe for each (a lateral subquery behind `offset 0`: acts_public is a union over every Act, and a planner that believes the turns or replies many hashes it whole)
+        cross join lateral (select 1 from acts_public pa where pa.id = t.post_act offset 0) pk
         join pool_answered pan on pan.turn = t.id
-        join acts_public a on a.id = pan.reply and a.character is not null
+        cross join lateral (select x."character" from acts_public x where x.id = pan.reply and x."character" is not null offset 0) a
         join characters_public cp on cp.id = a.character and cp.staff is null
         where t.day >= (span_from at time zone 'UTC')::date - 1 and t.day <= (until at time zone 'UTC')::date and t.at >= span_from and t.at < until
         group by a.character, cp.name
@@ -742,10 +761,8 @@ begin
     'polls', coalesce((select jsonb_agg(jsonb_build_object('poll', p.poll, 'post', p.post, 'thread', p.thread, 'title', p.title, 'board', (select bn.name from boards_now bn where bn.id = p.board_id),
                           'seq', p.seq, 'extras', (select x.j from ex_by x) -> p.post::text) order by p.voters desc, p.created_at desc, p.poll) from poll_v p), '[]'::jsonb),
     'spins', coalesce((select jsonb_agg(jsonb_build_object('thread', s.thread, 'title', s.title, 'origin', s.origin) order by s.replies desc, s.created_at desc, s.thread) from spin_v s), '[]'::jsonb),
-    'plays', coalesce((select jsonb_agg(jsonb_build_object('play', p.play, 'card', case when pe.x -> 'card' is null or pe.x -> 'card' = 'null'::jsonb then coalesce(to_jsonb(p.spring_card), 'null'::jsonb) else pe.x -> 'card' end,
-                          'at', pe.x -> 'at', 'by', pe.x -> 'by', 'config', pe.x -> 'config', 'state', pe.x -> 'state', 'text', pe.x -> 'text', 'covered', pe.x -> 'covered',
-                          'post', p.post, 'thread', p.thread, 'title', p.title, 'seq', p.seq) order by p.drawn desc, p.played_at desc, p.play desc)
-                       from play_v p cross join lateral (select e.x from jsonb_array_elements((select x.j from ex_by x) -> p.post::text -> 'plays') e(x) where e.x ->> 'play' = p.play::text limit 1) pe), '[]'::jsonb),
+    'plays', coalesce((select jsonb_agg(jsonb_build_object('play', p.play, 'card', p.card, 'at', p.made_at, 'by', p.caster, 'config', p.config, 'state', p.state, 'text', p.words, 'covered', p.covered,
+                          'post', p.post, 'thread', p.thread, 'title', p.title, 'seq', p.seq) order by p.drawn desc, p.played_at desc, p.play desc) from play_v p), '[]'::jsonb),
     'standouts', jsonb_build_object('days', stand_days,
       'cards', coalesce((select jsonb_agg(jsonb_build_object('character', s.character, 'name', s.name, 'count', s.n) order by s.n desc, s.name, s.character) from so s where s.category = 'cards'), '[]'::jsonb),
       'received', coalesce((select jsonb_agg(jsonb_build_object('character', s.character, 'name', s.name, 'count', s.n) order by s.n desc, s.name, s.character) from so s where s.category = 'received'), '[]'::jsonb),
