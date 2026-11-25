@@ -14,11 +14,18 @@
 --      Nothing else reads the columns: the latest definition of every function that did is re-created above (grep of supabase/migrations/ for each), and the export and import tools
 --      (tools/export-instance.mjs, tools/import-instance.mjs, supabase/functions/_shared/) read a table's columns as the database names them.
 --
+-- The refusal of a waiting character's Act (acts_well_formed, below) now says what is left of it: only a staff persona can wait, and its way out is an office (0082's set_office). played_by (0340) and
+-- retire_character (0205) keep their copies of the old words, 'that character debuts at the next settlement': a player's character is never waiting, so neither is reachable for one, and played_by keeps
+-- its refusal of a waiting persona.
+--
 -- A way out for every state this touches: a waiting player character (none can be made now) is made active by the changeover above; a staff persona waits as before and ends when an office debuts it.
 
 -- ---- 1. the changeover ----
 
-update characters set debuted_at = now() where debuted_at is null and staff is null and retired_at is null;
+-- A retired waiting character is made active too: restore_character (0043) only clears retired_at and nothing debuts a character now, so one left waiting would never act after a restore. Its debuted_at
+-- changes nothing a reader shows of a retired character (every reader that lists characters tests retired_at beside debuted_at, and characters_public lists a retired one that debuted already).
+
+update characters set debuted_at = now() where debuted_at is null and staff is null;
 
 -- ---- 2. my_characters ----
 
@@ -127,7 +134,7 @@ begin
     raise exception 'a draw or a wash is written only through draw_on_surface and wash_surface' using hint = 'kayfabb.refusal', errcode = '42501';
   end if;
   if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.debuted_at is null) then
-    raise exception 'that character debuts at the next settlement' using hint = 'kayfabb.refusal', errcode = '55000';
+    raise exception 'that persona has not debuted; an admin makes it a member or hires it' using hint = 'kayfabb.refusal', errcode = '55000';
   end if;
   if new.character is not null and exists (select 1 from characters c where c.id = new.character and c.retired_at is not null) and new.kind <> 'wash' then
     raise exception 'that character is retired; an admin can restore it' using hint = 'kayfabb.refusal', errcode = '55000';

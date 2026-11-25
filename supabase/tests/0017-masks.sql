@@ -64,7 +64,7 @@ begin
     raise exception 'a waiting character saved an effect';
   end if;
   -- And the table holds it, for any writer that forgets to ask.
-  if coalesce(pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, %L, %L, %L)', fresh, 'post', t, '{"body": "x"}')), '') not like '%debuts%' then
+  if coalesce(pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, %L, %L, %L)', fresh, 'post', t, '{"body": "x"}')), '') not like '%has not debuted%' then
     raise exception 'an Act by a waiting character was written past every action';
   end if;
 

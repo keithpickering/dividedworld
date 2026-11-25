@@ -128,7 +128,8 @@ create function tests.act(by_character uuid, kind text, in_thread uuid, payload 
 $$;
 
 -- A debut announcement as the settlement wrote one before 0428: an old Act, read as a reveal, a clue and a post's author's. Nothing writes one now (acts_well_formed refuses it), so a test
--- that needs an old one stands the trigger down for the insert, which a rollback gives back. Answers the Act's projection, as write_announce does.
+-- that needs an old one stands the trigger down for the insert, which a rollback gives back. Standing the trigger down skips every acts_well_formed check for that insert, and `alter table` takes a lock that
+-- keeps acts locked until the transaction ends. Answers the Act's projection, as write_announce does.
 create function tests.old_debut(of_character uuid, in_thread uuid, cls text default null, at timestamptz default now()) returns jsonb language plpgsql as $$
 declare written uuid;
 begin

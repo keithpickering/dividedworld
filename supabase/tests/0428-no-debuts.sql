@@ -94,3 +94,34 @@ begin
   -- A Turn's announcement is still written.
   perform write_announce(a, t, 'turn', null, null, now());
 end $$;
+
+-- ---- The changeover leaves no player character waiting, retired or not ----
+-- The changeover statement of 0428, copied: a migration's statement runs once against the rows there were, so the test runs it again against rows made here. A retired waiting character is made
+-- active as well: restore_character (0043) only clears retired_at, and nothing debuts a character now, so one left waiting would never act again. A waiting staff persona is left as it is (0082).
+do $$
+declare
+  ann uuid := tests.account('nd-changeover');
+  live uuid;
+  gone uuid;
+  persona uuid;
+begin
+  insert into characters (owner, name, created_at) values (ann, 'Changeover Live', now() - interval '2 days') returning id into live;
+  insert into characters (owner, name, created_at, retired_at) values (ann, 'Changeover Retired', now() - interval '2 days', now() - interval '1 day') returning id into gone;
+  insert into characters (name, staff, staff_kind) values ('Changeover Persona', gen_random_uuid(), 'persona') returning id into persona;
+  update characters set debuted_at = now() where debuted_at is null and staff is null;
+  if (select debuted_at from characters where id = live) is null then raise exception 'a waiting player character is made active'; end if;
+  if (select debuted_at from characters where id = gone) is null then raise exception 'a retired waiting player character is made active, or restoring it leaves it waiting for good'; end if;
+  if (select debuted_at from characters where id = persona) is not null then raise exception 'a waiting staff persona stays waiting'; end if;
+  -- A waiting persona's Act is refused in words that name its way out (acts_well_formed; the player-facing paths refuse in played_by's, retire_character's and the older functions' own words).
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  if pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, ''post'', %L, ''{"body": "Early."}'')', persona, tests.thread('Changeover persona thread')))
+     is distinct from '55000: that persona has not debuted; an admin makes it a member or hires it' then
+    raise exception 'a waiting persona''s Act names its way out: %', pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, ''post'', %L, ''{"body": "Early."}'')', persona, tests.thread('Changeover persona thread 2')));
+  end if;
+  perform set_config('kayfabb.staff_writer', 'off', true);
+  -- Restored, it acts.
+  update characters set retired_at = null where id = gone;
+  if pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, ''post'', %L, ''{"body": "Back."}'')', gone, tests.thread('Changeover thread'))) is not null then
+    raise exception 'a restored character acts';
+  end if;
+end $$;
