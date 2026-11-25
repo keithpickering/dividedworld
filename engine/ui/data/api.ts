@@ -344,7 +344,7 @@ export interface AnswerPlace {
 }
 
 /** Where a spun thread's origin can be found: an Act with a place number, an update, or a play and where it landed. */
-export type OriginPlace =
+export type OriginPlace = (
   | AnswerPlace
   | Extract<PlaceOn, { kind: 'post' | 'update' }>
   /** A poll, and a public ballot on one (0396): `on` is the poll's post. A secret ballot is no origin. */
@@ -355,7 +355,18 @@ export type OriginPlace =
    * character was cast from, and `at` the post the spin was pressed on (0351); each is null where the thread has none (a play on a post, a
    * thread or a board; a spin that named no post; a row from before the migration).
    */
-  | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null; readonly from: PostPlace | null; readonly at: PostPlace | null };
+  | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null; readonly from: PostPlace | null; readonly at: PostPlace | null }
+) & (
+  /** The board the origin's thread is on (0428), on every kind but an update, which is no post in a thread. */
+  | { readonly kind: 'update' }
+  | { readonly kind: 'post' | 'answer' | 'poll' | 'ballot' | 'play'; readonly board?: Id }
+);
+
+/** What `spinPlaces` answers. */
+export interface SpinPlaces {
+  readonly default: string | null;
+  readonly boards: readonly { readonly slug: string; readonly name: string; readonly barred: boolean; readonly until: string | null }[];
+}
 
 export type ActKind = 'post' | 'spin' | 'card' | 'edit' | 'tally' | 'reveal' | 'unmask' | 'move' | 'move_end' | 'move_keep' | 'set' | 'take_back' | 'spring' | 'update' | 'card_end' | 'announce'
   /* The Mod Bots' Acts (supabase/migrations/0104 to 0109): meta acts like a card play, none a place in the thread (`seq` null). */
@@ -3253,13 +3264,19 @@ export interface KayfaApi {
   closePollAsAdmin(poll: Id): Promise<Answer<PollWritten>>;
   /** A public poll's ballots, the changes included, newest first, 50 at a time; `after` is the last ballot of the page held (`at` and `act`). A secret poll is refused. */
   pollBallots(poll: Id, after?: { readonly at: string; readonly act: Id }): Promise<Answer<PollBallotsPage>>;
-  spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /** `board` is the slug of the board the thread opens on (0428); left out, today's board (the origin's thread's, or the players' board from The System's), with a bar checked on it. */
+  spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id, board?: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * A barred character's apology (`apologize`, 0130): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
    * apology the move's staff member rules on. Refused while the character is banned, on a move that is not this character's or has ended, while one waits, and
    * within `Settings.apology.apologyEveryHours` of the last (the refusal names the time the next opens). `framing` is a spin's: the characters its counterfeit quotes name are told.
    */
-  apologize(move: Id, character: Id, title: string, body: string, framing?: readonly Id[]): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  apologize(move: Id, character: Id, title: string, body: string, framing?: readonly Id[], board?: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
+  /**
+   * What a spin's form offers (`spin_places`, 0428): the slug of today's board for the origin (null for no Act) and every open board that is not The System's, in the index's order,
+   * with whether the character is barred from it and until when (null: no end set). The character must be the caller's. A failed read throws.
+   */
+  spinPlaces(origin: Id, character: Id): Promise<SpinPlaces>;
   /**
    * Buy a card from its slot of the Vending Machine, from the settled wallet only: the ghost estimate cannot be spent. The slot is
    * sent with the price it showed, and the server refuses, in plain words, a price that is no longer its own. Private, and nothing

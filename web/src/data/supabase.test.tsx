@@ -1177,6 +1177,7 @@ describe('writes through the act function', () => {
     await h.api.startThread('general', B, 'A title', 'body', [C]);
     await h.api.spin(A, B, 'A title', 'body', [C]);
     await h.api.spin(A, B, 'A title', 'body', undefined, C);
+    await h.api.spin(A, B, 'A title', 'body', undefined, undefined, 'side');
     expect(act(h).map((r) => r.body)).toEqual([
       { action: 'post', thread: T, character: B, body: 'hi', quote: A },
       { action: 'post', thread: T, character: B, body: 'hi' },
@@ -1187,6 +1188,7 @@ describe('writes through the act function', () => {
       { action: 'startThread', board: 'general', character: B, title: 'A title', body: 'body', framing: [C] },
       { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', framing: [C] },
       { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', at: C },
+      { action: 'spin', origin: A, character: B, title: 'A title', body: 'body', board: 'side' },
     ]);
     for (const r of act(h)) {
       expect(r.method).toBe('POST');
@@ -1238,6 +1240,24 @@ describe('writes through the act function', () => {
     expect(await secret.api.pollBallots(T)).toEqual({ ok: false, error: 'that poll\'s ballots are secret' });
   });
 
+  it('reads the places a spin can go by spin_places, and a failed read throws', async () => {
+    const h = harness((r) => (r.url.pathname.endsWith('/rpc/spin_places') ? json({ default: 'general', boards: [{ slug: 'general', name: 'General', barred: false, until: null }, { slug: 'side', name: 'Side', barred: true, until: '2026-12-01T00:00:00+00:00' }] }) : undefined));
+    expect(await h.api.spinPlaces(A, B)).toEqual({ default: 'general', boards: [{ slug: 'general', name: 'General', barred: false, until: null }, { slug: 'side', name: 'Side', barred: true, until: '2026-12-01T00:00:00+00:00' }] });
+    expect(h.to('rpc/spin_places')[0]!.body).toEqual({ origin: A, through: B });
+    const down = harness((r) => (r.url.pathname.endsWith('/rpc/spin_places') ? json({ message: 'boom' }, 500) : undefined));
+    await expect(down.api.spinPlaces(A, B)).rejects.toThrow();
+  });
+
+  it('maps the board an origin place carries, and none for an update', async () => {
+    const read = async (raw: unknown) => (await harness(() => rows([{ ...THREAD_ROW, origin_place: raw }])).api.thread(T))?.origin;
+    expect(await read({ kind: 'post', thread: C, title: 'Where', seq: 7, board: B })).toEqual({ kind: 'post', thread: C, title: 'Where', seq: 7, board: B });
+    expect(await read({ kind: 'post', thread: C, title: 'Where', seq: 7 })).toEqual({ kind: 'post', thread: C, title: 'Where', seq: 7 });
+    expect(await read({ kind: 'play', card: 'glint', on: null, board: B })).toMatchObject({ kind: 'play', board: B });
+    expect(await read({ kind: 'poll', question: 'Q', on: { kind: 'post', thread: C, title: 'W', seq: 1 }, board: B })).toMatchObject({ kind: 'poll', board: B });
+    expect(await read({ kind: 'update', act: A, title: 'U', board: B })).toEqual({ kind: 'update', act: A, title: 'U' });
+    expect(await read({ kind: 'post', thread: C, title: 'Where', seq: 7, board: 7 })).toEqual({ kind: 'post', thread: C, title: 'Where', seq: 7 });
+  });
+
   it('sends an apology to the act function, never to the apologize rpc, and maps its answer as a spin\'s', async () => {
     const thread = { id: T, board: C, title: 'Sorry', origin_act_id: null, created_at: '2026-10-01T09:00:00+00:00' };
     const h = harness((r) => (r.url.pathname === '/functions/v1/act' ? json({ thread, act: ACT_ROW }) : undefined));
@@ -1247,6 +1267,8 @@ describe('writes through the act function', () => {
       { action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry' },
       { action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry', framing: [C] },
     ]);
+    await h.api.apologize(A, B, 'Sorry', 'I am sorry', undefined, 'side');
+    expect(act(h).at(-1)!.body).toEqual({ action: 'apologize', move: A, character: B, title: 'Sorry', body: 'I am sorry', board: 'side' });
     expect(h.to('rpc/apologize')).toHaveLength(0);
     expect(plain).toEqual(await h.api.spin(A, B, 'Sorry', 'I am sorry'));
     expect(plain.ok && plain.value.act).toEqual(ACT);
