@@ -163,58 +163,6 @@ language sql stable security definer set search_path = public, pg_temp as $$
     left join instance_threads() st(id) on st.id = t.id cross join (select system_board() as id) sb
 $$;
 
--- lasting_move_problem (0320): a moveThread naming a thread in system_threads() is refused. Everything else as 0320 wrote it.
-create or replace function lasting_move_problem(in_kind text, params jsonb) returns text
-language plpgsql stable security definer set search_path = public, pg_temp as $$
-declare
-  th record;
-  src uuid;
-  dst uuid;
-  target uuid;
-  fb uuid;
-  hop uuid;
-  steps integer := 0;
-begin
-  if in_kind = 'createBoard' then
-    if jsonb_typeof(params -> 'name') is distinct from 'string' or btrim(params ->> 'name') = '' then return 'a new board needs a name'; end if;
-    if char_length(params ->> 'name') > 200 then return 'a board''s name is at most 200 characters'; end if;
-    if jsonb_typeof(params -> 'premise') is distinct from 'string' or btrim(params ->> 'premise') = '' then return 'a new board needs a premise'; end if;
-    if jsonb_typeof(params -> 'description') is distinct from 'string' or btrim(params ->> 'description') = '' then return 'a new board needs a description'; end if;
-    if params -> 'fallback' is not null and params -> 'fallback' <> 'null'::jsonb then
-      fb := safe_uuid(params ->> 'fallback');
-      if fb is null or not exists (select 1 from boards b where b.id = fb and not b.is_system and board_is_open(b.id)) then
-        return 'a new board''s fallback is an open board of the players';
-      end if;
-    end if;
-  elsif in_kind = 'moveThread' then
-    select t.id, t.board, t.origin_board into th from threads t where t.id = safe_uuid(params ->> 'thread');
-    if th.id is null then return 'there is no such thread to move'; end if;
-    if exists (select 1 from boards b where b.is_system and b.id in (th.board, th.origin_board)) then return 'a thread on The System''s own board is never moved'; end if;
-    if th.id in (select system_threads()) then return 'that thread is the staff''s own and stays on their board'; end if;
-    target := safe_uuid(params ->> 'board');
-    if target is null or not exists (select 1 from boards b where b.id = target) then return 'there is no such board to move the thread to'; end if;
-    if exists (select 1 from boards b where b.id = target and b.is_system) then return 'a thread is never moved onto The System''s own board'; end if;
-    if not board_is_open(target) then return 'that board is closed, so a thread cannot be moved onto it'; end if;
-  elsif in_kind = 'mergeBoard' then
-    src := safe_uuid(params ->> 'board');
-    dst := safe_uuid(params ->> 'into');
-    if src is null or not exists (select 1 from boards b where b.id = src) then return 'there is no such board to merge'; end if;
-    if dst is null or not exists (select 1 from boards b where b.id = dst) then return 'there is no such board to merge it into'; end if;
-    if src = dst then return 'a board is never merged into itself'; end if;
-    if exists (select 1 from boards b where b.is_system and b.id in (src, dst)) then return 'The System''s own board is never merged or merged into'; end if;
-    -- A cycle: the board it would merge into is already sent, by merges in force, on to this one.
-    hop := dst;
-    while hop is not null and steps < 50 loop
-      if hop = src then return 'a board is never merged into one that is already merged into it'; end if;
-      hop := board_merge_into(hop);
-      steps := steps + 1;
-    end loop;
-    if not board_is_open(src) then return 'that board is already closed'; end if;
-    if not board_is_open(dst) then return 'a board is never merged into a closed board'; end if;
-  end if;
-  return null;
-end $$;
-
 -- lasting_move_problem (0407): a moveThread naming a staff thread is refused, by its flag. Everything else as 0407 wrote it.
 create or replace function lasting_move_problem(in_kind text, params jsonb) returns text
 language plpgsql stable security definer set search_path = public, pg_temp as $$
