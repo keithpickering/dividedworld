@@ -37,13 +37,12 @@ jobs:
     # every shard's report and fails unless every file on disk ran.
     # The limit ends a job that will never end, and is the last of four: inside the suite a lock wait ends at 30s, a
     # statement at 300s and a file at 10 minutes (tools/test-sql.mjs), so a hang is ended long before this.
-    # Measured on 2026-11-25 (docs/plans/2026-11-25-sql-suite-split-design.md, sections 1 and 7): the suite ran one file
-    # after another in 41 minutes on main (release run 45610008489), and a PR's run was cancelled at 44. Each file now
-    # runs on a clone of one replayed template, four files at once in a shard, and a shard is expected in 6 to 10 minutes
-    # on a slow runner (issue #515: a slow runner's four CPUs do about two CPUs' work). 30 is about three times the
-    # slowest shard, the figure the build and the e2e shards use. If a shard needs more, the number of shards changes,
-    # not this limit. The limit before the split was 15 minutes (2026-11-12), then 45, then 75 as a stopgap until the
-    # split (#587) landed; those figures were for one runner running the whole suite.
+    # Measured on 2026-11-25: the suite ran one file after another in 41 minutes on main (release run 45610008489), and PR #1088's
+    # run was cancelled at 44. Each file now runs on a clone of one replayed template, as many at once as the runner has CPUs, and
+    # a file that holds a wall-clock budget runs alone (#1099). This PR's own runs (45694515162, 45697116054) took 3 to 7.5 minutes
+    # a shard, setup included, and the gather under half a minute. 30 is about four times the slowest shard, the figure the
+    # build and the e2e shards use. If a shard needs more, the number of shards changes, not this limit. The limit before the
+    # split was 15 minutes (2026-11-12), then 45, then 75 as a stopgap until the split (#587) landed: one runner, the whole suite.
     timeout-minutes: 30
     services:
       postgres:
