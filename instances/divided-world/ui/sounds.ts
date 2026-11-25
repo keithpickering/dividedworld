@@ -1,5 +1,5 @@
 /**
- * Divided World's sounds: the audience's laugh track and Steel Chair's, each with its caption and the ink of its dot.
+ * Divided World's sounds: the audience's laugh track, Steel Chair's and It's Curtains', each with its caption and the ink of its dot.
  * The files are in `sounds/`, listed in `sounds/sounds.json` (tools/check-sounds.mjs holds the two to each other).
  * The engine plays them on the game bus (engine/ui/audio/types.ts), each with the `gain` that brings its measured
  * loudness (the manifest's `lufs` and `peak`, written by tools/measure-sounds.mjs) to the same level.
@@ -23,6 +23,10 @@ import steelChairSettle1 from './sounds/steel-chair-settle-1.mp3?url';
 import steelChairSettle2 from './sounds/steel-chair-settle-2.mp3?url';
 import steelChairSettle3 from './sounds/steel-chair-settle-3.mp3?url';
 import steelChairSettle4 from './sounds/steel-chair-settle-4.mp3?url';
+import itsCurtainsDrumroll from './sounds/its-curtains-drumroll.mp3?url';
+import itsCurtainsCrash from './sounds/its-curtains-crash.mp3?url';
+import itsCurtainsWhoosh from './sounds/its-curtains-whoosh.mp3?url';
+import itsCurtainsTada from './sounds/its-curtains-tada.mp3?url';
 
 const LAUGH = 'The audience laughs';
 const CHEER = 'The audience cheers';
@@ -41,10 +45,11 @@ export function gainOf(m: { lufs: number; peak: number }): number {
 
 const measured = new Map(manifest.map((e) => [e.file, e]));
 
-const slot = (key: string, file: string, src: string, caption: string, ink: string, loop?: true): SoundSlot => {
+/* `level` is a mix the design sets on top of the loudness the manifest brings a sound to, as the owner tuned It's Curtains' four (2026-11-25). */
+const slot = (key: string, file: string, src: string, caption: string, ink: string, { loop, level = 1 }: { readonly loop?: true; readonly level?: number } = {}): SoundSlot => {
   const m = measured.get(file);
   if (!m) throw new Error(`sounds/sounds.json has no entry for ${file} (tools/check-sounds.mjs holds that there is one)`);
-  return Object.freeze({ key, src, bus: 'game', caption, ink, gain: gainOf(m), ...(loop ? { loop } : {}) });
+  return Object.freeze({ key, src, bus: 'game', caption, ink, gain: gainOf(m) * level, ...(loop ? { loop } : {}) });
 };
 
 export const sounds: SoundsUi = Object.freeze({
@@ -58,14 +63,18 @@ export const sounds: SoundsUi = Object.freeze({
     slot('laugh-track.boo-1', 'boo-1.mp3', boo1, BOO, 'var(--kb-salty)'),
     slot('laugh-track.boo-2', 'boo-2.mp3', boo2, BOO, 'var(--kb-salty)'),
     slot('laugh-track.boo-3', 'boo-3.mp3', boo3, BOO, 'var(--kb-salty)'),
-    slot('laugh-track.titter', 'titter.mp3', titter, 'The audience titters', 'var(--kb-pepperoni)', true),
-    slot('laugh-track.ooh', 'ooh.mp3', ooh, 'The audience goes “ooh”', 'var(--kb-sweet)', true),
-    slot('laugh-track.grumble', 'grumble.mp3', grumble, 'A grumble rises', 'var(--kb-salty)', true),
+    slot('laugh-track.titter', 'titter.mp3', titter, 'The audience titters', 'var(--kb-pepperoni)', { loop: true }),
+    slot('laugh-track.ooh', 'ooh.mp3', ooh, 'The audience goes “ooh”', 'var(--kb-sweet)', { loop: true }),
+    slot('laugh-track.grumble', 'grumble.mp3', grumble, 'A grumble rises', 'var(--kb-salty)', { loop: true }),
     slot('steel-chair.hit', 'steel-chair-hit.mp3', steelChairHit, 'A steel chair clangs', 'var(--kb-salty)'),
     slot('steel-chair.settle-1', 'steel-chair-settle-1.mp3', steelChairSettle1, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-2', 'steel-chair-settle-2.mp3', steelChairSettle2, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-3', 'steel-chair-settle-3.mp3', steelChairSettle3, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-4', 'steel-chair-settle-4.mp3', steelChairSettle4, CLATTER, 'var(--kb-salty)'),
+    slot('its-curtains.drumroll', 'its-curtains-drumroll.mp3', itsCurtainsDrumroll, 'Drumroll', 'var(--kb-pepperoni)', { loop: true, level: 0.8 }),
+    slot('its-curtains.crash', 'its-curtains-crash.mp3', itsCurtainsCrash, 'Cymbal crash', 'var(--kb-pepperoni)'),
+    slot('its-curtains.whoosh', 'its-curtains-whoosh.mp3', itsCurtainsWhoosh, 'Curtain whooshes open', 'var(--kb-pepperoni)', { level: 0.9 }),
+    slot('its-curtains.tada', 'its-curtains-tada.mp3', itsCurtainsTada, 'Ta-da!', 'var(--kb-pepperoni)', { level: 0.9 }),
   ]),
   preview: Object.freeze({ game: 'laugh-track.laugh-1' }),
 });

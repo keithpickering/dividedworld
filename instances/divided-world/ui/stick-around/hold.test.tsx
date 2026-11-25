@@ -683,6 +683,7 @@ describe('an effect given more than one play', () => {
     return (
       <HoldStage.Provider value={{ mode: 'view', level: 0 }}>
         <StickAroundEffect
+          covered={false}
           post={act1()} plays={plays} states={{}} released={released} written={new Map()} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} moment={null} save={vi.fn()} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null} nameOf={() => 'A character'}
           release={async (id) => { setReleased((r) => new Set([...r, id])); return { ok: true, value: { play: id, releasedAt: 'now' } } as never; }}
           give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
@@ -710,6 +711,64 @@ describe('an effect given more than one play', () => {
     expect(view()).toBeNull();
     /* A play that arrives later is not shown in a view that was open for the one before. */
     act(() => { set([]); });
+    expect(view()).toBeNull();
+  });
+});
+
+/* ---------------------------------------------------------------------- under a curtain ---- */
+describe('a held post under a curtain', () => {
+  let flip: (covered: boolean) => void = () => undefined;
+  function Covered({ covered }: { covered: boolean }) {
+    const [shut, setShut] = useState(covered);
+    flip = setShut;
+    return (
+      <StickAroundEffect
+        covered={shut}
+        post={{ id: 'curtained', character: null, kind: 'post', thread: 't', targetActId: null, seq: 2, createdAt: '2026-10-30T12:00:00Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null } as Act}
+        plays={[{ id: 'c1', card: 'stick-around', layer: 1, caster: null, message: '', config: { sentence: SENTENCE }, playedAt: '2026-10-30T12:00:00Z', post: 'curtained' }]}
+        states={{}} released={new Set()} written={new Map()} reader={{ author: false, caster: false }} place="thread" reach="post" still={false} moment={null} save={vi.fn()} show={() => {}} met={() => {}} ink={NO_INK} holdScreen={() => {}} marks={null}
+        release={async () => ({ ok: false, error: 'no' }) as never}
+        nameOf={() => 'Spritey'}
+        give={async () => ({ ok: false, error: 'no' })} moreGifts={async () => {}} wallet={null}
+      >
+        <p>the post</p>
+      </StickAroundEffect>
+    );
+  }
+
+  test('a covered post on screen is not taken over, however long the page is still; uncovered, it is, once the page settles as if it had just scrolled in', async () => {
+    vi.useFakeTimers();
+    renderIn(buildWorld(), <Covered covered />);
+    await scrollWindow();
+    await wait(TUNING.settleMs * 3);
+    expect(view(), 'covered: nothing is taken over').toBeNull();
+    act(() => { flip(false); });
+    await wait(TUNING.settleMs + 20);
+    expect(view()).not.toBeNull();
+  });
+
+  test('a reader already held when a curtain shuts over the post is let go of, as a post out of view; opened, it is taken over again as if it had just scrolled in', async () => {
+    vi.useFakeTimers();
+    renderIn(buildWorld(), <Covered covered={false} />);
+    await scrollWindow();
+    await wait(TUNING.settleMs + 20);
+    expect(view(), 'held first').not.toBeNull();
+    act(() => { flip(true); });
+    await wait(50);
+    expect(view(), 'the curtain shuts: the view is let go').toBeNull();
+    await wait(TUNING.settleMs * 3);
+    expect(view(), 'and nothing takes the reader over while it stays shut').toBeNull();
+    act(() => { flip(false); });
+    await wait(TUNING.settleMs + 20);
+    expect(view(), 'opened, the hold is taken again').not.toBeNull();
+  });
+
+  test('a curtain shut before the page settles stops the take-over that was coming', async () => {
+    vi.useFakeTimers();
+    renderIn(buildWorld(), <Covered covered={false} />);
+    await scrollWindow();
+    act(() => { flip(true); });
+    await wait(TUNING.settleMs * 3);
     expect(view()).toBeNull();
   });
 });

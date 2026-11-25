@@ -24,7 +24,7 @@ import { DEFAULTS, LaughTrackEffect, __resetPointer } from './Effect.tsx';
 import { defaults as instanceDefaults } from '../../settings.ts';
 import type { PlaceSpec } from './watch.ts';
 
-type Off = { (): void; refresh: () => void; pin: (on: boolean) => void };
+type Off = { (): void; refresh: () => void; pin: (on: boolean) => void; cover: (on: boolean) => void };
 const hub = vi.hoisted(() => ({
   mode: 'fake' as 'fake' | 'real',
   specs: [] as unknown[],
@@ -46,7 +46,7 @@ vi.mock('./watch.ts', async (original) => {
     register: (spec: PlaceSpec) => {
       if (hub.mode === 'real') return actual.register(spec);
       hub.specs.push(spec);
-      const off = Object.assign(vi.fn(() => { hub.gone.add(spec); }), { refresh: vi.fn(), pin: vi.fn() });
+      const off = Object.assign(vi.fn(() => { hub.gone.add(spec); }), { refresh: vi.fn(), pin: vi.fn(), cover: vi.fn() });
       hub.offs.push(off);
       return off;
     },
@@ -66,7 +66,7 @@ const postOf = (body: string) => ({ id: 'post-1', character: 'author', kind: 'po
 const CUES = [{ phrase: 'Luigi', sound: 'boo' }, { phrase: 'great', sound: 'cheer' }, { phrase: 'Mario is', sound: 'laugh' }];
 const playOf = (cues: unknown = CUES, seed = 7, id = 'lt1'): CardPlay => ({ id, card: 'laugh-track', layer: 1, caster: 'c1', message: '', config: { cues, seed }, playedAt: '2026-11-11T10:01:00.000Z', post: 'post-1' }) as CardPlay;
 
-interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly moment?: { readonly at: number } | null; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean; readonly cardSettings?: Record<string, number> }
+interface Options { readonly body?: string; readonly plays?: CardPlay[]; readonly still?: boolean; readonly moment?: { readonly at: number } | null; readonly wrap?: 'none' | 'autocorrect-inside' | 'autocorrect-outside'; readonly posts?: number; readonly place?: 'thread' | 'origin'; readonly sounds?: boolean; readonly cardSettings?: Record<string, number>; readonly covered?: boolean }
 
 const base = (o: Options, views: (CardView | null)[], met: () => void, body: string) => ({
   post: postOf(body), plays: o.plays ?? [playOf()], states: {}, released: new Set<string>(), written: new Map(), reader: { author: false, caster: false },
@@ -78,10 +78,13 @@ function mount(o: Options = {}) {
   const views: (CardView | null)[] = [];
   const met = vi.fn();
   let setBody: (b: string) => void = () => {};
+  let setCover: (c: boolean) => void = () => {};
   function Host() {
     const [body, set] = useState(o.body ?? BODY);
     setBody = set;
-    const props = base(o, views, met, body);
+    const [covered, shut] = useState(o.covered ?? false);
+    setCover = shut;
+    const props = { ...base(o, views, met, body), covered };
     const taped = { ...props, plays: [{ id: 'ac1', card: 'autocorrect', layer: 1, caster: 'c2', message: '', config: { phrase: 'Luigi', replacement: 'Wario' }, playedAt: '2026-11-11T10:02:00.000Z', post: 'post-1' } as CardPlay] };
     const text = <BbCode text={body} />;
     const lt = (children: React.ReactNode) => <LaughTrackEffect {...props}>{children}</LaughTrackEffect>;
@@ -98,7 +101,7 @@ function mount(o: Options = {}) {
     );
   }
   const world = renderInWorld(<Host />, { ...(o.sounds ? { sounds } : {}), ...(o.cardSettings ? { settings: { cardSettings: o.cardSettings } } : {}) });
-  return { ...world, views, met, edit: (b: string) => act(() => setBody(b)) };
+  return { ...world, views, met, edit: (b: string) => act(() => setBody(b)), cover: (c: boolean) => act(() => setCover(c)) };
 }
 const pieces = () => [...document.querySelectorAll<HTMLElement>('.dw-lt-cue')];
 /** The first piece of each place: the buttons, in the page's order. */
@@ -887,5 +890,20 @@ describe('Laugh Track: on a real page', () => {
     await step(1000);
     expect(heard.loop).not.toHaveBeenCalled();
     expect(heard.play).not.toHaveBeenCalled();
+  });
+});
+
+describe('Laugh Track: under a curtain', () => {
+  test('every place registered while the post is covered is told it is covered; opening tells each it is not, as a post that just scrolled in', () => {
+    const m = mount({ covered: true });
+    expect(hub.offs.length).toBeGreaterThan(0);
+    for (const o of hub.offs as Off[]) {
+      expect(o.cover, 'covered at registration').toHaveBeenLastCalledWith(true);
+      expect(o.cover).not.toHaveBeenCalledWith(false);
+    }
+    m.cover(false);
+    for (const o of hub.offs as Off[]) expect(o.cover).toHaveBeenLastCalledWith(false);
+    m.cover(true);
+    for (const o of hub.offs as Off[]) expect(o.cover).toHaveBeenLastCalledWith(true);
   });
 });

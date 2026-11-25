@@ -200,7 +200,7 @@ test('canApply refuses a cue found only inside a link, in the card\'s words, and
   assert.equal(laughTrack.canApply(linkedTarget(), [], { cues: [cue('Luigi')] }, new Date()).ok, true);
   assert.deepEqual(laughTrack.canApply(linkedTarget('Visit https://example.com/Luigi now'), [], { cues: [cue('Luigi')] }, new Date()), { ok: false, why: '“Luigi” is not in this post\'s own words' });
   const perPlace = { ...settings, economy: { ...settings.economy, 'laughTrack.perPlace': 100, 'laughTrack.freePlaces': 0, 'laughTrack.mostAdded': 10000 } };
-  const price = (text: string) => laughTrack.playPrice!(perPlace, linkedTarget(text), { cues: [cue(ADDRESS), cue('Luigi')] });
+  const price = (text: string) => laughTrack.playPrice!(perPlace, linkedTarget(text), { cues: [cue(ADDRESS), cue('Luigi')] }, []);
   assert.equal(price(LINKED), price('Visit and Luigi is great.'), 'the link\'s place costs nothing: only the plain Luigi is priced');
   assert.equal(price(LINKED), 100);
 });
@@ -275,15 +275,15 @@ test('Laugh Track is refused where the post already has an audience, in its own 
 });
 
 test('Laugh Track\'s price is 0.05 a place past five, at most 1.00, and a face asks the most', () => {
-  const price = (places: number) => laughTrack.playPrice(settings, on(Array(places).fill('word').join(' ')), { cues: [cue('word')] });
+  const price = (places: number) => laughTrack.playPrice(settings, on(Array(places).fill('word').join(' ')), { cues: [cue('word')] }, []);
   assert.equal(price(5), 0);
   assert.equal(price(6), 5);
   assert.equal(price(20), 75);
   assert.equal(price(40), 100, 'capped');
-  assert.equal(laughTrack.playPrice(settings, on('word'), {} as never), 100, 'a face asks the most');
-  assert.equal(laughTrack.playPrice(settings, { reach: 'character', character: 'c' }, { cues: [cue('word')] }), 0);
+  assert.equal(laughTrack.playPrice(settings, on('word'), {} as never, []), 100, 'a face asks the most');
+  assert.equal(laughTrack.playPrice(settings, { reach: 'character', character: 'c' }, { cues: [cue('word')] }, []), 0);
   const tuned = withOverrides(settings, { economy: { 'laughTrack.perPlace': 10, 'laughTrack.freePlaces': 1 } });
-  assert.equal(laughTrack.playPrice(tuned, on('word word word'), { cues: [cue('word')] }), 20, 'its numbers are the settings\'');
+  assert.equal(laughTrack.playPrice(tuned, on('word word word'), { cues: [cue('word')] }, []), 20, 'its numbers are the settings\'');
 });
 
 test('Laugh Track says which words the audience reacts to, and how', () => {

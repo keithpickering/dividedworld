@@ -14,5 +14,5 @@ test("Feelin' Glam lands on a thread, one at a time, and costs nothing more", ()
   assert.deepEqual(glam.canApply(post(10), []), { ok: false, why: 'this card lands on a thread' });
   assert.deepEqual(glam.canApply(thread, [{ card: 'feelin-glam', act: 'k1', reach: 'thread', ends: live }]), { ok: false, why: 'this thread already carries that card' });
   assert.equal(glam.canApply(thread, [{ card: 'feelin-glam', act: 'k1', reach: 'thread', ends: new Date(Date.now() - 1000).toISOString() }]).ok, true, 'one that has worn off is no longer in the way');
-  assert.equal(glam.playPrice(settings, thread, {}), 0);
+  assert.equal(glam.playPrice(settings, thread, {}, []), 0);
 });

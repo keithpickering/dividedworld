@@ -18,6 +18,16 @@ import type { CardFace } from './faces.ts';
  * A card played on a post, read from its card Act: the Act itself is the record, this is its payload
  * in the shape an effect wants (supabase/migrations/0016_cards_screens.sql writes it).
  */
+/**
+ * A post's covers for this reader (`CardUi.coversRow`; held by thread/cover.tsx, which re-exports it). `total` is the number of live covering plays on the post's own reach;
+ * `shut` is how many are still shut for this reader, from `total` down to 0; `open` opens the outermost shut one (the latest play this reader has not opened) and `encore` shuts every one again. The page's memory alone.
+ * It lives here, not in cover.tsx, since this file is compiled without JSX.
+ */
+export interface RowCover { readonly shut: number; readonly total: number; readonly open: () => void; readonly encore: () => void }
+
+/** What a card's `Cover` is given: this card's covering plays on the post that are still shut for this reader, latest (outermost) first, so `plays[0]` is the one to draw and `plays[1]`, if any, the next under it; the reader's state of all the post's covers; and the post. */
+export interface CoverProps { readonly plays: readonly CardPlay[]; readonly cover: RowCover; readonly post: Id }
+
 export interface CardPlay {
   /** The play's Act: what a saved state, a release and a log line name it by. */
   readonly id: Id;
@@ -248,6 +258,13 @@ export interface EffectProps {
    * thread's post: absent in the ORIGIN box, the front door, a moment and History, where the effect draws its own fold.
    */
   readonly fold?: { readonly open: boolean; readonly toggle: () => void };
+  /**
+   * The post's covers, for this reader: how many of the post's live covering plays are still shut, and the presses that open one or shut them all again. Given only to
+   * a card with `CardUi.coversRow`, on its post's own reach, and only in a thread's post: absent in the ORIGIN box, the front door, a moment and History, where the effect covers the content area itself.
+   */
+  readonly cover?: RowCover;
+  /** True while any cover over this post is shut for this reader (`CoveredCtx`): an effect that starts on sight waits until it is false. Given to every effect. */
+  readonly covered: boolean;
   /** The post's marks, drawn where the card's effect puts them (a takeover's only; null for every other card). */
   readonly marks: ReactNode;
   /**
@@ -442,6 +459,14 @@ export interface CardUi {
    * and draws its own fold where it has none (`EffectProps.fold`). It must have an `Effect` and must not be a `takeover` (`instanceUiProblems`).
    */
   readonly foldsRow?: true;
+  /**
+   * A live play of this card on a post covers the post's whole row in a thread; the engine mounts `Cover` over the row and holds the reader's state (thread/cover.tsx);
+   * where a post has no row, the card's `Effect` covers the content area itself. It must have both `Cover` and `Effect`, must not be a `takeover` and must not also set
+   * `foldsRow` (`instanceUiProblems`).
+   */
+  readonly coversRow?: true;
+  /** What the engine mounts over a post's row while a play of this card is shut for this reader (`coversRow`); it is given the post's covering plays and the reader's state. */
+  readonly Cover?: ComponentType<CoverProps>;
   /**
    * `nestOrder` nests this card's effect (a layer other cards' ink lies on) inside every card without it, whatever its play
    * order, and outside only the cards that write (whose tail stays next to the words); among several, play order holds. A

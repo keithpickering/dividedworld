@@ -156,6 +156,7 @@ function mount(o: Options = {}) {
   let say: (view: CardView | null) => void = () => {};
   const show: EffectProps['show'] = (view) => { shown.push(view); say(view); };
   const props: EffectProps = {
+    covered: false,
     post: POST, plays: plays(o.layers ?? 1), states: o.states ?? {}, released: new Set(), written: new Map(), reader: { author: o.author ?? false, caster: false },
     place: o.place ?? 'thread', reach: 'post', still: o.still ?? false, moment: o.moment ?? null, save, release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show, met: o.met ?? (() => {}), ink: createClaims().at('post:whoops', 0), holdScreen: () => {}, marks: null, nameOf: o.nameOf ?? ((c) => CASTERS[c ?? ''] ?? 'A character'), give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null, children: <p>{textOf(layoutLines)}</p>,
   };

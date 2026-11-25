@@ -556,3 +556,61 @@ test('a resize reads the root font size again, rebuilds the observer\'s reach if
   assert.equal(frames.length, 1);
   assert.equal(count(), 3, 'still one listener of each');
 });
+
+test('a covered place is told nothing and murmurs nothing, near or pinned; uncovered, it is told as if it had just scrolled in', () => {
+  const log = made(); const other = made();
+  const here = el(AT_LINE());
+  const off = place(log, 'boo', here, {}, SCREEN, false);
+  const pinned = place(other, 'cheer', el(rect(5000, 5020)), {}, SCREEN, false);
+  off.cover(true); pinned.cover(true); pinned.pin(true);
+  FakeObserver.all.at(-1)!.see(here);
+  play(1000, 1400);
+  assert.deepEqual(log.told, [], 'covered and at the line: told nothing');
+  assert.deepEqual(other.told, [], 'covered and pinned: told nothing');
+  assert.equal(log.voices.length + other.voices.length, 0, 'and no loop was made');
+  off.cover(false);
+  assert.ok(frames.length > 0, 'opening asks for a frame');
+  play(1500, 1900);
+  assert.deepEqual(log.told, [1], 'told as a place that had just come near');
+  assert.equal(log.voices.length, 1);
+  assert.equal(other.voices.length, 0, 'the other place is still covered');
+});
+
+test('a place that was near and heard is told 0 and its murmur at nothing when a curtain shuts over it', () => {
+  const log = made(); const e = el(AT_LINE());
+  const off = place(log, 'boo', e);
+  play(1000, 1200);
+  assert.deepEqual(log.told, [1]);
+  assert.equal(log.voices.length, 1);
+  off.cover(true);
+  play(1300, 1700);
+  assert.deepEqual(log.told, [1, 0]);
+  assert.equal(lastGain(log), 0, 'the murmur is held at nothing');
+});
+
+test('a place opened while it is far is told nothing more: it was told 0 at the shut, and the mark stays clear on the opening', () => {
+  const log = made(); const e = el(AT_LINE());
+  const off = place(log, 'boo', e);
+  play(1000, 1200);
+  assert.deepEqual(log.told, [1]);
+  off.cover(true);
+  play(1300, 1500);
+  assert.deepEqual(log.told, [1, 0], 'told 0 at the shut');
+  e.rects = [rect(5000, 5020)];
+  off.cover(false);
+  assert.ok(frames.length > 0, 'opening asks for a frame');
+  play(1600, 2000);
+  assert.deepEqual(log.told, [1, 0], 'far on opening: nothing more is told, so the mark stays clear');
+  assert.equal(lastGain(log), 0, 'and no murmur is raised');
+});
+
+test('a place let go while covered is gone: covering it again, either way, does nothing and asks for no frame', () => {
+  const log = made(); const e = el(AT_LINE());
+  const off = place(log, 'boo', e);
+  off.cover(true);
+  off();
+  frames = [];
+  assert.doesNotThrow(() => { off.cover(false); off.cover(true); });
+  assert.equal(frames.length, 0, 'nothing is owed to a place that is gone');
+  assert.deepEqual(log.told, []);
+});

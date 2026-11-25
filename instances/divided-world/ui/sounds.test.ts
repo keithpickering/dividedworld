@@ -40,12 +40,14 @@ test('every slot has a finite gain above 0, and every file in the manifest is a 
   assert.deepEqual(slotFiles, manifest.map((e) => e.file).sort());
 });
 
-test('every slot\'s gain is the gain of its own file\'s manifest entry', () => {
+/* A slot's level (the design's mix, index.test.tsx's table) only takes a sound down, so its peak never passes the ceiling gainOf holds. */
+test('every slot\'s gain is the gain of its own file\'s manifest entry, or that times a level below 1', () => {
   for (const s of sounds.slots) {
     const file = s.src.replace(/^.*\//, '');
     const entry = manifest.find((e) => e.file === file);
     assert.ok(entry, `${s.key} names ${file}, which the manifest lacks`);
-    assert.ok(near(s.gain as number, gainOf(entry)), `${s.key} has gain ${s.gain}, not the gain of ${file}`);
+    const level = (s.gain as number) / gainOf(entry);
+    assert.ok(level > 0 && (level < 1 || near(level, 1)), `${s.key} has gain ${s.gain}, above the gain of ${file}`);
   }
 });
 

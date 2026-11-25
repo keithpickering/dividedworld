@@ -39,6 +39,7 @@ function Host({ o }: { o: Options }) {
   const [plays, set] = useState(o.plays ?? [play()]);
   setPlays = set;
   const props: EffectProps = {
+    covered: false,
     post, plays, states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: o.place ?? 'thread', reach: 'post', still: false, moment: null,
     show: () => {}, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: vi.fn(), release: vi.fn(), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p data-kb-words>The words of the post.</p>,
@@ -210,7 +211,7 @@ describe('Kick Me hands the first three Salty cards back, end to end on the fake
     const { fake, bo, anaFace, boFace, opener } = setup();
     const sign = must(await fake.useCard('kick-me', anaFace, opener, {}, ''));
     fake.signInAs(bo);
-    const price = whoops.playPrice(instance.settings, { reach: 'post', length: 'Point at these words here. '.repeat(20).length } as never, ink);
+    const price = whoops.playPrice(instance.settings, { reach: 'post', length: 'Point at these words here. '.repeat(20).length } as never, ink, []);
     expect(price).toBeGreaterThan(0);
     const handed: unknown[] = [];
     for (let i = 0; i < 3; i++) {

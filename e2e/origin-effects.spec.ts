@@ -990,3 +990,29 @@ for (const name of ['chair-landed', 'chair-landed-phone'] as const) {
     expect(await pageViolations(page)).toEqual([]);
   });
 }
+
+/**
+ * 20. It's Curtains in the ORIGIN box (docs/plans/2026-11-23-its-curtains-plan.md, Task 8; story `InTheOriginBox`, instances/divided-world/ui/its-curtains/): the curtain over the post the box
+ * shows fills the area under the band, border to border (the byline and the band stay uncovered), the words under it cannot be pressed or tabbed to, and a press opens it.
+ * Poison: the curtain sized to the words' unbordered box, or drawn over the whole box (the band included).
+ */
+test("20. It's Curtains: the curtain fills the box's area under its band, and a press opens it", async ({ page }) => {
+  await page.goto('/?fixture=boards&story=boards-28-it-s-curtains--in-the-origin-box');
+  await expect(box(page)).toBeVisible({ timeout: 20_000 });
+  await expect(area(page)).toBeVisible();
+  await page.evaluate(() => document.fonts.ready);
+  const button = area(page).locator('.dw-curtain-button');
+  await expect(button).toBeVisible();
+  /* Fills the area: its padding box, within a pixel on each side, and the band is clear of it. */
+  await fills(area(page).locator('.dw-curtain'), area(page), 'the curtain');
+  expect((await borderBox(button)).top, "the curtain starts under the band's bottom").toBeGreaterThanOrEqual((await borderBox(band(page))).bottom - 1);
+  /* Shut: what is under it is inert, and the curtain is what a pointer finds over the area's middle. */
+  const middle = await centerOf(area(page));
+  expect(await page.evaluate(([x, y]) => document.elementFromPoint(x!, y!)?.closest('.dw-curtain-button') !== null, [middle.x, middle.y] as const), 'the curtain is on top at the area\'s middle').toBe(true);
+  await expect(area(page).locator('[inert]').first()).toBeAttached();
+  /* A press opens it: the curtain goes, and the words are there to press. */
+  await page.mouse.click(middle.x, middle.y);
+  await expect(area(page).locator('.dw-curtain')).toHaveCount(0, { timeout: 5000 });
+  await expect(area(page).locator('[inert]')).toHaveCount(0);
+  await expect(area(page).getByText('I would like to formally announce').first()).toBeVisible();
+});

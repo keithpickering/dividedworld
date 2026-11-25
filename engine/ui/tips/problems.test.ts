@@ -146,6 +146,17 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(withCards([folds]), rules), ['the card "below" folds the row and has no Effect to draw the fold where a post has no row']);
     assert.deepEqual(instanceUiProblems(withCards([{ ...folds, Effect, takeover: true }]), rules), ['the card "below" folds the row and is a takeover, which lifts the post out of the row the fold hides']);
   });
+  test('refuses a card that covers the row and has no Cover or no Effect, is a takeover, or also folds (CardUi.coversRow)', () => {
+    const Effect = () => null;
+    const Cover = () => null;
+    const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
+    const covers = { key: 'above', status: 'Covered', coversRow: true as const };
+    assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect, Cover }]), rules), [], 'a well-formed covering card');
+    assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect }]), rules), ['the card "above" covers the row and has no Cover to draw over it']);
+    assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Cover }]), rules), ['the card "above" covers the row and has no Effect to cover the content area where a post has no row']);
+    assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect, Cover, takeover: true }]), rules), ['the card "above" covers the row and is a takeover, which lifts the post out of the row the cover hides']);
+    assert.deepEqual(instanceUiProblems(withCards([{ ...covers, Effect, Cover, foldsRow: true }]), rules), ['the card "above" covers the row and also folds it; a card does one or the other']);
+  });
   test('refuses a card drawn by another that names no card with an Effect, has an Effect itself, or names a card that is itself drawn by another (CardUi.drawnBy)', () => {
     const Effect = () => null;
     const withCards = (list: unknown[]) => ({ ...ui(good), cards: [{ key: 'whoops', status: 'Ink on this post' }, ...list] as unknown as readonly CardUi[] });
