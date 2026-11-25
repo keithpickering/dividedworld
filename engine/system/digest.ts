@@ -16,7 +16,7 @@ import type { Memory } from './memory.ts';
 import { excerpt, EXCERPT_WORDS } from './excerpt.ts';
 import { READ_WORDS } from './read.ts';
 import { amountWords, ago } from './when.ts';
-import { originLine, playLine, pollLines, pollShort, type ReadOrigin, type ReadPlay, type ReadPoll, type Extras } from './extras.ts';
+import { originLine, playLine, pollLines, pollShort, rewoundLine, type ReadOrigin, type ReadPlay, type ReadPoll, type Extras } from './extras.ts';
 import type { SeenPlay } from '../rules/cards.ts';
 
 /**
@@ -29,7 +29,8 @@ export type DigestOrigin = Omit<ReadOrigin, 'post'> & { readonly post: null };
 /** The extras and origin a shown post carries: origin is non-null only for the post that opens a spun thread. */
 export interface DigestSee { readonly extras?: DigestExtras; readonly origin?: DigestOrigin | null }
 
-export interface DigestPollRow { readonly poll: string; readonly post: string; readonly thread: string; readonly title: string; readonly board: string; readonly extras: DigestExtras & { readonly poll: ReadPoll | null } }
+/** `seq` is the poll post's number in its thread, null (or absent) where the digest does not know it. */
+export interface DigestPollRow { readonly poll: string; readonly post: string; readonly thread: string; readonly seq?: number | null; readonly title: string; readonly board: string; readonly extras: DigestExtras & { readonly poll: ReadPoll | null } }
 export interface DigestSpin { readonly thread: string; readonly title: string; readonly origin: DigestOrigin }
 export interface DigestPlay extends ReadPlay { readonly post: string; readonly thread: string; readonly title: string; readonly seq: number | null }
 export interface DigestStandout { readonly character: string; readonly name: string; readonly count: number }
@@ -277,6 +278,9 @@ const clip = (s: string, n: number): string => (s.length <= n ? s : s.slice(0, n
 const unquote = (s: string): string => s.replace(/["\u201c\u201d]/g, "'");
 const line = (s: string): string => s.replace(/\s+/g, ' ').trim();
 
+/** "post #N", or "a post" where the number is not known. */
+const postWords = (seq: number | null | undefined): string => (typeof seq === 'number' && Number.isFinite(seq) ? `post #${seq}` : 'a post');
+
 const record = (v: unknown): Readonly<Record<string, unknown>> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /**
@@ -360,11 +364,33 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   const cardName = words.cardName ?? (() => undefined);
   const playText = (p: ReadPlay): string => clip(line(playLine(p, { now, seen: seen(p.card, { config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, now), amountWords }), cardName })), CLIPS.play);
   // A poll with its free strings and option list bounded, before any renderer sees it.
-  const tame = (p: ReadPoll): ReadPoll => ({ ...p, question: clip(line(p.question ?? ''), CLIPS.question), options: (p.options ?? []).slice(0, DIGEST_MOST.pollOptions).map((o) => clip(line(o), CLIPS.option)) });
+  // The counts are cut to the options' length, so an option past the cut never lends its count to the leaders.
+  const tame = (p: ReadPoll): ReadPoll => ({ ...p, question: clip(line(p.question ?? ''), CLIPS.question), options: (p.options ?? []).slice(0, DIGEST_MOST.pollOptions).map((o) => clip(line(o), CLIPS.option)), counts: (p.counts ?? []).slice(0, DIGEST_MOST.pollOptions) });
+  // The short poll line, assembled in parts so no clip can cut its closing tail: a tie names at most three options, then "others"; the question and the standing are clipped before they are joined.
+  const pollText = (p: ReadPoll): string => {
+    const t = tame(p);
+    const counts = t.options.map((_, i) => t.counts?.[i] ?? 0);
+    const top = counts.reduce((m, c) => Math.max(m, c), 0);
+    const tiedAt = counts.filter((c) => c === top).length;
+    const shown = tiedAt > 3 && top > 0 ? { ...t, options: t.options.filter((_, i) => counts[i] === top).slice(0, 3).concat(['others']), counts: [top, top, top, top] } : t;
+    const short = line(pollShort({ ...shown, question: '' }, now));
+    const at = short.indexOf('"", ');
+    // `[poll: "", <standing>, <time>]`: the question goes back in, clipped, and the rest is the standing and the time, each already bounded.
+    return `[poll: "${unquote(clip(line(t.question ?? ''), CLIPS.question))}", ${clip(short.slice(at + 4, -1), CLIPS.pollShort)}]`;
+  };
+  // The Cards section names the post after the line, so a card with no sentence of the instance's reads without "on this post".
+  const playRow = (p: ReadPlay): string => {
+    const sentence = seen(p.card, { config: p.config, state: p.state, text: p.text ?? null, covered: p.covered ?? null, by: p.by, ago: ago(p.at, now), amountWords });
+    if (sentence !== null && sentence !== '') return playText(p);
+    return clip(line(`[${p.card === null ? 'A card set face down' : cardName(p.card) ?? 'A card'} was played, ${ago(p.at, now)}]`), CLIPS.play);
+  };
   const originText = (o: DigestOrigin): string => clip(line(originLine(o, now, { cardName })), CLIPS.origin);
-  /** A shown post's extras in short form, each as ` <text>`: its poll, its plays, its origin. */
+  /**
+   * A shown post's extras in short form, each as ` <text>`: its poll, a rewind, its plays, its origin. The reaction counts (`extras.reactions`) are left out on purpose: the excerpt line already shows the post's reaction total.
+   */
   const extrasOf = (x: DigestSee): string => [
-    ...(x.extras?.poll ? [clip(line(pollShort(tame(x.extras.poll), now)), CLIPS.pollShort)] : []),
+    ...(x.extras?.poll ? [pollText(x.extras.poll)] : []),
+    ...(rewoundLine(x.extras?.rewoundTo, now) === null ? [] : [line(rewoundLine(x.extras?.rewoundTo, now)!)]),
     ...(x.extras?.plays ?? []).slice(0, DIGEST_MOST.postPlays).map(playText),
     ...(x.origin ? [originText(x.origin)] : []),
   ].map((t) => ` ${t}`).join('');
@@ -427,10 +453,13 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   );
   // The sections the board's extras add (the digest-sees-the-board design): each is present exactly when its field is, so a digest from a database before 0433 reads as it always did, and each says so when it is empty.
   if (digest.polls !== undefined) {
-    const rows = digest.polls.slice(0, DIGEST_MOST.polls).flatMap((p) => [
-      `On "${unquote(clip(line(p.title), CLIPS.title))}" (${clip(line(p.board), CLIPS.board)}):`,
-      ...(p.extras.poll === null ? [] : pollLines(tame(p.extras.poll), now)),
-    ]);
+    // A row with no poll to show (the database's extras are absent or null) is left out; the poll's own first line says "on this post", which has no referent here, so it reads `[poll]` under the row's own `On post #N in ...` line.
+    const rows = digest.polls.slice(0, DIGEST_MOST.polls).flatMap((p) => {
+      const shown = p.extras?.poll;
+      if (shown === null || shown === undefined) return [];
+      const [first = '', ...rest] = pollLines(tame(shown), now);
+      return [`On ${postWords(p.seq)} in "${unquote(clip(line(p.title), CLIPS.title))}" (${clip(line(p.board), CLIPS.board)}):`, first.replace(/^\[poll on this post\]/, '[poll]'), ...rest];
+    });
     section('Polls', rows, 'No poll was open or ran in the window.');
   }
   if (digest.spins !== undefined) {
@@ -439,17 +468,21 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   if (digest.plays !== undefined) {
     section(
       'Cards on the board',
-      digest.plays.slice(0, DIGEST_MOST.plays).map((p) => `${playText(p)} on ${p.seq === null ? 'a post' : `post #${p.seq}`} in "${unquote(clip(line(p.title), CLIPS.title))}".`),
+      digest.plays.slice(0, DIGEST_MOST.plays).map((p) => `${playRow(p)} on ${postWords(p.seq)} in "${unquote(clip(line(p.title), CLIPS.title))}".`),
       'No card was played in the window.',
     );
   }
   if (digest.standouts !== undefined) {
     const when = windowWords(digest.standouts.days);
     const rows = STANDOUT_LABELS.flatMap(([key, label]) => {
-      const list = (digest.standouts![key] ?? []).slice(0, DIGEST_MOST.standouts);
+      // Names and counts travel as pairs: filtered and sorted once here (count, then name), so the words' slots {1}, {2}, {3} always land on the names whose counts they describe.
+      const list = (digest.standouts![key] ?? [])
+        .filter((x) => Number.isFinite(x.count) && x.count > 0)
+        .map((x) => ({ name: clip(line(x.name), CLIPS.name), count: x.count }))
+        .sort((a, b) => b.count - a.count || (a.name < b.name ? -1 : a.name > b.name ? 1 : 0))
+        .slice(0, DIGEST_MOST.standouts);
       if (list.length === 0) return [];
-      const names = list.map((x) => clip(line(x.name), CLIPS.name));
-      return [`${label} ${when}: ${standingWords(list.map((x) => x.count)).replace(/\{(\d)\}/g, (_, i: string) => names[Number(i) - 1] ?? 'someone')}`];
+      return [`${label} ${when}: ${standingWords(list.map((x) => x.count)).replace(/\{(\d)\}/g, (_, i: string) => list[Number(i) - 1]?.name ?? 'someone')}`];
     });
     section('Standouts', rows, `Nobody stood out ${when}.`);
   }

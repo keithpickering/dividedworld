@@ -1358,5 +1358,5 @@ test('the digest is rendered at the meeting\'s slot, not the clock nor the windo
   await run(d.db, m.models, quiet, SLOT, () => slot + 5 * 86_400_000, noFeeds);
   const sent = m.chats[0]!.messages[0]!.content;
   assert.match(sent, /Open: ends in 2 hours\./, 'the poll\'s time is told from the slot');
-  assert.ok(sent.includes(`[${card.name} was played on this post, an hour ago.]`), `the card is named from the instance's list: ${sent.split('Cards on the board')[1]?.slice(0, 200)}`);
+  assert.ok(sent.includes(`[${card.name} was played, an hour ago]`), `the card is named from the instance's list: ${sent.split('Cards on the board')[1]?.slice(0, 200)}`);
 });
