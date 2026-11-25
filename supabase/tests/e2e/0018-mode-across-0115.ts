@@ -19,6 +19,7 @@ const psqlOn = (url: string, text: string) =>
 test('stored themes system, light, dark and an instance\'s own become a theme and a mode', () => {
   // A database as the migrations before 0115 left it, from the runner's snapshot of its replay; only the migrations from 0115 on are applied here.
   const old = databaseBefore('0115', 'mode');
+  assert.equal(old.crossing, '0115_board_mode.sql', 'the migration this holds is there');
   const db = new URL(old.url);
   try {
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));

@@ -8,17 +8,15 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
-import fs from 'node:fs';
-import path from 'node:path';
 import { databaseBefore } from './psql-db.ts';
 
-const root = path.resolve(import.meta.dirname, '../../..');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('every card gets a slot at its old price, the economy loses its price keys and keeps the rest, and a hand is as it was', () => {
   // A database as the migrations before 0139 left it, from the runner's snapshot of its replay; only the migrations from 0139 on are applied here.
   const old = databaseBefore('0139', 'machine');
+  assert.equal(old.crossing, '0139_machine.sql', 'the migration this holds is there');
   const db = new URL(old.url);
   try {
     // Before: three cards planted out of key order, each priced by the economy, one reading a number of its own, a class's number beside them,

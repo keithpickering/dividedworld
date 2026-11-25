@@ -19,6 +19,8 @@ const psqlOn = (url: string, text: string) =>
 test('plays held before the migration carry their Act\'s date as their start after it, and the guards are back', () => {
   // A database as the migrations before 0356 left it, from the runner's snapshot of its replay; only the migrations from 0356 on are applied here.
   const old = databaseBefore('0356', 'kept');
+  assert.ok(old.crossing.endsWith('_kept_character.sql'), 'the migration crossed is the one named for the kept character');
+  assert.ok(old.before.includes('0055_card_reach.sql'), 'the migrations before it include the one that made play_reach');
   const db = new URL(old.url);
   try {
     // The test instance's settings, as supabase/tests/setup/fixtures.sql writes them.

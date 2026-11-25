@@ -19,6 +19,7 @@ const psqlOn = (url: string, text: string) =>
 test('a Turn asked "revealed" before 0028 takes effect after it with its old class named, as asked', () => {
   // A database as the migrations before 0028 left it, from the runner's snapshot of its replay; only the migrations from 0028 on are applied here.
   const old = databaseBefore('0028', 'turns');
+  assert.equal(old.crossing, '0028_loud_classes.sql', 'the migration this holds is there');
   const db = new URL(old.url);
   try {
     // A Turn waiting, asked "revealed" as a client before 0028 asked it.

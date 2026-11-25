@@ -18,6 +18,7 @@ const psqlOn = (url: string, text: string) =>
 test('a season revealed before 0029 keeps its Acts, every class in them; the next is revealed by the new rule', () => {
   // A database as the migrations before 0029 left it, from the runner's snapshot of its replay; only the migrations from 0029 on are applied here.
   const old = databaseBefore('0029', 'reveal');
+  assert.equal(old.crossing, '0029_reveal_rolls_over.sql', 'the migration this holds is there');
   const db = new URL(old.url);
   try {
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
