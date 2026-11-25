@@ -16,3 +16,10 @@ Record, written 2026-11-23. What the owner supplied in the design session for It
   `its-curtains-drumroll.mp3` (a steady drumroll, 5.0 s), `its-curtains-crash.mp3` (a snare and splash cymbal hit,
   3.0 s), `its-curtains-whoosh.mp3` (a fabric whoosh, 1.2 s) and `its-curtains-tada.mp3` (a quick horn fanfare, 3.0 s).
   They are the raw takes; the plan's sound task cuts them.
+- `sounds/its-curtains-whoosh-take3-raw.mp3` and `sounds/its-curtains-whoosh-trimmed.mp3`, added 2026-11-25. The first
+  whoosh swelled for about 200 ms before its body, so the curtain sounded late. Four new ElevenLabs takes swelled the
+  same way, so each was cut at its onset (110 ms in for this take, with a 12 ms fade-in). The owner chose this take,
+  trimmed, in the bench ("trim3 working well. Approved"). It replaces `its-curtains-whoosh.mp3` as the whoosh the
+  build cuts from. The original take stays as the record of what was first supplied.
+- `bench.html`: the prototype bench the owner tuned and approved on 2026-11-25 (fabrics, timing, look). Its defaults
+  are the approved values; "Copy values" prints them as JSON.
