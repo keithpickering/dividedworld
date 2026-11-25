@@ -42,8 +42,10 @@ $$;
 -- No API role runs it: author_veil_covers, a security definer, calls it as its owner.
 revoke execute on function card_end_written(uuid) from public, anon, authenticated, service_role;
 
+-- Priced as what it is, an index probe for each row (cost 1000, about one random page read at the default costs; a plpgsql function is priced 100 unless it says, which is a tenth of that): priced at 100, the planner read
+-- pool_signals' `tops` (0420) by the thread alone through acts_thread_seq_key and filtered the window, where at its true price it narrows to the window's posts first (acts_patrol_posts by thread and created_at), as 0420's test asks.
 create function author_veil_covers(act uuid) returns boolean
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable cost 1000 security definer set search_path = public, pg_temp as $$
 declare
   pl uuid;
 begin

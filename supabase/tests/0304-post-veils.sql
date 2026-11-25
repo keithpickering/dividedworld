@@ -1277,7 +1277,8 @@ begin
     format('select * from acts_public where target_act_id = %L and kind = ''edit''', p)] loop
     plan := pg_temp.plan_of(q);
     if plan ~ 'Seq Scan on acts\y' then raise exception 'a read of acts_public scans acts: % %', q, plan; end if;
-    if plan !~ 'post_veils' then raise exception 'a read of acts_public does not probe the veils: % %', q, plan; end if;
+    -- the veils are probed for each Act by author_veil_covers (0434), which reads post_veil_cover, post_veils and the play's end by key; before 0434 the plan named post_veils itself
+    if plan !~ 'author_veil_covers' then raise exception 'a read of acts_public does not probe the veils: % %', q, plan; end if;
   end loop;
   reset enable_seqscan;
   -- And by what they touch, which a plan's shape does not say: with 3,000 posts by the author and a live veil, a profile's newest five, the stand-in's own newest five, a join that asks for a page's twenty Acts by
