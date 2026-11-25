@@ -1,6 +1,6 @@
 /**
  * The glass dialog's one frame (the glass polish plan, "Modals"): the Reveal modal's look, worn by every dialog, the Turn, the
- * Reveal, the Debut, the play form, card info, the React picker and the Lens. A dialog stands in `FRAME` (the chamfered box,
+ * Reveal, the play form, card info, the React picker and the Lens. A dialog stands in `FRAME` (the chamfered box,
  * its border drawn on the cut by base.css's `.kb-glass-cut-dialog`, sized by shell.css's four tokens and nobody else's), opens
  * with a `DialogBar` (the title row, sticky while the body scrolls) and closes with a `CloseCross` (the one look of Close, a
  * square with a cross, its word kept for its name and hidden). Overlay.tsx and Float.tsx are the two things that stand a

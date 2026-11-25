@@ -11,7 +11,7 @@
  * its large color only on the Turn (`data-kb-large`), the one surface here that draws a class's
  * large text (engine/ui/glass/apply.ts); My characters and New character draw a class as a chip.
  *
- * The reveal is drawn once, as a glass overlay beside Debut (RevealOverlay.tsx, `.kb-reveal-dialog`).
+ * The reveal is drawn once, as a glass overlay beside the Turn (RevealOverlay.tsx, `.kb-reveal-dialog`).
  * The `.kb-dialog-actions` rule near the foot of this file is the board's modal's (QuoteSomeone.tsx).
  */
 

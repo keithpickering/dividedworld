@@ -77,9 +77,9 @@ export default manifest;
 
 /*
  * Board 27, the characters on a phone (docs/research/2026-11-05-backfill/27-characters-phone.html): four phone screens at 390 by 844 side by side on one
- * page, New character's class carousel, the Debut dialog as a sheet, Edit profile, and My characters' title with its count on its own line. A phone
+ * page, New character's class carousel, the Debut dialog as a sheet (gone: a character is on the board when it is made), Edit profile, and My characters' title with its count on its own line. A phone
  * board has one parent and is compared at 390 by 844 (e2e/boards.spec.ts), so this export is the whole board: New character is its own side, and the
- * other three are further sides (`also`), each its own story against the same page. The board page is opened at 390 wide with its four screens at
+ * other three are further sides (the Debut sheet, the second, is gone, so the build compares two of them) (`also`), each its own story against the same page. The board page is opened at 390 wide with its four screens at
  * x = 20, 430, 840 and 1250; each landmark of a screen is found as that screen's nth (`nth`, where the build has one of each) and measured from a
  * landmark of that screen (`origin`), so a screen's place on the page is never compared. This is the manner of board 18's, as Task 6 held it.
  *
@@ -89,11 +89,6 @@ export default manifest;
  *  - The first screen is the page scrolled to its classes, with no head and no name field above them; the build's page starts at the top, so its parts are
  *    held from the CLASS label (`origin`), not from the menu. The board draws the class row as one card of 300px with the next peeking under the
  *    fade and "1 OF 5"; the build's carousel says "1–1 of 6" or "1–2 of 6" for the cards it shows whole, so the count is held by its place.
- *  - The Debut sheet's save is the board's "SAVE" where the build says the character's name ("Save how Waiting Wanda debuts"), the sheet shows its preview
- *    and its footer line where the board's does not, and the board draws it from 40px under the top of the window to its foot, the full width: the build's
- *    sheet stands on the window's foot, as tall as its words (a sheet stretched to the window moved what the calm covers at 200% text, which the contrast
- *    measurement reads), 8px in from each side with the frame's 12px of padding, so its Close stands 14px in from where the board's does. Its kicker, title,
- *    Close and options are held by their places from its kicker, and its buttons by their words.
  *  - Edit profile on the board is the head, the lead, Title, Signature and the save button; the build adds the character's select above Title, and the pip style,
  *    the avatar and the preview under the save, so Title and what follows stand lower by the select's height.
  *  - The build's New character and Edit profile each carry the pronoun picker (the pronouns plan, docs/plans/2026-11-07-pronouns-plan.md), which the board
@@ -112,13 +107,6 @@ export default manifest;
  *  - My characters' count stands on its own line under the title: the board's "3 OF 6" is the build's "(3 of 6)", its box a line of its own that is not broken.
  */
 const PHONE = '2026-11-05-backfill/27-characters-phone';
-
-/**
- * The Debut sheet's kicker stands 16.5px lower than it did, clear of the frame's top right cut (the owner, 2026-11-17: Close and the corners' words keep about 14px off
- * the chamfer, glass/shell.css `--kb-dialog-chamfer-clear`; the phone's bar top is 48px where it was 32), and on Close's middle line. The sheet's parts are held from
- * the kicker, so each stands that much higher from it than the first run measured.
- */
-const KICKER_LOWER = 16.5;
 
 /** The menu bar of the screen that is the board page's `nth` (the sheet has none), and Back in it, as the phone's bar draws them. */
 const bar = (nth: number): Landmark[] => [
@@ -146,21 +134,6 @@ export const phone: BoardManifest = {
     held('class-label', 'drop-now', 'text', 'DROP NOW', { y: 477.8 }, { buildName: 'Drop now.', origin: 'note', originEdge: 'bottom' }),
   ],
   also: [
-    {
-      name: 'The Debut sheet',
-      build: { story: 'boards-00-characters--waiting-phone' },
-      press: [{ role: 'button', name: 'Change how Waiting Wanda debuts…' }],
-      landmarks: [
-        { id: 'kicker', role: 'text', name: 'MY CHARACTERS › DEBUT', buildName: 'My characters › Debut', nth: 0, type: false, box: 'none' },
-        held('kicker', 'title', 'heading', 'HOW WAITING WANDA DEBUTS', { y: 44 - KICKER_LOWER }, { buildName: 'How Waiting Wanda debuts' }),
-        held('kicker', 'close', 'button', 'Close', { x: -14, y: -KICKER_LOWER }),
-        held('kicker', 'silent', 'text', 'SILENT', { y: 29.6 - KICKER_LOWER }, { buildName: 'Silent.' }),
-        held('kicker', 'announced', 'text', 'ANNOUNCED', { y: -13.5 - KICKER_LOWER }, { buildName: 'Announced.' }),
-        held('kicker', 'with-class', 'text', 'ANNOUNCED, WITH ITS CLASS', { y: -33.7 - KICKER_LOWER }, { buildName: 'Announced, with its class.' }),
-        held('kicker', 'cancel', 'button', 'CANCEL', {}, { buildName: 'Cancel', box: 'none' }),
-        held('kicker', 'save', 'button', 'SAVE', {}, { buildName: 'Save how Waiting Wanda debuts', box: 'none' }),
-      ],
-    },
     {
       name: 'Edit profile',
       build: { story: 'boards-00-edit-profile--edit-profile-phone' },

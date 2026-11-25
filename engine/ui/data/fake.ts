@@ -3233,8 +3233,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (lockedOut) return lockedOut;
     const closed = closedRefusal(found.board);
     if (closed) return closed;
-    const bar = barsOf(c.id).find((b) => b.board === found.board.id);
-    if (bar) return refuse(`${c.name} is barred from posting on ${boardNow(found.board).name} until ${bar.expiresAt === null ? 'a time not yet set' : `${refusalTime(iso(Math.ceil(Date.parse(bar.expiresAt) / 60_000) * 60_000))}`}`);
+    /* not_barred (0138): the latest end over every bar on the board (max(expires_at)), and "a time not yet set" only when none of them has one. */
+    const bars = barsOf(c.id).filter((b) => b.board === found.board.id);
+    if (bars.length > 0) {
+      const ends = bars.flatMap((b) => (b.expiresAt === null ? [] : [Date.parse(b.expiresAt)]));
+      return refuse(`${c.name} is barred from posting on ${boardNow(found.board).name} until ${ends.length === 0 ? 'a time not yet set' : refusalTime(iso(Math.ceil(Math.max(...ends) / 60_000) * 60_000))}`);
+    }
     return null;
   }
 

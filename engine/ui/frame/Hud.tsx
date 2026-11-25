@@ -162,7 +162,6 @@ export function Hud() {
   /* A reveal replaces the button with the Revealed line before the overlay closes, so focus returns to the line. */
   const revealedLine = useRef<HTMLSpanElement>(null);
   /* A Turn written takes the Turn button away (it is My characters' to show from then): focus returns to the status line that says it was done. */
-  const flashLine = useRef<HTMLSpanElement>(null);
   /* The Reveal's done line, in a status region of the HUD's own. It puts itself away, where My characters' flash stays until the player's next action: the HUD has no next action on its own surface to clear it. */
   useEffect(() => {
     if (!done) return undefined;
@@ -683,9 +682,9 @@ export function Hud() {
                           )}
                           {wide && hiddenMark}
                         </span>
-                        <span ref={flashLine} tabIndex={-1} role="status" className="kb-hud-flash">{done}</span>
+                        <span role="status" className="kb-hud-flash">{done}</span>
                       </span>
-                      {turning && <TurnDialog kicker="Turn" character={hud} face={face ?? undefined} nextSettlement={null} at={openThread} onClose={() => setTurning(false)} onDone={(m) => { setDone(m); setTurning(false); }} returnFocusTo={() => turnButton.current ?? flashLine.current} />}
+                      {turning && <TurnDialog kicker="Turn" character={hud} face={face ?? undefined} nextSettlement={null} at={openThread} onClose={() => setTurning(false)} onDone={(m) => { setDone(m); setTurning(false); }} returnFocusTo={() => turnButton.current ?? picker.current} />}
                       {revealing && <RevealOverlay kicker="Reveal" character={hud} at={openThread} onClose={() => setRevealing(false)} onDone={setDone} returnFocusTo={() => secret.current ?? revealedLine.current} />}
                       <CalmRegion as="span" calm={!wide} className="kb-hud-swap">
                         <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>

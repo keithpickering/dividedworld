@@ -1,6 +1,6 @@
 /**
  * Reveal a character's class, on the glass: the one reveal dialog, a glass overlay on the Turn's
- * smoke, as Debut and the Turn are (Overlay.tsx), so the three dialogs that change or announce a
+ * smoke, as the Turn is (Overlay.tsx), so the dialogs that change or announce a
  * class read as one family (the glass reveal design, §1 and §2). It has two openers, each wording
  * its own kicker: the HUD's "Only you see this" and My characters. Opened on a thread (`at`), it
  * starts on that thread and is ready at once; opened on nothing, the player chooses a thread (one

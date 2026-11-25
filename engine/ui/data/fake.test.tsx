@@ -366,6 +366,21 @@ describe('Turns', () => {
     expect(banned.ok).toBe(false);
     expect(banned.ok === false && banned.error).toMatch(/^this character is banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC; the ban ends by itself then, and it holds only this character, not your other characters$/u);
   });
+  test('an announced Turn is refused a bar in the SQL\'s words: not_barred names the latest end over every bar on the board, and "a time not yet set" only when none has one', async () => {
+    const { fake, anaFace, thread } = world();
+    const name = (await fake.boards()).find((b) => b.slug === 'general')!.name;
+    const minute = (t: number) => refusalTime(new Date(Math.ceil(t / MINUTE) * MINUTE).toISOString());
+    fake.seed.staff('mod', 'Mod Bot', 'mod');
+    const soon = fake.clock.now() + DAY;
+    const late = fake.clock.now() + 5 * DAY;
+    fake.seed.groupMove('mod', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: late });
+    fake.seed.groupMove('mod', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: soon });
+    expect(await fake.turn(anaFace, 'lurker', 'announced', false, true, thread)).toEqual(refused(`Ana Face is barred from posting on ${name} until ${minute(late)}`));
+    const open = world();
+    open.fake.seed.staff('mod', 'Mod Bot', 'mod');
+    open.fake.seed.groupMove('mod', { character: open.anaFace, group: 'trialMembers', board: 'general', expiresAt: null });
+    expect(await open.fake.turn(open.anaFace, 'lurker', 'announced', false, true, open.thread)).toEqual(refused(`Ana Face is barred from posting on ${(await open.fake.boards()).find((b) => b.slug === 'general')!.name} until a time not yet set`));
+  });
   test('a Turn a settlement passed over stands until the next settlement it can, as committed_turn_refusal says', async () => {
     const { fake, anaFace, thread } = world();
     must(await fake.turn(anaFace, 'lurker', 'announced', false, true, thread));
@@ -5086,6 +5101,16 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       must(await fake.reverseCard(spring.id));
       fake.signInAs(bo);
       must(await fake.post(thread, boFace, 'Hello again', null));
+    });
+
+    test('an announced Turn in the locked thread is refused in the SQL\'s words (turn_thread_checks: not_locked_out); another thread is not', async () => {
+      const { fake, bo, anaFace, boFace, post, thread, otherThread } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const until = String((await springOf(fake, post)).payload.until);
+      expect(await fake.turn(boFace, 'heel', 'announced', false, true, thread)).toEqual(refused(lockedWords(until)));
+      must(await fake.turn(boFace, 'heel', 'announced', false, true, otherThread));
     });
 
     test('a back is not set by the locked character in that thread', async () => {

@@ -1093,7 +1093,7 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     expect(await screen.findByText(/Pipewrench revealed as Face in The tea thread\./u)).toBeInTheDocument();
   });
 
-  test('on a thread, the HUD opens the Turn dialog on that thread: the picker starts on it, and focus lands on the HUD\'s status line when the opener is gone', async () => {
+  test('on a thread, the HUD opens the Turn dialog on that thread: the picker starts on it, and focus lands on the HUD\'s mask picker, which stays, when the opener is gone', async () => {
     const w = RevealWorld();
     await onThread(w);
     await userEvent.click(await screen.findByRole('button', { name: 'Turn Pipewrench' }));
@@ -1107,10 +1107,16 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     expect(await screen.findByText(/Pipewrench's Turn is announced in The tea thread\./u)).toBeInTheDocument();
     /* A Turn waiting, announced or not, is My characters' to show: the opener is gone from the HUD. */
     await waitFor(() => expect(screen.queryByRole('button', { name: 'Turn Pipewrench' })).toBeNull());
-    /* The opener unmounted with the Turn: focus is on the HUD's status line, not on the body. */
-    await waitFor(() => expect(document.activeElement).not.toBe(document.body));
-    expect(document.activeElement).toHaveClass('kb-hud-flash');
-  });
+    /* The opener unmounted with the Turn: focus is on the HUD's mask picker, a persistent control, not on the body and not on the status line (a live region that empties). */
+    const picker = await screen.findByRole('combobox', { name: 'Swap mask' });
+    await waitFor(() => expect(document.activeElement).toBe(picker));
+    expect(document.activeElement).not.toHaveClass('kb-hud-flash');
+    /* The done line empties after 8s; focus must still be on an element in the document. */
+    await act(async () => { await new Promise((r) => setTimeout(r, 8_500)); });
+    expect(screen.queryByText(/Pipewrench's Turn is announced/u)).toBeNull();
+    expect(document.activeElement).toBe(picker);
+    expect(document.body).toContainElement(picker);
+  }, 20_000);
 
   test('off a thread, the Board and Thread start empty', async () => {
     const w = RevealWorld();
