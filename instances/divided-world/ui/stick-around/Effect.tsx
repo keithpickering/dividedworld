@@ -124,6 +124,9 @@ export function StickAroundEffect({ post, plays, released, reader, release, show
   }, [lifted]);
   /* Certified: the play drops out of the held set, and the view with it. */
   useLayoutEffect(() => { if (!held) setLifted(false); }, [held]);
+  /* A curtain shut over a held post puts it out of view, as scrolling away would: the reader is let go of (not marked as having broken free, so
+     the post is taken again when it opens, as one that had just scrolled in). */
+  useLayoutEffect(() => { if (covered && stage.mode === 'live') setLifted(false); }, [covered, stage.mode]);
 
   return (
     <div ref={body} className={held ? 'kb-hold' : 'kb-hold-off'} data-kb-hold={held ? (lifted ? 'lifted' : 'held') : undefined}>

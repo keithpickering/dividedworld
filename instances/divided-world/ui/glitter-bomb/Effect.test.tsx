@@ -247,6 +247,21 @@ describe('Glitter Bomb', () => {
     expect(burst.mock.calls.length).toBe(1);
   });
 
+  test('a curtain shut while the burst is arming and opened again starts the 300 ms wait afresh: no burst on the opening frame', () => {
+    const view = render(<GlitterBombEffect {...props()} />);
+    see(1); aim(true); frames(10, 1000);
+    expect(burst.mock.calls.length, 'arming, not yet 300 ms').toBe(0);
+    view.rerender(<GlitterBombEffect {...props()} covered />);
+    frames(10, 1200);
+    view.rerender(<GlitterBombEffect {...props()} covered={false} />);
+    frames(1, 1400);
+    expect(burst.mock.calls.length, 'the old arming start is not carried across the curtain').toBe(0);
+    frames(10, 1416);
+    expect(burst.mock.calls.length, 'still inside the fresh 300 ms').toBe(0);
+    frames(30, 1500);
+    expect(burst.mock.calls.length).toBe(1);
+  });
+
   test('the point the burst watches stands on the burst point, and is watched against the middle of the view', () => {
     render(<GlitterBombEffect {...props()} />);
     see(1); frames(2);

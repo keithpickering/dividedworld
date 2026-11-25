@@ -747,6 +747,22 @@ describe('a held post under a curtain', () => {
     expect(view()).not.toBeNull();
   });
 
+  test('a reader already held when a curtain shuts over the post is let go of, as a post out of view; opened, it is taken over again as if it had just scrolled in', async () => {
+    vi.useFakeTimers();
+    renderIn(buildWorld(), <Covered covered={false} />);
+    await scrollWindow();
+    await wait(TUNING.settleMs + 20);
+    expect(view(), 'held first').not.toBeNull();
+    act(() => { flip(true); });
+    await wait(50);
+    expect(view(), 'the curtain shuts: the view is let go').toBeNull();
+    await wait(TUNING.settleMs * 3);
+    expect(view(), 'and nothing takes the reader over while it stays shut').toBeNull();
+    act(() => { flip(false); });
+    await wait(TUNING.settleMs + 20);
+    expect(view(), 'opened, the hold is taken again').not.toBeNull();
+  });
+
   test('a curtain shut before the page settles stops the take-over that was coming', async () => {
     vi.useFakeTimers();
     renderIn(buildWorld(), <Covered covered={false} />);
