@@ -54,7 +54,12 @@ test('a Mod grants a request on its beat; one off its beat is conferred and the 
   sql(`update characters set debuted_at = coalesce(debuted_at, now() - interval '30 days') where staff in ('${BOSS}', '${MOD.key}', '${OTHER_MOD}')`);
   for (const mod of [MOD.key, OTHER_MOD]) if (sql(`select office from staff_office_now where staff = '${mod}'`) !== 'mod') sql(`insert into staff_offices (staff, office, cause) values ('${mod}', 'mod', 'seed')`);
   sql(`insert into move_bank (staff, balance, as_of) values ('${BOSS}', 5, now()) on conflict (staff) do update set balance = 5, as_of = now()`);
-  const today = sql(`select ((now() + interval '5 minutes') at time zone 'UTC')::date::text`);
+  // The round's slot: five minutes ahead, on the first minute from there that no earlier file's round has claimed. 0034 takes the same five-minutes-ahead minute, and a round's claim holds its slot
+  // for ten minutes (claim_pool_round), so a file run in the same minute as 0034, as the suite does, would be told `busy`. The day of the session is the slot's.
+  const slot = sql(`select to_char(s at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') from generate_series(date_trunc('minute', now()) + interval '5 minutes', date_trunc('minute', now()) + interval '65 minutes', interval '1 minute') s
+    where not exists (select 1 from pool_round_claims c where c.slot = s) order by s limit 1`);
+  assert.ok(slot, 'a minute in the next hour is unclaimed');
+  const today = slot.slice(0, 10);
   sql(`select write_sessions('${today}'::date, '[{"staff": "${MOD.key}", "start": 0, "end": 1440}]')`);
 
   // ---- Three boards of this file's own (A and B the Mod's beat, C not) and a thread each for the three requests. ----
@@ -114,7 +119,6 @@ test('a Mod grants a request on its beat; one off its beat is conferred and the 
   const real = models(env, ledgerWriter(db), { tiers, oldVoice: { window: 1024, count: (x: string) => x.length }, fetch: fake });
 
   // ---- The round: the Mod's turns. ----
-  const slot = new Date(Math.floor(Date.now() / 60_000) * 60_000 + 5 * 60_000).toISOString();
   const out = await runChatter(db, real, instance, slot);
   assert.equal(out.status, 'ok', JSON.stringify(out));
   const turn = (s: { thread: string }) => out.turns.find((x) => x.thread === s.thread)!;
