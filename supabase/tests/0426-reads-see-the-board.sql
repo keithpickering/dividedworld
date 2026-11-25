@@ -173,6 +173,7 @@ begin
   w := tests.act(c, 'card', t, jsonb_build_object('card', 'exwink'), p_play, now() - interval '8 hours');
   insert into card_texts (play, version, text) values (w, p_play, 'A tail for the old version.');
   insert into surfaces (play, post, cover, owners, live) values (w, p_play, (repeat('1', 2500) || repeat('0', 7500))::bit(10000), array_fill(0::smallint, array[10000]), '{}');
+  insert into fx values ('tail_play', w), ('unsprung', us), ('shown_post', p_play);
   plays := pg_temp.ex(p_play) -> 'plays';
   perform pg_temp.expect((select x ->> 'text' from jsonb_array_elements(plays) x where x ->> 'play' = w::text) = 'A tail for the old version.'
     and (select (x ->> 'covered')::numeric from jsonb_array_elements(plays) x where x ->> 'play' = w::text) = 0.25, 'the text and covered of a play: ' || plays::text);
@@ -229,6 +230,7 @@ begin
   -- the post, whose words are empty and whose poll and plays are the whole of it
   empty := tests.post(a, t, '', base);
   p := empty;
+  insert into fx values ('d', d), ('o_post', p);
   th := pg_temp.spun(d, p); o := pg_temp.origin_of(th);
   perform pg_temp.expect(o ->> 'kind' = 'post' and o -> 'moment' = 'false'::jsonb and (o -> 'post' ->> 'act')::uuid = p and o -> 'post' ->> 'name' = 'Ex Ann' and o -> 'post' ->> 'title' = 'Ex Origins'
     and (o ->> 'at')::timestamptz = (select created_at from acts where id = p) and (o ->> 'spunAt')::timestamptz = (select created_at from threads where id = th)
@@ -237,6 +239,7 @@ begin
   -- the poll, and a public ballot: the post the poll is on, with its poll
   pl := pg_temp.mkpoll(t, p, a, at => base + interval '1 minute');
   bl := pg_temp.vote(pl, b, '[1]', base + interval '2 minutes');
+  insert into fx values ('o_poll', pl), ('o_ballot', bl);
   o := pg_temp.spun_origin(d, pl);
   perform pg_temp.expect(o ->> 'kind' = 'poll' and (o -> 'post' ->> 'act')::uuid = p and o -> 'post' -> 'poll' ->> 'voters' = '1', 'a poll origin: ' || o::text);
   o := pg_temp.spun_origin(d, bl);
@@ -253,6 +256,7 @@ begin
   first_play := tests.act(a, 'card', t, jsonb_build_object('card', 'exsplat', 'reach', 'post'), p, base + interval '4 minutes');
   insert into effect_state (play, state, saved_by, saved_at) values (first_play, '{"strokes": [[9]]}', a, base + interval '5 minutes');
   second_play := tests.act(c, 'card', t, jsonb_build_object('card', 'exblot', 'reach', 'post'), p, base + interval '6 minutes');
+  insert into fx values ('o_play', second_play);
   th := pg_temp.spun(d, second_play);
   later := tests.act(a, 'card', t, jsonb_build_object('card', 'exsweet', 'reach', 'post'), p, base + interval '7 minutes');
   o := pg_temp.origin_of(th);
@@ -267,6 +271,7 @@ begin
   first_play := tests.act(a, 'card', t, jsonb_build_object('card', 'exsplat', 'reach', 'post'), p, base + interval '9 minutes');
   reach_play := tests.act(b, 'card', t, jsonb_build_object('card', 'exsweet', 'reach', 'character', 'character', chp), p, base + interval '10 minutes');
   insert into play_reach (play, reach, character, ends_at) values (reach_play, 'character', chp, now() + interval '1 day');
+  insert into fx values ('o_char', reach_play), ('o_char_at', p);
   th := pg_temp.spun(d, reach_play, p);
   later := tests.act(a, 'card', t, jsonb_build_object('card', 'exblot', 'reach', 'post'), p, base + interval '11 minutes');
   o := pg_temp.origin_of(th);
@@ -280,6 +285,7 @@ begin
   -- a play on a board: no post
   bplay := tests.act(a, 'card', board_thread, jsonb_build_object('card', 'exsweet', 'reach', 'board', 'board', general), null);
   insert into play_reach (play, reach, board, ends_at) values (bplay, 'board', general, now() + interval '1 day');
+  insert into fx values ('o_board', bplay);
   o := pg_temp.spun_origin(d, bplay);
   perform pg_temp.expect(o ->> 'kind' = 'card' and o -> 'moment' = 'true'::jsonb and o -> 'post' = 'null'::jsonb and o -> 'place' -> 'on' ->> 'kind' = 'board', 'a board play: ' || o::text);
   -- an update
@@ -288,6 +294,7 @@ begin
   perform set_config('kayfabb.update_writer', 'on', true);
   upd := tests.act(dev, 'update', (select (value #>> '{}')::uuid from settings where key = 'updatesThread'), '{"title": "Ex Headline", "body": "Update body.", "changes": []}');
   perform set_config('kayfabb.update_writer', 'off', true);
+  insert into fx values ('o_update', upd);
   o := pg_temp.spun_origin(d, upd);
   perform pg_temp.expect(o ->> 'kind' = 'update' and (o -> 'post' ->> 'act')::uuid = upd and o -> 'post' ->> 'body' = 'Update body.' and o -> 'post' ->> 'title' = 'Ex Headline', 'an update origin: ' || o::text);
   -- reports, verdicts, appeals and rulings
@@ -306,6 +313,7 @@ begin
   insert into acts (character, kind, thread, target_act_id, payload) values (boss, 'appeal_ruling', t, apl, jsonb_build_object('appeal_act', apl, 'verdict', 'upheld', 'points_delta', 0, 'line', 'Upheld.')) returning id into rul;
   insert into acts (character, kind, thread, target_act_id, payload) values (boss, 'appeal_ruling', ann_thread, apm, jsonb_build_object('appeal_act', apm, 'verdict', 'upheld', 'points_delta', 0, 'line', 'Upheld.')) returning id into rulm;
   perform set_config('kayfabb.report_writer', '', true); perform set_config('kayfabb.warn_writer', '', true); perform set_config('kayfabb.appeal_writer', '', true);
+  insert into fx values ('o_report', rep), ('o_verdict', ver), ('o_appeal', apl), ('o_ruling', rul);
   foreach hidden in array array[rep, ver, apl, rul] loop
     o := pg_temp.spun_origin(d, hidden);
     perform pg_temp.expect(o ->> 'kind' in ('report', 'report_verdict', 'appeal', 'appeal_ruling') and o -> 'place' ->> 'kind' = 'answer' and (o -> 'post' ->> 'act')::uuid in (p, p) and o -> 'post' ->> 'seq' = (select seq::text from acts where id = p),
@@ -320,6 +328,41 @@ begin
   insert into conduct_decisions (version_act, post, admin, outcome) values (hidden, hidden, adm, 'hide');
   o := pg_temp.origin_of(th);
   perform pg_temp.expect(o ->> 'kind' = 'post' and o -> 'post' = 'null'::jsonb and o::text !~ 'Hidden words', 'a hidden origin post: ' || o::text);
+
+  -- ---- the digest role asks for what the board does not show: a hidden post's poll, plays and a writing play's words; a secret ballot; an unsprung back ----
+  declare hp uuid; hpoll uuid; hplay uuid; hplay2 uuid; shown_text text; tp uuid; got jsonb; n integer;
+  begin
+    hp := tests.post(b, t, 'Hidden with extras.', base + interval '14 minutes');
+    hpoll := pg_temp.mkpoll(t, hp, b, at => base + interval '15 minutes');
+    hplay := tests.act(a, 'card', t, jsonb_build_object('card', 'exwink', 'reach', 'post'), hp, base + interval '16 minutes');
+    insert into card_texts (play, version, text) values (hplay, hp, 'SECRET TAIL ON HIDDEN POST');
+    hplay2 := tests.act(c, 'card', t, jsonb_build_object('card', 'exsplat', 'reach', 'post'), hp, base + interval '17 minutes');
+    insert into reaction_tallies (act, kind, count) values (hp, 'up', 4);
+    insert into conduct_decisions (version_act, post, admin, outcome) values (hp, hp, adm, 'hide');
+    -- post_extras, asked for the hidden post directly, says nothing of it (an entry for it all the same, so one entry stays one post asked for, in the order asked)
+    got := post_extras(array[pg_temp.f('shown_post'), hp, pg_temp.f('p_react')]);
+    perform pg_temp.expect(jsonb_array_length(got) = 3 and got -> 1 = jsonb_build_object('post', hp, 'poll', null, 'plays', '[]'::jsonb, 'reactions', '{}'::jsonb, 'rewoundTo', null), 'post_extras of a hidden post: ' || (got -> 1)::text);
+    perform pg_temp.expect(got::text !~ 'SECRET TAIL' and got::text !~ hplay::text and got ->> 0 is not null and (got -> 0 ->> 'post') = pg_temp.f('shown_post')::text and jsonb_array_length(got -> 0 -> 'plays') > 0 and got -> 2 -> 'reactions' = '{"up": 3, "boo": 1}'::jsonb,
+      'post_extras beside a hidden post still reads the others: ' || got::text);
+    perform pg_temp.expect(pg_temp.ex(hp) -> 'poll' = 'null'::jsonb, 'a hidden post''s poll');
+    -- extras_layers, run as the digest role (the role is set around each call alone: it has no right to the session's temp schema)
+    foreach hplay in array array[hplay, hplay2, pg_temp.f('sec_ballot'), pg_temp.f('unsprung'), gen_random_uuid()] loop
+      perform set_config('role', 'kayfabb_digest', true);
+      select count(*) into n from extras_layers('play', hplay);
+      reset role;
+      perform pg_temp.expect(n = 0, 'extras_layers gives back ' || hplay::text || ' (a play on a hidden post, a secret ballot, an unsprung back or nothing)');
+      perform set_config('role', 'kayfabb_digest', true);
+      select count(*) into n from extras_layers('spin', hplay);
+      reset role;
+      perform pg_temp.expect(n = 0, 'extras_layers (spin) gives back ' || hplay::text);
+    end loop;
+    -- and the gate is not closed to the board's own plays: a shown writing play comes back, with its words
+    tp := pg_temp.f('tail_play');
+    perform set_config('role', 'kayfabb_digest', true);
+    select count(*), max(x.text) into n, shown_text from extras_layers('play', tp) x;
+    reset role;
+    perform pg_temp.expect(n >= 1 and shown_text = 'A tail for the new version.', 'extras_layers of a shown play: ' || n::text || ' ' || coalesce(shown_text, 'null'));
+  end;
 end $$;
 
 -- ---- 5. the security ----
@@ -363,6 +406,20 @@ end $$;
 -- Threads whose posts each carry a poll (with `bal` ballots by five characters) and eight plays (four kinds, two each). `n` posts. The persona writes none of them: a persona's own posts that nobody answered make 0425's pool_reply_ids read the
 -- thread under empty statistics (acts_patrol_posts, filtered by target: the reply read finds none and does not stop). That is pre-existing on main and inside 0425's own documented exception (the helpers
 -- may read the thread, never the table); the owner files it separately, so it is not this file's subject.
+-- A thread of `n` plain posts spun from the origin section 2 kept as `o_<kind>` (a play on a character is spun at the post it was pressed at).
+create function pg_temp.kind_thread(k text, n integer) returns uuid language plpgsql as $$
+declare
+  ch uuid[] := array[pg_temp.f('a'), pg_temp.f('b'), pg_temp.f('c')];
+  made jsonb; th uuid; i integer;
+begin
+  made := spin_written(pg_temp.f('o_' || k), pg_temp.f('d'), 'Kind ' || k || ' ' || n, 'Discuss.', false, array[]::uuid[], case when k = 'char' then pg_temp.f('o_char_at') end);
+  th := (made -> 'thread' ->> 'id')::uuid;
+  for i in 1..n loop
+    perform tests.act(ch[1 + i % 3], 'post', th, jsonb_build_object('body', 'Kind post ' || i), null, now() - interval '1 day' + i * interval '1 second');
+  end loop;
+  return th;
+end $$;
+
 create function pg_temp.ex_thread(n integer, bal integer, title text) returns uuid language plpgsql as $$
 declare
   ot uuid := tests.thread(title || ' origin');
@@ -401,11 +458,16 @@ begin
   return t;
 end $$;
 do $$
+declare k text;
 begin
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into fx values ('small', pg_temp.ex_thread(200, 5, 'Ex Bound 200'));
   insert into fx values ('big', pg_temp.ex_thread(400, 5, 'Ex Bound 400'));
   insert into fx values ('ballots', pg_temp.ex_thread(200, 40, 'Ex Bound 200 ballots'));
+  -- for each kind of origin of section 2, a thread of plain posts spun from it at two sizes (the origins are those the section made)
+  foreach k in array array['post', 'poll', 'ballot', 'play', 'char', 'board', 'update', 'report', 'verdict', 'appeal', 'ruling'] loop
+    insert into fx values ('k_' || k || '_200', pg_temp.kind_thread(k, 200)), ('k_' || k || '_400', pg_temp.kind_thread(k, 400));
+  end loop;
 end $$;
 
 -- `per` is the bound on post_extras for each post it is asked about (a post's polls, plays, edits and tallies are read by key, so the cost is a number of rows for each), `bound` on pool_read, which asks for about 70 posts;
@@ -435,15 +497,36 @@ begin
   raise notice '[%] rows of acts, pool_read: % (200 posts), % (400), % (40 ballots); post_extras for 100 posts: %, %, % and for 200: %, %, %', label, cs, cb, cv, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3];
 end $$;
 
+-- pool_read of a thread of 200 and of 400 plain posts spun from each kind of origin: the same rows of `acts`, below the bound (the plain thread's own read, 0425's, is about 450; the rest is the origin's read; 600 is the stated bound).
+create function pg_temp.measure_kinds(label text, bound bigint) returns void language plpgsql as $$
+declare
+  k text; c0 bigint; lo bigint; hi bigint; worst bigint := 0; r jsonb; line text := '';
+begin
+  perform set_config('track_functions', 'all', true);
+  foreach k in array array['post', 'poll', 'ballot', 'play', 'char', 'board', 'update', 'report', 'verdict', 'appeal', 'ruling'] loop
+    c0 := pg_temp.acts_read(); r := pool_read(pg_temp.f('k_' || k || '_200'), 'ex-boss', null, 60); lo := pg_temp.acts_read() - c0;
+    c0 := pg_temp.acts_read(); r := pool_read(pg_temp.f('k_' || k || '_400'), 'ex-boss', null, 60); hi := pg_temp.acts_read() - c0;
+    if r -> 'origin' is null or r -> 'origin' = 'null'::jsonb or r -> 'origin' ->> 'kind' is null then raise exception '[%] the thread spun from a % has no origin', label, k; end if;
+    if hi > lo + 20 then raise exception '[%] pool_read reads % rows of acts in a thread of 400 posts spun from a % and % in one of 200: it grows', label, hi, k, lo; end if;
+    if hi > bound then raise exception '[%] pool_read reads % rows of acts in a thread spun from a %: more than %', label, hi, k, bound; end if;
+    line := line || ' ' || k || ' ' || lo || '/' || hi;
+    worst := greatest(worst, hi);
+  end loop;
+  perform set_config('track_functions', 'none', true);
+  raise notice '[%] rows of acts by kind of origin (200 / 400 posts):%, worst %', label, line, worst;
+end $$;
+
 do $$
 begin
   delete from pg_statistic where starelid = 'acts'::regclass;
   update pg_class set relpages = 0, reltuples = 0 where oid = 'acts'::regclass;
   if (select reltuples from pg_class where oid = 'acts'::regclass) is distinct from 0 then raise exception 'the statistics were not set'; end if;
 end $$;
-select pg_temp.measure('empty statistics', 4000, 45);
+select pg_temp.measure('empty statistics', 4000, 50);
+select pg_temp.measure_kinds('empty statistics', 600);
 set local plan_cache_mode = force_generic_plan;
-select pg_temp.measure('empty statistics, generic plans', 4000, 45);
+select pg_temp.measure('empty statistics, generic plans', 4000, 50);
+select pg_temp.measure_kinds('empty statistics, generic plans', 600);
 reset plan_cache_mode;
 
 -- ---- 4. the bound can fail: the plays of 200 posts read by a join over `acts`, as a first draft would ----
@@ -459,4 +542,5 @@ begin
 end $$;
 
 analyze acts;
-select pg_temp.measure('true statistics', 4000, 45);
+select pg_temp.measure('true statistics', 4000, 50);
+select pg_temp.measure_kinds('true statistics', 600);

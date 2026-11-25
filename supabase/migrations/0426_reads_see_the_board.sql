@@ -85,14 +85,20 @@ grant execute on function extras_ids(uuid[]) to kayfabb_digest;
 create function extras_layers(via text, id uuid) returns table (layer uuid, state jsonb, text text)
 language sql stable security definer set search_path = public, pg_temp set jit = off
   set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+  -- Gated: a layer comes back only if it is a card the board shows (acts_public gives it, and it landed) on a post the board shows (not hidden), so the id the digest role passes is never echoed with its words, and a secret ballot, an unsprung back
+  -- or a play on a hidden post gives nothing, nor does the moment of an id that is no card the board shows (a set's) or no spin; and its words are read only for a layer that passed. Each probe is by id (a lateral subquery behind `offset 0`).
   select l.layer, l.state, (select ct.text from card_texts ct where ct.play = l.layer and ct.text is not null order by ct.created_at desc, ct.id desc limit 1)
   from (
     select extras_layers.id as layer, null::jsonb as state where extras_layers.via = 'play'
     union all
     select l.layer, l.state from play_moment_layers l where extras_layers.via = 'play' and l.play = extras_layers.id
+      and exists (select 1 from acts_public s where s.id = extras_layers.id and s.kind = 'card' and not (s.payload ? 'caught'))
     union all
     select l.layer, l.state from spin_moment_layers l where extras_layers.via = 'spin' and l.spin = extras_layers.id
+      and exists (select 1 from acts_public s where s.id = extras_layers.id and s.kind = 'spin' and s.hidden is not true)
   ) l
+  cross join lateral (select v.target_act_id from acts_public v where v.id = l.layer and v.kind = 'card' and not (v.payload ? 'caught') offset 0) k
+  cross join lateral (select 1 from acts_public pv where pv.id = k.target_act_id and pv.hidden is not true and pv.kind in ('post', 'spin', 'update') offset 0) pk
 $$;
 revoke execute on function extras_layers(text, uuid) from public, anon, authenticated, service_role;
 grant execute on function extras_layers(text, uuid) to kayfabb_digest;
@@ -104,12 +110,16 @@ language plpgsql stable security definer set search_path = public, pg_temp set j
   set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
   ids uuid[];
+  vis uuid[];
 begin
   if cardinality(post_extras.posts) > 200 then raise exception 'ask for at most 200 posts at a time' using hint = 'kayfabb.refusal', errcode = '22023'; end if;
   ids := coalesce(array(select u.p from (select g.p, min(g.n) as n from unnest(post_extras.posts) with ordinality g(p, n) where g.p is not null group by g.p) u order by u.n), '{}'::uuid[]);
+  -- Only a post the board shows has extras: one acts_public gives no row for, or gives as hidden, is answered with an entry of nothing (so an answer is still one entry for each post asked about, in the order asked, and
+  -- a caller that names a hidden post, as the digest will, learns no more than a reader of the board).
+  vis := coalesce(array(select v.id from acts_public v where v.id = any (ids) and v.hidden is not true and v.kind in ('post', 'spin', 'update')), '{}'::uuid[]);
   return coalesce((
     with given as materialized (select u.p as post, u.n from unnest(ids) with ordinality u(p, n)),
-    x as materialized (select * from extras_ids(ids)),
+    x as materialized (select * from extras_ids(vis)),
     a as materialized (
       select v.id, v.kind, v."character", v.created_at, v.payload, v.untaken
       from acts_public v where v.id = any (array(select z.act from x z union select z.ver from x z where z.ver is not null))
@@ -134,7 +144,7 @@ begin
     rt as materialized (
       select g.post, t.j from given g
       cross join lateral (select jsonb_object_agg(r.kind, r.count) as j from reaction_tallies_open r where r.act = g.post and r.count > 0) t
-      where t.j is not null
+      where t.j is not null and g.post = any (vis)
     )
     select jsonb_agg(
       jsonb_build_object(
