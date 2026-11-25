@@ -110,7 +110,7 @@ const pieceOf = (spot: Spot, key: string, text: string, extra?: Record<string, u
   <span key={key} data-sound={spot.sound} data-lt-place={spot.key} data-lt-piece={key} {...extra} className={extra?.['className'] as string | undefined ?? 'dw-lt-cue'}>{text}</span>
 );
 
-export function LaughTrackEffect({ post, plays, show, met, moment, children }: EffectProps) {
+export function LaughTrackEffect({ post, plays, show, met, moment, covered, children }: EffectProps) {
   const { settings } = useKayfa();
   const sound = useSound();
   const gameSound = useGameSound();
@@ -164,6 +164,9 @@ export function LaughTrackEffect({ post, plays, show, met, moment, children }: E
   /* The places the mouse is over and has fired or been refused, until it leaves them. */
   const over = useRef(new Set<string>());
   const registered = useRef(new Map<string, Unregister>());
+  /* A post under a curtain is out of view: its places are told so, and the watcher gives them no mark and no murmur until it opens. */
+  const coveredNow = useRef(covered);
+  coveredNow.current = covered;
   const sync = useCallback(() => {
     const el = root.current;
     if (!el) return;
@@ -184,10 +187,12 @@ export function LaughTrackEffect({ post, plays, show, met, moment, children }: E
         voice: (kind) => now.current.sound.loop(LOOPS[kind as Sound], { group: 'audience-build', id: `laugh-track:${kind}` }),
         near: (n) => mark(spot.key, n),
       }));
+      if (coveredNow.current) registered.current.get(spot.key)?.cover(true);
     }
   }, [mark]);
   const spotsKey = spots.map((s) => `${s.key}@${s.start}-${s.end}`).join(',');
   useEffect(() => { sync(); }, [spotsKey, screen, fired, sync]);
+  useEffect(() => { for (const off of registered.current.values()) off.cover(covered); }, [covered]);
   /* A card over this one (a tape peeled, a play ended) draws the words again without drawing this effect: its places are looked for again. */
   useEffect(() => {
     const el = root.current;

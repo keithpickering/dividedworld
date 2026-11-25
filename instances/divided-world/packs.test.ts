@@ -38,7 +38,7 @@ test('each starter card has a target its playPrice prices at 0', () => {
   for (const card of held()) {
     const config = card.key === 'whoops' ? { ink: 'x' } : card.key === 'autocorrect' ? { phrase } : card.key === 'this' ? { phrase: 'a', words: '' } : {};
     const target = card.key === 'autocorrect' ? on(`${phrase} and more words`) : on(short);
-    assert.equal(card.playPrice(settings, target, config as never), 0, card.key);
+    assert.equal(card.playPrice(settings, target, config as never, []), 0, card.key);
   }
 });
 
@@ -46,8 +46,8 @@ test('the free targets sit just under the step: one character more costs Aura', 
   const card = (key: string) => instance.cards.find((c) => c.key === key)!;
   const long = 'a'.repeat(settings.economy['whoops.lengthStep']!);
   const phrase = 'a'.repeat(settings.economy['autocorrect.volumeStep']!);
-  assert.ok(card('whoops').playPrice(settings, on(long), { ink: 'x' } as never) > 0);
-  assert.ok(card('autocorrect').playPrice(settings, on(`${phrase} and more words`), { phrase } as never) > 0);
+  assert.ok(card('whoops').playPrice(settings, on(long), { ink: 'x' } as never, []) > 0);
+  assert.ok(card('autocorrect').playPrice(settings, on(`${phrase} and more words`), { phrase } as never, []) > 0);
 });
 
 test('the instance with the starter has no problems', () => {

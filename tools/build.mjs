@@ -99,6 +99,8 @@ export const STEPS = [
   'node tools/check-glass-contrast.mjs',
   'node tools/test-mail.mjs',
   'node tools/check-mail.mjs',
+  'node tools/test-licenses.mjs',
+  'node tools/check-licenses.mjs',
   'node tools/test-card-art.mjs',
   'node tools/check-card-art.mjs',
   'node tools/test-sounds.mjs',

@@ -1,0 +1,21 @@
+[
+  {
+    "files": [
+      "ui/cards/card-template.svg"
+    ],
+    "maker": "KayfaBB",
+    "terms": "layer",
+    "work": "Postcard template",
+    "note": "Written by engine/ui/cards/template.ts as a file snapshot of templateSvg() (engine/ui/cards/template.test.tsx; docs/plans/2026-11-05-card-template-plan.md)."
+  },
+  {
+    "files": [
+      "ui/vending/pack-test-art.webp",
+      "ui/vending/pack-test-relief.webp"
+    ],
+    "maker": "KayfaBB",
+    "terms": "layer",
+    "work": "Pack test pictures",
+    "note": "Small test pictures committed beside the Pictured story, test fixtures in the engine and not an instance's art (docs/plans/2026-11-12-booster-pack-render-plan.md, Task 5)."
+  }
+]

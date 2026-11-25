@@ -145,8 +145,9 @@ new art for it replaces its picture. The owner approves art in review.
 
 The cards' own pictures, their marks, the card back, the Booster pack's art and the scenes they came from are under
 CC0 1.0 Universal (https://creativecommons.org/publicdomain/zero/1.0/): anyone may use them for any purpose, with or
-without credit. Each `art.json` says so. That is the art's license alone; the repository's code has none yet. Art you
-offer may name other terms in its own `art.json`.
+without credit. Each `art.json` says so, and that stays so. New art offered without other terms comes under the
+instance's dual offer (AGPL-3.0-or-later or CC BY 4.0, see `instances/divided-world/LICENSE.md`), and its `art.json`
+names the terms either way.
 
 ## What the guard refuses
 

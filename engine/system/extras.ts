@@ -132,7 +132,7 @@ function leaders(poll: ReadPoll): { names: string[]; top: number; second: number
 const joinAnd = (xs: readonly string[]): string => (xs.length <= 2 ? xs.join(' and ') : `${xs.slice(0, -1).join(', ')} and ${xs[xs.length - 1]}`);
 
 /** A poll under its post, in the design's section 1 form. */
-export function pollLines(poll: ReadPoll, now: number): string[] {
+export function pollLines(poll: ReadPoll, now: number, label = '[poll on this post]'): string[] {
   const rules = [poll.pick === 1 ? 'pick one' : `pick up to ${poll.pick}`, ...(poll.secret ? ['secret ballots'] : [])].join('; ');
   const state = !poll.closed ? `Open: ends ${until(poll.endsAt, now)}.`
     : poll.closedBy === null ? `Closed ${ago(poll.closedAt ?? poll.endsAt, now)}.`
@@ -145,30 +145,38 @@ export function pollLines(poll: ReadPoll, now: number): string[] {
     return `  ${i + 1}. ${o}: ${c} (${total === 0 ? 0 : Math.round((100 * c) / total)}%)`;
   });
   const voted = poll.voters === 0 ? 'No one has voted.' : `${count(poll.voters, 'character', 'characters')} voted.`;
-  return [`[poll on this post] "${poll.question}" (${rules})`, `  ${state}`, ...options, `  ${voted}`];
+  return [`${label} "${poll.question}" (${rules})`, `  ${state}`, ...options, `  ${voted}`];
+}
+
+/** Who leads a poll, in words: `Yes leads 9 to 4`, `A and B tied at 3`, `no votes yet`. */
+export function pollStanding(poll: ReadPoll): string {
+  const { names, top, second } = leaders(poll);
+  return top === 0 ? 'no votes yet'
+    : names.length > 1 ? `${joinAnd(names)} tied at ${top}`
+    : `${names[0]} ${poll.closed ? 'won' : 'leads'} ${top} to ${second}`;
+}
+
+/** When a poll ends or ended, in words: `closes in 2 hours`, `closed 3 days ago, early, by an admin`. */
+export function pollTime(poll: ReadPoll, now: number): string {
+  return !poll.closed ? `closes ${until(poll.endsAt, now)}`
+    : poll.closedBy === null ? `closed ${ago(poll.closedAt ?? poll.endsAt, now)}`
+    : `closed ${ago(poll.closedAt ?? poll.endsAt, now)}, early, by ${poll.closedBy === 'author' ? 'its author' : 'an admin'}`;
 }
 
 /** A poll in one line, for the digest: `[poll: "Rename this board?", Yes leads 9 to 4, closes in 2 hours]`; tied and closed forms read as the same line with their own verbs. */
 export function pollShort(poll: ReadPoll, now: number): string {
-  const { names, top, second } = leaders(poll);
-  const tied = names.length > 1;
-  const standing = top === 0 ? 'no votes yet'
-    : tied ? `${joinAnd(names)} tied at ${top}`
-    : `${names[0]} ${poll.closed ? 'won' : 'leads'} ${top} to ${second}`;
-  const time = !poll.closed ? `closes ${until(poll.endsAt, now)}`
-    : poll.closedBy === null ? `closed ${ago(poll.closedAt ?? poll.endsAt, now)}`
-    : `closed ${ago(poll.closedAt ?? poll.endsAt, now)}, early, by ${poll.closedBy === 'author' ? 'its author' : 'an admin'}`;
-  return `[poll: "${poll.question}", ${standing}, ${time}]`;
+  return `[poll: "${poll.question}", ${pollStanding(poll)}, ${pollTime(poll, now)}]`;
 }
 
 /**
- * One play as a line. `seen` is the instance's sentence for it (null for a card with no `seen`, or a back with no card); without one the line says what is known: the card's name by `cardName`
+ * One play as a line. `seen` is the instance's sentence for it (null for a card with no `seen`, or a back with no card); without one the line says what is known (`elsewhere` drops "on this post"): the card's name by `cardName`
  * ("A card" where the instance does not have it) or "A card set face down", and when.
  */
-export function playLine(play: ReadPlay, o: { readonly now: number; readonly seen: string | null; readonly cardName: (key: string) => string | undefined }): string {
+export function playLine(play: ReadPlay, o: { readonly now: number; readonly seen: string | null; readonly cardName: (key: string) => string | undefined; readonly elsewhere?: boolean }): string {
   if (o.seen !== null && o.seen !== '') return `[${o.seen}]`;
   const who = play.card === null ? 'A card set face down' : o.cardName(play.card) ?? 'A card';
-  return `[${who} was played on this post, ${ago(play.at, o.now)}.]`;
+  // `elsewhere`: a line shown under a heading that names the post, so it does not say "on this post".
+  return o.elsewhere === true ? `[${who} was played, ${ago(play.at, o.now)}]` : `[${who} was played on this post, ${ago(play.at, o.now)}.]`;
 }
 
 /** `[Reactions: ❤ 3, 😂 1]`: most first, then by kind; each kind as `name` says it. Null for none. */

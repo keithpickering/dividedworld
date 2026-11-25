@@ -4,10 +4,10 @@
  * and when it was settled, its place, counts of posts, spins and card plays, the month it joined,
  * its signature, and its public record's latest rows with a link to the full view.
  *
- * Its class is shown only as its player made it public, as of its date ("Revealed: Heel (Oct 3)",
- * "Has Turned since (Oct 20)"); a Turn announced with its old class names that class in the record
- * because it was announced. Nothing else about a class is read or drawn here. A character waiting
- * to debut, and one that does not exist, are the same "No such character".
+ * Its class is shown only as its player made it public, as of its date ("Revealed: Heel (Oct 3)"),
+ * and not at all once a Turn is announced after it; a Turn announced with its old class names that
+ * class in the record because it was announced. Nothing else about a class is read or drawn here.
+ * A character waiting to debut, and one that does not exist, are the same "No such character".
  *
  * Out of character and plain.
  */
@@ -105,7 +105,7 @@ function Profile({ character: c, doc }: { readonly character: Character; readonl
     ...(monthJoined ? [{ key: 'joined', label: 'Joined', value: monthJoined }] : []),
     ...(worn.length > 0 ? [{ key: 'wearing', label: 'Wearing', value: worn.join(', ') }] : []),
     ...(stated?.revealed
-      ? [{ key: 'class', label: 'Class', value: <>Revealed: {className(stated.revealed.class)} ({shortDate(stated.revealed.at)}){stated.turnedAt && <> · Has Turned since ({shortDate(stated.turnedAt)})</>}</> }]
+      ? [{ key: 'class', label: 'Class', value: <>Revealed: {className(stated.revealed.class)} ({shortDate(stated.revealed.at)})</> }]
       : []),
   ];
   const lead = facts.filter((f) => f.lead).length;

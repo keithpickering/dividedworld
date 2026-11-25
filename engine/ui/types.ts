@@ -431,6 +431,24 @@ export interface ConductUi {
   readonly mail?: ConductMailOverride;
 }
 
+/** Where this deployment's source can be had (AGPL section 13), its content terms, and its credits (the licensing design, section 5). */
+export interface Licensing {
+  /** An https URL where the source this deployment runs can be had. */
+  readonly source: string;
+  /** The instance's own terms, Markdown, drawn on /license through the guide's renderer. */
+  readonly terms: string;
+  /** The credits /license lists (Task 5 fills it; [] until then). */
+  readonly credits: readonly LicenseCredit[];
+}
+export interface LicenseCredit {
+  readonly work: string;
+  readonly maker: string;
+  readonly terms: string;
+  readonly termsUrl?: string;
+  readonly source?: string;
+  readonly note?: string;
+}
+
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
@@ -496,6 +514,8 @@ export interface InstanceUi {
    * version. Each section's `key` is its anchor on /conduct, its `title` the bold sentence, its `text` plain Markdown.
    */
   readonly conduct: ConductUi;
+  /** Where this deployment's source can be had, its content terms and its credits: the footer's Source link and the /license page (docs/plans/2026-11-25-licensing-design.md, section 5). */
+  readonly licensing: Licensing;
   /** What a signed-out visitor meets: a made-up sample thread, the developer persona's note and the HUD's prompt (docs/plans/2026-11-05-front-door-design.md, section 4). */
   readonly frontDoor: FrontDoorUi;
 }

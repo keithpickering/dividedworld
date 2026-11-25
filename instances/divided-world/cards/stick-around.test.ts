@@ -8,7 +8,7 @@ import { defaults as settings } from '../settings.ts';
 import { post } from './test-kit.ts';
 
 test('Stick Around costs nothing more to play', () => {
-  assert.equal(stickAround.playPrice(settings, post(6000), { sentence: 'Read it.' }), 0);
+  assert.equal(stickAround.playPrice(settings, post(6000), { sentence: 'Read it.' }, []), 0);
 });
 
 test('Stick Around\'s release is the caster\'s own sentence, bounded, with the design\'s default', () => {

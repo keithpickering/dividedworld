@@ -269,7 +269,7 @@ function Bare({ show, children }: { show: EffectProps['show']; children: EffectP
 }
 
 function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory; now: number }) {
-  const { live, show, met, children, memory, now } = props;
+  const { live, show, met, children, memory, now, covered } = props;
   const inMoment = props.moment !== null;
   const reduced = useMotionReduced();
   const sound = useSound();
@@ -310,7 +310,9 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   useEffect(() => {
     const el = host.current, chairLayer = layer.current, dentLayer = shading.current;
     const glowLayer = glows.current;
-    if (!el || !chairLayer || !dentLayer || !glowLayer) return;
+    /* A post under a curtain is out of view: nothing arms or throws, and a run that stood is cleared by this effect's cleanup. Opening the
+       curtain runs the effect again, and the arming observer reports the post as it would one that had just scrolled in. */
+    if (covered || !el || !chairLayer || !dentLayer || !glowLayer) return;
     let world: World | null = null;
     let running = false;
     let loud = false;
@@ -683,7 +685,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       control.current = null;
       paintNow.current = () => {};
     };
-  }, [inMoment, reduced, memory]);
+  }, [inMoment, reduced, memory, covered]);
 
   /* Plays that came or went, after the run's own effect has run. */
   useEffect(() => { control.current?.sync(); }, [key]);
@@ -708,12 +710,13 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       ...(ends !== undefined ? { ends } : {}),
       yours: false,
       controls: [
-        { kind: 'press', label: 'Throw again', run: replay },
+        /* Under a curtain there is nothing to throw at, so the control is not offered rather than offered and idle. */
+        ...(covered ? [] : [{ kind: 'press' as const, label: 'Throw again', run: replay }]),
         { kind: 'toggle', label: 'Game sounds', on: gameSound.on, set: gameSound.set },
       ],
       notes: {},
     };
-  }, [n, soonest, now, replay, gameSound.on, gameSound.set]);
+  }, [n, soonest, now, replay, covered, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 

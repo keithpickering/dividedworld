@@ -67,7 +67,7 @@ type Holder = 'pointer' | 'key' | 'toggle';
 const clearedFor = (state: unknown, version: string | undefined): boolean =>
   version !== undefined && typeof state === 'object' && state !== null && (state as { cleared?: unknown }).cleared === version;
 
-export function YouWereSayingEffect({ plays, states, written, version, reader, still, moment, save, children }: EffectProps) {
+export function YouWereSayingEffect({ plays, states, written, version, reader, still, moment, save, covered, children }: EffectProps) {
   const { settings } = useKayfa();
   const reduced = useMotionReduced();
   const cfg: EraseSettings = {
@@ -88,8 +88,8 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
   /* A tail still being written is not drawn in a moment: the moment's clock does not advance, so it would wait forever. */
   const drawn = texts.length > 0 || (!still && moment === null && waiting);
 
-  const latest = useRef({ cfg, total, live, written, version, reader, save, still, moment });
-  latest.current = { cfg, total, live, written, version, reader, save, still, moment };
+  const latest = useRef({ cfg, total, live, written, version, reader, save, still, moment, covered });
+  latest.current = { cfg, total, live, written, version, reader, save, still, moment, covered };
 
   /* The clock, kept outside the render and read by it: a snapshot, and the holds on it. Until the post is seen it has typed nothing. */
   const clock = useRef<Erase | null>(null);
@@ -204,20 +204,26 @@ export function YouWereSayingEffect({ plays, states, written, version, reader, s
     return () => { document.removeEventListener('visibilitychange', hidden); window.removeEventListener('blur', dropAll); };
   }, [control, dropAll]);
 
-  /* Seen: types in from the start, each time it comes into view. Not seen: at rest, whole, with no timer and no hold. */
+  /* Seen: types in from the start, each time it comes into view. Not seen: at rest, whole, with no timer and no hold. A post under a shut curtain is not seen whatever the observer says: nothing types unseen, and the curtain's opening is a coming into view. */
+  const watched = useRef(false);
+  const see = useCallback((showing: boolean) => {
+    inView.current = showing;
+    holds.current.clear();
+    const { cfg: c } = latest.current;
+    if (!look(c, latest.current.total, clock.current!, Date.now()).cleared) clock.current = showing ? typeIn(c, 0, Date.now()) : FULL;
+    stop();
+    if (showing) kick(); else redraw();
+  }, [stop, kick]);
   useEffect(() => {
     const el = box.current;
     if (still || !el) return;
     const stopWatching = watchInView(el, (showing) => {
-      inView.current = showing;
-      holds.current.clear();
-      const { cfg: c } = latest.current;
-      if (!look(c, latest.current.total, clock.current!, Date.now()).cleared) clock.current = showing ? typeIn(c, 0, Date.now()) : FULL;
-      stop();
-      if (showing) kick(); else redraw();
+      watched.current = showing;
+      see(showing && !latest.current.covered);
     });
-    return () => { stopWatching(); inView.current = false; stop(); };
-  }, [showing, still, stop, kick]);
+    return () => { stopWatching(); watched.current = false; inView.current = false; stop(); };
+  }, [showing, still, stop, see]);
+  useEffect(() => { if (watched.current && inView.current === covered) see(!covered); }, [covered, see]);
 
   /* Words that arrive while the post is in view type in after the ones before; a new version (an edit) types in whole, and is not the old one's clear. */
   const before = useRef({ total, version });

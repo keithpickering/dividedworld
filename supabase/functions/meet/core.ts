@@ -340,8 +340,14 @@ export async function runMeeting(
     const bossList = (await db.rpc<{ key: string; name: string; belt: boolean; holder: { id: string; name: string } | null }[]>('boss_trophies', {})).map((t) => ({
       key: t.key, name: t.name, belt: t.belt, holder: t.holder ? t.holder.id.toLowerCase() : null, holderName: t.holder ? t.holder.name : null,
     }));
+    const cardsByKey = new Map(tuned.cards.map((c) => [c.key, c]));
     const message = [
-      renderDigest(digest, memory, titles, requestLimits),
+      // Told at the slot the meeting is for (a retry reads as the meeting it retries), each play by the instance's own sentence for its card, else its name.
+      renderDigest(digest, memory, titles, requestLimits, {
+        now: slotAt,
+        seen: (card, p) => (card === null ? null : cardsByKey.get(card)?.seen?.(p) ?? null),
+        cardName: (key) => cardsByKey.get(key)?.name,
+      }),
       ...(due.length ? ['', ...inheritedText(due, settings.inheritanceGraceDays)] : []),
       ...(context.predecessor ? ['', ...predecessorText(context.predecessor)] : []),
       ...(farewell && context.handoffFacts ? ['', ...farewellFactsText(context.handoffFacts)] : []),

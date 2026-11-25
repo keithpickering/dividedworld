@@ -2,7 +2,7 @@
 --
 -- 1. watched_characters is a view of two columns (character, weight): the live watches on characters (a play at character reach whose card's discipline is a watch, not over by time and not
 --    ended by an admin). The digest role reads it and nobody else does; a play that is no watch, or is not on a character, is not in it.
--- 2. patrol_sample(boards, most, pool, seed) draws `most` posts from the newest `pool` eligible posts on the beat, each weighted by its author's largest live watch, else 1. The draw follows the weights
+-- 2. patrol_sample(boards, most, pool, seed) is patrol_draw(boards, most, pool, seed) (0433 split the draw from the extras so the thousands of draws below do not pay for them) plus the extras; the draw `most` posts from the newest `pool` eligible posts on the beat, each weighted by its author's largest live watch, else 1. The draw follows the weights
 --    (the statistical check below, with its own poison run inside this file), it is the same for the same seed, and a pool no larger than the sample returns every candidate whatever the weights.
 -- 3. An ended watch (by time, or by an admin's reverse_card) weighs 1. The sample is returned newest first, so its order says nothing of a weight; staff posts and posts under a visit are left out
 --    (0112-patrols.sql holds those cases).
@@ -47,7 +47,7 @@ create function pg_temp.ratio(seeds integer, most integer, pool integer) returns
   with picks as (
     select (x ->> 'act')::uuid as act
     from generate_series(1, seeds) s(seed)
-    cross join lateral jsonb_array_elements(patrol_sample(array[(select id from boards where slug = 'pw-general')], most, pool, s.seed)) x
+    cross join lateral jsonb_array_elements(patrol_draw(array[(select id from boards where slug = 'pw-general')], most, pool, s.seed)) x
   ), by_author as (
     select a.character, count(*)::numeric as n from picks p join acts a on a.id = p.act group by a.character
   )
@@ -118,34 +118,34 @@ declare
 begin
   -- The pool is the newest `pool` posts; with the sample as large as the pool, every candidate is returned, whatever the weights.
   newest := (select array_agg(a.id order by a.created_at desc, a.id desc) from (select id, created_at from acts where kind = 'post' and thread in (select id from threads where board = general) order by created_at desc, id desc limit 10) a);
-  got := patrol_sample(array[general], 10, 10, 7);
+  got := patrol_draw(array[general], 10, 10, 7);
   if (select array_agg((x ->> 'act')::uuid order by ord) from jsonb_array_elements(got) with ordinality t(x, ord)) is distinct from newest then
     raise exception 'a pool no larger than the sample did not return every candidate, newest first, with a watch up: %', got;
   end if;
-  got := patrol_sample(array[general], 15, 10, 7);
+  got := patrol_draw(array[general], 15, 10, 7);
   if jsonb_array_length(got) is distinct from 10 then raise exception 'a sample larger than its pool returned % posts and not the pool''s 10', jsonb_array_length(got); end if;
 
   -- A smaller sample is newest first, whatever drew it.
   for n in 1..30 loop
-    got := patrol_sample(array[general], 8, 40, n);
+    got := patrol_draw(array[general], 8, 40, n);
     if jsonb_array_length(got) is distinct from 8 then raise exception 'the sample is not cut to most: %', jsonb_array_length(got); end if;
     if (select array_agg((x ->> 'act')::uuid order by ord) from jsonb_array_elements(got) with ordinality t(x, ord))
        is distinct from (select array_agg(a.id order by a.created_at desc, a.id desc) from acts a where a.id in (select (x ->> 'act')::uuid from jsonb_array_elements(got) x)) then
       raise exception 'the sample is not newest first (an order that would tell a weight): %', got;
     end if;
-    again := patrol_sample(array[general], 8, 40, n);
+    again := patrol_draw(array[general], 8, 40, n);
     if again is distinct from got then raise exception 'the same seed drew a different sample'; end if;
-    if got is distinct from patrol_sample(array[general], 8, 40, n::bigint) then raise exception 'the seed is read differently by type'; end if;
-    if n > 1 and got is distinct from patrol_sample(array[general], 8, 40, n - 1) then differs := true; end if;
+    if got is distinct from patrol_draw(array[general], 8, 40, n::bigint) then raise exception 'the seed is read differently by type'; end if;
+    if n > 1 and got is distinct from patrol_draw(array[general], 8, 40, n - 1) then differs := true; end if;
   end loop;
   if not differs then raise exception 'thirty seeds drew one sample: the seed is not read'; end if;
 
   -- A pool of zero or less, and a sample of zero, read nothing; no boards, no sample.
-  if patrol_sample(array[general], 5, 0, 1) is distinct from '[]'::jsonb then raise exception 'a pool of zero gave a sample'; end if;
-  if patrol_sample(array[general], 0, 5, 1) is distinct from '[]'::jsonb then raise exception 'a sample of zero gave posts'; end if;
-  if patrol_sample('{}'::uuid[], 5, 20, 1) is distinct from '[]'::jsonb then raise exception 'no boards gave a sample'; end if;
-  -- The shape is today's: the same seven keys.
-  if (select string_agg(k, ',' order by k) from jsonb_object_keys(patrol_sample(array[general], 1, 5, 1) -> 0) k) is distinct from 'act,board,body,name,pronouns,thread,title' then
+  if patrol_draw(array[general], 5, 0, 1) is distinct from '[]'::jsonb then raise exception 'a pool of zero gave a sample'; end if;
+  if patrol_draw(array[general], 0, 5, 1) is distinct from '[]'::jsonb then raise exception 'a sample of zero gave posts'; end if;
+  if patrol_draw('{}'::uuid[], 5, 20, 1) is distinct from '[]'::jsonb then raise exception 'no boards gave a sample'; end if;
+  -- The shape is today's: the seven keys of 0362, and what the board shows with a post (0433: its poll, plays, reactions, rewind and a spun opener's origin).
+  if (select string_agg(k, ',' order by k) from jsonb_object_keys(patrol_sample(array[general], 1, 5, 1) -> 0) k) is distinct from 'act,board,body,name,origin,plays,poll,pronouns,reactions,rewoundTo,thread,title' then
     raise exception 'the sampled post has another shape: %', patrol_sample(array[general], 1, 5, 1) -> 0;
   end if;
 end $$;

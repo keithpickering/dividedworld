@@ -72,6 +72,7 @@ test('the classes\' and cards\' numbers are the table\'s, as settings', () => {
     'autocorrect.perVolume': 25, 'autocorrect.volumeStep': 50, 'autocorrect.mostAdded': 200, 'autocorrect.holdHours': 24,
     'laughTrack.perPlace': 5, 'laughTrack.freePlaces': 5, 'laughTrack.mostAdded': 100,
     'youWereSaying.baseTokens': 50, 'youWereSaying.stepTokens': 50, 'youWereSaying.stepPrice': 25, 'youWereSaying.mostTokens': 300,
+    'itsCurtains.secondAdd': 100, 'itsCurtains.thirdAdd': 200,
     'jimmyWails.gift1': 10, 'jimmyWails.gift2': 25, 'jimmyWails.gift3': 50, 'jimmyWails.gift4': 100, 'jimmyWails.overhead': 25,
     'machine.pullMost': 2, 'machine.moveDaysMost': 7, 'machine.repriceLeast': 50, 'machine.repriceMost': 200, 'machine.flashHoursLeast': 24, 'machine.flashHoursMost': 48,
   });

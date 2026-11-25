@@ -69,6 +69,10 @@ test('Steel Chair\'s stories are listed, one chair on the light board and the da
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['one-light', 'one-dark', 'three', 'short-post', 'short-three', 'reduced'].map((n) => `boards-25-steel-chair--${n}`)));
 });
 
+test('It\'s Curtains\' stories are listed: one curtain shut and opened, three stacked, with Below the Fold, over Steel Chair, reduced motion, forced colors, in the ORIGIN box, and the drumroll looped', () => {
+  expect(boardStoryIds()).toEqual(expect.arrayContaining(['one-shut', 'one-shut-dark', 'opened', 'three', 'with-below-the-fold', 'over-steel-chair', 'reduced', 'forced-colors', 'in-the-origin-box', 'drumroll-loop'].map((n) => `boards-28-it-s-curtains--${n}`)));
+});
+
 test('THIS\'s stories are listed, each on the Main board and the Phone one', () => {
   expect(boardStoryIds()).toEqual(expect.arrayContaining(['two-notes', 'bare', 'receipt', 'taped', 'inked', 'fab'].flatMap((n) => [`boards-23-this--${n}-main`, `boards-23-this--${n}-phone`])));
 });
