@@ -423,6 +423,15 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A departure in the same season (0403): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
       insert into season_handovers (season, outgoing, boss, how, cause) select (select id from seasons where ends_at is null), 'exp-bot', 'exp-boss', 'rotation', 'departure';
       insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
+      -- The staff-board threads (0429): a staff thread (the flag on a threads row), the departure's handover recording it (season_handovers.thread), and the open season's Staff Meetings thread (seasons.meetings_thread), so the three new columns round-trip.
+      declare staff_thread uuid; meetings uuid;
+      begin
+        staff_thread := open_staff_thread('exp-boss', 'Exported handover thread');
+        meetings := open_staff_thread('exp-boss', 'Exported staff meetings');
+        update season_handovers set thread = staff_thread where cause = 'departure';
+        update seasons set meetings_thread = meetings where ends_at is null;
+        assert (select count(*) from threads where staff_placed and id in (staff_thread, meetings)) = 2, 'the fixture holds its two staff threads';
+      end;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The chattier staff's tables (0415), insert-only and no client's: a round's claim on its slot, the day's kept pick, a session of the Boss's, a turn in it with the reply it answered (the Boss's own post quoting Ann's), and the meeting's talking point.

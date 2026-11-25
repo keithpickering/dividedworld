@@ -144,6 +144,9 @@ begin
   -- Its end follows it into the same thread.
   perform end_move(act, 'reversed', 'test');
   perform say_move_end(act, 'reversed');
+  -- A move landed and ended in one tick is never dated before itself: the move is stamped by the clock (write_staff_act), so its end is too (end_move).
+  perform pg_temp.expect((select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act) >= (select m.created_at from acts m where m.id = act),
+    'a move''s end is dated before the move it ends: ' || (select e.created_at from acts e where e.kind = 'move_end' and e.target_act_id = act) || ' < ' || (select m.created_at from acts m where m.id = act));
   perform pg_temp.expect((select count(*) from acts a where a.thread = t and a.kind = 'post' and a.payload ->> 'body' like 'Reversed: %') = 1, 'the move''s end was not said in its thread');
   perform pg_temp.expect((select count(*) from acts a where a.thread = t) = 3, 'the move''s thread holds ' || (select count(*) from acts a where a.thread = t) || ' Acts, not the move, its end and the line');
 end $$;
@@ -222,6 +225,29 @@ begin
   perform pg_temp.expect(pg_temp.thread_of(q3) = pg_temp.thread_of(q2), 'the third part did not find the thread the second opened');
 end $$;
 
+-- A part that fails inside write_staff_act, after its thread was opened, leaves no orphan thread: the open is inside the part's own block, so the failure takes it back. A trigger plays the failing write.
+create function pg_temp.fail_moves() returns trigger language plpgsql as $$
+begin
+  if current_setting('mt.fail_moves', true) = 'on' and new.kind = 'move' then raise exception 'planted: the move cannot be written' using errcode = '55000'; end if;
+  return new;
+end $$;
+create trigger mt_fail_moves before insert on acts for each row execute function pg_temp.fail_moves();
+do $$
+declare
+  q bigint := pg_temp.queue('renameBoard', pg_temp.rename('Orphan Palace'));
+  before_n bigint := (select count(*) from threads where staff_placed);
+  ran jsonb;
+begin
+  perform set_config('mt.fail_moves', 'on', true);
+  ran := system_tick();
+  perform set_config('mt.fail_moves', 'off', true);
+  perform pg_temp.expect((ran ->> 'failed')::integer >= 1 and (pg_temp.qrow(q)).landed_act is null and (pg_temp.qrow(q)).failure like '%planted%', 'the planted failure did not fail the part: ' || ran::text || ' ' || to_jsonb(pg_temp.qrow(q))::text);
+  perform pg_temp.expect((select count(*) from threads where staff_placed) = before_n, 'a part that failed after its thread was opened left ' || ((select count(*) from threads where staff_placed) - before_n) || ' orphan staff threads');
+  -- The row is put out of the later ticks' way.
+  update queued_moves set refused_at = now() where id = q;
+end $$;
+drop trigger mt_fail_moves on acts;
+
 -- ---- 4. A handover opens one thread: the farewell, then the arrival; season_news finds the quote there ----
 do $$
 declare
@@ -267,6 +293,31 @@ begin
   update settings set value = was where key = 'systemLines';
 end $$;
 
+-- A handover whose posts all fail (a planted failure of every staff post) opens no thread: none is listed, none is recorded, and nothing a player wrote is touched.
+create function pg_temp.fail_posts() returns trigger language plpgsql as $$
+begin
+  if current_setting('mt.fail_posts', true) = 'on' and new.kind = 'post' then raise exception 'planted: the post cannot be written' using errcode = '55000'; end if;
+  return new;
+end $$;
+create trigger mt_fail_posts before insert on acts for each row execute function pg_temp.fail_posts();
+do $$
+declare
+  before_n bigint := (select count(*) from threads where staff_placed);
+  before_all bigint := (select count(*) from threads);
+  open_id bigint := pg_temp.season();
+  boss text := current_boss();
+  h record;
+begin
+  perform set_config('mt.fail_posts', 'on', true);
+  perform hand_over(open_id, boss, now(), true);
+  perform set_config('mt.fail_posts', 'off', true);
+  select * into h from season_handovers x where x.season = open_id order by x.id desc limit 1;
+  perform pg_temp.expect(h.boss is not null and h.boss is distinct from boss, 'the handover did not seat a new Boss');
+  perform pg_temp.expect(h.thread is null and h.arrival_act is null, 'a handover whose posts failed recorded a thread: ' || coalesce(h.thread::text, 'none'));
+  perform pg_temp.expect((select count(*) from threads where staff_placed) = before_n and (select count(*) from threads) = before_all, 'a handover whose posts failed left an empty staff thread');
+end $$;
+drop trigger mt_fail_posts on acts;
+
 -- ---- 5. An admin's description of a board with no rename in force opens a thread; with a rename in force it is written in the rename's thread ----
 do $$
 declare
@@ -303,6 +354,22 @@ begin
   perform pg_temp.expect((answer ->> 'move_act')::uuid = rename_act and (select a.thread from acts a where a.id = (answer ->> 'act')::uuid) = pg_temp.thread_of(q) and (select count(*) from threads where staff_placed) = before_n,
     'a description beside a rename did not follow it into its thread');
   perform pg_temp.expect((select count(*) from acts a where a.thread = (select thread from pg_temp.ann)) = 0, 'a description wrote in the announcements thread');
+end $$;
+
+-- With no Boss seated, a description that needs a thread refuses, and says plainly how an admin seats one (the seed's firstBoss, or the next handover); nothing is written.
+do $$
+declare
+  b uuid := pg_temp.board('mt-dest');
+  was text := current_boss();
+  said text;
+  before_n bigint := (select count(*) from threads where staff_placed);
+begin
+  update seasons set boss = null where ends_at is null;
+  said := pg_temp.refusal(format('select write_describe(%L::uuid, %L, null)', b, 'Words for no one.'));
+  update seasons set boss = was where ends_at is null;
+  perform pg_temp.expect(said like '55000:%no Boss%', 'the description with no Boss did not refuse: ' || coalesce(said, 'it did not'));
+  perform pg_temp.expect(said like '%firstBoss%' and said like '%handover%', 'the refusal names no way to seat a Boss: ' || said);
+  perform pg_temp.expect((select count(*) from threads where staff_placed) = before_n, 'a refused description opened a thread');
 end $$;
 
 -- ---- 6. The flag: the placements carry every staff thread, the settings' and seasons' threads still follow it, and a moveThread naming a staff thread is refused ----

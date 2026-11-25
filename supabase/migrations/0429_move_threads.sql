@@ -373,7 +373,7 @@ begin
     in_thread := (select m.thread from acts m where m.id = move_act and m.kind = 'move');
   else
     boss := current_boss();
-    if boss is null then raise exception 'the staff has no Boss to open a thread for a description yet' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
+    if boss is null then raise exception 'The staff has no Boss to open a thread for this description yet. An admin seats one by naming a first Boss (system.firstBoss) in the instance''s seed and seeding again, or the next season''s handover seats one.' using hint = 'kayfabb.refusal', errcode = '55000'; end if;
     params := jsonb_build_object('board', write_describe.board::text, 'name', coalesce((select b.name from boards_now b where b.id = write_describe.board), ''));
     titled := move_thread_title('renameBoard', params, boss);
     in_thread := open_staff_thread(boss, titled);
@@ -403,6 +403,7 @@ declare
   open_nom record;
   arrival uuid;
   ht uuid;
+  said boolean;
 begin
   begin
     chosen := nominated_boss(outgoing);
@@ -464,21 +465,22 @@ begin
     exception when others then
       note := coalesce(note || '; ', '') || 'the outgoing Boss''s waiting moves were not withdrawn: ' || sqlerrm;
     end;
-    -- The handover's thread (the staff-board threads design, section 6): one staff thread on the system board, opened here, where there is anything to say in it, titled by the instance's handoverThreadTitle with
-    -- the arriving Boss's name and the new season's number. The Boss's own farewell, written at its last meeting (0337, above), comes first, in place of the stock line, which stands where none was
-    -- written or it could not be posted; the arrival follows. A thread that cannot be opened says nothing and the handover stands, as a farewell that could not be posted always has.
+    -- The handover's thread (the staff-board threads design, section 6): one staff thread on the system board, titled by the instance's handoverThreadTitle with the arriving Boss's name and the new season's
+    -- number, opened only where there is anything to say in it and kept only if a post lands in it. The Boss's own farewell, written at its last meeting (0337, above), comes first, in place of the stock line,
+    -- which stands where none was written or it could not be posted; the arrival follows. The farewell and the arrival swallow their own failures, so the whole is one block: where neither lands the block
+    -- raises, which takes the thread back with it (a thread with no post holds nothing a player wrote), and the row records none. A thread that cannot be opened says nothing and the handover stands.
     if (outgoing is not null and (farewell_words(outgoing, new_season, departure) is not null or line_set('bossFarewell'))) or line_set('bossArrival') then
       begin
         ht := open_staff_thread(chosen, handover_thread_title(chosen, new_season));
+        said := say_farewell(outgoing, new_season, departure, ht);
+        if not said then said := say_in_thread(outgoing, 'bossFarewell', ht) is not null; end if;
+        arrival := say_in_thread(chosen, 'bossArrival', ht);
+        if not said and arrival is null then raise exception 'neither the farewell nor the arrival could be posted'; end if;
       exception when others then
-        note := coalesce(note || '; ', '') || 'the handover''s thread was not opened: ' || sqlerrm;
+        ht := null;
+        arrival := null;
+        note := coalesce(note || '; ', '') || 'the handover''s thread was not kept: ' || sqlerrm;
       end;
-    end if;
-    if ht is not null then
-      if not say_farewell(outgoing, new_season, departure, ht) then
-        perform say_in_thread(outgoing, 'bossFarewell', ht);
-      end if;
-      arrival := say_in_thread(chosen, 'bossArrival', ht);
     end if;
   end if;
   insert into season_handovers (season, outgoing, boss, how, note, at, arrival_act, cause, thread)
@@ -636,7 +638,54 @@ begin
   -- Only a post that still has its target springs: one whose quote is doctored was written with none (acts_forged_quotes).
   if quoting and kept is not null then sprung := spring_traps('quote', kept, written, held => locked); end if;
   return act_projection(written) || case when sprung is not null then jsonb_build_object('sprung', sprung) else '{}'::jsonb end;
-end $$;;
+end $$;
+
+-- end_move (0322), its end dated by the clock and not the transaction, as write_staff_act dates a move: a move landed and ended in one tick (a trophy, spent at once) would otherwise be dated before itself. Everything else as 0322 wrote it.
+create or replace function end_move(move_act uuid, why text, by text) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  m acts%rowtype;
+  existing uuid;
+  written uuid;
+  lasting boolean;
+  first_before uuid;
+  shaped uuid;
+begin
+  if why is null or why not in ('met', 'expired', 'reversed', 'superseded', 'spent', 'unmet', 'overturned') then raise exception 'a move ends as met, expired, reversed, superseded, spent, unmet or overturned, not %', coalesce(why, 'nothing') using errcode = '22023'; end if;
+  if by is null or char_length(by) not between 1 and 40 then raise exception 'a move''s end says who ended it' using errcode = '22023'; end if;
+  -- A lasting move's end rewrites places: the global key first, before the per-move key (the tick holds the global key when it ends a superseded move, so this is the one order), and before anything is read.
+  if coalesce((select k.lasting from acts a join move_kinds k on k.key = a.payload ->> 'kind' where a.id = move_act and a.kind = 'move'), false) then perform lock_thread_places(); end if;
+  perform pg_advisory_xact_lock(hashtext('kayfabb.end_move'), hashtext(move_act::text));
+  select * into m from acts where id = move_act and kind = 'move';
+  if not found then raise exception 'there is no such move' using errcode = 'P0002'; end if;
+  lasting := coalesce((select k.lasting from move_kinds k where k.key = m.payload ->> 'kind'), false);
+  -- A move has one end of each class: superseded, and any other. A lasting move ended as superseded may take one later end, reversed or overturned, so an admin can undo
+  -- any lasting move after it lands (a new move_end Act beside the first, never an update). Any other second end is refused, as before.
+  select e.id into existing from acts e where e.kind = 'move_end' and e.target_act_id = move_act and ((e.payload ->> 'why' = 'superseded') = (why = 'superseded')) limit 1;
+  if existing is null and exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = move_act)
+     and not (lasting and why in ('reversed', 'overturned')
+              and not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = move_act and e.payload ->> 'why' <> 'superseded')) then
+    select e.id into existing from acts e where e.kind = 'move_end' and e.target_act_id = move_act limit 1;
+  end if;
+  if existing is not null then return jsonb_build_object('act', existing, 'ended', false); end if;
+  if lasting then
+    -- The board a merge or a creation takes out of play (or back): a start on it is refused at once while this end is open (0339), and after it lands on the board it should or is refused with the new home named.
+    shaped := case m.payload ->> 'kind' when 'mergeBoard' then safe_uuid(m.payload #>> '{params,board}') when 'createBoard' then (select b.id from boards b where b.created_by_act = move_act) end;
+    if shaped is not null then perform lock_board_closing(shaped); end if;
+    first_before := first_open_board();
+  end if;
+  -- A tick that read the old expiry before a ruling moved it is too late: the ruling is a fact of the lock's holder, read here under the lock.
+  if why = 'expired' and exists (select 1 from acts a join acts r on r.kind = 'appeal_ruling' and r.target_act_id = a.id
+                                 where a.kind = 'appeal' and a.target_act_id = move_act and (r.payload ->> 'until')::timestamptz > now()) then
+    return jsonb_build_object('act', null, 'ended', false, 'extended', true);
+  end if;
+  perform set_config('kayfabb.move_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at)
+  values (null, 'move_end', m.thread, move_act, jsonb_build_object('why', why, 'by', by), clock_timestamp()) returning id into written;
+  perform set_config('kayfabb.move_end_writer', '', true);
+  if lasting then perform lasting_rebuild(move_act, first_before); end if;
+  return jsonb_build_object('act', written, 'ended', true);
+end $$;
 
 -- ----------------------------------------------------------------------------------------------- the tick ----
 
@@ -692,9 +741,10 @@ declare
 begin
   if not pg_try_advisory_xact_lock(hashtext('kayfabb.system_tick')) then return jsonb_build_object('skipped', true); end if;
 
-  -- The one lock order (0339): the global place key before anything is written. A lasting move due to land, or one in force that this tick may end (an expiry, a demand met, a superseded one), writes places;
-  -- a move landing opens its own thread on the system board and writes into it (a row an admin's reversal (which takes the key and then writes its end into that thread) waits for, so the key cannot wait until the
-  -- first lasting landing. The one key is held to the end of the tick; the tick's own rows are the only thing it waits for before it is taken.
+  -- The one lock order (0339): the global place key before anything is written. A lasting move due to land, or one in force that this tick may end (an expiry, a demand met, a superseded one), writes places, so
+  -- the key is taken first. A landing move also opens a thread of its own on the system board and writes its Act into it, a thread no one else holds until the tick commits; an admin's reversal takes the key
+  -- and only then writes its end into the move's thread. A non-lasting landing therefore has no row a reversal waits for, and the key is needed only where a lasting move is due or in force, which is the test
+  -- below. The one key is held to the end of the tick; the tick's own rows are the only thing it waits for before it is taken.
   if exists (select 1 from queued_moves q join move_kinds k on k.key = q.kind
              where k.lasting and q.landed_act is null and q.held_at is null and q.refused_at is null and q.go_live_at <= now())
      or exists (select 1 from open_moves o join acts a on a.id = o.move_act join move_kinds k on k.key = a.payload ->> 'kind' where k.lasting) then
