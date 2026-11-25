@@ -19,6 +19,13 @@ create function pg_temp.acts_read() returns bigint language sql as $$
   select coalesce(sum(seq_tup_read + idx_tup_fetch), 0)::bigint from pg_stat_xact_all_tables where relname = 'acts'
 $$;
 
+-- The rows of the veils' tables read (0434): a table's own scans and every index entry its indexes return, which an index-only scan of an all-visible page leaves out of the table's count. A read of posts no veil covers has none to read;
+-- 0395's acts_public read every live veil and its cover for each probe of a post when the planner hashed its check, which on Postgres 17 probed each veil's end by key and so cost `acts` almost nothing.
+create function pg_temp.veils_read() returns bigint language sql as $$
+  select coalesce((select sum(t.seq_tup_read) from pg_stat_xact_all_tables t where t.relname in ('post_veils', 'post_veil_cover')), 0)::bigint
+       + coalesce((select sum(pg_stat_get_xact_tuples_returned(i.indexrelid)) from pg_index i where i.indrelid in ('post_veils'::regclass, 'post_veil_cover'::regclass)), 0)::bigint
+$$;
+
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
 begin if ok is not true then raise exception '%', what; end if; end $$;
 
@@ -506,11 +513,13 @@ end $$;
 -- neither may differ between a thread of 200 posts, one of 400 and one whose polls hold 40 ballots each, by more than 20 rows.
 create function pg_temp.measure(label text, bound bigint, per bigint) returns void language plpgsql as $$
 declare
-  c0 bigint; cs bigint; cb bigint; cv bigint; e1 bigint[] := '{}'; e2 bigint[] := '{}'; rs jsonb; rb jsonb; rv jsonb; k text; ids uuid[]; r jsonb;
+  c0 bigint; cs bigint; cb bigint; cv bigint; e1 bigint[] := '{}'; e2 bigint[] := '{}'; rs jsonb; rb jsonb; rv jsonb; k text; ids uuid[]; r jsonb; v0 bigint; vb bigint;
 begin
   perform set_config('track_functions', 'all', true);
   c0 := pg_temp.acts_read(); rs := pool_read(pg_temp.f('small'), 'ex-boss', null, 60); cs := pg_temp.acts_read() - c0;
+  v0 := pg_temp.veils_read();
   c0 := pg_temp.acts_read(); rb := pool_read(pg_temp.f('big'), 'ex-boss', null, 60); cb := pg_temp.acts_read() - c0;
+  vb := pg_temp.veils_read() - v0;
   c0 := pg_temp.acts_read(); rv := pool_read(pg_temp.f('ballots'), 'ex-boss', null, 60); cv := pg_temp.acts_read() - c0;
   foreach k in array array['small', 'big', 'ballots'] loop
     ids := array(select a.id from acts a where a.thread = pg_temp.f(k) and a.kind = 'post' order by a.seq desc limit 200);
@@ -525,8 +534,10 @@ begin
   if cb > cs + 20 or cv > cs + 20 then raise exception '[%] pool_read reads % rows of acts (400 posts), % (200 posts), % (40 ballots a poll): it grows with the thread or the ballots', label, cb, cs, cv; end if;
   if e1[2] > e1[1] + 20 or e1[3] > e1[1] + 20 or e2[2] > e2[1] + 20 or e2[3] > e2[1] + 20 then raise exception '[%] post_extras reads % / % / % rows of acts (200 / 400 posts / 40 ballots) for 100 posts and % / % / % for 200: it grows', label, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3]; end if;
   if cb > bound or cv > bound then raise exception '[%] pool_read reads % rows of acts: more than %', label, greatest(cb, cv), bound; end if;
+  -- no post of the thread is veiled, so a read of it reads no veil (the planted ones are elsewhere in the instance): at most a few rows, never the live veils once for each post
+  if vb > 20 then raise exception '[%] pool_read reads % rows of post_veils and post_veil_cover for a thread no veil covers: it reads the live veils for each post', label, vb; end if;
   if greatest(e1[1], e1[2], e1[3]) > per * 100 or greatest(e2[1], e2[2], e2[3]) > per * 200 then raise exception '[%] post_extras reads more than % rows of acts for each post: % for 100 posts, % for 200', label, per, greatest(e1[1], e1[2], e1[3]), greatest(e2[1], e2[2], e2[3]); end if;
-  raise notice '[%] rows of acts, pool_read: % (200 posts), % (400), % (40 ballots); post_extras for 100 posts: %, %, % and for 200: %, %, %', label, cs, cb, cv, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3];
+  raise notice '[%] rows of acts, pool_read: % (200 posts), % (400), % (40 ballots); post_extras for 100 posts: %, %, % and for 200: %, %, %; rows of the veils'' tables for the 400 posts: %', label, cs, cb, cv, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3], vb;
 end $$;
 
 -- pool_read of a thread of 200 and of 400 plain posts spun from each kind of origin: the same rows of `acts`, below the bound (the plain thread's own read, 0425's, is about 450; the rest is the origin's read; 600 is the stated bound).
