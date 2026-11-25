@@ -53,7 +53,8 @@
  * R16 also holds: the shards' job `if` is exactly the draft-skip condition, `sql-total`'s is exactly `always() && (<draft-skip>)`
  * (parentheses required), the upload's is exactly `always()` with `if-no-files-found: error`, `continue-on-error` appears nowhere
  * in sql.yml, the result step's run is exactly `[ "$SHARDS" = success ]`, and both jobs' `timeout-minutes` is present and at most 30,
- * so the limit cannot creep back up unnoticed.
+ * so the limit cannot creep back up unnoticed. No `sql-total` step has `if`, `shell`, `working-directory` or
+ * `continue-on-error`, no `defaults` appears, and the gather and result steps' `run` is exactly their one command.
  *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
@@ -292,6 +293,8 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     const normIf = (v) => String(v ?? '').trim().replace(/^\$\{\{\s*([\s\S]*?)\s*\}\}$/, '$1').replace(/\s+/g, ' ').trim();
     const DRAFT_SKIP = "github.event_name != 'pull_request' || github.event.pull_request.draft == false";
     const hasContinue = (v) => JSON.stringify(v ?? {}).includes('"continue-on-error"');
+    const hasDefaults = [sqlDoc, ...Object.values(isObj(sqlDoc.jobs) ? sqlDoc.jobs : {})].some((x) => isObj(x) && 'defaults' in x);
+    if (hasDefaults) out.push(`${WORKFLOWS}/sql.yml: R16 defaults appears (a workflow's or a job's); it could change the shell every step runs in`);
     if (hasContinue(sqlDoc)) out.push(`${WORKFLOWS}/sql.yml: R16 continue-on-error appears; a failed job or step must stay failed`);
     const path = `${WORKFLOWS}/sql.yml`;
     const isSuite = (s) => /npm run test:sql/.test(String(s?.run ?? ''));
@@ -338,9 +341,14 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
         const downloads = list(total.steps).filter((st) => String(st?.uses ?? '').startsWith('actions/download-artifact'));
         const dl = downloads.find((st) => st.with?.pattern === 'sql-report-*' && st.with?.['merge-multiple'] === true && typeof st.with?.path === 'string');
         if (!dl) bad16.push('sql-total has no download-artifact step with pattern: sql-report-*, merge-multiple: true and a path');
-        const gathers = list(total.steps).flatMap(shellLines).filter((l) => /--gather\b/.test(l));
+        for (const st of list(total.steps)) {
+          for (const k of ['if', 'shell', 'working-directory', 'continue-on-error']) {
+            if (isObj(st) && k in st) bad16.push(`a sql-total step has ${k} (${JSON.stringify(st.run ?? st.uses ?? '')}); none may, or it could be skipped or always pass`);
+          }
+        }
+        const gathers = list(total.steps).filter((st) => /--gather\b/.test(String(st?.run ?? '')));
         const dir = dl?.with?.path;
-        if (!gathers.some((l) => l.trim() === `node tools/test-sql.mjs --gather=${dir}` && dir)) {
+        if (!gathers.some((st) => String(st.run).trim() === `node tools/test-sql.mjs --gather=${dir}` && dir)) {
           bad16.push(`sql-total must run node tools/test-sql.mjs --gather=<the directory it downloaded to${dir ? `: ${dir}` : ''}>`);
         }
       }

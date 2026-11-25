@@ -457,6 +457,21 @@ red('the result step is skipped on failure', sqlRule((d) => {
 red('the shards have no timeout', sqlRule((d) => { delete sqlJob(d)['timeout-minutes']; }), /R16.*timeout/);
 red('the shards\' timeout crept up', sqlRule((d) => { sqlJob(d)['timeout-minutes'] = 75; }), /R16.*timeout/);
 red('sql-total\'s timeout crept up', sqlRule((d) => { sqlTotal(d)['timeout-minutes'] = 45; }), /R16.*timeout/);
+const dlStep = (d) => sqlTotal(d).steps.find((s) => String(s.uses ?? '').startsWith('actions/download-artifact'));
+const resStep = (d) => sqlTotal(d).steps.find((s) => /needs\./.test(JSON.stringify(s.env ?? {})));
+red('the download step is skipped by an if', sqlRule((d) => { dlStep(d).if = 'false'; }), /R16.*sql-total step/);
+red('the gather step is skipped by an if', sqlRule((d) => { gatherStep(d).if = 'false'; }), /R16.*sql-total step/);
+red('the gather step runs in a shell that always passes', sqlRule((d) => { gatherStep(d).shell = 'echo {0}'; }), /R16.*sql-total step/);
+red('the result step runs in a shell that always passes', sqlRule((d) => { resStep(d).shell = 'echo {0}'; }), /R16.*sql-total step/);
+red('a sql-total step changes its working directory', sqlRule((d) => { gatherStep(d)['working-directory'] = 'supabase'; }), /R16.*sql-total step/);
+red('the checkout step is skipped by an if', sqlRule((d) => { sqlTotal(d).steps[0].if = 'false'; }), /R16.*sql-total step/);
+red('the workflow sets defaults', sqlRule((d) => { d.defaults = { run: { shell: 'bash' } }; }), /R16.*defaults/);
+red('a job sets defaults', sqlRule((d) => { sqlTotal(d).defaults = { run: { shell: 'echo {0}' } }; }), /R16.*defaults/);
+red('the gather step exits 0 on an earlier line', sqlRule((d) => { gatherStep(d).run = `exit 0\n${gatherStep(d).run}`; }), /R16.*gather/);
+red('the result step exits 0 on an earlier line', sqlRule((d) => { resStep(d).run = `exit 0\n${resStep(d).run}`; }), /R16.*result/);
+red('sql-total\'s if loses its parentheses', sqlRule((d) => { sqlTotal(d).if = `always() && ${DRAFT_SKIP}`; }), /R16.*sql-total.*if/);
+red('SHARDS is a constant, not the shards\' result', sqlRule((d) => { resStep(d).env.SHARDS = 'success'; }), /R16.*result/);
+red('sql-total has no timeout', sqlRule((d) => { delete sqlTotal(d)['timeout-minutes']; }), /R16.*timeout.*sql-total/);
 quiet('a conforming sql.yml passes', sqlRule(() => {}));
 
 /* ---- a file that does not parse ---- */
