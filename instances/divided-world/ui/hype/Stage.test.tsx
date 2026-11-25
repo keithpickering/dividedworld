@@ -15,6 +15,7 @@ import { chairId, FILM_ORDER, PILE, playbook } from './stage-play.ts';
 import { postTarget, type CardEffect, type CardTarget } from '../../../../engine/rules/cards.ts';
 import { buildStage } from './stage-world.ts';
 import { objectOf } from '../steel-chair/objects.ts';
+import { Mini } from '../../../../engine/ui/mini.tsx';
 
 /** The stage, seeded and ready, with the film's player signed in as `as` (Snuckles's player when none). */
 async function stage(as: string | null = null) {
@@ -58,6 +59,18 @@ describe('the seats', () => {
     const plain = await stage();
     expect(plain.made.viewer).toBe(plain.made.owners['Snuckles']);
     expect(plain.made.played).toBe('Snuckles');
+  });
+
+  test('Human Josh has no picture (his source could not be licensed), and the stage draws his initial where a face would be, the others keeping theirs', async () => {
+    const { fake, made } = await stage();
+    const ids = Object.values(made.cast);
+    const faces = Object.fromEntries((await fake.characters(ids)).map((c) => [c.name, c]));
+    expect(faces['Human Josh']!.avatarSquare).toBeNull();
+    expect(faces['Human Josh']!.avatarPortrait).toBeNull();
+    for (const name of ['Snuckles', 'Chadluminum', 'Serious Deer', 'D-Guy']) expect(faces[name]!.avatarSquare, name).not.toBeNull();
+    const { container } = render(<Mini character={faces['Human Josh']} name="Human Josh" />);
+    expect(container.querySelector('img')).toBeNull();
+    expect(container.querySelector('.kb-mini-none')).toHaveTextContent('H');
   });
 
   test('a name the cast has not is refused, naming the cast', async () => {

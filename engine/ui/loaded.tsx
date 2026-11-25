@@ -26,6 +26,7 @@ import type { PictureIo } from './profile-edit/crops.ts';
 import { SeasonScreen } from './season/Season.tsx';
 import { ContactScreen } from './contact/Contact.tsx';
 import { ConductScreen } from './conduct/Conduct.tsx';
+import { LicenseScreen } from './license/License.tsx';
 import { SettingsScreen } from './account/Settings.tsx';
 import { SignInScreen } from './account/SignIn.tsx';
 import { Vending } from './vending/Vending.tsx';
@@ -104,7 +105,7 @@ const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => (
 const SCREENS: GlassScreens = {
   signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
   settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
-  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), trophies: direct(TrophiesScreen), wardrobe: direct(Wardrobe), log: direct(LogScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), license: direct(LicenseScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), trophies: direct(TrophiesScreen), wardrobe: direct(Wardrobe), log: direct(LogScreen),
   settlement: direct(SettlementScreen),
 };
 
@@ -119,6 +120,7 @@ const CHARACTERS = ['/characters', '/characters/new', '/characters/edit'];
 const SEASON = ['/season'];
 const CONTACT = ['/contact'];
 const CONDUCT = ['/conduct'];
+const LICENSE = ['/license'];
 const SETTINGS = ['/settings'];
 const ALERTS = ['/alerts'];
 const UPDATES = ['/updates'];
@@ -131,6 +133,7 @@ export function LoadedCharacters({ io }: { readonly io?: PictureIo } = {}) { ret
 export function LoadedSeason() { return <Glass paths={SEASON} />; }
 export function LoadedContact() { return <Glass paths={CONTACT} />; }
 export function LoadedConduct() { return <Glass paths={CONDUCT} />; }
+export function LoadedLicense() { return <Glass paths={LICENSE} />; }
 export function LoadedSettings() { return <Glass paths={SETTINGS} />; }
 export function LoadedAlerts() { return <Glass paths={ALERTS} />; }
 export function LoadedUpdates() { return <Glass paths={UPDATES} />; }

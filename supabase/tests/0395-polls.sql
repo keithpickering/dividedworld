@@ -55,14 +55,15 @@ end $$;
 -- ---- 1. The races ----
 -- Rows the racers read are committed (tests.commit). The holder's transaction is a dblink session, which becomes the player inside its own transaction.
 create function pg_temp.parked(tag text, conn text) returns text language plpgsql as $$
-declare tries integer := 0;
+declare tries integer := 0; max_tries constant integer := 1200;
 begin
   loop
     perform pg_stat_clear_snapshot();
     if exists (select 1 from pg_stat_activity a where a.query like '%/* ' || tag || ' */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock') then return 'waiting'; end if;
     if extensions.dblink_is_busy(conn) = 0 then return 'finished'; end if;
     tries := tries + 1;
-    if tries > 400 then return 'neither'; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then return 'neither'; end if;
     perform pg_sleep(0.025);
   end loop;
 end $$;

@@ -2,13 +2,14 @@
 -- refresh_play_post writes `drawn` from play_row's read, and the two draw triggers add to it, so a trigger that ran between the refresh's read and its write would be lost. Both take the per-play advisory lock the refresh holds.
 -- Staged without a barrier: one session holds the play's lock open, a second writes a tally (and then a spun thread) in autocommit and must wait on it; then the holder commits and the draw must be there. The rows are committed, in the scratch database the run drops.
 create function pg_temp.waits_on(lockname text, conn text) returns void language plpgsql as $$
-declare tries integer := 0; key bigint := hashtextextended(lockname, 0);
+declare tries integer := 0; max_tries constant integer := 1200; key bigint := hashtextextended(lockname, 0);
 begin
   loop
     -- The lock's waiter is the second session; the key is split into classid and objid.
     exit when exists (select 1 from pg_locks l where l.locktype = 'advisory' and not l.granted and l.classid = ((key >> 32) & 4294967295)::oid and l.objid = (key & 4294967295)::oid);
     tries := tries + 1;
-    if tries > 200 then raise exception 'nothing waited on the expected lock (%)', conn; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then raise exception 'nothing waited on the expected lock (%)', conn; end if;
     perform pg_sleep(0.025);
   end loop;
   if extensions.dblink_is_busy(conn) <> 1 then raise exception 'the session did not wait on the lock (%)', conn; end if;

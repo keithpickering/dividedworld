@@ -17,7 +17,7 @@
 do $$
 declare
   url text := current_setting('kayfabb.scratch_url');
-  tries integer := 0;
+  tries integer := 0; max_tries constant integer := 1200;
   has_row boolean;
 begin
   perform tests.commit($sql$
@@ -39,7 +39,8 @@ begin
     exit when extensions.dblink_is_busy('roster_b') = 0
       or exists (select 1 from pg_locks l where not l.granted and l.database = (select oid from pg_database where datname = current_database()));
     tries := tries + 1;
-    if tries > 400 then raise exception 'the season''s session neither finished nor waited'; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then raise exception 'the season''s session neither finished nor waited'; end if;
     perform pg_sleep(0.025);
   end loop;
   perform extensions.dblink_exec('roster_a', 'commit');

@@ -89,7 +89,7 @@ end $$;
 -- 3, never the 2 it could have counted before. What this leaves (an account, two cards, a gone key's rows) is append-only and committed; the scratch database is dropped at the end of the run.
 do $$
 declare
-  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer := 0; blocked integer := 0; got bigint;
+  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer := 0; max_waits constant integer := 300; blocked integer := 0; got bigint;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'cr-race@test.invalid');
@@ -101,8 +101,9 @@ begin
   perform extensions.dblink_connect('cr_b', url);
   perform extensions.dblink_exec('cr_a', 'begin');
   perform * from extensions.dblink('cr_a', format('select 1 from accounts where id = %L for no key update', r)) as t(x integer);
+  -- The waits for a condition give up at 30 s (300 looks of 0.1 s), as the other race tests do; they leave the moment it holds. Not the check below that a session does not finish, whose bound is the assertion.
   perform extensions.dblink_send_query('cr_b', 'select card_leaves(''crrold'', ''crrnew'', null)');
-  while blocked = 0 and waited < 100 loop
+  while blocked = 0 and waited < max_waits loop
     perform pg_sleep(0.1); perform pg_stat_clear_snapshot();
     waited := waited + 1;
     select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%card_leaves%' and pid <> pg_backend_pid();
@@ -120,7 +121,7 @@ end $$;
 -- A second account: a copy inserted by a session that is still in flight when a card leaves is counted (the seed waits for it), and one inserted after the seed took its table lock waits for it and is refused at its commit.
 do $$
 declare
-  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer; blocked integer; got bigint; said text;
+  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer; max_waits constant integer := 300; blocked integer; got bigint; said text;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'cr-race2@test.invalid');
@@ -135,7 +136,7 @@ begin
   perform extensions.dblink_exec('cr_b', 'begin');
   perform extensions.dblink_send_query('cr_b', 'select card_leaves(''crsold'', ''crsnew'', null)');
   waited := 0; blocked := 0;
-  while blocked = 0 and waited < 100 loop
+  while blocked = 0 and waited < max_waits loop
     perform pg_sleep(0.1); perform pg_stat_clear_snapshot(); waited := waited + 1;
     select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%card_leaves%' and pid <> pg_backend_pid();
   end loop;
@@ -148,7 +149,7 @@ begin
   perform extensions.dblink_exec('cr_s2', 'begin');
   perform extensions.dblink_send_query('cr_s2', format('insert into card_ledger (account, card, kind, price) values (%L, ''crsold'', ''bought'', 0)', r));
   waited := 0; blocked := 0;
-  while blocked = 0 and waited < 100 loop
+  while blocked = 0 and waited < max_waits loop
     perform pg_sleep(0.1); perform pg_stat_clear_snapshot(); waited := waited + 1;
     select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%insert into card_ledger%' and pid <> pg_backend_pid();
   end loop;
@@ -179,7 +180,7 @@ end $$;
 -- Either order is coherent, and neither may be a deadlock: here S's copy commits first and is counted and refunded.
 do $$
 declare
-  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer; blocked integer; got bigint; err_s text; err_b text;
+  r constant uuid := gen_random_uuid(); url text := current_setting('kayfabb.scratch_url'); waited integer; max_waits constant integer := 300; blocked integer; got bigint; err_s text; err_b text;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'cr-race3@test.invalid');
@@ -194,7 +195,7 @@ begin
   perform extensions.dblink_exec('cr_b', 'begin');
   perform extensions.dblink_send_query('cr_b', 'select card_leaves(''crwold'', null, 150)');
   waited := 0; blocked := 0;
-  while blocked = 0 and waited < 100 loop
+  while blocked = 0 and waited < max_waits loop
     perform pg_sleep(0.1); perform pg_stat_clear_snapshot(); waited := waited + 1;
     select count(*) into blocked from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%card_leaves%' and pid <> pg_backend_pid();
   end loop;
