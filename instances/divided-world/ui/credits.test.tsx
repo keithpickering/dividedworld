@@ -45,7 +45,7 @@ describe('Divided World\'s credits', () => {
     const manifest = JSON.parse(fs.readFileSync(path.join(here, 'sounds', 'sounds.json'), 'utf8')) as { source: string }[];
     expect(new Set(manifest.map((r) => r.source)).size).toBe(1);
     const sounds = credits.filter((c) => c.work === 'Sound effects');
-    expect(sounds).toEqual([{ work: 'Sound effects', maker: `Made with ${manifest[0]?.source}`, terms: 'ElevenLabs\' terms; not offered for reuse', termsUrl: 'https://elevenlabs.io/service-specific-terms' }]);
+    expect(sounds).toEqual([{ work: 'Sound effects', maker: `Divided World, with ${manifest[0]?.source}`, terms: 'ElevenLabs\' terms; not offered for reuse', termsUrl: 'https://elevenlabs.io/service-specific-terms' }]);
   });
 
   test('the card, back and pack art under shared terms are one credit', () => {

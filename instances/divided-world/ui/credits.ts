@@ -54,7 +54,7 @@ const fromArt = (): LicenseCredit[] => {
 const soundCredit = (): LicenseCredit[] => {
   const first = (sounds as readonly { readonly source: string }[])[0];
   if (first === undefined) return [];
-  return [{ work: 'Sound effects', maker: `Made with ${first.source}`, terms: 'ElevenLabs\' terms; not offered for reuse', termsUrl: 'https://elevenlabs.io/service-specific-terms' }];
+  return [{ work: 'Sound effects', maker: `Divided World, with ${first.source}`, terms: 'ElevenLabs\' terms; not offered for reuse', termsUrl: 'https://elevenlabs.io/service-specific-terms' }];
 };
 
 const fromPlates = (): LicenseCredit[] => {
