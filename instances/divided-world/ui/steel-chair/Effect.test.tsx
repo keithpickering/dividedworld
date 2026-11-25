@@ -1752,7 +1752,7 @@ describe('a curtain over the post (covered)', () => {
     expect(dents()).toHaveLength(1);
   });
 
-  test('Throw again is not offered while covered, and does nothing if it is run', () => {
+  test('Throw again is not offered while covered', () => {
     mount({ covered: true });
     run();
     expect(lastView().controls.map((c) => c.label)).toEqual(['Game sounds']);
