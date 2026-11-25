@@ -93,7 +93,7 @@ const loadSeed = (): string => {
   return Math.floor(Math.random() * 2 ** 32).toString(36);
 };
 
-export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) {
+export function GlitterBombEffect({ post, plays, kept, covered, children }: EffectProps) {
   const host = useRef<HTMLDivElement>(null);
   const surface = useRef<HTMLDivElement>(null);
   const under = useRef<HTMLCanvasElement>(null);
@@ -106,6 +106,12 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
      play's week ends, and that post keeps the glitter it has (the effect is not built again, so its seed does not change); the next load
      draws it settled. */
   const keptAtMount = useRef(kept === true);
+  /* A post under a curtain is out of view: no burst arms or fires, reduced motion included. The effect below reads this at each draw and
+     is told when it opens (`opened`), so the 300 ms wait starts then, as for a post that had just scrolled in. */
+  const coveredNow = useRef(covered);
+  coveredNow.current = covered;
+  const opened = useRef<() => void>(() => {});
+  useEffect(() => { if (!covered) opened.current(); }, [covered]);
 
   useEffect(() => {
     const el = host.current, face = surface.current, below = under.current, lit = flash.current, above = over.current, spot = mark.current;
@@ -189,11 +195,12 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
       }
       /* Reduced motion has no burst: the flakes are placed at once. Otherwise it waits for the burst point to stay in view. */
       let arming = false;
-      if (!fired && aimed && !motionReduced()) {
+      const held = coveredNow.current;
+      if (!fired && !held && aimed && !motionReduced()) {
         aimedAt ??= now;
         arming = now - aimedAt < ARM_MS;
       }
-      if (!fired && (motionReduced() || (aimed && !arming))) { fired = true; stopWatching(); burst(f, now); }
+      if (!fired && !held && (motionReduced() || (aimed && !arming))) { fired = true; stopWatching(); burst(f, now); }
       /* Reduced motion turned on mid-burst: what is in the air lands where it was headed (release), and the over canvas goes. */
       if (f.flying > 0 && motionReduced()) release(f);
       const busy = fired ? stepBurst(f, now) : false;
@@ -283,6 +290,7 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
     }) : null;
     resize?.observe(el);
     setup();
+    opened.current = () => { aimedAt = null; wake(el); };
     if (!fired) {
       stopWatch = watchInView(spot, (showing) => {
         aimed = showing;
@@ -299,6 +307,7 @@ export function GlitterBombEffect({ post, plays, kept, children }: EffectProps) 
     scheme?.addEventListener?.('change', boardChanged);
 
     return () => {
+      opened.current = () => {};
       scheme?.removeEventListener?.('change', boardChanged);
       mode?.disconnect();
       resize?.disconnect();

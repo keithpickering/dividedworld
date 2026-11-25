@@ -9,7 +9,8 @@
  *   3. The day's judgment budget (`modBots.judgmentsPerDay`, the same instance-wide count a report is held to: `judgment_load_today`) is read before every claim; a spent day claims
  *      nothing, so the patrol waits for the next one rather than being skipped.
  *   4. A patrol whose Mod has left the staff, or has no beat, or whose beat has no post to look at, is skipped: recorded on the patrol's row, with no call.
- *   5. The sample (`patrol_sample`, owned by the digest role: public play only) is `patrolSample` posts drawn from the newest `patrolPool` posts by players on the Mod's beat, not under a visit: a weighted draw (a Tattle-Tale on a character multiplies its weight), seeded by the patrol's id so a patrol that runs again draws the same posts. One light-tier call
+ *   5. The sample (`patrol_sample`, owned by the digest role: public play only) is `patrolSample` posts drawn from the newest `patrolPool` posts by players on the Mod's beat, not under a visit: a weighted draw (a Tattle-Tale on a character multiplies its weight), seeded by the patrol's id so a patrol that runs again draws the same posts. Each drawn post comes with its extras (poll, plays, reactions, a rewind, a spun opener's origin), and the Mod reads them whole, newest
+ *      first: the newest always, each other while the posts stay within `pool.readMost` (patrolShown); a post that does not fit is neither shown, judged nor recorded as sampled. One light-tier call
  *      (duty `patrolJudge`, with `staff` set so it is a ledger row) in the Mod's voice judges them against each board's premise and the rules in force there, and answers findings
  *      [{post, charge}] and, optionally, the Mod's one move.
  *   6. The answer is repaired (repairPatrol): a finding naming a post that is not in the sample is dropped and named; a charge naming no rule in force is the premise at the minor
@@ -30,10 +31,11 @@
  * **Cost does not grow with the instance.** One light-tier call per patrol, at most `patrolsPerDay` patrols a day (the meeting cuts them), a sample of `patrolSample` posts drawn from the newest `patrolPool` by
  * a bounded query, and the daily judgment budget above.
  */
+import type { ReadOrigin, ReadOriginPost } from '../../../engine/system/extras.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import { predicate } from '../../../engine/rules/predicates.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
-import { PATROL_RULE, patrolPrompt, repairPatrol, type Dropped, type PatrolFinding, type PatrolSamplePost, type RuleLine } from '../../../engine/system/judgment.ts';
+import { PATROL_RULE, patrolPrompt, patrolShown, repairPatrol, type Dropped, type PatrolFinding, type PatrolSamplePost, type RuleLine } from '../../../engine/system/judgment.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
@@ -42,6 +44,12 @@ import { AnswerRejected } from '../_shared/models/index.ts';
 import { pronounsOr, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { RUN_BUDGET_MS, instanceSet, learnMod, said, stopsTheRun } from './core.ts';
 import { readModGroups } from '../_shared/mod-groups.ts';
+import { readContext, readingOf } from '../_shared/pool-read.ts';
+
+/** An origin's post as `patrol_sample` answers: pronouns, poll, plays and reactions may be missing. */
+type PatrolOriginPost = Omit<ReadOriginPost, 'pronouns' | 'poll' | 'plays' | 'reactions'> & { pronouns?: PronounSet | null; poll?: ReadOriginPost['poll']; plays?: ReadOriginPost['plays']; reactions?: ReadOriginPost['reactions'] };
+/** A row of `patrol_sample`: a post with its extras, pronouns null for an author with no profile row, and the origin where the post opens a spun thread. */
+type PatrolRow = Omit<PatrolSamplePost, 'pronouns' | 'origin'> & { pronouns: PronounSet | null; origin?: (Omit<ReadOrigin, 'post'> & { post: PatrolOriginPost | null }) | null };
 
 /** The most patrols one run judges. The meeting schedules at most `patrolsPerDay` (6) a day, so a run rarely meets more than a few; the rest are the next run's. */
 export const PATROLS_PER_RUN = 10;
@@ -151,8 +159,17 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
 
     // An author with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set.
     const fallback = instanceSet(settings);
-    const read = await db.rpc<(Omit<PatrolSamplePost, 'pronouns'> & { pronouns: PronounSet | null })[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample, pool: settings.modBots.patrolPool, seed: p.id });
-    const sample: PatrolSamplePost[] = read.map((x) => ({ ...x, pronouns: pronounsOr(x.pronouns, fallback) }));
+    const originPost = (p: PatrolOriginPost): ReadOriginPost => ({ ...p, pronouns: pronounsOr(p.pronouns, fallback), poll: p.poll ?? null, plays: p.plays ?? [], reactions: p.reactions ?? {} });
+    const read = await db.rpc<PatrolRow[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample, pool: settings.modBots.patrolPool, seed: p.id });
+    // Each post is read whole with what the board shows with it, as the reader reads a thread (the same `seen`, card names and reaction names); the newest always, the rest while they fit `readMost`.
+    // A post left out for space is not in `sample`, so it is not in the context a finding is repaired against, and no visit is sent on a post that was not read. An author or an origin's post with no profile row takes the fallback pronouns, as the reader's.
+    const reading = readingOf(settings.pool.readMost, readContext(tuned, clock()));
+    const whole: PatrolSamplePost[] = read.map((x) => ({
+      ...x,
+      pronouns: pronounsOr(x.pronouns, fallback),
+      origin: x.origin === undefined || x.origin === null ? null : { ...x.origin, post: x.origin.post === null ? null : originPost(x.origin.post) },
+    }));
+    const sample = patrolShown(whole, reading);
     const ids = sample.map((s) => s.act);
     if (sample.length === 0) return skipped('there was nothing on the beat to patrol', ids);
 
@@ -168,7 +185,7 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
       ...(groups ? { conferred: groups.conferred } : {}),
       persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
       ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-      boards, sample, limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+      boards, sample, limits: { titleMaxLength: settings.titleMaxLength }, reading,
     });
     const context = {
       allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,

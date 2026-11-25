@@ -22,7 +22,7 @@ const character = (over: Partial<Character> = {}): Character => ({
   squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
-  character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
+  character: character(c), posts: 212, standing: 650, revealed: null, ...over,
 });
 
 export const SideBySide: Story = { args: { person: person(), layout: 'side' } };
@@ -30,9 +30,6 @@ export const Stacked: Story = { args: { person: person(), layout: 'stacked' } };
 export const SquareInTheTallSlot: Story = { args: { person: person({}, { avatarPortrait: null }), layout: 'side' } };
 export const NoAvatar: Story = { args: { person: person({}, { avatarSquare: null, avatarPortrait: null }), layout: 'side' } };
 export const ClassRevealed: Story = { args: { person: person({ revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' } }), layout: 'side' } };
-export const ClassRevealedThenTurned: Story = {
-  args: { person: person({ revealed: { class: 'heel', at: '2026-10-03T12:00:00Z' }, turnedAt: '2026-10-20T12:00:00Z' }), layout: 'stacked' },
-};
 
 /* A staff character at each of the three offices a postbit shows: the staff rung's bar at every office, the office's title beside it for the Boss and a mod. */
 const staffPerson = (c: Partial<Character>): PostbitPerson => person({ standing: null }, { avatarPortrait: null, ...c });

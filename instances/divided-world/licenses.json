@@ -1,0 +1,266 @@
+[
+  {
+    "files": [
+      "ui/front-door/wiggler-sheet.gif",
+      "ui/front-door/wiggler-sheet-dropshadow.gif",
+      "ui/hype/wiggler-sheet.gif"
+    ],
+    "maker": "Keith Pickering",
+    "terms": "layer",
+    "work": "Wiggler sprite sheet",
+    "note": "Drawn by Keith Pickering, first published on MFGG on 2005-04-17. Wiggler is a character and trademark of Nintendo and is not licensed here."
+  },
+  {
+    "files": [
+      "ui/avatars/fangame-portrait.webp",
+      "ui/avatars/fangame-square.webp"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "FanGaME",
+    "note": "Made with Gemini in November 2026. It uses Nintendo's trademarks, which are not licensed here. A machine-made image may hold no copyright for this license to cover."
+  },
+  {
+    "files": [
+      "ui/avatars/dguy_portrait.jpg",
+      "ui/avatars/dguy_square.jpg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "D-Guy",
+    "note": "Made with ChatGPT before 2025. It refers to Nintendo's Toad, which is not licensed here. A machine-made image may hold no copyright for this license to cover."
+  },
+  {
+    "files": [
+      "ui/avatars/robochad_portrait.jpg",
+      "ui/avatars/robochad_square.jpg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Chadluminum",
+    "note": "Made with ChatGPT before 2025. A machine-made image may hold no copyright for this license to cover."
+  },
+  {
+    "files": [
+      "ui/avatars/deer_portrait.jpg",
+      "ui/avatars/deer_square.jpg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Serious Deer",
+    "note": "Made with ChatGPT before 2025. A machine-made image may hold no copyright for this license to cover."
+  },
+  {
+    "files": [
+      "ui/avatars/snuckles_portrait.png",
+      "ui/avatars/snuckles_square.png"
+    ],
+    "maker": "Keith Pickering",
+    "terms": "layer",
+    "work": "Snuckles",
+    "note": "Art by Keith Pickering, 2025. This license covers this image only and grants no rights in the Snuckles character, created by Keith Pickering, Elliot Wallis and Jacob Stacy."
+  },
+  {
+    "files": [
+      "ui/avatars/gabe.png"
+    ],
+    "maker": "Keith Pickering",
+    "terms": "layer",
+    "work": "Gabe",
+    "note": "Drawn by Keith Pickering, 2025."
+  },
+  {
+    "files": [
+      "ui/fonts/Anton-Regular.woff2"
+    ],
+    "maker": "The Anton Project Authors",
+    "terms": {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org"
+    },
+    "work": "Anton",
+    "source": "https://github.com/googlefonts/AntonFont",
+    "licenseFile": "OFL.txt",
+    "note": "Copyright 2020 The Anton Project Authors, as ui/fonts/OFL.txt names."
+  },
+  {
+    "files": [
+      "ui/fonts/BarlowCondensed-Bold.woff2",
+      "ui/fonts/BarlowCondensed-BoldItalic.woff2",
+      "ui/fonts/BarlowCondensed-ExtraBold.woff2",
+      "ui/fonts/BarlowCondensed-ExtraBoldItalic.woff2",
+      "ui/fonts/BarlowCondensed-Medium.woff2",
+      "ui/fonts/BarlowCondensed-SemiBold.woff2"
+    ],
+    "maker": "The Barlow Project Authors",
+    "terms": {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org"
+    },
+    "work": "Barlow Condensed",
+    "source": "https://github.com/jpt/barlow",
+    "licenseFile": "OFL.txt",
+    "note": "Copyright 2017 The Barlow Project Authors, as ui/fonts/OFL.txt names."
+  },
+  {
+    "files": [
+      "ui/fonts/Silkscreen-Regular.woff2"
+    ],
+    "maker": "The Silkscreen Project Authors",
+    "terms": {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org"
+    },
+    "work": "Silkscreen",
+    "source": "https://github.com/googlefonts/silkscreen",
+    "licenseFile": "OFL.txt",
+    "note": "Copyright 2001 The Silkscreen Project Authors, as ui/fonts/OFL.txt names."
+  },
+  {
+    "files": [
+      "ui/public/mail/fonts/Anton-Regular.woff2"
+    ],
+    "maker": "The Anton Project Authors",
+    "terms": {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org"
+    },
+    "work": "Anton",
+    "source": "https://github.com/googlefonts/AntonFont",
+    "licenseFile": "OFL.txt",
+    "note": "Copied from ui/fonts/ by tools/make-mail-assets.mjs."
+  },
+  {
+    "files": [
+      "ui/public/mail/fonts/BarlowCondensed-Bold.woff2",
+      "ui/public/mail/fonts/BarlowCondensed-Medium.woff2",
+      "ui/public/mail/fonts/BarlowCondensed-SemiBold.woff2"
+    ],
+    "maker": "The Barlow Project Authors",
+    "terms": {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org"
+    },
+    "work": "Barlow Condensed",
+    "source": "https://github.com/jpt/barlow",
+    "licenseFile": "OFL.txt",
+    "note": "Copied from ui/fonts/ by tools/make-mail-assets.mjs."
+  },
+  {
+    "files": [
+      "cards/autocorrect/fonts/GochiHand-Regular.woff2"
+    ],
+    "maker": "Juan Pablo del Peral",
+    "terms": {
+      "name": "SIL Open Font License 1.1",
+      "url": "https://openfontlicense.org"
+    },
+    "work": "Gochi Hand",
+    "source": "https://fonts.google.com/specimen/Gochi+Hand",
+    "licenseFile": "OFL.txt",
+    "note": "Copyright (c) 2011 Juan Pablo del Peral, as cards/autocorrect/fonts/OFL.txt names; fetched from Google Fonts on 2026-11-11 (cards/autocorrect/autocorrect.css)."
+  },
+  {
+    "files": [
+      "ui/this/fonts/PermanentMarker-Regular.woff2"
+    ],
+    "maker": "Font Diner",
+    "terms": {
+      "name": "Apache License 2.0",
+      "url": "https://www.apache.org/licenses/LICENSE-2.0"
+    },
+    "work": "Permanent Marker",
+    "source": "https://fonts.google.com/specimen/Permanent+Marker",
+    "licenseFile": "LICENSE.txt",
+    "note": "Its LICENSE.txt names no copyright holder; the maker is the font's designer, Font Diner. Fetched from Google Fonts on 2026-11-14 (ui/this/this.css)."
+  },
+  {
+    "files": [
+      "ui/icon/coin-16.png"
+    ],
+    "maker": "Keith Pickering",
+    "terms": "layer",
+    "work": "Coin icon, 16 pixels",
+    "note": "The owner's own 16px sprite, drawn pixel by pixel (docs/research/2026-11-02-favicon/README.md; docs/plans/2026-11-02-favicon-design.md)."
+  },
+  {
+    "files": [
+      "ui/icon/coin.svg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Coin icon, vector",
+    "note": "B1, the vector every larger size is drawn from, made in the favicon design session (docs/research/2026-11-02-favicon/README.md)."
+  },
+  {
+    "files": [
+      "ui/public/favicon.ico",
+      "ui/public/apple-touch-icon.png"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Favicon and home-screen icon",
+    "note": "Made by tools/make-icons.mjs from ui/icon/coin-16.png and ui/icon/coin.svg; the record is ui/icon/icons.json."
+  },
+  {
+    "files": [
+      "ui/public/mail/smoke.jpg",
+      "ui/public/mail/cut-panel.png",
+      "ui/public/mail/cut-button.png",
+      "ui/public/mail/coin.png"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Email images",
+    "note": "Made by tools/make-mail-assets.mjs from the glass's colors and ui/icon/coin.svg; the record is mail/assets.json."
+  },
+  {
+    "files": [
+      "ui/trophies/bosss-pet.svg",
+      "ui/trophies/employee-of-the-month.svg",
+      "ui/trophies/hardcore-belt.svg",
+      "ui/trophies/met-the-bosss-demand.svg",
+      "ui/trophies/season-champion.svg",
+      "ui/trophies/season-runner-up.svg",
+      "ui/trophies/season-third.svg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Trophy badges",
+    "note": "Placeholders copied from docs/research/2026-11-04-cosmetics/art.svg, which stand until the owner's art replaces them (ui/cosmetics.ts; docs/research/2026-11-04-cosmetics/README.md)."
+  },
+  {
+    "files": [
+      "ui/gear/baseball-cap.svg",
+      "ui/gear/button.svg",
+      "ui/gear/mustache.svg",
+      "ui/gear/nostalgic-hat.svg",
+      "ui/gear/shades.svg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Gear art",
+    "note": "Placeholders copied from docs/research/2026-11-04-cosmetics/art.svg, which stand until the owner's art replaces them (ui/cosmetics.ts; docs/plans/2026-11-23-rendered-gear-design.md)."
+  },
+  {
+    "files": [
+      "ui/pips/default-empty.svg",
+      "ui/pips/default-full.svg"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Default pips",
+    "note": "The default pip style's two squares, a placeholder the instance holds until the owner gives more (index.ts's pipStyles; docs/plans/2026-10-29-screens-web-plan.md, section 7)."
+  },
+  {
+    "files": [
+      "ui/fixtures-staff-avatars/portrait-3to1.webp",
+      "ui/fixtures-staff-avatars/square-255.webp",
+      "ui/fixtures-staff-avatars/square-ok.png"
+    ],
+    "maker": "Divided World",
+    "terms": "layer",
+    "work": "Test pictures",
+    "note": "Flat-color test fixtures of the wrong and right shape for the staff picture check, used only by ui/index.test.tsx."
+  }
+]

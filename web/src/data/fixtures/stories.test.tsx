@@ -35,9 +35,9 @@ describe('the story route', () => {
       ]);
     });
     expect(screen.getAllByText('Yours')).toHaveLength(3);
-    expect(screen.getAllByText(/^Revealed /)).toHaveLength(2);
-    expect(screen.getAllByText(/^Has Turned since /)).toHaveLength(1);
-    expect(screen.getAllByText('Not revealed')).toHaveLength(4);
+    expect(screen.getAllByText(/^Revealed /)).toHaveLength(1);
+    expect(screen.queryAllByText(/^Has Turned since /)).toHaveLength(0);
+    expect(screen.getAllByText('Not revealed')).toHaveLength(5);
   });
 
   it('renders the React board\'s story on the fixture\'s moment: the rival\'s view of #42, the picker as the board draws it', async () => {

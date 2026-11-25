@@ -3,8 +3,8 @@
  * section 8): the season's public standings in their order, each with its place, its rank and its
  * standing; the player's own characters marked "Yours" and shown with their classes in their own
  * colors, from the player's own rows; and another character's class only as its player made it
- * public (`class_reveals`), with its date, and "Has Turned since" when an announced Turn came after
- * it. A character with no reveal shows no class. Nothing else about anyone's class is read here.
+ * public (`class_reveals`), with its date, and none once an announced Turn came after it. A
+ * character with no reveal shows no class. Nothing else about anyone's class is read here.
  *
  * `Rankings` is the view: it is handed what `standingsPage`, `classReveals` and `turnsAnnounced`
  * return and the player's own rows (`myCharacters`), and draws them. Its order is the standings'
@@ -80,12 +80,11 @@ function ClassCell({ own, stated, className }: { readonly own: MyCharacter | und
     <span className="kb-rankings-stated">
       <ClassChip cls={stated.revealed.class} name={className(stated.revealed.class)} kind="revealed" />
       <span className="kb-rankings-when">Revealed {shortDate(stated.revealed.at)}</span>
-      {stated.turnedAt && <span className="kb-rankings-when">Has Turned since {shortDate(stated.turnedAt)}</span>}
     </span>
   );
 }
 
-/** What a finished season's player made public of a character's class that season, drawn as the live table draws a reveal. */
+/** What a finished season's player made public of a character's class that season, drawn as the live table draws a reveal: a Turn announced after it clears it. */
 function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow['shown']; readonly className: (key: string) => string }) {
   const f = finalClass(shown);
   if (!f) return <><span aria-hidden="true" className="kb-rankings-none">—</span><span className="kb-visually-hidden">Not revealed</span></>;
@@ -93,7 +92,6 @@ function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow[
     <span className="kb-rankings-stated">
       <ClassChip cls={f.cls} name={className(f.cls)} kind="revealed" />
       <span className="kb-rankings-when">Revealed {shortDate(f.at)}</span>
-      {f.turnedAt && <span className="kb-rankings-when">Has Turned since {shortDate(f.turnedAt)}</span>}
     </span>
   );
 }

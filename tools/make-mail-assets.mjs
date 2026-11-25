@@ -18,7 +18,8 @@
  *   right; the button's is the ground over `--kb-glass-neon`, bottom right;
  * - `coin.png`: 80 by 80, `icon/coin.svg` drawn on the ground, opaque;
  * - `fonts/`: the fonts the email theme names (the basenames of its `fonts[].url`s), copied byte for byte
- *   from `<ui>/fonts/`. Reading the theme keeps this tool free of any instance's list;
+ *   from `<ui>/fonts/`, and `OFL.txt` beside them, since the SIL Open Font License asks that its text go with every
+ *   copy of the fonts. Reading the theme keeps this tool free of any instance's list;
  *
  * and `<ui>/../mail/assets.json`, the SHA-256 of each output and of each source (tools/mail-assets.mjs's
  * `sourceSlices` as canonical JSON, the coin vector and each font), keys sorted, which tools/check-mail.mjs
@@ -156,7 +157,7 @@ async function main() {
     fs.writeFileSync(path.join(out, name), bytes);
     outputs[name] = sha256(bytes);
   }
-  for (const f of fontFiles) {
+  for (const f of [...fontFiles, 'OFL.txt']) {
     const bytes = fs.readFileSync(need(path.join(ui, 'fonts', f)));
     fs.writeFileSync(path.join(out, 'fonts', f), bytes);
     outputs[`fonts/${f}`] = sha256(bytes);
@@ -168,7 +169,7 @@ async function main() {
   const recordFile = path.join(mailDir, 'assets.json');
   fs.writeFileSync(recordFile, recordText);
   for (const [name, bytes] of Object.entries(images)) console.log(`  wrote ${path.join(out, name)} (${bytes.length} bytes)`);
-  console.log(`  copied ${fontFiles.length} fonts to ${path.join(out, 'fonts')}`);
+  console.log(`  copied ${fontFiles.length} fonts and their OFL.txt to ${path.join(out, 'fonts')}`);
   console.log(`  wrote ${recordFile} (${recordText.length} bytes)`);
 }
 

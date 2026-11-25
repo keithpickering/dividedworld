@@ -59,6 +59,7 @@ const read = (p: string) => fs.readFileSync(path.resolve(here, p), 'utf8');
 const post: Act = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-11-01T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null, shownEditedAt: null };
 const play: CardPlay = { id: 'g1', card: 'glitter-bomb', layer: 1, caster: 'c2', message: '', config: {}, playedAt: '2026-11-01T12:00:00Z', post: 'p1', reach: 'character', on: 'c1', ends: '2099-01-01T00:00:00Z' };
 const props = (kept = false): EffectProps => ({
+  covered: false,
   post, plays: [play], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'character', still: false, moment: null, ...(kept ? { kept: true as const } : {}),
   show: () => {}, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
   children: <p data-kb-words>Hello there.</p>,
@@ -229,6 +230,36 @@ describe('Glitter Bomb', () => {
     see(0.1); see(0.9); aim(true); frames(30, 6000);
     expect(burst.mock.calls.filter(([f]) => f === first)).toHaveLength(1);
     expect(burst.mock.calls.filter(([f]) => f !== first && f.flying > 0)).toHaveLength(0);
+  });
+
+  test('a covered post in view bursts nothing, under reduced motion too; uncovered, it arms and bursts once as if it had just scrolled in', () => {
+    const view = render(<GlitterBombEffect {...props()} covered />);
+    see(1); aim(true); frames(30);
+    expect(burst.mock.calls.length, 'no burst while covered').toBe(0);
+    document.documentElement.setAttribute('data-kb-motion', 'reduced');
+    frames(30, 600);
+    expect(burst.mock.calls.length, 'reduced motion places the flakes at once, but not under a curtain').toBe(0);
+    document.documentElement.setAttribute('data-kb-motion', 'full');
+    view.rerender(<GlitterBombEffect {...props()} covered={false} />);
+    frames(10, 1000);
+    expect(burst.mock.calls.length, 'the 300 ms wait starts at the opening, not before').toBe(0);
+    frames(30, 1200);
+    expect(burst.mock.calls.length).toBe(1);
+  });
+
+  test('a curtain shut while the burst is arming and opened again starts the 300 ms wait afresh: no burst on the opening frame', () => {
+    const view = render(<GlitterBombEffect {...props()} />);
+    see(1); aim(true); frames(10, 1000);
+    expect(burst.mock.calls.length, 'arming, not yet 300 ms').toBe(0);
+    view.rerender(<GlitterBombEffect {...props()} covered />);
+    frames(10, 1200);
+    view.rerender(<GlitterBombEffect {...props()} covered={false} />);
+    frames(1, 1400);
+    expect(burst.mock.calls.length, 'the old arming start is not carried across the curtain').toBe(0);
+    frames(10, 1416);
+    expect(burst.mock.calls.length, 'still inside the fresh 300 ms').toBe(0);
+    frames(30, 1500);
+    expect(burst.mock.calls.length).toBe(1);
   });
 
   test('the point the burst watches stands on the burst point, and is watched against the middle of the view', () => {

@@ -31,6 +31,7 @@ import { ui as happyHeartUi } from './cards/happy-heart/ui.ts';
 import { ui as heatMagnetUi } from './cards/heat-magnet/ui.ts';
 import { ui as hotBoxUi } from './cards/hot-box/ui.ts';
 import { ui as hypeUpUi } from './cards/hype-up/ui.ts';
+import { ui as itsCurtainsUi } from './cards/its-curtains/ui.ts';
 import { ui as jimmyWailsUi } from './cards/jimmy-wails/ui.ts';
 import { ui as kickMeUi } from './cards/kick-me/ui.ts';
 import { ui as lastWordUi } from './cards/last-word/ui.ts';
@@ -86,6 +87,7 @@ export const cardsUi: readonly CardUi[] = Object.freeze([
   heatMagnetUi,
   hotBoxUi,
   hypeUpUi,
+  itsCurtainsUi,
   jimmyWailsUi,
   kickMeUi,
   lastWordUi,

@@ -359,7 +359,7 @@ export interface Settings {
   readonly structuralHoldHours: number;
   /** The most model calls a day that fill in small in-character lines; past it, stock lines stand in, so cost never grows with activity. A starting point. */
   readonly microEventDailyCalls: number;
-  /** How many threads the Boss's digest of public play holds. A starting point. */
+  /** How many threads the Boss's digest of public play holds per day of its window (the meeting's window, in days rounded up, at least one, times this, within `DIGEST_MOST.threads`). A starting point. */
   readonly digestThreads: number;
   /** How many boards the Boss's digest lines: when there are more open boards, the busiest half and the quietest half. A starting point. */
   readonly digestBoards: number;
@@ -373,10 +373,18 @@ export interface Settings {
   readonly bundleMostParts: number;
   /** The most parts a bundle a persona's file authors (an arc beat's template) holds. An authored bundle costs nothing from the bank, so it is bounded by what a writer may write (8 by default). */
   readonly bundleAuthoredMostParts: number;
-  /** How many top posts the digest quotes. A starting point. */
+  /** How many top posts the digest quotes per day of its window (within `DIGEST_MOST.excerpts`); also the cap, unscaled, of the lists that are no window's flow (standings, moves, quotes, the Boss's reactions). A starting point. */
   readonly digestExcerpts: number;
-  /** How many conversations (a persona's thread with waiting replies) the digest shows a pool persona, a whole number from 0 to `DIGEST_MOST.conversations`. */
+  /** How many conversations (a persona's thread with waiting replies) the digest shows a pool persona per day of its window, a whole number from 0 to `DIGEST_MOST.conversations`, which also holds the scaled count. */
   readonly digestConversations: number;
+  /** How many polls the digest shows per day of its window, a whole number from 1 to `DIGEST_MOST.polls`. */
+  readonly digestPolls: number;
+  /** How many threads with an origin (spun threads) the digest shows per day of its window, a whole number from 1 to `DIGEST_MOST.spins`. */
+  readonly digestSpins: number;
+  /** How many plays the digest shows per day of its window, a whole number from 1 to `DIGEST_MOST.plays`. */
+  readonly digestPlays: number;
+  /** The span in days the digest's standouts count over, whatever the window; a whole number from 1 to `DIGEST_MOST.standoutDays`. */
+  readonly digestStandoutDays: number;
   /** How many characters of a post the digest quotes. A starting point. */
   readonly digestExcerptChars: number;
   /** The most opinions of characters a Boss's memory keeps; the Boss orders them most important first and the rest are cut. A starting point. */

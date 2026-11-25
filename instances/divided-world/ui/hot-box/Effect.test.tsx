@@ -13,7 +13,7 @@
  */
 import { readFileSync } from 'node:fs';
 import { act, cleanup } from '@testing-library/react';
-import { StrictMode } from 'react';
+import { StrictMode, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import type { CardPlay, CardView, EffectProps, KitControl } from '../../../../engine/ui/cards/types.ts';
@@ -167,18 +167,26 @@ const settle = (ms = 400) => pass(ms, 16);
  * `bare` is a post with no content area (the ORIGIN box), `nested` the area of an ORIGIN box inside the opening post's body, and `inPost` the thread's
  * post around the area (`article.kb-act`, holding the Hot Box mark as engine/ui/cards/Marks.tsx writes it) with a button outside the post beside it.
  */
+/** Opens or shuts a curtain over the post set up last (the effect's `covered`), the way the engine does when a cover goes. */
+let cover: (covered: boolean) => void = () => {};
+function Covering({ props }: { props: EffectProps }) {
+  const [covered, setCovered] = useState(props.covered);
+  cover = setCovered;
+  return <HotBoxEffect {...props} covered={covered} />;
+}
 function setup(over: Partial<EffectProps> = {}, strict = false, bare = false, nested = false, inPost = false) {
   const show = vi.fn<(view: CardView | null) => void>();
   const met = vi.fn();
   const save = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const release = vi.fn(async () => ({ ok: false as const, error: 'no' }));
   const props: EffectProps = {
+    covered: false,
     post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met, ink: NO_INK, holdScreen: () => {}, marks: null, save, release, nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post. <a href="https://example.com/">A link</a></p>, ...over,
   };
   const world = createFake({ instance: testInstance, now: () => Date.now() });
-  const effect = <HotBoxEffect {...props} />;
+  const effect = <Covering props={props} />;
   /* In the thread the effect sits inside the post's content area; `bare` is a post with none (the ORIGIN box), where the area is the effect's own element. */
   const inArea = bare ? effect : nested
     ? <div className="kb-act-main" data-kb-content-area><div className="kb-origin" data-kb-over-ink=""><div className="kb-origin-area" data-kb-content-area><p data-kb-over-ink="" className="lifted">History</p>{effect}</div></div></div>
@@ -1769,6 +1777,17 @@ describe('what it tells the Lens', () => {
 describe('in view', () => {
   beforeEach(() => { stubObserver(); });
   const see = (s: Setup, isIntersecting: boolean) => act(() => { watch!([{ target: area(s), isIntersecting, intersectionRatio: isIntersecting ? 1 : 0 }]); });
+
+  test('a covered post in view is not met; uncovered, it is met once, as if it had just scrolled in', () => {
+    const s = setup({ covered: true });
+    see(s, true);
+    expect(s.met, 'a covered post is out of view').not.toHaveBeenCalled();
+    act(() => { cover(false); });
+    expect(s.met).toHaveBeenCalledTimes(1);
+    act(() => { cover(true); });
+    act(() => { cover(false); });
+    expect(s.met, 'met once however often the curtain shuts').toHaveBeenCalledTimes(1);
+  });
 
   test('met waits for the first sight of the post, and the fog is painted by the layer whether or not the post is reported in view', () => {
     const s = setup();

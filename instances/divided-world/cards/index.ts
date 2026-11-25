@@ -30,6 +30,7 @@ import { happyHeart, price as happyHeartPrice } from './happy-heart.ts';
 import { heatMagnet, price as heatMagnetPrice } from './heat-magnet.ts';
 import { hotBox, price as hotBoxPrice } from './hot-box.ts';
 import { hypeUp, price as hypeUpPrice } from './hype-up.ts';
+import { itsCurtains, price as itsCurtainsPrice } from './its-curtains.ts';
 import { jimmyWails, price as jimmyWailsPrice } from './jimmy-wails.ts';
 import { kickMe, price as kickMePrice } from './kick-me.ts';
 import { lastWord, price as lastWordPrice } from './last-word.ts';
@@ -83,6 +84,7 @@ const listed: readonly (readonly [CardRules, Hundredths])[] = [
   [heatMagnet as CardRules, heatMagnetPrice],
   [hotBox as CardRules, hotBoxPrice],
   [hypeUp as CardRules, hypeUpPrice],
+  [itsCurtains as CardRules, itsCurtainsPrice],
   [jimmyWails as CardRules, jimmyWailsPrice],
   [kickMe as CardRules, kickMePrice],
   [lastWord as CardRules, lastWordPrice],

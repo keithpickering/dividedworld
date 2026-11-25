@@ -63,6 +63,7 @@ const screens: GlassScreens = {
   guide: lazyScreen(() => import('../../engine/ui/guide/Guide.tsx').then((m) => ({ default: m.GuideScreen }))),
   contact: lazyScreen(() => import('../../engine/ui/contact/Contact.tsx').then((m) => ({ default: m.ContactScreen }))),
   conduct: lazyScreen(() => import('../../engine/ui/conduct/Conduct.tsx').then((m) => ({ default: m.ConductScreen }))),
+  license: lazyScreen(() => import('../../engine/ui/license/License.tsx').then((m) => ({ default: m.LicenseScreen }))),
   welcome: lazyScreen(() => import('../../engine/ui/welcome/Welcome.tsx').then((m) => ({ default: m.WelcomeScreen }))),
   queue: lazyScreen(() => import('../../engine/ui/admin/Queue.tsx').then((m) => ({ default: m.QueueScreen }))),
   reports: lazyScreen(() => import('../../engine/ui/admin/Reports.tsx').then((m) => ({ default: m.ReportsScreen }))),
@@ -134,6 +135,8 @@ const GLASS: Readonly<Record<string, GlassSurface>> = {
   '/contact': 'settings',
   /* The code of conduct stands on the same page smoke, for the same reason, and is readable signed out (registration links to it). */
   '/conduct': 'settings',
+  /* The license and credits page stands on the same page smoke, for the same reason, and is readable signed out (the footer links to it). */
+  '/license': 'settings',
   /* The welcome stands on the same page smoke, for the same reason. */
   '/welcome': 'settings',
   /* Alerts stands on the same page smoke as Updates, for the same reason: no surface of its own. */

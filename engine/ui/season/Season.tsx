@@ -73,10 +73,10 @@ function ClassChip({ cls, name }: { readonly cls: string; readonly name: string 
   return <span className="kb-rankings-class kb-glass-skew-tag" data-kb-kind="revealed" style={look}><span className="kb-glass-upright">{name}</span></span>;
 }
 
-/** What a result's player made public of its class that season: the last class it revealed, and whether a Turn was announced after. */
-function stated(r: SeasonResult): { readonly cls: string; readonly turned: boolean } | null {
+/** What a result's player made public of its class that season: the last class it revealed, none where a Turn was announced after it. */
+function stated(r: SeasonResult): { readonly cls: string } | null {
   const f = finalClass(r.shown);
-  return f === null ? null : { cls: f.cls, turned: f.turnedAt !== null };
+  return f === null ? null : { cls: f.cls };
 }
 
 function Results({ item, own, className }: { readonly item: SeasonNewsItem; readonly own: ReadonlySet<Id>; readonly className: (key: string) => string }) {
@@ -97,7 +97,7 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
                 <span className="kb-season-standing">
                   {figure(r.standing)}
                   {' · '}
-                  {s ? <>was a <ClassChip cls={s.cls} name={className(s.cls)} />{s.turned && <> and has Turned since</>}</> : 'class not revealed'}
+                  {s ? <>was a <ClassChip cls={s.cls} name={className(s.cls)} /></> : 'class not revealed'}
                 </span>
                 {own.has(r.character) && <Yours />}
               </li>

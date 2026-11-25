@@ -18,6 +18,7 @@ import { PlayerProvider } from '../player.tsx';
 import { buildWorld, testGlass, testInstance } from '../test-world.tsx';
 import { createClaims } from './claims.ts';
 import { PostEffects, VersionEffects } from './Effects.tsx';
+import { CoveredCtx, RowCoverCtx, type RowCover } from '../thread/cover.tsx';
 import { RowFoldCtx } from '../thread/fold.tsx';
 import { PlayProvider, usePlay, type PlayTarget } from './play.tsx';
 import { createPlays, playOf } from './plays.ts';
@@ -86,6 +87,10 @@ describe('how effects nest', () => {
 
   test('a takeover is outermost whatever else is beneath it', () => {
     expect(nesting([ui('one', { takeover: true }), ui('two', { beneath: true }), ui('three')], ['one', 'two', 'three'])).toEqual(['one', 'three', 'two']);
+  });
+
+  test('a card that covers the row is outside a takeover and outside a card played after it', () => {
+    expect(nesting([ui('one', { coversRow: true }), ui('two'), ui('three', { takeover: true })], ['one', 'two', 'three'])).toEqual(['one', 'three', 'two']);
   });
 });
 
@@ -326,5 +331,44 @@ describe('a card that folds the row is given the row\'s fold (CardUi.foldsRow)',
     inRow([folder()], [above('folder')], { open: true, toggle: vi.fn() });
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.every((f) => f === 'none')).toBe(true);
+  });
+});
+
+describe('a card that covers the row is given the row\'s cover (CardUi.coversRow)', () => {
+  const seen: { cover: EffectProps['cover'] | 'none'; covered: boolean }[] = [];
+  const Spy = ({ children, cover, covered }: EffectProps): ReactNode => { seen.push({ cover: cover ?? 'none', covered }); return <>{children}</>; };
+  const coverer = (extra: Partial<CardUi> = {}) => ui('folder', { Effect: Spy, coversRow: true, ...extra });
+  const value: RowCover = { shut: 1, total: 1, open: vi.fn(), encore: vi.fn() };
+  const inRow = (cards: CardUi[], played: (string | Act)[], cover: RowCover | null, covered = false) => {
+    seen.length = 0;
+    const kayfa = kayfaOf(cards);
+    const store = createPlays();
+    store.add(played.map((c, i) => (typeof c === 'string' ? play(c, i + 1) : c)));
+    render(<KayfaProvider value={kayfa}><PlayerProvider api={kayfa.api}><PlayProvider><RowCoverCtx.Provider value={cover}><CoveredCtx.Provider value={covered}><PostEffects plays={store} post={words} place="thread" nameOf={() => 'x'}><span data-kb-words>hi</span></PostEffects></CoveredCtx.Provider></RowCoverCtx.Provider></PlayProvider></PlayerProvider></KayfaProvider>);
+  };
+
+  test('inside a row it is given the reader\'s cover', () => {
+    inRow([coverer()], ['folder'], value);
+    expect(seen.at(-1)?.cover).toBe(value);
+  });
+
+  test('outside a row it is given none', () => {
+    inRow([coverer()], ['folder'], null);
+    expect(seen.at(-1)?.cover).toBe('none');
+  });
+
+  test('a card without coversRow is never given it, and a play on the thread\'s reach is not', () => {
+    inRow([coverer({ coversRow: undefined })], ['folder'], value);
+    expect(seen.at(-1)?.cover).toBe('none');
+    inRow([coverer()], [above('folder')], value);
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((s) => s.cover === 'none')).toBe(true);
+  });
+
+  test('every effect is given whether the post is covered', () => {
+    inRow([coverer({ coversRow: undefined })], ['folder'], null, true);
+    expect(seen.at(-1)?.covered).toBe(true);
+    inRow([coverer({ coversRow: undefined })], ['folder'], null, false);
+    expect(seen.at(-1)?.covered).toBe(false);
   });
 });

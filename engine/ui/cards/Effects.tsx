@@ -14,7 +14,7 @@
  * first, so a tail they draw is the words' next sibling under every other card, whatever the play order; then the cards with
  * `CardUi.beneath` (the layer other cards' ink lies on); then every other card, so the latest played is outermost; then the
  * takeovers (Stick Around, which lifts the post out of its thread), so every other card's effect is inside a takeover's
- * `children`. Each group keeps play order, and a card that writes and takes over is a takeover. The thread's and the board's
+ * `children`; and last the cards that cover the row (`CardUi.coversRow`), outside even a takeover. Each group keeps play order, and a card that writes and takes over is a takeover. The thread's and the board's
  * plays wrap as their own layers do. The moment (`MomentEffects`) and a History version (`VersionEffects`) nest by the same
  * function. Only a takeover is given the post's `marks` (the strip the post's date row draws, handed in by the post) and draws
  * them on the post it lifts. A post with no plays, or whose plays' cards draw no effect, is drawn untouched.
@@ -56,6 +56,7 @@ import type { PostPlays } from './plays.ts';
 import type { CardPlay, CardUi, CardView, Drive, EffectPlace, EffectProps, Written } from './types.ts';
 import { glassInk } from './ink.ts';
 import { useOwnerOf } from '../thread/context.ts';
+import { useCovered, useRowCover } from '../thread/cover.tsx';
 import { useRowFold } from '../thread/fold.tsx';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
@@ -65,7 +66,7 @@ export const SAMPLE = 'this is a sample post';
 /**
  * Wraps a post's words in the effect of each card played on it, and in the effects of the live plays above it (the card mechanic's
  * design, section 7): the layers in the order the board's, the thread's, the author's, then the post's own, as a card's rules see them
- * (effectsOnTarget), nested as `nestOrder` says (a card that writes innermost, every takeover outermost). A play beyond a post stops
+ * (effectsOnTarget), nested as `nestOrder` says (a card that writes innermost, then every takeover, then every card that covers the row outermost). A play beyond a post stops
  * wrapping at its end, by itself.
  */
 export function PostEffects({ plays, post, board = null, place, marks = null, nameOf, bodyOf, children }: {
@@ -262,8 +263,9 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const firsts = layers.flatMap((l) => [...new Set(l.acting.map((p) => p.card))].map((key): Wrap => ({ reach: l.reach, key, mine: l.acting.filter((p) => p.card === key), of: l.of })));
   /* A card drawn by another gives its plays to that card's wrap before the wraps are ordered, so the post draws one effect of the named card (`handedOn`). */
   const wraps = handedOn(firsts, here, ui.cards);
-  const { writing: within, rest, takeovers } = nestOrder(wraps, ui.cards, writing);
+  const { writing: within, rest, takeovers, covers } = nestOrder(wraps, ui.cards, writing);
   const rowFold = useRowFold();
+  const rowCover = useRowCover();
   const wrapIn = (node: ReactNode, list: readonly Wrap[], from: number): ReactNode => {
     let wrapped = node;
     for (const [i, { key, reach, mine, of }] of list.entries()) {
@@ -282,6 +284,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
           {...(reach === 'post' && driving.has(key) ? { drives: drivesOf(played, key, gifts, at) } : {})}
           reader={{ author: author !== null, caster: mine.some((p) => actingCharacters.some((c) => c.id === p.caster)) }}
           {...(rowFold !== null && reach === 'post' && card.foldsRow ? { fold: rowFold } : {})}
+          {...(rowCover !== null && reach === 'post' && card.coversRow ? { cover: rowCover } : {})}
           ink={claims.at(`${reach}:${key}`, from + i)} {...(reach === 'post' ? { surface: surfaceOf(key, mine, of) } : {})}
         >
           {wrapped}
@@ -302,7 +305,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
     const shown = (
       <MomentFrame play={rewindPlay} read="read" label={PRESENT_LABEL} backLabel={PRESENT_BACK} back={() => lens.showPresent(null)} bare named={[]} unrecorded={false}>{inner}</MomentFrame>
     );
-    return <>{slot(wrapIn(shown, takeovers, 0))}</>;
+    return <>{slot(wrapIn(wrapIn(shown, takeovers, 0), covers, takeovers.length))}</>;
   }
   if (momentAct && bodyOf) {
     const shown = (
@@ -311,10 +314,10 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
         back={() => lens.showMoment(null)} onView={(card, view) => plays.setView(post.id, card, view)}
       />
     );
-    return <>{slot(wrapIn(shown, takeovers, 0))}</>;
+    return <>{slot(wrapIn(wrapIn(shown, takeovers, 0), covers, takeovers.length))}</>;
   }
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
-  const wrapped = wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length);
+  const wrapped = wrapIn(wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length), covers, within.length + rest.length + takeovers.length);
   return <>{slot(wrapped)}</>;
 }
 
@@ -401,21 +404,24 @@ function afterSurface(plays: Plays, api: KayfaApi, play: Id, covered: number, li
  * The order cards nest around a post's words, the one place it is stated (PostEffects, MomentEffects and VersionEffects all take it). Given the
  * cards to wrap in play order (one entry for each card of a layer, `reach` naming the layer where it is not the post's own), it returns the
  * cards that write on the post's own reach as `writing`, which wrap the words first so their tail is the words' next sibling under every other
- * card, then `rest` outward from them (the `beneath` cards, then the others), then `takeovers` outermost, each group in the order given. A
- * takeover is a takeover whatever else it is, so `rest` never holds one. It reads the cards' rules and UI alone, never who played a card or
+ * card, then `rest` outward from them (the `beneath` cards, then the others), then `takeovers`, then `covers` outermost, each group in the order given. A
+ * takeover is a takeover whatever else it is, so `rest` never holds one; a card that covers the row (`CardUi.coversRow`) is in `covers` whatever else it is, so
+ * neither `rest` nor `takeovers` holds one. It reads the cards' rules and UI alone, never who played a card or
  * who owns a character.
  */
 export function nestOrder<T extends { readonly key: string; readonly reach?: Reach }>(
   cards: readonly T[], ui: readonly CardUi[], writing: ReadonlySet<string>,
-): { readonly writing: readonly T[]; readonly rest: readonly T[]; readonly takeovers: readonly T[] } {
+): { readonly writing: readonly T[]; readonly rest: readonly T[]; readonly takeovers: readonly T[]; readonly covers: readonly T[] } {
+  const cover = (key: string) => ui.find((c) => c.key === key)?.coversRow === true;
   const take = (key: string) => ui.find((c) => c.key === key)?.takeover === true;
   const under = (key: string) => ui.find((c) => c.key === key)?.beneath === true;
-  const inside = (c: T) => !take(c.key) && writing.has(c.key) && (c.reach === undefined || c.reach === 'post');
+  const inside = (c: T) => !cover(c.key) && !take(c.key) && writing.has(c.key) && (c.reach === undefined || c.reach === 'post');
   const others = cards.filter((c) => !inside(c));
   return {
     writing: cards.filter(inside),
-    rest: [...others.filter((c) => !take(c.key) && under(c.key)), ...others.filter((c) => !take(c.key) && !under(c.key))],
-    takeovers: others.filter((c) => take(c.key)),
+    rest: [...others.filter((c) => !cover(c.key) && !take(c.key) && under(c.key)), ...others.filter((c) => !cover(c.key) && !take(c.key) && !under(c.key))],
+    takeovers: others.filter((c) => !cover(c.key) && take(c.key)),
+    covers: others.filter((c) => cover(c.key)),
   };
 }
 
@@ -465,7 +471,7 @@ export function useUntil(plays: readonly CardPlay[]): number {
  * not by where the post is drawn: a post is drawn once on a page, in its thread or in the ORIGIN box of a thread spun
  * from it, never both, so the two places never share a key at once.
  */
-function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays; /** The card whose effect this is: not always its first play's card, where plays are lent to it (`handedOn`). */ readonly cardKey: string }) {
+function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'covered'> & { readonly Effect: ComponentType<EffectProps>; readonly store: Plays; /** The card whose effect this is: not always its first play's card, where plays are lent to it (`handedOn`). */ readonly cardKey: string }) {
   const post = props.post.id;
   /* A view is a post's: an effect above the post, drawn on many posts at once, says none (its mark is its target's). */
   const own = props.reach === 'post';
@@ -473,10 +479,11 @@ function BoundEffect({ Effect, store, marks, cardKey: card, ...props }: Omit<Eff
   useEffect(() => () => { if (own) store.setView(post, card, null); }, [store, post, card, own]);
   const met = useMeet(card);
   const holdScreen = useHoldScreen();
+  const covered = useCovered();
   /* The card's sounds warm while its effect's code loads, so they are ready when the effect asks (`CardUi.sounds`). */
   useWarmSounds(useKayfa().ui.cards.find((c) => c.key === card)?.sounds);
   /* An effect may load on first use: until it lands the post shows its words (`children`), so a post never pops in without them. */
-  return <Suspense fallback={props.children}><Effect {...props} still={false} moment={null} show={show} met={met} holdScreen={holdScreen} marks={marks} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still={false} moment={null} show={show} met={met} holdScreen={holdScreen} covered={covered} marks={marks} /></Suspense>;
 }
 
 /* ------------------------------------------------------------------------------ a play's moment ---- */
@@ -662,7 +669,7 @@ export function MomentEffects({ moment, place, nameOf, onView, children }: {
       ...[...new Set(counted.map((p) => p.card))].map((key) => ({ key, reach: 'post' as const, mine: counted.filter((p) => p.card === key) })),
     ];
     const nested = nestOrder(wraps, ui.cards, writing);
-    const list = [...nested.writing, ...nested.rest, ...nested.takeovers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
+    const list = [...nested.writing, ...nested.rest, ...nested.takeovers, ...nested.covers].map((w) => ({ ...w, written: w.reach === 'post' ? writtenOf(written, w.mine, writing) : NOTHING_WRITTEN }));
     return { list, inside: nested.writing.length };
   }, [counted, parts.above, ui.cards, writing, written]);
   /* The words box holds the words and the writing cards' wraps; every other wrap is outside it, as in PostEffects. */
@@ -714,7 +721,7 @@ export function VersionEffects({ post, version, plays, written, nameOf = () => '
   const has = plays.filter((p) => written.has(p.id));
   const order = nestOrder([...new Set(has.map((p) => p.card))].filter((k) => ui.cards.find((c) => c.key === k)?.Effect).map((key) => ({ key })), ui.cards, writing);
   let wrapped = children;
-  for (const { key } of [...order.writing, ...order.rest, ...order.takeovers]) {
+  for (const { key } of [...order.writing, ...order.rest, ...order.takeovers, ...order.covers]) {
     const Effect = ui.cards.find((c) => c.key === key)!.Effect!;
     wrapped = (
       <StillEffect key={key} Effect={Effect} card={key}
@@ -733,7 +740,7 @@ const NO_STATES: Readonly<Record<Id, EffectState>> = Object.freeze({});
  * handing the whole view to `onView`, which hears null when the effect is gone. Nothing it does is saved or sent: `save`, `release`, `give`
  * and a surface refuse without asking, `met` and `holdScreen` do nothing, and it has no marks and no wallet.
  */
-function MomentEffect({ Effect, card, at, onView, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface'> & {
+function MomentEffect({ Effect, card, at, onView, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'covered' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface'> & {
   readonly Effect: ComponentType<EffectProps>; readonly card: string; readonly at: number; readonly onView: (card: string, view: CardView | null) => void;
 }) {
   const { instance, ui } = useKayfa();
@@ -748,20 +755,20 @@ function MomentEffect({ Effect, card, at, onView, ...props }: Omit<EffectProps, 
   const show = useCallback((view: CardView | null) => { if (own) latest.current(card, view); }, [card, own]);
   useEffect(() => () => { if (own) latest.current(card, null); }, [card, own]);
   useWarmSounds(ui.cards.find((c) => c.key === card)?.sounds);
-  return <Suspense fallback={props.children}><Effect {...props} still={false} moment={moment} show={show} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} {...(surface ? { surface } : {})} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still={false} moment={moment} covered={false} show={show} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} {...(surface ? { surface } : {})} /></Suspense>;
 }
 
 /**
  * One card's effect on a History version, still: it draws a writing card's tail whole from that version's own rows and takes no input
  * (`EffectProps.still`). Nothing it does is saved or sent, and it says nothing to any frame.
  */
-function StillEffect({ Effect, card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface' | 'ink'> & {
+function StillEffect({ Effect, card, ...props }: Omit<EffectProps, 'show' | 'met' | 'holdScreen' | 'still' | 'moment' | 'covered' | 'save' | 'release' | 'marks' | 'drives' | 'give' | 'moreGifts' | 'wallet' | 'surface' | 'ink'> & {
   readonly Effect: ComponentType<EffectProps>; readonly card: string;
 }) {
   const { instance } = useKayfa();
   const rules = instance.cards.find((c) => c.key === card);
   const surface = useMemo(() => (rules?.surface ? momentSurface(surfaceMost(card, rules.surface.limitKey, instance.settings)) : undefined), [rules, card, instance.settings]);
-  return <Suspense fallback={props.children}><Effect {...props} still moment={null} show={nothing} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} ink={NO_INK} {...(surface ? { surface } : {})} /></Suspense>;
+  return <Suspense fallback={props.children}><Effect {...props} still moment={null} covered={false} show={nothing} met={nothing} holdScreen={nothing} marks={null} save={momentSave} release={momentRelease} give={momentGive} moreGifts={momentMore} wallet={null} ink={NO_INK} {...(surface ? { surface } : {})} /></Suspense>;
 }
 
 export { useNarrow, useSheet } from '../media.ts';

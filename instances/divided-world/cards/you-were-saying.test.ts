@@ -23,15 +23,15 @@ const frame = (over: Partial<Parameters<typeof writes.frame>[0]> = {}) =>
 test('its length and its price follow its steps', () => {
   assert.equal(writes.tokens({ steps: 0 }, settings), 50);
   assert.equal(writes.tokens({ steps: 7 }, settings), 300, 'past the most, the most');
-  assert.equal(rules.playPrice(settings, target('hello'), { steps: 0 }), 0);
-  assert.equal(rules.playPrice(settings, target('hello'), { steps: 7 }), 125);
-  assert.equal(rules.playPrice(settings, target('hello'), undefined as never), 125, 'a face asks the most');
+  assert.equal(rules.playPrice(settings, target('hello'), { steps: 0 }, []), 0);
+  assert.equal(rules.playPrice(settings, target('hello'), { steps: 7 }, []), 125);
+  assert.equal(rules.playPrice(settings, target('hello'), undefined as never, []), 125, 'a face asks the most');
 });
 
 test('an override that lowers the most is never exceeded', () => {
   const low = withOverrides(settings, { economy: { 'youWereSaying.mostTokens': 150 } });
   assert.equal(writes.tokens({ steps: 7 }, low), 150);
-  assert.equal(rules.playPrice(low, target('hello'), { steps: 7 }), 50);
+  assert.equal(rules.playPrice(low, target('hello'), { steps: 7 }, []), 50);
 });
 
 test('a step is a whole number from 0 to the most', () => {
@@ -185,14 +185,14 @@ test('a window that leaves less than the base records what is generated: the mos
   assert.equal(writeTokensMost(tight), 14);
   assert.equal(mostSteps(tight), 0);
   for (const steps of [0, 1, 7]) assert.equal(writes.tokens({ steps }, tight), 14, `steps ${steps}`);
-  assert.equal(rules.playPrice(tight, target('hello'), { steps: 7 }), 0, 'the one stop the slider shows costs nothing');
-  assert.equal(rules.playPrice(tight, target('hello'), undefined as never), 0);
+  assert.equal(rules.playPrice(tight, target('hello'), { steps: 7 }, []), 0, 'the one stop the slider shows costs nothing');
+  assert.equal(rules.playPrice(tight, target('hello'), undefined as never, []), 0);
   // A pair that clamps to one token plays one token long.
   for (const [window, floor] of [[64, 256], [256, 256]] as const) {
     const gone = { ...settings, oldVoiceWindow: window, oldVoicePromptFloor: floor };
     assert.equal(writes.tokens({ steps: 0 }, gone), 1);
     assert.equal(writes.tokens({ steps: 7 }, gone), 1);
-    assert.equal(rules.playPrice(gone, target('hello'), { steps: 7 }), 0);
+    assert.equal(rules.playPrice(gone, target('hello'), { steps: 7 }, []), 0);
   }
 });
 
@@ -337,9 +337,9 @@ test('with a narrowed window, the price and the tokens are those of the last ste
   const past = { steps: 7 };
   assert.equal(writes.tokens(past, narrow), writes.tokens({ steps: 1 }, narrow));
   assert.equal(writes.tokens(past, narrow), 100);
-  assert.equal(rules.playPrice(narrow, target('hello'), past), rules.playPrice(narrow, target('hello'), { steps: 1 }));
-  assert.equal(rules.playPrice(narrow, target('hello'), past), 25);
-  assert.equal(rules.playPrice(narrow, target('hello'), undefined as never), 25, 'a face asks the most that fits');
+  assert.equal(rules.playPrice(narrow, target('hello'), past, []), rules.playPrice(narrow, target('hello'), { steps: 1 }, []));
+  assert.equal(rules.playPrice(narrow, target('hello'), past, []), 25);
+  assert.equal(rules.playPrice(narrow, target('hello'), undefined as never, []), 25, 'a face asks the most that fits');
 });
 
 // The rambler, the ban and the pattern (docs/plans/2026-11-13-you-were-saying-voice-design.md, sections 0 to 4).
@@ -356,7 +356,7 @@ test('the card samples as measured', () => {
 test('the economy buys 300 tokens in five steps for 125', () => {
   assert.equal(mostSteps(settings), 5);
   assert.equal(writes.tokens({ steps: 5 }, settings), 300);
-  assert.equal(rules.playPrice(settings, target('hello'), { steps: 5 }), 125);
+  assert.equal(rules.playPrice(settings, target('hello'), { steps: 5 }, []), 125);
 });
 
 test('sofar follows the tails and a break the frame writes follows it', () => {

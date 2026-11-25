@@ -159,3 +159,16 @@
   opacity: var(--kb-fold-shade, 0);
   pointer-events: none;
 }
+
+/* A post's cover (cover.tsx): the host the engine draws first in the grid, over the whole row, the postbit included. The card's `Cover` fills it; the row under it is `inert`. */
+.kb-act-grid:has(> .kb-row-cover) {
+  position: relative;
+}
+
+.kb-act-grid > .kb-row-cover {
+  /* `.kb-act-grid > *` gives every cell the post's row color; the cover is drawn over the post and must not hide it while its curtain parts. A cover's own pieces hide the post while shut. */
+  background: none;
+  position: absolute;
+  inset: 0;
+  z-index: 6;
+}

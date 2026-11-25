@@ -7,6 +7,7 @@
     "fonts/BarlowCondensed-Bold.woff2": "bc4900784292a634e7fc6273262f357ca0782d3799aa1a19b1c5e2afbc366b51",
     "fonts/BarlowCondensed-Medium.woff2": "43c8ef42ec0c2174b35d5f3f1dff0299323a0a3c4ad1945076566d79c6837bf3",
     "fonts/BarlowCondensed-SemiBold.woff2": "fcd4e2bdfe5a2a0b0f526aac29671361f24d2b4afc11fec3d49574224409c94f",
+    "fonts/OFL.txt": "964b0bef55c6d154505299d4e845c902007aedab4d69af1dc8b333ed3c2b6877",
     "smoke.jpg": "68204ddc5d2b44627bbeac16a67637a4d1fb8aca261b9b5456c0f67e671a5bca"
   },
   "sources": {
@@ -14,6 +15,7 @@
     "fonts/BarlowCondensed-Bold.woff2": "bc4900784292a634e7fc6273262f357ca0782d3799aa1a19b1c5e2afbc366b51",
     "fonts/BarlowCondensed-Medium.woff2": "43c8ef42ec0c2174b35d5f3f1dff0299323a0a3c4ad1945076566d79c6837bf3",
     "fonts/BarlowCondensed-SemiBold.woff2": "fcd4e2bdfe5a2a0b0f526aac29671361f24d2b4afc11fec3d49574224409c94f",
+    "fonts/OFL.txt": "964b0bef55c6d154505299d4e845c902007aedab4d69af1dc8b333ed3c2b6877",
     "glass.json#keys.standard.--kb-glass-field": "0f354b955168077e5192e1d28f9c7033db6ee71b420484983e2ddf1b95fbb8f2",
     "glass.json#keys.standard.--kb-glass-ground": "74559cb9c58b8cf0e1ef91ed9d37d42465b6fc0431ed5e5e72ae6047df9e2a71",
     "glass.json#keys.standard.--kb-glass-neon": "0c4ae1ed8e0bc970b2f87c5abc32a51f2b0b4569ba5a7dba0bef4f7a774c604b",

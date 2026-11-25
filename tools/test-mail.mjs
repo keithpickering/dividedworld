@@ -136,11 +136,11 @@ const mail = 'instances/demo/mail';
 function repo(name, poison = () => {}) {
   const theme = { name: 'Demo', colors: { ...THEME_COLORS }, fonts: FONTS.map((f) => ({ url: `https://demo.example/mail/fonts/${f}` })) };
   const glass = JSON.parse(JSON.stringify(GLASS));
-  const fonts = Object.fromEntries(FONTS.map((f) => [f, Buffer.from(`font bytes of ${f}`)]));
+  const fonts = Object.fromEntries([...FONTS, 'OFL.txt'].map((f) => [f, Buffer.from(`font bytes of ${f}`)]));
   const images = { 'smoke.jpg': jpeg(1200, 360, 1000), 'cut-panel.png': png(24, 24), 'cut-button.png': png(24, 24, { seed: 5 }), 'coin.png': png(80, 80, { seed: 9 }) };
   const outputs = Object.fromEntries(Object.entries(images).map(([k, v]) => [k, sha256(v)]));
   const sources = { 'icon/coin.svg': sha256(SVG) };
-  for (const f of FONTS) {
+  for (const f of [...FONTS, 'OFL.txt']) {
     outputs[`fonts/${f}`] = sha256(fonts[f]);
     sources[`fonts/${f}`] = sha256(fonts[f]);
   }
@@ -154,7 +154,7 @@ function repo(name, poison = () => {}) {
     'supabase/functions/_shared/mail/auth.ts': `export function authTemplates() { return ${JSON.stringify(TEMPLATES)}; }\n`,
   };
   for (const [k, v] of Object.entries(images)) files[`${ui}/public/mail/${k}`] = v;
-  for (const f of FONTS) {
+  for (const f of [...FONTS, 'OFL.txt']) {
     files[`${ui}/fonts/${f}`] = fonts[f];
     files[`${ui}/public/mail/fonts/${f}`] = fonts[f];
   }
@@ -201,6 +201,7 @@ try {
 
   /* ---- (1) a file missing ---- */
   await red('a missing coin.png is named', (f) => { f[`${ui}/public/mail/coin.png`] = null; }, /public[\\/]mail[\\/]coin\.png.*missing/);
+  await red('a missing OFL.txt is named (the license goes with every copy of the fonts)', (f) => { f[`${ui}/public/mail/fonts/OFL.txt`] = null; }, /fonts[\\/]OFL\.txt.*missing/);
   await red('a missing font is named', (f) => { f[`${ui}/public/mail/fonts/${FONTS[1]}`] = null; }, new RegExp(`${FONTS[1]}.*missing`));
 
   /* ---- (2) the images ---- */
@@ -234,6 +235,8 @@ try {
     b[3] ^= 1;
     f[`${ui}/public/mail/fonts/${FONTS[0]}`] = b;
   }, new RegExp(`fonts[\\\\/]${FONTS[0]}.*differs from.*ui[\\\\/]fonts`));
+
+  await red('an OFL.txt that differs from the ui\'s', (f) => { f[`${ui}/public/mail/fonts/OFL.txt`] = Buffer.from('another license'); }, /fonts[\\/]OFL\.txt.*differs from.*ui[\\/]fonts/);
 
   /* ---- (4) the record ---- */
   await red('the page recipe\'s opacity changed after the record was written', (f, { glass }) => {

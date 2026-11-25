@@ -43,6 +43,22 @@ import strategyGuide from '../guide/strategy-guide.md?raw';
 import { hints } from '../guide/hints.ts';
 import { conduct } from './conduct.ts';
 import { defaults } from '../settings.ts';
+import { credits } from './credits.ts';
+import { HOT_DEBATE_CREDIT } from './hot-debate-credit.ts';
+
+/* Restates instances/divided-world/LICENSE.md in the glass's plain words, in the guide's Markdown (engine/ui/guide/markdown.ts). */
+const licenseTerms = `Everything Divided World made for this site (its code, its words, its pictures, its prompts and its personas) is offered under either of these, whichever you pick:
+
+- the [GNU Affero General Public License](https://www.gnu.org/licenses/agpl-3.0.html), version 3 or any later version, or
+- [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
+
+The credit Creative Commons asks for is "Divided World (https://dw.gripe)". That is the preferred line.
+
+Files made by others are under their own terms, listed below with their makers.
+
+The Snuckles image's license covers that image only and grants no rights in the Snuckles character, created by Keith Pickering, Elliot Wallis and Jacob Stacy. Nintendo's characters and marks that appear in the fan art are Nintendo's and are not licensed here.
+
+The sounds were made with ElevenLabs and are used here under ElevenLabs' terms; they are not offered for reuse.`;
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
 const FONT_URLS = import.meta.glob<string>('./fonts/*.woff2', { query: '?url', import: 'default', eager: true });
@@ -194,13 +210,7 @@ export const instanceUi: InstanceUi = Object.freeze({
       still: hotDebateFireStill,
       height: 56,
       clear: 40,
-      credit: Object.freeze({
-        work: 'Animated fire',
-        author: 'Nevit Dilmen',
-        source: 'https://commons.wikimedia.org/wiki/File:Animated_fire_by_nevit.gif',
-        license: 'CC BY-SA 3.0',
-        licenseUrl: 'https://creativecommons.org/licenses/by-sa/3.0/',
-      }),
+      credit: HOT_DEBATE_CREDIT,
     }) },
     // Fan Site's name is open (the board look design, Open); it ships as "Fan Site" until the owner names it.
     { key: 'fan-site', name: 'Fan Site', href: fanSite, modes: 'dark' as const, preview: fanSitePreview },
@@ -271,4 +281,6 @@ export const instanceUi: InstanceUi = Object.freeze({
   guide: Object.freeze({ markdown: strategyGuide, hints }),
   /* The code of conduct (conduct.ts), version 1: the words are the instance's, the page at /conduct the glass's. */
   conduct,
+  /* Where the source can be had (AGPL section 13), the site's terms (restating LICENSE.md) and its credits, which /license lists. */
+  licensing: Object.freeze({ source: 'https://github.com/keithpickering/dividedworld', terms: licenseTerms, credits }),
 });
