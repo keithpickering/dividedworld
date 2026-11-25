@@ -349,7 +349,7 @@ const origin = (o: Partial<ReadOrigin> = {}): ReadOrigin => ({
 test('a spun thread shows its origin directly above the opener: the line, the post block, then the opener', () => {
   const opener = cand(1, 'toad', '', { name: 'Toad' });
   const lines = readLines(rt([opener], { self: ME, must: [] }, 10_000, { ...names, origin: origin() }));
-  assert.equal(lines[0], '(This thread was spun 3 days ago from post #4 in "Best kart?", 6 months ago.)');
+  assert.equal(lines[0], '(This thread was spun 3 days ago from Wario\'s post #4 in "Best kart?", written 6 months ago.)');
   assert.equal(lines[1], `Wario (he/him) [origin, post #4 in "Best kart?"]`);
   assert.equal(lines[2], 'Mach 8 forever.');
   assert.ok(lines.includes('[Reactions: ❤ 2]') && lines.some((l) => l.startsWith('[poll on this post]')));
@@ -363,7 +363,7 @@ test('a play spin says it stands as it was when it was spun; an update origin ha
   assert.equal(readLines(rt([opener], { self: ME, must: [] }, 10_000, { ...names, origin: play }))[0], '(This thread was spun 3 days ago from Whoops! on post #4 in "Best kart?", 6 months ago, as it stood when it was spun.)');
   const upd = origin({ kind: 'update', place: { kind: 'update', act: 'u1', title: 'New board' }, post: { ...origin().post!, seq: null, title: 'New board' } });
   const lines = readLines(rt([opener], { self: ME, must: [] }, 10_000, { origin: upd }));
-  assert.equal(lines[0], '(This thread was spun 3 days ago from the Updates post "New board", 6 months ago.)');
+  assert.equal(lines[0], '(This thread was spun 3 days ago from the Updates post "New board", written 6 months ago.)');
   assert.equal(lines[1], 'Wario (he/him) [origin, the Updates post "New board"]');
   const bare = readLines(rt([opener], { self: ME, must: [] }, 10_000, { origin: origin({ post: null }) }));
   assert.deepEqual(bare.slice(1), ['Toad [post #1]', 'Hi']);

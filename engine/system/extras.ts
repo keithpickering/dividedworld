@@ -214,8 +214,14 @@ export function placeWords(place: ReadPlace | null, names: PlaceNames = {}): str
   }
 }
 
-/** The origin's one line: `(This thread was spun 3 days ago from <place>, 6 months ago.)`, with "as it stood when it was spun" for a moment. */
+/**
+ * The origin's one line, as the design's section 2 writes it: `(This thread was spun 3 days ago from Wario's post #4 in "Best kart?", written 6 months ago.)`, with "as it stood when it was spun" for a moment.
+ * A post origin names its author where the board shows the post (the block under the line names them too); a post or an Updates post was "written", every other origin simply happened.
+ */
 export function originLine(origin: ReadOrigin, now: number, names: PlaceNames = {}): string {
   const moment = origin.moment ? ', as it stood when it was spun' : '';
-  return `(This thread was spun ${ago(origin.spunAt, now)} from ${placeWords(origin.place, names)}, ${ago(origin.at, now)}${moment}.)`;
+  const kind = origin.place?.kind;
+  const whose = kind === 'post' && origin.post !== null ? `${origin.post.name}'s ` : '';
+  const written = kind === 'post' || kind === 'update' ? 'written ' : '';
+  return `(This thread was spun ${ago(origin.spunAt, now)} from ${whose}${placeWords(origin.place, names)}, ${written}${ago(origin.at, now)}${moment}.)`;
 }

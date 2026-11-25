@@ -99,7 +99,9 @@ test('placeWords says every origin_place kind', () => {
 
 test('the origin line: when it was spun and when the origin happened; "as it stood" for a moment', () => {
   const o: ReadOrigin = { kind: 'post', place: post(4), at: minus(180 * D), spunAt: minus(3 * D), moment: false, post: null };
-  assert.equal(originLine(o, NOW), '(This thread was spun 3 days ago from post #4 in "Best kart?", 6 months ago.)');
+  assert.equal(originLine(o, NOW), '(This thread was spun 3 days ago from post #4 in "Best kart?", written 6 months ago.)');
+  const named: ReadOrigin = { ...o, post: { act: 'p4', seq: 4, at: minus(180 * D), author: 'wario', name: 'Wario', body: '', title: 'Best kart?', poll: null, plays: [], reactions: {} } };
+  assert.equal(originLine(named, NOW), '(This thread was spun 3 days ago from Wario\'s post #4 in "Best kart?", written 6 months ago.)');
   const m: ReadOrigin = { ...o, kind: 'card', place: { kind: 'play', card: 'whoops', on: post(4) }, moment: true };
   assert.equal(originLine(m, NOW, { cardName: () => 'Whoops!' }), '(This thread was spun 3 days ago from Whoops! on post #4 in "Best kart?", 6 months ago, as it stood when it was spun.)');
 });
