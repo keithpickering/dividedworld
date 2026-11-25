@@ -73,14 +73,19 @@ begin
   select "group" into got from characters_public where id = old;
   if got is distinct from 'oldGuard' then raise exception '5 posts and 2 seasons is oldGuard, not %', coalesce(got, 'null'); end if;
 
-  -- A staff character with no posts: the staff rung. A persona in the member office is not staff.
+  -- A staff character with no posts: the staff rung. A persona off staff (in the member or benched office) is still a staff
+  -- persona, played by The System, so it keeps the staff rung's bar: leaving an office changes its powers and its badge, not
+  -- what it is (0427).
   insert into characters (name, staff, staff_kind, debuted_at) values ('Gr Mod', 'gr-mod', 'persona', now());
   insert into characters (name, staff, staff_kind, debuted_at) values ('Gr Former', 'gr-former', 'persona', now());
-  insert into staff_offices (staff, office, cause) values ('gr-mod', 'mod', 'seed'), ('gr-former', 'member', 'seed');
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Gr Benched', 'gr-benched', 'persona', now());
+  insert into staff_offices (staff, office, cause) values ('gr-mod', 'mod', 'seed'), ('gr-former', 'member', 'seed'), ('gr-benched', 'benched', 'seed');
   select "group" into got from characters_public where name = 'Gr Mod';
   if got is distinct from 'personalityCores' then raise exception 'a Mod with no posts is personalityCores, not %', coalesce(got, 'null'); end if;
   select "group" into got from characters_public where name = 'Gr Former';
-  if got is distinct from 'members' then raise exception 'a persona in the member office is members, not %', coalesce(got, 'null'); end if;
+  if got is distinct from 'personalityCores' then raise exception 'a persona in the member office is personalityCores, not %', coalesce(got, 'null'); end if;
+  select "group" into got from characters_public where name = 'Gr Benched';
+  if got is distinct from 'personalityCores' then raise exception 'a benched persona is personalityCores, not %', coalesce(got, 'null'); end if;
 end $$;
 
 -- ---- A group a move confers wins over the ladder while the move is open ----
