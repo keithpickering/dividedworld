@@ -594,7 +594,24 @@ begin
   update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid = 'acts'::regclass;
   if (select reltuples from pg_class where oid = 'acts'::regclass) is distinct from 0 then raise exception 'the statistics were not set'; end if;
 end $$;
-select pg_temp.measure('empty statistics', 4000, 50);
+do $$
+declare v0 bigint; out text := ''; ids uuid[]; trow jsonb; r jsonb; n bigint; p uuid; t uuid := pg_temp.f('big');
+begin
+  perform set_config('track_functions', 'all', true);
+  v0 := pg_temp.veils_read(); select count(*) into n from pool_read_rows(t, 'ex-boss', null, 60); out := out || 'pool_read_rows ' || (pg_temp.veils_read() - v0) || E'\n';
+  ids := array(select x.act from pool_read_rows(t, 'ex-boss', null, 60) x);
+  select to_jsonb(l) into trow from (select x.title, x.origin_act_id, x.created_at, x.origin_place, x.first_act from thread_list x where x.id = t) l;
+  v0 := pg_temp.veils_read(); r := pool_read_origin(t, trow); out := out || 'pool_read_origin ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); r := post_extras_rows(ids[1:200], ids[1:200]); out := out || 'post_extras_rows ' || (pg_temp.veils_read() - v0) || ' for ' || cardinality(ids) || E'\n';
+  v0 := pg_temp.veils_read(); perform * from extras_ids(ids[1:200]); out := out || 'extras_ids ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); perform count(*) from reaction_tallies_open r2 where r2.act = any (ids); out := out || 'reaction_tallies_open ' || (pg_temp.veils_read() - v0) || E'\n';
+  p := ids[1];
+  v0 := pg_temp.veils_read(); perform * from acts_public x where x.id = p; out := out || 'acts_public one ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); perform * from acts_public x where x.id = any (ids); out := out || 'acts_public any ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); perform * from pool_probe(p); out := out || 'pool_probe one ' || (pg_temp.veils_read() - v0) || E'\n';
+  raise exception E'veil reads by part:\n%', out;
+end $$;
+
 select pg_temp.measure_kinds('empty statistics', 600);
 select pg_temp.measure_layers('empty statistics', 700, 10);
 set local plan_cache_mode = force_generic_plan;
