@@ -1,4 +1,5 @@
 import { ROOM_HEIGHT } from './chair.ts';
+import type { ThrownObject } from './objects.ts';
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
@@ -80,25 +81,55 @@ export interface DentShape {
 }
 
 /**
+ * What differs between the objects' dents (docs/plans/2026-11-23-steel-chair-objects-design.md, section 5); the pipeline after the shape is
+ * the same. `axisMin` and `axisMax` bound the first axis draw; `aspect` says how the two axes relate: `free` draws both alike (the chair), `long`
+ * draws `ry` and takes `rx` as `ry` times a ratio in `ratio`, `near` draws `rx` and takes `ry` as `rx` times a ratio in `ratio`, `round` makes
+ * `ry` equal `rx`. The lobe count is `lobesMin` plus a draw over `lobesSpan` values; a lobe's `radius` and `depth` are `base + span * draw`; the
+ * crumple's lattice values run -`crumple` to `crumple`. The chair's values are the constants this file always had.
+ */
+interface DentKind {
+  readonly axisMin: number; readonly axisMax: number;
+  readonly aspect: 'free' | 'long' | 'near' | 'round'; readonly ratio: readonly [number, number];
+  readonly lobesMin: number; readonly lobesSpan: number;
+  readonly radius: readonly [number, number]; readonly depth: readonly [number, number];
+  readonly crumple: number;
+}
+const DENT_KINDS: Readonly<Record<ThrownObject, DentKind>> = {
+  chair: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'free', ratio: [1, 1], lobesMin: 2, lobesSpan: 3, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5 },
+  // long and narrow: a crease with one rung's ridge across its long axis
+  ladder: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'long', ratio: [0.35, 0.1], lobesMin: 1, lobesSpan: 1, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5 },
+  // rounder (axes within 5%), 2 or 3 lobes, deeper; `axisMax` leaves room for the ratio so no axis passes AXIS_MAX
+  can: { axisMin: AXIS_MIN, axisMax: AXIS_MAX / 1.04, aspect: 'near', ratio: [0.96, 0.08], lobesMin: 2, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.45, 0.3], crumple: 0.5 },
+  // round, 70% of the chair's size, 1 or 2 lobes, the deepest
+  extinguisher: { axisMin: AXIS_MIN * 0.7, axisMax: AXIS_MAX * 0.7, aspect: 'round', ratio: [1, 0], lobesMin: 1, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.6, 0.3], crumple: 0.5 },
+};
+
+/**
  * A dent's shape, from its play's id alone, through the seeded generator of body.ts: nothing about the reader and not the run's own seed, so a
  * given play's dent has the same shape for every reader and on every replay, and three plays' dents are not copies. (Where it lands is
  * the run's, and changes each run.) The id is salted with `dent|` so the shape does not move in step with the settle sound's seed from the same id.
  * The draws are in this order: `rx`, `ry`, `turn`, each wave's `amp` and `phase`, the lobe count, each lobe's distance, angle, `radius` and
- * `depth`, then the 81 lattice values.
+ * `depth`, then the 81 lattice values. Every object draws the same count of numbers in that order (a ladder or a can reads its two axis draws
+ * as a size and a ratio), and the chair's draws and results are what they were before objects, so a chair's dent is drawn from the same numbers.
  */
-export function dentShape(playId: string): DentShape {
+export function dentShape(playId: string, object: ThrownObject = 'chair'): DentShape {
+  const k = DENT_KINDS[object];
   const rand = rng(seedOfIds(['dent', playId]));
-  const axis = () => AXIS_MIN + (AXIS_MAX - AXIS_MIN) * rand();
-  const rx = axis(), ry = axis();
+  const axis = () => k.axisMin + (k.axisMax - k.axisMin) * rand();
+  let rx: number, ry: number;
+  if (k.aspect === 'long') { const r = k.ratio[0] + k.ratio[1] * rand(); ry = axis(); rx = ry * r; }
+  else if (k.aspect === 'near') { rx = axis(); ry = rx * (k.ratio[0] + k.ratio[1] * rand()); }
+  else if (k.aspect === 'round') { rx = axis(); rand(); ry = rx; }
+  else { rx = axis(); ry = axis(); }
   const turn = rand() * 360;
   const waves = Array.from({ length: 3 }, () => { const amp = -0.1 + 0.2 * rand(); return { amp, phase: rand() * 2 * Math.PI }; });
-  const lobes = Array.from({ length: 2 + Math.floor(3 * rand()) }, () => {
+  const lobes = Array.from({ length: k.lobesMin + Math.floor(k.lobesSpan * rand()) }, () => {
     const dist = 0.3 * rand(), angle = rand() * 2 * Math.PI;
-    const radius = 0.12 + 0.1 * rand();
-    const depth = 0.3 + 0.3 * rand();
+    const radius = k.radius[0] + k.radius[1] * rand();
+    const depth = k.depth[0] + k.depth[1] * rand();
     return { u: dist * Math.cos(angle), v: dist * Math.sin(angle), radius, depth };
   });
-  const crumple = Array.from({ length: 81 }, () => -0.5 + rand());
+  const crumple = Array.from({ length: 81 }, () => -k.crumple + 2 * k.crumple * rand());
   return { rx, ry, turn, waves, lobes, crumple };
 }
 

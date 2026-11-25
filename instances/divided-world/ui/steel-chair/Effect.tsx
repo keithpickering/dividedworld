@@ -88,6 +88,7 @@ import {
 } from './body.ts';
 import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
 import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, zoneHeight, type DentShape } from './dent.ts';
+import { objectOf, type ThrownObject } from './objects.ts';
 import './steel-chair.css';
 
 /**
@@ -97,12 +98,13 @@ import './steel-chair.css';
  * plays, which only costs a recomputation.
  */
 const shapes = new Map<string, DentShape>();
-function shapeOf(play: string): DentShape {
-  let shape = shapes.get(play);
+function shapeOf(play: string, object: ThrownObject = objectOf(play)): DentShape {
+  const key = `${play}|${object}`;
+  let shape = shapes.get(key);
   if (!shape) {
     if (shapes.size > 300) shapes.clear();
-    shape = dentShape(play);
-    shapes.set(play, shape);
+    shape = dentShape(play, object);
+    shapes.set(key, shape);
   }
   return shape;
 }

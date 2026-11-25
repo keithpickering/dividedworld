@@ -308,7 +308,7 @@ describe('dentShape: each dent its own shape, from the play id alone', () => {
     for (const id of ['sc1', 'sc2', 'sc3']) assert.deepEqual(dentShape(id), dentShape(id));
   });
   test('three ids give three shapes that differ', () => {
-    const [a, b, c] = ['sc1', 'sc2', 'sc3'].map(dentShape) as [ReturnType<typeof dentShape>, ReturnType<typeof dentShape>, ReturnType<typeof dentShape>];
+    const [a, b, c] = ['sc1', 'sc2', 'sc3'].map((id) => dentShape(id)) as [ReturnType<typeof dentShape>, ReturnType<typeof dentShape>, ReturnType<typeof dentShape>];
     for (const [p, q] of [[a, b], [a, c], [b, c]] as const) {
       assert.notDeepEqual(p, q);
       assert.notDeepEqual(p.crumple, q.crumple);
@@ -718,5 +718,50 @@ describe('dentShape: the chair keeps its recorded dents (dent-record.json, taken
       assert.deepEqual(dentShape(id), record[id], id);
       assert.deepEqual(dentShape(id, 'chair'), record[id], id);
     }
+  });
+});
+
+describe('dentShape: each object has its own dent', () => {
+  const IDS200 = Array.from({ length: 200 }, (_, i) => `object-dent-${i}`);
+  const within = (v: number, lo: number, hi: number) => v >= lo - 1e-9 && v <= hi + 1e-9;
+  const lobesOk = (id: string, object: 'can' | 'ladder' | 'extinguisher', n: [number, number], radius: [number, number], depth: [number, number]) => {
+    const s = dentShape(id, object);
+    assert.ok(s.lobes.length >= n[0] && s.lobes.length <= n[1], `${object} ${id} lobes ${s.lobes.length}`);
+    for (const l of s.lobes) {
+      assert.ok(within(l.radius, ...radius), `${object} ${id} radius ${l.radius}`);
+      assert.ok(within(l.depth, ...depth), `${object} ${id} depth ${l.depth}`);
+    }
+    return s;
+  };
+  test('the ladder is long and narrow (rx 0.35 to 0.45 of ry) with one ridge lobe', () => {
+    for (const id of IDS200) {
+      const s = lobesOk(id, 'ladder', [1, 1], [0.12, 0.22], [0.3, 0.6]);
+      assert.ok(within(s.rx / s.ry, 0.35, 0.45), `${id} ${s.rx / s.ry}`);
+      assert.ok(within(s.ry, AXIS_MIN, AXIS_MAX));
+    }
+  });
+  test('the can is rounder (axes within 5%), has 2 or 3 lobes and is deeper', () => {
+    for (const id of IDS200) {
+      const s = lobesOk(id, 'can', [2, 3], [0.12, 0.22], [0.45, 0.75]);
+      assert.ok(within(s.rx / s.ry, 0.95, 1.05), `${id} ${s.rx / s.ry}`);
+      assert.ok(s.rx <= AXIS_MAX && s.ry <= AXIS_MAX && s.rx >= AXIS_MIN * 0.96 && s.ry >= AXIS_MIN * 0.96);
+    }
+  });
+  test('the extinguisher is round, 70% of the chair, has 1 or 2 lobes and is the deepest', () => {
+    for (const id of IDS200) {
+      const s = lobesOk(id, 'extinguisher', [1, 2], [0.12, 0.22], [0.6, 0.9]);
+      assert.equal(s.rx, s.ry);
+      assert.ok(within(s.rx, AXIS_MIN * 0.7, AXIS_MAX * 0.7));
+    }
+  });
+  test('the extinguisher\'s box is smaller than the chair\'s for the same id', () => {
+    for (const id of IDS200) {
+      const a = dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'extinguisher') }], { width: 1000, height: 1000 })[0]!;
+      const b = dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'chair') }], { width: 1000, height: 1000 })[0]!;
+      assert.ok(a.width < b.width && a.height < b.height && a.size < b.size, id);
+    }
+  });
+  test('the same id and object give the same dent', () => {
+    for (const o of ['can', 'ladder', 'extinguisher'] as const) assert.deepEqual(dentShape('x', o), dentShape('x', o));
   });
 });
