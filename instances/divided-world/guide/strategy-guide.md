@@ -92,7 +92,7 @@ A **reveal** is something your character posts, in a thread you pick, with a lin
 
 ### New characters
 
-A new character is active the moment you make it. There's no waiting for a settlement, and nothing announces it when you make it; its first public post puts it among the new faces in the next Roster Report.
+A new character is active the moment you make it. There's no waiting for a settlement, and nothing announces it when you make it; the first thing it does in public puts it among the new faces in the next Roster Report.
 
 ## Cards
 
