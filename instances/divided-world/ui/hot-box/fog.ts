@@ -173,18 +173,18 @@ export function makeField(width: number, height: number, cell: number = FOG.cell
  * A field with no fog in it (density 0 in the cells it stores), its box disturbed: a fog that is made, not one that is thinned. Steel Chair's puff starts from it
  * (docs/plans/2026-11-23-steel-chair-objects-design.md, section 4) and fills it from the spout; a step with `whole` keeps the box stepped while it fills. Only the rows of `view`
  * (px of the box; all of it when not given) are stored, as a step with a `view` stores only those, so a tall post costs what is drawn; a row outside them is resting fog, as ever, and
- * is stepped, and driven to the model, when its tile is held. `from` gives each stored cell its density (at the cell's center, px) instead of none, for a field made again in the middle of a puff.
+ * is stepped, and driven to the model, when its tile is held. `seed` gives each stored cell its density (at the cell's center, px) instead of none, for a field made again in the middle of a puff.
  */
-export function emptyField(width: number, height: number, cell: number = FOG.cell, o: { readonly view?: { readonly top: number; readonly bottom: number }; readonly from?: (x: number, y: number) => number } = {}): FogField {
+export function emptyField(width: number, height: number, cell: number = FOG.cell, o: { readonly view?: { readonly top: number; readonly bottom: number }; readonly seed?: (x: number, y: number) => number } = {}): FogField {
   const field = makeField(width, height, cell);
   const rows = o.view ? rowsOf(field, o.view.top, o.view.bottom) : { y0: 0, y1: field.gh };
   const y0 = Math.max(1, rows.y0), y1 = Math.min(field.gh - 1, rows.y1);
   if (y1 <= y0 || field.gw - 1 <= 1) return field;
   field.box = { x0: 1, x1: field.gw - 1, y0, y1 };
-  if (o.from) field.seed = o.from;
+  if (o.seed) field.seed = o.seed;
   const s = storeFor(field, y0 - 1, y1 + 1);
   s.D.fill(0);
-  if (o.from) for (let y = 0; y < s.rows; y++) for (let x = 0; x < field.gw; x++) s.D[y * field.gw + x] = o.from((x - PAD + 0.5) * cell, (y + s.y0 - PAD + 0.5) * cell);
+  if (o.seed) for (let y = 0; y < s.rows; y++) for (let x = 0; x < field.gw; x++) s.D[y * field.gw + x] = o.seed((x - PAD + 0.5) * cell, (y + s.y0 - PAD + 0.5) * cell);
   return field;
 }
 

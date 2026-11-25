@@ -29,7 +29,7 @@ export const GONE_PX = 80;
 export interface Point { x: number; y: number }
 export interface LidArc {
   /** Where the lid starts, and the box's size (the content area's px): `done` is judged against it. */
-  readonly from: Point;
+  readonly start: Point;
   readonly box: { readonly width: number; readonly height: number };
   /** Launch velocity, px/s, y down. */
   readonly vx: number;
@@ -59,13 +59,13 @@ export function lidArcOf(rand: () => number, hitAt: Point, box: { width: number;
   /* Never out through the top: a hit too near it for the full speed is launched only as fast as keeps the peak inside. */
   speed = Math.min(speed, Math.sqrt(2 * GRAVITY * Math.max(0, hitAt.y)) / Math.cos(angle));
   const dir = hitAt.x < box.width / 2 ? -1 : 1;
-  return { from: { x: hitAt.x, y: hitAt.y }, box: { width: box.width, height: box.height }, vx: dir * Math.sin(angle) * speed, vy: -Math.cos(angle) * speed, spinX, spinY };
+  return { start: { x: hitAt.x, y: hitAt.y }, box: { width: box.width, height: box.height }, vx: dir * Math.sin(angle) * speed, vy: -Math.cos(angle) * speed, spinX, spinY };
 }
 
 /** The lid `t` seconds after the hit (gravity is the body's). `done` once it is GONE_PX past the box's border, or LID_SECONDS have passed; it fades by time only, over the last fifth of that. */
 export function lidAt(arc: LidArc, t: number): LidState {
-  const x = arc.from.x + arc.vx * t;
-  const y = arc.from.y + arc.vy * t + 0.5 * GRAVITY * t * t;
+  const x = arc.start.x + arc.vx * t;
+  const y = arc.start.y + arc.vy * t + 0.5 * GRAVITY * t * t;
   const past = Math.max(-x, x - arc.box.width, -y, y - arc.box.height);
   const done = past >= GONE_PX || t >= LID_SECONDS;
   const opacity = Math.min(1, Math.max(0, (LID_SECONDS - t) / (LID_SECONDS * 0.2)));

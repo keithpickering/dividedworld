@@ -288,7 +288,7 @@ describe('the page\'s ladder', () => {
     const again = vi.mocked(emptyField).mock.calls.at(-1);
     expect(again, 'a field was made again').toBeDefined();
     expect(again![2], 'at the new cell').toBe(5);
-    expect(again![3]!.from, 'seeded from the front').toBeTypeOf('function');
-    expect(again![3]!.from!(300, 200), 'whole inside it').toBe(1);
+    expect(again![3]!.seed, 'seeded from the front').toBeTypeOf('function');
+    expect(again![3]!.seed!(300, 200), 'whole inside it').toBe(1);
   });
 });

@@ -165,7 +165,7 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
     if (!p.field || p.field.width !== w || p.field.height !== h || p.field.cell !== rung.cell) {
       /* Made from the puff as it stands, so a field made again at a new rung (or a new size) is not empty in the middle of the puff. A field with no store is all that a direct rung needs. */
       const front = puffTarget(at, size, ms);
-      p.field = direct ? makeField(w, h, rung.cell) : emptyField(w, h, rung.cell, { from: front, view: stepRows(layerRef.current) ?? { top: draw.top, bottom: draw.top + draw.h } });
+      p.field = direct ? makeField(w, h, rung.cell) : emptyField(w, h, rung.cell, { seed: front, view: stepRows(layerRef.current) ?? { top: draw.top, bottom: draw.top + draw.h } });
     }
     const field = p.field, radius = holeRadius(w);
     if (draw.frame !== null && (draw.frame !== p.stamp || p.seen.has(draw.index))) {

@@ -452,13 +452,13 @@ test('an empty field stores only the rows it is given, and a field made again in
   const tall = emptyField(W, 20000, FOG.cell, { view: { top: 9000, bottom: 9600 } });
   assert.ok(tall.store && tall.store.rows < 200, `a tall post stores the rows it shows (${tall.store?.rows} of ${tall.gh})`);
   assert.equal(fogAt(tall, 100, 9300).d, 0, 'empty in its rows');
-  const seeded = emptyField(W, H, FOG.cell, { from: (x) => (x < W / 2 ? 1 : 0) });
+  const seeded = emptyField(W, H, FOG.cell, { seed: (x) => (x < W / 2 ? 1 : 0) });
   assert.ok(fogAt(seeded, 100, 100).d === 1 && fogAt(seeded, W - 100, 100).d === 0, 'seeded from the model');
 });
 
 test('a puff field\'s store moved to rows outside the front reads no fog there, and a Hot Box field\'s new rows are resting fog', () => {
   const front = (_x: number, y: number): number => (y < 1000 ? 1 : 0);
-  const puff = emptyField(W, 20000, FOG.cell, { view: { top: 100, bottom: 400 }, from: front });
+  const puff = emptyField(W, 20000, FOG.cell, { view: { top: 100, bottom: 400 }, seed: front });
   puff.seed = front;
   const clear = { clearings: [], trail: [], radius: R, whole: true, target: front };
   stepField(puff, FRAME, { ...clear, view: { top: 8000, bottom: 8300 } });
