@@ -139,10 +139,10 @@ begin
   p_sec := tests.post(a, t, 'Secret poll.', base + interval '7 minutes');
   pl := pg_temp.mkpoll(t, p_sec, a, secret => true, at => now() - interval '1 day');
   secret_ballot := pg_temp.vote(pl, b, '[1]', now() - interval '3 hours'); perform pg_temp.vote(pl, c, '[1]', now() - interval '2 hours');
+  insert into fx values ('sec_poll', pl), ('sec_ballot', secret_ballot);
   r := post_extras(array[p_sec]);
   perform pg_temp.expect(r -> 0 -> 'poll' -> 'counts' = '[0, 2, 0]'::jsonb and r -> 0 -> 'poll' -> 'secret' = 'true'::jsonb and r -> 0 -> 'poll' -> 'voters' = '2'::jsonb, 'the secret poll: ' || r::text);
   perform pg_temp.expect(r::text !~ b::text and r::text !~ c::text and r::text !~ ab::text and r::text !~ ac::text and r::text !~ secret_ballot::text and r::text !~ 'picks', 'a secret poll names a ballot character: ' || r::text);
-  -- the same through pool_read, whole
 
   -- plays: a live play with a saved state and a config, a sprung back, an unsprung back, a caught play
   p_play := tests.post(b, t, 'Played on.', base + interval '8 minutes');
@@ -199,6 +199,9 @@ begin
 
   -- pool_read carries the same on each post, and the rewound body
   r := pool_read(t, 'ex-boss', null, 200);
+  -- ... and, whole, names no one who only voted or reacted, no account, no ballot and no picks (the authors of its posts, a and b, are in it as authors)
+  perform pg_temp.expect(r::text !~ c::text and r::text !~ ab::text and r::text !~ ac::text and r::text !~ aa::text and r::text !~ 'picks'
+    and not exists (select 1 from acts x where x.kind = 'ballot' and x.thread = t and r::text ~ x.id::text), 'pool_read of the thread names a ballot, a voter or an account: ' || left(r::text, 2000));
   perform pg_temp.expect((select x ->> 'body' from jsonb_array_elements(r -> 'posts') x where x ->> 'act' = p_rw::text) = 'Second words.', 'pool_read shows the rewound body');
   perform pg_temp.expect((select x -> 'reactions' from jsonb_array_elements(r -> 'posts') x where x ->> 'act' = p_react::text) = '{"up": 3, "boo": 1}'::jsonb, 'pool_read carries reactions');
   perform pg_temp.expect((select (x -> 'poll' ->> 'voters')::integer from jsonb_array_elements(r -> 'posts') x where x ->> 'act' = p_open::text) = 3, 'pool_read carries the poll');
@@ -238,6 +241,13 @@ begin
   perform pg_temp.expect(o ->> 'kind' = 'poll' and (o -> 'post' ->> 'act')::uuid = p and o -> 'post' -> 'poll' ->> 'voters' = '1', 'a poll origin: ' || o::text);
   o := pg_temp.spun_origin(d, bl);
   perform pg_temp.expect(o ->> 'kind' = 'ballot' and (o -> 'post' ->> 'act')::uuid = p, 'a ballot origin: ' || o::text);
+  -- a spin of the secret poll: its post with its counts and no ballot's character anywhere; a secret ballot cannot be spun; a public ballot's place names its public character and the poll part none
+  o := pg_temp.spun_origin(d, pg_temp.f('sec_poll'));
+  perform pg_temp.expect(o ->> 'kind' = 'poll' and o -> 'post' -> 'poll' -> 'secret' = 'true'::jsonb and o -> 'post' -> 'poll' -> 'voters' = '2'
+    and o::text !~ b::text and o::text !~ c::text and o::text !~ pg_temp.f('ab')::text and o::text !~ pg_temp.f('sec_ballot')::text and o::text !~ 'picks', 'the origin of a secret poll names a ballot: ' || o::text);
+  perform pg_temp.expect(pg_temp.coded(format('select spin_written(%L, %L, ''x'', ''y'', false, array[]::uuid[], null)', pg_temp.f('sec_ballot'), d)) is not null, 'a secret ballot was spun');
+  o := pg_temp.spun_origin(d, bl);
+  perform pg_temp.expect(o -> 'place' -> 'character' ->> 'id' = b::text and (o -> 'post' -> 'poll')::text !~ b::text and (o -> 'post' -> 'poll')::text !~ c::text and (o -> 'post' -> 'poll')::text !~ 'picks', 'the poll of a spun ballot: ' || (o -> 'post' -> 'poll')::text);
   -- a play on a post: a moment; the plays are those as they stood, and a play landed after the spin is absent
   p := tests.post(b, t, 'Played on.', base + interval '3 minutes');
   first_play := tests.act(a, 'card', t, jsonb_build_object('card', 'exsplat', 'reach', 'post'), p, base + interval '4 minutes');
@@ -260,7 +270,13 @@ begin
   th := pg_temp.spun(d, reach_play, p);
   later := tests.act(a, 'card', t, jsonb_build_object('card', 'exblot', 'reach', 'post'), p, base + interval '11 minutes');
   o := pg_temp.origin_of(th);
-  perform pg_temp.expect(o ->> 'kind' = 'card' and o -> 'moment' = 'true'::jsonb and o -> 'post' is not null and (o -> 'post' ->> 'act')::uuid is distinct from reach_play, 'a play on a character: ' || o::text);
+  perform pg_temp.expect(o ->> 'kind' = 'card' and o -> 'moment' = 'true'::jsonb and o -> 'post' is not null and (o -> 'post' ->> 'act')::uuid = p, 'a play on a character: ' || o::text);
+  perform pg_temp.expect((select array_agg((x ->> 'play')::uuid) from jsonb_array_elements(o -> 'post' -> 'plays') x) = array[first_play] and o::text !~ later::text,
+    'the spin_moment branch: the plays are the layers recorded at the spin and not the play landed after it: ' || (o -> 'post' -> 'plays')::text);
+  -- a play on a character spun with no post pressed: the post it was cast from, with the play's own moment (play_moment's), the character play not among the post's plays
+  th := pg_temp.spun(d, reach_play);
+  o := pg_temp.origin_of(th);
+  perform pg_temp.expect((o -> 'post' ->> 'act')::uuid = p and o -> 'moment' = 'true'::jsonb and (select array_agg((x ->> 'play')::uuid) from jsonb_array_elements(o -> 'post' -> 'plays') x) = array[first_play], 'a play on a character, no post pressed: ' || o::text);
   -- a play on a board: no post
   bplay := tests.act(a, 'card', board_thread, jsonb_build_object('card', 'exsweet', 'reach', 'board', 'board', general), null);
   insert into play_reach (play, reach, board, ends_at) values (bplay, 'board', general, now() + interval '1 day');
@@ -349,13 +365,20 @@ end $$;
 -- may read the thread, never the table); the owner files it separately, so it is not this file's subject.
 create function pg_temp.ex_thread(n integer, bal integer, title text) returns uuid language plpgsql as $$
 declare
-  t uuid := tests.thread(title);
-  boss uuid := (select id from characters where staff = 'ex-boss');
+  ot uuid := tests.thread(title || ' origin');
   ch uuid[] := array(select id from characters where name in ('Ex Ann', 'Ex Bob', 'Ex Cat', 'Ex Dee', 'Ex Eve') order by name);
   base timestamptz := now() - interval '2 days';
-  p uuid; pl uuid; i integer; j integer; k text; who uuid;
+  op uuid; first_play uuid; origin_play uuid; made jsonb; t uuid;
+  p uuid; pl uuid; i integer; j integer; who uuid;
   kinds text[] := array['exsplat', 'exsweet', 'exblot', 'exwink'];
 begin
+  -- the thread is spun from a play on a post of another thread, so that pool_read reads a moment origin (a post with a poll and plays) as well
+  op := tests.act(ch[1], 'post', ot, jsonb_build_object('body', 'The origin post'), null, base - interval '1 hour');
+  perform pg_temp.mkpoll(ot, op, ch[1], at => base - interval '59 minutes');
+  first_play := tests.act(ch[2], 'card', ot, jsonb_build_object('card', 'exsplat', 'reach', 'post'), op, base - interval '58 minutes');
+  origin_play := tests.act(ch[3], 'card', ot, jsonb_build_object('card', 'exblot', 'reach', 'post'), op, base - interval '57 minutes');
+  made := spin_written(origin_play, ch[4], title, 'Discuss.', false, array[]::uuid[], null);
+  t := (made -> 'thread' ->> 'id')::uuid;
   for i in 1..n loop
     who := ch[1 + i % 5];
     p := tests.act(who, 'post', t, jsonb_build_object('body', 'Bound post ' || i), null, base + i * interval '1 second');
@@ -366,6 +389,14 @@ begin
     for j in 1..8 loop
       perform tests.act(ch[1 + (i + j) % 5], 'card', t, jsonb_build_object('card', kinds[1 + j % 4], 'reach', 'post'), p, base + i * interval '1 second' + j * interval '2 milliseconds');
     end loop;
+    -- every arm of extras_ids on the newest 200 posts: a removed poll on every fifth, a back that sprang into a lockout, and a live rewind (the post edited twice, the card naming the point between)
+    if i > n - 200 then
+      if i % 5 = 0 then perform tests.act(who, 'poll', t, '{"removed": true}', p, base + i * interval '1 second' + interval '500 milliseconds'); end if;
+      perform pg_temp.back(who, (select c.owner from characters c where c.id = who), t, p, 1, base + i * interval '1 second' + interval '600 milliseconds', true, true);
+      perform tests.act(who, 'edit', t, '{"body": "Edited once"}', p, base + i * interval '1 second' + interval '700 milliseconds');
+      perform tests.act(who, 'edit', t, '{"body": "Edited twice"}', p, base + i * interval '1 second' + interval '800 milliseconds');
+      perform tests.act(ch[1 + (i + 1) % 5], 'card', t, jsonb_build_object('card', 'exrewind', 'reach', 'post', 'ends', now() + interval '1 day', 'rewind_at', base + i * interval '1 second' + interval '750 milliseconds'), p, base + i * interval '1 second' + interval '900 milliseconds');
+    end if;
   end loop;
   return t;
 end $$;
@@ -377,25 +408,31 @@ begin
   insert into fx values ('ballots', pg_temp.ex_thread(200, 40, 'Ex Bound 200 ballots'));
 end $$;
 
-create function pg_temp.measure(label text, bound bigint) returns void language plpgsql as $$
+-- `per` is the bound on post_extras for each post it is asked about (a post's polls, plays, edits and tallies are read by key, so the cost is a number of rows for each), `bound` on pool_read, which asks for about 70 posts;
+-- neither may differ between a thread of 200 posts, one of 400 and one whose polls hold 40 ballots each, by more than 20 rows.
+create function pg_temp.measure(label text, bound bigint, per bigint) returns void language plpgsql as $$
 declare
-  c0 bigint; cs bigint; cb bigint; cv bigint; es bigint; eb bigint; ev bigint; rs jsonb; rb jsonb; rv jsonb;
+  c0 bigint; cs bigint; cb bigint; cv bigint; e1 bigint[] := '{}'; e2 bigint[] := '{}'; rs jsonb; rb jsonb; rv jsonb; k text; ids uuid[]; r jsonb;
 begin
   perform set_config('track_functions', 'all', true);
   c0 := pg_temp.acts_read(); rs := pool_read(pg_temp.f('small'), 'ex-boss', null, 60); cs := pg_temp.acts_read() - c0;
   c0 := pg_temp.acts_read(); rb := pool_read(pg_temp.f('big'), 'ex-boss', null, 60); cb := pg_temp.acts_read() - c0;
   c0 := pg_temp.acts_read(); rv := pool_read(pg_temp.f('ballots'), 'ex-boss', null, 60); cv := pg_temp.acts_read() - c0;
-  c0 := pg_temp.acts_read(); perform post_extras(array(select (x ->> 'act')::uuid from jsonb_array_elements(rs -> 'posts') x limit 100)); es := pg_temp.acts_read() - c0;
-  c0 := pg_temp.acts_read(); perform post_extras(array(select (x ->> 'act')::uuid from jsonb_array_elements(rb -> 'posts') x limit 100)); eb := pg_temp.acts_read() - c0;
-  c0 := pg_temp.acts_read(); perform post_extras(array(select (x ->> 'act')::uuid from jsonb_array_elements(rv -> 'posts') x limit 100)); ev := pg_temp.acts_read() - c0;
+  foreach k in array array['small', 'big', 'ballots'] loop
+    ids := array(select a.id from acts a where a.thread = pg_temp.f(k) and a.kind = 'post' order by a.seq desc limit 200);
+    c0 := pg_temp.acts_read(); r := post_extras(ids[1:100]); e1 := e1 || (pg_temp.acts_read() - c0);
+    c0 := pg_temp.acts_read(); perform post_extras(ids); e2 := e2 || (pg_temp.acts_read() - c0);
+  end loop;
   perform set_config('track_functions', 'none', true);
   if jsonb_array_length(rb -> 'posts') < 60 or jsonb_array_length(rs -> 'posts') < 60 then raise exception '[%] the reads are short: % and % posts', label, jsonb_array_length(rs -> 'posts'), jsonb_array_length(rb -> 'posts'); end if;
-  if (select count(*) from jsonb_array_elements(rb -> 'posts') x where jsonb_array_length(x -> 'plays') = 8 and x -> 'poll' <> 'null'::jsonb) < 50 then raise exception '[%] the posts do not carry a poll and eight plays', label; end if;
+  if (select count(*) from jsonb_array_elements(rb -> 'posts') x where jsonb_array_length(x -> 'plays') >= 10 and x -> 'poll' <> 'null'::jsonb and x -> 'rewoundTo' <> 'null'::jsonb) < 40 then raise exception '[%] the posts do not carry a poll, eight plays, a back and a rewind: % with plays >= 10, % with a poll, % rewound; one post: %', label, (select count(*) from jsonb_array_elements(rb -> 'posts') x where jsonb_array_length(x -> 'plays') >= 10), (select count(*) from jsonb_array_elements(rb -> 'posts') x where x -> 'poll' <> 'null'::jsonb), (select count(*) from jsonb_array_elements(rb -> 'posts') x where x -> 'rewoundTo' <> 'null'::jsonb), rb -> 'posts' -> 30; end if;
+  if (select count(*) from jsonb_array_elements(r -> 0 -> 'plays') x where x -> 'card' = 'null'::jsonb) is distinct from 1 or r -> 0 -> 'rewoundTo' = 'null'::jsonb then raise exception '[%] the measured posts hold no sprung back or rewind', label; end if;
+  if rb -> 'origin' -> 'post' is null or jsonb_array_length(rb -> 'origin' -> 'post' -> 'plays') <> 2 or rb -> 'origin' -> 'post' -> 'poll' = 'null'::jsonb then raise exception '[%] the origin is no moment of a post with a poll: %', label, rb -> 'origin'; end if;
   if cb > cs + 20 or cv > cs + 20 then raise exception '[%] pool_read reads % rows of acts (400 posts), % (200 posts), % (40 ballots a poll): it grows with the thread or the ballots', label, cb, cs, cv; end if;
-  if eb > es + 20 or ev > es + 20 then raise exception '[%] post_extras reads % rows of acts (400 posts), % (200 posts), % (40 ballots a poll): it grows', label, eb, es, ev; end if;
+  if e1[2] > e1[1] + 20 or e1[3] > e1[1] + 20 or e2[2] > e2[1] + 20 or e2[3] > e2[1] + 20 then raise exception '[%] post_extras reads % / % / % rows of acts (200 / 400 posts / 40 ballots) for 100 posts and % / % / % for 200: it grows', label, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3]; end if;
   if cb > bound or cv > bound then raise exception '[%] pool_read reads % rows of acts: more than %', label, greatest(cb, cv), bound; end if;
-  if eb > bound or ev > bound then raise exception '[%] post_extras reads % rows of acts for 200 posts: more than %', label, greatest(eb, ev), bound; end if;
-  raise notice '[%] rows of acts, pool_read: % (200 posts), % (400), % (40 ballots); post_extras: %, %, %', label, cs, cb, cv, es, eb, ev;
+  if greatest(e1[1], e1[2], e1[3]) > per * 100 or greatest(e2[1], e2[2], e2[3]) > per * 200 then raise exception '[%] post_extras reads more than % rows of acts for each post: % for 100 posts, % for 200', label, per, greatest(e1[1], e1[2], e1[3]), greatest(e2[1], e2[2], e2[3]); end if;
+  raise notice '[%] rows of acts, pool_read: % (200 posts), % (400), % (40 ballots); post_extras for 100 posts: %, %, % and for 200: %, %, %', label, cs, cb, cv, e1[1], e1[2], e1[3], e2[1], e2[2], e2[3];
 end $$;
 
 do $$
@@ -404,9 +441,9 @@ begin
   update pg_class set relpages = 0, reltuples = 0 where oid = 'acts'::regclass;
   if (select reltuples from pg_class where oid = 'acts'::regclass) is distinct from 0 then raise exception 'the statistics were not set'; end if;
 end $$;
-select pg_temp.measure('empty statistics', 2500);
+select pg_temp.measure('empty statistics', 4000, 45);
 set local plan_cache_mode = force_generic_plan;
-select pg_temp.measure('empty statistics, generic plans', 2500);
+select pg_temp.measure('empty statistics, generic plans', 4000, 45);
 reset plan_cache_mode;
 
 -- ---- 4. the bound can fail: the plays of 200 posts read by a join over `acts`, as a first draft would ----
@@ -422,4 +459,4 @@ begin
 end $$;
 
 analyze acts;
-select pg_temp.measure('true statistics', 2500);
+select pg_temp.measure('true statistics', 4000, 45);

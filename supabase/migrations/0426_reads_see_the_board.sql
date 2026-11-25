@@ -16,7 +16,7 @@
 --       rewoundTo  null, or the time of the version the post shows under a live rewind card (post_rewind_plays' newest played); then `body` is that version's body as acts_public shows it, and only then is there a `body` key.
 --   pool_read                  its signature and every key it returned, and through post_extras each post gains poll, plays, reactions and rewoundTo (and a rewound body); and a top-level `origin`: null for a thread that was not spun, else
 --       { kind, place, at, spunAt, moment, post }: `kind` the origin Act's kind, `place` thread_open.origin_place, `at` the origin Act's time, `spunAt` the thread's, `moment` true where the origin is a play (card, set, spring), `post` the post the origin
---       stands on, shaped as a pool_read post plus `thread` and `title` (for an Updates post the update's own headline), with its poll, plays, reactions and rewoundTo; null where the board shows none (hidden, no public name, a play beyond a post, an appeal of a move).
+--       stands on, shaped as a pool_read post plus `thread` and `title` (for an Updates post the update's own headline), with its poll, plays, reactions and rewoundTo; null where the board shows none (hidden, no public name, a play on a thread or a board, an appeal of a move). A play on a character stands on the post it was spun at, else the post it was cast from.
 --       For a moment the post's `plays` are the plays as they stood then and not today's, read as the page's ORIGIN box reads them (origin_moment, 0372): a play on a post is play_moment's (the other layers recorded when it landed, with their saved states, and the play
 --       itself), a play on a character spun at a post is spin_moment's (the layers recorded at the spin); a play with no recorded moment gives none; their `text` is the latest words the play made and their `covered` is null (a surface's cover as it stood then is not kept). A back is never one of them, and the body is the post's own words, not a rewound version.
 --       The plan said spin_moment of the opener for every play; spin_moment refuses a spin that names no post, which is every spin of a play on a post, so the page's own choice (origin_moment) is followed.
@@ -28,7 +28,7 @@
 -- are owned by the digest role; post_extras and pool_read are the service role's alone, the rest nobody's.
 --
 -- The guarantee about reads (0425's, kept): no read of `acts` is larger than its key says, on any plan the planner might take. A post's latest poll is one ordered probe of acts_polls (target, created_at, id) limited to one row and its close one probe of the unique
--- acts_one_poll_close, each a lateral subquery run once per post given, under the settings 0425's helpers run under (no sequential scan, no bitmap scan, no sort); every Act is read by its id through acts_public in one statement (`id = any (array)`: a probe of
+-- acts_one_poll_close, each a lateral subquery run once per post given, under the settings 0425's helpers run under (no sequential scan, no bitmap scan, no sort, no incremental sort), which every function here carries (a callee inherits them from its caller where it sets none of its own); every Act is read by its id through acts_public in one statement (`id = any (array)`: a probe of
 -- the primary key for each element); poll_counts and the reaction tallies are read for one poll or post at a time (a lateral probe by key), poll_counts reading poll_latest_ballots, so its cost is a poll's voters and never its ballots; the rewound version is
 -- one probe of acts_edits; the origin is the thread's row (thread_list by id), the origin Act by id, and the post by id or by (thread, seq) through 0425's own helpers. The plays are read from play_post and post_kinds (never `acts`) and joined to effect_state by key.
 -- supabase/tests/0426-reads-see-the-board.sql counts the rows of `acts` a read of threads with a poll and eight plays on every post reads, under empty statistics, generic plans and true statistics, for 100 and 400 posts and for 6 and 60 ballots on each poll.
@@ -83,7 +83,8 @@ grant execute on function extras_ids(uuid[]) to kayfabb_digest;
 -- The layers recorded for a play's moment (`via` = 'play', the play's id: 0072) or a spin's (`via` = 'spin', the spin's id: 0351), with the state each had saved then. Ids and states; the primary keys lead.
 -- For a play's moment the play itself comes first (its own moment lists it apart from the others, with no state). `text` is the latest words a writing layer has made.
 create function extras_layers(via text, id uuid) returns table (layer uuid, state jsonb, text text)
-language sql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+language sql stable security definer set search_path = public, pg_temp set jit = off
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
   select l.layer, l.state, (select ct.text from card_texts ct where ct.play = l.layer and ct.text is not null order by ct.created_at desc, ct.id desc limit 1)
   from (
     select extras_layers.id as layer, null::jsonb as state where extras_layers.via = 'play'
@@ -99,7 +100,8 @@ grant execute on function spin_answer_place(uuid) to kayfabb_digest;
 
 -- ---------------------------------------------------------------------------------------------------- post_extras ----
 create function post_extras(posts uuid[]) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
   ids uuid[];
 begin
@@ -151,7 +153,8 @@ end $$;
 -- ---------------------------------------------------------------------------------------------------- pool_read_origin ----
 -- The thread's origin without its extras: { kind, place, at, spunAt, moment, post, momentPlays }, null for a thread that was not spun. `post` has the pool_read post's keys plus `thread` and `title`; pool_read adds the extras and takes `momentPlays` out.
 create function pool_read_origin(in_thread uuid) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
   t record; o record; pp record; who record;
   place jsonb; on_kind text; pid uuid; via text; via_id uuid;
@@ -171,10 +174,13 @@ begin
       when o.kind = 'ballot' then (select b.target_act_id from acts_public b where b.id = o.target_act_id)
       when o.kind in ('card', 'set', 'spring') then case when on_kind in ('post', 'update') then o.target_act_id end
     end;
+    -- the post by its place: an ask's or an answer's line (`on`), and for a play on a character the post it was pressed at (`at`) or else cast from (`from`), as the ORIGIN box's `origin.at` names them
     if o.kind in ('report', 'report_verdict', 'appeal', 'appeal_ruling') then
       lthr := (place #>> '{on,thread}')::uuid; lseq := (place #>> '{on,seq}')::integer;
-      if lthr is not null and lseq is not null then pid := (pool_seq_ids(lthr, lseq, lseq))[1]; end if;
+    elsif o.kind in ('card', 'set', 'spring') and on_kind = 'character' then
+      lthr := coalesce(place #>> '{at,thread}', place #>> '{from,thread}')::uuid; lseq := coalesce(place #>> '{at,seq}', place #>> '{from,seq}')::integer;
     end if;
+    if lthr is not null and lseq is not null then pid := (pool_seq_ids(lthr, lseq, lseq))[1]; end if;
   end if;
   if pid is not null then
     select * into pp from pool_probe(pid);
@@ -194,8 +200,8 @@ begin
     end if;
   end if;
   if moment and cand is not null then
-    if o.kind = 'card' and on_kind = 'post' then via := 'play'; via_id := o.id;
-    elsif on_kind = 'character' and jsonb_typeof(place -> 'at') = 'object' and t.first_act is not null then via := 'spin'; via_id := t.first_act; end if;
+    if on_kind = 'character' and jsonb_typeof(place -> 'at') = 'object' and t.first_act is not null then via := 'spin'; via_id := t.first_act;
+    elsif o.kind = 'card' and on_kind in ('post', 'character') then via := 'play'; via_id := o.id; end if;
     mplays := '[]'::jsonb;
     if via is not null then
       mplays := coalesce((
@@ -203,8 +209,12 @@ begin
           select a.id, a.created_at,
                  jsonb_build_object('play', a.id, 'card', a.payload ->> 'card', 'at', a.created_at, 'by', c.name, 'config', a.payload -> 'config', 'state', l.state, 'text', l.text, 'covered', null::double precision) as j
           from extras_layers(via, via_id) l
-          join acts_public a on a.id = l.layer and a.kind = 'card' and not (a.payload ? 'caught') and a.untaken is not true
+          -- A layer recorded at the spin stays in its moment whatever became of it since (reversed by an admin, refunded, ended by its time): the ORIGIN box lists the recorded layers as they stood (play_moment, spin_moment) and draws a later end only
+          -- for a card_end made at or before the moment, which the layers' own rows already left out. Only a play that never landed (caught) is left out.
+          -- Each layer is one probe by id: a lateral subquery behind `offset 0`, never a join of the view to the layers (a planner that believes the layers many hashes every card of `acts_public`: 14,000 rows in the test's thread).
+          cross join lateral (select v.id, v.created_at, v.payload, v."character" from acts_public v where v.id = l.layer and v.kind = 'card' and not (v.payload ? 'caught') offset 0) a
           left join lateral (select cp.name from characters_public cp where cp.id = a."character") c on true
+          where l.layer <> via_id or on_kind = 'post'
         ) m), '[]'::jsonb);
     end if;
   end if;
@@ -215,7 +225,8 @@ end $$;
 -- 0425's pool_read (same signature, same keys), each post and the origin's post given their extras. post_extras is asked 200 posts at a time.
 drop function pool_read(uuid, text, uuid[], integer);
 create function pool_read(in_thread uuid, staff_key text, named uuid[], "window" integer) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off as $$
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
 declare
   rows jsonb; ids uuid[]; org jsonb; oid uuid; ex jsonb := '[]'::jsonb; i integer; ex_by jsonb; merged jsonb; opost jsonb; mp jsonb;
 begin
