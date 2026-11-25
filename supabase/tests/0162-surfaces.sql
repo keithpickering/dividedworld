@@ -122,6 +122,7 @@ begin
     select 1 from surfaces where play = %1$L for update;
     do $x$ begin
       for i in 1..400 loop
+        perform pg_stat_clear_snapshot();
         exit when exists (select 1 from pg_stat_activity where query like '%%sf-order-a%%' and wait_event_type = 'Lock' and pid <> pg_backend_pid());
         perform pg_sleep(0.025);
       end loop;
@@ -130,7 +131,8 @@ begin
     commit;
   $sql$, pl, cal, c, payload, (repeat('0', 1000) || repeat('1', 3000) || repeat('0', 6000))));
   perform pg_sleep(0.3);
-  perform extensions.dblink_send_query('ord_a', format($sql$select draw_on_surface(%L, %L, %L, %L, %L, 9000) /* sf-order-a */$sql$,
+  -- The marker leads the query: pg_stat_activity keeps only the first track_activity_query_size bytes (1024), and a draw's payload would cut a trailing one off.
+  perform extensions.dblink_send_query('ord_a', format($sql$/* sf-order-a */ select draw_on_surface(%L, %L, %L, %L, %L, 9000)$sql$,
     bob, b, pl, payload, (repeat('1', 3000) || repeat('0', 7000))));
   begin loop select count(*) into n from extensions.dblink_get_result('ord_b') as r(x text); exit when n = 0; end loop;
   exception when others then said_b := sqlerrm; end;
@@ -176,6 +178,7 @@ begin
     select 1 from surfaces where play = %1$L for update;
     do $x$ begin
       for i in 1..400 loop
+        perform pg_stat_clear_snapshot();
         exit when exists (select 1 from pg_stat_activity where query like '%%sf-end-a%%' and wait_event_type = 'Lock' and pid <> pg_backend_pid());
         perform pg_sleep(0.025);
       end loop;
@@ -187,7 +190,7 @@ begin
     commit;
   $sql$, pl, ann));
   perform pg_sleep(0.3);
-  perform extensions.dblink_send_query('end_a', format($sql$select draw_on_surface(%L, %L, %L, %L, %L, 4000) /* sf-end-a */$sql$, bob, b, pl, payload, (repeat('1', 100) || repeat('0', 9900))));
+  perform extensions.dblink_send_query('end_a', format($sql$/* sf-end-a */ select draw_on_surface(%L, %L, %L, %L, %L, 4000)$sql$, bob, b, pl, payload, (repeat('1', 100) || repeat('0', 9900))));
   begin loop select count(*) into n from extensions.dblink_get_result('end_b') as r(x text); exit when n = 0; end loop;
   exception when others then said_b := sqlerrm; end;
   begin loop select count(*) into n from extensions.dblink_get_result('end_a') as r(x text); exit when n = 0; end loop;

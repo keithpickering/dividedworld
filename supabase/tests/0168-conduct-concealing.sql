@@ -128,7 +128,7 @@ declare
   adm uuid := gen_random_uuid(); wr uuid := gen_random_uuid();
   ch uuid := gen_random_uuid(); th uuid := gen_random_uuid();
   p1 uuid := gen_random_uuid(); p2 uuid := gen_random_uuid(); s uuid := gen_random_uuid();
-  layer_text text; shown text; said text; waited integer := 0; got bigint;
+  layer_text text; shown text; said text; waited integer := 0; max_waits constant integer := 600; got bigint;
   svc text := $c$do $d$ begin perform set_config('request.jwt.claims', '{"role": "service_role"}', true); perform set_config('role', 'service_role', true); end $d$ $c$;
 begin
   perform tests.commit(format($sql$
@@ -172,8 +172,8 @@ begin
       perform pg_stat_clear_snapshot();
       exit when exists (select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid());
       waited := waited + 1;
-      -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS): the pool runs several files at once, so a parked session can take seconds to show on a loaded runner. The loop leaves the moment the wait shows.
-      if waited > 600 then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
+      -- Gives up at 30 s (600 looks of 50 ms), past the 20 s lock wait the racer sets for itself: the pool runs several files at once, so a parked session can take seconds to show on a loaded runner. The loop leaves the moment the wait shows.
+      if waited > max_waits then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
       exit when extensions.dblink_is_busy('job_b') = 0;
       perform pg_sleep(0.05);
     end loop;

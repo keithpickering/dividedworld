@@ -42,8 +42,8 @@ begin
 end $$;
 
 -- What a connection that has been sent a query is waiting on, as pg_stat_activity says: polled until it shows a lock wait (the kind and the event: `Lock:advisory` for a key, `Lock:transactionid` for a
--- row), bounded at `secs` (30 s by default, the lock_timeout: the pool runs several files at once, so a parked session can take seconds to show on a loaded runner; it returns the moment the wait shows); null when it never waited, which is what a writer with no key does.
-create function pg_temp.wait_lock(like_query text, secs numeric default 30) returns text language plpgsql as $$
+-- row), bounded at `secs` (10 s by default; a caller that asserts a wait passes 30, the lock_timeout, for a loaded runner; it returns the moment the wait shows); null when it never waited, which is what a writer with no key does.
+create function pg_temp.wait_lock(like_query text, secs numeric default 10) returns text language plpgsql as $$
 declare
   until_at timestamptz := clock_timestamp() + make_interval(secs => secs);
   seen text;
@@ -280,7 +280,7 @@ begin
   perform pg_temp.expect((select count(*) from extensions.dblink('tick', $q$select 1 from queued_moves where kind = 'mergeBoard' and landed_act is not null$q$) as x(a int)) = 2, 'the tick did not land the second merge');
   perform extensions.dblink_exec('admin', 'begin');
   perform extensions.dblink_send_query('admin', format($q$select end_move(%L, 'reversed', 'admin')::text$q$, move));
-  waited := pg_temp.wait_lock('%end_move%reversed%');
+  waited := pg_temp.wait_lock('%end_move%reversed%', 30);
   raise notice 'the reversal, while the merge was open, was waiting on %', waited;
   perform extensions.dblink_exec('tick', 'commit');
   select string_agg(r, '') into ended from extensions.dblink_get_result('admin') as x(r text);
@@ -307,7 +307,7 @@ begin
   perform extensions.dblink_exec('first', 'begin');
   perform * from extensions.dblink('first', $q$select rebuild_thread_places(array['7ace0000-0190-4000-8000-000000000a01']::uuid[])::text$q$) as x(r text);
   perform extensions.dblink_send_query('second', $q$select rebuild_thread_places(array['7ace0000-0190-4000-8000-000000000b01']::uuid[])::text$q$);
-  waited := pg_temp.wait_lock('%rebuild_thread_places%b01%');
+  waited := pg_temp.wait_lock('%rebuild_thread_places%b01%', 30);
   perform extensions.dblink_exec('first', 'commit');
   perform * from extensions.dblink_get_result('second') as x(r text);
   perform pg_temp.drain('second');
@@ -358,11 +358,11 @@ begin
   perform extensions.dblink_exec('tick', 'begin');
   perform extensions.dblink_send_query('tick', 'select system_tick()::text');
   -- The tick has landed the move that is not lasting (its Act holds the thread's row) and waits at the gate.
-  waited_tick := pg_temp.wait_lock('%system_tick()%');
+  waited_tick := pg_temp.wait_lock('%system_tick()%', 30);
   perform pg_temp.expect(waited_tick = 'Lock:advisory', 'the tick did not stop at the gate: ' || coalesce(waited_tick, 'it did not wait'));
   perform extensions.dblink_exec('admin', 'begin');
   perform extensions.dblink_send_query('admin', format($q$select end_move(%L, 'reversed', 'admin')::text$q$, move));
-  waited_admin := pg_temp.wait_lock('%end_move%reversed%');
+  waited_admin := pg_temp.wait_lock('%end_move%reversed%', 30);
   raise notice 'the tick waited on %, the reversal, with the tick holding the thread, on %', waited_tick, waited_admin;
   -- The gate opens. The tick goes on to the merge.
   perform extensions.dblink_exec('gate', 'commit');
@@ -415,7 +415,7 @@ begin
   perform extensions.dblink_exec('replier', $q$insert into acts (character, kind, thread, payload) values ('7ace0000-0190-4000-8000-0000000000b1', 'post', '7ace0000-0190-4000-8000-000000000f01', '{"body": "Il late reply"}')$q$);
   perform extensions.dblink_send_query('merger', $q$select rebuild_thread_places(array['7ace0000-0190-4000-8000-000000000f01', '7ace0000-0190-4000-8000-000000000f02']::uuid[])::text$q$);
   -- The merger waits on the reply's row (the thread's): polled, not slept.
-  perform pg_temp.expect(pg_temp.wait_lock('%rebuild_thread_places%f01%') is not null, 'the rebuild did not wait on the reply that holds its thread');
+  perform pg_temp.expect(pg_temp.wait_lock('%rebuild_thread_places%f01%', 30) is not null, 'the rebuild did not wait on the reply that holds its thread');
   perform extensions.dblink_exec('replier', 'commit');
   perform * from extensions.dblink_get_result('merger') as x(r text);
   perform pg_temp.drain('merger');

@@ -90,7 +90,7 @@ begin
     select count(*) into waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%refund_card_write%' and query like '%tests.raced%';
     exit when waiting >= 1;
     tries := tries + 1;
-    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    -- Gives up at 30 s (1200 looks of 25 ms), past the 20 s lock wait the racer sets for itself in tests.raced: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
     if tries > max_tries then
       perform extensions.dblink_exec('holder', 'rollback');
       raise exception 'a refund of a play whose Act an admin holds never waited: the two do not exclude each other';
