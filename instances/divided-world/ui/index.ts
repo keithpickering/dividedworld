@@ -42,6 +42,18 @@ import { frontDoor } from './front-door.ts';
 import strategyGuide from '../guide/strategy-guide.md?raw';
 import { hints } from '../guide/hints.ts';
 import { conduct } from './conduct.ts';
+
+/* Restates instances/divided-world/LICENSE.md in the glass's plain words, in the guide's Markdown (engine/ui/guide/markdown.ts). */
+const licenseTerms = `Everything Divided World made for this site (its code, its words, its pictures, its prompts and its personas) is offered under either of these, whichever you pick:
+
+- the [GNU Affero General Public License](https://www.gnu.org/licenses/agpl-3.0.html), version 3 or any later version, or
+- [Creative Commons Attribution 4.0 International](https://creativecommons.org/licenses/by/4.0/).
+
+The credit Creative Commons asks for is "Divided World (https://dw.gripe)". That is the preferred line.
+
+Files made by others are under their own terms, listed below with their makers.
+
+The Snuckles image's license covers that image only and grants no rights in the Snuckles character, created by Keith Pickering, Elliot Wallis and Jacob Stacy. Nintendo's characters and marks that appear in the fan art are Nintendo's and are not licensed here.`;
 import { defaults } from '../settings.ts';
 
 /** The font files, as URLs the bundler gives them, by their path under this folder. */
@@ -271,4 +283,6 @@ export const instanceUi: InstanceUi = Object.freeze({
   guide: Object.freeze({ markdown: strategyGuide, hints }),
   /* The code of conduct (conduct.ts), version 1: the words are the instance's, the page at /conduct the glass's. */
   conduct,
+  /* Where the source can be had (AGPL section 13), the site's terms (restating LICENSE.md) and its credits, which /license lists. */
+  licensing: Object.freeze({ source: 'https://github.com/keithpickering/dividedworld', terms: licenseTerms, credits: Object.freeze([]) }),
 });
