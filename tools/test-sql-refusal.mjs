@@ -276,7 +276,10 @@ await prelaunch(Object.values(runs).flat());
     if (copyAt < 0) return 'no statement reads pg_db_role_setting';
     if (!/setdatabase\s*=\s*\(select oid from pg_database where datname = 'tmpl'\)/.test(text) || !/setrole\s*=\s*0/.test(text)) return 'the copy does not read the source\'s no-role settings';
     if (!/alter database %I set %s to %L/.test(text) || !/\\gexec/.test(text)) return 'the copy does not run one alter database per stored setting with \\gexec';
-    if (/\bjit\b/.test(text)) return 'the copy names a setting';
+    // The copy (from the statement that reads the catalog to the runner's own lines) names no setting: not `jit`, which 0441
+    // stores, and none the runner stores either, so a setting a later migration adds travels without a list to keep.
+    const copy = text.slice(text.lastIndexOf('select', copyAt), ownAt < 0 ? undefined : ownAt);
+    if (['jit', ...Object.keys(SESSION_BOUNDS), 'track_functions', 'kayfabb'].some((name) => new RegExp(`\\b${name.replace('.', '\\.')}\\b`).test(copy))) return 'the copy names a setting';
     if (ownAt < 0 || copyAt > ownAt) return 'the copy does not come before the runner\'s own settings';
     return null;
   };
@@ -287,6 +290,8 @@ await prelaunch(Object.values(runs).flat());
   check('poison: a clone made with no copy fails the check', copyProblem(`create database tmpl_3 template tmpl;\n${own}`) !== null);
   check('poison: a copy after the runner\'s own settings fails the check (scratch_url would name the template)', copyPart.length > 0 && copyProblem(`create database tmpl_3 template tmpl;\n${own}\n${copyPart}`) !== null);
   check('poison: a copy that names a setting fails the check', copyProblem(sql.replace('select format(', "select 'jit' || format(")) !== null);
+  check('poison: a copy that names a bound fails the check', copyProblem(sql.replace('and s.setrole = 0', "and s.setrole = 0 and split_part(c, '=', 1) <> 'statement_timeout'")) !== null);
+  check('poison: a copy that names a kayfabb setting fails the check', copyProblem(sql.replace('and s.setrole = 0', "and s.setrole = 0 and c not like 'kayfabb.client_rpcs=%'")) !== null);
   const parsed = typeof runner.parseAfterFile === 'function' ? runner.parseAfterFile(['drift|p1|why one', 'calls|thread_page|3', '', 'calls|board_page|0']) : null;
   check('the after-file call\'s one result is read as drift rows and function counts', JSON.stringify(parsed) === JSON.stringify({ drift: [{ name: 'p1', calls: 'why one' }], calls: [{ name: 'thread_page', calls: '3' }, { name: 'board_page', calls: '0' }] }), JSON.stringify(parsed));
   check('afterFileSql asks for both, in one call', /play_post_drift\(\)/.test(runner.afterFileSql ?? '') && /pg_stat_user_functions/.test(runner.afterFileSql ?? ''));
