@@ -29,7 +29,6 @@ import chadPortrait from '../avatars/robochad_portrait.jpg?url';
 import chadSquare from '../avatars/robochad_square.jpg?url';
 import deerPortrait from '../avatars/deer_portrait.jpg?url';
 import deerSquare from '../avatars/deer_square.jpg?url';
-import joshPicture from '../avatars/human.jpg?url';
 import dguyPortrait from '../avatars/dguy_portrait.jpg?url';
 import dguySquare from '../avatars/dguy_square.jpg?url';
 import LINES from './staff-lines.json';
@@ -40,12 +39,13 @@ const HOUR = 3_600_000;
 /** When the film's cast revealed their classes: a fixed day, so the postbit's dated line reads the same for every visitor. */
 const REVEALED_AT = '2026-10-03T12:00:00Z';
 
-/** The film's cast: the five made-up characters the thread is written by, each with its name, rank, post count, revealed class and avatars. */
+/** The film's cast: the five made-up characters the thread is written by, each with its name, rank, post count, revealed class and avatars. Human Josh has none, so he is drawn as his initial
+ * (the engine's draw for a persona with no picture); the picture he had could not be licensed (docs/plans/2026-11-25-licensing-design.md, section 3). */
 export const FILM_CAST: readonly FrontDoorCharacter[] = Object.freeze([
   Object.freeze({ key: 'snuckles', name: 'Snuckles', rank: 0, posts: 2817, revealed: Object.freeze({ class: 'jabroni', at: REVEALED_AT }), avatarPortrait: snucklesPortrait, avatarSquare: snucklesSquare }),
   Object.freeze({ key: 'wholesome', name: 'Chadluminum', rank: 3, posts: 1204, revealed: Object.freeze({ class: 'face', at: REVEALED_AT }), avatarPortrait: chadPortrait, avatarSquare: chadSquare }),
   Object.freeze({ key: 'accountant', name: 'Serious Deer', rank: 2, posts: 388, revealed: Object.freeze({ class: 'technician', at: REVEALED_AT }), avatarPortrait: deerPortrait, avatarSquare: deerSquare }),
-  Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }), avatarPortrait: joshPicture, avatarSquare: joshPicture }),
+  Object.freeze({ key: 'roboto', name: 'Human Josh', rank: 1, posts: 212, revealed: Object.freeze({ class: 'heel', at: REVEALED_AT }) }),
   Object.freeze({ key: 'tweener', name: 'D-Guy', rank: 4, posts: 1224, revealed: Object.freeze({ class: 'tweener', at: REVEALED_AT }), avatarPortrait: dguyPortrait, avatarSquare: dguySquare }),
 ]);
 

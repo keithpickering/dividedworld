@@ -1,7 +1,7 @@
 /**
  * What an instance's UI must fill exactly, checked beside `instanceProblems` (engine/rules/instance.ts), which checks its
  * rules: `onboarding.tips` has every tip key the engine knows and none it does not, each with a title and a line, and the
- * welcome letter is text; the code of conduct has a positive whole version and sections with unique keys, each with a title and text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
+ * welcome letter is text; the licensing names an https source and has terms; the code of conduct has a positive whole version and sections with unique keys, each with a title and text; `copy.marquees`, when given, is a non-empty list of names of 1 to 20 characters; `copy.badges`, when given, is a non-empty list of pairs of two words of 12 characters between them; the front door names only cast
  * members, reactions and ranks the instance has, and cards with a `CardUi`; and a card's `sounds`, when it names any, are keys of the instance's `sounds.slots`. Pure, so the self-test can plant each defect; the build runs it
  * against the real instance (instances/divided-world/ui/index.test.tsx).
  */
@@ -24,7 +24,7 @@ export const BADGE_MAX = 12;
 /** The most badges the footer shows: a row of them wraps (engine/ui/frame/frame.css), but a footer of a dozen is a wall. */
 export const BADGES_MAX = 6;
 
-export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct'> & Partial<Pick<InstanceUi, 'themes' | 'sounds'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
+export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 'frontDoor' | 'cards' | 'classLooks' | 'conduct' | 'licensing'> & Partial<Pick<InstanceUi, 'themes' | 'sounds'>>, instance: Pick<Instance, 'reactions' | 'ranks' | 'classes' | 'cards' | 'settings'>): string[] {
   const out: string[] = [];
   /* A theme's `modes` and its preview's keys are one list (tools/theme-preview.mjs reads the keys from the theme's file). */
   for (const t of ui.themes ?? []) {
@@ -69,6 +69,7 @@ export function instanceUiProblems(ui: Pick<InstanceUi, 'onboarding' | 'copy' | 
     }
   }
   out.push(...conductProblems(ui.conduct));
+  out.push(...licensingProblems(ui.licensing));
   const on = ui.onboarding;
   if (typeof on !== 'object' || on === null) return [...out, 'the instance UI has no onboarding'];
   const tips: Record<string, { title?: unknown; line?: unknown; action?: unknown } | undefined> = on.tips ?? {};
@@ -158,6 +159,20 @@ function conductMailProblems(mail: unknown): string[] {
     const slots = TEMPLATES[key as keyof typeof TEMPLATES].slots;
     for (const text of texts) for (const m of text.matchAll(/\{(\w+)\}/g)) if (!slots.includes(m[1] ?? '')) out.push(`the conduct mail "${key}" uses the slot {${m[1]}}, which that template does not have`);
   }
+  return out;
+}
+
+/** AGPL section 13 needs a source a user can reach, so a fork must name its own: an https URL, and the instance's terms in words. */
+function licensingProblems(licensing: unknown): string[] {
+  if (typeof licensing !== 'object' || licensing === null) return ['the instance UI has no licensing'];
+  const { source, terms } = licensing as { source?: unknown; terms?: unknown };
+  const out: string[] = [];
+  let https = false;
+  if (typeof source === 'string') {
+    try { https = new URL(source.trim()).protocol === 'https:'; } catch { https = false; }
+  }
+  if (!https) out.push('the licensing source is not an https URL');
+  if (typeof terms !== 'string' || terms.trim() === '') out.push('the licensing has no terms');
   return out;
 }
 

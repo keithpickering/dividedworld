@@ -26,8 +26,9 @@ const looks = (): Record<string, unknown> => ({
 });
 const copy = { siteName: 'S', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'x' };
 const goodConduct = (): InstanceUi['conduct'] => ({ version: 1, sections: [{ key: 'person', title: 'T.', text: 'Words.' }, { key: 'hate', title: 'U.', text: 'More words.' }] });
+const goodLicensing = (): InstanceUi['licensing'] => ({ source: 'https://example.com/source', terms: 'Terms.', credits: [] });
 const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown, badges?: unknown) => ({
-  onboarding: onboarding as OnboardingUi, conduct: goodConduct(), frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
+  onboarding: onboarding as OnboardingUi, conduct: goodConduct(), licensing: goodLicensing(), frontDoor: frontDoor as FrontDoorUi, cards, classLooks: looks() as unknown as InstanceUi['classLooks'],
   copy: { ...copy, ...(marquees === undefined ? {} : { marquees: marquees as readonly string[] }), ...(badges === undefined ? {} : { badges: badges as InstanceUi['copy']['badges'] }) },
 });
 const good = { tips: tips(), letter: 'Hi.' };
@@ -38,6 +39,13 @@ const door = (change: (d: { -readonly [K in keyof FrontDoorUi]: FrontDoorUi[K] }
 };
 
 describe('instanceUiProblems', () => {
+  test('reports a licensing source that is blank or not https, and blank terms (AGPL section 13 needs a real source)', () => {
+    const withLicensing = (licensing: unknown) => instanceUiProblems({ ...ui(good), licensing: licensing as InstanceUi['licensing'] }, rules);
+    assert.deepEqual(withLicensing(goodLicensing()), []);
+    for (const source of ['', '  ', 'http://example.com/source', 'example.com/source', 'javascript:alert(1)']) assert.deepEqual(withLicensing({ ...goodLicensing(), source }), ['the licensing source is not an https URL']);
+    for (const terms of ['', ' \n ']) assert.deepEqual(withLicensing({ ...goodLicensing(), terms }), ['the licensing has no terms']);
+    assert.deepEqual(withLicensing(undefined), ['the instance UI has no licensing']);
+  });
   test('reports a conduct section with empty text (the poison the check exists for)', () => {
     const withConduct = (conduct: unknown) => instanceUiProblems({ ...ui(good), conduct: conduct as InstanceUi['conduct'] }, rules);
     for (const text of ['', ' \n ']) assert.deepEqual(withConduct({ version: 1, sections: [{ key: 'a', title: 'A.', text }] }), ['the conduct section "a" has no text']);

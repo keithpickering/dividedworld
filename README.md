@@ -459,3 +459,8 @@ and step 5 releases the site while it still points at the test project.
   Supabase gives its functions container `SUPABASE_SECRET_KEY` and `SUPABASE_PUBLISHABLE_KEY` under those names.
 - **Auth's own endpoints are reachable with the public key (issue #3).** Whether Supabase Auth answers an address it
   knows measurably differently from one it does not is to be measured on the deployed project before players arrive.
+
+## License
+
+KayfaBB is free software under the AGPL-3.0-or-later. Divided World's own content is offered under the AGPL-3.0-or-later
+or CC BY 4.0, your choice. `LICENSING.md` is the map.

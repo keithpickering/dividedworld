@@ -1,0 +1,45 @@
+/*
+ * The license and credits page (License.tsx): the account screens' frame (account.css) with each section ruled off by a hairline like the
+ * code of conduct's. Sizes are the glass's tokens and rem.
+ */
+.kb-license-section {
+  padding-block: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 22%, transparent);
+}
+
+.kb-license-title {
+  margin: 0 0 0.5rem;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 700;
+}
+
+.kb-license-section p,
+.kb-license-text p {
+  margin: 0 0 0.75rem;
+}
+
+.kb-license-text h3,
+.kb-license-text h4,
+.kb-license-text h5,
+.kb-license-text h6 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: var(--kb-glass-size-lead);
+  font-weight: 800;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-license-text ul,
+.kb-license-text ol,
+.kb-license-credits {
+  margin: 0 0 0.75rem;
+  padding-left: 1.75rem;
+}
+
+.kb-license-text li,
+.kb-license-credit {
+  margin: 0.375rem 0;
+}
+
+.kb-license-work {
+  font-weight: 700;
+}

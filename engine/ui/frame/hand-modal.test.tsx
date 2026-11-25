@@ -66,7 +66,7 @@ function setup(page = <p>page</p>) {
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
     },
-    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game.' } } },
+    ui: { glass: testGlass, licensing: { source: 'https://example.com/source', terms: 'T', credits: [] }, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game.' } } },
     settings: { walletCap: 600, registrationMode: 'invite' },
   } as unknown as Kayfa;
   render(
