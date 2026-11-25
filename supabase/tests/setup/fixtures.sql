@@ -121,6 +121,36 @@ create function tests.post(by_character uuid, in_thread uuid, body text default 
   select tests.act(by_character, 'post', in_thread, jsonb_build_object('body', body), null, at)
 $$;
 
+-- Elsewhere in the instance, in a thread of their own: `veils` posts each under a live author veil, and `ended` card plays each ended by a card_end Act. These are what the files before a read-cost guard leave committed (the race files
+-- write through dblink), and what made acts_public's author-veil check a hashed read of every veil and card_end for each probe of one post (0434_reads_bounded_on_any_plan.sql). A guard plants them so that it measures in that state
+-- on every run, not only on the runs whose earlier files happened to leave them. Returns the thread.
+create function tests.plant_live_veils(veils integer, ended integer) returns uuid language plpgsql as $$
+declare
+  tag text := substr(md5(random()::text), 1, 8);
+  a uuid := tests.character(tests.account('pv-ann-' || tag), 'Pv Ann ' || tag);
+  b uuid := tests.character(tests.account('pv-bea-' || tag), 'Pv Bea ' || tag);
+  t uuid := tests.thread('Planted veils ' || tag);
+  base timestamptz := now() - interval '1 day';
+  p uuid; play uuid; i integer;
+begin
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack) values ('pvveil', 'Pv Veil', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1) on conflict do nothing;
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, stack) values ('pvplain', 'Pv Plain', 'salty', 'rare', 'cast', '{post}', interval '3 days', 1) on conflict do nothing;
+  for i in 1..greatest(veils, ended) loop
+    p := tests.act(a, 'post', t, jsonb_build_object('body', 'Planted ' || i), null, base + i * interval '1 second');
+    if i <= veils then
+      play := tests.act(b, 'card', t, jsonb_build_object('card', 'pvveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '1 day'), p, base + i * interval '1 second');
+      insert into post_veils (play, post, veil, author, ends_at) values (play, p, 'author', a, now() + interval '1 day');
+    end if;
+    if i <= ended then
+      play := tests.act(b, 'card', t, jsonb_build_object('card', 'pvplain', 'message', '', 'config', '{}'::jsonb, 'layer', 2), p, base + i * interval '1 second');
+      perform set_config('kayfabb.card_end_writer', 'on', true);
+      insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, play, '{"why": "reversed", "by": "admin"}');
+      perform set_config('kayfabb.card_end_writer', '', true);
+    end if;
+  end loop;
+  return t;
+end $$;
+
 -- Be a signed-in player until tests.unbecome(), or the end of the file's transaction.
 create function tests.become(account uuid) returns void language plpgsql as $$
 begin
