@@ -17,7 +17,7 @@ export interface Facts extends Statement { readonly posts: number; readonly stan
 
 /** The facts of one character, from the document My characters loaded. */
 export function factsOf(page: MyCharactersPage, id: Id): Facts {
-  const said = reveals(page.reveals, page.turns).get(id) ?? { revealed: null, turnedAt: null };
+  const said = reveals(page.reveals, page.turns).get(id) ?? { revealed: null };
   return { posts: page.counts[id]?.posts ?? 0, standing: page.standings[id] ?? null, ...said };
 }
 
@@ -37,7 +37,7 @@ export function ProfilePreview({ character, title, signature, pipStyle, facts }:
       <h3 id="pe-preview-head" className="kb-profile-preview-head">What everyone will see</h3>
       <div className="kb-profile-preview-post">
         <div className="kb-profile-preview-side">
-          <Postbit person={{ character: shown, posts: facts.posts, standing: facts.standing, revealed: facts.revealed, turnedAt: facts.turnedAt }} layout="side" link={false} />
+          <Postbit person={{ character: shown, posts: facts.posts, standing: facts.standing, revealed: facts.revealed }} layout="side" link={false} />
         </div>
         <div className="kb-profile-preview-body">
           <p>A post by {character.name} reads here.</p>

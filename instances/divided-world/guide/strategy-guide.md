@@ -87,7 +87,7 @@ A class isn't a life sentence. A character can **Turn** into a different class, 
 
 Only you can make a character's class public, and only when you choose to.
 
-A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. While a character's reveal is current, it earns more on what reactions to its posts and cards earn it, and on what its own early calls earn. Any Turn ends that, and a new reveal starts it again; the character's log says how much. The catch is that everybody can now play against a known class.
+A **reveal** is something your character posts, in a thread you pick, with a line in the character's own words. It carries a badge The System checked, so it's the real thing and not just a character *saying* what its class is. A reveal can't be taken back, and it's dated: the badge says what the class was that day. An announced Turn takes the badge down until the character reveals again; a silent Turn leaves it up. While a character's reveal is current, it earns more on what reactions to its posts and cards earn it, and on what its own early calls earn. Any Turn ends that, and a new reveal starts it again; the character's log says how much. The catch is that everybody can now play against a known class.
 
 ### New characters
 
