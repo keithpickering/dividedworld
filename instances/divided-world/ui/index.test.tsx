@@ -47,6 +47,7 @@ import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
+import { sounds } from './sounds.ts';
 
 describe('Divided World\'s developer persona', () => {
   test('is Gabe, with his tagline, and his picture is one the UI has', () => {
@@ -482,7 +483,14 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('Steel Chair and Laugh Track name the sounds their effects play', () => {
     const steel = instanceUi.cards.find((c) => c.key === 'steel-chair')!;
-    expect(steel.sounds).toEqual(['steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4']);
+    expect(steel.sounds).toEqual([
+      'steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4',
+      'steel-chair.can-hit', 'steel-chair.can-settle-1', 'steel-chair.can-settle-2',
+      'steel-chair.ladder-hit', 'steel-chair.ladder-settle-1', 'steel-chair.ladder-settle-2',
+      'steel-chair.extinguisher-hit', 'steel-chair.extinguisher-settle-1', 'steel-chair.extinguisher-settle-2', 'steel-chair.extinguisher-hiss',
+    ]);
+    /* Every steel-chair slot the instance's sounds hold is one the card names, and it names no other. */
+    expect([...steel.sounds!].sort()).toEqual(sounds.slots.map((s) => s.key).filter((k) => k.startsWith('steel-chair.')).sort());
     const laugh = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
     expect(laugh.sounds).toEqual([
       'laugh-track.laugh-1', 'laugh-track.laugh-2', 'laugh-track.laugh-3',
