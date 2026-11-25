@@ -238,7 +238,7 @@ function exec(file, args, { input, env } = {}) {
     const finish = (code) => { if (done) return; done = true; children.delete(child); clearTimeout(timer); resolve({ code, killed, out, err }); };
     child.stdout.setEncoding('utf8').on('data', (d) => { out += d; });
     child.stderr.setEncoding('utf8').on('data', (d) => { err += d; });
-    child.on('error', (e) => {
+    child.on('error', (/** @type {NodeJS.ErrnoException} */ e) => {
       if (e.code === 'ENOENT') { console.error(`\n  ${file} not found; run scripts/setup-container.sh`); leave(2); }
       err += String(e);
       finish(null);

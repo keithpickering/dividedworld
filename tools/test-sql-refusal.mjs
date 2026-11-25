@@ -478,7 +478,7 @@ const full = boundedSuite(runs.full);
   };
   const gathered = () => {
     fs.rmSync(marker, { force: true });
-    const env = { ...process.env, KAYFABB_PSQL_SHIM: recorder };
+    const env = /** @type {NodeJS.ProcessEnv} */ ({ ...process.env, KAYFABB_PSQL_SHIM: recorder });
     delete env.DATABASE_URL;
     const r = spawnSync(process.execPath, ['tools/test-sql.mjs', `--gather=${dir}`], { env, encoding: 'utf8' });
     return { status: r.status, out: r.stdout + r.stderr, psqlRan: fs.existsSync(marker) };
