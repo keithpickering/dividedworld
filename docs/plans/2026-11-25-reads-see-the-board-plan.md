@@ -1,7 +1,8 @@
 # What the staff read sees of the board: polls, spun origins and plays: plan
 
 Record, written 2026-11-25. The plan for `docs/plans/2026-11-25-reads-see-the-board-design.md` (#1071). One build
-session builds it in one PR from `main`, after the design's PR is merged, and that PR says `Closes #1071`.
+session builds it in one PR from `main`, after the design's PR is merged. That PR says `Refs #1071`, not `Closes`:
+the issue also carries the digest, which `docs/plans/2026-11-25-digest-sees-the-board-plan.md` builds next and closes.
 
 Every task is test first: name the test, record its red run, then write the code. The one check this adds is a test in
 `instances/divided-world/cards/cards.test.ts` (Task 4), driven red once by a card without `seen`; the boundary check
@@ -44,8 +45,17 @@ Model: sonnet
 
 **Files:** the migration (section per bullet), its SQL test.
 
-`pool_read` keeps its signature and every key it returns; it gains:
+**`post_extras(posts uuid[]) returns jsonb`**, new: for each post given, `{ post, poll, plays, reactions, rewoundTo,
+body? }` as the bullets below define them, every part read set-based over the whole list (one call of `poll_counts`,
+one of `post_plays`, one read of `reaction_tallies`), never a loop per post. It is the one read of a post's extras:
+`pool_read` calls it for its chosen posts and the origin's post, and the digest and the patrol call it next (the digest
+plan). Owned by `kayfabb_digest` and executable by `service_role` alone, as `pool_read` is. Its at-most is the list's
+length, held to 200 (as `post_plays` holds it).
 
+`pool_read` keeps its signature and every key it returns; through `post_extras` it gains:
+
+- **On each post, `reactions`:** the post's public counts by kind, `{ <kind>: count }`, from `reaction_tallies` as
+  `thread_page` reads them; an empty object for none. Never who reacted.
 - **On each post, `poll`:** null, or `{ question, options, pick, secret, endsAt, closed, closedBy, counts, voters }`.
   The poll is `latest_poll(post)` unless its payload is `{removed: true}`; `counts` and the voter count are
   `poll_counts`' (0395, section 7), read for the chosen posts in one set-based call, never a loop per post. `closedBy`
@@ -72,7 +82,8 @@ Model: sonnet
 - **Grants.** `pool_read` is owned by `kayfabb_digest`; give that role only the execute grants the new calls need
   (`latest_poll`, `poll_counts`, `post_plays` and its definers, `spin_moment`, `post_rewind_plays`), and say each in a
   comment.
-- **Tests first** (`supabase/tests/NNNN-reads-see-the-board.sql`): a post with an open poll, a closed one (each of the
+- **Tests first** (`supabase/tests/NNNN-reads-see-the-board.sql`): `post_extras` of a post with reactions of two kinds
+  gives their counts and no character; a post with an open poll, a closed one (each of the
   three ways), a removed one, and a secret one whose ballots carry no character anywhere in the answer; a post with a
   live Whoops! and its saved state, a sprung back, and an unsprung face-down set that does not appear; a post under a
   live Time Machine reads the version's body; one thread spun from each origin kind (post, poll, ballot, play on a
@@ -86,11 +97,16 @@ Model: sonnet
 
 Model: sonnet
 
-**Files:** `engine/system/read.ts`, `engine/system/read.test.ts`, `engine/rules/cards.ts` (the `seen` type only),
-`supabase/functions/_shared/pool-read.ts`.
+**Files:** new `engine/system/extras.ts` and its test, `engine/system/read.ts`, `engine/system/read.test.ts`,
+`engine/rules/cards.ts` (the `seen` type only), `supabase/functions/_shared/pool-read.ts`.
 
-- **Types.** `ReadCandidate` gains `poll: ReadPoll | null`, `plays: readonly ReadPlay[]`, `rewoundTo: string | null`,
-  each matching Task 2's shape. `ReadPoll` has an optional `names?: readonly (readonly string[])[]`, unread today: the
+- **`extras.ts`** holds the types of `post_extras`' answer (`PostExtras`, `ReadPoll`, `ReadPlay`, `Reactions`) and every
+  renderer below (`pollLines`, `playLine`, `reactionLine`, `rewoundLine`, `originLine`, `placeWords`), each pure and
+  taking `now` where it says a time. It also exports `pollShort(poll, now)`, one line (the question, the leading option,
+  the time: `[poll: "Rename this board?", Yes leads 9 to 4, closes in 2 hours]`), which the digest uses. The reader
+  calls them; the digest and the patrol call them next (the digest plan).
+- **Types.** `ReadCandidate` gains `poll: ReadPoll | null`, `plays: readonly ReadPlay[]`, `reactions: Reactions`,
+  `rewoundTo: string | null`, each matching Task 2's shape. `ReadPoll` has an optional `names?: readonly (readonly string[])[]`, unread today: the
   design's path for voters' names. `readThread`'s third argument becomes `o: { readMost: number; now: number; seen:
   (p: SeenPlay) => string | null; origin: ReadOrigin | null }`; every caller is updated.
 - **`CardRules.seen?: (p: SeenPlay) => string`** (`engine/rules/cards.ts`), with `SeenPlay = { config: unknown; state:
@@ -101,6 +117,8 @@ Model: sonnet
   - a poll, under the body, in the design's section 1 form, its times by `until`/`ago` from `now`;
   - each play, under the poll, as `[<seen>]`, where `seen` is the instance's sentence or, when it returns null (a card
     with no `seen`, or a back with no card), `[<card name, or "A card set face down"> was played on this post, <ago>.]`;
+  - its reactions, last, as `[Reactions: <kind> <count>, …]`, most first and then by kind, each kind as the instance
+    names it; no line for none;
   - a rewound post, a line before its body: `[This post is showing how it looked <ago(rewoundTo)>.]`;
   - the origin, before the opener: the one line `(This thread was spun <ago(spunAt)> from <place's words>, <the
     origin's ago>.)`, with `as it stood when it was spun` added for `moment`, then its post as a block headed
@@ -115,7 +133,8 @@ Model: sonnet
 - **`readOf`** (`pool-read.ts`) takes `now` and the instance's cards (by key, from what each Edge Function already
   holds) and builds `seen` from `CardRules.seen`, passing `ago` and the engine's `amountWords`.
 - **Tests first:** a poll renders each state (open, closed by time, by its author, by an admin; secret; one option at
-  0 votes) with relative times; a play with a `seen` and one without; a rewound post; each origin kind's line; a play
+  0 votes) with relative times; `pollShort` for an open, a tied and a closed poll; reactions of three kinds in order,
+  and none giving no line; a play with a `seen` and one without; a rewound post; each origin kind's line; a play
   spin says "as it stood"; the origin never shows without the opener; a spun opener is tier 2 and an unspun one tier 3;
   a long poll on a tier-5 post makes it not fit where its body alone would; `names` set on a poll changes nothing
   rendered.
@@ -153,7 +172,7 @@ Model: sonnet
 - Pacing by characters already charges the prompt's real size, so the extras are charged with no change; a test holds
   that a turn reading a post with a poll and two plays charges their rendered size.
 - **Tests first:** in `chatter/core.test.ts` and `staff/core.test.ts`, the stubbed `pool_read` answer gains a poll, a
-  play and an origin, and the prompt the model is sent carries each rendered line.
+  play, reactions and an origin, and the prompt the model is sent carries each rendered line.
 
 ## Task 6. End to end
 
@@ -170,8 +189,8 @@ No state is added. Nothing here changes what a player, a character or a post can
 ## The masks
 
 - Every field `pool_read` gains is read through the public views a page reads (`acts_public`, `characters_public`,
-  `post_plays`, `poll_counts`, `thread_open`), as any reader of the board reads them: counts of characters, no secret
-  ballot's character, no face-down set, a caster only where the board names one.
+  `post_plays`, `poll_counts`, `reaction_tallies`, `thread_open`), as any reader of the board reads them: counts of
+  characters, reaction sums with no reactor, no secret ballot's character, no face-down set, a caster only where the board names one.
 - The relative times are computed from the call's clock and public times. Nothing reads who owns a character, a
   class or who reacted.
 - `seen` receives only the public facts of one play; it never receives an owner or a class.

@@ -142,12 +142,30 @@ about + breaking the illusion by making it clear that context was missing": a pl
 origin one line and one post; every line is a thing that is on the board, written as such; nothing is marked as left
 out except whole posts, as the whole-posts design already says.
 
+## 3a. A post's reactions are read with it
+
+**Decided** (added later in the same session, while designing the digest). The owner: "they are currently blind to
+reactions received on their posts. These of course are anonymous, and the exact counts might in fact add a bit of
+realism in this case ('My post about Mario's wiggler sprites got 3 heart reactions')." Each shown post carries its
+public reaction counts by kind, as every reader of the board sees them (`reaction_tallies`), never who reacted, and they
+are rendered as one line under the post: `[Reactions: ❤ 3, 😂 1]`. A post with none has no line. Every shown post, not
+only the persona's own: a reply's tone depends on whether the post it answers drew twelve laughs or none. Weighed: the
+persona's own posts alone (a Mod answering a post the crowd loved would not know it); the counts in words, as the
+digest's standouts are (here the exact count is the realism).
+
+## 3b. One set of renderers for every read
+
+**Decided**, for the same reason: the digest and the patrol show the same extras (section 6 here and
+`docs/plans/2026-11-25-digest-sees-the-board-design.md`). A post's poll, plays and reactions are read by one SQL
+function, `post_extras(posts uuid[])`, and rendered by one engine module, `engine/system/extras.ts`; `pool_read`, the
+reader, the digest and the patrol all use them, so a card's `seen` line or a poll reads the same in every prompt.
+
 ## 4. The prompt and the budget
 
 - **One more sentence in `READ_WORDS`:** polls, the cards played on posts and where a thread was spun from are things
   that really happened on the board; the persona may react to them in character, and never quotes the bracketed lines
   as anyone's words.
-- **A post's size is its rendered size:** body, poll and play lines, and for the opener its origin. The ceiling
+- **A post's size is its rendered size:** body, poll, play and reaction lines, and for the opener its origin. The ceiling
   (`pool.readMost`) and the must tier's rule are unchanged; a post with a long poll weighs what it reads.
 
 ## 5. Layers, masks, ways out
@@ -156,7 +174,7 @@ out except whole posts, as the whole-posts design already says.
   the engine's. Each card's `seen` sentence is Divided World's content, carried by `CardRules`, the interface every card
   already plugs into.
 - **Masks.** Everything shown is what any reader of the board sees: a poll's counts count characters and are the same
-  for every reader; no secret ballot is read; no face-down set is named; a caster is named only where the board names
+  for every reader; reactions are the public sums by kind, never who reacted; no secret ballot is read; no face-down set is named; a caster is named only where the board names
   one; the origin's line is the band's. The relative times come from the call's clock and public times. Nothing is
   computed from who owns a character.
 - **Ways out.** No state is added that a player, a character or a post can be put in.
@@ -164,8 +182,8 @@ out except whole posts, as the whole-posts design already says.
 ## 6. Not here: the meeting digest and the patrol
 
 The meeting digest and the patrol's cross-board sample still read marked excerpts, not the reader, and gain nothing
-here. The owner chose to design them next, while this is fresh; the issue filed with this design carries polls section
-8's unbuilt promise and this design's spins and plays to that session.
+here. The owner chose to design them next, while this is fresh: `docs/plans/2026-11-25-digest-sees-the-board-design.md`,
+written the same day, which also moves the patrol to whole posts.
 
 ## 7. Open
 
