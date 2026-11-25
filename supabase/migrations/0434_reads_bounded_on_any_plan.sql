@@ -9,7 +9,7 @@
 --      hash while the veils are few, which is the usual state of a live instance, whose card_end Acts never stop growing). CI's runs had about 9 card_end Acts and 8 veils, so each probe read about 9 rows more than its key: 0426's
 --      read probes about 250 posts and plays (4814 against 2546), 0424's 51 requests (438 against the bound of 306), 0425's about 200 posts (1924 against 1500).
 --      Rebuilt here: the check is author_veil_covers(act), one call for each Act, which a planner cannot hash: it reads the Act's rows of post_veil_cover by their key (act, play), and for each play the veil by its key (post_veils_pkey),
---      its end by its key (acts_one_card_end) and its refund by its key (card_write_refunds_pkey). It is post_veils_live's rule for one veil (author, not over, not ended, not refunded), read in that order, so an Act no veil covers costs one
+--      its end by its key (card_end_written: acts_one_card_end, under 0425's settings and in its own order, so that acts_card_ends' scan with a filter costs a disabled node) and its refund by its key (card_write_refunds_pkey). It is post_veils_live's rule for one veil (author, not over, not ended, not refunded), read in that order, so an Act no veil covers costs one
 --      probe of post_veil_cover and no row of `acts`. acts_public is otherwise 0395's, word for word.
 --   2. pool_own_post_ids and pool_reply_ids (0425), issue #1080. 0425 left one path with no disabled node besides each helper's ordered index: acts_patrol_posts (thread, created_at desc, id desc) gives the thread's posts in the order
 --      the helpers ask for, with the character (or the target) as a filter, so a planner that priced it below the ordered index read the thread's posts until it had n. Under empty statistics every candidate is estimated at one row
@@ -30,6 +30,18 @@
 -- ---------------------------------------------------------------------------------------------------- 1. acts_public ----
 -- Whether a live author veil covers the Act `act`: post_veils_live's rule (an author veil whose time has not passed, that no card_end Act ended and whose write was not refunded) for each veil post_veil_cover lists for it, each read
 -- by its key. Called once for each Act acts_public reads, in place of 0395's EXISTS, which a planner could hash over every veil and card_end of the instance.
+-- Whether a card_end Act ended the play `play`: one probe of acts_one_card_end. Asked as a range of one target in that target's order, under 0425's settings, so that no other index of `acts` serves it without a disabled node:
+-- acts_card_ends (created_at desc, id desc) where kind = 'card_end' would read every card_end Act with the target as a filter, and is free of a disabled node for a bare `exists`; ordered by the target it costs a sort.
+-- (acts_target, whose key leads with the target, is the other path left, and is a probe by key too.) Its own function so that the settings, which cost a little on each call, are paid only for an Act a live veil covers.
+create function card_end_written(play uuid) returns boolean
+language sql stable security definer set search_path = public, pg_temp
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+  -- a scalar subquery, not `exists`: Postgres drops an EXISTS subquery's ORDER BY and LIMIT, and with them the order that makes the other paths cost a sort
+  select (select e.id from acts e where e.kind = 'card_end' and e.target_act_id between card_end_written.play and card_end_written.play order by e.target_act_id limit 1) is not null
+$$;
+-- No API role runs it: author_veil_covers, a security definer, calls it as its owner.
+revoke execute on function card_end_written(uuid) from public, anon, authenticated, service_role;
+
 create function author_veil_covers(act uuid) returns boolean
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
@@ -38,7 +50,7 @@ begin
   if author_veil_covers.act is null then return false; end if;
   for pl in select c.play from post_veil_cover c where c.act = author_veil_covers.act loop
     continue when not exists (select 1 from post_veils v where v.play = pl and v.veil = 'author' and v.ends_at > now());
-    continue when exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = pl);
+    continue when card_end_written(pl);
     continue when exists (select 1 from card_write_refunds r where r.play = pl);
     return true;
   end loop;
