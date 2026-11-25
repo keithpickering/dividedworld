@@ -74,6 +74,7 @@ function surfaceOf(acts: readonly SurfaceAct[] | null, over: Partial<NonNullable
 
 function propsOf(o: { readonly surface?: EffectProps['surface']; readonly author?: boolean; readonly ink?: EffectProps['ink']; readonly children?: ReactNode } = {}): EffectProps {
   return {
+    covered: false,
     post: POST, plays: [PLAY], states: {}, released: new Set(), written: new Map(), reader: { author: o.author ?? false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     save: async () => ({ ok: false, error: 'no' }), release: async (play) => ({ ok: true, value: { play, releasedAt: '' } }), show: () => {}, met: () => {}, holdScreen: () => {}, marks: null,
     nameOf: () => 'A character', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,

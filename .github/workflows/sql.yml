@@ -25,20 +25,25 @@ jobs:
   sql:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
-    # A limit that ends a job that will never end, and the last of four: inside the suite a lock wait ends at 30s, a
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
+    name: sql (${{ matrix.shard }}/${{ strategy.job-total }})
+    # The SQL suite is split into four shards (tools/test-sql.mjs --shard=i/n), each a pool of files at once on its own
+    # runner, and every shard runs to its end (fail-fast off), so one failure never hides another. The total comes from
+    # strategy.job-total, so the matrix is the one list: to add a shard, add a number to it (a fifth is one more entry).
+    # tools/check-release-workflows.mjs (R16) holds that shape, and `sql-total` below holds the split itself: it reads
+    # every shard's report and fails unless every file on disk ran.
+    # The limit ends a job that will never end, and is the last of four: inside the suite a lock wait ends at 30s, a
     # statement at 300s and a file at 10 minutes (tools/test-sql.mjs), so a hang is ended long before this.
-    # At 15 minutes, jobs in which no test failed were cancelled with a minute or less of the suite left
-    # (docs/plans/2026-11-12-sql-job-bound-plan.md). Measured on 2026-11-12: the suite runs one file after another
-    # and is all of the job; the same suite took 9 to 13.5 minutes by which runner it drew (issue #515: a slow
-    # runner's four CPUs do about two CPUs' work); with 197 migrations, 205 assertion files and 26 end-to-end files a
-    # slow runner needs about 16 minutes; and the suite had doubled in five days. 45 is a little over twice the 20
-    # minutes a slow runner is expected to need once PR #575's statistics step lands. Not the build's 30: that would
-    # leave 10 minutes, and the suite gained 7 minutes or more in those five days.
-    # Raised to 75 on 2026-11-25, on the owner's word, as a stopgap while #587 is designed and built: main's suite took
-    # 41 minutes (release run 45610008489) and PR #1088's first run was cancelled at 44 with about 2.5 minutes left.
-    # 75 gives the builds in flight room. #587 (a shorter suite, spread over runners after #579) is the fix; this
-    # number comes back down when it lands.
-    timeout-minutes: 75
+    # Measured on 2026-11-25: the suite ran one file after another in 41 minutes on main (release run 45610008489), and PR #1088's
+    # run was cancelled at 44. Each file now runs on a clone of one replayed template, as many at once as the runner has CPUs, and
+    # a file that holds a wall-clock budget runs alone (#1099). This PR's own runs (45694515162, 45697116054) took 3 to 7.5 minutes
+    # a shard, setup included, and the gather under half a minute. 30 is about four times the slowest shard, the figure the
+    # build and the e2e shards use. If a shard needs more, the number of shards changes, not this limit. The limit before the
+    # split was 15 minutes (2026-11-12), then 45, then 75 as a stopgap until the split (#587) landed: one runner, the whole suite.
+    timeout-minutes: 30
     services:
       postgres:
         # Named by digest, not by the `postgres:17` tag: that tag moved to 17.12 on 2026-11-12 and every run failed
@@ -60,9 +65,43 @@ jobs:
       - run: command -v psql >/dev/null || (sudo apt-get update -qq && sudo apt-get install -y --no-install-recommends postgresql-client)
       - run: psql --version
       - run: npm ci --no-audit --no-fund
-      - run: npm run test:sql
+      - run: npm run test:sql -- --shard=${{ matrix.shard }}/${{ strategy.job-total }} --report=sql-report-${{ matrix.shard }}.json
         env:
           DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
+      # It builds its own database and needs no split, so one shard runs it; a failed suite does not hide it.
       - run: node tools/test-sql-drift.mjs
+        if: ${{ !cancelled() && matrix.shard == 1 }}
         env:
           DATABASE_URL: postgres://postgres:pg@localhost:5432/postgres
+      # The shard's own report, on a failure as well: sql-total reads every shard's and fails on one that is missing.
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: sql-report-${{ matrix.shard }}
+          path: sql-report-${{ matrix.shard }}.json
+          if-no-files-found: error
+  # The split cannot lose a file: this reads every shard's report and fails unless every file on disk ran, and it fails
+  # when a shard was cancelled or never uploaded. It runs when a shard failed (always()), but not for a draft, as the
+  # shards do not. It needs no database, only the repository's dependencies (tools/test-sql.mjs imports the web-reads
+  # check, which imports typescript).
+  sql-total:
+    if: ${{ always() && (github.event_name != 'pull_request' || github.event.pull_request.draft == false) }}
+    needs: [sql]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with: { ref: '${{ inputs.ref }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: sql-report-*
+          merge-multiple: true
+          path: sql-reports
+      - run: node tools/test-sql.mjs --gather=sql-reports
+      # A shard that was cancelled or skipped has no report, and the gather above says so; this says it from the
+      # shards' own result, so that the job is red whatever the reports hold.
+      - run: '[ "$SHARDS" = success ]'
+        env: { SHARDS: '${{ needs.sql.result }}' }

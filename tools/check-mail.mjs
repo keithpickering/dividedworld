@@ -15,7 +15,7 @@
  *    missing from `ui/public/mail/`;
  * 2. smoke.jpg is not a 1200 by 360 JPEG, or is over 60KB (61440 bytes); a corner is not a 24 by 24 opaque PNG;
  *    coin.png is not 80 by 80 and opaque (a transparent pixel is filled black by some clients);
- * 3. a font in `ui/public/mail/fonts/` differs from its namesake in `ui/fonts/`;
+ * 3. a font in `ui/public/mail/fonts/`, or the `OFL.txt` beside them, differs from its namesake in `ui/fonts/`;
  * 4. a hash in assets.json differs from its file or from its source (the canonical slice of glass.json, the
  *    coin vector, the fonts), saying `node tools/make-mail-assets.mjs <ui>` makes the assets again;
  * 5. a committed `supabase/templates/*.html` differs from what `authTemplates()` writes (`--write` writes them,
@@ -85,11 +85,13 @@ export function mailFaults({ ui, mailDir, templates, rendered }) {
   const at = (rel) => path.join(ui.path, 'public', 'mail', rel);
   const theme = mailDir.theme;
   const fontFiles = [...new Set((theme?.fonts ?? []).map((f) => path.posix.basename(new URL(f.url).pathname)))].sort();
+  /* The fonts' license text travels with every copy of them (the OFL asks it), so it is copied beside them. */
+  const copied = [...fontFiles, 'OFL.txt'];
   const remake = `run  node tools/make-mail-assets.mjs ${ui.path}  to make the assets again`;
 
   /* 1 */
   const present = {};
-  for (const name of [...IMAGES, ...fontFiles.map((f) => `fonts/${f}`)]) {
+  for (const name of [...IMAGES, ...copied.map((f) => `fonts/${f}`)]) {
     if (ui.mail[name]) present[name] = ui.mail[name];
     else out.push(`${at(name)}: missing`);
   }
@@ -118,7 +120,7 @@ export function mailFaults({ ui, mailDir, templates, rendered }) {
   png('coin.png', COIN);
 
   /* 3 */
-  for (const f of fontFiles) {
+  for (const f of copied) {
     const baked = present[`fonts/${f}`];
     if (!baked) continue;
     const own = ui.fonts[f];
@@ -145,7 +147,7 @@ export function mailFaults({ ui, mailDir, templates, rendered }) {
     }
     if (ui.coinSvg) sources['icon/coin.svg'] = sha256(ui.coinSvg);
     else out.push(`${path.join(ui.path, 'icon', 'coin.svg')}: missing`);
-    for (const f of fontFiles) if (ui.fonts[f]) sources[`fonts/${f}`] = sha256(ui.fonts[f]);
+    for (const f of copied) if (ui.fonts[f]) sources[`fonts/${f}`] = sha256(ui.fonts[f]);
     for (const [name, hash] of Object.entries(sources)) {
       const where = name.startsWith('glass.json#') ? `${path.join(ui.path, 'glass.json')} (${name.slice('glass.json#'.length)})` : path.join(ui.path, name);
       if (record.sources[name] === undefined) out.push(`${recordFile}: records no source hash for ${where}; ${remake}`);

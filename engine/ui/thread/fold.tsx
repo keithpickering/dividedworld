@@ -8,6 +8,7 @@ import { livePlays, usePlays, type Plays } from '../cards/plays.ts';
 import type { CardUi } from '../cards/types.ts';
 import { useFeel } from '../glass/motion.ts';
 import type { PostbitPerson } from '../postbit/Postbit.tsx';
+import { CoveredCtx, RowCoverCtx, type RowCovering } from './cover.tsx';
 import { FoldBar } from './FoldBar.tsx';
 
 export interface RowFold { readonly open: boolean; readonly toggle: () => void }
@@ -139,8 +140,10 @@ export function useRowFolding({ plays, actId, eligible, now, cards, article }: {
  * A post's row under the fold's context: the bar while it folds, then the grid, hidden until the reader opens it. `id` names the row for the bar's press;
  * `before` is drawn ahead of the bar and is not part of the row.
  */
-export function FoldedRow({ fold, id, bar, before, children }: {
+export function FoldedRow({ fold, cover, id, bar, before, children }: {
   readonly fold: RowFolding;
+  /** The post's covers (thread/cover.tsx), where it has them: their host is drawn over the grid and the grid's context carries them. The fold's bar stays outside the grid, so it is outermost. */
+  readonly cover?: RowCovering;
   /** The row's element id, which the bar's press controls: unique on the page. */
   readonly id: string;
   readonly bar: { readonly person: PostbitPerson | undefined; readonly name: string; readonly spoken: string; readonly seq: number; readonly marks: ReactNode };
@@ -151,7 +154,11 @@ export function FoldedRow({ fold, id, bar, before, children }: {
     <RowFoldCtx.Provider value={fold.rowFold}>
       {before}
       {fold.folding && <FoldBar {...bar} open={fold.folded} toggle={fold.toggle} controls={id} />}
-      <div ref={fold.grid} className="kb-act-grid" {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{children}</div>
+      <RowCoverCtx.Provider value={cover?.rowCover ?? null}>
+        <CoveredCtx.Provider value={(cover?.shut ?? 0) > 0}>
+          <div ref={fold.grid} className="kb-act-grid" {...(fold.folding ? { id, hidden: !fold.folded } : {})}>{cover?.host}{children}</div>
+        </CoveredCtx.Provider>
+      </RowCoverCtx.Provider>
     </RowFoldCtx.Provider>
   );
 }

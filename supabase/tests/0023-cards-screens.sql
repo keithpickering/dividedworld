@@ -3,6 +3,9 @@
 -- chose; every play carries its caster's message; and a reader's release from an effect is kept
 -- per account, read by that account alone. The screens' engine plan, Task 4.
 
+-- A race below debuts from two sessions: the shards of debuted_count are committed first, as tests.commit_debuted_shards says.
+select tests.commit_debuted_shards();
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;

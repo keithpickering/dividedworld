@@ -11,7 +11,7 @@
  * into the glass; the board's place for Back is kept by that move, as by every move into the glass
  * (keepBoardPlace, engine/ui/glass/back.ts), not by the link.
  *
- * The page ends in the footer (the credit, the theme's art's credit, and the instance's badges). The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
+ * The page ends in the footer (the credit with its Source and License & credits links, the theme's art's credit, and the instance's badges). The frame also holds what playing a card is (engine/ui/cards/play.tsx): which card is armed, whether the
  * hand is open and for which post, and the play form, so the HUD's hand and every post's own buttons read
  * one state. It also holds the page's one tip (engine/ui/tips/Tips.tsx), above the HUD and the page both so a spotlight can cut out either.
  */
@@ -131,11 +131,18 @@ export function Frame({ children }: { readonly children: ReactNode }) {
           </nav>
           <main ref={main} className="kb-page" tabIndex={-1} aria-busy={pending ? true : undefined}>{children}</main>
           {/*
-            * The footer ends every board page: the credit, the credit for the theme's art while a theme with art is on (its only links,
-            * to the work and its license, as the license asks), and the instance's badges, which are decoration.
+            * The footer ends every board page: the credit, two links (Source, where this deployment's source can be had, which AGPL section 13
+            * asks of every deployment, and License & credits, the /license page), the credit for the theme's art while a theme with art is on
+            * (links to the work and its license, as the license asks), and the instance's badges, which are decoration.
             */}
           <footer className="kb-footer">
-            Powered by KayfaBB
+            <p className="kb-footer-credit">
+              Powered by KayfaBB
+              <span className="kb-footer-links">
+                <a href={ui.licensing.source}>Source</a>
+                <Link to="/license">License &amp; credits</Link>
+              </span>
+            </p>
             {art && (
               <p className="kb-art-credit">
                 Banner art: <a href={art.credit.source}>{art.credit.work}</a> by {art.credit.author}, <a href={art.credit.licenseUrl}>{art.credit.license}</a>

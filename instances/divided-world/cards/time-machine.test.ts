@@ -14,7 +14,7 @@ import { instanceProblems } from '../../../engine/rules/instance.ts';
 test('Time Machine is a rare Pepperoni Cast on a post that rewinds up to rare for 3 days; it costs 3.00 and nothing more to play', async () => {
   const { timeMachine, price } = await import('./time-machine.ts');
   assert.deepEqual([timeMachine.key, timeMachine.name, timeMachine.alignment, timeMachine.rarity, timeMachine.play ?? 'cast', timeMachine.reaches, timeMachine.lasts, timeMachine.rewind], ['time-machine', 'Time Machine', 'pepperoni', 'rare', 'cast', ['post'], { unit: 'day', count: 3 }, { upTo: 'rare' }]);
-  assert.equal(timeMachine.playPrice(settings, post(10), { to: 'v1' }), 0);
+  assert.equal(timeMachine.playPrice(settings, post(10), { to: 'v1' }, []), 0);
   assert.equal(price, 300);
   assert.ok(cards.some((c) => c.key === 'time-machine'));
   assert.deepEqual(timeMachine.drawsEffect, {});

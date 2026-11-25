@@ -10,26 +10,18 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { databaseBefore } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('a staff_changes row becomes an office row, in order, with its move_act and cause; every boss and bot becomes a persona', () => {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_offices`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0082 left it, from the runner's snapshot of its replay; only the migrations from 0082 on are applied here.
+  const old = databaseBefore('0082', 'offices');
+  assert.equal(old.crossing, '0082_offices.sql', 'the migration this holds is there');
+  const db = new URL(old.url);
   try {
-    const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    assert.ok(all.includes('0082_offices.sql'), 'the migration this holds is there');
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of all.filter((f) => f < '0082')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
     // Before: a Boss and two Mod Bots with profiles and Acts; a hire and a fire with a move, a seed hire, a fire with no move, and
     // several rows for one bot so that their order matters. Rows are planted out of key order, so only `id` can sort them.
@@ -63,8 +55,7 @@ test('a staff_changes row becomes an office row, in order, with its move_act and
     const kept = psqlOn(db.toString(), keep);
     assert.match(psqlOn(db.toString(), `select string_agg(staff_kind, ',' order by staff) from characters where staff is not null`), /^bot,bot,boss$/);
 
-    psqlOn(db.toString(), fs.readFileSync(path.join(migrations, '0082_offices.sql'), 'utf8'));
-    for (const m of all.filter((f) => f > '0082_offices.sql')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
 
     // After: the same rows in the same order, as office rows.
     const rowsAfter = psqlOn(db.toString(), `select string_agg(staff || ':' || coalesce(move_act::text, '-') || ':' || at::date, ',' order by id) from staff_offices`);
@@ -80,6 +71,6 @@ test('a staff_changes row becomes an office row, in order, with its move_act and
     assert.equal(psqlOn(db.toString(), `select to_regclass('public.staff_changes') is null`), 't', 'staff_changes is gone');
     assert.equal(psqlOn(db.toString(), `select string_agg(staff || '=' || office, ',' order by staff) from staff_office_now`), 'bot-a=member,bot-b=member,old-boss=member', 'the office now is the latest row (no season names a Boss here)');
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });

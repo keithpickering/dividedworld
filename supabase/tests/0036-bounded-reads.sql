@@ -9,6 +9,9 @@
 -- that still says "Seq Scan on acts|threads|characters|standings" has no index to use. The last block
 -- withholds the index and the counters and shows that the same checks go red.
 
+-- A race below debuts from two sessions: the shards of debuted_count are committed first, as tests.commit_debuted_shards says.
+select tests.commit_debuted_shards();
+
 create function pg_temp.plan_of(q text) returns text language plpgsql as $$
 declare ln record; out text := '';
 begin

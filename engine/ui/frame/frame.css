@@ -287,6 +287,25 @@
   color: var(--kb-muted);
 }
 
+/* The credit and its two links, Source and License & credits (Frame.tsx): one line, wrapping on a phone. */
+.kb-footer-credit {
+  margin: 0;
+}
+
+.kb-footer-links {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0 1em;
+  margin-left: 1em;
+}
+
+.kb-footer-links a {
+  color: inherit;
+  text-decoration: underline;
+  text-underline-offset: 0.15em;
+}
+
 /* The credit for the theme's art, as its license asks, on its own line above the badges. */
 .kb-art-credit {
   margin: 0.4em 0 0;

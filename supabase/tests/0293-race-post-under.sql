@@ -66,7 +66,7 @@ declare
   ann uuid := gen_random_uuid(); bob uuid := gen_random_uuid(); a uuid := gen_random_uuid(); b uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); p uuid := gen_random_uuid(); p0 uuid := gen_random_uuid();
   url text := current_setting('kayfabb.scratch_url');
-  waiting integer; tries integer := 0; said text;
+  waiting integer; tries integer := 0; max_tries constant integer := 1200; said text;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'par-hann@test.invalid'), (%2$L, 'par-hbob@test.invalid');
@@ -86,10 +86,13 @@ begin
   perform extensions.dblink_send_query('player', format('select tests.raced(null, %L)',
     format('select play_card(%L, %L, %L, %L, %L, 0, %L, reply => %L)', bob, 'parcut', b, p, '{}', '', 'Bob cuts while Bob posts.')));
   loop
+    -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+    perform pg_stat_clear_snapshot();
     select count(*) into waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%play_card%' and query like '%tests.raced%';
     exit when waiting >= 1;
     tries := tries + 1;
-    if tries > 80 then
+    -- Gives up at 30 s (1200 looks of 25 ms), past the 20 s lock wait the racer sets for itself in tests.raced: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then
       perform extensions.dblink_exec('holder', 'rollback');
       raise exception 'a play on a post whose thread another post holds never waited: the play does not take the thread''s row';
     end if;

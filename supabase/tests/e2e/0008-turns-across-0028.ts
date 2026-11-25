@@ -10,27 +10,18 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { databaseBefore } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('a Turn asked "revealed" before 0028 takes effect after it with its old class named, as asked', () => {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_turns`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0028 left it, from the runner's snapshot of its replay; only the migrations from 0028 on are applied here.
+  const old = databaseBefore('0028', 'turns');
+  assert.equal(old.crossing, '0028_loud_classes.sql', 'the migration this holds is there');
+  const db = new URL(old.url);
   try {
-    const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    const before = all.filter((f) => f < '0028');
-    assert.ok(all.includes('0028_loud_classes.sql'), 'the migration this holds is there');
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of before) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // A Turn waiting, asked "revealed" as a client before 0028 asked it.
     // The test instance's settings, as supabase/tests/setup/fixtures.sql writes them.
     const fixtures = fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8');
@@ -48,7 +39,7 @@ test('a Turn asked "revealed" before 0028 takes effect after it with its old cla
       insert into class_history (character, class_key, started_at) values
         ('00000000-0000-4000-8000-0000000000c1', 'alpha', now() - interval '60 days'), ('00000000-0000-4000-8000-0000000000c2', 'alpha', now() - interval '60 days');
       insert into pending_turns (character, class_key, loudness) values ('00000000-0000-4000-8000-0000000000c1', 'beta', 'revealed');`);
-    for (const m of all.filter((f) => f >= '0028')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
 
     assert.equal(psqlOn(db.toString(), `select loudness || ',' || show_from || ',' || show_to from pending_turns where character = '00000000-0000-4000-8000-0000000000c1'`), 'announced,true,false',
       'a waiting "revealed" Turn becomes announced, naming its old class');
@@ -67,6 +58,6 @@ test('a Turn asked "revealed" before 0028 takes effect after it with its old cla
     }
     assert.equal(psqlOn(db.toString(), `select count(*) from acts where kind = 'unmask'`), '0', 'naming the old class alone writes no unmask');
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });

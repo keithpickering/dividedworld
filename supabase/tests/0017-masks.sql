@@ -26,6 +26,11 @@ begin
   return said || jsonb_build_object('start', s, 'end', s + interval '1 day');
 end $$;
 
+-- The last settled window is the file's own: a fresh instance has settled nothing, so the next window would end in the
+-- season's first days, before any character here was made, and none would debut at it.
+-- A window ending a day from now makes the next one end after the characters made below.
+insert into settlements (starts_at, ends_at, season) select date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', id from seasons where ends_at is null;
+
 -- ---- A character that has not debuted (a staff persona waiting for an office): unseen, unable to act, and no settlement debuts it ----
 do $$
 declare

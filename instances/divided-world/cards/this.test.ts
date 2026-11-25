@@ -16,7 +16,7 @@ const thisWhy = (v: unknown) => (v as { why: string }).why;
 test('THIS is a common Pepperoni Cast on a post that stacks three deep, free to set', () => {
   assert.deepEqual([thisCard.key, thisCard.name, thisCard.alignment, thisCard.rarity, thisCard.reaches, thisCard.stack, thisCard.lasts], ['this', 'THIS', 'pepperoni', 'common', ['post'], 3, undefined]);
   assert.equal(thisCard.setPhrase?.({ phrase: 'Mario', words: 'this' }), 'Mario');
-  assert.equal(thisCard.playPrice(settings, on('Mario'), { phrase: 'Mario', words: '' }), 0);
+  assert.equal(thisCard.playPrice(settings, on('Mario'), { phrase: 'Mario', words: '' }, []), 0);
 });
 
 test('THIS\'s configuration: no words is nothing, the words are one line of at most 60 characters, and both are trimmed', () => {

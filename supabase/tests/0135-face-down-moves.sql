@@ -77,7 +77,7 @@ declare
   setter uuid := gen_random_uuid(); quoter uuid := gen_random_uuid();
   s uuid := gen_random_uuid(); q uuid := gen_random_uuid(); q2 uuid := gen_random_uuid();
   t uuid := gen_random_uuid(); x uuid := gen_random_uuid(); waiting uuid := gen_random_uuid(); springing uuid := gen_random_uuid();
-  held text; tries integer := 0; set_waited boolean := false;
+  held text; tries integer := 0; max_tries constant integer := 1200; set_waited boolean := false;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'sp-win-setter@test.invalid'), (%2$L, 'sp-win-quoter@test.invalid');
@@ -100,7 +100,8 @@ begin
       perform pg_stat_clear_snapshot();
       exit when exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%/* win_q */%' and pid <> pg_backend_pid());
       tries := tries + 1;
-      if tries > 400 then raise exception 'lock_for_quote never waited for the character row'; end if;
+      -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+      if tries > max_tries then raise exception 'lock_for_quote never waited for the character row'; end if;
       perform pg_sleep(0.025);
     end loop;
     -- While it waits: the first back springs (another character's quote, committed on its own: it takes the back's face_down row, which the quote has not reached), then a second back is set on the
@@ -117,7 +118,8 @@ begin
       if exists (select 1 from pg_stat_activity where wait_event_type = 'Lock' and query like '%/* win_s */%' and pid <> pg_backend_pid()) then set_waited := true; exit; end if;
       exit when extensions.dblink_is_busy('win_s') = 0;
       tries := tries + 1;
-      exit when tries > 400;
+      -- Bounded as above.
+      exit when tries > max_tries;
       perform pg_sleep(0.025);
     end loop;
     perform extensions.dblink_exec('win_h', 'rollback');

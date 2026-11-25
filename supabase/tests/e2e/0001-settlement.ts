@@ -29,8 +29,9 @@ test('a day on the board settles into wallets and standings, once', async () => 
   const db = psqlDb();
   await db.rpc('seed_instance', { payload: scratchSeed(instance) });
 
-  // The day starts where the history ends (an earlier race file commits a window).
-  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
+  // The day starts where the history ends; on a database with no settlement yet, that is the first season's start, since the settlement's windows run
+  // from there (a day written at now() would sit beyond the windows one run settles, which stop short of it).
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
   const ids = JSON.parse(sql(`
     with u as (insert into auth.users (email) values ('e2e-heel@test.invalid'), ('e2e-face@test.invalid'), ('e2e-lurk@test.invalid') returning id, email),

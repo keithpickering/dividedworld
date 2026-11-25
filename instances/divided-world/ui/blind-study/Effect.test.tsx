@@ -24,6 +24,7 @@ const play = (over: Partial<CardPlay> = {}): CardPlay => ({ id: 'b1', card: 'bli
 function setup(over: Partial<EffectProps> = {}) {
   const show = vi.fn<(view: CardView | null) => void>();
   const props: EffectProps = {
+    covered: false,
     post, plays: [play()], states: {}, released: new Set(), written: new Map(), reader: { author: false, caster: false }, place: 'thread', reach: 'post', still: false, moment: null,
     show, met: () => {}, ink: NO_INK, holdScreen: () => {}, marks: null, save: async () => ({ ok: false, error: 'no' }), release: async () => ({ ok: false, error: 'no' }), nameOf: () => 'Spritey', give: async () => ({ ok: false, error: 'no' }), moreGifts: async () => {}, wallet: null,
     children: <p>The words of the post.</p>, ...over,

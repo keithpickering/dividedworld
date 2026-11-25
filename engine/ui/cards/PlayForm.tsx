@@ -71,6 +71,9 @@ export interface PlayFormProps {
   readonly onSpent?: () => void;
 }
 
+/** A post's own plays as the effects the server reads on it (`effectsOf`): the card, the play, its reach and its end. */
+const ownEffects = (plays: readonly CardPlay[]): CardEffect[] => plays.map((p) => ({ card: p.card, act: p.id, ...(p.reach ? { reach: p.reach } : {}), ...(p.ends ? { ends: p.ends } : {}) }));
+
 /** Where the message's counter starts to speak: its last stretch before the limit. */
 const MESSAGE_NEAR = MESSAGE_MOST - 20;
 
@@ -213,11 +216,14 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     if (!rules || setting) return 0;
     try {
       const checked = rules.validateConfig(config);
-      return goal ? rules.playPrice(priced, goal, checked.ok ? checked.value : config ?? {}) : 0;
+      /* The plays the post carries, as the server reads them for the price (`decidePlay`'s effects). Read from the store's plays, which hold still between renders, so the memo holds. */
+      const now = api.now();
+      const effects = ownEffects(livePlays(stackPlays(homePlays.plays, now), now).filter((p) => !p.caught));
+      return goal ? rules.playPrice(priced, goal, checked.ok ? checked.value : config ?? {}, effects) : 0;
     } catch {
       return 0;
     }
-  }, [rules, setting, priced, goal, config]);
+  }, [rules, setting, priced, goal, config, homePlays.plays, api]);
   /* What the card itself asks (`ownPrice`, the surcharge row), and with the price effects on it (`price`, what is paid). */
   const price = ownPrice + raises.reduce((sum, r) => sum + r.add, 0);
 
@@ -367,7 +373,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     const now = api.now();
     /* As the ghost marks read them (`effectsOf`): a caught play is no Gimmick there. */
     const plays = livePlays(carried, now).filter((p) => !p.caught);
-    const effects: CardEffect[] = plays.map((p) => ({ card: p.card, act: p.id, ...(p.reach ? { reach: p.reach } : {}), ...(p.ends ? { ends: p.ends } : {}) }));
+    const effects = ownEffects(plays);
     const named = new Set(cuttable(rules, effects, goal, new Date(now), (key) => instance.cards.find((c) => c.key === key)).map((e) => e.act));
     return plays.filter((p) => named.has(p.id) && p.caster !== null)
       .sort((a, b) => Date.parse(a.playedAt) - Date.parse(b.playedAt))

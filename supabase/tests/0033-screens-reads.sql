@@ -32,16 +32,17 @@ declare
 begin
   -- A Turn applied ten days ago: beta now, since then, and the cooldown (30 days) runs on.
   insert into class_history (character, class_key, started_at) values (turned, 'beta', applied);
-  -- A character waiting to debut, and one an admin retired.
-  insert into characters (owner, name, created_at) values (ann, 'Sr Waiting', now() - interval '1 day') returning id into waiting;
-  insert into class_history (character, class_key, started_at) values (waiting, 'alpha', now() - interval '1 day');
-  update characters set retired_at = retired where id = gone;
-  -- Settled up to an hour ago, so a Turn asked now has a window to take effect at.
+  -- Settled up to an hour ago, so a Turn asked now has a window to take effect at. A fresh instance has settled nothing, and this
+  -- settlement debuts every character made before its end, so it runs before the character that must still be waiting is made.
   if last_end is null or last_end < now() - interval '1 hour' then
     perform set_config('role', 'service_role', true);
     perform apply_settlement(coalesce(last_end, (select min(starts_at) from seasons)), now() - interval '1 hour', '[]');
     perform tests.unbecome();
   end if;
+  -- A character waiting to debut, and one an admin retired.
+  insert into characters (owner, name, created_at) values (ann, 'Sr Waiting', now() - interval '1 day') returning id into waiting;
+  insert into class_history (character, class_key, started_at) values (waiting, 'alpha', now() - interval '1 day');
+  update characters set retired_at = retired where id = gone;
 
   perform tests.become(ann);
   if (select count(*) from my_characters) is distinct from 4::bigint then raise exception 'Ann reads her four characters, got %', (select count(*) from my_characters); end if;

@@ -71,7 +71,7 @@ function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [
       settings: { economy: { 'whoops.price': 100, 'stick.price': 100 } },
       classes: [{ key: 'face', name: 'Face' }, { key: 'heel', name: 'Heel' }],
     },
-    ui: { glass: testGlass, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
+    ui: { glass: testGlass, licensing: { source: 'https://example.com/source', terms: 'T', credits: [] }, copy: { siteName: 'Divided World', siteTagline: 'dw.gripe', shopName: 'The Vending Machine', badges: [['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']] }, cards: [], frontDoor: { prompt: { title: 'Who will you play as?', line: 'A test game, played in masks.' } } },
     settings: { walletCap: 600, registrationMode },
   } as unknown as Kayfa;
   const view = render(
@@ -174,11 +174,12 @@ describe('the banner: the board\'s own', () => {
 });
 
 describe('the footer ends every board page', () => {
-  test('says "Powered by KayfaBB", then the instance\'s badges in its own words, hidden from assistive tech, and links nothing', () => {
+  test('says "Powered by KayfaBB", then the instance\'s badges in its own words, hidden from assistive tech, and links exactly the source and the license page', () => {
     setup();
     const foot = screen.getByRole('contentinfo');
     expect(foot).toHaveTextContent('Powered by KayfaBB');
-    expect(foot.querySelectorAll('a')).toHaveLength(0);
+    const links = [...foot.querySelectorAll('a')];
+    expect(links.map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Source', 'https://example.com/source'], ['License & credits', '/license']]);
     const badges = foot.querySelector('.kb-badges')!;
     expect(badges).toHaveAttribute('aria-hidden', 'true');
     expect([...badges.querySelectorAll('.kb-badge')].map((b) => [...b.children].map((c) => c.textContent))).toEqual([['Game', 'On'], ['Masks', 'On'], ['Kilter', 'Off']]);
@@ -193,14 +194,14 @@ describe('the footer ends every board page', () => {
     ];
     const copy = { siteName: 'X', siteTagline: 'x', shopName: 'S' };
     const show = () => render(
-      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], themes, frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
+      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, licensing: { source: 'https://example.com/source', terms: 'T', credits: [] }, cards: [], themes, frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
     );
     document.documentElement.setAttribute('data-kb-theme', 'flames');
     try {
       show();
       const foot = screen.getByRole('contentinfo');
       expect(foot.querySelector('.kb-art-credit')).toHaveTextContent('Banner art: Animated fire by A. Painter, CC BY-SA 3.0');
-      expect([...foot.querySelectorAll('a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Animated fire', credit.source], ['CC BY-SA 3.0', credit.licenseUrl]]);
+      expect([...foot.querySelectorAll('.kb-art-credit a')].map((a) => [a.textContent, a.getAttribute('href')])).toEqual([['Animated fire', credit.source], ['CC BY-SA 3.0', credit.licenseUrl]]);
       cleanup();
       document.documentElement.setAttribute('data-kb-theme', 'house');
       show();
@@ -214,7 +215,7 @@ describe('the footer ends every board page', () => {
     cleanup();
     const copy = { siteName: 'X', siteTagline: 'x', shopName: 'S' };
     render(
-      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, cards: [], frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
+      <RouterProvider><KayfaProvider value={{ api: {}, instance: { classes: [], cards: [], settings: {} }, ui: { glass: testGlass, copy, licensing: { source: 'https://example.com/source', terms: 'T', credits: [] }, cards: [], frontDoor: { prompt: { title: 'Who?', line: 'A game.' } } }, settings: {} } as unknown as Kayfa}><PlayerProvider api={{ session: async () => ({ signedIn: false, account: null, bar: null, conductAccepted: true }), onSession: () => () => {} } as unknown as KayfaApi}><Frame><p>x</p></Frame></PlayerProvider></KayfaProvider></RouterProvider>,
     );
     expect(screen.getByRole('contentinfo')).toHaveTextContent('Powered by KayfaBB');
     expect(document.querySelector('.kb-badges')).toBeNull();

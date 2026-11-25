@@ -351,6 +351,19 @@ test('/conduct, signed out, is a glass page on the settings smoke that lists the
   expect(window.location.pathname).toBe('/');
 });
 
+test('/license, signed out, is a glass page on the settings smoke that shows the engine\'s notice and the instance\'s terms', async () => {
+  window.history.pushState(null, '', '/license');
+  const fake = createFake({ instance, settings: fallbackSettings });
+  render(<App api={fake} />);
+  expect(await screen.findByRole('heading', { level: 1, name: 'License & credits' })).toBeInTheDocument();
+  expect(document.getElementById('kayfabb')).not.toBeNull();
+  expect(screen.queryByRole('banner')).toBeNull();
+  expect(screen.queryByRole('region', { name: 'Game HUD' })).toBeNull();
+  expect(document.querySelector('.kb-glass-content-panel')).toBeNull();
+  await userEvent.click(within(await screen.findByRole('navigation', { name: 'Menu' })).getByRole('link', { name: 'Back to the board' }));
+  expect(window.location.pathname).toBe('/');
+});
+
 test('/invites opens Settings › Account, where invites now live, and keeps the address working', async () => {
   window.history.pushState(null, '', '/invites');
   const fake = createFake({ instance, settings: fallbackSettings });

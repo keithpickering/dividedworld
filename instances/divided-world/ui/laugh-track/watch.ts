@@ -60,6 +60,8 @@ export type Unregister = (() => void) & {
   refresh(): void;
   /** A pinned place has nearness 1 wherever it is. */
   pin(on: boolean): void;
+  /** A curtain is shut over the place's post (or opened): a covered place is out of view, told nothing and never murmured. */
+  cover(on: boolean): void;
 };
 
 interface Place {
@@ -71,6 +73,8 @@ interface Place {
   /** The nearness last told, or null while none has been (or the pieces were drawn again, and the new ones are owed one). */
   told: number | null;
   pinned: boolean;
+  /** Whether a curtain is shut over its post: it is treated as out of view. */
+  covered: boolean;
 }
 
 /** How long the murmur is held at nothing for a reaction, until the reaction's own length is known. */
@@ -242,6 +246,8 @@ function tick(now: number): void {
     const s = place.spec.screen;
     const reachPx = s.reachRem * rem;
     let n = 0, gain = 0;
+    /* A covered place is out of view: told 0 once if it had been told more, and never heard. */
+    if (place.covered) { if (place.told !== null) tell(place, 0); continue; }
     if (place.pinned) { n = 1; gain = murmurGain(0, reachPx, s.murmurMost); }
     else if (near.has(place)) {
       const d = distance(boxes(place), line, pointer ?? undefined);
@@ -270,9 +276,9 @@ function observe(place: Place, redrawn = false): void {
 /** Registers a place; the function it returns unregisters it (its post is gone or its words changed). */
 export function register(spec: PlaceSpec): Unregister {
   /* A page with no observer (a test's, or a browser too old to have one) has no way to know which places are near: it hears nothing, and reads fine. */
-  if (typeof IntersectionObserver !== 'function') return Object.assign(() => {}, { refresh: () => {}, pin: () => {} });
+  if (typeof IntersectionObserver !== 'function') return Object.assign(() => {}, { refresh: () => {}, pin: () => {}, cover: () => {} });
   if (places.size === 0) start(spec.screen);
-  const place: Place = { spec, seen: new Set(), watched: new Set(), told: null, pinned: false };
+  const place: Place = { spec, seen: new Set(), watched: new Set(), told: null, pinned: false, covered: false };
   places.add(place);
   observe(place);
   const off = (() => {
@@ -283,6 +289,13 @@ export function register(spec: PlaceSpec): Unregister {
     wake();
   }) as Unregister;
   off.refresh = () => { if (places.has(place)) observe(place, true); };
+  off.cover = (on) => {
+    if (!places.has(place) || place.covered === on) return;
+    place.covered = on;
+    /* Shut or opened, it is owed a look: shut, it is told 0 and loses the murmur; opened, it is told as one that had just come near. */
+    owing.add(place);
+    wake();
+  };
   off.pin = (on) => {
     if (!places.has(place) || place.pinned === on) return;
     place.pinned = on;
