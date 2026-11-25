@@ -16,7 +16,9 @@
  * Cost. A puff steps the whole content area for its 5 s, where Hot Box steps only what is disturbed, so it takes its rungs from the page's one ladder (`hot-box/ladder.ts`) and
  * gives it its time with every smoked post's: over the budget it is the first to step down (it is `transient`), so a smoked post never goes down a rung for a puff that is
  * gone in 5 s, and a puff that steps down is cheaper for the rest of its life (bigger cells, fewer rounds, then drawn from the model with no field). Only the rows of the tiles the
- * layer holds are stepped and stored (the field's `view`), so a tall post costs what is drawn. At a busy instance's scale a page holds at most one puff for each post in view that
+ * layer holds are stepped and stored (the field's `view`), and only those rows are drawn, so a tall post costs what is seen and a held tile outside them is left clear. The rung a puff steps down
+ * to is kept on the page's ladder (`ladder.transientLevel`) and the next puff starts there, so a slow device is over the budget for the first judgment of one puff and not of every one; the last two rungs
+ * scale the cells with the bilinear filter, where the rungs the owner approved use the cubic one. At a busy instance's scale a page holds at most one puff for each post in view that
  * has an extinguisher thrown, and at 2% of plays that is rarely two.
  *
  * It reads the page's clock, `api.now()`, for the puff's own time and the reader's clearings, and the painter's cost is a duration on the page's timer (`performance.now`),
@@ -52,6 +54,8 @@ const JET_PX_S = 900;
 const START_LEVEL = 2;
 /** How far past the window's top and bottom the field is stepped, CSS px: a few frames of a fast scroll, so a row is stepped before it is seen. */
 export const STEP_MARGIN = 96;
+/** The first rung whose cells are scaled up with the bilinear filter (`imageSmoothingQuality` 'low') and not the cubic one: the rungs from which the puff is on a device too slow for the look. */
+const LOW_FILTER_LEVEL = 3;
 
 /** The spout, in the content area's px. */
 export interface PuffSpout { readonly x: number; readonly y: number }
@@ -66,7 +70,7 @@ export interface PuffProps {
 }
 
 /** What the painter keeps between frames: the field, the rung, when it last stepped, which tiles it has painted in the frame it is in, and the ladder's count of frames at its last paint. */
-interface Painter { field: FogField | null; level: number; steppedAt: number; stamp: number | null; seen: Set<number>; paintedIn: number }
+interface Painter { field: FogField | null; level: number; view: { top: number; bottom: number } | null; steppedAt: number; stamp: number | null; seen: Set<number>; paintedIn: number }
 
 /**
  * The rows (the box's px) a frame's step is for: what the window shows of the tiles the layer holds, and `STEP_MARGIN` more each side. The layer holds the tiles within 256 px of the window, which
@@ -101,7 +105,7 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
   const model = useRef(emptyPointer());
   const startedAt = useRef(api.now());
   const own = useMemo(() => nextPainterId(), []);
-  const painter = useRef<Painter>({ field: null, level: START_LEVEL, steppedAt: api.now(), stamp: null, seen: new Set(), paintedIn: Number.NEGATIVE_INFINITY });
+  const painter = useRef<Painter>({ field: null, level: Math.max(START_LEVEL, ladder.transientLevel), view: null, steppedAt: api.now(), stamp: null, seen: new Set(), paintedIn: Number.NEGATIVE_INFINITY });
   const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
   const latest = useRef({ spout, done, box: { w: 0, h: 0 } });
   latest.current = { spout, done, box: latest.current.box };
@@ -129,6 +133,9 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
     prunePointer(m, t);
     const dt = t - p.steppedAt;
     p.steppedAt = t;
+    /* The rows this frame is for: what is stepped, and so all that is drawn (a row outside it has not moved since it was last in it). */
+    const view = stepRows(layer);
+    p.view = view;
     if (direct) return;
     const box = latest.current.box, at = latest.current.spout;
     const clearings = openClearings(m, t, false);
@@ -138,8 +145,6 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
       ...(c === mover ? { vx: v.x, vy: v.y } : {}),
       burst: c === m.touch && t - c.openedAt < FOG.burst.ms,
     }));
-    /* Only what the window shows (and a margin) of the layer's tiles is stepped. */
-    const view = stepRows(layer);
     const floor = puffTarget(at, { width: box.w, height: box.h }, ms), cover = coverageOf(clearings, radius, t, false, m.trail);
     field.seed = floor;
     stepField(field, dt, {
@@ -175,7 +180,15 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
     }
     p.seen.add(draw.index);
     const alpha = puffAlpha(ms);
-    const rows = rowsOf(field, draw.top, draw.top + draw.h), n = rows.y1 - rows.y0;
+    /* Only the rows that were stepped are drawn: a tile the layer holds that lies outside them (it is held out to 256 px from the window, the step goes 96 px past it) is left clear, as a row is at rest where it is not seen. */
+    const seen = draw.frame === null ? stepRows(layerRef.current) : p.view;
+    const from = seen ? Math.max(draw.top, seen.top) : draw.top, to = seen ? Math.min(draw.top + draw.h, seen.bottom) : draw.top + draw.h;
+    if (to <= from) {
+      spend(`${own}:${draw.index}`, draw.frame, performance.now() - began, true);
+      if (draw.frame !== null) p.paintedIn = ladder.frames;
+      return;
+    }
+    const rows = rowsOf(field, from, to), n = rows.y1 - rows.y0;
     const sc = scratchFor(field.gw, n);
     if (!sc) {
       /* No scratch canvas: the front as a flat disc, so the puff is still seen filling the box. */
@@ -193,7 +206,8 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
       sc.ctx.putImageData(sc.img, 0, 0);
       const o = cellOrigin(field, 0, rows.y0);
       ctx.imageSmoothingEnabled = true;
-      ctx.imageSmoothingQuality = 'high';
+      /* The owner-approved look is the cubic filter, at the rungs the puff starts on; the last two rungs are for a device the first could not keep up on, and scale the cells with the bilinear one, which halves a frame's cost there. */
+      ctx.imageSmoothingQuality = (forcedFogLevel() ?? p.level) >= LOW_FILTER_LEVEL ? 'low' : 'high';
       ctx.drawImage(sc.canvas, 0, 0, field.gw, n, o.x, o.y, field.gw * field.cell, n * field.cell);
     }
     spend(`${own}:${draw.index}`, draw.frame, performance.now() - began, true);
@@ -232,7 +246,10 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
       level: () => painter.current.level,
       pointed: () => model.current.mouse !== null || model.current.touch !== null,
       paintedIn: () => painter.current.paintedIn,
-      lower: (to) => { painter.current.level = Math.min(FOG_LEVEL_MOST, Math.max(painter.current.level + 1, to)); },
+      lower: (to) => {
+        painter.current.level = Math.min(FOG_LEVEL_MOST, Math.max(painter.current.level + 1, to));
+        ladder.transientLevel = Math.max(ladder.transientLevel, painter.current.level);
+      },
     };
     ladder.rungs.add(rung);
     return () => { ladder.rungs.delete(rung); };

@@ -40,7 +40,8 @@ export const LADDER_FIRST = 8;
 /** A smoked post, or a puff (`transient`), on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
 export interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void; readonly transient?: boolean }
 /* One budget for the page: every smoked post's painter adds its time to the frame it ran in, and the mean of the last frames decides. */
-export const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, spentT: 0, painted: false, kept: [] as number[], keptT: [] as number[], frames: 0, skipping: false };
+export const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, spentT: 0, painted: false, kept: [] as number[], keptT: [] as number[], frames: 0, skipping: false, transientLevel: 0 };
+/* `ladder.transientLevel` is the lowest rung a transient fog (a puff) has been stepped down to on this page, which the next one starts at: a puff lasts 5 s and begins over the budget on a slow device at every start, so what the last one learned is not forgotten when it ends. Only a puff's `lower` sets it, and it is never raised, as no rung is. */
 /* Each smoked post's own name in the ladder's frames: the same play can be shown twice on a page (in its thread and in an ORIGIN box), so the play's id is not one. */
 let painters = 0;
 /** A new painter's name in the ladder's frames. */
@@ -111,7 +112,7 @@ export function forceFogLevel(level: number | null): void {
 }
 /** For tests: the ladder as a fresh page has it. */
 export function resetFogLadder(): void {
-  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.spentT = 0; ladder.painted = false; ladder.kept = []; ladder.keptT = []; ladder.frames = 0; ladder.skipping = false;
+  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.spentT = 0; ladder.painted = false; ladder.kept = []; ladder.keptT = []; ladder.frames = 0; ladder.skipping = false; ladder.transientLevel = 0;
   forcedLevel = null;
 }
 

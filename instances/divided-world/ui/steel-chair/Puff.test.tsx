@@ -36,7 +36,7 @@ let forced = false;
 let clock = 0;
 /** How far the window is scrolled over the area, CSS px: a canvas's rect is its place in the area less this. */
 let scrolled = 0;
-const rects = new WeakMap<HTMLCanvasElement, { clears: number; draws: number }>();
+const rects = new WeakMap<HTMLCanvasElement, { clears: number; draws: number; spans: [number, number][]; quality: string[] }>();
 
 function stubWindow() {
   window.requestAnimationFrame = vi.fn((cb: FrameRequestCallback) => { frames.set(++frameId, cb); return frameId; });
@@ -58,13 +58,15 @@ function stubWindow() {
   Object.defineProperty(HTMLElement.prototype, 'clientWidth', { configurable: true, get() { return AREA.width; } });
   Object.defineProperty(HTMLElement.prototype, 'clientHeight', { configurable: true, get() { return AREA.height; } });
   HTMLCanvasElement.prototype.getContext = (function (this: HTMLCanvasElement) {
-    const rec = rects.get(this) ?? { clears: 0, draws: 0 };
+    const rec = rects.get(this) ?? { clears: 0, draws: 0, spans: [], quality: [] };
     rects.set(this, rec);
-    return {
+    const ctx = {
+      imageSmoothingQuality: 'low',
       setTransform: () => {}, save: () => {}, restore: () => {}, beginPath: () => {}, clip: () => {}, fill: () => {}, rect: () => {}, arc: () => {}, fillRect: () => {},
-      clearRect: () => { rec.clears += 1; }, drawImage: () => { rec.draws += 1; }, putImageData: () => {},
+      clearRect: () => { rec.clears += 1; }, drawImage: (...a: number[]) => { rec.draws += 1; rec.quality.push(ctx.imageSmoothingQuality); rec.spans.push([a[6]!, a[6]! + a[8]!]); }, putImageData: () => {},
       createImageData: (w: number, h: number) => ({ width: w, height: h, data: new Uint8ClampedArray(w * h * 4) }),
     };
+    return ctx;
   }) as unknown as HTMLCanvasElement['getContext'];
 }
 
@@ -204,6 +206,28 @@ describe('its field', () => {
     expect(view.top, 'and its top edge').toBeLessThanOrEqual(1500);
   });
 
+  test('draws only the rows it stepped: a held tile that lies outside them is left clear, and a tile at the window draws no further than the margin past it', () => {
+    /* The window's top at 1,600 of a 5,000 px post, 768 tall: it shows 1,600 to 2,368, the step is for 1,504 to 2,464, and the layer holds tiles out to 256 px past the window, among them one that begins at 2,560. */
+    AREA.height = 5000;
+    scrolled = 1600;
+    window.scrollY = 1600;
+    const s = setup({ spout: { x: 300, y: 2000 } });
+    pass(PUFF.billowMs + 200);
+    const view = lastStep()[2].view!;
+    const held = vi.mocked(makeTileLayer).mock.results[0]!.value.held() as { top: number; h: number; sheets: HTMLCanvasElement[] }[];
+    const away = held.filter((t) => t.top >= view.bottom || t.top + t.h <= view.top);
+    expect(away.length, 'the layer holds a tile outside the stepped rows').toBeGreaterThan(0);
+    for (const t of away) expect(rects.get(t.sheets[0]!)!.draws, `the tile at ${t.top} is outside the rows stepped and is drawn from stale rows`).toBe(0);
+    const near = held.filter((t) => t.top < view.bottom && t.top + t.h > view.top);
+    expect(near.length).toBeGreaterThan(0);
+    for (const t of near) {
+      const rec = rects.get(t.sheets[0]!)!;
+      expect(rec.draws).toBeGreaterThan(0);
+      for (const [from, to] of rec.spans.slice(-1)) { expect(from).toBeGreaterThanOrEqual(view.top - 20); expect(to).toBeLessThanOrEqual(view.bottom + 20); }
+    }
+    s.unmount();
+  });
+
   test('the jet runs for jetMs and no longer', () => {
     setup();
     pass(64);
@@ -277,6 +301,31 @@ describe('the page\'s ladder', () => {
     pass(100);
     expect(vi.mocked(stepField).mock.calls.length, 'no field is stepped at the last rung').toBe(stepped);
     expect(canvases(document.body).length, 'and it is still drawn').toBeGreaterThan(0);
+  });
+
+  test('a puff that stepped down leaves the page at that rung, so the next one starts there and is not over the budget again until its first judgment', () => {
+    const first = setup();
+    pass(PUFF.billowMs + 100);
+    for (let i = 0; i < 12; i++) { spend('x:0', 1000 + i, FOG_BUDGET_MS * 3); spend('x:0', 1000 + i, 0); }
+    pass(48);
+    act(() => { vi.advanceTimersByTime(TOTAL + 50); });
+    expect(first.done).toHaveBeenCalledTimes(1);
+    first.unmount();
+    vi.mocked(stepField).mockClear();
+    vi.mocked(emptyField).mockClear();
+    setup();
+    pass(PUFF.billowMs + 100);
+    expect(vi.mocked(stepField).mock.calls.length, 'the new puff is at the last rung, drawn with no field').toBe(0);
+  });
+
+  test('the owner-approved smoothing is kept at the rungs that draw the fog from a field of cells, and the last two, which are for a slow device, scale it with the cheaper filter', () => {
+    setup();
+    pass(PUFF.billowMs + 100);
+    const qualities = () => canvases(document.body).flatMap((c) => rects.get(c)?.quality ?? []);
+    expect(new Set(qualities()), 'at its start rung').toEqual(new Set(['high']));
+    forceFogLevel(3);
+    pass(100);
+    expect(qualities().slice(-1)[0], 'at rung 3').toBe('low');
   });
 
   test('a field made again at another rung starts from the puff as it stands, not empty', () => {
