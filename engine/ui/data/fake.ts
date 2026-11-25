@@ -226,6 +226,11 @@ export interface Seed {
    */
   announce(character: Id, what: 'debut' | 'turn', options?: { was?: string; class?: string; ahead?: boolean; at?: number }): Id;
   /**
+   * A Roster Report entry that names Turns taking effect (`write_roster_entry`, 0432): `post` is the entry's first post (a staff post the seed has written), `turns` the first of the Turns taking effect as the entry's record
+   * holds them, `count` how many took effect (the turns' number where unsaid). Season News lists it as one `roster` item linking the post, dated `at` (else now).
+   */
+  rosterEntry(post: Id, turns: readonly TallyName[], options?: { at?: number; count?: number }): void;
+  /**
    * A season's results as they landed (`season_results`, 0099): one frozen row per character, `name` as it was then (else the character's now),
    * dated `at` (else now). The fake never ends a season itself; this is the state its end would have left. Written once: a second call for the
    * season throws, as the table refuses an edit.
@@ -1318,6 +1323,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     };
   }
   /* ------------------------------------------------------------------ season news ---- */
+  /** The Roster Report entries that named Turns taking effect (`news_landed` kind `roster`, 0432), as the seed wrote them. */
+  const rosterNews: { readonly post: Id; readonly turns: readonly TallyName[]; readonly count: number; readonly at: number }[] = [];
   /** The Boss changes the fake's seeds hold (`season_handovers`, 0051): who left, who arrived, and when. */
   const handovers: { readonly id: number; readonly cause: 'rollover' | 'departure'; readonly outgoing: string | null; readonly boss: string; readonly at: number; readonly how: string; readonly bossWas: string | null; readonly outgoingOffice: string | null; readonly note: string | null; readonly facts: HandoffFacts }[] = [];
   /** The handovers whose to-do an admin dismissed (`handover_dismissals`), by the handover's id. */
@@ -1404,7 +1411,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     }
     /* A landing is the announce Acts of one thread at one instant (news_landed, 0100): its item names the first, counts them all and lists the first 20 names, debuts then Turns. */
     const landings = new Map<string, ActRec[]>();
-    for (const a of [...acts.values()].filter((x) => x.kind === 'announce').sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order)) {
+    /* An announcement written ahead of its Turn makes no item (news_announce, 0432): the Turn is news when it takes effect, in the Roster Report's entry that names it. */
+    for (const a of [...acts.values()].filter((x) => x.kind === 'announce' && x.payload['ahead'] !== true).sort((x, y) => (x.seq ?? 0) - (y.seq ?? 0) || x.order - y.order)) {
       const key = `${a.thread}|${a.at}`;
       landings.set(key, [...(landings.get(key) ?? []), a]);
     }
@@ -1416,6 +1424,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...base, kind: 'tally', act: first.id, thread: first.thread, seq: first.seq, at: iso(first.at), season: seasons.find((x) => x.turnsThread === first.thread)?.number ?? 0, count: group.length,
         debuts: named.filter((a) => a.payload['what'] === 'debut').map(entry), turns: named.filter((a) => a.payload['what'] === 'turn').map(entry),
       });
+    }
+    for (const r of rosterNews) {
+      const post = acts.get(r.post)!;
+      out.push({ ...base, kind: 'roster', act: post.id, thread: post.thread, seq: post.seq, at: iso(r.at), season: [...seasons].filter((x) => Date.parse(x.startsAt) <= r.at).sort((x, y) => y.number - x.number)[0]?.number ?? 1, count: r.count, turns: r.turns });
     }
     for (const h of handovers) {
       if (h.boss === h.outgoing) continue;
@@ -5791,7 +5803,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const w of seededAlerts) if (w.account === account.id) out.push(line({ kind: w.kind, sub: w.sub, act: w.act, character: w.character, at: w.at }));
     for (const f of followedFor(account)) out.push(line({ kind: 'followed', sub: null, act: null, character: null, at: Date.parse(f.newestAt), thread: f.thread, title: f.title, count: f.newPosts }));
     /* Every player's news, the same for each (alerts_news, 0062): one line per update, and nothing of the player's in it. Season news joins here. */
-    for (const n of newsItems()) out.push(line({ kind: 'seasonNews', sub: n.kind, act: n.act, character: null, at: Date.parse(n.at), thread: n.thread, title: null, name: n.name, count: n.count }));
+    for (const n of newsItems()) out.push(line({ kind: 'seasonNews', sub: n.kind === 'roster' ? 'tally' : n.kind, act: n.act, character: null, at: Date.parse(n.at), thread: n.thread, title: null, name: n.name, count: n.count }));
     for (const u of updateActs()) out.push(line({ kind: 'update', sub: null, act: u.id, character: null, at: u.at, thread: u.thread, title: String(u.payload['title']), name: characters.get(u.character!)?.name ?? null }));
     for (const x of settlements) {
       const mine = x.lines.filter((l) => l.account === account.id);
@@ -6056,6 +6068,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o.class !== undefined) payload.class = o.class;
       if (o.ahead === true) payload.ahead = true;
       return write({ character, kind: 'announce', thread, payload, at }).id;
+    },
+    rosterEntry(post, turns, o = {}) {
+      if (!acts.has(post)) throw new Error(`no such Act ${post}`);
+      rosterNews.push({ post, turns, count: o.count ?? turns.length, at: o.at ?? now() });
     },
     seasonResults(season, rows, o = {}) {
       if (results.has(season)) throw new Error(`season ${season}'s results are written once, as the season ended`);

@@ -19,10 +19,21 @@
  * fails, leaves it for the next run; a window is applied once, so nothing is queued twice. A
  * run that dies between a send and its clearing sends that batch again, which a client, keeping
  * each Act by its id, takes as the same Act.
+ *
+ * **The Roster Report** (the staff-board threads plan, Task 7) follows the windows when the caller gives it (`options.roster`): each applied window of the open season with no entry
+ * (`roster_due`, oldest first) is read (`roster_facts`: public facts only), given one light-tier call for its commentary in the Boss's name, and written (`write_roster_entry`: the
+ * Boss's posts and the entry). It runs after `apply_settlement` has committed and is never the settlement's failure: whatever goes wrong in it is logged and the run goes on, and a
+ * window whose entry was not written is still due at the next run, which writes it (a run with nothing to settle writes the entries that wait). A model that fails posts the entry under
+ * the stock heading and says why on its record; a database or ledger error stops the roster there, leaving the window due. The settlement's answer says nothing of it.
  */
 import { settle, shareEntries } from '../../../engine/rules/settle.ts';
 import type { Instance, SettlementInput } from '../../../engine/rules/types.ts';
-import type { Db } from '../_shared/rpc.ts';
+import { DUTY_SPECS, staffFor } from '../../../engine/system/duties.ts';
+import type { Models } from '../../../engine/system/model.ts';
+import { DEFAULT_ROSTER_COPY, rosterBodies, rosterCommentary, rosterIsEmpty, rosterPrompt, type RosterCopy, type RosterFacts } from '../../../engine/system/roster.ts';
+import type { Trim } from '../../../engine/system/validate.ts';
+import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
+import { LedgerWriteFailed } from '../_shared/models/index.ts';
 import type { Broadcast, Delivery } from '../_shared/broadcast.ts';
 import { sendWaiting } from '../_shared/outbox.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
@@ -49,6 +60,13 @@ export interface RunOptions {
   readonly clock?: () => number;
   /** Sends live updates and says how it ended (supabase/functions/_shared/broadcast.ts); none sends nothing, and leaves them waiting. */
   readonly deliver?: (messages: readonly Broadcast[]) => Promise<Delivery>;
+  /** The Roster Report's commentary: the models, built from the instance as the database's settings tune it (the tiers are a setting), and the words of its headings. None writes no entries. */
+  readonly roster?: RosterRun;
+}
+
+export interface RosterRun {
+  readonly models: (tuned: Instance) => Models | Promise<Models>;
+  readonly copy?: RosterCopy;
 }
 
 /**
@@ -64,6 +82,9 @@ export const MOST_WINDOWS_PER_RUN = 31;
  * rather than a kill stopping it inside one. The next firing carries on.
  */
 export const MOST_RUN_MS = 60_000;
+
+/** How many windows' entries one run writes: as many as a run settles. */
+const MOST_ROSTER_WINDOWS = MOST_WINDOWS_PER_RUN;
 
 export async function runSettlement(db: Db, instance: Instance, until: string, options: RunOptions = {}): Promise<SettlementOutcome> {
   const clock = options.clock ?? Date.now;
@@ -115,8 +136,66 @@ export async function runSettlement(db: Db, instance: Instance, until: string, o
     if (applied.reveal) console.error('settle: the season was not revealed at', window.end, applied.reveal);
     windows.push({ ...window, applied: applied.applied, entries: result.entries.length, ...(applied.masks ? { masks: applied.masks } : {}), ...(applied.reveal ? { reveal: applied.reveal } : {}) });
   }
+  if (options.roster) {
+    try {
+      await runRoster(db, async () => (tuned ??= await withDatabaseSettings(instance, db)), options.roster, clock, started);
+    } catch (e) {
+      console.error('settle: the Roster Report stopped; its windows stay due for the next run', e instanceof Error ? e.message : String(e));
+    }
+  }
   await sendOutbox();
   return windows.length ? outcome(windows, false) : { status: 'nothing to settle', until };
+}
+
+const said = (e: unknown): string => (e instanceof Error ? e.message : String(e)).slice(0, 500);
+
+/** What the commentary call came to: its words (none where it failed or said nothing), the bounds it overshot, and why it has none where that is a failure. */
+interface Commentary { readonly text: string | null; readonly trims: readonly Trim[]; readonly failed?: string }
+
+async function commentary(db: Db, tuned: Instance, models: () => Promise<Models>, facts: RosterFacts): Promise<Commentary> {
+  // Nothing is asked of a System that is off, or of a season with no Boss: the database writes such an entry with no posts, and says why.
+  if (!tuned.settings.systemEnabled) return { text: null, trims: [] };
+  const boss = await db.rpc<string | null>('current_boss', {});
+  if (!boss) return { text: null, trims: [] };
+  const persona = tuned.system.roster.find((p) => p.key === boss);
+  if (!persona) return { text: null, trims: [], failed: `the Boss ${boss} is not in the roster` };
+  // The report is the Boss's work: its commentary is written in the Boss's voice and its posts are the Boss's. A duty the instance gives to anyone else is not served by a call in the Boss's name.
+  const assigned = staffFor('roster', tuned);
+  if (assigned !== 'boss') return { text: null, trims: [], failed: `the roster duty is assigned to ${assigned}, and only the Boss writes the report` };
+  const className = (key: string) => tuned.classes.find((c) => c.key === key)?.name ?? key;
+  try {
+    const frame = rosterPrompt(tuned.system, persona, facts, className);
+    const out = await (await models()).chat({ duty: 'roster', tier: DUTY_SPECS.roster.tier, staff: boss, system: frame.system, messages: frame.messages, schema: frame.schema, rules: frame.rules, maxTokens: frame.maxTokens });
+    const answer = rosterCommentary(out.value);
+    const trims = [...out.trims, ...answer.trims];
+    return answer.text === null ? { text: null, trims, failed: 'the answer held no commentary' } : { text: answer.text, trims };
+  } catch (e) {
+    // A ledger that cannot be written, or a database that cannot be reached, is a fact about the infrastructure: the entry waits for the next run, as a paid call that cannot be recorded must not be followed by anything.
+    if (e instanceof LedgerWriteFailed || e instanceof DatabaseError || e instanceof TransportError) throw e;
+    return { text: null, trims: [], failed: said(e) };
+  }
+}
+
+/** The due windows' entries, oldest first, each one whole: read, commented on, written. A window that cannot be written stops the roster there, so that later windows are never written ahead of it. */
+async function runRoster(db: Db, tunedNow: () => Promise<Instance>, roster: RosterRun, clock: () => number, started: number): Promise<void> {
+  const due = (await db.rpc<string[]>('roster_due', {})).slice(0, MOST_ROSTER_WINDOWS);
+  let models: Models | undefined;
+  for (const end of due) {
+    if (clock() - started >= MOST_RUN_MS) return;
+    const facts = await db.rpc<RosterFacts>('roster_facts', { window_end: end });
+    const record: Record<string, unknown> = { counts: { newcomers: facts.newcomers.length, announced: facts.announced.length, landed: facts.landed.length, reveals: facts.reveals.length } };
+    let bodies: string[] = [];
+    if (!rosterIsEmpty(facts)) {
+      const tuned = await tunedNow();
+      const answer = await commentary(db, tuned, async () => (models ??= await roster.models(tuned)), facts);
+      const className = (key: string) => tuned.classes.find((c) => c.key === key)?.name ?? key;
+      bodies = rosterBodies(facts, roster.copy ?? DEFAULT_ROSTER_COPY, tuned.settings.postMaxLength, { postsPerPage: tuned.settings.postsPerPage, commentary: answer.text, className });
+      record.commentary = answer.text;
+      if (answer.trims.length) record.trims = answer.trims;
+      if (answer.failed !== undefined) record.commentaryFailed = answer.failed;
+    }
+    await db.rpc('write_roster_entry', { window_end: end, newcomers: facts.newcomers.map((n) => n.character), bodies, record });
+  }
 }
 
 function outcome(windows: (Window & { applied: boolean; entries: number; masks?: string; reveal?: string })[], behind: boolean): SettlementOutcome {

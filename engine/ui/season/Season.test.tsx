@@ -391,6 +391,29 @@ describe('the News tab', () => {
     expect(await within(names[0]!).findByText('Yours')).toBeInTheDocument();
   });
 
+  test('a Roster Report entry that names Turns taking effect is one item listing them (the first of them and a count), linking the entry; an announcement written ahead of its Turn is none', async () => {
+    const w = world();
+    const boss = w.fake.seed.staff('roster-boss', 'Roster Boss', 'boss', { at: at(1) });
+    const entry = w.fake.seed.staffPost(boss, w.announcements.thread, 'The Turns are in.', { at: at(29, 9) });
+    w.fake.seed.rosterEntry(entry, [
+      { character: w.gloomba, name: 'Gloomba', class: 'heel', was: 'face' },
+      { character: w.pipe, name: 'Pipewrench', class: null, was: null },
+    ], { at: at(29, 9), count: 23 });
+    /* Written ahead of its Turn: the Turn is news when it takes effect, in the entry that names it. */
+    w.fake.seed.announce(w.mrs, 'turn', { at: at(29, 8), ahead: true, class: 'heel' });
+    show(w.fake);
+    const item = await waitFor(() => itemOf('23 characters turned'));
+    const names = within(item).getAllByRole('listitem');
+    expect(names.map((n) => within(n).getByRole('link').textContent)).toEqual(['Gloomba', 'Pipewrench']);
+    expect(names[0]).toHaveTextContent('Gloomba was a Face, now a Heel');
+    expect(names[1]).not.toHaveTextContent(/was a|now a/u);
+    expect(item).toHaveTextContent('and 21 more');
+    expect(within(item).getByRole('link', { name: 'Read the Roster Report entry' }).getAttribute('href')).toMatch(new RegExp(`^/t/${w.announcements.thread}\\?page=1#post-\\d+$`, 'u'));
+    expect(screen.queryByRole('heading', { level: 3, name: /Mrs\. Hooligan/u })).toBeNull();
+    const heads = within(feed()).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(heads.filter((h) => /turned/u.test(h ?? ''))).toEqual(['23 characters turned', 'Pipewrench turned']);
+  });
+
   test('each item is one seasonNews alert, the same for every player', async () => {
     const w = world();
     const mine = (await w.fake.alerts()).filter((a) => a.kind === 'seasonNews');

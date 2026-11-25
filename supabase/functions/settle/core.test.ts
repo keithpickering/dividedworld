@@ -358,3 +358,190 @@ test('an until that is not a time is refused before anything is asked', async ()
   await assert.rejects(runSettlement(db, instance, 'yesterday'), /until/);
   assert.equal(calls.length, 0);
 });
+
+/* ------------------------------------------------------------------------------- the Roster Report (the staff-board threads plan, Task 7) ---- */
+
+import { AnswerRejected, type ChatRequest, type ModelResult, type Models } from '../../../engine/system/model.ts';
+import { TransportFailure } from '../_shared/models/transport.ts';
+import { LedgerWriteFailed } from '../_shared/models/index.ts';
+import { DEFAULT_ROSTER_COPY, type RosterFacts } from '../../../engine/system/roster.ts';
+
+const W_END = new Date(TO).toISOString();
+const THREAD = '0a1b2c3d-0000-4000-8000-0000000000aa';
+const facts = (more: Partial<RosterFacts> = {}): RosterFacts => ({
+  window: { start: new Date(FROM).toISOString(), end: W_END }, season: 1,
+  newcomers: [{ character: 'c-new', name: 'Fresh Meat', act: 'a1', thread: THREAD, seq: 3 }],
+  announced: [], landed: [], reveals: [], ...more,
+});
+const BOSS = instance.system.firstBoss;
+
+/** The settlement's database with the roster's functions beside it: a due window, its facts, the Boss, and a writer that records what it is given. */
+function withRoster(opts: { facts?: RosterFacts; due?: string[]; boss?: string | null; writeFails?: boolean } = {}) {
+  const base = fakeDb();
+  const written: Record<string, unknown>[] = [];
+  const rosterCalls: string[] = [];
+  const due = opts.due ?? [W_END];
+  const db: Db = {
+    async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
+      if (fn === 'roster_due') { rosterCalls.push(fn); return (due.filter((d) => !written.some((w) => w.window_end === d))) as T; }
+      if (fn === 'roster_facts') { rosterCalls.push(fn); return (opts.facts ?? facts()) as T; }
+      if (fn === 'current_boss') { rosterCalls.push(fn); return (opts.boss === undefined ? BOSS : opts.boss) as T; }
+      if (fn === 'write_roster_entry') {
+        rosterCalls.push(fn);
+        if (opts.writeFails) throw new DatabaseError('write_roster_entry: the connection dropped', '08006', 500);
+        written.push(args);
+        return { written: true, posts: (args.bodies as string[]).length } as T;
+      }
+      return base.db.rpc<T>(fn, args);
+    },
+  };
+  return { db, calls: base.calls, written, rosterCalls };
+}
+
+function fakeModels(answer: (r: ChatRequest) => unknown | Promise<unknown>) {
+  const asked: ChatRequest[] = [];
+  const models: Models = {
+    async chat(r) { asked.push(r); const value = await answer(r); return { value, usage: {}, provider: 'p', model: 'm', trims: [], retries: 0, costMicrodollars: 0 } as ModelResult<unknown>; },
+    async complete() { throw new Error('the roster asks no completion'); },
+  };
+  return { models, asked };
+}
+const until = new Date(TO).toISOString();
+
+test('the Roster Report: after the windows, a due window with something to report is read, commented on by one light chat call in the Boss\'s name, and written', async () => {
+  const { db, written, calls } = withRoster();
+  const { models, asked } = fakeModels(() => ({ commentary: 'Fresh meat, everyone.' }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.equal(asked.length, 1);
+  assert.equal(asked[0]!.duty, 'roster');
+  assert.equal(asked[0]!.tier, 'light');
+  assert.equal(asked[0]!.staff, BOSS);
+  assert.equal(written.length, 1);
+  assert.equal(written[0]!.window_end, W_END);
+  assert.deepEqual(written[0]!.newcomers, ['c-new']);
+  const bodies = written[0]!.bodies as string[];
+  assert.ok(bodies[0]!.startsWith('Fresh meat, everyone.\n'), bodies[0]);
+  assert.ok(bodies[0]!.includes(`[url=/t/${THREAD}?page=1#post-3]Fresh Meat[/url]`));
+  assert.equal((written[0]!.record as { commentary: string }).commentary, 'Fresh meat, everyone.');
+  // After the settlement's own work, before the outbox is sent.
+  const order = calls.map((c) => c.fn);
+  assert.ok(order.lastIndexOf('apply_settlement') < order.length);
+});
+
+test('the commentary call is given the Boss\'s persona and the list, and nothing else: no id, no link, no player', async () => {
+  const { db } = withRoster();
+  const { models, asked } = fakeModels(() => ({ commentary: 'x' }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  const r = asked[0]!;
+  assert.match(r.system, /FanGaME|Boss|boss/i);
+  const text = [r.system, ...r.messages.map((m) => m.content)].join('\n');
+  assert.ok(text.includes('Fresh Meat'));
+  assert.ok(!/c-new|a1\b|\/t\/|\[url|0a1b2c3d|bob|cat|dee/.test(r.messages.map((m) => m.content).join('\n')), `the message holds only the list: ${r.messages[0]!.content}`);
+});
+
+test('a failed commentary posts the stock heading, and records why; the settlement\'s answer is the same as with no roster', async () => {
+  const plain = fakeDb();
+  const without = await runSettlement(plain.db, instance, until);
+  for (const failure of [new AnswerRejected('no JSON', 'notJson'), new TransportFailure('the provider never answered')]) {
+    const { db, written } = withRoster();
+    const { models } = fakeModels(() => { throw failure; });
+    const out = await runSettlement(db, instance, until, { roster: { models: () => models } });
+    assert.deepEqual(out, without, 'the roster adds nothing to the answer');
+    assert.equal(written.length, 1, 'the entry is written all the same');
+    const bodies = written[0]!.bodies as string[];
+    assert.ok(bodies[0]!.startsWith(`${DEFAULT_ROSTER_COPY.stockHeading}\n`), bodies[0]);
+    const record = written[0]!.record as { commentary: unknown; commentaryFailed: string };
+    assert.equal(record.commentary, null);
+    assert.match(record.commentaryFailed, /./);
+  }
+});
+
+test('an answer with no usable commentary posts the stock heading too', async () => {
+  const { db, written } = withRoster();
+  const { models } = fakeModels(() => ({ commentary: '   ' }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.ok((written[0]!.bodies as string[])[0]!.startsWith(DEFAULT_ROSTER_COPY.stockHeading));
+});
+
+test('a commentary past its bound is cut, and the cut is on the entry\'s record', async () => {
+  const { db, written } = withRoster();
+  const { models } = fakeModels(() => ({ commentary: 'word '.repeat(100) }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  const record = written[0]!.record as { commentary: string; trims: { path: string }[] };
+  assert.ok(record.commentary.length <= 280);
+  assert.deepEqual(record.trims.map((t) => t.path), ['commentary']);
+});
+
+test('a window with nothing to report is written with no posts and no call', async () => {
+  const { db, written } = withRoster({ facts: facts({ newcomers: [] }) });
+  const { models, asked } = fakeModels(() => ({ commentary: 'x' }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.equal(asked.length, 0);
+  assert.deepEqual(written.map((w) => [w.bodies, w.newcomers]), [[[], []]]);
+});
+
+test('a failed write never fails the settlement, and the window is still due at the next run', async () => {
+  const failing = withRoster({ writeFails: true });
+  const { models } = fakeModels(() => ({ commentary: 'x' }));
+  const out = await runSettlement(failing.db, instance, until, { roster: { models: () => models } });
+  assert.equal(out.status, 'applied');
+  assert.equal(failing.calls.filter((c) => c.fn === 'apply_settlement').length, 1, 'the settlement was applied');
+  // The next run: the writer works now, and finds the window due (nothing to settle, the roster runs all the same).
+  const { db, written } = withRoster();
+  const next = await runSettlement(db, instance, new Date(FROM).toISOString(), { roster: { models: () => models } });
+  assert.equal(next.status, 'nothing to settle');
+  assert.equal(written.length, 1, 'a run with nothing to settle still writes the entries that are due');
+});
+
+test('a roster that cannot read its due windows never fails the run', async () => {
+  const base = fakeDb();
+  const db: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>): Promise<T> => { if (fn === 'roster_due') throw new DatabaseError('roster_due: no', '42501', 403); return base.db.rpc<T>(fn, args); } };
+  const { models } = fakeModels(() => ({ commentary: 'x' }));
+  const out = await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.equal(out.status, 'applied');
+});
+
+test('a ledger that cannot be written stops the roster, leaving the window due, and still never fails the settlement', async () => {
+  const { db, written } = withRoster();
+  const { models } = fakeModels(() => { throw new LedgerWriteFailed('the ledger is down'); });
+  const out = await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.equal(out.status, 'applied');
+  assert.equal(written.length, 0, 'an unrecorded call is not followed by an entry; the window is due again');
+});
+
+test('with no Boss, or the System off, no call is made and the entry is written under the stock heading for the database to skip', async () => {
+  for (const setup of [{ boss: null }, { boss: BOSS }]) {
+    const { db, written } = withRoster(setup);
+    const off = setup.boss === BOSS;
+    const settings = off ? { economy: instance.settings.economy, systemEnabled: false } : undefined;
+    const fake = fakeDb(undefined, settings);
+    const wrapped: Db = { rpc: async <T>(fn: string, args: Record<string, unknown>) => (['roster_due', 'roster_facts', 'current_boss', 'write_roster_entry'].includes(fn) ? db.rpc<T>(fn, args) : fake.db.rpc<T>(fn, args)) };
+    const { models, asked } = fakeModels(() => ({ commentary: 'x' }));
+    await runSettlement(wrapped, instance, until, { roster: { models: () => models } });
+    assert.equal(asked.length, 0, off ? 'the System is off' : 'no Boss');
+    assert.equal(written.length, 1);
+  }
+});
+
+test('the windows are written oldest first, and one run writes only as many as a run may', async () => {
+  const due = Array.from({ length: 40 }, (_, i) => new Date(TO + (i + 1) * 3_600_000).toISOString());
+  const { db, written } = withRoster({ due: [...due].reverse().reverse() });
+  const { models } = fakeModels(() => ({ commentary: 'x' }));
+  await runSettlement(db, instance, until, { roster: { models: () => models } });
+  assert.deepEqual(written.map((w) => w.window_end), due.slice(0, written.length));
+  assert.ok(written.length > 0 && written.length <= MOST_WINDOWS_PER_RUN, `${written.length}`);
+});
+
+test('without a roster option a run asks nothing of the roster', async () => {
+  const { db, calls } = withRoster();
+  await runSettlement(db, instance, until);
+  assert.ok(!calls.some((c) => /roster/.test(c.fn)));
+});
+
+test('a run that stops behind leaves the roster for the run that catches up', async () => {
+  const { db, rosterCalls } = withRoster();
+  const { models } = fakeModels(() => ({ commentary: 'x' }));
+  const out = await runSettlement(db, instance, new Date(FROM + (MOST_WINDOWS_PER_RUN + 2) * 24 * H).toISOString(), { roster: { models: () => models } });
+  assert.equal((out as { behind: boolean }).behind, true);
+  assert.deepEqual(rosterCalls, []);
+});

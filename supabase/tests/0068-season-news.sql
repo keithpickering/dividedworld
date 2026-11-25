@@ -443,7 +443,7 @@ begin
   if (select count(*) from unlisted_threads where thread in (select r.thread from seasons s join acts r on r.id = s.reveal_act)) is distinct from gone then
     raise exception 'every reveal thread is recorded as unlisted again';
   end if;
-  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) + (select count(*) from (select distinct thread, created_at from acts where kind = 'announce') l) then
+  if (select count(*) from news_landed) is distinct from (select count(*) from acts where kind = 'tally' and tally_names(payload) > 0) + (select count(*) from (select distinct thread, created_at from acts where kind = 'announce' and coalesce(payload ->> 'ahead', '') <> 'true') l) then
     raise exception 'every old tally and every landing of announcements gets a landing time, and no reveal header does';
   end if;
   if exists (select 1 from news_landed n join acts a on a.id = n.act where n.landed_at is distinct from a.created_at) then raise exception 'an old item landed when it is dated'; end if;

@@ -1843,13 +1843,14 @@ export interface TallyName {
   readonly class: string | null;
   readonly was: string | null;
 }
-export type SeasonNewsKind = 'results' | 'tally' | 'bossArrived' | 'bossLeft';
+export type SeasonNewsKind = 'results' | 'tally' | 'roster' | 'bossArrived' | 'bossLeft';
 /**
  * One item of season news (`season_news`, supabase/migrations/0063_season_news.sql, 0099, 0100): public, and the same for every reader. `act`, `thread` and
  * `seq` name the Act to link (a landing's first announce Act, or the Boss's post, which is null where the instance wrote no line for it). A `results`
  * item has none of the three: a season's results are rows, not an Act, and the item opens the glass's Rankings of its season.
  * `results` carries the top three and `count`, the characters ranked; `tally` (a landing of announcements, or an old tally Act) its debuts and Turns,
- * at most 20 names with `count` the whole; a Boss row its `name` and the `quote` of its post.
+ * at most 20 names with `count` the whole; `roster` (0432) a Roster Report entry that named Turns taking effect, its first 20 in `turns` and `count` the whole, `act`, `thread` and `seq` the entry's first post;
+ * a Boss row its `name` and the `quote` of its post.
  */
 export interface SeasonNewsItem {
   readonly kind: SeasonNewsKind;

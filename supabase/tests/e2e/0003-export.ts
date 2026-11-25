@@ -21,7 +21,7 @@ const root = path.resolve(import.meta.dirname, '../../..');
 const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -431,6 +431,14 @@ test('an instance exported and imported into a fresh database is the same instan
         update season_handovers set thread = staff_thread where cause = 'departure';
         update seasons set meetings_thread = meetings where ends_at is null;
         assert (select count(*) from threads where staff_placed and id in (staff_thread, meetings)) = 2, 'the fixture holds its two staff threads';
+      end;
+      -- The Roster Report (0432): a settled window's entry holding the Boss's post, and a character it listed as new, so the two insert-only tables round-trip with their links to a settlement and an Act.
+      declare roster_window timestamptz := now() - interval '40 days'; roster_post uuid;
+      begin
+        insert into settlements (starts_at, ends_at, season) select roster_window - interval '1 day', roster_window, id from seasons where ends_at is null;
+        select id into roster_post from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
+        insert into roster_entries (window_end, season, acts, record) select roster_window, id, array[roster_post], '{"commentary": "Carried across.", "landedCount": 0, "landed": []}' from seasons where ends_at is null;
+        insert into roster_seen (character, window_end, act) select (select id from characters where staff = 'exp-boss'), roster_window, roster_post;
       end;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');

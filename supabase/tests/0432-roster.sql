@@ -1,0 +1,315 @@
+-- The Roster Report (supabase/migrations/0432_roster_report.sql; docs/plans/2026-11-24-staff-board-threads-plan.md, Task 7; the design, section 5).
+--
+-- Each settlement with something to report gets one entry in the season's thread (seasons.turns_thread), written by the Boss. The list is built from what the public reads: roster_facts(window_end) reads acts_public,
+-- characters_public and class_history, never `acts` or `reactions`; write_roster_entry writes the Boss's posts, the characters it listed (roster_seen) and the entry (roster_entries); roster_due() names the applied
+-- windows of the open season with no entry yet.
+--
+--  0. The tables exist, are insert-only (55000 on an update, a delete and a truncate), and no API role reads or writes them; the three functions are the service role's alone; roster_facts names no `acts` or `reactions`.
+--  1. Newcomers: a character is listed with its first public Act; a character that only reacted is not; one that never acted is not; a staff character is not.
+--  2. A post under a live author veil is no appearance: its author is not listed while the veil holds, and is at the first window after it ends.
+--  3. Turns: an announced (ahead) Turn is listed as announced in its window, with what the announcement names and no more, and as taking effect in the window of its settlement; a Turn announced naming no class
+--     shows no class there; a silent Turn is listed nowhere. Reveals are the unmask Acts of the window.
+--  4. write_roster_entry: the Boss posts each body in the season's thread, the newcomers are marked seen (listed once in their life), and the entry holds its record; a second call writes nothing again.
+--  5. A character listed in one window is not listed in the next.
+--  6. roster_due names the windows with no entry, oldest first.
+--  7. No Boss, or the System off: the entry is written with no posts and its record says why; the newcomers are not marked seen.
+--  8. Season News: an entry that names Turns taking effect lands one `roster` item (first 20 and a count, linked to the entry's first post); an ahead announcement lands no `announcements` item of its own.
+-- (Poison: roster_facts reading the class_history row's class for a landed Turn, instead of what the announcement names, is red on section 3's "a landed Turn that named no class shows none".)
+
+create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
+begin
+  if ok is not true then raise exception '%', what; end if;
+end $$;
+create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
+begin
+  execute stmt;
+  return null;
+exception when others then
+  return sqlstate || ': ' || sqlerrm;
+end $$;
+-- The characters of one list of the facts, by id.
+create function pg_temp.ids(facts jsonb, which text) returns uuid[] language sql as $$
+  select coalesce(array_agg((e ->> 'character')::uuid), '{}'::uuid[]) from jsonb_array_elements(facts -> which) e
+$$;
+create function pg_temp.item(facts jsonb, which text, who uuid) returns jsonb language sql as $$
+  select e from jsonb_array_elements(facts -> which) e where (e ->> 'character')::uuid = who
+$$;
+
+-- The tables and functions exist at all, so a missing migration fails here on an assertion and not on a missing function below.
+do $$
+declare bad text := '';
+  r record;
+begin
+  perform pg_temp.expect(to_regclass('roster_entries') is not null and to_regclass('roster_seen') is not null, 'roster_entries and roster_seen exist');
+  perform pg_temp.expect((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('roster_facts', 'write_roster_entry', 'roster_due')) = 3, 'roster_facts, write_roster_entry and roster_due exist');
+  -- No API role reads or writes the tables; the service role reaches them through the functions only.
+  for r in select a.rolname, c.relname from pg_roles a cross join pg_class c
+    where a.rolname in ('anon', 'authenticated', 'service_role') and c.relname in ('roster_entries', 'roster_seen') and c.relnamespace = 'public'::regnamespace
+      and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete') loop
+    bad := bad || E'\n  ' || r.rolname || ' reaches ' || r.relname;
+  end loop;
+  for r in select p.proname, a.rolname from pg_proc p cross join pg_roles a
+    where p.pronamespace = 'public'::regnamespace and p.proname in ('roster_facts', 'write_roster_entry', 'roster_due') and a.rolname in ('anon', 'authenticated')
+      and has_function_privilege(a.rolname, p.oid, 'execute') loop
+    bad := bad || E'\n  ' || r.rolname || ' executes ' || r.proname;
+  end loop;
+  for r in select p.proname from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('roster_facts', 'write_roster_entry', 'roster_due') and not has_function_privilege('service_role', p.oid, 'execute') loop
+    bad := bad || E'\n  service_role cannot execute ' || r.proname;
+  end loop;
+  if bad <> '' then raise exception 'the roster is the service role''s alone:%', bad; end if;
+  -- The facts are read from what the public reads: neither `acts` nor `reactions` is named in the function.
+  perform pg_temp.expect((select p.prosrc !~* '(from|join)\s+(public\.)?(acts|reactions)\M' from pg_proc p where p.proname = 'roster_facts' and p.pronamespace = 'public'::regnamespace), 'roster_facts reads acts_public and characters_public, never acts or reactions');
+  perform pg_temp.expect((select p.prosrc ~* 'acts_public' from pg_proc p where p.proname = 'roster_facts' and p.pronamespace = 'public'::regnamespace), 'roster_facts reads acts_public');
+  -- Insert-only, guards firing always.
+  perform pg_temp.expect((select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and t.tgname in ('roster_entries_no_update', 'roster_entries_no_delete', 'roster_entries_no_truncate', 'roster_seen_no_update', 'roster_seen_no_delete', 'roster_seen_no_truncate') and t.tgenabled = 'A') = 6, 'six guards, each firing always');
+end $$;
+
+-- ---- The fixture: a Boss, a season's thread, three windows, characters ----
+create temp table rr (k text primary key, v text);
+grant all on rr to public;
+
+do $$
+declare
+  sid bigint;
+  base timestamptz := now();
+  boss_before text;
+  enabled_before jsonb;
+  ann uuid := tests.account('rr-ann');
+  bob uuid := tests.account('rr-bob');
+  t uuid := tests.thread('Roster fixture');
+  n1 uuid; n2 uuid; n3 uuid; n4 uuid; n5 uuid;
+  p1 uuid; p4 uuid; veil_play uuid;
+begin
+  insert into characters (name, staff, staff_kind, debuted_at) values ('Rr Boss', 'rr-boss', 'persona', now());
+  select boss into boss_before from seasons where ends_at is null;
+  select value into enabled_before from settings where key = 'systemEnabled';
+  insert into rr values ('boss_before', coalesce(boss_before, '')), ('enabled_before', coalesce(enabled_before::text, 'null'));
+  update seasons set boss = 'rr-boss' where ends_at is null;
+  insert into settings (key, value) values ('systemEnabled', 'true') on conflict (key) do update set value = 'true';
+  update settings set value = value || jsonb_build_object('announcementsThreadTitle', 'Season {season}: Roster Report') where key = 'copy';
+  select id into sid from seasons where ends_at is null;
+  insert into settlements (starts_at, ends_at, season) values (base - interval '3 days', base - interval '2 days', sid), (base - interval '2 days', base - interval '1 day', sid), (base - interval '1 day', base + interval '1 minute', sid);
+  insert into rr values ('w1', (base - interval '2 days')::text), ('w2', (base - interval '1 day')::text), ('w3', (base + interval '1 minute')::text), ('base', base::text), ('t', t::text), ('sid', sid::text);
+
+  -- Newcomers: n1 posts in the first window; n2 only reacts; n3 never acts; n4's only post is under a live Whodunnit? veil; n5 posts in the second window.
+  n1 := tests.character(ann, 'Rr Newcomer One', 'alpha', base - interval '60 days');
+  n2 := tests.character(ann, 'Rr Only Reacts', 'alpha', base - interval '60 days');
+  n3 := tests.character(ann, 'Rr Never Acts', 'alpha', base - interval '60 days');
+  n4 := tests.character(bob, 'Rr Veiled', 'alpha', base - interval '60 days');
+  n5 := tests.character(bob, 'Rr Newcomer Two', 'alpha', base - interval '60 days');
+  p1 := tests.post(n1, t, 'First words of the first.', base - interval '2 days 12 hours');
+  p4 := tests.post(n4, t, 'Who wrote this?', base - interval '2 days 11 hours');
+  perform tests.post(n5, t, 'First words of the second.', base - interval '1 day 12 hours');
+  insert into reactions (act, reactor_character, reactor_account, kind, slot, created_at) values (p1, n2, ann, 'up', 1, base - interval '2 days 10 hours');
+  -- n4's post carries a live author veil, as 0371's helper lays one.
+  insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts, veil, stack, gimmick) values ('rrveil', 'Rr Whodunnit', 'salty', 'rare', 'cast', '{post}', interval '3 days', 'author', 1, null) on conflict (key) do nothing;
+  veil_play := tests.act(n5, 'card', t, jsonb_build_object('card', 'rrveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', base + interval '3 days'), p4, base);
+  insert into post_veils (play, post, veil, author, caster_account, ends_at) values (veil_play, p4, 'author', n4, null, base + interval '3 days');
+  insert into rr values ('n1', n1::text), ('n2', n2::text), ('n3', n3::text), ('n4', n4::text), ('n5', n5::text), ('p1', p1::text), ('p4', p4::text), ('veil', veil_play::text), ('ann', ann::text), ('bob', bob::text);
+end $$;
+
+-- ---- 1. Newcomers ----
+do $$
+declare
+  f jsonb;
+  n1 uuid := (select v::uuid from rr where k = 'n1');
+  i jsonb;
+begin
+  f := roster_facts((select v::timestamptz from rr where k = 'w1'));
+  perform pg_temp.expect(f ? 'newcomers' and f ? 'announced' and f ? 'landed' and f ? 'reveals', 'the facts carry the four lists: ' || f::text);
+  perform pg_temp.expect(pg_temp.ids(f, 'newcomers') @> array[n1], 'a character with a public Act in the window is a newcomer');
+  i := pg_temp.item(f, 'newcomers', n1);
+  perform pg_temp.expect(i ->> 'name' = 'Rr Newcomer One', 'the item names the character: ' || i::text);
+  perform pg_temp.expect((i ->> 'act')::uuid = (select v::uuid from rr where k = 'p1'), 'the item links its first Act: ' || i::text);
+  perform pg_temp.expect((i ->> 'thread')::uuid = (select v::uuid from rr where k = 't') and (i ->> 'seq')::integer = (select a.seq from acts a where a.id = (select v::uuid from rr where k = 'p1')), 'the item carries the thread and the number: ' || i::text);
+  -- A reaction is not an Act, and who reacted is private: it never makes a newcomer.
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[(select v::uuid from rr where k = 'n2')]), 'a character whose only activity is reactions is never listed');
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[(select v::uuid from rr where k = 'n3')]), 'a character that never acted is not listed');
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(f -> 'newcomers') e where (e ->> 'character')::uuid in (select id from characters where staff is not null)), 'a staff character is never listed');
+  -- A post under a live author veil shows the stand-in: its author is not seen, and the stand-in is no newcomer.
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[(select v::uuid from rr where k = 'n4')]), 'a post under a live veil makes no newcomer of its author');
+  -- The window does not bound the first appearance: the character is listed at the first report after it is seen, not only in the window of its Act.
+  f := roster_facts((select v::timestamptz from rr where k = 'w2'));
+  perform pg_temp.expect(pg_temp.ids(f, 'newcomers') @> array[n1, (select v::uuid from rr where k = 'n5')], 'until it is written down as seen, a character is a newcomer at each later window too');
+end $$;
+
+-- ---- 2. The veil ends: the author is listed at the first entry after ----
+do $$
+declare
+  f jsonb;
+  n4 uuid := (select v::uuid from rr where k = 'n4');
+  veil uuid := (select v::uuid from rr where k = 'veil');
+  t uuid := (select v::uuid from rr where k = 't');
+begin
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, veil, '{"why": "reversed", "by": "admin"}');
+  perform set_config('kayfabb.card_end_writer', '', true);
+  f := roster_facts((select v::timestamptz from rr where k = 'w3'));
+  perform pg_temp.expect(pg_temp.ids(f, 'newcomers') @> array[n4], 'once the veil is over its author is listed at the next report');
+  perform pg_temp.expect((pg_temp.item(f, 'newcomers', n4) ->> 'act')::uuid = (select v::uuid from rr where k = 'p4'), 'with the post it wrote');
+end $$;
+
+-- ---- 3. Turns and reveals ----
+do $$
+declare
+  ann uuid := tests.account('rr-cat');
+  t uuid := (select v::uuid from rr where k = 't');
+  w3 timestamptz := (select v::timestamptz from rr where k = 'w3');
+  a uuid := tests.character(ann, 'Rr Turns Out', 'alpha', now() - interval '60 days');
+  b uuid := tests.character(ann, 'Rr Turns Quietly', 'alpha', now() - interval '60 days');
+  c uuid := tests.character(ann, 'Rr Turns Silent', 'alpha', now() - interval '60 days');
+  d uuid := tests.character(ann, 'Rr Reveals', 'alpha', now() - interval '60 days');
+  said jsonb; f jsonb; i jsonb; landings_before bigint;
+  ann_a uuid; ann_b uuid;
+begin
+  insert into rr values ('a', a::text), ('b', b::text), ('c', c::text), ('d', d::text);
+  select count(*) into landings_before from news_landed where kind = 'announcements';
+  perform tests.become(ann);
+  said := turn(a, 'beta', 'announced', true, true, t);
+  perform turn(b, 'beta', 'announced', true, false, t);
+  perform turn(c, 'beta', 'silent', false, false, null);
+  perform tests.unbecome();
+  ann_a := (said -> 'announcement' ->> 'id')::uuid;
+  ann_b := (select id from acts where kind = 'announce' and character = b);
+  insert into rr values ('ann_a', ann_a::text), ('ann_b', ann_b::text);
+  -- A reveal, as unmask writes it: an Act of the character's own in the window.
+  perform tests.act(d, 'unmask', t, '{"class": "alpha", "via": "act"}', null, now());
+
+  -- An ahead announcement lands no Season News item of its own (the Roster Report's entry does that, for the Turns that take effect).
+  perform pg_temp.expect((select count(*) from news_landed where kind = 'announcements') = landings_before, 'an ahead announcement makes no announcements item');
+
+  -- Announced, in the window it was written, with what it names and no more.
+  f := roster_facts(w3);
+  i := pg_temp.item(f, 'announced', a);
+  perform pg_temp.expect(i is not null and i ->> 'was' = 'alpha' and i ->> 'class' = 'beta' and (i ->> 'act')::uuid = ann_a and (i ->> 'thread')::uuid = t, 'an announced Turn is listed as announced, with its was and class: ' || coalesce(i::text, 'nothing'));
+  i := pg_temp.item(f, 'announced', b);
+  perform pg_temp.expect(i is not null and i ->> 'was' = 'alpha' and not (i ? 'class'), 'a Turn announced naming no class lists none: ' || coalesce(i::text, 'nothing'));
+  -- A silent Turn is listed nowhere.
+  perform pg_temp.expect(not exists (select 1 from jsonb_each(f) l, jsonb_array_elements(case when jsonb_typeof(l.value) = 'array' then l.value else '[]'::jsonb end) e where e ->> 'character' = c::text), 'a silent Turn appears nowhere');
+  -- Nothing is taking effect before the settlement lands it.
+  perform pg_temp.expect(not (pg_temp.ids(f, 'landed') @> array[a]), 'a Turn that has not landed is not taking effect');
+  -- Reveals: the unmask Acts of the window.
+  i := pg_temp.item(f, 'reveals', d);
+  perform pg_temp.expect(i is not null and i ->> 'class' = 'alpha', 'an unmask of the window is a reveal: ' || coalesce(i::text, 'nothing'));
+
+  -- The settlement lands the Turns; the announced ones are listed as taking effect, with the announcement's class where it named one and none where it did not.
+  perform masks_change(w3);
+  f := roster_facts(w3);
+  i := pg_temp.item(f, 'landed', a);
+  perform pg_temp.expect(i is not null and i ->> 'class' = 'beta' and (i ->> 'act')::uuid = ann_a, 'an announced Turn is listed as taking effect: ' || coalesce(i::text, 'nothing'));
+  i := pg_temp.item(f, 'landed', b);
+  perform pg_temp.expect(i is not null and not (i ? 'class') and (i ->> 'act')::uuid = ann_b, 'a landed Turn that named no class shows none: ' || coalesce(i::text, 'nothing'));
+  perform pg_temp.expect(not exists (select 1 from jsonb_each(f) l, jsonb_array_elements(case when jsonb_typeof(l.value) = 'array' then l.value else '[]'::jsonb end) e where e ->> 'character' = c::text), 'a silent Turn that landed appears nowhere');
+  perform pg_temp.expect(position('"beta"' in coalesce(pg_temp.item(f, 'landed', b)::text, '')) = 0, 'the class of a Turn that named none is not in its item');
+end $$;
+
+-- ---- 4. write_roster_entry ----
+do $$
+declare
+  w1 timestamptz := (select v::timestamptz from rr where k = 'w1');
+  n1 uuid := (select v::uuid from rr where k = 'n1');
+  n2 uuid := (select v::uuid from rr where k = 'n2');
+  sid bigint := (select v::bigint from rr where k = 'sid');
+  r jsonb;
+  th uuid;
+  posts integer;
+begin
+  r := write_roster_entry(w1, array[n1], array['First body', 'Second body'], '{"commentary": "Ahem."}'::jsonb);
+  perform pg_temp.expect(coalesce((r ->> 'written')::boolean, false), 'the entry is written: ' || r::text);
+  th := (select turns_thread from seasons where id = sid);
+  perform pg_temp.expect(th is not null, 'the season''s thread is opened');
+  perform pg_temp.expect((select count(*) from acts a where a.thread = th and a.kind = 'post' and a.character = (select id from characters where staff = 'rr-boss')) = 2, 'the Boss posted each body in the season''s thread');
+  perform pg_temp.expect((select array_agg(a.payload ->> 'body' order by a.seq) from acts a where a.thread = th and a.character = (select id from characters where staff = 'rr-boss')) = array['First body', 'Second body'], 'in order, as written');
+  perform pg_temp.expect((select cardinality(e.acts) = 2 and e.season = sid and e.record ->> 'commentary' = 'Ahem.' from roster_entries e where e.window_end = w1), 'the entry holds its two posts, its season and its record');
+  perform pg_temp.expect((select (s.act is not null and s.window_end = w1) from roster_seen s where s.character = n1), 'the newcomer is written down as seen, with its first Act');
+  perform pg_temp.expect(not exists (select 1 from roster_seen s where s.character = n2), 'only the newcomers named are written down');
+  -- Twice writes once.
+  select count(*) into posts from acts a where a.thread = th and a.kind = 'post';
+  r := write_roster_entry(w1, array[n1], array['First body', 'Second body'], '{}'::jsonb);
+  perform pg_temp.expect(not coalesce((r ->> 'written')::boolean, true), 'a second call says it wrote nothing: ' || r::text);
+  perform pg_temp.expect((select count(*) from acts a where a.thread = th and a.kind = 'post') = posts, 'a second call posts nothing');
+  perform pg_temp.expect((select count(*) from roster_entries where window_end = w1) = 1, 'one entry for the window');
+  -- Insert-only.
+  perform pg_temp.expect(pg_temp.refusal('update roster_entries set season = season') like '55000%', 'an entry is never changed');
+  perform pg_temp.expect(pg_temp.refusal('delete from roster_seen') like '55000%', 'what was listed is never taken back');
+  -- 5. Listed once in its life.
+  perform pg_temp.expect(not (pg_temp.ids(roster_facts((select v::timestamptz from rr where k = 'w2')), 'newcomers') @> array[n1]), 'a character listed in one window is not listed in the next');
+  perform pg_temp.expect(pg_temp.ids(roster_facts((select v::timestamptz from rr where k = 'w2')), 'newcomers') @> array[(select v::uuid from rr where k = 'n5')], 'one not yet listed still is');
+end $$;
+
+-- ---- 6. roster_due ----
+do $$
+declare
+  w1 timestamptz := (select v::timestamptz from rr where k = 'w1');
+  w2 timestamptz := (select v::timestamptz from rr where k = 'w2');
+  w3 timestamptz := (select v::timestamptz from rr where k = 'w3');
+  due timestamptz[];
+begin
+  select coalesce(array_agg(d order by d), '{}') into due from roster_due() d where d in (w1, w2, w3);
+  perform pg_temp.expect(due = array[w2, w3], 'the windows with no entry, oldest first: ' || due::text);
+  perform pg_temp.expect((select array_agg(d) from roster_due() d where d in (w2, w3)) = array[w2, w3], 'roster_due answers oldest first');
+end $$;
+
+-- ---- 7. No Boss, the System off ----
+do $$
+declare
+  w2 timestamptz := (select v::timestamptz from rr where k = 'w2');
+  w5 timestamptz := (select v::timestamptz from rr where k = 'base') + interval '2 minutes';
+  w6 timestamptz := (select v::timestamptz from rr where k = 'base') + interval '3 minutes';
+  n5 uuid := (select v::uuid from rr where k = 'n5');
+  sid bigint := (select v::bigint from rr where k = 'sid');
+  th uuid := (select turns_thread from seasons where id = (select v::bigint from rr where k = 'sid'));
+  posts integer;
+  r jsonb;
+begin
+  insert into settlements (starts_at, ends_at, season) values ((select v::timestamptz from rr where k = 'w3'), w5, sid), (w5, w6, sid);
+  select count(*) into posts from acts a where a.thread = th and a.kind = 'post';
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  r := write_roster_entry(w2, array[n5], array['Would be posted'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'written')::boolean and (r ->> 'posts')::integer = 0, 'the System off: an entry with no posts: ' || r::text);
+  perform pg_temp.expect((select e.record ->> 'skipped' is not null and cardinality(e.acts) = 0 from roster_entries e where e.window_end = w2), 'the record says why');
+  perform pg_temp.expect((select count(*) from acts a where a.thread = th and a.kind = 'post') = posts, 'nothing was posted');
+  perform pg_temp.expect(not exists (select 1 from roster_seen where character = n5), 'a newcomer that was not reported is not written down as seen');
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+  update seasons set boss = null where id = sid;
+  r := write_roster_entry(w6, array[]::uuid[], array['Nobody to post it'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'written')::boolean and (r ->> 'posts')::integer = 0 and (select e.record ->> 'skipped' is not null from roster_entries e where e.window_end = w6), 'no Boss: an entry with no posts and the reason: ' || r::text);
+  update seasons set boss = 'rr-boss' where id = sid;
+end $$;
+
+-- ---- 8. Season News: the entry that names Turns taking effect ----
+do $$
+declare
+  w4 timestamptz := (select v::timestamptz from rr where k = 'w3');
+  sid bigint := (select v::bigint from rr where k = 'sid');
+  a uuid := (select v::uuid from rr where k = 'a');
+  r jsonb;
+  items record;
+  first_post uuid;
+begin
+  -- The window the Turns landed in (section 3's masks_change): its facts name the two announced Turns.
+  r := write_roster_entry(w4, array[]::uuid[], array['The Turns are in.', 'More of them.'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'written')::boolean and (r ->> 'posts')::integer = 2, 'written: ' || r::text);
+  first_post := (select e.acts[1] from roster_entries e where e.window_end = w4);
+  perform pg_temp.expect(exists (select 1 from news_landed n where n.act = first_post and n.kind = 'roster'), 'the entry lands a roster news item on its first post');
+  select * into items from season_news(null, 50) x where x.kind = 'roster' and x.act = first_post;
+  perform pg_temp.expect(items.act is not null, 'season_news lists it as a roster item');
+  perform pg_temp.expect(items.count = 2 and jsonb_array_length(items.detail -> 'turns') = 2, 'one item listing the Turns and a count: ' || to_jsonb(items)::text);
+  perform pg_temp.expect(items.thread = (select turns_thread from seasons where id = sid) and items.seq = (select seq from acts where id = first_post), 'linking to the entry''s first post');
+  perform pg_temp.expect(items.season = (select number from seasons where id = sid), 'in its season');
+  perform pg_temp.expect((select (e ->> 'character')::uuid from jsonb_array_elements(items.detail -> 'turns') e where e ->> 'name' = 'Rr Turns Out') = a, 'a Turn names its character');
+  perform pg_temp.expect((select e ->> 'class' from jsonb_array_elements(items.detail -> 'turns') e where e ->> 'name' = 'Rr Turns Out') = 'beta', 'and the class the announcement named');
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(items.detail -> 'turns') e where e ->> 'name' = 'Rr Turns Quietly' and e ? 'class'), 'and none where it named none');
+  -- An entry with nothing taking effect lands no item.
+  perform pg_temp.expect((select count(*) from news_landed n where n.kind = 'roster') = 1, 'only the entry that names Turns taking effect is news');
+end $$;
+
+-- ---- Put the instance back ----
+do $$
+declare
+  was text := (select v from rr where k = 'boss_before');
+  was_enabled text := (select v from rr where k = 'enabled_before');
+begin
+  update seasons set boss = nullif(was, '') where ends_at is null;
+  if was_enabled = 'null' then delete from settings where key = 'systemEnabled'; else update settings set value = was_enabled::jsonb where key = 'systemEnabled'; end if;
+end $$;

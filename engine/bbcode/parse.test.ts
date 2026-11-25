@@ -1075,3 +1075,12 @@ test('a forged set holds ids in any letters: the parser compares them with the i
   const tree = parse(`[quote=${ACT}]x[/quote]`, undefined, new Set([ACT.toUpperCase()]));
   assert.deepEqual(tree.map((n) => n.type), ['counterfeit']);
 });
+
+test('a site-relative [url] with a query and a fragment stays a link, with a name in [noparse] as its words (the Roster Report\'s lines)', () => {
+  const href = '/t/0a1b2c3d-0000-4000-8000-000000000001?page=3#post-45';
+  assert.deepEqual(parse(`[url=${href}]Bob[/url]`), [{ type: 'url', href, children: [text('Bob')] }]);
+  const covered = parse(`[url=${href}][noparse][b]Bob[/b][/noparse][/url]`);
+  assert.equal(covered.length, 1);
+  assert.equal(covered[0]!.type, 'url');
+  assert.deepEqual((covered[0] as unknown as { children: readonly BbNode[] }).children, [{ type: 'noparse', text: '[b]Bob[/b]' }]);
+});

@@ -249,6 +249,17 @@ begin
     where c.relname in ('handoffs', 'handoffs_latest') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
   loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
   if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
+
+  -- The Roster Report's tables (0432) are insert-only and no client's: guards firing always, and no grant to an API role (the service role reaches them through its functions).
+  for r in select t.tgname from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and t.tgname ~ '_no_(update|delete|truncate)$') is distinct from 6 then
+    bad := bad || E'\n  a guard of the roster is missing';
+  end if;
+  for r in select c.relname, a.rolname from pg_class c cross join (values ('anon'), ('authenticated'), ('service_role')) a(rolname)
+    where c.relname in ('roster_entries', 'roster_seen') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
+  loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
+  if bad <> '' then raise exception 'the roster can be changed or read:%', bad; end if;
 end $$;
 
 -- The kept rows of a post's plays (0408) are no API role's, and the check that holds them to the Acts is the service role's alone: not in `callable`, since no client calls it.
