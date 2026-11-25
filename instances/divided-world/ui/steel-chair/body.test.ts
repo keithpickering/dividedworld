@@ -10,6 +10,7 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
   addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
@@ -684,4 +685,32 @@ test('a body can be removed by its id and the others are woken; a given id is ke
   assert.equal(bodies(world).length, 1);
   assert.equal(at(bodies(world), 0).asleep, false, 'the others are woken');
   assert.ok(settle(world, 20));
+});
+
+/**
+ * The record: where a chair came to rest before the thrown objects had shapes (seeds 0 to 199, three throws a play apart as the effect
+ * staggers them, into a room 600 by 400). It was written from the body as it stood, and a chair's throw and rest must not move at all.
+ */
+test('the chair rests where it rested before shapes', () => {
+  const record = JSON.parse(readFileSync(new URL('./rest-record.json', import.meta.url), 'utf8')) as Array<Array<{ p: number[]; q: number[] }>>;
+  const words: Box = { left: 40, top: 30, width: 520, height: 330 };
+  assert.equal(record.length, 200);
+  for (let seed = 0; seed < 200; seed++) {
+    const world = createWorld(600, 400, 400);
+    const rand = rng(seed);
+    for (let i = 0; i < 3; i++) {
+      addThrow(world, throwOf(rand, words));
+      if (i < 2) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+    }
+    settle(world, SETTLE_S);
+    const now = bodies(world);
+    const was = at(record, seed);
+    assert.equal(now.length, was.length, `seed ${seed}: body count`);
+    for (const [i, b] of now.entries()) {
+      const r = at(was, i);
+      const got = [b.position.x, b.position.y, b.position.z, b.quaternion.w, b.quaternion.x, b.quaternion.y, b.quaternion.z];
+      const want = [...r.p, ...r.q];
+      for (const [k, v] of got.entries()) assert.ok(Math.abs(v - (want[k] as number)) < 1e-9, `seed ${seed} body ${i} value ${k}: ${v} against ${want[k]}`);
+    }
+  }
 });
