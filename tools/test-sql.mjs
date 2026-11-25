@@ -36,11 +36,14 @@
  * rows do to a plan: a plan assertion must still stand on its own fixture and `analyze` it, at the scale the assertion is
  * about. A clone costs about what the vacuum before each file did, 0.1 s to make and 0.2 s to drop.
  *
- * Settings do not travel with a clone: `alter database … set` is stored for the database it names, so a clone of a bounded
- * template has no bounds. So each clone is given its own, in the call that makes it, before anything connects to it
- * (cloneSql): SESSION_BOUNDS, `track_functions`, `kayfabb.client_rpcs`, and `kayfabb.scratch_url` naming the clone itself,
- * so a race test's dblink sessions open on its own clone. The template gets the same, since the shim and the migrations
- * run on it. supabase/tests/0000-harness.sql goes red on a clone without them ("this file's connection is unbounded").
+ * What a clone carries: `alter database … set` is stored for the database it names (`pg_db_role_setting`), and `create database …
+ * template` does not copy it. So the runner copies it (cloneSql): every setting stored for the source database with no role, read from the
+ * catalog by name, with no list of settings of its own, so a setting a migration stores with `alter database` reaches every clone with no
+ * runner change, and a file's clone shows the migration's setting and not one the runner invented. Then the runner gives the clone its own,
+ * last so that they win where both are set: the bounds (SESSION_BOUNDS), `track_functions`, `kayfabb.client_rpcs`, and `kayfabb.scratch_url`
+ * naming the clone itself (the source's names the source), so a race test's dblink sessions open on its own clone. All of it is sent in the
+ * call that makes the clone, before anything connects to it. The template gets its own settings the same way, since the shim and the
+ * migrations run on it. supabase/tests/0000-harness.sql goes red on a clone without them ("this file's connection is unbounded").
  *
  * Databases for the end-to-end files that need their own. While the template is replayed, the runner keeps a snapshot (`create database … template`,
  * made between two migrations, each of whose psql has ended) before each migration an upgrade test crosses, and one `migrated` snapshot after the last migration
@@ -312,10 +315,16 @@ export const settingsSql = (db, url) => [boundsSql(db), trackSql(db), clientRpcs
 
 /**
  * The SQL, run on the server's own database, that makes one clone of the template and gives it its settings. `alter database … set`
- * is stored for the database it names and is not copied by `create database … template`, so a clone made without these has no bounds,
- * no function counts and no scratch URL. All of it is sent before anything connects to the clone.
+ * is stored for the database it names and is not copied by `create database … template`, so the clone first gets, by `\gexec`, one
+ * `alter database` for each setting stored for its source with no role (`setrole = 0`; names read from the catalog, none listed here, values
+ * quoted whole so that one with commas survives), then the runner's own, which come last so the clone's `scratch_url` names the clone.
+ * All of it is sent before anything connects to the clone.
  */
-export const cloneSql = (template, clone, url) => `create database ${clone} template ${template};\n${settingsSql(clone, url)}`;
+export const cloneSql = (template, clone, url) => `create database ${clone} template ${template};
+select format('alter database %I set %s to %L', '${clone}', split_part(c, '=', 1), substr(c, strpos(c, '=') + 1))
+from pg_db_role_setting s, unnest(s.setconfig) c
+where s.setdatabase = (select oid from pg_database where datname = '${template}') and s.setrole = 0 \\gexec
+${settingsSql(clone, url)}`;
 
 /**
  * The drift check, read on a file's clone after the file: every row the kept tables `play_post` and `post_kinds` hold that
