@@ -14,33 +14,19 @@ grant all on fx to public;
 create function pg_temp.f(k text) returns uuid language sql as $$ select v from fx where fx.k = f.k $$;
 
 -- ---- the fixture ----
+-- The plain post and the planted veils alone, as the files before a guard left them on main's CI, where the planner hashed them (6 live veils, 9 card_end Acts): the posts of section 2, which stand a veil in each other way (ended,
+-- refunded, over, a totals veil), are made after the bound is measured, since a refund or a veil of another kind moves the planner's choice (Postgres 17 hashed the planted veils without them and probed by key with them).
 do $$
 declare
   a uuid := tests.character(tests.account('rb-ann'), 'Rb Ann');
-  b uuid := tests.character(tests.account('rb-bea'), 'Rb Bea');
   t uuid := tests.thread('Rb Probes');
-  base timestamptz := now() - interval '1 hour';
-  p uuid; play uuid; k text;
+  pt uuid;
 begin
-  -- as many as the files before a guard left on main's CI, where the planner hashed them (6 veils, 9 card_end Acts); section 1 adds 190 more card_end Acts after its first round
-  insert into fx values ('plain', tests.act(a, 'post', t, '{"body": "Nobody veiled this."}'::jsonb, null, base));
-  -- one post for each way a veil can stand: live, ended by a card_end, refunded, over by its time; a totals veil; each covering its post (post_veil_cover)
-  foreach k in array array['live', 'ended', 'refunded', 'over', 'totals'] loop
-    p := tests.act(a, 'post', t, jsonb_build_object('body', 'Veiled ' || k), null, base + interval '1 minute');
-    play := tests.act(b, 'card', t, jsonb_build_object('card', 'pvveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '2 minutes');
-    insert into post_veils (play, post, veil, author, ends_at)
-      values (play, p, case when k = 'totals' then 'totals' else 'author' end, a, case when k = 'over' then now() - interval '1 minute' else now() + interval '1 day' end);
-    if k in ('over', 'totals') then insert into post_veil_cover (act, play) values (p, play) on conflict do nothing; end if;
-    if k = 'ended' then
-      perform set_config('kayfabb.card_end_writer', 'on', true);
-      insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, play, '{"why": "reversed", "by": "admin"}');
-      perform set_config('kayfabb.card_end_writer', '', true);
-    end if;
-    if k = 'refunded' then insert into card_write_refunds (play, amount) values (play, 1); end if;
-    insert into fx values (k, p);
-  end loop;
-  perform tests.plant_live_veils(8, 10);
-  if not exists (select 1 from post_veil_cover c where c.act = pg_temp.f('live')) or not exists (select 1 from post_veil_cover c where c.act = pg_temp.f('ended')) then raise exception 'the veils cover nothing'; end if;
+  insert into fx values ('plain', tests.act(a, 'post', t, '{"body": "Nobody veiled this."}'::jsonb, null, now() - interval '1 hour'));
+  pt := tests.plant_live_veils(8, 10);
+  -- a planted post a live author veil covers
+  insert into fx select 'veiled', v.post from post_veils v join acts p on p.id = v.post where p.thread = pt and v.veil = 'author' limit 1;
+  if pg_temp.f('veiled') is null then raise exception 'the planting veiled nothing'; end if;
 end $$;
 
 -- ---- 1. the bound, under each state ----
@@ -51,7 +37,7 @@ declare c0 bigint; c_view bigint; c_probe bigint; r record; k text;
 begin
   perform set_config('track_functions', 'all', true);
   perform set_config('enable_seqscan', 'off', true);
-  foreach k in array array['plain', 'live'] loop
+  foreach k in array array['plain', 'veiled'] loop
     c0 := pg_temp.acts_read(); execute 'select x.id, x."character", x.current_payload from acts_public x where x.id = $1' using pg_temp.f(k) into r; c_view := pg_temp.acts_read() - c0;
     if r.id is distinct from pg_temp.f(k) then raise exception '[%] the % post was not read', label, k; end if;
     c0 := pg_temp.acts_read(); execute 'select * from pool_probe($1)' using pg_temp.f(k) into r; c_probe := pg_temp.acts_read() - c0;
@@ -81,12 +67,37 @@ begin
   perform pg_temp.measure(size || ', empty statistics, generic plans');
   perform set_config('plan_cache_mode', 'auto', true);
 end $$;
-select pg_temp.states('9 live author veils, 11 card_ends');
+select pg_temp.states('8 live author veils, 10 card_ends');
 -- and with the card_end Acts many and the veils still few, which a planner prices differently (Postgres 16 hashed them at 200 card_ends where it did not at 10)
 select tests.plant_live_veils(0, 190) is not null;
-select pg_temp.states('9 live author veils, 201 card_ends');
+select pg_temp.states('8 live author veils, 200 card_ends');
 
 -- ---- 2. the check is post_veils_live's rule ----
+-- one post for each way a veil can stand: live, ended by a card_end, refunded, over by its time; a totals veil; each covering its post (post_veil_cover)
+do $$
+declare
+  a uuid := tests.character(tests.account('rb-cy'), 'Rb Cy');
+  b uuid := tests.character(tests.account('rb-bea'), 'Rb Bea');
+  t uuid := tests.thread('Rb Rule');
+  base timestamptz := now() - interval '1 hour';
+  p uuid; play uuid; k text;
+begin
+  foreach k in array array['live', 'ended', 'refunded', 'over', 'totals'] loop
+    p := tests.act(a, 'post', t, jsonb_build_object('body', 'Veiled ' || k), null, base + interval '1 minute');
+    play := tests.act(b, 'card', t, jsonb_build_object('card', 'pvveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1), p, base + interval '2 minutes');
+    insert into post_veils (play, post, veil, author, ends_at)
+      values (play, p, case when k = 'totals' then 'totals' else 'author' end, a, case when k = 'over' then now() - interval '1 minute' else now() + interval '1 day' end);
+    if k in ('over', 'totals') then insert into post_veil_cover (act, play) values (p, play) on conflict do nothing; end if;
+    if k = 'ended' then
+      perform set_config('kayfabb.card_end_writer', 'on', true);
+      insert into acts (character, kind, thread, target_act_id, payload) values (null, 'card_end', t, play, '{"why": "reversed", "by": "admin"}');
+      perform set_config('kayfabb.card_end_writer', '', true);
+    end if;
+    if k = 'refunded' then insert into card_write_refunds (play, amount) values (play, 1); end if;
+    insert into fx values (k, p);
+  end loop;
+  if not exists (select 1 from post_veil_cover c where c.act = pg_temp.f('live')) or not exists (select 1 from post_veil_cover c where c.act = pg_temp.f('ended')) then raise exception 'the veils cover nothing'; end if;
+end $$;
 do $$
 declare k text; got boolean; was boolean; want boolean;
 begin
