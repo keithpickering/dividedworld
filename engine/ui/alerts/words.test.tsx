@@ -537,3 +537,186 @@ describe('a trophy alert and a belt lost alert (the cosmetics plan, Task 12)', (
     expect(said({ ...lost, kind: 'beltBack', name: null, sub: null }, ctx()).line).toBe('One of your characters holds a belt again');
   });
 });
+
+describe('a ruling, one line per sub (the rulings design, section 7)', () => {
+  const r = (sub: string | null, o: Partial<Alert> = {}) => row({ kind: 'ruling', sub, character: 'c1', name: 'Pipewrench', title: 'Hobbies', ...o });
+  const post = act('post4', { seq: 4, character: 'c1' });
+  /* What alerts_page gives (0423, section 9): the people are characters by id (the taker), and the Mods by their staff key; the infraction's Mod is a key, never a character's id. */
+  const names = new Map([['cTaker', 'Gloomba']]);
+  const staffNames = new Map([['ra-m1', 'Thwomp']]);
+  const c = (extra: readonly Act[] = [], o: Partial<WordsContext> = {}) => ctx([post, ...extra], { names, staffNames, ...o });
+  const postWayOf = [{ text: 'Go to the post', to: '/t/t1?page=1#post-4' }];
+  const logWay = [{ text: 'Open My log', to: '/log' }];
+
+  test('warning: the points, the rule and the Mod from the infraction, when they drop off, the post as the way', () => {
+    const inf = act('inf', { kind: 'infraction', character: null, seq: null, payload: { about_act: 'post4', character: 'c1', points: 3, rule_number: 2, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
+    expect(said(r('warning', { act: 'inf' }), c([inf]))).toEqual({
+      line: 'Pipewrench got 3 warn points',
+      detail: 'Thwomp filed rule 2. They drop off Nov 9. You can appeal from the post. In Hobbies.', ways: postWayOf, who: 'Pipewrench',
+    });
+    expect(said(r('warning', { act: 'inf' }), c([act('inf', { kind: 'infraction', character: null, seq: null, payload: { points: 1 } })])).line).toBe('Pipewrench got 1 warn point');
+  });
+  test('warning: a Mod key that was not loaded says "A Mod", never a character\'s name', () => {
+    const inf = act('inf', { kind: 'infraction', character: null, seq: null, payload: { about_act: 'post4', character: 'c1', points: 3, rule_number: 2, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
+    expect(said(r('warning', { act: 'inf' }), c([inf], { staffNames: new Map() })).detail).toBe('A Mod filed rule 2. They drop off Nov 9. You can appeal from the post. In Hobbies.');
+  });
+  test('warning: where the post could not be loaded, it offers no appeal from a post it cannot link to', () => {
+    const inf = act('inf', { kind: 'infraction', character: null, seq: null, targetActId: null, payload: { about_act: 'gone', character: 'c1', points: 3, rule_number: 2, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
+    expect(said(r('warning', { act: 'inf' }), c([inf])).detail).not.toContain('appeal from the post');
+  });
+  test('warning: the post is the one the infraction names, loaded by its payload id, when the infraction links to none', () => {
+    const inf = act('inf', { kind: 'infraction', character: null, seq: null, targetActId: null, payload: { about_act: 'post4', character: 'c1', points: 3, staff: 'ra-m1', expires_at: '2026-11-09T09:00:00.000Z' } });
+    expect(said(r('warning', { act: 'inf' }), c([inf])).ways).toEqual(postWayOf);
+  });
+  test('warning with no readable Act still says it, without the facts', () => {
+    expect(said(r('warning'), c()).line).toBe('Pipewrench got warn points');
+  });
+  test('ban: until when, and that it ends by itself and can be appealed, the log as the way', () => {
+    const ban = act('ban', { kind: 'ban', character: null, seq: null, payload: { character: 'c1', days: 3, until: '2026-11-12T10:00:00.000Z' } });
+    expect(said(r('ban', { act: 'ban' }), c([ban]))).toEqual({
+      line: 'Pipewrench was banned until Nov 12', detail: 'The warn bar filled. The ban ends by itself; you can appeal it to the Boss.', ways: logWay, who: 'Pipewrench',
+    });
+  });
+  test('fall taken: names the taker from the infraction, and where the points landed', () => {
+    const inf = act('inf', { kind: 'infraction', character: null, seq: null, payload: { about_act: 'post4', character: 'cTaker', points: 2 } });
+    expect(said(r('fallTaken', { act: 'inf' }), c([inf]))).toEqual({
+      line: "Gloomba took the fall for Pipewrench's post", detail: "The 2 warn points landed on Gloomba, not on Pipewrench. In Hobbies.", ways: postWayOf, who: 'Pipewrench',
+    });
+  });
+  test('report judged: each verdict in plain words, a visit only where one was opened', () => {
+    const verdict = (payload: Record<string, unknown>) => act('v', { kind: 'report_verdict', character: null, seq: null, targetActId: null, payload: { report_act: 'rep', line: 'The Mod sighs.', ...payload } });
+    const line = (payload: Record<string, unknown>) => said(r('reportJudged', { act: 'v' }), c([verdict(payload)]));
+    expect(line({ verdict: 'dismissed' })).toMatchObject({ line: "Pipewrench's report was judged: dismissed", ways: [{ text: 'Go to the thread', to: '/t/t1' }] });
+    expect(line({ verdict: 'visit', visit_act: 'vis' }).line).toBe("Pipewrench's report was judged: a Mod opened a visit to the post");
+    expect(line({ verdict: 'visit' }).line).toBe("Pipewrench's report was judged, but no visit was opened");
+    expect(line({ verdict: 'backfire' })).toMatchObject({ line: "Pipewrench's report was judged: it backfired", detail: 'In Hobbies.' });
+    expect(line({ verdict: 'backfire', visit_act: 'vis' }).detail).toBe('A Mod opened a visit to your own latest post. In Hobbies.');
+    expect(said(r('reportJudged'), c()).line).toBe("Pipewrench's report was judged");
+  });
+  test('report refunded', () => {
+    expect(said(r('reportRefunded'), c())).toMatchObject({ line: "Pipewrench's report could not be heard", detail: 'Its cost was refunded. In Hobbies.' });
+  });
+  test('appeal answered and refunded', () => {
+    const v = act('v', { kind: 'appeal_ruling', character: null, seq: null, payload: { verdict: 'reduced' } });
+    expect(said(r('appealAnswered', { act: 'v' }), c([v]))).toMatchObject({ line: "Pipewrench's appeal was reduced", ways: logWay });
+    expect(said(r('appealRefunded'), c())).toMatchObject({ line: "Pipewrench's appeal was not heard", detail: 'Its cost was refunded. You can appeal again.' });
+  });
+  /* A conferGroup move as the SQL writes it (0423, system_tick): {kind, params: {character, group}, body}, with `expires_at` only where the move lasts, which a conferGroup does not. */
+  const confer = (extra: Record<string, unknown> = {}) => act('mv', { kind: 'move', character: null, seq: null, payload: { kind: 'conferGroup', params: { group: 'tardy', character: 'c1' }, body: 'Done.', ...extra } });
+  const groups = (tone: 'punishment' | 'favor') => ({ instance: { cards: [], groups: { ladder: [], conferred: [{ key: 'tardy', name: 'Tardy', tone }] } } as unknown as WordsContext['instance'] });
+  test('grouped: a punishment names the group, points to the log for how it ends and offers the appeal and the apology', () => {
+    expect(said(r('grouped', { act: 'mv' }), c([confer()], groups('punishment')))).toMatchObject({
+      line: 'Pipewrench was put in Tardy', detail: 'The log says how it ends. You can appeal it, or apologize.', ways: logWay,
+    });
+    expect(said(r('grouped', { act: 'mv' }), c([confer()])).line).toBe('Pipewrench was put in a group');
+    expect(said(r('grouped', { act: 'mv' }), c([confer()])).detail).toBe('The log says how it ends.');
+  });
+  test('grouped: a favor offers no appeal or apology, and an end the move holds is said', () => {
+    expect(said(r('grouped', { act: 'mv' }), c([confer()], groups('favor'))).detail).toBe('The log says how it ends.');
+    expect(said(r('grouped', { act: 'mv' }), c([confer({ expires_at: '2026-11-20T00:00:00.000Z' })], groups('favor'))).detail).toBe('It ends Nov 20 by itself.');
+    expect(said(r('grouped', { act: 'mv' }), c([confer({ expires_at: '2026-11-20T00:00:00.000Z' })], groups('punishment'))).detail).toBe('It ends Nov 20 by itself. You can appeal it, or apologize.');
+    expect(said(r('grouped', { act: 'mv' }), c([confer({ demand: { kind: 'apologyAccepted', params: {} } })], groups('punishment'))).detail).toBe('It ends when an apology is accepted. You can appeal it, or apologize.');
+    expect(said(r('grouped', { act: 'mv' }), c([confer({ expires_at: '2026-11-20T00:00:00.000Z', demand: { kind: 'apologyAccepted', params: {} } })], groups('favor'))).detail).toBe('It ends Nov 20 by itself. It ends when an apology is accepted.');
+  });
+  test('thread moved: the thread and the board the move names, from the page; the thread that moved as the way (the row\'s own thread is the move\'s, Announcements)', () => {
+    /* A moveThread move as the SQL writes it: {kind, params: {thread, board}, body}, in the Announcements thread; the thread's title and the board's name come with the page. */
+    const move = act('mv', { kind: 'move', character: null, seq: null, thread: 'tAnn', payload: { kind: 'moveThread', params: { thread: 't1', board: 'b2' }, body: 'Done.' } });
+    const moved = (o: Partial<Alert> = {}) => r('threadMoved', { act: 'mv', thread: 'tAnn', title: 'Announcements', ...o });
+    const s = wordsFor(moved(), c([move], { boards: new Map([['b2', 'Crafts']]), threadTitles: new Map([['t1', 'Hobbies']]) }));
+    expect(s.line).toEqual([{ em: 'Hobbies' }, ' was moved to the Crafts board']);
+    expect(s.ways).toEqual([{ text: 'Go to the thread', to: '/t/t1' }]);
+    /* A page that could not name them says so plainly, and never names the Announcements thread. */
+    const bare = wordsFor(moved(), c([move]));
+    expect(plainText(bare.line)).toBe('Your thread was moved to another board');
+    expect(bare.ways).toEqual([{ text: 'Go to the thread', to: '/t/t1' }]);
+    expect(plainText(wordsFor(moved({ act: null }), c()).line)).toBe('Your thread was moved to another board');
+  });
+  test('trophy reversed, poll closed and gear given send the player to the log', () => {
+    expect(said(r('trophyReversed'), c())).toMatchObject({ line: 'An admin took back a trophy from Pipewrench', detail: 'The log says which.', ways: logWay });
+    expect(said(r('pollClosed'), c()).line).toBe("An admin closed Pipewrench's poll");
+    expect(said(r('gearGiven'), c())).toMatchObject({ line: 'An admin gave Pipewrench gear', detail: 'The log says what.', ways: logWay });
+  });
+  test('an unknown or null sub keeps the generic words', () => {
+    for (const sub of [null, 'whatever']) expect(said(r(sub, { act: 'post4' }), c()).line).toBe('A ruling landed on Pipewrench');
+  });
+});
+
+describe('cards ended and drawn, the new subs', () => {
+  test('cardEnded onYours names the card and the place it was on', () => {
+    const play = act('p', { kind: 'card', character: 'cBo', targetActId: 'post4', payload: { card: 'whoops', reach: 'post' } });
+    const end = act('e', { kind: 'card_end', character: null, targetActId: 'p', seq: null });
+    const s = said(row({ kind: 'cardEnded', sub: 'onYours', act: 'e', character: 'c1', name: 'Pipewrench', title: 'Hobbies' }), ctx([play, end, act('post4', { seq: 4, character: 'c1' })]));
+    expect(s.line).toBe("An admin ended Whoops! on your post");
+  });
+  test('cardEnded refunded', () => {
+    const play = act('p', { kind: 'card', payload: { card: 'whoops', reach: 'post' } });
+    expect(said(row({ kind: 'cardEnded', sub: 'refunded', act: 'p', name: 'Pipewrench' }), ctx([play])).line).toBe('Your Whoops! did not take; it was refunded');
+  });
+  test('cardOnYours drew names the drawer and the post', () => {
+    const wall = act('w', { kind: 'card', targetActId: 'post4', payload: { card: 'whoops', reach: 'post' } });
+    const draw = act('d', { kind: 'draw', character: 'cMod', targetActId: 'w', seq: null });
+    const c = ctx([wall, draw, act('post4', { seq: 4, character: 'c1' })], { names: new Map([['cMod', 'Thwomp']]) });
+    expect(said(row({ kind: 'cardOnYours', sub: 'drew', act: 'd', character: 'c1', name: 'Pipewrench' }), c).line).toBe("Thwomp drew on the wall on Pipewrench's post #4");
+  });
+  test('drawings batch per wall and say how many', () => {
+    const wall = act('w', { kind: 'card', targetActId: 'post4', payload: { card: 'whoops', reach: 'post' } });
+    const d1 = act('d1', { kind: 'draw', character: 'cMod', targetActId: 'w', seq: null });
+    const d2 = act('d2', { kind: 'draw', character: 'cMod', targetActId: 'w', seq: null });
+    const c = ctx([wall, d1, d2, act('post4', { seq: 4, character: 'c1' })]);
+    const rows = [row({ kind: 'cardOnYours', sub: 'drew', act: 'd2', name: 'Pipewrench' }), row({ kind: 'cardOnYours', sub: 'drew', act: 'd1', name: 'Pipewrench' })];
+    expect(targetKey(rows[0]!, c)).toBe('wall:w');
+    expect(plainText(batchWords(rows, c).line)).toBe("2 drawings on the wall on Pipewrench's post #4");
+  });
+});
+
+describe('a gift', () => {
+  /* donation -> the drive's opening play -> the post (three links, 0423 section 9); `amount` and `arrives` are in hundredths. */
+  const post = act('post4', { seq: 4, character: 'c1' });
+  const drive = act('drv', { kind: 'card', targetActId: 'post4', payload: { card: 'whoops', reach: 'post' } });
+  const g = (id: string, amount: number, arrives: number) => act(id, { kind: 'donation', targetActId: 'drv', seq: null, payload: { amount, overhead: amount - arrives, arrives } });
+  const r = (id: string) => row({ kind: 'gift', act: id, character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+  test('says the amount in dollars and cents, what was sent on, never who gave', () => {
+    expect(said(r('g1'), ctx([post, drive, g('g1', 500, 375)]))).toEqual({
+      line: "A gift of 5.00 was given to the drive on Pipewrench's post #4", detail: "3.75 of it was sent to Pipewrench, after the drive's overhead. In Hobbies.",
+      ways: [{ text: 'Go to the post', to: '/t/t1?page=1#post-4' }], who: 'Pipewrench',
+    });
+    expect(said(r('g1'), ctx()).line).toBe('A gift was given to the drive on a post of Pipewrench\'s');
+  });
+  test('a gift that all went to overhead (the post\'s author is staff) does not say it reached anyone', () => {
+    const s = said(r('g1'), ctx([post, drive, g('g1', 1000, 0)]));
+    expect(s.line).toBe("A gift of 10.00 was given to the drive on Pipewrench's post #4");
+    expect(s.detail).toBe("It all went to the drive's overhead. In Hobbies.");
+    expect(`${s.line} ${s.detail}`).not.toMatch(/reached/);
+  });
+  test('gifts batch per drive and say how many', () => {
+    const c = ctx([post, drive, g('g1', 500, 375), g('g2', 100, 75)]);
+    expect(targetKey(r('g1'), c)).toBe('drive:drv');
+    expect(plainText(batchWords([r('g2'), r('g1')], c).line)).toBe("2 gifts were given to the drive on Pipewrench's post #4");
+  });
+});
+
+describe('conduct, plain', () => {
+  const r = (sub: string | null) => row({ kind: 'conduct', sub, act: 'post4', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+  const c = () => ctx([act('post4', { seq: 4 })]);
+  const postWayOf = [{ text: 'Go to the post', to: '/t/t1?page=1#post-4' }];
+  test('each outcome, in the glass\'s own plain voice', () => {
+    expect(said(r('hide'), c())).toMatchObject({ line: "An admin hid Pipewrench's post for the code of conduct", ways: postWayOf });
+    expect(said(r('hideUntilEdited'), c())).toMatchObject({ line: "An admin hid Pipewrench's post until it is edited", detail: 'Edit the post to bring it back. In Hobbies.' });
+    expect(said(r('unhide'), c()).line).toBe("An admin brought back Pipewrench's post");
+    expect(said(r('approve'), c()).line).toBe("An admin approved the edit to Pipewrench's post");
+  });
+  test('an unknown sub is still plain', () => {
+    expect(said(r('whatever'), c()).line).toBe("A code of conduct decision on Pipewrench's post");
+  });
+  test('a decision on an edit points at the post the edit is of, since the version has no number', () => {
+    const edit = act('ver', { kind: 'edit', targetActId: 'post4', seq: null });
+    const on = row({ kind: 'conduct', sub: 'approve', act: 'ver', character: 'c1', name: 'Pipewrench', title: 'Hobbies' });
+    expect(said(on, ctx([edit, act('post4', { seq: 4 })]))).toMatchObject({ line: "An admin approved the edit to Pipewrench's post", ways: postWayOf });
+  });
+});
+
+describe('a settlement that paid only crowd pay', () => {
+  test('says so, in place of "moved 0"', () => {
+    expect(said(row({ kind: 'settlement', sub: '5', count: 0, thread: null }), ctx([], { newestSettlement: '5' })).detail).toBe('Crowd pay came in.');
+  });
+});

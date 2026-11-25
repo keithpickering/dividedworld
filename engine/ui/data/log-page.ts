@@ -31,7 +31,7 @@
  * and even then it is that player's own rows at that instant, never more than their whole history.
  */
 import { lineKey } from '../../rules/settle.ts';
-import type { LogBallot, LogPollClose, CardEnded, CardEvent, CaughtPlay, CrowdPaid, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
+import type { LogBallot, LogPollClose, LogThreadMoved, CardEnded, CardEvent, CaughtPlay, CrowdPaid, EffectSaved, FaceDownEnd, Log, LogAppeal, LogBan, LogCosmetic, LogFall, LogGroupMove, LogInfraction, LogLine, LogReport, LogSettlement, LogShare, PackEvent, PlayOnMine, ScoredAs, SurfaceLogRow, WalletEvent, WrittenOnMine } from './api.ts';
 
 /** The most rows a page reads from each source. */
 export const LOG_ROWS = 200;
@@ -74,6 +74,8 @@ export interface LogRead {
   /** The caller's own ballots (`my_ballots`) and the admin closes of their polls (`my_poll_closes`); a backend or an older payload that has none leaves them out. */
   readonly ballots?: readonly LogBallot[];
   readonly pollCloses?: readonly LogPollClose[];
+  /** The moves of threads the caller's characters started (`my_threads_moved`); a backend or an older payload that has none leaves it out. */
+  readonly moved?: readonly LogThreadMoved[];
   readonly saves: readonly EffectSaved[];
   readonly setEnds: readonly FaceDownEnd[];
   readonly caught: readonly CaughtPlay[];
@@ -114,6 +116,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...reached(read.wallsDrawn ?? [], () => read.wallsDrawn![read.wallsDrawn!.length - 1]!.at),
     ...reached(read.ballots ?? [], () => read.ballots![read.ballots!.length - 1]!.at),
     ...reached(read.pollCloses ?? [], () => read.pollCloses![read.pollCloses!.length - 1]!.at),
+    ...reached(read.moved ?? [], () => read.moved![read.moved!.length - 1]!.at),
     ...reached(read.saves, () => read.saves[read.saves.length - 1]!.savedAt),
     ...reached(read.setEnds, () => read.setEnds[read.setEnds.length - 1]!.endedAt),
     ...reached(read.caught, () => read.caught[read.caught.length - 1]!.at),
@@ -173,6 +176,7 @@ export function cutLog(read: LogRead, limit: number = LOG_ROWS): Log {
     ...(read.wallsDrawn === undefined ? {} : { wallsDrawn: read.wallsDrawn.filter((e) => keep(e.at)) }),
     ...(read.ballots === undefined ? {} : { ballots: read.ballots.filter((e) => keep(e.at)) }),
     ...(read.pollCloses === undefined ? {} : { pollCloses: read.pollCloses.filter((e) => keep(e.at)) }),
+    ...(read.moved === undefined ? {} : { moved: read.moved.filter((e) => keep(e.at)) }),
     saves: read.saves.filter((e) => keep(e.savedAt)),
     setEnds: read.setEnds.filter((e) => keep(e.endedAt)),
     caught: read.caught.filter((e) => keep(e.at)),
