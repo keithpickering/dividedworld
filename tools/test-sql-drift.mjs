@@ -3,11 +3,12 @@
  *
  *   DATABASE_URL=postgres://postgres:pg@localhost:5432/postgres node tools/test-sql-drift.mjs
  *
- * tools/test-sql.mjs ends with `driftCheck`, which runs play_post_drift() (supabase/migrations/0408_play_post.sql) on the scratch
- * database. A check that has only ever passed proves that it runs, not that it detects ("A guard that has never been red is not known
- * to work"), and tools/test-sql-refusal.mjs can only stand a psql in for the database. So this builds a real one from the migrations
- * and the fixtures, as the suite does, plays a card on a post, and writes the refund the play's own trigger (play_post_on_refund) would
- * have kept a row for, with that trigger disabled: `driftCheck` must fail naming the play. A clean database must pass.
+ * tools/test-sql.mjs reads play_post_drift() (supabase/migrations/0408_play_post.sql) on each file's clone after the file, and
+ * `driftCheck` is that read on one database. A check that has only ever passed proves that it runs, not that it detects ("A guard that
+ * has never been red is not known to work"), and tools/test-sql-refusal.mjs can only stand a psql in for the database. So this builds
+ * a real template from the migrations and the fixtures, as the suite does, clones it as the suite does (cloneSql), plays a card on a
+ * post on the clone, and writes the refund the play's own trigger (play_post_on_refund) would have kept a row for, with that trigger
+ * disabled: `driftCheck` must fail naming the play. A clone nothing was done to must pass.
  *
  * Outside the build, which has no Postgres (tools/build.mjs, OUTSIDE_THE_BUILD); it runs in .github/workflows/sql.yml beside the suite,
  * on the same refusal of any database but this machine's.
@@ -16,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { driftCheck, migrationFiles, refusal } from './test-sql.mjs';
+import { cloneSql, driftCheck, migrationFiles, refusal } from './test-sql.mjs';
 
 const url = process.env.DATABASE_URL;
 const why = refusal(url);
@@ -33,13 +34,15 @@ function check(name, condition, detail = '') {
   else { failures.push(name + (detail ? '  <- ' + detail : '')); console.log('  FAIL  ' + name + (detail ? '  <- ' + detail : '')); }
 }
 
-const scratch = `kayfabb_scratch_drift_${process.pid}_${Date.now()}`;
+const template = `kayfabb_scratch_drift_${process.pid}_${Date.now()}`;
+const clone = `${template}_1`;
 try {
-  psql(url, `create database ${scratch};`);
-  const target = at(scratch);
-  for (const f of [...migrationFiles(), fixtures]) psql(target, fs.readFileSync(f, 'utf8'));
+  psql(url, `create database ${template};`);
+  for (const f of [...migrationFiles(), fixtures]) psql(at(template), fs.readFileSync(f, 'utf8'));
+  psql(url, cloneSql(template, clone, url));
+  const target = at(clone);
 
-  check('a database the migrations and fixtures made has no drift', driftCheck(target) === null, String(driftCheck(target)));
+  check('a clone of a template the migrations and fixtures made has no drift', driftCheck(target) === null, String(driftCheck(target)));
 
   /* A card played through its trigger leaves a row that matches; still clean. */
   const played = psql(target, `select set_config('kayfabb.seeding', 'on', false);
@@ -57,7 +60,9 @@ try {
   check('a refund written with its trigger disabled fails the check', failure !== null, 'it passed');
   check('and names the play', Boolean(failure) && failure.includes(play), String(failure));
 } finally {
-  try { psql(url, `drop database if exists ${scratch} with (force);`); } catch (e) { console.error(`  test-sql-drift: could not drop ${scratch}: ${e.message}`); }
+  for (const db of [clone, template]) {
+    try { psql(url, `drop database if exists ${db} with (force);`); } catch (e) { console.error(`  test-sql-drift: could not drop ${db}: ${e.message}`); }
+  }
 }
 
 console.log(`\n  sql-drift: ${pass} passed, ${failures.length} failed`);
