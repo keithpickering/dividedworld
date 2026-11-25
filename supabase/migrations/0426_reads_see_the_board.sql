@@ -8,7 +8,7 @@
 --       poll       null, or { question, options, pick, secret, endsAt, closed, closedAt, closedBy, counts, voters }: the post's latest poll Act unless that is a removal (latest_poll's rule); `counts` and `voters` are poll_counts' (characters, never owners);
 --                  `closedBy` is 'author' | 'admin' from the poll's poll_close, null where its time ran out or it is open; `closedAt` is the close Act's time when closed early, the poll's end when its time ran out, null while open (endsAt is the least of the two).
 --                  There is no `names` key (design, section 1 keeps the path).
---       plays      [{ play, card, at, by, config, state, text, covered }], oldest first: the card and set Acts of post_play_ids (the plays in force, the sprung backs whose lockout is live and each kind's two stand-ins), as post_plays reads them through acts_public, but
+--       plays      [{ play, card, at, by, config, state, text, covered }], oldest first: the card and set Acts of post_play_ids that are in force or are sprung backs whose lockout is live (not its stand-ins, which are plays that ended), as post_plays reads them through acts_public, but
 --                  leaving out what the board shows no play of: a back that has not sprung (its card is hidden and, while it is down, so is the fact), a caught play (it never landed) and a play whose write was refunded (it never took). `card` is null for a
 --                  back that sprang (it names none), `by` is the caster's public name where acts_public gives the play a character, `config` the play's payload configuration, `state` its saved effect_state or null (exactly that row's state), `text` the words a writing card made as the page's tails show them to any reader (card_texts: the text of the post's current version, else its latest; null for
 --                  any other play), `covered` the share of a surface the play covers, in [0, 1] (bit_count of surfaces.cover over the grid's 10,000 cells, as the page's `covered`; null for a play with no surface). Both are read by key per play.
@@ -68,7 +68,8 @@ begin
   left join lateral (select ct.text from card_texts ct where ct.play = x.play and ct.text is not null order by (ct.version = post_version(x.post)) desc, ct.created_at desc, ct.id desc limit 1) t on true
   -- the share of a surface a play covers: the page's `covered` (bit_count of the cover) over the grid's 100 x 100 cells (0317), a row for a surface card alone
   left join lateral (select bit_count(sf.cover)::double precision / 10000 as covered from surfaces sf where sf.play = x.play) s on true
-  where p.kind <> '' or p.sprung
+  -- the plays the board draws as live layers (post_play_ids' first three arms: in force, or a sprung back whose lockout is live), not the stand-ins it also returns for the Lens; and never a back that has not sprung
+  where ((p.over_at is null and (p.ends_at is null or p.ends_at > now())) or p.lock_until > now()) and (p.kind <> '' or p.sprung)
   union all
   select rw.post, 'rewind', rw.play, pt.point, null::jsonb, v.id, null::text, null::double precision
   from rw

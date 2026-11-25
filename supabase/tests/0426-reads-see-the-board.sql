@@ -44,13 +44,14 @@ end $$;
 select pg_temp.cards();
 
 -- A back and its face_down row; `sprung` writes the spring a cast would.
-create function pg_temp.back(ch uuid, who uuid, th uuid, post uuid, rnd integer, at timestamptz, sprung boolean default false) returns uuid language plpgsql as $$
+create function pg_temp.back(ch uuid, who uuid, th uuid, post uuid, rnd integer, at timestamptz, sprung boolean default false, lockout boolean default true) returns uuid language plpgsql as $$
 declare s uuid;
 begin
   s := tests.act(ch, 'set', th, '{}', post, at);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (s, who, 'exback', post, th, rnd, now() + interval '1 day');
   if sprung then
-    perform tests.act(ch, 'spring', th, jsonb_build_object('set', s::text, 'card', 'exback', 'trigger', 'cast', 'did', 'returned'), post, at + interval '1 minute');
+    perform tests.act(ch, 'spring', th, case when lockout then jsonb_build_object('set', s::text, 'card', 'exback', 'trigger', 'cast', 'did', 'lockedOut', 'locks', ch::text, 'until', (now() + interval '1 day')::text)
+                                else jsonb_build_object('set', s::text, 'card', 'exback', 'trigger', 'cast', 'did', 'returned') end, post, at + interval '1 minute');
   end if;
   return s;
 end $$;
@@ -82,7 +83,7 @@ declare
   base timestamptz := now() - interval '3 days';
   p_react uuid; p_open uuid; p_time uuid; p_auth uuid; p_adm uuid; p_gone uuid; p_sec uuid; p_plain uuid; p_play uuid; p_rw uuid; p_ed uuid;
   pl uuid; r jsonb; e jsonb; w uuid; sp uuid; us uuid; plays jsonb; rpoint timestamptz; adm_close uuid; auth_close uuid; secret_ballot uuid;
-  txt text;
+  txt text; ended_back uuid; ended_time uuid; ended_admin uuid; adm1 uuid;
 begin
   perform set_config('kayfabb.staff_writer', 'on', true);
   insert into fx values ('a', a), ('b', b), ('c', c), ('t', t), ('aa', aa), ('ab', ab);
@@ -149,14 +150,23 @@ begin
   insert into effect_state (play, state, saved_by, saved_at) values (w, '{"strokes": [[1, 2]], "washed": 0.25}', a, now() - interval '1 day');
   sp := pg_temp.back(b, ab, t, p_play, 1, now() - interval '1 day', true);
   us := pg_temp.back(b, ab, t, p_play, 2, now() - interval '20 hours', false);
+  -- plays that ended are no layer the board draws: a back that sprang with no lockout, a play past its end, and a play an admin ended
+  ended_back := pg_temp.back(b, ab, t, p_play, 3, now() - interval '19 hours', true, false);
+  ended_time := tests.act(a, 'card', t, jsonb_build_object('card', 'exsweet', 'ends', now() - interval '1 hour'), p_play, now() - interval '12 hours');
+  ended_admin := tests.act(a, 'card', t, jsonb_build_object('card', 'exblot'), p_play, now() - interval '11 hours');
+  adm1 := tests.account('ex-adm1');
+  insert into admins (account) values (adm1);
+  perform tests.become(adm1);
+  perform reverse_card(ended_admin);
+  perform tests.unbecome();
   perform tests.act(a, 'card', t, jsonb_build_object('card', 'exwink', 'caught', 'x'), p_play, now() - interval '10 hours');
   e := pg_temp.ex(p_play);
   plays := e -> 'plays';
-  perform pg_temp.expect(jsonb_array_length(plays) = 2, 'the plays are the Whoops and the sprung back, not the unsprung back or the caught play: ' || plays::text);
+  perform pg_temp.expect(jsonb_array_length(plays) = 2, 'the plays are the Whoops and the back sprung into a lockout, not an unsprung back, a caught play or plays that ended: ' || plays::text);
   perform pg_temp.expect(plays -> 0 = jsonb_build_object('play', w, 'card', 'exsplat', 'at', (select created_at from acts where id = w), 'by', 'Ex Ann', 'config', '{"color": "teal"}'::jsonb,
     'state', '{"strokes": [[1, 2]], "washed": 0.25}'::jsonb, 'text', null, 'covered', null), 'the live play: ' || (plays -> 0)::text);
   perform pg_temp.expect((plays -> 1 ->> 'play')::uuid = sp and plays -> 1 -> 'card' = 'null'::jsonb and plays -> 1 -> 'state' = 'null'::jsonb and plays -> 1 ->> 'by' = 'Ex Bob', 'the sprung back: ' || (plays -> 1)::text);
-  perform pg_temp.expect(e::text !~ us::text and e::text !~ 'exback', 'an unsprung back or a back''s card appears: ' || e::text);
+  perform pg_temp.expect(e::text !~ us::text and e::text !~ ended_back::text and e::text !~ ended_time::text and e::text !~ ended_admin::text and e::text !~ 'exback', 'an unsprung back or a back''s card appears: ' || e::text);
   perform pg_temp.expect((select array_agg(k order by k) from jsonb_object_keys(plays -> 0) k) = array['at', 'by', 'card', 'config', 'covered', 'play', 'state', 'text'], 'the play keys');
 
   -- a writing play's words (the current version's, else the latest) and a surface's share covered
@@ -335,7 +345,8 @@ end $$;
 
 -- ---- 3. the bound ----
 -- Threads whose posts each carry a poll (with `bal` ballots by five characters) and eight plays (four kinds, two each). `n` posts. The persona writes none of them: a persona's own posts that nobody answered make 0425's pool_reply_ids read the
--- thread under empty statistics (acts_patrol_posts, filtered by target: the reply read finds none and does not stop), which is 0425's and is reported in the migration's change notes, not this file's subject.
+-- thread under empty statistics (acts_patrol_posts, filtered by target: the reply read finds none and does not stop). That is pre-existing on main and inside 0425's own documented exception (the helpers
+-- may read the thread, never the table); the owner files it separately, so it is not this file's subject.
 create function pg_temp.ex_thread(n integer, bal integer, title text) returns uuid language plpgsql as $$
 declare
   t uuid := tests.thread(title);
