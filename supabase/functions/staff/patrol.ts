@@ -30,10 +30,11 @@
  * **Cost does not grow with the instance.** One light-tier call per patrol, at most `patrolsPerDay` patrols a day (the meeting cuts them), a sample of `patrolSample` posts drawn from the newest `patrolPool` by
  * a bounded query, and the daily judgment budget above.
  */
+import type { ReadOrigin, ReadOriginPost } from '../../../engine/system/extras.ts';
 import type { Instance, Persona } from '../../../engine/rules/types.ts';
 import { predicate } from '../../../engine/rules/predicates.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
-import { PATROL_RULE, patrolPrompt, repairPatrol, type Dropped, type PatrolFinding, type PatrolSamplePost, type RuleLine } from '../../../engine/system/judgment.ts';
+import { PATROL_RULE, patrolPrompt, patrolShown, repairPatrol, type Dropped, type PatrolFinding, type PatrolSamplePost, type RuleLine } from '../../../engine/system/judgment.ts';
 import type { Models } from '../../../engine/system/model.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, type Db } from '../_shared/rpc.ts';
@@ -42,6 +43,7 @@ import { AnswerRejected } from '../_shared/models/index.ts';
 import { pronounsOr, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import { RUN_BUDGET_MS, instanceSet, learnMod, said, stopsTheRun } from './core.ts';
 import { readModGroups } from '../_shared/mod-groups.ts';
+import { readContext, readingOf } from '../_shared/pool-read.ts';
 
 /** The most patrols one run judges. The meeting schedules at most `patrolsPerDay` (6) a day, so a run rarely meets more than a few; the rest are the next run's. */
 export const PATROLS_PER_RUN = 10;
@@ -151,8 +153,15 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
 
     // An author with no profile row reads null pronouns; it takes the instance's default, else the engine's it-set.
     const fallback = instanceSet(settings);
-    const read = await db.rpc<(Omit<PatrolSamplePost, 'pronouns'> & { pronouns: PronounSet | null })[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample, pool: settings.modBots.patrolPool, seed: p.id });
-    const sample: PatrolSamplePost[] = read.map((x) => ({ ...x, pronouns: pronounsOr(x.pronouns, fallback) }));
+    const read = await db.rpc<(Omit<PatrolSamplePost, 'pronouns' | 'origin'> & { pronouns: PronounSet | null; origin?: (Omit<ReadOrigin, 'post'> & { post: (Omit<ReadOriginPost, 'pronouns' | 'poll' | 'plays' | 'reactions'> & { pronouns?: PronounSet | null; poll?: ReadOriginPost['poll']; plays?: ReadOriginPost['plays']; reactions?: ReadOriginPost['reactions'] }) | null }) | null })[]>('patrol_sample', { boards: standing.beat.map((b) => b.id), most: settings.modBots.patrolSample, pool: settings.modBots.patrolPool, seed: p.id });
+    // Each post is read whole with what the board shows with it, as the reader reads a thread (the same `seen`, card names and reaction names); the newest always, the rest while they fit `readMost`.
+    // A post left out for space is not in `sample`, so it is not in the context a finding is repaired against, and no visit is sent on a post that was not read. An author or an origin's post with no profile row takes the fallback pronouns, as the reader's.
+    const reading = readingOf(settings.pool.readMost, readContext(tuned, clock()));
+    const whole: PatrolSamplePost[] = read.map((x) => ({
+      ...x, pronouns: pronounsOr(x.pronouns, fallback),
+      origin: x.origin === undefined || x.origin === null ? null : { ...x.origin, post: x.origin.post === null ? null : { ...x.origin.post, pronouns: pronounsOr(x.origin.post.pronouns, fallback), poll: x.origin.post.poll ?? null, plays: x.origin.post.plays ?? [], reactions: x.origin.post.reactions ?? {} } },
+    }));
+    const sample = patrolShown(whole, reading);
     const ids = sample.map((s) => s.act);
     if (sample.length === 0) return skipped('there was nothing on the beat to patrol', ids);
 
@@ -168,7 +177,7 @@ export async function runPatrols(db: Db, models: Models, instance: Instance, clo
       ...(groups ? { conferred: groups.conferred } : {}),
       persona, office: 'mod', offices: tuned.system.offices, pronouns: mod.pronouns, order: standing.order, career: mod.career, memory: mod.memory, notes: mod.notes, rules: [], allowance: standing.allowance, beat: standing.beat,
       ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
-      boards, sample, limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+      boards, sample, limits: { titleMaxLength: settings.titleMaxLength }, reading,
     });
     const context = {
       allowance: standing.allowance, beat: standing.beat.map((b) => b.id), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours,
