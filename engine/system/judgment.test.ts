@@ -279,8 +279,8 @@ const base: ModPromptInput = {
 };
 /** A thread read as the judges get it: the posts in order (seq from 1), the one at `judged` the must tier. */
 const readOf = (posts: readonly { name: string; pronouns: typeof she; body: string }[], judged: number, readMost = 1_000_000) => {
-  const cands: ReadCandidate[] = posts.map((p, n) => ({ act: `act-${n + 1}`, seq: n + 1, at: '2026-11-01T00:00:00Z', author: `char-${p.name}`, name: p.name, pronouns: p.pronouns, body: p.body, replyTo: null, quotes: [] }));
-  return readThread(cands, { self: null, must: [`act-${judged + 1}`] }, readMost);
+  const cands: ReadCandidate[] = posts.map((p, n) => ({ act: `act-${n + 1}`, seq: n + 1, at: '2026-11-01T00:00:00Z', author: `char-${p.name}`, name: p.name, pronouns: p.pronouns, body: p.body, replyTo: null, quotes: [], poll: null, plays: [], reactions: {}, rewoundTo: null }));
+  return readThread(cands, { self: null, must: [`act-${judged + 1}`] }, { readMost, now: 0, seen: () => null, origin: null });
 };
 const MARIO = [{ name: 'Ann', pronouns: she, body: 'Odyssey.' }, { name: 'Bob', pronouns: they, body: 'Odyssey. Odyssey.' }];
 const marioRead = readOf(MARIO, 1);

@@ -35,6 +35,7 @@ import { DatabaseError, TransportError, barredAnswer, sessionRefused, type Db } 
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected } from '../_shared/models/index.ts';
 import { instanceSet, judgedRead, learnMod, pronounsOfCharacter, readModGroups, said } from './core.ts';
+import { readContext } from '../_shared/pool-read.ts';
 import { playerDoor, type DoorAnswer, type DoorDeps } from './door.ts';
 
 export type ReportAnswer = DoorAnswer;
@@ -118,7 +119,7 @@ async function judge(db: Db, getModels: () => Promise<Models>, instance: Instanc
   const standing = mod.standing;
 
   const rules = await db.rpc<RuleLine[]>('rules_in_force', { board: opened.board.id });
-  const heard = await judgedRead(db, settings, opened.thread, opened.staff, opened.post);
+  const heard = await judgedRead(db, settings, opened.thread, opened.staff, opened.post, readContext(tuned, Date.now()));
   // A post the read does not hold (hidden since the report, or gone) is not ruled on: nothing is judged, and the report is refunded as any report the Mod could not hear is.
   if (!heard.judged) throw new Error('the reported post cannot be read');
   const fallback = instanceSet(settings);

@@ -163,7 +163,7 @@ test('the provider schema asks for a title only for a thread start, and offers o
 /** A read built by hand: posts in thread order, each at a tier, none marked unless said. */
 function post(seq: number, name: string, body: string, o: { tier?: ReadPost['tier']; answering?: boolean; you?: boolean; pronouns?: PronounSet } = {}): ReadPost {
   return {
-    act: `act-${seq}`, seq, at: '2026-11-01T00:00:00Z', author: `char-${name}`, name, pronouns: o.pronouns ?? null, body, replyTo: null, quotes: [],
+    act: `act-${seq}`, seq, at: '2026-11-01T00:00:00Z', author: `char-${name}`, name, pronouns: o.pronouns ?? null, body, replyTo: null, quotes: [], poll: null, plays: [], reactions: {}, rewoundTo: null,
     thirdPerson: body, marks: { you: o.you === true, answering: o.answering === true, repliesToYou: false, quotesYou: false }, tier: o.answering ? 1 : o.tier ?? 5,
   };
 }
@@ -509,7 +509,7 @@ test('the prompt says once that every post is whole, only when it shows a read, 
 test('Spritey\'s thread: a 312-character opener and an 813-character reply that quotes a 680-character post whole read whole, both questions in the message, no ellipsis, the reply once', () => {
   const uuid = (n: number): string => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
   const c = (seq: number, author: string, name: string, body: string, o: Partial<ReadCandidate> = {}): ReadCandidate =>
-    ({ act: uuid(1000 + seq), seq, at: '2026-11-01T00:00:00Z', author, name, pronouns: null, body, replyTo: null, quotes: [], ...o });
+    ({ act: uuid(1000 + seq), seq, at: '2026-11-01T00:00:00Z', author, name, pronouns: null, body, replyTo: null, quotes: [], poll: null, plays: [], reactions: {}, rewoundTo: null, ...o });
   const opener = c(1, 'spritey', 'Spritey', 'o'.repeat(312));
   const mine = c(3, 'me', 'QC-1000', 'Here is my long whole post. '.repeat(25).trim().slice(0, 680));
   const questions = '\n\nWhy did it happen? Who else saw it?';
@@ -517,7 +517,7 @@ test('Spritey\'s thread: a 312-character opener and an 813-character reply that 
   const reply = c(4, 'spritey', 'Spritey', body, { replyTo: mine.act, quotes: [mine.act] });
   assert.equal(mine.body.length, 680);
   assert.equal(body.length > 750, true, String(body.length));
-  const read = readThread([opener, mine, reply], { self: 'me', must: [reply.act] }, 40_000);
+  const read = readThread([opener, mine, reply], { self: 'me', must: [reply.act] }, { readMost: 40_000, now: 0, seen: () => null, origin: null });
   const p = chatterPrompt({ ...base, trigger: 'answered', offeredCards: [], title: 'Spritey\'s thread', read });
   assert.ok(p.message.includes('Why did it happen?') && p.message.includes('Who else saw it?'), 'both questions');
   assert.ok(p.message.includes('[quoting your post #3]'));

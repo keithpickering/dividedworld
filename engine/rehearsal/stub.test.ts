@@ -103,7 +103,7 @@ const mctx = { allowance: 2, beat: [GAMES], ruleDaysMost: 7, expiryLeastHours: 2
 
 test('a filing\'s schema, with and without a move on offer and in both modes, gives an answer repairFiling accepts or rejects by name', () => {
   const filing = (over: Partial<FilingInput> = {}): FilingInput => ({
-    ...(base as unknown as FilingInput), board: { name: 'Games', premise: 'Talk about games.' }, title: null, read: readThread([{ act: 'a1', seq: 1, at: '2026-11-01T00:00:00Z', author: 'c1', name: 'Bob', pronouns: she, body: 'Odyssey.', replyTo: null, quotes: [] }], { self: null, must: ['a1'] }, 1000),
+    ...(base as unknown as FilingInput), board: { name: 'Games', premise: 'Talk about games.' }, title: null, read: readThread([{ act: 'a1', seq: 1, at: '2026-11-01T00:00:00Z', author: 'c1', name: 'Bob', pronouns: she, body: 'Odyssey.', replyTo: null, quotes: [], poll: null, plays: [], reactions: {}, rewoundTo: null }], { self: null, must: ['a1'] }, { readMost: 1000, now: 0, seen: () => null, origin: null }),
     charges: [{ rule: 'Rule 2', band: 'moderate', cause: 'rule' }], limits, ...over,
   });
   for (const over of [{}, { allowance: 0, beat: [] }, { mode: 'move' as const, said: 'Filed.' }]) {

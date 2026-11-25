@@ -15,12 +15,15 @@
 import { parse, type QuoteSpan } from '../bbcode/parse.ts';
 import { quoteNorm, quoteSource, quoteWords } from '../bbcode/quoted.ts';
 import { taggedName, type PronounSet } from '../rules/pronouns.ts';
+import type { SeenPlay } from '../rules/cards.ts';
+import { originLine, playLine, pollLines, reactionLine, rewoundLine, type Extras, type ReadOrigin, type ReadOriginPost, type ReadPlay, type ReadPoll, type Reactions } from './extras.ts';
+import { amountWords, ago } from './when.ts';
 
 /** The newest posts a read considers (the SQL read takes this many). */
 export const READ_WINDOW = 60;
 
 /** Said to the model once per prompt that shows a read (design section 4). */
-export const READ_WORDS = 'Every post you are shown is whole. Where the game left posts out for space, a line says how many; it is not part of anyone\'s post, and your post never mentions it.';
+export const READ_WORDS = 'Every post you are shown is whole. Where the game left posts out for space, a line says how many; it is not part of anyone\'s post, and your post never mentions it. Lines in square brackets under a post, and the line saying where a thread was spun from, describe things that really happened on the board: polls, cards played on posts, and the post a thread was spun from. React to them in character if you like; never quote them as anyone\'s words.';
 
 /** One post `pool_read` returns: whole public body, its number in the thread, the post it replies to and the posts it really quotes. */
 export interface ReadCandidate {
@@ -33,6 +36,26 @@ export interface ReadCandidate {
   readonly body: string;
   readonly replyTo: string | null;
   readonly quotes: readonly string[];
+  /** The post's live poll, the plays the board shows on it, its public reaction counts, and, for a rewound post, the moment it shows (`body` is then that version's). From `pool_read` (`post_extras`). */
+  readonly poll: ReadPoll | null;
+  readonly plays: readonly ReadPlay[];
+  readonly reactions: Reactions;
+  readonly rewoundTo: string | null;
+}
+
+/**
+ * What one call is given besides the candidates. `readMost`: the ceiling. `now`: the call's time (ms), the only clock the reader has. `seen`: the instance's sentence for a play of a card (`CardRules.seen`;
+ * null for a card with none, or a back with no card). `origin`: what the thread was spun from, null for a thread that was not. The names are the instance's: a card's by key (the fallback line of a play with
+ * no sentence, a play origin's place), a group's by key, a reaction kind as the board shows it (the kind itself where omitted).
+ */
+export interface ReadOptions {
+  readonly readMost: number;
+  readonly now: number;
+  readonly seen: (card: string | null, p: SeenPlay) => string | null;
+  readonly origin: ReadOrigin | null;
+  readonly cardName?: (key: string) => string | undefined;
+  readonly groupName?: (key: string) => string | undefined;
+  readonly reactionName?: (kind: string) => string;
 }
 
 /** `self`: the persona's character id. `must`: the answered replies, or the judged post, oldest first. */
@@ -56,6 +79,11 @@ export interface ReadPost extends ReadCandidate {
   readonly thirdPerson: string;
   /** The post's tier, 1 (must) to 5 (everyone else), as the module doc lists them; a fitter that must drop whole posts drops the highest number first. */
   readonly tier: 1 | 2 | 3 | 4 | 5;
+  /** The rendered extras (`readLines` emits them): the rewound line before the body, the poll, plays and reactions lines after it. */
+  readonly before?: readonly string[];
+  readonly after?: readonly string[];
+  /** The origin's lines (its line, then its post's block) directly above the opener; empty for every other post, and for an opener of a thread that was not spun. */
+  readonly originLines?: readonly string[];
 }
 
 export interface ThreadReadResult {
@@ -115,18 +143,54 @@ function markWith(body: string, lower: Map<string, ReadCandidate>, self: string 
   return out + body.slice(at);
 }
 
+/** A post's extras as lines: the rewound line (before the body), and the poll, plays and reactions (after it). */
+function extraLines(c: Extras, o: ReadOptions): { before: string[]; after: string[] } {
+  const rewound = rewoundLine(c.rewoundTo, o.now);
+  const reactions = reactionLine(c.reactions, o.reactionName ?? ((k) => k));
+  const cardName = o.cardName ?? (() => undefined);
+  return {
+    before: rewound === null ? [] : [rewound],
+    after: [
+      ...(c.poll === null ? [] : pollLines(c.poll, o.now)),
+      ...c.plays.map((p) => playLine(p, { now: o.now, seen: o.seen(p.card, seenOf(p, o)), cardName })),
+      ...(reactions === null ? [] : [reactions]),
+    ],
+  };
+}
+
+const seenOf = (p: ReadPlay, o: ReadOptions): SeenPlay => ({ config: p.config, state: p.state, by: p.by, ago: ago(p.at, o.now), amountWords });
+
+/** The origin's lines: its one line, then its post, headed `<name> [origin, post #<seq> in "<title>"]` (`[origin, the Updates post "<title>"]` with no seq), with its words, poll, plays and reactions. */
+function originBlock(origin: ReadOrigin, o: ReadOptions): string[] {
+  const out = [originLine(origin, o.now, o)];
+  const post: ReadOriginPost | null = origin.post;
+  if (post === null) return out;
+  const name = post.name.length > 60 ? post.name.slice(0, 60) : post.name;
+  const who = post.pronouns === null || post.pronouns === undefined ? name : taggedName(name, post.pronouns);
+  const where = post.seq === null || post.seq === undefined ? `the Updates post "${post.title}"` : `post #${post.seq} in "${post.title}"`;
+  const x = extraLines(post, o);
+  return [...out, `${who} [origin, ${where}]`, ...x.before, post.body, ...x.after];
+}
+
+const length = (lines: readonly string[]): number => lines.reduce((n, l) => n + l.length, 0);
+
 /**
- * Chooses what a call reads. `readMost` is the ceiling, in characters of marked post text; it bounds every tier but the must tier, whose newest post is read whatever its size
- * and whose older posts are added, newest first, only while the total stays within it.
+ * Chooses what a call reads. `o.readMost` is the ceiling, in characters of rendered post text (the words, and the poll, play and reaction lines under them; for the opener, the origin too); it bounds every tier
+ * but the must tier, whose newest post is read whatever its size and whose older posts are added, newest first, only while the total stays within it. A spun thread's opener (`o.origin` given) ranks with the
+ * persona's own, and the origin is shown exactly when the opener is.
  */
-export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, readMost: number): ThreadReadResult {
+export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, o: ReadOptions): ThreadReadResult {
+  const readMost = o.readMost;
   const byAct = new Map<string, ReadCandidate>();
   for (const c of all) if (!byAct.has(c.act)) byAct.set(c.act, c); // the first of an act wins
   const cands = [...byAct.values()];
   const lower = lowerActs(byAct);
   const bodies = new Map<string, string>(cands.map((c) => [c.act, markWith(c.body, lower, focus.self)]));
   const thirds = new Map<string, string>(cands.map((c) => [c.act, focus.self === null ? bodies.get(c.act)! : markWith(c.body, lower, null)]));
-  const size = (c: ReadCandidate): number => bodies.get(c.act)!.length;
+  const extras = new Map<string, { before: string[]; after: string[] }>(cands.map((c) => [c.act, extraLines(c, o)]));
+  const opener = cands.reduce<ReadCandidate | undefined>((m, c) => (m === undefined || c.seq < m.seq ? c : m), undefined);
+  const originLines = o.origin === null || opener === undefined ? [] : originBlock(o.origin, o);
+  const size = (c: ReadCandidate): number => { const x = extras.get(c.act)!; return bodies.get(c.act)!.length + length(x.before) + length(x.after) + (c === opener ? length(originLines) : 0); };
   const self = focus.self;
   const mine = (c: ReadCandidate): boolean => self !== null && c.author === self;
   const taken = new Set<string>();
@@ -164,8 +228,7 @@ export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, read
       for (const a of [c.replyTo, ...c.quotes]) { const t = a === null ? undefined : byAct.get(a); if (t !== undefined && !mine(t)) talked.add(t.author); }
     } else if (repliesToYou(c) || quotesYou(c)) talked.add(c.author);
   }
-  const opener = cands.reduce<ReadCandidate | undefined>((m, c) => (m === undefined || c.seq < m.seq ? c : m), undefined);
-  const own = (c: ReadCandidate): number => (mine(c) || repliesToYou(c) || quotesYou(c) ? 2 : c === opener ? 3 : talked.has(c.author) ? 4 : 5);
+  const own = (c: ReadCandidate): number => (mine(c) || repliesToYou(c) || quotesYou(c) ? 2 : c === opener ? (o.origin === null ? 3 : 2) : talked.has(c.author) ? 4 : 5);
   const rank = new Map<string, number>(cands.map((c) => [c.act, own(c)]));
   for (const c of cands) {
     for (const a of c.quotes) {
@@ -184,13 +247,16 @@ export function readThread(all: readonly ReadCandidate[], focus: ReadFocus, read
     thirdPerson: thirds.get(c.act)!,
     marks: { you: mine(c), answering: answeredActs.has(c.act), repliesToYou: repliesToYou(c), quotesYou: quotesYou(c) },
     tier: (answeredActs.has(c.act) ? 1 : rank.get(c.act)!) as ReadPost['tier'],
+    before: extras.get(c.act)!.before,
+    after: extras.get(c.act)!.after,
+    originLines: c === opener ? originLines : [],
   }));
   const through = cands.reduce((m, c) => Math.max(m, c.seq), 0);
   return { posts, omitted: Math.max(through - posts.length, 0), answered: answered.map((c) => c.act), through };
 }
 
 /**
- * The posts as prompt lines: `Name (she/her) [post #3] (you)` then the body, and in place of each run of left-out posts one line, `(N earlier posts not shown)` before the first shown post,
+ * The posts as prompt lines: `Name (she/her) [post #3] (you)` then the body (a rewound post's line first; its poll, plays and reactions after it; the origin of a spun thread above the opener), and in place of each run of left-out posts one line, `(N earlier posts not shown)` before the first shown post,
  * `(N posts not shown)` between and after. `mustLabel` is the word a must post carries: `answering` (the default) or `judged`. The name is as given, clipped to 60 characters as the prompt's other lines are.
  */
 export function readLines(read: ThreadReadResult, o: { readonly mustLabel?: 'answering' | 'judged' } = {}): string[] {
@@ -204,7 +270,7 @@ export function readLines(read: ThreadReadResult, o: { readonly mustLabel?: 'ans
     gap(p.seq - prev - 1, prev === 0);
     const name = p.name.length > 60 ? p.name.slice(0, 60) : p.name;
     const marks = [p.marks.you ? 'you' : '', p.marks.answering ? label : '', p.marks.repliesToYou ? 'replies to you' : '', p.marks.quotesYou ? 'quotes you' : ''].filter(Boolean).map((m) => ` (${m})`).join('');
-    out.push(`${p.pronouns === null ? name : taggedName(name, p.pronouns)} [post #${p.seq}]${marks}`, p.body);
+    out.push(...(p.originLines ?? []), `${p.pronouns === null ? name : taggedName(name, p.pronouns)} [post #${p.seq}]${marks}`, ...(p.before ?? []), p.body, ...(p.after ?? []));
     prev = p.seq;
   }
   gap(read.through - prev, false);

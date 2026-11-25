@@ -63,7 +63,7 @@ import type { Models } from '../../../engine/system/model.ts';
 import { READ_WINDOW, type ThreadReadResult } from '../../../engine/system/read.ts';
 import type { Trim } from '../../../engine/system/validate.ts';
 import { DatabaseError, TransportError, type Db } from '../_shared/rpc.ts';
-import { readOf, type PoolRead } from '../_shared/pool-read.ts';
+import { readContext, readOf, type PoolRead, type ReadContext } from '../_shared/pool-read.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 
@@ -138,9 +138,9 @@ export const instanceSet = (settings: { readonly pronouns?: PronounSet }): Prono
  * What a judge reads of a thread: one `pool_read` for the Mod (`staff`) with the judged post named, then the reader with the judged post as its must tier. `judged` says whether the judged post was
  * read: a ruling is never made on a post the model did not see, so a caller that needs it (every filing, report and appeal of a post) stops when it is false. `title` is the thread's.
  */
-export async function judgedRead(db: Db, settings: Instance['settings'], thread: string, staff: string, judged: string): Promise<{ readonly title: string; readonly read: ThreadReadResult; readonly judged: boolean }> {
+export async function judgedRead(db: Db, settings: Instance['settings'], thread: string, staff: string, judged: string, ctx: ReadContext): Promise<{ readonly title: string; readonly read: ThreadReadResult; readonly judged: boolean }> {
   const pooled = await db.rpc<PoolRead>('pool_read', { in_thread: thread, staff_key: staff, named: [judged], window: READ_WINDOW });
-  const read = readOf(pooled, instanceSet(settings), [judged], settings.pool.readMost);
+  const read = readOf(pooled, instanceSet(settings), [judged], settings.pool.readMost, ctx);
   return { title: pooled.title, read, judged: read.answered.length > 0 };
 }
 
@@ -294,7 +294,7 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
       const standing = mod.standing;
       const rules = rulesOf.get(v.board.id) ?? await db.rpc<RuleLine[]>('rules_in_force', { board: v.board.id });
       rulesOf.set(v.board.id, rules);
-      const heard = await judgedRead(db, settings, v.thread, v.staff, v.post);
+      const heard = await judgedRead(db, settings, v.thread, v.staff, v.post, readContext(tuned, clock()));
       // A post the read does not hold (hidden since the visit, or gone) is not ruled on: the visit is filed with its stock line, as a failed call is.
       if (!heard.judged) why = 'the post inspected cannot be read';
       const charges = v.charges.map((c) => ({ rule: c.rule ?? 'a breach of the rules', band: c.band, cause: c.cause }));
