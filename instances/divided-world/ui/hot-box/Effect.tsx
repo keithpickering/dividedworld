@@ -57,7 +57,7 @@
  * reader's clearings and the held sweep run on the page's clock, `api.now()`, never the page's own `Date`; the painter's own cost is a duration on the
  * page's timer (`performance.now`), compared with no time the data holds.
  */
-import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, useSyncExternalStore, type CSSProperties } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useMemo, useReducer, useRef, useState, type CSSProperties } from 'react';
 import { useMotionReduced } from '../../../../engine/ui/appearance.ts';
 import { bodyBox, bodyOf, liftedOver, type BodyBox } from '../../../../engine/ui/cards/body.ts';
 import { endsWords, markOf } from '../../../../engine/ui/cards/marks.ts';
@@ -69,9 +69,15 @@ import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { readLines } from '../../cards/whoops/lines.ts';
 import { SWEEP_PX_S } from '../../cards/whoops/scrub.ts';
 import { rgbOf } from '../../cards/whoops/splat.ts';
+import { forgetScratch, scratchFor, useForcedColors } from './paint.ts';
 import { FOG, cellOrigin, coverageOf, makeField, pageCloud, paintFog, rowsOf, stepField, type FogClearing, type FogField } from './fog.ts';
-import { SMOKE, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine, type TrailPoint } from './smoke.ts';
+import { SMOKE, extendTrail, fogAlpha, hardDiscs, holeRadius, maskAlpha, openness, strength, sweepAt, type Clearing, type SweepLine } from './smoke.ts';
+import { FOG_BUDGET_MS, FOG_LEVEL_MOST, FOG_SHARE, RUNGS, forceFogLevel, forcedFogLevel, joinRest, ladder, nextPainterId, resetFogLadder, spend, type Rung } from './ladder.ts';
+import { IDLE_MS, emptyPointer, openClearings, prunePointer, usePointerClearings, velocityOf, type PointerModel } from './pointer.ts';
 import './hot-box.css';
+
+/* The ladder, the forced-colors hook and the scratch canvas moved to ladder.ts and paint.ts when the puff came to share them; what this file's tests and stories import is still here. */
+export { FOG_BUDGET_MS, FOG_SHARE, forceFogLevel, resetFogLadder, forgetScratch, useForcedColors };
 
 /** The control's label and its hidden description, which the Lens is given. */
 export const WAVE_LABEL = 'Wave the smoke';
@@ -87,182 +93,10 @@ const STATE_WAVED = 'Waved clear for you';
 const SHIFT_PX = 0.5;
 /** How often the forced-colors mask is moved while something in it is changing, ms. */
 const TICK_MS = 50;
-/** How often fog at rest is drawn again, ms: 20 times a second, which its fastest sheet (7 px a second) needs and no more. */
-const REST_MS = 50;
 /** A frame's worth: the gap between one tile's rest repaint and the next in the same post. */
 const REST_STEP_MS = 16;
-/** A pointer that has not moved for this long drags nothing, and its clearing is fog at rest to the painter, ms. */
-const IDLE_MS = 60;
 /** The color a smoke that names none the card can read is drawn in: `lightgray` (Whoops!'s table has no such name, so it is written out). */
 const LIGHT_GRAY: readonly [number, number, number] = [211, 211, 211];
-
-/* -------------------------------------------------------------------------------- forced colors ---- */
-
-const FORCED = '(forced-colors: active)';
-/* One media query and one listener for every smoked post on the page: made with the first reader of it, dropped with the last. */
-const forcedReaders = new Set<() => void>();
-let forcedQuery: MediaQueryList | undefined;
-const forcedChanged = () => { for (const read of [...forcedReaders]) read(); };
-function subscribeForced(onChange: () => void): () => void {
-  if (typeof window === 'undefined') return () => {};
-  if (forcedReaders.size === 0) {
-    forcedQuery = window.matchMedia?.(FORCED);
-    forcedQuery?.addEventListener?.('change', forcedChanged);
-  }
-  forcedReaders.add(onChange);
-  return () => {
-    forcedReaders.delete(onChange);
-    if (forcedReaders.size === 0) {
-      forcedQuery?.removeEventListener?.('change', forcedChanged);
-      forcedQuery = undefined;
-    }
-  };
-}
-/** The shared query once anyone subscribes; before that (a first render) one is asked for, and not kept. */
-const forcedNow = (): boolean => typeof window !== 'undefined' && ((forcedQuery ?? window.matchMedia?.(FORCED))?.matches ?? false);
-
-/** Whether the reader's system is in forced colors, kept current as it changes. (`engine/ui` has no hook for it.) */
-export function useForcedColors(): boolean {
-  return useSyncExternalStore(subscribeForced, forcedNow, () => false);
-}
-
-/* -------------------------------------------------------------------------------- the ladder ---- */
-
-/**
- * The script time a frame all the fog in view may take together, ms (measured at a phone's speed by e2e/hot-box.spec.ts). Raised from the design's 4 ms on the
- * owner's word, 2026-11-16, after the measured figures (a phone's viewport at a 4x CPU throttle: 7.6 to 9.4 ms at rung 0) and the owner's own check on a Pixel 8;
- * 8 ms is the tiled layer's own budget figure.
- */
-export const FOG_BUDGET_MS = 8;
-/** How many of the painter's last frames the mean is taken over, at most. */
-const LADDER_FRAMES = 30;
-/** The rungs, by level: the cell's side (px), the rounds of the pressure solve, and whether the fog is drawn from the model with no field. */
-const RUNGS: readonly { readonly cell: number; readonly rounds: number; readonly direct: boolean }[] = [
-  { cell: FOG.cell, rounds: FOG.rounds, direct: false },
-  { cell: 7, rounds: FOG.rounds, direct: false },
-  { cell: 10, rounds: FOG.rounds, direct: false },
-  { cell: 10, rounds: 4, direct: false },
-  { cell: 10, rounds: 0, direct: true },
-];
-export const FOG_LEVEL_MOST = RUNGS.length - 1;
-/**
- * What a frame costs at each rung, as a share of rung 0's: how far down a mean over the budget has to go to fit it. Measured by e2e/hot-box.spec.ts's cost
- * cases in Chromium at a 4x CPU throttle (a phone's speed), each rung forced alone, a pointer or a finger sweeping 3 s over the short post and over LongPost
- * at a desktop's width and a phone's: the mean of the four ratios to rung 0 (2026-11-16, with `coverageOf` in the painter: 0.59 0.48 0.67 0.64 at rung 1,
- * 0.41 0.28 0.61 0.47 at rung 2, 0.41 0.29 0.56 0.42 at rung 3, 0.23 0.17 0.31 0.27 at rung 4). Rung 3's rounds buy nothing a pressure solve of 8 did not already cost less than the cell, so it
- * is no cheaper than rung 2 and the ladder never lands on it from a mean that rung 2 did not fit.
- */
-export const FOG_SHARE: readonly number[] = [1, 0.59, 0.44, 0.42, 0.25];
-/** How many painter frames the mean has before it is judged: a slow device paints few frames a second, and waits on no more than this. */
-const LADDER_FIRST = 8;
-
-/** A smoked post on the ladder: its rung, whether a pointer is on it, the last frame it painted in (the ladder's count), and the step down. */
-interface Rung { level(): number; pointed(): boolean; paintedIn(): number; lower(to: number): void }
-/* One budget for the page: every smoked post's painter adds its time to the frame it ran in, and the mean of the last frames decides. */
-const ladder = { rungs: new Set<Rung>(), stamp: null as number | null, seen: new Set<string>(), spent: 0, painted: false, kept: [] as number[], frames: 0, skipping: false };
-/* Each smoked post's own name in the ladder's frames: the same play can be shown twice on a page (in its thread and in an ORIGIN box), so the play's id is not one. */
-let painters = 0;
-
-/** The frame before this one is over: its cost joins the mean, and a mean over the budget sends one post a rung down, a post nobody points at first. */
-function closeFrame(): void {
-  /* The frame that straddled a step began at the old rung: it is not counted, so the new rung is judged on frames drawn at it. */
-  if (ladder.skipping) { ladder.skipping = false; ladder.spent = 0; ladder.painted = false; ladder.frames += 1; return; }
-  if (!ladder.painted) return;
-  ladder.kept.push(ladder.spent);
-  if (ladder.kept.length > LADDER_FRAMES) ladder.kept.shift();
-  ladder.spent = 0;
-  ladder.painted = false;
-  ladder.frames += 1;
-  if (ladder.kept.length < LADDER_FIRST) return;
-  let sum = 0;
-  for (const ms of ladder.kept) sum += ms;
-  const mean = sum / ladder.kept.length;
-  if (mean <= FOG_BUDGET_MS) return;
-  /* Only a post that painted in the frames the mean is over can take its cost off it: one that holds no tile near the window is never stepped down. */
-  const open = [...ladder.rungs].filter((r) => r.level() < FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
-  const next = open.find((r) => !r.pointed()) ?? open[0];
-  if (!next) return;
-  /* It goes to the first rung whose expected cost fits (the mean as the rungs' shares scale it), at least one down, and to the last where none does. */
-  const from = next.level();
-  let to = from + 1;
-  while (to < FOG_LEVEL_MOST && (mean * FOG_SHARE[to]!) / FOG_SHARE[from]! > FOG_BUDGET_MS) to += 1;
-  next.lower(to);
-  /* The mean starts again, so the rung just taken is judged on its own frames. */
-  ladder.kept = [];
-  ladder.skipping = true;
-}
-
-/** A painter's time for one tile, in the frame `stamp` (a tile is painted once a frame, so a tile seen twice is a new frame even where the stamp is the same). */
-function spend(key: string, stamp: number | null, ms: number): void {
-  if (stamp === null) return;
-  if (stamp !== ladder.stamp || ladder.seen.has(key)) { closeFrame(); ladder.stamp = stamp; ladder.seen.clear(); }
-  ladder.seen.add(key);
-  if (ladder.skipping) return;
-  ladder.spent += ms;
-  ladder.painted = true;
-}
-
-let forcedLevel: number | null = null;
-/** For a story and a test: every smoked post is drawn at this rung (null gives each its own back). */
-export function forceFogLevel(level: number | null): void {
-  forcedLevel = level === null ? null : Math.max(0, Math.min(FOG_LEVEL_MOST, Math.floor(level)));
-}
-/** For tests: the ladder as a fresh page has it. */
-export function resetFogLadder(): void {
-  ladder.rungs.clear(); ladder.stamp = null; ladder.seen.clear(); ladder.spent = 0; ladder.painted = false; ladder.kept = []; ladder.frames = 0; ladder.skipping = false;
-  forcedLevel = null;
-}
-
-/* -------------------------------------------------------------------------------- fog at rest ---- */
-
-/* One timer for every smoked post on the page: made with the first, dropped with the last. Each tick, a post marks its held tiles stale (one that holds none does nothing). */
-const resting = new Set<() => void>();
-let restTimer: ReturnType<typeof setTimeout> | undefined;
-function restTick(): void {
-  restTimer = undefined;
-  for (const tick of [...resting]) tick();
-  if (resting.size > 0) restTimer = setTimeout(restTick, REST_MS);
-}
-function joinRest(tick: () => void): () => void {
-  resting.add(tick);
-  restTimer ??= setTimeout(restTick, REST_MS);
-  return () => {
-    resting.delete(tick);
-    if (resting.size === 0 && restTimer !== undefined) { clearTimeout(restTimer); restTimer = undefined; }
-  };
-}
-
-/* -------------------------------------------------------------------------------- the scratch ---- */
-
-/**
- * The fog is worked out as bytes, a cell to a pixel, and reaches a tile through one small canvas the whole page shares: the bytes are put on it and it is
- * drawn onto the tile, scaled up smooth. It is as wide as the widest field and as tall as a tile's rows (a few hundred px by about a hundred), never the
- * size of a post. A browser that gives it no 2D context has none, and the tile is filled flat instead.
- */
-interface Scratch { readonly canvas: HTMLCanvasElement; readonly ctx: CanvasRenderingContext2D; readonly images: Map<string, ImageData> }
-let scratch: Scratch | null | undefined;
-function scratchFor(w: number, h: number): { readonly canvas: HTMLCanvasElement; readonly ctx: CanvasRenderingContext2D; readonly img: ImageData } | null {
-  if (scratch === undefined) {
-    const canvas = typeof document === 'undefined' ? null : document.createElement('canvas');
-    const ctx = canvas?.getContext?.('2d') ?? null;
-    scratch = canvas && ctx ? { canvas, ctx, images: new Map() } : null;
-  }
-  if (!scratch || w <= 0 || h <= 0) return null;
-  /* Grown, never shrunk: assigning a size clears a canvas, and the bytes put on it each time cover what is drawn from it. */
-  if (scratch.canvas.width < w) scratch.canvas.width = w;
-  if (scratch.canvas.height < h) scratch.canvas.height = h;
-  const key = `${w}x${h}`;
-  let img = scratch.images.get(key);
-  if (!img) {
-    /* A post's tiles are of two heights at most; a few sizes are kept so two posts in view do not make their bytes again every frame. */
-    if (scratch.images.size >= 8) scratch.images.clear();
-    img = scratch.ctx.createImageData(w, h);
-    scratch.images.set(key, img);
-  }
-  return { canvas: scratch.canvas, ctx: scratch.ctx, img };
-}
-/** For tests: the scratch canvas is the page's, and a test must start with none. */
-export function forgetScratch(): void { scratch = undefined; }
 
 /* -------------------------------------------------------------------------------- the model's state ---- */
 
@@ -287,19 +121,13 @@ interface Sweep {
  * What this screen's reader has done to the smoke, in memory only: the mouse's clearing, the last touch's, the clearings left behind, the trail, the sweep,
  * and when the post was waved. `moves` is where the pointer last was (three of them, for its speed) and `mover` whose clearing it is moving.
  */
-interface Model {
-  mouse: Clearing | null;
-  touch: Clearing | null;
-  rest: Clearing[];
-  trail: TrailPoint[];
-  moves: { readonly x: number; readonly y: number; readonly t: number }[];
-  mover: 'mouse' | 'touch' | null;
+interface Model extends PointerModel {
   sweep: Sweep | null;
   /** How many lines of the sweep have been read out. */
   said: number;
   wavedAt: number | null;
 }
-const emptyModel = (): Model => ({ mouse: null, touch: null, rest: [], trail: [], moves: [], mover: null, sweep: null, said: 0, wavedAt: null });
+const emptyModel = (): Model => ({ ...emptyPointer(), sweep: null, said: 0, wavedAt: null });
 
 /** What is open: the clearings (the sweep's travelling one among them, and named as `lead`) and a band for each line the sweep has finished. */
 interface Cuts { readonly clearings: readonly Clearing[]; readonly lead: Clearing | null; readonly rects: readonly { readonly top: number; readonly bottom: number; readonly o: number }[] }
@@ -314,13 +142,8 @@ function waveFactor(wavedAt: number | null, now: number, reduced: boolean): numb
   return reduced ? 0 : Math.max(0, 1 - over / SMOKE.roll);
 }
 
-/** A clearing that has closed and rolled out for good. */
-const dead = (c: Clearing, now: number): boolean => c.leftAt !== null && now >= c.leftAt + c.hold + SMOKE.roll;
-
 function prune(m: Model, now: number): void {
-  m.rest = m.rest.filter((c) => !dead(c, now));
-  if (m.touch && dead(m.touch, now)) m.touch = null;
-  if (m.trail.length > 0 && now - m.trail[0]!.leftAt >= SMOKE.wake) m.trail = m.trail.filter((p) => now - p.leftAt < SMOKE.wake);
+  prunePointer(m, now);
   if (m.sweep && m.sweep.releasedAt !== null && now >= m.sweep.releasedAt + SMOKE.roll) m.sweep = null;
 }
 
@@ -341,7 +164,7 @@ function feedSweep(m: Model, now: number, reduced: boolean, radius: number): voi
 
 /** What is open at `now`: each clearing and, from the sweep, a band for each finished line and (with motion) the clearing travelling along the line. */
 function cutsAt(m: Model, now: number, reduced: boolean): Cuts {
-  const clearings = [m.mouse, m.touch, ...m.rest].filter((c): c is Clearing => c !== null && openness(c, now, reduced) > 0);
+  const clearings = openClearings(m, now, reduced);
   const rects: { top: number; bottom: number; o: number }[] = [];
   const sw = m.sweep;
   let lead: Clearing | null = null;
@@ -355,14 +178,6 @@ function cutsAt(m: Model, now: number, reduced: boolean): Cuts {
     }
   }
   return { clearings, lead, rects };
-}
-
-/** How fast the pointer is moving, px a second, over its last moves; nothing once it has been still for `IDLE_MS`. */
-function velocityOf(m: Model, now: number): { x: number; y: number } {
-  const a = m.moves[0], b = m.moves[m.moves.length - 1];
-  if (!a || !b || a === b || now - b.t > IDLE_MS || b.t <= a.t) return { x: 0, y: 0 };
-  const s = (b.t - a.t) / 1000;
-  return { x: (b.x - a.x) / s, y: (b.y - a.y) / s };
 }
 
 /**
@@ -505,7 +320,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
   const layerRef = useRef<TileLayer | null>(null);
   const model = useRef<Model>(emptyModel());
   const startedAt = useRef(api.now());
-  const own = useMemo(() => ++painters, []);
+  const own = useMemo(() => nextPainterId(), []);
   const painter = useRef<Painter>({ field: null, level: 0, steppedAt: api.now(), stamp: null, seen: new Set(), live: null, paintedIn: Number.NEGATIVE_INFINITY });
   /* What render shows is as of the last `refresh`: the page's clock then, and a count so a change always draws again. */
   const [at, setAt] = useState(() => api.now());
@@ -658,7 +473,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
     const s = strength(L.fixedAt ?? t, L.playedAt, L.ends);
     const g = waveFactor(m.wavedAt, t, L.reduced);
     if (g >= 1) return;
-    const rung = RUNGS[forcedLevel ?? p.level]!;
+    const rung = RUNGS[forcedFogLevel() ?? p.level]!;
     /* Drawn from the model with no field: reduced motion (still), and the ladder's last rung (which drifts and fades as the full effect does). */
     const direct = L.reduced || rung.direct;
     if (!p.field || p.field.width !== w || p.field.height !== h || p.field.cell !== rung.cell) p.field = makeField(w, h, rung.cell);
@@ -759,7 +574,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
   /* ---- the ladder ---- */
   const setLevel = useCallback((level: number) => {
     painter.current.level = level;
-    hostRef.current?.setAttribute('data-dw-fog-level', String(forcedLevel ?? level));
+    hostRef.current?.setAttribute('data-dw-fog-level', String(forcedFogLevel() ?? level));
   }, []);
   useEffect(() => {
     if (!loop) return;
@@ -794,83 +609,21 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
     met();
   }, [moment, inView, met]);
 
-  /* ---- the pointer: on the content area, passive, never prevented, never captured ---- */
-  useEffect(() => {
-    if (!areaEl) return;
-    /* The pointer is read on the content area, which the smoke fills (the host where there is none), and placed in its padding box. */
-    const area = areaEl;
-    const at = (e: PointerEvent) => { const r = area.getBoundingClientRect(); return { x: e.clientX - r.left - area.clientLeft, y: e.clientY - r.top - area.clientTop }; };
-    /* Whatever the engine lifts over the ink inside this area (the reactions row, the ORIGIN box's History) is a way through of its own and not the words: a press on one clears nothing. The area is
-       found again here, since a lifted thing that holds it (the ORIGIN box, lifted whole over the opening post's smoke) is no part of it. A thing lifted inside the words is not lifted while they are
+  /* ---- the pointer: on the content area, passive, never prevented, never captured (pointer.ts) ---- */
+  usePointerClearings(areaEl, {
+    model,
+    now: () => api.now(),
+    radius: () => holeRadius(latest.current.frame.w),
+    changed,
+    /* Whatever the engine lifts over the ink inside this area (the reactions row, the ORIGIN box's History) is a way through of its own and not the words: a press on one clears nothing.
+       The area is found again here, since a lifted thing that holds it (the ORIGIN box, lifted whole over the opening post's smoke) is no part of it. A thing lifted inside the words is not lifted while they are
        inert (a fold's bar under smoke, hot-box.css): it is under the smoke like the words, and a press on it clears as a press on them does. */
-    const lifted = (e: Event) => {
+    lifted: (e) => {
       const words = wordsRef.current;
       if (words?.hasAttribute('inert') && e.target instanceof Node && words.contains(e.target)) return false;
       return liftedOver(e.target, hostRef.current ? bodyOf(hostRef.current) : null);
-    };
-    /* Where the pointer is now: its clearing moves there, its speed is kept from its last three moves, and the trail takes the point. */
-    const track = (who: 'mouse' | 'touch', x: number, y: number, t: number) => {
-      const m = model.current;
-      if (m.mover !== who) m.moves = [];
-      m.mover = who;
-      m.moves = [...m.moves.slice(-2), { x, y, t }];
-      m.trail = extendTrail(m.trail, x, y, t, holeRadius(latest.current.frame.w));
-    };
-    const follow = (e: PointerEvent) => {
-      const m = model.current, { x, y } = at(e), t = api.now();
-      m.mouse = { x, y, openedAt: m.mouse?.openedAt ?? t, leftAt: null, hold: 0 };
-      track('mouse', x, y, t);
-      return y;
-    };
-    /* The mouse's clearing closes where it is and rolls out, as when the pointer leaves the area. */
-    const closeMouse = () => {
-      const m = model.current;
-      if (!m.mouse) return;
-      const y = m.mouse.y;
-      m.rest.push({ ...m.mouse, leftAt: api.now() });
-      m.mouse = null;
-      if (m.mover === 'mouse') { m.mover = null; m.moves = []; }
-      changed(y);
-    };
-    const onMove = (e: PointerEvent) => {
-      if (e.pointerType === 'touch') {
-        /* A finger moves only while it is down: its clearing goes with it and holds `touchHold` from where it was last, and its drag leaves a wake. A swipe the browser takes for a scroll sends no move. */
-        const m = model.current;
-        if (!m.touch || lifted(e)) return;
-        const { x, y } = at(e), t = api.now();
-        m.touch = { x, y, openedAt: m.touch.openedAt, leftAt: t, hold: SMOKE.touchHold };
-        track('touch', x, y, t);
-        changed(y);
-        return;
-      }
-      /* Pointing at a lifted thing ends the clearing, or the words beside it are read for free. */
-      if (lifted(e)) { closeMouse(); return; }
-      changed(follow(e));
-    };
-    const onDown = (e: PointerEvent) => {
-      if (lifted(e)) { if (e.pointerType !== 'touch') closeMouse(); return; }
-      if (e.pointerType === 'touch') {
-        /* A finger cannot stay in place and scroll too: its clearing is opened where it lands and holds `touchHold`, replacing the last. */
-        const { x, y } = at(e), t = api.now(), m = model.current;
-        m.touch = { x, y, openedAt: t, leftAt: t, hold: SMOKE.touchHold };
-        m.mover = 'touch';
-        m.moves = [{ x, y, t }];
-        changed(y);
-      } else changed(follow(e));
-    };
-    const onLeave = (e: PointerEvent) => {
-      if (e.pointerType !== 'touch') closeMouse();
-    };
-    const passive = { passive: true } as const;
-    area.addEventListener('pointermove', onMove, passive);
-    area.addEventListener('pointerdown', onDown, passive);
-    area.addEventListener('pointerleave', onLeave, passive);
-    return () => {
-      area.removeEventListener('pointermove', onMove);
-      area.removeEventListener('pointerdown', onDown);
-      area.removeEventListener('pointerleave', onLeave);
-    };
-  }, [api, changed, areaEl]);
+    },
+  });
 
   /* ---- the hold ---- */
   const start = useCallback(() => {
@@ -978,7 +731,7 @@ function Smoke({ place, play, moment, show, met, children }: EffectProps & { rea
   const standIn = forced ? undefined : { '--dw-hotbox-rgb': rgb.join(' '), '--dw-hotbox-fog': a4(fogAlpha(s) * (1 - g)) } as CSSProperties;
 
   return (
-    <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedLevel ?? 0} style={standIn}>
+    <div ref={hostRef} className="dw-hotbox" data-kb-hotbox data-dw-fog-level={forcedFogLevel() ?? 0} style={standIn}>
       {forced && <p className="dw-hotbox-sign"><strong>{state}.</strong> {endsText}</p>}
       {!waved && <p className="kb-visually-hidden dw-hotbox-way">{SMOKED_WAY}</p>}
       <div ref={wordsRef} className="dw-hotbox-words" inert={!waved} style={mask}>{children}</div>
