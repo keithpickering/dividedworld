@@ -21,9 +21,11 @@
 --      desc) where kind <> 'edit'. acts_patrol_posts, acts_character and acts_created each lack a column of it and cost a sort, a disabled node. No other index of `acts` is implied by kind = 'post'. The rows read are the rows returned.
 --      Same signatures, owner, settings, grants and result as 0425's.
 --
--- The tests: supabase/tests/0434-reads-bounded-on-any-plan.sql plants the veils and card_end Acts that make the hash cheap (tests.plant_live_veils, supabase/tests/setup/fixtures.sql: few, as CI had them, then many) and counts one probe under each statistics
--- state; 0424's, 0425's and 0426's guards now measure in the states that failed, on every run rather than on the runs whose earlier files left them: all three plant the veils and card_ends, 0425 and 0426 forge relallvisible 0
--- with their empty statistics, and 0425 leaves 20,000 rolled-back posts' dead entries in `acts`' indexes first. Each was run red against the definitions before this file.
+-- The tests: supabase/tests/0434-reads-bounded-on-any-plan.sql plants the veils and card_end Acts that make the hash cheap (tests.plant_live_veils, supabase/tests/setup/fixtures.sql: 8 live veils and 10 ends, as CI had them, then 200
+-- ends) and counts one probe under each statistics state; 0424's, 0425's and 0426's guards now measure in the state that failed on every run, not only on the runs whose earlier files left it: each plants 8 veils and 10 ends first,
+-- analyzed before its own rows are written, as the suite's vacuum leaves the earlier files' rows; 0425 and 0426 forge relallvisible 0 with their empty statistics; 0425 leaves 20,000 rolled-back posts' dead entries in `acts`'
+-- indexes; and 0426 also bounds the rows of post_veils and post_veil_cover its read takes (Postgres 17 hashed the check there but probed each veil's end by key, so the hash read every veil for each post and almost no `acts`).
+-- Each was run red against the definitions before this file, on Postgres 16 and on CI's Postgres 17.
 -- Ways out: no state is added. Masks: author_veil_covers answers what acts_public already shows every reader of it (whether an Act is shown under the stand-in), reads no owner, class or reaction, and is executable by the roles that
 -- read acts_public, as ballot_secret is.
 
@@ -83,7 +85,10 @@ create or replace view acts_public as
     from acts a
     union all
     select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           true as g, (author_veil_covers(a.id) and not (a.kind = 'ballot' and ballot_secret(a.target_act_id))) as ok, false as secret
+           -- the stand-in's select asks first whether post_veil_cover lists the Act at all (a probe of its key, or, for a read of the stand-in's Acts, which walks `acts`, one set of the covered Acts the planner may hash),
+           -- and only then (a CASE, so that the planner cannot order the check first) whether a live veil covers it: a walk of the author's Acts for the stand-in's newest pays the full check only on the few the veils cover (0304: 3,175 buffers for the stand-in's newest five when it was
+           -- asked of every Act, 94 before 0434). Neither reads `acts`; a hash of post_veil_cover for a probe of one Act is what 0426's bound on the veils' tables would name.
+           true as g, (case when exists (select 1 from post_veil_cover c where c.act = a.id) then author_veil_covers(a.id) else false end and not (a.kind = 'ballot' and ballot_secret(a.target_act_id))) as ok, false as secret
     from acts a
     union all
     select a.id, null::uuid as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
