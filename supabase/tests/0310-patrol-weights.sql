@@ -144,8 +144,8 @@ begin
   if patrol_sample(array[general], 5, 0, 1) is distinct from '[]'::jsonb then raise exception 'a pool of zero gave a sample'; end if;
   if patrol_sample(array[general], 0, 5, 1) is distinct from '[]'::jsonb then raise exception 'a sample of zero gave posts'; end if;
   if patrol_sample('{}'::uuid[], 5, 20, 1) is distinct from '[]'::jsonb then raise exception 'no boards gave a sample'; end if;
-  -- The shape is today's: the same seven keys.
-  if (select string_agg(k, ',' order by k) from jsonb_object_keys(patrol_sample(array[general], 1, 5, 1) -> 0) k) is distinct from 'act,board,body,name,pronouns,thread,title' then
+  -- The shape is today's: the seven keys of 0362, and what the board shows with a post (0433: its poll, plays, reactions, rewind and a spun opener's origin).
+  if (select string_agg(k, ',' order by k) from jsonb_object_keys(patrol_sample(array[general], 1, 5, 1) -> 0) k) is distinct from 'act,board,body,name,origin,plays,poll,pronouns,reactions,rewoundTo,thread,title' then
     raise exception 'the sampled post has another shape: %', patrol_sample(array[general], 1, 5, 1) -> 0;
   end if;
 end $$;
