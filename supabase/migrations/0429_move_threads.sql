@@ -567,12 +567,21 @@ begin
            left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
     from boss_page c
     left join lateral (
+      -- A handover with a thread of its own: the Boss's first post there, by the thread's (thread, seq) index. An older handover has none: the Boss's first post in the announcements thread at that instant, by created_at. Each branch is its own lateral so each keeps its own index; one OR across both made the planner give up the created_at probe.
       select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id), a.id) ->> 'body' as body
-      from characters ch join acts a on a.character = ch.id
-      where ch.staff = c.who and (c.handover_thread is not null or a.created_at = c.at) and a.kind = 'post' and a.thread = coalesce(c.handover_thread, (select thread from ann))
+      from characters ch join acts a on a.thread = c.handover_thread and a.character = ch.id
+      where c.handover_thread is not null and ch.staff = c.who and a.kind = 'post'
         and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
       order by a.seq limit 1
-    ) p on true
+    ) ph on true
+    left join lateral (
+      select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id), a.id) ->> 'body' as body
+      from characters ch join acts a on a.character = ch.id
+      where c.handover_thread is null and ch.staff = c.who and a.created_at = c.at and a.kind = 'post' and a.thread = (select thread from ann)
+        and exists (select 1 from settings s where s.key = 'systemLines' and jsonb_typeof(s.value -> c.line) = 'array' and jsonb_array_length(s.value -> c.line) > 0)
+      order by a.seq limit 1
+    ) pa on true
+    cross join lateral (select coalesce(ph.id, pa.id) as id, coalesce(ph.thread, pa.thread) as thread, coalesce(ph.seq, pa.seq) as seq, coalesce(ph.body, pa.body) as body) p
   ),
   merged as (
     select * from results union all select * from tallies union all select * from bosses
