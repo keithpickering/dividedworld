@@ -455,3 +455,15 @@ test('an empty field stores only the rows it is given, and a field made again in
   const seeded = emptyField(W, H, FOG.cell, { from: (x) => (x < W / 2 ? 1 : 0) });
   assert.ok(fogAt(seeded, 100, 100).d === 1 && fogAt(seeded, W - 100, 100).d === 0, 'seeded from the model');
 });
+
+test('a puff field\'s store moved to rows outside the front reads no fog there, and a Hot Box field\'s new rows are resting fog', () => {
+  const front = (_x: number, y: number): number => (y < 1000 ? 1 : 0);
+  const puff = emptyField(W, 20000, FOG.cell, { view: { top: 100, bottom: 400 }, from: front });
+  puff.seed = front;
+  const clear = { clearings: [], trail: [], radius: R, whole: true, target: front };
+  stepField(puff, FRAME, { ...clear, view: { top: 8000, bottom: 8300 } });
+  assert.equal(fogAt(puff, 100, 8100).d, 0, 'rows the store moved to, past the front, are empty');
+  const hot = makeField(W, 20000);
+  stepField(hot, FRAME, { clearings: [{ x: 100, y: 8100 }], trail: [], radius: R, target: () => 1, view: { top: 8000, bottom: 8300 } });
+  assert.equal(fogAt(hot, 600, 8250).d, 1, 'Hot Box rows are resting fog');
+});

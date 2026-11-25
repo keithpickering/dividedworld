@@ -156,6 +156,11 @@ export interface FogField {
    * rest, after an `ease` step (carried texture only), and when a step returns early.
    */
   busy: boolean;
+  /**
+   * A fog that is made (`emptyField`) says what a row it newly stores, or that leaves the view, holds: the model's density at a point (px), kept current by the caller. Resting fog (1) where
+   * not given, as for every Hot Box field.
+   */
+  seed?: (x: number, y: number) => number;
 }
 
 /** A field at rest. It holds no array until it is disturbed. */
@@ -176,6 +181,7 @@ export function emptyField(width: number, height: number, cell: number = FOG.cel
   const y0 = Math.max(1, rows.y0), y1 = Math.min(field.gh - 1, rows.y1);
   if (y1 <= y0 || field.gw - 1 <= 1) return field;
   field.box = { x0: 1, x1: field.gw - 1, y0, y1 };
+  if (o.from) field.seed = o.from;
   const s = storeFor(field, y0 - 1, y1 + 1);
   s.D.fill(0);
   if (o.from) for (let y = 0; y < s.rows; y++) for (let x = 0; x < field.gw; x++) s.D[y * field.gw + x] = o.from((x - PAD + 0.5) * cell, (y + s.y0 - PAD + 0.5) * cell);
@@ -208,6 +214,7 @@ function storeFor(field: FogField, r0: number, r1: number): FogStore {
   const y0 = Math.max(0, r0 - FOG.margin), y1 = Math.min(gh, r1 + FOG.margin), rows = y1 - y0, n = rows * gw;
   const f = () => new Float32Array(n);
   const next: FogStore = { y0, rows, D: f().fill(1), U: f(), V: f(), OX: f(), OY: f(), D0: f(), U0: f(), V0: f(), OX0: f(), OY0: f(), P: f(), DIV: f() };
+  if (field.seed) seedRows(field, next, y0, y1);
   if (old) {
     const a = Math.max(y0, old.y0), b = Math.min(y1, old.y0 + old.rows);
     if (b > a) {
@@ -223,6 +230,14 @@ function storeFor(field: FogField, r0: number, r1: number): FogStore {
   return next;
 }
 
+/** Rows `r0` up to `r1` of the store hold the field's seed (a made fog's model), at their cells' centers. */
+function seedRows(field: FogField, s: FogStore, r0: number, r1: number): void {
+  const seed = field.seed;
+  if (!seed) return;
+  const a = Math.max(r0, s.y0), b = Math.min(r1, s.y0 + s.rows);
+  for (let y = a; y < b; y++) for (let x = 0; x < field.gw; x++) s.D[(y - s.y0) * field.gw + x] = seed((x - PAD + 0.5) * field.cell, (y - PAD + 0.5) * field.cell);
+}
+
 /** Rows `r0` up to `r1` of the store are resting fog again. */
 function restRows(s: FogStore, gw: number, r0: number, r1: number): void {
   const a = Math.max(r0, s.y0), b = Math.min(r1, s.y0 + s.rows);
@@ -234,6 +249,7 @@ function restRows(s: FogStore, gw: number, r0: number, r1: number): void {
   s.OX.fill(0, from, to);
   s.OY.fill(0, from, to);
 }
+
 
 /** Semi-Lagrangian: each cell of the box takes what the flow carried to it. `add` is what a unit of flow adds (the cloud's own offset moves with the fog). */
 function advect(s: FogStore, gw: number, dst: Float32Array, src: Float32Array, dt: number, B: CellBox, add: 0 | 1 | 2, cell: number): void {
@@ -338,7 +354,10 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   const B: CellBox = { x0: Math.max(1, x0), x1: Math.min(gw - 1, x1), y0: Math.max(1, seen.y0, y0), y1: Math.min(gh - 1, seen.y1, y1) };
   if (B.x1 <= B.x0 || B.y1 <= B.y0) { field.box = null; field.store = null; field.quiet = false; return 0; }
   /* Rows of the last box that this one leaves (they went out of view) are at rest when they are seen again. */
-  if (prev && field.store) { restRows(field.store, gw, prev.y0, B.y0); restRows(field.store, gw, B.y1, prev.y1); }
+  if (prev && field.store) {
+    restRows(field.store, gw, prev.y0, B.y0); restRows(field.store, gw, B.y1, prev.y1);
+    if (field.seed) { seedRows(field, field.store, prev.y0, B.y0); seedRows(field, field.store, B.y1, prev.y1); }
+  }
   const s = storeFor(field, B.y0 - 1, B.y1 + 1);
   const top = s.y0, { D, U, V, OX, OY, D0, U0, V0, OX0, OY0 } = s;
 

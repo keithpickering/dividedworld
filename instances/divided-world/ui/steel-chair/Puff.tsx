@@ -120,6 +120,7 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
     let top = Number.POSITIVE_INFINITY, bottom = Number.NEGATIVE_INFINITY;
     for (const tile of layer?.held() ?? []) { top = Math.min(top, tile.top); bottom = Math.max(bottom, tile.top + tile.h); }
     const floor = puffTarget(at, { width: box.w, height: box.h }, ms), cover = coverageOf(clearings, radius, t, false, m.trail);
+    field.seed = floor;
     stepField(field, dt, {
       clearings: fog, trail: m.trail, radius, rounds, whole: true, fill: FILL_MS,
       ...(bottom > top ? { view: { top, bottom } } : {}),

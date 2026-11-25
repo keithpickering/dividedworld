@@ -64,6 +64,8 @@ function closeFrame(): void {
   /* Only a post that painted in the frames the mean is over can take its cost off it: one that holds no tile near the window is never stepped down. */
   const open = [...ladder.rungs].filter((r) => r.level() < FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES);
   /* A transient fog (a puff, which is gone in 5 s) steps down first: it is the cheaper to degrade, and a smoked post that lasts three days never goes down a rung for it. */
+  /* A transient fog already at the last rung holds: it has nowhere left to go, and the cost it adds is not a smoked post's to take off, so no smoked post goes down a rung it would not have taken alone. */
+  if (!open.some((r) => r.transient === true) && [...ladder.rungs].some((r) => r.transient === true && r.level() >= FOG_LEVEL_MOST && ladder.frames - r.paintedIn() <= LADDER_FRAMES)) return;
   const next = open.find((r) => r.transient === true) ?? open.find((r) => !r.pointed()) ?? open[0];
   if (!next) return;
   /* It goes to the first rung whose expected cost fits (the mean as the rungs' shares scale it), at least one down, and to the last where none does. */

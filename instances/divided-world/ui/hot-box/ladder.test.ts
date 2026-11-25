@@ -40,3 +40,13 @@ test('with no puff the order is as it was: a post nobody points at first, in the
   assert.ok(idle.to !== null && pointed.to === null, 'the unpointed post was lowered, the pointed one was not');
   resetFogLadder();
 });
+
+test('a puff already at the last rung and still over the budget holds: no smoked post steps down in its place', () => {
+  resetFogLadder();
+  const smoked = post({});
+  const puff = { to: null as number | null, level: () => 4, pointed: () => false, paintedIn: () => ladder.frames, lower(to: number) { puff.to = to; }, transient: true };
+  ladder.rungs.add(puff);
+  overBudget(FOG_BUDGET_MS * 3);
+  assert.equal(smoked.to, null, 'the smoked post was left alone');
+  resetFogLadder();
+});
