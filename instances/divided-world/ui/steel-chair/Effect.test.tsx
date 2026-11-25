@@ -1388,6 +1388,18 @@ describe("the extinguisher's puff", () => {
     expect(call[1].group).toBe('steel-chair');
   });
 
+  test('a curtain that shuts while the puff stands clears it, as it clears the lid, and a puff is not drawn while covered', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    see(true); arm();
+    settled();
+    expect(puffEls(), 'the puff stands').toHaveLength(1);
+    act(() => { hub.setCovered(true); });
+    expect(puffEls(), 'the puff is gone the moment the curtain shuts').toHaveLength(0);
+    settled();
+    expect(puffEls(), 'and none is drawn over the curtain after').toHaveLength(0);
+  });
+
   test('a chair mounts no puff and plays no hiss', () => {
     pin(2);
     mount({ plays: [play(1)] });

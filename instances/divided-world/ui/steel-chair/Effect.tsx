@@ -847,6 +847,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       /* The drawn chairs and dents go with the run that drew them: kept through a re-arm (reduced motion or the moment changing), an old
          dent would stand at its old place while the new run's chair is aimed elsewhere, and the reduced path skips a play that has a dent. */
       clearRun(true);
+      /* The puff is a run's too: a curtain that shuts (or a motion or moment change) takes it, so it is never drawn over the post's cover. */
+      setPuff(null);
       control.current = null;
       paintNow.current = () => {};
     };
