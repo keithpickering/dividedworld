@@ -382,11 +382,11 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   const extrasOf = (x: DigestSee): string => {
     const rewound = rewoundLine(x.extras?.rewoundTo, now);
     return [
-    ...(x.extras?.poll ? [pollText(x.extras.poll)] : []),
-    ...(rewound === null ? [] : [line(rewound)]),
-    ...(x.extras?.plays ?? []).slice(0, DIGEST_MOST.postPlays).map((p) => playText(p)),
-    ...(x.origin ? [originText(x.origin)] : []),
-  ].map((t) => ` ${t}`).join('');
+      ...(x.extras?.poll ? [pollText(x.extras.poll)] : []),
+      ...(rewound === null ? [] : [line(rewound)]),
+      ...(x.extras?.plays ?? []).slice(0, DIGEST_MOST.postPlays).map((p) => playText(p)),
+      ...(x.origin ? [originText(x.origin)] : []),
+    ].map((t) => ` ${t}`).join('');
   };
   const { threads: T, boards: B, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
   const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E + (2 + DIGEST_MOST.conversationWith) * DIGEST_MOST.conversations).map((c) => [c.id, taggedName(clip(line(c.name), CLIPS.name), c.pronouns)]));
