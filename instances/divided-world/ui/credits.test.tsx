@@ -29,21 +29,23 @@ describe('Divided World\'s credits', () => {
 
   test('a row\'s own terms are named and linked, and "layer" terms are the instance\'s own', () => {
     const anton = credits.find((c) => c.work === 'Anton');
+    expect(anton?.note).toContain('Copyright 2020 The Anton Project Authors');
     expect(anton).toMatchObject({ maker: 'The Anton Project Authors', terms: 'SIL Open Font License 1.1', termsUrl: 'https://openfontlicense.org', source: 'https://github.com/googlefonts/AntonFont' });
     const wiggler = credits.find((c) => c.work === 'Wiggler sprite sheet');
-    expect(wiggler?.terms).toMatch(/Divided World/);
+    expect(wiggler?.terms).toBe('Divided World\'s terms (AGPL-3.0-or-later or CC BY 4.0)');
     expect(wiggler?.note).toContain('Nintendo');
   });
 
   test('name no work twice', () => {
-    const keys = credits.map((c) => `${c.work}|${c.maker}`);
+    const keys = credits.map((c) => `${c.work}|${c.maker}|${c.source ?? ''}`);
     expect(new Set(keys).size).toBe(keys.length);
   });
 
-  test('the sounds are one credit, from sounds.json', () => {
+  test('the sounds are one credit, and every sounds.json row shares one source', () => {
+    const manifest = JSON.parse(fs.readFileSync(path.join(here, 'sounds', 'sounds.json'), 'utf8')) as { source: string }[];
+    expect(new Set(manifest.map((r) => r.source)).size).toBe(1);
     const sounds = credits.filter((c) => c.work === 'Sound effects');
-    expect(sounds).toHaveLength(1);
-    expect(sounds[0]?.terms).toContain('ElevenLabs');
+    expect(sounds).toEqual([{ work: 'Sound effects', maker: `Made with ${manifest[0]?.source}`, terms: 'ElevenLabs\' terms; not offered for reuse', termsUrl: 'https://elevenlabs.io/service-specific-terms' }]);
   });
 
   test('the card, back and pack art under shared terms are one credit', () => {
@@ -54,6 +56,6 @@ describe('Divided World\'s credits', () => {
 
   test('Hot Debate\'s fire and each Jimmy Wails plate are credited', () => {
     expect(credits.find((c) => c.work === 'Animated fire')).toMatchObject({ maker: 'Nevit Dilmen', terms: 'CC BY-SA 3.0', termsUrl: 'https://creativecommons.org/licenses/by-sa/3.0/' });
-    for (const p of PLATES) expect(credits.some((c) => c.source === p.credit.source && c.maker === p.credit.author), p.key).toBe(true);
+    for (const p of PLATES) expect(credits.some((c) => c.source === p.credit.source && c.maker === p.credit.author && c.work === 'Photograph of Jimmy Wales (Wikimedia Commons)' && c.note === 'Cropped and faded for the Jimmy Wails banner.'), p.key).toBe(true);
   });
 });

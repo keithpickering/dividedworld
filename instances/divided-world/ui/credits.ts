@@ -24,10 +24,11 @@ const fromRows = (rows: readonly Row[]): LicenseCredit[] => {
     if (r.terms === 'layer' && r.maker === OWN && r.note === undefined) continue;
     const own = r.terms === 'layer';
     const work = r.work ?? r.files[0] ?? '';
-    /* A work declared in more than one place (a font in the board's folder and the mail's) is one credit. */
+    /* A work declared in more than one place (a font in the board's folder and the mail's) is one credit, the first row's. */
+    if (out.has(`${work}|${r.maker}`)) continue;
     out.set(`${work}|${r.maker}`, {
       work, maker: r.maker,
-      terms: own ? 'The terms of Divided World, above' : (r.terms as { name: string }).name,
+      terms: own ? 'Divided World\'s terms (AGPL-3.0-or-later or CC BY 4.0)' : (r.terms as { name: string }).name,
       ...(own ? {} : { termsUrl: (r.terms as { url: string }).url }),
       ...(r.source === undefined ? {} : { source: r.source }),
       ...(r.note === undefined ? {} : { note: r.note }),
@@ -49,16 +50,16 @@ const fromArt = (): LicenseCredit[] => {
   return [...groups.values()];
 };
 
+/** The sounds share one source (credits.test.tsx holds sounds.json to that), so they are one credit. */
 const soundCredit = (): LicenseCredit[] => {
-  const s = sounds as readonly { readonly source: string; readonly license: string; readonly maker: string }[];
-  const first = s[0];
+  const first = (sounds as readonly { readonly source: string }[])[0];
   if (first === undefined) return [];
-  return [{ work: 'Sound effects', maker: first.maker, terms: `${first.source}: ${first.license.replace(/\[([^\]]*)\]\([^)]*\)/g, '$1')}` }];
+  return [{ work: 'Sound effects', maker: `Made with ${first.source}`, terms: 'ElevenLabs\' terms; not offered for reuse', termsUrl: 'https://elevenlabs.io/service-specific-terms' }];
 };
 
 const fromPlates = (): LicenseCredit[] => {
   const out = new Map<string, LicenseCredit>();
-  for (const p of PLATES) out.set(p.credit.source, { work: `Jimmy Wales photograph (${p.key})`, maker: p.credit.author, terms: p.credit.license, termsUrl: p.credit.licenseUrl, source: p.credit.source, note: 'Cropped and faded for the banner.' });
+  for (const p of PLATES) out.set(p.credit.source, { work: 'Photograph of Jimmy Wales (Wikimedia Commons)', maker: p.credit.author, terms: p.credit.license, termsUrl: p.credit.licenseUrl, source: p.credit.source, note: 'Cropped and faded for the Jimmy Wails banner.' });
   return [...out.values()];
 };
 
