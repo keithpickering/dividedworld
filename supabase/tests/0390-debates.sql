@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- The debates the inputs carry (supabase/migrations/0390_debates.sql; docs/plans/2026-11-18-tweener-catalyst-plan.md, Task 2; models: 0378-target-lean.sql and 0376-cushion.sql).
 -- settlement_input holds each spark a window reached (a post made no earlier than `debateDays` before the window that a window Act quotes or sits under), every member of its debate made before the window's end, the quote
 -- edges among the input's Acts, the votes standing on the spark (reactions and paid rows, even where none reached it in the window) and each cushion play that was up on the spark or its character after it was made.

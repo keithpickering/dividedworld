@@ -5,6 +5,9 @@
 -- moved only when the job recounts them; and a player's own reactions, readable by that player
 -- alone. The screens' engine plan, Task 6; the clues plan, Task 1.
 
+-- A race below debuts from two sessions: the shards of debuted_count are committed first, as tests.commit_debuted_shards says.
+select tests.commit_debuted_shards();
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;

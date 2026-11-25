@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- A claim on a card write is renewed by the worker that holds it, and by no other
 -- (supabase/migrations/0354_card_write_claim_renewal.sql; docs/plans/2026-11-12-old-voice-window-design.md section 5; issue #584).
 -- Every name is this file's, and the file's work is rolled back.

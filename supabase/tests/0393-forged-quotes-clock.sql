@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- The clock of quote_forged covers every step that grows with a post's history, not only the strpos tests (supabase/migrations/0393_forged_quotes.sql, quote_forged and quote_search_cap; final review G1 and G2).
 -- Three cases, each red against the build that lacked what it names:
 --   G2a, many cheap versions: a post of 100,000 versions an admin hid. A hidden version never reaches the per-quote clock read, so only the clock read before each version bounds the loop; without it the

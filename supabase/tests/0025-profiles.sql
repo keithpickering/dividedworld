@@ -4,6 +4,9 @@
 -- has; and the avatar's two crops, written by the service for the character's player, one first
 -- avatar after another. The screens' engine plan, Task 7; the clues plan, Task 4.
 
+-- A race below debuts from two sessions: the shards of debuted_count are committed first, as tests.commit_debuted_shards says.
+select tests.commit_debuted_shards();
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;

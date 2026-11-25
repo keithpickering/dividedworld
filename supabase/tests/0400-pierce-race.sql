@@ -75,7 +75,7 @@ do $$
 declare
   url text := current_setting('kayfabb.scratch_url');
   ann uuid := current_setting('pcr.ann')::uuid; a uuid := current_setting('pcr.a')::uuid; p1 uuid := current_setting('pcr.p1')::uuid;
-  pierce_a uuid; pierce_b uuid; waiting integer; tries integer := 0; said text; cast_by text;
+  pierce_a uuid; pierce_b uuid; waiting integer; tries integer := 0; max_tries constant integer := 1200; said text; cast_by text;
 begin
   select k.id into pierce_a from acts k where k.character = a and k.payload ->> 'card' = 'pcr-pierce-a';
   select k.id into pierce_b from acts k where k.character = a and k.payload ->> 'card' = 'pcr-pierce-b';
@@ -85,10 +85,13 @@ begin
   perform extensions.dblink_connect('player', url);
   perform extensions.dblink_send_query('player', format('select tests.raced(null, %L)', format('select play_card(%L, %L, %L, %L, %L, 0, %L)', ann, 'pcr-move', a, p1, '{}', '')));
   loop
+    -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+    perform pg_stat_clear_snapshot();
     select count(*) into waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%play_card%' and query like '%tests.raced%';
     exit when waiting >= 1;
     tries := tries + 1;
-    if tries > 80 then
+    -- Gives up at 30 s (1200 looks of 25 ms), past the 20 s lock wait the racer sets for itself in tests.raced: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then
       perform extensions.dblink_exec('holder', 'rollback');
       raise exception 'a cast never waited on its pierce''s lock held by another session';
     end if;
