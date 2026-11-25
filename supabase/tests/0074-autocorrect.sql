@@ -19,7 +19,7 @@ do $$
 declare
   ann uuid := gen_random_uuid(); a uuid := gen_random_uuid(); th uuid := gen_random_uuid(); p uuid := gen_random_uuid();
   url text := current_setting('kayfabb.scratch_url');
-  waiting integer; tries integer := 0; post_held boolean; said text;
+  waiting integer; tries integer := 0; max_tries constant integer := 1200; post_held boolean; said text;
 begin
   perform tests.commit(format($sql$
     insert into auth.users (id, email) values (%1$L, 'lock-order@test.invalid');
@@ -38,10 +38,13 @@ begin
   perform extensions.dblink_send_query('player', format('select tests.raced(null, %L)',
     format('select play_card(%L, %L, %L, %L, %L, 0, %L, %L, null, %L)', ann, 'lockstick', a, p, '{}', '', 'post', p)));
   loop
+    -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+    perform pg_stat_clear_snapshot();
     select count(*) into waiting from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and query like '%tests.raced%';
     exit when waiting >= 1;
     tries := tries + 1;
-    if tries > 400 then raise exception 'the versioned play never came to wait'; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then raise exception 'the versioned play never came to wait'; end if;
     perform pg_sleep(0.025);
   end loop;
   -- The post is tried without waiting, in a block that rolls back, so the lock is let go again whatever it found.

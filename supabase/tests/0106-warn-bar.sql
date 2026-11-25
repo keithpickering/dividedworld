@@ -24,7 +24,7 @@ $$;
 do $$
 declare
   u uuid := gen_random_uuid(); c uuid := gen_random_uuid(); t uuid := gen_random_uuid(); p uuid := gen_random_uuid();
-  tries integer := 0;
+  tries integer := 0; max_tries constant integer := 1200;
   got jsonb;
 begin
   perform tests.commit(format($sql$
@@ -44,9 +44,12 @@ begin
   perform extensions.dblink_send_query('wbr_a', format('select /* wbr_a */ infract(%L, ''minor'', %L, ''wb-mod'')', c, p));
   -- The first filing has begun and waits on the row.
   loop
+    -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+    perform pg_stat_clear_snapshot();
     exit when exists (select 1 from pg_stat_activity a where a.query like '%/* wbr_a */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
     tries := tries + 1;
-    if tries > 400 then raise exception 'the first filing never waited on the character''s row'; end if;
+    -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+    if tries > max_tries then raise exception 'the first filing never waited on the character''s row'; end if;
     perform pg_sleep(0.025);
   end loop;
   perform pg_sleep(0.05);

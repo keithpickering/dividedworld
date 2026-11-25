@@ -199,7 +199,7 @@ declare
   said text;
   conn text;
   waiting integer;
-  tries integer := 0;
+  tries integer := 0; max_tries constant integer := 1200;
 begin
   perform pg_advisory_lock(4242);
   begin
@@ -213,7 +213,8 @@ begin
       where l.locktype = 'advisory' and l.objid = 4242 and not l.granted and l.database = (select oid from pg_database where datname = current_database());
       exit when waiting >= 2;
       tries := tries + 1;
-      if tries > 400 then raise exception 'tests.race: the two sessions never both reached the barrier'; end if;
+      -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+      if tries > max_tries then raise exception 'tests.race: the two sessions never both reached the barrier'; end if;
       perform pg_sleep(0.025);
     end loop;
   exception when others then

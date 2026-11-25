@@ -28,7 +28,7 @@ end $$;
 create function pg_temp.ordered(on_post uuid, first_stmt text, second_stmt text) returns text[] language plpgsql as $$
 declare
   url text := current_setting('kayfabb.scratch_url');
-  out text[] := array[null, null]::text[]; tries integer; conn text; n integer := 0;
+  out text[] := array[null, null]::text[]; tries integer; max_tries constant integer := 1200; conn text; n integer := 0;
 begin
   perform extensions.dblink_connect('df_h', url);
   perform extensions.dblink_connect('df_1', url);
@@ -46,7 +46,8 @@ begin
         perform pg_stat_clear_snapshot();
         exit when exists (select 1 from pg_stat_activity a where a.query like '%/* df_wait_' || n || ' */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
         tries := tries + 1;
-        if tries > 400 then raise exception 'statement % never waited on the post''s row', n; end if;
+        -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS), 1200 looks of 25 ms: the pool runs several files at once, so a parked session can take seconds to show here on a loaded runner. The loop leaves the moment the wait shows, so the bound is only how long a broken race takes to fail.
+        if tries > max_tries then raise exception 'statement % never waited on the post''s row', n; end if;
         perform pg_sleep(0.025);
       end loop;
     end loop;
@@ -160,7 +161,7 @@ end $$;
 create function pg_temp.ordered_lo(on_post uuid, first_stmt text, second_stmt text) returns text[] language plpgsql as $$
 declare
   url text := current_setting('kayfabb.scratch_url');
-  out text[] := array[null, null]::text[]; tries integer; conn text; n integer := 0;
+  out text[] := array[null, null]::text[]; tries integer; max_tries constant integer := 1200; conn text; n integer := 0;
 begin
   perform extensions.dblink_connect('lo_h', url);
   perform extensions.dblink_connect('lo_1', url);
@@ -178,7 +179,8 @@ begin
         perform pg_stat_clear_snapshot();
         exit when exists (select 1 from pg_stat_activity a where a.query like '%/* lo_wait_' || n || ' */%' and a.pid <> pg_backend_pid() and a.wait_event_type = 'Lock');
         tries := tries + 1;
-        if tries > 400 then raise exception 'statement % never waited on a lock', n; end if;
+        -- Bounded as above.
+        if tries > max_tries then raise exception 'statement % never waited on a lock', n; end if;
         perform pg_sleep(0.025);
       end loop;
     end loop;

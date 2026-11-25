@@ -168,9 +168,12 @@ begin
     -- B records {P1, P2} (it began first), and waits on A.
     perform extensions.dblink_send_query('job_b', format('select record_layer(%L, %L, %L)', s, (select array_agg(x order by x) from unnest(array[p1, p2]) x), layer_text));
     loop
+      -- A transaction reads one snapshot of pg_stat_activity until it is cleared, so a session that began to wait after the last look is not seen.
+      perform pg_stat_clear_snapshot();
       exit when exists (select 1 from pg_stat_activity where datname = current_database() and wait_event_type = 'Lock' and pid <> pg_backend_pid());
       waited := waited + 1;
-      if waited > 200 then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
+      -- Gives up at 30 s, the lock_timeout (tools/test-sql.mjs, SESSION_BOUNDS): the pool runs several files at once, so a parked session can take seconds to show on a loaded runner. The loop leaves the moment the wait shows.
+      if waited > 600 then raise exception 'race: job B neither waits on job A nor finishes: it was never held'; end if;
       exit when extensions.dblink_is_busy('job_b') = 0;
       perform pg_sleep(0.05);
     end loop;

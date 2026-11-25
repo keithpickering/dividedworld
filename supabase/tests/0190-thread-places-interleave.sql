@@ -42,8 +42,8 @@ begin
 end $$;
 
 -- What a connection that has been sent a query is waiting on, as pg_stat_activity says: polled until it shows a lock wait (the kind and the event: `Lock:advisory` for a key, `Lock:transactionid` for a
--- row), bounded at `secs`; null when it never waited, which is what a writer with no key does.
-create function pg_temp.wait_lock(like_query text, secs numeric default 10) returns text language plpgsql as $$
+-- row), bounded at `secs` (30 s by default, the lock_timeout: the pool runs several files at once, so a parked session can take seconds to show on a loaded runner; it returns the moment the wait shows); null when it never waited, which is what a writer with no key does.
+create function pg_temp.wait_lock(like_query text, secs numeric default 30) returns text language plpgsql as $$
 declare
   until_at timestamptz := clock_timestamp() + make_interval(secs => secs);
   seen text;
