@@ -258,9 +258,10 @@ const boardSlug = (r: Fields): { board_slug?: string } => (r.board === undefined
 
 /** Each action: the SQL function that writes it, and its arguments from the request. */
 const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
-  startThread: (r, { settings }) => {
-    return { rpc: 'start_thread', args: { board_slug: slug(r), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) } };
-  },
+  startThread: (r, { settings }) => ({
+    rpc: 'start_thread',
+    args: { board_slug: slug(r), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) },
+  }),
   post: (r, { settings }) => ({
     rpc: 'post',
     args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote'), ...framing(r), ...pollDraft(r, settings) },
