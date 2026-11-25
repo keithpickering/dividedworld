@@ -99,7 +99,7 @@ export const defaults: Settings = deepFreeze<Settings>({
   structuralHoldHours: 24,
   /** A starting point: twenty in-character lines a day from the light model; past it, stock lines stand in. */
   microEventDailyCalls: 20,
-  /** A starting point: the Boss's digest holds the ten hottest threads. */
+  /** A starting point: the Boss's digest holds the ten hottest threads a day of its window. */
   digestThreads: 10,
   /** A starting point: the digest lines thirty boards, and the busiest half and the quietest half when there are more, so a Boss can see a forum with five posts in it. */
   digestBoards: 30,
@@ -113,9 +113,9 @@ export const defaults: Settings = deepFreeze<Settings>({
   bundleMostParts: 4,
   /** A bundle an arc's beat authors holds at most eight: it costs nothing from the bank, so a writer's bundle is bounded here and not by the bank. */
   bundleAuthoredMostParts: 8,
-  /** A starting point: the digest quotes the eight top posts. */
+  /** A starting point: the digest quotes the eight top posts a day of its window, and lists eight of each list that is no window's flow (standings, moves, quotes, the Boss's reactions), unscaled. */
   digestExcerpts: 8,
-  /** How many conversations with waiting replies the digest shows a pool persona (the chattier staff design): six. */
+  /** How many conversations with waiting replies the digest shows a pool persona (the chattier staff design): six a day of its window. */
   digestConversations: 6,
   /** A starting point: the digest shows five polls a day of its window, the most voted first. */
   digestPolls: 5,
