@@ -8,10 +8,14 @@
 --      reads live veils x card_end Acts rows of `acts` before it reads its post. With 8 live author veils and 200 card_end Acts, one probe of a post nobody veiled read 1604 rows of `acts` with true statistics (the planner picks the
 --      hash while the veils are few, which is the usual state of a live instance, whose card_end Acts never stop growing). CI's runs had about 9 card_end Acts and 8 veils, so each probe read about 9 rows more than its key: 0426's
 --      read probes about 250 posts and plays (4814 against 2546), 0424's 51 requests (438 against the bound of 306), 0425's about 200 posts (1924 against 1500).
---      Rebuilt here: the check is author_veil_covers(act), one call for each Act, which a planner cannot hash: it reads the Act's rows of post_veil_cover by their key (act, play), and for each play the veil by its key (post_veils_pkey),
---      its end by its key (card_end_written: acts_one_card_end, under 0425's settings and in its own order, so that acts_card_ends' scan with a filter costs a disabled node) and its refund by its key (card_write_refunds_pkey). It is post_veils_live's rule for one veil (author, not over, not ended, not refunded), read in that order, so an Act no veil covers costs one
---      probe of post_veil_cover and no row of `acts`. acts_public is otherwise 0395's, word for word.
---   2. pool_own_post_ids and pool_reply_ids (0425), issue #1080. 0425 left one path with no disabled node besides each helper's ordered index: acts_patrol_posts (thread, created_at desc, id desc) gives the thread's posts in the order
+--      Rebuilt here around one check that no planner can hash, author_veil_live(play): post_veils_live's rule for one veil (author, not over, not ended, not refunded), each part read by its key (post_veils_pkey; card_end_written,
+--      which reads acts_one_card_end under 0425's settings and in its own order, so that acts_card_ends' scan with a filter costs a disabled node; card_write_refunds_pkey). acts_public's first two selects ask
+--      author_veil_covers(act) of each Act, a loop of author_veil_live over the Act's rows of post_veil_cover read by their key (act, play), so that an Act no veil covers costs one probe of post_veil_cover and no row of `acts`.
+--      acts_public is otherwise 0395's, word for word.
+--   2. The stand-in's own Acts (the owner's answer on #1107). Read through acts_public by the stand-in, as profile_page and record_page read every character's, they were a walk of every Act of the instance that 0395's hashed
+--      set made nearly free and item 1's per-Act check makes a probe each (3,175 buffers for 0304's newest five). The two pages now read the stand-in's Acts from stand_in_acts, which starts from the live author veils, and
+--      every other character's as before; what each shows is unchanged (section 3 below).
+--   3. pool_own_post_ids and pool_reply_ids (0425), issue #1080. 0425 left one path with no disabled node besides each helper's ordered index: acts_patrol_posts (thread, created_at desc, id desc) gives the thread's posts in the order
 --      the helpers ask for, with the character (or the target) as a filter, so a planner that priced it below the ordered index read the thread's posts until it had n. Under empty statistics every candidate is estimated at one row
 --      and the cheaper is the smaller index, which acts_patrol_posts is: forged empty statistics with relallvisible 0 (the visibility map's count, which 0425's test did not forge, and which the files before it leave as they leave it)
 --      read 1241 rows in a 4,000-post thread and 941 in a 1,000-post one, #1080's own numbers.
@@ -46,6 +50,19 @@ revoke execute on function card_end_written(uuid) from public, anon, authenticat
 
 -- Priced as what it is, an index probe for each row (cost 1000, about one random page read at the default costs; a plpgsql function is priced 100 unless it says, which is a tenth of that): priced at 100, the planner read
 -- pool_signals' `tops` (0420) by the thread alone through acts_thread_seq_key and filtered the window, where at its true price it narrows to the window's posts first (acts_patrol_posts by thread and created_at), as 0420's test asks.
+-- Whether the veil play `play` is a live author veil: post_veils_live's rule for one veil (an author veil whose time has not passed, that no card_end Act ended and whose write was not refunded), each part read by its key.
+create function author_veil_live(play uuid) returns boolean
+language plpgsql stable cost 1000 security definer set search_path = public, pg_temp as $$
+begin
+  if author_veil_live.play is null then return false; end if;
+  if not exists (select 1 from post_veils v where v.play = author_veil_live.play and v.veil = 'author' and v.ends_at > now()) then return false; end if;
+  if card_end_written(author_veil_live.play) then return false; end if;
+  return not exists (select 1 from card_write_refunds r where r.play = author_veil_live.play);
+end $$;
+revoke execute on function author_veil_live(uuid) from public, anon;
+grant execute on function author_veil_live(uuid) to authenticated, service_role, kayfabb_digest;
+
+-- Whether a live author veil covers the Act `act`: author_veil_live for each veil post_veil_cover lists for it, read by its key (act, play). acts_public's first two selects ask it of each Act they read.
 create function author_veil_covers(act uuid) returns boolean
 language plpgsql stable cost 1000 security definer set search_path = public, pg_temp as $$
 declare
@@ -53,10 +70,7 @@ declare
 begin
   if author_veil_covers.act is null then return false; end if;
   for pl in select c.play from post_veil_cover c where c.act = author_veil_covers.act loop
-    continue when not exists (select 1 from post_veils v where v.play = pl and v.veil = 'author' and v.ends_at > now());
-    continue when card_end_written(pl);
-    continue when exists (select 1 from card_write_refunds r where r.play = pl);
-    return true;
+    if author_veil_live(pl) then return true; end if;
   end loop;
   return false;
 end $$;
@@ -64,7 +78,8 @@ revoke execute on function author_veil_covers(uuid) from public, anon;
 grant execute on function author_veil_covers(uuid) to authenticated, service_role, kayfabb_digest;
 
 -- acts_public as 0395 wrote it (section 8), but for the author-veil check of its first two selects: `not author_veil_covers(a.id)` and `author_veil_covers(a.id)` where 0395 had `not exists (...)` and `exists (...)` over post_veil_cover
--- and post_veils_live. The columns, their order and every other expression are 0395's.
+-- and post_veils_live. The columns, their order and every other expression are 0395's. A read of the stand-in's own Acts through this view tests every Act it walks, one probe each; the two screens that list them read
+-- stand_in_acts instead (section 3).
 create or replace view acts_public as
   select u.id, u."character", u.kind, u.thread, u.target_act_id, u.seq, u.created_at,
          shown_payload(case when u.secret then '{"secret": true}'::jsonb else u.payload end, h.own, co.refs, co.ready, co.body) as payload,
@@ -85,10 +100,7 @@ create or replace view acts_public as
     from acts a
     union all
     select a.id, (select k.id from characters k where k.staff_kind = 'anonymous') as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
-           -- the stand-in's select asks first whether post_veil_cover lists the Act at all (a probe of its key, or, for a read of the stand-in's Acts, which walks `acts`, one set of the covered Acts the planner may hash),
-           -- and only then (a CASE, so that the planner cannot order the check first) whether a live veil covers it: a walk of the author's Acts for the stand-in's newest pays the full check only on the few the veils cover (0304: 3,175 buffers for the stand-in's newest five when it was
-           -- asked of every Act, 94 before 0434). Neither reads `acts`; a hash of post_veil_cover for a probe of one Act is what 0426's bound on the veils' tables would name.
-           true as g, (case when exists (select 1 from post_veil_cover c where c.act = a.id) then author_veil_covers(a.id) else false end and not (a.kind = 'ballot' and ballot_secret(a.target_act_id))) as ok, false as secret
+           true as g, (author_veil_covers(a.id) and not (a.kind = 'ballot' and ballot_secret(a.target_act_id))) as ok, false as secret
     from acts a
     union all
     select a.id, null::uuid as "character", a.kind, a.thread, a.target_act_id, a.seq, a.created_at, a.payload,
@@ -110,7 +122,7 @@ create or replace view acts_public as
 
 
 -- ---------------------------------------------------------------------------------------------------- 2. the ordered helpers ----
--- 0425's two helpers, same signatures, owner, settings and grants (create or replace keeps them), the n newest ids by (created_at desc, id desc) as before: see this file's header, item 2.
+-- 0425's two helpers, same signatures, owner, settings and grants (create or replace keeps them), the n newest ids by (created_at desc, id desc) as before: see this file's header, item 3.
 create or replace function pool_own_post_ids(in_thread uuid, by_character uuid, n integer) returns uuid[]
 language sql stable security definer set search_path = public, pg_temp set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
   select coalesce(array(
@@ -127,3 +139,362 @@ language sql stable security definer set search_path = public, pg_temp set enabl
     order by y.target_act_id, y.created_at desc, y.id desc
     limit least(greatest(coalesce(n, 0), 0), 100)), '{}'::uuid[])
 $$;
+
+-- ---------------------------------------------------------------------------------------------------- 3. the stand-in's own Acts ----
+-- The owner's answer on #1107 (option 3). A listing of the stand-in's Acts through acts_public walks every Act of the instance and, with section 1's per-Act check, pays a probe for each (3,175 buffers for 0304's newest five).
+-- profile_page and record_page (0357) read the stand-in's Acts from stand_in_acts instead, and every other character's as before: what each screen shows is unchanged (supabase/tests/0434-reads-bounded-on-any-plan.sql,
+-- section 4, holds both pages to the view's read). stand_in_acts starts from the live author veils, so its cost is the Acts those veils cover now, never the instance's history and never `acts` whole:
+--   the live author veils, in post_veils_ends' order (veil, ends_at) under no sequential scan, bitmap scan, sort or incremental sort, so that post_veils_pkey or post_veils_post, read with a filter, costs a disabled node;
+--   each one's liveness by author_veil_live (by key); its covered Acts by post_veil_cover_by_play (play, act), asked as a range of one play in that order, so that the primary key (act, play) read with a filter costs a sort;
+--   each Act by its key; and the page, ordered (created_at desc, id desc) in the function, of what it found.
+
+-- post_veil_cover read by its play: the Acts a veil covers.
+create index post_veil_cover_by_play on post_veil_cover (play, act);
+
+-- The ids of the stand-in's Acts of the kinds `kinds`, newest first (created_at desc, id desc), `skip` passed and at most `take`: null when `in_character` is not the stand-in, so a page reads every other character as before.
+-- Owned by the migration's role: it reads post_veils, post_veil_cover and acts, which no API role reads. It returns ids that acts_public, which every page reads them through, shows under the stand-in.
+create function stand_in_acts(in_character uuid, kinds text[], skip integer, take integer) returns uuid[]
+language plpgsql stable security definer set search_path = public, pg_temp
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+declare
+  pl uuid;
+  x uuid;
+  r record;
+  seen uuid[] := '{}'::uuid[];
+  ids uuid[] := '{}'::uuid[];
+  ats timestamptz[] := '{}'::timestamptz[];
+begin
+  if in_character is null or in_character is distinct from stand_in() then return null; end if;
+  if coalesce(take, 0) <= 0 then return '{}'::uuid[]; end if;
+  for pl in select v.play from post_veils v where v.veil = 'author' and v.ends_at > now() order by v.veil, v.ends_at loop
+    continue when not author_veil_live(pl);
+    for x in select c.act from post_veil_cover c where c.play between pl and pl order by c.play, c.act loop
+      continue when x = any (seen);
+      seen := seen || x;
+      select a.created_at, a.kind into r from acts a where a.id = x;
+      if r.kind = any (kinds) then ids := ids || x; ats := ats || r.created_at; end if;
+    end loop;
+  end loop;
+  return coalesce(array(select u.id from unnest(ids, ats) as u(id, at) order by u.at desc, u.id desc offset greatest(coalesce(skip, 0), 0) limit take), '{}'::uuid[]);
+end $$;
+revoke execute on function stand_in_acts(uuid, text[], integer, integer) from public, anon;
+grant execute on function stand_in_acts(uuid, text[], integer, integer) to authenticated, service_role;
+
+-- profile_page and record_page as 0357 wrote them, but for the list of Acts: for the stand-in, the Acts stand_in_acts names, read through acts_public by id; for any other character, the read they made before.
+create or replace function profile_page(in_character uuid)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_generic_plan'
+ SET jit TO 'off'
+AS $function$
+#variable_conflict use_column
+begin
+  return (
+  WITH c AS (
+          SELECT characters_public.id,
+             characters_public.name,
+             characters_public.joined,
+             characters_public.staff,
+             characters_public.office,
+             characters_public.warn_points,
+             characters_public.banned_until,
+             characters_public."group"
+            FROM characters_public
+           WHERE (characters_public.id = profile_page.in_character)
+         ), sid AS (
+          -- the stand-in's newest five, read from the live veils (stand_in_acts, 0434); null for any other character
+          SELECT stand_in_acts(profile_page.in_character, ARRAY['post'::text, 'spin'::text, 'card'::text], 0, 5) AS ids
+         ), acts5 AS (
+          (SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE ((a."character" = profile_page.in_character) AND (a.kind = ANY (ARRAY['post'::text, 'spin'::text, 'card'::text])) AND (( SELECT sid.ids FROM sid) IS NULL))
+           ORDER BY a.created_at DESC
+          LIMIT 5)
+          UNION ALL
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE ((a.id = ANY (( SELECT sid.ids FROM sid)::uuid[])) AND (a."character" = profile_page.in_character))
+         ), rv AS (
+          SELECT r.act,
+             r."character",
+             r.class,
+             r.at,
+             r.via,
+             r.thread
+            FROM class_reveals r
+           WHERE (r."character" = profile_page.in_character)
+         ), tn AS (
+          SELECT t.act,
+             t."character",
+             t.at,
+             t.was
+            FROM turns_announced t
+           WHERE (t."character" = profile_page.in_character)
+         )
+  SELECT
+         CASE
+             WHEN (NOT (EXISTS ( SELECT 1
+                FROM c))) THEN NULL::jsonb
+             ELSE jsonb_build_object('character', ( SELECT to_jsonb(c.*) AS to_jsonb
+                FROM c), 'profile', ( SELECT (to_jsonb(p.*) || profile_cosmetics(p."character"))
+                FROM ( SELECT character_profiles."character",
+                         character_profiles.title,
+                         character_profiles.signature,
+                         character_profiles.avatar_square,
+                         character_profiles.avatar_portrait,
+                         character_profiles.square_frame,
+                         character_profiles.portrait_frame,
+                         character_profiles.pip_style,
+                         character_profiles.pronouns
+                        FROM character_profiles
+                       WHERE (character_profiles."character" = profile_page.in_character)) p), 'counts', ( SELECT to_jsonb(n.*) AS to_jsonb
+                FROM ( SELECT character_post_counts."character",
+                         character_post_counts.posts,
+                         character_post_counts.spins,
+                         character_post_counts.cards
+                        FROM character_post_counts
+                       WHERE (character_post_counts."character" = profile_page.in_character)) n), 'standing', standing_place(in_character), 'settled_at', ( SELECT s.ends_at
+                FROM settlements s
+               ORDER BY s.ends_at DESC
+              LIMIT 1), 'season', ( SELECT to_jsonb(s.*) AS to_jsonb
+                FROM current_season s
+              LIMIT 1), 'reveals', COALESCE(( SELECT jsonb_agg(to_jsonb(r.*) ORDER BY r.at, ((r.act)::text COLLATE "C")) AS jsonb_agg
+                FROM rv r), '[]'::jsonb), 'turns', COALESCE(( SELECT jsonb_agg(to_jsonb(t.*) ORDER BY t.at, ((t.act)::text COLLATE "C")) AS jsonb_agg
+                FROM tn t), '[]'::jsonb), 'acts', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY a.created_at DESC) AS jsonb_agg
+                FROM acts5 a), '[]'::jsonb), 'targets', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*)) AS jsonb_agg
+                FROM acts_public x
+               WHERE (x.id IN ( SELECT a.target_act_id
+                        FROM acts5 a
+                       WHERE ((a.kind = 'card'::text) AND (a.target_act_id IS NOT NULL))
+                     UNION
+                      SELECT t.act
+                        FROM tn t))), '[]'::jsonb), 'seasons', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY a.at DESC, a.season DESC) AS jsonb_agg
+                FROM ( SELECT f.number AS season,
+                         r.place,
+                         r.standing,
+                         f.results_at AS at
+                        FROM (season_results r
+                          JOIN seasons_finished f ON ((f.id = r.season)))
+                       WHERE (r."character" = profile_page.in_character)
+                       ORDER BY f.results_at DESC, f.number DESC
+                      LIMIT 50) a), '[]'::jsonb), 'unread', my_alerts_unread())
+         END AS jsonb_build_object
+  );
+end
+$function$;
+
+create or replace function record_page(in_character uuid, in_kind text, in_page integer)
+ RETURNS jsonb
+ LANGUAGE plpgsql
+ STABLE
+ SET search_path TO 'public', 'pg_temp'
+ SET plan_cache_mode TO 'force_generic_plan'
+ SET jit TO 'off'
+AS $function$
+#variable_conflict use_column
+begin
+  return (
+  WITH c AS (
+          SELECT characters_public.id,
+             characters_public.name,
+             characters_public.joined,
+             characters_public.staff,
+             characters_public.office,
+             characters_public.warn_points,
+             characters_public.banned_until,
+             characters_public."group"
+            FROM characters_public
+           WHERE (characters_public.id = record_page.in_character)
+         ), k AS (
+          SELECT
+                 CASE
+                     WHEN (in_kind = ANY (ARRAY['all'::text, 'post'::text, 'spin'::text, 'card'::text, 'class'::text, 'seasons'::text])) THEN in_kind
+                     ELSE 'all'::text
+                 END AS kind,
+             LEAST(GREATEST(COALESCE(in_page, 1), 1), 10000) AS page
+         ), rv AS (
+          SELECT r.act,
+             r."character",
+             r.class,
+             r.at,
+             r.via,
+             r.thread
+            FROM class_reveals r,
+             k
+           WHERE ((r."character" = record_page.in_character) AND (k.kind = ANY (ARRAY['all'::text, 'class'::text])))
+         ), tn AS (
+          SELECT t.act,
+             t."character",
+             t.at,
+             t.was
+            FROM turns_announced t,
+             k
+           WHERE ((t."character" = record_page.in_character) AND (k.kind = ANY (ARRAY['all'::text, 'class'::text])))
+         ), seasons_read AS (
+          SELECT f.number AS season,
+             r.place,
+             r.standing,
+             f.results_at AS at
+            FROM (season_results r
+              JOIN seasons_finished f ON ((f.id = r.season))),
+             k
+           WHERE ((k.kind = ANY (ARRAY['all'::text, 'seasons'::text])) AND (r."character" = record_page.in_character))
+           ORDER BY f.results_at DESC, f.number DESC
+          LIMIT 50
+         ), w AS (
+          SELECT
+                 CASE k.kind
+                     WHEN 'all'::text THEN ARRAY['post'::text, 'spin'::text, 'card'::text]
+                     WHEN 'post'::text THEN ARRAY['post'::text]
+                     WHEN 'spin'::text THEN ARRAY['spin'::text]
+                     WHEN 'card'::text THEN ARRAY['card'::text]
+                     ELSE ARRAY[]::text[]
+                 END AS kinds,
+                 CASE
+                     WHEN (k.kind = 'all'::text) THEN GREATEST((0)::bigint, (((k.page - 1) * 20) - ((( SELECT count(*) AS count
+                        FROM rv) + ( SELECT count(*) AS count
+                        FROM tn)) + ( SELECT count(*) AS count
+                        FROM seasons_read))))
+                     ELSE (((k.page - 1) * 20))::bigint
+                 END AS from_row,
+                 CASE
+                     WHEN (k.kind = 'all'::text) THEN (((k.page - 1) * 20) + 20)
+                     ELSE 20
+                 END AS base
+            FROM k
+         ), sid AS (
+          -- the stand-in's page, read from the live veils (stand_in_acts, 0434); null for any other character
+          SELECT stand_in_acts(record_page.in_character, w.kinds, (w.from_row)::integer, (CASE WHEN (k.kind = 'all'::text) THEN (w.base - w.from_row) ELSE (20)::bigint END)::integer) AS ids
+            FROM w,
+             k
+         ), acts_read AS (
+          (SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE ((a."character" = record_page.in_character) AND (a.kind = ANY (( SELECT w.kinds
+                    FROM w)::text[])) AND (( SELECT sid.ids FROM sid) IS NULL))
+           ORDER BY a.created_at DESC
+          OFFSET ( SELECT w.from_row
+                    FROM w)
+          LIMIT ( SELECT
+                         CASE
+                             WHEN (k.kind = 'all'::text) THEN (w.base - w.from_row)
+                             ELSE (20)::bigint
+                         END AS "case"
+                    FROM w,
+                     k))
+          UNION ALL
+          SELECT a.id,
+             a."character",
+             a.kind,
+             a.thread,
+             a.target_act_id,
+             a.seq,
+             a.created_at,
+             a.payload,
+             a.current_payload,
+             a.edited_at,
+             a.shown_edited_at,
+             a.untaken,
+             a.ends_at,
+             a.hidden,
+             a.any_hidden,
+             a.concealing,
+             a.payload_hidden,
+             a.payload_concealing
+            FROM acts_public a
+           WHERE ((a.id = ANY (( SELECT sid.ids FROM sid)::uuid[])) AND (a."character" = record_page.in_character))
+         )
+  SELECT
+         CASE
+             WHEN (NOT (EXISTS ( SELECT 1
+                FROM c))) THEN NULL::jsonb
+             ELSE jsonb_build_object('kind', ( SELECT k.kind
+                FROM k), 'page', ( SELECT k.page
+                FROM k), 'character', ( SELECT to_jsonb(c.*) AS to_jsonb
+                FROM c), 'profile', ( SELECT (to_jsonb(p.*) || profile_cosmetics(p."character"))
+                FROM ( SELECT character_profiles."character",
+                         character_profiles.title,
+                         character_profiles.signature,
+                         character_profiles.avatar_square,
+                         character_profiles.avatar_portrait,
+                         character_profiles.square_frame,
+                         character_profiles.portrait_frame,
+                         character_profiles.pip_style,
+                         character_profiles.pronouns
+                        FROM character_profiles
+                       WHERE (character_profiles."character" = record_page.in_character)) p), 'counts', ( SELECT to_jsonb(n.*) AS to_jsonb
+                FROM ( SELECT character_post_counts."character",
+                         character_post_counts.posts,
+                         character_post_counts.spins,
+                         character_post_counts.cards
+                        FROM character_post_counts
+                       WHERE ((character_post_counts."character" = record_page.in_character) AND (( SELECT k.kind
+                                FROM k) = ANY (ARRAY['all'::text, 'post'::text, 'spin'::text, 'card'::text])))) n), 'reveals', COALESCE(( SELECT jsonb_agg(to_jsonb(r.*) ORDER BY r.at, ((r.act)::text COLLATE "C")) AS jsonb_agg
+                FROM rv r), '[]'::jsonb), 'turns', COALESCE(( SELECT jsonb_agg(to_jsonb(t.*) ORDER BY t.at, ((t.act)::text COLLATE "C")) AS jsonb_agg
+                FROM tn t), '[]'::jsonb), 'seasons', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY a.at DESC, a.season DESC) AS jsonb_agg
+                FROM seasons_read a), '[]'::jsonb), 'acts', COALESCE(( SELECT jsonb_agg(to_jsonb(a.*) ORDER BY a.created_at DESC) AS jsonb_agg
+                FROM acts_read a), '[]'::jsonb), 'targets', COALESCE(( SELECT jsonb_agg(to_jsonb(x.*)) AS jsonb_agg
+                FROM acts_public x
+               WHERE (x.id IN ( SELECT a.target_act_id
+                        FROM acts_read a
+                       WHERE ((a.kind = 'card'::text) AND (a.target_act_id IS NOT NULL))
+                     UNION
+                      SELECT t.act
+                        FROM tn t))), '[]'::jsonb), 'unread', my_alerts_unread())
+         END AS jsonb_build_object
+  );
+end
+$function$;
