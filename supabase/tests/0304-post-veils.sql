@@ -925,7 +925,16 @@ begin
   perform tests.unbecome();
   if got is not null then raise exception 'a veil on a quote whose spring names no one: %', got; end if;
   if not exists (select 1 from post_veils v where v.post = q2) or (select x.character from acts_public x where x.id = q2) is distinct from stand then raise exception 'the veil on a quote whose spring names no one did not land'; end if;
-  -- One bounded indexed read: with sequential scans off the probe is served by acts_spring_by.
+  -- One bounded indexed read: with sequential scans off the probe is served by acts_spring_by. It is judged on the Acts of a board that
+  -- has been played on, analyzed here: a fresh instance's `acts` holds a few rows with no statistics, on which the planner prefers another
+  -- partial index (acts_origin_plays) for the same kinds. The filler is a character and a thread of its own, so no count above is moved.
+  declare
+    filler_c uuid := tests.character(tests.account('vl-filler'), 'Vl Filler');
+    filler_t uuid := tests.thread('Vl filler');
+  begin
+    insert into acts (character, kind, thread, payload) select filler_c, 'post', filler_t, jsonb_build_object('body', 'Filler ' || g) from generate_series(1, 300) g;
+  end;
+  analyze acts;
   set local enable_seqscan = off;
   plan := pg_temp.plan_of(format('select exists (select 1 from acts s where s.kind = ''spring'' and s.payload ->> ''by'' = %L and s.payload ? ''for'')', q::text));
   reset enable_seqscan;

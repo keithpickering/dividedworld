@@ -74,6 +74,10 @@ begin
   perform tests.unbecome();
 end $$;
 
+-- The window the season's end is dated from is the file's own: a fresh instance has settled nothing, so its last settled end
+-- would be the season's start, long before these characters existed (a settlement committed by another file used to stand in).
+insert into settlements (starts_at, ends_at, season) select date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', id from seasons where ends_at is null;
+
 -- ---- The season's results: every character in order of final standing, with its place and standing, and
 -- only what its player made public in the season: its reveals and its announced Turns, an old class
 -- where the Turn named it. Unrevealed classes and silent Turns roll over; who plays them, never

@@ -160,6 +160,15 @@ begin
   perform extensions.dblink_disconnect('tests_setup');
 end $$;
 
+-- Commits the four shards of debuted_count, empty, so a race test can debut characters from two sessions. A fresh instance
+-- holds no shard (characters_count_debuted() makes one on the first debut), and a file's open transaction that has debuted
+-- a character holds shard 0 uncommitted: a racer that debuts another then picks shard 0 too (none committed to skip) and
+-- waits on a transaction that ends only after the race. With all four committed, the open transaction locks one and the
+-- racer's `for update skip locked` takes another. Called before the file's own transaction debuts anyone.
+create function tests.commit_debuted_shards() returns void language sql as $$
+  select tests.commit('insert into debuted_count (shard, characters) values (0, 0), (1, 0), (2, 0), (3, 0) on conflict (shard) do nothing');
+$$;
+
 -- One racer: waits at the barrier, becomes `who` (an account, or null for the service role),
 -- runs one statement, and returns null, or the error it raised. One statement on the wire, so
 -- dblink returns this function's answer and nothing of the racer's is lost.
