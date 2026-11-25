@@ -11,6 +11,7 @@ import { useEffect } from 'react';
 import { Frame } from '../../../../engine/ui/frame/Frame.tsx';
 import { LoadedThread } from '../../../../engine/ui/loaded.tsx';
 import { cardOf, type World } from '../../../../engine/ui/story.tsx';
+import { objectOf } from './objects.ts';
 
 /** The thread the world seeded: a story's world is made before it renders. */
 let thread = '';
@@ -21,8 +22,16 @@ const WORDS = [
   'Anyway, Double Dash is still the greatest game ever made, and I would die on that hill. That is all. Thank you for coming to my talk.',
 ].join('\n\n');
 
-/** A thread with a post by a character, and `throwers` characters (one to three) who each play Steel Chair on it. */
-const worldOf = (words: string, throwers: number, fab: false | 'chair-first' | 'fab-first' = false): World => (fake, instance) => {
+/** A play's id that rolls a chair (objects.ts), so that a story is the chairs it says it is however the table rolls: nine ids in ten already do. */
+const chairId = (n: number): string => { let id = `story-chair-${n}`; while (objectOf(id) !== 'chair') id += 'c'; return id; };
+/** Ids that roll each of the other objects (objects.ts; its test holds them to what they roll). */
+const ID = { chair: 'play-0', can: 'play-6', ladder: 'play-2', extinguisher: 'play-93' } as const;
+
+/**
+ * A thread with a post by a character, and `throwers` characters (one to three) who each play Steel Chair on it. Each play's id is `ids[i]`,
+ * and a chair's where there are none: what the play throws is rolled from its id.
+ */
+const worldOf = (words: string, throwers: number, fab: false | 'chair-first' | 'fab-first' = false, ids: readonly string[] = []): World => (fake, instance) => {
   const rules = cardOf(instance.cards, 'steel-chair');
   const [first, second] = instance.classes;
   const player = fake.seed.account('story-player', { seasoned: true });
@@ -39,7 +48,7 @@ const worldOf = (words: string, throwers: number, fab: false | 'chair-first' | '
   for (let i = 0; i < throwers; i++) {
     const account = i === 0 ? player : fake.seed.account(`thrower-${i}`);
     const who = fake.seed.character(account, names[i]!, (i % 2 === 0 ? first : (second ?? first))!.key);
-    fake.seed.card(who, post, rules.key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
+    fake.seed.card(who, post, rules.key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: ids[i] ?? chairId(i) });
   }
   if (fab === 'chair-first') fabAt();
   /* The signature lies under the reactions, in the content area, over a foil that bleeds under everything (e2e/steel-chair.spec.ts). */
@@ -81,3 +90,17 @@ export const Reduced: Story = { args: { mode: 'light', reduced: true } };
 export const WithFab: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, 'fab-first') } };
 /** The same post with the order turned: Steel Chair played first, then Feelin' Fab (Fab is the outer effect, and the chair's dents are under its foil). */
 export const FabAfter: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, 'chair-first') } };
+
+/**
+ * Each object on the three-paragraph post, alone: at rest (`...AtRest`, motion reduced, so it is drawn lying where it settled) and in flight
+ * (`...InFlight`, thrown on the reader's own screen when the post's middle has been in view for 300 ms). The ladder, the can and the fire
+ * extinguisher are the rare rolls (objects.ts), so each story names the id that rolls it.
+ */
+export const LadderAtRest: Story = { args: { mode: 'light', reduced: true }, parameters: { world: worldOf(WORDS, 1, false, [ID.ladder]) } };
+export const LadderInFlight: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, false, [ID.ladder]) } };
+export const CanAtRest: Story = { args: { mode: 'light', reduced: true }, parameters: { world: worldOf(WORDS, 1, false, [ID.can]) } };
+export const CanInFlight: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, false, [ID.can]) } };
+export const ExtinguisherAtRest: Story = { args: { mode: 'light', reduced: true }, parameters: { world: worldOf(WORDS, 1, false, [ID.extinguisher]) } };
+export const ExtinguisherInFlight: Story = { args: { mode: 'light' }, parameters: { world: worldOf(WORDS, 1, false, [ID.extinguisher]) } };
+/** A chair, a ladder and a can on the one post, at rest: the room is the tallest of the three's. */
+export const MixedAtRest: Story = { args: { mode: 'light', reduced: true }, parameters: { world: worldOf(WORDS, 3, false, [ID.chair, ID.ladder, ID.can]) } };

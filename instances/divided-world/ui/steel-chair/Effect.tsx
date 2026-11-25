@@ -16,7 +16,7 @@
  * effect draws no wrapper of its own; the throw aims at the box the text really takes (a Range's client rects: a short post's words box is as wide as
  * the content area), and the words' filter is in the words box's coordinates, not the content area's: `geo` holds the measured offset between the two,
  * and the area's own size. The floor's room is the content area's own
- * last ROOM_HEIGHT px (chair.ts, the height of the tallest rest), so a resting chair reaches neither the reactions row nor the words: the
+ * last `roomHeightOf` px (chair.ts, the height of the tallest rest of the objects the plays rolled, set on the area as `--dw-chair-room`), so a resting chair reaches neither the reactions row nor the words: the
  * effect marks the body it found (`data-dw-chair-room`, the nearest content area, so a chair in a spun thread's ORIGIN box makes room in the
  * box and not in the opening post's body around it) and steel-chair.css draws the room at the foot of whatever is marked; only where there
  * is no content area is it a strip in the host (`.dw-chair-room`, hidden where the host is `data-kb-bleed`). Nothing
@@ -87,9 +87,10 @@ import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
   addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
-import { depthOf, INSET, piecesOf, project, shadeOf, transformOf, type Piece } from './chair.ts';
+import { depthOf, INSET, piecesFor, project, roomHeightOf, shadeOf, transformOf, type Piece } from './chair.ts';
 import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, zoneHeight, type DentShape } from './dent.ts';
 import { objectOf, type ThrownObject } from './objects.ts';
+import { dentedBy } from '../cards/steel-chair/dented.ts';
 import './steel-chair.css';
 
 /**
@@ -115,6 +116,8 @@ function shapeOf(play: string, object: ThrownObject = objectOf(play)): DentShape
  * area (one host per post-reach card per post; a moment replaces the live effect, never joins it), so the mark is a plain attribute and is not counted.
  */
 const ROOM_MARK = 'data-dw-chair-room';
+/** The custom property that is the room's height, set on the marked content area and on the host (steel-chair.css reads it). */
+const ROOM_VAR = '--dw-chair-room';
 /** The attribute the hit's shake is: on the content area (or the host where there is none), where steel-chair.css runs the 4 px shake. */
 const SHAKE_MARK = 'data-dw-chair-shake';
 /** The most chairs one post draws (the card's stack). */
@@ -191,7 +194,7 @@ interface Memory { met: boolean }
 interface Control { replay(): void; sync(): void; rebend(): void }
 /** What a chair's group remembers between frames, so a style is written only when it changed. */
 interface Cache {
-  pieces: HTMLElement[]; list: Piece[]; fold: number; transform: string; depth: string; nudges: number; matrices: string[]; applied: string[]; shades: string[];
+  pieces: HTMLElement[]; object: ThrownObject; list: readonly Piece[]; fold: number; transform: string; depth: string; nudges: number; matrices: string[]; applied: string[]; shades: string[];
 }
 
 /** How far a dent's circle (center in the content area's px, `radius`) reaches past the box's borders, in px: 0 where it lies inside. */
@@ -245,10 +248,15 @@ const turned = (m: readonly number[], n: readonly [number, number, number]): [nu
 ];
 
 /**
- * The pieces a chair is drawn from: their size and place are fixed (the order is `piecesOf`'s at every fold), their transform and shade are
+ * The pieces each object is drawn from: their size and place are fixed (the order is `piecesFor`'s at every fold), their transform and shade are
  * the frame loop's.
  */
-const PIECES = piecesOf(1);
+const OPEN: Record<ThrownObject, readonly Piece[]> = {
+  chair: piecesFor('chair', 1, true),
+  can: piecesFor('can', 1, true),
+  ladder: piecesFor('ladder', 1, true),
+  extinguisher: piecesFor('extinguisher', 1, true),
+};
 /**
  * The px the oblique view draws a chair at the hit (z = 0) above its world y: the throw aims this much lower so the drawn chair meets the
  * dent.
@@ -358,10 +366,18 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
        box makes room in the box and not in the opening post's body around it. One effect draws all of a post's chairs, so the mark has one
        owner, and the cleanup below takes both marks off. */
     const giveRoom = (next: HTMLElement | null): void => {
-      if (marked && marked !== next) marked.removeAttribute(ROOM_MARK);
+      if (marked && marked !== next) { marked.removeAttribute(ROOM_MARK); marked.style.removeProperty(ROOM_VAR); }
       marked = next;
       next?.setAttribute(ROOM_MARK, '');
       el.toggleAttribute('data-kb-bleed', next !== null);
+      giveHeight();
+    };
+    /* The room's height is the tallest rest of the objects the live plays rolled (chair.ts `roomHeightOf`); it changes as plays come and go. */
+    const roomNow = (): number => roomHeightOf(latest.current.live.map((p) => objectOf(p.id)));
+    const giveHeight = (): void => {
+      const px = `${roomNow()}px`;
+      marked?.style.setProperty(ROOM_VAR, px);
+      el.style.setProperty(ROOM_VAR, px);
     };
     /* The room is there from the moment a play is live, as the old `:has(.dw-chair)` rule gave it, so the post does not grow when a run starts. */
     giveRoom(bodyOf(el));
@@ -404,7 +420,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
          the filter's coordinates are the box's own untransformed px; a rect's size would be scaled by a scaled ancestor. Left and top are rect
          differences and so are in the window's px: a scaled ancestor is not supported for them (as `bodyBox` does not support one). */
       const g: Geo = {
-        left: w.left - h.left - b.left, top: w.top - h.top - b.top, width: wordsEl.offsetWidth, height: wordsEl.offsetHeight, w: b.w, h: b.h, zone: zoneHeight(b.h),
+        left: w.left - h.left - b.left, top: w.top - h.top - b.top, width: wordsEl.offsetWidth, height: wordsEl.offsetHeight, w: b.w, h: b.h, zone: zoneHeight(b.h, roomNow()),
       };
       const moved = !sameBox(b, box) || !sameGeo(geoNow, g);
       box = b;
@@ -424,7 +440,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       const group = groups.current.get(play);
       if (!group) return null;
       c = {
-        pieces: [...group.children] as HTMLElement[], list: PIECES, fold: -1, transform: '', depth: '', nudges: -1, matrices: [], applied: [], shades: [],
+        pieces: [...group.children] as HTMLElement[], object: objectOf(play), list: OPEN[objectOf(play)], fold: -1, transform: '', depth: '', nudges: -1, matrices: [], applied: [], shades: [],
       };
       caches.set(play, c);
       return c;
@@ -451,7 +467,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         const depth = String(depthOf(v.position.z));
         if (depth !== c.depth) { group.style.zIndex = depth; c.depth = depth; }
         if (Math.abs(v.fold - c.fold) > 0.002) {
-          c.list = piecesOf(v.fold);
+          c.list = piecesFor(c.object, v.fold, true);
           c.fold = v.fold;
           c.matrices = c.list.map((p) => `matrix3d(${p.matrix.map((n) => +n.toFixed(5)).join(', ')})`);
         }
@@ -459,7 +475,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
           const node = c.pieces[i];
           if (!node) return;
           if (c.applied[i] !== c.matrices[i]) { c.applied[i] = c.matrices[i]!; node.style.transform = c.matrices[i]!; }
-          const shade = shadeOf(turned(m, p.normal));
+          const shade = shadeOf(turned(m, p.normal), p.color);
           if (c.shades[i] !== shade) {
             c.shades[i] = shade;
             if (p.kind === 'frame') node.style.borderColor = shade; else node.style.background = shade;
@@ -539,7 +555,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     const aim = (play: string): Box => {
       /* A dent is sized and aimed in the height it may land in (dent.ts `zoneHeight`: the area less the room where that is at least LEAST_ZONE, else
          the whole area), so its box stays inside the area and, where there is room, above the chairs' floor. */
-      const zone = zoneHeight(box.h);
+      const zone = zoneHeight(box.h, roomNow());
       const dent = dentPrimitives([{ x: 0, y: 0, shape: shapeOf(play) }], { width: geoNow?.width ?? box.w, height: zone })[0]!;
       const aimed = hitZone(target, { width: box.w, height: zone }, dent);
       return { left: aimed.left - INSET, top: aimed.top + HIT_LIFT, width: aimed.width, height: aimed.height };
@@ -548,7 +564,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     /* A chair into the standing world, in flight. */
     const addPlay = (play: CardPlay): void => {
       if (!world || bodyOfPlay.has(play.id)) return;
-      const id = addThrow(world, throwOf(rand, aim(play.id)));
+      const id = addThrow(world, throwOf(rand, aim(play.id), objectOf(play.id)));
       bodyOfPlay.set(play.id, id);
       playOfBody.set(id, play.id);
       setChairs((c) => (c.includes(play.id) ? c : [...c, play.id]));
@@ -565,7 +581,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       for (const p of plays) {
         if (bodyOfPlay.has(p.id)) continue;
         if (added.length > 0) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
-        const th = throwOf(rand, aim(p.id));
+        const th = throwOf(rand, aim(p.id), objectOf(p.id));
         const id = addThrow(world, th);
         bodyOfPlay.set(p.id, id);
         playOfBody.set(id, p.id);
@@ -666,6 +682,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
           bodyOfPlay.delete(play); playOfBody.delete(id); growing.delete(play); caches.delete(play);
         }
         due = due.filter((d) => ids.has(d.play.id));
+        giveHeight();
         setChairs((c) => c.filter((id) => ids.has(id)));
         setDents((d) => d.filter((x) => ids.has(x.play)));
         const fresh = plays.filter((p) => !bodyOfPlay.has(p.id) && !due.some((d) => d.play.id === p.id));
@@ -713,10 +730,10 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
     const at = soonest === null ? null : new Date(soonest).toISOString();
     const ends = at === null ? undefined
       : n === 1 ? endsWords(at, now)
-      : `The first chair is gone ${dayAndTime(at)}; each lasts ${spanWords(STEEL_CHAIR_LASTS)}.`;
+      : `The first one is gone ${dayAndTime(at)}; each lasts ${spanWords(STEEL_CHAIR_LASTS)}.`;
     return {
       progress: null,
-      state: n === 1 ? 'Dented by a chair' : `Dented by ${n} chairs`,
+      state: dentedBy(live),
       ...(ends !== undefined ? { ends } : {}),
       yours: false,
       controls: [
@@ -725,7 +742,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       ],
       notes: {},
     };
-  }, [n, soonest, now, replay, gameSound.on, gameSound.set]);
+  }, [n, live, soonest, now, replay, gameSound.on, gameSound.set]);
   useEffect(() => { show(view); }, [show, view]);
   useEffect(() => () => show(null), [show]);
 
@@ -818,10 +835,10 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       <div ref={layer} className="dw-chair-layer" data-kb-effect-ink="" aria-hidden="true">
         {chairs.filter((id) => live.some((p) => p.id === id)).map((id) => (
           <div key={id} className="dw-chair-group" data-play={id} ref={groupRef(id)}>
-            {PIECES.map((p) => (
+            {OPEN[objectOf(id)].map((p) => (
               <div
                 key={p.name} className="dw-chair-piece" data-kind={p.kind}
-                style={{ width: p.width, height: p.height, left: p.left, top: p.top }}
+                style={{ width: p.width, height: p.height, left: p.left, top: p.top, ...(p.clip ? { clipPath: p.clip } : {}) }}
               />
             ))}
           </div>

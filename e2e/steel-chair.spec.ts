@@ -1,8 +1,11 @@
 import { expect, test, type Page } from '@playwright/test';
 import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
-import { GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { GIVE, INSET, K, roomHeightOf, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
+
+/** The room a post of chairs keeps: the stories' plays have ids that roll chairs. */
+const ROOM_HEIGHT = roomHeightOf([]);
 
 /**
  * Steel Chair as a browser draws it (docs/plans/2026-11-15-steel-chair-plan.md, Task 7, as amended: the chair's world is the post's content

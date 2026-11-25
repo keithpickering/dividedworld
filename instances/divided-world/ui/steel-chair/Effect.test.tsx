@@ -18,7 +18,8 @@ import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
-import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
+import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ladderPiecesOf, piecesFor, roomHeightOf, Z_FRONT } from './chair.ts';
+import { objectOf } from './objects.ts';
 import { DENT_SCALE, FULL_DENT } from './dent.ts';
 import { LATE_MS, SteelChairEffect, VOICES } from './Effect.tsx';
 
@@ -62,7 +63,11 @@ vi.mock('./dent.ts', async (original) => {
 
 const post = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-10-29T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
 const FAR = '2099-01-01T00:00:00Z';
-const play = (n: number, ends: string | undefined = FAR): CardPlay => ({ id: `sc${n}`, card: 'steel-chair', layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T12:00:00Z', post: 'p1', ...(ends !== undefined ? { ends } : {}) });
+/** The room the chair's own post keeps (chair.ts `roomHeightOf`): the CSS's fallback and, with chairs alone, what the effect sets. */
+const ROOM_HEIGHT = roomHeightOf([]);
+/** A play's id that rolls a chair (objects.ts: nine in ten do), so that a test's chairs are drawn as chairs whatever the id table says: `sc9` rolls a ladder. */
+const chairId = (n: number): string => { let id = `sc${n}`; while (objectOf(id) !== 'chair') id += 'c'; return id; };
+const play = (n: number, ends: string | undefined = FAR): CardPlay => ({ id: chairId(n), card: 'steel-chair', layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T12:00:00Z', post: 'p1', ...(ends !== undefined ? { ends } : {}) });
 
 /* The page, as the test drives it. */
 let queue = new Map<number, FrameRequestCallback>();
@@ -294,12 +299,12 @@ describe('which plays, and what is drawn', () => {
   test('1. the room is the marked body\'s last ROOM_HEIGHT px, by a rule that reads no :has() and sits in no @supports :has block', () => {
     expect(ruleOf('[data-dw-chair-room]::after'), 'the marked body has an ::after').toMatch(/content:\s*''/u);
     expect(ruleOf('[data-dw-chair-room]::after')).toMatch(/display:\s*block/u);
-    expect(ruleOf('[data-dw-chair-room]::after'), 'the ::after is ROOM_HEIGHT px tall').toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('[data-dw-chair-room]::after'), 'the ::after is the room tall, ROOM_HEIGHT px where nothing sets it').toMatch(new RegExp(`height:\\s*var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)`, 'u'));
     expect(sheet, 'no rule reads :has(').not.toContain(':has(');
     expect(sheet, 'no @supports block guards :has').not.toContain('@supports selector');
     expect(ruleOf('.dw-chair[data-kb-bleed] .dw-chair-room'), 'the strip in the host is hidden where a body was found').toMatch(/display:\s*none/u);
     /* The strip itself is a plain rule: where there is no body it stays, ROOM_HEIGHT px, in the host. */
-    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)`, 'u'));
   });
 
   test('2. in a thread the body carries data-dw-chair-room and the host data-kb-bleed, and both come off when the play ends', () => {
@@ -366,7 +371,7 @@ describe('which plays, and what is drawn', () => {
   test('4. with no marked ancestor the host\'s box is the world and the room stays in the host, after the words: ROOM_HEIGHT px', () => {
     mount({ place: 'origin', wrapped: false });
     const room = document.querySelector('.dw-chair-room')!;
-    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)`, 'u'));
     expect(wordsEl().nextElementSibling).toBe(room);
     expect(host()).toContainElement(room as HTMLElement);
     run();
@@ -949,7 +954,7 @@ describe('a dent fits the room it has', () => {
 
   test('6. the least height of a marked area is the full dent and the room, held equal to the constants', () => {
     expect(FULL_DENT + ROOM_HEIGHT).toBe(237);
-    expect(ruleOf('[data-dw-chair-room]')).toMatch(new RegExp(`min-height:\\s*${FULL_DENT + ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('[data-dw-chair-room]')).toMatch(new RegExp(`min-height:\\s*calc\\(${FULL_DENT}px \\+ var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)\\)`, 'u'));
   });
 });
 
@@ -1228,6 +1233,57 @@ describe('sound by object', () => {
     expect(heard.filter((k) => k === 'steel-chair.ladder-hit')).toHaveLength(1);
     expect(heard.filter((k) => /^steel-chair\.ladder-settle-[12]$/u.test(k))).toHaveLength(1);
     expect(heard.filter((k) => k === 'steel-chair.hit' || /^steel-chair\.settle-/u.test(k)), 'nothing of the chair\'s').toEqual([]);
+  });
+});
+
+describe('each object is drawn as itself, in the room it needs', () => {
+  const roomOf = () => areaEl().style.getPropertyValue('--dw-chair-room');
+  const nodes = (id: string) => [...document.querySelectorAll<HTMLElement>(`.dw-chair-group[data-play="${id}"] .dw-chair-piece`)];
+
+  test('a chair post draws the chair\'s pieces and sets the chair\'s room', () => {
+    mount({ plays: [play(1)] });
+    run();
+    expect(roomOf()).toBe('77px');
+    expect(host()!.style.getPropertyValue('--dw-chair-room')).toBe('77px');
+    expect(nodes(play(1).id).map((n) => n.dataset.kind)).toEqual(piecesFor('chair', 1, true).map((p) => p.kind));
+  });
+
+  test('a ladder (play-2) draws the ladder\'s pieces, and the marked area carries the ladder\'s room, which goes with the play', () => {
+    expect(objectOf('play-2')).toBe('ladder');
+    mount({ plays: [{ ...play(1), id: 'play-2' }] });
+    run();
+    const drawnPieces = nodes('play-2');
+    const want = ladderPiecesOf(1);
+    expect(drawnPieces).toHaveLength(want.length);
+    expect(drawnPieces.map((n) => [parseFloat(n.style.width), parseFloat(n.style.height)])).toEqual(want.map((p) => [p.width, p.height]));
+    expect(drawnPieces.map((n) => n.dataset.kind)).toEqual(want.map((p) => p.kind));
+    expect(roomOf()).toBe(`${roomHeightOf(['ladder'])}px`);
+    expect(roomHeightOf(['ladder'])).toBeGreaterThan(77);
+    /* The pieces are shaded in the ladder's aluminum, not steel gray: bluer than the chair's rgb(b, b + 6, b + 16) by its color. */
+    expect(drawnPieces.some((n) => n.style.background !== '' || n.style.borderColor !== '')).toBe(true);
+    act(() => { hub.setPlays([]); });
+    expect(areaEl().style.getPropertyValue('--dw-chair-room'), 'the property goes with the effect').toBe('');
+  });
+
+  test('a can after a chair raises the room, and the can\'s end lowers it again', () => {
+    mount({ plays: [play(1)] });
+    run();
+    expect(roomOf()).toBe('77px');
+    act(() => { hub.setPlays([play(1), { ...play(2), id: 'play-6' }]); });
+    expect(roomOf()).toBe(`${roomHeightOf(['chair', 'can'])}px`);
+    act(() => { hub.setPlays([play(1)]); });
+    expect(roomOf()).toBe('77px');
+  });
+
+  test('a clipped cap carries its clip-path', () => {
+    mount({ plays: [{ ...play(1), id: 'play-6' }] });
+    run();
+    expect(nodes('play-6').filter((n) => n.style.clipPath.startsWith('polygon(')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the Lens names the objects', () => {
+    mount({ plays: [play(1), { ...play(2), id: 'play-2' }, { ...play(3), id: 'play-6' }] });
+    expect(lastView().state).toBe('Dented by a chair, a ladder and a trash can');
   });
 });
 
@@ -1569,14 +1625,14 @@ describe('what it tells the Lens', () => {
     expect(view).toMatchObject({ progress: null, yours: false, notes: {} });
     expect(viewProblems(view, { holds: false, covers: false })).toEqual([]);
     if (n === 1) expect(view.ends).toMatch(/^Ends /u);
-    else expect(view.ends).toMatch(/^The first chair is gone .*; each lasts 3 days\.$/u);
+    else expect(view.ends).toMatch(/^The first one is gone .*; each lasts 3 days\.$/u);
     expect(view.controls.map((c) => [c.kind, c.label])).toEqual([['press', 'Throw again'], ['toggle', 'Game sounds']]);
     expect(view.controls[1]).toMatchObject({ on: false, set: hub.set });
   });
 
   test('the soonest end is the first chair\'s', () => {
     mount({ plays: [play(1, '2026-11-03T12:00:00Z'), play(2, '2026-11-01T12:00:00Z')] });
-    expect(lastView().ends).toContain('The first chair is gone');
+    expect(lastView().ends).toContain('The first one is gone');
     mount({ plays: [play(3, '2026-11-01T12:00:00Z')] });
     expect(lastView().ends).toMatch(/^Ends /u);
   });

@@ -32,6 +32,9 @@ import { cardOf, type World } from '../../../engine/ui/story.tsx';
 import { packStroke } from '../cards/whoops/points.ts';
 import { BRUSH_PX, brushOf } from '../cards/whoops/scrub.ts';
 
+/** A play id that rolls a chair (steel-chair/objects.ts), so that the stories' Steel Chair is the chair e2e/origin-effects.spec.ts measures. */
+const CHAIR_PLAY = 'play-0';
+
 declare global {
   interface Window {
     /** The nth foil canvas of the ORIGIN box, as the worker that draws it holds it (the canvas's own size where the page draws it): e2e/origin-effects.spec.ts reads the backing size through it, since a handed-over canvas cannot be read on the page. */
@@ -165,7 +168,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   if (shown === 'under') fake.seed.card(caster, post, cardOf(instance.cards, '4d-chess').key, { layer: 1, live: true, config: {}, message: 'Check.' });
   if (shown === 'chair-landed') {
     /* The thread is spun from the play, so the box shows the chair's moment, "as it landed" (the case of issue #768). */
-    const play = fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
+    const play = fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: CHAIR_PLAY });
     spun(play);
     return;
   }
@@ -186,11 +189,11 @@ const worldOf = (shown: Case): World => (fake, instance) => {
       fake.signInAs(player);
       if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
       fake.clock.advance(MINUTE);
-      return fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 2, live: true, config: {}, message: 'Steel Chair' });
+      return fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 2, live: true, config: {}, message: 'Steel Chair', id: CHAIR_PLAY });
     })());
     return;
   }
-  if (shown === 'chair' || shown === 'chair-short') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
+  if (shown === 'chair' || shown === 'chair-short') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: CHAIR_PLAY });
   spun(post);
 };
 

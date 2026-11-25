@@ -4,9 +4,10 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf } from './body.ts';
+import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, rng, settle, SETTLE_S, SHAPES, STAGGER_STEPS, step, STEP, throwOf } from './body.ts';
+import { OBJECTS } from './objects.ts';
 import {
-  BOX, depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, ROOM_HEIGHT, shadeOf, transformOf, Z_FRONT,
+  BOX, canPiecesOf, depthOf, drawn, extinguisherPiecesOf, FLOOR_DEPTH, GIVE, INSET, K, ladderPiecesOf, PERSPECTIVE, piecesFor, piecesOf, prismPiecesOf, project, REACH, roomHeightOf, shadeOf, transformOf, Z_FRONT,
   type Matrix, type Piece,
 } from './chair.ts';
 
@@ -19,6 +20,7 @@ function corners(p: Piece): [number, number, number][] {
     return [m[0] * x + m[4] * y + m[12], m[1] * x + m[5] * y + m[13], m[2] * x + m[6] * y + m[14]] as [number, number, number];
   });
 }
+const ROOM_HEIGHT = roomHeightOf(['chair']);
 const byName = (ps: Piece[], name: string) => ps.find((p) => p.name === name)!;
 
 describe('piecesOf', () => {
@@ -197,6 +199,8 @@ function riseOf(b: ReturnType<typeof bodies>[number], h: number): number {
 
 describe('the room', () => {
   test('the room is derived from the lowest a body may sleep: REST_RISE high, at the back of the floor, and the insets', () => {
+    assert.equal(roomHeightOf([]), 77);
+    assert.equal(ROOM_HEIGHT, 77);
     assert.equal(ROOM_HEIGHT, Math.ceil(INSET + REST_RISE + K * (Z_FRONT + DEPTH + GIVE + HALF[1])));
     /* The floor is 28 px deep and a chair rests at most REST_RISE up (three flat chairs and a chair across them: 33), so the room is between
        the two summed and the old room, which had to cover a chair standing on its end. */
@@ -305,5 +309,143 @@ describe('depthOf', () => {
     assert.ok(depthOf(10) > depthOf(-10));
     assert.ok(depthOf(10.4) >= depthOf(10));
     assert.ok(depthOf(-Z_FRONT) >= 0);
+  });
+});
+
+/* ---------- the other objects ---------- */
+
+describe('the objects\' pieces', () => {
+  /** Whether every corner of every piece lies in the box `half` (plus `slack`) at fold 0; pieces with a `lid` or a handle or hose may stand out by their own `slack`. */
+  const inside = (ps: Piece[], half: readonly [number, number, number], slack = (_: Piece) => 0) => {
+    for (const p of ps) for (const [x, y, z] of corners(p)) {
+      const s = slack(p) + 1e-6;
+      assert.ok(Math.abs(x) <= half[0] + s && Math.abs(y) <= half[1] + s && Math.abs(z) <= half[2] + s, `${p.name} corner ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)} is outside ${half}`);
+    }
+  };
+  const looseName = (p: Piece) => (/^(lid|handle|valve|hose)/u.test(p.name) ? 6 : 0);
+  const names = (ps: Piece[]) => ps.map((p) => p.name);
+
+  test('the ladder: two rail frames, three treads on the front frame, a spreader, all frame, panel and tube pieces, and shut it lies in its 30 by 96 by 6 box', () => {
+    const ps = ladderPiecesOf(0);
+    assert.deepEqual(ps.filter((p) => p.kind === 'frame').map((p) => p.name), ['front', 'rear']);
+    assert.equal(ps.filter((p) => p.name.startsWith('tread')).length, 3);
+    for (const t of ps.filter((p) => p.name.startsWith('tread'))) assert.equal(t.kind, 'panel');
+    assert.ok(names(ps).includes('spreader'));
+    assert.ok(ps.some((p) => p.kind === 'tube'));
+    inside(ps, [15, 48, 3]);
+    assert.equal(ladderPiecesOf(1).length, ps.length, 'the list is the same at every fold');
+    assert.deepEqual(names(ladderPiecesOf(1)), names(ps));
+  });
+  test('the ladder opens: the rear frame turns 28 degrees back of the front one', () => {
+    const open = ladderPiecesOf(1);
+    const angle = (n: [number, number, number]) => Math.atan2(n[1], n[2]) * 180 / Math.PI;
+    assert.ok(Math.abs(Math.abs(angle(byName(open, 'rear').normal) - angle(byName(open, 'front').normal)) - 28) < 1e-3);
+    assert.ok(Math.abs(byName(ladderPiecesOf(0), 'rear').normal[2]) > 1 - 1e-6);
+  });
+  test('a prism: 12 side strips and two 12-gon caps clipped by a polygon, inside its own cylinder', () => {
+    const ps = prismPiecesOf(15, 40, 12);
+    assert.equal(ps.filter((p) => p.name.startsWith('side')).length, 12);
+    const caps = ps.filter((p) => p.name.startsWith('cap'));
+    assert.equal(caps.length, 2);
+    for (const c of caps) {
+      assert.equal(c.kind, 'panel');
+      assert.equal(c.clip!.match(/%\s+[\d.]+%/gu)!.length, 12, c.clip);
+      assert.match(c.clip!, /^polygon\(/u);
+    }
+    for (const p of ps.filter((q) => q.name.startsWith('side'))) assert.equal(p.kind, 'panel');
+    inside(ps, [15, 20, 15]);
+    /* The strips face outward all round: each normal is horizontal, and the twelve are distinct. */
+    const normals = new Set(ps.filter((p) => p.name.startsWith('side')).map((p) => p.normal.map((n) => n.toFixed(3)).join()));
+    assert.equal(normals.size, 12);
+    for (const p of ps.filter((q) => q.name.startsWith('side'))) assert.ok(Math.abs(p.normal[1]) < 1e-9);
+  });
+  test('the can: the prism, three bands, two handles and a lid with its handle, the lid pieces marked, in its box', () => {
+    const on = canPiecesOf(true), off = canPiecesOf(false);
+    assert.equal(on.filter((p) => p.name.startsWith('band-0')).length, 12);
+    assert.deepEqual(new Set(on.filter((p) => p.name.startsWith('band')).map((p) => p.name.split('-').slice(0, 2).join('-'))), new Set(['band-0', 'band-1', 'band-2']));
+    assert.ok(names(on).some((n) => n.startsWith('handle-left')) && names(on).some((n) => n.startsWith('handle-right')));
+    const lid = on.filter((p) => p.lid);
+    assert.ok(lid.some((p) => p.name === 'lid-cap') && lid.some((p) => p.name.startsWith('lid-handle')));
+    assert.equal(off.filter((p) => p.lid).length, 0);
+    assert.deepEqual(names(on).slice(0, off.length), names(off), 'lidless is the same list less its end');
+    assert.ok(on.length > off.length);
+    inside(off, [15, 20, 15], looseName);
+    inside(on, [15, 20, 15], looseName);
+    /* Strictly inside, apart from what stands out on purpose: the barrel, its bands and its caps. */
+    inside(off.filter((p) => /^(side|cap|band)/u.test(p.name)), [15, 20, 15]);
+  });
+  test('the extinguisher: the red prism, a black collar, a valve head, a hose and a gauge disc', () => {
+    const ps = extinguisherPiecesOf();
+    assert.equal(ps.filter((p) => p.name.startsWith('side')).length, 12);
+    assert.ok(ps.every((p) => p.color));
+    assert.ok(byName(ps, 'side-0').color![0] > 150 && byName(ps, 'side-0').color![1] < 60, 'red');
+    assert.ok(ps.filter((p) => p.name.startsWith('collar')).every((p) => p.color![0] < 80), 'black collar');
+    assert.ok(names(ps).some((n) => n.startsWith('valve')) && names(ps).some((n) => n.startsWith('hose')));
+    assert.equal(byName(ps, 'gauge').clip, 'circle(50%)');
+    inside(ps, [7.5, 25, 7.5], looseName);
+    inside(ps.filter((p) => /^(side|cap|collar|gauge)/u.test(p.name)), [7.5, 25, 7.5]);
+  });
+  test('the hose runs from the valve head to a nozzle down the side, and the spout is at the top of the body', () => {
+    const hose = extinguisherPiecesOf().filter((p) => p.name.startsWith('hose'));
+    assert.equal(hose.length, 2);
+    const ys = corners(hose[0]!).map((c) => c[1]);
+    assert.ok(Math.min(...ys) < -25 && Math.max(...ys) > -25 + 8, `${ys}`);
+    assert.deepEqual(SHAPES.extinguisher.spout, [0, -25, 0]);
+  });
+  test('piecesFor dispatches by object', () => {
+    assert.deepEqual(piecesFor('chair', 0.5, true), piecesOf(0.5));
+    assert.deepEqual(piecesFor('ladder', 0.5, true), ladderPiecesOf(0.5));
+    assert.deepEqual(piecesFor('can', 1, true), canPiecesOf(true));
+    assert.deepEqual(piecesFor('can', 1, false), canPiecesOf(false));
+    assert.deepEqual(piecesFor('extinguisher', 1, true), extinguisherPiecesOf());
+  });
+  test("a piece's color tints the shade in place of steel", () => {
+    assert.equal(shadeOf([0, 0, 1], [200, 40, 30]), 'rgb(187, 37, 28)');
+    assert.equal(shadeOf([0, 0, 1], undefined), shadeOf([0, 0, 1]));
+    assert.notEqual(shadeOf([0, 0, 1], [200, 40, 30]), shadeOf([0, 0, 1]));
+  });
+  test('every piece of every object has a unit normal and its left and top at minus half its size', () => {
+    for (const o of OBJECTS.map((x) => x.object)) for (const p of piecesFor(o, 1, true)) {
+      assert.ok(Math.abs(Math.hypot(...p.normal) - 1) < 1e-9, `${o} ${p.name}`);
+      assert.equal(p.left, -p.width / 2);
+      assert.equal(p.top, -p.height / 2);
+    }
+  });
+});
+
+describe('roomHeightOf', () => {
+  test('a chair, or nothing, is 77 px, as the constant was', () => {
+    assert.equal(roomHeightOf(['chair']), 77);
+    assert.equal(roomHeightOf([]), 77);
+    assert.equal(roomHeightOf(['chair', 'chair']), 77);
+  });
+  test('the tallest of the objects sets it: a can is taller, and a post is as tall as its tallest', () => {
+    for (const o of ['can', 'ladder', 'extinguisher'] as const) assert.ok(roomHeightOf([o]) > 77, o);
+    assert.equal(roomHeightOf(['chair', 'can']), roomHeightOf(['can']));
+    assert.equal(roomHeightOf(['can', 'ladder', 'extinguisher']), Math.max(...['can', 'ladder', 'extinguisher'].map((o) => roomHeightOf([o as 'can']))));
+  });
+  test('over 200 seeded throws of each object, no rest is drawn higher than the object\'s room', () => {
+    for (const { object } of OBJECTS) {
+      const room = roomHeightOf([object]);
+      const h = 8 + 120 + 8 + room;
+      const aim = { left: 10 - INSET, top: 8 - project({ x: 0, y: 0, z: 0 }).y, width: 600 - 20, height: 120 };
+      let tallest = 0;
+      for (let s = 1; s <= 200; s++) {
+        const r = rng(s * 2654435761 + 7);
+        const world = createWorld(600 - 2 * INSET, h - INSET, h - INSET);
+        for (let i = 0; i < 1 + (s % 3); i++) {
+          addThrow(world, throwOf(r, aim, object));
+          for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+        }
+        settle(world, SETTLE_S);
+        for (const b of bodies(world)) {
+          const center = { x: b.position.x + INSET, y: b.position.y, z: b.position.z };
+          const rise = h - Math.min(...cornersOf(b, SHAPES[object]).map((c) => drawn([c[0] + INSET, c[1], c[2]], center).y));
+          tallest = Math.max(tallest, rise);
+          assert.ok(rise <= room, `${object} seed ${s}: drawn ${rise.toFixed(1)} above the border, past the room ${room}`);
+        }
+      }
+      console.log(`# ${object}: room ${room}, tallest of 200 seeded runs ${tallest.toFixed(1)}`);
+    }
   });
 });

@@ -29,7 +29,8 @@
 }
 
 /*
- * The floor's room: 77 px (chair.ts `ROOM_HEIGHT`, held equal by Effect.test.tsx: CSS cannot read it) above the content area's bottom border
+ * The floor's room: `var(--dw-chair-room, 77px)` (chair.ts `roomHeightOf`: the effect sets the property from the objects its plays rolled, and 77 is the
+ * fallback, `roomHeightOf([])`, held equal by Effect.test.tsx: CSS cannot read it) above the content area's bottom border
  * where chairs come to rest: a bound on how high any rest is drawn (a chair never rests on its end; it lies flat, or stacked on another),
  * so a resting chair reaches neither the reactions row nor the words. After the effect's host come the edited note, the reactions row, the
  * signature and the spun line, so a strip right under the words would be nowhere near the floor. So the effect marks the content area it found
@@ -39,15 +40,15 @@
  * effect's resize observer sees the area grow. The host is `data-kb-bleed` where a body was found, and then its own strip is hidden.
  */
 [data-dw-chair-room] {
-  /* A full dent (160, dent.ts `FULL_DENT`) and the room (77), held equal to the constants by Effect.test.tsx: a tiny post's box grows to hold a
+  /* A full dent (160, dent.ts `FULL_DENT`) and the room (77 where no property says otherwise), held equal to the constants by Effect.test.tsx: a tiny post's box grows to hold a
      dent, and the dent is not cut down to fit a small box. Where the engine gives the area a least height of its own (a post's body, 22.5em) that
      rule stands. */
-  min-height: 237px;
+  min-height: calc(160px + var(--dw-chair-room, 77px));
 }
 [data-dw-chair-room]::after {
   content: '';
   display: block;
-  height: 77px;
+  height: var(--dw-chair-room, 77px);
   pointer-events: none;
 }
 .dw-chair[data-kb-bleed] .dw-chair-room {
@@ -55,7 +56,7 @@
 }
 /* Where there is no content area (a moment or a preview outside a thread; the world is the host's own box), the room is a strip in the host. */
 .dw-chair-room {
-  height: 77px;
+  height: var(--dw-chair-room, 77px);
   pointer-events: none;
 }
 

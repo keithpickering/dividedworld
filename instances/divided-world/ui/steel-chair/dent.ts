@@ -1,4 +1,4 @@
-import { ROOM_HEIGHT } from './chair.ts';
+import { roomHeightOf } from './chair.ts';
 import { objectOf, type ThrownObject } from './objects.ts';
 import { seedOfIds } from './seed.ts';
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
@@ -159,11 +159,11 @@ export const FULL_DENT = 160;
 /** The least height a dent's zone may have where the area has room for the chairs below it; below that the room is given up (`zoneHeight`). */
 export const LEAST_ZONE = 80;
 /**
- * The height a dent may land in, from the content area's height: the area less the chairs' room (`ROOM_HEIGHT`, chair.ts) where that leaves at
+ * The height a dent may land in, from the content area's height: the area less the objects' room (`roomHeightOf`, chair.ts; the chair's by default) where that leaves at
  * least `LEAST_ZONE`, else the whole area (a short area gives up the room, so the dent is held to the area alone, never outside it).
  */
-export function zoneHeight(areaHeight: number): number {
-  const above = areaHeight - ROOM_HEIGHT;
+export function zoneHeight(areaHeight: number, room: number = roomHeightOf([])): number {
+  const above = areaHeight - room;
   return above >= LEAST_ZONE ? above : areaHeight;
 }
 

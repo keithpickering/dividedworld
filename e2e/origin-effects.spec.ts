@@ -1,10 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
-import { ROOM_HEIGHT } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { roomHeightOf } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { inflateSync } from 'node:zlib';
 import { pageViolations } from './axe.ts';
 import { settled } from './settled.ts';
 import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
+
+/** The room a post of chairs keeps: the stories' plays have ids that roll chairs. */
+const ROOM_HEIGHT = roomHeightOf([]);
 
 /**
  * Card effects in a spun thread's ORIGIN box, as a browser lays them out (docs/plans/2026-11-15-origin-box-effects-plan.md, Task 3; design, sections 2 to 7).
