@@ -34,3 +34,5 @@ design records it as decided, and the owner may strike that in review.
 
 Source and license for the manifest, as the chair's own sounds carry them: `source` "ElevenLabs Sound Effects",
 `maker` "Divided World", and the license string of `steel-chair-hit.mp3`'s entry, word for word.
+
+Moved on 2026-11-25 to instances/divided-world/ui/sounds/ by the build of the plan, task 5.

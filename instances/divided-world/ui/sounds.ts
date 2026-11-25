@@ -1,5 +1,5 @@
 /**
- * Divided World's sounds: the audience's laugh track and Steel Chair's, each with its caption and the ink of its dot.
+ * Divided World's sounds: the audience's laugh track and Steel Chair's (the chair's and its other objects'), each with its caption and the ink of its dot.
  * The files are in `sounds/`, listed in `sounds/sounds.json` (tools/check-sounds.mjs holds the two to each other).
  * The engine plays them on the game bus (engine/ui/audio/types.ts), each with the `gain` that brings its measured
  * loudness (the manifest's `lufs` and `peak`, written by tools/measure-sounds.mjs) to the same level.
@@ -23,6 +23,16 @@ import steelChairSettle1 from './sounds/steel-chair-settle-1.mp3?url';
 import steelChairSettle2 from './sounds/steel-chair-settle-2.mp3?url';
 import steelChairSettle3 from './sounds/steel-chair-settle-3.mp3?url';
 import steelChairSettle4 from './sounds/steel-chair-settle-4.mp3?url';
+import steelChairCanHit from './sounds/steel-chair-can-hit.mp3?url';
+import steelChairCanSettle1 from './sounds/steel-chair-can-settle-1.mp3?url';
+import steelChairCanSettle2 from './sounds/steel-chair-can-settle-2.mp3?url';
+import steelChairLadderHit from './sounds/steel-chair-ladder-hit.mp3?url';
+import steelChairLadderSettle1 from './sounds/steel-chair-ladder-settle-1.mp3?url';
+import steelChairLadderSettle2 from './sounds/steel-chair-ladder-settle-2.mp3?url';
+import steelChairExtinguisherHit from './sounds/steel-chair-extinguisher-hit.mp3?url';
+import steelChairExtinguisherSettle1 from './sounds/steel-chair-extinguisher-settle-1.mp3?url';
+import steelChairExtinguisherSettle2 from './sounds/steel-chair-extinguisher-settle-2.mp3?url';
+import steelChairExtinguisherHiss from './sounds/steel-chair-extinguisher-hiss.mp3?url';
 
 const LAUGH = 'The audience laughs';
 const CHEER = 'The audience cheers';
@@ -66,6 +76,16 @@ export const sounds: SoundsUi = Object.freeze({
     slot('steel-chair.settle-2', 'steel-chair-settle-2.mp3', steelChairSettle2, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-3', 'steel-chair-settle-3.mp3', steelChairSettle3, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-4', 'steel-chair-settle-4.mp3', steelChairSettle4, CLATTER, 'var(--kb-salty)'),
+    slot('steel-chair.can-hit', 'steel-chair-can-hit.mp3', steelChairCanHit, 'A trash can bangs', 'var(--kb-salty)'),
+    slot('steel-chair.can-settle-1', 'steel-chair-can-settle-1.mp3', steelChairCanSettle1, 'A trash can clatters to the floor', 'var(--kb-salty)'),
+    slot('steel-chair.can-settle-2', 'steel-chair-can-settle-2.mp3', steelChairCanSettle2, 'A trash can clatters to the floor', 'var(--kb-salty)'),
+    slot('steel-chair.ladder-hit', 'steel-chair-ladder-hit.mp3', steelChairLadderHit, 'A ladder clangs', 'var(--kb-salty)'),
+    slot('steel-chair.ladder-settle-1', 'steel-chair-ladder-settle-1.mp3', steelChairLadderSettle1, 'A ladder clatters to the floor', 'var(--kb-salty)'),
+    slot('steel-chair.ladder-settle-2', 'steel-chair-ladder-settle-2.mp3', steelChairLadderSettle2, 'A ladder clatters to the floor', 'var(--kb-salty)'),
+    slot('steel-chair.extinguisher-hit', 'steel-chair-extinguisher-hit.mp3', steelChairExtinguisherHit, 'A fire extinguisher thunks', 'var(--kb-salty)'),
+    slot('steel-chair.extinguisher-settle-1', 'steel-chair-extinguisher-settle-1.mp3', steelChairExtinguisherSettle1, 'A fire extinguisher clunks to the floor', 'var(--kb-salty)'),
+    slot('steel-chair.extinguisher-settle-2', 'steel-chair-extinguisher-settle-2.mp3', steelChairExtinguisherSettle2, 'A fire extinguisher clunks to the floor', 'var(--kb-salty)'),
+    slot('steel-chair.extinguisher-hiss', 'steel-chair-extinguisher-hiss.mp3', steelChairExtinguisherHiss, 'A fire extinguisher hisses', 'var(--kb-salty)'),
   ]),
   preview: Object.freeze({ game: 'laugh-track.laugh-1' }),
 });

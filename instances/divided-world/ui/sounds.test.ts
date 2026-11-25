@@ -6,6 +6,7 @@
  * answers those imports with the file's name, as Vite would answer with its URL.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import { register } from 'node:module';
 import { test } from 'node:test';
 import manifest from './sounds/sounds.json' with { type: 'json' };
@@ -56,4 +57,13 @@ test('laugh-3 is loud and near full scale: brought down for loudness, and its pe
   const slot = sounds.slots.find((s) => s.key === 'laugh-track.laugh-3');
   assert.ok(slot && near(slot.gain as number, 10 ** (-6.3 / 20)), String(slot?.gain));
   assert.ok(20 * Math.log10(slot.gain as number) + entry.peak <= -1);
+});
+
+test('every steel-chair.* slot is in the card\'s list in cards/steel-chair/ui.ts, and the list names no other', () => {
+  /* ui.ts imports art and a lazy effect Node cannot load, so its list is read from the source. */
+  const source = fs.readFileSync(new URL('./cards/steel-chair/ui.ts', import.meta.url), 'utf8');
+  const listed = [...(/sounds: \[([^\]]*)\]/u.exec(source)?.[1] ?? '').matchAll(/'([^']+)'/gu)].map((m) => m[1]).sort();
+  const slots = sounds.slots.map((s) => s.key).filter((k) => k.startsWith('steel-chair.')).sort();
+  assert.ok(slots.length > 0);
+  assert.deepEqual(listed, slots);
 });

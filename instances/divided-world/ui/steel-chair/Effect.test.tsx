@@ -1217,6 +1217,20 @@ describe('sound', () => {
   });
 });
 
+describe('sound by object', () => {
+  const keys = () => (hub.sound.play.mock.calls as unknown as [string][]).map((c) => c[0]);
+
+  test('a ladder (play-2) plays the ladder\'s hit and one of the ladder\'s two settles, and none of the chair\'s', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-2' }] });
+    run();
+    const heard = keys();
+    expect(heard.filter((k) => k === 'steel-chair.ladder-hit')).toHaveLength(1);
+    expect(heard.filter((k) => /^steel-chair\.ladder-settle-[12]$/u.test(k))).toHaveLength(1);
+    expect(heard.filter((k) => k === 'steel-chair.hit' || /^steel-chair\.settle-/u.test(k)), 'nothing of the chair\'s').toEqual([]);
+  });
+});
+
 describe('sound and met across the effect coming and going inside one mount', () => {
   test('after the last play ends and a new one lands, the new run sounds and the card is not met again', () => {
     mount({ plays: [play(1)] });

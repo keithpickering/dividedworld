@@ -65,7 +65,8 @@
  * content area's measured size; the reduced picture (`placeAll`) steps the same STAGGER_STEPS between their throws, so it is
  * the pile the animated run ends in for the same seed.
  *
- * Sound. Every animated run plays `steel-chair.hit` on each hit and one of the four settle sounds on each chair's first floor contact, in
+ * Sound. Every animated run plays its object's hit (`steel-chair.hit` for a chair, `steel-chair.ladder-hit` for a ladder and so on) on each hit and one
+ * of its object's settle sounds (four for a chair, two for each other object) on each body's first floor contact, in
  * the group `steel-chair`, whether it started from a scroll, from Throw again or from a new play landing; a reduced draw does not
  * sound. Three limits keep a thread from being a wall of clangs: the group's cap of `VOICES` sounds at once across the page (a newer clang
  * fades out the oldest past it), the limiter the engine puts on every sound, and the 300 ms a post must be in view before a run starts. A
@@ -135,8 +136,16 @@ const MOST_STEPS = 4;
  * background tab coming back) loses the rest.
  */
 const MOST_FRAME_S = MOST_STEPS * STEP;
-/** How many settle sounds there are (`steel-chair.settle-1` to `-4`): a chair's first floor contact plays one of them. */
-const SETTLE_SOUNDS = 4;
+/**
+ * Each object's sounds: the key of its hit and how many settle sounds it has, `<settle>-1` to `-n`; its first floor contact plays one of them.
+ * The chair's keys are the original `steel-chair.hit` and `steel-chair.settle-1` to `-4`, so they stay as they were.
+ */
+const SOUNDS: Readonly<Record<ThrownObject, { readonly hit: string; readonly settle: string; readonly settles: number }>> = Object.freeze({
+  chair: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4 },
+  can: { hit: 'steel-chair.can-hit', settle: 'steel-chair.can-settle', settles: 2 },
+  ladder: { hit: 'steel-chair.ladder-hit', settle: 'steel-chair.ladder-settle', settles: 2 },
+  extinguisher: { hit: 'steel-chair.extinguisher-hit', settle: 'steel-chair.extinguisher-settle', settles: 2 },
+});
 /**
  * How late a hit's or a settle's sound may start and still be heard as that hit's, in milliseconds; later, it is skipped and its caption
  * shows (docs/plans/2026-11-17-sound-preload-design.md, 2.3).
@@ -494,9 +503,10 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x + INSET, y: e.at.y - HIT_LIFT, full: false }]));
         growing.set(play, null);
         shake();
-        if (loud) void latest.current.sound.play('steel-chair.hit', { group: GROUP, voices: VOICES, lateMs: LATE_MS });
+        if (loud) void latest.current.sound.play(SOUNDS[objectOf(play)].hit, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       } else if (e.kind === 'floor' && loud) {
-        void latest.current.sound.play(`steel-chair.settle-${1 + Math.floor(soundRand() * SETTLE_SOUNDS)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
+        const sounds = SOUNDS[objectOf(play)];
+        void latest.current.sound.play(`${sounds.settle}-${1 + Math.floor(soundRand() * sounds.settles)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       }
     };
 
