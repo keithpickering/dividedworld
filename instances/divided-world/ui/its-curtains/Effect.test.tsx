@@ -49,7 +49,13 @@ beforeEach(() => {
   document.documentElement.setAttribute('data-kb-motion', 'reduce');
   HTMLCanvasElement.prototype.getContext = vi.fn(() => null) as never;
 });
-afterEach(() => { cleanup(); __stopConfetti(); document.documentElement.removeAttribute('data-kb-motion'); });
+afterEach(() => {
+  cleanup();
+  __stopConfetti();
+  vi.restoreAllMocks();
+  for (const k of ['clientWidth', 'clientHeight', 'clientLeft', 'clientTop']) delete (HTMLElement.prototype as unknown as Record<string, unknown>)[k];
+  document.documentElement.removeAttribute('data-kb-motion');
+});
 
 describe('with the engine\'s cover (a post in a thread)', () => {
   test('draws the words alone: no curtain of its own, nothing made inert', () => {
@@ -104,6 +110,23 @@ describe('without a cover (the ORIGIN box, a moment, History)', () => {
     expect(area.querySelector('.dw-curtain-overlay button')).toHaveAccessibleName('Open the curtain');
     expect(words()).toHaveAttribute('data-covered', 'true');
     expect(words().closest('[inert]')).not.toBeNull();
+  });
+
+  test('the curtain\'s overlay is the content area\'s box, measured from the host: left, top, width and height', () => {
+    const rect = (l: number, t: number, w: number, h: number) => ({ x: l, y: t, left: l, top: t, right: l + w, bottom: t + h, width: w, height: h, toJSON: () => ({}) }) as DOMRect;
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (this: HTMLElement) {
+      return this.hasAttribute('data-kb-content-area') ? rect(30, 50, 300, 120) : rect(10, 20, 400, 200);
+    });
+    Object.defineProperty(HTMLElement.prototype, 'clientWidth', { get() { return this.hasAttribute('data-kb-content-area') ? 296 : 0; }, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, 'clientHeight', { get() { return this.hasAttribute('data-kb-content-area') ? 116 : 0; }, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, 'clientLeft', { get() { return this.hasAttribute('data-kb-content-area') ? 2 : 0; }, configurable: true });
+    Object.defineProperty(HTMLElement.prototype, 'clientTop', { get() { return this.hasAttribute('data-kb-content-area') ? 2 : 0; }, configurable: true });
+    const { container } = mount();
+    const overlay = container.querySelector<HTMLElement>('.dw-curtain-overlay')!;
+    expect(overlay.style.left).toBe('22px');
+    expect(overlay.style.top).toBe('32px');
+    expect(overlay.style.width).toBe('296px');
+    expect(overlay.style.height).toBe('116px');
   });
 
   test('the Lens goes from "Shut for you" with Open to "Open for you" with Encore, and back on Encore', () => {

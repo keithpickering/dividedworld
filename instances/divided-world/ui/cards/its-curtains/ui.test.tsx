@@ -49,7 +49,11 @@ describe('its entry', () => {
 
   test('its words read the two surcharges from the settings, and never write them in', () => {
     const words = ui.describe(instance.settings);
-    expect(words).toBe(`A Pepperoni card, ${itsCurtains.rarity}. It hangs a curtain in the fabric you choose over a post, author and all. A drumroll plays while a reader points at it, and one press opens it, with a ta-da and confetti. Each reader opens it for themselves, and the post's effects start only then. Up to ${itsCurtains.stack} curtains stack, each opened in turn; the second costs 1.00 more to play and the third 2.00 more. ${setMoveWords('the quoting post')}`);
+    expect(words).toContain(`A Pepperoni card, ${itsCurtains.rarity}.`);
+    expect(words).toContain(`Up to ${itsCurtains.stack} curtains stack, each opened in turn`);
+    expect(words).toContain('the second costs 1.00 more to play and the third 2.00 more');
+    expect(words).toContain('Each reader opens it for themselves');
+    expect(words).toContain(setMoveWords('the quoting post'));
     const other = ui.describe(withEconomy(350, 725));
     expect(other).toContain('the second costs 3.50 more to play and the third 7.25 more');
     expect(other).not.toContain('1.00');

@@ -60,6 +60,40 @@ const moved = (e: { clientX: number; clientY: number }): boolean => {
   return was.x !== e.clientX || was.y !== e.clientY;
 };
 
+/* The page's one scroll and resize listener, passive and coalesced to one frame, attached only while some curtain needs it: a curtain on a touch-only page (it reads the
+   reader's line), or a curtain taller than the window that is in view (its resting spotlights follow the visible part). A mouse page with short curtains adds none. */
+const lineChecks = new Set<() => void>();
+const tallRedraws = new Set<() => void>();
+let scrollOn = false, scrollFrame = 0;
+const onScrollFrame = (): void => { scrollFrame = 0; for (const f of [...lineChecks]) f(); for (const f of [...tallRedraws]) f(); };
+const onScroll = (): void => { if (!scrollFrame) scrollFrame = requestAnimationFrame(onScrollFrame); };
+const syncScroll = (): void => {
+  const want = lineChecks.size + tallRedraws.size > 0;
+  if (want && !scrollOn) {
+    scrollOn = true;
+    window.addEventListener('scroll', onScroll, { capture: true, passive: true });
+    window.addEventListener('resize', onScroll, { passive: true });
+  } else if (!want && scrollOn) {
+    scrollOn = false;
+    window.removeEventListener('scroll', onScroll, { capture: true });
+    window.removeEventListener('resize', onScroll);
+    if (scrollFrame) cancelAnimationFrame(scrollFrame);
+    scrollFrame = 0;
+  }
+};
+/** Redraws `redraw` on every scroll frame while `el` is in view, and once as it comes into view. Returns the way to stop. */
+function watchTall(el: Element, redraw: () => void): () => void {
+  if (typeof IntersectionObserver !== 'function') return () => {};
+  const io = new IntersectionObserver((entries) => {
+    const last = entries.at(-1);
+    if (!last) return;
+    if (last.isIntersecting) { tallRedraws.add(redraw); redraw(); } else tallRedraws.delete(redraw);
+    syncScroll();
+  });
+  io.observe(el);
+  return () => { io.disconnect(); tallRedraws.delete(redraw); syncScroll(); };
+}
+
 const coarse = (): boolean => typeof window.matchMedia === 'function' && window.matchMedia('(pointer: coarse)').matches;
 const hudHeight = (): number => Number.parseFloat(document.documentElement.style.getPropertyValue('--kb-hud-measured')) || 0;
 
@@ -69,6 +103,25 @@ const HANDOFF_MS = 1000;
 
 /** For tests: forget where the mouse was, and any focus waiting to be handed on. */
 export const __resetPointer = (): void => { lastPointer = null; handedFocusAt = 0; };
+
+/* ---------- the reader's selection ---------- */
+
+/** The page's selection as a press found it: its text and its range. */
+interface Held { readonly text: string; readonly range: Range | null }
+const held = (): Held => {
+  const sel = window.getSelection?.();
+  if (!sel || sel.isCollapsed || sel.rangeCount === 0) return { text: '', range: null };
+  return { text: sel.toString(), range: sel.getRangeAt(0).cloneRange() };
+};
+/** Whether the page has a selection now that the press did not find: none held and one now, or a different one. With no press known, any selection counts. */
+function selectionMadeSince(before: Held | null): boolean {
+  const sel = window.getSelection?.();
+  if (!sel || sel.isCollapsed) return false;
+  if (!before || !before.range) return true;
+  const r = sel.rangeCount > 0 ? sel.getRangeAt(0) : null;
+  if (!r || sel.toString() !== before.text) return true;
+  return r.compareBoundaryPoints(Range.START_TO_START, before.range) !== 0 || r.compareBoundaryPoints(Range.END_TO_END, before.range) !== 0;
+}
 
 /* ---------- the spotlights ---------- */
 
@@ -108,7 +161,8 @@ function makeSpots(root: HTMLElement, spots: readonly HTMLElement[], glints: Gli
   };
   const kick = (): void => { if (!raf) { lastT = performance.now(); raf = requestAnimationFrame(tick); } };
   return {
-    setHot(on) { hot = on; kick(); },
+    /* Under reduced motion the spotlights stand still: they are drawn once, bright or dim, and no frame loop runs. */
+    setHot(on) { hot = on; if (reduced()) { k = on ? 1 : 0; draw(); } else kick(); },
     draw,
     dispose() { if (raf) cancelAnimationFrame(raf); raf = 0; },
   };
@@ -172,9 +226,8 @@ function Swags({ art, glints }: { readonly art: SwagArt; readonly glints?: Glint
 }
 
 /** The halves and the swags: the fabric, drawn in the shades the box carries as custom properties. */
-function Drawing({ width, glints }: { readonly width: number; readonly glints?: Glints }) {
+function Drawing({ art, glints }: { readonly art: SwagArt | null; readonly glints?: Glints }) {
   const n = TUNING.shape.pleatsPerHalf;
-  const art = useMemo(() => (width > 0 ? swagArt(width, TUNING.shape.swags, TUNING.shape.swagHeightPx) : null), [width]);
   const pleats = (right: boolean) => Array.from({ length: n }, (_, i) => <i key={i} className="dw-curtain-pleat" style={right ? { zIndex: n - i } : undefined} />);
   return (
     <>
@@ -209,6 +262,7 @@ export function Curtain({ fabric, under, seed, n, total, onOpened }: CurtainProp
   now.current = { sound, reduced, line, onOpened, seed, fabric };
 
   const [width, setWidth] = useState(0);
+  const art = useMemo(() => (width > 0 ? swagArt(width, TUNING.shape.swags, TUNING.shape.swagHeightPx) : null), [width]);
   const [opening, setOpening] = useState(false);
   const busy = useRef(false);
   const timers = useRef<number[]>([]);
@@ -224,12 +278,21 @@ export function Curtain({ fabric, under, seed, n, total, onOpened }: CurtainProp
   useLayoutEffect(() => {
     const el = root.current;
     if (!el) return;
-    const measure = (): void => { setWidth(el.clientWidth); spots.current?.draw(); };
+    /* A cover taller than the window has resting spotlights that must follow the visible part as the page scrolls: it is watched while it is in view. */
+    let tall = false, unwatch = (): void => {};
+    const measure = (): void => {
+      setWidth(el.clientWidth);
+      spots.current?.draw();
+      const now = el.clientHeight > window.innerHeight;
+      if (now === tall) return;
+      tall = now;
+      unwatch();
+      unwatch = tall ? watchTall(el, () => spots.current?.draw()) : () => {};
+    };
     measure();
-    if (typeof ResizeObserver !== 'function') return;
-    const ro = new ResizeObserver(measure);
-    ro.observe(el);
-    return () => ro.disconnect();
+    const ro = typeof ResizeObserver === 'function' ? new ResizeObserver(measure) : null;
+    ro?.observe(el);
+    return () => { ro?.disconnect(); unwatch(); };
   }, []);
 
   useLayoutEffect(() => {
@@ -265,19 +328,18 @@ export function Curtain({ fabric, under, seed, n, total, onOpened }: CurtainProp
     const check = (): void => {
       const el = root.current;
       if (!el || busy.current) return;
-      let on = false;
-      if (lastPointer === null && coarse()) {
-        const r = el.getBoundingClientRect();
-        const y = readingLine(window.innerHeight, hudHeight(), now.current.line);
-        on = r.top < y && r.bottom > y;
-      }
-      lineHot.current = on;
+      /* A mouse that has moved ends the line's reading for good: this curtain asks for the page's listener no more. */
+      if (lastPointer !== null) { lineHot.current = false; apply(); if (lineChecks.delete(check)) syncScroll(); return; }
+      const r = el.getBoundingClientRect();
+      const y = readingLine(window.innerHeight, hudHeight(), now.current.line);
+      lineHot.current = r.top < y && r.bottom > y;
       apply();
     };
+    if (lastPointer !== null || !coarse()) return;
+    lineChecks.add(check);
+    syncScroll();
     check();
-    window.addEventListener('scroll', check, { capture: true, passive: true });
-    window.addEventListener('resize', check, { passive: true });
-    return () => { window.removeEventListener('scroll', check, { capture: true }); window.removeEventListener('resize', check); };
+    return () => { lineChecks.delete(check); syncScroll(); };
   }, [apply]);
 
   /* Whatever is still going stops with the curtain: the drumroll, and the timers of an opening. */
@@ -314,8 +376,8 @@ export function Curtain({ fabric, under, seed, n, total, onOpened }: CurtainProp
   }, [opening]);
 
   /* A press that ends a drag, a scroll or a selection is not an opening. */
-  const down = useRef<{ x: number; y: number; sx: number; sy: number } | null>(null);
-  const onPointerDown = (e: ReactPointer<HTMLButtonElement>): void => { down.current = { x: e.clientX, y: e.clientY, sx: window.scrollX, sy: window.scrollY }; };
+  const down = useRef<{ x: number; y: number; sx: number; sy: number; sel: Held } | null>(null);
+  const onPointerDown = (e: ReactPointer<HTMLButtonElement>): void => { down.current = { x: e.clientX, y: e.clientY, sx: window.scrollX, sy: window.scrollY, sel: held() }; };
   const open = (): void => {
     if (busy.current) return;
     busy.current = true;
@@ -347,9 +409,9 @@ export function Curtain({ fabric, under, seed, n, total, onOpened }: CurtainProp
   const onClick = (e: ReactMouse<HTMLButtonElement>): void => {
     /* A keyboard's press (Enter, Space) has no pointer and no detail; it is the reader's, and a selection elsewhere does not stop it. */
     if (e.detail !== 0) {
-      const sel = window.getSelection?.();
-      if (sel && !sel.isCollapsed) { down.current = null; return; }
       const d = down.current;
+      /* A selection counts only if the press made it: one the reader already had elsewhere on the page is not this press's drag. */
+      if (selectionMadeSince(d?.sel ?? null)) { down.current = null; return; }
       if (d) {
         const far = Math.hypot(e.clientX - d.x, e.clientY - d.y) > TUNING.dragSlopPx;
         if (far || window.scrollY !== d.sy || window.scrollX !== d.sx) { down.current = null; return; }
@@ -376,14 +438,14 @@ export function Curtain({ fabric, under, seed, n, total, onOpened }: CurtainProp
     <div className="dw-curtain" ref={root} data-dw-curtain="">
       {under && (
         <span className="dw-curtain-face dw-curtain-under" data-dw-under="" data-dw-fabric={under} aria-hidden="true" style={styleOf(under)}>
-          <Drawing width={width} />
+          <Drawing art={art} />
         </span>
       )}
       <button
         type="button" ref={button} className="dw-curtain-face dw-curtain-button" data-kb-over-ink="" data-dw-fabric={fabric} data-dw-opening={opening ? '' : undefined} style={styleOf(fabric)}
         onPointerDown={onPointerDown} onPointerEnter={onPointerEnter} onPointerMove={onPointerMove} onPointerLeave={onPointerLeave} onPointerCancel={onPointerLeave} onClick={onClick}
       >
-        <span className="dw-curtain-art" aria-hidden="true"><Drawing width={width} glints={glints.current} /></span>
+        <span className="dw-curtain-art" aria-hidden="true"><Drawing art={art} glints={glints.current} /></span>
         <span className="dw-curtain-spot" aria-hidden="true" ref={(el) => { spotEls.current[0] = el; }} />
         <span className="dw-curtain-spot" aria-hidden="true" ref={(el) => { spotEls.current[1] = el; }} />
         <span className="dw-curtain-label">{words}</span>
