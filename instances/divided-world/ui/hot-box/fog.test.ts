@@ -9,7 +9,7 @@
  */
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
-import { FOG, cellOrigin, coverageOf, divergence, fogAt, makeCloud, makeField, pageCloud, paintFog, project, rowsOf, stepField, type FogClearing, type FogField, type FogInput } from './fog.ts';
+import { FOG, cellOrigin, coverageOf, divergence, emptyField, fogAt, makeCloud, makeField, pageCloud, paintFog, project, rowsOf, stepField, type FogClearing, type FogField, type FogInput } from './fog.ts';
 import { SMOKE, covered, extendTrail, fogAlpha, holeRadius, type Clearing, type TrailPoint } from './smoke.ts';
 import { mulberry32 } from '../../cards/whoops/splat.ts';
 
@@ -404,4 +404,46 @@ test('coverageOf answers exactly what covered answers at every point, for cleari
     for (let y = -5; y < 460; y += 7) for (let x = -120; x < 700; x += 7) assert.equal(cover(x, y), covered(x, y, clearings, R, now, reduced, trail), `at ${x}, ${y}, reduced ${reduced}`);
   }
   assert.equal(coverageOf([], R, now, false, [])(10, 10), 1, 'nothing open is whole fog');
+});
+
+/* ---- a fog that is made (Steel Chair's puff, docs/plans/2026-11-23-steel-chair-objects-design.md, section 4) ---- */
+
+test('a made fog: the field starts empty, a step with `whole` asks the model about every cell, and fog fills in where the model says fog', () => {
+  const field = emptyField(W, H);
+  assert.equal(fogAt(field, W / 2, H / 2).d, 0, 'empty at the start');
+  assert.ok(field.box, 'the whole box is disturbed from the start');
+  const asked: number[] = [];
+  /* A model: fog on the left half, none on the right. */
+  const target = (x: number, _y: number): number => { asked.push(x); return x < W / 2 ? 1 : 0; };
+  let now = 0;
+  while (now < 400) { now += FRAME; stepField(field, FRAME, { clearings: [], trail: [], radius: R, target, whole: true, fill: 80 }); }
+  assert.ok(asked.reduce((a, b) => Math.min(a, b)) < 10 && asked.reduce((a, b) => Math.max(a, b)) > W - 10, 'it was asked about cells at both ends of the box, far from any clearing');
+  assert.ok(fogAt(field, 100, H / 2).d > 0.95, 'fog is whole where the model says fog');
+  assert.ok(fogAt(field, W - 100, H / 2).d < 0.02, 'and none where it says none');
+});
+
+test('without `whole` an empty field is left alone by the model beyond a clearing\'s reach (the defect `whole` is for)', () => {
+  const field = emptyField(W, H);
+  let asked = 0;
+  stepField(field, FRAME, { clearings: [{ x: 50, y: 50 }], trail: [], radius: R, target: () => { asked += 1; return 0; } });
+  assert.ok(asked > 0 && asked < (field.gw * field.gh) / 4, `only cells near the clearing were asked (${asked} of ${field.gw * field.gh})`);
+  assert.ok(fogAt(field, W - 100, H - 50).d > 0, 'a cell the model was never asked about is whole fog to it, though the model says none: fog creeps in');
+});
+
+test('the fill takes the time it is given: 80 ms fills inside the front in a few frames, the default wake takes seconds', () => {
+  const level = (fill: number | undefined): number => {
+    const field = emptyField(W, H);
+    for (let now = 0; now < 300; now += FRAME) stepField(field, FRAME, { clearings: [], trail: [], radius: R, target: () => 1, whole: true, ...(fill === undefined ? {} : { fill }) });
+    return fogAt(field, W / 2, H / 2).d;
+  };
+  assert.ok(level(80) > 0.95, 'fast fill: whole in 300 ms');
+  assert.ok(level(undefined) < 0.5, 'the default wake is slow');
+});
+
+test('a jet pushes fog outward from its point, and a point outside its reach is not pushed', () => {
+  const field = emptyField(W, H);
+  stepField(field, FRAME, { clearings: [], trail: [], radius: R, target: () => 1, whole: true, jet: { x: 400, y: 150, speed: 900, reach: 200 } });
+  const right = fogAt(field, 520, 150), left = fogAt(field, 280, 150), far = fogAt(field, 40, 150);
+  assert.ok(right.u > 0 && left.u < 0, `pushed away from the point (right ${right.u}, left ${left.u})`);
+  assert.ok(Math.abs(far.u) < Math.abs(right.u) / 20, 'not beyond its reach');
 });

@@ -164,6 +164,17 @@ export function makeField(width: number, height: number, cell: number = FOG.cell
   return { width: w, height: h, cell, gw: Math.ceil(w / cell) + 1 + 2 * PAD, gh: Math.ceil(h / cell) + 1 + 2 * PAD, box: null, store: null, quiet: false, busy: false };
 }
 
+/**
+ * A field with no fog in it (density 0 everywhere in the box), its whole box disturbed: a fog that is made, not one that is thinned. Steel Chair's puff starts from it
+ * (docs/plans/2026-11-23-steel-chair-objects-design.md, section 4) and fills it from the spout; a step with `whole` keeps the whole box stepped while it fills.
+ */
+export function emptyField(width: number, height: number, cell: number = FOG.cell): FogField {
+  const field = makeField(width, height, cell);
+  field.box = { x0: 1, x1: field.gw - 1, y0: 1, y1: field.gh - 1 };
+  storeFor(field, 0, field.gh).D.fill(0);
+  return field;
+}
+
 /** The grid rows that cover the box's px rows `top` to `bottom`, with a row over at each end so a scaled picture has a neighbor to blend with. */
 export function rowsOf(field: FogField, top: number, bottom: number): { y0: number; y1: number } {
   const y0 = clamp(Math.floor(top / field.cell) + PAD - 1, 0, field.gh);
@@ -271,6 +282,15 @@ export interface FogInput {
   readonly target: (x: number, y: number) => number;
   /** Rounds of the pressure solve; `FOG.rounds` when not given. */
   readonly rounds?: number;
+  /**
+   * The model reaches every cell of the box, not only those a clearing or the trail reaches (a puff's target is the whole box's): the whole box (the view's rows) is stepped, and
+   * `target` is asked of every cell in it. Without this a cell outside every clearing's reach is whole fog to the model and is not asked.
+   */
+  readonly whole?: boolean;
+  /** How long a thinned cell takes to fill back in, ms; `SMOKE.wake` when not given. A puff fills fast inside its front. */
+  readonly fill?: number;
+  /** A jet: fog pushed outward from a point (px) at `speed` (px a second, falling to nothing at `reach` px), a burst's way (a part of the pressure's correction is kept). */
+  readonly jet?: { readonly x: number; readonly y: number; readonly speed: number; readonly reach: number };
   /** The part of the box that is drawn (px rows): nothing outside it is stepped or stored. All of it when not given. */
   readonly view?: { readonly top: number; readonly bottom: number };
 }
@@ -289,7 +309,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   const real = (p: { readonly x: number; readonly y: number }): boolean => Number.isFinite(p.x) && Number.isFinite(p.y);
   const clearings = !Number.isFinite(R) ? [] : input.clearings.every(real) ? input.clearings : input.clearings.filter(real);
   const trail = !Number.isFinite(R) ? [] : input.trail.every(real) ? input.trail : input.trail.filter(real);
-  const modeled = clearings.length > 0 || trail.length > 0;
+  const modeled = clearings.length > 0 || trail.length > 0 || input.whole === true;
   const prev = field.box;
   field.busy = false;
   if (!prev && !modeled) return 0;
@@ -306,6 +326,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     x0 = Math.min(x0, Math.floor(cx - rr)); x1 = Math.max(x1, Math.ceil(cx + rr)); y0 = Math.min(y0, Math.floor(cy - rr)); y1 = Math.max(y1, Math.ceil(cy + rr));
   }
+  if (input.whole) { x0 = 0; x1 = gw; y0 = 0; y1 = gh; }
   const seen = input.view ? rowsOf(field, input.view.top, input.view.bottom) : { y0: 0, y1: gh };
   const B: CellBox = { x0: Math.max(1, x0), x1: Math.min(gw - 1, x1), y0: Math.max(1, seen.y0, y0), y1: Math.min(gh - 1, seen.y1, y1) };
   if (B.x1 <= B.x0 || B.y1 <= B.y0) { field.box = null; field.store = null; field.quiet = false; return 0; }
@@ -330,6 +351,17 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
       if (burst && d > 0.01) { const push = (w * FOG.burst.push) / cell * dt; U[i]! += (dx / d) * push; V[i]! += (dy / d) * push; }
     }
   }
+  const jet = input.jet;
+  if (jet && Number.isFinite(jet.x) && Number.isFinite(jet.y) && jet.reach > 0) {
+    const jx = jet.x / cell + PAD, jy = jet.y / cell + PAD, rj = jet.reach / cell, k = (jet.speed / cell) * dt;
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
+      const dx = x - jx, dy = y - jy, d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 0.01 || d > rj) continue;
+      const w = (1 - d / rj) ** 2, i = (y - top) * gw + x;
+      U[i]! += (dx / d) * w * k; V[i]! += (dy / d) * w * k;
+    }
+    bursting = true;
+  }
   project(field, B, input.rounds ?? FOG.rounds, bursting ? FOG.burst.keep : 1);
   U0.set(U); V0.set(V); D0.set(D); OX0.set(OX); OY0.set(OY);
   /* The density as the step began, kept in `P`: the pressure solve is done with it, and the next step's `project` clears every cell of it that it reads before it reads it. */
@@ -337,10 +369,10 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   advect(s, gw, U, U0, dt, B, 0, cell); advect(s, gw, V, V0, dt, B, 0, cell); advect(s, gw, D, D0, dt, B, 0, cell); advect(s, gw, OX, OX0, dt, B, 1, cell); advect(s, gw, OY, OY0, dt, B, 2, cell);
 
   const damp = Math.exp(-dt / (FOG.damp / 1000)), settle = Math.exp(-dt / (FOG.settle / 1000)), sink = 1 - Math.exp(-dt / (FOG.sink / 1000));
-  const back = dt / (SMOKE.wake / 1000);
+  const back = dt / ((input.fill !== undefined && input.fill > 0 ? input.fill : SMOKE.wake) / 1000);
   D0.set(D);
   /* The cells the model can reach: it is asked about no other, and they are whole fog to it. */
-  let mx0 = gw, mx1 = 0, my0 = gh, my1 = 0;
+  let mx0 = input.whole ? 0 : gw, mx1 = input.whole ? gw : 0, my0 = input.whole ? 0 : gh, my1 = input.whole ? gh : 0;
   for (const p of [...clearings, ...trail]) {
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     mx0 = Math.min(mx0, Math.floor(cx - rr) - 1); mx1 = Math.max(mx1, Math.ceil(cx + rr) + 1); my0 = Math.min(my0, Math.floor(cy - rr) - 1); my1 = Math.max(my1, Math.ceil(cy + rr) + 1);
