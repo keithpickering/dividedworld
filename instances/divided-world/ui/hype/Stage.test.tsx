@@ -5,13 +5,13 @@
  */
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, test } from 'vitest';
+import { afterEach, describe, expect, test, vi } from 'vitest';
 import { createFake, type Fake } from '../../../../engine/ui/data/fake.ts';
 import { instance } from '../../index.ts';
 import { Camera, levelBoard, turnBoard } from './Camera.tsx';
 import { Nodes, nodes } from './Nodes.tsx';
 import { pendingOf } from './forecast.ts';
-import { FILM_ORDER, PILE, playbook } from './stage-play.ts';
+import { chairId, FILM_ORDER, PILE, playbook } from './stage-play.ts';
 import { postTarget, type CardEffect, type CardTarget } from '../../../../engine/rules/cards.ts';
 import { buildStage } from './stage-world.ts';
 import { objectOf } from '../steel-chair/objects.ts';
@@ -207,6 +207,15 @@ describe('a spring on a post written another way', () => {
     const sprang = await play.springsOn(made.posts['kind']!, wrote.value.id);
     expect((await fake.postPlays([wrote.value.id])).plays.filter((a) => a.kind === 'card').map((a) => (a.payload as { card: string }).card)).toEqual(['steel-chair']);
     expect((await fake.postPlays([made.acts['kind']!])).plays.find((a) => a.id === sprang.spring)?.payload).toMatchObject({ card: 'steel-chair', trigger: 'quote', did: 'landed' });
+  });
+
+  test('chairId passes over ids that roll something else: a ladder\'s and a trash can\'s are drawn and skipped, a chair\'s is kept', () => {
+    const drawn = ['play-2', 'play-6', 'play-0'];
+    const spy = vi.spyOn(crypto, 'randomUUID').mockImplementation(() => drawn.shift() as `${string}-${string}-${string}-${string}-${string}`);
+    try {
+      expect(chairId()).toBe('play-0');
+      expect(drawn).toEqual([]);
+    } finally { spy.mockRestore(); }
   });
 
   test('every Steel Chair the stage seeds rolls a chair: the pile\'s three on Snuckles\'s first post, and the one a quote springs', async () => {
