@@ -128,7 +128,7 @@ if (/^begin;\\n/.test(sql)) {
  * One run of the suite with the recording psql. `pattern` limits it to the files whose names match; `hang`, `fail` and `drift` plant what is above.
  * A run is made ready (its state directory, its environment), run (here, or beforehand and side by side: see prelaunch), and read.
  */
-const ready = ({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '60000', e2eDir = '', workers = '', shard = '', report = '', extraEnv = {} } = {}) => {
+const readyRun = ({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '60000', e2eDir = '', workers = '', shard = '', report = '', extraEnv = {} } = {}) => {
   const state = fs.mkdtempSync(path.join(bounded, 'run-'));
   const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, KAYFABB_STATE: state, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep, KAYFABB_SQL_WORKERS: workers, CALLS: '', ...(e2eDir ? { KAYFABB_SQL_E2E_DIR: e2eDir } : {}), ...extraEnv };
   const args = ['tools/test-sql.mjs', ...(pattern ? [pattern] : []), ...(shard ? [`--shard=${shard}`] : []), ...(report ? [`--report=${report}`] : [])];
@@ -146,7 +146,7 @@ const read = (state, status, out) => {
 /* The suite's own end-to-end files would try a clone this psql never made; a bound keeps a slip here from hanging the
    build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
 const runAside = (opts) => new Promise((resolve) => {
-  const { state, env, args } = ready(opts);
+  const { state, env, args } = readyRun(opts);
   const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
   let out = '';
   child.stdout.on('data', (d) => { out += d; });
@@ -168,7 +168,7 @@ async function prelaunch(list) {
 }
 function boundedSuite(opts = {}) {
   if (ahead.has(opts)) return ahead.get(opts);
-  const { state, env, args } = ready(opts);
+  const { state, env, args } = readyRun(opts);
   const r = spawnSync(process.execPath, args, { env, encoding: 'utf8', timeout: 600_000 });
   return read(state, r.status, (r.stdout ?? '') + (r.stderr ?? ''));
 }
@@ -216,6 +216,8 @@ const testsPlanted = {
     '0003-marker-misspelled.sql': '-- kayfabb-sql: alon\n-- kayfabb sql: alone\n--kayfabb-sql: alonee\n' + timedBody,
     '0004-marker-on-an-untimed-file.sql': aloneLine + raises,
     '0005-timed-and-marked.sql': aloneLine + timedBody,
+    '0007-execution-time-unmarked.sql': "do $$ declare plan jsonb; best numeric := 1e9; begin execute 'explain (analyze, format json) select 1' into plan; best := least(best, (plan -> 0 ->> 'Execution Time')::numeric); if best > 250 then raise exception 'slow %', best; end if; end $$;\n",
+    '0008-execution-time-noticed.sql': "do $$ declare plan jsonb; begin execute 'explain (analyze, format json) select 1' into plan; raise notice '% ms', round((plan -> 0 ->> 'Execution Time')::numeric); if plan is null then raise exception 'x'; end if; end $$;\n",
     '0006-clock-as-a-value.sql': "do $$ declare id timestamptz := clock_timestamp(); begin raise notice 'at %', clock_timestamp(); if id is null then raise exception 'x'; end if; end $$;\n",
   }),
   alone: plantedDir({
@@ -514,6 +516,9 @@ const full = boundedSuite(runs.full);
   check('and an assert on an elapsed time', timed(wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; assert spent < interval '1 s', 'slow';")) === true);
   check('and a helper that raises, called with an elapsed time', timed("create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$ begin if not ok then raise exception '%', what; end if; end $$;\n" + wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; perform pg_temp.expect(spent < interval '1 s', 'slow');")) === true);
   check('an elapsed time kept in a variable of a declaration counts as well', timed("do $$ declare t0 timestamptz := clock_timestamp(); begin if extract(epoch from clock_timestamp() - t0) > 2 then raise exception 'slow'; end if; end $$;") === true);
+  check('a value read from an EXPLAIN ANALYZE\'s Execution Time, compared in a raise, is a budget', timed("do $$ declare plan jsonb; best_plain numeric := 1e9; best_spun numeric := 1e9; begin best_plain := least(best_plain, (plan -> 0 ->> 'Execution Time')::numeric); best_spun := least(best_spun, (plan -> 0 ->> 'Execution Time')::numeric); if best_spun > 3 * best_plain + 250 then raise exception 'x'; end if; end $$;") === true);
+  check('and so is a Planning Time, and one read in the condition itself', timed("do $$ declare plan jsonb; begin if (plan -> 0 ->> 'Planning Time')::numeric > 5 then raise exception 'x'; end if; end $$;") === true);
+  check('an Execution Time only printed in a NOTICE is not', timed("do $$ declare plan jsonb; begin raise notice '% ms', round((plan -> 0 ->> 'Execution Time')::numeric); if plan is null then raise exception 'x'; end if; end $$;") === false);
   check('the clock as an id or a timestamp a row is written with is not a budget', timed("insert into meetings (slot) values (clock_timestamp());\ndo $$ begin if (select count(*) from meetings) <> 1 then raise exception 'x'; end if; end $$;") === false);
   check('nor the clock printed in a NOTICE, or a time measured and only printed', timed(wrap("t0 := clock_timestamp(); spent := clock_timestamp() - t0; raise notice 'took %', spent;")) === false);
   check('nor a comment or a string that says so', timed("-- if clock_timestamp() - t0 > 1 then raise exception 'slow'; end if;\ndo $$ begin raise exception 'a clock_timestamp() then raise exception'; end $$;") === false);
@@ -534,9 +539,11 @@ const full = boundedSuite(runs.full);
   check('a marker inside a block comment does not save it', /FAIL/.test(lineOf('0002-marker-in-a-block-comment.sql')) && /wall-clock budget/.test(lineOf('0002-marker-in-a-block-comment.sql')), lineOf('0002-marker-in-a-block-comment.sql'));
   check('nor does a marker that is misspelled', /FAIL/.test(lineOf('0003-marker-misspelled.sql')) && /wall-clock budget/.test(lineOf('0003-marker-misspelled.sql')), lineOf('0003-marker-misspelled.sql'));
   check('a marker on a file that holds no budget is refused too: the marker means what it says', /FAIL/.test(lineOf('0004-marker-on-an-untimed-file.sql')) && /holds no wall-clock budget/.test(lineOf('0004-marker-on-an-untimed-file.sql')), lineOf('0004-marker-on-an-untimed-file.sql'));
+  check('a file that raises on an Execution Time with no marker is refused', /FAIL/.test(lineOf('0007-execution-time-unmarked.sql')) && /wall-clock budget/.test(lineOf('0007-execution-time-unmarked.sql')), lineOf('0007-execution-time-unmarked.sql'));
+  check('one that only prints the Execution Time is not', /PASS/.test(lineOf('0008-execution-time-noticed.sql')), lineOf('0008-execution-time-noticed.sql'));
   check('a timed file with its marker runs and passes', /PASS/.test(lineOf('0005-timed-and-marked.sql')), lineOf('0005-timed-and-marked.sql'));
   check('and a file that only uses the clock as a value is not asked for one', /PASS/.test(lineOf('0006-clock-as-a-value.sql')), lineOf('0006-clock-as-a-value.sql'));
-  check('the refused files get no clone, and the run fails', t.status === 1 && t.records.map(createdClone).filter(Boolean).length === 2, `${t.records.map(createdClone).filter(Boolean).length} clones, status ${t.status}`);
+  check('the refused files get no clone, and the run fails', t.status === 1 && t.records.map(createdClone).filter(Boolean).length === 3, `${t.records.map(createdClone).filter(Boolean).length} clones, status ${t.status}`);
 
   /* The pool, with a file that runs alone: nothing is in flight beside it, and it waits for the others to end. */
   const a = boundedSuite(runs.aloneFiles);
@@ -552,26 +559,34 @@ const full = boundedSuite(runs.full);
 
 /* ---- a run that is interrupted leaves nothing on the server ---- */
 {
-  const { state, env, args } = ready({ pattern: small, e2eDir: emptyDir, workers: '1', extraEnv: { SLEEP_MS: '60000' } });
-  const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
-  let out = '';
-  child.stdout.on('data', (d) => { out += d; });
-  child.stderr.on('data', (d) => { out += d; });
-  const exited = new Promise((resolve) => child.on('close', (code, signal) => resolve({ code, signal })));
-  const began = Date.now();
-  const files = () => (fs.existsSync(path.join(state, 'calls')) ? fs.readFileSync(path.join(state, 'calls'), 'utf8').split('\x1e\n').filter((x) => x.trim()) : []);
-  /* Until a file is running on its clone: its psql is sleeping, so the run is in the middle of the pool. */
-  while (Date.now() - began < 240_000 && !files().some(isFile)) await new Promise((r) => setTimeout(r, 100));
-  child.kill('SIGINT');
-  const result = await Promise.race([exited, new Promise((r) => setTimeout(() => r({ code: 'still running', signal: null }), 30_000))]);
-  if (result.code === 'still running') child.kill('SIGKILL');
-  const recs = files();
-  const tmplName = recs.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean) ?? '';
-  const sweep = recs.find((c) => dbOf(c) === 'postgres' && /drop database if exists %I with \(force\)/.test(bodyOf(c)) && bodyOf(c).includes(`datname = '${tmplName}'`) && bodyOf(c).includes(`like '${tmplName}\\_%'`));
-  check('SIGINT during a run exits 130, not by the signal and not left running', result.code === 130, `${JSON.stringify(result)}`);
-  check('and drops the template and every database named `<template>_%` (clones, their sub-databases, snapshots) in one sweep', Boolean(tmplName) && Boolean(sweep), `${tmplName}: ${recs.length} calls`);
-  check('and the in-flight psql is killed with it, not waited out', Date.now() - began < 200_000 && result.code !== 'still running');
-  /* psql missing: exit 2 at once, with the same cleanup path (which cannot itself need psql in a loop). */
+  const migrationCount = runner.migrationFiles().length;
+  /** Runs the suite, signals it once `ready` says so, and reads how it ended. */
+  const interrupted = async (signal, ready) => {
+    const { state, env, args } = readyRun({ pattern: small, e2eDir: emptyDir, workers: '1', extraEnv: { SLEEP_MS: '60000' } });
+    const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+    const exited = new Promise((resolve) => child.on('close', (code, sig) => resolve({ code, sig })));
+    const began = Date.now();
+    const recs = () => (fs.existsSync(path.join(state, 'calls')) ? fs.readFileSync(path.join(state, 'calls'), 'utf8').split('\x1e\n').filter((x) => x.trim()) : []);
+    while (Date.now() - began < 240_000 && !ready(recs())) await new Promise((r) => setTimeout(r, 20));
+    const before = recs().length;
+    child.kill(signal);
+    const result = await Promise.race([exited, new Promise((r) => setTimeout(() => r({ code: 'still running', sig: null }), 30_000))]);
+    if (result.code === 'still running') child.kill('SIGKILL');
+    const all = recs();
+    const tmplName = all.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean) ?? '';
+    const sweep = all.find((c) => dbOf(c) === 'postgres' && /drop database if exists %I with \(force\)/.test(bodyOf(c)) && bodyOf(c).includes(`datname = '${tmplName}'`) && bodyOf(c).includes(`like '${tmplName}\\_%'`));
+    return { result, tmplName, sweep, before, after: all.length, ms: Date.now() - began };
+  };
+  for (const [signal, code] of [['SIGINT', 130], ['SIGTERM', 143]]) {
+    const r = await interrupted(signal, (recs) => recs.some(isFile));
+    check(`${signal} during a run exits ${code}, not by the signal and not left running`, r.result.code === code, JSON.stringify(r.result));
+    check(`${signal}: drops the template and every database named \`<template>_%\` (clones, their sub-databases, snapshots) in one sweep`, Boolean(r.tmplName) && Boolean(r.sweep), `${r.tmplName}: ${r.after} calls`);
+    check(`${signal}: the in-flight psql is killed with it, not waited out`, r.result.code !== 'still running' && r.ms < 200_000);
+  }
+  /* A signal while the template is still being built stops the build, where it is: the steps are awaited, so the handler runs between them. */
+  const early = await interrupted('SIGTERM', (recs) => recs.length >= 5 && !recs.some((c) => createdClone(c)));
+  check('a SIGTERM during the template build exits 143 with the build stopped, and sweeps', early.result.code === 143 && early.after < migrationCount && Boolean(early.sweep), `${JSON.stringify(early.result)}, ${early.after} of ${migrationCount} calls`);
+  /* psql missing: exit 2 at once. The sweep after it needs psql too, so it only exits (leave cannot recurse); that the sweep is attempted cannot be seen without a psql to record it. */
   const lost = spawnSync(process.execPath, ['tools/test-sql.mjs', small], { env: { ...process.env, KAYFABB_PSQL_SHIM: '', PATH: '/nonexistent', DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres' }, encoding: 'utf8', timeout: 60_000 });
   check('psql not found exits 2 and says so', lost.status === 2 && /not found/.test(lost.stdout + lost.stderr), `status ${lost.status}: ${(lost.stdout + lost.stderr).slice(0, 200)}`);
 }

@@ -91,12 +91,12 @@
  * process, on its own report, so `npm run test:sql` is one command that runs everything; a shard or a pattern runs part and says `skipped`.
  *
  * Files that hold a wall-clock budget run alone (#1099). Design §5 says that what files running together change is how long a statement takes, "which no
- * guard reads"; that is not so. 15 of the assertion files measure a time with `clock_timestamp()` and raise when it is over a budget or a bound
+ * guard reads"; that is not so. 17 of the assertion files measure a time (with `clock_timestamp()`, or an EXPLAIN ANALYZE's "Execution Time") and raise when it is over a budget or a bound
  * (0393-forged-quotes-scale: `post()` on its body took 0.33 s over a budget of 0.25 s with three other files on a four-CPU runner, and not one at a time), and 42
  * more only use the clock as a value. A file that holds a budget says so itself, in a line of its own, `-- kayfabb-sql: alone` (carriesAloneMarker): the file is the
  * one list, and the runner keeps no table. The pool runs every other file first and then each marked file by itself, one at a time, with nothing else of this runner in
  * flight. A file is refused before it runs if it holds a budget without the marker, or carries the marker without a budget, so the marker means what it says
- * (holdsClockBudget: a `raise exception`, an `assert` or a raising helper whose condition reads `clock_timestamp()` directly or through an elapsed time; a clock that is
+ * (holdsClockBudget: a `raise exception`, an `assert` or a raising helper whose condition reads `clock_timestamp()` directly or through an elapsed time, a value read from an EXPLAIN ANALYZE's Execution Time or Planning Time included; a clock that is
  * printed, waited for or written as a value does not count, nor do the end-to-end files, which assert no duration). tools/test-sql-refusal.mjs drives both on planted files.
  *
  * Each file's line carries its seconds, and the summary lists the slowest, since a file that grows is otherwise found by a CI
@@ -452,7 +452,8 @@ export function codeOnly(sql) {
         if (escaped && sql[j] === '\\') j++;
         else if (sql[j] === "'") { if (sql[j + 1] === "'") j++; else break; }
       }
-      out += "''"; i = j + 1;
+      /* A string that names an EXPLAIN ANALYZE's time stays as a token, since a value read from it is a measured time (holdsClockBudget). */
+      out += /\b(?:execution|planning) time\b/i.test(sql.slice(i, j + 1)) ? "'EXPLAIN_TIME'" : "''"; i = j + 1;
     } else out += sql[i++];
   }
   return out;
@@ -469,7 +470,7 @@ export const carriesAloneMarker = (sql) => ALONE_MARKER.test(sql.replace(/\/\*[\
 /**
  * Whether an assertion file holds a wall-clock budget: a `raise exception` (an `if … then raise exception`, or an `assert`) whose condition reads the
  * clock, directly (`clock_timestamp()` in the condition) or through an elapsed time (a variable that a statement assigned from `clock_timestamp()`
- * less a start that was itself assigned `clock_timestamp()`, or from another elapsed variable). That is a time measured and compared to a budget
+ * less a start that was itself assigned `clock_timestamp()`, or from an EXPLAIN ANALYZE's "Execution Time" or "Planning Time", or from another elapsed variable). That is a time measured and compared to a budget
  * or an interval, which what else runs on the machine changes. Not that: `clock_timestamp()` as a value (an id, a `slot`, `expires_at`, a timestamp
  * a row is written with), printed in a NOTICE, or waited for (`pg_sleep`), none of which a slow machine turns into a failure. Comments and the text of
  * strings are not read. Conservative where it must be (a SQL string built for another session is read as code), so a file it flags that is not timed
@@ -484,7 +485,8 @@ export function holdsClockBudget(sql) {
     .map((m) => ({ name: (m[1] ?? m[3]).toLowerCase(), expr: m[2] ?? m[4] }));
   const starts = new Set(assigns.filter((a) => /^\s*clock_timestamp\s*\(\s*\)\s*$/i.test(a.expr)).map((a) => a.name));
   const mentions = (text, names) => [...names].some((n) => new RegExp(`\\b${n}\\b`, 'i').test(text));
-  const elapsed = new Set();
+  /* A value read from an EXPLAIN ANALYZE's "Execution Time" or "Planning Time" is an elapsed time as well. */
+  const elapsed = new Set(assigns.filter((a) => /'EXPLAIN_TIME'/.test(a.expr)).map((a) => a.name));
   for (let grew = true; grew;) {
     grew = false;
     for (const a of assigns) {
@@ -492,7 +494,7 @@ export function holdsClockBudget(sql) {
       if ((clock.test(a.expr) && mentions(a.expr, starts)) || mentions(a.expr, elapsed)) { elapsed.add(a.name); grew = true; }
     }
   }
-  const readsClock = (cond) => clock.test(cond) || mentions(cond, elapsed);
+  const readsClock = (cond) => clock.test(cond) || /'EXPLAIN_TIME'/.test(cond) || mentions(cond, elapsed);
   /* `if` and `elsif`: the condition runs to the `then` outside any parenthesis or CASE, and counts when the branch begins with `raise exception`. */
   for (const m of code.matchAll(/\b(?:if|elsif)\b/gi)) {
     /* Only an `if` that begins a statement: not `end if`, nor the `if exists` of a `drop` or `create`. */
@@ -737,8 +739,8 @@ async function main() {
   const snapshots = {};
   const template = `kayfabb_scratch_${process.pid}_${Date.now()}`;
   const templateUrl = withDatabase(url, template);
-  /* An interrupt, or a terminate, ends the run here (the `finally` below is not reached by a signal): exit 130 or 143 after the sweep. A signal is
-     handled between the steps of the template's build, which are one psql each, and the terminal's own Ctrl-C reaches the psql running as well. */
+  /* An interrupt, or a terminate, ends the run here (the `finally` below is not reached by a signal): exit 130 or 143 after the sweep. The template's build
+     awaits each of its steps (one psql each), so the handler runs between them and kills the one in flight, the build included. */
   sweep = { url, template };
   process.on('SIGINT', () => leave(130));
   process.on('SIGTERM', () => leave(143));
@@ -826,34 +828,34 @@ async function main() {
   console.log(`\nsql: template database ${template}`);
   /* The creation and the settings are one call that may fail between the two, with the database made: so the drop below covers it, and a
      failure here returns rather than exits, which would skip the drop. */
-  const made = psql(url, `create database ${template};\n${settingsSql(template, url)}`);
+  const made = (await psqlAsync(url, `create database ${template};\n${settingsSql(template, url)}`)).error;
   try {
     if (!step('create', made)) return 1;
     const [shimFile, ...migrationPaths] = migrationFiles();
-    if (!step('setup/auth-shim.sql', psql(templateUrl, fs.readFileSync(shimFile, 'utf8')))) return 1;
+    if (!step('setup/auth-shim.sql', (await psqlAsync(templateUrl, fs.readFileSync(shimFile, 'utf8'))).error)) return 1;
 
     console.log('\nsql: migrations, from zero');
     const migrations = migrationPaths.map((f) => path.basename(f));
     /* Before migration MMMM, a copy of the database as built so far, for the upgrade test that crosses it. Each migration's psql has
        ended, so nothing is connected to the template and `create database … template` may read it. */
-    const snapshot = (key, name) => {
-      if (!step(`snapshot ${key}`, psql(url, cloneSql(template, name, url)))) return false;
+    const snapshot = async (key, name) => {
+      if (!step(`snapshot ${key}`, (await psqlAsync(url, cloneSql(template, name, url))).error)) return false;
       snapshots[key] = name;
       return true;
     };
     for (const m of migrations) {
       const point = points.find((p) => m.startsWith(`${p}_`));
-      if (point && !snapshot(point, `${template}_s${point}`)) return 1;
-      if (!step(m, psql(templateUrl, fs.readFileSync(path.join(migrationsDir, m), 'utf8')))) {
+      if (point && !(await snapshot(point, `${template}_s${point}`))) return 1;
+      if (!step(m, (await psqlAsync(templateUrl, fs.readFileSync(path.join(migrationsDir, m), 'utf8'))).error)) {
         console.error('\n  a migration failed; the schema is not replayable from zero');
         return 1;
       }
     }
 
-    if (selectedE2e.length && !snapshot('migrated', `${template}_migrated`)) return 1;
-    if (!step('setup/fixtures.sql', psql(templateUrl, fs.readFileSync(fixtures, 'utf8')))) return 1;
+    if (selectedE2e.length && !(await snapshot('migrated', `${template}_migrated`))) return 1;
+    if (!step('setup/fixtures.sql', (await psqlAsync(templateUrl, fs.readFileSync(fixtures, 'utf8'))).error)) return 1;
     /* Once, here: every clone starts from this analyzed state. */
-    if (!step('vacuum (analyze)', psql(templateUrl, 'vacuum (analyze);'))) return 1;
+    if (!step('vacuum (analyze)', (await psqlAsync(templateUrl, 'vacuum (analyze);')).error)) return 1;
 
     console.log(`\nsql: ${selected.length} file(s)${pattern ? ` matching "${pattern}"` : ''}${shardN > 1 ? `, shard ${shardI}/${shardN}` : ''}, ${Math.min(workers, selected.length)} at a time`);
     /* A file that runs alone (its marker, `-- kayfabb-sql: alone`) is held to the end: every other file runs in the pool first, then each marked file on its

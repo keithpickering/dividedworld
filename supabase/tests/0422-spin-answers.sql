@@ -1,3 +1,5 @@
+-- kayfabb-sql: alone
+-- This file holds wall-clock budgets, so it runs with nothing beside it (#1099).
 -- A report, a verdict, an appeal and a ruling are origins with a place (supabase/migrations/0422_spin_answers.sql;
 -- docs/plans/2026-11-23-spin-mod-answers-plan.md, Task 1; docs/plans/2026-11-23-spin-mod-answers-design.md, sections 3, 4 and 6).
 --
