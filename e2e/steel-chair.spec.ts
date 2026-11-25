@@ -36,7 +36,7 @@ const ROOM_HEIGHT = roomHeightOf([]);
  * until the pose is there, and fail if none of the first SCAN_SEEDS has it. The pose of the second is a chair that took a nudge, which the
  * effect writes on the chair as `data-nudges`; a rest alone does not show it.
  *
- * `KB_POISON` (environment, default none) plants one defect back by hand so that a run shows a test red: `clip` (the foil test, with-fab only):
+ * `KB_POISON` (environment, default none) plants one defect back by hand so that a run shows a test red: `lidclip` (the can's lid tests: the content area gets `overflow: hidden`), `clip` (the foil test, with-fab only):
  * the chair's host gets the old filter, its region grown back to the words box, which clips the foil to it; `trap` (the signature test, with-fab
  * only): the element that holds Fab's host gets the area's filter, which holds the foil in a stacking context over the signature; `inherit` (the
  * nested-area test): the nested content area takes the post's bend properties again.
@@ -1217,15 +1217,15 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
       }) as typeof crypto.getRandomValues;
     }, 101);
     await page.goto(url);
-    if (process.env.KB_POISON === 'lidclip') await page.addStyleTag({ content: '.kb-act-main, .kb-origin-area { overflow: hidden; }' });
+    if (POISON === 'lidclip') await page.addStyleTag({ content: '.kb-act-main, .kb-origin-area { overflow: hidden; }' });
     await expect(page.locator('.dw-chair').first()).toBeAttached();
     await page.evaluate(() => document.fonts.ready);
     await page.locator(areaSelector).first().scrollIntoViewIfNeeded();
     const seen = await page.evaluate((selector) => new Promise<{
-      lids: number; frames: number; outside: number; visible: number; clippers: string[]; gone: boolean; canPieces: number;
+      lids: number; frames: number; outside: number; visible: number; painted: number; clippers: string[]; gone: boolean; canPieces: number;
     }>((resolve) => {
       const area = document.querySelector<HTMLElement>(selector)!;
-      const out = { lids: 0, frames: 0, outside: 0, visible: 0, clippers: [] as string[], gone: false, canPieces: -1 };
+      const out = { lids: 0, frames: 0, outside: 0, visible: 0, painted: 0, clippers: [] as string[], gone: false, canPieces: -1 };
       const started = performance.now();
       const clips = (el: Element): boolean => {
         const s = getComputedStyle(el);
@@ -1253,7 +1253,23 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
                 const tag = `${el.tagName.toLowerCase()}.${[...el.classList].join('.')}`;
                 if (!out.clippers.includes(tag)) out.clippers.push(tag);
               }
-              if (box.right - box.left > 1 && box.bottom - box.top > 1 && Number(lid.style.opacity || '1') > 0.2) out.visible++;
+              if (box.right - box.left > 1 && box.bottom - box.top > 1 && Number(lid.style.opacity || '1') > 0.2) {
+                out.visible++;
+                /* Painted: the topmost thing at some point of a piece, inside the visible part of the box, is that piece (pieces take no pointer, so they
+                   are let through for the probe), and not a post, a stacking context or a layer drawn over it. */
+                const nodes = [...lid.querySelectorAll<HTMLElement>('.dw-chair-piece')];
+                const saved = nodes.map((n) => n.style.pointerEvents);
+                nodes.forEach((n) => { n.style.pointerEvents = 'auto'; });
+                let hit = false;
+                for (let gx = 0; gx < 5 && !hit; gx++) for (let gy = 0; gy < 5 && !hit; gy++) {
+                  const x = box.left + (box.right - box.left) * (gx + 0.5) / 5, y = box.top + (box.bottom - box.top) * (gy + 0.5) / 5;
+                  if (x < 0 || y < 0 || x >= innerWidth || y >= innerHeight) continue;
+                  const top = document.elementFromPoint(x, y);
+                  if (top && lid.contains(top)) hit = true;
+                }
+                nodes.forEach((n, i) => { n.style.pointerEvents = saved[i]!; });
+                if (hit) out.painted++;
+              }
             }
           }
         } else if (out.lids > 0) {
@@ -1272,6 +1288,7 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
     expect(seen.lids, 'a lid group was drawn').toBeGreaterThan(0);
     expect(seen.outside, `the lid was wholly outside the content area at some frame (clipping ancestors on the way up: ${seen.clippers.join(', ') || 'none'})`).toBeGreaterThan(0);
     expect(seen.visible, `and seen there (not cut away by ${seen.clippers.join(', ') || 'any ancestor'})`).toBeGreaterThan(0);
+    expect(seen.painted, 'and painted there: the topmost element at a point of the lid is the lid, nothing covers it').toBeGreaterThan(0);
     expect(seen.gone, 'the lid group is removed when its arc is done').toBe(true);
     expect(seen.canPieces, 'the can is left with its own pieces, no lid').toBeGreaterThan(0);
     /* The can goes on to rest, and the loop with it. */

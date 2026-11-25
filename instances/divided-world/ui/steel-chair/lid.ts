@@ -3,9 +3,10 @@
  * content area on an arc, through its top border or its nearer side border, spinning about two axes, and is gone. This file is the arc and nothing
  * else (pure: no DOM, no clock): `lidArcOf` draws it whole from a generator, `lidAt` says where the lid is `t` seconds after the hit.
  *
- * The arc's numbers come from a generator of the lid's own (Effect.tsx seeds one per can from the run's seed and the play's id), drawn after
- * the can's throw has drawn all of its own, so no number a chair, a ladder, an extinguisher or the can itself draws is moved by it. The lid is
- * thrown from where it stood on the can at the hit, in the content area's px (y down).
+ * The arc's numbers come from a generator of the lid's own, `rng(seedOfIds([seed, play, 'lid']))` (Effect.tsx makes one per can at its hit, from
+ * the run's seed and the play's id), and never from the run's shared generator: that one is drawn by every throw in turn, so a lid drawing from it
+ * would move the draws of every later throw (a chair's, a ladder's, an extinguisher's, another can's). With its own, no throw's draws move. The lid
+ * is thrown from where it stood on the can at the hit, in the content area's px (y down).
  *
  * What the arc keeps, so that the lid is a flourish and never a second object on the post:
  *  - it leaves the box within LID_SECONDS (1.2 s), by the top border or by the side border nearer to where it started, and is `done` by then;
