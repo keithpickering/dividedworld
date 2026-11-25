@@ -104,7 +104,9 @@ begin
       -- What the staff read sees of the board (0426): the two helpers the migration's role owns (ids, times and saved states of polls, plays and moments: the digest role reads none of play_post, effect_state, card_texts, surfaces or the moment tables), the place of a thread spun from an ask or an answer that thread_list calls, and the two functions the digest role owns.
       'extras_ids(uuid[])', 'extras_layers(text,uuid)', 'spin_answer_place(uuid)', 'post_extras(uuid[])', 'post_extras_rows(uuid[],uuid[])', 'pool_read_origin(uuid,jsonb)',
       -- What the digest sees of the board (0433): the five helpers the migration's role owns (the standouts' counts by character, the polls open in the window, the spun threads and the plays played in it: ids, times, public names and counts, from Acts the digest role reads no column of).
-      'digest_standouts(timestamp with time zone,timestamp with time zone)', 'digest_polls(timestamp with time zone,timestamp with time zone)', 'digest_origin(uuid)', 'digest_spins(timestamp with time zone,timestamp with time zone,integer)', 'digest_plays(timestamp with time zone,timestamp with time zone,integer)']) x) then
+      'digest_standouts(timestamp with time zone,timestamp with time zone)', 'digest_polls(timestamp with time zone,timestamp with time zone)', 'digest_origin(uuid)', 'digest_spins(timestamp with time zone,timestamp with time zone,integer)', 'digest_plays(timestamp with time zone,timestamp with time zone,integer)',
+      -- The patrol's weighted draw (0433), owned by the role like patrol_sample, which is the draw plus each post's extras: it reads the public posts and the weights of watched_characters, and only the role may run it.
+      'patrol_draw(uuid[],integer,integer,bigint)']) x) then
     raise exception 'the functions the digest role may execute are not the reviewed ones: %', fns;
   end if;
   if (select r.rolcanlogin or r.rolsuper or r.rolbypassrls from pg_roles r where r.rolname = 'kayfabb_digest') then raise exception 'the digest role logs in, is a superuser or bypasses row-level security'; end if;
@@ -168,7 +170,9 @@ begin
     -- The waiting staff requests (0424): the queue's read and the one request it reads by key, owned by the role like pool_read.
     'requests_waiting(integer)', 'requests_waiting_total()', 'staff_request_shown(bigint)',
     -- What the staff read sees of the board (0426), owned by the role like pool_read.
-    'post_extras(uuid[])', 'post_extras_rows(uuid[],uuid[])', 'pool_read_origin(uuid,jsonb)']);
+    'post_extras(uuid[])', 'post_extras_rows(uuid[],uuid[])', 'pool_read_origin(uuid,jsonb)',
+    -- The patrol's weighted draw (0433), owned by the role like patrol_sample.
+    'patrol_draw(uuid[],integer,integer,bigint)']);
   if bad is not null then raise exception 'functions owned by the digest role that this file has not reviewed: %', bad; end if;
   if exists (select 1 from pg_class where relowner = 'kayfabb_digest'::regrole) or exists (select 1 from pg_type where typowner = 'kayfabb_digest'::regrole and typtype <> 'c') then
     raise exception 'the digest role owns an object that is not a function';
