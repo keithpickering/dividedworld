@@ -3,6 +3,7 @@
  * shape from its play's id, which dents overlap, and the hit zone a short post's throws aim at (owner's answers of 2026-11-15, see dent.ts).
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
 import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { rng, throwOf } from './body.ts';
@@ -806,5 +807,25 @@ describe('dentImages draws each object\'s own dent', () => {
     const made = dentImages('obj-chair', box, 1, [], toUrl as never, 'chair');
     const want = dentShade(dentHeight(dentShape('obj-chair'), 100, 100), 100, 100);
     assert.equal(made.shade, toUrl(want as never));
+  });
+});
+
+describe('the chair\'s images and primitives equal main\'s (dent-images-record.json, hashed from dent.ts before the objects)', () => {
+  const record = JSON.parse(readFileSync(new URL('./dent-images-record.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+  const toUrl = (px: Uint8ClampedArray, w: number, h: number) =>
+    createHash('sha1').update(Buffer.from(px.buffer, px.byteOffset, px.byteLength)).update(`${w}x${h}`).digest('hex');
+  test('10 ids at two sizes, alone and over an earlier dent, and the primitives', () => {
+    const got: Record<string, unknown> = {};
+    for (let i = 0; i < 10; i++) {
+      const id = `images-record-${i}`;
+      for (const [w, h] of [[160, 140], [120, 150]] as const) {
+        const box = { x: 0, y: 0, size: Math.max(w, h), width: w, height: h };
+        got[`${id}|${w}x${h}`] = dentImages(id, box, 1, [], toUrl as never, 'chair');
+        got[`${id}|${w}x${h}|over`] = dentImages(id, box, 2, [{ play: `images-record-before-${i}`, box: { ...box, x: 40, y: 20 }, object: 'chair' }], toUrl as never, 'chair');
+      }
+      got[`${id}|prim`] = dentPrimitives([{ x: 10, y: 20, shape: dentShape(id, 'chair') }], { width: 500, height: 300 });
+    }
+    assert.equal(Object.keys(record).length, 50);
+    assert.deepEqual(got, record);
   });
 });

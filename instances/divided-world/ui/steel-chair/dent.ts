@@ -1,5 +1,6 @@
 import { ROOM_HEIGHT } from './chair.ts';
 import { objectOf, type ThrownObject } from './objects.ts';
+import { seedOfIds } from './seed.ts';
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
@@ -55,15 +56,8 @@ export function filterTrusted(env: FilterEnv = {}): boolean {
 /** The range a dent's two axes are scaled within, as a fraction of round: within about 15% of round (owner's answer, 2026-11-15). */
 export const AXIS_MIN = 0.85;
 export const AXIS_MAX = 1.15;
-/**
- * A hash (FNV-1a) of ids, so a play's id (public) gives the same number for every reader and on every replay. The effect seeds its settle sound's picks the same
- * way (Effect.tsx).
- */
-export function seedOfIds(ids: readonly string[]): number {
-  let h = 2166136261;
-  for (const ch of ids.join('|')) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
+// seedOfIds lives in seed.ts (objects.ts needs it too, and dent.ts imports objects.ts); it stays importable from here.
+export { seedOfIds };
 
 /**
  * One dent's shape, the numbers its height map is made from: `rx` and `ry`, how far its two axes are scaled from round (0.85 to 1.15);
@@ -239,7 +233,7 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
   const lattice = shape.crumple;
   const amp = shape.waves.map((w) => w.amp), phase = shape.waves.map((w) => w.phase);
   const lobeU = shape.lobes.map((l) => l.u), lobeV = shape.lobes.map((l) => l.v);
-  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeA2 = shape.lobes.map((l) => (l.across ?? l.radius) ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
+  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeA2 = shape.lobes.map((l) => (l.across ?? 0) ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
   const lobes = shape.lobes.length;
   const us = new Float64Array(width);
   for (let x = 0; x < width; x++) us[x] = ((x + 0.5) / width) * 2 - 1;
@@ -259,7 +253,11 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
       for (let i = 0; i < 3; i++) wave += amp[i]! * Math.cos(ks[i]! * a + phase[i]!);
       const r0 = 0.5 * (1 + wave);
       let h = -Math.exp(-2.2 * (rho / r0) ** 2);
-      for (let i = 0; i < lobes; i++) h -= lobeDepth[i]! * Math.exp(-((u - lobeU[i]!) ** 2 / lobeA2[i]! + (v - lobeV[i]!) ** 2 / lobeR2[i]!));
+      for (let i = 0; i < lobes; i++) {
+        const du = u - lobeU[i]!, dv = v - lobeV[i]!;
+        // a round lobe keeps its one expression, so the chair's dent stays bit-identical; a ridge stretches u by its `across`
+        h -= lobeDepth[i]! * Math.exp(-(lobeA2[i]! === 0 ? (du ** 2 + dv ** 2) / lobeR2[i]! : du ** 2 / lobeA2[i]! + dv ** 2 / lobeR2[i]!));
+      }
       const n = u * sinT - v * cosT, t = u * cosT + v * sinT;
       h -= 0.15 * Math.exp(-((n / 0.08) ** 2)) * Math.exp(-((t / 0.4) ** 2));
       h += 0.12 * Math.exp(-(((rho - 1.05 * r0) / 0.09) ** 2));

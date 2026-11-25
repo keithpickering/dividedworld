@@ -8,7 +8,7 @@
  * (`dent`, dent.ts) and from the settle sounds' seed, so a play's object says nothing about its dent.
  */
 import { rng } from './body.ts';
-import { seedOfIds } from './dent.ts';
+import { seedOfIds } from './seed.ts';
 
 export type ThrownObject = 'chair' | 'can' | 'ladder' | 'extinguisher';
 
