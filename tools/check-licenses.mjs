@@ -56,7 +56,12 @@ export function licenseFaults(files) {
   const declare = (file, by) => declared.set(file, [...(declared.get(file) ?? []), by]);
   /** A declaration naming `rel` from `declFile`'s folder: resolved, checked for existence, recorded. */
   const names = (declFile, rel, by) => {
-    const file = path.posix.normalize(path.posix.join(path.posix.dirname(declFile), rel));
+    const dir = path.posix.dirname(declFile);
+    const file = path.posix.normalize(path.posix.join(dir, rel));
+    if (path.posix.isAbsolute(rel) || file === '..' || file.startsWith('../') || (dir !== '.' && !file.startsWith(`${dir}/`))) {
+      out.push(`${file}: declared by ${by} as "${rel}", which is outside its folder; a declaration names files in its own folder or below`);
+      return null;
+    }
     if (!present.has(file)) {
       out.push(`${file}: declared by ${by} but does not exist`);
       return null;
@@ -127,7 +132,7 @@ function rowsFaults(p, content, files, names) {
       const file = names(p, f, p);
       if (file === null || !own || !FONT.has(ext(file))) continue;
       const lic = r.licenseFile;
-      if (blank(lic) || !Object.hasOwn(files, path.posix.join(path.posix.dirname(file), lic))) out.push(`${file}: a font with terms of its own needs a licenseFile that is a file in the font's folder (${p} row ${i + 1})`);
+      if (blank(lic) || path.posix.basename(lic) !== lic || !Object.hasOwn(files, path.posix.join(path.posix.dirname(file), lic))) out.push(`${file}: a font with terms of its own needs a licenseFile that is a bare file name of a file in the font's folder (${p} row ${i + 1})`);
     }
   });
   return out;
