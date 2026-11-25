@@ -24,9 +24,10 @@
 --      disabled node only from an index whose key is it under the query's equalities: acts_thread_posts (thread, character, created_at, id) where kind = 'post', read backward, and acts_target (target_act_id, kind, created_at desc, id
 --      desc) where kind <> 'edit'. acts_patrol_posts, acts_character and acts_created each lack a column of it and cost a sort, a disabled node. No other index of `acts` is implied by kind = 'post'. The rows read are the rows returned.
 --      Same signatures, owner, settings, grants and result as 0425's.
---   4. play_row (0412), which play_post's upkeep (refresh_play_post) and its drift check call for one play: one statement that reads the play by its id, with no setting of its own, so a planner that thought `acts` small read
---      it whole for each call (0321's author veil landing fetched 11,247 rows of `acts`, with main's definitions too, wherever the suite left `acts`' statistics small: CI's full suite on main happened to pass it, and this
---      file's moved it to 430). It now runs with no sequential scan, so its reads by id stay probes by key (83 rows for the same landing).
+--   4. play_row (0412), which play_post's upkeep (refresh_play_post) calls for one play: one statement that reads the play by its id, run with no setting of its own, so a planner that thought `acts` small read it whole for
+--      each call (0321's author veil landing fetched 11,247 rows of `acts`, with main's definitions too, wherever the suite left `acts`' statistics small: CI's full suite on main happened to pass it, and this file's moved
+--      it to 430). play_row now runs with no sequential scan, so its reads by id stay probes by key (79 rows for the same landing), and in plpgsql: as a SQL function with settings of its own (a security definer) it kept
+--      its prepared statement across calls, and with no sequential scan that statement names indexes, which 0034 drops before it writes again (`could not open relation with OID`); a plpgsql plan is made again.
 --
 -- The tests: supabase/tests/0434-reads-bounded-on-any-plan.sql plants the veils and card_end Acts that make the hash cheap (tests.plant_live_veils, supabase/tests/setup/fixtures.sql: 8 live veils and 10 ends, as CI had them, then 200
 -- ends) and counts one probe under each statistics state; 0424's, 0425's and 0426's guards now measure in the state that failed on every run, not only on the runs whose earlier files left it: each plants 8 veils and 10 ends first,
@@ -503,5 +504,48 @@ end
 $function$;
 
 -- ---------------------------------------------------------------------------------------------------- 4. play_row ----
--- 0412's play_row, unchanged but for its setting: see this file's header, item 4.
-alter function play_row(uuid) set enable_seqscan = off;
+-- 0412's play_row, its one statement word for word, now in plpgsql with no sequential scan (see this file's header, item 4): `into r`, then r, which is the row of nulls where 0412's returned a null for an Act that is no play
+-- (play_post_drift reads `(play_row(p.play)).play is null` and `p is distinct from play_row(p.play)`, which answer alike). Same signature, owner, security and grants (create or replace keeps them).
+create or replace function play_row(play uuid) returns play_post
+language plpgsql stable security definer set search_path = public, pg_temp set enable_seqscan = off as $$
+declare
+  r play_post;
+begin
+    select a.id, a.target_act_id,
+           case when a.kind = 'card' then coalesce(a.payload ->> 'card', '') else '' end,
+           case when a.kind = 'card' then coalesce(a.payload ->> 'reach', 'post') else 'post' end,
+           a.created_at,
+           case when a.kind = 'set' then coalesce((ls.payload ->> 'until')::timestamptz, f.ends_at)
+                else least((a.payload ->> 'ends')::timestamptz, pr.ends_at,
+                           case when ck.drive is not null and coalesce(a.payload ->> 'reach', 'post') = 'post' and not (a.payload ? 'caught') then
+                             (select coalesce(max(k.created_at) filter (where not card_ended(k.id)), max(k.created_at)) from acts k
+                              where k.kind = 'card' and k.target_act_id = a.target_act_id and k.payload ->> 'card' = a.payload ->> 'card' and not (k.payload ? 'caught')
+                                and coalesce(k.payload ->> 'reach', 'post') = 'post' and coalesce(k.payload ->> 'drive', k.id::text) = coalesce(a.payload ->> 'drive', a.id::text))
+                             + span_interval(ck.drive -> 'lasts') end) end,
+           case when a.kind = 'set' and ls.id is not null then
+                  (select min(e.created_at) from acts e where e.kind = 'card_end' and e.target_act_id = ls.id)
+                when a.kind = 'set' then
+                  least((select min(s.created_at) from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text),
+                        (select min(tb.created_at) from acts tb where tb.kind = 'take_back' and (tb.payload ->> 'set') = a.id::text))
+                else
+                  least(case when a.payload ? 'caught' or a.payload ? 'instant' then a.created_at end,
+                        (select min(e.created_at) from acts e where e.kind = 'card_end' and e.target_act_id = a.id),
+                        rf.at,
+                        (select min(c.created_at) from acts c where c.kind = 'card' and c.payload ? 'pierce' and (c.payload #>> '{pierce,by}') = a.id::text),
+                        card_cut_at(a.id)) end,
+           rf.play is null,
+           a.kind = 'set' and exists (select 1 from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text),
+           coalesce((select sum(t.count) from reaction_tallies t where t.act = a.id), 0)::integer + (select count(*) from threads th where th.origin_act_id = a.id)::integer,
+           case when a.kind = 'set' then (select min((s.payload ->> 'until')::timestamptz) from acts s where s.kind = 'spring' and (s.payload ->> 'set') = a.id::text and s.payload ->> 'did' = 'lockedOut'
+                                                                     and not exists (select 1 from acts e where e.kind = 'card_end' and e.target_act_id = s.id)) end
+    into r
+    from acts a
+    left join face_down f on f.play = a.id and a.kind = 'set'
+    left join lateral (select s.id, s.payload from acts s where a.kind = 'set' and s.kind = 'spring' and (s.payload ->> 'set') = a.id::text and s.payload ->> 'did' = 'lockedOut'
+                        order by s.created_at, s.id limit 1) ls on true
+    left join play_reach pr on pr.play = a.id and a.kind = 'card'
+    left join card_write_refunds rf on rf.play = a.id and a.kind = 'card'
+    left join card_kinds ck on ck.key = a.payload ->> 'card' and a.kind = 'card'
+    where a.id = play_row.play and a.kind in ('card', 'set') and a.target_act_id is not null;
+  return r;
+end $$;
