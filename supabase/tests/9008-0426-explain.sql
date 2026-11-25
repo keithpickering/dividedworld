@@ -583,6 +583,11 @@ begin
   update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid = 'acts'::regclass;
   if (select reltuples from pg_class where oid = 'acts'::regclass) is distinct from 0 then raise exception 'the statistics were not set'; end if;
 end $$;
+load 'auto_explain';
+set auto_explain.log_min_duration = 0; set auto_explain.log_nested_statements = on; set auto_explain.log_analyze = on; set auto_explain.log_timing = off;
+set client_min_messages = log;
+select pool_read(pg_temp.f('big'), 'ex-boss', null, 60) is not null;
+reset client_min_messages; set auto_explain.log_min_duration = -1;
 select pg_temp.measure('empty statistics', 4000, 50);
 select pg_temp.measure_kinds('empty statistics', 600);
 select pg_temp.measure_layers('empty statistics', 700, 10);
