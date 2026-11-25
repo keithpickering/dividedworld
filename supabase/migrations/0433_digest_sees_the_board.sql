@@ -190,10 +190,10 @@ end $function$;
 -- holds the reviewed list of the functions that role may run, and digest_origin is on it beside the others. Each carries the settings 0426's
 -- helpers run under (no sequential scan, no bitmap scan), and each Act is read through a key. At a busy instance's scale (a week of thousands of plays, polls with many voters):
 --   digest_standouts   reads the Acts of the span by kind: the cards, springs, ballots and polls of the span, each from a partial index of its own ordered by time (`include` holding the id, the character and the target: the plays' and the ballots' read is of the index alone, the polls' also reads the heap for `removed`), one probe of the target
---                      post for each play (received), one of a ballot's poll for each (poll, character) pair that voted (secret?), one digest_origin (the origin Act and, for a set, its spring) for each spin of the span. It reads no Act outside the span and no post.
+--                      post for each play (received), one of a ballot's poll for each (poll, character) pair that voted (secret?), one digest_origin (the origin Act and, for a set, its spring) for each spin of the span. It reads no Act outside the span but those spins' origins and their springs, and no post.
 --   digest_polls       the polls created in the last pollLastsMax and the window (acts_digest_polls_at), each with one probe of its close (acts_one_poll_close), its newest poll (acts_polls) and its post through acts_public (hidden, kind): the polls of a few weeks, never their ballots
 --                      (the ballots are poll_counts' own read, one pass over a poll's voters for the polls kept after the cut to the window's, each).
---   digest_origin      one probe of an origin Act and, for a set, of the spring Act that names it (acts_target): the one predicate of whether the board shows an origin, asked by digest_spins and by system_digest.
+--   digest_origin      one probe of an origin Act and, for a set, of the spring Act that names it (acts_target): the one predicate of whether the board shows an origin, asked by digest_spins, digest_standouts and system_digest.
 --   digest_spins       the spun threads created in the window (threads_digest_spun) and one digest_origin for each, in order, until the cap is full.
 --   digest_plays       the plays played in the window from play_post (play_post_digest_at), sorted by what they drew, then one probe through acts_public of the Act and one of the post, and of its text, state and surface, for each play kept, in order, until the cap is full.
 -- New indexes, each added only because no existing one is ordered by time for its kind: acts_digest_plays_at, acts_digest_ballots_at, acts_digest_polls_at (acts_card_created holds cards alone, with no character, and nothing holds springs, ballots or polls by time:
@@ -301,9 +301,6 @@ language sql stable security definer set search_path = public, pg_temp set jit =
     and (o.kind <> 'set' or exists (select 1 from acts sp where sp.kind = 'spring' and sp.target_act_id = o.target_act_id and sp.payload ->> 'set' = o.id::text))
 $$;
 
--- digest_plays gates on play_post.sprung (`p.kind <> '' or p.sprung`, the partial index's own predicate), not on digest_origin: a play listed is a play the board's own play_post draws, and play_post is that board's list of plays. It agrees with
--- digest_origin because 0408 (play_row) derives `sprung` from the same Act, a spring naming the set, and a spring is written only on the set's own post by the one who set it (acts_well_formed refuses any other, so a spring naming a set
--- but targeting another post cannot exist outside a test that forces one past the trigger: supabase/tests/0433-digest-sees-the-board.sql section 8). digest_origin's extra clause on the spring's target is that same fact, asked of the Act.
 -- The threads created in [since, until) whose origin Act the board shows (digest_origin), in the order the digest lists them (replies, newest), unlisted threads left out, `most` of them.
 create function digest_spins(since timestamptz, until timestamptz, most integer) returns table (thread uuid)
 language sql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off set enable_bitmapscan = off as $$
@@ -319,6 +316,9 @@ $$;
 -- The plays played in [since, until) that landed and that the board shows as plays, most drawn first, `most` of them, each shaped as the page's extras shape a play: the rows of play_post by time, then each in order through its Act (acts_public: a card or a
 -- set that is not caught and not refunded; the caster is the public one), its post (not hidden, a post or a spin, in a listed thread) and its saved state, words and surface, until the cap is full. A face-down set that has not sprung is never here
 -- (a row kept out of the index); a back that sprang is, `card` being the card the public spring Act names (acts_layers finds it by the post). Nothing is read against now(): a play that has ended since is a play of the window all the same.
+-- digest_plays gates on play_post.sprung (`p.kind <> '' or p.sprung`, the partial index's own predicate), not on digest_origin: a play listed is a play the board's own play_post draws, and play_post is that board's list of plays. It agrees with
+-- digest_origin because 0408 (play_row) derives `sprung` from the same Act, a spring naming the set, and a spring is written only on the set's own post by the one who set it (acts_well_formed refuses any other, so a spring naming a set
+-- but targeting another post cannot exist outside a test that forces one past the trigger: supabase/tests/0433-digest-sees-the-board.sql section 8). digest_origin's extra clause on the spring's target is that same fact, asked of the Act.
 create function digest_plays(since timestamptz, until timestamptz, most integer)
   returns table (play uuid, post uuid, drawn integer, played_at timestamptz, card text, made_at timestamptz, caster text, config jsonb, state jsonb, words text, covered double precision)
 language sql stable security definer set search_path = public, pg_temp set jit = off set enable_seqscan = off set enable_bitmapscan = off as $$

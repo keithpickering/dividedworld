@@ -4,7 +4,7 @@
 -- the last day, the standouts' span of seven days): 60 posts and 6,000 replies, 2,400 plays (a third of them in the window), 30 polls open in the window with 120 voters each (3,600 ballots), 20 spun threads, and 300 older threads, 8,000 older posts
 -- and 3,000 older plays, ballots and polls outside the span. It is written with the triggers off for this transaction (the runner rolls it back); the kept tables are filled as the migrations' triggers fill them, and analyzed.
 --  1. digest_standouts reads rows of `acts` at most 2 x (plays + springs of the span) + ballots + 3 x polls + 3 x spun + 20: the plays once from the index and once for the target post, the ballots once, a probe of each poll voted on (not of each
---     voter), one of each spin's origin. Not one older Act, one reply post.
+--     voter), three for each spin (its origin Act, digest_origin's read of it, and for a set the probe of its spring). Not one older Act, one reply post.
 --  2. digest_polls is planned over acts_digest_polls_at and reads at most 6 x (the polls created in the 14 days and the window) + 20 rows of `acts`; digest_spins at most 2 x its spins + 20 rows of `threads` and `acts`; digest_plays at most 5 x its cap + 10 rows of `acts`, and rows of
 --     play_post that are those played in the window (less than a third of the table) and no more, and is planned over play_post_digest_at.
 --  3. system_digest reads as many rows of `acts` with 10,000 more Acts outside the span (older posts, plays and ballots) as it did without them, to within 2%, and no more than 1.5 x the Acts created in the span (about 12,000: each Act of the

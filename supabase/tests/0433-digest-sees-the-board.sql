@@ -583,9 +583,9 @@ begin
   perform pg_temp.expect(not exists (select 1 from digest_origin(s_bad)), '8 digest_origin of a set whose spring names it but targets another post');
   th := pg_temp.spin(c1, s_bad, 'Dx8 spun from the mis-sprung set', base - interval '7 hours');
   perform pg_temp.expect(not exists (select 1 from digest_spins(base - interval '1 day', base, 20) x where x.thread = th), '8 digest_spins lists a thread whose origin the board does not show');
-  perform pg_temp.expect(not exists (select 1 from digest_standouts(base - interval '1 day', base) x where x.category = 'spun' and x."character" = c1), '8 a thread spun from a set the board does not show counts as spun');
+  perform pg_temp.expect(not exists (select 1 from digest_standouts(base - interval '1 day', base) x where x.category = 'spun' and x."character" = c1), '8 a thread spun from a set whose spring the board does not show is counted as spun');
   perform pg_temp.spin(c1, s_ok, 'Dx8 spun from the sprung set', base - interval '6 hours');
-  perform pg_temp.expect((select x.n from digest_standouts(base - interval '1 day', base) x where x.category = 'spun' and x."character" = c1) = 1, '8 the thread spun from the sprung set is not the character''s one spun');
+  perform pg_temp.expect((select x.n from digest_standouts(base - interval '1 day', base) x where x.category = 'spun' and x."character" = c1) = 1, '8 the thread spun from the sprung set is not counted as the character''s one spin');
 end $$;
 
 -- ---- 5. the security
