@@ -471,3 +471,38 @@ begin
   perform pg_temp.expect(move_thread_title('createBoard', '{"name": "Lodge"}'::jsonb, 'mt-boss') = 'New board: Lodge',
     'a title fills its move''s parameters: ' || coalesce(move_thread_title('createBoard', '{"name": "Lodge"}'::jsonb, 'mt-boss'), 'null'));
 end $$;
+
+-- ---- 11. Divided World's own eleven titles, rendered through their moves' parameters, leave no token unfilled (the Task 8 spec review) ----
+-- The titles are copied from instances/divided-world/system/index.ts's threadTitles; each kind gets the parameters its move carries, and the values it names must show in the words.
+do $$
+declare
+  titles jsonb := jsonb_build_object(
+    'renameBoard', '{board} is now {name}', 'nameSuccessor', 'On the matter of succession', 'setRule', 'New rule in {board}', 'conferGroup', 'Welcome to {groupName}',
+    'pullSlot', 'Machine notice: a card is pulled', 'repriceSlot', 'Machine notice: new prices', 'flashSale', 'Flash sale!', 'createBoard', 'New board: {name}',
+    'moveThread', 'A thread moves to {board}', 'mergeBoard', '{board} is closing', 'awardTrophy', '{trophyName} goes to {characterName}');
+  b text := (select name from boards_now where id = pg_temp.board('general'));
+  gen text := pg_temp.board('general')::text;
+  wants jsonb := jsonb_build_object(
+    'renameBoard', jsonb_build_array(b, 'Lodge'), 'nameSuccessor', jsonb_build_array('succession'), 'setRule', jsonb_build_array(b), 'conferGroup', jsonb_build_array('Knights'),
+    'pullSlot', jsonb_build_array('card is pulled'), 'repriceSlot', jsonb_build_array('new prices'), 'flashSale', jsonb_build_array('Flash sale'), 'createBoard', jsonb_build_array('Lodge'),
+    'moveThread', jsonb_build_array(b), 'mergeBoard', jsonb_build_array(b), 'awardTrophy', jsonb_build_array('Golden Mop', 'Mt Boss'));
+  paramsets jsonb := jsonb_build_object(
+    'renameBoard', jsonb_build_object('board', gen, 'name', 'Lodge'), 'nameSuccessor', jsonb_build_object('successor', 'mt-mod'),
+    'setRule', jsonb_build_object('board', gen, 'predicate', 'maxLength', 'param', '100'), 'conferGroup', jsonb_build_object('group', 'knights', 'groupName', 'Knights'),
+    'pullSlot', jsonb_build_object('slot', 'one'), 'repriceSlot', jsonb_build_object('slot', 'one', 'price', 5), 'flashSale', jsonb_build_object('percent', 50),
+    'createBoard', jsonb_build_object('name', 'Lodge'), 'moveThread', jsonb_build_object('thread', gen, 'board', gen), 'mergeBoard', jsonb_build_object('board', gen, 'into', gen),
+    'awardTrophy', jsonb_build_object('trophy', 'mop', 'trophyName', 'Golden Mop', 'character', 'mt-boss', 'characterName', 'Mt Boss'));
+  k text;
+  w text;
+  said text;
+begin
+  update settings set value = titles where key = 'systemThreadTitles';
+  perform pg_temp.expect((select count(*) from jsonb_object_keys(titles)) = 11, 'the test does not hold the eleven titles');
+  for k in select jsonb_object_keys(titles) loop
+    said := move_thread_title(k, paramsets -> k, 'mt-boss');
+    perform pg_temp.expect(said is not null and said not like '%{%' and said not like '%}%', 'the title of ' || k || ' has a token left unfilled: ' || coalesce(said, 'null'));
+    for w in select jsonb_array_elements_text(wants -> k) loop
+      perform pg_temp.expect(position(w in said) > 0, 'the title of ' || k || ' does not show "' || w || '": ' || said);
+    end loop;
+  end loop;
+end $$;
