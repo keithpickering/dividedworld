@@ -86,9 +86,14 @@ export function psqlDb(as?: string): Db {
         return `"${k}" => (:'args'::jsonb ->> '${k}')::${type}`;
       });
       try {
+        // A set-returning function answers as PostgREST answers it, one JSON array of its rows (or of its values, where it returns a scalar).
+        const setof = sql(`select coalesce(bool_or(p.proretset), false) from pg_proc p where p.proname = :'fn' and p.pronamespace = 'public'::regnamespace`, { fn }) === 't';
+        const call = setof
+          ? `select coalesce(jsonb_agg(r), '[]'::jsonb)::text from public.${fn}(${named.join(', ')}) r;`
+          : `select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`;
         const out = sql(`set role ${role};
           select set_config('request.jwt.claims', :'claims', false) \\g /dev/null
-          select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`, { args: JSON.stringify(args), claims });
+          ${call}`, { args: JSON.stringify(args), claims });
         return JSON.parse(out) as T;
       } catch (e) {
         // psql's own report of the error: its message, and the hint it was raised with.
