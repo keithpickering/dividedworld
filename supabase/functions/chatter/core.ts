@@ -543,14 +543,19 @@ async function readRuling(r: TurnRun, answering: readonly string[]): Promise<Rul
   const { db, tuned, persona, planned } = r;
   const settings = tuned.settings;
   if (r.office !== 'boss' && r.office !== 'mod') return null;
+  // The persona-level reads are kept for the run; only the thread's board and the replies answered vary per turn. A turn that queues a move drops them (`oneTurn`): the allowance and the bank are spent, so the next turn reads them again.
+  const kept = r.readings.get(planned.staff) ?? {};
+  r.readings.set(planned.staff, kept);
   try {
     const place = await db.rpc<string | null>('thread_place', { in_thread: planned.thread });
     const threadBoards = new Map<string, string>(place ? [[planned.thread.toLowerCase(), place.toLowerCase()]] : []);
     const daysMost = settings.staffRequests.daysMost;
     if (r.office === 'mod') {
-      const standing = await db.rpc<Standing>('mod_standing', { staff: planned.staff });
-      if (standing.office !== 'mod') return null;
-      const groups = await readModGroups(db, standing);
+      const standing = kept.standing ?? await db.rpc<Standing>('mod_standing', { staff: planned.staff });
+      if (standing.office !== 'mod') return { unoffered: 'the persona holds no Mod office now' };
+      kept.standing = standing;
+      if (kept.groups === undefined) kept.groups = await readModGroups(db, standing);
+      const groups = kept.groups;
       const mod = { allowance: standing.allowance, beat: standing.beat.map((b) => b.id.toLowerCase()), ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, threadBoards, ...(groups ? { groups: groups.facts } : {}) };
       return {
         facts: { answering, office: 'mod', mod },
@@ -558,12 +563,13 @@ async function readRuling(r: TurnRun, answering: readonly string[]): Promise<Rul
         schema: { office: 'mod', ...(groups ? { conferred: groups.conferred } : {}) },
       };
     }
-    if (!r.context.season) return null;
+    if (!r.context.season) return { unoffered: 'the round has no season' };
     // A season that is not a number (phaseAt throws a plain Error for it) is a fact about this ruling and not about the run.
     let phase: ReturnType<typeof phaseAt>;
     try { phase = phaseAt(r.context.season, r.slotAt, settings, persona); } catch (e) { return { unoffered: said(e) }; }
     const { weeklyMoves, bankCap } = phase.numbers;
-    const bank = Math.floor(Number(await db.rpc<number>('bank_now', { staff: planned.staff, weekly_moves: weeklyMoves, bank_cap: bankCap })));
+    const bank = kept.bank ?? Math.floor(Number(await db.rpc<number>('bank_now', { staff: planned.staff, weekly_moves: weeklyMoves, bank_cap: bankCap })));
+    kept.bank = bank;
     const moveExpiryMostDays = Math.min(phase.numbers.moveExpiryMostDays, settings.moveExpiryMostDays);
     return {
       facts: { answering, office: 'boss', boss: { bank, threadBoards, expiryLeastHours: settings.moveExpiryLeastHours, moveExpiryMostDays, structuralHoldHours: settings.structuralHoldHours } },
@@ -606,12 +612,15 @@ async function recordTheRuling(r: TurnRun, post: string, quoting: string, raw: u
   const dropped = request ? undefined : given ? 'the ruling could not be repaired' : undefined;
   const record = { quoting, ...(request ? { reply: request.reply, ruling: request.ruling } : {}), ...(written ? { written } : {}), ...(refused ? { refused } : {}), ...(dropped ? { dropped } : {}), trims: own };
   let recorded = false;
+  let lost = '';
   try {
     await db.rpc('record_staff_call', { cause_act: post, duty: 'ruling', staff: planned.staff, record });
     recorded = true;
   } catch (e) {
     if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+    lost = said(e);
   }
+  if (!recorded) console.warn(`chatter: the ruling's call record for ${planned.staff} on post ${post} was not written${lost ? `: ${lost}` : ''}`);
   return request ? { reply: request.reply, ruling: request.ruling, ...(written ? { written } : {}), ...(refused ? { refused } : {}), recorded } : undefined;
 }
 
@@ -650,6 +659,7 @@ async function takeTurns(r: TurnsRun): Promise<TurnRecord[]> {
   const keys = [...new Set(awake.map((a) => a.staff))].sort();
   const open = await db.rpc<OpenThread[]>('pool_waiting', { staff_keys: keys, since: new Date(slotAt - rules.waitHours * 3_600_000).toISOString() });
   const records: TurnRecord[] = [];
+  const readings = new Map<string, PersonaReading>();
   for (const planned of planTurns(open, awake, rules, slotAt)) {
     if (!pace.mayStart()) break;
     const persona = tuned.system.roster.find((p) => p.key === planned.staff);
@@ -657,7 +667,7 @@ async function takeTurns(r: TurnsRun): Promise<TurnRecord[]> {
     const base = { staff: planned.staff, thread: planned.thread, session: planned.session, answers: planned.answers, trims: [] as Trim[] };
     if (!persona) { records.push({ ...base, status: 'skipped', why: 'the persona is not in the roster' }); continue; }
     if (!isPosting(office)) { records.push({ ...base, status: 'skipped', why: 'the persona holds no posting office' }); continue; }
-    const turn = await oneTurn({ ...r, persona, office: office as PostingOffice, planned });
+    const turn = await oneTurn({ ...r, persona, office: office as PostingOffice, planned, readings });
     records.push(turn);
     pace.charge(turn.chars ?? 0);
   }
@@ -668,6 +678,15 @@ interface TurnRun extends TurnsRun {
   readonly persona: Persona;
   readonly office: PostingOffice;
   readonly planned: PlannedTurn;
+  /** What a persona's ruling reads of itself, kept for the round (see `readRuling`). */
+  readonly readings: Map<string, PersonaReading>;
+}
+
+/** The persona-level reads of a ruling (standing and groups for a Mod, the bank for the Boss), read once per persona per run and dropped after a turn that queued a move (which spends the allowance or the bank). */
+interface PersonaReading {
+  standing?: Standing;
+  groups?: Awaited<ReturnType<typeof readModGroups>>;
+  bank?: number;
 }
 
 /** One turn, from its reads to its note. Never throws except for a run-stopping error. A write that was refused spends nothing and its replies wait; a call that failed, was rejected or was refused writes an attempt (below), which decides whether its replies wait. */
@@ -779,6 +798,8 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
       }
     }
     // The ruling was written with the post; what remains is its call record, and the post stands whatever becomes of that.
+    // A ruling that queued a move spent the allowance or the bank: what was kept of them is read again by the next turn.
+    if ((result.ruling?.move as { queued?: boolean } | null | undefined)?.queued) r.readings.delete(planned.staff);
     const ruled = ruling ? await recordTheRuling(r, post, quoting, raw, answer, trims, result) : undefined;
     return { ...base, status: 'taken', post, answers, trims, noteWritten, chars: sender.sent(), ...(ruled ? { ruling: ruled } : {}), ...(offered && 'unoffered' in offered ? { rulingUnoffered: offered.unoffered } : {}) };
   } catch (e) {

@@ -92,6 +92,8 @@ interface World {
   originNotPost?: boolean;
   /** A Mod's `mod_standing` (allowance and beat); none: no move to spend and an empty beat. */
   standing?: { allowance: number; beat: { id: string; name: string }[] };
+  /** `record_staff_call` cannot write (a database error). */
+  recordRefusal?: boolean;
   /** What `bank_now` reports for the Boss. */
   bank?: number;
   /** `rule_request` refuses with this database error code (a refusal is a 4xx: 22023 or 23514). */
@@ -214,11 +216,12 @@ function fakeDb(w: World = {}) {
           return { turn: state.turns.length, post: { id: post }, ...ruled } as T;
         }
         case 'thread_place': return GENERAL as T;
-        case 'mod_standing': return { office: 'mod', allowance: w.standing?.allowance ?? 0, order: null, beat: w.standing?.beat ?? [] } as T;
+        // A queued move spends one of the allowance (and of the bank), as the database counts it.
+        case 'mod_standing': return { office: 'mod', allowance: Math.max(0, (w.standing?.allowance ?? 0) - state.requests.filter((x) => x.staff === args.staff && (x.move as any)?.queued).length), order: null, beat: w.standing?.beat ?? [] } as T;
         case 'mod_group_context': return { conferred: [], characters: [] } as T;
-        case 'bank_now': return (w.bank ?? 3) as T;
+        case 'bank_now': return Math.max(0, (w.bank ?? 3) - state.requests.filter((x) => x.staff === args.staff && (x.move as any)?.queued).length) as T;
         case 'rule_request': return ruleIt(args) as T;
-        case 'record_staff_call': { state.callRecords.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record as any }); return { recorded: true, attempt: state.callRecords.length } as T; }
+        case 'record_staff_call': { if (w.recordRefusal) throw new DatabaseError('record_staff_call: refused', '55000', 400, 'nope'); state.callRecords.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record as any }); return { recorded: true, attempt: state.callRecords.length } as T; }
         case 'claim_pool_run': return (state.held ? null : 'run-0001') as T;
         case 'pool_context':
           return { season: w.season === undefined ? { startsAt: Date.parse('2026-10-01T00:00:00Z'), endsAt: Date.parse('2026-12-30T00:00:00Z') } : w.season, boss: HYPE, predecessor: null,
@@ -2330,6 +2333,53 @@ test('a Boss\'s turn whose season is not a number is offered no ruling, and the 
   assert.ok(!('request' in (m.chats[0]!.schema as any).properties) && !m.chats[0]!.system.includes('rule on it'), 'no ruling is offered');
   assert.equal(d.of('write_staff_turn')[0]!.in_ruling, undefined);
   assert.ok(out.turns[0]!.rulingUnoffered?.includes('finite'), String(out.turns[0]!.rulingUnoffered));
+});
+
+test('a persona\'s standing, groups and bank are read once per run; a turn that spent a move makes the next one read again', async () => {
+  const waiting = (staff: string) => [{ staff, thread: T1, replies: [reply(R1)] }, { staff, thread: T2, replies: [reply(R2)] }];
+  // A ruling that queues nothing leaves what was read standing: two turns, one read of each.
+  const quiet = fakeDb({ sessions: [SIGH_NOW], waiting: waiting(SIGH), standing: { allowance: 2, beat: BEAT } });
+  await run(quiet, ruling({ reply: R1, ruling: 'reject' }));
+  assert.equal(quiet.count('write_staff_turn'), 2, 'two turns of one persona');
+  assert.deepEqual([quiet.count('mod_standing'), quiet.count('mod_group_context'), quiet.count('thread_place')], [1, 1, 2], 'the persona is read once, the thread each turn');
+  // A turn that queued a move spent allowance: the next turn's offer is read again and says one is left.
+  const spent = fakeDb({ sessions: [SIGH_NOW], waiting: waiting(SIGH), standing: { allowance: 2, beat: BEAT } });
+  let n = 0;
+  const m = fakeModels((r) => ({ words: `Decided, said ${r.staff}.`, request: n++ === 0 ? { reply: R1, ruling: 'fulfill', move: moveThread } : { reply: R2, ruling: 'reject' } }));
+  await run(spent, m);
+  assert.deepEqual([spent.count('mod_standing'), spent.count('mod_group_context')], [2, 2], 'read again after a spent move');
+  const offers = m.chats.map((c) => c.system);
+  assert.notEqual(offers[0], offers[1], 'the second offer is not the first');
+  // The Boss's bank likewise.
+  const boss = fakeDb({ sessions: [HYPE_NOW], waiting: waiting(HYPE), bank: 2 });
+  await run(boss, ruling({ reply: R1, ruling: 'reject' }));
+  assert.equal(boss.count('bank_now'), 1, 'the bank is read once');
+  const bossSpent = fakeDb({ sessions: [HYPE_NOW], waiting: waiting(HYPE), bank: 2 });
+  let k = 0;
+  await run(bossSpent, fakeModels(() => ({ words: 'Ok.', request: k++ === 0 ? { reply: R1, ruling: 'fulfill', move: moveThread } : { reply: R2, ruling: 'reject' } })));
+  assert.equal(bossSpent.count('bank_now'), 2, 'the bank is read again after a spent move');
+});
+
+test('a Mod who no longer holds the office is offered no ruling, and the turn says why', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 2, beat: BEAT } });
+  const orig = d.db.rpc.bind(d.db);
+  (d.db as any).rpc = async (name: string, args: any) => (name === 'mod_standing' ? { office: 'member' } : orig(name, args));
+  const out = await run(d, ruling({ reply: R1, ruling: 'reject' }));
+  assert.ok(out.status === 'ok');
+  assert.equal(out.turns[0]!.status, 'taken');
+  assert.ok(out.turns[0]!.rulingUnoffered?.includes('Mod office'), 'the record says why');
+});
+
+test('a ruling whose call record could not be written is warned about, and the post and ruling stand', async () => {
+  const d = fakeDb({ sessions: [SIGH_NOW], waiting: [{ staff: SIGH, thread: T1, replies: [reply(R1)] }], standing: { allowance: 2, beat: BEAT }, recordRefusal: true });
+  const warned: string[] = [];
+  const was = console.warn;
+  console.warn = (...a: unknown[]) => { warned.push(a.join(' ')); };
+  let out;
+  try { out = await run(d, ruling({ reply: R1, ruling: 'reject' })); } finally { console.warn = was; }
+  assert.ok(out.status === 'ok');
+  assert.equal(out.turns[0]!.ruling?.recorded, false);
+  assert.ok(warned.some((w) => w.includes('call record') && w.includes(SIGH)), warned.join('|'));
 });
 
 test('a Boss\'s turn in a round with no season is offered no ruling', async () => {
