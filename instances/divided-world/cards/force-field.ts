@@ -15,7 +15,7 @@ export const forceField: CardRules<Record<string, never>> = {
   play: 'use',
   gimmick: { kind: 'ward', upTo: 'uncommon' },
   lasts: { unit: 'day', count: 7 },
-  seen: (p) => `${who(p)} raised a Force Field around this post, ${p.ago}: for a week it turns away every card no rarer than it, and then it fades.`,
+  seen: (p) => `${who(p)} raised a Force Field around this post, ${p.ago}: for a week it turns away every card cast here that is no rarer than it, though a card set face down slips past, and then it fades.`,
   playPrice: () => 0,
   canApply: (target, effects, _config, now) => landsOn(forceField, target, effects, now),
   validateConfig: () => ok({}),

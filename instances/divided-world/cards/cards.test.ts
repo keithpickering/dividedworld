@@ -832,12 +832,17 @@ test('seen sentences stay true to their cards', () => {
   assert.match(said('stick-around', { config: {} }), /scroll/, 'the fallback names the exits too');
   assert.doesNotMatch(said('stick-around', { config: {} }), /caster's sentence/);
   assert.match(said('toll'), /this post's author/);
-  assert.match(said('force-field'), /no rarer/);
+  assert.match(said('force-field'), /every card cast here that is no rarer than it/);
+  assert.match(said('force-field'), /face down.*slips past/);
   assert.doesNotMatch(said('force-field'), /lesser/);
   assert.doesNotMatch(said('4d-chess'), /several turns|paid off/);
-  assert.match(said('4d-chess'), /earns? from every vote/);
+  assert.match(said('4d-chess'), /votes that move draws in the reactions the setter named/);
+  assert.doesNotMatch(said('4d-chess'), /every vote/, 'only the named quadrant pays');
   assert.doesNotMatch(said('jimmy-wails'), /sob story/);
   assert.match(said('hype-up'), /calm/);
+  assert.doesNotMatch(said('toll'), /own|same player|owner/i, 'the toll\'s exception depends on who owns the caster, so the sentence leaves it out');
+  assert.match(said('overreaction', { config: { emoji: '  ' } }), /a reaction of their own/);
+  assert.ok(said('overreaction', { config: { emoji: 'x'.repeat(100) } }).length < 200, 'a long emoji value is cut');
   // One specific assertion each for the cards that say a configured word.
   assert.match(said('hot-box', { config: { color: 'orange' } }), /thick orange smoke/);
   assert.match(said('overreaction', { config: { emoji: '🦆', quadrant: 'excitedPositive' } }), /a 🦆 reaction/);

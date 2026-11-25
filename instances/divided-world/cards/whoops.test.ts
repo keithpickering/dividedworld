@@ -8,6 +8,7 @@ import { encodePoints } from './whoops/points.ts';
 import type { Pt } from './whoops/scrub.ts';
 import { defaults as settings } from '../settings.ts';
 import { post, seenOf } from './test-kit.ts';
+import { POINT_BUDGET, thinned, washedShare } from './whoops/seen.ts';
 
 test('Whoops! costs 0.25 more per 500 characters of its target, at most 2.00 added', () => {
   const config = { color: '#ff00aa' };
@@ -157,4 +158,19 @@ test('Whoops! says what the splat looks like to a reader, and how much of it has
   const at = (strokes: object[]) => rank.findIndex((w) => seenOf('whoops', { config, state: { strokes } }).includes(`${w[0]!.toUpperCase()}${w.slice(1)} of it`) || (w === 'none' && !/scrubbed/.test(seenOf('whoops', { config, state: { strokes } }))));
   assert.ok(at([sweep(0.04)]) < at(wholeBox), 'more washing reads as more');
   assert.equal(at(wholeBox), rank.indexOf('almost all'));
+});
+
+test('the staff\'s read of a Whoops! thins a maximum-stroke play to bounded work, and leaves an ordinary one alone', () => {
+  const line = (n: number, y: number): Pt[] => Array.from({ length: n }, (_, i): Pt => [i / (n - 1), y]);
+  const stroke = (n: number, y: number) => ({ tool: 'wash' as const, width: 0.05, aspect: 2, points: line(n, y) });
+  const ordinary = [stroke(20, 0.3), stroke(20, 0.6)];
+  assert.deepEqual(thinned(ordinary), ordinary, 'a small play is replayed whole');
+  const most = Array.from({ length: STROKES.most }, (_, i) => stroke(STROKES.totalPoints / STROKES.most, i / STROKES.most));
+  const kept = thinned(most);
+  assert.equal(kept.length, STROKES.most, 'every stroke stays');
+  assert.ok(kept.reduce((n, s) => n + s.points.length, 0) <= POINT_BUDGET + 2 * STROKES.most, 'the points replayed are bounded, not the 40,000 the card allows');
+  for (const [i, s] of kept.entries()) assert.deepEqual([s.points[0], s.points.at(-1)], [most[i]!.points[0], most[i]!.points.at(-1)], 'a stroke keeps its first and last point');
+  const config = { seed: 3 };
+  const share = washedShare(config, { strokes: most.map((s) => ({ ...s, points: pack([...s.points]) })) });
+  assert.ok(share > 0 && share < 1);
 });
