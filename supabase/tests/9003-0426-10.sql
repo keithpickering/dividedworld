@@ -8,6 +8,10 @@
 -- 5. the security: owners, grants, search paths.
 -- The rows are this file's own (ex...).
 
+-- What the files before this one leave committed (0434_reads_bounded_on_any_plan.sql), planted first so that every run measures in it: a few live author veils and card_end Acts elsewhere in the instance, analyzed before this
+-- file's own rows are written, as the earlier files' rows are by the suite's vacuum. With them, each probe of an Act through acts_public was a hashed read of every veil and card_end (CI on main at 7d8a255: `pool_read reads 4814 rows of acts: more than 4000`).
+select tests.plant_live_veils(8, 10) is not null;
+
 create function pg_temp.coded(stmt text) returns text language plpgsql as $$
 begin execute stmt; return null; exception when others then return sqlstate || ' ' || sqlerrm; end $$;
 
@@ -572,9 +576,6 @@ begin
   raise notice '[%] rows of acts with 2 / 9 plays on the origin post: post origin %, % and play origin %, %', label, rows[1], rows[2], rows[3], rows[4];
 end $$;
 
--- What the files before this one leave committed, planted so that every run measures in it (0434_reads_bounded_on_any_plan.sql): live author veils and card_end Acts elsewhere in the instance, which made each probe of an Act
--- through acts_public a hashed read of all of them (CI on main at 7d8a255: `pool_read reads 4814 rows of acts: more than 4000`).
-select tests.plant_live_veils(8, 40) is not null;
 do $$
 begin
   -- relallvisible 0 as well: a visibility map that counts no page all-visible, as 0425's states set it

@@ -29,6 +29,10 @@
 -- 15. moves_log lists a request for the staff member that ruled on it and for no other: its thread, its title, the request post's number, the first ruling, the office that ruled and the move's kind, and how a request
 --     passed on ended (waiting with its lapse date, ruled by a meeting, lapsed); a Mod's confer and the Boss's are told apart; the row names no asker and nothing private.
 
+-- What the files before this one leave committed (0434_reads_bounded_on_any_plan.sql), planted first so that every run measures in it: a few live author veils and card_end Acts elsewhere in the instance, analyzed before this
+-- file's own rows are written, as the earlier files' rows are by the suite's vacuum. With them, each probe of an Act through acts_public was a hashed read of every veil and card_end (CI on main at 7d8a255: `requests_waiting(1) read 438 tuples of acts for 50 hidden rows and 1 shown`).
+select tests.plant_live_veils(8, 10) is not null;
+
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
   execute stmt;
@@ -763,9 +767,6 @@ begin
   analyze threads;
   analyze boards;
   analyze characters;
-  -- What the files before this one leave committed, planted so that every run measures in it (0434_reads_bounded_on_any_plan.sql): live author veils and card_end Acts elsewhere in the instance, which made each probe of a post
-  -- through acts_public a hashed read of all of them (CI on main at 7d8a255: `requests_waiting(1) read 438 tuples of acts for 50 hidden rows and 1 shown`).
-  perform tests.plant_live_veils(8, 40);
 
   foreach state in array array['as the suite leaves it', 'random_page_cost 100'] loop
     if state = 'random_page_cost 100' then
