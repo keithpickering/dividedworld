@@ -10,8 +10,8 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { makeTileLayer } from '../../../../engine/ui/cards/tiles.ts';
 import { createFake } from '../../../../engine/ui/data/fake.ts';
 import { renderIn, testInstance } from '../../../../engine/ui/test-world.tsx';
-import { emptyField, fogAt, stepField, type FogField } from '../hot-box/fog.ts';
-import { FOG_BUDGET_MS, ladder, resetFogLadder, spend } from '../hot-box/ladder.ts';
+import { FOG, emptyField, fogAt, stepField, type FogField } from '../hot-box/fog.ts';
+import { FOG_BUDGET_MS, forceFogLevel, ladder, resetFogLadder, spend } from '../hot-box/ladder.ts';
 import { holeRadius } from '../hot-box/smoke.ts';
 import { PUFF, puffDone } from './puff.ts';
 import { Puff, forgetScratch, type PuffProps } from './Puff.tsx';
@@ -241,16 +241,29 @@ describe('the page\'s ladder', () => {
     expect(ladder.rungs.size).toBe(1);
   });
 
-  test('over the budget it steps down a rung, and a field made again at the new rung starts from the puff as it stands, not empty', () => {
+  test('it starts at a rung below Hot Box\'s, and over the budget it steps down to the last rung, drawn from the model with no field', () => {
+    setup();
+    pass(PUFF.billowMs + 100);
+    expect(vi.mocked(emptyField).mock.calls[0]![2], 'it starts in 10 px cells').toBe(10);
+    expect(lastStep()[2].rounds).toBe(FOG.rounds);
+    /* The frames cost three times the budget: the page's mean is over it. */
+    for (let i = 0; i < 12; i++) { spend('x:0', 1000 + i, FOG_BUDGET_MS * 3); spend('x:0', 1000 + i, 0); }
+    pass(48);
+    const stepped = vi.mocked(stepField).mock.calls.length;
+    pass(100);
+    expect(vi.mocked(stepField).mock.calls.length, 'no field is stepped at the last rung').toBe(stepped);
+    expect(canvases(document.body).length, 'and it is still drawn').toBeGreaterThan(0);
+  });
+
+  test('a field made again at another rung starts from the puff as it stands, not empty', () => {
     setup();
     pass(PUFF.billowMs + 100);
     vi.mocked(emptyField).mockClear();
-    /* The frames cost three times the budget: the page's mean is over it. */
-    for (let i = 0; i < 12; i++) { spend('x:0', 1000 + i, FOG_BUDGET_MS * 3); spend('x:0', 1000 + i, 0); }
-    pass(100);
+    forceFogLevel(0);
+    pass(50);
     const again = vi.mocked(emptyField).mock.calls.at(-1);
     expect(again, 'a field was made again').toBeDefined();
-    expect(again![2], 'at a bigger cell').toBeGreaterThan(5);
+    expect(again![2], 'at the new cell').toBe(5);
     expect(again![3]!.from, 'seeded from the front').toBeTypeOf('function');
     expect(again![3]!.from!(300, 200), 'whole inside it').toBe(1);
   });

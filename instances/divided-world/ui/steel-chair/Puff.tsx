@@ -43,6 +43,14 @@ export const FILL_MS = 80;
 /** The jet's push at its start, px a second, falling to nothing over `PUFF.jetMs` (the bench's `JET_PX_S`). */
 const JET_PX_S = 900;
 
+/**
+ * The rung a puff starts at, where Hot Box starts at 0: a puff steps the whole of what is drawn for 5 s (Hot Box steps only what is disturbed), and it is gone before the ladder's
+ * first judgment (8 frames, then a step a judgment) has taken it to the rung its cost needs, so a puff that began at rung 0 spent a fifth of its life over the budget on every
+ * page that drew it. Rung 2 draws it in 10 px cells (the fog's own texture is finer than that and scaled up smooth), with the flow, the jet and the pointer's clearing as ever;
+ * the ladder lowers it further, and never raises it.
+ */
+const START_LEVEL = 2;
+
 /** The spout, in the content area's px. */
 export interface PuffSpout { readonly x: number; readonly y: number }
 
@@ -71,7 +79,7 @@ export function Puff({ host, place, spout, done }: PuffProps): null {
   const model = useRef(emptyPointer());
   const startedAt = useRef(api.now());
   const own = useMemo(() => nextPainterId(), []);
-  const painter = useRef<Painter>({ field: null, level: 0, steppedAt: api.now(), stamp: null, seen: new Set(), paintedIn: Number.NEGATIVE_INFINITY });
+  const painter = useRef<Painter>({ field: null, level: START_LEVEL, steppedAt: api.now(), stamp: null, seen: new Set(), paintedIn: Number.NEGATIVE_INFINITY });
   const [areaEl, setAreaEl] = useState<HTMLElement | null>(null);
   const latest = useRef({ spout, done, box: { w: 0, h: 0 } });
   latest.current = { spout, done, box: latest.current.box };
