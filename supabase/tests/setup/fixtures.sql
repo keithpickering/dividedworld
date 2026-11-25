@@ -243,3 +243,13 @@ begin
   perform set_config('role', 'service_role', true);
 end $$;
 grant execute on all functions in schema tests to anon, authenticated, service_role;
+
+-- A pending announced Turn as it was queued before turns were announced at once (0427): announced, naming what its player chose, with no announcement
+-- written (announce_act null), so the settlement writes it the old way, in the season's Promos thread. As turn() wrote the row then.
+create function tests.queue_old_turn(c uuid, to_class text, show_from boolean default false, show_to boolean default false) returns void
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  -- plpgsql, so that fixtures.sql still loads on the older schemas the end-to-end files build it on (pending_turns has no due_at before 0100).
+  insert into pending_turns (character, class_key, loudness, show_from, show_to) values (c, to_class, 'announced', show_from, show_to)
+  on conflict (character) do update set class_key = excluded.class_key, loudness = 'announced', show_from = excluded.show_from, show_to = excluded.show_to, asked_at = clock_timestamp(), due_at = null;
+end $$;

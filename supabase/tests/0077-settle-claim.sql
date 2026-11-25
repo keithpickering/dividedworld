@@ -16,9 +16,14 @@ end $$;
 create function pg_temp.turning(label text, loudness text default 'silent') returns uuid language plpgsql as $$
 declare ann uuid := tests.account(label); a uuid := tests.character(ann, label, 'alpha', now() - interval '60 days');
 begin
-  perform tests.become(ann);
-  perform turn(a, 'beta', loudness, false, loudness = 'announced');
-  perform tests.unbecome();
+  -- An announced one is queued as before turns were announced at once (0427, which commits a Turn announced now): the settlement writes it the old way.
+  if loudness = 'announced' then
+    perform tests.queue_old_turn(a, 'beta', false, true);
+  else
+    perform tests.become(ann);
+    perform turn(a, 'beta', loudness, false, false);
+    perform tests.unbecome();
+  end if;
   update pending_turns set asked_at = now() - interval '2 hours' where character = a;
   return a;
 end $$;
@@ -317,7 +322,7 @@ begin
     perform masks_change(w1);
     if (select p.due_at from pending_turns p where p.character = a) is null then raise exception 'the setup: the Turn was passed over'; end if;
     perform tests.become((select owner from characters where id = a));
-    perform turn(a, 'beta', 'announced', true, false);
+    perform turn(a, 'beta', 'silent', false, false);
     perform tests.unbecome();
     if (select p.due_at from pending_turns p where p.character = a) is not null then raise exception 'a changed Turn is a new ask, with no due_at'; end if;
     perform tests.become((select owner from characters where id = a));

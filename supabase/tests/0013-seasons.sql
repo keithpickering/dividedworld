@@ -42,30 +42,30 @@ declare
   said jsonb;
   why text;
 begin
-  -- A Turn, silent or loud, writes no public Act and changes nothing another player can read
+  -- A silent Turn writes no public Act and changes nothing another player can read
   -- while it waits for the settlement (supabase/tests/0017-masks.sql settles it).
   perform tests.become(bob);
   before := pg_temp.public_view();
   perform tests.unbecome();
   perform tests.become(ann);
-  said := turn(a, 'beta', 'announced');
-  if said - 'takes_effect_at' <> '{"pending": true, "class": "beta", "loudness": "announced", "show_from": false, "show_to": false}' or not said ? 'takes_effect_at' then raise exception 'a Turn waits, and says so to its player: %', said; end if;
+  said := turn(a, 'beta', 'silent', false, false);
+  if said - 'takes_effect_at' <> '{"pending": true, "class": "beta", "loudness": "silent", "show_from": false, "show_to": false}' or not said ? 'takes_effect_at' then raise exception 'a Turn waits, and says so to its player: %', said; end if;
   perform tests.unbecome();
   perform tests.become(bob);
   if pg_temp.public_view() <> before then raise exception 'a waiting Turn changed what another player can read'; end if;
   -- And the rest of what a Turn cannot be.
-  if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'beta', 'silent')) is distinct from 'you do not play that character' then raise exception 'a Turn of another''s character'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', a, 'beta', 'silent')) is distinct from 'you do not play that character' then raise exception 'a Turn of another''s character'; end if;
   perform tests.unbecome();
   perform tests.become(ann);
-  if coalesce(pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'alpha', 'silent')), '') not like '%already%' then raise exception 'a Turn to the class it holds'; end if;
-  if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'ghost', 'silent')) is null then raise exception 'a Turn to no class'; end if;
-  if pg_temp.refusal(format('select turn(%L, %L, %L)', a, 'beta', 'shouted')) is null then raise exception 'a Turn of no loudness'; end if;
+  if coalesce(pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', a, 'alpha', 'silent')), '') not like '%already%' then raise exception 'a Turn to the class it holds'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', a, 'ghost', 'silent')) is null then raise exception 'a Turn to no class'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', a, 'beta', 'shouted')) is null then raise exception 'a Turn of no loudness'; end if;
   perform tests.unbecome();
   -- A Turn inside the cooldown is refused, and the refusal says when it can be made: the
   -- cooldown after the last Turn took effect.
   insert into class_history (character, class_key, started_at) values (b, 'beta', now() - interval '10 days');
   perform tests.become(bob);
-  why := pg_temp.refusal(format('select turn(%L, %L, %L)', b, 'alpha', 'silent'));
+  why := pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', b, 'alpha', 'silent'));
   if why is null then raise exception 'a Turn inside the cooldown went through'; end if;
   if why !~ 'can Turn again at \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z' then raise exception 'the refusal should say when: %', why; end if;
   if substring(why from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz is distinct from date_trunc('second', now() - interval '10 days' + interval '30 days') then
@@ -105,9 +105,7 @@ begin
   -- Bob's character reveals itself in the season, then Turns, announced naming both classes, which
   -- is announced, as its own Act, with the class it Turned to.
   unmasked := write_unmask(says, t, 'act', season_start + interval '1 day', 'Alpha, and proud.');
-  perform tests.become(bob);
-  perform turn(says, 'beta', 'announced', true, true);
-  perform tests.unbecome();
+  perform tests.queue_old_turn(says, 'beta', true, true);
   update pending_turns set asked_at = told_at - interval '1 hour' where character = says;
   tally := masks_change(told_at);
   -- Outside the season, and so in no part of its reveal: a reveal and an announced Turn before it

@@ -91,7 +91,7 @@ declare
   said jsonb;
 begin
   perform tests.become(ann);
-  perform turn(a, 'beta', 'silent');
+  perform turn(a, 'beta', 'silent', false, false);
   said := unmask(a, t, 'Still this.');
   perform tests.unbecome();
   if said -> 'payload' ->> 'class' is distinct from 'alpha' then raise exception 'a reveal while a Turn waits names the class held: %', said; end if;
@@ -115,8 +115,9 @@ begin
   -- A class held and a silent Turn taken, and nothing made public.
   insert into class_history (character, class_key, started_at) values (quiet, 'beta', now() - interval '2 days');
   perform tests.become(ann);
-  perform turn(loud, 'beta', 'announced');
-  perform turn(told, 'beta', 'revealed');
+  -- Queued as before turns were announced at once (0427): the settlement writes their announcements the old way.
+  perform tests.queue_old_turn(loud, 'beta');
+  perform tests.queue_old_turn(told, 'beta', true, false);
   perform tests.unbecome();
   tally := masks_change(now() + interval '1 minute');
   perform tests.become(tests.account('unmask-quiet-reader'));

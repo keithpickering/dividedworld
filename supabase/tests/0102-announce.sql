@@ -14,7 +14,7 @@ end $$;
 -- The migration exists at all, so a missing one fails here on an assertion and not on a missing kind below.
 do $$
 begin
-  if to_regprocedure('write_announce(uuid,uuid,text,text,text,timestamptz)') is null or to_regprocedure('promos_thread(bigint)') is null then
+  if to_regprocedure('write_announce(uuid,uuid,text,text,text,timestamptz,boolean)') is null or to_regprocedure('promos_thread(bigint)') is null then
     raise exception 'write_announce and promos_thread exist';
   end if;
   if to_regprocedure('post_tally(bigint,jsonb,jsonb,timestamptz,integer,integer)') is not null then raise exception 'post_tally is gone'; end if;
@@ -45,9 +45,11 @@ begin
   t_to := tests.character(z, 'An Names What It Is', 'alpha', now() - interval '60 days');
   t_both := tests.character(x, 'An Names Both', 'alpha', now() - interval '60 days');
   t_silent := tests.character(y, 'An Silent Turn', 'alpha', now() - interval '60 days');
-  perform tests.become(x); perform turn(t_plain, 'beta', 'announced', false, false); perform turn(t_both, 'beta', 'announced', true, true); perform tests.unbecome();
-  perform tests.become(y); perform turn(t_from, 'beta', 'announced', true, false); perform turn(t_silent, 'beta', 'silent', false, false); perform tests.unbecome();
-  perform tests.become(z); perform turn(t_to, 'beta', 'announced', false, true); perform tests.unbecome();
+  -- The announced ones are queued as before turns were announced at once (0427): with no announcement written, so the settlement writes them the old way.
+  perform tests.queue_old_turn(t_plain, 'beta'); perform tests.queue_old_turn(t_both, 'beta', true, true);
+  perform tests.queue_old_turn(t_from, 'beta', true, false);
+  perform tests.become(y); perform turn(t_silent, 'beta', 'silent', false, false); perform tests.unbecome();
+  perform tests.queue_old_turn(t_to, 'beta', false, true);
   update seasons set turns_thread = null where ends_at is null;
 
   first_id := masks_change(window_end);
@@ -165,7 +167,7 @@ begin
   insert into characters (owner, name, created_at, debut_loudness) values (ann, 'An Crash Debut', now() - interval '1 hour', 'announced') returning id into debut;
   insert into class_history (character, class_key, started_at) values (debut, 'alpha', now() - interval '1 hour');
   turner := tests.character(ann, 'An Crash Turn', 'alpha', now() - interval '60 days');
-  perform tests.become(ann); perform turn(turner, 'beta', 'announced', false, false); perform tests.unbecome();
+  perform tests.queue_old_turn(turner, 'beta');
   -- The Turn's Act is the second written (debuts first): the first is written, then the second fails.
   perform set_config('tests.crash_character', turner::text, true);
   create trigger tests_crash before insert on acts for each row execute function pg_temp.crash_on_turn();
@@ -326,7 +328,7 @@ begin
   dropped := tests.character(ann, 'An Same Drop', 'alpha', now() - interval '1 hour');
   turner := tests.character(ann, 'An Same Turn', 'alpha', now() - interval '60 days');
   insert into class_history (character, class_key, started_at) values (waiting, 'alpha', now() - interval '1 hour');
-  perform tests.become(ann); perform turn(turner, 'beta', 'announced', false, false); perform tests.unbecome();
+  perform tests.queue_old_turn(turner, 'beta');
   perform announce_drop(dropped, window_end);
   perform masks_change(window_end);
   if (select count(*) from news_landed n join acts a on a.id = n.act where n.kind = 'announcements' and a.thread = th and a.created_at = window_end) is distinct from 1::bigint then raise exception 'the same instant is one landing'; end if;

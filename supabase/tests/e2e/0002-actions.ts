@@ -73,12 +73,13 @@ test('a player starts a thread, replies quoting it, edits, spins a thread from i
   const again = await runAction(asAnn, instance, { action: 'playCard', card: 'whoops', character: ann.character, target: act.id, config: { color: 'red' } });
   assert.equal(again.status, 400, 'no card left, and the post carries one already');
 
-  // A Turn, announced, waits for the settlement: nothing public yet, and nothing sent live. Bob
-  // may withdraw it until then.
-  const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'announced' });
+  // A Turn, silent, waits for the settlement: nothing public, and nothing sent live. Bob
+  // may withdraw it until then. (An announced Turn is posted in a thread when it is asked and cannot be withdrawn: 0427; the action carries
+  // the thread from the client's Task 3.)
+  const turned = await runAction(asBob, instance, { action: 'turn', character: bob.character, class: 'jabroni', loudness: 'silent' });
   assert.equal(turned.status, 200, JSON.stringify(turned));
   const { takes_effect_at: when, ...waiting } = turned.body as { takes_effect_at: string | null };
-  assert.deepEqual(waiting, { pending: true, class: 'jabroni', loudness: 'announced', show_from: false, show_to: false });
+  assert.deepEqual(waiting, { pending: true, class: 'jabroni', loudness: 'silent', show_from: false, show_to: false });
   assert.equal(when, sql(`select to_json(next_settlement_at())`).replace(/^"|"$/g, '') || null, 'it says when it takes effect, or that the first run decides');
   assert.deepEqual(turned.broadcasts, []);
   const withdrawn = await runAction(asBob, instance, { action: 'withdrawTurn', character: bob.character });
