@@ -12,7 +12,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import {
-  addThrow, boxShape, bodies, CHAIR, SHAPES, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, probe, prismShape, rng, separation, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
+  addThrow, boxShape, bodies, CHAIR, CHAIR_THICKNESS, SHAPES, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, probe, prismShape, rng, separation, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
 } from './body.ts';
 import { Z_FRONT } from './chair.ts';
@@ -870,21 +870,37 @@ test('no shape reaches farther than the chair, which is what holds chair.ts K fo
   for (const o of OBJECT_LIST) assert.ok(SHAPES[o].reach <= chair + 1e-9, `${o} reaches ${SHAPES[o].reach} against the chair's ${chair}`);
 });
 
-test('the four shapes are the ladder, the can and the extinguisher the design names', () => {
+test('the four shapes are the ladder, the can and the extinguisher the owner tuned (2026-11-25)', () => {
   assert.equal(SHAPES.chair, CHAIR);
-  assert.deepEqual(SHAPES.ladder.half, [15, 48, 3]);
+  assert.deepEqual(SHAPES.ladder.half, [15, 48, 6]);
   assert.equal(SHAPES.ladder.hinge, true);
   assert.equal(SHAPES.ladder.sleepsUpright, false);
   assert.equal(SHAPES.can.name, 'prism12');
   assert.equal(SHAPES.can.sleepsUpright, true);
-  assert.ok(Math.abs(SHAPES.can.support([0, 1, 0]) - 20) < 1e-12);
-  assert.ok(Math.abs(SHAPES.can.support([1, 0, 0]) - 15) < 1e-9);
+  assert.ok(Math.abs(SHAPES.can.support([0, 1, 0]) - 42) < 1e-12);
+  assert.ok(Math.abs(SHAPES.can.support([1, 0, 0]) - 25) < 1e-9);
   assert.equal(SHAPES.extinguisher.sleepsUpright, true);
-  assert.ok(Math.abs(SHAPES.extinguisher.support([0, 1, 0]) - 25) < 1e-12);
-  assert.ok(Math.abs(SHAPES.extinguisher.support([1, 0, 0]) - 7.5) < 1e-9);
-  assert.deepEqual(SHAPES.extinguisher.spout, [0, -25, 0]);
+  assert.ok(Math.abs(SHAPES.extinguisher.support([0, 1, 0]) - 45) < 1e-12);
+  assert.ok(Math.abs(SHAPES.extinguisher.support([1, 0, 0]) - 13.5) < 1e-9);
+  assert.deepEqual(SHAPES.extinguisher.spout, [18, -39.6, 0]);
   for (const o of ['chair', 'can', 'ladder'] as const) assert.equal(SHAPES[o].spout, undefined);
   assert.equal(SHAPES.chair.restRise, REST_RISE);
+  /* The reaches the owner's bench gave: the can 48.9, the ladder 50.6, the extinguisher 47.0 (the chair's 50.7 is the cap). */
+  assert.ok(Math.abs(SHAPES.can.reach - 48.9) < 0.05, `${SHAPES.can.reach}`);
+  assert.ok(Math.abs(SHAPES.ladder.reach - 50.6) < 0.05, `${SHAPES.ladder.reach}`);
+  assert.ok(Math.abs(SHAPES.extinguisher.reach - 47.0) < 0.05, `${SHAPES.extinguisher.reach}`);
+});
+
+test('restRise is built from two chairs under it: two chair thicknesses, its own lying thickness twice (or its standing height), and 1 px', () => {
+  assert.equal(CHAIR_THICKNESS, 8);
+  for (const o of ['can', 'ladder', 'extinguisher'] as const) {
+    const s = SHAPES[o];
+    const lying = Math.min(...s.faces.map((f) => 2 * s.support(f)));
+    const standing = s.sleepsUpright ? 2 * s.support([0, 1, 0]) : 0;
+    assert.equal(s.restRise, 2 * CHAIR_THICKNESS + Math.max(2 * lying, standing) + 1, o);
+  }
+  assert.equal(SHAPES.ladder.restRise, 2 * 8 + 2 * 12 + 1);
+  assert.equal(SHAPES.extinguisher.restRise, 2 * 8 + 90 + 1);
 });
 
 /** The throws of one seed: each object alone, or three drawn uniformly from the seed (so each object is present often enough to mean something). */
@@ -960,8 +976,8 @@ test('three throws of objects drawn from the seed (each present at least 30 time
   console.log(`# mixed: ${Date.now() - t0} ms; counts ${OBJECT_LIST.map((o) => `${o} ${count.get(o)}`).join(', ')}`);
 });
 
-/** Found by scanning seeds 0 to 199 of a lone can: 38 of them land on a base (1, 2, 10, 16, ...) and none is nudged. */
-const CAN_STANDING_SEED = 1;
+/** Found by scanning seeds 0 to 199 of a lone can: 18 of them land on a base (9, 16, 47, 54, ...) and none is nudged (the can of 2026-11-25 is 50 across by 84). */
+const CAN_STANDING_SEED = 9;
 test('a can that lands on its base sleeps standing, and it is not nudged over', () => {
   const r = restOf(CAN_STANDING_SEED, ['can']);
   const [body] = r.list;
@@ -974,5 +990,24 @@ test('the object draws no number: a throw of any object is the chair\'s throw ap
   for (const seed of [0, 1, 7, 99, 150]) {
     const chair = throwOf(rng(seed), WORDS);
     for (const o of OBJECT_LIST) assert.deepEqual(throwOf(rng(seed), WORDS, o), { ...chair, object: o }, `${o} seed ${seed}`);
+  }
+});
+
+test('each object\'s hit lands at the throw\'s target, where its body is, so its dent (centered on the hit) is centered on the body', () => {
+  for (const o of OBJECT_LIST) for (const seed of [0, 1, 7, 42, 99]) {
+    const world = createWorld(600, 400, 400);
+    const th = throwOf(rng(seed), WORDS, o);
+    const id = addThrow(world, th);
+    let hit: { x: number; y: number } | undefined, middle: { x: number; y: number; z: number } | undefined;
+    for (let k = 0; k < 600 && !hit; k++) {
+      for (const e of step(world, STEP)) if (e.kind === 'hit' && e.id === id) {
+        hit = e.at;
+        const b = bodies(world).find((x) => x.id === id)!;
+        middle = b.position;
+      }
+    }
+    assert.ok(hit && middle, `${o} seed ${seed}: no hit`);
+    assert.ok(Math.abs(hit.x - th.target.x) < 1e-9 && Math.abs(hit.y - th.target.y) < 1e-9, `${o} seed ${seed}: hit ${hit.x},${hit.y} against target ${th.target.x},${th.target.y}`);
+    assert.ok(Math.abs(middle.x - hit.x) < 1e-9 && Math.abs(middle.y - hit.y) < 1e-9 && Math.abs(middle.z) < 1e-9, `${o} seed ${seed}: the body is at ${middle.x},${middle.y},${middle.z} at its hit`);
   }
 });

@@ -153,31 +153,22 @@
     "sha256": "ea2a4884f8f062284240af1ab370006119f25454fc44f568d1161734bbe34209"
   },
   {
-    "file": "steel-chair-can-hit.mp3",
-    "source": "ElevenLabs Sound Effects",
-    "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World",
-    "lufs": -21,
-    "peak": -1.7,
-    "sha256": "32d599fd0be7bf5e45f16a09f1e1614121f327b5441fa9648e4d8f79b908f8d7"
-  },
-  {
     "file": "steel-chair-can-settle-1.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
     "maker": "Divided World",
-    "lufs": -22.8,
-    "peak": -3.9,
-    "sha256": "8c7175e99fe278fe8dd831830378451ad4a1b064473c47a80dfafde00b0a4184"
+    "lufs": -23.9,
+    "peak": -4.5,
+    "sha256": "09efdd26cab56ca8b3d7f73a4f9a4bf87a8c872e30d0003fb52a7dc1d7407e7e"
   },
   {
     "file": "steel-chair-can-settle-2.mp3",
     "source": "ElevenLabs Sound Effects",
     "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
     "maker": "Divided World",
-    "lufs": -17.9,
-    "peak": -0.7,
-    "sha256": "596223cb8ce21470968f634c7cd4d03f850b39960b6ea51297de8676104b04d1"
+    "lufs": -19.4,
+    "peak": -1,
+    "sha256": "0861e3aeb82ebabe7a41187e604024ff7745830f6040ccb5ed700c1db9a66271"
   },
   {
     "file": "steel-chair-extinguisher-hiss.mp3",
@@ -214,15 +205,6 @@
     "lufs": -13.4,
     "peak": -1.2,
     "sha256": "40f7b26ca91f82e3d0d42fb4833ebc5656f1174c2de43a0cccbc602def534497"
-  },
-  {
-    "file": "steel-chair-ladder-hit.mp3",
-    "source": "ElevenLabs Sound Effects",
-    "license": "Content generated during a paid subscription can be used commercially, and indefinitely, subject to our [Service-Specific Terms](https://elevenlabs.io/service-specific-terms). Attribution requirement is subject to the agreement you have with ElevenLabs.",
-    "maker": "Divided World",
-    "lufs": -17.2,
-    "peak": -0.6,
-    "sha256": "04fb81b2b0cd3faa6eb8797332139d0efa965f93aae7b9617d8f11acec6a34e0"
   },
   {
     "file": "steel-chair-ladder-settle-1.mp3",

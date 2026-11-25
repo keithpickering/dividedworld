@@ -16,6 +16,8 @@
  */
 import { GRAVITY } from './body.ts';
 
+/** The lid's launch speed, px/s, which a draw of a tenth either way varies (the owner's bench, 2026-11-25). The arcs below raise it only where leaving needs more. */
+export const LID_SPEED = 550;
 /** The most the lid is flown for, in seconds. */
 export const LID_SECONDS = 1.2;
 /** How far past the content area's border the lid is when it is done, px. */
@@ -52,7 +54,7 @@ export interface LidState {
  */
 export function lidArcOf(rand: () => number, hitAt: Point, box: { width: number; height: number }): LidArc {
   const viaTop = rand() < 0.5;
-  const speed = 900 + 700 * rand();
+  const speed = LID_SPEED * (0.9 + 0.2 * rand());
   const lean = rand();
   const spinX = (rand() < 0.5 ? -1 : 1) * (5 + 9 * rand());
   const spinY = (rand() < 0.5 ? -1 : 1) * (5 + 9 * rand());

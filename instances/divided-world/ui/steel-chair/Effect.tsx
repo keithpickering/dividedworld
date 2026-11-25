@@ -65,10 +65,12 @@
  * content area's measured size; the reduced picture (`placeAll`) steps the same STAGGER_STEPS between their throws, so it is
  * the pile the animated run ends in for the same seed.
  *
- * Sound. Every animated run plays its object's hit (`steel-chair.hit` for a chair, `steel-chair.ladder-hit` for a ladder and so on) on each hit and one
- * of its object's settle sounds (four for a chair, two for each other object) on each body's first floor contact, in
- * the group `steel-chair`, whether it started from a scroll, from Throw again or from a new play landing; a reduced draw does not
- * sound. Three limits keep a thread from being a wall of clangs: the group's cap of `VOICES` sounds at once across the page (a newer clang
+ * Sound. Every animated run plays a hit on each hit and one settle sound on each body's first floor contact, in the group `steel-chair`, whether it
+ * started from a scroll, from Throw again or from a new play landing; a reduced draw does not sound. The chair, the can and the ladder all hit with
+ * the chair's `steel-chair.hit`; the chair and the can land with one of the chair's four settles, the ladder with one of its own two, and the
+ * extinguisher has its own hit and two settles (and its hiss). The can's own `can-settle` takes are its lid landing out of sight: one of the two is
+ * played LID_LANDS_MS (900 ms) after the lid's launch, at the slot's own normalized gain, and not at all if the run is cleared first; the lid has
+ * no sound of its own beyond that. (The owner's tuning of 2026-11-25: the can-hit and ladder-hit takes were struck.) Three limits keep a thread from being a wall of clangs: the group's cap of `VOICES` sounds at once across the page (a newer clang
  * fades out the oldest past it), the limiter the engine puts on every sound, and the 300 ms a post must be in view before a run starts. A
  * sound that would start later than `LATE_MS` after its hit or settle is skipped.
  *
@@ -158,14 +160,18 @@ const MOST_STEPS = 4;
 const MOST_FRAME_S = MOST_STEPS * STEP;
 /**
  * Each object's sounds: the key of its hit and how many settle sounds it has, `<settle>-1` to `-n`; its first floor contact plays one of them.
- * The chair's keys are the original `steel-chair.hit` and `steel-chair.settle-1` to `-4`, so they stay as they were.
+ * The chair's keys are the original `steel-chair.hit` and `steel-chair.settle-1` to `-4`, so they stay as they were; the can has the chair's.
  */
+/** The can's lid lands out of sight this long after it leaves (the owner's bench, 2026-11-25), with one of this many takes (`steel-chair.can-settle-1` and `-2`). */
+export const LID_LANDS_MS = 900;
+const LID_LANDS = 'steel-chair.can-settle';
+const LID_TAKES = 2;
 /** The extinguisher's hiss, played with its puff at its first floor contact. */
 const HISS = 'steel-chair.extinguisher-hiss';
 const SOUNDS: Readonly<Record<ThrownObject, { readonly hit: string; readonly settle: string; readonly settles: number }>> = Object.freeze({
   chair: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4 },
-  can: { hit: 'steel-chair.can-hit', settle: 'steel-chair.can-settle', settles: 2 },
-  ladder: { hit: 'steel-chair.ladder-hit', settle: 'steel-chair.ladder-settle', settles: 2 },
+  can: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4 },
+  ladder: { hit: 'steel-chair.hit', settle: 'steel-chair.ladder-settle', settles: 2 },
   extinguisher: { hit: 'steel-chair.extinguisher-hit', settle: 'steel-chair.extinguisher-settle', settles: 2 },
 });
 /**
@@ -403,6 +409,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
        that the group React drew is whole for the next run (React's own children are never left out of the group it put them in). */
     const lids = new Map<string, Lid>();
     const spent = new Map<string, Lid>();
+    /* The timers of the lids that have not yet landed, by play: each is cleared with its lid, so a cleared run makes no sound. */
+    const landings = new Map<string, ReturnType<typeof setTimeout>>();
     /* The lid's own generator: from the run's seed and the play's id, so that none of the numbers a throw draws (this can's or any other's) is moved. */
     let lidSeed = 0;
 
@@ -511,7 +519,8 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         const depth = String(depthOf(v.position.z));
         if (depth !== c.depth) { group.style.zIndex = depth; c.depth = depth; }
         if (Math.abs(v.fold - c.fold) > 0.002) {
-          c.list = piecesFor(c.object, v.fold, c.lidOn);
+          /* Only a hinged object (the chair, the ladder) has a different list at each fold; the others' lists are the ones the cache holds (OPEN, BARE, less a lid thrown). */
+          if (SHAPES[c.object].hinge) c.list = piecesFor(c.object, v.fold, c.lidOn);
           c.fold = v.fold;
           c.matrices = c.list.map((p) => `matrix3d(${p.matrix.map((n) => +n.toFixed(5)).join(', ')})`);
         }
@@ -546,13 +555,14 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       }
     };
 
-    const shake = (): void => {
+    /* The hit's shake: 4 px, and the ladder's 1.5 times that (6 px: steel-chair.css, `heavy`). */
+    const shake = (heavy: boolean): void => {
       if (reduced) return;
       const at = body ?? el;
       if (shaken && shaken !== at) shaken.removeAttribute(SHAKE_MARK);
       at.removeAttribute(SHAKE_MARK);
       void at.offsetWidth;
-      at.setAttribute(SHAKE_MARK, '');
+      at.setAttribute(SHAKE_MARK, heavy ? 'heavy' : '');
       shaken = at;
     };
 
@@ -562,7 +572,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       if (e.kind === 'hit') {
         setDents((d) => (d.some((x) => x.play === play) ? d : [...d, { play, x: e.at.x + INSET, y: e.at.y - HIT_LIFT, full: false }]));
         growing.set(play, null);
-        shake();
+        shake(objectOf(play) === 'ladder');
         if (objectOf(play) === 'can') throwLid(play, e);
         if (loud) void latest.current.sound.play(SOUNDS[objectOf(play)].hit, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       } else if (e.kind === 'floor' && loud) {
@@ -606,8 +616,18 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       const at = { x: e.at.x + INSET + m0[4]! * LID_TOP, y: e.at.y - HIT_LIFT + m0[5]! * LID_TOP };
       const arc = lidArcOf(lidRand, at, { width: box.w, height: box.h });
       lids.set(play, { group, nodes, list, home, arc, m0, age: 0, shades: [], done: false });
+      if (loud) {
+        /* The lid lands where nobody sees it, a beat later: one of the can-settle takes (the pick has a generator of its own, so no other draw moves). */
+        const take = 1 + Math.floor(rng(seedOfIds([String(lidSeed), play, 'lid-lands']))() * LID_TAKES);
+        clearTimeout(landings.get(play));
+        landings.set(play, setTimeout(() => {
+          landings.delete(play);
+          void latest.current.sound.play(`${LID_LANDS}-${take}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
+        }, LID_LANDS_MS));
+      }
     };
     const putLidsBack = (play?: string): void => {
+      for (const [id, timer] of [...landings]) if (play === undefined || id === play) { clearTimeout(timer); landings.delete(id); }
       for (const from of [lids, spent]) {
         for (const [id, l] of [...from]) {
           if (play !== undefined && id !== play) continue;
@@ -725,9 +745,12 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
            would poke out of it. Only the dent goes (it is decoration): its play, its chair and the Lens's count are unchanged. A dent that poked
            out as far before (it landed near a border) stays; only one that pokes out farther than it did is dropped. */
         const now = box;
-        const radius = dentPrimitives([{ x: 0, y: 0 }], { width: geoNow?.width ?? 0, height: geoNow?.zone ?? 0 })[0]!.size / 2;
+        /* The plain dent's radius, or the dent's own where its shape is bigger (the can's and the ladder's may pass the cap). */
+        const area = { width: geoNow?.width ?? 0, height: geoNow?.zone ?? 0 };
+        const plain = dentPrimitives([{ x: 0, y: 0 }], area)[0]!.size / 2;
+        const radiusOf = (play: string): number => Math.max(plain, dentPrimitives([{ x: 0, y: 0, shape: shapeOf(play) }], area)[0]!.size / 2);
         setDents((d) => {
-          const kept = d.filter((x) => overshoot(x, radius, now) <= overshoot(x, radius, was) + 0.01);
+          const kept = d.filter((x) => overshoot(x, radiusOf(x.play), now) <= overshoot(x, radiusOf(x.play), was) + 0.01);
           return kept.length === d.length ? d : kept;
         });
         if (reduced) { settle(world, SETTLE_S); paint(); } else wake();

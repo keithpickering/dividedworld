@@ -20,8 +20,8 @@ export const ui: CardUi = {
   Effect: SteelChairEffect,
   sounds: [
     'steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4',
-    'steel-chair.can-hit', 'steel-chair.can-settle-1', 'steel-chair.can-settle-2',
-    'steel-chair.ladder-hit', 'steel-chair.ladder-settle-1', 'steel-chair.ladder-settle-2',
+    'steel-chair.can-settle-1', 'steel-chair.can-settle-2',
+    'steel-chair.ladder-settle-1', 'steel-chair.ladder-settle-2',
     'steel-chair.extinguisher-hit', 'steel-chair.extinguisher-settle-1', 'steel-chair.extinguisher-settle-2', 'steel-chair.extinguisher-hiss',
   ],
   art: { color: '#ff3d7f', ink: '#14030a', canvas: steelChairCanvas, mark: steelChairMark, credit: steelChairArt.credit, tagline: 'Dent a post.' },

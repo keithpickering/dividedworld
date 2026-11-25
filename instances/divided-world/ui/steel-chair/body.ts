@@ -397,32 +397,33 @@ function lyingThickness(shape: Shape): number {
   return Math.min(...shape.faces.map((f) => 2 * shape.support(f)));
 }
 
+/** How thick a chair lies, px (HALF[2] each side): what two of them under an object add to its rest. */
+export const CHAIR_THICKNESS = 2 * HALF[2];
+
 /**
- * The highest a corner of a sleeping shape reaches, worked out as the chair's REST_RISE comment does it, but over the thickest object that
- * can lie under it: it lies on two more of that thickness (the effect keeps three live objects), plus one more of its own thickness for lying
- * across the edge of the stack, or its own height for one that stands on its end, and 1 px for the 0.5 px (TOUCH) of each of two contacts.
+ * The highest a corner of a sleeping shape reaches, worked out as the chair's REST_RISE comment does it, but with the owner's reading of
+ * 2026-11-25 (issue #1104): an object rests on at most two chairs (not on the thickest object that could lie under it), so that is two chair
+ * thicknesses; then its own lying thickness twice (lying flat on that stack, and lying across the edge of it one thickness higher), or its
+ * own height for one that stands on its end; and 1 px for the 0.5 px (TOUCH) of each of two contacts. The chair's own is 33 by the same
+ * sum (two chairs, two of itself, 1), which is why it keeps REST_RISE.
  */
-function restRiseOver(shape: Shape, thickest: number): number {
-  const lying = 2 * thickest + 2 * lyingThickness(shape);
-  const standing = shape.sleepsUpright ? 2 * thickest + 2 * shape.support([0, 1, 0]) : 0;
-  return Math.max(lying, standing) + 2 * 0.5;
+function restRiseOver(shape: Shape): number {
+  const lying = 2 * lyingThickness(shape);
+  const standing = shape.sleepsUpright ? 2 * shape.support([0, 1, 0]) : 0;
+  return 2 * CHAIR_THICKNESS + Math.max(lying, standing) + 2 * 0.5;
 }
 
-const CAN = prismShape(15, 40, 12);
-const LADDER = boxShape([15, 48, 3], true);
-const EXTINGUISHER = { ...prismShape(7.5, 50, 12), spout: [0, -25, 0] as Vec3 };
-/** The thickest any object lies, px: what one object may lie under two of. */
-const THICKEST = Math.max(...[CHAIR, CAN, LADDER, EXTINGUISHER].map(lyingThickness));
+/* The owner's tuned sizes (2026-11-25, from his bench): the reaches are 48.9, 50.6 and 47.0, none past the chair's 50.7. */
+const CAN = prismShape(25, 84, 12);
+const LADDER = boxShape([15, 48, 6], true);
+const EXTINGUISHER = { ...prismShape(13.5, 90, 12), spout: [18, -39.6, 0] as Vec3 };
 
-/**
- * The shape of each thrown object. The chair keeps the rest it had before shapes (REST_RISE, which chair.ts's room is made from); the other
- * three are worked out over the thickest object that can lie under them (restRiseOver).
- */
+/** The shape of each thrown object. The chair keeps the rest it had before shapes (REST_RISE, which chair.ts's room is made from). */
 export const SHAPES: Record<ThrownObject, Shape> = {
   chair: CHAIR,
-  can: { ...CAN, restRise: restRiseOver(CAN, THICKEST) },
-  ladder: { ...LADDER, restRise: restRiseOver(LADDER, THICKEST) },
-  extinguisher: { ...EXTINGUISHER, restRise: restRiseOver(EXTINGUISHER, THICKEST) },
+  can: { ...CAN, restRise: restRiseOver(CAN) },
+  ladder: { ...LADDER, restRise: restRiseOver(LADDER) },
+  extinguisher: { ...EXTINGUISHER, restRise: restRiseOver(EXTINGUISHER) },
 };
 
 /** The corners of a body as the view shows it (a box's eight, in the order a bit pattern of (x, y, z) signs counts). */

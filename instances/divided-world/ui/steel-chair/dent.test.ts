@@ -734,10 +734,10 @@ describe('dentShape: each object has its own dent', () => {
     }
     return s;
   };
-  test('the ladder is long and narrow (rx 0.35 to 0.45 of ry) with one ridge lobe', () => {
+  test('the ladder is long and a little wider than before (rx 0.45 to 0.55 of ry) with one ridge lobe', () => {
     for (const id of IDS200) {
       const s = lobesOk(id, 'ladder', [1, 1], [0.072, 0.132], [0.3, 0.6]);
-      assert.ok(within(s.rx / s.ry, 0.35, 0.45), `${id} ${s.rx / s.ry}`);
+      assert.ok(within(s.rx / s.ry, 0.45, 0.55), `${id} ${s.rx / s.ry}`);
       assert.ok(within(s.ry, AXIS_MIN, AXIS_MAX));
     }
   });
@@ -748,19 +748,22 @@ describe('dentShape: each object has its own dent', () => {
       assert.ok(s.rx <= AXIS_MAX && s.ry <= AXIS_MAX && s.rx >= AXIS_MIN * 0.96 && s.ry >= AXIS_MIN * 0.96);
     }
   });
-  test('the extinguisher is round, 70% of the chair, has 1 or 2 lobes and is the deepest', () => {
+  test('the extinguisher is round, 80% of the chair, has 1 or 2 lobes and is the deepest', () => {
     for (const id of IDS200) {
       const s = lobesOk(id, 'extinguisher', [1, 2], [0.12, 0.22], [0.6, 0.9]);
       assert.equal(s.rx, s.ry);
-      assert.ok(within(s.rx, AXIS_MIN * 0.7, AXIS_MAX * 0.7));
+      assert.ok(within(s.rx, AXIS_MIN * 0.8, AXIS_MAX * 0.8));
     }
   });
-  test('the extinguisher\'s box is smaller than the chair\'s for the same id', () => {
+  test('the extinguisher\'s box is the smallest: its largest is under 0.8 of the chair\'s cap, and smaller than the chair\'s on average', () => {
+    let ext = 0, chair = 0;
     for (const id of IDS200) {
       const a = dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'extinguisher') }], { width: 1000, height: 1000 })[0]!;
       const b = dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'chair') }], { width: 1000, height: 1000 })[0]!;
-      assert.ok(a.width < b.width && a.height < b.height && a.size < b.size, id);
+      assert.ok(a.size <= 0.8 * FULL_DENT + 1e-9, id);
+      ext += a.size; chair += b.size;
     }
+    assert.ok(ext < 0.9 * chair, `${ext / 200} against the chair's ${chair / 200}`);
   });
   test('the same id and object give the same dent', () => {
     for (const o of ['can', 'ladder', 'extinguisher'] as const) assert.deepEqual(dentShape('x', o), dentShape('x', o));
@@ -827,5 +830,65 @@ describe('the chair\'s images and primitives equal main\'s (dent-images-record.j
     }
     assert.equal(Object.keys(record).length, 50);
     assert.deepEqual(got, record);
+  });
+});
+
+describe('the owner\'s tuning of the dents (2026-11-25): the ladder bigger and darker, the can scaled to its size, the extinguisher a little bigger', () => {
+  const IDS = Array.from({ length: 100 }, (_, i) => `tuned-${i}`);
+  const larger = (p: { width: number; height: number }) => Math.max(p.width, p.height);
+  const meanOf = (object: 'chair' | 'can' | 'ladder' | 'extinguisher', box = { width: 2000, height: 2000 }) =>
+    IDS.reduce((sum, id) => sum + larger(dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, object) }], box)[0]!), 0) / IDS.length;
+  test('the chair\'s shape carries no size or darkness at all (so its records are what they were)', () => {
+    for (const id of IDS) { const s = dentShape(id, 'chair'); assert.equal('size' in s, false); assert.equal('darkness' in s, false); }
+  });
+  test('the ladder\'s dent is bigger than before (1.3 of the cap) and 0.28 / 0.18 as dark', () => {
+    const s = dentShape('tuned-0', 'ladder');
+    assert.equal(s.size, 1.3);
+    assert.ok(Math.abs(s.darkness! - 0.28 / 0.18) < 1e-9, `${s.darkness}`);
+    assert.ok(meanOf('ladder') > 1.2 * meanOf('chair'), `${meanOf('ladder')} against ${meanOf('chair')}`);
+    for (const id of IDS) assert.ok(larger(dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'ladder') }], { width: 2000, height: 2000 })[0]!) <= 1.3 * FULL_DENT + 1e-9);
+  });
+  test('the can\'s dent is scaled to its size (1.25 of the cap), the extinguisher\'s is the smallest and has grown', () => {
+    assert.equal(dentShape('tuned-0', 'can').size, 1.25);
+    assert.ok(meanOf('can') > 1.15 * meanOf('chair'));
+    assert.ok(meanOf('extinguisher') < meanOf('chair'));
+    assert.ok(meanOf('extinguisher') / meanOf('chair') > 0.7 && meanOf('extinguisher') / meanOf('chair') < 0.85, `${meanOf('extinguisher') / meanOf('chair')}`);
+  });
+  test('a grown dent is still held to 60% of the box and to the height it may land in', () => {
+    for (const object of ['can', 'ladder'] as const) for (const id of IDS) {
+      const shape = dentShape(id, object);
+      const wide = dentPrimitives([{ x: 300, y: 30, shape }], { width: 120, height: 400 })[0]!;
+      assert.ok(larger(wide) <= 0.6 * 120 + 1e-9, `${object} ${larger(wide)} in 120 wide`);
+      const low = dentPrimitives([{ x: 300, y: 30, shape }], { width: 900, height: 62 })[0]!;
+      assert.ok(larger(low) <= 62 + 1e-9, `${object} ${larger(low)} in 62 high`);
+    }
+  });
+  test('each object\'s dent is centered on the point it is given, which is its body\'s hit point', () => {
+    for (const object of ['chair', 'can', 'ladder', 'extinguisher'] as const) for (const id of IDS) {
+      const p = dentPrimitives([{ x: 321.5, y: 87.25, shape: dentShape(id, object) }], { width: 700, height: 300 })[0]!;
+      assert.ok(Math.abs(p.x + p.width / 2 - 321.5) < 1e-9 && Math.abs(p.y + p.height / 2 - 87.25) < 1e-9, `${object} ${id}`);
+    }
+  });
+  test('a darker dent has every pixel of its shade at least as dark and some darker, and none past the 127 the darkest may be', () => {
+    const shape = dentShape('tuned-3', 'ladder');
+    const h = dentHeight(shape, 90, 90);
+    const plain = dentShade(h, 90, 90), dark = dentShade(h, 90, 90, shape.darkness);
+    let more = 0, sumPlain = 0, sumDark = 0;
+    for (let i = 3; i < plain.length; i += 4) {
+      assert.ok(dark[i]! >= plain[i]!, `pixel ${i}`);
+      assert.ok(dark[i]! <= 127);
+      if (dark[i]! > plain[i]!) more++;
+      sumPlain += plain[i]!; sumDark += dark[i]!;
+    }
+    assert.ok(more > 100, `${more}`);
+    assert.ok(sumDark > 1.15 * sumPlain && sumDark < 1.8 * sumPlain, `${sumDark / sumPlain}`);
+    assert.deepEqual(dentShade(h, 90, 90, 1), plain);
+  });
+  test('dentImages draws the ladder with its darkness: darker than the same shape made plain', () => {
+    const box = { x: 0, y: 0, size: 90, width: 90, height: 90 };
+    const toUrl = (px: Uint8ClampedArray) => Array.from(px).join(',');
+    const made = dentImages('tuned-3', box, 1, [], toUrl as never, 'ladder');
+    const shape = dentShape('tuned-3', 'ladder');
+    assert.equal(made.shade, toUrl(dentShade(dentHeight(shape, 90, 90), 90, 90, shape.darkness) as never));
   });
 });

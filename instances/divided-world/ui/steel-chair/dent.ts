@@ -73,6 +73,10 @@ export interface DentShape {
   /** A lobe is round (`radius`) unless it has an `across`: then it is a ridge, `across` wide along `u` and `radius` along `v` (the ladder's rung). */
   readonly lobes: readonly { readonly u: number; readonly v: number; readonly radius: number; readonly depth: number; readonly across?: number }[];
   readonly crumple: readonly number[];
+  /** How many times the cap (`FULL_DENT`) the dent's larger axis may be (`dentPrimitives`); absent is 1, the chair's. The owner's tuning of 2026-11-25. */
+  readonly size?: number;
+  /** How much darker the shade is drawn than the map gives it (`dentShade`); absent is 1, the chair's. */
+  readonly darkness?: number;
 }
 
 /**
@@ -88,15 +92,18 @@ interface DentKind {
   readonly lobesMin: number; readonly lobesSpan: number;
   readonly radius: readonly [number, number]; readonly depth: readonly [number, number];
   readonly crumple: number;
+  /** `size` and `darkness` of the shape (1 is the chair's and leaves them off it, so the chair's recorded shapes stay equal). */
+  readonly size: number; readonly darkness: number;
 }
 const DENT_KINDS: Readonly<Record<ThrownObject, DentKind>> = {
-  chair: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'free', ratio: [1, 1], lobesMin: 2, lobesSpan: 3, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5 },
-  // long and narrow: a crease with one rung's ridge across its long axis
-  ladder: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'long', ratio: [0.35, 0.1], lobesMin: 1, lobesSpan: 1, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5 },
-  // rounder (axes within 5%), 2 or 3 lobes, deeper; `axisMax` leaves room for the ratio so no axis passes AXIS_MAX
-  can: { axisMin: AXIS_MIN, axisMax: AXIS_MAX / 1.04, aspect: 'near', ratio: [0.96, 0.08], lobesMin: 2, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.45, 0.3], crumple: 0.5 },
-  // round, 70% of the chair's size, 1 or 2 lobes, the deepest
-  extinguisher: { axisMin: AXIS_MIN * 0.7, axisMax: AXIS_MAX * 0.7, aspect: 'round', ratio: [1, 0], lobesMin: 1, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.6, 0.3], crumple: 0.5 },
+  chair: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'free', ratio: [1, 1], lobesMin: 2, lobesSpan: 3, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5, size: 1, darkness: 1 },
+  // long and narrow: a crease with one rung's ridge across its long axis. The owner's tuning (2026-11-25): bigger (1.3 times the cap, a little wider
+  // too) and darker, by the bench's 0.28 against the chair's 0.18
+  ladder: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'long', ratio: [0.45, 0.1], lobesMin: 1, lobesSpan: 1, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5, size: 1.3, darkness: 0.28 / 0.18 },
+  // rounder (axes within 5%), 2 or 3 lobes, deeper; `axisMax` leaves room for the ratio so no axis passes AXIS_MAX. Scaled to its 50 px (from 30): 1.25 times the cap
+  can: { axisMin: AXIS_MIN, axisMax: AXIS_MAX / 1.04, aspect: 'near', ratio: [0.96, 0.08], lobesMin: 2, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.45, 0.3], crumple: 0.5, size: 1.25, darkness: 1 },
+  // round, 80% of the chair's size (70% before it grew from 15 to 27 px across), 1 or 2 lobes, the deepest
+  extinguisher: { axisMin: AXIS_MIN * 0.8, axisMax: AXIS_MAX * 0.8, aspect: 'round', ratio: [1, 0], lobesMin: 1, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.6, 0.3], crumple: 0.5, size: 1, darkness: 1 },
 };
 
 /**
@@ -127,7 +134,7 @@ export function dentShape(playId: string, object: ThrownObject = 'chair'): DentS
     return { u: dist * Math.cos(angle), v: dist * Math.sin(angle), radius, depth };
   });
   const crumple = Array.from({ length: 81 }, () => -k.crumple + 2 * k.crumple * rand());
-  return { rx, ry, turn, waves, lobes, crumple };
+  return { rx, ry, turn, waves, lobes, crumple, ...(k.size === 1 ? {} : { size: k.size }), ...(k.darkness === 1 ? {} : { darkness: k.darkness }) };
 }
 
 /** One dent's `feImage`, and the box of its shading: its top left corner, its width and height, and the larger of the two, in the box's px. */
@@ -171,14 +178,17 @@ export function zoneHeight(areaHeight: number, room: number = roomHeightOf([])):
  * Each dent's `feImage` numbers, in order. A dent's larger axis is at most `FULL_DENT` (160) px, at most 60% of the box's width (a narrow post
  * would otherwise be mostly dent) and at most the box's height (the caller gives the height a dent may land in, `zoneHeight`); a dent with a `shape` has its two axes scaled by it,
  * divided by `AXIS_MAX` so that the larger can never pass that limit. The
- * dent's box is centered on its point. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
+ * dent's box is centered on its point. A shape with a `size` (the can's, the ladder's) takes it times the cap, held to the same two limits. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
  * elliptical dent, and the bend, the shade and the light, all from that one map, agree.
  */
 export function dentPrimitives(dents: readonly { x: number; y: number; shape?: DentShape }[], box: { width: number; height: number }): DentPrimitive[] {
-  const base = Math.min(FULL_DENT, 0.6 * box.width, box.height);
+  const room = Math.min(0.6 * box.width, box.height);
+  const base = Math.min(FULL_DENT, room);
   return dents.map((d) => {
-    const width = d.shape ? (base * d.shape.rx) / AXIS_MAX : base;
-    const height = d.shape ? (base * d.shape.ry) / AXIS_MAX : base;
+    /* An object whose dent is bigger (`size`) may pass the cap, but never 60% of the box's width or the height it may land in. */
+    const cap = d.shape?.size ? Math.min(FULL_DENT * d.shape.size, room) : base;
+    const width = d.shape ? (cap * d.shape.rx) / AXIS_MAX : base;
+    const height = d.shape ? (cap * d.shape.ry) / AXIS_MAX : base;
     return { x: d.x - width / 2, y: d.y - height / 2, size: Math.max(width, height), width, height };
   });
 }
@@ -333,8 +343,8 @@ function lighting(h: Float32Array, width: number, height: number): Lit {
  * least lit sample lands on 128/255; its alpha is 255 less that gray, so black at that alpha over a color `c` leaves `c × gray / 255`, which is what
  * multiplying by the gray gave. A map with no slope (which no shape gives) is alpha 0 everywhere.
  */
-export function dentShade(h: Float32Array, width: number, height: number): Uint8ClampedArray {
-  return alphaPixels(shadeGray(lighting(h, width, height)), 0, true);
+export function dentShade(h: Float32Array, width: number, height: number, darkness = 1): Uint8ClampedArray {
+  return alphaPixels(shadeGray(lighting(h, width, height), darkness), 0, true);
 }
 /** Gray bytes as RGBA of one color with an alpha: the gray itself, or (`flip`) 255 less it. */
 function alphaPixels(gray: Uint8Array, rgb: number, flip: boolean): Uint8ClampedArray {
@@ -346,11 +356,11 @@ function alphaPixels(gray: Uint8Array, rgb: number, flip: boolean): Uint8Clamped
   return out;
 }
 /** The shade's gray map (255 flat, 128 darkest), one byte a pixel: what the multiply gave, and what `capped` works on. */
-function shadeGray({ lam }: Lit): Uint8Array {
+function shadeGray({ lam }: Lit, darkness = 1): Uint8Array {
   const flat = LIGHT[2];
   let lo = Infinity;
   for (let i = 0; i < lam.length; i++) lo = Math.min(lo, lam[i]!);
-  const g = flat - lo > 1e-12 ? (1 - 128 / 255) / (flat - lo) : 0;
+  const g = flat - lo > 1e-12 ? ((1 - 128 / 255) / (flat - lo)) * darkness : 0;
   const out = new Uint8Array(lam.length);
   for (let i = 0; i < lam.length; i++) out[i] = Math.round(255 * Math.min(1, Math.max(128 / 255, 1 + (lam[i]! - flat) * g)));
   return out;
@@ -536,7 +546,7 @@ function keptOf(play: string, w: number, h: number, density: number, toUrl: type
   const bendMap = dentHeight(shape, w, h);
   const map = sw === w && sh === h ? bendMap : dentHeight(shape, sw, sh);
   const lit = lighting(map, sw, sh);
-  const shadeMap = shadeGray(lit), lightMap = lightGray(lit, sw, sh);
+  const shadeMap = shadeGray(lit, shape.darkness), lightMap = lightGray(lit, sw, sh);
   const made: Kept = {
     bend: toUrl(dentBend(bendMap, w, h), w, h),
     shade: toUrl(alphaPixels(shadeMap, 0, true), sw, sh),

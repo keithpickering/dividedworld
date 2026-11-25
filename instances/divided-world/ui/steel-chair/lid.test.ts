@@ -7,7 +7,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { rng } from './body.ts';
-import { lidArcOf, lidAt, LID_SECONDS } from './lid.ts';
+import { lidArcOf, lidAt, LID_SECONDS, LID_SPEED } from './lid.ts';
 
 const BOXES = [{ width: 640, height: 330 }, { width: 340, height: 520 }, { width: 980, height: 240 }, { width: 300, height: 1600 }];
 const SEEDS = 500;
@@ -77,4 +77,24 @@ test('the same draws are the same arc, and the orientation is a rotation', () =>
   assert.equal(m.length, 16);
   const col = (c: number) => [m[c * 4]!, m[c * 4 + 1]!, m[c * 4 + 2]!];
   for (let c = 0; c < 3; c++) assert.ok(Math.abs(Math.hypot(...(col(c) as [number, number, number])) - 1) < 1e-9);
+});
+
+test('the lid is launched at 550 px/s, give or take a tenth, where nothing needs it faster', () => {
+  assert.equal(LID_SPEED, 550);
+  const box = BOXES[0]!;
+  const hitAt = { x: 70, y: 150 };
+  let side = 0, top = 0;
+  for (let seed = 0; seed < SEEDS; seed++) {
+    const viaTop = rng(seed + 1)() < 0.5;
+    const arc = lidArcOf(rng(seed + 1), hitAt, box);
+    if (viaTop) {
+      /* Up fast enough to be 80 px past the border before it peaks: 1.05 * sqrt(2 g (150 + 80)) = 981 px/s, which the nominal 550 cannot do. */
+      assert.ok(-arc.vy >= 0.99 * 1.05 * Math.sqrt(2 * 1900 * (hitAt.y + 80)), `seed ${seed}: ${arc.vy}`);
+      top++;
+    } else {
+      assert.ok(Math.abs(arc.vx) >= 0.9 * LID_SPEED - 1e-9 && Math.abs(arc.vx) <= 1.1 * LID_SPEED + 1e-9, `seed ${seed}: ${arc.vx}`);
+      side++;
+    }
+  }
+  assert.ok(side > 100 && top > 100, `${side} side, ${top} top`);
 });

@@ -21,7 +21,7 @@
  * vanish when seen edge-on.
  */
 
-import { DEPTH, HALF, SHAPES } from './body.ts';
+import { DEPTH, HALF, SHAPES, type Vec3 } from './body.ts';
 import type { ThrownObject } from './objects.ts';
 
 /** A column-major 4 by 4, 16 numbers: what `matrix3d()` and `DOMMatrix` take. */
@@ -126,18 +126,29 @@ export function piecesOf(fold: number): Piece[] {
 
 /* ---------- the ladder ---------- */
 
-const LADDER_HALF = [15, 48, 3] as const;
-const ALUMINUM: Piece['color'] = [214, 222, 232];
+const LADDER_HALF = [15, 48, 6] as const;
+/** The step ladder is yellow (the owner's bench, 2026-11-25): the rails, the treads' lighter yellow, and a darker brace. */
+const YELLOW: Piece['color'] = [222, 168, 38];
+const YELLOW_TREAD: Piece['color'] = [236, 196, 74];
+const YELLOW_BRACE: Piece['color'] = [150, 104, 28];
 const GALVANIZED: Piece['color'] = [184, 190, 194];
 const GALVANIZED_DARK: Piece['color'] = [118, 124, 130];
 const RED: Piece['color'] = [196, 30, 28];
+const RED_DARK: Piece['color'] = [150, 30, 30];
 const BLACK: Piece['color'] = [44, 44, 48];
+const WHITE: Piece['color'] = [238, 238, 232];
+
+/** The ladder's rails: the front pair 6 px, the rear pair 5 px, and its four treads, each 13 px deep. */
+const FRONT_RAIL = 6;
+const REAR_RAIL = 5;
+const TREAD_DEPTH = 13;
+const TREAD_Y = [-30, -9, 12, 33] as const;
 
 /**
- * The ladder's pieces at `fold` (0 shut, 1 open), a three-step A-frame: the front frame (two rails, a tube down each and three treads
- * between them) stays in the ladder's frame, and the rear frame and the spreader hang from the hinge at the top and turn with `fold`. The
- * spreader is the brace between the frames: shut it lies along the rails, open it turns across, from one frame to the other. Shut, every
- * piece fits in the 30 by 96 by 6 box the body simulates.
+ * The ladder's pieces at `fold` (0 shut, 1 open), a four-step A-frame: the front frame (two 6 px rails, a tube down each and four 13 px treads
+ * between them) stays in the ladder's frame, the treads stand out from it as the ladder opens (shut they lie flat on it), and the rear frame
+ * (two 5 px rails) and the spreader hang from the hinge at the top and turn with `fold`. The spreader is the brace between the frames: shut it
+ * lies along the rails, open it turns across, from one frame to the other. Shut, every piece fits in the 30 by 96 by 12 box the body simulates.
  */
 export function ladderPiecesOf(fold: number): Piece[] {
   const f = Math.min(1, Math.max(0, fold));
@@ -146,17 +157,20 @@ export function ladderPiecesOf(fold: number): Piece[] {
   const rearOpen = -28;
   const rearAt = mul(mul(translate(0, hingeY, 0), rotateX(rearOpen * f)), translate(0, (hh * 2 - 4) / 2, -1.5));
   const braceAt = mul(mul(mul(translate(0, hingeY, 0), rotateX((rearOpen * f) / 2)), translate(0, 30, 0)), rotateX(90 * f));
-  const rail = hw - TUBE / 2;
-  const own = { color: ALUMINUM };
+  const rail = hw - FRONT_RAIL / 2;
+  const rearRail = hw - 2 - REAR_RAIL / 2;
+  const own = { color: YELLOW };
+  /* A tread is a panel pivoting about its top edge: flat on the front frame shut, standing out its full depth open. */
+  const treadAt = (y: number): Matrix => mul(mul(translate(0, y, 2.5), rotateX(88 * f)), translate(0, TREAD_DEPTH / 2, 0));
   return [
     piece('front', 'frame', hw * 2, hh * 2, IDENTITY, own),
-    ...[-26, 0, 26].map((y, i) => piece(`tread-${i}`, 'panel', hw * 2 - 8, 6, translate(0, y, 1), own)),
+    ...TREAD_Y.map((y, i) => piece(`tread-${i}`, 'panel', hw * 2 - 8, TREAD_DEPTH, treadAt(y), { color: YELLOW_TREAD })),
     piece('rear', 'frame', hw * 2 - 4, hh * 2 - 4, rearAt, own),
-    piece('spreader', 'panel', 20, 16, braceAt, own),
-    ...tube('rail-left', hh * 2, translate(-rail, 0, 0), own),
-    ...tube('rail-right', hh * 2, translate(rail, 0, 0), own),
-    ...tube('rear-rail-left', hh * 2 - 4, mul(rearAt, translate(-(rail - 2), 0, 0)), own),
-    ...tube('rear-rail-right', hh * 2 - 4, mul(rearAt, translate(rail - 2, 0, 0)), own),
+    piece('spreader', 'panel', 20, 16, braceAt, { color: YELLOW_BRACE }),
+    ...tube('rail-left', hh * 2, translate(-rail, 0, 0), own, FRONT_RAIL),
+    ...tube('rail-right', hh * 2, translate(rail, 0, 0), own, FRONT_RAIL),
+    ...tube('rear-rail-left', hh * 2 - 4, mul(rearAt, translate(-rearRail, 0, 0)), own, REAR_RAIL),
+    ...tube('rear-rail-right', hh * 2 - 4, mul(rearAt, translate(rearRail, 0, 0)), own, REAR_RAIL),
   ];
 }
 
@@ -208,12 +222,15 @@ export function prismPiecesOf(radius: number, height: number, sides: number, ext
   ];
 }
 
-const CAN = { radius: 15, height: 40, sides: 12 } as const;
+/** The can's body, as `SHAPES.can` (body.ts) has it: 50 across and 84 tall, the lid on its rim above that. */
+const CAN = { radius: 25, height: 84, sides: 12 } as const;
+/** The lid is 27.3 px in radius, a little wider than the rim. */
+const LID_RADIUS = 27.3;
 /** Where the can's lid stands on it: the lid's middle, in the can's frame (y down), which the lid's arc turns about (lid.ts, Effect.tsx). */
 export const LID_TOP = -CAN.height / 2 - 0.5;
 
 /**
- * The trash can: the galvanized barrel (a little inside the body's own 15 px rim, so its bands, which stand proud of it, are not outside
+ * The trash can: the galvanized barrel (a little inside the body's own 25 px rim, so its bands, which stand proud of it, are not outside
  * it), three corrugation bands, two side handles and, last, the lid with its handle. The lid's pieces carry `lid: true`, so that Task 6 can
  * move them on their arc and the can without its lid (`lidOn` false) is the same list less its end.
  */
@@ -224,44 +241,48 @@ export function canPiecesOf(lidOn: boolean): Piece[] {
   const barrel = radius - 0.6;
   const out: Piece[] = [
     ...prismPiecesOf(barrel, height, sides, body),
-    ...[-11, 0, 11].flatMap((y, i) => ringOf(`band-${i}`, radius - 0.1, 2.4, sides, y, bands)),
-    ...tube('handle-left', 12, mul(translate(-radius, -8, 0), rotateZ(0)), { color: GALVANIZED_DARK }, 2),
-    ...tube('handle-right', 12, mul(translate(radius, -8, 0), rotateZ(0)), { color: GALVANIZED_DARK }, 2),
+    ...[-32, 0, 32].flatMap((y, i) => ringOf(`band-${i}`, radius - 0.1, 4, sides, y, bands)),
+    ...tube('handle-left', 20, mul(translate(-radius, -17, 0), rotateZ(0)), { color: GALVANIZED_DARK }, 3),
+    ...tube('handle-right', 20, mul(translate(radius, -17, 0), rotateZ(0)), { color: GALVANIZED_DARK }, 3),
   ];
   if (lidOn) {
     const lid = { color: GALVANIZED, lid: true as const };
     const top = LID_TOP;
     out.push(
-      { ...capOf('lid-cap', radius + 0.4, sides, top, lid) },
-      ...tube('lid-handle', 12, mul(translate(0, top - 3.5, 0), rotateZ(90)), { color: BLACK, lid: true }, 2),
-      ...tube('lid-post-left', 4, translate(-5, top - 1.5, 0), { color: BLACK, lid: true }, 2),
-      ...tube('lid-post-right', 4, translate(5, top - 1.5, 0), { color: BLACK, lid: true }, 2),
+      { ...capOf('lid-cap', LID_RADIUS, sides, top, lid) },
+      ...tube('lid-handle', 22, mul(translate(0, top - 5, 0), rotateZ(90)), { color: BLACK, lid: true }, 4),
+      ...tube('lid-post-left', 5, translate(-8, top - 2.5, 0), { color: BLACK, lid: true }, 3),
+      ...tube('lid-post-right', 5, translate(8, top - 2.5, 0), { color: BLACK, lid: true }, 3),
     );
   }
   return out;
 }
 
 /**
- * The fire extinguisher: the red cylinder, a black collar below its top, a valve head, a short hose from the head down to the nozzle at the
- * spout's side, and the gauge disc on its front. Its body's spout is `SHAPES.extinguisher.spout`, at the top.
+ * The fire extinguisher, 27 across and 90 tall (the owner's bench, scaled 1.8 from the first one): the red cylinder up to a shoulder, a narrow
+ * neck above it, a white label, a lever across the valve on top, and a hose from the valve out to the nozzle at the spout, 18 px from the center
+ * (`SHAPES.extinguisher.spout`, body.ts: the hose ends there).
  */
 export function extinguisherPiecesOf(): Piece[] {
-  const radius = 7.5, height = 50, sides = 12;
+  const radius = 13.5, height = 90, sides = 12;
   const half = height / 2;
   const red = { color: RED };
   const black = { color: BLACK };
-  /* The hose runs from the valve head to its nozzle, slanting out and down: its long axis is local y, so it turns about z to lie along the run. */
-  const from = [1, -half - 2], to = [9, -half + 14];
-  const run = [to[0]! - from[0]!, to[1]! - from[1]!];
-  const length = Math.hypot(run[0]!, run[1]!);
-  const turnDeg = (Math.atan2(-run[0]!, run[1]!) * 180) / Math.PI;
-  const hoseAt = mul(translate((from[0]! + to[0]!) / 2, (from[1]! + to[1]!) / 2, 0), rotateZ(turnDeg));
+  const shoulder = -25.2;
+  const body = half - shoulder;
+  const spout = SHAPES.extinguisher.spout!;
+  const reach = spout[0], at = spout[1];
   return [
-    ...prismPiecesOf(radius - 0.4, height, sides, red),
-    ...ringOf('collar', radius - 0.05, 5, sides, -half + 9, black),
-    ...tube('valve', 6, translate(0, -half - 2, 0), black, 3),
-    ...tube('hose', length, hoseAt, black, 1.6),
-    piece('gauge', 'panel', 6, 6, translate(0, -half + 20, radius - 0.4), { clip: 'circle(50%)', color: [236, 236, 228] }),
+    ...ringOf('side', radius - 0.4, body, sides, shoulder + body / 2, red),
+    capOf('cap-top', radius - 0.4, sides, shoulder, { color: RED_DARK }),
+    capOf('cap-bottom', radius - 0.4, sides, half, { color: [120, 28, 28] }),
+    ...ringOf('label', radius - 0.05, 21.6, sides, 14.4, { color: WHITE }),
+    ...ringOf('neck', 5.6, 19.8, 8, -35.1, black),
+    piece('lever', 'panel', 27, 6.3, mul(translate(-1.8, -half, 0), rotateX(90)), black),
+    ...tube('valve', 8, translate(0, -half - 1, 0), black, 5),
+    ...tube('hose', reach - 4, mul(translate((reach + 4) / 2, at, 0), rotateZ(90)), black, 4),
+    piece('nozzle', 'panel', 4.5, 5.4, mul(translate(reach, at, 0), rotateZ(90)), { color: [200, 200, 205] }),
+    piece('gauge', 'panel', 9, 9, translate(0, -14, radius - 0.4), { clip: 'circle(50%)', color: [236, 236, 228] }),
   ];
 }
 
@@ -335,18 +356,63 @@ export const REACH = (CHAIR_REACH * CHAIR_REACH * (0.5 + K)) / (PERSPECTIVE - CH
 export const INSET = REACH;
 
 /**
+ * The outline of a piece in the object's frame: its rectangle's four corners through its matrix, or, for a piece clipped to a polygon (a prism's
+ * cap), the polygon's corners, since that is all of it that is drawn.
+ */
+export function pieceOutline(p: Piece): [number, number, number][] {
+  const m = p.matrix;
+  const at = (x: number, y: number): [number, number, number] => [m[0] * x + m[4] * y + m[12], m[1] * x + m[5] * y + m[13], m[2] * x + m[6] * y + m[14]];
+  const polygon = p.clip?.startsWith('polygon(') ? [...p.clip.matchAll(/([\d.]+)%\s+([\d.]+)%/gu)] : [];
+  if (polygon.length > 0) return polygon.map((q) => at(((Number(q[1]) - 50) / 100) * p.width, ((Number(q[2]) - 50) / 100) * p.height));
+  return ([[-1, -1], [1, -1], [1, 1], [-1, 1]] as const).map(([sx, sy]) => at((sx * p.width) / 2, (sy * p.height) / 2));
+}
+
+const protruded = new Map<ThrownObject, number>();
+/**
+ * How far past its body the resting object is drawn, px: the farthest any drawn point of the pieces it rests in (shut, and a can without its
+ * lid, which has left it by then) lies beyond the body's own extent in the direction it lies, taken over the body's face normals, the three
+ * axes and the point's own direction. A chair and a ladder are drawn inside their boxes (0); the extinguisher's valve and hose stand out
+ * of its cylinder, so that is the room it needs above its rest (`roomHeightOf`). Anything under 1e-6 is the arithmetic's, and is 0.
+ */
+export function protrusionOf(object: ThrownObject): number {
+  let out = protruded.get(object);
+  if (out === undefined) {
+    const shape = SHAPES[object];
+    const dirs: Vec3[] = [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+    for (const f of shape.faces) dirs.push(f);
+    let most = 0;
+    for (const piece of piecesFor(object, 0, false)) {
+      for (const p of pieceOutline(piece)) {
+        const len = Math.hypot(...p) || 1;
+        for (const d of [...dirs, [p[0] / len, p[1] / len, p[2] / len] as Vec3]) {
+          for (const sign of [1, -1]) {
+            const n: Vec3 = [sign * d[0], sign * d[1], sign * d[2]];
+            most = Math.max(most, n[0] * p[0] + n[1] * p[1] + n[2] * p[2] - shape.support(n));
+          }
+        }
+      }
+    }
+    out = most < 1e-6 ? 0 : most;
+    protruded.set(object, out);
+  }
+  return out;
+}
+
+/**
  * The height of the room the content area keeps above its bottom border while a body is live, px, so that a resting body reaches neither
  * the reactions row nor the last line of words. A body sleeps only while no corner is higher above the floor than its shape's `restRise`
  * (body.ts: one that goes quiet higher is nudged and falls over), so the highest drawn point of any rest is that of a corner `restRise`
- * above the floor at the deepest z a corner of a low body can have. That z is the very back of the glass's give (-(DEPTH + GIVE)) with
+ * above the floor at the deepest z a corner of a low body can have, and what the object is drawn with beyond its body (`protrusionOf`: the
+ * extinguisher's valve and hose) stands that much higher. That z is the very back of the glass's give (-(DEPTH + GIVE)) with
  * the shape's longest half extent (the chair's 45 px, HALF[1]) lying back along z from it, which is also the most the oblique view lifts
  * a point: K per px of depth, so K (Z_FRONT + DEPTH + GIVE + half). With the INSET the border lies below the world's floor the arithmetic is
  *
- *   INSET + restRise + K (Z_FRONT + DEPTH + GIVE + half)
+ *   INSET + restRise + protrusion + K (Z_FRONT + DEPTH + GIVE + half)
  *
  * rounded up, for the tallest of the objects the post's plays rolled (no objects: the chair's, 77). It is a bound and not a fit: a corner at
  * `restRise` (a chair across a stack) and a corner at the far back (a chair lying flat) are not the same corner, so the tallest rest the sample
- * draws is lower; chair.test.ts proves that none is higher, for each object. The effect sets it on the marked content area as
+ * draws is lower; chair.test.ts proves that none is higher, for each object, bodies and drawn pieces. The room depends on the objects only, and
+ * each play's object comes from its id (objects.ts), so a post's room is the same on every replay. The effect sets it on the marked content area as
  * `--dw-chair-room`, and the CSS (steel-chair.css: the `::after` and the strip in the host) keeps the chair's, `roomHeightOf([])`, as its fallback.
  */
 export function roomHeightOf(objects: readonly ThrownObject[]): number {
@@ -354,7 +420,7 @@ export function roomHeightOf(objects: readonly ThrownObject[]): number {
   for (const object of objects.length > 0 ? objects : (['chair'] as const)) {
     const shape = SHAPES[object];
     const half = Math.max(shape.support([1, 0, 0]), shape.support([0, 1, 0]), shape.support([0, 0, 1]));
-    room = Math.max(room, Math.ceil(INSET + shape.restRise + K * (Z_FRONT + DEPTH + GIVE + half)));
+    room = Math.max(room, Math.ceil(INSET + shape.restRise + protrusionOf(object) + K * (Z_FRONT + DEPTH + GIVE + half)));
   }
   return room;
 }

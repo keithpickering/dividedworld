@@ -27,6 +27,17 @@
   60% { transform: translate(-3px, 1px); }
   80% { transform: translate(2px, 0); }
 }
+/* The ladder's hit shakes the post 1.5 times as far as the chair's (the owner's tuning, 2026-11-25): 6 px against 4. */
+[data-dw-chair-shake='heavy'] {
+  animation-name: dw-chair-shake-heavy;
+}
+@keyframes dw-chair-shake-heavy {
+  0%, 100% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 1px); }
+  40% { transform: translate(6px, -1px); }
+  60% { transform: translate(-4.5px, 1px); }
+  80% { transform: translate(3px, 0); }
+}
 
 /*
  * The floor's room: `var(--dw-chair-room, 77px)` (chair.ts `roomHeightOf`: the effect sets the property from the objects its plays rolled, and 77 is the

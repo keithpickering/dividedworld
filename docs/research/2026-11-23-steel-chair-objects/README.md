@@ -36,3 +36,10 @@ Source and license for the manifest, as the chair's own sounds carry them: `sour
 `maker` "Divided World", and the license string of `steel-chair-hit.mp3`'s entry, word for word.
 
 Moved on 2026-11-25 to instances/divided-world/ui/sounds/ by the build of the plan, task 5.
+
+Changed on 2026-11-25 by the owner's tuning round. The can's own hit and floor now use the chair's sounds, and the ladder's hit is the
+chair's, so `steel-chair-can-hit.mp3` and `steel-chair-ladder-hit.mp3` (and their slots) were removed from
+`instances/divided-world/ui/sounds/`. The two can-settle takes became the sound of the lid landing out of sight, played 900 ms after its
+launch, so each had its lead-in trimmed: the audible impact (first sample over -45 dBFS, `ffmpeg -af silencedetect`) was 0.883 s into
+take 3 and 0.477 s into take 4, and after `-af atrim=start=0.873` (take 3) and `start=0.467` (take 4) and a re-encode at 128 kb/s
+(`-c:a libmp3lame -b:a 128k`) it is 0.010 s into each. `node tools/measure-sounds.mjs` refreshed their manifest entries.

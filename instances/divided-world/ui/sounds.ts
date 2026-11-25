@@ -23,10 +23,8 @@ import steelChairSettle1 from './sounds/steel-chair-settle-1.mp3?url';
 import steelChairSettle2 from './sounds/steel-chair-settle-2.mp3?url';
 import steelChairSettle3 from './sounds/steel-chair-settle-3.mp3?url';
 import steelChairSettle4 from './sounds/steel-chair-settle-4.mp3?url';
-import steelChairCanHit from './sounds/steel-chair-can-hit.mp3?url';
 import steelChairCanSettle1 from './sounds/steel-chair-can-settle-1.mp3?url';
 import steelChairCanSettle2 from './sounds/steel-chair-can-settle-2.mp3?url';
-import steelChairLadderHit from './sounds/steel-chair-ladder-hit.mp3?url';
 import steelChairLadderSettle1 from './sounds/steel-chair-ladder-settle-1.mp3?url';
 import steelChairLadderSettle2 from './sounds/steel-chair-ladder-settle-2.mp3?url';
 import steelChairExtinguisherHit from './sounds/steel-chair-extinguisher-hit.mp3?url';
@@ -38,6 +36,8 @@ const LAUGH = 'The audience laughs';
 const CHEER = 'The audience cheers';
 const BOO = 'The audience boos';
 const CLATTER = 'A chair clatters to the floor';
+/** The can-settle takes are the lid landing out of sight, a beat after it leaves (steel-chair/Effect.tsx plays them LID_LANDS_MS after the hit); the can itself uses the chair's sounds. */
+const LID_LANDS = 'A trash can lid clatters down somewhere';
 
 /** The loudness every sound is brought to, in LUFS. */
 export const TARGET_LUFS = -18;
@@ -76,10 +76,8 @@ export const sounds: SoundsUi = Object.freeze({
     slot('steel-chair.settle-2', 'steel-chair-settle-2.mp3', steelChairSettle2, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-3', 'steel-chair-settle-3.mp3', steelChairSettle3, CLATTER, 'var(--kb-salty)'),
     slot('steel-chair.settle-4', 'steel-chair-settle-4.mp3', steelChairSettle4, CLATTER, 'var(--kb-salty)'),
-    slot('steel-chair.can-hit', 'steel-chair-can-hit.mp3', steelChairCanHit, 'A trash can bangs', 'var(--kb-salty)'),
-    slot('steel-chair.can-settle-1', 'steel-chair-can-settle-1.mp3', steelChairCanSettle1, 'A trash can clatters to the floor', 'var(--kb-salty)'),
-    slot('steel-chair.can-settle-2', 'steel-chair-can-settle-2.mp3', steelChairCanSettle2, 'A trash can clatters to the floor', 'var(--kb-salty)'),
-    slot('steel-chair.ladder-hit', 'steel-chair-ladder-hit.mp3', steelChairLadderHit, 'A ladder clangs', 'var(--kb-salty)'),
+    slot('steel-chair.can-settle-1', 'steel-chair-can-settle-1.mp3', steelChairCanSettle1, LID_LANDS, 'var(--kb-salty)'),
+    slot('steel-chair.can-settle-2', 'steel-chair-can-settle-2.mp3', steelChairCanSettle2, LID_LANDS, 'var(--kb-salty)'),
     slot('steel-chair.ladder-settle-1', 'steel-chair-ladder-settle-1.mp3', steelChairLadderSettle1, 'A ladder clatters to the floor', 'var(--kb-salty)'),
     slot('steel-chair.ladder-settle-2', 'steel-chair-ladder-settle-2.mp3', steelChairLadderSettle2, 'A ladder clatters to the floor', 'var(--kb-salty)'),
     slot('steel-chair.extinguisher-hit', 'steel-chair-extinguisher-hit.mp3', steelChairExtinguisherHit, 'A fire extinguisher thunks', 'var(--kb-salty)'),
