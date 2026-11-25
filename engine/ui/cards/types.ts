@@ -20,12 +20,12 @@ import type { CardFace } from './faces.ts';
  */
 /**
  * A post's covers for this reader (`CardUi.coversRow`; held by thread/cover.tsx, which re-exports it). `total` is the number of live covering plays on the post's own reach;
- * `shut` is how many are still shut for this reader, from `total` down to 0; `open` opens the outermost shut one and `encore` shuts every one again. The page's memory alone.
+ * `shut` is how many are still shut for this reader, from `total` down to 0; `open` opens the outermost shut one (the latest play this reader has not opened) and `encore` shuts every one again. The page's memory alone.
  * It lives here, not in cover.tsx, since this file is compiled without JSX.
  */
 export interface RowCover { readonly shut: number; readonly total: number; readonly open: () => void; readonly encore: () => void }
 
-/** What a card's `Cover` is given: the post's live covering plays by layer, latest outermost first, the reader's state of them, and the post. */
+/** What a card's `Cover` is given: this card's covering plays on the post that are still shut for this reader, latest (outermost) first, so `plays[0]` is the one to draw and `plays[1]`, if any, the next under it; the reader's state of all the post's covers; and the post. */
 export interface CoverProps { readonly plays: readonly CardPlay[]; readonly cover: RowCover; readonly post: Id }
 
 export interface CardPlay {

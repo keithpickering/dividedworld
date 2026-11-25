@@ -18,14 +18,17 @@ const rules = (key: string, extra: Partial<CardRules> = {}): CardRules => ({
 });
 const instance: Instance = {
   ...testInstance,
-  cards: [...testInstance.cards, rules('curtain', { lasts: { unit: 'day', count: 1 }, stack: 3 }), rules('probe', { lasts: { unit: 'day', count: 1 } }), rules('folder', { lasts: { unit: 'day', count: 1 } })],
+  cards: [...testInstance.cards, rules('cover-card', { lasts: { unit: 'day', count: 1 }, stack: 3 }), rules('cover-b', { lasts: { unit: 'day', count: 1 } }), rules('bare', { lasts: { unit: 'day', count: 1 } }), rules('probe', { lasts: { unit: 'day', count: 1 } }), rules('folder', { lasts: { unit: 'day', count: 1 } })],
 };
 
 /* The cover says how many are shut and opens one; the effect says what it was given and shuts them all again. */
 const Cover = ({ cover, plays }: CoverProps) => (
-  <div data-testid="cover" data-shut={cover.shut} data-plays={plays.length}>
+  <div data-testid="cover" data-shut={cover.shut} data-plays={plays.length} data-first={plays[0]?.id}>
     <button type="button" onClick={cover.open}>open the curtain</button>
   </div>
+);
+const CoverB = ({ cover }: CoverProps) => (
+  <div data-testid="cover-b" data-shut={cover.shut}><button type="button" onClick={cover.open}>open b</button></div>
 );
 const Curtain = ({ cover, covered, children }: EffectProps) => (
   <div data-testid="fx-curtain" data-covered={String(covered)} data-cover={cover ? `${cover.shut}/${cover.total}` : 'none'}>
@@ -37,7 +40,9 @@ const Probe = ({ covered, children }: EffectProps) => <div data-testid="fx-probe
 const Fold = ({ children }: EffectProps) => <div data-testid="fx-folder">{children}</div>;
 const art = { color: '#000000', ink: '#ffffff', canvas: '', mark: '', credit: 'Test' };
 const cards: CardUi[] = [
-  { key: 'curtain', art, describe: () => 'curtain', Effect: Curtain, Cover, coversRow: true },
+  { key: 'cover-card', art, describe: () => 'cover-card', Effect: Curtain, Cover, coversRow: true },
+  { key: 'cover-b', art, describe: () => 'b', Effect: Probe, Cover: CoverB, coversRow: true },
+  { key: 'bare', art, describe: () => 'bare', Effect: Probe, coversRow: true },
   { key: 'probe', art, describe: () => 'probe', Effect: Probe },
   { key: 'folder', art, describe: () => 'folder', Effect: Fold, foldsRow: true },
 ];
@@ -70,7 +75,7 @@ afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
 describe('a post that wears a card that covers the row', () => {
   test('draws the card\'s Cover over the row, makes the row inert and tells another effect the post is covered', async () => {
     const w = world();
-    w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
     w.fake.seed.card(w.spritey, w.ids[1]!, 'probe');
     open(w);
     const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
@@ -90,7 +95,7 @@ describe('a post that wears a card that covers the row', () => {
 
   test('opens on a press: the cover goes, the row is no longer inert and covered is false', async () => {
     const w = world();
-    w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
     w.fake.seed.card(w.spritey, w.ids[1]!, 'probe');
     open(w);
     const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
@@ -103,8 +108,8 @@ describe('a post that wears a card that covers the row', () => {
 
   test('with two plays, the first open leaves one shut and Encore shuts both again', async () => {
     const w = world();
-    w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
-    w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
     open(w);
     const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
     expect(within(second).getByTestId('cover')).toHaveAttribute('data-shut', '2');
@@ -122,8 +127,8 @@ describe('a post that wears a card that covers the row', () => {
   test('is never stuck when a play is ended: fewer plays than were opened leaves none shut, and a new play shuts one', async () => {
     const w = world();
     w.fake.seed.admin(w.me);
-    const a = w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
-    w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
+    const a = w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
     open(w);
     const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
     await userEvent.click(within(second).getByRole('button', { name: 'open the curtain' }));
@@ -132,15 +137,89 @@ describe('a post that wears a card that covers the row', () => {
     await act(async () => { expect((await w.fake.reverseCard(a)).ok).toBe(true); });
     await waitFor(() => expect(within(second).getByTestId('fx-curtain')).toHaveAttribute('data-cover', '0/1'));
     expect(covers(second)).toHaveLength(0);
-    w.fake.seed.cards(w.me, { curtain: 1 });
-    await act(async () => { expect((await w.fake.playCard('curtain', w.pipe, w.ids[1]!, {}, '')).ok).toBe(true); });
+    w.fake.seed.cards(w.me, { 'cover-card': 1 });
+    await act(async () => { expect((await w.fake.playCard('cover-card', w.pipe, w.ids[1]!, {}, '')).ok).toBe(true); });
     await waitFor(() => expect(within(second).getByTestId('cover')).toHaveAttribute('data-shut', '1'));
+  });
+
+  test('a play ended while it is the only one shut takes the host away and lifts the inert', async () => {
+    const w = world();
+    w.fake.seed.admin(w.me);
+    const a = w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    expect(covers(second)).toHaveLength(1);
+    await act(async () => { expect((await w.fake.reverseCard(a)).ok).toBe(true); });
+    await waitFor(() => expect(covers(second)).toHaveLength(0));
+    expect(under(second).some((el) => el.hasAttribute('inert'))).toBe(false);
+  });
+
+  test('inert is only what the cover marked: a cell already inert stays so, and a cell added while shut becomes inert', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    const fresh = document.createElement('div');
+    const already = document.createElement('div');
+    already.setAttribute('inert', '');
+    grid(second).append(fresh, already);
+    await userEvent.click(within(second).getByRole('button', { name: 'open the curtain' }));
+    expect(fresh.hasAttribute('inert')).toBe(true);
+    await userEvent.click(within(second).getByRole('button', { name: 'open the curtain' }));
+    expect(covers(second)).toHaveLength(0);
+    expect(fresh.hasAttribute('inert')).toBe(false);
+    expect(already.hasAttribute('inert')).toBe(true);
+  });
+
+  test('a covering card with no Cover never makes the post inert', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'bare');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    expect(covers(second)).toHaveLength(0);
+    expect(under(second).some((el) => el.hasAttribute('inert'))).toBe(false);
+  });
+
+  test('a play landing after the reader opened two shuts only the new one, and the Cover is given it first', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    const first = () => within(second).getByTestId('cover').getAttribute('data-first');
+    const b = first();
+    await userEvent.click(within(second).getByRole('button', { name: 'open the curtain' }));
+    const a = first();
+    expect(a).not.toBe(b);
+    await userEvent.click(within(second).getByRole('button', { name: 'open the curtain' }));
+    expect(covers(second)).toHaveLength(0);
+    w.fake.seed.cards(w.me, { 'cover-card': 1 });
+    await act(async () => { expect((await w.fake.playCard('cover-card', w.pipe, w.ids[1]!, {}, '')).ok).toBe(true); });
+    await waitFor(() => expect(within(second).getByTestId('cover')).toHaveAttribute('data-shut', '1'));
+    expect(within(second).getByTestId('cover')).toHaveAttribute('data-plays', '1');
+    expect(within(second).getByTestId('cover').getAttribute('data-first')).not.toBe(a);
+    expect(within(second).getByTestId('cover').getAttribute('data-first')).not.toBe(b);
+  });
+
+  test('two covering cards stacked draw the latest card\'s Cover first, then the one under it', async () => {
+    const w = world();
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-b');
+    open(w);
+    const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
+    expect(within(second).getByTestId('cover-b')).toHaveAttribute('data-shut', '2');
+    expect(within(second).queryByTestId('cover')).toBeNull();
+    await userEvent.click(within(second).getByRole('button', { name: 'open b' }));
+    expect(within(second).queryByTestId('cover-b')).toBeNull();
+    expect(within(second).getByTestId('cover')).toHaveAttribute('data-shut', '1');
+    expect(within(second).getByTestId('cover')).toHaveAttribute('data-plays', '1');
   });
 
   test('with a fold too, the fold\'s bar is outside the grid and the cover inside it', async () => {
     const w = world();
     w.fake.seed.card(w.spritey, w.ids[1]!, 'folder');
-    w.fake.seed.card(w.spritey, w.ids[1]!, 'curtain');
+    w.fake.seed.card(w.spritey, w.ids[1]!, 'cover-card');
     open(w);
     const second = await screen.findByRole('article', { name: /^Post 2 by Pipewrench$/u });
     const bar = second.querySelector<HTMLElement>('.kb-fold-bar')!;

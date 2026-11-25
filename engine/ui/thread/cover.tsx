@@ -31,9 +31,10 @@ export interface RowCovering {
 
 /**
  * Whether a post covers its row and the reader's state of it, for a thread's post. It covers while the post wears a live play, on its own reach, of a card that covers the row;
- * an admin's ending of one lowers `total` when the post next renders. The state is the number this reader has opened, never more than `total`: it is clamped as `total` falls, so a
- * play ended after the reader opened it leaves nothing shut, never a count below none, and a play landing later raises `total` above it, so the new cover is shut. While any is
- * shut, every child of the grid but the host is made `inert`, so nothing under the cover can be focused or pressed.
+ * an admin's ending of one lowers `total` when the post next renders. The state is the set of play ids this reader has opened, in the page's memory: a play is shut until its id is
+ * in it, so a play ended after it was opened leaves nothing shut, and a play landing later (outermost, since covers run latest first) is shut however many the reader has opened. The
+ * drawn cover is the latest play not yet opened; `open` adds its id and `encore` clears the set. While the host draws a Cover, every child of the grid but the host is made `inert`,
+ * so nothing under it can be focused or pressed; only what the effect marked is lifted again.
  */
 export function useRowCovering({ plays, actId, eligible, now, cards, grid, post }: {
   readonly plays: Plays; readonly actId: string; readonly eligible: boolean; readonly now: number; readonly cards: readonly CardUi[]; readonly grid: RefObject<HTMLElement | null>; readonly post: string;
@@ -42,24 +43,26 @@ export function useRowCovering({ plays, actId, eligible, now, cards, grid, post 
   /* Latest first: the outermost cover is the latest play. */
   const covering = eligible ? livePlays(own, now).filter((p) => !p.reach && cards.find((c) => c.key === p.card)?.coversRow === true).reverse() : [];
   const total = covering.length;
-  const [kept, setKept] = useState(0);
-  if (kept > total) setKept(total);
-  const opened = Math.min(kept, total);
-  const shut = total - opened;
-  const open = useCallback(() => setKept((was) => was + 1), []);
-  const encore = useCallback(() => setKept(0), []);
+  /* Ids of plays gone from `covering` are harmless: they are never looked up. */
+  const [opened, setOpened] = useState<ReadonlySet<string>>(() => new Set());
+  const stillShut = covering.filter((p) => !opened.has(p.id));
+  const shut = stillShut.length;
+  const next = stillShut[0];
+  const open = useCallback(() => { if (next) setOpened((was) => new Set(was).add(next.id)); }, [next?.id]);
+  const encore = useCallback(() => setOpened(new Set()), []);
   const rowCover = useMemo<RowCover | null>(() => (total > 0 ? { shut, total, open, encore } : null), [total, shut, open, encore]);
-  const shown = shut > 0 ? cards.find((c) => c.key === covering[opened]?.card) : undefined;
+  const shown = next ? cards.find((c) => c.key === next.card) : undefined;
   const Cover = shown?.Cover;
-  const same = shown ? covering.filter((p) => p.card === shown.key) : [];
-  /* Run after every render: a cell added to the grid while a cover is shut is made inert at the next one. */
+  const same = shown ? stillShut.filter((p) => p.card === shown.key) : [];
+  const drawn = Boolean(rowCover && Cover);
+  /* Run after every render: a cell added to the grid while a Cover is drawn is made inert at the next one. */
   useLayoutEffect(() => {
     const g = grid.current;
     if (!g) return;
     const marked: Element[] = [];
-    if (shut > 0) for (const el of g.children) if (!el.classList.contains('kb-row-cover') && !el.hasAttribute('inert')) { el.setAttribute('inert', ''); marked.push(el); }
+    if (drawn) for (const el of g.children) if (!el.classList.contains('kb-row-cover') && !el.hasAttribute('inert')) { el.setAttribute('inert', ''); marked.push(el); }
     return () => { for (const el of marked) el.removeAttribute('inert'); };
   });
-  const host = shut > 0 && rowCover && Cover ? <div className="kb-row-cover"><Cover plays={same} cover={rowCover} post={post} /></div> : null;
+  const host = drawn && Cover && rowCover ? <div className="kb-row-cover"><Cover plays={same} cover={rowCover} post={post} /></div> : null;
   return { covering: total > 0, shut, rowCover, host };
 }
