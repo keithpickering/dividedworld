@@ -89,7 +89,7 @@ begin
     want := k = 'live';
     if got is distinct from want or was is distinct from want then raise exception 'the % post: author_veil_covers says %, 0395''s check %, and it is % that a live author veil covers it', k, got, was, want; end if;
     -- and acts_public shows it as it did: under the stand-in where a live author veil covers it, under its author otherwise, once
-    if (select count(*) from acts_public x where x.id = pg_temp.f(k)) <> 1
+    if (select count(*) from acts_public x where x.id = pg_temp.f(k)) is distinct from 1
        or (select x."character" from acts_public x where x.id = pg_temp.f(k)) is distinct from (case when want then stand_in() else (select a."character" from acts a where a.id = pg_temp.f(k)) end) then
       raise exception 'acts_public shows the % post as %', k, (select jsonb_agg(jsonb_build_object('character', x."character")) from acts_public x where x.id = pg_temp.f(k));
     end if;

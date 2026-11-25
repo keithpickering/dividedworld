@@ -241,6 +241,7 @@ select 'function', n, m, w from (values
   ('dismiss_handover_todo', 'no author', 'an admin''s write'),
   ('drive_gifts', 'no author', 'a drive''s donors: characters that gave, public, never a post''s author'),
   ('drive_gifts_page', 'no author', 'a drive''s donors: characters that gave, public, never a post''s author'),
+  ('author_veil_covers', 'no author', 'whether a live author veil covers an Act (0434): acts_public''s own check, which its reader runs; it answers what the projection shows every reader (the stand-in or the author) and names no one'),
   ('ballot_secret', 'no author', 'whether a poll is secret (0395): a public fact of the poll, which acts_public''s reader runs; it names no one'),
   ('cast_ballot', 'no author', 'a write (0395): answers the ballot through the projection, which names no character on a secret poll, and the poll''s counts of characters'),
   ('poll_ballots', 'no author', 'a public poll''s ballots through acts_public (0396), whose projection puts the stand-in where a veiled author''s own ballot is (0395); the post''s author is not read, and a secret poll is refused'),
