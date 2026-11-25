@@ -5,7 +5,7 @@
  *
  * Each key's lines are a list, one chosen at random, so a stock line wears thin more slowly.
  */
-import { PRONOUN_FORMS, words, type PronounForm, type PronounSet } from '../rules/pronouns.ts';
+import { PRONOUN_FORMS } from '../rules/pronouns.ts';
 
 export { PRONOUN_FORMS };
 
@@ -45,17 +45,3 @@ export const STOCK_LINE_TOKENS: Readonly<Record<StockLineKey, readonly string[]>
   requestRefused: ['boss', 'asker'],
   requestLapsed: ['boss', 'asker'],
 };
-
-/**
- * A stock line with its tokens filled, for the code that posts one (a meeting's reply to a request): `{name}` for each of `values`, and `{boss.they}` and the rest of `PRONOUN_FORMS` from `bossPronouns` as the SQL's
- * `fill_tokens` does for the tick's. A token the line carries that is neither is left as written. The line is chosen by `pick` over the list, so a retried meeting writes what the first would have.
- */
-export function fillStockLine(lines: readonly string[], pick: number, values: Readonly<Record<string, string>>, bossPronouns: PronounSet): string | null {
-  if (lines.length === 0) return null;
-  const forms = words(bossPronouns);
-  const line = lines[((pick % lines.length) + lines.length) % lines.length]!;
-  return line.replace(/\{([A-Za-z]+)(?:\.([A-Za-z]+))?\}/g, (whole, name: string, form: string | undefined) => {
-    if (form === undefined) return values[name] ?? whole;
-    return name === 'boss' && (PRONOUN_FORMS as readonly string[]).includes(form) ? forms[form as PronounForm] : whole;
-  });
-}

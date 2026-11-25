@@ -26,3 +26,21 @@ function Here() {
 
 export const Boss: Story = { render: () => <Here />, parameters: { world: as('director') } };
 export const ModBot: Story = { render: () => <Here />, parameters: { world: as('bot') } };
+
+/** A Mod Bot's log with the requests it ruled on: one granted, one refused, one passed to the Boss and waiting, one the meeting granted and one that lapsed. */
+const withRequests: World = (fake, instance) => {
+  const w = seedMoves(fake, instance);
+  const { seed } = fake;
+  const asker = seed.character(seed.account('story-asker'), 'Pipe Dreamer', instance.classes[0]!.key);
+  const board = instance.boards.find((b) => !b.system)!.slug;
+  const { thread } = seed.thread(board, asker, 'Best Mario game', 'Which one is it, really?');
+  const day = 86_400_000;
+  const ask = (at: number) => seed.post(thread, asker, 'Could this thread be moved?', { at });
+  seed.staffRequest('hall-monitor', ask(Date.now() - 6 * day), { ruling: 'fulfill', at: Date.now() - 6 * day });
+  seed.staffRequest('hall-monitor', ask(Date.now() - 5 * day), { ruling: 'reject', at: Date.now() - 5 * day });
+  seed.staffRequest('hall-monitor', ask(Date.now() - 4 * day), { ruling: 'confer', ruled: 'fulfill', at: Date.now() - 4 * day });
+  seed.staffRequest('hall-monitor', ask(Date.now() - 3 * day), { ruling: 'confer', lapsed: true, at: Date.now() - 3 * day });
+  seed.staffRequest('hall-monitor', ask(Date.now() - day), { ruling: 'confer', at: Date.now() - day });
+  window.history.replaceState(null, '', `/c/${w.bot}`);
+};
+export const ModBotRequests: Story = { render: () => <Here />, parameters: { world: withRequests } };

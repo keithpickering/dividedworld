@@ -310,6 +310,11 @@ export interface Seed {
    * with `charges` (default one minor breach of Rule 2) and a `challenge`. A quiz's `answer` is the fake's alone, never carried to a reader.
    */
   visit(mod: Id, post: Id, options?: { at?: number; endsInMs?: number; line?: string; charges?: readonly SeedCharge[]; challenge?: SeedChallenge }): Id;
+  /**
+   * A request a staff member ruled on (`staff_requests`, 0424), as its moderation log lists it: the request post, the first ruling (`fulfill`, `reject` or `confer`), the office that ruled, and for a confer how it ended
+   * (`ruled` by a meeting, or `lapsed`; neither is still waiting). Only the log reads it here: the fake has no meeting to rule it.
+   */
+  staffRequest(staff: string, post: Id, options: { ruling: 'fulfill' | 'reject' | 'confer'; by?: 'mod' | 'boss'; moveKind?: string; ruled?: 'fulfill' | 'reject'; lapsed?: boolean; at?: number }): void;
   /** A visit's end (`end_visit`): filed, intercepted, trapped, reversed or dropped, with the Act that ended it where one did. */
   visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number }): Id;
   /** A character's report of a post (`open_report`), with its reason. */
@@ -470,6 +475,18 @@ interface CharRec {
   /** Set for a staff character. */
   staff?: { readonly key: string; readonly office: Office };
 }
+/** A request a staff member ruled on (`seed.staffRequest`): what the moderation log lists of it. */
+interface StaffRequestRec {
+  readonly request: Id;
+  readonly staff: Id;
+  readonly ruling: 'fulfill' | 'reject' | 'confer';
+  readonly by: 'mod' | 'boss';
+  readonly moveKind: string | null;
+  readonly ruled: 'fulfill' | 'reject' | null;
+  readonly lapsed: boolean;
+  readonly at: number;
+}
+
 interface ActRec {
   readonly id: Id;
   readonly order: number;
@@ -880,6 +897,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return opening?.character != null && characters.get(opening.character)?.owner === account.id;
   };
   /** The answer a seeded quiz visit holds (never carried to a reader), and its question and choices, by visit. */
+  const staffRequests: StaffRequestRec[] = [];
   const visitQuizzes = new Map<Id, { readonly question: string; readonly choices: readonly string[]; readonly answer: string }>();
   const visitEndOf = (e: ActRec): VisitEnd => ({ act: e.id, at: iso(e.at), outcome: e.payload.outcome as VisitOutcome, byAct: (e.payload.by_act as Id | undefined) ?? null, line: (e.payload.line as string | undefined) ?? '' });
   /** A visit as `thread_page` carries it: its charges (the start's and each join's), its challenge without an answer, and its end. */
@@ -3980,11 +3998,25 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     movesLog(staff, before) {
       const who = [...characters.values()].find((c) => c.staff?.key === staff);
       const mine = !who ? [] : [...acts.values()].filter((a) => (a.kind === 'move' || a.kind === 'visit' || a.kind === 'report_verdict' || a.kind === 'appeal_ruling') && a.character === who.id)
+        .map((a) => ({ id: a.id, at: a.at, act: a as ActRec | null, req: null as StaffRequestRec | null }))
+        .concat(!who ? [] : staffRequests.filter((q) => q.staff === who.id).map((q) => ({ id: q.request, at: q.at, act: null, req: q })))
         .sort((x, y) => y.at - x.at || (y.id < x.id ? -1 : y.id > x.id ? 1 : 0));
       const after = before ? mine.filter((a) => a.at < Date.parse(before.at) || (a.at === Date.parse(before.at) && a.id < before.act)) : mine;
       const page = after.slice(0, MOVES_LOG_PAGE);
       const seqOf = (id: unknown): number | null => (typeof id === 'string' ? acts.get(id)?.seq ?? null : null);
-      const rows = page.map((a): MoveLogRow => {
+      const rows = page.map((entry): MoveLogRow => {
+        /* A request the staff member ruled on (0424): the facts the code holds, never the post's words or the persona's. */
+        const q = entry.req;
+        if (q) {
+          const post = acts.get(q.request);
+          const waiting = q.ruling === 'confer' && q.ruled === null && q.lapsed === false;
+          return {
+            act: q.request, kind: 'request', thread: post?.thread ?? '', at: iso(q.at), demand: null, expiresAt: null, end: null, keptBy: null,
+            params: { thread: post?.thread ?? null, title: post ? threads.get(post.thread)?.title ?? null : null, post: seqOf(q.request), ruling: q.ruling, by: q.by, move_kind: q.moveKind, ruled: waiting ? null : q.lapsed ? 'lapsed' : q.ruled ?? q.ruling, lapses_at: waiting ? iso(q.at + 3 * 86_400_000) : null },
+            outcome: q.ruling === 'confer' ? (q.lapsed ? 'lapsed' : q.ruled) : null,
+          };
+        }
+        const a = entry.act!;
         /* A Mod's visit, a report it judged and an appeal it heard are rows too (0111), each with how it ended. */
         if (a.kind === 'visit') {
           const charge = ((a.payload.charges ?? []) as { rule?: string; rule_number?: number | null; band?: string; cause?: string }[])[0] ?? {};
@@ -6122,6 +6154,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       }).id;
       if (ch.kind === 'quiz') visitQuizzes.set(id, { question: ch.question, choices: ch.choices, answer: ch.answer });
       return id;
+    },
+    staffRequest(staff, post, o) {
+      const who = [...characters.values()].find((c) => c.staff?.key === staff);
+      if (!who || !acts.get(post)) throw new Error(`no such staff member ${staff} or post ${post}`);
+      staffRequests.push({ request: post, staff: who.id, ruling: o.ruling, by: o.by ?? 'mod', moveKind: o.ruling === 'fulfill' ? o.moveKind ?? 'moveThread' : null, ruled: o.ruled ?? null, lapsed: o.lapsed === true, at: o.at ?? now() });
     },
     visitEnd(visit, e) {
       const v = acts.get(visit);

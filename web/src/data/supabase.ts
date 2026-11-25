@@ -1428,7 +1428,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
             ? { why: r['ended_why'], by: String(r['ended_by'] ?? ''), at: String(r['ended_at'] ?? '') }
             : null,
           keptBy: typeof r['kept_by'] === 'string' ? r['kept_by'] : null,
-          ...(r['kind'] === 'visit' || r['kind'] === 'report' || r['kind'] === 'appeal' ? { outcome: typeof r['ended_why'] === 'string' ? r['ended_why'] : null } : {}),
+          ...(r['kind'] === 'visit' || r['kind'] === 'report' || r['kind'] === 'appeal' || r['kind'] === 'request' ? { outcome: typeof r['ended_why'] === 'string' ? r['ended_why'] : null } : {}),
         })),
         older: rows.length > MOVES_LOG_PAGE && last ? { at: last['at'], act: last['id'] } : null,
       };

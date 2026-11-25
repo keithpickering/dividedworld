@@ -1116,8 +1116,9 @@ export interface MoveLogRow {
   /** The staff key of the Boss that keeps it after a handover (a review's keep), or null. */
   readonly keptBy: string | null;
   /**
-   * For a Mod's visit, a report it judged or an appeal it heard (`kind` 'visit', 'report' or 'appeal', whose `params` say the post's number and the plain facts): how it
-   * ended (a visit's outcome, a report's verdict, an appeal's ruling), null while a visit is open. Absent on a move.
+   * For a Mod's visit, a report it judged, an appeal it heard or a request it ruled on (`kind` 'visit', 'report', 'appeal' or 'request', whose `params` say the post's number and the plain facts): how it
+   * ended (a visit's outcome, a report's verdict, an appeal's ruling), null while a visit is open. For a request (`params`: thread, title, post, ruling, by, ruled, lapses_at, move_kind; the request post's number,
+   * its first ruling, the office that ruled, and the current one) it is the later ruling of a request that was passed on ('fulfill', 'reject' or 'lapsed'), null while it waits and on a request ruled at once. Absent on a move.
    */
   readonly outcome?: string | null;
 }
