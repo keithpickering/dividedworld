@@ -323,8 +323,8 @@ declare
   seen text;
   stmt text;
 begin
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling)
-  values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer') returning id into rid;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office)
+  values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer', 'mod') returning id into rid;
   if not exists (select 1 from staff_requests_open where request = rid) then raise exception 'a confer did not join the queue of what waits'; end if;
   insert into staff_request_rulings (request, ruling) values (rid, 'lapsed');
   if exists (select 1 from staff_requests_open where request = rid) then raise exception 'a ruled request is still in the queue of what waits'; end if;
@@ -337,15 +337,18 @@ begin
   -- A request is ruled on once, and a ruling is one of the three words.
   seen := pg_temp.refusal(format('insert into staff_request_rulings (request, ruling) values (%s, %L)', rid, 'reject'));
   if seen is null or seen not like '23505%' then raise exception 'a second ruling on a request was not refused by its key: %', seen; end if;
-  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values (%L, %L, %L, %L, %L, %L)',
-    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'grant'));
+  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values (%L, %L, %L, %L, %L, %L, %L)',
+    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'grant', 'mod'));
   if seen is null or seen not like '23514%' then raise exception 'a ruling outside fulfill, reject and confer was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values (%L, %L, %L, %L, %L, %L)',
-    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values (%L, %L, %L, %L, %L, %L, %L)',
+    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '23505%' then raise exception 'a second row for one (staff, request) was not refused by its key: %', seen; end if;
+  seen := pg_temp.refusal(format('insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values (%L, %L, %L, %L, %L, %L, %L)',
+    sc ->> 'request', sc ->> 'thread', pg_temp.poster(), 'mm-m1', sc ->> 'turn', 'reject', 'member'));
+  if seen is null or seen not like '23514%' then raise exception 'an office other than boss or mod was not refused: %', seen; end if;
   -- A later ruling is for a request that waited: a reject has none.
   sc := pg_temp.scene('mm-m1', 'mm-games', 'rejected');
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'reject') returning id into rid2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'reject', 'mod') returning id into rid2;
   seen := pg_temp.refusal(format('insert into staff_request_rulings (request, ruling) values (%s, %L)', rid2, 'reject'));
   if seen is null or seen not like '23514%' then raise exception 'a ruling on a request that was never conferred was not refused: %', seen; end if;
   if exists (select 1 from staff_requests_open where request = rid2) then raise exception 'a reject joined the queue of what waits'; end if;
@@ -363,8 +366,8 @@ declare
   rid bigint;
   v record;
 begin
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at)
-  values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer', now() - interval '1 day') returning id into rid;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at)
+  values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer', 'mod', now() - interval '1 day') returning id into rid;
   if (select o.at from staff_requests_open o where o.request = rid) is distinct from (select q.at from staff_requests q where q.id = rid) then raise exception 'the queue row does not carry the request''s time'; end if;
   select * into v from staff_requests_now x where x.id = rid;
   if v.ruling is distinct from 'confer' or v.waiting is not true or v.lapses_at is distinct from now() + interval '2 days' then
@@ -495,19 +498,19 @@ begin
   -- Refusals (22023): a ruling outside the three, a request that is no reply, one in another thread, a turn that is not the persona's, a persona that is no staff, a member's, a request of the persona's own.
   seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'request', sc ->> 'turn', 'lapsed'));
   if seen is null or seen not like '22023%' then raise exception 'a ruling of lapsed was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'request', sc ->> 'turn', 'grant'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'request', sc ->> 'turn', 'grant', 'mod'));
   if seen is null or seen not like '22023%' then raise exception 'an unknown ruling was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', (select id from acts where thread = (sc ->> 'thread')::uuid and seq = 1), sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', (select id from acts where thread = (sc ->> 'thread')::uuid and seq = 1), sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '22023%' then raise exception 'a request that is no reply was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', other ->> 'request', sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', other ->> 'request', sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '22023%' then raise exception 'a request in another thread than the turn was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m2', sc ->> 'request', sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m2', sc ->> 'request', sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '22023%' then raise exception 'a turn that is another persona''s was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m3', sc ->> 'request', sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m3', sc ->> 'request', sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '22023%' then raise exception 'a member persona ruling on a request was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-nobody', sc ->> 'request', sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-nobody', sc ->> 'request', sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '22023%' and seen not like 'P0002%' then raise exception 'an unknown staff key was not refused: %', seen; end if;
-  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'turn', sc ->> 'turn', 'reject'));
+  seen := pg_temp.refusal(format('select rule_request(%L, %L, %L, %L, null)', 'mm-m1', sc ->> 'turn', sc ->> 'turn', 'reject', 'mod'));
   if seen is null or seen not like '22023%' then raise exception 'the persona ruling on its own post was not refused: %', seen; end if;
   if (select count(*) from staff_requests) is distinct from base_n then raise exception 'a refusal wrote a request row'; end if;
 
@@ -599,13 +602,13 @@ declare
 begin
   -- Drain what the earlier sections left waiting: this section reads the queue's head, so it starts from a clean one.
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', now() - interval '1 hour') returning id into x1;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer', now() - interval '3 hours') returning id into x2;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer', now() - interval '2 hours') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', 'mod', now() - interval '1 hour') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer', 'mod', now() - interval '3 hours') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer', 'mod', now() - interval '2 hours') returning id into x3;
   -- Conferred by Mod Two, on a thread it was never asked about: it is still shown, with its own staff.
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m2', (s4 ->> 'turn')::uuid, 'confer', now() - interval '30 minutes') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m2', (s4 ->> 'turn')::uuid, 'confer', 'mod', now() - interval '30 minutes') returning id into x4;
   -- A reject: never waiting.
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'reject', now() - interval '5 hours') returning id into x5;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'reject', 'mod', now() - interval '5 hours') returning id into x5;
 
   got := requests_waiting(10);
   if jsonb_typeof(got) is distinct from 'array' or jsonb_array_length(got) is distinct from 4 then raise exception 'requests_waiting did not list the four waiting: %', got; end if;
@@ -671,7 +674,7 @@ begin
   tn := (write_staff_act('mm-m1', 'post', t, p0, '{"body": "Turn reply, many."}') ->> 'id')::uuid;
   for i in 1..history + 3 loop
     r := tests.act(pg_temp.poster(), 'post', t, jsonb_build_object('body', 'Request number ' || i), p0, now() - interval '30 days' + i * interval '1 minute');
-    insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values (r, t, pg_temp.poster(), 'mm-m1', tn, 'confer', now() - interval '30 days' + i * interval '1 minute');
+    insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values (r, t, pg_temp.poster(), 'mm-m1', tn, 'confer', 'mod', now() - interval '30 days' + i * interval '1 minute');
   end loop;
   -- The history: every request but the last three is ruled, and each keeps its first ruling, a confer.
   insert into staff_request_rulings (request, ruling) select q.id, 'reject' from staff_requests q where q.thread = t order by q.id limit history;
@@ -729,12 +732,12 @@ declare
   rows_before bigint;
 begin
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer') returning id into x2;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer') returning id into x3;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer') returning id into x4;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer') returning id into x5;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s6 ->> 'request')::uuid, (s6 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s6 ->> 'turn')::uuid, 'confer') returning id into x6;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', 'mod') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer', 'mod') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer', 'mod') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer', 'mod') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer', 'mod') returning id into x5;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s6 ->> 'request')::uuid, (s6 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s6 ->> 'turn')::uuid, 'confer', 'mod') returning id into x6;
   rows_before := (select count(*) from queued_moves);
 
   -- Two fulfills against a room of one: the first is queued and paid, the second is cut and is a reject with the reason; a reject with a line; a refused fulfill is a reject with the guard's words.
@@ -806,10 +809,10 @@ begin
   -- Whatever the earlier sections left waiting is ruled, so this section counts only its own.
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
   -- A is due at this instant, B a minute later, C's post is hidden (it lapses at once, with no reply), D is asked of by Bob.
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((a ->> 'request')::uuid, (a ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (a ->> 'turn')::uuid, 'confer', now() - interval '3 days') returning id into ra;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (b ->> 'turn')::uuid, 'confer', now() - interval '3 days' + interval '1 minute') returning id into rb;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((c ->> 'request')::uuid, (c ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (c ->> 'turn')::uuid, 'confer', now()) returning id into rc;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((d ->> 'request')::uuid, (d ->> 'thread')::uuid, (select id from characters where name = 'Mm Asker Two'), 'mm-m1', (d ->> 'turn')::uuid, 'confer', now() - interval '4 days') returning id into rd;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((a ->> 'request')::uuid, (a ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (a ->> 'turn')::uuid, 'confer', 'mod', now() - interval '3 days') returning id into ra;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (b ->> 'turn')::uuid, 'confer', 'mod', now() - interval '3 days' + interval '1 minute') returning id into rb;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((c ->> 'request')::uuid, (c ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (c ->> 'turn')::uuid, 'confer', 'mod', now()) returning id into rc;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((d ->> 'request')::uuid, (d ->> 'thread')::uuid, (select id from characters where name = 'Mm Asker Two'), 'mm-m1', (d ->> 'turn')::uuid, 'confer', 'mod', now() - interval '4 days') returning id into rd;
   insert into admins (account) values (admin_a);
   perform tests.become(admin_a);
   perform decide(null, (c ->> 'request')::uuid, 'hide', null, 'hidden');
@@ -839,7 +842,7 @@ begin
 
   -- The System off: a request still lapses (its way out is time), and says nothing.
   update settings set value = 'false'::jsonb where key = 'systemEnabled';
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m2', (b ->> 'turn')::uuid, 'confer', now() - interval '9 days') returning id into rb;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m2', (b ->> 'turn')::uuid, 'confer', 'mod', now() - interval '9 days') returning id into rb;
   tick := system_tick();
   if (tick ->> 'requestsLapsed')::integer is distinct from 1 or (select (g.ruling, g.post_act) from staff_request_rulings g where g.request = rb) is distinct from row('lapsed'::text, null::uuid) then
     raise exception 'a request did not lapse silently while The System is off: %', tick;
@@ -866,8 +869,8 @@ declare
 begin
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
   insert into settings (key, value) values ('demandChecksPerTick', '1'::jsonb) on conflict (key) do update set value = excluded.value;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((a ->> 'request')::uuid, (a ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (a ->> 'turn')::uuid, 'confer', now() - interval '9 days') returning id into ra;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (b ->> 'turn')::uuid, 'confer', now() - interval '8 days') returning id into rb;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((a ->> 'request')::uuid, (a ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (a ->> 'turn')::uuid, 'confer', 'mod', now() - interval '9 days') returning id into ra;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office, at) values ((b ->> 'request')::uuid, (b ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (b ->> 'turn')::uuid, 'confer', 'mod', now() - interval '8 days') returning id into rb;
   perform set_config('kayfabb.test_refused', ra::text, true);
   create trigger zz_refuse_ruling before insert on staff_request_rulings for each row execute function pg_temp.refuse_ruling();
 
@@ -931,7 +934,7 @@ begin
      or has_column_privilege('kayfabb_digest', 'staff_requests', 'asker', 'select') or has_column_privilege('kayfabb_digest', 'staff_requests', 'move', 'select') then
     raise exception 'the digest role reads a private column of the request tables, or characters';
   end if;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer') returning id into rid;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((sc ->> 'request')::uuid, (sc ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (sc ->> 'turn')::uuid, 'confer', 'mod') returning id into rid;
   perform tests.become_service();
   got := requests_waiting(500);
   perform tests.unbecome();
@@ -1100,11 +1103,11 @@ declare
   payload jsonb;
 begin
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer') returning id into x2;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer') returning id into x3;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer') returning id into x4;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer') returning id into x5;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', 'mod') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer', 'mod') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer', 'mod') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer', 'mod') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer', 'mod') returning id into x5;
 
   insert into settings (key, value) values ('digestThreads', '5'), ('digestExcerpts', '5'), ('digestExcerptChars', '280') on conflict (key) do nothing;
   -- The digest carries the waiting requests, oldest first, each with its thread's board, and no more than meetingMost of them.
@@ -1174,7 +1177,7 @@ declare
   queued_before bigint := (select count(*) from queued_moves);
 begin
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', 'mod') returning id into x1;
   perform pg_temp.bank(5);
   m := (begin_meeting('2031-05-20T09:00:00Z'::timestamptz) ->> 'meeting')::bigint;
   r := apply_meeting(m, jsonb_build_object('boss', 'mm-boss', 'weekly_moves', 0, 'bank_cap', 5, 'memory', pg_temp.memory('wrestling'),
@@ -1222,12 +1225,12 @@ declare
   body text;
 begin
   insert into staff_request_rulings (request, ruling) select v.id, 'reject' from staff_requests_now v where v.waiting;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer') returning id into x1;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer') returning id into x2;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer') returning id into x3;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer') returning id into x4;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer') returning id into x5;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) values ((s6 ->> 'request')::uuid, (s6 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s6 ->> 'turn')::uuid, 'confer') returning id into x6;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s1 ->> 'request')::uuid, (s1 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s1 ->> 'turn')::uuid, 'confer', 'mod') returning id into x1;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s2 ->> 'request')::uuid, (s2 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s2 ->> 'turn')::uuid, 'confer', 'mod') returning id into x2;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s3 ->> 'request')::uuid, (s3 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s3 ->> 'turn')::uuid, 'confer', 'mod') returning id into x3;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s4 ->> 'request')::uuid, (s4 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s4 ->> 'turn')::uuid, 'confer', 'mod') returning id into x4;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s5 ->> 'request')::uuid, (s5 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s5 ->> 'turn')::uuid, 'confer', 'mod') returning id into x5;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values ((s6 ->> 'request')::uuid, (s6 ->> 'thread')::uuid, pg_temp.poster(), 'mm-m1', (s6 ->> 'turn')::uuid, 'confer', 'mod') returning id into x6;
   update settings set value = value || jsonb_build_object('requestGranted', jsonb_build_array('{boss} grants {asker}.'), 'requestRefused', jsonb_build_array('{boss} refuses {asker}.')) where key = 'systemLines';
   create trigger zz_refuse_reply before insert on acts for each row execute function pg_temp.refuse_reply();
 
@@ -1351,6 +1354,13 @@ begin
   select * into r from moves_log where id = (sb ->> 'request')::uuid and staff = 'mm-boss';
   if r.params ->> 'ruling' is distinct from 'confer' or r.params ->> 'by' is distinct from 'boss' or r.ended_why is not null then raise exception 'the Boss''s confer is wrong in the log: %', to_jsonb(r); end if;
 
+  -- The office is the one the ruling was made in, recorded when it was made: seasons.boss is filled in after a season opens, so a ruling read back from it would say 'mod' for the Boss's own.
+  update seasons set boss = null where boss = 'mm-boss';
+  if (select count(*) from moves_log where kind = 'request' and staff = 'mm-boss' and params ->> 'by' = 'boss' and thread in ((sg ->> 'thread')::uuid, (sb ->> 'thread')::uuid)) is distinct from 2
+     or exists (select 1 from moves_log where kind = 'request' and staff = 'mm-m1' and params ->> 'by' is distinct from 'mod' and thread in ((sr ->> 'thread')::uuid, (sc ->> 'thread')::uuid, (sl ->> 'thread')::uuid)) then
+    raise exception 'a request ruled by the Boss does not say boss once seasons.boss is not filled in, or a Mod''s says boss: %', (select jsonb_agg(jsonb_build_array(staff, params ->> 'by')) from moves_log where kind = 'request' and thread in ((sg ->> 'thread')::uuid, (sr ->> 'thread')::uuid, (sc ->> 'thread')::uuid, (sl ->> 'thread')::uuid, (sb ->> 'thread')::uuid));
+  end if;
+
   -- A meeting's ruling and a lapse each end a confer, with a new row beside it.
   qid := (select id from staff_requests where request_act = (sc ->> 'request')::uuid and staff = 'mm-m1');
   insert into staff_request_rulings (request, ruling, move) values (qid, 'fulfill', (select max(id) from queued_moves));
@@ -1363,4 +1373,26 @@ begin
 
   -- The clients read it, as every row of the log.
   if not has_table_privilege('anon', 'moves_log', 'select') or not has_table_privilege('authenticated', 'moves_log', 'select') then raise exception 'moves_log is not readable by the clients'; end if;
+end $$;
+
+-- ---- 15b. A staff member's requests are paged by an index ----
+-- The request branch of moves_log is read for one staff key, newest first by (at, request_act), a page at a time: staff_requests_staff_at serves that keyset, so a busy instance's page is read from the index and
+-- never from all the requests the staff member has ruled on. Planned with the sequential scan off (as 0036 does): on a table this small the planner scans whatever the indexes are.
+create function pg_temp.plan_of(q text) returns text language plpgsql as $$
+declare ln record; out text := '';
+begin
+  for ln in execute 'explain ' || q loop out := out || E'\n' || ln."QUERY PLAN"; end loop;
+  return out;
+end $$;
+
+do $$
+declare plan text;
+begin
+  analyze staff_requests; analyze staff_request_rulings; analyze staff_requests_open;
+  set local enable_seqscan = off;
+  plan := pg_temp.plan_of('select * from staff_requests q where q.staff = ''mm-m1'' and (q.at, q.request_act) < (now(), ''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid) order by q.at desc, q.request_act desc limit 21');
+  if plan !~ 'Index (Only )?Scan.* on staff_requests\y' or plan ~ 'Sort' or plan ~ 'Seq Scan on staff_requests\y' then raise exception 'the staff member''s keyset page is not served by an index in order: %', plan; end if;
+  plan := pg_temp.plan_of('select * from moves_log where kind = ''request'' and staff = ''mm-m2'' and (at < now() or (at = now() and id < ''ffffffff-ffff-ffff-ffff-ffffffffffff''::uuid)) order by at desc, id desc limit 21');
+  if plan !~ 'staff_requests_staff_at' then raise exception 'moves_log''s request branch does not read staff_requests by staff_requests_staff_at (a staff member with few requests among many): %', plan; end if;
+  reset enable_seqscan;
 end $$;

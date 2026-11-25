@@ -436,10 +436,10 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into pool_attempt_replies (attempt, reply) select (select max(id) from pool_attempts), quoting from pool_turns limit 1;
       insert into staff_points (meeting, staff, line) select max(id), 'exp-boss', 'Needle the Mod, defend the pie.' from meetings;
       -- A staff request (0424), insert-only and no client's: the Boss conferred on the reply its turn answered, and the request lapsed.
-      insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) select quoting, thread, (select character from acts where id = quoting), 'exp-boss', post_act, 'confer' from pool_turns limit 1;
+      insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) select quoting, thread, (select character from acts where id = quoting), 'exp-boss', post_act, 'confer', 'boss' from pool_turns limit 1;
       insert into staff_request_rulings (request, ruling) select max(id), 'lapsed' from staff_requests;
       -- A request that still waits (0424): a confer joins the queue staff_requests_open, which the export carries as it carries every table (the lapsed one above has left it).
-      insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling) select post_act, thread, (select character from acts where id = post_act), 'exp-boss', post_act, 'confer' from pool_turns limit 1;
+      insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) select post_act, thread, (select character from acts where id = post_act), 'exp-boss', post_act, 'confer', 'boss' from pool_turns limit 1;
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),
       -- and an update by it, written as post_update writes one.
       perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,

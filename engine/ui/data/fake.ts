@@ -4012,7 +4012,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
           const waiting = q.ruling === 'confer' && q.ruled === null && q.lapsed === false;
           return {
             act: q.request, kind: 'request', thread: post?.thread ?? '', at: iso(q.at), demand: null, expiresAt: null, end: null, keptBy: null,
-            params: { thread: post?.thread ?? null, title: post ? threads.get(post.thread)?.title ?? null : null, post: seqOf(q.request), ruling: q.ruling, by: q.by, move_kind: q.moveKind, ruled: waiting ? null : q.lapsed ? 'lapsed' : q.ruled ?? q.ruling, lapses_at: waiting ? iso(q.at + 3 * 86_400_000) : null },
+            params: { thread: post?.thread ?? null, title: post ? threads.get(post.thread)?.title ?? null : null, post: seqOf(q.request), ruling: q.ruling, by: q.by, move_kind: q.moveKind, ruled: waiting ? null : q.lapsed ? 'lapsed' : q.ruled ?? q.ruling, lapses_at: waiting ? iso(q.at + settings.staffRequests.daysMost * 86_400_000) : null },
             outcome: q.ruling === 'confer' ? (q.lapsed ? 'lapsed' : q.ruled) : null,
           };
         }

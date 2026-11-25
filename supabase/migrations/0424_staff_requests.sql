@@ -395,11 +395,15 @@ create table staff_requests (
   turn_act uuid not null references acts (id),
   ruling text not null check (ruling in ('fulfill', 'reject', 'confer')),
   move bigint references queued_moves (id),
+  -- The office the staff member held when it ruled, as rule_request decided it (staff_office_now); recorded so the log never reads it back from seasons, whose boss is filled in after a season opens.
+  office text not null check (office in ('boss', 'mod')),
   at timestamptz not null default now(),
   -- A fulfill names its move, and nothing else does.
   check ((ruling = 'fulfill') = (move is not null)),
   unique (staff, request_act)
 );
+-- The log's read of a staff member's requests, newest first by (at, request_act): a page is read from this index, in order (moves_log, section 4).
+create index staff_requests_staff_at on staff_requests (staff, at desc, request_act desc);
 
 create table staff_request_rulings (
   id bigint generated always as identity primary key,
@@ -682,8 +686,8 @@ begin
       why := coalesce(result ->> 'reason', 'the move was not made');
     end if;
   end if;
-  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, move)
-  values (rule_request.request_act, req.thread, req.character, rule_request.staff_key, rule_request.turn_act, final, made) returning id into written;
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, move, office)
+  values (rule_request.request_act, req.thread, req.character, rule_request.staff_key, rule_request.turn_act, final, made, office) returning id into written;
   return jsonb_build_object('request', written, 'ruling', final, 'move', made, 'existing', false)
     || case when why is not null then jsonb_build_object('asked', 'fulfill', 'reason', why) else '{}'::jsonb end;
 end $$;
@@ -2322,10 +2326,12 @@ grant execute on function system_digest(timestamptz, timestamptz) to service_rol
 
 -- ------------------------------------------------------------------------------------------------ 4. the moderation log ----
 
--- Task 7 (design section 5). moves_log (0401_report_no_visit.sql) lists a staff member's requests too: a row of kind `request` for each request it ruled on (staff_requests_now), with the facts the screen words (the
+-- Task 7 (design section 5). moves_log (0401_report_no_visit.sql) lists a staff member's requests too: a row of kind `request` for each request it ruled on (staff_requests, with its later ruling and the queue), with the facts the screen words (the
 -- glass's own, never the persona's or the Boss's text). Columns, rows and grants as 0401 left them; the one new branch is below. Masks: the row is the request post's public number, its thread and title (public), the
--- ruling, the office and the move's kind; never `asker`, which is a post's real author even where it is veiled, and nothing that reads who owns a character. At a busy instance's scale: one row per request the
--- staff member ruled on, read for the staff key the screen asks (a page of 20 by keyset), like every other branch.
+-- ruling, the office and the move's kind; never `asker`, which is a post's real author even where it is veiled, and nothing that reads who owns a character. At a busy instance's scale: a row for each request the
+-- staff member ruled on, read for the staff key the screen asks (a page of 20 by keyset). The branch is driven from staff_requests and staff_requests_staff_at (staff, at desc, request_act desc) serves the keyset in
+-- order, so a page reads its own rows from the index; each row also reads its ruling and queue row (by request, unique) and its thread, post and move by primary key: a page's worth, never the history.
+-- (The other branches are as 0401 left them.)
 create or replace view moves_log as
   select a.id, c.staff, a.payload ->> 'kind' as kind, a.payload -> 'params' as params, a.payload -> 'demand' as demand,
          move_expires_at(a.id) as expires_at, a.thread, a.created_at as at,
@@ -2376,12 +2382,18 @@ create or replace view moves_log as
   -- office that ruled it then ('boss' where the persona held the open season's seat at that moment, else 'mod'), `move_kind` the kind of the move a grant made, `ruled` the ruling now (null while a confer waits)
   -- and `lapses_at` when a waiting confer lapses. `ended_why` is the later ruling of a confer (fulfill, reject or lapsed), null while it waits and on a request ruled at once. Nothing a persona or the Boss wrote is here, and no asker.
   select q.request_act, q.staff, 'request'::text,
-         jsonb_build_object('thread', q.thread, 'title', t.title, 'post', p.seq, 'ruling', q.first_ruling,
-                            'by', case when exists (select 1 from seasons s where s.boss = q.staff and s.starts_at <= q.at and (s.ends_at is null or s.ends_at > q.at)) then 'boss' else 'mod' end,
-                            'move_kind', (select m.kind from queued_moves m where m.id = q.move),
-                            'ruled', case when q.waiting then null else q.ruling end, 'lapses_at', q.lapses_at),
+         jsonb_build_object('thread', q.thread, 'title', t.title, 'post', p.seq, 'ruling', q.ruling,
+                            'by', q.office,
+                            'move_kind', (select m.kind from queued_moves m where m.id = coalesce(g.move, q.move)),
+                            'ruled', case when o.request is not null then null else coalesce(g.ruling, q.ruling) end,
+                            'lapses_at', case when o.request is not null then q.at + make_interval(days => staff_request_days()) end),
          null::jsonb, null::timestamptz, q.thread, q.at,
-         case when q.first_ruling = 'confer' and not q.waiting then q.ruling end, null::text, case when q.first_ruling = 'confer' and not q.waiting then q.ruled_at end, null::text, null::timestamptz, null::uuid, null::text
-  from staff_requests_now q
+         case when q.ruling = 'confer' and o.request is null then g.ruling end, null::text, case when q.ruling = 'confer' and o.request is null then g.at end, null::text, null::timestamptz, null::uuid, null::text
+  -- Driven from staff_requests, with the later ruling and the queue read by request (each unique), not from staff_requests_now: the view's joins would be free to order by request id, and this read is for one staff
+  -- key in (at, request_act) order, which is the order of staff_requests_staff_at. `ruling`, `ruled`, `move_kind` and `lapses_at` are staff_requests_now's first_ruling, ruling, move and lapses_at, read the same way.
+  from staff_requests q
+  left join staff_request_rulings g on g.request = q.id
+  left join staff_requests_open o on o.request = q.id
+  -- `threads`, not thread_list or thread_open: thread_list leaves out a thread no list holds (unlisted_threads), and a request keeps its row in the log wherever its thread has gone; the title is all a row takes, read by primary key.
   join threads t on t.id = q.thread
   join acts p on p.id = q.request_act;

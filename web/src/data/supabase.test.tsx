@@ -3792,6 +3792,7 @@ describe('reports, appeals and what a page says of a ban', () => {
       if (name === 'moves_log') return rows([
         { id: A, kind: 'visit', params: { post: 41, rule: 'Rule 2: No double posting', band: 'minor', cause: 'rule' }, demand: null, expires_at: past, thread: T, at: past, ended_why: 'filed', ended_by: null, ended_at: past, kept_by: null },
         { id: C, kind: 'renameBoard', params: {}, demand: null, expires_at: null, thread: T, at: past, ended_why: null, ended_by: null, ended_at: null, kept_by: null },
+        { id: B, kind: 'request', params: { thread: T, title: 'Req', post: 3, ruling: 'confer', by: 'mod', move_kind: null, ruled: 'lapsed', lapses_at: null }, demand: null, expires_at: null, thread: T, at: past, ended_why: 'lapsed', ended_by: null, ended_at: past, kept_by: null },
       ]);
       return undefined;
     });
@@ -3815,6 +3816,8 @@ describe('reports, appeals and what a page says of a ban', () => {
     const log = await h.api.movesLog('clerk');
     expect(log.rows[0]).toMatchObject({ kind: 'visit', outcome: 'filed', params: { post: 41 } });
     expect(log.rows[1]?.outcome).toBeUndefined();
+    /* A request row (0424) carries what ended it as its outcome, and its params as the database words them. */
+    expect(log.rows[2]).toMatchObject({ kind: 'request', outcome: 'lapsed', params: { thread: T, title: 'Req', post: 3, ruling: 'confer', by: 'mod', ruled: 'lapsed' } });
   });
 });
 
