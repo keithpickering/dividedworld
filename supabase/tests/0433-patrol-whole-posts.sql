@@ -115,4 +115,16 @@ begin
     and not has_function_privilege('authenticated', 'patrol_sample(uuid[], integer, integer, bigint)', 'execute'), 'the door');
   -- the draw: a smaller sample is the newest-weighted same posts as before (this seed, the same call twice)
   perform pg_temp.expect(patrol_sample(array[board], 3, 50, 7) = patrol_sample(array[board], 3, 50, 7) and jsonb_array_length(patrol_sample(array[board], 3, 50, 7)) = 3, 'the same seed draws the same sample');
+  -- patrol_sample is patrol_draw plus the extras: the same acts, in the same order, for the same arguments (0310 measures the draw's weights through patrol_draw alone, so this holds the two together)
+  for n in 1..5 loop
+    perform pg_temp.expect((select coalesce(jsonb_agg(e -> 'act' order by ord), '[]'::jsonb) from jsonb_array_elements(patrol_sample(array[board], 3, 50, n)) with ordinality t(e, ord))
+      = (select coalesce(jsonb_agg(e -> 'act' order by ord), '[]'::jsonb) from jsonb_array_elements(patrol_draw(array[board], 3, 50, n)) with ordinality t(e, ord)), 'patrol_sample drew other acts than patrol_draw for seed ' || n);
+  end loop;
+  perform pg_temp.expect(jsonb_array_length(patrol_draw(array[board], 3, 50, 7)) = 3, 'the draw is a sample of three');
+  -- red: a copy of patrol_sample whose draw reads the seed plus one fails the same comparison for some seed (the copy lives in pg_temp, and the comparison is the one above)
+  execute replace(replace(pg_get_functiondef('patrol_sample(uuid[], integer, integer, bigint)'::regprocedure), 'public.patrol_sample', 'pg_temp.patrol_sample_mut'), 'patrol_draw(boards, most, pool, seed)', 'patrol_draw(boards, most, pool, seed + 1)');
+  perform pg_temp.expect(exists (
+    select 1 from generate_series(1, 5) g(n)
+    where (select coalesce(jsonb_agg(e -> 'act' order by ord), '[]'::jsonb) from jsonb_array_elements(pg_temp.patrol_sample_mut(array[board], 3, 50, g.n)) with ordinality t(e, ord))
+      is distinct from (select coalesce(jsonb_agg(e -> 'act' order by ord), '[]'::jsonb) from jsonb_array_elements(patrol_draw(array[board], 3, 50, g.n)) with ordinality t(e, ord))), 'the equality cannot tell a different draw apart');
 end $$;

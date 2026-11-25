@@ -819,24 +819,19 @@ revoke execute on function system_digest(timestamptz, timestamptz) from public, 
 grant execute on function system_digest(timestamptz, timestamptz) to service_role;
 
 -- ----------------------------------------------------------------------------- the patrol reads whole posts --
--- (docs/plans/2026-11-25-digest-sees-the-board-plan.md, Task 4; design section 5.) patrol_sample(boards, most, pool, seed) is 0362's, with its draw and its order unchanged, and each sampled post now carries what the board shows with it:
+-- (docs/plans/2026-11-25-digest-sees-the-board-plan.md, Task 4; design section 5.) patrol_sample(boards, most, pool, seed) is patrol_draw(boards, most, pool, seed) (0362's draw and order, unchanged, with only the `trow` column the extras below need; the weighted draw is its own function so supabase/tests/0310-patrol-weights.sql measures the weights through it, thousands of draws, without paying for the extras) and each drawn post now carries what the board shows with it:
 --   the post's `post_extras` answer minus `post` (poll, plays, reactions, rewoundTo, and `body` replacing the words where a rewind shows another version, as pool_read does), asked once for the whole sample (the sampled posts and the origin posts below, at most 2 * `most`);
 --   `origin`, for a post that opens a spun thread (it is the thread's first Act and the thread has an origin Act): exactly pool_read's `origin` (pool_read_origin(thread, row) with the origin post's own extras, and for a moment the plays as they stood), `post` being the full shape or null as pool_read gives it; null for any other post.
 -- The words are the whole current words (SQL never cut them: the engine's excerpt did, and no longer does).
--- Grants and owner: patrol_sample stays owned by the digest role (the owner change 0110 and 0362 used: the role holds `create` on the schema while it happens and gives it back), and its door stays the service role's. post_extras and pool_read_origin are owned by that same role
+-- Grants and owner: patrol_draw is owned by the digest role and no client's, the service role's included (patrol_sample, its owner, and the tests, which run as the superuser, are its only callers). patrol_sample stays owned by the digest role (the owner change 0110 and 0362 used: the role holds `create` on the schema while it happens and gives it back), and its door stays the service role's. post_extras and pool_read_origin are owned by that same role
 -- (0426), so the function runs them as its owner with no new grant: none is needed and none is given. The masks are 0426's: everything arrives through post_extras and pool_read_origin, which read acts_public and the public views only, so no secret ballot's voter, no unsprung set and no owner is in the answer.
 -- Settings: the planner settings 0426's functions carry (jit off, no seq or bitmap scan, no sort or incremental sort: every probe reads a table by its key), with the same search_path. The draw's own order by has no index to use and still runs (enable_sort only discourages a sort).
 -- Cost at a busy instance: unchanged draw; then at most `most` origin probes (pool_read_origin reads a thread's row, the origin Act and its post by key) and one post_extras for at most 2 * `most` posts, which is bounded as 0426 bounds it. post_extras refuses above 200 posts, so `most` above 100 is refused plainly (the setting holds it to 25).
 
 drop function patrol_sample(uuid[], integer, integer, bigint);
-create function patrol_sample(boards uuid[], most integer, pool integer, seed bigint) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp set jit = off
-  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
-declare
-  picked jsonb; e jsonb; org jsonb; opost jsonb; mp jsonb; act_id text; orgs jsonb := '{}'::jsonb; ids uuid[] := '{}'::uuid[]; ex jsonb; ex_by jsonb;
-begin
+create function patrol_draw(boards uuid[], most integer, pool integer, seed bigint) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(jsonb_build_object('act', s.id, 'thread', s.thread, 'title', s.title, 'board', s.board, 'name', s.name, 'pronouns', s.pronouns, 'body', s.body, 'trow', s.trow) order by s.created_at desc, s.id desc), '[]'::jsonb)
-  into picked
   from (
     select k.id, k.thread, k.created_at, k.title, k.board, k.name, k.pronouns, k.body, k.trow
     from (
@@ -848,24 +843,37 @@ begin
                case when th.origin_act_id is not null and a.id = th.first_act
                     then jsonb_build_object('origin_act_id', th.origin_act_id, 'created_at', th.t_created, 'origin_place', th.origin_place, 'first_act', th.first_act) end as trow
         from unnest(coalesce(boards, '{}'::uuid[])) with ordinality b(id, ord)
-        cross join lateral (select t.id, t.title, t.board, t.origin_act_id, t.created_at as t_created, t.origin_place, t.first_act from thread_list t where t.board = b.id order by t.last_at desc, t.id desc limit greatest(patrol_sample.pool, 0)) th
+        cross join lateral (select t.id, t.title, t.board, t.origin_act_id, t.created_at as t_created, t.origin_place, t.first_act from thread_list t where t.board = b.id order by t.last_at desc, t.id desc limit greatest(patrol_draw.pool, 0)) th
         cross join lateral (
           select p.id, p.thread, p.character, p.created_at, p.current_payload
           from acts_public p
           where p.thread = th.id and p.kind in ('post', 'spin')
             and not exists (select 1 from acts_public v where v.kind = 'visit' and v.target_act_id = p.id)
-          order by p.created_at desc, p.id desc limit greatest(patrol_sample.most, 0)
+          order by p.created_at desc, p.id desc limit greatest(patrol_draw.most, 0)
         ) a
         join characters_public c on c.id = a.character and c.staff is null
         where b.ord <= 50
         order by a.created_at desc, a.id desc
-        limit greatest(patrol_sample.pool, 0)
+        limit greatest(patrol_draw.pool, 0)
       ) cand
-      cross join lateral (select (hashtextextended(patrol_sample.seed::text || ':' || cand.id::text, 0)::numeric + 9223372036854775808 + 0.5) / 18446744073709551616 as u) h
+      cross join lateral (select (hashtextextended(patrol_draw.seed::text || ':' || cand.id::text, 0)::numeric + 9223372036854775808 + 0.5) / 18446744073709551616 as u) h
     ) k
     order by k.drawn, k.id
-    limit greatest(patrol_sample.most, 0)
-  ) s;
+    limit greatest(patrol_draw.most, 0)
+  ) s
+$$;
+revoke execute on function patrol_draw(uuid[], integer, integer, bigint) from public, anon, authenticated, service_role;
+grant create on schema public to kayfabb_digest;
+alter function patrol_draw(uuid[], integer, integer, bigint) owner to kayfabb_digest;
+revoke create on schema public from kayfabb_digest;
+
+create function patrol_sample(boards uuid[], most integer, pool integer, seed bigint) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp set jit = off
+  set enable_seqscan = off set enable_bitmapscan = off set enable_sort = off set enable_incremental_sort = off as $$
+declare
+  picked jsonb; e jsonb; org jsonb; opost jsonb; mp jsonb; act_id text; orgs jsonb := '{}'::jsonb; ids uuid[] := '{}'::uuid[]; ex jsonb; ex_by jsonb;
+begin
+  picked := patrol_draw(boards, most, pool, seed);
 
   -- the origin of each post that opens a spun thread
   for e in select x from jsonb_array_elements(picked) x where jsonb_typeof(x -> 'trow') = 'object' loop
