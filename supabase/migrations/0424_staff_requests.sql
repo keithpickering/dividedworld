@@ -373,7 +373,7 @@ end $$;
 --               RLS on, no client's grant; the instance's export carries it as it carries every table, and an import's replica write carries its rows as they were.
 --               staff_requests_now reads each request's latest ruling and, while it waits, when it lapses (`at` + staffRequests.daysMost days, staff_request_days()).
 --   functions   apply_boss_move (the Boss's side of apply_mod_move: the Boss's bank pays), rule_request (the turn's ruling: one transaction, idempotent on (staff, request post)), requests_waiting (the meeting's read of
---               what waits, each request by key through staff_request_shown), staff_requests_due (the tick's pick of what lapses, each post by key through staff_request_post_public), requests_ruled (what apply_meeting calls for the meeting's answers; Task 5), setting_staffrequests, and settings_held (0416) and system_tick (0403) re-created.
+--               what waits, each request by key through staff_request_shown), staff_requests_due (the tick's pick of what lapses, each post by key through staff_request_post_public), requests_ruled (what apply_meeting calls for the meeting's answers; Task 5), setting_staffrequests, and settings_held and system_tick (both as 0423 left them) re-created.
 --   The bank. A turn's fulfill and a meeting both spend the Boss's bank, and apply_meeting writes the balance it read at its start. apply_boss_move therefore takes the lock a meeting takes (`kayfabb.meeting.<id>`, for each
 --   meeting still open) and then the Boss's own bank lock (`kayfabb.bank.<boss>`), and reads bank_now under both: a turn and a meeting at one minute are one after the other, and the second reads what the first left. Task 5's
 --   apply_meeting takes `kayfabb.bank.<boss>` right after its own meeting lock, so a meeting begun after a turn read its meetings is held too.
@@ -956,7 +956,7 @@ begin
 end $$;
 revoke execute on function setting_staffrequests(jsonb) from public, anon, authenticated;
 
--- settings_held (0416), staffRequests held by setting_staffrequests. Everything else as 0416_crowd_floor_setting.sql wrote it.
+-- settings_held (0423_rulings_alerts.sql, which took it from 0416), staffRequests held by setting_staffrequests. Everything else as 0423 wrote it.
 create or replace function public.settings_held()
  RETURNS trigger
  LANGUAGE plpgsql
@@ -968,7 +968,7 @@ declare
   shape text;
   phase text;
   pkey text;
-  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'];
+  kinds text[] := array['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'settlement', 'followed', 'update', 'seasonNews', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack', 'gift', 'conduct'];
 begin
   why := case new.key
     when 'walletCap' then case when not setting_whole(v, 1) then 'a whole number of hundredths, at least 1' end
@@ -1105,7 +1105,7 @@ begin
   return new;
 end $function$;
 
--- system_tick (0403_departed_personas.sql), lapsing the requests whose time has come (step 5). Everything else as 0403 wrote it.
+-- system_tick (0423_rulings_alerts.sql, which took it from 0403_departed_personas.sql), lapsing the requests whose time has come (step 5). Everything else as 0423 wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -1249,6 +1249,12 @@ begin
           || case when due.demand is not null then jsonb_build_object('demand', due.demand) else '{}'::jsonb end
           || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end) ->> 'id')::uuid;
         update queued_moves set landed_act = written where id = due.id;
+        -- A ruling on a player's own character (design section 2): the member a Boss put in a group is told, as is the starter of a thread the Boss moved. A mergeBoard and a group left alert no one.
+        if due.kind = 'conferGroup' then
+          perform write_alert(safe_uuid(lp ->> 'character'), 'ruling', 'grouped', written, null);
+        elsif due.kind = 'moveThread' then
+          perform write_alert((select a.character from acts a where a.thread = safe_uuid(lp ->> 'thread') and a.seq = 1), 'ruling', 'threadMoved', written, null);
+        end if;
         -- What it was built on, recorded now that it has landed: an admin's reversal of one of them follows it (reverse_move).
         if due.depends_on is not null then
           insert into move_dependencies (act, on_act) select written, d.landed_act from queued_moves d where d.id = any (due.depends_on) and d.landed_act is not null and d.landed_act <> written on conflict do nothing;
