@@ -34,7 +34,7 @@ function world(o: { hooTurns?: boolean } = {}) {
   seed.turn(pipe, 'face', { loudness: 'silent' });
   if (o.hooTurns) seed.turn(hoo, 'heel', { loudness: 'silent' });
   seed.settle({
-    at: at(29, 8, 17), debut: false, turns: true,
+    at: at(29, 8, 17), turns: true,
     ledger: [
       { character: pipe, reason: 'heel.drewHeat', amount: 330, shares: [{ act: p2, quadrant: 'excitedNegative', amount: 330 }] },
       { character: pipe, reason: 'heel.shrugged', amount: -5, shares: [{ act: p2, quadrant: 'calmPositive', amount: -5 }] },
@@ -152,7 +152,7 @@ describe('the settlement\'s summary', () => {
     fake.signInAs(me);
     /* The announcement is written now, ahead of the settlement; nothing writes another when the Turn lands (0427). */
     expect((await fake.turn(pipe, 'face', 'announced', true, false, thread)).ok).toBe(true);
-    seed.settle({ at: at(29, 8, 17), debut: false, turns: true, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 100 }] });
+    seed.settle({ at: at(29, 8, 17), turns: true, ledger: [{ character: pipe, reason: 'heel.drewHeat', amount: 100 }] });
     await openSummary(fake, me, pipe);
     const turn = await screen.findByRole('region', { name: 'Turn' });
     expect(turn.textContent).toContain('Pipewrench\'s Turn took effect. From the Oct 29 settlement she scores as a Face. It was announced in Where the Turn is said, with the old class.');
@@ -379,7 +379,7 @@ describe('crowd pay in the summary', () => {
     const { fake } = world();
     const other = fake.seed.account('other');
     const glo = fake.seed.character(other, 'Gloomba', 'heel');
-    fake.seed.settle({ at: at(30, 8, 17), debut: false, turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
+    fake.seed.settle({ at: at(30, 8, 17), turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
     const real = fake.log.bind(fake);
     const endsAt = new Date(at(30, 8, 17)).toISOString();
     vi.spyOn(fake, 'log').mockImplementation(async (before) => crowdLog(await real(before), 77, endsAt, ['x'], { stub: true }));
@@ -458,7 +458,7 @@ describe('the summary on the first load after a settlement', () => {
     const { fake, me } = world();
     const other = fake.seed.account('other');
     const glo = fake.seed.character(other, 'Gloomba', 'heel');
-    fake.seed.settle({ at: at(30, 8, 17), debut: false, turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
+    fake.seed.settle({ at: at(30, 8, 17), turns: false, ledger: [{ character: glo, reason: 'heel.drewHeat', amount: 10 }] });
     localStorage.clear();
     load(fake);
     await waitFor(async () => expect(await seenOf(fake)).toBe(new Date(at(30, 8, 17)).toISOString()));

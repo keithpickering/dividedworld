@@ -359,7 +359,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   seed.wallet(player, WALLET_START - SCORED_OCT_28.reduce((sum, [, , amount]) => sum + amount, 0));
   when(SETTLE_1, (at) => {
     seed.settle({
-      at, debut: false, turns: false, sharesKept: false,
+      at, turns: false, sharesKept: false,
       ledger: SCORED_OCT_28.map(([who, reason, amount]) => ({ character: named[who], reason, amount })),
       wallet: { [rival]: 300, [reader]: 120 },
       standings: { [spritey]: 650, [hooligan]: 420, [pipewrench]: 295, [gloomba]: 180, [thwompson]: 40 },
@@ -388,7 +388,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   when(SETTLE_2, (at) => {
     const shareOn = { 'post-43': posts[43]!, 'play-46': plays[46]! };
     seed.settle({
-      at, debut: false, turns: true,
+      at, turns: true,
       ledger: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount, shares: [{ act: shareOn[SHARED_ON[reason][0]], quadrant: SHARED_ON[reason][1], amount }] })),
     });
     seed.announceTurn(pipewrench, turns.thread, { was: 'heel', at });

@@ -531,12 +531,12 @@ describe('standings', () => {
   test('ranked with ties sharing a place, waiting characters left out', async () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 } });
     expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.standing, s.place])).toEqual([
       ['Bo Face', 500, 1], ['Ana Face', 300, 2], ['Ana Heel', 300, 2],
     ]);
     /* Dense (#453): the standing after a tie takes the next place. */
-    fake.seed.settle({ standings: { [anaFace]: 500, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 500, [anaHeel]: 300, [boFace]: 500 } });
     expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.place])).toEqual([['Ana Face', 1], ['Bo Face', 1], ['Ana Heel', 2]]);
     expect(await fake.lastSettledAt()).toBe(new Date(fake.clock.now()).toISOString());
   });
@@ -586,11 +586,11 @@ describe('what the public reads never prove', () => {
     must(await fake.unmask(anaFace, thread, 'now a heel'));
     expect(await shown()).not.toBeNull();
   });
-  test('classShownAt is set by a debut with its class and by a Turn announced with its class', async () => {
+  test('classShownAt is set by an old debut with its class and by a Turn announced with its class', async () => {
     const { fake, anaFace, anaHeel } = world();
     const shown = async (id: string) => (await fake.myCharacters()).find((c) => c.id === id)!.classShownAt;
     expect(await shown(anaFace)).toBeNull();
-    const debut = fake.seed.announce(anaFace, 'debut', { class: 'face' });
+    const debut = fake.seed.debutHistory(anaFace, { class: 'face' });
     expect(await shown(anaFace)).toBe((await fake.act(debut))!.createdAt);
     expect(await shown(anaHeel)).toBeNull();
     const turned = fake.seed.announce(anaHeel, 'turn', { class: 'heel', was: 'face' });
@@ -1881,7 +1881,7 @@ describe('a place and a standing, read for one character or a page of them', () 
   test('standingAmounts is each asked character\'s standing: 0 for one with nothing settled, and for one that is not a character', async () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: -40 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: -40 } });
     expect(await fake.standingAmounts([anaFace, boFace, anaHeel, waiting, 'nobody'])).toEqual({ [anaFace]: 300, [boFace]: -40, [anaHeel]: 0, [waiting]: 0, nobody: 0 });
     expect(await fake.standingAmounts([])).toEqual({});
   });
@@ -1889,7 +1889,7 @@ describe('a place and a standing, read for one character or a page of them', () 
   test('standingPlace is the standing, the place and the number of debuted characters, as the ranking says them, and null for one that has not debuted', async () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 } });
     const all = await fake.standingsPage(0, 1000);
     for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
     /* A debt holds no place (#492): only a standing above zero is placed. The tie at 300 shares place 1. */
@@ -2011,9 +2011,9 @@ describe('a finished season\'s results and its announcements', () => {
     expect((await w.fake.profilePage(w.anaHeel))?.seasons).toEqual([{ season: 1, place: null, standing: -30, at: new Date(at(28, 12)).toISOString() }]);
   });
 
-  test('seed.announce writes the character\'s own announce Act in the season\'s Roster Report thread, which a board lists', async () => {
+  test('seed.announce and seed.debutHistory write the character\'s own announce Act in the season\'s Roster Report thread, which a board lists', async () => {
     const { fake, anaFace, boFace } = world();
-    const first = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
+    const first = fake.seed.debutHistory(anaFace, { class: 'face', at: at(5, 8) });
     const second = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
     const a = (await fake.act(first))!;
     expect(a).toMatchObject({ kind: 'announce', character: anaFace, payload: { what: 'debut', class: 'face' } });
@@ -2023,14 +2023,13 @@ describe('a finished season\'s results and its announcements', () => {
     expect((await fake.season())?.turnsThread).toBe(a.thread);
     const board = (await fake.boards()).find((b) => b.slug === 'announcements')!;
     expect((await fake.threads(board.id, { offset: 0, limit: 20 })).threads.map((t) => t.id)).toContain(a.thread);
-    expect(() => fake.seed.announce(anaFace, 'debut', { was: 'face' })).toThrow('a debut has no class it was');
   });
 
   test('an announcements item is one landing: the announce Acts of a thread at one instant, debuts then Turns, at most 20 names, count of them all', async () => {
     const { fake, anaFace, anaHeel, boFace } = world();
     fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
-    fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
-    fake.seed.announce(anaHeel, 'debut', { at: at(5, 8) });
+    fake.seed.debutHistory(anaFace, { class: 'face', at: at(5, 8) });
+    fake.seed.debutHistory(anaHeel, { at: at(5, 8) });
     fake.seed.announce(anaHeel, 'turn', { at: at(6, 8) });
     const items = (await fake.seasonNews()).filter((n) => n.kind === 'tally');
     expect(items).toHaveLength(2);
@@ -2041,7 +2040,7 @@ describe('a finished season\'s results and its announcements', () => {
     expect(landing!.turns).toEqual([{ character: boFace, name: 'Bo Face', class: 'face', was: 'heel' }]);
     const crowd = world();
     const who = crowd.fake.seed.account('crowd');
-    for (let i = 0; i < 25; i++) crowd.fake.seed.announce(crowd.fake.seed.character(who, `D${String(i).padStart(2, '0')}`, 'face'), 'debut', { at: at(7, 8) });
+    for (let i = 0; i < 25; i++) crowd.fake.seed.debutHistory(crowd.fake.seed.character(who, `D${String(i).padStart(2, '0')}`, 'face'), { at: at(7, 8) });
     const [big] = (await crowd.fake.seasonNews()).filter((n) => n.kind === 'tally');
     expect(big).toMatchObject({ count: 25 });
     expect(big!.debuts).toHaveLength(20);
@@ -2049,8 +2048,8 @@ describe('a finished season\'s results and its announcements', () => {
 
   test('classReveals and turnsAnnounced read announce Acts beside the old: a class named is a reveal, a Turn is announced, with its old class where it said it', async () => {
     const { fake, anaFace, anaHeel, boFace } = world();
-    const debut = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
-    const bare = fake.seed.announce(anaHeel, 'debut', { at: at(5, 8) });
+    const debut = fake.seed.debutHistory(anaFace, { class: 'face', at: at(5, 8) });
+    const bare = fake.seed.debutHistory(anaHeel, { at: at(5, 8) });
     const turn = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(6, 8) });
     const quiet = fake.seed.announceTurn(boFace, (await fake.act(debut))!.thread, { at: at(7, 8) });
     const thread = (await fake.act(debut))!.thread;
@@ -2079,7 +2078,7 @@ describe('a page of the standings', () => {
     const { fake, bo, anaFace, anaHeel, boFace } = world();
     const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
     const boLurk = fake.seed.character(bo, 'Bo Lurk', 'lurker');
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 } });
     const row = (s: { name: string; standing: number; place: number | null }) => [s.name, s.standing, s.place];
     expect((await fake.standingsPage(0, 2)).map(row)).toEqual([['Bo Face', 500, 1], ['Ana Face', 300, 2]]);
     /* Places are dense (#453): the tie at 300 is place 2. A standing of 0 or below holds no place (#492): the masks below are listed by standing, unplaced. */

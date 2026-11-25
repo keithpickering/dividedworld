@@ -50,7 +50,7 @@ const season: World = (fake, instance) => {
   seed.announceTurn(thwompson, turns.thread, { at: utc(20, 8, 17) });
 
   seed.settle({
-    at: SETTLED, debut: false, turns: false,
+    at: SETTLED, turns: false,
     standings: { [spritey]: 650, [hooligan]: 420, [pipewrench]: 330, [gloomba]: 180, [thwompson]: 40 },
   });
   fake.signInAs(player);

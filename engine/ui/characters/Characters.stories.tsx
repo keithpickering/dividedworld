@@ -15,7 +15,7 @@ const full: World = (fake, instance) => {
   const pipe = fake.seed.character(me, 'Pipewrench', a!.key, { at: t0 });
   const hoolie = fake.seed.character(me, 'Mrs. Hooligan', (b ?? a)!.key, { at: t0 });
   fake.seed.character(me, 'Spritey', (c ?? a)!.key, { at: t0 });
-  fake.seed.settle({ at: t0 + 86_400_000, debut: false, standings: { [pipe]: 1420, [hoolie]: 685 } });
+  fake.seed.settle({ at: t0 + 86_400_000, standings: { [pipe]: 1420, [hoolie]: 685 } });
   fake.signInAs(me);
 };
 

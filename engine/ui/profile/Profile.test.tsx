@@ -25,7 +25,7 @@ function world(fake: Fake) {
   for (let i = 0; i < 4; i++) fake.seed.post(thread, spritey, `reply ${i + 1} [b]bold[/b]`, { at: T0 + 3 * DAY + i * 3_600_000 });
   fake.seed.card(spritey, act, 'whoops', { at: T0 + 4 * DAY });
   fake.seed.post(thread, pipe, 'hello', { at: T0 + 5 * DAY });
-  fake.seed.settle({ at: Date.UTC(2026, 9, 29, 8, 17), debut: false, standings: { [spritey]: 350, [pipe]: 120 } });
+  fake.seed.settle({ at: Date.UTC(2026, 9, 29, 8, 17), standings: { [spritey]: 350, [pipe]: 120 } });
   fake.signInAs(me);
   return { me, other, spritey, pipe, waiting, thread, act };
 }
@@ -59,7 +59,7 @@ describe('the public profile', () => {
   test('a character at 0 Aura or below has no place this season: its Place says unplaced, never a number (#492)', async () => {
     const fake = buildWorld();
     const w = world(fake);
-    fake.seed.settle({ at: Date.UTC(2026, 9, 30, 8), debut: false, standings: { [w.pipe]: 0 } });
+    fake.seed.settle({ at: Date.UTC(2026, 9, 30, 8), standings: { [w.pipe]: 0 } });
     open(w.pipe, fake);
     const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
     await waitFor(() => expect(fact(facts, 'Aura this season')).toHaveTextContent('0.00'));

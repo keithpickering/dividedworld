@@ -277,7 +277,7 @@ async function settledWorld() {
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   const [mine] = await fake.myCharacters();
-  fake.seed.settle({ at: fake.clock.now(), debut: false, turns: false, ledger: [{ character: mine!.id, reason: 'heel.drewHeat', amount: 20 }] });
+  fake.seed.settle({ at: fake.clock.now(), turns: false, ledger: [{ character: mine!.id, reason: 'heel.drewHeat', amount: 20 }] });
   return fake;
 }
 

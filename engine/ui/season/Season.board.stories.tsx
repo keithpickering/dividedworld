@@ -43,7 +43,7 @@ const news: World = (fake, instance) => {
     { character: hooligan, place: 3, standing: 795, shown: shown(hooliganRevealed, utc(10, 14, 1), cls(2)) },
   ], { at: utc(11, 1) });
   seed.handover({ outgoing: 'story-lady-ledger', boss: 'story-mister-spreadsheet', at: utc(11, 1), farewell: 'The ledger is closed. Balance carried forward.', arrival: 'Efficiency is a virtue. So is fear. I have reviewed your posting cadence.' });
-  seed.announce(thwompson, 'debut', { at: utc(11, 2) });
+  seed.debutHistory(thwompson, { at: utc(11, 2) });
   seed.announce(pipewrench, 'turn', { at: utc(11, 2), was: cls(1) });
   fake.signInAs(player);
 };

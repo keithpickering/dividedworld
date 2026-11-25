@@ -36,7 +36,8 @@ describe('the announce line', () => {
     const fake = buildWorld();
     const owner = fake.seed.account('o');
     const spritey = fake.seed.character(owner, 'Spritey', 'face');
-    const act = fake.seed.announce(spritey, what, { was, class: cls, ahead });
+    /* A debut is history (0428 wrote the last of them): only the seed for old Acts writes one. */
+    const act = what === 'debut' ? fake.seed.debutHistory(spritey, { class: cls }) : fake.seed.announce(spritey, what, { was, class: cls, ahead });
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/' });
     await waitFor(() => expect(screen.getByText(says)).toBeInTheDocument());
     expect(screen.getByText(says).tagName).toBe('P');
@@ -46,7 +47,7 @@ describe('the announce line', () => {
     const fake = buildWorld();
     const owner = fake.seed.account('o');
     const spritey = fake.seed.character(owner, 'Spritey', 'face');
-    const act = fake.seed.announce(spritey, 'debut', { class: 'alpha' });
+    const act = fake.seed.debutHistory(spritey, { class: 'alpha' });
     const instance = { ...testInstance, classes: [...testInstance.classes, { key: 'alpha', name: 'Alpha', earn: () => [] }] };
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/', instance });
     await waitFor(() => expect(screen.getByText('Spritey debuts as an Alpha.')).toBeInTheDocument());

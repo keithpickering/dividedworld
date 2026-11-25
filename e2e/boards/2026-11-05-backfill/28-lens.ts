@@ -51,8 +51,11 @@ export const part = (id: string, role: string, name: string, more: Partial<Landm
 /** What stands under another part, held from that part's bottom edge. */
 const under = (of: string) => ({ origin: of, originEdge: 'bottom' }) as const;
 
-/** The Lens's dialog, as the board draws it docked (its own place on the page is held by the first board). */
-export const dialog = (more: Partial<Landmark> = {}): Landmark => ({ id: 'dialog', role: 'dialog', name: 'Cards on this post', type: false, box: 'size', buildShift: { height: -8 }, ...more });
+/**
+ * The Lens's dialog, as the board draws it docked (its own place on the page is held by the first board). It stands 20px shorter than the board's: 8px for the
+ * frame, and 12px more because it is docked above the HUD, which is 12px taller for the Turn opener it gained (the staff board threads plan, Task 3).
+ */
+export const dialog = (more: Partial<Landmark> = {}): Landmark => ({ id: 'dialog', role: 'dialog', name: 'Cards on this post', type: false, box: 'size', buildShift: { height: -20 }, ...more });
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/28-lens',

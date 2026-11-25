@@ -9,7 +9,7 @@
  * Public reads go through the same projections the server has: a waiting character is in none of
  * them, an owner is in none, a class is public only through a reveal or an announced Turn, a
  * tally is counts. What a test controls is on `seed` (state the server's own code would have made:
- * a settlement, a reveal, a debut), on `clock`, on `signInAs`, and on `broadcast`, which can hold
+ * a settlement, a reveal), on `clock`, on `signInAs`, and on `broadcast`, which can hold
  * the live events a post or a reaction sends and deliver them twice and out of order.
  *
  * Where it differs from the server, and says so:
@@ -115,7 +115,7 @@ export interface Seed {
   /** A reaction, refused in the server's words like any other. */
   react(account: Id, character: Id, act: Id, kind: string): void;
   /**
-   * A settlement: debuts the waiting characters, applies the waiting Turns (class history starts
+   * A settlement: applies the waiting Turns (class history starts
    * then, so the cooldown does) but for one whose character revealed at or after `at`, which waits for the next (0074), writes its ledger lines with their shares, credits each account's
    * wallet with its lines' sum as apply_settlement does (held to the cap and the floor, with a wallet
    * event saying what either cut off) and adds each character's to its standing, sets the wallets (by
@@ -125,7 +125,7 @@ export interface Seed {
    * line's shares add up to it, and an account's wallet is credited by its lines or set, never both.
    */
   settle(options: {
-    at?: number; wallet?: Readonly<Record<Id, number>>; standings?: Readonly<Record<Id, number>>; debut?: boolean; turns?: boolean;
+    at?: number; wallet?: Readonly<Record<Id, number>>; standings?: Readonly<Record<Id, number>>; turns?: boolean;
     ledger?: readonly SeedLine[]; sharesKept?: boolean;
   }): void;
   season(season: Partial<Season>): void;
@@ -220,11 +220,16 @@ export interface Seed {
    */
   announceTurn(character: Id, thread: Id, options?: { was?: string; class?: string; since?: string; at?: number }): Id;
   /**
-   * A character's announce Act (0100) in the Roster Report thread of the season open at `at` (else now), which this opens on the staff board where the
-   * season has none. A debut names no `was`, and one that names its `class` is that class's reveal. Throws on a debut naming `was`; unlike the
-   * guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
+   * A character's Turn announce Act (0100) in the Roster Report thread of the season open at `at` (else now), which this opens on the staff board where the
+   * season has none. Unlike the guard, it does not check that `class` is the one the character holds, so a seed states what the board shows.
    */
-  announce(character: Id, what: 'debut' | 'turn', options?: { was?: string; class?: string; ahead?: boolean; at?: number }): Id;
+  announce(character: Id, what: 'turn', options?: { was?: string; class?: string; ahead?: boolean; at?: number }): Id;
+  /**
+   * A debut announce Act as the database still holds those written before 0428, in the Roster Report thread of the season open at `at` (else now): history, read as it always
+   * was (the board's line, the class reveal a `class` makes). Nothing writes one now, so this is no writer a test can reach by the game's own means; a character made now
+   * writes no Act.
+   */
+  debutHistory(character: Id, options?: { class?: string; at?: number }): Id;
   /**
    * A Roster Report entry that names Turns taking effect (`write_roster_entry`, 0432): `post` is the entry's first post (a staff post the seed has written), `turns` the first of the Turns taking effect as the entry's record
    * holds them, `count` how many took effect (the turns' number where unsaid). Season News lists it as one `roster` item linking the post, dated `at` (else now).
@@ -5828,6 +5833,26 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return out.sort((a, b) => Date.parse(b.at) - Date.parse(a.at) || (a.kind < b.kind ? -1 : a.kind > b.kind ? 1 : 0) || String(a.sub ?? '').localeCompare(String(b.sub ?? '')) || String(a.act ?? '').localeCompare(String(b.act ?? '')));
   }
 
+  /** An announce Act in the Roster Report thread of the season open at `at`, which this opens on the staff board where the season has none (`seed.announce`, `seed.debutHistory`). */
+  function rosterAct(character: Id, what: 'debut' | 'turn', o: { was?: string; class?: string; ahead?: boolean; at?: number }): Id {
+    if (!characters.has(character)) throw new Error(`no such character ${character}`);
+    const at = o.at ?? now();
+    const season = seasons.filter((x) => Date.parse(x.startsAt) <= at && (x.endsAt === null || Date.parse(x.endsAt) > at)).sort((x, y) => y.number - x.number)[0]
+      ?? seasons.find((x) => x.endsAt === null) ?? seasons[seasons.length - 1]!;
+    let thread = season.turnsThread;
+    if (thread === null) {
+      const board = boards.find((b) => b.isSystem);
+      if (!board) throw new Error('the instance has no System board');
+      thread = openThread(board.id, (options.instance.copy?.rosterThreadTitle ?? 'Season {season}: Roster Report').replace('{season}', String(season.number)), null, at).id;
+      seasons.splice(seasons.indexOf(season), 1, { ...season, turnsThread: thread });
+    }
+    const payload: Record<string, unknown> = { what };
+    if (o.was !== undefined) payload.was = o.was;
+    if (o.class !== undefined) payload.class = o.class;
+    if (o.ahead === true) payload.ahead = true;
+    return write({ character, kind: 'announce', thread, payload, at }).id;
+  }
+
   const seed: Seed = {
     account(name, o) {
       const email = (o?.email ?? `${name.toLowerCase()}@example.test`).toLowerCase();
@@ -5922,7 +5947,6 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     react(account, character, act, kind) { accepted(as(account, () => react(act, character, kind))); },
     settle(o) {
       const at = o.at ?? now();
-      if (o.debut !== false) for (const c of characters.values()) if (c.debutedAt === null) c.debutedAt = at;
       if (o.turns !== false) {
         for (const c of characters.values()) {
           if (!c.pending) continue;
@@ -6076,23 +6100,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       return systemAct(thread, { at: o.at, kind: 'tally', payload: { turns: [turned] } }, '').id;
     },
     announce(character, what, o = {}) {
-      if (!characters.has(character)) throw new Error(`no such character ${character}`);
-      if (what === 'debut' && o.was !== undefined) throw new Error('a debut has no class it was');
-      const at = o.at ?? now();
-      const season = seasons.filter((x) => Date.parse(x.startsAt) <= at && (x.endsAt === null || Date.parse(x.endsAt) > at)).sort((x, y) => y.number - x.number)[0]
-        ?? seasons.find((x) => x.endsAt === null) ?? seasons[seasons.length - 1]!;
-      let thread = season.turnsThread;
-      if (thread === null) {
-        const board = boards.find((b) => b.isSystem);
-        if (!board) throw new Error('the instance has no System board');
-        thread = openThread(board.id, (options.instance.copy?.rosterThreadTitle ?? 'Season {season}: Roster Report').replace('{season}', String(season.number)), null, at).id;
-        seasons.splice(seasons.indexOf(season), 1, { ...season, turnsThread: thread });
-      }
-      const payload: Record<string, unknown> = { what };
-      if (o.was !== undefined) payload.was = o.was;
-      if (o.class !== undefined) payload.class = o.class;
-      if (o.ahead === true) payload.ahead = true;
-      return write({ character, kind: 'announce', thread, payload, at }).id;
+      return rosterAct(character, what, o);
+    },
+    debutHistory(character, o = {}) {
+      return rosterAct(character, 'debut', o);
     },
     rosterEntry(post, turns, o = {}) {
       if (!acts.has(post)) throw new Error(`no such Act ${post}`);

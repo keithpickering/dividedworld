@@ -62,7 +62,7 @@ function world() {
   /* A Turn announced before Gloomba's reveal changes nothing it says; one after Spritey's makes it out of date. */
   seed.announceTurn(gloomba, system.thread, { at: at(4) });
   seed.announceTurn(spritey, system.thread, { at: at(20, 8) });
-  seed.settle({ at: at(29, 8), debut: false, standings: { [spritey]: 650, [pipe]: 330, [gloomba]: 180, [quiet]: 40 } });
+  seed.settle({ at: at(29, 8), standings: { [spritey]: 650, [pipe]: 330, [gloomba]: 180, [quiet]: 40 } });
   return { fake, me, other, pipe, spritey, gloomba, quiet };
 }
 
@@ -295,7 +295,7 @@ describe('Rankings', () => {
     const w = world();
     const idle = w.fake.seed.character(w.other, 'Idle', 'face', { at: at(1) });
     const owes = w.fake.seed.character(w.other, 'Owes', 'face', { at: at(1) });
-    w.fake.seed.settle({ at: at(29, 9), debut: false, standings: { [owes]: -20 } });
+    w.fake.seed.settle({ at: at(29, 9), standings: { [owes]: -20 } });
     w.fake.signInAs(w.me);
     renderIn(w.fake, <RankingsScreen />, { path: '/rankings' });
     await screen.findByRole('table');

@@ -54,13 +54,13 @@ function world(places: readonly [number | null, number | null, number | null, nu
     { character: mrs, place: places[2], standing: unplacedAt(2, 795) },
     { character: pipe, place: places[3], standing: unplacedAt(3, 100) },
   ], { at: at(28) });
-  /* Season 1's Roster Report: a debut, then a Turn announced with its old class. */
-  seed.announce(thwomp, 'debut', { at: at(26, 8) });
+  /* Season 1's Roster Report: an old debut (written before 0428), then a Turn announced with its old class. */
+  seed.debutHistory(thwomp, { at: at(26, 8) });
   const turned = seed.announce(pipe, 'turn', { at: at(27, 8), was: 'heel' });
   seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
   /* The Boss changed at the roll-over: the handover's own thread holds the farewell and then the arrival. */
   const handover = seed.handover({ outgoing: 'lady-ledger', boss: 'mister-spreadsheet', at: at(28), farewell: 'My [b]ledger[/b] is closed. Goodbye.', arrival: 'Efficiency is a virtue. So is fear.' });
-  seed.settle({ at: at(29, 8), debut: false, standings: { [spritey]: 50, [pipe]: 30 } });
+  seed.settle({ at: at(29, 8), standings: { [spritey]: 50, [pipe]: 30 } });
   fake.signInAs(me);
   return { fake, me, other, pipe, mrs, spritey, gloomba, thwomp, turned, roster, handover };
 }

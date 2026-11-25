@@ -47,8 +47,8 @@ const roster: World = (fake, instance) => {
   seed.season({ number: 2, startsAt: new Date(T0 - 60 * MIN).toISOString() });
   seed.settle({ at: T0 - 30 * MIN, standings: { [made[0]!]: 100 } });
   const acts = [
-    seed.announce(made[0]!, 'debut', { at: T0 }),
-    seed.announce(made[1]!, 'debut', { at: T0 + MIN, class: cls(1) }),
+    seed.debutHistory(made[0]!, { at: T0 }),
+    seed.debutHistory(made[1]!, { at: T0 + MIN, class: cls(1) }),
     seed.announce(made[2]!, 'turn', { at: T0 + 2 * MIN, was: cls(0), class: cls(2) }),
     seed.announce(made[3]!, 'turn', { at: T0 + 3 * MIN, was: cls(0) }),
     seed.announce(made[4]!, 'turn', { at: T0 + 4 * MIN, class: cls(3) }),

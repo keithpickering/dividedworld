@@ -30,7 +30,7 @@ function world(options: { readonly per?: number; readonly instance?: Instance } 
   const hoolie = fake.seed.character(me, 'Mrs. Hooligan', 'heel', { at: T0 + DAY });
   const spritey = fake.seed.character(me, 'Spritey', 'heel', { pronouns: PRONOUN_PRESETS.they });
   const stranger = fake.seed.character(other, 'Stranger', 'heel', { at: T0 });
-  fake.seed.settle({ at: T0 + 2 * DAY, debut: false, standings: { [pipe]: 1420, [hoolie]: 685, [stranger]: 100 } });
+  fake.seed.settle({ at: T0 + 2 * DAY, standings: { [pipe]: 1420, [hoolie]: 685, [stranger]: 100 } });
   fake.signInAs(me);
   return { fake, me, other, pipe, hoolie, spritey, stranger, per };
 }
@@ -72,7 +72,7 @@ const offered = async (dialog: HTMLElement) => within(await within(dialog).findB
 async function cooldown(w: World) {
   w.fake.signInAs(w.me);
   expect((await w.fake.turn(w.hoolie, 'face', 'silent', false, false)).ok).toBe(true);
-  w.fake.seed.settle({ at: w.fake.clock.now(), debut: false });
+  w.fake.seed.settle({ at: w.fake.clock.now() });
 }
 
 describe('My characters', () => {
