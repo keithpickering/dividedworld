@@ -5,6 +5,9 @@
  *   DATABASE_URL=postgres://postgres:pg@localhost:5432/postgres npm run test:sql
  *   DATABASE_URL=… npm run test:sql -- 0420          (only the files whose names contain 0420)
  *   KAYFABB_SQL_KEEP=failed …                        (a failing file's clone is kept, and its URL printed)
+ *   KAYFABB_SQL_WORKERS=2 …                          (how many files run at once; the default is one for each CPU)
+ *   … --shard=2/4 --report=sql-report.json           (the files at positions 2, 6, 10… of the one list, and a report of the run)
+ *   node tools/test-sql.mjs --gather=<dir>           (every shard's report in <dir> against the files on disk; needs no database)
  *
  * Each run creates a **template** on the server DATABASE_URL names (`kayfabb_scratch_<pid>_<time>`), applies
  * supabase/tests/setup/auth-shim.sql (a stand-in for what Supabase provides before any migration: the API roles,
@@ -74,6 +77,19 @@
  * where neither reaches) is killed at FILE_TIMEOUT_MS and reported as such, its clone dropped, and the files after it still run. A
  * file or statement setting its own shorter lock_timeout (the racers' 20s in tests.raced) is unaffected.
  *
+ * Files run in a pool, and over shards. As many files run at once as the machine has CPUs (`os.availableParallelism()`, or KAYFABB_SQL_WORKERS), each on
+ * its own clone and taken in name order; the pool is `child_process.spawn` and not `execFileSync`, which would block the one thread that runs the pool.
+ * Each file's whole output is printed as one block when it ends, so lines of different files never interleave, and a failing file does not stop the
+ * others: the failed count is the number of files that failed. The template is built once, before the pool, and its snapshots only when a selected
+ * end-to-end file needs them. `--shard=i/n` runs the files at positions i, i+n, i+2n… of the one sorted list (the assertion files, then the end-to-end
+ * files as `e2e/<file>`; shardOf, counting from 1), so every file is in exactly one shard and no list but the files on disk says which; no flag is shard
+ * 1 of 1. A pattern then narrows the shard's files. `--report=<path>` writes `{ shard: { i, n }, files: [{ name, outcome, seconds }], calls }`, the summed
+ * function counts included, and `--gather=<dir>` reads every report in a directory and lists the files on disk: it fails unless every file is in
+ * exactly one report and passed, every shard 1..n reported and agrees on n (gatherFailures), and every client read was called on the counts summed over
+ * every report (coverageFailure). A split that drops a file, a file run twice and a shard that silently ran nothing are each red there. It touches no
+ * database, so the refusal of one does not apply to it. A run with no `--shard` and no pattern is the whole suite and makes the same comparison in this
+ * process, on its own report, so `npm run test:sql` is one command that runs everything; a shard or a pattern runs part and says `skipped`.
+ *
  * Each file's line carries its seconds, and the summary lists the slowest, since a file that grows is otherwise found by a CI
  * run that takes longer.
  *
@@ -90,7 +106,8 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
-import { execFileSync } from 'node:child_process';
+import os from 'node:os';
+import { execFileSync, spawn } from 'node:child_process';
 import { ALLOWED_RPCS } from './check-web-reads.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -166,6 +183,49 @@ function psqlLines(url, sql) {
 function psqlRows(url, sql) {
   const { lines, error } = psqlLines(url, sql);
   return { rows: lines.filter((l) => l.includes('|')).map((l) => { const [name, calls] = l.split('|'); return { name, calls }; }), error };
+}
+
+/**
+ * Runs a program without blocking this process (the pool runs files together), killed with SIGKILL at FILE_TIMEOUT_MS. Answers its exit code,
+ * whether it was killed, and what it printed. A killed program's own children may hold its pipes open, so it is let go two seconds after it exits.
+ * @param {string} file
+ * @param {string[]} args
+ * @param {{ input?: string, env?: NodeJS.ProcessEnv }} [options]
+ * @returns {Promise<{ code: number | null, killed: boolean, out: string, err: string }>}
+ */
+function exec(file, args, { input, env } = {}) {
+  return new Promise((resolve) => {
+    const child = spawn(file, args, { env, stdio: [input === undefined ? 'ignore' : 'pipe', 'pipe', 'pipe'] });
+    let out = '';
+    let err = '';
+    let killed = false;
+    let done = false;
+    const timer = setTimeout(() => { killed = true; child.kill('SIGKILL'); }, FILE_TIMEOUT_MS);
+    const finish = (code) => { if (done) return; done = true; clearTimeout(timer); resolve({ code, killed, out, err }); };
+    child.stdout.setEncoding('utf8').on('data', (d) => { out += d; });
+    child.stderr.setEncoding('utf8').on('data', (d) => { err += d; });
+    child.on('error', (e) => {
+      if (e.code === 'ENOENT') { console.error(`\n  ${file} not found; run scripts/setup-container.sh`); process.exit(2); }
+      err += String(e);
+      finish(null);
+    });
+    child.on('close', (code) => finish(code));
+    child.on('exit', (code) => { setTimeout(() => finish(code), 2000).unref(); });
+    if (input !== undefined) { child.stdin.on('error', () => {}); child.stdin.end(input); }
+  });
+}
+
+/** psql as exec runs it: the SQL on stdin; answers the error (what psql printed, or the kill) or null. */
+async function psqlAsync(url, sql) {
+  const r = await exec(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', url, '-f', '-'], { input: sql });
+  return { error: r.killed ? killedWhy() : r.code === 0 ? null : (r.err || r.out || `psql exited with ${r.code}`).trim() };
+}
+
+/** psqlLines, without blocking: the lines the queries print, unaligned and `|`-separated, or the error. @returns {Promise<{ lines: string[], error: string | null }>} */
+async function psqlLinesAsync(url, sql) {
+  const r = await exec(PSQL.file, [...PSQL.args, '-v', 'ON_ERROR_STOP=1', '-q', '-X', '-A', '-t', '-F', '|', url, '-f', '-'], { input: sql });
+  if (r.killed) return { lines: [], error: killedWhy() };
+  return r.code === 0 ? { lines: r.out.split('\n'), error: null } : { lines: [], error: (r.err || r.out || `psql exited with ${r.code}`).trim() };
 }
 
 /** SQL with its `--` and block comments blanked, so a comment cannot stand in for code. */
@@ -391,77 +451,246 @@ export const ASSERTION_FILE = /^(\d{4})-[\w.-]+\.sql$/;
 /** Seconds, one decimal, of a duration in ms. */
 const seconds = (ms) => `${(ms / 1000).toFixed(1)}s`;
 
-function main() {
+/**
+ * Every file of the suite, as the one sorted list the shards are cut from: the assertion files (every .sql in supabase/tests/, by
+ * number then name, a name that is not NNNN-*.sql included, which fails when it is reached), then the end-to-end files, each named
+ * `e2e/<file>` as its line prints. `e2eDir` is where the end-to-end files are (KAYFABB_SQL_E2E_DIR stands another in, for
+ * tools/test-sql-refusal.mjs). The files on disk are the only list: the gathering step reads this too.
+ * @param {string} [e2eDir]
+ * @returns {{ names: string[], e2e: string[] }} `names` is the whole list, `e2e` the bare end-to-end file names
+ */
+export function suiteFiles(e2eDir = path.join(testsDir, 'e2e')) {
+  const numberOf = (f) => Number(ASSERTION_FILE.exec(f)?.[1] ?? Number.NaN);
+  const assertion = fs.readdirSync(testsDir).filter((f) => f.endsWith('.sql'))
+    .sort((a, b) => (numberOf(a) - numberOf(b)) || (a < b ? -1 : a > b ? 1 : 0));
+  const e2e = fs.existsSync(e2eDir) ? fs.readdirSync(e2eDir).filter((f) => E2E_FILE.test(f)).sort() : [];
+  return { names: [...assertion, ...e2e.map((f) => `e2e/${f}`)], e2e };
+}
+
+/**
+ * The files of shard `i` of `n`: those at positions i, i+n, i+2n… of the list, counting from 1 (so shard 1 of 4 takes the 1st, 5th, 9th). Every
+ * file is in exactly one shard, and nothing but the list says which. Throws on an `i` or `n` that is not a whole number, on `n < 1`, and
+ * on `i` outside 1..n: a run that cannot say which files are its own runs none of them. Pure.
+ * @param {string[]} files
+ * @param {number} i
+ * @param {number} n
+ */
+export function shardOf(files, i, n) {
+  if (!Number.isInteger(i) || !Number.isInteger(n) || n < 1 || i < 1 || i > n) throw new Error(`shard ${i}/${n} is not a shard: i and n are whole numbers, n is at least 1, and i is from 1 to n`);
+  return files.filter((_, at) => at % n === i - 1);
+}
+
+/** `--shard=i/n` as `[i, n]`; no flag is shard 1 of 1. Throws on anything else. Pure. @param {string | undefined} arg */
+export function parseShard(arg) {
+  if (arg === undefined) return [1, 1];
+  const m = /^(\d+)\/(\d+)$/.exec(arg);
+  if (!m) throw new Error(`--shard=${arg} is not i/n: two whole numbers, as --shard=2/4`);
+  const [i, n] = [Number(m[1]), Number(m[2])];
+  shardOf([], i, n);
+  return [i, n];
+}
+
+/**
+ * Every way a set of shard reports fails to cover the files: a report with no shard to name, a different total of shards from one report to
+ * another, a shard number with no report, a file in no report, a file in two, and a file that did not pass. `reports` are what `--report`
+ * wrote (`{ shard: { i, n }, files: [{ name, outcome, seconds }], calls }`), `allFiles` the files on disk (suiteFiles). One message each; none is
+ * an empty list. Pure, so tools/test-sql-refusal.mjs plants each.
+ * @param {{ shard: { i: number, n: number }, files: { name: string, outcome: string }[] }[]} reports
+ * @param {string[]} allFiles
+ */
+export function gatherFailures(reports, allFiles) {
+  if (!reports.length) return ['no shard report was found, so nothing says that any file ran'];
+  const failures = [];
+  const named = reports.filter((r) => Number.isInteger(r?.shard?.i) && Number.isInteger(r?.shard?.n) && Array.isArray(r.files));
+  if (named.length !== reports.length) failures.push(`${reports.length - named.length} report(s) have no shard {i, n} or no file list`);
+  const totals = [...new Set(named.map((r) => r.shard.n))].sort((a, b) => a - b);
+  if (totals.length > 1) failures.push(`the reports disagree on how many shards there are: ${totals.join(' and ')}`);
+  const n = Math.max(0, ...totals);
+  for (let k = 1; k <= n; k++) if (!named.some((r) => r.shard.i === k)) failures.push(`shard ${k}/${n} has no report`);
+  /** @type {Map<string, { shard: string, outcome: string }[]>} */
+  const seen = new Map();
+  for (const r of named) for (const f of r.files) seen.set(f.name, [...(seen.get(f.name) ?? []), { shard: `${r.shard.i}/${r.shard.n}`, outcome: f.outcome }]);
+  for (const name of allFiles) {
+    const ran = seen.get(name) ?? [];
+    if (!ran.length) failures.push(`${name} is in no report: no shard ran it`);
+    else if (ran.length > 1) failures.push(`${name} is in ${ran.length} reports (shards ${ran.map((x) => x.shard).join(', ')}): a file runs once`);
+    else if (ran[0].outcome !== 'passed') failures.push(`${name} did not pass (${ran[0].outcome}) in shard ${ran[0].shard}`);
+  }
+  return failures;
+}
+
+/**
+ * Why the client reads are not all called, or null: the counts of every report summed, then `uncalledReads` on the sum. A read one file leaves
+ * uncalled is another's to call, and another shard's, so the comparison is on every file of every shard.
+ * @param {{ calls: { name: string, calls: number | string }[] }[]} reports
+ */
+export function coverageFailure(reports) {
+  const summed = sumCalls(reports.map((r) => r.calls));
+  const uncalled = uncalledReads(summed.map((r) => r.name).filter((n) => !(n in UNCOUNTABLE_READS)), summed);
+  return uncalled.length
+    ? `${uncalled.length} client read(s) in ALLOWED_RPCS no test called: ${uncalled.join(', ')}\n`
+      + 'A client read no test calls is one whose broken reference nothing would find; add a call to the assertion file that tests it.'
+    : null;
+}
+
+/** Every `.json` file under a directory, however deep (a downloaded artifact is one folder each), by path. */
+function jsonFilesUnder(dir) {
+  return fs.readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? jsonFilesUnder(path.join(dir, e.name)) : e.name.endsWith('.json') ? [path.join(dir, e.name)] : [])).sort();
+}
+
+/** `--gather=<dir>`: every report in the directory against the files on disk. No database, so no refusal of one applies. */
+function gather(dir) {
+  const problems = [];
+  const reports = [];
+  try {
+    for (const f of jsonFilesUnder(dir)) {
+      try { reports.push(JSON.parse(fs.readFileSync(f, 'utf8'))); } catch (err) { problems.push(`${f} is not a readable report: ${err.message}`); }
+    }
+  } catch (err) { problems.push(`could not read ${dir}: ${err.message}`); }
+  const { names } = suiteFiles(process.env.KAYFABB_SQL_E2E_DIR || undefined);
+  console.log(`\nsql: gather ${reports.length} report(s) from ${dir}, ${names.length} file(s) on disk`);
+  problems.push(...gatherFailures(reports, names));
+  if (reports.length) {
+    const unread = coverageFailure(reports);
+    if (unread) problems.push(unread);
+  }
+  for (const p of problems) console.log(`  FAIL  ${p.split('\n').join('\n        ')}`);
+  if (!problems.length) console.log(`  PASS  every file ran once, in one of ${reports.length} shard(s), and passed; every client read was called`);
+  return problems.length ? 1 : 0;
+}
+
+/** How many files run at once: KAYFABB_SQL_WORKERS, or one for each CPU. */
+const workerCount = () => (Number(process.env.KAYFABB_SQL_WORKERS) >= 1 ? Math.floor(Number(process.env.KAYFABB_SQL_WORKERS)) : os.availableParallelism());
+
+/**
+ * Runs `work` over `items` with at most `limit` in flight, taking them in order; resolves with every result in the items' order. A work that
+ * rejects rejects the pool, so `work` answers its failures as values.
+ * @template T, R
+ * @param {T[]} items
+ * @param {number} limit
+ * @param {(item: T) => Promise<R>} work
+ * @returns {Promise<R[]>}
+ */
+export async function pool(items, limit, work) {
+  /** @type {R[]} */
+  const results = new Array(items.length);
+  let next = 0;
+  const lane = async () => { for (let at = next++; at < items.length; at = next++) results[at] = await work(items[at]); };
+  await Promise.all(Array.from({ length: Math.max(1, Math.min(limit, items.length)) }, lane));
+  return results;
+}
+
+async function main() {
+  const args = process.argv.slice(2);
+  const flags = new Map();
+  for (const a of args.filter((x) => x.startsWith('--'))) {
+    const m = /^--(shard|report|gather)=(.*)$/.exec(a);
+    if (!m) { console.error(`  test-sql: unknown option ${a} (--shard=i/n, --report=<path>, --gather=<dir>)`); return 2; }
+    flags.set(m[1], m[2]);
+  }
+  const pattern = args.find((a) => !a.startsWith('--')) ?? '';
+  if (flags.has('gather')) return gather(flags.get('gather'));
+
   const url = process.env.DATABASE_URL;
   const why = refusal(url);
   if (why) { console.error(`  test-sql: ${why}`); process.exit(2); }
 
-  /* Which end-to-end files there are, and which migrations they cross, before anything is made: a name that gives no point, two that
-     give one, or a point no migration has fails the run here, with no database touched. KAYFABB_SQL_E2E_DIR stands another
-     directory in, for tools/test-sql-refusal.mjs. */
+  /* Which shard this is, which files there are and which migrations the end-to-end files cross, before anything is made: a shard that is
+     not one, a name that gives no point, two that give one, or a point no migration has fails the run here, with no database touched. */
+  let shardI;
+  let shardN;
+  try { [shardI, shardN] = parseShard(flags.get('shard')); } catch (err) { console.error(`  test-sql: ${err.message}`); return 1; }
+  const everything = suiteFiles(process.env.KAYFABB_SQL_E2E_DIR || undefined);
   const e2eDir = process.env.KAYFABB_SQL_E2E_DIR || path.join(testsDir, 'e2e');
-  const allE2e = fs.existsSync(e2eDir) ? fs.readdirSync(e2eDir).filter((f) => E2E_FILE.test(f)).sort() : [];
   const migrationNames = migrationFiles().slice(1).map((f) => path.basename(f));
   let allPoints;
-  try { allPoints = snapshotPoints(allE2e, migrationNames); } catch (err) { console.error(`  test-sql: ${err.message}`); process.exit(1); }
-  const template = `kayfabb_scratch_${process.pid}_${Date.now()}`;
-  const templateUrl = withDatabase(url, template);
-  const pattern = process.argv[2] ?? '';
-  /* A pattern matches an end-to-end file by its label too (`e2e/0001`), as it prints. */
-  const e2e = allE2e.filter((f) => f.includes(pattern) || `e2e/${f}`.includes(pattern));
-  /* A snapshot of the replay for each point a selected file names, and the migrated one, are made while the template is built. */
+  try { allPoints = snapshotPoints(everything.e2e, migrationNames); } catch (err) { console.error(`  test-sql: ${err.message}`); return 1; }
+  /* This shard's files of the one list, then the pattern's among them (a pattern also takes an end-to-end file by its label, `e2e/0001`, which is its name). */
+  const selected = shardOf(everything.names, shardI, shardN).filter((f) => f.includes(pattern));
+  if (pattern && !selected.length) { console.error(`  test-sql: no file in supabase/tests/ or supabase/tests/e2e/ in shard ${shardI}/${shardN} has a name containing "${pattern}", so nothing ran`); return 1; }
+  const selectedE2e = selected.filter((f) => f.startsWith('e2e/')).map((f) => f.slice(4));
+  /* A snapshot of the replay for each point a selected file names, and the migrated one, are made while the template is built, and only then. */
   const pointOf = (f) => (f.includes('-across-') ? f.slice(f.indexOf('-across-') + 8, f.indexOf('-across-') + 12) : null);
-  const points = allPoints.filter((p) => e2e.some((f) => pointOf(f) === p));
+  const points = allPoints.filter((p) => selectedE2e.some((f) => pointOf(f) === p));
   /** @type {Record<string, string>} point to the database that holds the replay before it, and `migrated` */
   const snapshots = {};
+  const template = `kayfabb_scratch_${process.pid}_${Date.now()}`;
+  const templateUrl = withDatabase(url, template);
   const keepFailed = process.env.KAYFABB_SQL_KEEP === 'failed';
-  let failed = 0;
-  const timings = [];
-  /** @type {{ name: string, calls: string }[][]} */
-  const counts = [];
-  const step = (label, err, ms) => {
-    console.log(`  ${err ? 'FAIL' : 'PASS'}  ${label}${ms === undefined ? '' : `  ${seconds(ms)}`}${err ? `\n        ${err.split('\n').join('\n        ')}` : ''}`);
-    if (err) failed++;
-    if (ms !== undefined) timings.push({ label, ms });
+  const workers = workerCount();
+  const step = (label, err) => {
+    console.log(`  ${err ? 'FAIL' : 'PASS'}  ${label}${err ? `\n        ${err.split('\n').join('\n        ')}` : ''}`);
     return !err;
   };
 
-  /* One file on a clone of its own: make it, run the file on it, read the drift and the counts, then drop it, pass or fail (kept, with
-     its URL, when KAYFABB_SQL_KEEP=failed and the file failed). `run` is given the clone's URL and answers why the file failed, or null. */
-  let clones = 0;
-  const onClone = (label, run) => {
-    const clone = `${template}_${++clones}`;
+  /** What a file would have to be to run, or why it may not: its text for an assertion file, nothing more to read for an end-to-end one. */
+  const refused = (name) => {
+    if (name.startsWith('e2e/')) return { why: e2eRefusal(fs.readFileSync(path.join(e2eDir, name.slice(4)), 'utf8')) };
+    if (!ASSERTION_FILE.test(name)) return { why: 'an .sql file in supabase/tests/ that is not NNNN-*.sql would never run; rename it or move it under setup/' };
+    const sql = fs.readFileSync(path.join(testsDir, name), 'utf8');
+    const code = withoutComments(sql);
+    if (!/raise\s+exception/i.test(code)) return { why: 'asserts nothing: no `raise exception` outside a comment in this file' };
+    if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(withoutDollarQuotes(code))) return { why: 'ends its own transaction, which would escape the rollback around it' };
+    const blind = nullBlind(code);
+    if (blind.length) return { why: `passes when its select finds no row; use \`is distinct from\`:\n          ${blind.join('\n          ')}` };
+    return { why: null, sql };
+  };
+
+  /**
+   * One file, from its clone to its drop: make the clone of the template, run the file on it, read the drift and the counts, drop the clone, pass or
+   * fail (kept, with its URL, when KAYFABB_SQL_KEEP=failed and the file failed). Answers the result as a value, with the block of text the file prints
+   * when it ends, so lines of files running together never interleave. The clone's name is the template's and the file's place in the run.
+   */
+  const runFile = async (name, place) => {
+    const block = (err, ms, extra = '') => `  ${err ? 'FAIL' : 'PASS'}  ${name}${ms === undefined ? '' : `  ${seconds(ms)}`}${err ? `\n        ${err.split('\n').join('\n        ')}` : ''}${extra}`;
+    const read = refused(name);
+    if (read.why) return { name, outcome: 'failed', seconds: 0, calls: [], text: block(read.why) };
+    const clone = `${template}_${place}`;
     const cloneUrl = withDatabase(url, clone);
     const began = Date.now();
-    let err = psql(url, cloneSql(template, clone, url));
+    let err = (await psqlAsync(url, cloneSql(template, clone, url))).error;
+    let calls = [];
     let kept = false;
+    let extra = '';
     try {
       if (!err) {
-        err = run(cloneUrl);
+        err = name.startsWith('e2e/') ? await runE2e(name.slice(4), cloneUrl) : await runAssertion(read.sql, cloneUrl);
         /* Read after the file, before the drop, even from a file that failed: its calls count, and its drift is named if the file itself was fine.
            Not from a file that was killed: its backend may be the one that is stuck, and a read on its clone could wait out the file bound again. */
-        const after = wasKilled(err) ? null : psqlLines(cloneUrl, afterFileSql);
+        const after = wasKilled(err) ? null : await psqlLinesAsync(cloneUrl, afterFileSql);
         if (after === null) { /* killed: its counts and drift are not read, and the drop below goes straight on */ }
         else if (after.error) err ??= `could not read the drift and the function statistics:\n${after.error}`;
         else {
-          const read = parseAfterFile(after.lines);
-          counts.push(read.calls);
-          err ??= driftFailure(read.drift);
+          const got = parseAfterFile(after.lines);
+          calls = got.calls;
+          err ??= driftFailure(got.drift);
         }
       }
-      step(label, err, Date.now() - began);
-      if (err && keepFailed) { kept = true; console.log(`        kept: ${cloneUrl}`); }
+      if (err && keepFailed) { kept = true; extra = `\n        kept: ${cloneUrl}`; }
     } finally {
       if (!kept) {
         /* What a file made and named after its clone (`<clone>_<suffix>`, a database from psql-db.ts) goes with it, so a file that died
            before its `finally` leaves nothing. `_` is a wildcard in `like`, so it is escaped; `<clone>_1` and `<clone>_10` stay apart
            since the clone's own number is followed by the underscore. */
-        const children = psql(url, `select format('drop database if exists %I with (force)', datname) from pg_database where datname like '${clone}\\_%' \\gexec`);
+        const children = (await psqlAsync(url, `select format('drop database if exists %I with (force)', datname) from pg_database where datname like '${clone}\\_%' \\gexec`)).error;
         if (children) console.error(`  test-sql: could not drop what is named for ${clone}: ${children}`);
-        const dropped = psql(url, `drop database if exists ${clone} with (force);`);
+        const dropped = (await psqlAsync(url, `drop database if exists ${clone} with (force);`)).error;
         if (dropped) console.error(`  test-sql: could not drop ${clone}: ${dropped}`);
       }
     }
+    const ms = Date.now() - began;
+    return { name, outcome: err ? 'failed' : 'passed', seconds: Math.round(ms) / 1000, calls, text: block(err, ms, extra) };
+  };
+  /* `begin;` on its own line before the file, so a file's line N is line N+1 of what psql reads and the `psql:<stdin>:N:` in an error means what it always did. */
+  const runAssertion = async (sql, cloneUrl) => (await psqlAsync(cloneUrl, `begin;\n${sql}\nrollback;\n`)).error;
+  /* End to end: TypeScript that runs the Edge Functions' own core against its clone
+     (supabase/tests/e2e/NNNN-*.ts, Node's test runner), so the contract between the
+     engine and the SQL is read where both meet. */
+  const runE2e = async (file, cloneUrl) => {
+    const r = await exec(process.execPath, ['--experimental-strip-types', '--no-warnings', '--test', path.join(e2eDir, file)], {
+      env: { ...process.env, KAYFABB_SCRATCH_URL: cloneUrl, KAYFABB_SNAPSHOTS: JSON.stringify(snapshots) },
+    });
+    return r.code === 0 && !r.killed ? null : (r.killed ? `${killedWhy()}\n` : '') + r.out + r.err;
   };
 
   console.log(`\nsql: template database ${template}`);
@@ -491,63 +720,38 @@ function main() {
       }
     }
 
-    if (e2e.length && !snapshot('migrated', `${template}_migrated`)) return 1;
+    if (selectedE2e.length && !snapshot('migrated', `${template}_migrated`)) return 1;
     if (!step('setup/fixtures.sql', psql(templateUrl, fs.readFileSync(fixtures, 'utf8')))) return 1;
     /* Once, here: every clone starts from this analyzed state. */
     if (!step('vacuum (analyze)', psql(templateUrl, 'vacuum (analyze);'))) return 1;
 
-    console.log(`\nsql: assertions${pattern ? ` matching "${pattern}"` : ''}`);
-    const numberOf = (f) => Number(ASSERTION_FILE.exec(f)?.[1] ?? Number.NaN);
-    const files = fs.readdirSync(testsDir).filter((f) => f.endsWith('.sql') && f.includes(pattern))
-      .sort((a, b) => (numberOf(a) - numberOf(b)) || (a < b ? -1 : a > b ? 1 : 0));
-    let ran = 0;
-    for (const t of files) {
-      if (!ASSERTION_FILE.test(t)) { step(t, 'an .sql file in supabase/tests/ that is not NNNN-*.sql would never run; rename it or move it under setup/'); continue; }
-      const sql = fs.readFileSync(path.join(testsDir, t), 'utf8');
-      const code = withoutComments(sql);
-      if (!/raise\s+exception/i.test(code)) { step(t, 'asserts nothing: no `raise exception` outside a comment in this file'); continue; }
-      if (/(^|;)\s*(commit|rollback(?!\s+to\b))\b/im.test(withoutDollarQuotes(code))) { step(t, 'ends its own transaction, which would escape the rollback around it'); continue; }
-      const blind = nullBlind(code);
-      if (blind.length) { step(t, `passes when its select finds no row; use \`is distinct from\`:\n          ${blind.join('\n          ')}`); continue; }
-      ran++;
-      /* `begin;` on its own line before the file, so a file's line N is line N+1 of what psql reads and the `psql:<stdin>:N:` in an error means what it always did. */
-      onClone(t, (cloneUrl) => psql(cloneUrl, `begin;\n${sql}\nrollback;\n`));
-    }
-    /* End to end: TypeScript that runs the Edge Functions' own core against its clone
-       (supabase/tests/e2e/NNNN-*.ts, Node's test runner), so the contract between the
-       engine and the SQL is read where both meet. */
-    console.log('\nsql: end to end');
-    for (const f of e2e) {
-      const refused = e2eRefusal(fs.readFileSync(path.join(e2eDir, f), 'utf8'));
-      if (refused) { step(`e2e/${f}`, refused); continue; }
-      onClone(`e2e/${f}`, (cloneUrl) => {
-        try {
-          execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', '--test', path.join(e2eDir, f)], {
-            env: { ...process.env, KAYFABB_SCRATCH_URL: cloneUrl, KAYFABB_SNAPSHOTS: JSON.stringify(snapshots) }, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL',
-          });
-          return null;
-        } catch (err) {
-          return (timedOut(err) ? `${killedWhy()}\n` : '') + String(err.stdout || '') + String(err.stderr || '');
-        }
-      });
-    }
-    if (!files.length && !e2e.length) step('pattern', `no file in supabase/tests/ or supabase/tests/e2e/ has a name containing "${pattern}", so nothing ran`);
-    /* A client read no test calls is one whose broken reference nothing would find: a plpgsql body is checked only when
-       it runs. The counts of every file's clone, summed; a run of part of the suite cannot say which reads the rest would call. */
+    console.log(`\nsql: ${selected.length} file(s)${pattern ? ` matching "${pattern}"` : ''}${shardN > 1 ? `, shard ${shardI}/${shardN}` : ''}, ${Math.min(workers, selected.length)} at a time`);
+    const results = await pool(selected.map((name, at) => ({ name, place: at + 1 })), workers, async ({ name, place }) => {
+      const r = await runFile(name, place);
+      console.log(r.text);
+      return r;
+    });
+    const failed = results.filter((r) => r.outcome !== 'passed').length;
+    const report = { shard: { i: shardI, n: shardN }, files: results.map((r) => ({ name: r.name, outcome: r.outcome, seconds: r.seconds })), calls: sumCalls(results.map((r) => r.calls)) };
+    if (flags.has('report')) fs.writeFileSync(flags.get('report'), `${JSON.stringify(report, null, 1)}\n`);
+
+    /* The files that ran, against the files on disk, and the client reads no test calls (a plpgsql body is checked only when it runs, so a
+       broken reference nothing calls is found by nothing). Both are about the whole suite: a pattern or a shard runs part of it and cannot say. A
+       run that is the whole suite makes the comparison in this process, the one a gathering job makes over every shard's report. */
     console.log('\nsql: coverage');
-    if (pattern) console.log('  skipped: a pattern runs part of the suite');
+    let compared = 0;
+    if (pattern || shardN > 1) console.log(`  skipped: ${pattern ? 'a pattern runs part of the suite' : `shard ${shardI}/${shardN} runs part of the suite, and \`--gather\` compares every shard's report`}`);
     else {
-      const summed = sumCalls(counts);
-      const uncalled = uncalledReads(summed.map((r) => r.name).filter((n) => !(n in UNCOUNTABLE_READS)), summed);
-      step('coverage', uncalled.length
-        ? `${uncalled.length} client read(s) in ALLOWED_RPCS no test called: ${uncalled.join(', ')}\n`
-          + 'A client read no test calls is one whose broken reference nothing would find; add a call to the assertion file that tests it.'
-        : null);
+      const uncovered = gatherFailures([report], everything.names);
+      for (const f of uncovered) step('files', f);
+      const unread = coverageFailure([report]);
+      step('coverage', unread);
+      compared = uncovered.length + (unread ? 1 : 0);
     }
     console.log(`\nsql: slowest files`);
-    for (const t of [...timings].sort((a, b) => b.ms - a.ms).slice(0, 10)) console.log(`  ${seconds(t.ms).padStart(7)}  ${t.label}`);
-    console.log(`\n  sql: ${migrations.length} migration(s); ${ran} assertion file(s); ${e2e.length} end-to-end file(s); ${failed} failed`);
-    return failed ? 1 : 0;
+    for (const t of [...results].filter((r) => r.seconds > 0).sort((a, b) => b.seconds - a.seconds).slice(0, 10)) console.log(`  ${`${t.seconds.toFixed(1)}s`.padStart(7)}  ${t.name}`);
+    console.log(`\n  sql: ${migrations.length} migration(s); ${selected.length - selectedE2e.length} assertion file(s); ${selectedE2e.length} end-to-end file(s); ${failed} failed`);
+    return failed || compared ? 1 : 0;
   } finally {
     for (const snap of Object.values(snapshots)) {
       const gone = psql(url, `drop database if exists ${snap} with (force);`);
@@ -559,5 +763,5 @@ function main() {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  process.exit(main());
+  process.exit(await main());
 }

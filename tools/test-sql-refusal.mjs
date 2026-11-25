@@ -18,11 +18,15 @@
  * given before anything connects, drift and function counts read after each file and the clone dropped, pass or fail; and a
  * psql that never answers must be killed and reported by its file's name, so a lock regression (removing 0030's
  * `for update skip locked` hung 0012-cards.sql) fails the suite instead of hanging it.
+ *
+ * Files run together in a pool and over shards: shardOf cuts the one sorted list by position (poisoned here with an off-by-one that drops
+ * the last file, a split that repeats a file, and a shard that is not one), a recording psql that sleeps shows no more files in flight than
+ * KAYFABB_SQL_WORKERS, and gatherFailures is planted with each way shard reports fail to cover the files on disk.
  */
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import { ASSERTION_FILE, SESSION_BOUNDS, nullBlind, refusal } from './test-sql.mjs';
 /* A namespace import, so a runner without the constant fails the assertions below instead of failing to load. */
 import * as runner from './test-sql.mjs';
@@ -90,47 +94,83 @@ check('a select whose comparison is not right after it is not refused', nullBlin
    assertion file's call (the harness wraps each in `begin;`): HANG never answers, as a backend stuck on a deadlock it cannot see
    would; FAIL answers an error; DRIFT answers the drift rows it names with the tag the after-file call reads. */
 const bounded = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-psql-bounds-'));
-const calls = path.join(bounded, 'calls');
-const hung = path.join(bounded, 'hung');
-/* When each psql began, one time to a line, so the kill is timed by the gap from the hung psql to the one after it. */
-const starts = path.join(bounded, 'starts');
+/* Each run of the suite has a directory of its own for what the psql records (KAYFABB_STATE), so runs may go side by side. */
 const hanger = path.join(bounded, 'psql.mjs');
 fs.writeFileSync(hanger, `import fs from 'node:fs';
-fs.appendFileSync(${JSON.stringify(starts)}, Date.now() + '\\n');
+const STATE = process.env.KAYFABB_STATE;
+/* When each psql began, one time to a line, so the kill is timed by the gap from the hung psql to the one after it. */
+fs.appendFileSync(STATE + '/starts', Date.now() + '\\n');
 const sql = fs.readFileSync(0, 'utf8');
-fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
+fs.appendFileSync(STATE + '/calls', process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
 /* The after-file call, on the clone of the first file: answered with the drift rows DRIFT names (\`drift|play|why\`, as psql -A -t -F '|' prints them). */
 /* A planted behavior happens once: the first psql to create the marker file is the one that takes it, and with files in flight together two cannot both. */
 const once = (file, text = '1') => { try { fs.writeFileSync(file, text, { flag: 'wx' }); return true; } catch { return false; } };
-if (process.env.DRIFT && /^select pg_stat_force_next_flush\\(\\);/.test(sql) && once(${JSON.stringify(hung)} + '.drift')) process.stdout.write('drift|' + process.env.DRIFT + '\\n');
+if (process.env.DRIFT && /^select pg_stat_force_next_flush\\(\\);/.test(sql) && once(STATE + '/hung.drift')) process.stdout.write('drift|' + process.env.DRIFT + '\\n');
+/* CALLS answers each after-file call with one function count row (\`calls|name|n\`), so that a report holds counts to sum. */
+if (process.env.CALLS && /^select pg_stat_force_next_flush\\(\\);/.test(sql)) process.stdout.write('calls|' + process.env.CALLS + '\\n');
 /* The template's creation, with its settings in the same call: the database is made, then the settings fail. */
 if (process.env.FAIL_SETTINGS && /^create database kayfabb_scratch_\\d+_\\d+;/.test(sql)) { process.stderr.write('ERROR:  planted settings failure'); process.exit(1); }
 if (/^begin;\\n/.test(sql)) {
   /* FAIL_N: the first N files fail, each with an error of two lines. SLEEP_MS: a file takes that long, and its span is recorded. */
-  for (let k = 1; k <= Number(process.env.FAIL_N || 0); k++) if (once(${JSON.stringify(hung)} + '.n' + k)) { process.stderr.write('ERROR:  planted failure\\nDETAIL:  a second line'); process.exit(1); }
-  if (process.env.HANG || process.env.FAIL) if (once(${JSON.stringify(hung)}, String(Date.now()))) {
+  for (let k = 1; k <= Number(process.env.FAIL_N || 0); k++) if (once(STATE + '/hung.n' + k)) { process.stderr.write('ERROR:  planted failure\\nDETAIL:  a second line'); process.exit(1); }
+  if (process.env.HANG || process.env.FAIL) if (once(STATE + '/hung', String(Date.now()))) {
     if (process.env.FAIL) { process.stderr.write('ERROR:  planted failure'); process.exit(1); }
     setTimeout(() => {}, 60_000);
   }
   if (process.env.SLEEP_MS) {
     const began = Date.now();
     await new Promise((r) => setTimeout(r, Number(process.env.SLEEP_MS)));
-    fs.appendFileSync(${JSON.stringify(calls)} + '.spans', began + ' ' + Date.now() + '\\n');
+    fs.appendFileSync(STATE + '/spans', began + ' ' + Date.now() + '\\n');
   }
 }
 `);
-/** One run of the suite with the recording psql. `pattern` limits it to the files whose names match; `hang`, `fail` and `drift` plant what is above. */
-function boundedSuite({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '1500', e2eDir = '', extraEnv = {} } = {}) {
-  for (const f of [calls, calls + '.spans', hung, hung + '.drift', hung + '.n1', hung + '.n2', starts]) fs.rmSync(f, { force: true });
-  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep, ...(e2eDir ? { KAYFABB_SQL_E2E_DIR: e2eDir } : {}), ...extraEnv };
-  /* The suite's own end-to-end files would try a clone this psql never made; a bound keeps a slip here from hanging the
-     build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
-  const r = spawnSync(process.execPath, ['tools/test-sql.mjs', ...(pattern ? [pattern] : [])], { env, encoding: 'utf8', timeout: 600_000 });
-  const records = fs.existsSync(calls) ? fs.readFileSync(calls, 'utf8').split('\x1e\n').filter((x) => x.trim()) : [];
+/**
+ * One run of the suite with the recording psql. `pattern` limits it to the files whose names match; `hang`, `fail` and `drift` plant what is above.
+ * A run is made ready (its state directory, its environment), run (here, or beforehand and side by side: see prelaunch), and read.
+ */
+const ready = ({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '1500', e2eDir = '', workers = '', shard = '', report = '', extraEnv = {} } = {}) => {
+  const state = fs.mkdtempSync(path.join(bounded, 'run-'));
+  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, KAYFABB_STATE: state, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep, KAYFABB_SQL_WORKERS: workers, CALLS: '', ...(e2eDir ? { KAYFABB_SQL_E2E_DIR: e2eDir } : {}), ...extraEnv };
+  const args = ['tools/test-sql.mjs', ...(pattern ? [pattern] : []), ...(shard ? [`--shard=${shard}`] : []), ...(report ? [`--report=${report}`] : [])];
+  return { state, env, args };
+};
+const lines = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : []);
+const read = (state, status, out) => {
+  const records = fs.existsSync(path.join(state, 'calls')) ? fs.readFileSync(path.join(state, 'calls'), 'utf8').split('\x1e\n').filter((x) => x.trim()) : [];
   /* How long the hung psql lived: from its start to the start of the next psql, which the suite runs once the hung one is killed. */
-  const hungAt = fs.existsSync(hung) ? Number(fs.readFileSync(hung, 'utf8')) : NaN;
-  const after = fs.existsSync(starts) ? fs.readFileSync(starts, 'utf8').split('\n').filter(Boolean).map(Number).find((t) => t > hungAt) : undefined;
-  return { status: r.status, out: (r.stdout ?? '') + (r.stderr ?? ''), records, hungMs: after === undefined ? NaN : after - hungAt };
+  const hungAt = fs.existsSync(path.join(state, 'hung')) ? Number(fs.readFileSync(path.join(state, 'hung'), 'utf8')) : NaN;
+  const after = lines(path.join(state, 'starts')).map(Number).find((t) => t > hungAt);
+  const spans = lines(path.join(state, 'spans')).map((l) => l.split(' ').map(Number));
+  return { status, out, records, spans, hungMs: after === undefined ? NaN : after - hungAt };
+};
+/* The suite's own end-to-end files would try a clone this psql never made; a bound keeps a slip here from hanging the
+   build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
+const runAside = (opts) => new Promise((resolve) => {
+  const { state, env, args } = ready(opts);
+  const child = spawn(process.execPath, args, { env, stdio: ['ignore', 'pipe', 'pipe'] });
+  let out = '';
+  child.stdout.on('data', (d) => { out += d; });
+  child.stderr.on('data', (d) => { out += d; });
+  const timer = setTimeout(() => child.kill('SIGKILL'), 600_000);
+  child.on('close', (status) => { clearTimeout(timer); resolve(read(state, status, out)); });
+});
+/** Runs that were made ready beforehand, by the options object that asked for them. */
+const ahead = new Map();
+/**
+ * Runs each set of options side by side, a few at a time (each run is a replay of every migration through a Node psql, which dominates this
+ * file's time, and one run at a time left the machine's other CPUs idle), and keeps the results for boundedSuite to answer with.
+ * @param {object[]} list
+ */
+async function prelaunch(list) {
+  let next = 0;
+  const lane = async () => { for (let at = next++; at < list.length; at = next++) ahead.set(list[at], await runAside(list[at])); };
+  await Promise.all(Array.from({ length: Math.min(3, list.length) }, lane));
+}
+function boundedSuite(opts = {}) {
+  if (ahead.has(opts)) return ahead.get(opts);
+  const { state, env, args } = ready(opts);
+  const r = spawnSync(process.execPath, args, { env, encoding: 'utf8', timeout: 600_000 });
+  return read(state, r.status, (r.stdout ?? '') + (r.stderr ?? ''));
 }
 /* What a record says: the database its connection names (`postgres` is the server's own, where databases are made and dropped), and its SQL. */
 const dbOf = (c) => /\/(\w+) -f/.exec(c.split('\n')[0] ?? '')?.[1] ?? '';
@@ -143,6 +183,53 @@ const assertionFiles = fs.readdirSync('supabase/tests').filter((f) => ASSERTION_
 const e2eFiles = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f));
 const first = assertionFiles[0];
 const second = assertionFiles[1];
+
+/* Every run of the suite this file reads, laid out here and run side by side before the checks (prelaunch), so each check below reads its run by name. A run
+   that plants a behavior does so on the first file, so those take one worker: with files in flight together, which file is first is not fixed. */
+const small = '000';
+const emptyDir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-e2e-none-'));
+const sawIn = path.join(bounded, 'saw');
+const writesEnv = (file) => `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(file)}, JSON.stringify({ url: process.env.KAYFABB_SCRATCH_URL, snapshots: process.env.KAYFABB_SNAPSHOTS }));\n`;
+/** A planted end-to-end directory: the runner reads it in place of supabase/tests/e2e, so the planted names are the run's. */
+const plantedDir = (files) => { const d = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-e2e-')); for (const [n, t] of Object.entries(files)) fs.writeFileSync(path.join(d, n), t); return d; };
+const planted = {
+  poison: plantedDir({
+    '0901-replays-the-migrations.ts': "import fs from 'node:fs';\nfor (const m of fs.readdirSync('supabase/migrations')) console.log(m);\n",
+    '0902-asks-the-list.ts': "import { migrationFiles } from '../../../tools/test-sql.mjs';\nmigrationFiles();\n",
+    '0903-only-says-so.ts': writesEnv(sawIn + '3') + '// supabase/migrations and migrationFiles, in a comment\n',
+  }),
+  told: plantedDir({ '0904-asks-where.ts': writesEnv(sawIn + '4') }),
+  pointed: plantedDir({ '0905-across-0003.ts': writesEnv(sawIn + '5') }),
+  nowhere: plantedDir({ '0906-nowhere-across-9999.ts': '' }),
+  dupe: plantedDir({ '0907-a-across-0003.ts': '', '0908-b-across-0003.ts': '' }),
+  unpointed: plantedDir({ '0909-x-across-.ts': '' }),
+};
+const reportFile = path.join(bounded, 'report.json');
+const runs = {
+  full: {},
+  hang: { pattern: small, hang: true, workers: '1' },
+  fail: { pattern: small, fail: true, workers: '1' },
+  kept: { pattern: small, fail: true, keep: 'failed', workers: '1' },
+  drifted: { pattern: small, workers: '1', drift: '00000000-0000-4000-8000-0000000000d1|a play with no row' },
+  noSettings: { pattern: first, extraEnv: { FAIL_SETTINGS: '1' } },
+  part: { pattern: first },
+  one: { pattern: '0001' },
+  none: { pattern: 'no-such-file-anywhere' },
+  bad: ['3/2', '0/2', '1/0', '1/1.5', 'x'].map((shard) => ({ shard })),
+  shard: { shard: '2/3' },
+  wide: { pattern: small, e2eDir: emptyDir, workers: '3', extraEnv: { SLEEP_MS: '800' }, timeoutMs: '60000' },
+  alone: { pattern: small, e2eDir: emptyDir, workers: '1', extraEnv: { SLEEP_MS: '200' }, timeoutMs: '60000' },
+  failing: { pattern: small, e2eDir: emptyDir, workers: '3', extraEnv: { FAIL_N: '2', SLEEP_MS: '300' }, timeoutMs: '60000' },
+  reported: { pattern: small, e2eDir: emptyDir, workers: '2', report: reportFile, extraEnv: { FAIL_N: '1', CALLS: 'thread_page|3' }, timeoutMs: '60000' },
+  poison: { pattern: 'e2e/090', e2eDir: planted.poison },
+  told: { pattern: '0904', e2eDir: planted.told },
+  pointed: { pattern: '0905', e2eDir: planted.pointed },
+  nowhere: { pattern: '0906', e2eDir: planted.nowhere },
+  dupe: { pattern: 'e2e/090', e2eDir: planted.dupe },
+  unpointed: { pattern: '0909', e2eDir: planted.unpointed },
+  noE2e: { pattern: first },
+};
+await prelaunch(Object.values(runs).flat());
 
 /* The pure pieces first. */
 {
@@ -163,7 +250,7 @@ const second = assertionFiles[1];
 }
 
 /* One full run, read for how the template and the clones are made. */
-const full = boundedSuite();
+const full = boundedSuite(runs.full);
 {
   const r = full;
   const tmpl = r.records.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean) ?? '';
@@ -207,13 +294,13 @@ const full = boundedSuite();
   check('the files\' lines carry their seconds', new RegExp(`PASS  ${first.replace('.', '\\.')}  \\d+\\.\\ds`).test(r.out), r.out.split('\n').filter((l) => l.includes(first)).join(' | '));
   const slowest = /slowest[^\n]*\n((?:\s+\d+\.\ds  \S+\n?)+)/.exec(r.out)?.[1].trim().split('\n') ?? [];
   check('and the summary lists the ten slowest, longest first', slowest.length === 10 && slowest.every((l, i) => i === 0 || parseFloat(slowest[i - 1]) >= parseFloat(l)), slowest.join(' | '));
+  check('a whole run compares in this process: every file against the files on disk, and the client reads', /PASS  coverage/.test(r.out) && !/FAIL  coverage/.test(r.out), r.out.split('\n').filter((l) => /coverage/.test(l)).join(' | '));
   check('no drift row from the stand-in: no file fails its drift read, and every assertion file passes', !/differs from the Acts/.test(r.out) && assertionFiles.every((f) => new RegExp(`PASS  ${f.replace('.', '\\.')}  `).test(r.out)), r.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 3).join(' | '));
 }
 
 /* A hang, a failure and a drift row, each on the first of a few files. */
 {
-  const small = '000';
-  const hang = boundedSuite({ pattern: small, hang: true });
+  const hang = boundedSuite(runs.hang);
   check('a file whose psql never answers fails the suite', hang.status === 1, `status ${hang.status}`);
   /* Timed from the hung psql to the next, never over the whole run: the run's length is every other file's too, and on a busy machine
      it passed the 60s hang while the kill came at 1.5s. Half the hang leaves room for a slow Node start. */
@@ -229,11 +316,11 @@ const full = boundedSuite();
   check('the killed file\'s clone is not read after it, and is dropped', Boolean(hungClone) && readsOf(hang, hungClone) === 0 && hang.records.some((c) => droppedDb(c) === hungClone), `${readsOf(hang, hungClone)} reads of ${hungClone}`);
   check('while the files that finished are read', hang.records.filter(isFile).map(dbOf).filter((db) => db !== hungClone).every((db) => readsOf(hang, db) === 1));
 
-  const fail = boundedSuite({ pattern: small, fail: true });
+  const fail = boundedSuite(runs.fail);
   check('a planted failure fails that file\'s line and the suite', fail.status === 1 && new RegExp(`FAIL  ${first.replace('.', '\\.')}  [\\d.]+s\\s+ERROR:  planted failure`).test(fail.out), fail.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 2).join(' | '));
   check('and its clone is dropped all the same', clonesOf(fail).length > 0 && clonesOf(fail).every((db) => fail.records.some((c) => droppedDb(c) === db)));
 
-  const kept = boundedSuite({ pattern: small, fail: true, keep: 'failed' });
+  const kept = boundedSuite(runs.kept);
   const failedClone = dbOf(kept.records.find(isFile) ?? '');
   check('KAYFABB_SQL_KEEP=failed keeps the failing file\'s clone', Boolean(failedClone) && !kept.records.some((c) => droppedDb(c) === failedClone));
   check('prints its URL', kept.out.includes(`postgres://postgres:pg@localhost:5432/${failedClone}`), kept.out.slice(0, 300));
@@ -241,7 +328,7 @@ const full = boundedSuite();
   check('and drops the clones of assertion files that passed', passedClones.length > 1 && passedClones.every((db) => kept.records.some((c) => droppedDb(c) === db)));
   check('without it, nothing is kept: no clone is named as kept', !/kept: postgres/.test(fail.out));
 
-  const drifted = boundedSuite({ pattern: small, drift: '00000000-0000-4000-8000-0000000000d1|a play with no row' });
+  const drifted = boundedSuite(runs.drifted);
   const driftClone = dbOf(drifted.records.find(isFile) ?? '');
   check('a drift row from one file\'s clone fails the suite', drifted.status === 1, `status ${drifted.status}`);
   check('and fails that file\'s line, naming the row', new RegExp(`FAIL  ${first.replace('.', '\\.')}  [\\d.]+s\\s+play_post or post_kinds differs from the Acts[^\\n]*\\s+00000000-0000-4000-8000-0000000000d1  a play with no row`).test(drifted.out), drifted.out.split('\n').filter((l) => /FAIL|00000000/.test(l)).join(' | '));
@@ -250,24 +337,147 @@ const full = boundedSuite();
   check('the drifted clone is dropped', Boolean(driftClone) && drifted.records.some((c) => droppedDb(c) === driftClone));
 
   /* The template is made and its settings fail: it is dropped, not left. */
-  const noSettings = boundedSuite({ pattern: first, extraEnv: { FAIL_SETTINGS: '1' } });
+  const noSettings = boundedSuite(runs.noSettings);
   const madeTemplate = noSettings.records.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean);
   check('a template whose settings fail fails the run before any file', noSettings.status === 1 && /planted settings failure/.test(noSettings.out) && noSettings.records.filter(isFile).length === 0, `status ${noSettings.status}`);
   check('and the template that was made is dropped, not leaked', Boolean(madeTemplate) && noSettings.records.some((c) => droppedDb(c) === madeTemplate), `${madeTemplate}: ${noSettings.records.length} calls`);
 
   /* A pattern run reads part of the suite: it says so under coverage, and compares nothing. */
-  const part = boundedSuite({ pattern: first });
+  const part = boundedSuite(runs.part);
   const coverageText = /sql: coverage\n([\s\S]*?)\n\s*\n/.exec(part.out)?.[1] ?? '';
   check('a pattern run prints `skipped` under coverage', /skipped/.test(coverageText), coverageText);
   check('and no coverage failure', !/FAIL  coverage/.test(part.out) && part.status === 0, `status ${part.status}`);
 
   /* A pattern runs the matching files only; none matching fails the run. */
-  const one = boundedSuite({ pattern: '0001' });
+  const one = boundedSuite(runs.one);
   const wanted = [...assertionFiles, ...e2eFiles].filter((f) => f.includes('0001')).length;
   check('a pattern runs only the files whose names match', one.records.map(createdClone).filter(Boolean).length === wanted && one.records.filter(isFile).length === assertionFiles.filter((f) => f.includes('0001')).length && !/0002-/.test(one.out.replace(/psql[^\n]*/g, '')), `${one.records.map(createdClone).filter(Boolean).length} clones, wanted ${wanted}`);
   check('and still builds the template', one.records.filter((c) => dbOf(c) !== 'postgres').length > runner.migrationFiles().length);
-  const none = boundedSuite({ pattern: 'no-such-file-anywhere' });
+  const none = boundedSuite(runs.none);
   check('a pattern that matches nothing fails the run, rather than passing on nothing', none.status === 1 && /no-such-file-anywhere/.test(none.out) && none.records.filter(isFile).length === 0, `status ${none.status}`);
+}
+
+/* ---- shards, the pool and the gathering ---- */
+{
+  const names = Array.from({ length: 11 }, (_, k) => `${String(k + 1).padStart(4, '0')}-f.sql`);
+  /* What a split must be: shard i is the files at positions i, i+n, … (1-based), the shards are disjoint, and their union is the list. */
+  const problems = (shard, list, n) => {
+    const found = [];
+    const parts = Array.from({ length: n }, (_, k) => shard(list, k + 1, n));
+    parts.forEach((part, k) => { if (JSON.stringify(part) !== JSON.stringify(list.filter((_, at) => at % n === k))) found.push(`shard ${k + 1}/${n} is ${JSON.stringify(part)}`); });
+    const all = parts.flat();
+    if (new Set(all).size !== all.length) found.push(`a file is in two shards of ${n}`);
+    if (JSON.stringify([...all].sort()) !== JSON.stringify([...list].sort())) found.push(`the union of ${n} shards is not the list`);
+    return found;
+  };
+  const sizes = [1, 2, 3, 4, 7, 11, 13];
+  check('over i = 1..n the shards are disjoint and their union is the list, for every n', typeof runner.shardOf === 'function' && sizes.every((n) => problems(runner.shardOf, names, n).length === 0), sizes.map((n) => problems(runner.shardOf ?? (() => []), names, n)[0]).filter(Boolean).join(' | '));
+  check('shard 2 of 4 is positions 2, 6, 10', JSON.stringify(runner.shardOf?.(names, 2, 4)) === JSON.stringify([names[1], names[5], names[9]]));
+  const dropsLast = (list, i, n) => runner.shardOf(list.slice(0, -1), i, n);
+  const repeats = (list, i, n) => list.filter((_, at) => at % n === i - 1 || at === 0);
+  check('poison: a split that drops the last file is red', typeof runner.shardOf === 'function' && sizes.some((n) => problems(dropsLast, names, n).length > 0));
+  check('poison: a split that repeats a file is red', typeof runner.shardOf === 'function' && sizes.some((n) => problems(repeats, names, n).length > 0));
+  const offByOne = (list, i, n) => list.filter((_, at) => at % n === i % n);
+  check('poison: positions counted from 0 and not 1 is red', sizes.some((n) => problems(offByOne, names, n).length > 0));
+  const rejects = (fn, i, n) => { try { fn(names, i, n); return false; } catch { return true; } };
+  const notShards = [[0, 4], [5, 4], [1, 0], [1, -1], [1.5, 2], [1, 2.5], [Number.NaN, 2], [-1, 2]];
+  check('i > n, i < 1, n < 1 and a non-integer are each refused', typeof runner.shardOf === 'function' && notShards.every(([i, n]) => rejects(runner.shardOf, i, n)), notShards.filter(([i, n]) => !rejects(runner.shardOf ?? (() => {}), i, n)).join(' | '));
+  check('poison: a shardOf that answers a list for them is red', !notShards.every(([i, n]) => rejects((list) => list, i, n)));
+  const parsed = (arg) => { try { return JSON.stringify(runner.parseShard(arg)); } catch { return 'throws'; } };
+  check('--shard=i/n is read, and no flag is shard 1 of 1', parsed('2/4') === '[2,4]' && parsed(undefined) === '[1,1]', `${parsed('2/4')} ${parsed(undefined)}`);
+  check('and anything that is not i/n is refused', ['3/2', '0/2', '1/0', '1/1.5', 'x', '2', '1/2/3', '-1/2'].every((a) => parsed(a) === 'throws'));
+  for (const [at, bad] of ['3/2', '0/2', '1/0', '1/1.5', 'x'].entries()) {
+    const r = boundedSuite(runs.bad[at]);
+    check(`--shard=${bad} fails the run before any psql is called`, r.status === 1 && r.records.length === 0 && /shard/.test(r.out), `status ${r.status}, ${r.records.length} calls: ${r.out.slice(0, 120)}`);
+  }
+
+  /* The sorted list is the assertion files, then the end-to-end files; a shard of a run is what shardOf says of it. */
+  const listed = typeof runner.suiteFiles === 'function' ? runner.suiteFiles().names : [];
+  check('the one list is every assertion file, then every end-to-end file as `e2e/<file>`', JSON.stringify(listed) === JSON.stringify([...assertionFiles, ...e2eFiles.sort().map((f) => `e2e/${f}`)]), `${listed.length} names`);
+  const shardRun = boundedSuite(runs.shard);
+  const want = runner.shardOf?.(listed, 2, 3) ?? [];
+  const lineNames = [...shardRun.out.matchAll(/^ {2}(?:PASS|FAIL)  (\S+\.(?:sql|ts))/gm)].map((m) => m[1]).filter((n) => listed.includes(n));
+  check('a run of --shard=2/3 runs the files shardOf names for it, and no others', want.length > 0 && JSON.stringify([...lineNames].sort()) === JSON.stringify([...want].sort()), `${lineNames.length} lines, wanted ${want.length}`);
+  check('and clones one for each', shardRun.records.map(createdClone).filter(Boolean).length === want.length, `${shardRun.records.map(createdClone).filter(Boolean).length} clones`);
+  check('a shard does not compare coverage or files: it says `skipped`', /sql: coverage\n\s+skipped/.test(shardRun.out) && !/(PASS|FAIL)  (coverage|files)/.test(shardRun.out));
+
+  /* The pool. An empty end-to-end directory keeps the stand-in away from the suite's real end-to-end files, and 000 takes the assertion files 0000 to 0009. */
+  const mostAtOnce = (spans) => Math.max(0, ...spans.flatMap(([from]) => [spans.filter(([a, b]) => a <= from && from < b).length]));
+  const wide = boundedSuite(runs.wide);
+  const wideSpans = wide.spans;
+  check('with KAYFABB_SQL_WORKERS=3 and a psql that sleeps, three files are in flight at once', wideSpans.length >= 6 && mostAtOnce(wideSpans) === 3, `${wideSpans.length} files, ${mostAtOnce(wideSpans)} at once`);
+  check('and never a fourth, over the whole run', mostAtOnce(wideSpans) <= 3);
+  check('and every one of them ran and passed', wideSpans.length === (wide.out.match(/^ {2}PASS  000\d-/gm) ?? []).length && wide.status === 0, `status ${wide.status}`);
+  const alone = boundedSuite(runs.alone);
+  check('with one worker, one at a time', mostAtOnce(alone.spans) === 1 && alone.status === 0, `${mostAtOnce(alone.spans)} at once`);
+  /* A failing file does not stop the others; each file's output is one block; the failed count is the number of failed files. */
+  const failing = boundedSuite(runs.failing);
+  const total = (failing.out.match(/^ {2}(?:PASS|FAIL)  000\d-/gm) ?? []).length;
+  check('a failing file does not stop the others: the rest still run and pass', failing.status === 1 && total >= 6 && (failing.out.match(/^ {2}PASS  000\d-/gm) ?? []).length === total - 2, `${total} files`);
+  check('the failed count is the number of failed files', new RegExp(`; 2 failed`).test(failing.out), failing.out.split('\n').filter((l) => /failed/.test(l)).join(' | '));
+  const blocks = [...failing.out.matchAll(/^ {2}FAIL  (000\d-\S+)  [\d.]+s\n {8}ERROR:  planted failure\n {8}DETAIL:  a second line$/gm)];
+  check('each file\'s output is one block: a failure\'s two lines follow its line, with no other file\'s between', blocks.length === 2, `${blocks.length} whole blocks`);
+
+  /* The report, and the gathering. */
+  const reported = boundedSuite(runs.reported);
+  const rep = fs.existsSync(reportFile) ? JSON.parse(fs.readFileSync(reportFile, 'utf8')) : null;
+  check('--report writes the shard, each file with its outcome and seconds, and the summed calls', rep !== null && rep.shard.i === 1 && rep.shard.n === 1 && rep.files.length >= 6 && rep.files.every((f) => typeof f.name === 'string' && ['passed', 'failed'].includes(f.outcome) && typeof f.seconds === 'number') && rep.files.filter((f) => f.outcome === 'failed').length === 1 && JSON.stringify(rep.calls) === JSON.stringify([{ name: 'thread_page', calls: 3 * rep.files.length }]), JSON.stringify(rep).slice(0, 300));
+  check('and the files are in name order', rep !== null && JSON.stringify(rep.files.map((f) => f.name)) === JSON.stringify([...rep.files.map((f) => f.name)].sort()));
+
+  const disk = ['0001-a.sql', '0002-b.sql', 'e2e/0001-c.ts', 'e2e/0002-d.ts'];
+  const report = (i, n, files, outcome = 'passed', calls = [{ name: 'thread_page', calls: 1 }]) => ({ shard: { i, n }, files: files.map((name) => ({ name, outcome, seconds: 1 })), calls });
+  const good = () => [report(1, 2, [disk[0], disk[2]]), report(2, 2, [disk[1], disk[3]])];
+  const gf = (reports) => (typeof runner.gatherFailures === 'function' ? runner.gatherFailures(reports, disk) : ['no gatherFailures']);
+  check('shard reports that cover every file once, passed, fail nothing', gf(good()).length === 0, gf(good()).join(' | '));
+  const dropped = good(); dropped[1].files.pop();
+  check('a file in no report is named', gf(dropped).some((m) => m.includes('e2e/0002-d.ts') && /no report/.test(m)), gf(dropped).join(' | '));
+  const twice = good(); twice[1].files.push({ name: disk[0], outcome: 'passed', seconds: 1 });
+  check('a file in two reports is named', gf(twice).some((m) => m.includes('0001-a.sql') && /2 reports/.test(m)), gf(twice).join(' | '));
+  const failedOne = good(); failedOne[0].files[1].outcome = 'failed';
+  check('a file that did not pass is named', gf(failedOne).some((m) => m.includes('e2e/0001-c.ts') && /did not pass/.test(m)), gf(failedOne).join(' | '));
+  const totals = good(); totals[1].shard.n = 3;
+  check('shard totals that differ are named', gf(totals).some((m) => /disagree/.test(m)), gf(totals).join(' | '));
+  const lone = [good()[0]];
+  check('a missing shard number is named', gf(lone).some((m) => /shard 2\/2 has no report/.test(m)), gf(lone).join(' | '));
+  check('no report at all fails', gf([]).length > 0);
+  check('a report with no shard fails', gf([{ files: [] }, ...good()]).some((m) => /no shard/.test(m)));
+  check('a shard that ran nothing, with its files in no report, fails', gf([report(1, 2, []), report(2, 2, [disk[1], disk[3]])]).length > 0);
+
+  /* --gather: no database, no refusal; every report on disk against the files on disk, then the reads on the summed counts. */
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-gather-'));
+  const onDisk = typeof runner.suiteFiles === 'function' ? runner.suiteFiles().names : [];
+  const halves = (mut = (x) => x) => {
+    fs.rmSync(dir, { recursive: true, force: true }); fs.mkdirSync(path.join(dir, 'sql-shard-2'), { recursive: true }); fs.mkdirSync(path.join(dir, 'sql-shard-1'), { recursive: true });
+    const [a, b] = mut([report(1, 2, onDisk.filter((_, k) => k % 2 === 0)), report(2, 2, onDisk.filter((_, k) => k % 2 === 1))]);
+    if (a) fs.writeFileSync(path.join(dir, 'sql-shard-1', 'report.json'), JSON.stringify(a));
+    if (b) fs.writeFileSync(path.join(dir, 'sql-shard-2', 'report.json'), JSON.stringify(b));
+  };
+  const gathered = () => {
+    fs.rmSync(marker, { force: true });
+    const env = { ...process.env, KAYFABB_PSQL_SHIM: recorder };
+    delete env.DATABASE_URL;
+    const r = spawnSync(process.execPath, ['tools/test-sql.mjs', `--gather=${dir}`], { env, encoding: 'utf8' });
+    return { status: r.status, out: r.stdout + r.stderr, psqlRan: fs.existsSync(marker) };
+  };
+  halves();
+  const okGather = gathered();
+  check('--gather passes on reports that cover every file on disk once, with no DATABASE_URL and no psql', okGather.status === 0 && !okGather.psqlRan, `status ${okGather.status}: ${okGather.out.slice(0, 300)}`);
+  halves((r) => [r[0], null]);
+  const missing = gathered();
+  check('--gather fails on a missing shard and the files it held', missing.status === 1 && /shard 2\/2 has no report/.test(missing.out) && /is in no report/.test(missing.out), missing.out.slice(0, 300));
+  halves((r) => { r[1].files.push(r[0].files[0]); return r; });
+  const dup = gathered();
+  check('--gather fails on a file in two reports', dup.status === 1 && /in 2 reports/.test(dup.out), dup.out.slice(0, 300));
+  halves((r) => { r[0].files[0].outcome = 'failed'; return r; });
+  const notPassed = gathered();
+  check('--gather fails on a file that did not pass', notPassed.status === 1 && /did not pass/.test(notPassed.out), notPassed.out.slice(0, 300));
+  halves((r) => { r[0].calls = [{ name: 'planted_read', calls: 0 }]; r[1].calls = []; return r; });
+  const unread = gathered();
+  check('--gather fails on a client read no shard called, on the counts summed over the shards', unread.status === 1 && /planted_read/.test(unread.out), unread.out.slice(0, 300));
+  halves((r) => { r[0].calls = [{ name: 'thread_page', calls: 0 }]; r[1].calls = [{ name: 'thread_page', calls: 2 }]; return r; });
+  const summed = gathered();
+  check('and passes when another shard called it: the sum is what is compared', summed.status === 0, summed.out.slice(0, 300));
+  fs.rmSync(dir, { recursive: true, force: true });
 }
 
 /* ---- the end-to-end files: snapshots of the replay, and what a file may not do ---- */
@@ -294,34 +504,22 @@ const full = boundedSuite();
   check('a mention in a comment is not read', reads("// the migrations (supabase/migrations/0025_avatars.sql)\n/* supabase/migrations and migrationFiles */\nconst a = 1;") === null);
   check('a URL\'s double slash does not hide what follows it on the line', /migrationFiles/.test(reads("const u = 'postgres://x'; migrationFiles();") ?? ''));
 
-  /* A planted end-to-end directory: the runner reads it in place of supabase/tests/e2e, so the planted names are the run's. */
-  const planted = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-e2e-'));
-  const plant = (name, text) => fs.writeFileSync(path.join(planted, name), text);
-  const unplant = () => { for (const f of fs.readdirSync(planted)) fs.rmSync(path.join(planted, f)); };
-  const sawIn = path.join(bounded, 'saw');
-  const writesEnv = (file) => `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(file)}, JSON.stringify({ url: process.env.KAYFABB_SCRATCH_URL, snapshots: process.env.KAYFABB_SNAPSHOTS }));\n`;
   const tmplOf = (r) => r.records.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean) ?? '';
 
   /* Poison: a file that replays the migrations itself. */
-  plant('0901-replays-the-migrations.ts', "import fs from 'node:fs';\nfor (const m of fs.readdirSync('supabase/migrations')) console.log(m);\n");
-  plant('0902-asks-the-list.ts', "import { migrationFiles } from '../../../tools/test-sql.mjs';\nmigrationFiles();\n");
-  plant('0903-only-says-so.ts', writesEnv(sawIn + '3') + '// supabase/migrations and migrationFiles, in a comment\n');
-  const poison = boundedSuite({ pattern: 'e2e/090', e2eDir: planted });
+  const poison = boundedSuite(runs.poison);
   check('the runner refuses an end-to-end file that replays the migrations itself, and the run fails', poison.status === 1 && /FAIL  e2e\/0901-replays-the-migrations\.ts[^\n]*\s+reads supabase\/migrations/.test(poison.out), poison.out.split('\n').filter((l) => /FAIL|e2e/.test(l)).join(' | ').slice(0, 400));
   check('and one that asks migrationFiles', /FAIL  e2e\/0902-asks-the-list\.ts[^\n]*\s+reads[^\n]*migrationFiles/.test(poison.out), poison.out.slice(0, 300));
   check('the refused files get no clone, and one that only mentions them in a comment still runs and passes', /PASS  e2e\/0903-only-says-so\.ts/.test(poison.out) && poison.records.map(createdClone).filter(Boolean).length === 1, `${poison.records.map(createdClone).filter(Boolean).length} clones`);
-  unplant();
 
   /* What the file is told. */
-  plant('0904-asks-where.ts', writesEnv(sawIn + '4'));
-  plant('0905-across-0003.ts', writesEnv(sawIn + '5'));
-  const told = boundedSuite({ pattern: '0904', e2eDir: planted });
+  const told = boundedSuite(runs.told);
   const saw = fs.existsSync(sawIn + '4') ? JSON.parse(fs.readFileSync(sawIn + '4', 'utf8')) : {};
   const cloneOf = told.records.map(createdClone).filter(Boolean)[0]?.[1];
   check('an end-to-end file is told its clone in KAYFABB_SCRATCH_URL', Boolean(cloneOf) && saw.url === `postgres://postgres:pg@localhost:5432/${cloneOf}`, JSON.stringify(saw));
   const snaps = saw.snapshots ? JSON.parse(saw.snapshots) : {};
   check('and the snapshots in KAYFABB_SNAPSHOTS: `migrated`, and a point for each file that names one', typeof snaps.migrated === 'string' && snaps.migrated.startsWith(tmplOf(told)), saw.snapshots);
-  const pointed = boundedSuite({ pattern: '0905', e2eDir: planted });
+  const pointed = boundedSuite(runs.pointed);
   const sawPointed = fs.existsSync(sawIn + '5') ? JSON.parse(fs.readFileSync(sawIn + '5', 'utf8')) : {};
   const pointedSnaps = sawPointed.snapshots ? JSON.parse(sawPointed.snapshots) : {};
   check('a point a file names is in it, and its database is made from the template', /^kayfabb_scratch_\d+_\d+_/.test(pointedSnaps['0003'] ?? '') && pointed.records.some((c) => bodyOf(c).startsWith(`create database ${pointedSnaps['0003']} template ${tmplOf(pointed)};`)), sawPointed.snapshots);
@@ -345,7 +543,7 @@ const full = boundedSuite();
   check('the snapshots are dropped, before the template', [snapOf, migrated].every((db) => Boolean(db) && droppedAt(pointed, db) > 0 && droppedAt(pointed, db) < droppedAt(pointed, tmplOf(pointed))));
 
   /* A run with no end-to-end file in it makes no snapshot. */
-  const noE2e = boundedSuite({ pattern: first });
+  const noE2e = boundedSuite(runs.noE2e);
   check('a pattern that selects no end-to-end file makes no snapshot', noE2e.records.length > 0 && !noE2e.records.some((c) => dbOf(c) === 'postgres' && /^create database \w+_(s\d+|migrated) /.test(bodyOf(c))), '');
 
   /* Whatever a file leaves named after its clone goes with the clone. */
@@ -353,19 +551,13 @@ const full = boundedSuite();
   check('when a clone is dropped, so is every database named for it (<clone>_%)', dropOf.length >= 1 && dropOf.every((c) => /like 'kayfabb_scratch_\d+_\d+_\d+\\_%'/.test(bodyOf(c))), dropOf[0] ? bodyOf(dropOf[0]) : 'no such call');
 
   /* A point no migration has fails the run before anything runs. */
-  unplant();
-  plant('0906-nowhere-across-9999.ts', '');
-  const nowhere = boundedSuite({ pattern: '0906', e2eDir: planted });
+  const nowhere = boundedSuite(runs.nowhere);
   check('a point no migration has fails the run before any psql is called', nowhere.status === 1 && /9999/.test(nowhere.out) && nowhere.records.length === 0, `status ${nowhere.status}, ${nowhere.records.length} calls: ${nowhere.out.slice(0, 200)}`);
-  unplant();
-  plant('0907-a-across-0003.ts', ''); plant('0908-b-across-0003.ts', '');
-  const dupe = boundedSuite({ pattern: 'e2e/090', e2eDir: planted });
+  const dupe = boundedSuite(runs.dupe);
   check('two files naming one point fail the run before any psql is called', dupe.status === 1 && /0907-a-across-0003\.ts/.test(dupe.out) && /0908-b-across-0003\.ts/.test(dupe.out) && dupe.records.length === 0, `status ${dupe.status}, ${dupe.records.length} calls`);
-  unplant();
-  plant('0909-x-across-.ts', '');
-  const unpointed = boundedSuite({ pattern: '0909', e2eDir: planted });
+  const unpointed = boundedSuite(runs.unpointed);
   check('and so does a name with -across- and no point', unpointed.status === 1 && /0909-x-across-\.ts/.test(unpointed.out) && unpointed.records.length === 0, `status ${unpointed.status}`);
-  fs.rmSync(planted, { recursive: true, force: true });
+  for (const d of [...Object.values(planted), emptyDir]) fs.rmSync(d, { recursive: true, force: true });
 
   /* The real files: every upgrade test is named for its point, and no file replays the migrations on its own. */
   const real = have ? (() => { try { return runner.snapshotPoints(e2eFiles, allMigrations); } catch (e) { return String(e.message); } })() : 'no snapshotPoints';

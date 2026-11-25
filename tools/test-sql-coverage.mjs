@@ -46,12 +46,12 @@ if (typeof uncalled === 'function') {
 const text = fs.readFileSync('tools/test-sql.mjs', 'utf8');
 const code = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/^\s*\/\/.*$/gm, ' ');
 const trackAt = code.search(/track_functions/);
-const e2eLoopAt = code.search(/for \(const f of e2e\)/);
+const poolAt = code.search(/await pool\(/);
 const coverageAt = code.search(/step\(\s*'coverage'/);
 check('the suite sets track_functions', trackAt >= 0);
 check('and reads ALLOWED_RPCS from check-web-reads, with no copy', /import \{[^}]*\bALLOWED_RPCS\b[^}]*\} from '\.\/check-web-reads\.mjs'/.test(code));
 check('and runs the coverage step', coverageAt >= 0);
-check('after the end-to-end loop', e2eLoopAt >= 0 && coverageAt > e2eLoopAt, `loop at ${e2eLoopAt}, coverage at ${coverageAt}`);
+check('after the pool has run every file', poolAt >= 0 && coverageAt > poolAt, `pool at ${poolAt}, coverage at ${coverageAt}`);
 
 check('the suite sets kayfabb.client_rpcs from ALLOWED_RPCS, and every setting through one list for the template and each clone', /set kayfabb\.client_rpcs to '\$\{ALLOWED_RPCS\.join\(','\)\}'/.test(code) && /clientRpcsSql\(db\)/.test(code) && /cloneSql\(template, clone, url\)/.test(code));
 if (typeof runner.clientRpcsSql === 'function') {
@@ -63,14 +63,22 @@ if (typeof runner.clientRpcsSql === 'function') {
 const clone = typeof runner.cloneSql === 'function' ? runner.cloneSql('t', 'c', 'postgres://postgres:pg@localhost:5432/postgres') : '';
 check('track_functions is set on each clone, not only on the template', clone.includes("alter database c set track_functions to 'all';"), clone.slice(0, 120));
 check('and client_rpcs too, which the counts are asked about', clone.includes(`alter database c set kayfabb.client_rpcs to '${ALLOWED_RPCS.join(',')}';`));
-const afterAt = code.search(/psqlLines\(cloneUrl, afterFileSql\)/);
+const afterAt = code.search(/psqlLinesAsync\(cloneUrl, afterFileSql\)/);
 const dropAt = code.search(/drop database if exists \$\{clone\} with \(force\)/);
 check('the counts are read from each clone before its drop', afterAt >= 0 && dropAt > afterAt, `read at ${afterAt}, drop at ${dropAt}`);
-check('and kept, one list for each file', /counts\.push\(read\.calls\)/.test(code));
+check('and kept, one list for each file, into its report', /calls = got\.calls/.test(code) && /calls: sumCalls\(results\.map\(\(r\) => r\.calls\)\)/.test(code));
 const comparisons = [...code.matchAll(/\buncalledReads\(/g)].filter((m) => !/function\s+$/.test(code.slice(0, m.index))).map((m) => m.index);
 check('uncalledReads runs once', comparisons.length === 1, `${comparisons.length} calls`);
-check('on the sum of every file\'s counts', /sumCalls\(counts\)/.test(code) && code.search(/sumCalls\(counts\)/) < (comparisons[0] ?? -1));
-check('after the loops over the assertion files and the end-to-end files', comparisons.length === 1 && code.search(/for \(const t of files\)/) < comparisons[0] && e2eLoopAt < comparisons[0], `comparison at ${comparisons[0]}`);
+check('on the sum of every report\'s counts, in the one function both the local run and --gather call', /sumCalls\(reports\.map\(\(r\) => r\.calls\)\)/.test(code) && code.search(/sumCalls\(reports\.map/) < (comparisons[0] ?? -1) && /function coverageFailure\(/.test(code));
+const callers = [...code.matchAll(/\bcoverageFailure\(/g)].filter((m) => !/function\s+$/.test(code.slice(0, m.index))).length;
+check('coverageFailure is called by the whole local run and by --gather, and nowhere else', callers === 2, `${callers} calls`);
+check('a whole run compares only without a pattern or a shard', /if \(pattern \|\| shardN > 1\) console\.log\([^\n]*skipped/.test(code));
+if (typeof runner.coverageFailure === 'function') {
+  const planted2 = runner.coverageFailure([{ calls: [{ name: 'planted_read', calls: 0 }] }]);
+  check('coverageFailure names a read no report called', /planted_read/.test(planted2 ?? ''), String(planted2));
+  const across = runner.coverageFailure([{ calls: [{ name: 'a', calls: 0 }] }, { calls: [{ name: 'a', calls: 2 }] }]);
+  check('and counts what another shard called, since the counts are summed', across === null, String(across));
+} else check('the runner exports coverageFailure', false);
 if (typeof runner.afterFileSql === 'string') {
   check('what is read from a clone is the function statistics, after a forced flush', /pg_stat_force_next_flush\(\)/.test(runner.afterFileSql) && /pg_stat_user_functions/.test(runner.afterFileSql));
 } else check('the runner exports afterFileSql', false);
