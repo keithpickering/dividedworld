@@ -380,7 +380,7 @@ end $$;
 --   Masks. Nothing here reads who owns a character, a class or who reacted. A request's asker is read for its public name through acts_public, so a veiled author shows as the anonymous character; the staff's own state
 --   (office, bank, allowance, beat) and the boards decide every ruling and refusal, never an owner: a confer, a refusal and when they happen are the same whoever is behind a request.
 --   Ways out. A waiting request lapses by itself at lapses_at (the tick), or when its post is hidden at the next tick, or is ruled at a meeting. Nothing else is added.
---   Cost. requests_waiting reads the queue's oldest rows and one public post for each, at most `most` of them (and the rows whose post is not public, which the tick lapses); the tick's pass reads the queue, one public post
+--   Cost. requests_waiting is one statement driven by the queue's oldest rows, each joined by key to its public post, thread, board and names, stopping at `most` shown (a row whose post is not public, which the tick lapses, is passed at one tuple); requests_waiting_total counts the queue the same way, for the digest's "N more wait"; the tick's pass reads the queue, one public post
 --   per waiting request, which the days a request waits (daysMost) bound, `cap` of them at most, and a row that failed or was held by a meeting goes behind the rest (failed_at), so one row cannot hold a slot for good;
 --   rule_request and apply_boss_move are one request's reads and writes. Nothing here grows with the requests ruled in the past.
 --   The digest. requests_waiting is owned by kayfabb_digest (0045), which Task 5's system_digest calls it from: it reads public relations only (acts_public, characters_public, thread_list, boards_now), the queue, and
@@ -700,33 +700,30 @@ grant execute on function rule_request(text, uuid, uuid, text, jsonb, numeric, n
 create function requests_waiting(most integer) returns jsonb
 language plpgsql stable security definer set search_path = public, pg_temp as $$
 declare
-  o record;
-  q record;
-  p record;
-  out jsonb := '[]';
-  n integer := 0;
   cap integer := least(greatest(coalesce(requests_waiting.most, 0), 0), 500);
   days integer := staff_request_days();
+  out jsonb;
 begin
-  if cap = 0 then return out; end if;
-  -- The queue in order, and each request by its key: one lookup for each row the loop reads, whatever the planner thinks of a join's cost on the record table.
-  for o in select x.request, x.at from staff_requests_open x order by x.at, x.request loop
-    select r.id, r.request_act, r.thread, r.staff, r.turn_act, o.at into q from staff_requests r where r.id = o.request;
-    select a.id, coalesce(a.current_payload ->> 'body', '') as body, k.name as asker_name into p
-    from acts_public a join characters_public k on k.id = a.character
-    where a.id = q.request_act and a.hidden is not true;
-    continue when not found;
-    out := out || jsonb_build_array(jsonb_build_object(
-      'id', q.id, 'requestAct', q.request_act, 'thread', q.thread,
-      'title', coalesce((select t.title from thread_list t where t.id = q.thread), ''),
-      'board', (select t.board from thread_list t where t.id = q.thread),
-      'boardName', coalesce((select b.name from thread_list t join boards_now b on b.id = t.board where t.id = q.thread), ''),
-      'askerName', p.asker_name, 'staff', q.staff,
-      'staffName', coalesce((select k.name from acts_public a join characters_public k on k.id = a.character where a.id = q.turn_act), ''),
-      'body', p.body, 'at', q.at, 'lapsesAt', q.at + make_interval(days => days)));
-    n := n + 1;
-    exit when n >= cap;
-  end loop;
+  if cap = 0 then return '[]'::jsonb; end if;
+  -- One statement: the queue in order drives it, each row's request, its public post and author, its thread, board and conferring persona are joined by key, and a row whose post is not public is not a row, so `limit` stops
+  -- the scan at the `cap`th request that is shown (it reads the queue's rows up to there, and a hidden one it passes is one tuple, never a lookup of its thread or names).
+  select coalesce(jsonb_agg(jsonb_build_object(
+      'id', w.id, 'requestAct', w.request_act, 'thread', w.thread, 'title', coalesce(w.title, ''), 'board', w.board, 'boardName', coalesce(w.board_name, ''),
+      'askerName', w.asker_name, 'staff', w.staff, 'staffName', coalesce(w.staff_name, ''), 'body', w.body, 'at', w.at, 'lapsesAt', w.at + make_interval(days => days)) order by w.at, w.id), '[]'::jsonb)
+  into out
+  from (
+    select q.id, q.request_act, q.thread, q.staff, o.at, t.title, t.board, b.name as board_name, k.name as asker_name, coalesce(a.current_payload ->> 'body', '') as body, tk.name as staff_name
+    from staff_requests_open o
+    join staff_requests q on q.id = o.request
+    join acts_public a on a.id = q.request_act and a.hidden is not true
+    join characters_public k on k.id = a.character
+    left join thread_list t on t.id = q.thread
+    left join boards_now b on b.id = t.board
+    left join acts_public ta on ta.id = q.turn_act
+    left join characters_public tk on tk.id = ta.character
+    order by o.at, o.request
+    limit cap
+  ) w;
   return out;
 end $$;
 grant create on schema public to kayfabb_digest;
@@ -734,6 +731,20 @@ alter function requests_waiting(integer) owner to kayfabb_digest;
 revoke create on schema public from kayfabb_digest;
 revoke execute on function requests_waiting(integer) from public, anon, authenticated;
 grant execute on function requests_waiting(integer) to service_role, kayfabb_digest;
+
+-- requests_waiting_total: how many requests wait in all (the queue's rows whose post is public, as requests_waiting lists them), so the digest can say how many more wait than it holds. Read from the queue, which holds the
+-- requests that wait and no other, so it is as long as the waiting set; owned by the digest role as requests_waiting is.
+create function requests_waiting_total() returns integer
+language sql stable security definer set search_path = public, pg_temp as $$
+  select count(*)::integer from staff_requests_open o
+  join staff_requests q on q.id = o.request
+  join acts_public a on a.id = q.request_act and a.hidden is not true
+$$;
+grant create on schema public to kayfabb_digest;
+alter function requests_waiting_total() owner to kayfabb_digest;
+revoke create on schema public from kayfabb_digest;
+revoke execute on function requests_waiting_total() from public, anon, authenticated;
+grant execute on function requests_waiting_total() to service_role, kayfabb_digest;
 
 -- boss_request_reply: the Boss's reply to a request post, in its thread as a post quoting it (write_staff_act), shared by the meeting's rulings (requests_ruled) and the tick's lapse. `own_line` is the Boss's own words, used
 -- as they are; with none, the stock line `stock` of settings systemLines, one of the key's lines chosen at random, with {boss} and {asker} (the asker as the request post's public author shows, so a veiled one is the anonymous
@@ -765,7 +776,7 @@ revoke execute on function boss_request_reply(text, uuid, uuid, text, text) from
 -- whose ruling is neither word is skipped with its reason. A fulfill's move is queued as the Boss's others are (boss_move_queue, filed under `in_meeting`, a structural one held for admins) while `room` moves remain
 -- in the bank (what the meeting still has to spend after its own moves); one the bank cannot pay, or the queue refuses, is a reject with the reason recorded (staff_request_rulings.reason). The meeting charges `spent`
 -- to its bank itself: it writes the balance at its end, so this never touches move_bank. Each ruling is one row, and the Boss's reply is written with it, in this transaction, before the row (boss_request_reply): in the thread
--- as a post quoting the request post, in the Boss's own line (trimmed, cut to postMaxLength) or, where it gave none, the stock line requestGranted or requestRefused; the row names it (post_act). The reply is written in a
+-- as a post quoting the request post, in the Boss's own line (trimmed, cut to postMaxLength) or, where it gave none, the stock line requestGranted or requestRefused (a line written for a grant that becomes a reject is not posted: the stock refusal stands); the row names it (post_act). The reply is written in a
 -- subtransaction: one that cannot be written (the Boss locked out of the thread, say) leaves the ruling, with no post_act and the reason on the row (`reason`, after the reason for a reject, if any), and is returned as
 -- `replyFailed`, so the ruling is never lost to its reply and the reply is never lost to a process that died after the commit. A rolled-back meeting leaves neither; a retried one is not run twice.
 -- Returns {spent, rulings: [{id, requestAct, thread, staff, ruling, move, reason, postAct, replyFailed}], skipped: [{id, why}]}.
@@ -832,6 +843,7 @@ begin
       if spent >= left_room then
         decided := 'reject';
         why := 'the bank could not pay for another move';
+        line := null;
       else
         result := boss_move_queue(boss, ans -> 'move', rq.request_act, requests_ruled.in_meeting);
         if (result ->> 'queued')::boolean then
@@ -839,6 +851,7 @@ begin
           spent := spent + 1;
         else
           decided := 'reject';
+          line := null;
           why := case when (result ->> 'existing')::boolean then 'the Boss has already made a move for that request' else coalesce(result ->> 'reason', 'the move was not made') end;
         end if;
       end if;
@@ -2295,6 +2308,7 @@ begin
                                        from conv_best b where b.thread = c.thread and b.staff = c.staff))
                           order by c.reactions desc, c.turns desc, c.thread, c.staff) from conv c), '[]'::jsonb),
     'requests', requests_waiting(req_most),
+    'requestsWaiting', requests_waiting_total(),
     'characters', coalesce((select jsonb_agg(jsonb_build_object('id', cp.id, 'name', cp.name, 'staff', cp.staff is not null and cp.office is distinct from 'anonymous',
                                                                 'pronouns', (select p.pronouns from character_profiles p where p.character = cp.id)) order by cp.id)
                             from characters_public cp where cp.id in (select id from named)), '[]'::jsonb)

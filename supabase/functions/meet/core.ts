@@ -555,6 +555,7 @@ export async function runMeeting(
 function reportRequestReplies(ruled: readonly RuledRequest[], notes: string[]): { id: number; ruling: 'fulfill' | 'reject'; posted: boolean }[] {
   return ruled.map((r) => {
     if (r.replyFailed) notes.push(`request ${r.id}: the Boss's reply was not posted (${clip(r.replyFailed, 200)}); the ruling stands.`);
+    else if (r.postAct === null) notes.push(`request ${r.id}: no reply was posted, since the Boss gave no line and the instance has no stock line for it; the ruling stands.`);
     return { id: r.id, ruling: r.ruling, posted: r.postAct !== null };
   });
 }

@@ -274,6 +274,19 @@ test('no section and no whole-posts line when no request waits (or the digest is
   }
 });
 
+test('when more wait than the read held, the section says how many more, from the total the database counted', () => {
+  const d = { ...small, requests: [request(1, 'one'), request(2, 'two'), request(3, 'three')], requestsWaiting: 14 };
+  const text = renderDigest(d, null, [], { readMost: 10_000, meetingMost: 3 });
+  assert.ok(text.includes('(11 more requests wait and are not shown here; they stay waiting.)'), text);
+  // A total that is not more than the list (or absent) adds nothing.
+  const same = renderDigest({ ...d, requestsWaiting: 3 }, null, [], { readMost: 10_000, meetingMost: 3 });
+  assert.ok(!same.includes('not shown here'), same);
+  assert.ok(!renderDigest({ ...d, requestsWaiting: undefined }, null, [], { readMost: 10_000, meetingMost: 3 }).includes('not shown here'));
+  // Left out by the ceiling and by the total are both counted, once each.
+  const both = renderDigest({ ...d, requests: [request(1, 'short'), request(2, 'z'.repeat(900)), request(3, 'short')], requestsWaiting: 5 }, null, [], { readMost: 500, meetingMost: 3 });
+  assert.ok(both.includes('(3 more requests wait'), both);
+});
+
 test('requests are bounded by meetingMost and then by readMost over the bodies: the longest is dropped first, the count is said, and no body is ever cut', () => {
   const big = 'x'.repeat(900);
   const d = { ...small, requests: [request(1, 'short one'), request(2, big), request(3, 'short two'), request(4, 'y'.repeat(500))] };

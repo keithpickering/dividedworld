@@ -148,6 +148,8 @@ export interface Digest {
   readonly conversations: readonly DigestConversation[];
   /** The requests waiting for the Boss's ruling, oldest first, at most `staffRequests.meetingMost`; absent from a database that has none. */
   readonly requests?: readonly DigestRequest[];
+  /** How many requests wait in all (the queue's count, requests_waiting_total), which may be more than `requests` holds; absent from a database that does not count. */
+  readonly requestsWaiting?: number;
   /**
    * The debuted, public characters the lists name: the set the meeting passes to `repairMemory` as the public
    * characters (dropping `staff` ones if the Boss should hold no opinion of staff).
@@ -198,9 +200,9 @@ export const REQUEST_LIMITS: RequestLimits = { readMost: 40_000, meetingMost: 10
 
 /**
  * The requests the section shows: the oldest `meetingMost` (the SQL read already holds them to that, and this does not trust it), then, while their bodies together pass `readMost`, the longest goes (the newest of a tie), never the last
- * one left, so the oldest request is read whatever its size and no body is ever cut. Returns them in their own order and how many were left out of those the digest held.
+ * one left, so the oldest request is read whatever its size and no body is ever cut. Returns them in their own order and how many were left out of all that wait (the digest's list, or `waitingInAll` where the database counted more).
  */
-export function shownRequests(all: readonly DigestRequest[], o: RequestLimits = REQUEST_LIMITS): { readonly shown: readonly DigestRequest[]; readonly leftOut: number } {
+export function shownRequests(all: readonly DigestRequest[], o: RequestLimits = REQUEST_LIMITS, waitingInAll?: number): { readonly shown: readonly DigestRequest[]; readonly leftOut: number } {
   let shown = all.slice(0, Math.max(0, Math.min(Math.trunc(o.meetingMost), 500)));
   let total = shown.reduce((n, r) => n + r.body.length, 0);
   // `shown.length > 1`: the last request left is kept even if its body alone passes readMost (a body is never cut); unreachable while postMaxLength < readMost, as a request post is at most postMaxLength long.
@@ -210,7 +212,8 @@ export function shownRequests(all: readonly DigestRequest[], o: RequestLimits = 
     total -= shown[at]!.body.length;
     shown = shown.filter((_, i) => i !== at);
   }
-  return { shown, leftOut: all.length - shown.length };
+  // `waitingInAll` is the database's count of every request that waits, which can pass what the read held (it holds at most meetingMost).
+  return { shown, leftOut: Math.max(all.length, Number.isFinite(waitingInAll) ? Math.trunc(waitingInAll!) : 0) - shown.length };
 }
 
 const waited = (from: string, to: string): string => {
@@ -340,7 +343,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   if (digest.excerpts.length > 0 || talks.some((c) => c.exchange !== null)) out.push('', EXCERPT_WORDS);
   // The requests waiting for a ruling (the staff requests design, section 3): outside the excerpt budget, whole, bounded by meetingMost and the reader's readMost. A request's post is quoted line by line so
   // that it cannot be told apart from the digest's own words, and the whole-posts line is said once.
-  const waiting = shownRequests(digest.requests ?? [], limits);
+  const waiting = shownRequests(digest.requests ?? [], limits, digest.requestsWaiting);
   if (waiting.shown.length > 0) {
     out.push('', '## Requests waiting for your ruling', READ_WORDS);
     for (const r of waiting.shown) {

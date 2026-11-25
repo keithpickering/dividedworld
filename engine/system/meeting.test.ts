@@ -1818,12 +1818,13 @@ test('a ruling other than fulfill or reject (confer) is dropped, naming the choi
   assert.ok(r.trims.some((t) => t.path === 'requests[0].ruling' && t.predicate === 'oneOf(fulfill, reject)'), JSON.stringify(r.trims));
 });
 
-test('a fulfill is counted against the bank after the Boss\'s own moves and its bundle, cut from the end: one the bank cannot pay becomes a reject, with both trims named and its line kept', () => {
+test('a fulfill is counted against the bank after the Boss\'s own moves and its bundle, cut from the end: one the bank cannot pay becomes a reject, with both trims named and its grant line dropped (the stock refusal stands)', () => {
   // Bank 2: the Boss's own move takes one; the first fulfill takes the last; the second fulfill is cut.
   const r = repairAnswer({ ...withRequests([grant(7), grant(8, { line: 'Also fine.' })]), moves: [move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })] }, requestsCtx({ bank: 2 }));
   assert.ok(r.ok, JSON.stringify(r));
   assert.equal(r.moves.length, 1);
-  assert.deepEqual(r.requests.map((x) => [x.id, x.ruling, x.move === null, x.line]), [[7, 'fulfill', false, 'Fine. Done.'], [8, 'reject', true, 'Also fine.']]);
+  assert.deepEqual(r.requests.map((x) => [x.id, x.ruling, x.move === null, x.line]), [[7, 'fulfill', false, 'Fine. Done.'], [8, 'reject', true, null]]);
+  assert.ok(r.trims.some((t) => t.path === 'requests[1].line' && t.predicate === 'grantLineNotPosted'), JSON.stringify(r.trims));
   assert.ok(r.trims.some((t) => t.path === 'requests[1].move' && t.predicate === 'withinBank'), JSON.stringify(r.trims));
   assert.ok(r.trims.some((t) => t.path === 'requests[1].ruling' && t.predicate === 'fulfillToReject'), JSON.stringify(r.trims));
   // The bank spent by the Boss's own moves alone: every fulfill is a reject.
@@ -1877,7 +1878,28 @@ test('the line is cut to postMaxLength at a sentence and the trim is named; a bl
   assert.ok(r.trims.some((t) => t.path === 'requests[0].line' && t.predicate === 'maxLength(120)'), JSON.stringify(r.trims));
   assert.equal(r.requests[1]!.line, null);
   assert.equal(r.requests[2]!.line, null);
-  assert.ok(r.trims.some((t) => t.path === 'requests[1].line' && t.predicate === 'nonBlank'));
+  assert.ok(!r.trims.some((t) => /line$/.test(t.path) && t.predicate === 'nonBlank'), 'a blank line is fine by the prompt, so it is no drop');
+});
+
+test('a fulfill whose move is lost for any reason drops its grant line too, and a reject keeps its own line', () => {
+  const r = repairAnswer(withRequests([{ id: 7, ruling: 'fulfill', line: 'Granted!' }, { id: 8, ruling: 'reject', line: 'No.' }]), requestsCtx());
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.deepEqual(r.requests.map((x) => [x.ruling, x.line]), [['reject', null], ['reject', 'No.']]);
+});
+
+test('the bank the requests pay from counts the Boss\'s moves, its bundle, the fulfills answered before, and then the Mods\' allowances take what is left', () => {
+  // Bank 5: 1 own move + a 2-part bundle + 1 fulfill = 4, so the order's allowance of 3 is cut to 1; a second fulfill (needs 1) still fits before the orders are cut? It does: bank after own and bundle is 2, two fulfills use it.
+  const orders = [{ mod: 'mod-key', boards: [], order: 'Watch.', allowance: 3 }];
+  const bundle = { name: 'Pair', parts: [1, 2].map((i) => ({ kind: 'createBoard', role: `r${i}`, params: { name: `Pirate Puns Palace ${i}`, premise: 'p', description: 'd' }, why: 'Part.' })) };
+  const r = repairAnswer({ ...withRequests([grant(7)]), moves: [move({ kind: 'postsOnBoard', params: { board: BOARD, count: 5 } })], bundle, orders }, requestsCtx({ bank: 5, mods: new Set(['mod-key']) }));
+  assert.ok(r.ok, JSON.stringify(r));
+  assert.equal(r.moves.length, 1);
+  assert.equal(r.bundles.length, 1, JSON.stringify(r.bundles));
+  assert.equal(r.bundles[0]!.cost, 2);
+  assert.equal(r.requests[0]!.ruling, 'fulfill');
+  assert.equal(r.orders[0]!.allowance, 1, 'bank 5 less 1 move, 2 bundle, 1 fulfill leaves 1');
+  const total = r.moves.length + r.bundles.reduce((n, b) => n + b.cost, 0) + r.requests.filter((x) => x.ruling === 'fulfill').length + r.orders.reduce((n, o) => n + o.allowance, 0);
+  assert.equal(total, 5);
 });
 
 test('a malformed requests answer never costs the answer: a non-list, a non-object entry and a non-number id are dropped', () => {
