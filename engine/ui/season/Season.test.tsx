@@ -50,7 +50,11 @@ function world(places: readonly [number | null, number | null, number | null, nu
   /* Season 1's results are rows, not Acts: the final table as it stood. */
   seed.seasonResults(1, [
     { character: spritey, place: places[0], standing: unplacedAt(0, 985), shown: [{ kind: 'reveal', act: said.act, at: new Date(at(3, 13)).toISOString(), class: 'face', was: null }] },
-    { character: gloomba, place: places[1], standing: unplacedAt(1, places[1] === places[0] ? 985 : 840) },
+    /* Gloomba revealed a Heel, then a Turn was announced with no class: the reveal is cleared, so the podium says none. */
+    { character: gloomba, place: places[1], standing: unplacedAt(1, places[1] === places[0] ? 985 : 840), shown: [
+      { kind: 'reveal', act: said.act, at: new Date(at(4)).toISOString(), class: 'heel', was: null },
+      { kind: 'turn', act: said.act, at: new Date(at(9)).toISOString(), class: null, was: null },
+    ] },
     { character: mrs, place: places[2], standing: unplacedAt(2, 795) },
     { character: pipe, place: places[3], standing: unplacedAt(3, 100) },
   ], { at: at(28) });
@@ -266,6 +270,8 @@ describe('the News tab', () => {
     expect(podium[0]).toHaveTextContent('was a Face');
     expect(podium[1]).toHaveTextContent('Gloomba');
     expect(podium[1]).toHaveTextContent('class not revealed');
+    expect(podium[1]).not.toHaveTextContent('Heel');
+    expect(item).not.toHaveTextContent(/has Turned since/iu);
     expect(podium[2]).toHaveTextContent('Mrs. Hooligan');
     expect(within(item).queryByText('Pipewrench')).toBeNull();
     expect(within(podium[0]!).getByRole('link', { name: 'Spritey' })).toHaveAttribute('href', `/c/${w.spritey}`);

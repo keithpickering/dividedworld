@@ -84,7 +84,7 @@ function ClassCell({ own, stated, className }: { readonly own: MyCharacter | und
   );
 }
 
-/** What a finished season's player made public of a character's class that season, drawn as the live table draws a reveal. */
+/** What a finished season's player made public of a character's class that season, drawn as the live table draws a reveal: a Turn announced after it clears it. */
 function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow['shown']; readonly className: (key: string) => string }) {
   const f = finalClass(shown);
   if (!f) return <><span aria-hidden="true" className="kb-rankings-none">—</span><span className="kb-visually-hidden">Not revealed</span></>;
@@ -92,7 +92,6 @@ function FinalClassCell({ shown, className }: { readonly shown: SeasonResultRow[
     <span className="kb-rankings-stated">
       <ClassChip cls={f.cls} name={className(f.cls)} kind="revealed" />
       <span className="kb-rankings-when">Revealed {shortDate(f.at)}</span>
-      {f.turnedAt && <span className="kb-rankings-when">Has Turned since {shortDate(f.turnedAt)}</span>}
     </span>
   );
 }

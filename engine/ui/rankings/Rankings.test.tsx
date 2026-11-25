@@ -99,9 +99,10 @@ function finished(count = 120) {
     { kind: 'reveal' as const, act: 'a1', at: new Date(at(3)).toISOString(), class: 'heel', was: null },
     { kind: 'turn' as const, act: 'a2', at: new Date(at(9)).toISOString(), class: null, was: null },
   ];
+  const current = [{ kind: 'reveal' as const, act: 'a3', at: new Date(at(5)).toISOString(), class: 'face', was: null }];
   seed.season({ number: 1, endsAt: new Date(at(30)).toISOString() });
   seed.season({ number: 2, startsAt: new Date(at(30)).toISOString() });
-  seed.seasonResults(1, ids.map((character, i) => ({ character, place: i + 1, standing: 1000 - i, shown: i === 0 ? shown : [] })), { at: at(30, 9) });
+  seed.seasonResults(1, ids.map((character, i) => ({ character, place: i + 1, standing: 1000 - i, shown: i === 0 ? shown : i === 2 ? current : [] })), { at: at(30, 9) });
   fake.signInAs(me);
   return { fake, ids, me };
 }
@@ -117,14 +118,17 @@ describe('a finished season', () => {
     expect(screen.getByText(/Page 1 of 3/u)).toBeInTheDocument();
   });
 
-  test('shows the class its player made public, with the Turn after it, and no class for anyone else', async () => {
+  test('shows the class its player made public unless a Turn was announced after it, and no class for anyone else', async () => {
     const w = finished();
     renderIn(w.fake, <RankingsScreen embedded season={1} />, { path: '/season?tab=rankings&season=1' });
     await waitFor(() => expect(bodyRows()).toHaveLength(50));
     const first = rowOf('Name 000');
-    expect(first).toHaveTextContent('Heel');
-    expect(within(first).getByText('Revealed Oct 3')).toBeInTheDocument();
-    expect(within(first).getByText('Has Turned since Oct 9')).toBeInTheDocument();
+    expect(first).toHaveTextContent('Not revealed');
+    expect(first).not.toHaveTextContent('Heel');
+    expect(first).not.toHaveTextContent('Has Turned since');
+    const third = rowOf('Name 002');
+    expect(third).toHaveTextContent('Face');
+    expect(within(third).getByText('Revealed Oct 5')).toBeInTheDocument();
     expect(rowOf('Name 001')).toHaveTextContent('Not revealed');
   });
 
