@@ -598,6 +598,10 @@ do $$
 declare v0 bigint; out text := ''; ids uuid[]; trow jsonb; r jsonb; n bigint; p uuid; t uuid := pg_temp.f('big');
 begin
   perform set_config('track_functions', 'all', true);
+  v0 := pg_temp.veils_read(); r := pool_read(pg_temp.f('small'), 'ex-boss', null, 60); out := out || 'pool_read small ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); r := pool_read(t, 'ex-boss', null, 60); out := out || 'pool_read big ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); r := pool_read(pg_temp.f('ballots'), 'ex-boss', null, 60); out := out || 'pool_read ballots ' || (pg_temp.veils_read() - v0) || E'\n';
+  v0 := pg_temp.veils_read(); perform post_extras(array(select a.id from acts a where a.thread = t and a.kind = 'post' order by a.seq desc limit 100)); out := out || 'post_extras 100 ' || (pg_temp.veils_read() - v0) || E'\n';
   v0 := pg_temp.veils_read(); select count(*) into n from pool_read_rows(t, 'ex-boss', null, 60); out := out || 'pool_read_rows ' || (pg_temp.veils_read() - v0) || E'\n';
   ids := array(select x.act from pool_read_rows(t, 'ex-boss', null, 60) x);
   select to_jsonb(l) into trow from (select x.title, x.origin_act_id, x.created_at, x.origin_place, x.first_act from thread_list x where x.id = t) l;
