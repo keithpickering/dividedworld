@@ -81,7 +81,7 @@ function standInLayout(): void {
 const drawn = instanceUi.cards.filter((c) => c.Effect && (c.key === 'glitter-bomb' || playsInMoment(instance.cards.find((r) => r.key === c.key), c)));
 
 test('the cards a moment draws are these, Stick Around, Graffiti and Jimmy Wails are not among them, and Glitter Bomb is held to the same contract', () => {
-  expect(drawn.map((c) => c.key).sort()).toEqual(['autocorrect', 'below-the-fold', 'blind-study', 'feelin-fab', 'glitter-bomb', 'hot-box', 'kick-me', 'laugh-track', 'steel-chair', 'this', 'time-machine', 'whodunnit', 'whoops', 'you-were-saying']);
+  expect(drawn.map((c) => c.key).sort()).toEqual(['autocorrect', 'below-the-fold', 'blind-study', 'feelin-fab', 'glitter-bomb', 'hot-box', 'its-curtains', 'kick-me', 'laugh-track', 'steel-chair', 'this', 'time-machine', 'whodunnit', 'whoops', 'you-were-saying']);
   for (const key of ['stick-around', 'graffiti', 'jimmy-wails']) expect(drawn.map((c) => c.key)).not.toContain(key);
 });
 
@@ -172,7 +172,7 @@ const unreactive = instanceUi.cards.filter((c) => c.Effect && !WRITING.includes(
 
 test('the writing cards are the one left out of the still comparison, with the two that wait for issue #774', () => {
   expect(instance.cards.filter((r) => r.writes !== undefined).map((r) => r.key)).toEqual(WRITING);
-  expect(unreactive.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'autocorrect', 'feelin-fab', 'this', 'hot-box', 'steel-chair', 'whodunnit', 'blind-study', 'below-the-fold', 'laugh-track', 'glitter-bomb', 'stick-around']));
+  expect(unreactive.map((c) => c.key)).toEqual(expect.arrayContaining(['whoops', 'autocorrect', 'feelin-fab', 'this', 'hot-box', 'steel-chair', 'whodunnit', 'blind-study', 'below-the-fold', 'laugh-track', 'glitter-bomb', 'stick-around', 'its-curtains']));
 });
 
 test.each(unreactive.map((c) => [c.key, c] as const))('%s draws the same markup with still true and with still false', async (key, card) => {

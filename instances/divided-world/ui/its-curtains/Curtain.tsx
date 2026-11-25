@@ -119,8 +119,8 @@ function makeSpots(root: HTMLElement, spots: readonly HTMLElement[], glints: Gli
 const GOLD = { light: '#fff2a8', body: '#e2ba00', dark: '#aa8c00', deep: '#5c4300', edge: '#4f3a00', stripe: '#e8c42a', body2: '#b08e00' } as const;
 
 function Swags({ art, glints }: { readonly art: SwagArt; readonly glints?: Glints }) {
-  const raw = useId().replace(/[^a-zA-Z0-9]/gu, '');
-  const id = (s: string): string => `dw${raw}${s}`;
+  const raw = useId();
+  const id = (s: string): string => `${raw}${s}`;
   const dims = { width: art.width, height: art.height, viewBox: `0 0 ${art.width} ${art.height}`, 'aria-hidden': true, focusable: false } as const;
   const tw = art.trimWidth, k = art.k;
   const T = `#${id('t')}`;
