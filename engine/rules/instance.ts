@@ -406,7 +406,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   /** How many polls the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). SQL's settings_held holds the same. */
   digestPolls: whole(1, 'polls', DIGEST_MOST.polls),
   /** How many spun threads the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). SQL's settings_held holds the same. */
-  digestSpins: whole(1, 'spins', DIGEST_MOST.spins),
+  digestSpins: whole(1, 'spun threads', DIGEST_MOST.spins),
   /** How many plays the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). SQL's settings_held holds the same. */
   digestPlays: whole(1, 'plays', DIGEST_MOST.plays),
   /** The span in days the digest's standouts count over, whatever the meeting's window (a whole number from 1 to the ceiling). SQL's settings_held holds the same. */
