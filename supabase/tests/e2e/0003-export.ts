@@ -11,14 +11,15 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { scratchUrl, sql } from './psql-db.ts';
+import { migratedDatabase, psqlDb, scratchSeed, scratchUrl, sql } from './psql-db.ts';
+import { runSettlement } from '../../functions/settle/core.ts';
+import { instance } from '../../functions/_shared/instance.ts';
 
 /** The tables the migrations fill themselves (tools/instance-files.mjs), held below to what a fresh database holds. */
 const files = '../../../tools/instance-files.mjs';
 const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly string[] };
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
 const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
@@ -86,6 +87,10 @@ async function fakeStorage() {
 
 test('an instance exported and imported into a fresh database is the same instance, table by table', async () => {
   const from = scratchUrl();
+  // What the cast below stands on, written here: the instance's seed (its reaction kinds, among them `fire`) and a settlement, a day in the
+  // first season, which the cast's settlement rows (ledger lines, class totals, scored_as, claims) name.
+  await psqlDb().rpc('seed_instance', { payload: scratchSeed(instance) });
+  assert.equal((await runSettlement(psqlDb(), instance, '2000-01-02T00:00:00Z')).status, 'applied', 'a day of the first season settles');
   /** The card an admin ends after the cast's last card (0092): its play's id, fixed here so the assertions below name it. */
   const endedPlay = '7d4e2f9a-1c3b-4e8d-9a6f-0b5c2e8d1f37';
   // A cast with every kind of thing in it: players, characters, Acts, reactions, cards and
@@ -377,7 +382,12 @@ test('an instance exported and imported into a fresh database is the same instan
       perform write_unmask(a, t, 'act', now(), 'Exported, and unmasked.');
       insert into standings (character, season, amount) values (a, (select max(id) from seasons), 10) on conflict (season, character) do update set amount = excluded.amount;
       insert into settlement_class_totals (settlement, class_key, amount) select max(id), 'face', 10 from settlements on conflict do nothing;
-      -- A share of a ledger line in e2e/0001's settlement (0034), on Ann's post.
+      -- A share of a ledger line in the settlement written above (0034), on Ann's post.
+      -- A tally's landing mark (0063: a tally with names writes it) and a search rebuild left running (0117), each a row to carry across.
+      insert into news_landed (act, kind) values (p, 'tally');
+      insert into search_rebuild (only_one, after_act) values (true, null) on conflict (only_one) do nothing;
+      -- A line of the settlement's own, which its share below belongs to (a settlement of a day with no vote writes none).
+      insert into ledger (settlement, account, character, reason, amount) select max(id), ann, a, 'heel.drewHeat', 10 from settlements;
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 10 from ledger;
       -- What a settlement scored a character as (0151, append-only), and a ledger row that names the card that paid it (0150: params.card).
       insert into scored_as (settlement, character, class_key, play) select (select max(id) from settlements), b, 'heel', id from acts where kind = 'card' and payload ->> 'card' = 'expscore';
@@ -555,8 +565,9 @@ test('an instance exported and imported into a fresh database is the same instan
         perform infract(b, 'moderate', relief_post2, 'exp-bot');
         perform play_card(ann, 'expunban', a, b, '{}', 0, '', 'character', relief_post);
       end;
-      -- The open season revealed at its end, as the settlement of its last window would.
-      perform reveal_season((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')));
+      -- The open season revealed at its end, as the settlement of its last window would. Its end is after the cast's debuts (this cast debuted now, and the first season
+      -- began in 2000), so that the season's results hold the cast, as they did on a database whose seasons an earlier file had carried to the present.
+      perform reveal_season(greatest((select starts_at from seasons where ends_at is null) + span_interval(setting('seasonLength')), now() + interval '1 minute'));
       -- An earlier season's reveal thread, as the seasons before 0099 wrote them: the season points at its header and the thread is unlisted (0063).
       declare old_thread uuid; old_head uuid;
       begin
@@ -710,12 +721,9 @@ test('an instance exported and imported into a fresh database is the same instan
   assert.deepEqual(empty, [], 'each table should hold something to carry across');
 
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-export-'));
-  const fresh = new URL(from);
-  const name = `${fresh.pathname.slice(1)}_imported`;
-  const server = new URL(from);
-  server.pathname = '/postgres';
-  fresh.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // The fresh instance: a clone of the runner's snapshot of the shim and every migration, nothing seeded.
+  const home = migratedDatabase('imported');
+  const fresh = new URL(home.url);
   // The old project's Storage holds the avatar's two files; the new project's starts empty.
   const oldStore = await fakeStorage();
   const newStore = await fakeStorage();
@@ -789,9 +797,6 @@ test('an instance exported and imported into a fresh database is the same instan
     for (const [k, v] of Object.entries(files)) assert.deepEqual(fs.readFileSync(path.join(dir, 'files', k)), v, `${k} is carried`);
     assert.ok(oldStore.seen.every((r) => r.startsWith('GET') && r.endsWith(' keyed')), oldStore.seen.join('\n'));
 
-    // The fresh instance: the shim and the migrations, nothing seeded.
-    psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // The tables a fresh, migrated database already holds rows in are the ones the export leaves
     // to the migrations (MIGRATION_DATA): one more, and every import would be refused as not empty.
     const filled = psqlOn(fresh.toString(), `select string_agg(name, ',' order by name) from (select format('%I.%I', schemaname, tablename) as name from pg_tables where schemaname = 'public') t
@@ -1063,7 +1068,7 @@ test('an instance exported and imported into a fresh database is the same instan
   } finally {
     await oldStore.close();
     await newStore.close();
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    home.drop();
     fs.rmSync(dir, { recursive: true, force: true });
   }
 });

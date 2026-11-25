@@ -9,26 +9,17 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { databaseBefore } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('a season revealed before 0029 keeps its Acts, every class in them; the next is revealed by the new rule', () => {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_reveal`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0029 left it, from the runner's snapshot of its replay; only the migrations from 0029 on are applied here.
+  const old = databaseBefore('0029', 'reveal');
+  const db = new URL(old.url);
   try {
-    const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    assert.ok(all.includes('0029_reveal_rolls_over.sql'), 'the migration this holds is there');
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of all.filter((f) => f < '0029')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8'));
     // Season 1 revealed before the migration: a character with a silent Turn in it.
     psqlOn(db.toString(), `
@@ -40,7 +31,7 @@ test('a season revealed before 0029 keeps its Acts, every class in them; the nex
       end $$;`);
     const before = psqlOn(db.toString(), `select jsonb_agg(to_jsonb(a) order by a.seq)::text from acts a where a.kind = 'reveal'`);
     assert.match(before, /"classes": \[\{"from": "[^"]+", "class": "alpha"\}, \{"from": "[^"]+", "class": "beta"\}\]/, 'the old reveal showed every class, the silent Turn among them');
-    for (const m of all.filter((f) => f >= '0029')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
     assert.equal(psqlOn(db.toString(), `select jsonb_agg(to_jsonb(a) order by a.seq)::text from acts a where a.kind = 'reveal'`), before, 'the earlier season\'s reveal is as it was written');
     // The migrations that came after copied the old reveal's facts into the season's results, and left its Acts alone (0099): the old reveal
     // showed every class in `classes` and no `shown`, so the character shows nothing public.
@@ -56,6 +47,6 @@ test('a season revealed before 0029 keeps its Acts, every class in them; the nex
     assert.doesNotMatch(after, /alpha|beta/);
     assert.equal(psqlOn(db.toString(), `select jsonb_agg(to_jsonb(a) order by a.seq)::text from acts a where a.kind = 'reveal'`), before, 'and no reveal Act was written for the second season');
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });

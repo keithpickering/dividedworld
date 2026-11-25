@@ -39,6 +39,14 @@
  * so a race test's dblink sessions open on its own clone. The template gets the same, since the shim and the migrations
  * run on it. supabase/tests/0000-harness.sql goes red on a clone without them ("this file's connection is unbounded").
  *
+ * Databases for the end-to-end files that need their own. While the template is replayed, the runner keeps a snapshot (`create database … template`,
+ * made between two migrations, each of whose psql has ended) before each migration an upgrade test crosses, and one `migrated` snapshot after the last migration
+ * and before the fixtures. The point is the file's name: `NNNN-<name>-across-MMMM.ts` crosses migration MMMM (snapshotPoints, the one list; a name that gives no
+ * point, two files naming one, or a point no migration has fail the run before anything is made). A file is told its clone in KAYFABB_SCRATCH_URL and the
+ * snapshots in KAYFABB_SNAPSHOTS (JSON: point to database name, and `migrated`), and takes a database from supabase/tests/e2e/psql-db.ts (`databaseBefore`,
+ * `migratedDatabase`: a clone of a snapshot, named `<clone>_<suffix>`). The runner drops every database named `<clone>_%` with the clone, and refuses a file
+ * that reads the migrations itself (e2eRefusal), as it refuses an assertion file that ends its own transaction.
+ *
  * Each assertion file runs inside its own `begin; … rollback;`. `set local role` and
  * `set_config(…, true)` are scoped to a transaction and are silent no-ops outside one, and an
  * assertion file is exactly where a caller is impersonated; the wrap also means a file's
@@ -331,6 +339,46 @@ export function uncalledReads(stableNames, callRows) {
   return stableNames.filter((n) => !((calls.get(n) ?? 0) > 0)).sort();
 }
 
+/** An end-to-end file: four digits, a hyphen, a name. */
+export const E2E_FILE = /^\d{4}-[\w.-]+\.ts$/;
+
+/**
+ * The migrations the upgrade tests cross, from the end-to-end files' names: a file named `NNNN-<name>-across-MMMM.ts` crosses
+ * migration MMMM, and the runner keeps a snapshot of the database as it stood before MMMM (see main). The name is the one list.
+ * A file with no `-across-` is not an upgrade test and names no point. Sorted, with no repeats; throws, naming the files, on a name
+ * that says `-across-` and gives no four-digit point, on two files naming one point, and, given `migrationNames` (the migrations'
+ * file names), on a point no migration has. Pure.
+ * @param {string[]} e2eNames
+ * @param {string[]} [migrationNames]
+ */
+export function snapshotPoints(e2eNames, migrationNames) {
+  /** @type {Map<string, string>} */
+  const named = new Map();
+  for (const f of e2eNames) {
+    const at = f.indexOf('-across-');
+    if (at < 0) continue;
+    const point = /^(\d{4})\.ts$/.exec(f.slice(at + '-across-'.length))?.[1];
+    if (!point) throw new Error(`${f} says -across- but gives no point: an upgrade test is named NNNN-<name>-across-MMMM.ts for the migration MMMM it crosses`);
+    if (named.has(point)) throw new Error(`${named.get(point)} and ${f} both name the point ${point}; a point is one file's, since each file's snapshot is its own`);
+    if (migrationNames && !migrationNames.some((m) => m.startsWith(`${point}_`))) throw new Error(`${f} names the point ${point}, and no migration in supabase/migrations/ begins ${point}_`);
+    named.set(point, f);
+  }
+  return [...named.keys()].sort();
+}
+
+/**
+ * Why an end-to-end file may not run, or null. A file replays no migrations of its own: the runner snapshots the replay it makes
+ * for the template (`databaseBefore` and `migratedDatabase` in supabase/tests/e2e/psql-db.ts hand a file a clone of one), and a file
+ * that reads the migrations itself goes back to replaying them, which is what the snapshots end. The text is read with its comments
+ * blanked, as an assertion file's is.
+ * @param {string} text
+ */
+export function e2eRefusal(text) {
+  const code = text.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+  const read = ['supabase/migrations', 'migrationFiles'].find((w) => code.includes(w));
+  return read ? `reads ${read}, which an end-to-end file may not: it takes a database from databaseBefore() or migratedDatabase() (supabase/tests/e2e/psql-db.ts), never by replaying the migrations itself` : null;
+}
+
 const timedOut = (err) => err.code === 'ETIMEDOUT' || (err.signal != null && err.status == null);
 const killedWhy = () => `did not finish within ${FILE_TIMEOUT_MS / 1000}s and was killed: a hang that neither lock_timeout (${SESSION_BOUNDS.lock_timeout}) nor statement_timeout (${SESSION_BOUNDS.statement_timeout}) ended`;
 
@@ -345,9 +393,24 @@ function main() {
   const why = refusal(url);
   if (why) { console.error(`  test-sql: ${why}`); process.exit(2); }
 
+  /* Which end-to-end files there are, and which migrations they cross, before anything is made: a name that gives no point, two that
+     give one, or a point no migration has fails the run here, with no database touched. KAYFABB_SQL_E2E_DIR stands another
+     directory in, for tools/test-sql-refusal.mjs. */
+  const e2eDir = process.env.KAYFABB_SQL_E2E_DIR || path.join(testsDir, 'e2e');
+  const allE2e = fs.existsSync(e2eDir) ? fs.readdirSync(e2eDir).filter((f) => E2E_FILE.test(f)).sort() : [];
+  const migrationNames = migrationFiles().slice(1).map((f) => path.basename(f));
+  let allPoints;
+  try { allPoints = snapshotPoints(allE2e, migrationNames); } catch (err) { console.error(`  test-sql: ${err.message}`); process.exit(1); }
   const template = `kayfabb_scratch_${process.pid}_${Date.now()}`;
   const templateUrl = withDatabase(url, template);
   const pattern = process.argv[2] ?? '';
+  /* A pattern matches an end-to-end file by its label too (`e2e/0001`), as it prints. */
+  const e2e = allE2e.filter((f) => f.includes(pattern) || `e2e/${f}`.includes(pattern));
+  /* A snapshot of the replay for each point a selected file names, and the migrated one, are made while the template is built. */
+  const pointOf = (f) => (f.includes('-across-') ? f.slice(f.indexOf('-across-') + 8, f.indexOf('-across-') + 12) : null);
+  const points = allPoints.filter((p) => e2e.some((f) => pointOf(f) === p));
+  /** @type {Record<string, string>} point to the database that holds the replay before it, and `migrated` */
+  const snapshots = {};
   const keepFailed = process.env.KAYFABB_SQL_KEEP === 'failed';
   let failed = 0;
   const timings = [];
@@ -385,6 +448,11 @@ function main() {
       if (err && keepFailed) { kept = true; console.log(`        kept: ${cloneUrl}`); }
     } finally {
       if (!kept) {
+        /* What a file made and named after its clone (`<clone>_<suffix>`, a database from psql-db.ts) goes with it, so a file that died
+           before its `finally` leaves nothing. `_` is a wildcard in `like`, so it is escaped; `<clone>_1` and `<clone>_10` stay apart
+           since the clone's own number is followed by the underscore. */
+        const children = psql(url, `select format('drop database if exists %I with (force)', datname) from pg_database where datname like '${clone}\\_%' \\gexec`);
+        if (children) console.error(`  test-sql: could not drop what is named for ${clone}: ${children}`);
         const dropped = psql(url, `drop database if exists ${clone} with (force);`);
         if (dropped) console.error(`  test-sql: could not drop ${clone}: ${dropped}`);
       }
@@ -399,13 +467,23 @@ function main() {
 
     console.log('\nsql: migrations, from zero');
     const migrations = migrationPaths.map((f) => path.basename(f));
+    /* Before migration MMMM, a copy of the database as built so far, for the upgrade test that crosses it. Each migration's psql has
+       ended, so nothing is connected to the template and `create database … template` may read it. */
+    const snapshot = (key, name) => {
+      if (!step(`snapshot ${key}`, psql(url, cloneSql(template, name, url)))) return false;
+      snapshots[key] = name;
+      return true;
+    };
     for (const m of migrations) {
+      const point = points.find((p) => m.startsWith(`${p}_`));
+      if (point && !snapshot(point, `${template}_s${point}`)) return 1;
       if (!step(m, psql(templateUrl, fs.readFileSync(path.join(migrationsDir, m), 'utf8')))) {
         console.error('\n  a migration failed; the schema is not replayable from zero');
         return 1;
       }
     }
 
+    if (e2e.length && !snapshot('migrated', `${template}_migrated`)) return 1;
     if (!step('setup/fixtures.sql', psql(templateUrl, fs.readFileSync(fixtures, 'utf8')))) return 1;
     /* Once, here: every clone starts from this analyzed state. */
     if (!step('vacuum (analyze)', psql(templateUrl, 'vacuum (analyze);'))) return 1;
@@ -431,13 +509,13 @@ function main() {
        (supabase/tests/e2e/NNNN-*.ts, Node's test runner), so the contract between the
        engine and the SQL is read where both meet. */
     console.log('\nsql: end to end');
-    const e2eDir = path.join(testsDir, 'e2e');
-    const e2e = (fs.existsSync(e2eDir) ? fs.readdirSync(e2eDir).filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f)).sort() : []).filter((f) => f.includes(pattern));
     for (const f of e2e) {
+      const refused = e2eRefusal(fs.readFileSync(path.join(e2eDir, f), 'utf8'));
+      if (refused) { step(`e2e/${f}`, refused); continue; }
       onClone(`e2e/${f}`, (cloneUrl) => {
         try {
           execFileSync(process.execPath, ['--experimental-strip-types', '--no-warnings', '--test', path.join(e2eDir, f)], {
-            env: { ...process.env, KAYFABB_SCRATCH_URL: cloneUrl }, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL',
+            env: { ...process.env, KAYFABB_SCRATCH_URL: cloneUrl, KAYFABB_SNAPSHOTS: JSON.stringify(snapshots) }, stdio: ['ignore', 'pipe', 'pipe'], encoding: 'utf8', timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL',
           });
           return null;
         } catch (err) {
@@ -463,6 +541,10 @@ function main() {
     console.log(`\n  sql: ${migrations.length} migration(s); ${ran} assertion file(s); ${e2e.length} end-to-end file(s); ${failed} failed`);
     return failed ? 1 : 0;
   } finally {
+    for (const snap of Object.values(snapshots)) {
+      const gone = psql(url, `drop database if exists ${snap} with (force);`);
+      if (gone) console.error(`  test-sql: could not drop ${snap}: ${gone}`);
+    }
     const err = psql(url, `drop database if exists ${template} with (force);`);
     if (err) console.error(`  test-sql: could not drop ${template}: ${err}`);
   }

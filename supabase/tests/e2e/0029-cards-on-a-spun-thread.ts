@@ -35,7 +35,7 @@ import http from 'node:http';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
+import { migratedDatabase, psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
 import { handleAction } from '../../functions/act/core.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
@@ -94,8 +94,8 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   const KEYS = ['feelin-fab', 'last-word', 'good-vibes', 'main-event', 'mooch'];
   assert.equal(sql(`select count(*) from card_kinds where key in (${KEYS.map((k) => `'${k}'`).join(', ')})`), String(KEYS.length), 'the instance\'s five cards are in the catalog');
 
-  // Where the settlements stand: this file's own window opens there. Its characters are older than that and than now.
-  const start = sql(`select to_jsonb(coalesce(max(ends_at), now()))#>>'{}' from settlements`);
+  // Where the settlements stand: this file's own window opens there (with none yet, at the first season's start, where the settlement's windows begin: a window at now() is past the ones a run settles). Its characters are older than that and than now.
+  const start = sql(`select to_jsonb(coalesce(max(ends_at), (select min(starts_at) from seasons)))#>>'{}' from settlements`);
   const early = sql(`select to_jsonb(least(now(), '${start}'::timestamptz) - interval '3 days')#>>'{}'`);
   const at = (hours: number) => new Date(Date.parse(start) + hours * 3_600_000).toISOString();
 
@@ -267,20 +267,14 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   assert.notEqual(sql(`select count(*) from acts where kind = 'card' and target_act_id = '${open}'`), '0', 'the opening post holds plays to carry across');
   const before = contents(from);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-spun-cards-'));
-  const fresh = new URL(from);
-  const name = `${fresh.pathname.slice(1)}_spun_imported`;
-  const server = new URL(from);
-  server.pathname = '/postgres';
-  fresh.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // The fresh instance: a clone of the runner's snapshot of the shim and every migration, nothing seeded.
+  const home = migratedDatabase('spun_imported');
+  const fresh = new URL(home.url);
   const oldStore = await fakeStorage(true);
   const newStore = await fakeStorage(false);
   try {
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
-    psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    const migrations = path.join(root, 'supabase/migrations');
-    for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // A table an earlier file committed outside the migrations (0003's probe) is made in the fresh database too, as 0003 makes it.
     if (psqlOn(from, `select to_regclass('public.export_probe') is not null`) === 't') psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
@@ -297,6 +291,6 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
     await oldStore.close();
     await newStore.close();
     fs.rmSync(dir, { recursive: true, force: true });
-    try { psqlOn(server.toString(), `drop database if exists ${name} with (force);`); } catch { /* the harness drops the scratch database's own */ }
+    try { home.drop(); } catch { /* the runner drops what is named for its clone */ }
   }
 });

@@ -111,9 +111,9 @@ if (/^begin;\\n/.test(sql) && (process.env.HANG || process.env.FAIL) && !fs.exis
 }
 `);
 /** One run of the suite with the recording psql. `pattern` limits it to the files whose names match; `hang`, `fail` and `drift` plant what is above. */
-function boundedSuite({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '1500' } = {}) {
+function boundedSuite({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '1500', e2eDir = '', extraEnv = {} } = {}) {
   for (const f of [calls, hung, hung + '.drift', starts]) fs.rmSync(f, { force: true });
-  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep };
+  const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep, ...(e2eDir ? { KAYFABB_SQL_E2E_DIR: e2eDir } : {}), ...extraEnv };
   /* The suite's own end-to-end files would try a clone this psql never made; a bound keeps a slip here from hanging the
      build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
   const r = spawnSync(process.execPath, ['tools/test-sql.mjs', ...(pattern ? [pattern] : [])], { env, encoding: 'utf8', timeout: 600_000 });
@@ -127,7 +127,8 @@ function boundedSuite({ pattern = '', hang = false, fail = false, drift = '', ke
 const dbOf = (c) => /\/(\w+) -f/.exec(c.split('\n')[0] ?? '')?.[1] ?? '';
 const bodyOf = (c) => c.split('\n').slice(1).join('\n').trim();
 const isFile = (c) => /^begin;\n/.test(bodyOf(c)) && bodyOf(c).endsWith('\nrollback;');
-const createdClone = (c) => /^create database (kayfabb_scratch_\w+) template (kayfabb_scratch_\w+);/.exec(bodyOf(c));
+/* A clone is named for the template and a number; a snapshot of the replay (`_s0025`, `_migrated`) is not one. */
+const createdClone = (c) => /^create database (kayfabb_scratch_\d+_\d+_\d+) template (kayfabb_scratch_\w+);/.exec(bodyOf(c));
 const droppedDb = (c) => /^drop database if exists (kayfabb_scratch_\w+) with \(force\);$/.exec(bodyOf(c))?.[1];
 const assertionFiles = fs.readdirSync('supabase/tests').filter((f) => ASSERTION_FILE.test(f)).sort();
 const e2eFiles = fs.readdirSync('supabase/tests/e2e').filter((f) => /^\d{4}-[\w.-]+\.ts$/.test(f));
@@ -241,6 +242,110 @@ const full = boundedSuite();
   check('and still builds the template', one.records.filter((c) => dbOf(c) !== 'postgres').length > runner.migrationFiles().length);
   const none = boundedSuite({ pattern: 'no-such-file-anywhere' });
   check('a pattern that matches nothing fails the run, rather than passing on nothing', none.status === 1 && /no-such-file-anywhere/.test(none.out) && none.records.filter(isFile).length === 0, `status ${none.status}`);
+}
+
+/* ---- the end-to-end files: snapshots of the replay, and what a file may not do ---- */
+{
+  const names = ['0003-export.ts', '0007-avatar-sweep-across-0025.ts', '0008-turns-across-0028.ts', '0001-settlement.ts', '0026-kept-across-0356.ts'];
+  const have = typeof runner.snapshotPoints === 'function';
+  const points = have ? runner.snapshotPoints(names) : null;
+  check('snapshotPoints reads the migrations named by -across-MMMM, sorted', JSON.stringify(points) === JSON.stringify(['0025', '0028', '0356']), JSON.stringify(points));
+  const throws = (fn) => { try { fn(); return ''; } catch (e) { return String(e.message ?? e); } };
+  check('a file that is not an upgrade test names no point and is not an error', have && JSON.stringify(runner.snapshotPoints(['0001-a.ts', '0002-b.ts'])) === '[]');
+  const noPoint = have ? throws(() => runner.snapshotPoints(['0007-avatar-sweep-across-.ts'])) : '';
+  check('a name that says -across- with no point is refused, naming the file', /0007-avatar-sweep-across-\.ts/.test(noPoint) && /point/.test(noPoint), noPoint);
+  const noPoint2 = have ? throws(() => runner.snapshotPoints(['0007-x-across-25.ts'])) : '';
+  check('and so is one whose point is not four digits', /0007-x-across-25\.ts/.test(noPoint2), noPoint2);
+  const twice = have ? throws(() => runner.snapshotPoints(['0007-a-across-0025.ts', '0009-b-across-0025.ts'])) : '';
+  check('two files naming one point are refused, naming both', /0007-a-across-0025\.ts/.test(twice) && /0009-b-across-0025\.ts/.test(twice), twice);
+  const missing = have ? throws(() => runner.snapshotPoints(['0007-a-across-0025.ts', '0008-b-across-9999.ts'], ['0024_x.sql', '0025_y.sql'])) : '';
+  check('a point no migration has is refused, naming it', /9999/.test(missing) && /0008-b-across-9999\.ts/.test(missing), missing);
+  check('and a point a migration has is not', have && JSON.stringify(runner.snapshotPoints(['0007-a-across-0025.ts'], ['0024_x.sql', '0025_y.sql'])) === '["0025"]');
+
+  const reads = typeof runner.e2eRefusal === 'function' ? (t) => runner.e2eRefusal(t) : () => 'no e2eRefusal';
+  check('an end-to-end file that reads supabase/migrations is refused', /supabase\/migrations/.test(reads("fs.readdirSync(path.join(root, 'supabase/migrations'))") ?? ''));
+  check('and so is one that reads migrationFiles', /migrationFiles/.test(reads("import { migrationFiles } from '../../../tools/test-sql.mjs'; migrationFiles();") ?? ''));
+  check('a mention in a comment is not read', reads("// the migrations (supabase/migrations/0025_avatars.sql)\n/* supabase/migrations and migrationFiles */\nconst a = 1;") === null);
+  check('a URL\'s double slash does not hide what follows it on the line', /migrationFiles/.test(reads("const u = 'postgres://x'; migrationFiles();") ?? ''));
+
+  /* A planted end-to-end directory: the runner reads it in place of supabase/tests/e2e, so the planted names are the run's. */
+  const planted = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-e2e-'));
+  const plant = (name, text) => fs.writeFileSync(path.join(planted, name), text);
+  const unplant = () => { for (const f of fs.readdirSync(planted)) fs.rmSync(path.join(planted, f)); };
+  const sawIn = path.join(bounded, 'saw');
+  const writesEnv = (file) => `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(file)}, JSON.stringify({ url: process.env.KAYFABB_SCRATCH_URL, snapshots: process.env.KAYFABB_SNAPSHOTS }));\n`;
+  const tmplOf = (r) => r.records.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean) ?? '';
+
+  /* Poison: a file that replays the migrations itself. */
+  plant('0901-replays-the-migrations.ts', "import fs from 'node:fs';\nfor (const m of fs.readdirSync('supabase/migrations')) console.log(m);\n");
+  plant('0902-asks-the-list.ts', "import { migrationFiles } from '../../../tools/test-sql.mjs';\nmigrationFiles();\n");
+  plant('0903-only-says-so.ts', writesEnv(sawIn + '3') + '// supabase/migrations and migrationFiles, in a comment\n');
+  const poison = boundedSuite({ pattern: 'e2e/090', e2eDir: planted });
+  check('the runner refuses an end-to-end file that replays the migrations itself, and the run fails', poison.status === 1 && /FAIL  e2e\/0901-replays-the-migrations\.ts[^\n]*\s+reads supabase\/migrations/.test(poison.out), poison.out.split('\n').filter((l) => /FAIL|e2e/.test(l)).join(' | ').slice(0, 400));
+  check('and one that asks migrationFiles', /FAIL  e2e\/0902-asks-the-list\.ts[^\n]*\s+reads[^\n]*migrationFiles/.test(poison.out), poison.out.slice(0, 300));
+  check('the refused files get no clone, and one that only mentions them in a comment still runs and passes', /PASS  e2e\/0903-only-says-so\.ts/.test(poison.out) && poison.records.map(createdClone).filter(Boolean).length === 1, `${poison.records.map(createdClone).filter(Boolean).length} clones`);
+  unplant();
+
+  /* What the file is told. */
+  plant('0904-asks-where.ts', writesEnv(sawIn + '4'));
+  plant('0905-across-0003.ts', writesEnv(sawIn + '5'));
+  const told = boundedSuite({ pattern: '0904', e2eDir: planted });
+  const saw = fs.existsSync(sawIn + '4') ? JSON.parse(fs.readFileSync(sawIn + '4', 'utf8')) : {};
+  const cloneOf = told.records.map(createdClone).filter(Boolean)[0]?.[1];
+  check('an end-to-end file is told its clone in KAYFABB_SCRATCH_URL', Boolean(cloneOf) && saw.url === `postgres://postgres:pg@localhost:5432/${cloneOf}`, JSON.stringify(saw));
+  const snaps = saw.snapshots ? JSON.parse(saw.snapshots) : {};
+  check('and the snapshots in KAYFABB_SNAPSHOTS: `migrated`, and a point for each file that names one', typeof snaps.migrated === 'string' && snaps.migrated.startsWith(tmplOf(told)), saw.snapshots);
+  const pointed = boundedSuite({ pattern: '0905', e2eDir: planted });
+  const sawPointed = fs.existsSync(sawIn + '5') ? JSON.parse(fs.readFileSync(sawIn + '5', 'utf8')) : {};
+  const pointedSnaps = sawPointed.snapshots ? JSON.parse(sawPointed.snapshots) : {};
+  check('a point a file names is in it, and its database is made from the template', /^kayfabb_scratch_\d+_\d+_/.test(pointedSnaps['0003'] ?? '') && pointed.records.some((c) => bodyOf(c).startsWith(`create database ${pointedSnaps['0003']} template ${tmplOf(pointed)};`)), sawPointed.snapshots);
+
+  /* Each snapshot is made between the right two migrations, by `create database … template`, and given the settings. */
+  const bodies = (r) => r.records.map((c) => ({ db: dbOf(c), body: bodyOf(c) }));
+  const migrationBody = (n) => fs.readFileSync(path.join('supabase/migrations', n), 'utf8').trim();
+  const allMigrations = fs.readdirSync('supabase/migrations').filter((f) => f.endsWith('.sql')).sort();
+  const indexOfBody = (r, text) => bodies(r).findIndex((b) => b.body === text.trim());
+  const at = (r, db) => bodies(r).findIndex((b) => b.db === 'postgres' && b.body.startsWith(`create database ${db} template `));
+  const thirdAt = allMigrations.indexOf('0003_aura.sql');
+  const snapOf = pointedSnaps['0003'];
+  check('the snapshot of 0003 is made after 0002 and before 0003', at(pointed, snapOf) > indexOfBody(pointed, migrationBody(allMigrations[thirdAt - 1])) && at(pointed, snapOf) >= 0 && at(pointed, snapOf) < indexOfBody(pointed, migrationBody(allMigrations[thirdAt])), `${indexOfBody(pointed, migrationBody(allMigrations[thirdAt - 1]))} < ${at(pointed, snapOf)} < ${indexOfBody(pointed, migrationBody(allMigrations[thirdAt]))}`);
+  const migrated = pointedSnaps.migrated;
+  const lastBody = migrationBody(allMigrations.at(-1));
+  const fixturesBody = fs.readFileSync('supabase/tests/setup/fixtures.sql', 'utf8').trim();
+  check('the migrated snapshot is made after the last migration and before the fixtures', at(pointed, migrated) > indexOfBody(pointed, lastBody) && at(pointed, migrated) < indexOfBody(pointed, fixturesBody), `${indexOfBody(pointed, lastBody)} < ${at(pointed, migrated)} < ${indexOfBody(pointed, fixturesBody)}`);
+  const settingsOf = (r, db) => r.records.filter((c) => dbOf(c) === 'postgres' && new RegExp(`alter database ${db} set`).test(bodyOf(c))).map(bodyOf).join('\n');
+  check('each snapshot is given the bounds, track_functions and client_rpcs, which a clone does not carry', [snapOf, migrated].every((db) => Boolean(db) && Object.entries(SESSION_BOUNDS).every(([k, v]) => settingsOf(pointed, db).includes(`alter database ${db} set ${k} to '${v}'`)) && settingsOf(pointed, db).includes(`alter database ${db} set track_functions to 'all'`) && settingsOf(pointed, db).includes(`alter database ${db} set kayfabb.client_rpcs`)));
+  const droppedAt = (r, db) => r.records.findIndex((c) => droppedDb(c) === db);
+  check('the snapshots are dropped, before the template', [snapOf, migrated].every((db) => Boolean(db) && droppedAt(pointed, db) > 0 && droppedAt(pointed, db) < droppedAt(pointed, tmplOf(pointed))));
+
+  /* A run with no end-to-end file in it makes no snapshot. */
+  const noE2e = boundedSuite({ pattern: first });
+  check('a pattern that selects no end-to-end file makes no snapshot', noE2e.records.length > 0 && !noE2e.records.some((c) => dbOf(c) === 'postgres' && /^create database \w+_(s\d+|migrated) /.test(bodyOf(c))), '');
+
+  /* Whatever a file leaves named after its clone goes with the clone. */
+  const dropOf = pointed.records.filter((c) => dbOf(c) === 'postgres' && /pg_database/.test(bodyOf(c)) && /\\gexec/.test(bodyOf(c)));
+  check('when a clone is dropped, so is every database named for it (<clone>_%)', dropOf.length >= 1 && dropOf.every((c) => /like 'kayfabb_scratch_\d+_\d+_\d+\\_%'/.test(bodyOf(c))), dropOf[0] ? bodyOf(dropOf[0]) : 'no such call');
+
+  /* A point no migration has fails the run before anything runs. */
+  unplant();
+  plant('0906-nowhere-across-9999.ts', '');
+  const nowhere = boundedSuite({ pattern: '0906', e2eDir: planted });
+  check('a point no migration has fails the run before any psql is called', nowhere.status === 1 && /9999/.test(nowhere.out) && nowhere.records.length === 0, `status ${nowhere.status}, ${nowhere.records.length} calls: ${nowhere.out.slice(0, 200)}`);
+  unplant();
+  plant('0907-a-across-0003.ts', ''); plant('0908-b-across-0003.ts', '');
+  const dupe = boundedSuite({ pattern: 'e2e/090', e2eDir: planted });
+  check('two files naming one point fail the run before any psql is called', dupe.status === 1 && /0907-a-across-0003\.ts/.test(dupe.out) && /0908-b-across-0003\.ts/.test(dupe.out) && dupe.records.length === 0, `status ${dupe.status}, ${dupe.records.length} calls`);
+  unplant();
+  plant('0909-x-across-.ts', '');
+  const unpointed = boundedSuite({ pattern: '0909', e2eDir: planted });
+  check('and so does a name with -across- and no point', unpointed.status === 1 && /0909-x-across-\.ts/.test(unpointed.out) && unpointed.records.length === 0, `status ${unpointed.status}`);
+  fs.rmSync(planted, { recursive: true, force: true });
+
+  /* The real files: every upgrade test is named for its point, and no file replays the migrations on its own. */
+  const real = have ? (() => { try { return runner.snapshotPoints(e2eFiles, allMigrations); } catch (e) { return String(e.message); } })() : 'no snapshotPoints';
+  check('the end-to-end files\' names give their points, each of which a migration has', Array.isArray(real) && real.join(',') === '0025,0028,0029,0082,0115,0139,0356', String(real));
+  const replaying = e2eFiles.filter((f) => runner.e2eRefusal?.(fs.readFileSync(path.join('supabase/tests/e2e', f), 'utf8')) != null);
+  check('and no end-to-end file replays migrations on its own: the runner refuses none of them', typeof runner.e2eRefusal === 'function' && replaying.length === 0, replaying.join(', '));
 }
 fs.rmSync(bounded, { recursive: true, force: true });
 

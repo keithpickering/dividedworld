@@ -80,6 +80,8 @@ test('the Boss is named and a mod quoted, the season is handed over, and the poo
   assert.equal(sql(`select count(*) from face_down where post = '${annPost}'`), '1', 'the trap is set face down on Ann\'s post');
 
   // ---- The season is handed over: OLD becomes a member, NEXT debuts as Boss. ----
+  // A player's mask that debuted in the season, so that its end writes results (the season began in 2000; the masks made now debuted after it).
+  sql(`select tests.character(tests.account('season-member'), 'Season Member', 'alpha', '2000-01-02')`);
   const before = sql(`select clock_timestamp()`);
   assert.equal(sql(`select reveal_season(starts_at + span_interval(setting('seasonLength'))) is not null from seasons where ends_at is null`), 't');
   assert.equal(sql(`select count(*) > 0 from season_results where season = (select id from seasons where ends_at is not null order by number desc limit 1)`), 't', 'the season\'s end wrote its results');

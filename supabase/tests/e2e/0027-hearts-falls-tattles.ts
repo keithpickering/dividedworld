@@ -33,7 +33,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { firstMessageOf, partOf, partAnswer } from './meeting-fake.ts';
-import { psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
+import { migratedDatabase, psqlDb, sql, scratchSeed, scratchUrl } from './psql-db.ts';
 import { handleAction } from '../../functions/act/core.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runFilings } from '../../functions/staff/core.ts';
@@ -369,21 +369,15 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
   for (const t of ['warn_reliefs', 'ban_lifts']) assert.notEqual(sql(`select count(*) from ${t}`), '0', `${t} holds rows to carry across`);
   const before = contents(from);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'kayfabb-hearts-'));
-  const fresh = new URL(from);
-  const name = `${fresh.pathname.slice(1)}_hearts_imported`;
-  const server = new URL(from);
-  server.pathname = '/postgres';
-  fresh.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // The fresh instance: a clone of the runner's snapshot of the shim and every migration, nothing seeded.
+  const home = migratedDatabase('hearts_imported');
+  const fresh = new URL(home.url);
   const oldStore = await fakeStorage(true);
   const newStore = await fakeStorage(false);
   try {
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     for (const t of ['warn_reliefs', 'ban_lifts']) assert.ok(fs.existsSync(path.join(dir, `public.${t}.jsonl`)), `the export holds ${t}`);
-    psqlOn(fresh.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    const migrations = path.join(root, 'supabase/migrations');
-    for (const m of fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort()) psqlOn(fresh.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // A table an earlier file committed outside the migrations (0003's probe) is made in the fresh database too, as 0003 makes it.
     if (psqlOn(from, `select to_regclass('public.export_probe') is not null`) === 't') psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
@@ -399,6 +393,6 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
     await oldStore.close();
     await newStore.close();
     fs.rmSync(dir, { recursive: true, force: true });
-    try { psqlOn(server.toString(), `drop database if exists ${name} with (force);`); } catch { /* the harness drops the scratch database's own */ }
+    try { home.drop(); } catch { /* the runner drops what is named for its clone */ }
   }
 });

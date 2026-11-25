@@ -10,26 +10,17 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { databaseBefore } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('every card gets a slot at its old price, the economy loses its price keys and keeps the rest, and a hand is as it was', () => {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_machine`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0139 left it, from the runner's snapshot of its replay; only the migrations from 0139 on are applied here.
+  const old = databaseBefore('0139', 'machine');
+  const db = new URL(old.url);
   try {
-    const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    assert.ok(all.includes('0139_machine.sql'), 'the migration this holds is there');
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of all.filter((f) => f < '0139')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // Before: three cards planted out of key order, each priced by the economy, one reading a number of its own, a class's number beside them,
     // and a player holding two of one card, one bought and one played.
     psqlOn(db.toString(), `
@@ -45,7 +36,7 @@ test('every card gets a slot at its old price, the economy loses its price keys 
     const hand = `select string_agg(card || ':' || kind || ':' || price, ',' order by id) from card_ledger`;
     const handBefore = psqlOn(db.toString(), hand);
 
-    for (const m of all.filter((f) => f >= '0139')) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
 
     assert.equal(psqlOn(db.toString(), `select string_agg(position || ':' || coalesce(card, pack) || ':' || availability || ':' || price, ',' order by position) from machine_slots`),
       '1:zz-a:onSale:150,2:zz-b:onSale:25,3:zz-c:onSale:20', 'a slot for each card, ordered by key, on sale, at its old price, none lost or doubled');
@@ -67,6 +58,6 @@ test('every card gets a slot at its old price, the economy loses its price keys 
     assert.equal(psqlOn(db.toString(), `select string_agg(position || ':' || coalesce(card, pack) || ':' || availability || ':' || price, ',' order by position) from machine_slots`),
       '1:zz-a:onSale:150,2:zz-b:onSale:25,3:zz-c:onSale:20,4:zz-pack:onSale:300', 'the pack is added at the end; no slot already there is touched');
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });

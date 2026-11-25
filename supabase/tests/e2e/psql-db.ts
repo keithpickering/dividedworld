@@ -6,11 +6,17 @@
  * parameter takes, by name, as PostgREST does.
  */
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
 import { execFileSync, spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { DatabaseError, type Db } from '../../functions/_shared/rpc.ts';
 import { instanceSeed } from '../../functions/_shared/seed.ts';
 import { conduct } from '../../../instances/divided-world/ui/conduct.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
+
+// A variable specifier: TypeScript does not resolve it, so the .mjs needs no declaration file.
+const runnerFile = '../../../tools/test-sql.mjs';
+const { cloneSql, migrationFiles } = (await import(runnerFile)) as { cloneSql(template: string, clone: string, url: string): string; migrationFiles(): string[] };
 
 export function scratchUrl(): string {
   const url = process.env.KAYFABB_SCRATCH_URL;
@@ -18,6 +24,49 @@ export function scratchUrl(): string {
   const host = new URL(url).hostname;
   if (!['localhost', '127.0.0.1', '::1', '[::1]'].includes(host)) throw new Error(`refusing a database on ${host}`);
   return url;
+}
+
+/** What the runner snapshotted while it replayed the migrations for its template: `migrated`, and one database for each point a file's name gives (tools/test-sql.mjs, snapshotPoints). */
+function snapshots(): Record<string, string> {
+  const raw = process.env.KAYFABB_SNAPSHOTS;
+  if (!raw) throw new Error('KAYFABB_SNAPSHOTS is not set; end-to-end tests run inside tools/test-sql.mjs');
+  return JSON.parse(raw) as Record<string, string>;
+}
+
+let made = 0;
+
+/** A clone of one of the runner's snapshots, named after this file's own clone (`<clone>_<suffix>`) so it is unique, and dropped with it: by `drop()`, and by the runner when it drops the clone. */
+function cloneOfSnapshot(key: string, suffix: string): { url: string; drop: () => void } {
+  const snapshot = snapshots()[key];
+  if (!snapshot) throw new Error(`the runner made no snapshot for ${key} (it made ${Object.keys(snapshots()).join(', ')}); an upgrade test is named NNNN-<name>-across-MMMM.ts for the migration it crosses`);
+  const scratch = new URL(scratchUrl());
+  const name = `${scratch.pathname.slice(1)}_${suffix}`;
+  const server = new URL(scratch);
+  server.pathname = '/postgres';
+  const onServer = (text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', server.toString(), '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+  // The settings a database starts with do not travel with a clone, so cloneSql gives the clone its own, scratch_url naming it.
+  onServer(cloneSql(snapshot, name, server.toString()));
+  const url = new URL(scratch);
+  url.pathname = `/${name}`;
+  return { url: url.toString(), drop: () => { onServer(`drop database if exists ${name} with (force);`); } };
+}
+
+/**
+ * A database as the migrations before `migration` (its number, as `0082`) left it: the shim and every migration up to it, no fixtures. It is a clone
+ * of the snapshot the runner made at that point of its replay; the point is the file's own name (`NNNN-<name>-across-0082.ts`). `remaining` is the SQL
+ * of each migration from `migration` on, in order, for the file to apply once it has written what the old schema wrote. This is the one place that reads
+ * the migrations directory: a file replays nothing of its own (the runner refuses one that does).
+ */
+export function databaseBefore(migration: string, suffix = `before${++made}`): { url: string; drop: () => void; remaining: string[] } {
+  const names = migrationFiles().slice(1);
+  const at = names.findIndex((f) => path.basename(f).startsWith(`${migration}_`));
+  if (at < 0) throw new Error(`no migration begins ${migration}_`);
+  return { ...cloneOfSnapshot(migration, suffix), remaining: names.slice(at).map((f) => fs.readFileSync(f, 'utf8')) };
+}
+
+/** A database with every migration and no fixtures, as a fresh instance is before an import: a clone of the runner's `migrated` snapshot. */
+export function migratedDatabase(suffix = `migrated${++made}`): { url: string; drop: () => void } {
+  return cloneOfSnapshot('migrated', suffix);
 }
 
 /** Runs SQL as the harness's superuser and returns psql's unaligned output. */

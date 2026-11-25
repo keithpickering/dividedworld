@@ -100,6 +100,8 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
   const [oldRename, nominationAct] = landed as string[];
   assert.equal(boardName(), 'Pirate Puns Palace');
 
+  // A player's mask that debuted in the season, so that its end writes results (the season began in 2000; the masks made now debuted after it).
+  sql(`select tests.character(tests.account('season-member'), 'Season Member', 'alpha', '2000-01-02')`);
   // The season rolls over. The nominated Boss arrives, not the rotation's.
   const before = sql(`select clock_timestamp()`);
   assert.equal(sql(`select reveal_season(starts_at + span_interval(setting('seasonLength'))) is not null from seasons where ends_at is null`), 't');

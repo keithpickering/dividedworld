@@ -10,30 +10,17 @@ import assert from 'node:assert/strict';
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
-import { scratchUrl } from './psql-db.ts';
+import { databaseBefore } from './psql-db.ts';
 
 const root = path.resolve(import.meta.dirname, '../../..');
-const migrations = path.join(root, 'supabase/migrations');
 const psqlOn = (url: string, text: string) =>
   execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', url, '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] }).trim();
 
 test('plays held before the migration carry their Act\'s date as their start after it, and the guards are back', () => {
-  const scratch = new URL(scratchUrl());
-  const name = `${scratch.pathname.slice(1)}_kept`;
-  const server = new URL(scratch);
-  server.pathname = '/postgres';
-  const db = new URL(scratch);
-  db.pathname = `/${name}`;
-  psqlOn(server.toString(), `create database ${name};`);
+  // A database as the migrations before 0356 left it, from the runner's snapshot of its replay; only the migrations from 0356 on are applied here.
+  const old = databaseBefore('0356', 'kept');
+  const db = new URL(old.url);
   try {
-    const all = fs.readdirSync(migrations).filter((f) => f.endsWith('.sql')).sort();
-    const found = all.filter((f) => f.endsWith('_kept_character.sql'));
-    assert.equal(found.length, 1, 'exactly one migration is named for the kept character');
-    const kept = found[0]!;
-    const before = all.filter((f) => f < kept);
-    assert.ok(before.length > 0 && before.includes('0055_card_reach.sql'), 'the migrations before it include the one that made play_reach');
-    psqlOn(db.toString(), fs.readFileSync(path.join(root, 'supabase/tests/setup/auth-shim.sql'), 'utf8'));
-    for (const m of before) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
     // The test instance's settings, as supabase/tests/setup/fixtures.sql writes them.
     const fixtures = fs.readFileSync(path.join(root, 'supabase/tests/setup/fixtures.sql'), 'utf8');
     const settings = fixtures.indexOf('insert into settings');
@@ -66,7 +53,7 @@ test('plays held before the migration carry their Act\'s date as their start aft
         ('00000000-0000-4000-8000-0000000000a3', 'thread', null, '${pin}', null, '${general}', now() - interval '19 days'),
         ('00000000-0000-4000-8000-0000000000a4', 'board', null, null, '${general}', null, now() - interval '9 days');`);
     assert.equal(psqlOn(db.toString(), `select count(*) from play_reach`), '4', 'the old schema wrote four rows, one at each reach and one that pins');
-    for (const m of all.filter((f) => f >= kept)) psqlOn(db.toString(), fs.readFileSync(path.join(migrations, m), 'utf8'));
+    for (const m of old.remaining) psqlOn(db.toString(), m);
 
     assert.equal(psqlOn(db.toString(), `select count(*) from play_reach r join acts a on a.id = r.play where r.started_at = a.created_at`), '4', 'each row\'s start is its Act\'s date');
     assert.equal(psqlOn(db.toString(), `select count(*) from play_reach where pins_board is not null`), '1', 'the pinning row was carried');
@@ -76,6 +63,6 @@ test('plays held before the migration carry their Act\'s date as their start aft
     assert.throws(() => psqlOn(db.toString(), `update play_reach set ends_at = ends_at + interval '1 day'`), /a play beyond a post is never edited/, 'an update is refused');
     assert.throws(() => psqlOn(db.toString(), `update play_reach set started_at = now()`), /a play beyond a post is never edited/, 'an update of the start is refused');
   } finally {
-    psqlOn(server.toString(), `drop database if exists ${name} with (force);`);
+    old.drop();
   }
 });

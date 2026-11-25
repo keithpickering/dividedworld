@@ -28,7 +28,7 @@
  *      of a tenth of the budget and 0.6 MB fails too and asks for the budget to be lowered.
  *   3. Postgres 17 only: the figures differ by major version, so `requireRecorded` stops the file before the fixture and before every measurement on another, and every
  *      test that measures fails on that one message.
- * A megabyte is 1,048,576 bytes. A budget is its measurement in the workflow (the sql job, on its Postgres 17, after the files before this one), rounded up to one decimal,
+ * A megabyte is 1,048,576 bytes. A budget is its measurement in the workflow (the sql job, on its Postgres 17, on the template and this file's own fixture), rounded up to one decimal,
  * plus 0.3 MB of room, so ordinary run-to-run movement never fails
  * a build and the far-under gap (twice the room) never asks a freshly set budget to be lowered.
  *
@@ -48,11 +48,12 @@
  *
  * The fixture (two accounts, three characters, a staff persona, a board of its own with a thread of twenty posts with five card plays and one post by the persona, an admin) is committed once so
  * each call answers a document and not a refusal. A call reads the fixture's own rows (its board, thread, characters and accounts), or something no file changes (season 1 and
- * the open season, which fixtures.sql makes, and ids or terms that match nothing), or the whole instance as the files before this one left it (index_page's boards, the queue,
- * a season's rankings, a search, the updates): the same rows in every run of the suite, which is why a budget is the workflow's figure after those files and a run of this
- * file alone on a database holding only the fixtures measures another state. None names 'general', which an earlier file merges away.
- * It is left in the scratch database: this is the last end-to-end file, and a later file that counted accounts or characters would see it, and would find every mask an
- * earlier file left online a day stale (below). `drive_gifts_page` and `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those
+ * the open season, which fixtures.sql makes, and ids or terms that match nothing), or the instance as the template holds it (index_page's boards, the queue,
+ * a season's rankings, a search, the updates): the same rows in every run of the suite, since every end-to-end file runs on a clone of its own (tools/test-sql.mjs), which is why a
+ * budget is the workflow's figure on that state: the template and this file's own fixture, and nothing an earlier file left. A run of this file alone on a clone measures the same state.
+ * None names 'general', which an earlier file merged away when the files shared one database; no file does now.
+ * It is committed to this file's own clone, which is dropped after it: no later file sees it. It would otherwise find every mask a file left online a day stale (below).
+ * `drive_gifts_page` and `results_page` answer empty documents (no drive, no finished season in the fixture), so a helper those
  * pages call only for each row is not planned by these calls and its plan is not in their figures.
  *
  * Who is online is pinned, because it is what decides, by the clock, whether a helper is planned. The online box (`presence_box`, which index_page, board_page and
