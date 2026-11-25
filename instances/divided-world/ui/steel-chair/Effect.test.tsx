@@ -1486,6 +1486,29 @@ describe('each object is drawn as itself, in the room it needs', () => {
       expect(queue.size, 'and the loop comes to rest').toBe(0);
     });
 
+    test('Throw again while the lid flies leaves no lid node behind, and draws a whole can again', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      see(true); arm();
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) frame();
+      expect(lidsNow()).toHaveLength(1);
+      const press = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+      act(() => { press.run(); });
+      expect(lidsNow(), 'no lid group is left on the layer').toHaveLength(0);
+      expect(document.querySelectorAll('.dw-chair-lid')).toHaveLength(0);
+      expect(canGroup().querySelectorAll('.dw-chair-piece'), 'the can is whole again').toHaveLength(canPiecesOf(true).length);
+    });
+
+    test('the play ending while the lid flies leaves no lid node behind, and the can is whole when it comes back', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      see(true); arm();
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) frame();
+      expect(lidsNow()).toHaveLength(1);
+      act(() => { hub.setPlays([play(2)]); });
+      expect(document.querySelectorAll('.dw-chair-lid'), 'the lid goes with its can').toHaveLength(0);
+      act(() => { hub.setPlays([play(2), { ...play(1), id: 'play-6' }]); });
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(true).length);
+    });
+
     test('a can drawn at rest under reduced motion has no lid, and no lid group ever stands', () => {
       document.documentElement.setAttribute('data-kb-motion', 'reduce');
       mount({ plays: [{ ...play(1), id: 'play-6' }] });
