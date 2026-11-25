@@ -100,13 +100,14 @@ import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
-  addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
+  addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, SHAPES, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
 import { depthOf, INSET, LID_TOP, piecesFor, project, roomHeightOf, shadeOf, transformOf, type Piece } from './chair.ts';
 import { lidArcOf, lidAt, type LidArc } from './lid.ts';
 import { DENT_SCALE, dentImages, dentPrimitives, dentShape, filterTrusted, hitZone, seedOfIds, zoneHeight, type DentShape } from './dent.ts';
 import { objectOf, type ThrownObject } from './objects.ts';
 import { dentedBy } from '../cards/steel-chair/dented.ts';
+import { Puff, type PuffSpout } from './Puff.tsx';
 import './steel-chair.css';
 
 /**
@@ -159,6 +160,8 @@ const MOST_FRAME_S = MOST_STEPS * STEP;
  * Each object's sounds: the key of its hit and how many settle sounds it has, `<settle>-1` to `-n`; its first floor contact plays one of them.
  * The chair's keys are the original `steel-chair.hit` and `steel-chair.settle-1` to `-4`, so they stay as they were.
  */
+/** The extinguisher's hiss, played with its puff at its first floor contact. */
+const HISS = 'steel-chair.extinguisher-hiss';
 const SOUNDS: Readonly<Record<ThrownObject, { readonly hit: string; readonly settle: string; readonly settles: number }>> = Object.freeze({
   chair: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4 },
   can: { hit: 'steel-chair.can-hit', settle: 'steel-chair.can-settle', settles: 2 },
@@ -332,6 +335,9 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
   const shading = useRef<HTMLDivElement>(null);
   const glows = useRef<HTMLDivElement>(null);
   const [chairs, setChairs] = useState<readonly string[]>([]);
+  /* The puff that stands, if one does: each is its own (a new throw of the same play starts a new one in its place, by its key). */
+  const [puff, setPuff] = useState<{ readonly key: number; readonly spout: PuffSpout } | null>(null);
+  const puffs = useRef(0);
   const [dents, setDents] = useState<readonly Dent[]>([]);
   const [geo, setGeo] = useState<Geo | null>(null);
   /* What the frame loop writes to: each chair's group, and each dent's two transfer functions (its depth), by play. */
@@ -561,8 +567,19 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         if (loud) void latest.current.sound.play(SOUNDS[objectOf(play)].hit, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       } else if (e.kind === 'floor' && loud) {
         const sounds = SOUNDS[objectOf(play)];
+        if (objectOf(play) === 'extinguisher') startPuff(e.id);
         void latest.current.sound.play(`${sounds.settle}-${1 + Math.floor(soundRand() * sounds.settles)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
       }
+    };
+
+    /* The extinguisher's first floor contact: its puff starts at its spout, where the oblique view draws it now (the spout's local point turned and placed as the group's transform places the body), and it hisses. */
+    const startPuff = (id: number): void => {
+      const v = world ? bodies(world).find((b) => b.id === id) : undefined, spout = SHAPES.extinguisher.spout;
+      if (!v || !spout) return;
+      const m = rotation(v.quaternion), d = turned(m, spout);
+      const at = project({ x: v.position.x + INSET + d[0] * v.scale, y: v.position.y + d[1] * v.scale, z: v.position.z + d[2] * v.scale });
+      setPuff({ key: ++puffs.current, spout: at });
+      void latest.current.sound.play(HISS, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
     };
 
     /* The lid comes off at the can's hit: its pieces (the list's last) leave the can's group for one of their own on the chairs' layer, which
@@ -928,6 +945,7 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
       <div ref={glows} className="dw-chair-glows dw-chair-shading" data-kb-effect-ink="" aria-hidden="true">
         {shown.map((d, i) => <div key={d.play} className="dw-chair-glow" data-play={d.play} style={lightStyle(i)} />)}
       </div>
+      {puff && host.current ? <Puff key={puff.key} host={host.current} place={props.place} spout={puff.spout} done={() => setPuff((p) => (p?.key === puff.key ? null : p))} /> : null}
       <div ref={layer} className="dw-chair-layer" data-kb-effect-ink="" aria-hidden="true">
         {chairs.filter((id) => live.some((p) => p.id === id)).map((id) => (
           <div key={reduced ? `${id}|bare` : id} className="dw-chair-group" data-play={id} ref={groupRef(id)}>

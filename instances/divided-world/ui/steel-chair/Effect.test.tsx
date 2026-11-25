@@ -37,7 +37,16 @@ const hub = vi.hoisted(() => ({
   sleepAll: false,
   /** What the mocked `dentImages` calls (a spy made in `beforeEach`, so the effect's arguments can be read): fixed addresses from the play's id. */
   images: undefined as unknown as import('vitest').Mock<(play: string, ...rest: unknown[]) => { bend: string; shade: string; light: string }>,
+  /** The puffs the effect mounted (Puff.tsx is drawn by its own test): the props each was given, in order. */
+  puffs: [] as { key: string | null; spout: { x: number; y: number }; place: string }[],
 }));
+vi.mock('./Puff.tsx', async () => {
+  const { createElement } = await import('react');
+  return {
+    Puff: (p: { spout: { x: number; y: number }; place: string }) => { hub.puffs.push({ key: null, spout: p.spout, place: p.place }); return createElement('i', { 'data-puff': '', 'data-x': p.spout.x, 'data-y': p.spout.y }); },
+    forgetScratch: () => {},
+  };
+});
 vi.mock('./body.ts', async (original) => {
   const actual = await original<typeof import('./body.ts')>();
   return {
@@ -229,6 +238,7 @@ let pinned: number | null = null;
 const pin = (seed: number | null) => { pinned = seed; };
 
 beforeEach(() => {
+  hub.puffs = [];
   vi.useFakeTimers();
   queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; wordsScale = 1; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null; hub.sleepAll = false;
   const realRandom = crypto.getRandomValues.bind(crypto);
@@ -1234,6 +1244,62 @@ describe('sound by object', () => {
     expect(heard.filter((k) => k === 'steel-chair.ladder-hit')).toHaveLength(1);
     expect(heard.filter((k) => /^steel-chair\.ladder-settle-[12]$/u.test(k))).toHaveLength(1);
     expect(heard.filter((k) => k === 'steel-chair.hit' || /^steel-chair\.settle-/u.test(k)), 'nothing of the chair\'s').toEqual([]);
+  });
+});
+
+describe("the extinguisher's puff", () => {
+  const keys = () => (hub.sound.play.mock.calls as unknown as [string, { group?: string; voices?: number; lateMs?: number }][]).map((c) => c[0]);
+  const puffEls = () => [...document.querySelectorAll<HTMLElement>('[data-puff]')];
+
+  test('an extinguisher (play-93) at its first floor contact mounts a puff at its spout, inside the content area, and plays the hiss once, in the group', () => {
+    pin(2);
+    expect(objectOf('play-93')).toBe('extinguisher');
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    see(true); arm();
+    expect(puffEls(), 'none before it lands').toHaveLength(0);
+    settled();
+    expect(puffEls()).toHaveLength(1);
+    const x = Number(puffEls()[0]!.dataset.x), y = Number(puffEls()[0]!.dataset.y);
+    expect(x).toBeGreaterThan(0);
+    expect(x).toBeLessThan(areaWidth);
+    expect(y).toBeGreaterThan(0);
+    expect(y).toBeLessThan(size.h + ROOM_HEIGHT);
+    expect(keys().filter((k) => k === 'steel-chair.extinguisher-hiss')).toHaveLength(1);
+    const call = (hub.sound.play.mock.calls as unknown as [string, { group?: string }][]).find((c) => c[0] === 'steel-chair.extinguisher-hiss')!;
+    expect(call[1].group).toBe('steel-chair');
+  });
+
+  test('a chair mounts no puff and plays no hiss', () => {
+    pin(2);
+    mount({ plays: [play(1)] });
+    run();
+    expect(puffEls()).toHaveLength(0);
+    expect(hub.puffs).toHaveLength(0);
+    expect(keys().filter((k) => k.includes('hiss'))).toEqual([]);
+  });
+
+  test('a new throw of the same play while a puff stands starts a new one in its place', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    run();
+    expect(puffEls()).toHaveLength(1);
+    const first = hub.puffs.length;
+    const again = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+    act(() => { again.run(); });
+    settled();
+    expect(hub.puffs.length, 'a puff was started again').toBeGreaterThan(first);
+    expect(puffEls(), 'and only one stands').toHaveLength(1);
+    expect(keys().filter((k) => k === 'steel-chair.extinguisher-hiss')).toHaveLength(2);
+  });
+
+  test('under reduced motion there is no puff and no hiss', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    run();
+    expect(puffEls()).toHaveLength(0);
+    expect(keys().filter((k) => k.includes('hiss'))).toEqual([]);
+    document.documentElement.removeAttribute('data-kb-motion');
   });
 });
 

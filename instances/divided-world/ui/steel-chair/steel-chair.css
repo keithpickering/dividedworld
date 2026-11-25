@@ -60,6 +60,12 @@
   pointer-events: none;
 }
 
+/* The extinguisher's puff (Puff.tsx): the tiles the engine's layer makes over the content area, border to border, above the words (the engine lifts a marked tile in the thread; this does it elsewhere). They take no pointer. */
+.dw-chair-puff {
+  display: block;
+  z-index: 1;
+}
+
 /* The chairs' layer and the dents' shading layer each fill the content area, placed by `placeLayer` and marked `data-kb-effect-ink`
    (see the header); each `.dw-chair-dent` is positioned inside the dents' layer. */
 .dw-chair-layer,
