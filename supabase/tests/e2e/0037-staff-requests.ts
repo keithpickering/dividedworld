@@ -14,7 +14,7 @@
  *      or the Boss wrote is in a row, and no asker.
  *
  * Stepped over, as 0017 and 0034 step over theirs: the Mod's order (a finished meeting row and a staff_orders row, written by the superuser) and office, the day's session (written for the whole day), the pool's picks
- * (weekly 1 and a spend row for yesterday leave no allowance for one, so the round makes only the session's turns), the open season's Boss (the instance's first, with a bank) and the age of the waiting request
+ * (weekly 1 and threadsWeekly 0 leave no allowance for one, so the round makes only the session's turns), the open season's Boss (the instance's first, with a bank) and the age of the waiting request
  * c (the queue's row is back-dated; an Act is never edited, and the queue is a state row). Reads only the scratch database tools/test-sql.mjs made; run by tools/test-sql.mjs. It commits what it sets and leaves it,
  * as the files before it do, under keys and boards of its own.
  */
@@ -47,7 +47,9 @@ test('a Mod grants a request on its beat; one off its beat is conferred and the 
   assert.ok(daysMost >= 1, `the setting is seeded: ${daysMost}`);
 
   // ---- The staff: the Boss is the open season's, with a bank; the persona is a Mod with an order (two boards, an allowance) and a session all day. ----
+  const priorBoss = sql(`select coalesce(boss, '') from seasons where ends_at is null`);
   sql(`update seasons set boss = '${BOSS}' where ends_at is null`);
+  t.after(() => sql(`update seasons set boss = ${priorBoss ? `'${priorBoss}'` : 'null'} where ends_at is null`));
   t.after(openSeasonAhead());
   sql(`update characters set debuted_at = coalesce(debuted_at, now() - interval '30 days') where staff in ('${BOSS}', '${MOD.key}', '${OTHER_MOD}')`);
   for (const mod of [MOD.key, OTHER_MOD]) if (sql(`select office from staff_office_now where staff = '${mod}'`) !== 'mod') sql(`insert into staff_offices (staff, office, cause) values ('${mod}', 'mod', 'seed')`);
@@ -166,7 +168,7 @@ test('a Mod grants a request on its beat; one off its beat is conferred and the 
   assert.equal(await place(b.thread), boardC, 'the thread moves when the move lands, not before');
   sql(`select system_tick()`);
   assert.equal(await place(b.thread), boardA, 'once it lands the thread is on A');
-  assert.equal(waiting.length > 0 && json<{ thread: string }[]>(sql(`select requests_waiting(10)`)).some((r) => r.thread === b.thread), false, 'a ruled request no longer waits');
+  assert.equal(json<{ thread: string }[]>(sql(`select requests_waiting(10)`)).some((r) => r.thread === b.thread), false, 'a ruled request no longer waits');
 
   // c. The lapse: Cy's request was left out; its queue row is aged to the days it may wait, and the tick lapses it with the stock line.
   assert.equal(json<{ thread: string }[]>(sql(`select requests_waiting(10)`)).some((r) => r.thread === c.thread), true, 'the request the meeting left out still waits');
