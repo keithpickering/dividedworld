@@ -1,7 +1,7 @@
 """It's Curtains card art: a stage with red velvet curtains drawn back by gold tiebacks, a dark house behind, a bare
 wooden stage and a white chicken with a red comb alone in a spotlight. (The card hangs a curtain over a forum post;
 the curtain parts when the post is opened.)"""
-import sys, os, math, random
+import sys, os, math
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))   # rig.py is one folder up, shared by every card
 sys.dont_write_bytecode = True           # no __pycache__ beside the card folders: the art guard reads every folder there as a card's
 import numpy as np
