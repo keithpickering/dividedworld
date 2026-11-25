@@ -1970,6 +1970,19 @@ describe('the poll lines', () => {
   });
 });
 
+describe('the moved-thread lines', () => {
+  const mine = [char('b', 'Wario', 'heel', undefined, PRONOUN_PRESETS.he)];
+  const at = '2026-11-20T12:00:00.000Z';
+  const said = (r: { details: readonly unknown[] }) => r.details.map((d) => (typeof d === 'string' ? d : (d as { text: string }).text)).join('');
+
+  test('a landed move of a thread the player\'s character started says where it went and where it left', () => {
+    const [r] = logRows(data({ log: { ...empty, moved: [{ move: 'm1', at, thread: 't9', character: 'b', from: 'x', to: 'y', title: 'Kart talk', fromName: 'General', toName: 'Karts' }] }, mine }), words, 600, null).filter((r) => r.kind === 'threadMoved');
+    expect(r).toMatchObject({ key: 'threadMoved:m1', kind: 'threadMoved', at, aura: 0, wallet: null, characters: ['b'] });
+    expect(r!.what).toBe('\u2018Kart talk\u2019 was moved to the Karts board');
+    expect(said(r!)).toBe('\u2018Kart talk\u2019 was moved to the Karts board. It left the General board.');
+  });
+});
+
 describe('merging pages with poll lines', () => {
   const place = { thread: 't', title: 'T', seq: 1 };
   const b = (act: string) => ({ act, poll: 'p', character: 'c', picks: [0], at: '2026-11-20T12:00:00.000Z', question: 'Q', secret: false, options: ['A', 'B'], changed: false, place });

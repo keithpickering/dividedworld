@@ -3376,16 +3376,18 @@ describe('a screen in one call', () => {
     const answer = {
       alerts: [{ kind: 'quote', sub: null, act: A, character: B, at: '2026-10-02T10:00:00+00:00', thread: T, name: 'Bea', title: null, count: null }, { kind: 'from-the-future', at: '2026-10-02T09:00:00+00:00' }],
       seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', acts: [ACT_ROW], people: [{ ...CHAR, profile: PROFILE }], openings: [{ ...ACT_ROW, id: C, seq: 1 }], reading: [{ thread: T, furthest_seq: 2 }],
+      boards: [{ id: A, name: 'Hobbies' }, { id: 7, name: 'bad' }], threads: [{ id: T, title: 'Moved' }, { id: 5, title: 'bad' }],
     };
     const h = once('alerts_page', answer);
     const page = await h.api.alertsPage('2026-10-03T00:00:00+00:00');
     expect(only(h, 'alerts_page')).toEqual({ in_before: '2026-10-03T00:00:00+00:00' });
     expect(page.alerts.map((x) => [x.kind, x.act, x.name])).toEqual([['quote', A, 'Bea']]);
-    expect(page).toMatchObject({ seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', people: [BEA], reading: { [T]: 2 } });
+    expect(page).toMatchObject({ seenAt: '2026-10-01T00:00:00+00:00', openedAt: '2026-09-01T00:00:00+00:00', people: [BEA], reading: { [T]: 2 }, boards: [{ id: A, name: 'Hobbies' }], threads: [{ id: T, title: 'Moved' }] });
     expect(page.acts).toEqual([ACT]);
     expect(page.openings[0]).toMatchObject({ id: C, seq: 1 });
     const first = once('alerts_page', { ...answer, seenAt: null, openedAt: null });
-    expect(await first.api.alertsPage(null)).toMatchObject({ seenAt: null, openedAt: null });
+    expect(await first.api.alertsPage(null)).toMatchObject({ seenAt: null, openedAt: null, boards: [{ id: A, name: 'Hobbies' }] });
+    expect(await once('alerts_page', { ...answer, boards: undefined, threads: undefined }).api.alertsPage(null)).toMatchObject({ boards: [], threads: [] });
     expect(only(first, 'alerts_page')).toEqual({ in_before: null });
   });
 
@@ -3442,6 +3444,14 @@ describe('a screen in one call', () => {
       expect(page.log.pollCloses).toEqual([{ act: SET, poll: C, character: B, at: close.at, question: 'Best part?', place: { thread: T, title: 'Best kart?', seq: 12 } }]);
       const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
       expect(older.log.ballots ?? []).toEqual([]);
+    });
+
+    it('maps log_page\'s moved threads (from_board and to_board to from and to, with the names), and an older payload without them reads as none', async () => {
+      const moved = { move: A, at: '2026-10-30T11:00:00+00:00', thread: T, character: B, from_board: C, to_board: SET, title: 'Kart talk', from_name: 'General', to_name: 'Karts' };
+      const page = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW], moved: [moved] }))).api.logPage(null);
+      expect(page.log.moved).toEqual([{ move: A, at: moved.at, thread: T, character: B, from: C, to: SET, title: 'Kart talk', fromName: 'General', toName: 'Karts' }]);
+      const older = await once('log_page', doc(SRC({ ledger: [LEDGER_ROW] }))).api.logPage(null);
+      expect(older.log.moved ?? []).toEqual([]);
     });
 
     it('maps the top-level scoredAs rows (named_class to classKey), and an older payload without them reads as none', async () => {

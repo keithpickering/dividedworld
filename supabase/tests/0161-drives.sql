@@ -636,6 +636,7 @@ declare
   gv uuid := tests.account('dq-giver'); gch uuid := tests.character(gv, 'Dq Giver');
   au uuid := tests.account('dq-author'); ach uuid := tests.character(au, 'Dq Author');
   cs uuid := tests.account('dq-caster'); cch uuid := tests.character(cs, 'Dq Caster');
+  rd uuid := tests.account('dq-reader'); rch uuid := tests.character(rd, 'Dq Reader');
   t uuid := tests.thread('Dq seq');
   p uuid := tests.post(ach, t, 'A day-old post.', now() - interval '1 day');
   d uuid;
@@ -651,14 +652,16 @@ begin
   d := pg_temp.open_drive(cs, cch, p);
   select * into before_row from threads where id = t;
   -- The readers of a thread's Acts and of its numbers, as a signed-in player reads them: the thread's page, its board's page and the index, before and after a gift.
-  perform tests.become(au);
+  -- The reader is a player the gift is not about: a gift now alerts the drive post's author (docs/plans/2026-11-23-rulings-and-missing-alerts-design.md,
+  -- section 5), so the author's own pages carry one more unread alert, which says nothing of the thread; 0423-rulings-alerts.sql tests that alert.
+  perform tests.become(rd);
   pages_before := jsonb_build_array(thread_page(t, 1, null, null, '{}'), board_page('general', 1, '{}'), index_page());
   perform tests.unbecome();
   perform tests.become_service();
   r := donate(gv, gch, d, 10);
   perform tests.unbecome();
   select * into after_row from threads where id = t;
-  perform tests.become(au);
+  perform tests.become(rd);
   pages_after := jsonb_build_array(thread_page(t, 1, null, null, '{}'), board_page('general', 1, '{}'), index_page());
   perform tests.unbecome();
   if pages_after is distinct from pages_before then raise exception 'a gift changed what a reader of the thread sees: % then %', pages_before, pages_after; end if;

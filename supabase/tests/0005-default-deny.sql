@@ -39,7 +39,9 @@ declare
                            -- Polls (0395): every poll's counts, the same for every caller (characters counted, no owner read), and the caller's own ballots, a secret one's character and picks included.
                            'poll_counts', 'my_ballots', 'my_latest_ballots',
                            -- The poll reads (0396): the caller's own ballots' sibling, an admin's closes of the caller's own polls, read by the log alone.
-                           'my_poll_closes'];
+                           'my_poll_closes',
+                           -- My log's moved threads (0423): the moves of threads the caller's own characters started, read by the log alone.
+                           'my_threads_moved'];
   callable text[] := array['react(uuid,uuid,text)', 'start_thread(text,uuid,text,text,uuid[],jsonb)', 'post(uuid,uuid,text,uuid,uuid[],jsonb)',
                            'edit_post(uuid,uuid,text,jsonb)',
                            -- A ballot and a poll's two closes (0395): the player's doors, which verify the caller plays the character; an admin's close checks the caller inside. The poll's draft is written inside post, start_thread and edit_post.
@@ -165,6 +167,8 @@ declare
                            'post_kind(text)',
                            -- The place of a thread spun from a report, a verdict, an appeal or a ruling (0422): thread_open is read as its caller and calls it; a definer answering the public names, post and punishment of one public Act.
                            'spin_answer_place(uuid)',
+                           -- What an Alerts page's ruling, gift and drew rows name, merged into the page (0423): alerts_page is read as its caller and calls it; public Acts and public names, from the caller's own page.
+                           'alert_line_refs(jsonb)',
                            -- The ids of the Acts that cut a given list of plays (0405), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.
                            'cutting_acts(uuid[])',
                            -- The plays on a post (0410). The three definers behind the reads read the kept rows (play_post, post_kinds), which no API role does, and answer ids and counts alone, for any list of posts and the same for every caller:

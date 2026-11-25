@@ -9,11 +9,11 @@
  *   from Acts and settlements. Nothing is stored, so no Act fans out to followers and a settlement is no write.
  * - everyone's: public news, computed from public Acts and shown to every player alike. It is never a row per player.
  *
- * A ruling is written, with a sub-key each ruling's own build adds when it lands one on a character or a post (only
- * board moves exist today, and none of them does), in the same change as that build ("No player is ever stuck").
+ * A ruling is written with a sub-key naming what landed (design `docs/plans/2026-11-23-rulings-and-missing-alerts-design.md`,
+ * section 7). A Mod Bot visit while it runs, and one that ends unfiled, writes none.
  */
 
-export const WRITTEN_KINDS = ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack'] as const;
+export const WRITTEN_KINDS = ['quote', 'cardOnYours', 'trapStruck', 'trapSprang', 'hint', 'ruling', 'cardEnded', 'framed', 'trophy', 'beltLost', 'beltBack', 'gift', 'conduct'] as const;
 export const DERIVED_KINDS = ['settlement', 'followed'] as const;
 export const EVERYONE_KINDS = ['update', 'seasonNews'] as const;
 
@@ -22,9 +22,21 @@ export const ALERT_KINDS = [...WRITTEN_KINDS, ...DERIVED_KINDS, ...EVERYONE_KIND
 export type WrittenKind = (typeof WRITTEN_KINDS)[number];
 export type AlertKind = (typeof ALERT_KINDS)[number];
 
-/** The sub-keys of `ruling`; empty until a ruling's build adds its own. */
-export const RULING_SUBS = [] as const;
+/** The sub-keys of `ruling`: what landed on the character or the post. */
+export const RULING_SUBS = ['warning', 'ban', 'fallTaken', 'reportJudged', 'reportRefunded', 'appealAnswered', 'appealRefunded', 'grouped', 'threadMoved', 'trophyReversed', 'pollClosed', 'gearGiven'] as const;
 export type RulingSub = (typeof RULING_SUBS)[number];
+
+/** The sub-keys of `cardEnded`. A null sub is the caster's own card ended, as first built. */
+export const CARD_ENDED_SUBS = ['onYours', 'refunded'] as const;
+export type CardEndedSub = (typeof CARD_ENDED_SUBS)[number];
+
+/** The sub-keys of `cardOnYours` beyond a card played on yours (null). */
+export const CARD_ON_YOURS_SUBS = ['drew'] as const;
+export type CardOnYoursSub = (typeof CARD_ON_YOURS_SUBS)[number];
+
+/** The sub-keys of `conduct`: the outcomes' own names in `conduct_decisions`. */
+export const CONDUCT_SUBS = ['hide', 'hideUntilEdited', 'unhide', 'approve'] as const;
+export type ConductSub = (typeof CONDUCT_SUBS)[number];
 
 export function isWritten(kind: AlertKind): kind is WrittenKind {
   return (WRITTEN_KINDS as readonly string[]).includes(kind);

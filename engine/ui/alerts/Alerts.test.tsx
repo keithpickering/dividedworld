@@ -445,6 +445,41 @@ describe('a page that is left or changed while it loads', () => {
   });
 });
 
+describe('Older, for the lines that name more than the rows do (0423, section 9)', () => {
+  /* What alerts_page loads for the first page, Older reads with the API's own calls: the post an infraction names, the drawer, the taker, the Mod by key, the board, and the post three links from a gift and a drawing. */
+  test('the older page\'s warning, fall, move, drawing and gift say their names, boards and amounts', async () => {
+    const w = world({ mark: null });
+    const real = await w.fake.alertsPage(null);
+    vi.spyOn(w.fake, 'alertsPage').mockResolvedValueOnce({ ...real, alerts: [...real.alerts, ...Array.from({ length: ALERTS_PAGE - real.alerts.length }, (_, i) => filler(i + 1, w.pipe))] });
+    const at = (n: number) => iso(T0 - (100 + n) * MIN);
+    const row = (n: number, kind: Alert['kind'], sub: string | null, act: string): Alert => ({ kind, sub, act, character: w.pipe, at: at(n), thread: w.thread, name: 'Pipewrench', title: 'who keeps splatting my posts', count: null });
+    const made = (id: string, kind: string, o: Record<string, unknown>) => ({ id, character: null, kind, thread: w.thread, targetActId: null, seq: null, createdAt: at(0), payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null, ...o });
+    const known = [
+      made('post-9', 'post', { character: w.pipe, seq: 1 }),
+      made('inf-w', 'infraction', { payload: { about_act: 'post-9', character: w.pipe, points: 3, rule_number: 2, staff: 'mod-1', expires_at: '2026-12-01T00:00:00.000Z' } }),
+      made('inf-f', 'infraction', { payload: { about_act: 'post-9', character: 'c-taker', points: 2, staff: 'mod-1' } }),
+      made('mv', 'move', { payload: { kind: 'moveThread', params: { thread: w.thread, board: 'b-9' } } }),
+      made('draw', 'draw', { character: 'c-drawer', targetActId: 'wall' }),
+      made('wall', 'card', { character: 'c-drawer', targetActId: 'post-9', payload: { card: 'whoops', reach: 'post' } }),
+      made('gift', 'donation', { character: 'c-drawer', targetActId: 'drv', payload: { amount: 500, overhead: 125, arrives: 375 } }),
+      made('drv', 'card', { character: 'c-drawer', targetActId: 'post-9', payload: { card: 'whoops', reach: 'post' } }),
+    ];
+    vi.spyOn(w.fake, 'alerts').mockResolvedValueOnce([row(1, 'ruling', 'warning', 'inf-w'), row(2, 'ruling', 'fallTaken', 'inf-f'), row(3, 'ruling', 'threadMoved', 'mv'), row(4, 'cardOnYours', 'drew', 'draw'), row(5, 'gift', null, 'gift')]);
+    vi.spyOn(w.fake, 'actsById').mockImplementation(async (ids) => known.filter((a) => ids.includes(a.id)) as never);
+    vi.spyOn(w.fake, 'characters').mockImplementation(async (ids) => [{ id: 'c-taker', name: 'Gloomba' }, { id: 'c-drawer', name: 'Drizzle' }].filter((c) => ids.includes(c.id)) as never);
+    vi.spyOn(w.fake, 'staffNames').mockResolvedValue([{ staff: 'mod-1', name: 'Thwomp', pronouns: { subject: 'it', object: 'it', possessive: 'its', reflexive: 'itself' } }] as never);
+    vi.spyOn(w.fake, 'boardNames').mockResolvedValue([{ id: 'b-9', slug: 'crafts', name: 'Crafts', was: 'Crafts' }]);
+    await show(w);
+    await userEvent.click(await screen.findByRole('button', { name: 'Older' }));
+    const text = async (re: RegExp) => (await waitFor(() => { const r = rows().find((x) => re.test(x.textContent!)); expect(r).toBeDefined(); return r!; })).textContent!;
+    expect(await text(/got 3 warn points/u)).toContain('Thwomp filed rule 2.');
+    expect(await text(/took the fall/u)).toContain("Gloomba took the fall for Pipewrench's post");
+    expect(await text(/was moved to/u)).toContain('was moved to the Crafts board');
+    expect(await text(/drew on the wall/u)).toContain("Drizzle drew on the wall on Pipewrench's post #1");
+    expect(await text(/A gift of/u)).toContain("A gift of 5.00 was given to the drive on Pipewrench's post #1");
+  });
+});
+
 describe('a page that cannot read everything', () => {
   test('without the player\'s characters there are no filters, and the rows are all there', async () => {
     const w = world();

@@ -490,6 +490,9 @@ begin
     delete from standings where character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1');
     delete from class_history where character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2');
     delete from characters where id in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1');
+    -- The alerts the landed moveThread wrote to the moved thread's starter (0423, design section 2 of docs/plans/2026-11-23-rulings-and-missing-alerts-design.md): the replica role lets the account go without them,
+    -- and an alert left naming a deleted account is a row an instance's export cannot import (tools/import-instance.mjs checks every foreign key).
+    delete from alerts where account = '7ace0000-0190-4000-8000-0000000000a1';
     delete from accounts where id = '7ace0000-0190-4000-8000-0000000000a1';
     delete from auth.users where id = '7ace0000-0190-4000-8000-0000000000a1';
   $sql$);
@@ -508,6 +511,13 @@ begin
     || ' delete from debuted_count; ' ||
     coalesce((select string_agg(format('insert into debuted_count (shard, characters) values (%s, %s);', p.value ->> 'shard', p.value ->> 'characters'), ' ') from prior p where p.what like 'debuted shard %'), '')
     || ' ' || format('update seasons set boss = %L where ends_at is null and boss = ''il-boss'';', (select p.value #>> '{}' from prior p where p.what = 'boss')));
+end $$;
+
+-- Nothing the file committed is left naming the account it took out: a row that did would hold a key the foreign keys, off in the replica role, never checked.
+do $$
+begin
+  perform pg_temp.expect(not exists (select 1 from alerts a where a.account = '7ace0000-0190-4000-8000-0000000000a1' or a.character in ('7ace0000-0190-4000-8000-0000000000b1', '7ace0000-0190-4000-8000-0000000000b2', '7ace0000-0190-4000-8000-0000000000f1')),
+    format('the cleanup left alerts naming the account or characters it took out: %s', (select jsonb_agg(to_jsonb(a)) from alerts a where a.account = '7ace0000-0190-4000-8000-0000000000a1')));
 end $$;
 
 -- The System board's counts are what they were before this file (F15): the announcements threads it made were counted, and taking them out must not leave the board one or two too high.
