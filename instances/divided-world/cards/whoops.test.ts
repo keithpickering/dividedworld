@@ -12,12 +12,12 @@ import { POINT_BUDGET, thinned, washedShare } from './whoops/seen.ts';
 
 test('Whoops! costs 0.25 more per 500 characters of its target, at most 2.00 added', () => {
   const config = { color: '#ff00aa' };
-  assert.equal(whoops.playPrice(settings, post(499), config), 0);
-  assert.equal(whoops.playPrice(settings, post(500), config), 25);
-  assert.equal(whoops.playPrice(settings, post(999), config), 25);
-  assert.equal(whoops.playPrice(settings, post(1000), config), 50);
-  assert.equal(whoops.playPrice(settings, post(6000), config), 200, 'twelve steps would be 3.00 on top; 2.00 is the most a play adds');
-  assert.equal(whoops.playPrice(settings, post(1_000_000), config), 200);
+  assert.equal(whoops.playPrice(settings, post(499), config, []), 0);
+  assert.equal(whoops.playPrice(settings, post(500), config, []), 25);
+  assert.equal(whoops.playPrice(settings, post(999), config, []), 25);
+  assert.equal(whoops.playPrice(settings, post(1000), config, []), 50);
+  assert.equal(whoops.playPrice(settings, post(6000), config, []), 200, 'twelve steps would be 3.00 on top; 2.00 is the most a play adds');
+  assert.equal(whoops.playPrice(settings, post(1_000_000), config, []), 200);
 });
 
 test('Whoops!\'s ink is a color, and only a color', () => {

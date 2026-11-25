@@ -548,7 +548,7 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
     expect(laughTrack.canApply(post('abcd'), [audience], config, new Date())).toEqual({ ok: false, why: 'this post already has an audience' });
     expect(said).toContain('It costs more to play the more places its phrases cover.');
     const free = e['laughTrack.freePlaces']!;
-    const priceAt = (places: number) => laughTrack.playPrice!(instance.settings, post('abcd '.repeat(places)), config);
+    const priceAt = (places: number) => laughTrack.playPrice!(instance.settings, post('abcd '.repeat(places)), config, []);
     expect(priceAt(free)).toBe(0);
     expect(priceAt(free + 1)).toBe(e['laughTrack.perPlace']);
     expect(priceAt(free + 2)).toBeGreaterThan(priceAt(free + 1));

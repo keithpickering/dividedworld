@@ -210,7 +210,7 @@ describe('Kick Me hands the first three Salty cards back, end to end on the fake
     const { fake, bo, anaFace, boFace, opener } = setup();
     const sign = must(await fake.useCard('kick-me', anaFace, opener, {}, ''));
     fake.signInAs(bo);
-    const price = whoops.playPrice(instance.settings, { reach: 'post', length: 'Point at these words here. '.repeat(20).length } as never, ink);
+    const price = whoops.playPrice(instance.settings, { reach: 'post', length: 'Point at these words here. '.repeat(20).length } as never, ink, []);
     expect(price).toBeGreaterThan(0);
     const handed: unknown[] = [];
     for (let i = 0; i < 3; i++) {

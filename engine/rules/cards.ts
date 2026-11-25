@@ -488,8 +488,11 @@ export interface CardRules<Config = unknown> {
   readonly reaction?: true;
   /** Whether each play is drawn from a seed the server chooses (a splat different every time), stored on its Act. */
   readonly seeded?: boolean;
-  /** What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it. */
-  playPrice(settings: Settings, target: CardTarget, config: Config): Hundredths;
+  /**
+   * What casting it on this target costs from the wallet, on top of the base price already paid. A set or a sprung card pays none of it.
+   * `effects` are the target's own and above it, as `canApply` is given them, all public: a card may price a play from what is already there.
+   */
+  playPrice(settings: Settings, target: CardTarget, config: Config, effects: readonly CardEffect[]): Hundredths;
   /**
    * Whether it lands on this target, given the effects already there. A Cast or a Use is also given its configuration as
    * `validateConfig` returned it, where that accepted it, so a card that works on the post's words can refuse a phrase that is
@@ -628,7 +631,7 @@ function decided(rules: CardRules, settings: Settings, target: CardTarget, effec
   if (rules.needsMessage !== undefined && said.value === '') return refuse(rules.needsMessage);
   // A cast pays every live price effect on its target, or above it, whose flavors hold its printed alignment; a use or a set pays none.
   const added = surcharge ? effects.reduce((sum, e) => (e.gimmick?.kind === 'price' && isLive(e, now) && e.gimmick.flavors.includes(rules.alignment) ? sum + e.gimmick.add : sum), 0) : 0;
-  const price = Math.max(0, rules.playPrice(settings, target, checked.value) + added);
+  const price = Math.max(0, rules.playPrice(settings, target, checked.value, effects) + added);
   if (!Number.isSafeInteger(price) || price < 0) throw new Error(`card ${rules.key} priced a play at ${price}`);
   if (!rules.writes) return ok({ price, config: checked.value, message: said.value });
   const tokens = rules.writes.tokens(checked.value, settings);

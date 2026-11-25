@@ -205,11 +205,13 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
     if (!rules || setting) return 0;
     try {
       const checked = rules.validateConfig(config);
-      return goal ? rules.playPrice(priced, goal, checked.ok ? checked.value : config ?? {}) : 0;
+      /* The plays the post carries, as the server reads them for the price (`decidePlay`'s effects). */
+      const effects: CardEffect[] = livePlays(carried, api.now()).filter((p) => !p.caught).map((p) => ({ card: p.card, act: p.id, ...(p.reach ? { reach: p.reach } : {}), ...(p.ends ? { ends: p.ends } : {}) }));
+      return goal ? rules.playPrice(priced, goal, checked.ok ? checked.value : config ?? {}, effects) : 0;
     } catch {
       return 0;
     }
-  }, [rules, setting, priced, goal, config]);
+  }, [rules, setting, priced, goal, config, carried, api]);
   /* What the card itself asks (`ownPrice`, the surcharge row), and with the price effects on it (`price`, what is paid). */
   const price = ownPrice + raises.reduce((sum, r) => sum + r.add, 0);
 

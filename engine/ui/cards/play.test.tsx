@@ -10,7 +10,7 @@ import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-libra
 import userEvent from '@testing-library/user-event';
 import { useEffect, useId, useState } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
+import { isLive, landsOn, ok, refuse, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
 import { LOST_ANSWER } from '../data/api.ts';
 import { plainRefusal } from './faces.ts';
@@ -571,6 +571,22 @@ describe('the play form', () => {
     await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(462 - (await w.fake.wallet()).balance).toBe(40);
+  });
+
+  /* A card may price a play from the effects already on the post: the form hands the rules the same plays the server reads. */
+  test('a card that prices from the plays already on the post is priced with them, in the surcharge row and the cost', async () => {
+    const user = userEvent.setup();
+    const reading: CardRules<{ color: string }> = { ...whoopsRules, playPrice: (_s, _t, _c, effects) => 100 * effects.filter((e) => e.card === 'whoops' && isLive(e)).length };
+    const served: Instance = { ...instance, cards: [reading, stickRules] };
+    const w = world(served);
+    for (const layer of [1, 2]) w.fake.seed.card(w.gloomba, w.ids[1]!, 'whoops', { message: `layer ${layer}`, layer, config: { color: '#ff2bd6' } });
+    await open(w, cards, served);
+    const form = await playHere(user, 2);
+    expect(within(form).getByText('To pay now').closest('div')!.textContent).toContain('2.00');
+    expect(within(form).getByText('Long post, +0.25 per 500 characters').closest('div')!.textContent).toContain('2.00');
+    await user.click(within(form).getByRole('button', { name: 'Play as Pipewrench' }));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(462 - (await w.fake.wallet()).balance).toBe(200);
   });
 
   test('on a post by another of the player\'s own characters it says so, and not on anyone else\'s', async () => {

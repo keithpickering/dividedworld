@@ -66,16 +66,16 @@ test('Autocorrect lands on a post when asked with a config that holds no phrase,
 });
 
 test('Autocorrect costs its base price, plus 0.25 per 50 characters it covers, at most 2.00 added', () => {
-  const price = (body: string, phrase: string) => autocorrect.playPrice(settings, on(body), { phrase, replacement: 'x' });
+  const price = (body: string, phrase: string) => autocorrect.playPrice(settings, on(body), { phrase, replacement: 'x' }, []);
   assert.equal(price('cats', 'cats'), 0, '4 characters covered');
   assert.equal(price(Array(12).fill('cats').join(' '), 'cats'), 0, '48 characters covered');
   assert.equal(price(Array(13).fill('cats').join(' '), 'cats'), 25, '52 characters: one step');
   assert.equal(price(Array(50).fill('cats').join(' '), 'cats'), 100, '200 characters: four steps');
   assert.equal(price(Array(1000).fill('cats').join(' '), 'cats'), 200, 'capped: 3.00 in all, less the 1.00 paid at the machine');
   assert.equal(price('Mario Mario', 'mario'), 0);
-  assert.equal(autocorrect.playPrice(settings, { reach: 'character', character: 'c' }, { phrase: 'cats', replacement: 'x' }), 0);
+  assert.equal(autocorrect.playPrice(settings, { reach: 'character', character: 'c' }, { phrase: 'cats', replacement: 'x' }, []), 0);
   const tuned = withOverrides(settings, { economy: { 'autocorrect.perVolume': 10, 'autocorrect.volumeStep': 4 } });
-  assert.equal(autocorrect.playPrice(tuned, on('cats cats cats'), { phrase: 'cats', replacement: 'x' }), 30, 'its numbers are the settings\'');
+  assert.equal(autocorrect.playPrice(tuned, on('cats cats cats'), { phrase: 'cats', replacement: 'x' }, []), 30, 'its numbers are the settings\'');
 });
 
 test('Autocorrect\'s saved state is the author\'s peels by occurrence, and the largest fits the database\'s bound', () => {
@@ -190,9 +190,9 @@ test('Autocorrect\'s saved state keeps where a roll fell, by the strip\'s place:
 test('Autocorrect: a landing refusal is said before a configuration\'s, the face shows the most a play adds, and a phrase is priced in characters', () => {
   const stacked = [1, 2, 3].map((i) => ({ card: 'autocorrect', act: `k${i}` }));
   assert.match((decidePlay(autocorrect as CardRules, settings, on('cats'), stacked, { phrase: 'x', replacement: '' }, '') as { why: string }).why, /already carries 3/);
-  assert.equal(autocorrect.playPrice(settings, on(''), {} as never), 200, 'with no phrase yet: 3.00 in all less the 1.00 at the machine');
+  assert.equal(autocorrect.playPrice(settings, on(''), {} as never, []), 200, 'with no phrase yet: 3.00 in all less the 1.00 at the machine');
   // Four letters outside the Basic Multilingual Plane: 4 characters, 8 of the string's units. 13 of them cover 52 characters, one step.
-  assert.equal(autocorrect.playPrice(settings, on(Array(13).fill('𝒜𝒷𝒸𝒹').join(' ')), { phrase: '𝒜𝒷𝒸𝒹', replacement: 'x' }), 25);
+  assert.equal(autocorrect.playPrice(settings, on(Array(13).fill('𝒜𝒷𝒸𝒹').join(' ')), { phrase: '𝒜𝒷𝒸𝒹', replacement: 'x' }, []), 25);
 });
 
 test('Autocorrect: the replacement is refused as the phrase itself exactly when the matcher would read them as one', () => {
