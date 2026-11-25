@@ -1839,8 +1839,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function barRefusal(character: Id, board: Board): Refusal | null {
     const here = barsOf(character).filter((b) => b.board === board.id);
     if (here.length === 0) return null;
-    const ends = here.map((b) => b.expiresAt);
-    const until = ends.includes(null) ? null : Math.max(...ends.map((e) => Date.parse(e!)));
+    /* max(expires_at) ignores a bar with no end: null only when every bar is open. */
+    const ends = here.flatMap((b) => (b.expiresAt === null ? [] : [Date.parse(b.expiresAt)]));
+    const until = ends.length === 0 ? null : Math.max(...ends);
     const shown = until === null ? 'a time not yet set' : `${iso(Math.ceil(until / 60_000) * 60_000).slice(0, 16).replace('T', ' ')} UTC`;
     return refuse(`${characters.get(character)!.name} is barred from posting on ${boardNow(board).name} until ${shown}`);
   }
@@ -4090,11 +4091,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const c = acting(character);
       if (isRefusal(c)) throw new Error(c.error);
       const bars = barsOf(character);
+      const today = spinBoard(origin);
       return {
-        default: spinBoard(origin) === null ? null : boardNow(spinBoard(origin)!).slug,
+        default: today === null ? null : boardNow(today).slug,
         boards: boards.filter((b) => !b.isSystem && !closedBoards.has(b.id)).map((b) => {
           const here = bars.filter((x) => x.board === b.id).map((x) => x.expiresAt);
-          const until = here.length === 0 || here.includes(null) ? null : here.reduce((a, e) => (Date.parse(e!) > Date.parse(a!) ? e : a));
+          const ends = here.flatMap((e) => (e === null ? [] : [e]));
+          const until = ends.length === 0 ? null : ends.reduce((a, e) => (Date.parse(e) > Date.parse(a) ? e : a));
           return { slug: b.slug, name: boardNow(b).name, barred: here.length > 0, until };
         }),
       };

@@ -307,6 +307,30 @@ describe('a spin picks its board (0428_spin_board.sql)', () => {
     fake.seed.closeBoard('attic', { fallback: 'general' });
     expect((await fake.spinPlaces(opener, anaFace)).boards.map((b) => b.slug)).toEqual(['general', 'side']);
   });
+  test('two bars on one board, one that ends and one with no end: the refusal and spinPlaces read the latest end, as max(expires_at) does, and null only when every bar is open', async () => {
+    const { fake, anaFace, opener, bar } = pickWorld();
+    const end = Math.ceil((Date.now() + 86_400_000) / 60_000) * 60_000;
+    bar('general', end);
+    bar('general', null);
+    const said = (await fake.spin(opener, anaFace, 'T', 'b')) as { ok: false; error: string };
+    expect(said.error).toBe(`Ana Face is barred from posting on General until ${new Date(end).toISOString().slice(0, 16).replace('T', ' ')} UTC`);
+    expect((await fake.spinPlaces(opener, anaFace)).boards[0]).toEqual({ slug: 'general', name: 'General', barred: true, until: new Date(end).toISOString() });
+    bar('side', null);
+    expect((await fake.spinPlaces(opener, anaFace)).boards[1]).toEqual({ slug: 'side', name: 'Side', barred: true, until: null });
+    expect(((await fake.spin(opener, anaFace, 'T', 'b', undefined, undefined, 'side')) as { error: string }).error).toBe('Ana Face is barred from posting on Side until a time not yet set');
+  });
+  test('a spin with no board whose today\'s board is closed is refused in the closed words, and an apology naming a closed board is too', async () => {
+    const { fake, anaFace, opener, thread, bar } = pickWorld();
+    const move = bar('general', Date.now() + 86_400_000);
+    fake.seed.closeBoard('attic', { fallback: 'side' });
+    /* A thread left on a board that has since closed (the seed puts it there, as a race with the close would): today's board is the closed one. */
+    fake.seed.moveThread(thread, 'attic');
+    const words = 'this board was closed, and its threads are in Side; start your thread there instead';
+    expect(await fake.spin(opener, anaFace, 'T', 'b')).toEqual(refused(words));
+    expect(await fake.apologize(move, anaFace, 'Sorry', 'x', undefined, 'attic')).toEqual(refused(words));
+    expect(await fake.spunFrom(opener)).toEqual([]);
+    expect(await fake.myApologies(anaFace)).toEqual([]);
+  });
   test('spinPlaces from The System\'s board defaults to the players\' board; a missing Act answers a null default and the list', async () => {
     const { fake, anaFace } = pickWorld();
     const said = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
@@ -320,11 +344,11 @@ describe('a spin picks its board (0428_spin_board.sql)', () => {
     const general = await boardId(fake, 'general');
     const origin = async (o: string) => (await fake.thread(must(await fake.spin(o, anaFace, 'Spun', 'b', undefined, undefined, 'side')).thread.id))?.origin;
     expect(await origin(opener)).toEqual({ kind: 'post', thread, title: 'Hello', seq: 1, board: general });
-    expect(await origin(fake.seed.card(anaFace, opener, 'whoops'))).toMatchObject({ kind: 'play', board: general });
+    expect(await origin(fake.seed.card(anaFace, opener, 'whoops'))).toEqual({ kind: 'play', card: 'whoops', on: { kind: 'post', thread, title: 'Hello', seq: 1 }, from: null, at: null, board: general });
     const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
     expect(await origin(update)).toEqual({ kind: 'update', act: update, title: 'Traps bite' });
     const said = fake.seed.thread('announcements', null, 'Tally', 'Settled.');
-    expect(await origin(said.act)).toMatchObject({ board: await boardId(fake, 'announcements') });
+    expect(await origin(said.act)).toEqual({ kind: 'post', thread: said.thread, title: 'Tally', seq: 1, board: await boardId(fake, 'announcements') });
   });
 });
 
@@ -1136,11 +1160,12 @@ describe('what a list row shows', () => {
 
   test('a spun thread names its origin in the row: the thread, and the place with its title and the Act\'s seq', async () => {
     const { fake, anaFace, thread } = world();
+    const board = await boardId(fake, 'general');
     const second = must(await fake.post(thread, anaFace, 'second', null));
     const spun = must(await fake.spin(second.id, anaFace, 'Spun out', 'body'));
     const row = await fake.thread(spun.thread.id);
-    expect([row?.originThread, row?.origin]).toMatchObject([thread, { kind: 'post', thread, title: 'Hello', seq: 2 }]);
-    expect((await fake.spunFrom(second.id)).map((t) => [t.originThread, t.origin])).toMatchObject([[thread, { kind: 'post', thread, title: 'Hello', seq: 2 }]]);
+    expect([row?.originThread, row?.origin]).toEqual([thread, { kind: 'post', thread, title: 'Hello', seq: 2, board }]);
+    expect((await fake.spunFrom(second.id)).map((t) => [t.originThread, t.origin])).toEqual([[thread, { kind: 'post', thread, title: 'Hello', seq: 2, board }]]);
     const plain = await fake.thread(thread);
     expect([plain?.originThread, plain?.origin]).toEqual([null, null]);
   });
@@ -1149,27 +1174,28 @@ describe('what a list row shows', () => {
     const { fake, anaFace, boFace, opener, thread } = world();
     const place = async (origin: string) => (await fake.thread(must(await fake.spin(origin, anaFace, 'Spun', 'b')).thread.id))?.origin;
     const post = { kind: 'post', thread, title: 'Hello', seq: 1 };
+    const board = await boardId(fake, 'general');
     // A face-up card on a post.
-    expect(await place(fake.seed.card(anaFace, opener, 'whoops'))).toMatchObject({ kind: 'play', card: 'whoops', on: post, from: null, at: null });
+    expect(await place(fake.seed.card(anaFace, opener, 'whoops'))).toEqual({ kind: 'play', card: 'whoops', on: post, from: null, at: null, board });
     // A face-down set names no card; its spring, its own Act, names it.
     const set = fake.seed.set(boFace, fake.seed.post(thread, boFace, 'Bo here.'), 'snare');
-    expect(await place(set)).toMatchObject({ kind: 'play', card: null, on: { kind: 'post', thread, title: 'Hello', seq: 2 }, from: null, at: null });
+    expect(await place(set)).toEqual({ kind: 'play', card: null, on: { kind: 'post', thread, title: 'Hello', seq: 2 }, from: null, at: null, board });
     expect(JSON.stringify(await place(set))).not.toContain('snare');
-    expect(await place(fake.seed.spring(set))).toMatchObject({ kind: 'play', card: 'snare', on: { kind: 'post', thread, title: 'Hello', seq: 2 }, from: null, at: null });
+    expect(await place(fake.seed.spring(set))).toEqual({ kind: 'play', card: 'snare', on: { kind: 'post', thread, title: 'Hello', seq: 2 }, from: null, at: null, board });
     // Beyond a post: a character (its name, null before its debut), a thread and a board.
     const mine = fake.seed.post(thread, anaFace, 'Mine.');
-    expect(await place(fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine }))).toMatchObject({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from: { kind: 'post', thread, title: 'Hello', seq: 3 }, at: null });
+    expect(await place(fake.seed.reach(boFace, 'character', anaFace, 'glint', { post: mine }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from: { kind: 'post', thread, title: 'Hello', seq: 3 }, at: null, board });
     const unborn = fake.seed.staff('ghost', 'Not Yet', 'mod', { debuted: false });
     const sys = fake.seed.thread('announcements', null, 'Notice').thread;
     const theirs = fake.seed.staffPost(unborn, sys, 'Hidden.');
-    expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toMatchObject({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null }, from: { kind: 'post', thread: sys, title: 'Notice', seq: 2 }, at: null });
-    expect(await place(fake.seed.reach(boFace, 'thread', thread, 'glint'))).toMatchObject({ kind: 'play', card: 'glint', on: { kind: 'thread', id: thread, title: 'Hello' }, from: null, at: null });
+    expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null }, from: { kind: 'post', thread: sys, title: 'Notice', seq: 2 }, at: null, board: await boardId(fake, 'announcements') });
+    expect(await place(fake.seed.reach(boFace, 'thread', thread, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'thread', id: thread, title: 'Hello' }, from: null, at: null, board });
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
-    expect(await place(fake.seed.reach(boFace, 'board', general.id, 'glint'))).toMatchObject({ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' }, from: null, at: null });
+    expect(await place(fake.seed.reach(boFace, 'board', general.id, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' }, from: null, at: null, board: await boardId(fake, 'announcements') });
     // A card that kept an old place number (staged last, since it takes one): still a play, never a post.
     const old = fake.seed.card(anaFace, opener, 'whoops');
     fake.seed.legacyNumber(old);
-    expect(await place(old)).toMatchObject({ kind: 'play', card: 'whoops', on: post, from: null, at: null });
+    expect(await place(old)).toEqual({ kind: 'play', card: 'whoops', on: post, from: null, at: null, board });
   });
 
   test('a play on a board names the board as it is called now: a rename in force shows, and its end gives the old name back (0152)', async () => {
@@ -1183,16 +1209,17 @@ describe('what a list row shows', () => {
       expect(row).toEqual(one);
       return [one, (await fake.boards()).find((b) => b.id === general.id)?.name];
     };
-    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name }, from: null, at: null }, name];
-    expect(await names()).toMatchObject(on('General'));
+    const system = await boardId(fake, 'announcements');
+    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name }, from: null, at: null, board: system }, name];
+    expect(await names()).toEqual(on('General'));
     fake.seed.staff('boss', 'The Boss', 'boss');
     const first = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
-    expect(await names()).toMatchObject(on('Toast Palace'));
+    expect(await names()).toEqual(on('Toast Palace'));
     fake.seed.endMove(first, { why: 'reversed' });
-    expect(await names()).toMatchObject(on('General'));
+    expect(await names()).toEqual(on('General'));
     // A second rename, after the first has ended: the place follows it too.
     fake.seed.move('boss', { board: 'general', name: 'Crumb Hall' });
-    expect(await names()).toMatchObject(on('Crumb Hall'));
+    expect(await names()).toEqual(on('Crumb Hall'));
   });
 
   test('a thread spun from an update has the update\'s place, and a play on an update lands on the update', async () => {
@@ -1202,7 +1229,7 @@ describe('what a list row shows', () => {
     expect(spun.thread.origin).toEqual({ kind: 'update', act: update, title: 'Traps bite' });
     const played = fake.seed.card(anaFace, update, 'whoops');
     const fromPlay = must(await fake.spin(played, anaFace, 'About the play', 'b'));
-    expect(fromPlay.thread.origin).toMatchObject({ kind: 'play', card: 'whoops', on: { kind: 'update', act: update, title: 'Traps bite' }, from: null, at: null });
+    expect(fromPlay.thread.origin).toEqual({ kind: 'play', card: 'whoops', on: { kind: 'update', act: update, title: 'Traps bite' }, from: null, at: null, board: await boardId(fake, 'announcements') });
   });
 
   test('spunFromMany reads the threads spun from any of several Acts at once, and postPlays the card plays on one', async () => {
@@ -1476,8 +1503,8 @@ describe('what a list row shows', () => {
       const at = { kind: 'post', thread, title: 'Hello', seq: 3 };
       const place = async (args: Parameters<typeof fake.spin>) => (await fake.thread(must(await fake.spin(...args)).thread.id))?.origin;
       // The spin may name any post of the character the play is on, not only the one it was cast from.
-      expect(await place([play, anaFace, 'At', 'b', undefined, pressedAt])).toMatchObject({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from, at });
-      expect(await place([play, anaFace, 'None', 'b'])).toMatchObject({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from, at: null });
+      expect(await place([play, anaFace, 'At', 'b', undefined, pressedAt])).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from, at, board: await boardId(fake, 'general') });
+      expect(await place([play, anaFace, 'None', 'b'])).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: anaFace, name: 'Ana Face' }, from, at: null, board: await boardId(fake, 'general') });
     });
   });
 
@@ -7176,8 +7203,9 @@ describe('polls (0395, 0396)', () => {
     const { fake, id, anaFace, thread, post, ana } = await poll();
     const ballot = must(await fake.castBallot(id, anaFace, [1])).act;
     const on = { kind: 'post', thread, title: 'Hello', seq: post.seq };
+    const board = await boardId(fake, 'general');
     const polled = must(await fake.spin(id, anaFace, 'About the poll', 'b'));
-    expect(polled.thread.origin).toMatchObject({ kind: 'poll', question: 'Which?', on });
+    expect(polled.thread.origin).toEqual({ kind: 'poll', question: 'Which?', on, board });
     const origin = (await fake.threadPage(polled.thread.id, { page: 1 }, null, []))!.origin!;
     expect([origin.polls.map((x) => x.act.id), origin.at]).toEqual([[id], { thread, seq: post.seq }]);
     expect(origin.polls[0]!.counts).toEqual([0, 1, 0]);
@@ -7901,29 +7929,30 @@ describe('a rewind: a card that shows a post as it was and freezes it (0413_rewi
 
 /* A report, its verdict, an appeal and its ruling are origins with a place, and an exchange reads them (spin-mod-answers plan, Tasks 1 and 2; 0422). */
 describe('an ask or an answer as an origin', () => {
-  function desk() {
+  async function desk() {
     const w = world();
+    const board = await boardId(w.fake, 'general');
     const mod = w.fake.seed.staff('s-mod', 'Mod Staff', 'mod');
     const on = { kind: 'post' as const, thread: w.thread, title: 'Hello', seq: 1 };
     const asker = { id: w.anaFace, name: 'Ana Face' };
     const staff = { id: mod, name: 'Mod Staff' };
     /** The place of a thread spun from `act`, by Ana's own mask. */
     const placeOf = async (act: string) => must(await w.fake.spin(act, w.anaFace, 'About it', 'b')).thread.origin;
-    return { ...w, mod, on, asker, staff, placeOf };
+    return { ...w, mod, on, asker, staff, placeOf, board };
   }
 
   test('a dismissed report: from its ask and from its answer, the asker, the staff and the reported post', async () => {
-    const d = desk();
+    const d = await desk();
     const report = d.fake.seed.report(d.anaFace, d.opener, 'rude');
-    const open = { kind: 'answer', spun: 'ask', ask: 'report', asker: d.asker, staff: null, punishment: null, group: null, on: d.on };
-    expect(await d.placeOf(report)).toMatchObject(open);
+    const open = { kind: 'answer', spun: 'ask', ask: 'report', asker: d.asker, staff: null, punishment: null, group: null, on: d.on, board: d.board };
+    expect(await d.placeOf(report)).toEqual(open);
     const verdict = d.fake.seed.verdict(report, d.mod, 'dismissed');
-    expect(await d.placeOf(report)).toMatchObject({ ...open, staff: d.staff });
-    expect(await d.placeOf(verdict)).toMatchObject({ ...open, spun: 'answer', staff: d.staff });
+    expect(await d.placeOf(report)).toEqual({ ...open, staff: d.staff });
+    expect(await d.placeOf(verdict)).toEqual({ ...open, spun: 'answer', staff: d.staff });
   });
 
   test('a report heard as a visit and one that backfired read the same as a dismissed one', async () => {
-    const d = desk();
+    const d = await desk();
     const report = d.fake.seed.report(d.anaFace, d.opener, 'rude');
     const visit = d.fake.seed.visit(d.mod, d.opener, {});
     const verdict = d.fake.seed.verdict(report, d.mod, 'visit', { visit });
@@ -7934,48 +7963,48 @@ describe('an ask or an answer as an origin', () => {
   });
 
   test('an appeal of an infraction names the infraction\'s post, from its ask and from its ruling', async () => {
-    const d = desk();
+    const d = await desk();
     const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
     const appeal = d.fake.seed.appeal(d.boFace, inf, 'please');
     const asker = { id: d.boFace, name: 'Bo Face' };
-    const want = { kind: 'answer', spun: 'ask', ask: 'appeal', asker, staff: null, punishment: 'infraction', group: null, on: d.on };
-    expect(await d.placeOf(appeal)).toMatchObject(want);
+    const want = { kind: 'answer', spun: 'ask', ask: 'appeal', asker, staff: null, punishment: 'infraction', group: null, on: d.on, board: d.board };
+    expect(await d.placeOf(appeal)).toEqual(want);
     const ruling = d.fake.seed.ruling(appeal, d.mod, 'reduced');
-    expect(await d.placeOf(ruling)).toMatchObject({ ...want, spun: 'answer', staff: d.staff });
-    expect(await d.placeOf(appeal)).toMatchObject({ ...want, staff: d.staff });
+    expect(await d.placeOf(ruling)).toEqual({ ...want, spun: 'answer', staff: d.staff });
+    expect(await d.placeOf(appeal)).toEqual({ ...want, staff: d.staff });
   });
 
   test('an appeal of a ban names the post of the infraction the ban followed', async () => {
-    const d = desk();
+    const d = await desk();
     const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
     const ban = d.fake.seed.ban(d.boFace, d.fake.clock.now() + DAY, { infraction: inf });
     const appeal = d.fake.seed.appeal(d.boFace, ban, 'please');
-    expect(await d.placeOf(appeal)).toMatchObject({ kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'ban', group: null, on: d.on });
+    expect(await d.placeOf(appeal)).toEqual({ kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'ban', group: null, on: d.on, board: d.board });
   });
 
   test('an appeal of a move names its group and the move\'s own line, from its ask and from its ruling', async () => {
-    const d = desk();
+    const d = await desk();
     const move = d.fake.seed.groupMove('s-mod', { character: d.boFace, group: 'trialMembers' });
     const appeal = d.fake.seed.appeal(d.boFace, move, 'please');
     const line = (await d.fake.act(move))!;
     expect(line.seq).not.toBeNull();
     const on = { kind: 'post', thread: line.thread, title: (await d.fake.thread(line.thread))!.title, seq: line.seq };
-    const want = { kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'move', group: 'trialMembers', on };
-    expect(await d.placeOf(appeal)).toMatchObject(want);
+    const want = { kind: 'answer', spun: 'ask', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: null, punishment: 'move', group: 'trialMembers', on, board: await boardId(d.fake, 'announcements') };
+    expect(await d.placeOf(appeal)).toEqual(want);
     const ruling = d.fake.seed.ruling(appeal, d.mod, 'upheld');
-    expect(await d.placeOf(ruling)).toMatchObject({ ...want, spun: 'answer', staff: d.staff });
+    expect(await d.placeOf(ruling)).toEqual({ ...want, spun: 'answer', staff: d.staff });
   });
 
   test('a ruling on a ban names the ban\'s infraction post', async () => {
-    const d = desk();
+    const d = await desk();
     const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
     const ban = d.fake.seed.ban(d.boFace, d.fake.clock.now() + DAY, { infraction: inf });
     const ruling = d.fake.seed.ruling(d.fake.seed.appeal(d.boFace, ban, 'please'), d.mod, 'reduced');
-    expect(await d.placeOf(ruling)).toMatchObject({ kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: d.staff, punishment: 'ban', group: null, on: d.on });
+    expect(await d.placeOf(ruling)).toEqual({ kind: 'answer', spun: 'answer', ask: 'appeal', asker: { id: d.boFace, name: 'Bo Face' }, staff: d.staff, punishment: 'ban', group: null, on: d.on, board: d.board });
   });
 
   test('a report of an Act with no place number has no post in its place', async () => {
-    const d = desk();
+    const d = await desk();
     const inf = d.fake.seed.infraction(d.fake.seed.visit(d.mod, d.opener, {}));
     expect((await d.fake.act(inf))!.seq).toBeNull();
     const report = d.fake.seed.report(d.anaFace, inf, 'odd');
@@ -7983,7 +8012,7 @@ describe('an ask or an answer as an origin', () => {
   });
 
   test('an asker that has not debuted has no answer place, and an answerer that has not debuted and is no staff is null', async () => {
-    const d = desk();
+    const d = await desk();
     const ghost = d.fake.seed.character(d.ana, 'Ghost', 'face', { debuted: false });
     const report = d.fake.seed.report(ghost, d.opener, 'rude');
     /* Spun by a character of the player's that may: the origin falls through to its own seq (none), as SQL does. */
@@ -7996,12 +8025,12 @@ describe('an ask or an answer as an origin', () => {
   });
 
   test('a post as an origin keeps its own place', async () => {
-    const d = desk();
-    expect(await d.placeOf(d.opener)).toMatchObject({ kind: 'post', thread: d.thread, title: 'Hello', seq: 1 });
+    const d = await desk();
+    expect(await d.placeOf(d.opener)).toEqual({ kind: 'post', thread: d.thread, title: 'Hello', seq: 1, board: d.board });
   });
 
   test('filing a report or an appeal answers with the answer\'s Act, and the log rows carry it', async () => {
-    const d = desk();
+    const d = await desk();
     d.fake.seed.wallet(d.ana, 500);
     const filed = must(await d.fake.fileReport(d.anaFace, d.opener, 'rude'));
     expect(filed.answer).toEqual(expect.any(String));
@@ -8018,13 +8047,13 @@ describe('an ask or an answer as an origin', () => {
   });
 
   test('an unanswered report\'s log row has no answer', async () => {
-    const d = desk();
+    const d = await desk();
     d.fake.seed.report(d.anaFace, d.opener, 'rude');
     expect((await d.fake.log()).reports[0]?.answer).toBeNull();
   });
 
   test('an exchange reads from an ask, from an answer and from an unanswered ask, and refuses a post', async () => {
-    const d = desk();
+    const d = await desk();
     const report = d.fake.seed.report(d.anaFace, d.opener, 'rude');
     const unanswered = d.fake.seed.report(d.anaFace, d.opener, 'again');
     const verdict = d.fake.seed.verdict(report, d.mod, 'dismissed');
