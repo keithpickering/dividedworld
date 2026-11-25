@@ -62,6 +62,15 @@ test('a play adds nothing for the first curtain, 1.00 for the second and 2.00 fo
   assert.equal(itsCurtains.playPrice(settings, characterTarget, config, [curtain('a'), curtain('b')]), 0, 'off a post, nothing');
 });
 
+test('the price counts only the post\'s own curtains: another card\'s play and a curtain above the post add nothing', () => {
+  const config = { fabric: 'red' as const };
+  const other: CardEffect = { card: 'below-the-fold', act: 'x', reach: 'post' };
+  const above: CardEffect = { card: 'its-curtains', act: 'y', reach: 'thread' };
+  const unmarked: CardEffect = { card: 'its-curtains', act: 'z' };
+  assert.equal(itsCurtains.playPrice(settings, post(10), config, [other, above]), 0);
+  assert.equal(itsCurtains.playPrice(settings, post(10), config, [unmarked, other, above]), 100, 'a play with no reach is the post\'s own');
+});
+
 test('an override of the second and third surcharges reaches the price', () => {
   const tuned = withOverrides(settings, { economy: { 'itsCurtains.secondAdd': 250, 'itsCurtains.thirdAdd': 400 } });
   assert.equal(itsCurtains.playPrice(tuned, post(10), { fabric: 'red' }, [curtain('a')]), 250);

@@ -44,6 +44,7 @@ export const itsCurtains: CardRules<{ fabric: Fabric }> = {
   seen: (p) => `${who(p)} hid this post behind a curtain, ${p.ago}: each reader opens it with a press to see the post, and its author.`,
   playPrice: (settings, target, _config, effects) => {
     if (target.reach !== 'post') return 0;
+    /* playPrice is given no clock, so an ended curtain is read against the wall clock, as Laugh Track's price reads it. */
     const up = effects.filter((e) => (e.reach === undefined || e.reach === 'post') && e.card === 'its-curtains' && isLive(e)).length;
     if (up === 0) return 0;
     return economyOf(settings, up === 1 ? 'itsCurtains.secondAdd' : 'itsCurtains.thirdAdd');
