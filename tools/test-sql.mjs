@@ -61,7 +61,8 @@
  * committed through an end-to-end run or a race test's dblink. And the function statistics, which say which client reads a
  * test called, a call in a rolled-back transaction included, are summed over every file; the comparison (uncalledReads) runs
  * once on the sum after the last file, since a read one file leaves uncalled is another's to call. A run with a pattern reads
- * a part of the suite and skips that comparison.
+ * a part of the suite and skips that comparison, and says so (`skipped`, under `sql: coverage`). A killed file's clone is not read
+ * (see below): its counts are missing from the sum, and the file has already failed the run.
  *
  * A hang fails, and names its file. Every connection to a clone, each file's psql and every
  * dblink session a race test opens, starts with SESSION_BOUNDS, set on the database itself so no helper
@@ -379,6 +380,8 @@ export function e2eRefusal(text) {
   return read ? `reads ${read}, which an end-to-end file may not: it takes a database from databaseBefore() or migratedDatabase() (supabase/tests/e2e/psql-db.ts), never by replaying the migrations itself` : null;
 }
 
+/** Whether a file's failure is its kill at FILE_TIMEOUT_MS (what killedWhy says), as opposed to an error it answered. */
+const wasKilled = (err) => typeof err === 'string' && err.startsWith('did not finish within');
 const timedOut = (err) => err.code === 'ETIMEDOUT' || (err.signal != null && err.status == null);
 const killedWhy = () => `did not finish within ${FILE_TIMEOUT_MS / 1000}s and was killed: a hang that neither lock_timeout (${SESSION_BOUNDS.lock_timeout}) nor statement_timeout (${SESSION_BOUNDS.statement_timeout}) ended`;
 
@@ -435,9 +438,11 @@ function main() {
     try {
       if (!err) {
         err = run(cloneUrl);
-        /* Read after the file, before the drop, even from a file that failed: its calls count, and its drift is named if the file itself was fine. */
-        const after = psqlLines(cloneUrl, afterFileSql);
-        if (after.error) err ??= `could not read the drift and the function statistics:\n${after.error}`;
+        /* Read after the file, before the drop, even from a file that failed: its calls count, and its drift is named if the file itself was fine.
+           Not from a file that was killed: its backend may be the one that is stuck, and a read on its clone could wait out the file bound again. */
+        const after = wasKilled(err) ? null : psqlLines(cloneUrl, afterFileSql);
+        if (after === null) { /* killed: its counts and drift are not read, and the drop below goes straight on */ }
+        else if (after.error) err ??= `could not read the drift and the function statistics:\n${after.error}`;
         else {
           const read = parseAfterFile(after.lines);
           counts.push(read.calls);
@@ -460,8 +465,11 @@ function main() {
   };
 
   console.log(`\nsql: template database ${template}`);
-  if (!step('create', psql(url, `create database ${template};\n${settingsSql(template, url)}`))) process.exit(1);
+  /* The creation and the settings are one call that may fail between the two, with the database made: so the drop below covers it, and a
+     failure here returns rather than exits, which would skip the drop. */
+  const made = psql(url, `create database ${template};\n${settingsSql(template, url)}`);
   try {
+    if (!step('create', made)) return 1;
     const [shimFile, ...migrationPaths] = migrationFiles();
     if (!step('setup/auth-shim.sql', psql(templateUrl, fs.readFileSync(shimFile, 'utf8')))) return 1;
 

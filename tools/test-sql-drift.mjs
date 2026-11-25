@@ -6,7 +6,7 @@
  * tools/test-sql.mjs reads play_post_drift() (supabase/migrations/0408_play_post.sql) on each file's clone after the file, and
  * `driftCheck` is that read on one database. A check that has only ever passed proves that it runs, not that it detects ("A guard that
  * has never been red is not known to work"), and tools/test-sql-refusal.mjs can only stand a psql in for the database. So this builds
- * a real template from the migrations and the fixtures, as the suite does, clones it as the suite does (cloneSql), plays a card on a
+ * a real template from the migrations and the fixtures, as the suite does (its settings first, the one `vacuum (analyze)` last), clones it as the suite does (cloneSql), plays a card on a
  * post on the clone, and writes the refund the play's own trigger (play_post_on_refund) would have kept a row for, with that trigger
  * disabled: `driftCheck` must fail naming the play. A clone nothing was done to must pass.
  *
@@ -17,7 +17,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { cloneSql, driftCheck, migrationFiles, refusal } from './test-sql.mjs';
+import { cloneSql, driftCheck, migrationFiles, refusal, settingsSql } from './test-sql.mjs';
 
 const url = process.env.DATABASE_URL;
 const why = refusal(url);
@@ -37,10 +37,15 @@ function check(name, condition, detail = '') {
 const template = `kayfabb_scratch_drift_${process.pid}_${Date.now()}`;
 const clone = `${template}_1`;
 try {
-  psql(url, `create database ${template};`);
+  psql(url, `create database ${template};\n${settingsSql(template, url)}`);
   for (const f of [...migrationFiles(), fixtures]) psql(at(template), fs.readFileSync(f, 'utf8'));
+  psql(at(template), 'vacuum (analyze);');
   psql(url, cloneSql(template, clone, url));
   const target = at(clone);
+
+  /* Built as the runner builds it: its settings given first, one vacuum (analyze) after the fixtures. */
+  check('the template carries the suite\'s bounds and names itself in kayfabb.scratch_url', psql(at(template), "select current_setting('lock_timeout') || ' ' || current_setting('kayfabb.scratch_url')").trim() === `30s ${at(template)}`);
+  check('and every table in public is analyzed, as the one vacuum leaves it', psql(at(template), "select count(*) from pg_class c join pg_namespace n on n.oid = c.relnamespace where n.nspname = 'public' and c.relkind = 'r' and c.reltuples < 0").trim() === '0');
 
   check('a clone of a template the migrations and fixtures made has no drift', driftCheck(target) === null, String(driftCheck(target)));
 

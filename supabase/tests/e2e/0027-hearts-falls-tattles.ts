@@ -17,13 +17,12 @@
  * the fake judge's "nothing found" says anything of a weight; and the weight itself is public plays only, so nothing here reads an owner.
  *
  * Stepped over, as 0012, 0015 and 0017 step over theirs: the visits' end times (a state row is moved to a minute ago so the filing run may file), the Mod's office (written as the
- * office log's seed row if an earlier file did not), the season's Boss, and the players' wallets and hands (a purchase is another function's: `wallets` and `card_ledger` are written
- * directly, as 0002 and 0020 do). Every board, account and character is this file's own and every assertion is about its ids, since the files before leave committed rows.
+ * office log's seed row if the template has none), the season's Boss, and the players' wallets and hands (a purchase is another function's: `wallets` and `card_ledger` are written
+ * directly, as 0002 and 0020 do). Every board, account and character is this file's own and every assertion is about its ids.
  *
- * Order: a high number, so it runs after the others (tools/test-sql.mjs sorts the files). It relies on nothing a file before it commits except what any file of the stage leaves: the
- * export's Storage is a fake that serves any object a row names (the files before this one leave avatar rows), and the imported database is told of the `export_probe` table 0003 commits,
- * if it is there. It leaves its own committed rows behind and drops the database it imports into.
- * Reads only the scratch database tools/test-sql.mjs made (scratchUrl refuses any other); run by tools/test-sql.mjs.
+ * Order does not matter: tools/test-sql.mjs runs this file on a clone of its own, so no other file's rows are here. The export's Storage is a fake that serves any object a row names
+ * (the template's fixtures may name avatar files), and the file's own committed rows go with its clone. It drops the database it imports into.
+ * Reads only the clone tools/test-sql.mjs made for it (scratchUrl refuses any other); run by tools/test-sql.mjs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -378,8 +377,6 @@ test('a fall lands on the caster, hearts take points and a ban off, a tattle wei
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
     for (const t of ['warn_reliefs', 'ban_lifts']) assert.ok(fs.existsSync(path.join(dir, `public.${t}.jsonl`)), `the export holds ${t}`);
-    // A table an earlier file committed outside the migrations (0003's probe) is made in the fresh database too, as 0003 makes it.
-    if (psqlOn(from, `select to_regclass('public.export_probe') is not null`) === 't') psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
     const after = contents(fresh.toString());

@@ -3,7 +3,7 @@
  * design sections 1, 5, 6 and 9). Of the plan's cases C1 to C16 only C1, C3, C5, C10 and C12 run here, as named below.
  * The path is the act function's own (supabase/functions/act/core.ts), the settlement job's core (supabase/functions/settle/core.ts)
  * and the export and import tools (tools/export-instance.mjs, tools/import-instance.mjs), against the real migrations on the
- * scratch database, with the instance's REAL cards seeded (Feelin' Fab, Last Word, Good Vibes, Main Event and Mooch).
+ * file's own clone of the suite's template, with the instance's REAL cards seeded (Feelin' Fab, Last Word, Good Vibes, Main Event and Mooch).
  *
  * The day: Ann's character spins a post of Bob's, so the spun thread S opens with Ann's `spin` Act at seq 1, and Bob's
  * character replies once. Then, each through the act function:
@@ -19,14 +19,14 @@
  * imported again to the same forum, and the imported forum reads the plays the same.
  *
  * Stepped over, as 0001, 0027 and 0003 step over theirs: the players' wallets and hands (`wallets` and `card_ledger` are
- * written directly), and the clock. The act function writes at the wall clock, but the settlement's window opens where the files
- * before this one left the settlements (ahead of it), and the skim needs the plays inside the window's reach, so this file's
+ * written directly), and the clock. The act function writes at the wall clock, but the settlement's window opens where the
+ * settlements stand on the clone (none yet, so at the first season's start, behind now), and the skim needs the plays inside the window's reach, so this file's
  * own Acts, reactions and threads are carried to just after the window's start, all by one distance (their order and gaps are
  * kept). Every board, account and character is this file's own, and every assertion is about its ids.
  *
- * Order: a high number, so it runs after the others (tools/test-sql.mjs sorts the files). It leaves its own committed rows
- * behind and drops the database it imports into. Reads only the scratch database tools/test-sql.mjs made (scratchUrl
- * refuses any other); run by tools/test-sql.mjs.
+ * Order does not matter: tools/test-sql.mjs runs this file on a clone of its own, so no other file's rows are here and its own
+ * committed rows go with the clone. It drops the database it imports into. Reads only the clone tools/test-sql.mjs made for it
+ * (scratchUrl refuses any other); run by tools/test-sql.mjs.
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -191,7 +191,7 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   // ---- The clock: this file's Acts, reactions and threads are carried to just after the window's start, by one distance. ----
   // No guard-free way exists. Moving only the reactions (as 0012 does) is not enough: settlement also reads the Mooch plays made before
   // the window and still up in it (migration 0370, skim_up: made within the card's week before window_start and ending after it). The act
-  // function stamped them at the wall clock, and the window opens wherever the earlier files left the settlements, which can be past that
+  // function stamped them at the wall clock, and the window opens wherever the settlements stand on the clone, which can be past that
   // week. Only an update of the Acts' own time puts them inside it, so acts_no_update is off for this one transaction. Replica mode skips the
   // ordinary triggers but not an ALWAYS one (0001_core.sql), hence the alter; it is enabled again, as ALWAYS, before the commit (an error
   // rolls the transaction back, the trigger's state with it).
@@ -211,10 +211,10 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
     commit;`);
 
   // ---- The settlement: the skim is paid on the opening post as on the plain post, and the opening post's reactions go to the spinner. ----
-  // The settlement reads every character on the instance, and 0028 (the file before this one) left its fixture committed, its characters in the test
+  // The settlement reads every character on the instance, and the clone holds the fixtures' characters (the template's), in the test
   // fixtures' classes (alpha, beta: supabase/tests/setup/fixtures.sql:47), which the instance has not. The settle engine refuses a held class the instance lacks
-  // (engine/rules/settle.ts:208), so the instance this settles with is the real one plus those classes, each earning nothing: the leftover characters are in the
-  // input and score nothing, and nothing of theirs is edited or removed. Any file after this one that settles must do the same.
+  // (engine/rules/settle.ts:208), so the instance this settles with is the real one plus those classes, each earning nothing: the fixtures' characters are in the
+  // input and score nothing, and nothing of theirs is edited or removed. Any file that settles on a clone must do the same.
   const held = sql(`select coalesce(string_agg(distinct class_key, ','), '') from class_history`).split(',').filter((k) => k !== '');
   const known = new Set(instance.classes.map((c) => c.key));
   const settling = { ...instance, classes: [...instance.classes, ...held.filter((k) => !known.has(k)).map((k) => ({ key: k, name: k, earn: () => [] }))] };
@@ -275,8 +275,6 @@ test('cards land on a spun thread\'s opening post and on the spun thread, settle
   try {
     const exported = await run('export-instance.mjs', ['--from', from, '--to', dir, '--storage', oldStore.url]);
     assert.equal(exported.status, 0, exported.stderr + exported.stdout);
-    // A table an earlier file committed outside the migrations (0003's probe) is made in the fresh database too, as 0003 makes it.
-    if (psqlOn(from, `select to_regclass('public.export_probe') is not null`) === 't') psqlOn(fresh.toString(), 'create table public.export_probe (id integer primary key, amount numeric(10,2), tags text[], said text);');
     const imported = await run('import-instance.mjs', ['--from', dir, '--to', fresh.toString(), '--storage', newStore.url]);
     assert.equal(imported.status, 0, imported.stderr + imported.stdout);
     const after = contents(fresh.toString());

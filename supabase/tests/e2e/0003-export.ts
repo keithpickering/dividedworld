@@ -1,8 +1,9 @@
 /**
  * An instance exported and imported into a fresh database is the same instance, table by
  * table ("Portable by construction"; plan Task 15): tools/export-instance.mjs and
- * tools/import-instance.mjs, run as an admin would run them, on the scratch database
- * tools/test-sql.mjs made and on a second one made here from the migrations alone.
+ * tools/import-instance.mjs, run as an admin would run them, on the clone tools/test-sql.mjs made for this file
+ * and on a second database, a clone of the runner's `migrated` snapshot (migratedDatabase in psql-db.ts: the
+ * shim and every migration, no fixtures).
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
@@ -651,7 +652,7 @@ test('an instance exported and imported into a fresh database is the same instan
     (select count(*) from (select * from surface_cuts except select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c) x) || '|' ||
     (select count(*) from (select c.* from surfaces s cross join lateral surface_cuts_of(s.play) c except select * from surface_cuts) x)`);
   assert.equal(narrowRows(from), '2|1|0|0|0|0', 'the fixture\'s wall holds a mark for its draw and its wash and a cut for the one draw the wash took from, and the rows equal those the Acts give');
-  // Part 3's rows (0357, 0359), each asserted by what it holds, not by being there: a veil of each kind live and ended (the fixture's own posts, since the end-to-end files before this one leave rows in the same database), a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind.
+  // Part 3's rows (0357, 0359), each asserted by what it holds, not by being there: a veil of each kind live and ended (the fixture's own posts, which the clone's template holds), a card kind with each flag, the stand-in, and a post-local reaction with a reaction and a tally of its kind.
   const part3 = (url: string) => psqlOn(url, `select
     (select string_agg(v.veil || ':' || (v.ends_at > now())::text, ',' order by v.veil, v.ends_at > now()) from post_veils v join acts a on a.id = v.post and (a.payload ->> 'body' like 'Veiled, %' or a.payload ->> 'body' like 'Blind, %')) || '|' ||
     (select string_agg(key || ':' || coalesce(veil, '-') || ':' || adds_reaction::text, ',' order by key) from card_kinds where key in ('expveil', 'expblind', 'expreact')) || '|' ||

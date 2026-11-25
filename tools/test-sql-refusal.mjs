@@ -100,19 +100,28 @@ fs.appendFileSync(${JSON.stringify(starts)}, Date.now() + '\\n');
 const sql = fs.readFileSync(0, 'utf8');
 fs.appendFileSync(${JSON.stringify(calls)}, process.argv.slice(2).join(' ') + '\\n' + sql + '\\n\\x1e\\n');
 /* The after-file call, on the clone of the first file: answered with the drift rows DRIFT names (\`drift|play|why\`, as psql -A -t -F '|' prints them). */
-if (process.env.DRIFT && /^select pg_stat_force_next_flush\\(\\);/.test(sql) && !fs.existsSync(${JSON.stringify(hung)} + '.drift')) {
-  fs.writeFileSync(${JSON.stringify(hung)} + '.drift', '1');
-  process.stdout.write('drift|' + process.env.DRIFT + '\\n');
-}
-if (/^begin;\\n/.test(sql) && (process.env.HANG || process.env.FAIL) && !fs.existsSync(${JSON.stringify(hung)})) {
-  fs.writeFileSync(${JSON.stringify(hung)}, String(Date.now()));
-  if (process.env.FAIL) { process.stderr.write('ERROR:  planted failure'); process.exit(1); }
-  setTimeout(() => {}, 60_000);
+/* A planted behavior happens once: the first psql to create the marker file is the one that takes it, and with files in flight together two cannot both. */
+const once = (file, text = '1') => { try { fs.writeFileSync(file, text, { flag: 'wx' }); return true; } catch { return false; } };
+if (process.env.DRIFT && /^select pg_stat_force_next_flush\\(\\);/.test(sql) && once(${JSON.stringify(hung)} + '.drift')) process.stdout.write('drift|' + process.env.DRIFT + '\\n');
+/* The template's creation, with its settings in the same call: the database is made, then the settings fail. */
+if (process.env.FAIL_SETTINGS && /^create database kayfabb_scratch_\\d+_\\d+;/.test(sql)) { process.stderr.write('ERROR:  planted settings failure'); process.exit(1); }
+if (/^begin;\\n/.test(sql)) {
+  /* FAIL_N: the first N files fail, each with an error of two lines. SLEEP_MS: a file takes that long, and its span is recorded. */
+  for (let k = 1; k <= Number(process.env.FAIL_N || 0); k++) if (once(${JSON.stringify(hung)} + '.n' + k)) { process.stderr.write('ERROR:  planted failure\\nDETAIL:  a second line'); process.exit(1); }
+  if (process.env.HANG || process.env.FAIL) if (once(${JSON.stringify(hung)}, String(Date.now()))) {
+    if (process.env.FAIL) { process.stderr.write('ERROR:  planted failure'); process.exit(1); }
+    setTimeout(() => {}, 60_000);
+  }
+  if (process.env.SLEEP_MS) {
+    const began = Date.now();
+    await new Promise((r) => setTimeout(r, Number(process.env.SLEEP_MS)));
+    fs.appendFileSync(${JSON.stringify(calls)} + '.spans', began + ' ' + Date.now() + '\\n');
+  }
 }
 `);
 /** One run of the suite with the recording psql. `pattern` limits it to the files whose names match; `hang`, `fail` and `drift` plant what is above. */
 function boundedSuite({ pattern = '', hang = false, fail = false, drift = '', keep = '', timeoutMs = '1500', e2eDir = '', extraEnv = {} } = {}) {
-  for (const f of [calls, hung, hung + '.drift', starts]) fs.rmSync(f, { force: true });
+  for (const f of [calls, calls + '.spans', hung, hung + '.drift', hung + '.n1', hung + '.n2', starts]) fs.rmSync(f, { force: true });
   const env = { ...process.env, KAYFABB_PSQL_SHIM: hanger, DATABASE_URL: 'postgres://postgres:pg@localhost:5432/postgres', KAYFABB_SQL_FILE_TIMEOUT_MS: timeoutMs, HANG: hang ? '1' : '', FAIL: fail ? '1' : '', DRIFT: drift, KAYFABB_SQL_KEEP: keep, ...(e2eDir ? { KAYFABB_SQL_E2E_DIR: e2eDir } : {}), ...extraEnv };
   /* The suite's own end-to-end files would try a clone this psql never made; a bound keeps a slip here from hanging the
      build. It is wide, since the whole run under a busy build (a Node start for each psql, the end-to-end files) took 85s on Windows. */
@@ -214,6 +223,11 @@ const full = boundedSuite();
   check('and the files after it still run', /PASS  0001-/.test(hang.out), hang.out.slice(0, 400));
   const clonesOf = (r) => r.records.map(createdClone).filter(Boolean).map((m) => m[1]);
   check('and its clone is dropped', clonesOf(hang).length > 0 && clonesOf(hang).every((db) => hang.records.some((c) => droppedDb(c) === db)));
+  /* A killed file's backend may be the one that is stuck; a read on its clone could wait out the file bound again, so it goes straight to the drop. */
+  const hungClone = dbOf(hang.records.find(isFile) ?? '');
+  const readsOf = (r, db) => r.records.filter((c) => dbOf(c) === db && bodyOf(c) === runner.afterFileSql.trim()).length;
+  check('the killed file\'s clone is not read after it, and is dropped', Boolean(hungClone) && readsOf(hang, hungClone) === 0 && hang.records.some((c) => droppedDb(c) === hungClone), `${readsOf(hang, hungClone)} reads of ${hungClone}`);
+  check('while the files that finished are read', hang.records.filter(isFile).map(dbOf).filter((db) => db !== hungClone).every((db) => readsOf(hang, db) === 1));
 
   const fail = boundedSuite({ pattern: small, fail: true });
   check('a planted failure fails that file\'s line and the suite', fail.status === 1 && new RegExp(`FAIL  ${first.replace('.', '\\.')}  [\\d.]+s\\s+ERROR:  planted failure`).test(fail.out), fail.out.split('\n').filter((l) => /FAIL/.test(l)).slice(0, 2).join(' | '));
@@ -234,6 +248,18 @@ const full = boundedSuite();
   check('and no other file', (drifted.out.match(/FAIL  0\d{3}-/g) ?? []).length === 1, drifted.out.split('\n').filter((l) => /FAIL/.test(l)).join(' | '));
   check('driftFailure is null for no rows and names every row it is given', runner.driftFailure([]) === null && /a  b\nc  d/.test(runner.driftFailure([{ name: 'a', calls: 'b' }, { name: 'c', calls: 'd' }]) ?? ''));
   check('the drifted clone is dropped', Boolean(driftClone) && drifted.records.some((c) => droppedDb(c) === driftClone));
+
+  /* The template is made and its settings fail: it is dropped, not left. */
+  const noSettings = boundedSuite({ pattern: first, extraEnv: { FAIL_SETTINGS: '1' } });
+  const madeTemplate = noSettings.records.map((c) => /^create database (kayfabb_scratch_\d+_\d+);/.exec(bodyOf(c))?.[1]).find(Boolean);
+  check('a template whose settings fail fails the run before any file', noSettings.status === 1 && /planted settings failure/.test(noSettings.out) && noSettings.records.filter(isFile).length === 0, `status ${noSettings.status}`);
+  check('and the template that was made is dropped, not leaked', Boolean(madeTemplate) && noSettings.records.some((c) => droppedDb(c) === madeTemplate), `${madeTemplate}: ${noSettings.records.length} calls`);
+
+  /* A pattern run reads part of the suite: it says so under coverage, and compares nothing. */
+  const part = boundedSuite({ pattern: first });
+  const coverageText = /sql: coverage\n([\s\S]*?)\n\s*\n/.exec(part.out)?.[1] ?? '';
+  check('a pattern run prints `skipped` under coverage', /skipped/.test(coverageText), coverageText);
+  check('and no coverage failure', !/FAIL  coverage/.test(part.out) && part.status === 0, `status ${part.status}`);
 
   /* A pattern runs the matching files only; none matching fails the run. */
   const one = boundedSuite({ pattern: '0001' });
