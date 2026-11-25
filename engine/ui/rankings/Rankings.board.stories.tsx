@@ -6,9 +6,9 @@
  * The season is the boards' as it stands after the Oct 30 settlement (the boards fixture's
  * standings): the player's own Pipewrench, Mrs. Hooligan and Spritey, the rival's Gloomba, the
  * reader's Thwompson and the crowd's four, seeded onto the fake through `fake.seed`. Two other
- * characters have said their class in public, so both ways a stranger's class shows are on the
- * page: Gloomba revealed on Oct 12, and Thwompson revealed on Oct 8 and Turned, announced, on
- * Oct 20. The page is the screen itself (the season page's Rankings tab) in the glass's page shell, as the
+ * characters have said their class in public: Gloomba revealed on Oct 12, and its reveal shows, and
+ * Thwompson revealed on Oct 8 and Turned, announced, on Oct 20, which clears it, so Thwompson's class
+ * cell is the dash (docs/plans/2026-11-25-turn-clears-reveal-design.md). The page is the screen itself (the season page's Rankings tab) in the glass's page shell, as the
  * route /season puts it (web/src/App.tsx; /rankings opens it), signed in as the player. The classes are the instance's, by their place in its list, so the story names
  * none: the first is the player's two Faces' and the second Gloomba's.
  */

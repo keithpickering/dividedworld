@@ -66,7 +66,8 @@ const PLAYED_AT = utc(29, 21, 52);
 const TURNED_AT = utc(30, 0, 35);
 /*
  * The two classes said in public, which only Rankings draws (board 13): Thwompson's long before the
- * night (it posts nowhere the boards show), and Gloomba's after the last board of its thread, 06-turn
+ * night (it posts nowhere the boards show) and cleared by its announced Turn, so Rankings shows it as the dash
+ * (docs/plans/2026-11-25-turn-clears-reveal-design.md), and Gloomba's, which shows, after the last board of its thread, 06-turn
  * at 00:35, so no postbit of Gloomba's on boards 01 to 05 says it. Thwompson's player asks a Turn,
  * announced, after the Hold board's 21:41, and the Oct 30 settlement makes it and announces it.
  */

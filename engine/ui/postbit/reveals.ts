@@ -1,17 +1,18 @@
 /**
  * What a character's postbit says of its class: the latest statement its player made public
- * (`class_reveals`), and the date of an announced Turn made after it, which makes that statement
- * out of date ("Revealed: Heel (Oct 3)", "Has Turned since (Oct 20)"). A Turn from before the
- * reveal changes nothing it says, and a Turn with no reveal says nothing about a class.
+ * (`class_reveals`), "Revealed: Heel (Oct 3)", while that statement is current. An announced Turn
+ * made after the reveal clears it, so the character has no entry until it reveals again; a Turn
+ * from before the reveal, or at its exact moment (a Turn announced with its new class writes both
+ * rows at one instant), changes nothing, and a Turn with no reveal says nothing about a class. A
+ * silent Turn is never read: only `turns_announced` reaches here.
  */
 import type { ClassReveal, Id, TurnAnnounced } from '../data/api.ts';
 
 export interface Statement {
   readonly revealed: { readonly class: string; readonly at: string } | null;
-  readonly turnedAt: string | null;
 }
 
-/** One entry for each character that has a reveal. */
+/** One entry for each character whose latest reveal no announced Turn came after. */
 export function reveals(revealed: readonly ClassReveal[], turns: readonly TurnAnnounced[]): Map<Id, Statement> {
   const latest = new Map<Id, ClassReveal>();
   for (const r of revealed) {
@@ -20,12 +21,8 @@ export function reveals(revealed: readonly ClassReveal[], turns: readonly TurnAn
   }
   const out = new Map<Id, Statement>();
   for (const [character, r] of latest) {
-    let turnedAt: string | null = null;
-    for (const t of turns) {
-      if (t.character !== character || Date.parse(t.at) <= Date.parse(r.at)) continue;
-      if (turnedAt === null || Date.parse(t.at) > Date.parse(turnedAt)) turnedAt = t.at;
-    }
-    out.set(character, { revealed: { class: r.class, at: r.at }, turnedAt });
+    if (turns.some((t) => t.character === character && Date.parse(t.at) > Date.parse(r.at))) continue;
+    out.set(character, { revealed: { class: r.class, at: r.at } });
   }
   return out;
 }

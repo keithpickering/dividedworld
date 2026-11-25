@@ -98,7 +98,7 @@ const base = {
   notes: [], rules: [{ board: GAMES, number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }],
   allowance: 2, beat: [{ id: GAMES, name: 'Games' }], ruleDaysMost: 7, expiryLeastHours: 24,
 } as const;
-const limits = { excerptChars: 300, titleMaxLength: 100 };
+const limits = { titleMaxLength: 100 };
 const mctx = { allowance: 2, beat: [GAMES], ruleDaysMost: 7, expiryLeastHours: 24 };
 
 test('a filing\'s schema, with and without a move on offer and in both modes, gives an answer repairFiling accepts or rejects by name', () => {

@@ -16,7 +16,7 @@ const character = (over: Partial<Character> = {}): Character => ({
   squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members', ...over,
 });
 const person = (over: Partial<PostbitPerson> = {}, c: Partial<Character> = {}): PostbitPerson => ({
-  character: character(c), posts: 212, standing: 650, revealed: null, turnedAt: null, ...over,
+  character: character(c), posts: 212, standing: 650, revealed: null, ...over,
 });
 const show = (p: PostbitPerson, layout: 'side' | 'stacked' = 'side') => renderInWorld(<Postbit person={p} layout={layout} />, { settings: { groups: GROUPS } });
 /* The groups the screens hold (screen_settings.groups): the ladder lowest first, then the groups a move confers. */
@@ -159,13 +159,6 @@ describe('the postbit', () => {
     expect(screen.getByRole('group')).toHaveTextContent('Revealed: Heel (Oct 3)');
   });
 
-  test('and "Has Turned since" when a later announced Turn came after it', () => {
-    show(person({ revealed: { class: 'heel', at: '2026-10-03T15:00:00Z' }, turnedAt: '2026-10-20T15:00:00Z' }));
-    const bit = screen.getByRole('group');
-    expect(bit).toHaveTextContent('Revealed: Heel (Oct 3)');
-    expect(bit).toHaveTextContent('Has Turned since (Oct 20)');
-  });
-
   test('the signature is BBCode', () => {
     renderInWorld(<Signature text="i fix things. [b]sometimes[/b] they were working." />);
     expect(document.querySelector('.kb-signature strong')).toHaveTextContent('sometimes');
@@ -175,18 +168,22 @@ describe('the postbit', () => {
 describe('reveals(): which statement of its class a character has made', () => {
   const rev = (character: string, cls: string, at: string) => ({ act: `${character}${at}`, character, class: cls, at, via: 'act' as const, thread: 't' });
   const turn = (character: string, at: string) => ({ act: `${character}${at}`, character, at, was: null, since: null });
-  test('the latest reveal, and only a Turn after it', () => {
+  test('the latest reveal shows, unless an announced Turn came strictly after it', () => {
     const out = reveals(
       [rev('a', 'face', '2026-09-01T00:00:00Z'), rev('a', 'heel', '2026-10-03T00:00:00Z'), rev('b', 'face', '2026-10-05T00:00:00Z')],
       [turn('a', '2026-09-15T00:00:00Z'), turn('a', '2026-10-20T00:00:00Z'), turn('c', '2026-10-21T00:00:00Z')],
     );
-    expect(out.get('a')).toEqual({ revealed: { class: 'heel', at: '2026-10-03T00:00:00Z' }, turnedAt: '2026-10-20T00:00:00Z' });
-    expect(out.get('b')).toEqual({ revealed: { class: 'face', at: '2026-10-05T00:00:00Z' }, turnedAt: null });
+    expect(out.has('a')).toBe(false);
+    expect(out.get('b')).toEqual({ revealed: { class: 'face', at: '2026-10-05T00:00:00Z' } });
     expect(out.has('c')).toBe(false);
   });
-  test('a Turn from before the reveal, or at its moment, says nothing: there is no "Has Turned since"', () => {
+  test('a Turn from before the reveal, or at its moment, leaves the reveal shown', () => {
     const out = reveals([rev('a', 'heel', '2026-10-03T00:00:00Z')], [turn('a', '2026-09-15T00:00:00Z'), turn('a', '2026-10-03T00:00:00Z')]);
-    expect(out.get('a')).toEqual({ revealed: { class: 'heel', at: '2026-10-03T00:00:00Z' }, turnedAt: null });
+    expect(out.get('a')).toEqual({ revealed: { class: 'heel', at: '2026-10-03T00:00:00Z' } });
+  });
+  test('a reveal made after the Turn shows again', () => {
+    const out = reveals([rev('a', 'heel', '2026-10-03T00:00:00Z'), rev('a', 'face', '2026-10-25T00:00:00Z')], [turn('a', '2026-10-20T00:00:00Z')]);
+    expect(out.get('a')).toEqual({ revealed: { class: 'face', at: '2026-10-25T00:00:00Z' } });
   });
 });
 
@@ -196,11 +193,10 @@ describe('dates', () => {
     expect(new Date('2026-10-04T03:00:00Z').getDate()).toBe(3);
   });
 
-  test('a reveal or Turn date is the reader\'s local date, like every time in a thread', () => {
+  test('a reveal date is the reader\'s local date, like every time in a thread', () => {
     expect(shortDate('2026-10-04T03:00:00Z')).toBe('Oct 3');
-    show(person({ revealed: { class: 'heel', at: '2026-10-04T03:00:00Z' }, turnedAt: '2026-11-01T02:00:00Z' }));
+    show(person({ revealed: { class: 'heel', at: '2026-10-04T03:00:00Z' } }));
     expect(screen.getByRole('group')).toHaveTextContent('Revealed: Heel (Oct 3)');
-    expect(screen.getByRole('group')).toHaveTextContent('Has Turned since (Oct 31)');
   });
 
   test('"Joined" is the calendar month the server gave, whatever the reader\'s zone', () => {

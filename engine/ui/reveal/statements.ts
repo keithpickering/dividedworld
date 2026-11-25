@@ -60,14 +60,14 @@ export function wording(s: Statement, className: (key: string) => string): strin
 }
 
 /**
- * What a finished season's row says of its character's class: the last class its player revealed that season, when, and the date of the
- * first Turn announced after it (null where none was). The row's `shown` list is the season's own, so a reveal and a Turn are read in the
- * order they were made. Null where no class was revealed.
+ * What a finished season's row says of its character's class: the last class its player revealed that season and when, or null where none
+ * was revealed or a Turn was announced after it (a Turn clears a reveal, as it does on the live table). A Turn announced with its new class
+ * is `[..., turn, reveal]` at one instant, so that reveal is the last and still counts. The row's `shown` list is the season's own, so a
+ * reveal and a Turn are read in the order they were made.
  */
-export function finalClass(shown: readonly SeasonShown[]): { readonly cls: string; readonly at: string; readonly turnedAt: string | null } | null {
+export function finalClass(shown: readonly SeasonShown[]): { readonly cls: string; readonly at: string } | null {
   let at = -1;
   shown.forEach((x, i) => { if (x.kind === 'reveal' && x.class !== null) at = i; });
-  if (at < 0) return null;
-  const turn = shown.slice(at + 1).find((x) => x.kind === 'turn');
-  return { cls: shown[at]!.class!, at: shown[at]!.at, turnedAt: turn?.at ?? null };
+  if (at < 0 || shown.slice(at + 1).some((x) => x.kind === 'turn')) return null;
+  return { cls: shown[at]!.class!, at: shown[at]!.at };
 }

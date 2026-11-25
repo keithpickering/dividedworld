@@ -57,7 +57,7 @@ function HeldPost({ stage, long = false, inked = false, first = false }: { reado
       let person: PostbitPerson | undefined;
       if (author !== null) {
         const [[character], stats, standings] = await Promise.all([api.characters([author]), api.characterStats([author]), api.standingAmounts([author])]);
-        if (character) person = { character, posts: stats[author]?.posts ?? 0, standing: standings[author] ?? null, revealed: null, turnedAt: null };
+        if (character) person = { character, posts: stats[author]?.posts ?? 0, standing: standings[author] ?? null, revealed: null };
       }
       tallies.merge(act.id, (await api.tallies([act.id]))[act.id] ?? {});
       mine.merge(act.id, await api.myReactions([act.id]));

@@ -184,7 +184,7 @@ describe('what the profile says of a class: only what its player made public', (
     expect(document.body).not.toHaveTextContent(/Heel|Face|Jabroni/u);
   });
 
-  test('the latest reveal is stated as of its date, and a later announced Turn says it has Turned since', async () => {
+  test('the latest reveal is stated as of its date, and it is the whole of what the Class fact says', async () => {
     const fake = buildWorld();
     const w = world(fake);
     fake.seed.reveal(w.pipe, w.thread, { class: 'heel', at: OCT3 });
@@ -194,7 +194,7 @@ describe('what the profile says of a class: only what its player made public', (
     expect(facts).not.toHaveTextContent('Has Turned since');
   });
 
-  test('a Turn announced after the reveal makes the statement out of date', async () => {
+  test('a Turn announced after the reveal clears the Class fact', async () => {
     const fake = buildWorld();
     const w = world(fake);
     const sys = fake.seed.thread('announcements', null, 'Turns', '');
@@ -202,8 +202,10 @@ describe('what the profile says of a class: only what its player made public', (
     fake.seed.announceTurn(w.pipe, sys.thread, { at: OCT20 });
     open(w.pipe, fake);
     const facts = await screen.findByRole('table', { name: 'About Pipewrench' });
-    await waitFor(() => expect(facts).toHaveTextContent('Revealed: Heel (Oct 3)'));
-    expect(facts).toHaveTextContent('Has Turned since (Oct 20)');
+    await waitFor(() => expect(within(facts).getByText(/^Posts/u)).toBeInTheDocument());
+    expect(facts).not.toHaveTextContent('Revealed:');
+    expect(facts).not.toHaveTextContent('Has Turned since');
+    expect(within(facts).queryByText('Class')).toBeNull();
   });
 
   test('the public record lists every reveal, and an announced Turn names the old class only if it was announced with it', async () => {

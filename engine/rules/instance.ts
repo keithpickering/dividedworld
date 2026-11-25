@@ -388,6 +388,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   rosterRecentExcluded: whole(0, 'Bosses'),
   structuralHoldHours: whole(1, 'hours'),
   microEventDailyCalls: whole(0, 'calls'),
+  /** How many threads the digest holds, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). */
   digestThreads: whole(1, 'threads', DIGEST_MOST.threads),
   digestBoards: whole(1, 'boards', DIGEST_MOST.boards),
   digestBoardDays: whole(1, 'days', DIGEST_MOST.boardDays),
@@ -398,8 +399,18 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   /** A bundle holds one to sixteen parts, as SQL's settings_held holds: a composed bundle is bounded by a setting, never by what a model proposes. */
   bundleMostParts: whole(1, 'parts', 16),
   bundleAuthoredMostParts: whole(1, 'parts', 16),
+  /** How many top posts the digest quotes, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). The same setting also caps, unscaled, the lists that are no window's flow: the standings, the moves, the quotes and the Boss's reactions. SQL's settings_held holds the same. */
   digestExcerpts: whole(1, 'posts', DIGEST_MOST.excerpts),
+  /** How many conversations with waiting replies the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling); zero shows none. SQL's settings_held holds the same. */
   digestConversations: whole(0, 'conversations', DIGEST_MOST.conversations),
+  /** How many polls the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). SQL's settings_held holds the same. */
+  digestPolls: whole(1, 'polls', DIGEST_MOST.polls),
+  /** How many spun threads the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). SQL's settings_held holds the same. */
+  digestSpins: whole(1, 'spun threads', DIGEST_MOST.spins),
+  /** How many plays the digest shows, per day of the meeting's window (a list holds the setting times the window's days, rounded up, at least one, within its ceiling). SQL's settings_held holds the same. */
+  digestPlays: whole(1, 'plays', DIGEST_MOST.plays),
+  /** The span in days the digest's standouts count over, whatever the meeting's window (a whole number from 1 to the ceiling). SQL's settings_held holds the same. */
+  digestStandoutDays: whole(1, 'days', DIGEST_MOST.standoutDays),
   digestExcerptChars: whole(1, 'characters', DIGEST_MOST.excerptChars),
   memoryOpinions: whole(1, 'opinions'),
   memoryGrudges: whole(1, 'grudges'),
