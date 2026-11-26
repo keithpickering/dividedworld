@@ -25,11 +25,13 @@ create function pg_temp.announcements() returns uuid language sql as $$
   select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'
 $$;
 
--- Sets the instance's lines and the personas' (null removes the row's value: neither set).
+-- Sets the instance's lines and the personas' (null deletes the row: that set is absent, as before 0443).
 create function pg_temp.sets(instance jsonb, personas jsonb) returns void language plpgsql as $$
 begin
-  insert into settings (key, value) values ('systemLines', coalesce(instance, '{}'::jsonb)) on conflict (key) do update set value = excluded.value;
-  insert into settings (key, value) values ('personaLines', coalesce(personas, '{}'::jsonb)) on conflict (key) do update set value = excluded.value;
+  if instance is null then delete from settings where key = 'systemLines';
+  else insert into settings (key, value) values ('systemLines', instance) on conflict (key) do update set value = excluded.value; end if;
+  if personas is null then delete from settings where key = 'personaLines';
+  else insert into settings (key, value) values ('personaLines', personas) on conflict (key) do update set value = excluded.value; end if;
 end $$;
 
 create function pg_temp.body(act uuid) returns text language sql as $$ select a.payload ->> 'body' from acts a where a.id = act $$;
@@ -78,11 +80,41 @@ begin
   perform pg_temp.sets('{"moveLanded": ["Instance: {move}."]}', '{"tl-a": {"moveMet": ["A met."]}}');
   perform pg_temp.expect('a persona with other keys falls to the instance', system_line('moveLanded', 'setRule', '{}', 'tl-a'), 'Instance: a rule.');
   perform pg_temp.sets(null, null);
+  if exists (select 1 from settings where key in ('systemLines', 'personaLines')) then raise exception 'a null set left its row behind'; end if;
+  perform pg_temp.expect('neither row exists: the move''s words', system_line('moveLanded', 'setRule', '{}', 'tl-a'), 'a rule');
+  perform pg_temp.expect('neither row exists, another staff', system_line('moveLanded', 'setRule', '{}', 'tl-c'), 'a rule');
+  perform pg_temp.expect('neither row exists: visit_line', visit_line('visitFiled', 'tl-a', '[]'), 'Tl Aye filed this post under a breach of the rules.');
+  if say_in_thread('tl-a', 'bossArrival', tests.thread('Persona none')) is not null then raise exception 'neither row exists, yet say_in_thread said something'; end if;
   perform pg_temp.expect('neither set: the move''s words', system_line('moveLanded', 'setRule', '{}', 'tl-a'), 'a rule');
   perform pg_temp.expect('neither set, another staff', system_line('moveLanded', 'setRule', '{}', 'tl-c'), 'a rule');
   perform pg_temp.sets(null, '{"tl-a": {"moveLanded": ["A says {move}."]}}');
   perform pg_temp.expect('a persona''s set with no instance set', system_line('moveLanded', 'setRule', '{}', 'tl-a'), 'A says a rule.');
   perform pg_temp.expect('another persona with no instance set', system_line('moveLanded', 'setRule', '{}', 'tl-c'), 'a rule');
+end $$;
+
+-- ---- 1b. stock_lines, called directly with poisoned settings: each falls through to the next set, or returns null ----
+do $$
+declare
+  poison text;
+begin
+  -- systemLines is no held setting, and personaLines is held by a trigger that replica mode does not fire, so a scalar can be put where an object belongs.
+  perform set_config('session_replication_role', 'replica', true);
+  perform pg_temp.sets(null, null);
+  foreach poison in array array['"a string"', '3', '{"moveLanded": "a string"}', '{"moveLanded": 3}', '{"moveLanded": []}', '{"moveLanded": [7, "x"]}', '{"moveLanded": [null]}', '[]', 'null'] loop
+    perform pg_temp.sets(poison::jsonb, null);
+    if stock_lines('moveLanded', 'tl-a') is not null then raise exception 'systemLines % was read as a set: %', poison, stock_lines('moveLanded', 'tl-a'); end if;
+    perform pg_temp.sets(poison::jsonb, '{"tl-a": {"moveLanded": ["Persona."]}}');
+    perform pg_temp.expect('a persona''s line wins over poisoned systemLines ' || poison, stock_lines('moveLanded', 'tl-a') ->> 0, 'Persona.');
+    perform pg_temp.sets('{"moveLanded": ["Instance."]}', null);
+  end loop;
+  foreach poison in array array['"a string"', '3', '{"tl-a": "a string"}', '{"tl-a": 3}', '{"tl-a": {"moveLanded": "a string"}}', '{"tl-a": {"moveLanded": []}}', '{"tl-a": {"moveLanded": [7]}}', '{"tl-a": {"moveLanded": [null, "x"]}}', '[["moveLanded"]]'] loop
+    perform pg_temp.sets('{"moveLanded": ["Instance."]}', poison::jsonb);
+    perform pg_temp.expect('personaLines ' || poison || ' falls through to the instance''s', stock_lines('moveLanded', 'tl-a') ->> 0, 'Instance.');
+    perform pg_temp.sets(null, poison::jsonb);
+    if stock_lines('moveLanded', 'tl-a') is not null then raise exception 'personaLines % was read as a set: %', poison, stock_lines('moveLanded', 'tl-a'); end if;
+  end loop;
+  perform set_config('session_replication_role', 'origin', true);
+  perform pg_temp.sets(null, null);
 end $$;
 
 -- ---- 2. visit_line, report_line, appeal_line and boss_request_reply ----

@@ -8,7 +8,10 @@
 -- 6. A speaker that cannot post pays `unsaid` with a reason, and the line leaves the queue.
 -- 7. With The System off, the grace pays `unsaid` and posts nothing.
 -- 8. No client reads lines_owed, lines_owed_open or lines_paid, and none of the functions is a client's to call.
+-- 6b. A speaker locked out of the thread pays unsaid as well.
 -- 9. The staff run's reads: owed_lines_due (a jsonb array, oldest first, failed rows last, with the office now) and standing_order_line_calls_today; staff_call_records takes the duty standingOrderLine.
+-- 10. A line whose payment raises transiently goes behind the rest and is paid on a later tick; transient failures alone never make it unsaid, however many.
+-- 11. A lapse paid after its request was hidden pays unsaid ('the request is no longer public') and posts nothing.
 
 create function pg_temp.expect(label text, got text, want text) returns void language plpgsql as $$
 begin
@@ -245,6 +248,29 @@ begin
   if exists (select 1 from lines_owed_open where owed = oid) or pg_temp.posts_in(th) <> 0 then raise exception 'the unsaid line is still queued or posted'; end if;
 end $$;
 
+-- ---- 6b. A speaker locked out of the thread pays unsaid, and posts nothing ----
+do $$
+declare
+  th uuid := tests.thread('Owed locked out');
+  a uuid := tests.character(tests.account('tl-p-locker'), 'Tl Locker');
+  held uuid := tests.post(a, th, 'Held.');
+  mv uuid := pg_temp.move_of('tl-a', th);
+  oid bigint;
+  before_n bigint := pg_temp.posts_in(th);
+begin
+  perform pg_temp.sets('{"moveMet": ["Instance met {move}."]}', null);
+  perform tests.act(a, 'spring', th, jsonb_build_object('card', 'lkback', 'trigger', 'cast', 'did', 'lockedOut', 'set', tests.act(a, 'set', th, '{}', held)::text,
+    'locks', (select id from characters where staff = 'tl-a')::text, 'until', (now() + interval '1 day')::text), held);
+  if locked_out_until((select id from characters where staff = 'tl-a'), th) is null then raise exception 'the world: the Mod is not locked out of the thread'; end if;
+  perform say_move_end(mv, 'met');
+  oid := pg_temp.owed(mv, 'moveMet');
+  perform pay_owed_line(oid, 'Anything.');
+  if (select (p.how, p.act is null, p.reason like '%locked out of this thread%') from lines_paid p where p.owed = oid) is distinct from row('unsaid'::text, true, true) then
+    raise exception 'a speaker locked out of the thread did not pay unsaid with the lockout as its reason: %', (select to_jsonb(p) from lines_paid p where p.owed = oid);
+  end if;
+  if exists (select 1 from lines_owed_open where owed = oid) or pg_temp.posts_in(th) is distinct from before_n then raise exception 'the locked-out line is still queued or was posted'; end if;
+end $$;
+
 -- ---- 7. The System off: the grace pays unsaid and posts nothing ----
 do $$
 declare
@@ -270,10 +296,19 @@ do $$
 declare
   t text;
   f text;
+  why text;
 begin
   foreach t in array array['lines_owed', 'lines_owed_open', 'lines_paid'] loop
     if not (select c.relrowsecurity from pg_class c where c.oid = t::regclass) then raise exception '% has no row level security', t; end if;
     if has_table_privilege('anon', t, 'select') or has_table_privilege('authenticated', t, 'select') or has_table_privilege('public', t, 'select') then raise exception 'a client can select from %', t; end if;
+  end loop;
+  foreach f in array array['anon', 'authenticated'] loop
+    foreach t in array array['lines_owed', 'lines_owed_open', 'lines_paid'] loop
+      execute format('set local role %I', f);
+      why := pg_temp.refusal(format('select count(*) from %I', t));
+      reset role;
+      if why is null or why not like '42501:%' then raise exception '% could read %: %', f, t, why; end if;
+    end loop;
   end loop;
   if pg_temp.refusal('delete from lines_owed') is null then raise exception 'lines_owed took a delete'; end if;
   if pg_temp.refusal('delete from lines_paid') is null then raise exception 'lines_paid took a delete'; end if;
@@ -326,4 +361,91 @@ begin
   -- staff_call_records takes the duty.
   perform record_staff_call(b, 'standingOrderLine', 'tl-a', '{}'::jsonb);
   if not exists (select 1 from staff_call_records r where r.duty = 'standingOrderLine') then raise exception 'staff_call_records did not take the duty standingOrderLine'; end if;
+end $$;
+
+-- ---- 10. A transient failure sends a line behind the rest; it is paid on a later tick, and never unsaid for failing ----
+create function pg_temp.flaky() returns trigger language plpgsql as $$
+begin
+  if new.kind = 'post' and new.thread::text = current_setting('owed.fail_thread', true) then
+    raise exception 'a lock timeout, as the staff post could meet' using errcode = '55P03';
+  end if;
+  return new;
+end $$;
+
+do $$
+declare
+  ta uuid := tests.thread('Owed flaky a');
+  tb uuid := tests.thread('Owed flaky b');
+  ma uuid := pg_temp.move_of('tl-a', ta);
+  mb uuid := pg_temp.move_of('tl-a', tb);
+  mc uuid := pg_temp.move_of('tl-a', tb);
+  md uuid := pg_temp.move_of('tl-a', tb);
+  ia bigint; ib bigint; ic bigint; id_ bigint;
+  i integer;
+  tick jsonb;
+begin
+  perform pg_temp.sets('{"moveMet": ["Instance met {move}."]}', null);
+  delete from lines_owed_open where owed in (select owed from lines_owed_open);
+  perform say_move_end(ma, 'met'); perform say_move_end(mb, 'met'); perform say_move_end(mc, 'met');
+  ia := pg_temp.owed(ma, 'moveMet'); ib := pg_temp.owed(mb, 'moveMet'); ic := pg_temp.owed(mc, 'moveMet');
+  update lines_owed_open set at = now() - interval '40 minutes' where owed = ia;
+  update lines_owed_open set at = now() - interval '35 minutes' where owed = ib;
+  update lines_owed_open set at = now() - interval '30 minutes' where owed = ic;
+  create trigger owed_flaky before insert on acts for each row execute function pg_temp.flaky();
+  perform set_config('owed.fail_thread', ta::text, false);
+  tick := system_tick();
+  if (select count(*) from lines_paid p where p.owed in (ib, ic) and p.how = 'stock') is distinct from 2::bigint then raise exception 'the lines behind the failing one were not paid: %', tick; end if;
+  if exists (select 1 from lines_paid p where p.owed = ia) then raise exception 'a line that failed transiently was paid on the first failure'; end if;
+  if (select (o.attempts, o.failed_at is not null) from lines_owed_open o where o.owed = ia) is distinct from row(1, true) then raise exception 'the failure was not recorded on the queue row: %', (select to_jsonb(o) from lines_owed_open o where o.owed = ia); end if;
+  -- A line owed later is read before the one that failed.
+  perform say_move_end(md, 'met');
+  id_ := pg_temp.owed(md, 'moveMet');
+  update lines_owed_open set at = now() - interval '20 minutes' where owed = id_;
+  if (owed_lines_due(10) -> 0 ->> 'id')::bigint is distinct from id_ or (owed_lines_due(10) -> 1 ->> 'id')::bigint is distinct from ia then raise exception 'the failed line is not behind the others: %', owed_lines_due(10); end if;
+  -- Many more failures: still queued, never unsaid.
+  for i in 1..7 loop
+    perform system_tick();
+  end loop;
+  if (select o.attempts from lines_owed_open o where o.owed = ia) < 6 then raise exception 'the failing line was not tried on each tick'; end if;
+  if exists (select 1 from lines_paid p where p.owed = ia) then raise exception 'transient failures alone paid the line: %', (select to_jsonb(p) from lines_paid p where p.owed = ia); end if;
+  -- The failure passes: a later tick pays it from stock.
+  perform set_config('owed.fail_thread', '', false);
+  perform system_tick();
+  if (select p.how from lines_paid p where p.owed = ia) is distinct from 'stock' then raise exception 'the line was not paid from stock once the failure passed: %', (select to_jsonb(p) from lines_paid p where p.owed = ia); end if;
+  drop trigger owed_flaky on acts;
+end $$;
+
+-- ---- 11. A lapse paid after its request was hidden pays unsaid and posts nothing ----
+do $$
+declare
+  th uuid := tests.thread('Owed lapse hidden');
+  asker uuid := tests.character(tests.account('tl-p-hidden'), 'Tl Hidden');
+  req uuid := tests.post(asker, th, 'Do a thing?');
+  admin_a uuid := tests.account('tl-p-admin');
+  turn uuid;
+  rid bigint;
+  oid bigint;
+  paid jsonb;
+  before_n bigint;
+begin
+  perform pg_temp.sets('{"requestLapsed": ["{boss} says to {asker}: lapsed."]}', null);
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  turn := tests.post((select id from characters where staff = 'tl-a'), th, 'I will ask the Boss.');
+  perform set_config('kayfabb.staff_writer', '', true);
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values (req, th, asker, 'tl-a', turn, 'confer', 'mod') returning id into rid;
+  update staff_requests_open set at = now() - interval '4 days' where request = rid;
+  perform system_tick();
+  oid := (select o.id from lines_owed o where o.request = rid and o.line_key = 'requestLapsed');
+  if oid is null then raise exception 'the lapse owed nothing'; end if;
+  before_n := pg_temp.posts_in(th);
+  insert into admins (account) values (admin_a) on conflict do nothing;
+  perform tests.become(admin_a);
+  perform decide(null, req, 'hide', null, 'hidden');
+  perform tests.unbecome();
+  if staff_request_post_public(req) then raise exception 'the world: the request is still public'; end if;
+  paid := pay_owed_line(oid, 'A voiced lapse.');
+  if (select (p.how, p.act is null, p.reason) from lines_paid p where p.owed = oid) is distinct from row('unsaid'::text, true, 'the request is no longer public'::text) then
+    raise exception 'a lapse for a hidden request was not paid unsaid: %', (select to_jsonb(p) from lines_paid p where p.owed = oid);
+  end if;
+  if pg_temp.posts_in(th) is distinct from before_n then raise exception 'a lapse line was posted for a hidden request'; end if;
 end $$;
