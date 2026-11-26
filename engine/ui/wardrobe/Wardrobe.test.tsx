@@ -88,12 +88,26 @@ describe('the Facing row', () => {
     const save = vi.spyOn(fake, 'setOutfit');
     fireEvent.click(screen.getByRole('radio', { name: 'Side, facing right' }));
     expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
-    expect(said()).toHaveTextContent('Visor now faces Side, facing right.');
+    expect(said()).toHaveTextContent('Visor now shows its side, facing right.');
     expect(screen.getByText('Facing: Side, facing right')).toBeInTheDocument();
     expect(screen.getByText(/You have changes not saved yet/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
     expect(save.mock.calls[0]![1][0]).toMatchObject({ gear: 'visor', view: 'side-right' });
+  });
+
+  test('each facing is said in a sentence of its own', async () => {
+    await withVisor();
+    const says: Record<string, string> = {
+      'Side, facing left': 'Visor now shows its side, facing left.',
+      'Three-quarter, facing left': 'Visor now shows a three-quarter view, facing left.',
+      'Three-quarter, facing right': 'Visor now shows a three-quarter view, facing right.',
+      Front: 'Visor now shows its front.',
+    };
+    for (const [option, words] of Object.entries(says)) {
+      fireEvent.click(screen.getByRole('radio', { name: option }));
+      expect(said()).toHaveTextContent(words);
+    }
   });
 
   test('the arrow keys move the choice along the group', async () => {
