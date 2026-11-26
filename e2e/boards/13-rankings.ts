@@ -107,7 +107,7 @@ const manifest: BoardManifest = {
     {
       id: 'lead', box: 'none', role: 'text', name: 'The season\'s standings, as the last settlement left them. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.',
       /* Departure by #492 (the header): the lead says why a row at 0 takes no place. */
-      buildName: 'The season\'s standings, as the last settlement left them. A character at 0 Aura or below takes no place. Your own characters are marked, with their classes, which only you see here. Anyone else\'s class shows only once its player has revealed it.',
+      buildName: 'The season\'s standings, as the last settlement left them. A character at 0 Aura or below takes no place. Your own characters are marked, with their classes, which no other player sees here. Anyone else\'s class shows only once its player has revealed it.',
     },
 
     /* The table and its heads. */

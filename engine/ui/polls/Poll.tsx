@@ -39,7 +39,7 @@ const MOST_MS = 2 ** 31 - 1;
 
 /**
  * `board` is the board whose bars bind a vote on this poll: left out, the thread screen's own board; the ORIGIN box passes null (the poll's board is not the spun thread's, and the
- * server refuses a barred ballot in its own words, shown in the foot).
+ * server refuses a barred ballot in its own words, shown in the foot). It is not the board being read: the foot's Spun into reads against the thread screen's board, in the box too.
  */
 export function Poll({ post, polls, board }: { readonly post: Id; readonly polls?: Polls | undefined; readonly board?: Id | null }) {
   const thread = useContext(ThreadCtx);
@@ -264,7 +264,7 @@ function PollBody({ view, store, board }: { readonly view: PollView; readonly st
             <button type="button" className="kb-link-button" aria-expanded={spinning} onClick={() => setSpinning((s) => !s)}>Spin</button>
             {canClose && <button type="button" className="kb-link-button" aria-disabled={busy} onClick={() => void close()}>Close poll</button>}
           </span>
-          <SpunInto act={id} />
+          <SpunInto act={id} here={thread?.summary.board ?? null} />
           <span className="kb-visually-hidden" role="status" aria-live="polite">{said || (reading ? 'Reading the rest of the voters' : listed === 'reading' ? 'Reading the ballots' : '')}</span>
           {refusal !== null && <p className="kb-poll-refusal" role="alert">{refusal}</p>}
         </div>

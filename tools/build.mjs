@@ -113,6 +113,8 @@ export const STEPS = [
   'node tools/check-theme-preview.mjs',
   'node tools/test-guide.mjs',
   'node tools/check-guide.mjs',
+  'node tools/test-privacy-copy.mjs',
+  'node tools/check-privacy-copy.mjs',
   'node tools/test-web-reads.mjs',
   'node tools/check-web-reads.mjs',
   'node tools/test-id-reads.mjs',

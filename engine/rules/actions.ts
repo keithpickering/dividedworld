@@ -235,13 +235,22 @@ const drawing = (r: Fields): unknown => {
   return r.input;
 };
 
+/** A board named by its slug: a thread's start must name one. */
+const slug = (r: Fields): string => {
+  const board = r.board;
+  if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
+  return board;
+};
+
+/** A spin's or an apology's board, which may be left out (null too), so the server's default holds. */
+const boardSlug = (r: Fields): { board_slug?: string } => (r.board === undefined || r.board === null ? {} : { board_slug: slug(r) });
+
 /** Each action: the SQL function that writes it, and its arguments from the request. */
 const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
-  startThread: (r, { settings }) => {
-    const board = r.board;
-    if (typeof board !== 'string' || !SLUG.test(board)) throw new Refused('board', 'is not a board');
-    return { rpc: 'start_thread', args: { board_slug: board, through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) } };
-  },
+  startThread: (r, { settings }) => ({
+    rpc: 'start_thread',
+    args: { board_slug: slug(r), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...pollDraft(r, settings) },
+  }),
   post: (r, { settings }) => ({
     rpc: 'post',
     args: { in_thread: id(r, 'thread'), through: id(r, 'character'), body: text(r, 'body', settings.postMaxLength), quoting: optionalId(r, 'quote'), ...framing(r), ...pollDraft(r, settings) },
@@ -252,12 +261,12 @@ const ACTIONS: Record<string, (r: Fields, instance: Instance) => Decided> = {
   }),
   spin: (r, { settings }) => ({
     rpc: 'spin',
-    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), at_post: optionalId(r, 'at'), ...framing(r) },
+    args: { origin: id(r, 'origin'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength, { mayBeEmpty: true }), at_post: optionalId(r, 'at'), ...framing(r), ...boardSlug(r) },
   }),
   // A barred character's apology (supabase/migrations/0130_bars_apologies.sql): the spin of the move's Act that bars it, with words of its own that the judge reads.
   apologize: (r, { settings }) => ({
     rpc: 'apologize',
-    args: { in_move: id(r, 'move'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r) },
+    args: { in_move: id(r, 'move'), through: id(r, 'character'), title: text(r, 'title', settings.titleMaxLength), body: text(r, 'body', settings.postMaxLength), ...framing(r), ...boardSlug(r) },
   }),
   react: (r, { reactions }) => {
     const kind = r.kind;

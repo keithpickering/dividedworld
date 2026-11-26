@@ -11,7 +11,7 @@ import { useCallback, useEffect, useRef, useState, type FormEvent, type Keyboard
 import { useWhoPosts } from '../composer/draft.ts';
 import { framingArgs } from '../composer/text.ts';
 import { useKayfa } from '../context.tsx';
-import type { Id } from '../data/api.ts';
+import type { Id, SpinPlaces } from '../data/api.ts';
 import { usePlayer } from '../player.tsx';
 import { CharactersFailed } from '../characters/CharactersFailed.tsx';
 import { Link, useNavigate } from '../router.tsx';
@@ -26,8 +26,8 @@ export const CARD_NOT_ON_POST = 'that card is not on that post';
 /** What a spin form says in its place: out of character, and what to press. */
 const NO_LONGER_ON_POST = 'That card is no longer on that post. Spin thread again to spin from the card without the post.';
 
-/** What was typed in a spin form: the title and the opening post. */
-export interface SpinDraft { readonly title: string; readonly body: string }
+/** What was typed in a spin form: the title and the opening post, and the slug of the board the player picked (none until one is picked). */
+export interface SpinDraft { readonly title: string; readonly body: string; readonly board?: string }
 
 /**
  * A post's spin drafts, one per origin (the post itself, or a play on it): the form is keyed by its origin and remounts
@@ -37,7 +37,7 @@ export interface SpinDraft { readonly title: string; readonly body: string }
 export function useSpinDrafts(): { readonly get: (origin: Id) => SpinDraft | undefined; readonly set: (origin: Id, draft: SpinDraft | null) => void } {
   const drafts = useRef(new Map<Id, SpinDraft>());
   const get = useCallback((origin: Id) => drafts.current.get(origin), []);
-  const set = useCallback((origin: Id, draft: SpinDraft | null) => { if (draft === null || (draft.title === '' && draft.body === '')) drafts.current.delete(origin); else drafts.current.set(origin, draft); }, []);
+  const set = useCallback((origin: Id, draft: SpinDraft | null) => { if (draft === null || (draft.title === '' && draft.body === '' && draft.board === undefined)) drafts.current.delete(origin); else drafts.current.set(origin, draft); }, []);
   return { get, set };
 }
 
@@ -62,8 +62,13 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
   const navigate = useNavigate();
   const [title, setTitleNow] = useState(draft?.title ?? '');
   const [body, setBodyNow] = useState(draft?.body ?? '');
-  const setTitle = (t: string) => { setTitleNow(t); onDraft?.({ title: t, body }); };
-  const setBody = (b: string) => { setBodyNow(b); onDraft?.({ title, body: b }); };
+  const [picked, setPickedNow] = useState<string | undefined>(draft?.board);
+  const keep = (next: { title: string; body: string; board: string | undefined }) => onDraft?.(next.board === undefined ? { title: next.title, body: next.body } : { title: next.title, body: next.body, board: next.board });
+  const setTitle = (t: string) => { setTitleNow(t); keep({ title: t, body, board: picked }); };
+  const setBody = (b: string) => { setBodyNow(b); keep({ title, body: b, board: picked }); };
+  const setPicked = (slug: string) => { setPickedNow(slug); keep({ title, body, board: slug }); };
+  /* The boards the form offers for this character: read on mount and when the HUD's character changes (the bars are the character's). A read that lands after either changed is dropped. */
+  const [places, setPlaces] = useState<{ readonly for: string; readonly state: 'loading' | 'failed' | 'ready'; readonly value?: SpinPlaces }>({ for: '', state: 'loading' });
   const [busy, setBusy] = useState(false);
   const [refusal, setRefusal] = useState<string | null>(null);
   const [again, setAgain] = useState(false);
@@ -76,6 +81,14 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
   const who = useWhoPosts(hud, title.trim() !== '' || body.trim() !== '');
 
   useEffect(() => { first.current?.focus(); }, []);
+  useEffect(() => {
+    if (hud === null) return undefined;
+    setPlaces({ for: hud, state: 'loading' });
+    /* A read lands only if the form is still on the character it was made for; the render treats any other character's answer as not read. */
+    const land = (next: { readonly state: 'failed' } | { readonly state: 'ready'; readonly value: SpinPlaces }) => setPlaces((prev) => (prev.for === hud ? { for: hud, ...next } : prev));
+    api.spinPlaces(origin, hud).then((value) => land({ state: 'ready', value }), () => land({ state: 'failed' }));
+    return undefined;
+  }, [api, origin, hud]);
 
   const label = apology ? 'Write an apology' : named === null ? 'Spin a thread' : `Spin a thread from ${named}`;
   const verb = apology ? 'Send apology' : 'Spin thread';
@@ -87,6 +100,21 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
       </div>
     );
   }
+  const reading = places.for !== hudCharacter.id || places.state === 'loading';
+  const unread = !reading && places.state === 'failed';
+  const list = !reading && places.state === 'ready' ? places.value ?? null : null;
+  const choosable = (b: SpinPlaces['boards'][number]) => apology !== undefined || !b.barred;
+  const entry = (slug: string | null | undefined) => (list === null || !slug ? undefined : list.boards.find((b) => b.slug === slug));
+  const kept = entry(picked);
+  const standing = entry(list?.default);
+  /* The board the form would send: the player's pick if it can still be used, else today's board if it can, else none (the first, empty option). */
+  const board = kept && choosable(kept) ? kept.slug : standing && choosable(standing) ? standing.slug : '';
+  const anyOpen = list !== null && list.boards.some(choosable);
+  const untilWords = (until: string | null) => (until === null ? 'a time not yet set' : `${new Date(Math.ceil(Date.parse(until) / 60_000) * 60_000).toISOString().slice(0, 16).replace('T', ' ')} UTC`);
+  const note = list === null || board !== '' ? null
+    : !anyOpen ? `${hudCharacter.name} is barred from posting on every board right now.`
+      : standing && standing.barred ? `${hudCharacter.name} is barred from posting on ${standing.name} until ${untilWords(standing.until)}. Pick another board.` : null;
+  const noteId = `spin-board-note-${origin}`;
   /* The thread is made: the player goes to it, and focus is on its ORIGIN when it opens. */
   const went = (thread: Id) => {
     onDraft?.(null);
@@ -110,7 +138,7 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
   const fieldWords = (field: string | undefined) => (field === 'title' ? 'The thread title ' : field === 'body' ? (apology ? 'Your apology ' : 'Your opening post ') : '');
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (busy || title.trim() === '') return;
+    if (busy || reading || (list !== null && board === '') || title.trim() === '') return;
     if (who.changed) { who.confirm(); return; }
     const character = hudCharacter.id;
     setBusy(true);
@@ -118,8 +146,11 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
     try {
       let answer;
       try {
-        answer = await (apology ? api.apologize(origin, character, title, body, ...framingArgs(body))
-          : sentAt === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], sentAt));
+        /* A failed read sends no board: the server opens the thread where spins open by default. */
+        const sendBoard = list !== null ? board : undefined;
+        answer = await (apology ? (sendBoard === undefined ? api.apologize(origin, character, title, body, ...framingArgs(body)) : api.apologize(origin, character, title, body, framingArgs(body)[0], sendBoard))
+          : sendBoard !== undefined ? api.spin(origin, character, title, body, framingArgs(body)[0], sentAt, sendBoard)
+            : sentAt === undefined ? api.spin(origin, character, title, body, ...framingArgs(body)) : api.spin(origin, character, title, body, framingArgs(body)[0], sentAt));
       } catch { await look(null, character); return; }
       if (answer.ok) went(answer.value.thread.id);
       else if (answer.uncertain) await look(answer.error, character);
@@ -147,6 +178,26 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
           </p>
         )}
       </div>
+      {unread
+        ? <p className="kb-small">The boards could not be read. The thread will open where spins open by default.</p>
+        : (
+          <div className="kb-field">
+            <label htmlFor={`spin-board-${origin}`}>Board</label>
+            <select id={`spin-board-${origin}`} className="kb-input" value={list === null ? '' : board} disabled={list === null} aria-describedby={note ? noteId : undefined} onChange={(e) => setPicked(e.target.value)}>
+              {list === null ? <option value="">Loading boards…</option> : (
+                <>
+                  {board === '' && <option value="">Pick a board</option>}
+                  {list.boards.map((b) => (
+                    <option key={b.slug} value={b.slug} disabled={!choosable(b)}>
+                      {b.barred && apology === undefined ? `${b.name} (barred until ${untilWords(b.until)})` : b.name}
+                    </option>
+                  ))}
+                </>
+              )}
+            </select>
+            {note && <p id={noteId} className="kb-small kb-muted">{note}</p>}
+          </div>
+        )}
       <div className="kb-field">
         <label htmlFor={`spin-title-${origin}`}>Thread title</label>
         <input ref={first} id={`spin-title-${origin}`} className="kb-input kb-spin-title" value={title} maxLength={settings.titleMaxLength} autoComplete="off" onChange={(e) => { setTitle(e.target.value); edited(); }} />
@@ -158,7 +209,7 @@ export function SpinForm({ origin, label: named, at, onClose, draft, onDraft, ap
       </div>
       {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
       <div className="kb-spin-actions">
-        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || title.trim() === '' || (apology !== undefined && body.trim() === '') || [...body].length > settings.postMaxLength}>
+        <button type="submit" className="kb-button" data-kb-primary="" disabled={busy || reading || (list !== null && board === '') || title.trim() === '' || (apology !== undefined && body.trim() === '') || [...body].length > settings.postMaxLength}>
           {who.changed ? `Confirm posting as ${hudCharacter.name}` : again ? (apology ? 'Send again anyway' : 'Spin again anyway') : verb}
         </button>
         <button type="button" className="kb-button" onClick={dismiss}>Cancel</button>

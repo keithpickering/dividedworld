@@ -153,7 +153,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
               <>
                 <label className="kb-choice-option" data-kb-chosen={loudness === 'silent' || undefined}>
                   <input type="radio" name="turn-loudness" checked={loudness === 'silent'} onChange={() => setLoudness('silent')} />
-                  <span><b>Silent.</b> Nobody is told, and nothing is posted. Until you reveal it, only you know.</span>
+                  <span><b>Silent.</b> Nobody is told, and nothing is posted. Until you reveal it, no other player knows.</span>
                 </label>
                 <label className="kb-choice-option" data-kb-chosen={loudness === 'announced' || undefined}>
                   <input type="radio" name="turn-loudness" checked={loudness === 'announced'} onChange={() => setLoudness('announced')} />

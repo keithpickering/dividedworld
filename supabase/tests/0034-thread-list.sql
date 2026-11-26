@@ -88,7 +88,7 @@ begin
   spun := tests.thread('Spun');
   update threads set origin_act_id = op where id = spun;
   select * into r from thread_list where id = spun;
-  if (r.origin_thread, r.origin_place) is distinct from (older, jsonb_build_object('kind', 'post', 'thread', older, 'title', 'Older', 'seq', (select seq from acts where id = op))) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
+  if (r.origin_thread, r.origin_place) is distinct from (older, jsonb_build_object('kind', 'post', 'thread', older, 'title', 'Older', 'seq', (select seq from acts where id = op), 'board', (select board from threads where id = older))) then raise exception 'a spun thread names its origin: %', to_jsonb(r); end if;
   select * into r from thread_list where id = older;
   if r.origin_thread is not null or r.origin_place is not null then raise exception 'a thread that was not spun has no origin: %', to_jsonb(r); end if;
 

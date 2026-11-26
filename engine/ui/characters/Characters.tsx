@@ -341,7 +341,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
                 <option value="hidden">Hidden</option>
               </select>
             </label>
-            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. While you post as {words(c.pronouns).them}, only you see {words(c.pronouns).them} there.</p>
+            <p id={`presence-help-${c.id}`} className="kb-roster-line">A hidden character isn't listed in Who is online or Users browsing. While you post as {words(c.pronouns).them}, no other player sees {words(c.pronouns).them} there.</p>
           </>
         )}
         {problem?.id === c.id && problem.pip && <p role="alert" className="kb-notice" data-kb-tone="refusal">{problem.text}</p>}
@@ -361,7 +361,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
 
   return (
     <div className="kb-characters">
-      <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them." />
+      <PageHead size="roster" title="Your characters" count={`(${active.length} of ${per})`} lead="This page is out of character, and no other player can see it. Classes are shown here and nowhere else unless you reveal them." />
       <div role="status" className="kb-flash">{flash && <CalmRegion as="p" className="kb-notice">{flash}</CalmRegion>}</div>
 
       {mine.length === 0 && <CalmRegion as="p" className="kb-characters-empty">You have no characters yet. <GlassLink to="/characters/new">Make one</GlassLink> to start playing.</CalmRegion>}

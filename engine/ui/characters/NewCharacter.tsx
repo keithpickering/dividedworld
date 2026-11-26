@@ -79,7 +79,7 @@ export function NewCharacter() {
 
   return (
     <div className="kb-new-character">
-      <PageHead size="roster" title="New character" lead="This page is out of character and only you can see it. Nobody else can tell who plays a character." leadUnder />
+      <PageHead size="roster" title="New character" lead="This page is out of character, and no other player can see it. No other player can tell who plays a character." leadUnder />
       <CalmRegion as="form" className="kb-new-form" aria-label="New character" onSubmit={(e) => { e.preventDefault(); void submit(); }}>
         <div className="kb-new-name">
           <label className="kb-glass-field">
@@ -90,7 +90,7 @@ export function NewCharacter() {
         </div>
         <div className="kb-new-classes">
           <ClassCards legend="Class" value={cls} onChange={setCls} />
-          <p className="kb-roster-line">Only you will know {words(pronouns).their} class, unless you choose to reveal it.</p>
+          <p className="kb-roster-line">No other player will know {words(pronouns).their} class, unless you choose to reveal it.</p>
         </div>
         <PronounPicker name={name} value={pronouns} onChange={setPronouns} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}

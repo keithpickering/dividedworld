@@ -85,7 +85,7 @@ describe('the presence box', () => {
     const box = await screen.findByRole('region', { name: HEADING });
     const mine = await within(box).findByText('Spritey');
     expect(mine.closest('em')).not.toBeNull();
-    expect(box).toHaveTextContent('Spritey (hidden, only you see this)');
+    expect(box).toHaveTextContent('Spritey (hidden, no other player sees this)');
     /* Nobody else's render of the place holds it: the server never lists a hidden mask. */
     const other = fake.seed.account('other');
     fake.signInAs(other);
@@ -498,7 +498,7 @@ describe('a snapshot from the page\'s document', () => {
     const box = screen.getByRole('region', { name: HEADING });
     expect(within(box).getAllByRole('link').map((a) => a.textContent)).toEqual(['Pipewrench', 'Spritey']);
     expect(box.querySelectorAll('em')).toHaveLength(1);
-    expect(box).toHaveTextContent('Spritey (hidden, only you see this)');
+    expect(box).toHaveTextContent('Spritey (hidden, no other player sees this)');
   });
 
   test('a full box counts the mask among the others, as the first heartbeat would', async () => {

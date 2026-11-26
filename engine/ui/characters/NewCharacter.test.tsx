@@ -42,7 +42,7 @@ describe('New character', () => {
     for (const name of [/^Drop now/u, /^Debut at the settlement/u, /^Silent/u, /^Announced/u]) expect(within(f).queryByRole('radio', { name })).toBeNull();
     expect(within(f).queryByRole('group', { name: 'What everyone will see' })).toBeNull();
     expect(f).not.toHaveTextContent(/debut|Promo/iu);
-    expect(f.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('Spritey is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
+    expect(f.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('Spritey is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays hidden from every other player.');
   });
 
   test('a character made without touching the timing has debuted and can post at once', async () => {
@@ -185,7 +185,7 @@ describe('New character\'s head, name and foot', () => {
   test('sets the lead under the title, in the page head', async () => {
     open(world());
     await form();
-    const lead = screen.getByText('This page is out of character and only you can see it. Nobody else can tell who plays a character.');
+    const lead = screen.getByText('This page is out of character, and no other player can see it. No other player can tell who plays a character.');
     expect(lead.closest('.kb-page-head')).toHaveAttribute('data-kb-lead', 'under');
   });
 
@@ -209,20 +209,20 @@ describe('New character\'s head, name and foot', () => {
     const line = () => f.querySelector('.kb-glass-form-foot-line')!;
     await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
     await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
-    expect(within(f).getByText('Only you will know her class, unless you choose to reveal it.')).toBeInTheDocument();
-    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays yours alone.');
+    expect(within(f).getByText('No other player will know her class, unless you choose to reveal it.')).toBeInTheDocument();
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays hidden from every other player.');
     await userEvent.click(within(f).getByRole('radio', { name: /^they\/them/u }));
-    expect(within(f).getByText('Only you will know their class, unless you choose to reveal it.')).toBeInTheDocument();
-    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays yours alone.');
+    expect(within(f).getByText('No other player will know their class, unless you choose to reveal it.')).toBeInTheDocument();
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays hidden from every other player.');
   });
 
   test('says in one line, beside Cancel and Make the character, what will happen, as the form is filled', async () => {
     open(world());
     const f = await form();
     const line = () => f.querySelector('.kb-glass-form-foot-line')!;
-    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays hidden from every other player.');
     await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
-    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays hidden from every other player.');
     const foot = f.querySelector('.kb-glass-form-foot') as HTMLElement;
     expect(within(foot).getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/characters');
     expect(within(foot).getByRole('button', { name: 'Make the character' })).toBeDisabled();

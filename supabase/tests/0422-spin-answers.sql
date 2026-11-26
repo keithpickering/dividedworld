@@ -92,37 +92,37 @@ begin
 
   -- ---- 1. A report's place, spun from the verdict and from the ask ----
   perform pg_temp.expect('a dismissed report, spun from its verdict', pg_temp.place(pg_temp.spun(s, v_dis)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pa)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pa)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('a visit report, spun from its verdict', pg_temp.place(pg_temp.spun(s, v_vis)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pb)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pb)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('a backfired report, spun from its verdict', pg_temp.place(pg_temp.spun(s, v_back)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pc)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pc)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('a report spun from the report itself, answered', pg_temp.place(pg_temp.spun(s, r_dis)),
-    jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pa)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pa)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('a report spun from the report itself, unanswered', pg_temp.place(pg_temp.spun(s, r_none)),
-    jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', null, 'punishment', null, 'group', null, 'on', pg_temp.line(pd)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', null, 'punishment', null, 'group', null, 'on', pg_temp.line(pd)) || jsonb_build_object('board', board)));
 
   -- ---- 2. An appeal's place: of an infraction, of a ban (through its infraction), of a move (its line) ----
   perform pg_temp.expect('an appeal of an infraction, spun from its ruling', pg_temp.place(pg_temp.spun(s, ru_inf)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'infraction', 'group', null, 'on', pg_temp.line(pe)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'infraction', 'group', null, 'on', pg_temp.line(pe)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('an appeal of a ban, spun from its ruling', pg_temp.place(pg_temp.spun(s, ru_ban)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'ban', 'group', null, 'on', pg_temp.line(pe)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'ban', 'group', null, 'on', pg_temp.line(pe)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('an appeal of a move, spun from its ruling', pg_temp.place(pg_temp.spun(s, ru_mov)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'move', 'group', 'trialMembers', 'on', pg_temp.line(mov)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'move', 'group', 'trialMembers', 'on', pg_temp.line(mov)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('an appeal of an infraction, spun from the appeal', pg_temp.place(pg_temp.spun(s, ap_inf)),
-    jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'infraction', 'group', null, 'on', pg_temp.line(pe)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'infraction', 'group', null, 'on', pg_temp.line(pe)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('an appeal of a ban, spun from the appeal', pg_temp.place(pg_temp.spun(s, ap_ban)),
-    jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'ban', 'group', null, 'on', pg_temp.line(pe)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', pg_temp.person(boss), 'punishment', 'ban', 'group', null, 'on', pg_temp.line(pe)) || jsonb_build_object('board', board)));
   perform pg_temp.expect('an unheard appeal of an infraction, spun from the appeal', pg_temp.place(pg_temp.spun(s, ap_open)),
-    jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', null, 'punishment', 'infraction', 'group', null, 'on', pg_temp.line(pe)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'ask', 'ask', 'appeal', 'asker', pg_temp.person(v), 'staff', null, 'punishment', 'infraction', 'group', null, 'on', pg_temp.line(pe)) || jsonb_build_object('board', board)));
 
   -- ---- 3. A thread spun from a plain post keeps its post place; a spin made earlier needs no migration of any Act ----
   spun_plain := pg_temp.spun(s, pf);
-  perform pg_temp.expect('a thread spun from a plain post', pg_temp.place(spun_plain), pg_temp.line(pf));
+  perform pg_temp.expect('a thread spun from a plain post', pg_temp.place(spun_plain), pg_temp.line(pf) || jsonb_build_object('board', board));
   if (select count(*) from acts where kind = 'spin' and target_act_id = v_dis) is distinct from 1::bigint then raise exception 'the verdict was spun once above'; end if;
   perform pg_temp.expect('a spin made before, of the same verdict, draws the new place from its unchanged Acts',
     pg_temp.place((select thread from acts where kind = 'spin' and target_act_id = v_dis order by created_at, id limit 1)),
-    jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pa)));
+    (jsonb_build_object('kind', 'answer', 'spun', 'answer', 'ask', 'report', 'asker', pg_temp.person(w), 'staff', pg_temp.person(kassie), 'punishment', null, 'group', null, 'on', pg_temp.line(pa)) || jsonb_build_object('board', board)));
 
   -- ---- 4. The log's views name the answer ----
   perform tests.become(ann);

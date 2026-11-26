@@ -48,6 +48,30 @@ describe('a thread spun from a poll', () => {
     expect(within(head).getByRole('link')).toHaveAttribute('href', `/t/${w.thread}?page=1#post-1`);
   });
 
+  test('its head names the poll\'s board when the thread was spun onto another board', async () => {
+    const w = world();
+    const over = await w.fake.spin(w.poll, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    open(w, over.value.thread.id);
+    const head = (await box()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from the poll “Best kart in the series\?” on #1 in A short thread on General$/u));
+    expect(within(head).getAllByRole('link')).toHaveLength(1);
+  });
+
+  test('the poll\'s Spun into in the box reads against the board being read: no "on" for a thread on it, the board named for one elsewhere', async () => {
+    const w = world();
+    const here = await spinFrom(w, w.poll);
+    w.fake.clock.advance(86_400_000);
+    const over = await w.fake.spin(w.poll, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    open(w, here);
+    const poll = await question(await box());
+    const line = (await within(poll).findByText(/Spun into:/u)).closest('p')!;
+    await waitFor(() => expect(line).toHaveTextContent('Over there (on Off Topic, 0 replies)'));
+    expect(line).toHaveTextContent('About the poll (0 replies)');
+    expect(line).not.toHaveTextContent('on General');
+  });
+
   test('the box draws the poll in its content area, with its counts and who chose each option', async () => {
     const w = world();
     open(w, await spinFrom(w, w.poll));
@@ -108,7 +132,7 @@ describe('a thread spun from a poll', () => {
     const form = await screen.findByRole('form', { name: 'Spin a thread from this poll' });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'Again');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.poll, w.pipe, 'Again', ''));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.poll, w.pipe, 'Again', '', undefined, undefined, 'general'));
   });
 });
 
@@ -161,7 +185,7 @@ describe('the Ballots list of a poll', () => {
     const form = await screen.findByRole('form', { name: "Spin a thread from Wario's ballot" });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'About a ballot');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.ballot, w.pipe, 'About a ballot', ''));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.ballot, w.pipe, 'About a ballot', '', undefined, undefined, 'general'));
   });
 
   test('a secret poll has no list, so no ballot Spin is drawn', async () => {

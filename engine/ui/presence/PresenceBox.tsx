@@ -4,7 +4,7 @@
  * a period table (engine/ui/base.css) with an h2 on the light band and the names, joined by commas, each linked to its profile,
  * and past the cap "and N others".
  *
- * The viewer's own HUD mask, when it is hidden, is added in italics, "(hidden, only you see this)":
+ * The viewer's own HUD mask, when it is hidden, is added in italics, "(hidden, no other player sees this)":
  * drawn from the player's own session (the HUD's mask), never from the answer, which lists no hidden
  * mask for anyone. The box is not a live region, so a screen reader is not interrupted at each poll.
  * A staff name is followed by the staff group's chip (the staff roster design, section 10).
@@ -55,7 +55,7 @@ export function PresenceBox({ place, heading, note, snapshot }: PresenceBoxProps
   if (hud?.presenceHidden) {
     items.push(
       <em key="me" className="kb-presence-me">
-        <Link to={profile(hud.id)}>{hud.name}</Link> (hidden<span className="kb-presence-wide">, only you see this</span>)
+        <Link to={profile(hud.id)}>{hud.name}</Link> (hidden<span className="kb-presence-wide">, no other player sees this</span>)
       </em>,
     );
   }

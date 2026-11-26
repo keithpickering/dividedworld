@@ -70,33 +70,33 @@ begin
 
   -- A post: its thread, that thread's title and its own place number.
   got := pg_temp.place(pg_temp.spun(ann, a, p, 'From a post'));
-  if got is distinct from p_place then raise exception 'a spin from a post: %, wanted %', got, p_place; end if;
+  if got is distinct from p_place || jsonb_build_object('board', general) then raise exception 'a spin from a post: %, wanted %', got, p_place; end if;
 
   -- A face-up card on that post: a play, with the card's key and the post's place.
   card_act := tests.act(a, 'card', t, '{"card": "sweetie"}', p);
   got := pg_temp.place(pg_temp.spun(ann, a, card_act, 'From a card'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', p_place) then raise exception 'a spin from a card on a post: %', got; end if;
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', p_place) || jsonb_build_object('board', general)) then raise exception 'a spin from a card on a post: %', got; end if;
 
   -- A face-down set on that post: a play whose card is null, and the jsonb holds no card key anywhere.
   set_act := tests.act(b, 'set', t, '{}', p);
   insert into face_down (play, account, card, post, thread, round, ends_at) values (set_act, bob, 'splat', p, t, 1, now() + interval '1 day');
   got := pg_temp.place(pg_temp.spun(ann, a, set_act, 'From a set'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', null, 'on', p_place) then raise exception 'a spin from a face-down set: %', got; end if;
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', null, 'on', p_place) || jsonb_build_object('board', general)) then raise exception 'a spin from a face-down set: %', got; end if;
   if got::text like '%splat%' or got ? 'trap' then raise exception 'a set''s place names its trap: %', got; end if;
 
   -- A trap's spring: a play with the trap's card key, on the post.
   spring_act := tests.act(b, 'spring', t, jsonb_build_object('card', 'splat', 'trigger', 'cast', 'outcome', jsonb_build_object('do', 'nullify'), 'set', set_act), p);
   got := pg_temp.place(pg_temp.spun(ann, a, spring_act, 'From a spring'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'splat', 'on', p_place) then raise exception 'a spin from a spring: %', got; end if;
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'splat', 'on', p_place) || jsonb_build_object('board', general)) then raise exception 'a spin from a spring: %', got; end if;
   -- A set whose spring has landed still reads face down: the spring is its own Act.
   got := pg_temp.place((select id from threads where origin_act_id = set_act));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', null, 'on', p_place) then raise exception 'a set stays face down once sprung: %', got; end if;
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', null, 'on', p_place) || jsonb_build_object('board', general)) then raise exception 'a set stays face down once sprung: %', got; end if;
 
   -- A play on a character, through play_reach: the character's name.
   reach_act := tests.act(a, 'card', t, jsonb_build_object('card', 'sweetie', 'reach', 'character', 'character', b), p);
   insert into play_reach (play, reach, character, ends_at) values (reach_act, 'character', b, now() + interval '1 day');
   got := pg_temp.place(pg_temp.spun(ann, a, reach_act, 'From a character play'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'character', 'id', b, 'name', 'Op Bob')) then
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'character', 'id', b, 'name', 'Op Bob')) || jsonb_build_object('board', general)) then
     raise exception 'a spin from a play on a character: %', got;
   end if;
   -- A character that has not debuted is not named: the name reads null, and nothing else in the place gives the character away
@@ -105,7 +105,7 @@ begin
   reach_act := tests.act(a, 'card', t, jsonb_build_object('card', 'sweetie', 'reach', 'character', 'character', hidden), p);
   insert into play_reach (play, reach, character, ends_at) values (reach_act, 'character', hidden, now() + interval '1 day');
   got := pg_temp.place(pg_temp.spun(ann, a, reach_act, 'From a play on a waiting character'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'character', 'id', hidden, 'name', null)) then
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'character', 'id', hidden, 'name', null)) || jsonb_build_object('board', general)) then
     raise exception 'a play on a character that has not debuted: %', got;
   end if;
   if got::text like '%Op Hidden%' then raise exception 'a waiting character''s name is in the place: %', got; end if;
@@ -114,7 +114,7 @@ begin
   reach_act := tests.act(a, 'card', other, jsonb_build_object('card', 'sweetie', 'reach', 'thread', 'thread', t), first_post);
   insert into play_reach (play, reach, thread, ends_at) values (reach_act, 'thread', t, now() + interval '1 day');
   got := pg_temp.place(pg_temp.spun(ann, a, reach_act, 'From a thread play'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'thread', 'id', t, 'title', 'Op Thread')) then
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'thread', 'id', t, 'title', 'Op Thread')) || jsonb_build_object('board', general)) then
     raise exception 'a spin from a play on a thread: %', got;
   end if;
 
@@ -122,7 +122,7 @@ begin
   reach_act := tests.act(a, 'card', other, jsonb_build_object('card', 'sweetie', 'reach', 'board', 'board', general), null);
   insert into play_reach (play, reach, board, ends_at) values (reach_act, 'board', general, now() + interval '1 day');
   got := pg_temp.place(pg_temp.spun(ann, a, reach_act, 'From a board play'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', 'General')) then
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', 'General')) || jsonb_build_object('board', general)) then
     raise exception 'a spin from a play on a board: %', got;
   end if;
 
@@ -132,7 +132,7 @@ begin
   alter table acts enable trigger acts_take_seq;
   if (select seq from acts where id = legacy) is distinct from 99 then raise exception 'the fixture did not stage a numbered card'; end if;
   got := pg_temp.place(pg_temp.spun(ann, a, legacy, 'From an old card'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', p_place) then raise exception 'a legacy numbered card is not a play: %', got; end if;
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', p_place) || jsonb_build_object('board', general)) then raise exception 'a legacy numbered card is not a play: %', got; end if;
 
   -- An update: its headline, and the thread it opens is listed on the players' first board and is not "#N in Updates".
   perform seed_instance(jsonb_build_object('settings', '{}'::jsonb, 'classes', '[]'::jsonb, 'boards', '[]'::jsonb, 'cards', '[]'::jsonb,
@@ -155,7 +155,7 @@ begin
   reach_act := tests.act(a, 'card', (select thread from acts where id = upd), '{"card": "sweetie"}', upd);
   alter table acts enable trigger acts_well_formed;
   got := pg_temp.place(pg_temp.spun(ann, a, reach_act, 'From a card on an update'));
-  if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'update', 'act', upd, 'title', 'Op Headline')) then
+  if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'update', 'act', upd, 'title', 'Op Headline')) || jsonb_build_object('board', (select board from threads where id = (select thread from acts where id = upd)))) then
     raise exception 'a spin from a card on an update: %', got;
   end if;
 end $$;
@@ -198,7 +198,7 @@ begin
   create function pg_temp.named(th uuid, board uuid, name text, step text) returns void language plpgsql as $f$
   declare got jsonb := pg_temp.place(th);
   begin
-    if got is distinct from jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', name)) then
+    if got is distinct from (jsonb_build_object('kind', 'play', 'card', 'sweetie', 'on', jsonb_build_object('kind', 'board', 'slug', 'general', 'name', name)) || jsonb_build_object('board', board)) then
       raise exception '%: the place is %, wanted the board named %', step, got, name;
     end if;
     if (select n.name from boards_now n where n.id = board) is distinct from name then

@@ -171,7 +171,7 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
   readonly act: Act; readonly editing: boolean; readonly onEdit: () => void; readonly editButton: React.RefObject<HTMLButtonElement | null>;
   readonly spinOrigin: SpinOrigin | null; readonly setSpinOrigin: (o: SpinOrigin | null) => void;
 }) {
-  const { quote, plays } = useThread();
+  const { quote, plays, summary } = useThread();
   const owner = useOwnerOf();
   const { instance } = useKayfa();
   const { actingCharacters } = usePlayer();
@@ -200,7 +200,7 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
           {onReport && <button type="button" className="kb-button" data-kb-size="small" aria-haspopup="dialog" onClick={(e) => onReport(e.currentTarget)}>Report</button>}
         </div>
         {/* Under the buttons, out of the content area: an effect on the post neither covers the list nor is sized around it. */}
-        <SpunInto act={act.id} />
+        <SpunInto act={act.id} here={summary.board} />
       </footer>
       <div className="kb-act-panels">
         <div id={`spin-${act.id}`}>

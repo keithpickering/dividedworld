@@ -331,6 +331,13 @@ function toWho(raw: unknown): { readonly id: Id; readonly name: string } | null 
 
 /** A spun thread's origin_place (thread_open and thread_list, 0079): null for no place, a malformed one or an unknown kind; a play whose `on` is malformed keeps `on: null`. */
 function toPlace(raw: unknown): OriginPlace | null {
+  const place = toPlaceBare(raw);
+  /* The origin's thread's board (0428): a text on every kind but an update, else absent. */
+  return place !== null && place.kind !== 'update' && isObject(raw) && isText(raw['board']) ? { ...place, board: raw['board'] } : place;
+}
+
+/** toPlace's kinds, without the board. */
+function toPlaceBare(raw: unknown): OriginPlace | null {
   if (!isObject(raw)) return null;
   if (raw['kind'] === 'play') {
     if (!(raw['card'] === null || isText(raw['card']))) return null;
@@ -2419,8 +2426,17 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const a = await rpcWrite(() => client.rpc('poll_ballots', { poll, before: after?.at ?? null, before_id: after?.act ?? null }));
       return a.ok ? { ok: true, value: { ballots: rowsOf(a.value['ballots']).map((b) => ({ act: b['act'] as Id, character: toCharacter(isObject(b['character']) ? b['character'] : {}, isObject(b['character']) ? b['character'] : undefined), picks: toPicks(b['picks']), at: String(b['at']) })), more: a.value['more'] === true } } : a;
     },
-    spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
-    apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
+    spin: (origin, character, title, body, framing, at, board) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}), ...(board ? { board } : {}) }, withThread),
+    apologize: (move, character, title, body, framing, board) => act({ action: 'apologize', move, character, title, body, ...framed(framing), ...(board ? { board } : {}) }, withThread),
+    async spinPlaces(origin, character) {
+      /* One read (spin_places, 0428): a failed read throws as the others do. */
+      const d = (await read(() => client.rpc('spin_places', { origin, through: character }))).data;
+      const boards = isObject(d) ? rowsOf(d['boards']) : [];
+      return {
+        default: isObject(d) && isText(d['default']) ? d['default'] : null,
+        boards: boards.map((b) => ({ slug: String(b['slug']), name: String(b['name']), barred: b['barred'] === true, until: isText(b['until']) ? b['until'] : null })),
+      };
+    },
     react: (target, character, kind, opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null }), opts?.keepalive === true),
     turn: (character, to, loudness, showFrom, showTo, thread) =>
       act({ action: 'turn', character, class: to, loudness, showFrom, showTo, ...(thread === undefined ? {} : { thread }) }, toTurnAsked),

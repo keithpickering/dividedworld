@@ -560,7 +560,7 @@ export function Vending() {
               */}
             <p className="kb-vending-fine kb-vending-outcome" role="status" aria-live="polite" data-kb-tone="done">{outcome?.tone === 'refusal' ? '' : outcome?.text ?? ''}</p>
             <p className="kb-vending-fine kb-vending-outcome" role="alert" data-kb-tone="refusal">{outcome?.tone === 'refusal' ? outcome.text : ''}</p>
-            <p className="kb-vending-fine">The ghost estimate can't be spent. What you buy is private: nobody else sees it until you play it.</p>
+            <p className="kb-vending-fine">The ghost estimate can't be spent. What you buy is private: no other player sees it until you play it.</p>
           </CalmRegion>
         </section>
         <GlassLink ref={handLinkEl} to={handLink} className="kb-vending-hand kb-glass-skew">

@@ -372,6 +372,16 @@ describe('what is drawn beside the poll', () => {
     expect(within(spun.closest('p')!).getByRole('link', { name: 'Karts, settled' })).toBeInTheDocument();
   });
 
+  test('its SpunInto names the board of a thread spun onto another board', async () => {
+    const w = world();
+    const made = await w.fake.spin(w.poll, w.pipe, 'Karts, elsewhere', 'Over there.', undefined, undefined, 'off-topic');
+    expect(made.ok).toBe(true);
+    openThread(w);
+    const poll = await group();
+    const spun = await within(poll).findByText(/Spun into:/u);
+    await waitFor(() => expect(spun.closest('p')).toHaveTextContent('↳ Spun into: Karts, elsewhere (on Off Topic, 0 replies)'));
+  });
+
   test('a hidden post draws no poll', async () => {
     const w = world();
     w.fake.seed.hide(w.ids[0]!, 'hide');
