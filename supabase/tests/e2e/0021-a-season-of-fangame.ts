@@ -44,7 +44,7 @@ const makeDue = (where: string) => sql(`
 const dayOfSeason = (days: number) => sql(`update seasons set starts_at = now() - interval '${days * 24} hours' where ends_at is null`);
 /** The open season ends in `days` days. */
 const endsInDays = (days: number) => sql(`update seasons set starts_at = now() + interval '${days * 24} hours' - span_interval(setting('seasonLength')) where ends_at is null`);
-const arcRead = (): { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[] } =>
+const arcRead = (): { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[]; leadIns: string[] } =>
   JSON.parse(sql(`select arc_for_meeting(current_boss(), (select id from seasons where ends_at is null))`));
 const lastEvent = (beat: string) => sql(`select coalesce((select e.event from arc_beat_events e where e.staff = '${BOSS}' and e.beat = '${beat}' and e.season = (select id from seasons where ends_at is null) order by e.id desc limit 1), 'none')`);
 const noDrift = (step: string) => assert.equal(sql(`select count(*) from thread_places_drift()`), '0', `thread_places_drift is empty after ${step}`);
@@ -123,7 +123,7 @@ test('a season of FanGaME: the Split, picking it apart, the consolidation, every
   // ---- Day 3, the honeymoon: nothing is unlocked, and all three kinds are held back. ----
   dayOfSeason(3);
   await tick();
-  assert.deepEqual(arcRead(), { beats: [], heldBack: ['createBoard', 'moveThread', 'mergeBoard'] });
+  assert.deepEqual(arcRead(), { beats: [], leadIns: [], heldBack: ['createBoard', 'moveThread', 'mergeBoard'] });
   noDrift('the honeymoon');
 
   // ---- Day 15, the reign has begun: the Split is unlocked, and is not yet due (a week into the reign). ----

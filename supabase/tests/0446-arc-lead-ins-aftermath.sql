@@ -76,7 +76,7 @@ begin
         pg_temp.persona('al-s1'), pg_temp.persona('al-s2'), pg_temp.persona('al-s3'), pg_temp.persona('al-s4'), pg_temp.persona('al-s5'),
         pg_temp.persona('al-dep', pred_arc), pg_temp.persona('al-dsc'),
         pg_temp.persona('al-ca', pred_arc, chain_a_after), pg_temp.persona('al-cb', pred_arc, chain_b_after), pg_temp.persona('al-cc')),
-      'firstStaff', '[]'::jsonb,
+      'firstStaff', jsonb_build_array('al-pr1', 'al-pr2', 'al-pr3', 'al-pr4', 'al-pr5', 'al-dep', 'al-ca', 'al-cb', 'al-cc', 'al-s1', 'al-s2', 'al-s3', 'al-s4', 'al-s5', 'al-dsc'),
       'moves', jsonb_build_array(
         jsonb_build_object('key', 'createBoard', 'structural', true, 'shapesBoard', true, 'lasting', true, 'offices', jsonb_build_array('boss')),
         jsonb_build_object('key', 'moveThread', 'structural', false, 'shapesBoard', false, 'lasting', true, 'offices', jsonb_build_array('boss')),
@@ -91,6 +91,7 @@ begin
         jsonb_build_object('key', 'demandResolved', 'plain', 'one of the Boss''s moves'' demands was met or failed'))));
   perform seed_instance(seed);
   perform seed_instance(seed);
+  insert into admins (account) values (tests.account('al-admin'));
 end $$;
 
 create function pg_temp.season() returns bigint language sql as $$ select id from seasons where ends_at is null $$;
@@ -115,7 +116,7 @@ declare
 begin
   insert into meetings (started_at, slot, finished_at, outcome) values (now(), clock_timestamp(), now(), 'ok') returning id into m;
   insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, bundle, bundle_name, role)
-  values (m, who, 'createBoard', params, null, 'because', now() - interval '1 minute' + coalesce(wait, interval '0'), now() - interval '1 minute' + coalesce(wait, interval '0'), true, bundle, bname, role) returning id into q;
+  values (m, who, 'createBoard', params, null, 'because', now() - interval '1 minute' + coalesce(wait, interval '0'), now() - interval '1 minute' + coalesce(wait, interval '0') + case when wait is null then interval '0' else interval '1 day' end, true, bundle, bname, role) returning id into q;
   return q;
 end $$;
 -- A beat played, as the meeting writes it: unlocked, then played with the bundle it queued.
@@ -153,7 +154,8 @@ begin
   perform pg_temp.expect(said like '%noSuchCondition%', 'an aftermath beat named a condition the catalog lacks: ' || coalesce(said, 'allowed'));
   said := pg_temp.refusal($q$select seed_instance(jsonb_build_object('system', jsonb_build_object('staff', jsonb_build_array(
     jsonb_build_object('key', 'al-lead', 'name', 'al-lead', 'title', 'Boss', 'signature', 'Hi', 'beats', '[]'::jsonb,
-      'arc', jsonb_build_array(jsonb_build_object('key', 'split', 'unlock', '[]'::jsonb, 'leadIn', jsonb_build_object('unlock', jsonb_build_array(jsonb_build_object('kind', 'noSuchLeadIn')))))))))$q$);
+      'arc', jsonb_build_array(jsonb_build_object('key', 'split', 'unlock', '[]'::jsonb,
+        'leadIn', jsonb_build_object('unlock', jsonb_build_array(jsonb_build_object('kind', 'noSuchLeadIn'))))))))))$q$);
   perform pg_temp.expect(said like '%noSuchLeadIn%', 'a lead-in named a condition the catalog lacks: ' || coalesce(said, 'allowed'));
   perform pg_temp.expect((select lead_ins <> '{}'::jsonb from persona_arcs where staff = 'al-lead'), 'a refused seed rewrote a row');
 end $$;
@@ -204,12 +206,250 @@ end $$;
 
 -- ---- 3. beatLanded with `not`, in a Boss's own arc: it never lifts a phase condition it is paired with ----
 do $$
-declare
-  split_held uuid := gen_random_uuid();
 begin
   -- `not` alone holds from the season's first day: the beat has not landed yet (the instance check refuses a beat whose every condition is negated).
   perform pg_temp.began(3);
   perform pg_temp.expect(pg_temp.holds('al-lead', '{"kind": "beatLanded", "beat": "split", "not": true}'), 'a beat that was never played has landed');
+  perform pg_temp.expect(pg_temp.state('al-lead', 'solo') = 'unlocked', 'a beat whose only condition is a negated beatLanded did not unlock on the first days');
+  -- Paired with a phase that has not begun, it unlocks nothing: the negation holds and the phase does not.
+  perform pg_temp.expect(pg_temp.state('al-lead', 'epilogue') is null, 'epilogue unlocked before the meltdown');
+  perform pg_temp.began(40);
   perform system_tick();
-  perform pg_temp.expect(pg_temp.state('al-lead', 'solo') is null, 'solo was already unlocked by an earlier tick'); -- it unlocks below, once; day 3 ticks ran above with no solo
+  perform pg_temp.expect(pg_temp.state('al-lead', 'epilogue') is null, 'epilogue unlocked at day 40, before the meltdown');
+  perform pg_temp.began(75);
+  perform system_tick();
+  perform pg_temp.expect(pg_temp.state('al-lead', 'epilogue') = 'unlocked', 'epilogue did not unlock in the meltdown with the split unlanded');
+  -- A `not` that is false (the beat landed) keeps a beat locked even once its phase has come.
+  perform pg_temp.expect(not pg_temp.holds('al-lead', '{"kind": "beatLanded", "beat": "solo", "not": true}') is null, 'a condition read null');
+  perform pg_temp.expect(not pg_temp.holds('al-lead', '{"kind": "beatLanded", "beat": "split", "of": "predecessor", "not": true}'), 'a Boss with no predecessor holds a negated predecessor condition');
+  perform pg_temp.expect(not pg_temp.holds('al-lead', '{"kind": "beatLanded", "beat": "split", "of": "predecessor"}'), 'a Boss with no predecessor holds a predecessor condition');
+  perform pg_temp.expect(pg_temp.refusal($q$select beat_condition_holds('al-lead', (select id from seasons where ends_at is null), '{"kind": "beatLanded", "beat": "split", "of": "successor"}')$q$) like '%predecessor%', 'an unknown `of` was read');
+end $$;
+
+-- ---- 4. The FanGaME shape: two aftermath beats, and the three outcomes of a predecessor ----
+-- Each predecessor plays as the Boss (the tick lands only the Boss's moves), then a departure row names its successor in this season.
+do $$
+declare
+  b uuid;
+  e uuid;
+  q bigint;
+begin
+  perform pg_temp.began(10);
+  -- al-pr1: Split landed, Everything is World -1 landed.
+  perform pg_temp.boss('al-pr1');
+  b := gen_random_uuid(); e := gen_random_uuid();
+  perform pg_temp.part('al-pr1', b, 'Split', 'minus', pg_temp.mkboard('P1 Minus'));
+  perform pg_temp.part('al-pr1', b, 'Split', 'fangames', pg_temp.mkboard('P1 Fangames'));
+  perform pg_temp.part('al-pr1', e, 'Everything', 'all', pg_temp.mkboard('P1 All'));
+  perform system_tick();
+  perform pg_temp.play('al-pr1', 'split', b);
+  perform pg_temp.play('al-pr1', 'everything', e);
+  -- al-pr2: Split landed, Everything never played.
+  perform pg_temp.boss('al-pr2');
+  b := gen_random_uuid();
+  perform pg_temp.part('al-pr2', b, 'Split', 'minus', pg_temp.mkboard('P2 Minus'));
+  perform system_tick();
+  perform pg_temp.play('al-pr2', 'split', b);
+  -- al-pr3: Split played and held in full, so it never landed; nothing else.
+  perform pg_temp.boss('al-pr3');
+  b := gen_random_uuid();
+  q := pg_temp.part('al-pr3', b, 'Split', 'minus', pg_temp.mkboard('P3 Minus'));
+  update queued_moves set held_at = now(), held_by = (select id from auth.users where email = 'al-admin@test.invalid') where id = q;
+  perform pg_temp.play('al-pr3', 'split', b);
+  -- al-pr4: Split landed; Everything played with its only part held.
+  perform pg_temp.boss('al-pr4');
+  b := gen_random_uuid(); e := gen_random_uuid();
+  perform pg_temp.part('al-pr4', b, 'Split', 'minus', pg_temp.mkboard('P4 Minus'));
+  q := pg_temp.part('al-pr4', e, 'Everything', 'all', pg_temp.mkboard('P4 All'));
+  update queued_moves set held_at = now(), held_by = (select id from auth.users where email = 'al-admin@test.invalid') where id = q;
+  perform system_tick();
+  perform pg_temp.play('al-pr4', 'split', b);
+  perform pg_temp.play('al-pr4', 'everything', e);
+  -- al-pr5: Split landed; Everything played, its part still waiting (due in 30 days).
+  perform pg_temp.boss('al-pr5');
+  b := gen_random_uuid(); e := gen_random_uuid();
+  perform pg_temp.part('al-pr5', b, 'Split', 'minus', pg_temp.mkboard('P5 Minus'));
+  perform pg_temp.part('al-pr5', e, 'Everything', 'all', pg_temp.mkboard('P5 All'), interval '30 days');
+  perform system_tick();
+  perform pg_temp.play('al-pr5', 'split', b);
+  perform pg_temp.play('al-pr5', 'everything', e);
+  perform pg_temp.expect((select count(*) from queued_moves where staff in ('al-pr1', 'al-pr2', 'al-pr4', 'al-pr5') and landed_act is not null) = 6, 'the fixture bundles did not land as planned: ' || (select count(*) from queued_moves where landed_act is not null));
+  -- Each successor is seated in this season by a departure: the predecessor served this very season.
+  perform pg_temp.handover(pg_temp.season(), 'al-pr1', 'al-s1', 'departure');
+  perform pg_temp.handover(pg_temp.season(), 'al-pr2', 'al-s2', 'departure');
+  perform pg_temp.handover(pg_temp.season(), 'al-pr3', 'al-s3', 'departure');
+  perform pg_temp.handover(pg_temp.season(), 'al-pr4', 'al-s4', 'departure');
+  perform pg_temp.handover(pg_temp.season(), 'al-pr5', 'al-s5', 'departure');
+  perform pg_temp.boss('al-s1');
+end $$;
+do $$
+declare
+  s bigint := pg_temp.season();
+  r record;
+begin
+  select * into r from arc_predecessor('al-s1', s);
+  perform pg_temp.expect(r.staff = 'al-pr1' and r.season = s, 'the predecessor of a departure is not the departed Boss in the same season: ' || coalesce(r.staff, 'none'));
+  perform pg_temp.expect(not exists (select 1 from arc_predecessor('al-lead', s)), 'a Boss nobody handed over to has a predecessor');
+  perform pg_temp.expect(not exists (select 1 from arc_predecessor('al-pr1', s)), 'a Boss that handed over has a predecessor it never had');
+  perform pg_temp.expect(not exists (select 1 from arc_predecessor(null, s)), 'no one has a predecessor');
+
+  -- Before any pass: lead-in of the aftermath's `restore` (honeymoon, day 10, three days in) shows under the successor's event key.
+  perform pg_temp.expect(arc_lead_ins('al-s1', s) = array['after:al-pr1:restore'], 'the aftermath lead-in did not show under the key its event takes: ' || arc_lead_ins('al-s1', s)::text);
+  perform pg_temp.expect(arc_lead_ins('al-s3', s) = array['after:al-pr3:restore'], 'a lead-in is read from its own conditions, for a Boss whose predecessor''s beat was held');
+
+  -- Both landed: only restore.
+  perform pg_temp.pass('al-s1');
+  perform pg_temp.expect(pg_temp.state('al-s1', 'after:al-pr1:restore') = 'unlocked' and pg_temp.state('al-s1', 'after:al-pr1:unfinished') is null, 'both landed did not unlock only restore');
+  perform pg_temp.expect(arc_lead_ins('al-s1', s) = '{}'::text[], 'the aftermath lead-in went on after its beat unlocked');
+  -- Split landed, Everything never played: only unfinished.
+  perform pg_temp.pass('al-s2');
+  perform pg_temp.expect(pg_temp.state('al-s2', 'after:al-pr2:unfinished') = 'unlocked' and pg_temp.state('al-s2', 'after:al-pr2:restore') is null, 'split landed and everything did not did not unlock only unfinished');
+  -- Split played and held: neither, and it never will.
+  perform pg_temp.pass('al-s3');
+  perform pg_temp.expect(pg_temp.state('al-s3', 'after:al-pr3:restore') is null and pg_temp.state('al-s3', 'after:al-pr3:unfinished') is null, 'a predecessor whose split was held unlocked an aftermath beat');
+  -- Split landed, Everything held: unfinished (held is settled: it will not land).
+  perform pg_temp.pass('al-s4');
+  perform pg_temp.expect(pg_temp.state('al-s4', 'after:al-pr4:unfinished') = 'unlocked' and pg_temp.state('al-s4', 'after:al-pr4:restore') is null, 'an everything held did not leave only unfinished');
+  -- Everything's part still waiting: neither, so the two exclusive beats cannot both unlock.
+  perform pg_temp.pass('al-s5');
+  perform pg_temp.expect(pg_temp.state('al-s5', 'after:al-pr5:restore') is null and pg_temp.state('al-s5', 'after:al-pr5:unfinished') is null, 'a beat still waiting to land unlocked an aftermath beat');
+  perform pg_temp.expect(not pg_temp.holds('al-s5', '{"kind": "beatLanded", "beat": "everything", "of": "predecessor", "not": true}', s) and not pg_temp.holds('al-s5', '{"kind": "beatLanded", "beat": "everything", "of": "predecessor"}', s),
+    'a waiting beat was read as landed or as not landed');
+  -- Once is once.
+  perform pg_temp.expect((pg_temp.pass('al-s1') ->> 'unlocked')::integer = 0 and (select count(*) from arc_beat_events where staff = 'al-s1') = 1, 'a second pass unlocked again');
+  -- An aftermath beat is never the Boss's own: the successor has no beat of that key, and an event for it is refused.
+  perform pg_temp.expect(pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'al-s1', 'restore', 'unlocked')) like '%no beat%', 'a plain key stood for an aftermath beat');
+  perform pg_temp.expect(pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'al-s1', 'after:al-pr2:restore', 'unlocked')) like '%no beat%', 'an aftermath beat of a Boss that did not hand over to this one was written');
+  perform pg_temp.expect(pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'al-s1', 'after:al-pr1:nothing', 'unlocked')) like '%no beat%', 'an aftermath beat the predecessor lacks was written');
+  perform pg_temp.expect(pg_temp.refusal(format('insert into arc_beat_events (season, staff, beat, event) values (%s, %L, %L, %L)', s, 'al-s1', 'after:al-pr1:restore', 'played')) is null, 'the unlocked aftermath beat could not be played');
+end $$;
+
+-- ---- 5. What the meeting reads: the unlocked aftermath beats, flagged, with their predecessor ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  m jsonb;
+begin
+  m := arc_for_meeting('al-s2', s);
+  perform pg_temp.expect(m -> 'beats' = jsonb_build_array(jsonb_build_object('key', 'unfinished', 'mini', true, 'due', false, 'aftermath', true, 'predecessor', 'al-pr2')), 'the meeting reads: ' || (m -> 'beats')::text);
+  perform pg_temp.expect(m -> 'leadIns' = '["after:al-pr2:restore"]'::jsonb and m ? 'heldBack', 'the meeting''s read lost a key: ' || m::text);
+  -- Played, it is no longer offered.
+  perform pg_temp.expect(arc_for_meeting('al-s1', s) -> 'beats' = '[]'::jsonb, 'a played aftermath beat is still offered');
+  perform pg_temp.expect(arc_for_meeting('al-s3', s) -> 'beats' = '[]'::jsonb, 'a held predecessor''s beat is offered');
+  -- An own beat is listed as it was, with no aftermath flag.
+  perform pg_temp.expect(arc_for_meeting('al-lead', s) -> 'beats' -> 0 ? 'aftermath' is false, 'an own beat carries an aftermath flag');
+end $$;
+
+-- ---- 6. A role of the predecessor's: its board, and none once it is reversed or merged ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  minus uuid := (select id from boards where slug = 'p2-minus');
+  said text;
+begin
+  perform pg_temp.expect(minus is not null, 'fixture board missing');
+  perform pg_temp.expect(arc_board(s, 'al-s2', '{"role": "minus", "beat": "split", "of": "predecessor"}') = minus, 'the predecessor''s role did not resolve to its board');
+  perform pg_temp.expect(beat_role_board(s, 'al-s2', 'split', 'minus', 'predecessor') = minus, 'beat_role_board did not resolve the predecessor''s role');
+  perform pg_temp.expect(arc_board(s, 'al-s2', '{"role": "minus", "beat": "split"}') is null, 'a role with no `of` read the predecessor''s beat');
+  perform pg_temp.expect(arc_board(s, 'al-s2', '{"role": "nowhere", "beat": "split", "of": "predecessor"}') is null and arc_board(s, 'al-s2', '{"role": "minus", "beat": "everything", "of": "predecessor"}') is null,
+    'a role the predecessor never made has a board');
+  perform pg_temp.expect(arc_board(s, 'al-lead', '{"role": "minus", "beat": "split", "of": "predecessor"}') is null, 'a Boss with no predecessor has its board');
+  perform pg_temp.expect(beat_role_board(s, 'al-pr2', 'split', 'minus') = minus, 'the four-argument call reads an own beat as it always did');
+  -- The board's own boardActivity reading follows the same refs.
+  perform pg_temp.expect(arc_board(s, 'al-s2', to_jsonb(minus::text)) = minus, 'a board by id stopped resolving');
+  -- Once the predecessor's board is reversed, the role is none; an own beat's role is read as it was.
+  perform end_move((select q.landed_act from queued_moves q where q.staff = 'al-pr2' and q.role = 'minus'), 'reversed', 'admin');
+  perform pg_temp.expect(arc_board(s, 'al-s2', '{"role": "minus", "beat": "split", "of": "predecessor"}') is null, 'a reversed board of the predecessor still resolves');
+  perform pg_temp.expect(beat_role_board(s, 'al-pr2', 'split', 'minus') = minus, 'an own beat''s role changed with the board reversed');
+  -- A board that is not reversed is still there for the same Boss's other role.
+  perform pg_temp.expect(arc_board(s, 'al-s1', '{"role": "fangames", "beat": "split", "of": "predecessor"}') = (select id from boards where slug = 'p1-fangames'), 'the other board did not resolve');
+  said := pg_temp.refusal($q$select beat_condition_holds('al-s1', (select id from seasons where ends_at is null), '{"kind": "boardActivity", "days": 7, "board": {"role": "fangames", "beat": "split", "of": "predecessor"}, "above": 0}')$q$);
+  perform pg_temp.expect(said is null, 'boardActivity could not read the predecessor''s board: ' || coalesce(said, ''));
+end $$;
+
+-- ---- 7. A departure mid-season reads the departed Boss's beats in the same season; an aftermath beat's own earlier beats are read under its key ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  b uuid := gen_random_uuid();
+begin
+  -- al-dep played its split as the Boss, then left: its successor reads the same season.
+  perform pg_temp.boss('al-dep');
+  perform pg_temp.part('al-dep', b, 'Split', 'minus', pg_temp.mkboard('Dep Minus'));
+  perform system_tick();
+  perform pg_temp.play('al-dep', 'split', b);
+  perform pg_temp.handover(s, 'al-dep', 'al-dsc', 'departure');
+  perform pg_temp.boss('al-dsc');
+  perform pg_temp.expect(pg_temp.holds('al-dsc', '{"kind": "beatLanded", "beat": "split", "of": "predecessor"}', s), 'a departure''s successor did not read the departed Boss''s beat in the same season');
+  perform pg_temp.expect(not pg_temp.holds('al-dsc', '{"kind": "beatLanded", "beat": "split", "of": "predecessor", "not": true}', s), 'the negation held for a beat that landed');
+  perform pg_temp.expect(pg_temp.holds('al-dsc', '{"kind": "beatLanded", "beat": "everything", "of": "predecessor", "not": true}', s), 'the negation did not hold for a beat never played, by a predecessor that has gone');
+  perform pg_temp.expect(not pg_temp.holds('al-dsc', '{"kind": "beatLanded", "beat": "split"}', s), 'the successor''s own beat of that key landed');
+end $$;
+do $$
+declare
+  s bigint := pg_temp.season();
+begin
+  -- Inside an aftermath beat, a condition with no `of` names an earlier aftermath beat of the same list, which is read under the successor's own event key (after:<pred>:<key>).
+  -- Planted as a fixture row beside the seeded ones: `second` waits on `first` having landed (played with no bundle), `first` waits on nothing but the honeymoon.
+  update persona_arcs set aftermath = jsonb_build_array(
+    jsonb_build_object('key', 'first', 'mini', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'phase', 'phase', 'honeymoon'))),
+    jsonb_build_object('key', 'second', 'mini', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'first'))),
+    jsonb_build_object('key', 'role', 'mini', true, 'unlock', jsonb_build_array(jsonb_build_object('kind', 'boardActivity', 'days', 7, 'board', jsonb_build_object('role', 'nope', 'beat', 'first'), 'above', 0))))
+  where staff = 'al-dep';
+  perform pg_temp.pass('al-dsc', s);
+  perform pg_temp.expect(pg_temp.state('al-dsc', 'after:al-dep:first') = 'unlocked' and pg_temp.state('al-dsc', 'after:al-dep:second') is null, 'an aftermath beat waiting on an earlier one unlocked with it, or the first did not');
+  insert into arc_beat_events (season, staff, beat, event) values (s, 'al-dsc', 'after:al-dep:first', 'played');
+  perform pg_temp.pass('al-dsc', s);
+  perform pg_temp.expect(pg_temp.state('al-dsc', 'after:al-dep:second') = 'unlocked', 'an aftermath beat did not read the successor''s own play of the earlier aftermath beat');
+  perform pg_temp.expect(pg_temp.state('al-dsc', 'after:al-dep:role') is null, 'an aftermath beat''s role with no `of` resolved to a board that is not there');
+  -- The same beat key in the predecessor's own arc is another thing: `split` here is the departed Boss's, and the plain reading would find none under the successor.
+end $$;
+
+-- ---- 8. A departure followed by a roll-over: the predecessor is the Boss that handed over to the current one, never an earlier one ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  b uuid := gen_random_uuid();
+  r record;
+begin
+  -- A is the Boss; it plays a-only and lands its split, then departs. B is seated by the departure, plays side and not split, and passes at the roll-over to C.
+  perform pg_temp.boss('al-ca');
+  perform pg_temp.part('al-ca', b, 'Split', 'minus', pg_temp.mkboard('A Minus'));
+  perform system_tick();
+  perform pg_temp.play('al-ca', 'split', b);
+  perform pg_temp.play('al-ca', 'a-only');
+  perform pg_temp.handover(s, 'al-ca', 'al-cb', 'departure');
+  perform pg_temp.boss('al-cb');
+  perform pg_temp.play('al-cb', 'side');
+  -- B is seated: A's beat a-only unlocks B's from-a, and A's aftermath exists only for B.
+  perform pg_temp.pass('al-cb');
+  perform pg_temp.expect(pg_temp.state('al-cb', 'after:al-ca:from-a') = 'unlocked', 'the departure''s successor did not unlock the aftermath of the beat that landed');
+  -- The roll-over: the season closes, the next opens with C seated by B's hand-over.
+  update seasons set ends_at = now(), boss = 'al-cb' where ends_at is null;
+  insert into seasons (number, starts_at, boss) select max(number) + 1, (select ends_at from seasons where ends_at is not null order by number desc limit 1), 'al-cc' from seasons;
+  perform pg_temp.handover(pg_temp.season(), 'al-cb', 'al-cc', 'rollover');
+  select * into r from arc_predecessor('al-cc', pg_temp.season());
+  perform pg_temp.expect(r.staff = 'al-cb' and r.season = s, 'after a departure and a roll-over C''s predecessor is not B in the season before: ' || coalesce(r.staff, 'none') || ' ' || coalesce(r.season::text, ''));
+  select * into r from arc_predecessor('al-cb', pg_temp.season());
+  perform pg_temp.expect(r.staff = 'al-ca' and r.season = s, 'B''s own predecessor changed with the roll-over');
+  perform pg_temp.expect(pg_temp.holds('al-cc', '{"kind": "beatLanded", "beat": "side", "of": "predecessor"}'), 'C did not read B''s beat in the season B served');
+  perform pg_temp.expect(not pg_temp.holds('al-cc', '{"kind": "beatLanded", "beat": "a-only", "of": "predecessor"}'), 'C read the Boss before B');
+  perform pg_temp.expect(not pg_temp.holds('al-cc', '{"kind": "beatLanded", "beat": "split", "of": "predecessor"}') and pg_temp.holds('al-cc', '{"kind": "beatLanded", "beat": "split", "of": "predecessor", "not": true}'),
+    'C read A''s landed split');
+  perform pg_temp.expect(arc_board(pg_temp.season(), 'al-cc', '{"role": "minus", "beat": "split", "of": "predecessor"}') is null and (select id from boards where slug = 'a-minus') is not null,
+    'C resolved a board A made');
+  -- The tick makes the pass for the new Boss: `from-b` unlocks under C's key; `from-b-a` (A's beat) does not.
+  perform system_tick();
+  perform pg_temp.expect(pg_temp.state('al-cc', 'after:al-cb:from-b') = 'unlocked' and pg_temp.state('al-cc', 'after:al-cb:from-b-a') is null, 'the tick did not unlock the aftermath of the Boss that handed over, and only that');
+  perform pg_temp.expect(arc_for_meeting('al-cc', pg_temp.season()) -> 'beats' = jsonb_build_array(jsonb_build_object('key', 'from-b', 'mini', true, 'due', false, 'aftermath', true, 'predecessor', 'al-cb')), 'the meeting does not read the aftermath of the roll-over');
+  -- The season before closed with B's from-a unlocked: the pass lapses it, once.
+  -- (that tick also made the closed season's pass for its last Boss.)
+  perform system_tick();
+  perform pg_temp.expect(pg_temp.state('al-cb', 'after:al-ca:from-a', s) = 'lapsed', 'an aftermath beat did not lapse at the season''s end');
+  perform pg_temp.expect((select count(*) from arc_beat_events where staff = 'al-cb' and beat = 'after:al-ca:from-a' and event = 'lapsed') = 1, 'it lapsed twice');
+  -- An aftermath beat is read only in the season its Boss was seated in: a later season with the same row finds none.
+  perform pg_temp.expect(arc_lead_ins('al-cc', pg_temp.season()) = '{}'::text[], 'a lead-in showed for a Boss with none');
+  update seasons set ends_at = now() + interval '1 day' where ends_at is null;
+  insert into seasons (number, starts_at) select max(number) + 1, now() + interval '1 day' from seasons;
+  perform pg_temp.expect(not exists (select 1 from arc_predecessor('al-cc', (select max(id) from seasons)) p where p.seated = (select max(id) from seasons)), 'a Boss seated before the season is read as seated in it');
 end $$;

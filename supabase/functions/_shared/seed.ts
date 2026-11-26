@@ -16,6 +16,7 @@ import { DEMAND_KINDS } from '../../../engine/system/demands.ts';
 import { CONDITIONS } from '../../../engine/system/conditions.ts';
 import { PHASE_CAPS } from '../../../engine/system/phases.ts';
 import type { Beat, Persona } from '../../../engine/rules/types.ts';
+import type { Condition } from '../../../engine/system/conditions.ts';
 
 /** What a persona's visits can be talked down with, as the seed carries it in `challenge`: the kind and its number, never a quiz's questions or answers (those travel in `quiz`). */
 function challengeOf(w: Weakness): { kind: string; questions?: number; price?: number } {
@@ -31,12 +32,19 @@ function quizOf(w: Weakness): { quiz: { question: string; choices: string[]; ans
 
 /**
  * A persona's arc as the seed carries it to `persona_arcs` (0332): each beat's key, whether it is a mini-arc and repeatable, its unlock conditions and its due point, in the persona's
- * order (the arc, then the mini-arcs). Never a brief or a bundle template: those are the instance's, read by the meeting in code, as the prompts are, so the database holds only what
- * it checks. An arc's beat is not a patrol `beats` (the boards a Mod Bot watches), which travels beside it unchanged.
+ * order (the arc, then the mini-arcs), and a lead-in's unlock where the beat has one (0446). Never a brief, a mood, an announcement or a bundle template: those are the instance's, read
+ * by the meeting in code, as the prompts are, so the database holds only what it checks. An arc's beat is not a patrol `beats` (the boards a Mod Bot watches), which travels beside it unchanged.
  */
-function arcOf(p: Persona): { key: string; mini: boolean; repeatable: boolean; unlock: Beat['unlock']; due: Beat['due'] | null }[] {
-  const one = (b: Beat, mini: boolean) => ({ key: b.key, mini, repeatable: mini && b.repeatable === true, unlock: b.unlock, due: b.due ?? null });
+type SeedBeat = { key: string; mini: boolean; repeatable: boolean; unlock: Beat['unlock']; due?: Beat['due'] | null; leadIn?: { unlock: Condition[] } };
+const leadInOf = (b: Beat): { leadIn?: { unlock: Condition[] } } => (b.leadIn ? { leadIn: { unlock: [...b.leadIn.unlock] } } : {});
+function arcOf(p: Persona): SeedBeat[] {
+  const one = (b: Beat, mini: boolean): SeedBeat => ({ key: b.key, mini, repeatable: mini && b.repeatable === true, unlock: b.unlock, due: b.due ?? null, ...leadInOf(b) });
   return [...(p.arc ?? []).map((b) => one(b, false)), ...(p.miniArcs ?? []).map((b) => one(b, true))];
+}
+
+/** A persona's aftermath as the seed carries it (0446): the beats a successor plays, kept as the arc's are, each a mini-arc that is never repeatable and never due. */
+function aftermathOf(p: Persona): SeedBeat[] {
+  return (p.aftermath ?? []).map((b) => ({ key: b.key, mini: true, repeatable: false, unlock: b.unlock, ...leadInOf(b) }));
 }
 
 /**
@@ -160,7 +168,7 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
           // A persona's own pronouns (0124); left out, seed_instance gives it the instance's default.
           ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}),
           // The arc's part that SQL checks (0332): its beats, the kinds held back until a beat, and the phase lengths its conditions read.
-          arc: arcOf(p), holdsBack: (p.holdsBack ?? []).map((h) => ({ kind: h.kind, until: h.until })), phaseDays: phaseDaysOf(p) })),
+          arc: arcOf(p), aftermath: aftermathOf(p), holdsBack: (p.holdsBack ?? []).map((h) => ({ kind: h.kind, until: h.until })), phaseDays: phaseDaysOf(p) })),
       ],
       firstStaff: [...instance.system.firstStaff],
       // The first season's Boss, set on an open season that has none (0047).

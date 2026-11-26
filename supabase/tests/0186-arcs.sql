@@ -490,14 +490,14 @@ declare
   p regprocedure;
 begin
   perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned()'::regprocedure) = 'reaction', 'the masks check did not find the word it exists to find');
-  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting') loop
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_predecessor', 'arc_lead_ins', 'arc_aftermath_cond', 'arc_beat_events_guard') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting')) = 11, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_predecessor', 'arc_lead_ins', 'arc_aftermath_cond', 'arc_beat_events_guard')) = 15, 'a function the masks check reads is missing');
   -- Every definer function here pins its search path, and no client can call one.
-  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_beat_events_guard')
+  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_predecessor', 'arc_lead_ins', 'arc_aftermath_cond', 'arc_beat_events_guard')
     and (not prosecdef or not exists (select 1 from unnest(proconfig) c where c = 'search_path=public, pg_temp'))), 'an arc function is not a definer with a pinned search path');
-  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting')
+  perform pg_temp.expect(not exists (select 1 from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_predecessor', 'arc_lead_ins', 'arc_aftermath_cond', 'arc_beat_events_guard')
     and (has_function_privilege('anon', oid, 'execute') or has_function_privilege('authenticated', oid, 'execute'))), 'a client can call an arc function');
 end $$;
 
@@ -559,13 +559,13 @@ begin
   perform pg_temp.began(89);
   perform pg_temp.expect(arc_for_meeting('ar-boss', s) = jsonb_build_object('beats', jsonb_build_array(
       jsonb_build_object('key', 'late', 'mini', false, 'due', true), jsonb_build_object('key', 'never', 'mini', false, 'due', false)),
-    'heldBack', '[]'::jsonb), 'the meeting''s read is not the unlocked, unplayed beats with their due state: ' || arc_for_meeting('ar-boss', s)::text);
+    'heldBack', '[]'::jsonb, 'leadIns', '[]'::jsonb), 'the meeting''s read is not the unlocked, unplayed beats with their due state: ' || arc_for_meeting('ar-boss', s)::text);
   -- Before the due point the same beat is not due; a played beat is not listed; a persona with no arc reads empty.
   perform pg_temp.began(80);
   perform pg_temp.expect((arc_for_meeting('ar-boss', s) -> 'beats' -> 0 ->> 'due')::boolean is false, 'late is due before its point');
   insert into arc_beat_events (season, staff, beat, event) values (s, 'ar-boss', 'never', 'played');
   perform pg_temp.expect(arc_for_meeting('ar-boss', s) -> 'beats' = '[{"key": "late", "mini": false, "due": false}]'::jsonb, 'a played beat is still listed: ' || (arc_for_meeting('ar-boss', s) -> 'beats')::text);
-  perform pg_temp.expect(arc_for_meeting('ar-plain', s) = '{"beats": [], "heldBack": []}'::jsonb and arc_for_meeting('nobody', s) = '{"beats": [], "heldBack": []}'::jsonb, 'a persona with no arc has beats');
+  perform pg_temp.expect(arc_for_meeting('ar-plain', s) = '{"beats": [], "heldBack": [], "leadIns": []}'::jsonb and arc_for_meeting('nobody', s) = '{"beats": [], "heldBack": [], "leadIns": []}'::jsonb, 'a persona with no arc has beats');
   -- A lapsed beat is not listed either (`rev` lapsed in section 9): the meeting's read and the pass share one definition of a beat's state.
   perform pg_temp.expect(not (arc_for_meeting('ar-boss', s) -> 'beats')::text like '%"rev"%', 'a lapsed beat is listed');
 end $$;
