@@ -91,7 +91,7 @@ test('phase: daysIntoPhase is whole days into a named phase, never beside daysBe
   assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 0 }), null);
   assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: DAYS_BEFORE_END_MOST }), null);
   assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7, daysBeforeEnd: 3 })?.predicate, 'notWith(daysBeforeEnd)');
-  assert.equal(bad({ kind: 'phase', daysIntoPhase: 7 })?.predicate, 'requires(phase)');
+  assert.equal(bad({ kind: 'phase', daysIntoPhase: 7 })?.predicate, 'atLeastOneOf(phase, daysBeforeEnd)');
   assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 99_999 })?.predicate, `atMost(${DAYS_BEFORE_END_MOST})`);
   assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: DAYS_BEFORE_END_MOST + 1 })?.predicate, `atMost(${DAYS_BEFORE_END_MOST})`);
   assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: -1 })?.predicate, 'atLeast(0)');

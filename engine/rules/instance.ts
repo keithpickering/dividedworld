@@ -1212,6 +1212,7 @@ function arcProblems(who: string, p: Persona, authoredMostParts: number | null, 
     list.forEach(({ b }, i) => { if (isObj(b) && typeof b.key === 'string' && !m.has(b.key)) m.set(b.key, i); });
     return m;
   };
+  // Arc and aftermath keys are separate namespaces: an aftermath beat's events are recorded as `after:<predecessor key>:<key>`, so a key may repeat across the two.
   const at = indexOf(own);
   const atAfter = indexOf(beats.filter((x) => x.after));
   for (const list of [own, beats.filter((x) => x.after)]) for (const k of duplicates(list.filter(({ b }) => isObj(b)), ({ b }) => String(b.key))) out.push(`${who}: beat "${k}" is used twice (isUnique)`);
@@ -1221,6 +1222,7 @@ function arcProblems(who: string, p: Persona, authoredMostParts: number | null, 
   const ref = (pre: string, r: Record<string, unknown>, from: number, mustPrecede: boolean, inAfter: boolean): string | null => {
     const beat = String(r['beat']);
     const role = String(r['role']);
+    if (r['of'] !== undefined && r['of'] !== 'predecessor') return `${pre} names role "${role}" of beat "${beat}" with an of that is not the predecessor (oneOf(predecessor))`;
     const theirs = r['of'] === 'predecessor';
     if (theirs && !inAfter) return `${pre} names role "${role}" of beat "${beat}" of the predecessor, which only an aftermath beat may (aftermathOnly)`;
     const i = (theirs || !inAfter ? at : atAfter).get(beat);

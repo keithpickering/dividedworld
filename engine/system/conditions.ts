@@ -100,7 +100,7 @@ export function conditionProblem(c: unknown): ConditionProblem | null {
       const extra = stray(c, ['phase', 'daysBeforeEnd', 'daysIntoPhase']);
       if (extra) return extra;
       const has = (k: string) => c[k] !== undefined;
-      if (!has('phase') && !has('daysBeforeEnd') && !has('daysIntoPhase')) return problem('phase', 'atLeastOneOf(phase, daysBeforeEnd)', 'a phase condition names a phase, or days before the end, or both');
+      if (!has('phase') && !has('daysBeforeEnd')) return problem('phase', 'atLeastOneOf(phase, daysBeforeEnd)', 'a phase condition names a phase, or days before the end, or both');
       if (has('phase')) { const bad = phaseProblem(c['phase'], 'phase'); if (bad) return bad; }
       if (has('daysBeforeEnd')) {
         const bad = whole(c['daysBeforeEnd'], 1, DAYS_BEFORE_END_MOST);

@@ -1538,7 +1538,7 @@ test('a lead-in needs a condition, a brief and a mood within their bounds, and c
   assert.match(withLeadIn({ mood: ' ' }), /beat "split".*leadIn.*mood.*\(required\)/);
   assert.match(withLeadIn({ brief: 'x'.repeat(LEAD_IN_BRIEF_MOST + 1) }), new RegExp(`beat "split".*leadIn.*brief.*\\(atMost\\(${LEAD_IN_BRIEF_MOST}\\)\\)`));
   assert.match(withLeadIn({ mood: 'x'.repeat(MOOD_MOST + 1) }), new RegExp(`beat "split".*leadIn.*mood.*\\(atMost\\(${MOOD_MOST}\\)\\)`));
-  assert.match(withLeadIn({ unlock: [{ kind: 'phase', daysIntoPhase: 7 }] }), /beat "split".*leadIn unlock 1.*\(requires\(phase\)\)/);
+  assert.match(withLeadIn({ unlock: [{ kind: 'phase', daysIntoPhase: 7 }] }), /beat "split".*leadIn unlock 1.*\(atLeastOneOf\(phase, daysBeforeEnd\)\)/);
 });
 
 test('of: predecessor outside the aftermath is a problem, in a condition and in a bundle ref', () => {
@@ -1593,6 +1593,21 @@ test('the beat bound counts aftermath beats with the rest', () => {
   assert.match(announcedOf({ arc: [], miniArcs: [], holdsBack: [], aftermath: some(25, 'a') }), /25 beats.*\(atMost\(24\)\)/);
   assert.match(announcedOf({ arc: [split, picking, everything], miniArcs: [lap], holdsBack: [], aftermath: some(21, 'a') }), /25 beats.*\(atMost\(24\)\)/);
   assert.deepEqual(instanceProblems(withBoss({ ...arcFields, arc: [split, picking, everything], miniArcs: [lap], holdsBack: [], aftermath: some(20, 'a') } as Partial<Persona>)), []);
+});
+
+test('a bundle ref with an of that is not predecessor is refused, and in the aftermath a plain reference stays in the aftermath', () => {
+  const bogus = { ...restore, bundle: { name: 'R', parts: [{ role: 'back', kind: 'moveThread', params: { from: { role: 'minus', beat: 'split', of: 'bogus' }, into: { role: 'home' } } }] } };
+  assert.match(afterWith(bogus), /beat "restore".*part "back".*\(oneOf\(predecessor\)\)/);
+  // A plain beatLanded in the aftermath names an aftermath beat, never one of the arc.
+  assert.match(afterWith({ ...unfinished, unlock: [{ kind: 'beatLanded', beat: 'split' }] }), /beat "unfinished".*"split".*\(beatOfPersona\)/);
+  // ...and an earlier one: waiting on itself or a later aftermath beat is refused.
+  assert.match(afterWith({ ...unfinished, unlock: [{ kind: 'beatLanded', beat: 'restore' }] }, restore), /beat "unfinished".*"restore".*\(earlierBeat\)/);
+  assert.deepEqual(instanceProblems(withBoss({ ...announcedFields, aftermath: [restore, { ...unfinished, unlock: [{ kind: 'beatLanded', beat: 'restore' }] }] } as Partial<Persona>)), []);
+  // A plain board ref in the aftermath names an aftermath beat's bundle, not the arc's.
+  assert.match(afterWith({ ...unfinished, unlock: [{ kind: 'boardActivity', board: { role: 'minus', beat: 'split' }, days: 7, above: 1 }] }), /beat "unfinished".*"split".*\(beatOfPersona\)/);
+  assert.deepEqual(instanceProblems(withBoss({ ...announcedFields, aftermath: [restore, { ...unfinished, unlock: [{ kind: 'boardActivity', board: { role: 'home', beat: 'restore' }, days: 7, above: 1 }] }] } as Partial<Persona>)), []);
+  const later = { ...restore, bundle: { name: 'R', parts: [{ role: 'back', kind: 'moveThread', params: { from: { role: 'home', beat: 'unfinished' }, into: { role: 'home' } } }] } };
+  assert.match(afterWith(later, { ...unfinished, bundle: { name: 'U', parts: [{ role: 'home', kind: 'createBoard', params: {} }] } }), /beat "restore".*part "back".*"unfinished".*\(earlierBeat\)/);
 });
 
 // Cosmetics: gear, trophies and Random Events (docs/plans/2026-11-04-cosmetics-plan.md, Task 1).
