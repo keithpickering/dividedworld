@@ -26,9 +26,8 @@ import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
-import { keysOf, keyProblems, listProblems, price, pack, WORKERS, BUDGET_MINUTES } from './e2e-cost.mjs';
+import { SEP, keysOf, keyProblems, listProblems, price, pack, WORKERS, BUDGET_MINUTES } from './e2e-cost.mjs';
 
-const SEP = ' › ';
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** @param {any} manifest @returns {string[]} */
@@ -51,7 +50,7 @@ function manifestProblems(manifest) {
     for (const [key, secs] of Object.entries(tests)) {
       if (typeof secs !== 'number' || !(secs > 0)) out.push(`test "${key}": seconds must be a number above 0`);
       const file = key.split(SEP)[0];
-      if (!isObject(specs) || !(file in specs)) out.push(`test "${key}": its file ${file} has no spec entry`);
+      if (!isObject(specs) || !Object.hasOwn(specs, file)) out.push(`test "${key}": its file ${file} has no spec entry`);
     }
   }
   return out;
@@ -72,7 +71,7 @@ export function problems({ manifest, keys, shards, list }) {
   for (const key of keys) {
     const cost = price(key, usable);
     all += cost;
-    if (typeof usable.tests?.[key] !== 'number' && !usable.specs[key.split(SEP)[0]]) unpriced += cost;
+    if (!(Object.hasOwn(usable.tests ?? {}, key) && typeof usable.tests[key] === 'number') && !Object.hasOwn(usable.specs, key.split(SEP)[0])) unpriced += cost;
   }
   const share = all > 0 ? unpriced / all : 0;
   const { totals } = pack(keys, usable, shards);

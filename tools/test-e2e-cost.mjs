@@ -243,6 +243,28 @@ if (over.lines.some((l) => /add .*shard.*web\.yml/i.test(l))) ok('report: over t
 else fail('report: over the budget says to add a shard', JSON.stringify(over.lines));
 if (rep.lines.some((l) => /add .*shard/i.test(l))) fail('report: under the budget must not say to add a shard', JSON.stringify(rep.lines));
 else ok('report: under the budget does not say to add a shard');
+/* a malformed spec entry is a problem, never a throw */
+for (const [what, bad] of [['null', null], ['a number', 3], ['an array', []]]) {
+  let got;
+  try { got = problems(withManifest({ specs: { ...CLEAN.manifest.specs, 'a.spec.ts': bad } })).problems; } catch (e) { got = [`THREW ${e.message}`]; }
+  if (got.length > 0 && !got.some((g) => /^THREW/.test(g)) && got.some((g) => /a\.spec\.ts/.test(g))) ok(`problems: a spec entry that is ${what} is reported`);
+  else fail(`problems: a spec entry that is ${what}`, JSON.stringify(got));
+}
+
+/* the unpriced share is by cost, over keys with no entry of their own and no spec */
+const MIXED_SHARE = {
+  manifest: { measured: null, specs: { 'a.spec.ts': { count: 2, mean: 30 } }, tests: { 'a.spec.ts › o': 50 } },
+  keys: ['a.spec.ts › t', 'a.spec.ts › o', 'n.spec.ts › x'],
+  shards: 2,
+};
+eq('report: the unpriced share is by cost (30 of 110), not by count', problems(MIXED_SHARE).report.unpricedShare, 30 / 110);
+
+/* a key under a prototype name is an ordinary unknown file */
+eq('price: a file named constructor falls back, not to Object.prototype', price('constructor › t', { specs: {}, tests: {} }), 1);
+eq('price: a title named toString has no entry', price('f.spec.ts › toString', { specs: { 'f.spec.ts': { count: 1, mean: 4 } }, tests: {} }), 4);
+mustFault('problems: a test entry whose file is named constructor has no spec entry', withManifest({ tests: { 'constructor › x': 5 } }), /constructor/);
+eq('report: a key under constructor counts as unpriced', problems({ ...CLEAN, keys: ['constructor › t'] }).report.unpricedShare, 1);
+
 eq('report: over the budget is not a problem', problems(ALL(1200)).problems, []);
 
 if (failures) {

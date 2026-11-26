@@ -34,7 +34,7 @@
 export const WORKERS = 2;
 export const BUDGET_MINUTES = 15;
 
-const SEP = ' › ';
+export const SEP = ' › ';
 
 /** The most shards `--cost-shard` accepts. */
 const MAX_SHARDS = 1000;
@@ -117,6 +117,9 @@ export function listProblems(listJson) {
   return out;
 }
 
+/** Own-property lookup, so a file or title named `constructor` is not a manifest entry. */
+const has = (obj, key) => obj != null && Object.hasOwn(obj, key);
+
 /**
  * The suite's mean seconds per test: total seconds over total count across `specs`, or null with
  * no specs. Computed once per `pack` call and passed to `price`.
@@ -136,8 +139,9 @@ export function suiteMean(manifest) {
  * @param {number | null} [mean]
  */
 export function price(key, manifest, mean = suiteMean(manifest)) {
-  const own = manifest.tests?.[key];
-  const spec = manifest.specs?.[key.split(SEP)[0]];
+  const own = has(manifest.tests, key) ? manifest.tests[key] : undefined;
+  const file = key.split(SEP)[0];
+  const spec = has(manifest.specs, file) ? manifest.specs[file] : undefined;
   const found = typeof own === 'number' ? own : spec ? spec.mean : mean ?? 1;
   if (!Number.isFinite(found) || found <= 0) throw new Error(`price of "${key}" is ${found}, which must be a finite number above 0`);
   return found;
