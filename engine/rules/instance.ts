@@ -11,6 +11,7 @@ import { DIGEST_MOST } from '../system/digest.ts';
 import { BEAT_KEY, conditionProblem, dueProblem } from '../system/conditions.ts';
 import { MOVE_KINDS } from '../system/moves.ts';
 import { DUTIES } from '../system/duties.ts';
+import { CONCESSION_MOST } from '../system/quiz.ts';
 import { PHASES, PHASE_CAPS, PHASE_KEYS } from '../system/phases.ts';
 import { POSTING_OFFICES, TRIGGERS as POOL_TRIGGERS } from '../system/pool.ts';
 import { PRONOUN_FORMS, STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../system/stock.ts';
@@ -188,16 +189,19 @@ function poolRule(v: unknown): string | null {
  * The Mod Bots' settings (`Settings.modBots`): exactly the fields of ModBotSettings, each held as its own words say. Mirrors `setting_modbots`
  * in supabase/migrations/0103_orders.sql (as 0362_patrol_weights.sql wrote it again, with `patrolPool`), and supabase/tests/0079-settings-held.sql lists its poisons and goods.
  */
-const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1, quizQuestionsPerDay: 0, quizWriteMinutes: 1 } as const;
+const MOD_BOTS_WHOLE = { allowanceMost: 1, ruleDaysMost: 1, patrolsPerDay: 0, reportPrice: 0, reportsPerDay: 1, judgmentsPerDay: 1, filingLinesPerDay: 1, appealPrice: 0, tailHours: 1, filingGraceMinutes: 1, quizQuestionsPerDay: 0, quizWriteMinutes: 1, concessionsPerDay: 0, concessionWriteMinutes: 1 } as const;
 /** The most characters a quiz persona's `quizBrief` may be. */
 export const QUIZ_BRIEF_MOST = 300;
+/** The fewest and most stock concessions a persona carries. */
+const CONCESSIONS_LEAST = 3;
+const CONCESSIONS_MOST = 8;
 /** The most a patrol's judgment reads: a bounded read. */
 export const PATROL_SAMPLE_MOST = 25;
 /** The most posts a patrol draws its sample from: a bounded read. */
 export const PATROL_POOL_MOST = 100;
 const MOD_BOTS_KEYS = [...Object.keys(MOD_BOTS_WHOLE), 'patrolSample', 'patrolPool', 'visitHours', 'cap', 'filingCron'].sort();
 function modBotsRule(v: unknown): string | null {
-  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours, filingGraceMinutes and quizWriteMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice, appealPrice and quizQuestionsPerDay (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
+  const shape = `an object giving allowanceMost, ruleDaysMost, reportsPerDay, judgmentsPerDay, filingLinesPerDay, tailHours, filingGraceMinutes, quizWriteMinutes and concessionWriteMinutes (whole numbers, at least 1), patrolsPerDay, reportPrice, appealPrice, quizQuestionsPerDay and concessionsPerDay (whole numbers, at least 0), patrolSample (a whole number from 1 to ${PATROL_SAMPLE_MOST}), patrolPool (a whole number from patrolSample to ${PATROL_POOL_MOST}), visitHours (least and most, whole hours, at least 1, most not below least), cap (punishments and days, whole numbers, at least 1) and filingCron (a five-field cron expression, each field inside its range)`;
   const object = (x: unknown): x is Record<string, unknown> => typeof x === 'object' && x !== null && !Array.isArray(x);
   if (!object(v)) return shape;
   const extra = Object.keys(v).find((k) => !MOD_BOTS_KEYS.includes(k));
@@ -1451,6 +1455,17 @@ function systemProblems(instance: Instance): string[] {
       if (!isWhole(w.price, BRIBE_BOUNDS.least) || w.price > BRIBE_BOUNDS.most) out.push(`${who} has a bribe with a price of ${JSON.stringify(w.price)}; a price is a whole number of hundredths from ${BRIBE_BOUNDS.least} to ${BRIBE_BOUNDS.most}`);
       else if (typeof instance.settings?.walletCap === 'number' && w.price > instance.settings.walletCap) out.push(`${who} has a bribe priced at ${w.price}, more than a wallet holds (walletCap ${instance.settings.walletCap}); no one could pay it`);
     } else if (w?.kind !== 'distraction') out.push(`${who} has no weakness: a quiz, a bribe or a distraction`);
+    if (!Array.isArray(p.concessions)) out.push(`${who} has no concessions; every persona carries its own lines for when it is talked down`);
+    else {
+      if (p.concessions.length < CONCESSIONS_LEAST || p.concessions.length > CONCESSIONS_MOST) out.push(`${who} has ${p.concessions.length} concessions; it needs ${CONCESSIONS_LEAST} to ${CONCESSIONS_MOST}`);
+      p.concessions.forEach((c: unknown, i: number) => {
+        const at = `${who}'s concession ${i + 1}`;
+        if (typeof c !== 'string' || !c.trim()) return void out.push(`${at} is blank; a concession is text`);
+        if (c.length > CONCESSION_MOST) out.push(`${at} is ${c.length} characters; at most ${CONCESSION_MOST}`);
+        const token = /\{[^{}]*\}/g;
+        for (const t of c.match(token) ?? []) if (t !== '{who}') out.push(`${at} uses ${t}; the only token is {who}`);
+      });
+    }
     if (p.voice === undefined) out.push(`${who} has no voice`);
     else if (p.voice !== 'chat' && p.voice !== 'oldVoice') out.push(`${who} has the voice ${JSON.stringify(p.voice)}; a voice is "chat" or "oldVoice"`);
     const v = p.strictness?.visitHours;

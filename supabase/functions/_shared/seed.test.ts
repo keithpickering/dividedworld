@@ -95,9 +95,10 @@ test('the seed carries the roster as staff characters, one kind of persona, the 
   assert.equal(seed.system.firstBoss, instance.system.firstBoss, 'the first season\'s Boss');
   for (const s of seed.system.staff) {
     const p = roster.find((r) => r.key === s.key)!;
-    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['arc', 'beats', 'challenge', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['arc', 'beats', 'challenge', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'signature', 'title', 'visitHours']));
+    assert.deepEqual(Object.keys(s).sort(), (p.weakness.kind === 'quiz' ? ['arc', 'beats', 'challenge', 'concessions', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'quiz', 'signature', 'title', 'visitHours'] : ['arc', 'beats', 'challenge', 'concessions', 'holdsBack', 'key', 'name', 'phaseDays', 'pronouns', 'signature', 'title', 'visitHours']));
     assert.deepEqual((s as { pronouns?: unknown }).pronouns, p.pronouns, 'a persona\'s pronouns travel on its roster entry');
     assert.deepEqual(s.beats, [...p.beats], 'the beat preferences travel, for beat_of (0103)');
+    assert.deepEqual((s as { concessions?: unknown }).concessions, [...p.concessions], 'a persona\'s own concessions travel, for seed_instance to keep where no client can read them (the concession post, Task 1)');
     // A quiz persona's questions travel as a list of their own, beside the challenge (never in it), for seed_instance to keep where no client can read them (0108).
     if (p.weakness.kind === 'quiz') assert.deepEqual((s as { quiz?: unknown }).quiz, p.weakness.questions.map((q) => ({ question: q.question, choices: [...q.choices], answer: q.answer })), 'a quiz persona\'s questions and answers travel');
     assert.deepEqual(s.visitHours, p.strictness.visitHours, 'the persona\'s visit hours travel, for start_visit (0105)');

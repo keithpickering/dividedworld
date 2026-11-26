@@ -41,7 +41,7 @@ function fakeDb(w: World = {}) {
       calls.push({ fn, args });
       if (w.failOn?.[fn]) throw new DatabaseError(`${fn}: the connection dropped`, '08006', 500);
       switch (fn) {
-        case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, modBots: { ...dividedWorld.settings.modBots, quizQuestionsPerDay: 60, quizWriteMinutes: 15, ...(w.modBots ?? {}) } } as T;
+        case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, modBots: { ...dividedWorld.settings.modBots, quizQuestionsPerDay: 60, quizWriteMinutes: 15, concessionsPerDay: 60, concessionWriteMinutes: 15, ...(w.modBots ?? {}) } } as T;
         case 'pending_quizzes': return pending.filter((p) => !written.has(p.visit_act)).slice(0, Number(args.most)) as T;
         case 'quiz_calls_today': return (w.today ?? 0) as T;
         case 'mod_standing': return { office: w.office === undefined ? 'mod' : w.office, allowance: 1, order: null, beat: [{ id: GAMES, name: 'Games' }] } as T;
@@ -66,7 +66,7 @@ function fakeDb(w: World = {}) {
   return { db, calls, written, records, of: (fn: string) => calls.filter((c) => c.fn === fn).map((c) => c.args), count: (fn: string) => calls.filter((c) => c.fn === fn).length };
 }
 const result = <T,>(value: T): ModelResult<T> => ({ value, usage: {}, provider: 'fake', model: 'fake', trims: [], retries: 0, costMicrodollars: 0 });
-function fakeModels(reply: (r: ChatRequest) => unknown = () => GOOD) {
+function fakeModels(reply: (r: ChatRequest) => unknown = () => ({ ...GOOD, concession: 'Fine, {who}.' })) {
   const chats: ChatRequest[] = [];
   const models: Models = {
     async chat(r) { chats.push(r); const out = reply(r); if (out instanceof Error) throw out; return result(out) as never; },

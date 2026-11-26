@@ -13,6 +13,8 @@ import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
 
 /** Placeholder lines, one for every standing order: a fixture is never in the roster, so it says the same plain line everywhere. */
 const PLACEHOLDER_LINES = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
+/** Placeholder concessions, for the same reason. */
+const PLACEHOLDER_CONCESSIONS = ['A line, {who}.', 'Another line, {who}.', 'A third line.'];
 
 const name = 'Clerk-O-Tron 3000 (placeholder)';
 const title = 'Placeholder Boss: the petty clerk';
@@ -23,6 +25,7 @@ export const theClerk: Persona = {
   title,
   signature: 'Per my previous announcement. (Placeholder Boss.)',
   stockLines: PLACEHOLDER_LINES,
+  concessions: PLACEHOLDER_CONCESSIONS,
   startingHobby: 'stamping things (rubber stamps, official seals, anything with a form number)',
   temperament: 'Petty, bureaucratic and wounded. Treats every feud as a filing error.',
   phases: { honeymoon: { weeklyMoves: 3, bankCap: 6 } },

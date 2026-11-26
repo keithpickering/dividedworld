@@ -157,6 +157,8 @@ export function instanceSeed(instance: Instance, conduct: ConductSeed) {
         // questions it has and never one of them or its answer. The questions and answers travel beside it in `quiz` (0108), which seed_instance writes where no client can read it.
         ...instance.system.roster.map((p) => ({ key: p.key, name: p.name, title: p.title, signature: p.signature, beats: [...p.beats],
           visitHours: { least: p.strictness.visitHours.least, most: p.strictness.visitHours.most }, challenge: challengeOf(p.weakness), ...quizOf(p.weakness),
+          // What it posts in the thread when it is talked down and no concession was written for the visit (the concession post design, section 3); seed_instance keeps them in `staff_concessions`.
+          concessions: [...p.concessions],
           // A persona's own pronouns (0124); left out, seed_instance gives it the instance's default.
           ...(p.pronouns !== undefined ? { pronouns: p.pronouns } : {}),
           // The arc's part that SQL checks (0332): its beats, the kinds held back until a beat, and the phase lengths its conditions read.

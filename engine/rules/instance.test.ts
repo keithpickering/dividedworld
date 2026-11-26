@@ -82,7 +82,7 @@ const settings: Settings = {
   memoryWheelhouse: 30,
   memoryRealWorld: 30,
   pool: { weekly: 20, holdback: 0.2, threadsWeekly: 1, cardRarityMost: 'common', priorityDays: 28, notesRead: 12, chatterThreadPosts: 8, strengths: { named: 5, quoted: 5, legacy: 5, successorStumbles: 5, oldFlame: 5, homeTurf: 2, seasonTurn: 2, hotOnBeat: 2 }, sessions: { perDay: 3, minutes: { least: 20, most: 60 }, waking: { from: 13, to: 5 } }, turns: { waitHours: 48, perThread: 2, perSession: 4 }, charsPerDay: 800_000, readMost: 40_000, chatterCron: '37 17 * * *' },
-  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10, quizQuestionsPerDay: 60, quizWriteMinutes: 15 },
+  modBots: { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10, quizQuestionsPerDay: 60, quizWriteMinutes: 15, concessionsPerDay: 60, concessionWriteMinutes: 15 },
   warnBar: { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] },
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   owedLines: { graceMinutes: 15, perDay: 60, perRun: 20 },
@@ -110,7 +110,7 @@ const bossFields = { startingHobby: 'tomatoes', temperament: 'petty' };
 const botFields = {
   beats: ['general'], petRules: ['noBump'], strictness: { visitHours: { least: 2, most: 12 }, bands: ['small'] },
   weakness: { kind: 'quiz', questions: [{ question: 'Which is a number?', choices: ['one', 'cat'], answer: 'one' }] },
-  voice: 'chat', persuadedBy: 'Pedantry.',
+  voice: 'chat', persuadedBy: 'Pedantry.', concessions: ['Fine, {who}.', 'Have it your way, {who}.', 'You win this one.'],
 } as const;
 const personaLines = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
 const boss: Persona = { key: 'boss-a', name: 'Boss A', title: 'The Boss', signature: 'Hi.', selfPrompt: 'You are a boss.', stockLines: personaLines, ...bossFields, ...botFields };
@@ -120,7 +120,7 @@ const system: SystemContent = {
   roster: [boss, bot],
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer', concession: 'filer' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -524,7 +524,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 13);
+  assert.equal(DUTIES.length, 14);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -1860,6 +1860,20 @@ test('a machine slot never names a card that is out of print', () => {
   assert.match(said(leftWith({ cards: retiredB, machine: [slot] })), /the slot for card "b" names a card that is out of print/);
 });
 
+test('a persona\'s concessions are three to eight lines, each text of at most 280 characters with no brace token but {who}, each problem naming the persona', () => {
+  const lines = (n: number) => Array.from({ length: n }, (_, i) => `Line ${i + 1}, {who}.`);
+  assert.deepEqual(instanceProblems(withBot({ concessions: lines(3) })), []);
+  assert.deepEqual(instanceProblems(withBot({ concessions: lines(8) })), []);
+  assert.deepEqual(instanceProblems(withBot({ concessions: ['x'.repeat(280), 'Fine.', 'Fine, {who}.'] })), []);
+  assert.match(said(withBot({ concessions: lines(2) })), /persona "bot-a" has 2 concessions; it needs 3 to 8/);
+  assert.match(said(withBot({ concessions: lines(9) })), /persona "bot-a" has 9 concessions; it needs 3 to 8/);
+  assert.match(said(withBot({ concessions: undefined as never })), /persona "bot-a" has no concessions/);
+  assert.match(said(withBot({ concessions: ['Fine.', '  ', 'Fine, {who}.'] })), /persona "bot-a"'s concession 2 is blank/);
+  assert.match(said(withBot({ concessions: ['Fine.', 'x'.repeat(281), 'Fine, {who}.'] })), /persona "bot-a"'s concession 2 is 281 characters; at most 280/);
+  assert.match(said(withBot({ concessions: ['Fine, {name}.', 'Fine.', 'Fine, {who}.'] })), /persona "bot-a"'s concession 1 uses \{name\}; the only token is \{who\}/);
+  assert.match(said(withBoss({ concessions: [7 as never, 'Fine.', 'Fine, {who}.'] })), /persona "boss-a"'s concession 1 is blank/);
+});
+
 test('a formerly or withdrawn entry has a name, and the instance has a withdrawn list', () => {
   const formerly = [{ ...packCards[0]!, formerly: [{ key: 'old', name: ' ' }] }, packCards[1]!, packCards[2]!] as Instance['cards'];
   assert.match(said(leftWith({ cards: formerly })), /formerly key "old" has no name/);
@@ -1891,6 +1905,11 @@ test('the modBots check holds the quiz settings, naming the field', () => {
   assert.match(mod({ quizWriteMinutes: 0 }), /"quizWriteMinutes" is not/);
   assert.match(mod({ quizWriteMinutes: 1.5 }), /"quizWriteMinutes" is not/);
   assert.deepEqual(settingsProblems({ ...settings, modBots: { ...settings.modBots, quizQuestionsPerDay: 0 } }), [], '0 means the bank always');
+  assert.match(mod({ concessionsPerDay: -1 }), /"concessionsPerDay" is not/);
+  assert.match(mod({ concessionsPerDay: undefined }), /"concessionsPerDay" is not/);
+  assert.match(mod({ concessionWriteMinutes: 0 }), /"concessionWriteMinutes" is not/);
+  assert.match(mod({ concessionWriteMinutes: 1.5 }), /"concessionWriteMinutes" is not/);
+  assert.deepEqual(settingsProblems({ ...settings, modBots: { ...settings.modBots, concessionsPerDay: 0 } }), [], '0 means the stock always');
 });
 
 test('a quiz persona\'s quizBrief is at most 300 characters, and the problem names the persona', () => {

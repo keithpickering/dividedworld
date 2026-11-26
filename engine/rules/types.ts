@@ -137,6 +137,10 @@ export interface ModBotSettings {
   readonly quizQuestionsPerDay: number;
   /** How long a quiz visit may wait for its written question before the bank's question is used, in minutes. */
   readonly quizWriteMinutes: number;
+  /** The most concession posts the instance pays a model to write in a day, for a visit that is not a quiz (a quiz's call writes its own); 0 means every talk-down posts the persona's stock. Counted from the ledger. */
+  readonly concessionsPerDay: number;
+  /** How long a visit may wait for its written concession before the stock is used, in minutes. */
+  readonly concessionWriteMinutes: number;
 }
 
 /**
@@ -1021,6 +1025,11 @@ export interface Persona extends StaffSeed {
   readonly persuadedBy: string;
   /** What it says at each standing order when a model call is out of budget or fails, in its own voice; the instance's `stockLines` stand in only for a speaker the roster does not hold. */
   readonly stockLines: StockLines;
+  /**
+   * What it posts in the thread when it is talked down, if no concession was written for the visit (the concession post design, section 3): three to eight lines, each at most 280 characters, each
+   * quoting the visited post as the post does and each free to use `{who}`, which is filled with the interceptor's character's name.
+   */
+  readonly concessions: readonly string[];
 }
 
 /** Who does a duty: the season's Boss, the bot on the board's beat, the bot that filed, or a staff member by key. */
