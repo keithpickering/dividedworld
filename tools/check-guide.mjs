@@ -81,6 +81,14 @@ const FRACTIONS = 'half|halves|thirds?|fourths?|fifths?|sixths?|sevenths?|eighth
 const COUNT_WORDS = `one|${NUMBER_WORDS}`;
 const RETYPED_WORD = new RegExp(`(?<![\\w-])(double|triple|quadruple|twice|thrice|half|(?:an?|${COUNT_WORDS})\\s+(?:${FRACTIONS})|(?:${COUNT_WORDS})\\s+times)(?![\\w-])`, 'giu');
 
+/**
+ * Whole sentences the owner has kept although they hold a fraction's words, each cut out of a block's text before RETYPED_WORD reads it.
+ * "This place has two halves." is a figure of speech about the board and the glass, not an amount a retune could change (the owner,
+ * 2026-11-26, PR #1133). An entry is a whole sentence matched exactly, so the same words in any other sentence still fire. A figure of
+ * speech is never exempted by rule: each one is the owner's to keep.
+ */
+const KEPT_SENTENCES = ['This place has two halves.'];
+
 /** The words of a block, a setting marker said as a placeholder that is neither a digit nor a word, so a marker beside a unit is clean. */
 function words(block) {
   const say = () => '§';
@@ -225,7 +233,7 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
   }
   for (const block of blocks) {
     for (const text of words(block)) {
-      for (const m of text.matchAll(RETYPED_WORD)) {
+      for (const m of KEPT_SENTENCES.reduce((rest, kept) => rest.split(kept).join(' '), text).matchAll(RETYPED_WORD)) {
         fault(file, lineOf(markdown, m[0]), `"${m[0]}" is a multiplier or a fraction typed into the prose; say it with {{setting:<path>}}, or without an amount, so a retune cannot make it untrue`);
       }
     }

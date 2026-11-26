@@ -118,6 +118,16 @@ const fires = (markdown, pattern, o = {}) => {
     const r = faultsOf(markdown);
     check(`a retyped multiplier or fraction fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
   }
+  /* The one figure of speech the owner kept (2026-11-26, PR #1133): that exact sentence is clean, and the same words anywhere else are not. */
+  check('the owner\'s kept sentence "This place has two halves." is clean', faultsOf('## A\n\nOne more thing. This place has two halves. The board is the game.\n').length === 0, JSON.stringify(faultsOf('## A\n\nThis place has two halves.\n')));
+  for (const [name, markdown] of [
+    ['the same words in another sentence', '## A\n\nThe wallet has two halves.\n'],
+    ['the sentence run on into another', '## A\n\nThis place has two halves, and so does the wallet.\n'],
+    ['the kept sentence beside a real fraction', '## A\n\nThis place has two halves. It costs half as much.\n'],
+  ]) {
+    const r = faultsOf(markdown);
+    check(`a fraction outside the owner's kept sentence still fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
+  }
   for (const [name, markdown] of retyped) {
     const r = faultsOf(markdown);
     check(`a retyped number fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
