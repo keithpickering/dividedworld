@@ -84,7 +84,7 @@ test('another account signing in starts the open screen afresh: the last account
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   const pipe = (await fake.myCharacters()).find((c) => c.name === 'Pipewrench')!;
-  await fake.turn(pipe.id, instance.classes.find((c) => c.key !== pipe.class)!.key, 'announced', false, false);
+  await fake.turn(pipe.id, instance.classes.find((c) => c.key !== pipe.class)!.key, 'silent', false, false);
   render(<App api={fake} />);
   await userEvent.click(await screen.findByRole('tab', { name: /^Pipewrench/u }));
   await userEvent.click(await screen.findByRole('button', { name: 'Withdraw Pipewrench\'s Turn' }));
@@ -277,7 +277,7 @@ async function settledWorld() {
   const fake = createFake({ instance, settings: fallbackSettings });
   seedDemo(fake);
   const [mine] = await fake.myCharacters();
-  fake.seed.settle({ at: fake.clock.now(), debut: false, turns: false, ledger: [{ character: mine!.id, reason: 'heel.drewHeat', amount: 20 }] });
+  fake.seed.settle({ at: fake.clock.now(), turns: false, ledger: [{ character: mine!.id, reason: 'heel.drewHeat', amount: 20 }] });
   return fake;
 }
 
@@ -551,7 +551,7 @@ describe('the welcome', () => {
     await fake.openAccount(code);
     expect(await screen.findByRole('heading', { level: 1, name: 'Welcome' })).toBeInTheDocument();
     expect(window.location.pathname).toBe('/welcome');
-    expect(screen.getByRole('heading', { level: 2, name: 'After nine years of development' })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { level: 2, name: 'Hi. I\'m Gabe.' })).toBeInTheDocument();
     await waitFor(async () => expect((await fake.preferences()).welcomedAt).not.toBeNull());
   });
 

@@ -54,7 +54,7 @@ begin
   if exists (select 1 from jsonb_array_elements(input -> 'acts') x where x ->> 'id' in (reveal::text, tally::text)) then raise exception 'The System''s Acts reached the settlement as a character''s'; end if;
   -- An announced debut is its character's own Act, not The System's: its reactions are scored for the character, so it is named among the
   -- Acts the settlement pays for and is not among The System's (the tally above stays The System's, as the old Act it is).
-  announced := (write_announce(b, t, 'debut', null, null, now()) ->> 'id')::uuid;
+  announced := (tests.old_debut(b, t) ->> 'id')::uuid;
   perform tests.become(ann);
   perform react(announced, a1, 'up');
   perform tests.unbecome();

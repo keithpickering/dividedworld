@@ -292,7 +292,7 @@ begin
   -- Every writer: a cast at character, thread and board reach.
   ch := play_card(ann, 'sbchar', c, target, '{}', 0, '', 'character', q);
   th := play_card(ann, 'sbthread', c, t, '{}', 0, '', 'thread');
-  bd := play_card(ann, 'sbboard', c, general, '{}', 0, '', 'board');
+  bd := play_card(ann, 'sbboard', c, general, '{}', 0, '', 'board', null, null, null, null, '{}', t);
   if (select count(*) from play_reach r join acts a on a.id = r.play where r.play in ((ch ->> 'id')::uuid, (th ->> 'id')::uuid, (bd ->> 'id')::uuid)
         and r.started_at is not distinct from a.created_at) is distinct from 3 then
     raise exception 'a cast at character, thread and board reach carries its Act''s date as its start: %', (select jsonb_agg(to_jsonb(r)) from play_reach r where r.play in ((ch ->> 'id')::uuid, (th ->> 'id')::uuid, (bd ->> 'id')::uuid));

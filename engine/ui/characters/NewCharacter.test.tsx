@@ -34,33 +34,15 @@ describe('New character', () => {
     expect(within(f).getByText('Earns heat: boos and tomatoes.')).toBeInTheDocument();
   });
 
-  test('previews what everyone will see, and shows no class unless "with its class" is chosen', async () => {
+  test('has no debut fields: no timing, no loudness, no preview of an announcement; the character is on the board at once', async () => {
     open(world());
     const f = await form();
     await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
     await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
-    const preview = within(f).getByRole('group', { name: 'What everyone will see' });
-    expect(preview).toHaveTextContent('Spritey debuts');
-    expect(preview).toHaveTextContent(/At once/u);
-    expect(preview).not.toHaveTextContent(/next settlement/u);
-    expect(preview).not.toHaveTextContent(/Heel|Face/u);
-    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
-    expect(preview).toHaveTextContent(/Nothing is posted/u);
-    expect(preview).toHaveTextContent(/first post is its entrance/u);
-    expect(preview).not.toHaveTextContent(/Heel|Face/u);
-    await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
-    expect(preview).toHaveTextContent(/simply appears after the next settlement/u);
-    await userEvent.click(within(f).getByRole('radio', { name: /^Announced, with its class/u }));
-    expect(preview).toHaveTextContent('Spritey debuts as a Heel.');
-  });
-
-  test('opens with Drop now chosen, and announced', async () => {
-    open(world());
-    const f = await form();
-    expect(within(f).getByRole('radio', { name: /^Drop now/u })).toBeChecked();
-    expect(within(f).getByRole('radio', { name: /^Debut at the settlement/u })).not.toBeChecked();
-    expect(within(f).getByRole('radio', { name: /^Announced\./u })).toBeChecked();
-    expect(within(f).getByRole('group', { name: 'What everyone will see' })).toHaveTextContent(/At once/u);
+    for (const name of [/^Drop now/u, /^Debut at the settlement/u, /^Silent/u, /^Announced/u]) expect(within(f).queryByRole('radio', { name })).toBeNull();
+    expect(within(f).queryByRole('group', { name: 'What everyone will see' })).toBeNull();
+    expect(f).not.toHaveTextContent(/debut|Promo/iu);
+    expect(f.querySelector('.kb-glass-form-foot-line')).toHaveTextContent('Spritey is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
   });
 
   test('a character made without touching the timing has debuted and can post at once', async () => {
@@ -93,7 +75,7 @@ describe('New character', () => {
     expect(await screen.findByRole('tab', { name: /Spritey/u })).toBeInTheDocument();
   });
 
-  test('makes a character that waits to debut when the settlement is chosen, announced by default, and leaves the player on My characters', async () => {
+  test('makes the character with a name, a class and pronouns only, and leaves the player on My characters', async () => {
     const w = world();
     const create = vi.spyOn(w.fake, 'createCharacter');
     open(w);
@@ -103,13 +85,14 @@ describe('New character', () => {
     await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
     expect(submit).toBeDisabled();
     await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
-    await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
     await userEvent.click(submit);
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', 'tally', 'announced', PRONOUN_PRESETS.it));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'heel', PRONOUN_PRESETS.it));
+    expect(create.mock.calls[0]).toHaveLength(3);
     await waitFor(() => expect(window.location.pathname).toBe('/characters'));
     const mine = await w.fake.myCharacters();
-    expect(mine.find((c) => c.name === 'Spritey')).toMatchObject({ debutedAt: null, class: 'heel' });
-    expect((await w.fake.characters(mine.map((c) => c.id))).map((c) => c.name)).toEqual(['Pipewrench']);
+    expect(mine.find((c) => c.name === 'Spritey')).toMatchObject({ class: 'heel' });
+    expect(mine.find((c) => c.name === 'Spritey')!.debutedAt).not.toBeNull();
+    expect((await w.fake.characters(mine.map((c) => c.id))).map((c) => c.name).sort()).toEqual(['Pipewrench', 'Spritey']);
     /* My characters opens on the new one: the navigation carries it in history.state, never in the address. */
     expect(window.location.search + window.location.hash).toBe('');
     expect((window.history.state as { state: unknown }).state).toEqual({ character: mine.find((c) => c.name === 'Spritey')!.id });
@@ -134,7 +117,7 @@ describe('New character', () => {
     expect(within(f).getByText('the subject has 13 characters; at most 12')).toBeInTheDocument();
     await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
     await userEvent.click(submit);
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Gloomba', 'heel', 'now', 'announced', PRONOUN_PRESETS.she));
+    await waitFor(() => expect(create).toHaveBeenCalledWith('Gloomba', 'heel', PRONOUN_PRESETS.she));
     expect((await w.fake.myCharacters()).find((c) => c.name === 'Gloomba')!.pronouns).toEqual(PRONOUN_PRESETS.she);
   });
 
@@ -146,19 +129,6 @@ describe('New character', () => {
     const f = await form();
     expect(within(f).getByRole('radio', { name: /^she\/her/u })).toBeChecked();
     expect(within(f).getByRole('radio', { name: /^it\/its/u })).not.toBeChecked();
-  });
-
-  test('drops at once, silently, with only the loudness changed', async () => {
-    const w = world();
-    const create = vi.spyOn(w.fake, 'createCharacter');
-    open(w);
-    const f = await form();
-    await userEvent.type(within(f).getByLabelText('Name'), 'Spritey');
-    await userEvent.click(within(f).getByRole('radio', { name: /^Face/u }));
-    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
-    await userEvent.click(within(f).getByRole('button', { name: 'Make the character' }));
-    await waitFor(() => expect(create).toHaveBeenCalledWith('Spritey', 'face', 'now', 'silent', PRONOUN_PRESETS.it));
-    expect((await w.fake.myCharacters()).find((c) => c.name === 'Spritey')!.debutedAt).not.toBeNull();
   });
 
   test('Make the character is a busy button while the create is out: aria-busy, its name kept, and a second press makes one character', async () => {
@@ -230,7 +200,7 @@ describe('New character\'s head, name and foot', () => {
   test('sets each section a section gap from the next in one flex column', () => {
     const css = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'characters.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
     expect(/\.kb-new-form\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
-    expect(/\.kb-debut,\s*\.kb-reveal\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
+    expect(/\.kb-reveal\s*\{[^}]*gap:\s*var\(--kb-glass-section-gap\)/u.test(css)).toBe(true);
   });
 
   test('every line about the new character follows the pronouns chosen on the form: she/her, then they/them', async () => {
@@ -238,94 +208,25 @@ describe('New character\'s head, name and foot', () => {
     const f = await form();
     const line = () => f.querySelector('.kb-glass-form-foot-line')!;
     await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
-    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     await userEvent.click(within(f).getByRole('radio', { name: /^she\/her/u }));
     expect(within(f).getByText('Only you will know her class, unless you choose to reveal it.')).toBeInTheDocument();
     expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays yours alone.');
-    expect(within(f).getByText(/Nothing is posted\. Waiting Wanda is on the board at once, and her first post is her entrance\./u)).toBeInTheDocument();
     await userEvent.click(within(f).getByRole('radio', { name: /^they\/them/u }));
     expect(within(f).getByText('Only you will know their class, unless you choose to reveal it.')).toBeInTheDocument();
     expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays yours alone.');
-    expect(within(f).getByText('When they debut')).toBeInTheDocument();
-    expect(within(f).getByText(/They are on the board at once, and can post at once\./u)).toBeInTheDocument();
-    expect(within(f).getByText(/They wait, seen by no one but you, and debut at the next settlement\./u)).toBeInTheDocument();
-    expect(within(f).getByRole('radio', { name: /^Announced, with their class/u })).toBeInTheDocument();
   });
 
   test('says in one line, beside Cancel and Make the character, what will happen, as the form is filled', async () => {
     open(world());
     const f = await form();
     const line = () => f.querySelector('.kb-glass-form-foot-line')!;
-    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
+    expect(line()).toHaveTextContent('Your character is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
     await userEvent.type(within(f).getByLabelText('Name'), 'Waiting Wanda');
-    expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it, and its own Promo announces it. Its class stays yours alone.');
-    await userEvent.click(within(f).getByRole('radio', { name: /^Silent/u }));
     expect(line()).toHaveTextContent('Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
-    await userEvent.click(within(f).getByRole('radio', { name: /^Debut at the settlement/u }));
-    expect(line()).toHaveTextContent('Waiting Wanda waits, seen by no one but you, and appears at the next settlement without a word. Its class stays yours alone.');
-    await userEvent.click(within(f).getByRole('radio', { name: /^Announced, with its class/u }));
-    expect(line()).toHaveTextContent("Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced with the class you choose. That stays public, and can't be taken back.");
-    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
-    expect(line()).toHaveTextContent("Waiting Wanda waits, seen by no one but you, and debuts at the next settlement, announced as a Heel. That stays public, and can't be taken back.");
     const foot = f.querySelector('.kb-glass-form-foot') as HTMLElement;
     expect(within(foot).getByRole('link', { name: 'Cancel' })).toHaveAttribute('href', '/characters');
+    expect(within(foot).getByRole('button', { name: 'Make the character' })).toBeDisabled();
+    await userEvent.click(within(f).getByRole('radio', { name: /^Heel/u }));
     expect(within(foot).getByRole('button', { name: 'Make the character' })).toBeEnabled();
-  });
-});
-
-/* A class card is two facts: how the class earns, and under it what hurts it, set apart in the hurt color (the backfill design, section 5). */
-describe('New character\'s class cards, earns and hurts', () => {
-  test('set the description and then the hurt as two paragraphs, the second the hurt', async () => {
-    open(world());
-    const f = await form();
-    const heel = within(f).getByRole('radio', { name: /^Heel/u }).closest('label')!;
-    const earns = within(heel).getByText('Earns heat: boos and tomatoes.');
-    const hurts = within(heel).getByText('Hurt by the polite shrug.');
-    expect(earns).toHaveClass('kb-class-description');
-    expect(hurts).toHaveClass('kb-class-hurt');
-    expect(earns.nextElementSibling).toBe(hurts);
-    expect(heel).not.toHaveTextContent('Earns heat: boos and tomatoes. Hurt by the polite shrug. Hurt by');
-  });
-
-  test('describe the radio by both, then the marks', async () => {
-    open(world());
-    const f = await form();
-    expect(within(f).getByRole('radio', { name: /^Heel/u })).toHaveAccessibleDescription('Earns heat: boos and tomatoes. Hurt by the polite shrug. Earns from heat, hurt by the calm');
-  });
-
-  test('say nothing under a description for a class with no hurt', async () => {
-    const looks: Readonly<Record<string, ClassLook>> = { face: { color: 'currentColor', description: () => 'Reads the room.', hurtsBy: () => '', marks: { label: 'Face marks', earns: [], hurts: [] } } };
-    renderIn(world().fake, <NewCharacter />, { path: '/characters/new', classLooks: looks });
-    const f = await form();
-    expect(within(f).getByRole('radio', { name: /^Face/u }).closest('label')!.querySelector('.kb-class-hurt')).toBeNull();
-  });
-});
-
-/* A class card's words are told the settlement span in force, as they are told the economy (#179). */
-describe('New character\'s class cards', () => {
-  test('pass the settlement span in force to each class\'s description', async () => {
-    const looks: Readonly<Record<string, ClassLook>> = {
-      face: { color: 'currentColor', description: (_e, span) => `Counts per window of ${span.count} ${span.unit}.`, hurtsBy: () => 'Hurt by nothing.', marks: { label: 'Face marks', earns: [], hurts: [] } },
-    };
-    const fake = buildWorld({ charactersPerPlayer: 3, settlementLength: { unit: 'week', count: 1 } });
-    fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3, settlementLength: { unit: 'week', count: 1 } }, classLooks: looks });
-    const f = await form();
-    expect(within(f).getByText('Counts per window of 1 week.')).toBeInTheDocument();
-  });
-});
-
-/* The carousel's six classes (the Technician plan's Task 4, the Tweener plan's Task 6), in an instance of the test's own, since a test in engine/ui may not import one. */
-describe('New character\'s classes', () => {
-  test('offers every class in the instance\'s order, in one group, nothing chosen', async () => {
-    const six: Instance = { ...testInstance, classes: ['Face', 'Heel', 'Jabroni', 'Technician', 'Tweener', 'Lurker'].map((name) => ({ key: name.toLowerCase(), name, earn: () => [] })) };
-    const fake = buildWorld({ charactersPerPlayer: 3 }, six);
-    fake.signInAs(fake.seed.account('me'));
-    renderIn(fake, <NewCharacter />, { path: '/characters/new', settings: { charactersPerPlayer: 3 }, instance: six });
-    const f = await form();
-    const radios = within(within(f).getByRole('group', { name: /class/iu })).getAllByRole('radio');
-    expect(radios.map((r) => r.getAttribute('value'))).toEqual(six.classes.map((c) => c.key));
-    expect(new Set(radios.map((r) => r.getAttribute('name'))).size).toBe(1);
-    expect(radios.filter((r) => (r as HTMLInputElement).checked)).toEqual([]);
   });
 });

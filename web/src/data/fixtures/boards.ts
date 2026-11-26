@@ -360,7 +360,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
   seed.wallet(player, WALLET_START - SCORED_OCT_28.reduce((sum, [, , amount]) => sum + amount, 0));
   when(SETTLE_1, (at) => {
     seed.settle({
-      at, debut: false, turns: false, sharesKept: false,
+      at, turns: false, sharesKept: false,
       ledger: SCORED_OCT_28.map(([who, reason, amount]) => ({ character: named[who], reason, amount })),
       wallet: { [rival]: 300, [reader]: 120 },
       standings: { [spritey]: 650, [hooligan]: 420, [pipewrench]: 295, [gloomba]: 180, [thwompson]: 40 },
@@ -374,7 +374,7 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     seed.cards(player, { whoops: 1, 'stick-around': 1 });
     seed.estimate(player, { entries: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount })) });
   });
-  when(TURNED_AT, () => seed.turn(pipewrench, 'face', { loudness: 'announced', showFrom: true, showTo: false }));
+  when(TURNED_AT, () => seed.turn(pipewrench, 'face', { loudness: 'silent' }));
   /* ---- the classes said in public, and Thwompson's Turn ---- */
   when(THWOMPSON_REVEALED_AT, (at) => {
     const lurking = seed.thread('general', thwompson, 'i read everything', 'Someone has to. Since you ask, here is what I am.', { at: at - MINUTE });
@@ -384,12 +384,12 @@ export function seedBoards(fake: Fake, moment: MomentName): string {
     const said = seed.thread('general', gloomba, 'cards on the table', 'Fine. You want to know who I am? Here it is.', { at: at - MINUTE });
     seed.reveal(gloomba, said.thread, { at });
   });
-  when(THWOMPSON_TURNS_AT, () => seed.turn(thwompson, 'heel', { loudness: 'announced', showFrom: false, showTo: false }));
+  when(THWOMPSON_TURNS_AT, () => seed.turn(thwompson, 'heel', { loudness: 'silent' }));
 
   when(SETTLE_2, (at) => {
     const shareOn = { 'post-43': posts[43]!, 'play-46': plays[46]! };
     seed.settle({
-      at, debut: false, turns: true,
+      at, turns: true,
       ledger: SCORED.map(([reason, amount]) => ({ character: pipewrench, reason, amount, shares: [{ act: shareOn[SHARED_ON[reason][0]], quadrant: SHARED_ON[reason][1], amount }] })),
     });
     seed.announceTurn(pipewrench, turns.thread, { was: 'heel', at });

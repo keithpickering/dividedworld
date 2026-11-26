@@ -1,7 +1,7 @@
 /**
- * The five view names are held in three places: `GEAR_VIEWS` here in TypeScript, and in supabase/migrations/0442_gear_views.sql the check on `gear_worn.view` and the
+ * The five view names are held in three places: `GEAR_VIEWS` here in TypeScript, and in supabase/migrations/0443_gear_views.sql the check on `gear_worn.view` and the
  * `not in (...)` list in `piece_problem`. This reads both lists from the migration and sets each against `GEAR_VIEWS`, so a name changed in one place and not the others
- * fails the build. (`piece_problem`'s words and the pgTAP file supabase/tests/0442-gear-views.sql hold the refusal; this holds only the names.)
+ * fails the build. (`piece_problem`'s words and the pgTAP file supabase/tests/0443-gear-views.sql hold the refusal; this holds only the names.)
  */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -9,7 +9,7 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { GEAR_VIEWS } from './cosmetics.ts';
 
-const MIGRATION = path.join(import.meta.dirname, '../../supabase/migrations/0442_gear_views.sql');
+const MIGRATION = path.join(import.meta.dirname, '../../supabase/migrations/0443_gear_views.sql');
 
 /** The names in the column's check, in the order the migration writes them. */
 export function checkedViews(sql: string): string[] {

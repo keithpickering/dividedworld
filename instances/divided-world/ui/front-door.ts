@@ -151,7 +151,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     '- You play up to {{setting:charactersPerPlayer}} anonymous characters, each with a secret class only you can see.',
     '- Each class benefits from a different posting style. Figure out how the crowd responds to your character, and play it up!',
     '- Crowd reactions turn into Aura at each settlement, {{setting:settlementLength}} apart. Spend Aura on booster packs to get Cards, add effects to posts, and get even more reactions.',
-    '- Evade Mod Bots and appease the almighty Administrator. Learn what they like and you might be able to sweet-talk them!',
+    '- Evade Mod Bots and appease the Boss. Learn what they like and you might be able to sweet-talk them!',
     '',
     'This is rated M. Or it probably would be, if the ESRB would get back to me. I think they might not rate this kind of thing.',
   ].join('\n'),

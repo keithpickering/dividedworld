@@ -1,6 +1,6 @@
 /**
  * Divided World's onboarding words, in Gabe's voice (the developer persona, `instance.developer`): the tips the spotlight and the card callouts
- * show, and the welcome letter. Every word is a DRAFT for the owner's review in the PR (docs/plans/2026-11-02-onboarding-plan.md).
+ * show, and the welcome letter. The voice is instances/divided-world/voice/gabe.md; the letter is the first half of the owner's intro post (docs/plans/2026-11-21-gabes-voice-design.md, section 3).
  *
  * The glass may joke where it describes the game, and it never bluffs and never reveals what is hidden (CLAUDE.md, "The fiction may lie;
  * the log never does"). The Starter Pack's lines are this design's (docs/plans/2026-11-18-starter-pack-design.md), and no setting is retyped as a
@@ -13,11 +13,11 @@ export const onboarding: OnboardingUi = Object.freeze({
   tips: Object.freeze({
     'tour-plate': {
       title: 'This is your mask',
-      line: 'It is the character you are posting as. The tag beside the name is the class, which no other player can see unless you reveal it. Swap masks here, or press the picture to see all of yours.',
+      line: 'It\'s the character you\'re posting as. The tag beside the name is the class, which no other player can see unless you make it public. Swap masks here, or press the picture to see all of yours.',
     },
     'tour-orbs': {
       title: 'These are your orbs',
-      line: 'Reactions to your characters fill them at the settlement. Until then, hatched fill shows where you\'re headed. There is a most you can hold, so spend it.',
+      line: 'Aura lands here at each settlement: from reactions to your characters, and from reacting to other players\' posts and cards. Until then, hatched fill shows where you\'re headed. There\'s a most you can hold, so spend it. I would.',
     },
     'tour-hand': {
       title: 'This is your hand',
@@ -29,7 +29,7 @@ export const onboarding: OnboardingUi = Object.freeze({
     },
     ghost: {
       title: 'Ghost means estimate',
-      line: 'The hatched fill is a ghost: our estimate of where today\'s reactions are taking your Aura. It is only an estimate until the settlement, which is when it becomes real.',
+      line: 'The hatched fill is a ghost: my estimate of where the reactions so far are taking your Aura. It\'s a guess until the settlement, which is when it becomes real.',
     },
     'first-card': {
       title: 'That is a card',
@@ -42,16 +42,15 @@ export const onboarding: OnboardingUi = Object.freeze({
     },
   }),
   letter: [
-    '## After nine years of development',
+    '## Hi. I\'m Gabe.',
     '',
-    '...hopefully it would have been worth the wait.',
+    'You might know me as the creator of Minus World, a forum and a fighting game all-in-one. Recently, I made the decision to strip the RAM from Minus World\'s servers and sell it to Sam Altman to pay for another yacht for myself. As a result, Minus World had to be shut down. Its denizens were left stranded with nowhere to go, like sad, wandering hobos. Hobos without yachts.',
     '',
-    'This is Divided World. It looks like a message board from 2003, and it is one. It is also a game. You\'ll play several characters, each behind a mask, each with a secret class that decides which reactions make it stronger. No other player can see which masks are yours.',
+    'Although Minus World was eventually restored to working order (through no fault of my own), I couldn\'t shake the feeling that maybe I behaved sort of selfishly in this situation. To clear my conscience, I had the fellas at the lab whip up something new. This is basically like Minus World, but half as good—So I called it "Divided World".',
     '',
-    'Everything anyone does here is public. Who\'s doing it isn\'t. Work it out, or don\'t.',
+    'I can\'t lie to you. Prioritizing this project meant that several in-development games nearing completion, most notably Half-Life: Nuts & Bolts, had to be shelved, likely permanently. These games\' assets will be repurposed as purchasable cosmetics, so they will live on in our hats. Uh, I mean hearts.',
     '',
-    'Go make somebody.',
-    '',
+    'Have fun,',
     'Gabe',
   ].join('\n'),
 });

@@ -57,7 +57,7 @@ begin
   -- When it may Turn: after the cooldown from the Turn that took effect, as turn() says in its refusal.
   select * into r from my_characters where id = turned;
   if r.turn_opens_at is distinct from applied + interval '30 days' then raise exception 'the cooldown runs from the last Turn: %', r.turn_opens_at; end if;
-  why := pg_temp.refusal(format('select turn(%L, ''alpha'', ''silent'')', turned));
+  why := pg_temp.refusal(format('select turn(%L, ''alpha'', ''silent'', false, false)', turned));
   if why is distinct from 'this character can Turn again at ' || to_char(r.turn_opens_at at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS"Z"') then
     raise exception 'turn_opens_at disagrees with turn()''s refusal: % and %', r.turn_opens_at, why;
   end if;
@@ -71,7 +71,7 @@ begin
 
   -- Waiting and retired, and nothing pending yet.
   select * into r from my_characters where id = waiting;
-  if r.debuted_at is not null or r.debut_loudness is distinct from 'announced' or r.retired_at is not null then raise exception 'a waiting character has not debuted: %', to_jsonb(r); end if;
+  if r.debuted_at is not null or r.retired_at is not null then raise exception 'a waiting character has not debuted: %', to_jsonb(r); end if;
   select * into r from my_characters where id = gone;
   if r.retired_at is distinct from retired or r.debuted_at is null then raise exception 'a retired character shows when: %', to_jsonb(r); end if;
   if exists (select 1 from my_characters where pending_class is not null or pending_loudness is not null or pending_show_from is not null
@@ -80,9 +80,9 @@ begin
   end if;
 
   -- A Turn waiting: its columns, and when it takes effect, the settlement turn() promised.
-  asked := turn(fresh, 'beta', 'announced', true, false);
+  asked := turn(fresh, 'beta', 'silent', false, false);
   select * into r from my_characters where id = fresh;
-  if (r.pending_class, r.pending_loudness, r.pending_show_from, r.pending_show_to) is distinct from ('beta', 'announced', true, false) then
+  if (r.pending_class, r.pending_loudness, r.pending_show_from, r.pending_show_to) is distinct from ('beta', 'silent', false, false) then
     raise exception 'a pending Turn''s columns: %', to_jsonb(r);
   end if;
   if r.takes_effect_at is null or r.takes_effect_at is distinct from (asked ->> 'takes_effect_at')::timestamptz then raise exception 'takes_effect_at is what turn() promised: % and %', r.takes_effect_at, asked; end if;
@@ -96,10 +96,11 @@ begin
   if exists (select 1 from my_characters where pending_class is not null) then raise exception 'Bob read a Turn of Ann''s'; end if;
   perform tests.unbecome();
 
-  -- The columns are exactly these: nothing the tables withhold (banned_until reads public ban Acts, 0111; pronouns is the character's public set, 0125; group reads public facts, 0128; bars reads bars_now, public, 0133; class_shown_at reads class_reveals by the caller's own characters, 0147; lockouts reads the caller's own characters' live lockout springs through lockout_ends, 0402).
+  -- The columns are exactly these: nothing the tables withhold (banned_until reads public ban Acts, 0111; pronouns is the character's public set, 0125; group reads public facts, 0128; bars reads bars_now, public, 0133; class_shown_at reads class_reveals by the caller's own characters, 0147; lockouts reads the caller's own characters' live lockout springs through lockout_ends, 0402; the pending_announce columns read the announcement Act of the caller's own characters' committed Turn, 0435).
   if (select array_agg(column_name::text order by ordinal_position) from information_schema.columns where table_schema = 'public' and table_name = 'my_characters')
-     is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'debut_loudness', 'retired_at', 'pending_class', 'pending_loudness',
-                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden', 'class_due_at', 'banned_until', 'pronouns', 'group', 'bars', 'class_shown_at', 'lockouts'] then
+     is distinct from array['id', 'name', 'class', 'class_since', 'turn_opens_at', 'debuted_at', 'retired_at', 'pending_class', 'pending_loudness',
+                            'pending_show_from', 'pending_show_to', 'takes_effect_at', 'presence_hidden', 'class_due_at', 'banned_until', 'pronouns', 'group', 'bars', 'class_shown_at', 'lockouts',
+                            'pending_announce_act', 'pending_announce_thread', 'pending_announce_seq', 'pending_announce_title'] then
     raise exception 'my_characters shows more or less than it should';
   end if;
 end $$;
@@ -173,7 +174,9 @@ declare
                          -- How long a card set face down lasts (0156), for the line a card about to be set shows.
                          'setLasts',
                          -- The poll editor's bounds (0395).
-                         'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax'];
+                         'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax',
+                         -- How long a season is (0442), for the Strategy Guide; the switch, systemEnabled, joins it where the instance holds one.
+                         'seasonLength'];
   k text;
 begin
   perform tests.become_anon();

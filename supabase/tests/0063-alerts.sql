@@ -64,6 +64,7 @@ declare
 begin
   perform pg_temp.cards();
   insert into boards (slug, name) values ('al-board', 'Al Board') returning id into brd;
+  insert into threads (board, title) values (brd, 'Al Board Thread');
   announce := tests.thread('Al Announcements');
   insert into settings (key, value) values ('systemAnnouncements', to_jsonb(announce::text)) on conflict (key) do update set value = excluded.value;
   insert into characters (name, staff, staff_kind, debuted_at) values ('Al Bot', 'al-bot', 'persona', now()) returning id into staff;
@@ -136,7 +137,7 @@ begin
   delete from broadcasts_due where topic like 'account:%'; delete from alerts;
 
   -- A board play writes none; a play on a staff character and on a staff post none; a play by Ann's own other mask on Ann's none.
-  perform play_card(bob, 'quake', b1, brd, '{}', 0, '', 'board');
+  perform play_card(bob, 'quake', b1, brd, '{}', 0, '', 'board', null, null, null, null, '{}', (select x.id from threads x where x.board = brd));
   perform play_card(bob, 'glint', b1, staff, '{}', 0, '', 'character', staff_post);
   perform play_card(ann, 'sweetie', a2, tests.post(a1, t, 'Ann One, once more.'), '{}', 0);
   if exists (select 1 from alerts) or pg_temp.queued() <> 0 then

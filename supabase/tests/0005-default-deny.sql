@@ -51,9 +51,12 @@ declare
                            -- The two readers behind it and behind thread_page's voters (0396): definers that read the ids of a public poll's ballots newest first (nothing for a secret poll), which the invokers then read through acts_public by id.
                            'poll_voter_acts(uuid,timestampwithtimezone,integer)', 'poll_ballot_acts(uuid,timestampwithtimezone,uuid,integer)',
                            -- Whether a poll is secret (0395): a column of acts_public's projection of a ballot, whose reader executes it (a view's functions run as its reader); a public fact of any poll id, naming no one.
-                           'ballot_secret(uuid)', 'spin(uuid,uuid,text,text,uuid[],uuid)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'turn(uuid,text,text)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,text,text,jsonb)', 'set_debut(uuid,text,text)',
-                           'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'origin_moment(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text,text,integer,text,integer,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text,jsonb)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
-                           'open_pack(uuid)', 'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'admin_machine()', 'set_slot(uuid,text,integer)', 'move_slot(uuid,text)', 'save_machine(jsonb)', 'hold_move(bigint)', 'replace_queued_description(bigint,text)', 'describe_board(uuid,text)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'post_tails(uuid[])', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(bigint)', 'move_progress(uuid)',
+                           'ballot_secret(uuid)',
+                           -- Whether a live author veil covers an Act, and whether a veil play is a live author veil (0434): acts_public's checks, read by key, which its reader runs; what acts_public already shows every reader (the stand-in or the author).
+                           'author_veil_covers(uuid)', 'author_veil_live(uuid)',
+                           -- The stand-in's own Acts from the live veils (0434), which profile_page and record_page read for the stand-in: ids acts_public shows under the stand-in to every reader.
+                           'stand_in_acts(uuid,text[],integer,integer)', 'spin(uuid,uuid,text,text,uuid[],uuid)', 'whoami()', 'card_target(uuid)', 'card_of_play(uuid)', 'play_landed_at(uuid)', 'withdraw_turn(uuid)', 'create_invite()', 'reissue_invite(bigint)', 'open_account(text,integer)', 'create_character(text,text,jsonb)', 'next_settlement_at(timestampwithtimezone)', 'release_effect(uuid)', 'origin_moment(uuid)', 'mark_read(uuid,integer,uuid)', 'set_preferences(text,text,text,text,text,integer,text,text,text,integer,text,integer,text,text[],boolean)', 'meet_card(text)', 'see_welcome()', 'see_tip(text)', 'skip_tips()', 'restore_tips()', 'resume_tips()', 'replay_tour()', 'my_account_opened()', 'see_alerts(timestampwithtimezone)', 'see_settlement(timestampwithtimezone)', 'follow_thread(uuid,boolean)', 'following_thread(uuid)', 'my_alerts(timestampwithtimezone,integer)', 'my_alerts_unread()', 'my_settlement_moved(bigint)', 'set_profile(uuid,text,text,text,jsonb)', 'is_admin()', 'retire_character(uuid)', 'restore_character(uuid)', 'span_interval(jsonb)',
+                           'open_pack(uuid)', 'unmask(uuid,uuid,text)', 'turn(uuid,text,text,boolean,boolean,uuid)', 'announce_turn(uuid,uuid,boolean,boolean)', 'standing_place(uuid)', 'standings_page(integer,integer)', 'standings_season()', 'admin_queue()', 'admin_machine()', 'set_slot(uuid,text,integer)', 'move_slot(uuid,text)', 'save_machine(jsonb)', 'hold_move(bigint)', 'replace_queued_description(bigint,text)', 'describe_board(uuid,text)', 'reverse_move(uuid)', 'reverse_card(uuid)', 'card_ended(uuid)', 'post_tails(uuid[])', 'replace_successor(bigint,text)', 'set_office(text,text)', 'boss_roster_names()', 'dismiss_handover_todo(bigint)', 'move_progress(uuid)',
                            'here(text,uuid,uuid)', 'set_presence_hidden(uuid,boolean)',
                            -- The box here() ends with (0093), readable without marking a mask.
                            'presence_box(text,uuid)',
@@ -177,6 +180,8 @@ declare
                            'post_play_ids(uuid[])', 'post_kind_counts(uuid[])', 'play_rider_ids(uuid[])',
                            -- The live rewind plays of a list of posts (0413): the definer behind thread_page's `rewinds`, the ids of face-up plays on public posts from the kept rows, the same for every caller; granted as post_play_ids is.
                            'post_rewind_plays(uuid[])',
+                           -- The board cards written in a thread within a page's span (0438): the definer behind thread_page's `boardCards`, ids alone from the kept Acts, the same for every caller; granted as post_play_ids is, because thread_page is a security invoker.
+                           'board_card_ids(uuid,integer,integer,integer)',
                            -- A page of a kind's plays that are over on a post (0410): the definer behind kind_plays, the ids of the page from the kept rows, newest first from a cursor; a public fact of the post and the kind.
                            'kind_play_ids(uuid,text,timestampwithtimezone,uuid,integer)',
                            -- A post's plays and counts in one read (0410): the plays of up to 200 posts, in force and each kind's stand-ins, with their riders, through acts_public. An invoker for a signed-in player, writing nothing, the same for every caller.
@@ -248,6 +253,17 @@ begin
     where c.relname in ('handoffs', 'handoffs_latest') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
   loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
   if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
+
+  -- The Roster Report's tables (0440) are insert-only and no client's: guards firing always, and no grant to an API role (the service role reaches them through its functions).
+  for r in select t.tgname from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass, 'public.roster_pending'::regclass) and not t.tgisinternal and t.tgenabled <> 'A'
+  loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
+  if (select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass, 'public.roster_pending'::regclass) and t.tgname ~ '_no_(update|delete|truncate)$') is distinct from 9 then
+    bad := bad || E'\n  a guard of the roster is missing';
+  end if;
+  for r in select c.relname, a.rolname from pg_class c cross join (values ('anon'), ('authenticated'), ('service_role')) a(rolname)
+    where c.relname in ('roster_entries', 'roster_seen', 'roster_pending') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
+  loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
+  if bad <> '' then raise exception 'the roster can be changed or read:%', bad; end if;
 end $$;
 
 -- The kept rows of a post's plays (0408) are no API role's, and the check that holds them to the Acts is the service role's alone: not in `callable`, since no client calls it.

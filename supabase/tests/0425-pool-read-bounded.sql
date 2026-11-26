@@ -8,6 +8,10 @@
 -- 3. the same security: the owner, the service role's only, the helpers with no caller.
 
 -- 0426 added keys to pool_read (an origin, and each post's poll, plays, reactions and rewoundTo); 0421's read, kept below, has none, so the comparisons strip them.
+-- What the files before this one leave committed (0434_reads_bounded_on_any_plan.sql), planted first so that every run measures in it: a few live author veils and card_end Acts elsewhere in the instance, analyzed before this
+-- file's own rows are written, as the earlier files' rows are by the suite's vacuum. With them, each probe of an Act through acts_public was a hashed read of every veil and card_end (CI on main at 7d8a255: `pool_read reads 1924 rows of acts in a 4,000-post thread`).
+select tests.plant_live_veils(8, 10) is not null;
+
 create function pg_temp.strip(r jsonb) returns jsonb language sql as $$
   select (r - 'origin') || jsonb_build_object('posts', (select coalesce(jsonb_agg(x - 'poll' - 'plays' - 'reactions' - 'rewoundTo'), '[]'::jsonb) from jsonb_array_elements(r -> 'posts') x))
 $$;
@@ -140,11 +144,19 @@ begin
   raise notice '[%] rows of acts: % (1,000 posts), % (4,000 posts)', label, c_small, c_big;
 end $$;
 
+-- And the dead rows the files before this one leave in `acts`' indexes (a rolled-back file's index entries stay until a vacuum reclaims them, and an index never shrinks): 20,000 posts written and rolled back. Under the empty
+-- statistics below they make acts_patrol_posts the index the planner prices lowest for 0425's helpers, which read the thread's posts through it (issue #1080: 84,833 rows of `acts` here for 0425's helpers, against Postgres 16).
+savepoint pad;
+insert into acts (character, kind, thread, payload, created_at)
+select (select c.id from characters c where c.name = 'Wp Len Ann'), 'post', tests.thread('Wp Padding'), jsonb_build_object('body', 'Padding ' || i), now() - interval '20 days' + i * interval '1 second'
+from generate_series(1, 20000) i;
+rollback to savepoint pad;
 do $$
 begin
-  -- the statistics of a table that was empty when it was last vacuumed (a new or restored instance)
+  -- the statistics of a table that was empty when it was last vacuumed (a new or restored instance), and a visibility map that counts no page all-visible (relallvisible 0: with it the planner took acts_patrol_posts for
+  -- pool_own_post_ids, issue #1080's 1241 and 941 rows; the files before this one leave it as they leave it, so it is set here)
   delete from pg_statistic where starelid = 'acts'::regclass;
-  update pg_class set relpages = 0, reltuples = 0 where oid = 'acts'::regclass;
+  update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid = 'acts'::regclass;
   if (select reltuples from pg_class where oid = 'acts'::regclass) is distinct from 0 then raise exception 'the statistics were not set'; end if;
 end $$;
 select pg_temp.measure('empty statistics', 1500);
@@ -283,7 +295,7 @@ reset random_page_cost;
 do $$
 begin
   delete from pg_statistic where starelid = 'acts'::regclass;
-  update pg_class set relpages = 0, reltuples = 0 where oid = 'acts'::regclass;
+  update pg_class set relpages = 0, reltuples = 0, relallvisible = 0 where oid = 'acts'::regclass;
 end $$;
 select pg_temp.helper_reads('empty statistics', 200);
 set local plan_cache_mode = force_generic_plan;

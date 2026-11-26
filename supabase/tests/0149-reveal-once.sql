@@ -101,7 +101,8 @@ declare
   elsewhere uuid := tests.thread('Already out');
 begin
   insert into threads (board, title) values (system_board(), 'The System announces') returning id into on_system;
-  perform tests.act(a, 'announce', on_system, '{"what": "debut", "class": "alpha"}', null, now() - interval '1 hour');
+  -- An old debut announcement, as the settlement wrote it (a new one is refused by acts_well_formed, 0435, 0436; tests.old_debut stands the guard down for the one).
+  perform tests.old_debut(a, on_system, 'alpha', now() - interval '1 hour');
   insert into class_history (character, class_key, started_at) values (b, 'beta', now() - interval '2 days');
   perform tests.act(b, 'announce', on_system, '{"what": "turn", "class": "beta"}', null, now() - interval '1 day');
   perform tests.become(ann);
@@ -160,8 +161,8 @@ begin
     delete from settlement_claims;
     perform write_unmask(a, t, 'act', now() - interval '1 day');
     perform tests.become(ann);
-    perform turn(a, 'beta', 'silent');
-    perform turn(b, 'beta', 'silent');
+    perform turn(a, 'beta', 'silent', false, false);
+    perform turn(b, 'beta', 'silent', false, false);
     perform tests.unbecome();
     update pending_turns set asked_at = now() - interval '2 hours' where character in (a, b);
     perform tests.become_service();
@@ -177,4 +178,24 @@ begin
     raise exception 'undone' using errcode = 'KB001';
   exception when sqlstate 'KB001' then null;
   end;
+end $$;
+
+-- ---- An announcement ahead of its Turn (0435) makes the new class public only when the Turn lands: until then the class is not shown, and a reveal of the class held is still its player's to make ----
+do $$
+declare
+  ann uuid := tests.account('shown-ahead');
+  a uuid := tests.character(ann, 'Ahead Of Its Turn', 'alpha', now() - interval '60 days');
+  t uuid := tests.thread('Ahead');
+  landed timestamptz := now() + interval '1 minute';
+  said jsonb;
+begin
+  perform tests.become(ann);
+  said := turn(a, 'beta', 'announced', false, true, t);
+  if (select class_shown_at from my_characters where id = a) is not null then raise exception 'an announcement ahead of its Turn made the held class public'; end if;
+  if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, t, '')) is not null then raise exception 'a class held and not public could not be revealed because a Turn was announced'; end if;
+  perform tests.unbecome();
+  perform masks_change(landed);
+  perform tests.become(ann);
+  if (select class_shown_at from my_characters where id = a) is distinct from landed then raise exception 'the announcement made the new class public as of the landing: %', (select class_shown_at from my_characters where id = a); end if;
+  perform tests.unbecome();
 end $$;

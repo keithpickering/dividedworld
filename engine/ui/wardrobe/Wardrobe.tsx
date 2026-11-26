@@ -44,6 +44,8 @@ const STUCK = "It can't move further that way.";
 
 /** The words for each view of a piece: the option's name and the live line. */
 const FACING: Readonly<Record<GearView, string>> = { 'side-left': 'Side, facing left', 'three-quarter-left': 'Three-quarter, facing left', front: 'Front', 'three-quarter-right': 'Three-quarter, facing right', 'side-right': 'Side, facing right' };
+/** What the live words say a piece now shows, in a sentence: "<name> now shows <this>." */
+const SHOWS: Readonly<Record<GearView, string>> = { 'side-left': 'its side, facing left', 'three-quarter-left': 'a three-quarter view, facing left', front: 'its front', 'three-quarter-right': 'a three-quarter view, facing right', 'side-right': 'its side, facing right' };
 
 type Drag = { readonly mode: 'move' | 'size' | 'turn'; readonly index: number; readonly start: Piece; readonly sx: number; readonly sy: number; readonly d0: number; readonly a0: number; readonly dirty: boolean };
 
@@ -229,7 +231,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
   };
   const faces = current && ui.gear[current.gear] ? GEAR_VIEWS.filter((v) => ui.gear[current.gear]!.views[v] !== undefined) : [];
   const facingShown = current && ui.gear[current.gear] ? shownView(ui.gear[current.gear]!, current.view) : null;
-  const faceTo = (v: GearView) => edit((p) => ({ ...p, view: v }), '', () => `${nameOf(current!.gear)} now faces ${FACING[v]}.`);
+  const faceTo = (v: GearView) => edit((p) => ({ ...p, view: v }), '', () => `${nameOf(current!.gear)} now shows ${SHOWS[v]}.`);
   /* A radio group's arrows, kept here because they move the page's choice (and focus), whatever the browser does with a name. */
   const faceKeys = (e: KeyboardEvent<HTMLInputElement>, v: GearView) => {
     const by = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;

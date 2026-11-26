@@ -31,7 +31,7 @@ const CLASSES = ['face', 'heel'];
 const HINTS = { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' };
 const SETTINGS = screenSettingsOf({
   walletCap: 600, reactionCap: 3, charactersPerPlayer: 6, registrationMode: 'invite',
-  turnCooldown: { unit: 'day', count: 30 }, economy: { 'whoops.price': 100, 'lurker.crowd': 3 },
+  turnCooldown: { unit: 'day', count: 30 }, systemEnabled: true, seasonLength: { unit: 'week', count: 8 }, economy: { 'whoops.price': 100, 'lurker.crowd': 3 },
 });
 const GOOD = '## Aura\n\nA wallet holds {{setting:walletCap}} orbs.\n\n<!-- kayfabb:classes -->\n';
 const faultsOf = (markdown, o = {}) => guideFaults({ file: FILE, markdown, hints: HINTS, classKeys: CLASSES, settings: SETTINGS, ...o });
@@ -73,6 +73,8 @@ const fires = (markdown, pattern, o = {}) => {
   check('a map key the map does not have fires', fires('## A\n\n{{setting:cardEconomy.nope.price}} here.\n', /nope/));
   check('a setting in a list, a table, a heading and a link is read too', faultsOf('## {{setting:nope1}}\n\n- {{setting:nope2}}\n\n| A |\n| --- |\n| {{setting:nope3}} |\n\n[{{setting:nope4}}](/x)\n').length === 4);
   check('a malformed {{…}} that is not a marker fires', fires('## A\n\nA {{setting:wallet cap}} here.\n', /not a \{\{setting/));
+  check('the season\'s length is a span and is clean', faultsOf('## A\n\nA season lasts {{setting:seasonLength}}.\n').length === 0);
+  check('the switch is not a number or a span, so {{setting:systemEnabled}} fires', fires('## A\n\nThe System is {{setting:systemEnabled}}.\n', /systemEnabled/));
   check('the wallet, a count, a span and a card\'s price are all clean', faultsOf('## A\n\n{{setting:walletCap}} {{setting:reactionCap}} {{setting:turnCooldown}} {{setting:cardEconomy.whoops.price}} {{setting:cardEconomy.lurker.crowd}}\n').length === 0);
 }
 
@@ -116,6 +118,16 @@ const fires = (markdown, pattern, o = {}) => {
     const r = faultsOf(markdown);
     check(`a retyped multiplier or fraction fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
   }
+  /* The one figure of speech the owner kept (2026-11-26, PR #1133): that exact sentence is clean, and the same words anywhere else are not. */
+  check('the owner\'s kept sentence "This place has two halves." is clean', faultsOf('## A\n\nOne more thing. This place has two halves. The board is the game.\n').length === 0, JSON.stringify(faultsOf('## A\n\nThis place has two halves.\n')));
+  for (const [name, markdown] of [
+    ['the same words in another sentence', '## A\n\nThe wallet has two halves.\n'],
+    ['the sentence run on into another', '## A\n\nThis place has two halves, and so does the wallet.\n'],
+    ['the kept sentence beside a real fraction', '## A\n\nThis place has two halves. It costs half as much.\n'],
+  ]) {
+    const r = faultsOf(markdown);
+    check(`a fraction outside the owner's kept sentence still fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
+  }
   for (const [name, markdown] of retyped) {
     const r = faultsOf(markdown);
     check(`a retyped number fires: ${name}`, r.length >= 1 && r.every((f) => /typed into the prose/.test(f.why)), JSON.stringify(r));
@@ -138,6 +150,45 @@ const fires = (markdown, pattern, o = {}) => {
   }
 }
 
+/* ---- a conditional passage: both branches are read, and a malformed one is named ---- */
+{
+  const on = (body) => `## A\n\n<!-- kayfabb:if system-on -->\n\n${body}\n\n<!-- kayfabb:end -->\n`;
+  const off = (body) => `## A\n\n<!-- kayfabb:if system-off -->\n\n${body}\n\n<!-- kayfabb:end -->\n`;
+  const only = (markdown, pattern, line) => {
+    const r = faultsOf(markdown);
+    return r.length === 1 && pattern.test(r[0].why) && (line === undefined || r[0].line === line);
+  };
+  check('poison 1: an unknown marker inside a system-on passage fires, naming its line', only(on('<!-- kayfabb:leaderboard -->'), /"kayfabb:leaderboard"/, 5), JSON.stringify(faultsOf(on('<!-- kayfabb:leaderboard -->'))));
+  check('poison 2: a {{setting:nope}} inside a system-off passage fires', only(off('A {{setting:nope}} here.'), /\{\{setting:nope\}\}/, 5), JSON.stringify(faultsOf(off('A {{setting:nope}} here.'))));
+  check('poison 3: a #nope link inside a passage fires', only(on('See [it](#nope).'), /#nope/, 5) && only(off('See [it](#nope).'), /#nope/, 5), JSON.stringify(faultsOf(on('See [it](#nope).'))));
+  check('poison 3b: a #fragment link to a real section from inside a passage is clean', faultsOf(on('See [it](#a).')).length === 0);
+  check('poison 4: "30 days" typed inside a passage fires', fires(on('A Turn waits 30 days.'), /typed into the prose/) && fires(off('A Turn waits 30 days.'), /typed into the prose/));
+  check('poison 4b: a stray {{ and a marker sharing its line, inside a passage, fire', fires(on('A {{ here.'), /not a \{\{setting/) && fires(on('See <!-- kayfabb:classes --> here.'), /does not stand alone/));
+  const unknown = faultsOf('## A\n\n<!-- kayfabb:if system-maybe -->\n\nText.\n\n<!-- kayfabb:end -->\n');
+  check('poison 5: <!-- kayfabb:if system-maybe --> fires, naming the condition and the ones the engine knows', unknown.length === 1 && unknown.some((f) => /the condition "system-maybe" is not one the engine knows \(system-on, system-off\)/.test(f.why) && f.line === 3), JSON.stringify(unknown));
+  const nested = faultsOf('## A\n\n<!-- kayfabb:if system-on -->\n\n<!-- kayfabb:if system-off -->\n\nText.\n\n<!-- kayfabb:end -->\n\n<!-- kayfabb:end -->\n');
+  check('poison 6: an if inside an if fires once, "a conditional passage stands inside another"', nested.length === 1 && /a conditional passage stands inside another/.test(nested[0].why) && nested[0].line === 5, JSON.stringify(nested));
+  const unclosed = faultsOf('## A\n\n<!-- kayfabb:if system-on -->\n\nText.\n');
+  check('poison 7: an if with no end fires, "never closed with kayfabb:end"', unclosed.length === 1 && /a conditional passage is never closed with kayfabb:end/.test(unclosed[0].why) && unclosed[0].line === 3, JSON.stringify(unclosed));
+  const stray = faultsOf('## A\n\nText.\n\n<!-- kayfabb:end -->\n');
+  check('poison 8: an end with no if fires, "kayfabb:end closes nothing"', stray.length === 1 && /kayfabb:end closes nothing/.test(stray[0].why) && stray[0].line === 5, JSON.stringify(stray));
+  const section = faultsOf(on('## A section'));
+  check('poison 9: a second-level heading inside a passage fires, naming why', section.length === 1 && /a section cannot stand inside a conditional passage, since the guide's contents and its links must be the same whichever way the switch is/.test(section[0].why) && section[0].line === 5, JSON.stringify(section));
+  const short = faultsOf('## Alpha\n\n<!-- kayfabb:if system-on -->\n\n## A\n\n<!-- kayfabb:end -->\n');
+  check('poison 9a: a section inside a passage is named on its own heading line, not on an earlier line holding its title', short.length === 1 && short[0].line === 5, JSON.stringify(short));
+  check('poison 9b: a third-level heading inside a passage is clean', faultsOf(on('### A part')).length === 0);
+  const SAY = 'They are not switched on yet.';
+  const outside = faultsOf(`## A\n\n${SAY}\n`);
+  check('poison 10: "not switched on" in a paragraph outside any passage fires', outside.length === 1 && /says the staff are not switched on outside a system-off passage, so it would be untrue the day they are switched on/.test(outside[0].why) && outside[0].line === 3, JSON.stringify(outside));
+  check('poison 10b: the same inside a system-on passage fires', fires(on(SAY), /not switched on outside a system-off passage/));
+  check('poison 10c: it is case-blind, and read in a list, a heading, a table, a quote and the text of a link', fires('## A\n\nThey are NOT SWITCHED ON.\n', /not switched on/) && fires('## A\n\n- Not Switched On.\n', /not switched on/) && fires('## Not switched on\n', /not switched on/) && fires('## A\n\n| H |\n| --- |\n| not switched on |\n', /not switched on/) && fires('## A\n\n> They are not switched on.\n', /not switched on/) && fires('## A\n\nSee [not switched on](#a).\n', /not switched on/));
+  check('clean: the same sentence inside a system-off passage', faultsOf(off(SAY)).length === 0);
+  check('clean: a guide with one passage of each kind', faultsOf(`## A\n\nBefore.\n\n<!-- kayfabb:if system-on -->\n\nThe staff are here.\n\n<!-- kayfabb:end -->\n\n<!-- kayfabb:if system-off -->\n\n${SAY}\n\n<!-- kayfabb:end -->\n\nAfter.\n`).length === 0);
+  check('clean: a guide with no passage', faultsOf(GOOD).length === 0);
+  check('the old exact sentence is no longer a rule in its own right: "Built, and not switched on here yet:" in a system-off passage is clean, with the switch on or off', faultsOf(off('Built, and not switched on here yet:')).length === 0 && faultsOf(off('Built, and not switched on here yet:'), { settings: { ...SETTINGS, systemEnabled: false } }).length === 0);
+  check('a guide that never says it is clean whatever the switch', faultsOf(GOOD, { settings: { ...SETTINGS, systemEnabled: false } }).length === 0);
+}
+
 /* ---- the real tree: poisoned, then as it is ---- */
 {
   const { tree, names } = instanceNames();
@@ -153,12 +204,23 @@ const fires = (markdown, pattern, o = {}) => {
     check(`${name}: the real guide with an unknown setting appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nA {{setting:walletCapp}}.\n` }).length === 1);
     check(`${name}: the real guide with a retyped number appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nA wallet holds 6.00 orbs.\n` }).length === 1);
     check(`${name}: the real guide with a link to no section appended fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\n[x](#nope)\n` }).length === 1);
-    const LINE = 'Built, and not switched on here yet:';
-    check(`${name}: the real guide leaves out the not-switched-on line while the instance has The System on`, real.settings.systemEnabled === true && !real.markdown.includes(LINE));
-    const withLine = `${real.markdown}\n\n${LINE}\n`;
-    check(`${name}: the real guide with the not-switched-on line added fires`, guideFaults({ ...real, markdown: withLine }).length === 1);
-    check(`${name}: the real guide against settings with The System off fires`, guideFaults({ ...real, settings: { ...real.settings, systemEnabled: false } }).length === 1);
-    check(`${name}: a guide with the line is clean where The System is off`, guideFaults({ ...real, markdown: withLine, settings: { ...real.settings, systemEnabled: false } }).length === 0);
+    /* The first `kayfabb:end` line deleted leaves its `if` unclosed. The guide may hold no passage yet, and then a copy with one appended is poisoned. */
+    const END = '<!-- kayfabb:end -->';
+    const lines = real.markdown.split('\n');
+    const endAt = lines.findIndex((l) => l.trim() === END);
+    if (endAt >= 0) {
+      const cut = lines.filter((_, i) => i !== endAt).join('\n');
+      check(`${name}: the real guide with its first ${END} line deleted fires`, guideFaults({ ...real, markdown: cut }).length >= 1);
+    } else {
+      console.log(`  NOTE  ${name}: the real guide holds no ${END} line yet, so the poison is a copy with a passage appended and its end deleted`);
+      const withPassage = `${real.markdown}\n\n<!-- kayfabb:if system-on -->\n\nText.\n\n${END}\n`;
+      check(`${name}: the copy with a passage appended is clean`, guideFaults({ ...real, markdown: withPassage }).length === 0);
+      check(`${name}: the copy with the passage's ${END} line deleted fires`, guideFaults({ ...real, markdown: withPassage.replace(`${END}\n`, '') }).length >= 1);
+    }
+    check(`${name}: the real guide with "not switched on" appended outside a passage fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nThey are not switched on yet.\n` }).length === 1);
+    // The staff-board plan (Task 9): a character is active at once, so the guide offers no debut; a Turn is announced by the player in a thread they pick, never posted by The System.
+    check(`${name}: the real guide offers no debut`, !/\bdebut/i.test(real.markdown));
+    check(`${name}: the real guide does not say "The System posts"`, !real.markdown.includes('The System posts'));
     const r = guideFaults(real);
     check(`${name}: the real guide is clean`, r.length === 0, JSON.stringify(r));
   }

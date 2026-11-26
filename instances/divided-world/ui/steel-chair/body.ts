@@ -35,13 +35,24 @@
  * (a chair stopped on arrival) or after it (one that overlapped anyway). Two awake chairs also push each other
  * apart (the plan names sleepers as the obstacles; two chairs falling together must not pass through each other either).
  *
- * Cost: measured at about 0.02 ms a step with one chair tumbling, about 0.07 ms with three awake apart and about 0.12 ms with three
- * awake in a pile, and about 0.002 ms with all asleep, on a desktop; a phone is several times slower. The caller must
+ * Shapes: what a body is (the chair, a can) is a Shape, a convex solid symmetric about its middle: its sample points, corners, face normals,
+ * edge directions, how far it reaches along a direction (support), inertia, reach, and what its rest allows. The contact tests read only that,
+ * so a chair is a box that hinges and a can is a prism that may stand on its end. The chair's throw and rest are exactly what they were before
+ * shapes (rest-record.json holds them); the throw draws the same numbers whatever is thrown.
+ *
+ * Cost: measured at about 0.01 to 0.02 ms a step with one chair tumbling, about 0.04 ms with three awake apart and about 0.05 ms with three
+ * awake in a pile, and about 0.003 ms with all asleep, on a desktop (the figures before shapes, from an older run, were 0.02, 0.07, 0.12 and
+ * 0.002 on that machine; on this one, the chair is the same before and after shapes to within the noise of the run). A prism of 12 sides (15 px
+ * radius and 40 tall, the can's shape) costs more, since it has seven face normals and seven edge directions, not three: about 0.015 to 0.025 ms
+ * with one tumbling, about 0.13 to 0.19 ms with three awake apart and about 0.2 to 0.3 ms with three awake in a pile; with a chair and two
+ * prisms, about 0.1 ms apart and about 0.2 to 0.27 ms in a pile. A phone is several times slower. The caller must
  * cap the steps it runs in one frame (a slow frame must not owe a hundred steps, which makes the next frame slower still). The
  * cost is kept down without changing a result: a pair of chairs, or a chair and a wall, too far apart for any sample point to be
  * near is not probed; a step's contacts are recycled, not allocated; a contact nothing has pushed since it last pushed nothing is
  * not visited again in a step; and the separating axis test stops at the first face axis that separates two boxes.
  */
+
+import type { ThrownObject } from './objects.ts';
 
 export type Vec3 = [number, number, number];
 /** A rotation matrix, row by row. */
@@ -66,6 +77,8 @@ export interface Throw {
   kick: number;
   /** The new spin the hit gives, radians a second. */
   spinAfter: Vec3;
+  /** What is thrown: which shape the body has (SHAPES). It draws no number, so a seed's path is the same whatever it is. */
+  object: ThrownObject;
 }
 
 export type Event =
@@ -102,6 +115,8 @@ export interface BodyView {
 interface Body {
   id: number;
   th: Throw;
+  /** What the body is: its samples, corners, axes, inertia and reach. */
+  shape: Shape;
   phase: 'flying' | 'tumbling';
   pos: Vec3;
   q: Quat;
@@ -152,7 +167,7 @@ export const HALF: Vec3 = [23, 45, 4];
  */
 export const REST_RISE = 3 * 2 * HALF[2] + 2 * HALF[2] + 2 * 0.5;
 
-const GRAVITY = 1900;
+export const GRAVITY = 1900;
 const LINEAR_DAMPING = 0.1;
 const ANGULAR_DAMPING = 0.6;
 const FLOOR_BOUNCE = 0.35;
@@ -199,14 +214,6 @@ const HINGE = 40;
 /** The glass's spring, 1/s squared (about 3 Hz), and the drag on a chair held in it, 1/s. */
 const GLASS_SPRING = 400;
 const GLASS_DRAG = 8;
-const RADIUS = Math.hypot(...HALF);
-
-/** Principal moments of a uniform box of mass 1 about its own x, y and z. */
-const INERTIA: Vec3 = (() => {
-  const [w, h, d] = [HALF[0] * 2, HALF[1] * 2, HALF[2] * 2];
-  return [(h * h + d * d) / 12, (w * w + d * d) / 12, (w * w + h * h) / 12];
-})();
-
 /** A small seeded generator of numbers in [0, 1) (mulberry32): the one every function here draws from. */
 export function rng(seed: number): () => number {
   let a = seed >>> 0;
@@ -272,35 +279,158 @@ const toBody = (R: Mat, v: Vec3): Vec3 => [
 /** The inverse inertia tensor in the world, applied to v. */
 function invInertia(b: Body, v: Vec3): Vec3 {
   const R = b.R;
-  const l0 = (R[0] * v[0] + R[3] * v[1] + R[6] * v[2]) / INERTIA[0];
-  const l1 = (R[1] * v[0] + R[4] * v[1] + R[7] * v[2]) / INERTIA[1];
-  const l2 = (R[2] * v[0] + R[5] * v[1] + R[8] * v[2]) / INERTIA[2];
+  const I = b.shape.inertia;
+  const l0 = (R[0] * v[0] + R[3] * v[1] + R[6] * v[2]) / I[0];
+  const l1 = (R[1] * v[0] + R[4] * v[1] + R[7] * v[2]) / I[1];
+  const l2 = (R[2] * v[0] + R[5] * v[1] + R[8] * v[2]) / I[2];
   return [R[0] * l0 + R[1] * l1 + R[2] * l2, R[3] * l0 + R[4] * l1 + R[5] * l2, R[6] * l0 + R[7] * l1 + R[8] * l2];
 }
 
 /** Where a local point of the box is in the world. */
 const pointOf = (b: Body, local: Vec3): Vec3 => add(b.pos, toWorld(b.R, local));
 
-/** The eight corners, and the midpoints of the edges along the two long sides: the points that can touch another chair. */
-const CORNERS: Vec3[] = [];
-for (let k = 0; k < 8; k++) CORNERS.push([k & 4 ? HALF[0] : -HALF[0], k & 2 ? HALF[1] : -HALF[1], k & 1 ? HALF[2] : -HALF[2]]);
 /**
- * What can touch another chair is more than its corners: two thin boxes lie across each other with an edge on a face and no
- * corner under anything. So the points are the corners and a row along each of the eight edges of the two large faces, every
- * 15 px or so. They are where the contact impulses act, so that a chair resting on another is held at several places and not
- * two; the separation of two boxes that overlap does not depend on them (separation() below finds it from the boxes).
+ * What a thrown object is, to the physics: everything the body reads about its form, so that the chair is one shape and a can another and
+ * nothing below the shape knows which. All of it is local to the body (y is the prism's axis; the box's three axes are x, y and z).
  */
-const SAMPLES: Vec3[] = [...CORNERS];
-for (const sz of [-1, 1]) {
-  for (const sx of [-1, 1]) for (let k = 1; k < 6; k++) SAMPLES.push([sx * HALF[0], -HALF[1] + (k * 2 * HALF[1]) / 6, sz * HALF[2]]);
-  for (const sy of [-1, 1]) for (let k = 1; k < 3; k++) SAMPLES.push([-HALF[0] + (k * 2 * HALF[0]) / 3, sy * HALF[1], sz * HALF[2]]);
+export interface Shape {
+  name: string;
+  /** Where the contact impulses act and what can touch another body: the corners first, then a row along each edge that can lie across another's face. */
+  points: Vec3[];
+  corners: Vec3[];
+  /** The unit face normals, one for each parallel pair of faces. */
+  faces: Vec3[];
+  /** The unit edge directions, one for each parallel set. */
+  edges: Vec3[];
+  /** How far the shape reaches from its middle along a local unit direction. */
+  support(dir: Vec3): number;
+  /** Principal moments about the local x, y and z, mass 1. */
+  inertia: Vec3;
+  /** The distance from the middle to the farthest corner. */
+  reach: number;
+  /** Whether it folds as it is hit (the chair's hinge). */
+  hinge: boolean;
+  /** Whether it may sleep standing on its end, which is a rest and not a balance. */
+  sleepsUpright: boolean;
+  /** The highest a corner of a sleeping body of this shape may be above the floor, px. */
+  restRise: number;
+  /** Where a fire extinguisher's spout is, local (its top; y is negative up as the chair's frame has it). Only the extinguisher has one. */
+  spout?: Vec3;
+  /** A box's half extents: the exact distance to a box is known from them (a prism's is bounded by its face planes instead). */
+  half?: Vec3;
 }
 
-/** The eight corners of a body as the view shows it, in the order a bit pattern of (x, y, z) signs counts. */
-export function cornersOf(b: BodyView): Vec3[] {
+/**
+ * A box of uniform density and mass 1. What can touch another body is more than its corners: two thin boxes lie across each other with an
+ * edge on a face and no corner under anything. So the points are the corners and a row along each of the eight edges of the two large faces,
+ * every 15 px or so. They are where the contact impulses act, so that a body resting on another is held at several places and not two; the
+ * separation of two bodies that overlap does not depend on them (separation() below finds it from the shapes).
+ */
+export function boxShape(half: Vec3, hinge: boolean): Shape {
+  const corners: Vec3[] = [];
+  for (let k = 0; k < 8; k++) corners.push([k & 4 ? half[0] : -half[0], k & 2 ? half[1] : -half[1], k & 1 ? half[2] : -half[2]]);
+  const points: Vec3[] = [...corners];
+  for (const sz of [-1, 1]) {
+    for (const sx of [-1, 1]) for (let k = 1; k < 6; k++) points.push([sx * half[0], -half[1] + (k * 2 * half[1]) / 6, sz * half[2]]);
+    for (const sy of [-1, 1]) for (let k = 1; k < 3; k++) points.push([-half[0] + (k * 2 * half[0]) / 3, sy * half[1], sz * half[2]]);
+  }
+  const [w, h, d] = [half[0] * 2, half[1] * 2, half[2] * 2];
+  const axes = (): Vec3[] => [[1, 0, 0], [0, 1, 0], [0, 0, 1]];
+  return {
+    name: 'box', points, corners, faces: axes(), edges: axes(),
+    support: (v) => half[0] * Math.abs(v[0]) + half[1] * Math.abs(v[1]) + half[2] * Math.abs(v[2]),
+    inertia: [(h * h + d * d) / 12, (w * w + d * d) / 12, (w * w + h * h) / 12],
+    reach: Math.hypot(...half), hinge, sleepsUpright: false, restRise: 3 * 2 * half[2] + 2 * half[2] + 2 * 0.5, half,
+  };
+}
+
+/**
+ * A prism of uniform density and mass 1 along the local y: `sides` (even, so that faces come in parallel pairs) corners round each end, a
+ * body that stands on its end or lies on a side. The points are the corners and a row every 15 px or so along each rim edge and down each
+ * side edge. A cylinder's inertia is used, since a prism of many sides is not far from one.
+ */
+export function prismShape(radius: number, height: number, sides: number): Shape {
+  if (sides < 4 || sides % 2 !== 0) throw new Error(`a prism needs an even number of sides, at least 4 (got ${sides})`);
+  const halfHeight = height / 2;
+  const turn = (2 * Math.PI) / sides;
+  const rim: Array<[number, number]> = [];
+  for (let k = 0; k < sides; k++) rim.push([radius * Math.cos(k * turn), radius * Math.sin(k * turn)]);
+  const corners: Vec3[] = [];
+  for (const sy of [-1, 1]) for (const [x, z] of rim) corners.push([x, sy * halfHeight, z]);
+  const points: Vec3[] = [...corners];
+  const row = (from: Vec3, to: Vec3): void => {
+    const n = Math.max(1, Math.round(norm(sub(to, from)) / 15));
+    for (let k = 1; k < n; k++) points.push(add(from, mul(sub(to, from), k / n)));
+  };
+  for (let k = 0; k < sides; k++) {
+    for (let e = 0; e < 2; e++) row(corners[e * sides + k] as Vec3, corners[e * sides + ((k + 1) % sides)] as Vec3);
+    row(corners[k] as Vec3, corners[sides + k] as Vec3);
+  }
+  const faces: Vec3[] = [], edges: Vec3[] = [];
+  for (let k = 0; k < sides / 2; k++) {
+    const mid = (k + 0.5) * turn;
+    faces.push([Math.cos(mid), 0, Math.sin(mid)]);
+    const [x0, z0] = rim[k] as [number, number], [x1, z1] = rim[(k + 1) % sides] as [number, number];
+    const len = Math.hypot(x1 - x0, z1 - z0);
+    edges.push([(x1 - x0) / len, 0, (z1 - z0) / len]);
+  }
+  faces.push([0, 1, 0]);
+  edges.push([0, 1, 0]);
+  const thin = Math.min(2 * radius * Math.cos(turn / 2), height);
+  return {
+    name: `prism${sides}`, points, corners, faces, edges,
+    support: (v) => {
+      let best = -Infinity;
+      for (const [x, z] of rim) best = Math.max(best, x * v[0] + z * v[2]);
+      return best + halfHeight * Math.abs(v[1]);
+    },
+    inertia: [(3 * radius * radius + height * height) / 12, (radius * radius) / 2, (3 * radius * radius + height * height) / 12],
+    reach: Math.hypot(radius, halfHeight), hinge: false, sleepsUpright: true, restRise: 4 * thin + 2 * 0.5,
+  };
+}
+
+/** The folding chair. */
+export const CHAIR: Shape = boxShape(HALF, true);
+
+/** How thick a shape is lying on its thinnest face, px: a box's thinnest side, a prism's width across two parallel side faces. */
+function lyingThickness(shape: Shape): number {
+  return Math.min(...shape.faces.map((f) => 2 * shape.support(f)));
+}
+
+/** How thick a chair lies, px (HALF[2] each side): what two of them under an object add to its rest. */
+export const CHAIR_THICKNESS = 2 * HALF[2];
+
+/**
+ * The highest a corner of a sleeping shape reaches, worked out as the chair's REST_RISE comment does it, but with the owner's reading of
+ * 2026-11-25 (issue #1104): an object rests on at most two chairs (not on the thickest object that could lie under it), so that is two chair
+ * thicknesses; then its own lying thickness twice (lying flat on that stack, and lying across the edge of it one thickness higher), or its
+ * own height for one that stands on its end; and 1 px for the 0.5 px (TOUCH) of each of two contacts. The chair's own is 33 by the same
+ * sum (two chairs, two of itself, 1), which is why it keeps REST_RISE.
+ */
+function restRiseOver(shape: Shape): number {
+  const lying = 2 * lyingThickness(shape);
+  const standing = shape.sleepsUpright ? 2 * shape.support([0, 1, 0]) : 0;
+  return 2 * CHAIR_THICKNESS + Math.max(lying, standing) + 2 * 0.5;
+}
+
+/* The owner's tuned sizes (2026-11-25, from his bench): the reaches are 48.9, 50.6 and 47.0, none past the chair's 50.7. */
+const CAN = prismShape(25, 84, 12);
+const LADDER = boxShape([15, 48, 6], true);
+const EXTINGUISHER = { ...prismShape(13.5, 90, 12), spout: [18, -39.6, 0] as Vec3 };
+
+/** The shape of each thrown object. The chair keeps the rest it had before shapes (REST_RISE, which chair.ts's room is made from). */
+export const SHAPES: Record<ThrownObject, Shape> = {
+  chair: CHAIR,
+  can: { ...CAN, restRise: restRiseOver(CAN) },
+  ladder: { ...LADDER, restRise: restRiseOver(LADDER) },
+  extinguisher: { ...EXTINGUISHER, restRise: restRiseOver(EXTINGUISHER) },
+};
+
+/** The corners of a body as the view shows it (a box's eight, in the order a bit pattern of (x, y, z) signs counts). */
+export function cornersOf(b: BodyView, shape: Shape = CHAIR): Vec3[] {
   const R = matrixOf([b.quaternion.w, b.quaternion.x, b.quaternion.y, b.quaternion.z]);
   const pos: Vec3 = [b.position.x, b.position.y, b.position.z];
-  return CORNERS.map((c) => add(pos, toWorld(R, c)));
+  return shape.corners.map((c) => add(pos, toWorld(R, c)));
 }
 
 /* ---------- the world ---------- */
@@ -323,9 +453,10 @@ export const THROW_SPAN_Y = 0.45;
  * A throw. The target is a point in the words' box, 15 percent in from the sides and from the top and no lower than 60 percent
  * of its height (the dent bends the words, so the aim is the words). The chair comes from any direction, from one diagonal of
  * the world away (taken as twice the words' margins plus their size, since the world is the box the words sit in), at 1500 px/s,
- * spinning up to 600 degrees a second about each axis, scaled 2.2 times and shrinking to 1 as it arrives.
+ * spinning up to 600 degrees a second about each axis, scaled 2.2 times and shrinking to 1 as it arrives. The object draws no number: the
+ * same generator gives the same throw whatever is thrown, so what differs between objects is their shape and nothing else.
  */
-export function throwOf(rand: () => number, words: Box): Throw {
+export function throwOf(rand: () => number, words: Box, object: ThrownObject = 'chair'): Throw {
   const target = {
     x: words.left + words.width * (THROW_INSET_X + THROW_SPAN_X * rand()),
     y: words.top + words.height * (THROW_INSET_Y + THROW_SPAN_Y * rand()),
@@ -346,7 +477,7 @@ export function throwOf(rand: () => number, words: Box): Throw {
   ];
   const kick = (rand() * 2 - 1) * 110;
   const spinAfter: Vec3 = [(rand() * 2 - 1) * 900 * deg, (rand() * 2 - 1) * 900 * deg, (rand() * 2 - 1) * 700 * deg];
-  return { target, start, direction, speed: 1500, spin, orientation, scaleFrom: 2.2, kick, spinAfter };
+  return { target, start, direction, speed: 1500, spin, orientation, scaleFrom: 2.2, kick, spinAfter, object };
 }
 
 /** A seed for a body's nudges, from the numbers of its throw alone (the same throw, the same nudges, on any machine). */
@@ -359,8 +490,33 @@ function seedOf(th: Throw): number {
 /** The highest any corner of a body is above the floor, px. */
 function riseOf(world: World, b: Body): number {
   let top = Infinity;
-  for (const corner of CORNERS) top = Math.min(top, pointOf(b, corner)[1]);
+  for (const corner of b.shape.corners) top = Math.min(top, pointOf(b, corner)[1]);
   return world.floorY - top;
+}
+
+/** The most an end face may lean from the horizontal, and still be an end the body stands on: 5 degrees. */
+const UPRIGHT = Math.cos(5 * Math.PI / 180);
+
+/**
+ * Whether a body that sleeps upright stands on its end: the end's whole outline within TOUCH of the floor, and the end the prism's own (its
+ * axis, the local y, within 5 degrees of the world's up or down). A body that is only held there by a wall or another chair is not.
+ */
+function onItsEnd(world: World, b: Body): boolean {
+  if (!b.shape.sleepsUpright) return false;
+  const axis = toWorld(b.R, [0, 1, 0]);
+  if (Math.abs(axis[1]) < UPRIGHT) return false;
+  // y runs down: the end that is lower is the one on the floor
+  const side = axis[1] > 0 ? 1 : -1;
+  for (const corner of b.shape.corners) {
+    if (corner[1] * side <= 0) continue;
+    if (Math.abs(world.floorY - pointOf(b, corner)[1]) > TOUCH) return false;
+  }
+  return true;
+}
+
+/** Whether a body is too high to sleep: a corner above its shape's restRise, unless it stands on a prism's end. */
+function tooHigh(world: World, b: Body): boolean {
+  return riseOf(world, b) > b.shape.restRise && !onItsEnd(world, b);
 }
 
 /**
@@ -384,9 +540,9 @@ function nudge(world: World, b: Body): void {
   const d: Vec3 = [Math.cos(angle), 0, Math.sin(angle)];
   /* The pivot: of the corners that are on the floor (within a pixel of the lowest) the one farthest toward d. */
   let lowY = -Infinity;
-  for (const corner of CORNERS) lowY = Math.max(lowY, pointOf(b, corner)[1]);
+  for (const corner of b.shape.corners) lowY = Math.max(lowY, pointOf(b, corner)[1]);
   let pivot = b.pos, far = -Infinity;
-  for (const corner of CORNERS) {
+  for (const corner of b.shape.corners) {
     const p = pointOf(b, corner);
     if (p[1] >= lowY - 1 && dot(p, d) > far) { far = dot(p, d); pivot = p; }
   }
@@ -400,7 +556,8 @@ function nudge(world: World, b: Body): void {
      friction alone, which a spin of nothing would not break. */
   const barrier = Math.max(NUDGE_MIN_LIFT, across - (pivot[1] - b.pos[1]));
   const local = toBody(b.R, axis);
-  const inertia = INERTIA[0] * local[0] ** 2 + INERTIA[1] * local[1] ** 2 + INERTIA[2] * local[2] ** 2 + across ** 2;
+  const I = b.shape.inertia;
+  const inertia = I[0] * local[0] ** 2 + I[1] * local[1] ** 2 + I[2] * local[2] ** 2 + across ** 2;
   const spin = mul(axis, Math.min(NUDGE_CAP, Math.sqrt((2 * rate * GRAVITY * barrier) / inertia)));
   b.w = add(b.w, spin);
   b.vel = add(b.vel, cross(spin, sub(b.pos, pivot)));
@@ -418,7 +575,7 @@ export function addThrow(world: World, th: Throw, id?: number): number {
   const use = id ?? world.nextId;
   world.nextId = Math.max(world.nextId, use + 1);
   const body: Body = {
-    id: use, th, phase: 'flying',
+    id: use, th, shape: SHAPES[th.object], phase: 'flying',
     pos: [th.start.x, th.start.y, 0], q: th.orientation,
     vel: [th.direction.x * th.speed, th.direction.y * th.speed, 0], w: [...th.spin],
     R: matrixOf(th.orientation), flown: 0, foldT: 0, scale: th.scaleFrom, asleep: false, quiet: 0, floored: false, peak: 0, pushes: 0, nudges: 0, wedged: false, luck: rng(seedOf(th)),
@@ -454,7 +611,8 @@ const foldAt = (t: number): number => (1 + HINGE * t) * Math.exp(-HINGE * t);
 /** Linear plus rotational kinetic energy, mass 1. */
 function kineticOf(b: Body): number {
   const local = toBody(b.R, b.w);
-  return 0.5 * dot(b.vel, b.vel) + 0.5 * (INERTIA[0] * local[0] ** 2 + INERTIA[1] * local[1] ** 2 + INERTIA[2] * local[2] ** 2);
+  const I = b.shape.inertia;
+  return 0.5 * dot(b.vel, b.vel) + 0.5 * (I[0] * local[0] ** 2 + I[1] * local[1] ** 2 + I[2] * local[2] ** 2);
 }
 
 /** Kinetic plus g times height above the floor plus what the glass's spring holds. */
@@ -468,7 +626,7 @@ export function bodies(world: World): BodyView[] {
     id: b.id,
     position: { x: b.pos[0], y: b.pos[1], z: b.pos[2] },
     quaternion: { w: b.q[0], x: b.q[1], y: b.q[2], z: b.q[3] },
-    fold: b.phase === 'flying' ? 1 : foldAt(b.foldT),
+    fold: b.phase === 'flying' || !b.shape.hinge ? 1 : foldAt(b.foldT),
     scale: b.scale,
     phase: b.phase,
     asleep: b.asleep,
@@ -535,11 +693,11 @@ export function step(world: World, dt: number): Event[] {
   const surfaces = planes(world);
   for (const a of moving) {
     // a point farther from a surface than three steps of the fastest anything on the body moves cannot reach it this step
-    const reach = 3 * (norm(a.vel) + norm(a.w) * RADIUS) * dt + 1;
+    const reach = 3 * (norm(a.vel) + norm(a.w) * a.shape.reach) * dt + 1;
     // and no point of the body is nearer a surface than the middle's distance less the radius: a surface that sphere cannot reach is
     // skipped
-    const near = surfaces.map((plane) => plane.gap(a.pos) - RADIUS <= reach + 1e-6);
-    for (const [ci, corner] of CORNERS.entries()) {
+    const near = surfaces.map((plane) => plane.gap(a.pos) - a.shape.reach <= reach + 1e-6);
+    for (const [ci, corner] of a.shape.corners.entries()) {
       const p = pointOf(a, corner);
       for (const [pi, plane] of surfaces.entries()) {
         if (!near[pi]) continue;
@@ -553,22 +711,23 @@ export function step(world: World, dt: number): Event[] {
   }
   // and the other chairs, the same way: every sample point that is outside another chair's box and near it, with the distance
   const live = world.list.filter((b) => b.phase === 'tumbling');
-  const speed = new Map<Body, number>(live.map((b) => [b, norm(b.vel) + norm(b.w) * RADIUS]));
+  const speed = new Map<Body, number>(live.map((b) => [b, norm(b.vel) + norm(b.w) * b.shape.reach]));
   for (const a of moving) {
     for (const b of live) {
       if (a === b) continue;
       const reach = 3 * ((speed.get(a) as number) + (speed.get(b) as number)) * dt + 1;
-      if (norm(sub(a.pos, b.pos)) > 2 * RADIUS + reach) continue;
+      if (norm(sub(a.pos, b.pos)) > a.shape.reach + b.shape.reach + reach) continue;
       // no point of a chair is nearer the other's box than its middle's distance less its radius: a pair that sphere cannot reach has
       // no sample near enough, and its probes are skipped (a point is never counted nearer than it is)
       const forth = !apart(a, b, reach);
       // a sleeper's points near this chair too (an awake chair's own points are its own contacts): the sleeper cannot give way
       const back = b.asleep && !apart(b, a, reach);
       if (!forth && !back) continue;
-      for (const [si, sample] of SAMPLES.entries()) {
-        const near = forth ? probeNear(a, sample, b, reach) : null;
+      const pa = a.shape.points, pb = b.shape.points;
+      for (let si = 0; si < Math.max(pa.length, pb.length); si++) {
+        const near = forth && si < pa.length ? probeNear(a, pa[si] as Vec3, b, reach) : null;
         if (near) early.push(makeContact(a, b, near.p, near.n, FLOOR_BOUNCE, false, dt, near.gap, `s${a.id}.${b.id}.${si}`));
-        const under = back ? probeNear(b, sample, a, reach) : null;
+        const under = back && si < pb.length ? probeNear(b, pb[si] as Vec3, a, reach) : null;
         if (under) {
           const n: Vec3 = [-under.n[0], -under.n[1], -under.n[2]];
           const c = makeContact(a, null, under.p, n, FLOOR_BOUNCE, false, dt, under.gap, `t${a.id}.${b.id}.${si}`);
@@ -607,9 +766,9 @@ export function step(world: World, dt: number): Event[] {
   for (const b of awake) {
     if (norm(b.vel) < SLEEP_SPEED && norm(b.w) < SLEEP_SPIN) b.quiet += dt;
     else b.quiet = 0;
-    if (b.quiet >= SLEEP_TIME && riseOf(world, b) > REST_RISE && b.nudges < MAX_NUDGES) nudge(world, b);
+    if (b.quiet >= SLEEP_TIME && tooHigh(world, b) && b.nudges < MAX_NUDGES) nudge(world, b);
     else if (b.quiet >= SLEEP_TIME) {
-      if (riseOf(world, b) > REST_RISE) b.wedged = true;
+      if (tooHigh(world, b)) b.wedged = true;
       b.asleep = true;
       b.vel = [0, 0, 0];
       b.w = [0, 0, 0];
@@ -683,7 +842,8 @@ function move(b: Body, dt: number): void {
   // A free body keeps its angular momentum, not its angular velocity: the box turns by w for dt, and the w it has afterward is the
   // one that momentum gives in the new orientation (a thin box spun about its middle axis tumbles; a fixed w would make energy up).
   const l = toBody(b.R, b.w);
-  const momentum = toWorld(b.R, [l[0] * INERTIA[0], l[1] * INERTIA[1], l[2] * INERTIA[2]]);
+  const I = b.shape.inertia;
+  const momentum = toWorld(b.R, [l[0] * I[0], l[1] * I[1], l[2] * I[2]]);
   b.q = turned(b.q, b.w, dt);
   b.R = matrixOf(b.q);
   b.w = invInertia(b, momentum);
@@ -772,9 +932,10 @@ function crossInto(r0: number, r1: number, r2: number, d: Vec3, out: Vec3): void
 /** invInertia() into out. */
 function invInertiaInto(b: Body, v: Vec3, out: Vec3): void {
   const R = b.R;
-  const l0 = (R[0] * v[0] + R[3] * v[1] + R[6] * v[2]) / INERTIA[0];
-  const l1 = (R[1] * v[0] + R[4] * v[1] + R[7] * v[2]) / INERTIA[1];
-  const l2 = (R[2] * v[0] + R[5] * v[1] + R[8] * v[2]) / INERTIA[2];
+  const I = b.shape.inertia;
+  const l0 = (R[0] * v[0] + R[3] * v[1] + R[6] * v[2]) / I[0];
+  const l1 = (R[1] * v[0] + R[4] * v[1] + R[7] * v[2]) / I[1];
+  const l2 = (R[2] * v[0] + R[5] * v[1] + R[8] * v[2]) / I[2];
   out[0] = R[0] * l0 + R[1] * l1 + R[2] * l2;
   out[1] = R[3] * l0 + R[4] * l1 + R[5] * l2;
   out[2] = R[6] * l0 + R[7] * l1 + R[8] * l2;
@@ -827,49 +988,56 @@ function along(c: Contact, i: number): number {
 }
 
 /**
- * Whether a local point of one body is inside another body's box: the point, the way out along the least-penetrating face and how
- * far, or null. Plain numbers, since this runs for every sample of every near pair, several times a step.
+ * Whether a local point of one body is inside another body's shape: the point, the way out along the least-penetrating face and how
+ * far, or null. The point's depth below each face's plane is what the shape reaches along that face's normal less how far the point is
+ * along it, on both faces of a parallel pair (the shapes are symmetric about their middles). Plain numbers, since this runs for every
+ * sample of every near pair, several times a step.
  */
-function probe(owner: Body, local: Vec3, box: Body): { p: Vec3; n: Vec3; depth: number } | null {
+export function probe(owner: Body, local: Vec3, box: Body): { p: Vec3; n: Vec3; depth: number } | null {
   const R = owner.R, Q = box.R;
   const px = owner.pos[0] + R[0] * local[0] + R[1] * local[1] + R[2] * local[2];
   const py = owner.pos[1] + R[3] * local[0] + R[4] * local[1] + R[5] * local[2];
   const pz = owner.pos[2] + R[6] * local[0] + R[7] * local[1] + R[8] * local[2];
   const dx = px - box.pos[0], dy = py - box.pos[1], dz = pz - box.pos[2];
-  const l0 = Q[0] * dx + Q[3] * dy + Q[6] * dz;
-  const r0 = HALF[0] - Math.abs(l0);
-  if (r0 <= 0) return null;
-  const l1 = Q[1] * dx + Q[4] * dy + Q[7] * dz;
-  const r1 = HALF[1] - Math.abs(l1);
-  if (r1 <= 0) return null;
-  const l2 = Q[2] * dx + Q[5] * dy + Q[8] * dz;
-  const r2 = HALF[2] - Math.abs(l2);
-  if (r2 <= 0) return null;
-  let axis = 0, depth = r0, sign = l0 >= 0 ? 1 : -1;
-  if (r1 < depth) { axis = 1; depth = r1; sign = l1 >= 0 ? 1 : -1; }
-  if (r2 < depth) { axis = 2; depth = r2; sign = l2 >= 0 ? 1 : -1; }
-  const n: Vec3 = axis === 0 ? [Q[0] * sign, Q[3] * sign, Q[6] * sign]
-    : axis === 1 ? [Q[1] * sign, Q[4] * sign, Q[7] * sign]
-    : [Q[2] * sign, Q[5] * sign, Q[8] * sign];
+  const L0 = Q[0] * dx + Q[3] * dy + Q[6] * dz;
+  const L1 = Q[1] * dx + Q[4] * dy + Q[7] * dz;
+  const L2 = Q[2] * dx + Q[5] * dy + Q[8] * dz;
+  const { faces, support } = box.shape;
+  let best = -1, depth = Infinity, sign = 1;
+  for (let k = 0; k < faces.length; k++) {
+    const f = faces[k] as Vec3;
+    const l = f[0] * L0 + f[1] * L1 + f[2] * L2;
+    const r = support(f) - Math.abs(l);
+    if (r <= 0) return null;
+    if (r < depth) { best = k; depth = r; sign = l >= 0 ? 1 : -1; }
+  }
+  const f = faces[best] as Vec3;
+  const n: Vec3 = [(Q[0] * f[0] + Q[1] * f[1] + Q[2] * f[2]) * sign, (Q[3] * f[0] + Q[4] * f[1] + Q[5] * f[2]) * sign, (Q[6] * f[0] + Q[7] * f[1] + Q[8] * f[2]) * sign];
   return { p: [px, py, pz], n, depth };
 }
 
 /**
- * The separating axis test of two boxes: the axis of least overlap among the fifteen (the three faces of each and the nine crossed
- * edges), as a unit vector pointing from b toward a, and how far they overlap along it (zero or less when they are apart).
- * `reach` is how far a's box extends from its middle along the axis, for where its deepest point is.
+ * The separating axis test of two bodies: the axis of least overlap among those of their shapes (the faces of each and the crossed
+ * edges; for two boxes the fifteen: the three faces of each and the nine crossed edges), as a unit vector pointing from b toward a, and how
+ * far they overlap along it (zero or less when they are apart). `reach` is how far a's shape extends from its middle along the axis, for
+ * where its deepest point is.
  */
-function separation(a: Body, b: Body): { n: Vec3; depth: number; reach: number } {
+export function separation(a: Body, b: Body): { n: Vec3; depth: number; reach: number } {
   const A = a.R, B = b.R;
   tx = a.pos[0] - b.pos[0]; ty = a.pos[1] - b.pos[1]; tz = a.pos[2] - b.pos[2];
   sepDepth = Infinity; sepX = 0; sepY = 1; sepZ = 0; sepReach = 0;
-  // the face axes first: one of them that separates the boxes ends it (the least overlap is then at most zero, whatever the rest say)
-  for (let k = 0; k < 3; k++) if (axisOverlap(A, B, A[k]!, A[3 + k]!, A[6 + k]!, false) <= 0) return APART;
-  for (let k = 0; k < 3; k++) if (axisOverlap(A, B, B[k]!, B[3 + k]!, B[6 + k]!, false) <= 0) return APART;
-  for (let i = 0; i < 3; i++) {
-    for (let j = 0; j < 3; j++) {
-      const ux = A[i]!, uy = A[3 + i]!, uz = A[6 + i]!, vx = B[j]!, vy = B[3 + j]!, vz = B[6 + j]!;
-      axisOverlap(A, B, uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, true);
+  // the face axes first: one of them that separates the shapes ends it (the least overlap is then at most zero, whatever the rest say)
+  for (const f of a.shape.faces) {
+    if (axisOverlap(a, b, A[0] * f[0] + A[1] * f[1] + A[2] * f[2], A[3] * f[0] + A[4] * f[1] + A[5] * f[2], A[6] * f[0] + A[7] * f[1] + A[8] * f[2], false) <= 0) return APART;
+  }
+  for (const f of b.shape.faces) {
+    if (axisOverlap(a, b, B[0] * f[0] + B[1] * f[1] + B[2] * f[2], B[3] * f[0] + B[4] * f[1] + B[5] * f[2], B[6] * f[0] + B[7] * f[1] + B[8] * f[2], false) <= 0) return APART;
+  }
+  for (const e of a.shape.edges) {
+    const ux = A[0] * e[0] + A[1] * e[1] + A[2] * e[2], uy = A[3] * e[0] + A[4] * e[1] + A[5] * e[2], uz = A[6] * e[0] + A[7] * e[1] + A[8] * e[2];
+    for (const g of b.shape.edges) {
+      const vx = B[0] * g[0] + B[1] * g[1] + B[2] * g[2], vy = B[3] * g[0] + B[4] * g[1] + B[5] * g[2], vz = B[6] * g[0] + B[7] * g[1] + B[8] * g[2];
+      axisOverlap(a, b, uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, true);
     }
   }
   return { n: [sepX, sepY, sepZ], depth: sepDepth, reach: sepReach };
@@ -878,16 +1046,25 @@ function separation(a: Body, b: Body): { n: Vec3; depth: number; reach: number }
 const APART = { n: [0, 1, 0] as Vec3, depth: -1, reach: 0 };
 /** separation()'s state: the offset of the two middles and the least overlap so far (the module's scratch: a step is not re-entered). */
 let tx = 0, ty = 0, tz = 0, sepDepth = 0, sepX = 0, sepY = 0, sepZ = 0, sepReach = 0;
+/** The local direction reachAlong() hands a shape's support (the module's scratch). */
+const local: Vec3 = [0, 0, 0];
 
-/** The overlap of two boxes along one candidate axis (not yet unit), kept as the best if it is the least so far. Returns the overlap. */
-function axisOverlap(A: Mat, B: Mat, x: number, y: number, z: number, edge: boolean): number {
+/** How far a body's shape extends from its middle along a world unit direction. */
+function reachAlong(b: Body, x: number, y: number, z: number): number {
+  const R = b.R;
+  local[0] = R[0] * x + R[3] * y + R[6] * z;
+  local[1] = R[1] * x + R[4] * y + R[7] * z;
+  local[2] = R[2] * x + R[5] * y + R[8] * z;
+  return b.shape.support(local);
+}
+
+/** The overlap of two bodies along one candidate axis (not yet unit), kept as the best if it is the least so far. Returns the overlap. */
+function axisOverlap(a: Body, b: Body, x: number, y: number, z: number, edge: boolean): number {
   const len = Math.hypot(x, y, z);
   if (len < 1e-6) return Infinity;
   const ax = x / len, ay = y / len, az = z / len;
-  const ra = HALF[0] * Math.abs(A[0] * ax + A[3] * ay + A[6] * az) + HALF[1] * Math.abs(A[1] * ax + A[4] * ay + A[7] * az) +
-    HALF[2] * Math.abs(A[2] * ax + A[5] * ay + A[8] * az);
-  const rb = HALF[0] * Math.abs(B[0] * ax + B[3] * ay + B[6] * az) + HALF[1] * Math.abs(B[1] * ax + B[4] * ay + B[7] * az) +
-    HALF[2] * Math.abs(B[2] * ax + B[5] * ay + B[8] * az);
+  const ra = reachAlong(a, ax, ay, az);
+  const rb = reachAlong(b, ax, ay, az);
   const dist = tx * ax + ty * ay + tz * az;
   const depth = ra + rb - Math.abs(dist);
   // a face is preferred to an edge unless the edge is clearly less overlapped
@@ -901,45 +1078,51 @@ function axisOverlap(A: Mat, B: Mat, x: number, y: number, z: number, edge: bool
 }
 
 /**
- * Whether every point of the owner's box is farther than reach from the other body's box, for certain: along one of the other box's
- * own axes the owner's box (a sphere of RADIUS about its middle, or its extent along that axis, whichever is tighter) is that far
- * off. Then no sample of the owner is near the box, and probeNear need not be asked about any of them.
+ * Whether every point of the owner's shape is farther than reach from the other body's shape, for certain: along one of the other shape's
+ * own face normals the owner's shape (a sphere of its reach about its middle, or its extent along that axis, whichever is tighter) is that
+ * far off. Then no sample of the owner is near the shape, and probeNear need not be asked about any of them.
  */
 function apart(owner: Body, box: Body, reach: number): boolean {
-  const R = owner.R, Q = box.R;
+  const Q = box.R;
   const dx = owner.pos[0] - box.pos[0], dy = owner.pos[1] - box.pos[1], dz = owner.pos[2] - box.pos[2];
   const limit = reach + 1e-6;
-  let sphere = 0;
-  for (let i = 0; i < 3; i++) {
-    const c = Math.abs(Q[i]! * dx + Q[3 + i]! * dy + Q[6 + i]! * dz);
-    // the extent of the owner's box along box axis i: the sum over its own axes of half size times the axes' alignment
-    let extent = 0;
-    for (let j = 0; j < 3; j++) extent += (HALF[j] as number) * Math.abs(Q[i]! * R[j]! + Q[3 + i]! * R[3 + j]! + Q[6 + i]! * R[6 + j]!);
-    const out = c - extent - (HALF[i] as number);
+  const { faces } = box.shape;
+  let sphere = 0, nearest = 0;
+  for (let i = 0; i < faces.length; i++) {
+    const f = faces[i] as Vec3;
+    const x = Q[0] * f[0] + Q[1] * f[1] + Q[2] * f[2], y = Q[3] * f[0] + Q[4] * f[1] + Q[5] * f[2], z = Q[6] * f[0] + Q[7] * f[1] + Q[8] * f[2];
+    const c = Math.abs(x * dx + y * dy + z * dz);
+    const held = box.shape.support(f);
+    // the extent of the owner's shape along that normal
+    const out = c - reachAlong(owner, x, y, z) - held;
     if (out > limit) return true;
-    const past = Math.max(c - (HALF[i] as number), 0);
+    const past = Math.max(c - held, 0);
     sphere += past * past;
+    nearest = Math.max(nearest, past);
   }
-  return Math.sqrt(sphere) - RADIUS > limit;
+  // for a box the passed distances are along orthogonal axes and add as a hypotenuse; for any other shape the farthest one is a bound
+  return (box.shape.half ? Math.sqrt(sphere) : nearest) - owner.shape.reach > limit;
 }
 
 /**
- * How near a local point of one body is to another body's box, from outside it: the point, the direction from the box toward the
- * point (the box's face for a point over a face, the line to the nearest edge or corner for a point off one) and the distance,
- * or null if it is inside the box or farther than reach.
+ * How near a local point of one body is to another body's shape, from outside it: the point, the direction from the shape toward the
+ * point (a box's face for a point over a face, the line to the nearest edge or corner for a point off one; a prism's is the face it is
+ * farthest over, which is never farther than the point is) and the distance, or null if it is inside the shape or farther than reach.
  */
-function probeNear(owner: Body, local: Vec3, box: Body, reach: number): { p: Vec3; n: Vec3; gap: number } | null {
+function probeNear(owner: Body, point: Vec3, box: Body, reach: number): { p: Vec3; n: Vec3; gap: number } | null {
   const R = owner.R, Q = box.R;
-  const px = owner.pos[0] + R[0] * local[0] + R[1] * local[1] + R[2] * local[2];
-  const py = owner.pos[1] + R[3] * local[0] + R[4] * local[1] + R[5] * local[2];
-  const pz = owner.pos[2] + R[6] * local[0] + R[7] * local[1] + R[8] * local[2];
+  const px = owner.pos[0] + R[0] * point[0] + R[1] * point[1] + R[2] * point[2];
+  const py = owner.pos[1] + R[3] * point[0] + R[4] * point[1] + R[5] * point[2];
+  const pz = owner.pos[2] + R[6] * point[0] + R[7] * point[1] + R[8] * point[2];
   const dx = px - box.pos[0], dy = py - box.pos[1], dz = pz - box.pos[2];
   const l0 = Q[0] * dx + Q[3] * dy + Q[6] * dz;
   const l1 = Q[1] * dx + Q[4] * dy + Q[7] * dz;
   const l2 = Q[2] * dx + Q[5] * dy + Q[8] * dz;
-  const o0 = l0 > HALF[0] ? l0 - HALF[0] : l0 < -HALF[0] ? l0 + HALF[0] : 0;
-  const o1 = l1 > HALF[1] ? l1 - HALF[1] : l1 < -HALF[1] ? l1 + HALF[1] : 0;
-  const o2 = l2 > HALF[2] ? l2 - HALF[2] : l2 < -HALF[2] ? l2 + HALF[2] : 0;
+  const half = box.shape.half;
+  if (!half) return probeNearConvex(px, py, pz, l0, l1, l2, box, reach);
+  const o0 = l0 > half[0] ? l0 - half[0] : l0 < -half[0] ? l0 + half[0] : 0;
+  const o1 = l1 > half[1] ? l1 - half[1] : l1 < -half[1] ? l1 + half[1] : 0;
+  const o2 = l2 > half[2] ? l2 - half[2] : l2 < -half[2] ? l2 + half[2] : 0;
   const gap = Math.hypot(o0, o1, o2);
   if (gap > reach) return null;
   if (gap === 0) {
@@ -947,7 +1130,7 @@ function probeNear(owner: Body, local: Vec3, box: Body, reach: number): { p: Vec
     // resting has its points exactly here (the push out leaves them on the surface to rounding), and a contact that was only taken when
     // the point was outside let a resting chair fall a step's gravity into the other and be stopped after the fact, so it started every
     // step at 16 px/s and never slept. A point deeper than TOUCH is a collision, which is the late pass's, along the pair's own axis.
-    const r0 = HALF[0] - Math.abs(l0), r1 = HALF[1] - Math.abs(l1), r2 = HALF[2] - Math.abs(l2);
+    const r0 = half[0] - Math.abs(l0), r1 = half[1] - Math.abs(l1), r2 = half[2] - Math.abs(l2);
     const depth = Math.min(r0, r1, r2);
     if (depth > TOUCH) return null;
     const axis = r0 <= r1 && r0 <= r2 ? 0 : r1 <= r2 ? 1 : 2;
@@ -964,6 +1147,28 @@ function probeNear(owner: Body, local: Vec3, box: Body, reach: number): { p: Vec
     p: [px, py, pz],
     n: [Q[0] * n0 + Q[1] * n1 + Q[2] * n2, Q[3] * n0 + Q[4] * n1 + Q[5] * n2, Q[6] * n0 + Q[7] * n1 + Q[8] * n2],
     gap,
+  };
+}
+
+/** probeNear for a shape that is not a box: the point's height over the face plane it is farthest over (the same rules as a box's for a point on or inside the surface). */
+function probeNearConvex(px: number, py: number, pz: number, l0: number, l1: number, l2: number, box: Body, reach: number): { p: Vec3; n: Vec3; gap: number } | null {
+  const Q = box.R;
+  const { faces, support } = box.shape;
+  let best = -1, over = -Infinity, sign = 1;
+  for (let k = 0; k < faces.length; k++) {
+    const f = faces[k] as Vec3;
+    const l = f[0] * l0 + f[1] * l1 + f[2] * l2;
+    const o = Math.abs(l) - support(f);
+    if (o > over) { best = k; over = o; sign = l >= 0 ? 1 : -1; }
+  }
+  if (over > reach) return null;
+  // inside the surface: a contact at gap zero if no deeper than TOUCH, as for a box
+  if (over <= 0 && -over > TOUCH) return null;
+  const f = faces[best] as Vec3;
+  return {
+    p: [px, py, pz],
+    n: [(Q[0] * f[0] + Q[1] * f[1] + Q[2] * f[2]) * sign, (Q[3] * f[0] + Q[4] * f[1] + Q[5] * f[2]) * sign, (Q[6] * f[0] + Q[7] * f[1] + Q[8] * f[2]) * sign],
+    gap: Math.max(over, 0),
   };
 }
 
@@ -988,8 +1193,8 @@ function late(world: World, awake: Body[], dt: number, events: Event[], woken: S
   const surfaces = planes(world);
   for (const a of awake) {
     // a surface farther from the middle than the radius has no corner past it
-    const near = surfaces.map((plane) => plane.gap(a.pos) - RADIUS < 1e-6);
-    for (const [ci, corner] of CORNERS.entries()) {
+    const near = surfaces.map((plane) => plane.gap(a.pos) - a.shape.reach < 1e-6);
+    for (const [ci, corner] of a.shape.corners.entries()) {
       const p = pointOf(a, corner);
       for (const [pi, plane] of surfaces.entries()) {
         if (near[pi] && plane.gap(p) < 0) list.push(makeContact(a, null, p, plane.n, plane.e, plane.floor, dt, 0, `p${a.id}.${ci}.${pi}`));
@@ -997,16 +1202,17 @@ function late(world: World, awake: Body[], dt: number, events: Event[], woken: S
     }
   }
   for (const a of awake) for (const b of live) {
-    if (a === b || (!b.asleep && b.id < a.id) || norm(sub(a.pos, b.pos)) > 2 * RADIUS) continue;
+    if (a === b || (!b.asleep && b.id < a.id) || norm(sub(a.pos, b.pos)) > a.shape.reach + b.shape.reach) continue;
     const sat = separation(a, b);
     if (sat.depth <= 0) continue;
     // One direction for the whole pair, the axis of least overlap: points of either chair inside the other push along it (each
     // point choosing its own way out had two thin chairs pushing across each other and leaving one standing in the other)
     let any = false;
-    for (const [si, sample] of SAMPLES.entries()) {
-      const inA = probe(a, sample, b);
+    const pa = a.shape.points, pb = b.shape.points;
+    for (let si = 0; si < Math.max(pa.length, pb.length); si++) {
+      const inA = si < pa.length ? probe(a, pa[si] as Vec3, b) : null;
       if (inA) { any = true; list.push(makeContact(a, b, inA.p, sat.n, FLOOR_BOUNCE, false, dt, 0, `b${a.id}.${b.id}.${si}`)); }
-      const inB = probe(b, sample, a);
+      const inB = si < pb.length ? probe(b, pb[si] as Vec3, a) : null;
       if (inB) { any = true; list.push(makeContact(a, b, inB.p, sat.n, FLOOR_BOUNCE, false, dt, 0, `c${a.id}.${b.id}.${si}`)); }
     }
     // overlapped with no sampled point inside either (edges crossing): one contact at a's deepest point along the way out
@@ -1057,7 +1263,7 @@ function pushOut(world: World, awake: Body[]): void {
   for (let pass = 0; pass < 3; pass++) {
     let moved = false;
     for (const a of awake) for (const b of live) {
-      if (a === b || (!b.asleep && b.id < a.id) || norm(sub(a.pos, b.pos)) > 2 * RADIUS) continue;
+      if (a === b || (!b.asleep && b.id < a.id) || norm(sub(a.pos, b.pos)) > a.shape.reach + b.shape.reach) continue;
       const sat = separation(a, b);
       if (sat.depth <= 0) continue;
       moved = true;
@@ -1066,7 +1272,7 @@ function pushOut(world: World, awake: Body[]): void {
     }
     for (const a of awake) {
       let floorPast = 0, left = 0, right = 0;
-      for (const local of CORNERS) {
+      for (const local of a.shape.corners) {
         const p = pointOf(a, local);
         floorPast = Math.max(floorPast, p[1] - world.floorY);
         left = Math.max(left, -p[0]);

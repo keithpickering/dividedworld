@@ -34,7 +34,7 @@ const earn = () => [];
 
 export const testInstance: Instance = {
   key: 'test', name: 'Test', withdrawn: [],
-  copy: { announcementsThreadTitle: 'Promos {season}' },
+  copy: { rosterThreadTitle: 'Season {season}: Roster Report' },
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }],
   /* One salty card at 1.00, whose play costs nothing more: enough rules for a screen that prices a card (the HUD's hand, the Vending Machine). */
   cards: [{
@@ -153,6 +153,8 @@ export interface WorldOptions {
   readonly cardBack?: InstanceUi['cardBack'];
   /** A different Strategy Guide (its Markdown and hints) than the test world's small one. */
   readonly guide?: GuideUi;
+  /** A different welcome letter's Markdown than the test world's one line. */
+  readonly letter?: string;
   /** A different code of conduct than the test world's small one. */
   readonly conduct?: ConductUi;
   /** Different licensing (source, terms, credits) than the test world's small one. */
@@ -217,7 +219,7 @@ export function tapThread(fake: Fake): () => ThreadListener {
 
 export function renderIn(fake: Fake, element: ReactElement, options: WorldOptions = {}) {
   window.history.replaceState(options.state ?? null, '', options.path ?? '/');
-  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.conduct || options.licensing || options.copy || options.cardBack || options.sounds ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.licensing ? { licensing: options.licensing } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
+  const kayfa: Kayfa = { api: fake, instance: options.instance ?? testInstance, ui: options.glass || options.cards || options.packs || options.classLooks || options.avatars || options.guide || options.letter || options.conduct || options.licensing || options.copy || options.cardBack || options.sounds ? { ...ui, ...(options.copy ? { copy: { ...ui.copy, ...options.copy } } : {}), ...(options.glass ? { glass: options.glass } : {}), ...(options.cards ? { cards: options.cards } : {}), ...(options.packs ? { packs: options.packs } : {}), ...(options.classLooks ? { classLooks: options.classLooks } : {}), ...(options.avatars ? { avatars: options.avatars } : {}), ...(options.guide ? { guide: options.guide } : {}), ...(options.letter ? { onboarding: { ...ui.onboarding, letter: options.letter } } : {}), ...(options.conduct ? { conduct: options.conduct } : {}), ...(options.licensing ? { licensing: options.licensing } : {}), ...(options.cardBack ? { cardBack: options.cardBack } : {}), ...(options.sounds ? { sounds: options.sounds } : {}) } : ui, settings: { ...settings, groups: screenGroups, ...options.settings } as unknown as ScreenSettings, ...(options.random ? { random: options.random } : {}) };
   return {
     fake,
     ...render(

@@ -1077,7 +1077,7 @@ test('a meeting is four chat calls in order, each with its part\'s schema, rule 
   const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
   assert.equal(out.status, 'ok', JSON.stringify(out));
   assert.deepEqual(m.chats.map(partOf), ['moves', 'bundle', 'staff', 'self']);
-  assert.deepEqual(m.chats.map((c) => c.maxTokens), [6000, 4000, 3000, 4500]);
+  assert.deepEqual(m.chats.map((c) => c.maxTokens), [6000, 4000, 3000, 4800]);
   assert.deepEqual(m.chats.map((c) => 'cachePrefix' in c), [false, false, false, false]);
   m.chats.forEach((c, i) => {
     const k = MEETING_PARTS[i]!.key;
@@ -1343,6 +1343,30 @@ test('a granted rename gets the stock description, as a rename among the moves d
   const quietRun = fakeDb({ requests: [waiting(12)] });
   await run(quietRun.db, fakeModels(answer()).models, quiet, SLOT, clock, noFeeds);
   assert.equal(posts(quietRun).length, 0);
+});
+
+/* ---------------------------------------------------------------------------------------- the minutes ---- */
+
+test('the minutes reach the database as the payload\'s own key, trimmed to 600 and recorded; an answer with none sends none', async () => {
+  const d = fakeDb({});
+  const m = fakeModels(answer([], { minutes: 'x'.repeat(700) }));
+  const out = await run(d.db, m.models, quiet, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const payload = d.state.applied[0]!.payload;
+  assert.equal(payload.minutes.length, 600);
+  assert.ok(out.trims.some((t: any) => t.path === 'minutes' && t.predicate === 'maxLength(600)'), JSON.stringify(out.trims));
+  const d2 = fakeDb({});
+  const none = await run(d2.db, fakeModels(answer([])).models, quiet, SLOT, clock, noFeeds);
+  assert.equal(none.status, 'ok');
+  assert.ok(!('minutes' in d2.state.applied[0]!.payload), 'no minutes, no key');
+});
+
+test('the self part is the one asked for minutes, and it is given room for them', async () => {
+  const m = fakeModels(answer([], { minutes: 'We argued.' }));
+  await run(fakeDb({}).db, m.models, quiet, SLOT, clock, noFeeds);
+  const self = m.chats.find((c) => partOf(c) === 'self')!;
+  assert.match(self.system, /minutes: a few lines/);
+  assert.equal(self.maxTokens, 4800);
 });
 
 test('the digest is rendered at the meeting\'s slot, not the clock nor the window\'s end, and with the instance\'s cards', async () => {

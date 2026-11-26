@@ -14,12 +14,12 @@ const full: World = (fake, instance) => {
   const t0 = Date.parse('2026-10-01T12:00:00Z');
   const pipe = fake.seed.character(me, 'Pipewrench', a!.key, { at: t0 });
   const hoolie = fake.seed.character(me, 'Mrs. Hooligan', (b ?? a)!.key, { at: t0 });
-  fake.seed.character(me, 'Spritey', (c ?? a)!.key, { debuted: false, loudness: 'announced' });
-  fake.seed.settle({ at: t0 + 86_400_000, debut: false, standings: { [pipe]: 1420, [hoolie]: 685 } });
+  fake.seed.character(me, 'Spritey', (c ?? a)!.key, { at: t0 });
+  fake.seed.settle({ at: t0 + 86_400_000, standings: { [pipe]: 1420, [hoolie]: 685 } });
   fake.signInAs(me);
 };
 
-/** Three masks: one free to Turn, one waiting to debut. */
+/** Three masks: one free to Turn. */
 export const WithCharacters: Story = { parameters: { world: full } };
 
 /** A Turn that is waiting, with Change and Withdraw. */

@@ -1,4 +1,6 @@
-import { ROOM_HEIGHT } from './chair.ts';
+import { roomHeightOf } from './chair.ts';
+import { objectOf, type ThrownObject } from './objects.ts';
+import { seedOfIds } from './seed.ts';
 import { rng, THROW_INSET_X, THROW_INSET_Y, THROW_SPAN_X, THROW_SPAN_Y } from './body.ts';
 
 /**
@@ -54,15 +56,8 @@ export function filterTrusted(env: FilterEnv = {}): boolean {
 /** The range a dent's two axes are scaled within, as a fraction of round: within about 15% of round (owner's answer, 2026-11-15). */
 export const AXIS_MIN = 0.85;
 export const AXIS_MAX = 1.15;
-/**
- * A hash (FNV-1a) of ids, so a play's id (public) gives the same number for every reader and on every replay. The effect seeds its settle sound's picks the same
- * way (Effect.tsx).
- */
-export function seedOfIds(ids: readonly string[]): number {
-  let h = 2166136261;
-  for (const ch of ids.join('|')) { h ^= ch.codePointAt(0)!; h = Math.imul(h, 16777619); }
-  return h >>> 0;
-}
+// seedOfIds lives in seed.ts (objects.ts needs it too, and dent.ts imports objects.ts); it stays importable from here.
+export { seedOfIds };
 
 /**
  * One dent's shape, the numbers its height map is made from: `rx` and `ry`, how far its two axes are scaled from round (0.85 to 1.15);
@@ -75,31 +70,71 @@ export interface DentShape {
   readonly ry: number;
   readonly turn: number;
   readonly waves: readonly { readonly amp: number; readonly phase: number }[];
-  readonly lobes: readonly { readonly u: number; readonly v: number; readonly radius: number; readonly depth: number }[];
+  /** A lobe is round (`radius`) unless it has an `across`: then it is a ridge, `across` wide along `u` and `radius` along `v` (the ladder's rung). */
+  readonly lobes: readonly { readonly u: number; readonly v: number; readonly radius: number; readonly depth: number; readonly across?: number }[];
   readonly crumple: readonly number[];
+  /** How many times the cap (`FULL_DENT`) the dent's larger axis may be (`dentPrimitives`); absent is 1, the chair's. The owner's tuning of 2026-11-25. */
+  readonly size?: number;
+  /** How much darker the shade is drawn than the map gives it (`dentShade`); absent is 1, the chair's. */
+  readonly darkness?: number;
 }
+
+/**
+ * What differs between the objects' dents (docs/plans/2026-11-23-steel-chair-objects-design.md, section 5); the pipeline after the shape is
+ * the same. `axisMin` and `axisMax` bound the first axis draw; `aspect` says how the two axes relate: `free` draws both alike (the chair), `long`
+ * draws `ry` and takes `rx` as `ry` times a ratio in `ratio`, `near` draws `rx` and takes `ry` as `rx` times a ratio in `ratio`, `round` makes
+ * `ry` equal `rx`. The lobe count is `lobesMin` plus a draw over `lobesSpan` values; a lobe's `radius` and `depth` are `base + span * draw`; the
+ * crumple's lattice values run -`crumple` to `crumple`. The chair's values are the constants this file always had.
+ */
+interface DentKind {
+  readonly axisMin: number; readonly axisMax: number;
+  readonly aspect: 'free' | 'long' | 'near' | 'round'; readonly ratio: readonly [number, number];
+  readonly lobesMin: number; readonly lobesSpan: number;
+  readonly radius: readonly [number, number]; readonly depth: readonly [number, number];
+  readonly crumple: number;
+  /** `size` and `darkness` of the shape (1 is the chair's and leaves them off it, so the chair's recorded shapes stay equal). */
+  readonly size: number; readonly darkness: number;
+}
+const DENT_KINDS: Readonly<Record<ThrownObject, DentKind>> = {
+  chair: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'free', ratio: [1, 1], lobesMin: 2, lobesSpan: 3, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5, size: 1, darkness: 1 },
+  // long and narrow: a crease with one rung's ridge across its long axis. The owner's tuning (2026-11-25): bigger (1.3 times the cap, a little wider
+  // too) and darker, by the bench's 0.28 against the chair's 0.18
+  ladder: { axisMin: AXIS_MIN, axisMax: AXIS_MAX, aspect: 'long', ratio: [0.45, 0.1], lobesMin: 1, lobesSpan: 1, radius: [0.12, 0.1], depth: [0.3, 0.3], crumple: 0.5, size: 1.3, darkness: 0.28 / 0.18 },
+  // rounder (axes within 5%), 2 or 3 lobes, deeper; `axisMax` leaves room for the ratio so no axis passes AXIS_MAX. Scaled to its 50 px (from 30): 1.25 times the cap
+  can: { axisMin: AXIS_MIN, axisMax: AXIS_MAX / 1.04, aspect: 'near', ratio: [0.96, 0.08], lobesMin: 2, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.45, 0.3], crumple: 0.5, size: 1.25, darkness: 1 },
+  // round, 80% of the chair's size (70% before it grew from 15 to 27 px across), 1 or 2 lobes, the deepest
+  extinguisher: { axisMin: AXIS_MIN * 0.8, axisMax: AXIS_MAX * 0.8, aspect: 'round', ratio: [1, 0], lobesMin: 1, lobesSpan: 2, radius: [0.12, 0.1], depth: [0.6, 0.3], crumple: 0.5, size: 1, darkness: 1 },
+};
 
 /**
  * A dent's shape, from its play's id alone, through the seeded generator of body.ts: nothing about the reader and not the run's own seed, so a
  * given play's dent has the same shape for every reader and on every replay, and three plays' dents are not copies. (Where it lands is
  * the run's, and changes each run.) The id is salted with `dent|` so the shape does not move in step with the settle sound's seed from the same id.
  * The draws are in this order: `rx`, `ry`, `turn`, each wave's `amp` and `phase`, the lobe count, each lobe's distance, angle, `radius` and
- * `depth`, then the 81 lattice values.
+ * `depth`, then the 81 lattice values. Every object draws the same count of numbers in that order (a ladder or a can reads its two axis draws
+ * as a size and a ratio), and the chair's draws and results are what they were before objects, so a chair's dent is drawn from the same numbers.
  */
-export function dentShape(playId: string): DentShape {
+export function dentShape(playId: string, object: ThrownObject = 'chair'): DentShape {
+  const k = DENT_KINDS[object];
   const rand = rng(seedOfIds(['dent', playId]));
-  const axis = () => AXIS_MIN + (AXIS_MAX - AXIS_MIN) * rand();
-  const rx = axis(), ry = axis();
+  const axis = () => k.axisMin + (k.axisMax - k.axisMin) * rand();
+  let rx: number, ry: number;
+  if (k.aspect === 'long') { const r = k.ratio[0] + k.ratio[1] * rand(); ry = axis(); rx = ry * r; }
+  else if (k.aspect === 'near') { rx = axis(); ry = rx * (k.ratio[0] + k.ratio[1] * rand()); }
+  else if (k.aspect === 'round') { rx = axis(); rand(); ry = rx; }
+  else { rx = axis(); ry = axis(); }
   const turn = rand() * 360;
   const waves = Array.from({ length: 3 }, () => { const amp = -0.1 + 0.2 * rand(); return { amp, phase: rand() * 2 * Math.PI }; });
-  const lobes = Array.from({ length: 2 + Math.floor(3 * rand()) }, () => {
+  const lobes = Array.from({ length: k.lobesMin + Math.floor(k.lobesSpan * rand()) }, () => {
     const dist = 0.3 * rand(), angle = rand() * 2 * Math.PI;
-    const radius = 0.12 + 0.1 * rand();
-    const depth = 0.3 + 0.3 * rand();
+    const radius = k.radius[0] + k.radius[1] * rand();
+    const depth = k.depth[0] + k.depth[1] * rand();
+    // the ladder's one lobe is a rung's ridge across its long axis (`ry`, the v direction): centered along it, stretched along u
+    if (k.aspect === 'long') return { u: 0, v: (dist / 0.3 - 0.5) * 0.2, radius: radius * 0.6, depth, across: 0.55 + 0.4 * (angle / (2 * Math.PI)) };
     return { u: dist * Math.cos(angle), v: dist * Math.sin(angle), radius, depth };
   });
-  const crumple = Array.from({ length: 81 }, () => -0.5 + rand());
-  return { rx, ry, turn, waves, lobes, crumple };
+  const crumple = Array.from({ length: 81 }, () => -k.crumple + 2 * k.crumple * rand());
+  return { rx, ry, turn, waves, lobes, crumple, ...(k.size === 1 ? {} : { size: k.size }), ...(k.darkness === 1 ? {} : { darkness: k.darkness }) };
 }
 
 /** One dent's `feImage`, and the box of its shading: its top left corner, its width and height, and the larger of the two, in the box's px. */
@@ -131,11 +166,11 @@ export const FULL_DENT = 160;
 /** The least height a dent's zone may have where the area has room for the chairs below it; below that the room is given up (`zoneHeight`). */
 export const LEAST_ZONE = 80;
 /**
- * The height a dent may land in, from the content area's height: the area less the chairs' room (`ROOM_HEIGHT`, chair.ts) where that leaves at
+ * The height a dent may land in, from the content area's height: the area less the objects' room (`roomHeightOf`, chair.ts; the chair's by default) where that leaves at
  * least `LEAST_ZONE`, else the whole area (a short area gives up the room, so the dent is held to the area alone, never outside it).
  */
-export function zoneHeight(areaHeight: number): number {
-  const above = areaHeight - ROOM_HEIGHT;
+export function zoneHeight(areaHeight: number, room: number = roomHeightOf([])): number {
+  const above = areaHeight - room;
   return above >= LEAST_ZONE ? above : areaHeight;
 }
 
@@ -143,14 +178,17 @@ export function zoneHeight(areaHeight: number): number {
  * Each dent's `feImage` numbers, in order. A dent's larger axis is at most `FULL_DENT` (160) px, at most 60% of the box's width (a narrow post
  * would otherwise be mostly dent) and at most the box's height (the caller gives the height a dent may land in, `zoneHeight`); a dent with a `shape` has its two axes scaled by it,
  * divided by `AXIS_MAX` so that the larger can never pass that limit. The
- * dent's box is centered on its point. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
+ * dent's box is centered on its point. A shape with a `size` (the can's, the ladder's) takes it times the cap, held to the same two limits. The dent's height map is made in this (axis-aligned) box (`dentImages`), so an elliptical box gives an
  * elliptical dent, and the bend, the shade and the light, all from that one map, agree.
  */
 export function dentPrimitives(dents: readonly { x: number; y: number; shape?: DentShape }[], box: { width: number; height: number }): DentPrimitive[] {
-  const base = Math.min(FULL_DENT, 0.6 * box.width, box.height);
+  const room = Math.min(0.6 * box.width, box.height);
+  const base = Math.min(FULL_DENT, room);
   return dents.map((d) => {
-    const width = d.shape ? (base * d.shape.rx) / AXIS_MAX : base;
-    const height = d.shape ? (base * d.shape.ry) / AXIS_MAX : base;
+    /* An object whose dent is bigger (`size`) may pass the cap, but never 60% of the box's width or the height it may land in. */
+    const cap = d.shape?.size ? Math.min(FULL_DENT * d.shape.size, room) : base;
+    const width = d.shape ? (cap * d.shape.rx) / AXIS_MAX : base;
+    const height = d.shape ? (cap * d.shape.ry) / AXIS_MAX : base;
     return { x: d.x - width / 2, y: d.y - height / 2, size: Math.max(width, height), width, height };
   });
 }
@@ -205,7 +243,7 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
   const lattice = shape.crumple;
   const amp = shape.waves.map((w) => w.amp), phase = shape.waves.map((w) => w.phase);
   const lobeU = shape.lobes.map((l) => l.u), lobeV = shape.lobes.map((l) => l.v);
-  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
+  const lobeR2 = shape.lobes.map((l) => l.radius ** 2), lobeA2 = shape.lobes.map((l) => (l.across ?? 0) ** 2), lobeDepth = shape.lobes.map((l) => l.depth);
   const lobes = shape.lobes.length;
   const us = new Float64Array(width);
   for (let x = 0; x < width; x++) us[x] = ((x + 0.5) / width) * 2 - 1;
@@ -225,7 +263,11 @@ export function dentHeight(shape: DentShape, width: number, height: number): Flo
       for (let i = 0; i < 3; i++) wave += amp[i]! * Math.cos(ks[i]! * a + phase[i]!);
       const r0 = 0.5 * (1 + wave);
       let h = -Math.exp(-2.2 * (rho / r0) ** 2);
-      for (let i = 0; i < lobes; i++) h -= lobeDepth[i]! * Math.exp(-(((u - lobeU[i]!) ** 2 + (v - lobeV[i]!) ** 2) / lobeR2[i]!));
+      for (let i = 0; i < lobes; i++) {
+        const du = u - lobeU[i]!, dv = v - lobeV[i]!;
+        // a round lobe keeps its one expression, so the chair's dent stays bit-identical; a ridge stretches u by its `across`
+        h -= lobeDepth[i]! * Math.exp(-(lobeA2[i]! === 0 ? (du ** 2 + dv ** 2) / lobeR2[i]! : du ** 2 / lobeA2[i]! + dv ** 2 / lobeR2[i]!));
+      }
       const n = u * sinT - v * cosT, t = u * cosT + v * sinT;
       h -= 0.15 * Math.exp(-((n / 0.08) ** 2)) * Math.exp(-((t / 0.4) ** 2));
       h += 0.12 * Math.exp(-(((rho - 1.05 * r0) / 0.09) ** 2));
@@ -301,8 +343,8 @@ function lighting(h: Float32Array, width: number, height: number): Lit {
  * least lit sample lands on 128/255; its alpha is 255 less that gray, so black at that alpha over a color `c` leaves `c × gray / 255`, which is what
  * multiplying by the gray gave. A map with no slope (which no shape gives) is alpha 0 everywhere.
  */
-export function dentShade(h: Float32Array, width: number, height: number): Uint8ClampedArray {
-  return alphaPixels(shadeGray(lighting(h, width, height)), 0, true);
+export function dentShade(h: Float32Array, width: number, height: number, darkness = 1): Uint8ClampedArray {
+  return alphaPixels(shadeGray(lighting(h, width, height), darkness), 0, true);
 }
 /** Gray bytes as RGBA of one color with an alpha: the gray itself, or (`flip`) 255 less it. */
 function alphaPixels(gray: Uint8Array, rgb: number, flip: boolean): Uint8ClampedArray {
@@ -314,11 +356,11 @@ function alphaPixels(gray: Uint8Array, rgb: number, flip: boolean): Uint8Clamped
   return out;
 }
 /** The shade's gray map (255 flat, 128 darkest), one byte a pixel: what the multiply gave, and what `capped` works on. */
-function shadeGray({ lam }: Lit): Uint8Array {
+function shadeGray({ lam }: Lit, darkness = 1): Uint8Array {
   const flat = LIGHT[2];
   let lo = Infinity;
   for (let i = 0; i < lam.length; i++) lo = Math.min(lo, lam[i]!);
-  const g = flat - lo > 1e-12 ? (1 - 128 / 255) / (flat - lo) : 0;
+  const g = flat - lo > 1e-12 ? ((1 - 128 / 255) / (flat - lo)) * darkness : 0;
   const out = new Uint8Array(lam.length);
   for (let i = 0; i < lam.length; i++) out[i] = Math.round(255 * Math.min(1, Math.max(128 / 255, 1 + (lam[i]! - flat) * g)));
   return out;
@@ -495,16 +537,16 @@ function sample(map: Uint8Array, width: number, height: number, gx: number, gy: 
 }
 
 /** A play's images at a size and density, made once and kept (the three addresses and the two gray maps). */
-function keptOf(play: string, w: number, h: number, density: number, toUrl: typeof pixelsUrl): Kept {
-  const key = `${play}|${w}|${h}|${density}`;
+function keptOf(play: string, w: number, h: number, density: number, toUrl: typeof pixelsUrl, object: ThrownObject): Kept {
+  const key = `${play}|${object}|${w}|${h}|${density}`;
   const kept = imageCache.get(key);
   if (kept) return kept;
-  const shape = dentShape(play);
+  const shape = dentShape(play, object);
   const sw = Math.round(w * density), sh = Math.round(h * density);
   const bendMap = dentHeight(shape, w, h);
   const map = sw === w && sh === h ? bendMap : dentHeight(shape, sw, sh);
   const lit = lighting(map, sw, sh);
-  const shadeMap = shadeGray(lit), lightMap = lightGray(lit, sw, sh);
+  const shadeMap = shadeGray(lit, shape.darkness), lightMap = lightGray(lit, sw, sh);
   const made: Kept = {
     bend: toUrl(dentBend(bendMap, w, h), w, h),
     shade: toUrl(alphaPixels(shadeMap, 0, true), sw, sh),
@@ -529,20 +571,21 @@ function keptOf(play: string, w: number, h: number, density: number, toUrl: type
  */
 export function dentImages(
   play: string, box: DentPrimitive, density: number,
-  earlier: readonly { readonly play: string; readonly box: DentBox }[] = [], toUrl: typeof pixelsUrl = pixelsUrl,
+  earlier: readonly { readonly play: string; readonly box: DentBox; readonly object?: ThrownObject }[] = [], toUrl: typeof pixelsUrl = pixelsUrl,
+  object: ThrownObject = objectOf(play),
 ): DentImages {
   const w = Math.round(box.width), h = Math.round(box.height);
   // a box under 1 px on a side (not yet measured, or a very narrow post) has no image to make: `new ImageData` would throw on it
   if (w < 1 || h < 1) return { bend: '', shade: '', light: '' };
-  const own = keptOf(play, w, h, density, toUrl);
+  const own = keptOf(play, w, h, density, toUrl, object);
   const near = earlier.filter((e) => Math.round(e.box.width) >= 1 && Math.round(e.box.height) >= 1 && intersects(box, e.box));
   if (near.length === 0) return { bend: own.bend, shade: own.shade, light: own.light };
   const step = (v: number) => Math.round(v * density) / density;
-  const key = `${play}|${w}|${h}|${density}|` + near.map((e) => `${e.play}@${step(e.box.x - box.x)},${step(e.box.y - box.y)}:${Math.round(e.box.width)}x${Math.round(e.box.height)}`).join('|');
+  const key = `${play}|${object}|${w}|${h}|${density}|` + near.map((e) => `${e.play}|${e.object ?? objectOf(e.play)}@${step(e.box.x - box.x)},${step(e.box.y - box.y)}:${Math.round(e.box.width)}x${Math.round(e.box.height)}`).join('|');
   const hit = cappedCache.get(key);
   if (hit) return hit;
   const others: CapDent[] = near.map((e) => {
-    const k = keptOf(e.play, Math.round(e.box.width), Math.round(e.box.height), density, toUrl);
+    const k = keptOf(e.play, Math.round(e.box.width), Math.round(e.box.height), density, toUrl, e.object ?? objectOf(e.play));
     return { box: e.box, width: k.sw, height: k.sh, shade: k.shadeMap, light: k.lightMap };
   });
   const out = capped({ box, width: own.sw, height: own.sh, shade: own.shadeMap, light: own.lightMap }, others);

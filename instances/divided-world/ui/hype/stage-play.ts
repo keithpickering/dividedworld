@@ -13,10 +13,22 @@ import type { Fake } from '../../../../engine/ui/data/fake.ts';
 import type { Instance } from '../../../../engine/rules/types.ts';
 import LINES from './staff-lines.json';
 import { pendingOf } from './forecast.ts';
+import { objectOf } from '../steel-chair/objects.ts';
 import type { Made } from './stage-world.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
+
+/**
+ * The id of a Steel Chair play the stage seeds: drawn until its object rolls a chair (nine in ten do), so that the stage's chairs are chairs
+ * and not a can, a ladder or an extinguisher. The id is the play's own, as the server would make it.
+ */
+export function chairId(): string {
+  for (;;) {
+    const id = crypto.randomUUID();
+    if (objectOf(id) === 'chair') return id;
+  }
+}
 
 /** What the Mod's visit to a post said when it came, and when it filed (round 1's stage: ONTOPIC 5.0's, kept word for word). */
 export const VISIT_LINE = 'A question about boards, asked on a board. I will allow that this is efficient.';
@@ -138,7 +150,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     const spring = fake.seed.spring(set, { trigger: 'quote' });
     const setter = quotedAct.character;
     if (setter === null) throw new Error(`post ${quoted} has no author to have set the card`);
-    const play = fake.seed.card(setter, quoting, 'steel-chair', { layer: 1, message: '', spring, live: true, ends: new Date(Date.now() + 3 * DAY).toISOString() });
+    const play = fake.seed.card(setter, quoting, 'steel-chair', { id: chairId(), layer: 1, message: '', spring, live: true, ends: new Date(Date.now() + 3 * DAY).toISOString() });
     fake.broadcast.rejoin();
     mark('spring');
     return { spring, play };
@@ -180,7 +192,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       const move = fake.seed.move('fangame', { board: '', name: '', body: LINES.merged.text, lasting: { kind: 'mergeBoard', params: { board: palace, into: minus } } });
       fake.seed.closeBoard(palace, { mergedInto: minus });
       fake.broadcast.rejoin();
-      /* The move's notice is posted in the Staff Announcements thread: the stage can show it (`show('thread:announcements')`). */
+      /* The move opens a thread of its own on the Staff Announcements board (the board's newest): the stage can show it (`show('thread:announcements')`). */
       const announcements = (await fake.boardPage('announcements', 1, []))?.threads[0]?.id;
       if (announcements !== undefined) (made.threads as Record<string, string>)['announcements'] = announcements;
       mark('staff:merge');
@@ -215,7 +227,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
     if (p.reach === 'character') {
       fake.seed.reach(characterOf(p.by), 'character', made.target.character, p.card, { post: first, ends: Date.now() + 5 * DAY, message: p.message ?? '', config: p.config, live: true });
     } else {
-      const play = fake.seed.card(characterOf(p.by), first, p.card, { layer, live: true, message: p.message ?? '', ...(p.config === undefined ? {} : { config: p.config }), ...lasting });
+      const play = fake.seed.card(characterOf(p.by), first, p.card, { ...(p.card === 'steel-chair' ? { id: chairId() } : {}), layer, live: true, message: p.message ?? '', ...(p.config === undefined ? {} : { config: p.config }), ...lasting });
       /* The old voice's words arrive after its play, and type in as they land. */
       if (p.card === 'you-were-saying') {
         const version = (await actOf(1)).id;

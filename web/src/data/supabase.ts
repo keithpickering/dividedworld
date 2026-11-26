@@ -598,6 +598,15 @@ function toStaffCard(r: Row): StaffCardPlay {
   };
 }
 
+/** The answer of turn and announce_turn (0435): the Turn as queued, with the announcement Act it wrote at once where it is announced. */
+function toTurnAsked(r: Row): TurnAsked {
+  const told = isObject(r['announcement']) ? r['announcement'] : null;
+  return {
+    class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null,
+    announced: told && told['id'] && told['thread'] ? { act: told['id'] as Id, thread: told['thread'] as Id } : null,
+  };
+}
+
 function toMyCharacter(r: Row): MyCharacter {
   const pending: PendingTurn | null = r['pending_class']
     ? {
@@ -606,6 +615,9 @@ function toMyCharacter(r: Row): MyCharacter {
         showFrom: r['pending_show_from'] === true,
         showTo: r['pending_show_to'] === true,
         takesEffectAt: r['takes_effect_at'] ?? null,
+        announced: r['pending_announce_act'] && r['pending_announce_thread']
+          ? { act: r['pending_announce_act'], thread: r['pending_announce_thread'], seq: Number(r['pending_announce_seq'] ?? 0), title: String(r['pending_announce_title'] ?? '') }
+          : null,
       }
     : null;
   return {
@@ -618,7 +630,6 @@ function toMyCharacter(r: Row): MyCharacter {
     classDueAt: r['class_due_at'] ?? null,
     turnOpensAt: r['turn_opens_at'] ?? null,
     debutedAt: r['debuted_at'] ?? null,
-    debutLoudness: r['debut_loudness'] ?? null,
     retiredAt: r['retired_at'] ?? null,
     pendingTurn: pending,
     presenceHidden: r['presence_hidden'] === true,
@@ -1714,7 +1725,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     /* A card that replies sends its reply as `body` and `framing`, as a post does; the function names them for the play. */
     /* The answer of a play that carried a reply names it too (`under`, as the broadcast does): it is handed to the thread's listeners here, as the broadcast would, so the caster's own screen nests it
        even where the broadcast is slow or lost; a screen that hears both ignores the second. */
-    playCard: (card, character, target, config, message, reach, fromPost, first, reply) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, (row) => {
+    playCard: (card, character, target, config, message, reach, fromPost, first, reply, boardThread) => act({ action: 'playCard', card, character, target, config, message, ...beyond(reach, fromPost), ...(boardThread === undefined ? {} : { boardThread }), ...(first === undefined ? {} : { first }), ...(reply === undefined ? {} : { body: reply.body, ...framed(reply.framing) }) }, (row) => {
       const { under, ...card } = row;
       if (isObject(under) && typeof card['thread'] === 'string') for (const l of [...(topics.get(`thread:${card['thread']}`)?.listeners ?? [])]) l('under', under);
       return toAct(card);
@@ -1965,6 +1976,8 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const under = rowsOf(d['under']).map((u) => ({ parent: u['parent'] as Id, play: u['play'] as Id, act: toAct(u['act']) }));
       const cut = rowsOf(d['cut']).map((c) => ({ seq: num(c['seq']), parentSeq: num(c['parent_seq']) }));
       const kept = rowsOf(d['kept']).map(toPlayAbove);
+      /* The board cards written in the thread (0438); a document without the key reads as none. */
+      const boardCards = rowsOf(d['boardCards']).map(toAct);
       const summary = toThread(d['summary'] as Row);
       /* The origin of a spun thread, on the page that holds its first Act (0372); a document without the key, or with a null one, has none. */
       const o = d['origin'];
@@ -1978,12 +1991,12 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         : null;
       /* The ids the page's tallies were asked for: its Acts, then the plays on its posts and above them, the nested replies and the kept plays, and the origin's Act and plays (the plays' ends are no plays). */
       const asked = [
-        ...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id),
+        ...acts.map((a) => a.id), ...plays.map((a) => a.id), ...above.map((x) => x.act.id), ...under.map((u) => u.act.id), ...kept.map((x) => x.act.id), ...boardCards.map((a) => a.id),
         ...(origin === null ? [] : [...(origin.act === null ? [] : [origin.act.id]), ...origin.plays.filter((a) => a.kind !== 'card_end').map((a) => a.id)]),
       ];
       const reading: Record<Id, number> = typeof d['reading'] === 'number' ? { [thread]: d['reading'] } : {};
       return {
-        thread: summary, page: num(d['page'], 1), acts,
+        thread: summary, page: num(d['page'], 1), acts, boardCards,
         people: rowsOf(d['people']).map((p): ThreadPerson => ({
           character: toCharacter(p['character'], isObject(p['profile']) ? p['profile'] : undefined), posts: num(p['posts']), standing: num(p['standing']),
           reveals: rowsOf(p['reveals']).map(toClassReveal), turns: rowsOf(p['turns']).map(toTurn),
@@ -2409,13 +2422,13 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     spin: (origin, character, title, body, framing, at) => act({ action: 'spin', origin, character, title, body, ...framed(framing), ...(at ? { at } : {}) }, withThread),
     apologize: (move, character, title, body, framing) => act({ action: 'apologize', move, character, title, body, ...framed(framing) }, withThread),
     react: (target, character, kind, opts) => act({ action: 'react', act: target, character, kind }, (r) => ({ act: r['act'], tally: isObject(r['tally']) ? r['tally'] as Tally : null }), opts?.keepalive === true),
-    turn: (character, to, loudness, showFrom, showTo) =>
-      act({ action: 'turn', character, class: to, loudness, showFrom, showTo }, (r): TurnAsked => ({ class: r['class'], loudness: r['loudness'], showFrom: r['show_from'] === true, showTo: r['show_to'] === true, takesEffectAt: r['takes_effect_at'] ?? null })),
+    turn: (character, to, loudness, showFrom, showTo, thread) =>
+      act({ action: 'turn', character, class: to, loudness, showFrom, showTo, ...(thread === undefined ? {} : { thread }) }, toTurnAsked),
+    announceTurn: (character, thread, showFrom, showTo) => act({ action: 'announceTurn', character, thread, showFrom, showTo }, toTurnAsked),
     withdrawTurn: (character) => act({ action: 'withdrawTurn', character }, () => ({ withdrawn: true as const })),
     unmask: (character, thread, message) => act({ action: 'unmask', character, thread, message }, toAct),
-    createCharacter: (name, cls, timing, loudness, pronouns) =>
-      act({ action: 'createCharacter', name, class: cls, timing, loudness, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
-    setDebut: (character, timing, loudness) => act({ action: 'setDebut', character, timing, loudness }, (r) => ({ id: r['id'], waiting: r['waiting'] === true, loudness: r['loudness'] })),
+    createCharacter: (name, cls, pronouns) =>
+      act({ action: 'createCharacter', name, class: cls, ...(pronouns === undefined ? {} : { pronouns }) }, (r): CreatedCharacter => ({ id: r['id'], name: r['name'], class: r['class'] })),
     async setProfile(character, title, signature, pipStyle, pronouns) {
       /* A null set keeps the stored one (set_profile, 0124). A set goes out normalized: the picker and the fake judge it trimmed and lowercased, as the act
          function sends createCharacter's, and set_profile lowers a set but refuses a space, in words that name no form. */
