@@ -66,10 +66,10 @@ test('a blind post\'s row, for a third reader, shows no count and none of the ki
 
 test('the author\'s player and the caster each see the totals, and the line says who else does', async ({ page }) => {
   await open(page, VEILS('veiled-and-blind'), 42);
-  await expect(page.locator('#post-42')).toContainText(/Only you and the caster can see these until \w+ \d+, \d+:\d\d\s[AP]M\./u);
+  await expect(page.locator('#post-42')).toContainText(/No other player but the caster can see these until \w+ \d+, \d+:\d\d\s[AP]M\./u);
   await expect(row(page, 42)).toContainText('💀');
   await open(page, VEILS('caster'), 42);
-  await expect(page.locator('#post-42')).toContainText(/Only you and the author can see these until \w+ \d+, \d+:\d\d\s[AP]M\./u);
+  await expect(page.locator('#post-42')).toContainText(/No other player but the author can see these until \w+ \d+, \d+:\d\d\s[AP]M\./u);
   await expect(row(page, 42)).toContainText('💀');
 });
 

@@ -66,7 +66,7 @@ const manifest: BoardManifest = {
     {
       id: 'lead', role: 'text',
       name: 'Only you see this page. The classes here are never shown to anyone else unless you announce them.',
-      buildName: 'This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.',
+      buildName: 'This page is out of character, and no other player can see it. Classes are shown here and nowhere else unless you reveal them.',
       /* Its x and width follow the title's, which carries the count: the lead is held by its words and type. */
       box: 'none',
     },

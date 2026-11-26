@@ -476,7 +476,7 @@ export function PlayForm({ card, target, onClose, onPlayed, seen = [], faceDown 
           {unsettled && <p className="kb-play-fine" id={`${id}-unsettled`} role="status">Choose the card's settings above to set it.</p>}
           <p className="kb-play-fine">
             {setting
-              ? `Setting is a public Act${named ? ` under ${named.name}'s name` : ''}. Everyone sees a card back on the post; only you see which card it is.`
+              ? `Setting is a public Act${named ? ` under ${named.name}'s name` : ''}. Everyone sees a card back on the post; no other player sees which card it is.`
               : `${verb === 'Play' ? 'Playing' : 'Using'} is a public Act${hud ? ` under ${hud.name}'s name` : ''}. Only solid Aura is spent; the ghost doesn't count.`}
           </p>
         </div>

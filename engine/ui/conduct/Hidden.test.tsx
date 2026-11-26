@@ -275,12 +275,12 @@ describe('a post that quotes a hidden post, before the conceal job has written i
 });
 
 describe('the author of a version hidden until they edit it', () => {
-  test('sees their own words under the note, "Only you see this", with Edit, which opens the editor on those words', async () => {
+  test('sees their own words under the note, "No other player sees this", with Edit, which opens the editor on those words', async () => {
     const w = world();
     w.fake.seed.hide(w.mine, 'hideUntilEdited');
     open(w);
     const art = await article(3);
-    const own = await within(art).findByText('Only you see this');
+    const own = await within(art).findByText('No other player sees this');
     const panel = own.closest('.kb-hidden-own') as HTMLElement;
     expect(within(art).getByRole('note')).toHaveTextContent(NOTE);
     expect(panel).toHaveTextContent(`${WORDS}, from me`);
@@ -295,7 +295,7 @@ describe('the author of a version hidden until they edit it', () => {
     vi.spyOn(w.fake, 'myHiddenVersion').mockResolvedValue({ status: 'hiddenUntilEdited', version: w.mine, words: `[quote=${w.theirs}]never said[/quote]mine`, forged: [w.theirs] });
     open(w);
     const art = await article(3);
-    const panel = (await within(art).findByText('Only you see this')).closest('.kb-hidden-own') as HTMLElement;
+    const panel = (await within(art).findByText('No other player sees this')).closest('.kb-hidden-own') as HTMLElement;
     expect(panel.querySelector('blockquote')).toHaveAttribute('data-kb-counterfeit');
   });
 
@@ -305,7 +305,7 @@ describe('the author of a version hidden until they edit it', () => {
     const edit = vi.spyOn(w.fake, 'edit');
     open(w);
     const art = await article(3);
-    const panel = (await within(art).findByText('Only you see this')).closest('.kb-hidden-own') as HTMLElement;
+    const panel = (await within(art).findByText('No other player sees this')).closest('.kb-hidden-own') as HTMLElement;
     await userEvent.click(within(panel).getByRole('button', { name: 'Edit' }));
     const box = await within(art).findByRole('textbox');
     await userEvent.clear(box);
@@ -322,7 +322,7 @@ describe('the author of a version hidden until they edit it', () => {
     expect(await within(art).findByText('You edited this post. An admin will look at your edit before it shows again.')).toBeInTheDocument();
     expect(within(art).getByRole('note')).toHaveTextContent(NOTE);
     expect(art).not.toHaveTextContent(WORDS);
-    expect(within(art).queryByText('Only you see this')).toBeNull();
+    expect(within(art).queryByText('No other player sees this')).toBeNull();
   });
 
   test('a version an admin hid outright shows its author the note and nothing more', async () => {
@@ -331,7 +331,7 @@ describe('the author of a version hidden until they edit it', () => {
     open(w);
     const art = await article(3);
     expect(within(art).getByRole('note')).toHaveTextContent(NOTE);
-    await waitFor(() => expect(within(art).queryByText('Only you see this')).toBeNull());
+    await waitFor(() => expect(within(art).queryByText('No other player sees this')).toBeNull());
     expect(art).not.toHaveTextContent(WORDS);
   });
 
@@ -340,7 +340,7 @@ describe('the author of a version hidden until they edit it', () => {
     w.fake.seed.hide(w.mine, 'hideUntilEdited');
     open(w);
     const art = await article(3);
-    await within(art).findByText('Only you see this');
+    await within(art).findByText('No other player sees this');
     expect(describeViolations(await axeViolations(art))).toBe('');
   });
 });

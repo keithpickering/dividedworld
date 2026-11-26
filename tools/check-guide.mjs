@@ -95,7 +95,7 @@ const KEPT_SENTENCES = ['This place has two halves.'];
  * you" with a seeing, learning, knowing or reading verb at most three words after it ("Only you see it", "nobody learns", "only you can see")
  * is refused, and so is "yours alone". "Nobody" with another verb ("so nobody is told", "nobody starts ahead") is a different claim and left alone.
  */
-const OVERCLAIM = /\b(?:nobody|no one|only you)(?:\s+[\w'’]+){0,2}?\s+(?:sees?|seen|learns?|knows?|reads?)\b|\byours alone\b/giu;
+const OVERCLAIM = /\b(?:nobody|no one|only you)(?:\s+[\w'’]+){0,2}?\s+(?:sees?|seen|saw|learns?|learned|learnt|knows?|knew|known|reads?)\b|\byours alone\b/giu;
 
 /** Each phrase in `text` that claims more privacy than the game gives, as written; empty when there is none. Also read by the instance's own tests for copy outside the guide. */
 export function privacyOverclaims(text) {

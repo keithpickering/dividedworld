@@ -13,17 +13,17 @@ const she = PRONOUN_PRESETS.she;
 const they = PRONOUN_PRESETS.they;
 
 test('New character says what making the character does: it is on the board at once, nobody is told', () => {
-  assert.equal(newCharacterFooter(base), 'Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
+  assert.equal(newCharacterFooter(base), 'Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays hidden from every other player.');
 });
 
 test('New character writes the character\'s own pronouns, verbs agreeing, for she/her and they/them', () => {
-  assert.equal(newCharacterFooter({ ...base, pronouns: she }), 'Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays yours alone.');
-  assert.equal(newCharacterFooter({ ...base, pronouns: they }), 'Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays yours alone.');
+  assert.equal(newCharacterFooter({ ...base, pronouns: she }), 'Waiting Wanda is on the board as soon as you make her. Nobody is told, and her first post is her entrance. Her class stays hidden from every other player.');
+  assert.equal(newCharacterFooter({ ...base, pronouns: they }), 'Waiting Wanda is on the board as soon as you make them. Nobody is told, and their first post is their entrance. Their class stays hidden from every other player.');
 });
 
 test('New character names no one yet without breaking the sentence, and says nothing of a debut', () => {
   const said = newCharacterFooter({ name: '  ', pronouns: PRONOUN_PRESETS.it });
-  assert.equal(said, 'Your character is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.');
+  assert.equal(said, 'Your character is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays hidden from every other player.');
   assert.doesNotMatch(said, /debut|settlement|Promo/u);
 });
 

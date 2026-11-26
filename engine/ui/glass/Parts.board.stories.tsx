@@ -20,7 +20,7 @@ function Parts() {
         title="Your characters"
         count="(2 of 3)"
         eyebrow="Out of character"
-        lead="This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them, and the lead is long enough to want its own line when the title is wide."
+        lead="This page is out of character, and no other player can see it. Classes are shown here and nowhere else unless you reveal them, and the lead is long enough to want its own line when the title is wide."
         actions={<><GlassButton kind="primary">Make a character</GlassButton><GlassButton>Edit profile</GlassButton></>}
       />
       {SIZES.map((size) => (
