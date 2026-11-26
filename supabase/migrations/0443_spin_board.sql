@@ -191,8 +191,10 @@ grant execute on function write_staff_spin(text, uuid, text, text, jsonb, text) 
 
 -- ===================================================================================== 6. spin_places ====
 -- What the form reads for a character spinning from an origin: today's board (null for no Act) and every open board that is not The System's, with the character's bars. The caller must play `through` (acting), as spin does.
+-- A client read keeps one generic plan and is never JIT-compiled (supabase/tests/0320-client-reads-plan-once.sql).
 create function public.spin_places(origin uuid, through uuid) returns jsonb
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable security definer set search_path = public, pg_temp
+set plan_cache_mode = force_generic_plan set jit = off as $$
 begin
   perform acting(through);
   return jsonb_build_object(
