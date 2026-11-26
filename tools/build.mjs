@@ -103,6 +103,8 @@ export const STEPS = [
   'node tools/check-licenses.mjs',
   'node tools/test-card-art.mjs',
   'node tools/check-card-art.mjs',
+  'node tools/test-gear-art.mjs',
+  'node tools/check-gear-art.mjs',
   'node tools/test-sounds.mjs',
   'node tools/check-sounds.mjs',
   'node tools/test-theme.mjs',

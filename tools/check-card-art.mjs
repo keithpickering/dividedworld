@@ -1,6 +1,9 @@
 /**
  * Guard: a card's art folder is complete, is the right shape, and holds nothing that runs.
  *
+ * The SVG safety reading (rule 6 and the hostile cases) and the WebP header reading live in tools/art-files.mjs, which
+ * tools/check-gear-art.mjs reads with too; the rules below say what each is held to here.
+ *
  *   node tools/check-card-art.mjs [--root <directory>]     (default: the repository)
  *
  * The design is docs/plans/2026-11-05-card-template-plan.md (Task 2), and, for a raster canvas,
@@ -60,6 +63,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
+import { KEY, read, rootFaults, safetyFaults, webpInfo } from './art-files.mjs';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -69,101 +73,13 @@ const CANVAS = [0, 0, 540, 840];
 const RASTER = [1080, 1680];
 const RELIEF = [540, 840];
 
-/** The file at a path, or null when there is none. */
-function read(file) {
-  try {
-    return fs.readFileSync(file);
-  } catch (e) {
-    if (e.code === 'ENOENT' || e.code === 'EISDIR') return null;
-    throw e;
-  }
-}
-
-/**
- * Every `name=value` in a text, quoted either way or bare: [name, value] with the name's case kept. A name starts only
- * where the character before it cannot be part of one, so a long run of name characters with no `=` after it (a
- * comment, a title) is tried once, not again from each of its characters: the reading stays linear in the file.
- */
-function attributes(text) {
-  const out = [];
-  for (const m of text.matchAll(/(?<![^\s=<>"'/])([^\s=<>"'/]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s>"']+))/gu)) out.push([m[1], m[2] ?? m[3] ?? m[4]]);
-  return out;
-}
-
-/** The start tags in a text whose name matches `names` (a regex source), read past a `>` inside a quoted value. */
-function tags(text, names) {
-  return [...text.matchAll(new RegExp(`<(?:${names})(?![\\w:-])(?:"[^"]*"|'[^']*'|[^>"'])*>`, 'giu'))].map((m) => m[0]);
-}
-
-/** The four numbers of a viewBox value, or null. */
-function viewBoxOf(value) {
-  const parts = value.trim().split(/\s+/u);
-  if (parts.length !== 4) return null;
-  const nums = parts.map((p) => (/^[+-]?(?:\d+\.?\d*|\.\d+)(?:[eE][+-]?\d+)?$/u.test(p) ? Number(p) : NaN));
-  return nums.some(Number.isNaN) ? null : nums;
-}
-
-/** Faults of one SVG's root viewBox: [] when `ok(box)` holds. */
-function rootFaults(name, text, what, ok) {
-  const root = tags(text.replace(/<!--[\s\S]*?-->/gu, ''), 'svg')[0];
-  if (!root) return [`${name}: has no <svg> root, so it has no viewBox; ${what}`];
-  const vb = attributes(root).find(([n]) => n === 'viewBox');
-  if (!vb) return [`${name}: its root svg has no viewBox; ${what}`];
-  const box = viewBoxOf(vb[1]);
-  if (!box) return [`${name}: its viewBox "${vb[1]}" is not four numbers; ${what}`];
-  return ok(box) ? [] : [`${name}: its viewBox is "${vb[1].trim()}"; ${what}`];
-}
-
-/** Faults of an SVG that runs or reaches out (rule 6 and the hostile cases). tools/check-theme.mjs reads a theme's inline SVG with it too. */
-export function safetyFaults(name, text) {
-  const out = [];
-  const lower = text.toLowerCase();
-  for (const bad of ['<script', '<foreignobject', '<image', '@import', '<!doctype', '<!entity']) {
-    if (!lower.includes(bad)) continue;
-    const shown = bad === '<foreignobject' ? '<foreignObject' : bad;
-    out.push(`${name}: holds ${shown}; an art file is vector only and runs and fetches nothing${bad === '<!doctype' ? '; delete the DOCTYPE line' : ''}`);
-  }
-  for (const [n, v] of attributes(text)) {
-    const attr = n.toLowerCase();
-    if (attr.startsWith('on')) out.push(`${name}: has the event attribute ${n}; an art file runs nothing`);
-    if (attr === 'xml:base') out.push(`${name}: has xml:base, which re-bases every relative reference`);
-    if (/^(?:[\w-]+:)?href$/u.test(attr) && !v.startsWith('#')) out.push(`${name}: has ${n}="${v.slice(0, 60)}"; an href must start with # (a reference inside the file)`);
-    if (/&#/u.test(v)) out.push(`${name}: has a numeric character reference in ${n}="${v.slice(0, 60)}"; write the character itself, since a reference hides it from this reading`);
-  }
-  for (const m of text.matchAll(/url\(\s*(["']?)\s*([^)]*)/giu)) {
-    if (!m[2].startsWith('#')) out.push(`${name}: has url(${m[1]}${m[2].slice(0, 60)}; every url( must start with #`);
-  }
-  for (const t of tags(text, 'set|animate\\w*')) {
-    for (const [n, v] of attributes(t)) {
-      if (n.toLowerCase() === 'attributename' && /^\s*(?:(?:[\w-]+:)?href|xml:base)\s*$/iu.test(v)) out.push(`${name}: has a ${t.match(/^<\w+/u)[0]} writing ${v.trim()}, which sets a reference after load`);
-    }
-  }
-  return out;
-}
-
 /** Faults of a WebP read by its header alone, decoding nothing: [] when it is a still image of `size` (1080 by 1680 unless said). */
 function webpFaults(name, bytes, size = RASTER) {
-  if (bytes.length < 30 || bytes.toString('latin1', 0, 4) !== 'RIFF' || bytes.toString('latin1', 8, 12) !== 'WEBP') return [`${name}: is not a WebP image`];
-  const unreadable = [`${name}: is not a WebP image this guard can read`];
-  const tag = bytes.toString('latin1', 12, 16);
-  let width;
-  let height;
-  if (tag === 'VP8 ') {
-    if (bytes[23] !== 0x9d || bytes[24] !== 0x01 || bytes[25] !== 0x2a) return unreadable;
-    width = bytes.readUInt16LE(26) & 0x3fff;
-    height = bytes.readUInt16LE(28) & 0x3fff;
-  } else if (tag === 'VP8L') {
-    if (bytes[20] !== 0x2f) return unreadable;
-    const v = bytes.readUInt32LE(21);
-    width = (v & 0x3fff) + 1;
-    height = ((v >>> 14) & 0x3fff) + 1;
-  } else if (tag === 'VP8X') {
-    width = bytes.readUIntLE(24, 3) + 1;
-    height = bytes.readUIntLE(27, 3) + 1;
-  } else return unreadable;
+  const info = webpInfo(bytes);
+  if ('fault' in info) return [`${name}: ${info.fault}`];
   const out = [];
-  if (width !== size[0] || height !== size[1]) out.push(`${name}: is ${width} by ${height}; a raster canvas is exactly ${size[0]} by ${size[1]}`);
-  if (tag === 'VP8X' && (bytes[20] & 2) !== 0) out.push(`${name}: is animated; a card's art is a still image`);
+  if (info.width !== size[0] || info.height !== size[1]) out.push(`${name}: is ${info.width} by ${info.height}; a raster canvas is exactly ${size[0]} by ${size[1]}`);
+  if (info.animated) out.push(`${name}: is animated; a card's art is a still image`);
   return out;
 }
 
@@ -253,9 +169,6 @@ function backFaults(dir) {
   return [...canvasFaults(dir, BACK_HOLDS), ...manifestFaults(dir, BACK_HOLDS)];
 }
 
-/** What a card's key looks like: lowercase words joined by hyphens. A folder named any other way is not a card's. */
-const CARD_KEY = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/u;
-
 /**
  * Every `instances/*\/ui/cards/<key>/` directory under a root. A folder whose name could not be a card's key is a
  * tool's leavings (Python's `__pycache__` when a scene is run, a dot-folder) and is not read (the owner, 2026-11-11).
@@ -267,7 +180,7 @@ function cardFolders(root, kind = 'cards') {
   for (const i of fs.readdirSync(inst, { withFileTypes: true })) {
     const cards = path.join(inst, i.name, 'ui', kind);
     if (!i.isDirectory() || !fs.existsSync(cards)) continue;
-    for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory() && CARD_KEY.test(c.name)) out.push(path.join(cards, c.name));
+    for (const c of fs.readdirSync(cards, { withFileTypes: true })) if (c.isDirectory() && KEY.test(c.name)) out.push(path.join(cards, c.name));
   }
   return out.sort();
 }
