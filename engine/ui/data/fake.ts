@@ -328,6 +328,12 @@ export interface Seed {
   staffRequest(staff: string, post: Id, options: { ruling: 'fulfill' | 'reject' | 'confer'; by?: 'mod' | 'boss'; moveKind?: string; ruled?: 'fulfill' | 'reject'; lapsed?: boolean; at?: number }): void;
   /** A visit's end (`end_visit`): filed, intercepted, trapped, reversed or dropped, with the Act that ended it where one did. */
   visitEnd(visit: Id, end: { outcome: VisitOutcome; by?: Id; line?: string; at?: number }): Id;
+  /** The written concession a visit's Mod holds (`visit_concessions`), posted when the visit is talked down; `{who}` is the interceptor's name. Never carried to a reader before it is posted. */
+  concession(visit: Id, body: string): void;
+  /** The stock lines a Mod's staff key draws a concession from when none was written (the persona's `concessions`); the draw is deterministic by the visit. */
+  stockConcessions(staff: string, lines: readonly string[]): void;
+  /** A visit's concession post as already written: `post` is a post of the visit's thread, and the story names it. For a screen's test that needs the post without a talk-down. */
+  concessionPost(visit: Id, post: Id): void;
   /** A character's report of a post (`open_report`), with its reason. */
   report(character: Id, post: Id, reason: string, options?: { at?: number }): Id;
   /** A Mod's verdict on a report (`close_report`): the visit it sent, where it sent one. */
@@ -943,6 +949,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   };
   /** The answer a seeded quiz visit holds (never carried to a reader), and its question and choices, by visit. */
   const staffRequests: StaffRequestRec[] = [];
+  /** A written concession by visit, the stock lines by staff key, and the concession post written for a visit. */
+  const writtenConcessions = new Map<Id, string>();
+  const stockLines = new Map<string, readonly string[]>();
+  const concessionPosts = new Map<Id, Id>();
   const visitQuizzes = new Map<Id, { readonly question: string; readonly choices: readonly string[]; readonly answer: string }>();
   const visitEndOf = (e: ActRec): VisitEnd => ({ act: e.id, at: iso(e.at), outcome: e.payload.outcome as VisitOutcome, byAct: (e.payload.by_act as Id | undefined) ?? null, line: (e.payload.line as string | undefined) ?? '' });
   /** A visit as `thread_page` carries it: its charges (the start's and each join's), its challenge without an answer, and its end. */
@@ -1829,6 +1839,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       polls, voters, votersMore: polls.filter((p) => acts.get(p.act.id)!.payload.secret !== true && p.voters > 50).map((p) => p.act.id), myBallots,
       cast: [...new Set(voters.map((v) => v.character))].sort(),
     };
+  }
+
+  /**
+   * The concession post of a talked-down visit (post_concession): the Mod's character posts in the visit's thread, quoting the visited post, the written concession or else a stock line of its staff key
+   * drawn by the visit's id, `{who}` filled once with the interceptor's name. Best effort: with no line, or a Mod gone from the office, nothing is posted.
+   */
+  function postConcession(visit: ActRec, who: string): void {
+    const mod = visit.character === null ? undefined : characters.get(visit.character);
+    if (!mod?.staff || mod.retiredAt !== null) return;
+    const lines = stockLines.get(mod.staff.key) ?? [];
+    const draw = [...visit.id].reduce((n, ch) => (n * 31 + ch.charCodeAt(0)) >>> 0, 7);
+    const line = writtenConcessions.get(visit.id) ?? (lines.length > 0 ? lines[draw % lines.length]! : undefined);
+    if (line === undefined || !visit.target || !acts.has(visit.target)) return;
+    const written = write({ character: mod.id, kind: 'post', thread: visit.thread, target: visit.target, payload: { body: line.replace('{who}', () => who) } });
+    sendAct(written);
+    concessionPosts.set(visit.id, written.id);
   }
 
   function post(thread: Id, character: Id, body: string, quote: Id | null, framing?: readonly Id[], poll?: PollDraft): Answer<Act> {
@@ -4454,6 +4480,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         infraction: inf ? { act: inf.id, character: inf.payload.character as Id, points: inf.payload.points as number, band: inf.payload.band as VisitBand, ruleNumber: (inf.payload.rule_number as number | null) ?? null, expiresAt: inf.payload.expires_at as string, at: iso(inf.at) } : null,
         appeal: appeal ? publicAct(appeal) : null, ruling: ruling ? publicAct(ruling) : null,
         warnPoints: inf ? warnOf(inf.payload.character as Id) : null,
+        concessionPost: ((id) => (id !== undefined && acts.has(id) ? publicAct(acts.get(id)!) : null))(end?.payload.outcome === 'intercepted' ? concessionPosts.get(visit) : undefined),
       };
     },
     exchange(origin): Exchange {
@@ -4495,6 +4522,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (bribed > 0) spend(me()!, bribed, 'bribe', written.id);
       let tailUntil: string | null = null;
       if (worked) write({ character: null, kind: 'visit_end', thread: v.thread, target: visit, payload: { visit_act: visit, outcome: 'intercepted', by_act: written.id, line: `${who.name} got past ${characters.get(v.character!)?.name ?? 'the Mod'}'s ${challenge.kind === 'quiz' ? 'quiz' : 'price'}.` } });
+      if (worked) postConcession(v, who.name);
       else tailUntil = iso(now() + 24 * 3_600_000);
       return ok({ act: written.id, succeeded: worked, tailUntil });
     },
@@ -6429,6 +6457,15 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       const who = [...characters.values()].find((c) => c.staff?.key === staff);
       if (!who || !acts.get(post)) throw new Error(`no such staff member ${staff} or post ${post}`);
       staffRequests.push({ request: post, staff: who.id, ruling: o.ruling, by: o.by ?? 'mod', moveKind: o.ruling === 'fulfill' ? o.moveKind ?? 'moveThread' : null, ruled: o.ruled ?? null, lapsed: o.lapsed === true, at: o.at ?? now() });
+    },
+    concession(visit, body) {
+      if (acts.get(visit)?.kind !== 'visit') throw new Error(`no such visit ${visit}`);
+      writtenConcessions.set(visit, body);
+    },
+    stockConcessions(staff, lines) { stockLines.set(staff, [...lines]); },
+    concessionPost(visit, post) {
+      if (acts.get(visit)?.kind !== 'visit' || !acts.has(post)) throw new Error(`no such visit ${visit} or post ${post}`);
+      concessionPosts.set(visit, post);
     },
     visitEnd(visit, e) {
       const v = acts.get(visit);

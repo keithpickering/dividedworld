@@ -8225,3 +8225,48 @@ describe('the staff board holds a thread for each decision and each handover (04
     expect(await staffThreads(fake)).toHaveLength(1);
   });
 });
+
+/* A talked-down Mod's concession post (the concession-post plan, Task 4): the interception writes one post in the thread by the visit's Mod, quoting the visited post. */
+describe('a talked-down Mod posts its concession', () => {
+  const setup = (challenge: { kind: 'bribe'; price: number } | { kind: 'quiz'; question: string; choices: readonly string[]; answer: string } = { kind: 'bribe', price: 0 }) => {
+    const w = world();
+    const mod = w.fake.seed.staff('clerk', 'The Clerk', 'mod');
+    const visit = w.fake.seed.visit(mod, w.opener, { challenge });
+    const postsIn = async () => (await w.fake.acts(w.thread, 1, 50)).filter((a) => a.kind === 'post');
+    return { ...w, mod, visit, postsIn };
+  };
+
+  test('a written concession is posted quoting the visited post, with {who} filled once', async () => {
+    const w = setup();
+    w.fake.seed.concession(w.visit, 'Fine, {who}. You win. {who} stays unfilled the second time.');
+    const before = (await w.postsIn()).length;
+    const r = await w.fake.intercept(w.anaFace, w.visit, null);
+    expect(r).toMatchObject({ ok: true, value: { succeeded: true } });
+    const after = await w.postsIn();
+    expect(after).toHaveLength(before + 1);
+    const post = after[after.length - 1]!;
+    expect(post).toMatchObject({ character: w.mod, targetActId: w.opener });
+    expect(post.payload['body']).toBe('Fine, Ana Face. You win. {who} stays unfilled the second time.');
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost?.id).toBe(post.id);
+  });
+
+  test('with none written it posts one of the stock lines of the Mod\'s staff key', async () => {
+    const w = setup();
+    w.fake.seed.stockConcessions('clerk', ['One, {who}.', 'Two, {who}.', 'Three, {who}.']);
+    await w.fake.intercept(w.anaFace, w.visit, null);
+    const post = (await w.postsIn()).at(-1)!;
+    expect(['One, Ana Face.', 'Two, Ana Face.', 'Three, Ana Face.']).toContain(post.payload['body']);
+  });
+
+  test('a failed try, or a Mod with no lines at all, posts nothing and the visit still ends', async () => {
+    const w = setup({ kind: 'quiz', question: 'Q?', choices: ['a', 'b'], answer: 'a' });
+    const before = (await w.postsIn()).length;
+    expect(await w.fake.intercept(w.anaFace, w.visit, 'b')).toMatchObject({ ok: true, value: { succeeded: false } });
+    expect(await w.postsIn()).toHaveLength(before);
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
+    expect(await w.fake.intercept(w.anaHeel, w.visit, 'a')).toMatchObject({ ok: true, value: { succeeded: true } });
+    expect(await w.postsIn()).toHaveLength(before);
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).end?.outcome).toBe('intercepted');
+    expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
+  });
+});

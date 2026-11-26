@@ -19,7 +19,7 @@ import { useLocation } from '../router.tsx';
 import { LoadedThread } from '../loaded.tsx';
 
 const MINUTE = 60_000;
-type Which = 'quiz' | 'quizPending' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'trapped' | 'report' | 'appeal' | 'presence';
+type Which = 'quiz' | 'quizPending' | 'bribe' | 'distraction' | 'filed' | 'filedAuthor' | 'talkedDown' | 'talkedDownWithReply' | 'trapped' | 'report' | 'appeal' | 'presence';
 
 const QUIZ: SeedChallenge = { kind: 'quiz', question: 'Which form is used to request another form?', choices: ['Form 1-A', 'Form 0', 'Form 27-B/6'], answer: 'Form 0' };
 
@@ -56,6 +56,10 @@ function useSeeded(thread: string | null, which: Which): boolean {
         fake.seed.infraction(visit, { points: 2, at: Date.now() + MINUTE });
       }
       if (which === 'talkedDown') fake.seed.visitEnd(visit, { outcome: 'intercepted', line: 'Talked down.' });
+      if (which === 'talkedDownWithReply') {
+        fake.seed.visitEnd(visit, { outcome: 'intercepted', line: 'Talked down.' });
+        fake.seed.concessionPost(visit, fake.seed.staffPost(clerk, thread, 'Fine. The hats were never mentioned in the changelog. I will let it go this once.'));
+      }
       if (which === 'trapped') fake.seed.visitEnd(visit, { outcome: 'trapped', line: 'A trap set on this post sprang as the visit began, and the visit ended.' });
       if (live) setReady(true);
     })().catch((e: unknown) => { console.error('the visit story could not be seeded', e); });
@@ -76,7 +80,7 @@ function Opened({ which }: { readonly which: Which }) {
       }, 100);
       return () => clearInterval(timer);
     }
-    const unfold = which === 'filed' || which === 'filedAuthor';
+    const unfold = which === 'filed' || which === 'filedAuthor' || which === 'talkedDownWithReply';
     let step = 0;
     const timer = setInterval(() => {
       if (which === 'report') {
@@ -144,6 +148,8 @@ export const Filed: Story = { args: { which: 'filed' } };
 /** Filed, on a post of the reader's own mask: Appeal with its price and terms. */
 export const FiledAuthor: Story = { args: { which: 'filedAuthor' } };
 export const TalkedDown: Story = { args: { which: 'talkedDown' } };
+/** Talked down, and the Mod posted its concession in the thread: How it went unfolded, its ending row linking "The Clerk posted a reply". */
+export const TalkedDownWithReply: Story = { args: { which: 'talkedDownWithReply' } };
 export const Trapped: Story = { args: { which: 'trapped' } };
 export const QuizPhone: Story = { args: { which: 'quiz' }, ...phone };
 export const BribePhone: Story = { args: { which: 'bribe' }, ...phone };

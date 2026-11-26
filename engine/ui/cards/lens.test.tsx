@@ -2059,6 +2059,31 @@ describe('a visit\'s tab', () => {
       expect(within(l).queryByRole('heading', { name: 'Talk it down' })).toBeNull();
     });
 
+    test('talked down with a reply, the row links the Mod\'s concession post', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
+      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
+      const reply = w.fake.seed.staffPost(w.clerk, w.thread, 'Fine, Gloomba. Go.');
+      w.fake.seed.concessionPost(w.visit, reply);
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      const link = within(l).getByRole('link', { name: /The Clerk posted a reply/u });
+      expect(link.getAttribute('href')).toMatch(new RegExp(`^/t/${w.thread}\\?page=1#post-\\d+$`, 'u'));
+    });
+
+    test('talked down with no reply posted, the row has no such link', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      const attempt = w.fake.seed.report(w.gloomba, w.second, 'unused');
+      w.fake.seed.visitEnd(w.visit, { outcome: 'intercepted', by: attempt, line: 'Gloomba got past The Clerk\'s quiz.' });
+      openVisit(w);
+      const l = await press(w);
+      await userEvent.click(await within(l).findByRole('button', { name: /^How it went/u }));
+      expect(within(l).queryByRole('link', { name: /posted a reply/u })).toBeNull();
+    });
+
     test('dropped, it says it could not be filed and that nothing landed', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });
