@@ -108,7 +108,13 @@ export function repairConcession(raw: unknown, postMaxLength: number): RepairedC
   let body = raw.trim();
   if (body !== raw) trims.push({ path: 'concession', predicate: 'trimmed', before: raw.length, after: body.length });
   if (body === '') return { ok: false, why: 'concession: blank, nothing is left after trimming' };
-  const unbraced = body.replace(/\{([^{}]*)\}/g, (_t, word: string) => (/^\s*who\s*$/i.test(word) ? '{who}' : word));
+  // Repeat until stable, so a nested brace never survives: `{{days}}` is `days`, `{{who}}` is `{who}`.
+  let unbraced = body;
+  for (let before = ''; before !== unbraced; ) {
+    before = unbraced;
+    unbraced = unbraced.replace(/\{(\{[^{}]*\})\}/g, (_t, inner: string) => inner);
+    unbraced = unbraced.replace(/\{([^{}]*)\}/g, (_t, word: string) => (/^\s*who\s*$/i.test(word) ? '{who}' : word));
+  }
   if (unbraced !== body) {
     trims.push({ path: 'concession', predicate: 'braces', before: body.length, after: unbraced.length });
     body = unbraced.trim();

@@ -93,9 +93,13 @@ export function repairBanLine(raw: unknown): { readonly line: string | null; rea
       return token;
     });
   }
+  text = text.replace(/ {2,}/g, ' ').trim();
   if (stripped) trims.push({ path: 'line', predicate: 'tokens(banEntry)', before: stripped, after: 0 });
   if (text.length > BAN_LINE_MOST) {
-    const cut = cutAtSentence(text, BAN_LINE_MOST);
+    let cut = cutAtSentence(text, BAN_LINE_MOST);
+    // A cut that lands inside a {banned} falls before the token, never leaving `{bann`.
+    const partial = /\{b?a?n?n?e?d?$/.exec(cut);
+    if (partial !== null && text.startsWith('{banned}', partial.index)) cut = cut.slice(0, partial.index).trimEnd() || cut;
     trims.push({ path: 'line', predicate: `maxLength(${BAN_LINE_MOST})`, before: text.length, after: cut.length });
     text = cut;
   }

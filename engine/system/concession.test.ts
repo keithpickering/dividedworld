@@ -145,3 +145,10 @@ test('a concession that is not text, or is blank after trims, is rejected naming
   const blank = repairConcession('  \n ', 2000);
   assert.ok(!blank.ok && /blank/.test(blank.why), JSON.stringify(blank));
 });
+
+test('a doubly braced token is unbraced all the way, and {{who}} stays {who}', () => {
+  const a = repairConcession('{{days}} hi', 2000);
+  assert.ok(a.ok && a.body === 'days hi', JSON.stringify(a));
+  const b = repairConcession('{{who}} hi', 2000);
+  assert.ok(b.ok && b.body === '{who} hi', JSON.stringify(b));
+});

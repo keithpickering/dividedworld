@@ -53,7 +53,7 @@ test('the ban prompt carries the thread, the banned character, the days, the rul
   assert.match(p.system, /you make no move/i);
   assert.deepEqual(Object.keys((p.schema as any).properties), ['line']);
   assert.deepEqual((p.schema as any).required, ['line']);
-  assert.ok(banEntryPrompt(input({ days: 1 })).message.includes('1 day.') || banEntryPrompt(input({ days: 1 })).message.includes('1 day,'), 'singular day');
+  assert.ok(banEntryPrompt(input({ days: 1 })).message.includes('Bob (they/them) is banned for 1 day, under Rule 2: no double posting (moderate). This is in the Banlist for Season 4.'), 'singular day');
 });
 
 test('the ban prompt never carries an owner, a class, or another of the player\'s characters', () => {
@@ -100,4 +100,11 @@ test('a stray {token} loses its braces and is recorded; {banned} stays', () => {
 
 test('a blank ban line, or one that is not text, is none; the stock line follows', () => {
   for (const raw of [undefined, null, 7, ['a'], {}, '', '  \n ']) assert.deepEqual(repairBanLine(raw), { line: null, trims: [] }, JSON.stringify(raw));
+});
+
+test('a cut never lands inside {banned}, and stripping a token leaves no double space', () => {
+  const r = kept('x'.repeat(274) + ' {banned} ok');
+  assert.ok(!/\{[a-z]*$/.test(r.line!) && r.line!.length <= 280, r.line!.slice(-12));
+  assert.equal(kept('a {} b').line, 'a b');
+  assert.equal(kept('a {x} b').line, 'a x b');
 });
