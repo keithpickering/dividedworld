@@ -656,7 +656,7 @@ create function pg_temp.pins_as(label text) returns jsonb language plpgsql as $$
 declare r jsonb;
 begin
   perform tests.become(pg_temp.acct(label));
-  r := (select coalesce(jsonb_agg(jsonb_build_object('thread', p.thread, 'title', p.title) order by p.pinned_at, p.thread), '[]'::jsonb) from admin_staff_pins() p);
+  r := (select coalesce(jsonb_agg(jsonb_build_object('thread', p.thread, 'title', p.title) order by p.n), '[]'::jsonb) from admin_staff_pins() with ordinality p(thread, title, pinned_at, n));
   perform tests.unbecome();
   return r;
 exception when others then
@@ -702,7 +702,7 @@ begin
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins')) = 3, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins')) = 4, 'a function the masks check reads is missing');
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('pool_record', 'meeting_context', 'board_page') loop
     perform pg_temp.expect(pg_temp.leaks(p, '(owner)') is null, p::text || ' reads a character''s owner: ' || pg_temp.leaks(p, '(owner)'));
   end loop;
