@@ -166,8 +166,24 @@ test('the concession prompt carries the post as given, its author, the title, th
   assert.ok(/card|distract/i.test(concessionPrompt(cinput({ how: 'distracted' })).message));
 });
 
+test('the concession prompt never carries the quiz brief, even if one is handed in', () => {
+  const p = concessionPrompt({ ...cinput(), brief: 'SECRET BRIEF TEXT' } as unknown as ConcessionInput);
+  assert.ok(!p.message.includes('SECRET BRIEF TEXT') && !p.message.includes('What you care about'), p.message);
+});
+
+test('a cut never splits {who}: it falls before the token', () => {
+  for (const pad of [276, 277, 278, 279]) {
+    const r = fine('x'.repeat(pad) + '{who} and more');
+    assert.ok(!/\{w?h?o?$/.test(r.body) && r.body.length <= CONCESSION_MOST, `${pad}: ${r.body.slice(-10)}`);
+    assert.equal(r.body, 'x'.repeat(pad));
+  }
+  assert.ok(fine('x'.repeat(100) + '{who}' + 'y'.repeat(300)).body.includes('{who}'), 'a whole token inside the bound stays');
+  assert.equal(fine('lone { brace').body, 'lone { brace');
+  assert.equal(fine('lone } brace').body, 'lone } brace');
+});
+
 test('the concession prompt never names a field the input lacks', () => {
-  const p = concessionPrompt(cinput({ title: null, brief: null, charges: [] }));
+  const p = concessionPrompt(cinput({ title: null, charges: [] }));
   assert.ok(!p.message.includes('Best Mario game?') && !p.message.includes('null') && !p.message.includes('undefined'));
   assert.ok(!/thread titled|charged with|What you care about/i.test(p.message), p.message);
 });
