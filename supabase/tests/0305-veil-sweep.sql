@@ -167,6 +167,8 @@ select 'relation', n, m, w from (values
 insert into listed (kind, name, mark, why)
 select 'function', n, m, w from (values
   ('spin_answer_place', 'no author', 'the place of a thread spun from a report, a verdict, an appeal or a ruling (thread_open calls it): the asker is read as acts_public shows it, the stand-in under a live author veil (supabase/tests/0422-spin-answers.sql, section 5, drives it red against a read of acts.character); the staff and the names are public'),
+  ('spin_board', 'no author', 'the board a spin of an Act lands on (its thread''s board, the first open board for The System''s): a fact of the thread, never of a character (supabase/tests/0428-spin-board.sql)'),
+  ('spin_places', 'no author', 'the open boards and the caller''s own character''s bars on them (acting() first): boards and bars are public, no post or author is read (supabase/tests/0428-spin-board.sql)'),
   ('admin_contact', 'no author', 'one setting, the same for every caller'),
   ('accept_conduct', 'no author', 'a write: the caller''s own acceptance of the code of conduct'),
   ('admin_failed_mail', 'no author', 'an admin''s read of the mail that failed: the account it was for and the template, never a post or a character; refused to a player'),

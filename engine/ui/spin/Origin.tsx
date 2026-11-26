@@ -287,7 +287,7 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
     return { acts, marked, post: kept.version.id, then: new Set(acts.map((a) => a.id).filter((id) => id !== cardPlay.id)) as ReadonlySet<Id> };
   }, [api, cardPlay, kept, instance.cards, ui.cards]);
   useEffect(() => { if (shown) plays.add(shown.acts); }, [plays, shown]);
-  const link = <OriginLink place={summary.origin} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
+  const link = <OriginLink place={summary.origin} here={summary.board} perPage={perPage} {...(onCharacter ? { faces: characterOf } : {})} />;
 
   /* A card on a character: the post's own drawn cards have a strip beside the character's, every row of it a `then` row (state, controls, Go to post). */
   const to = cardPlay ? (pressed?.href ?? castFrom?.href ?? (target ? threadHref(target.thread, pageOf(target.seq, perPage), target.seq) : null)) : backHref;

@@ -993,6 +993,11 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
 
   /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
   function originPlace(origin: ActRec, first: ActRec | undefined): OriginPlace | null {
+    const place = originPlaceBare(origin, first);
+    /* thread_open (0444): the origin's thread's board, on every kind but an update. */
+    return place !== null && place.kind !== 'update' ? { ...place, board: threads.get(origin.thread)!.board } : place;
+  }
+  function originPlaceBare(origin: ActRec, first: ActRec | undefined): OriginPlace | null {
     if (origin.kind === 'update') return placeOf(origin);
     if (origin.kind === 'card' || origin.kind === 'set' || origin.kind === 'spring') {
       const card = origin.kind === 'set' ? null : String(origin.payload['card']);
@@ -1580,7 +1585,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return d.ok ? null : refuse(d.why, d.field);
   }
 
-  /** `not_closed` (0328): the refusal a closed board's startings and Turn announcements meet, in the SQL's words. */
+  /** `not_closed` (0328): the refusal a closed board's startings, spins and Turn announcements meet, in the SQL's words. */
   const closedRefusal = (board: Board): Refusal | null => {
     const closed = closedBoards.get(board.id);
     if (!closed) return null;
@@ -1846,6 +1851,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
+  /** spin_board (0444): today's board for an origin, its thread's board or, where that is The System's, the players' board; null for no Act or an edit. */
+  function spinBoard(origin: Id): Board | null {
+    const from = acts.get(origin);
+    if (!from || from.kind === 'edit') return null;
+    const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
+    return home.isSystem ? playersBoard! : home;
+  }
+
+  /** The board a spin or an apology names (spin_written's, 0444): it exists and is not The System's; null slug is no board named. Open and bar are checked later, in start_thread's order. */
+  function namedBoard(slug: string): Board | Refusal {
+    const board = boards.find((b) => b.slug === slug);
+    if (!board) return refuse('there is no such board');
+    if (board.isSystem) return refuse(`${boardNow(board).name} is the staff's own board; pick another board`);
+    return board;
+  }
+
+  /** not_barred (0138): the character's words for a bar on the board, with the time it ends rounded up to the minute; null for no bar. */
+  function barRefusal(character: Id, board: Board): Refusal | null {
+    const here = barsOf(character).filter((b) => b.board === board.id);
+    if (here.length === 0) return null;
+    /* max(expires_at) ignores a bar with no end: null only when every bar is open. */
+    const ends = here.flatMap((b) => (b.expiresAt === null ? [] : [Date.parse(b.expiresAt)]));
+    const until = ends.length === 0 ? null : Math.max(...ends);
+    const shown = until === null ? 'a time not yet set' : `${iso(Math.ceil(until / 60_000) * 60_000).slice(0, 16).replace('T', ' ')} UTC`;
+    return refuse(`${characters.get(character)!.name} is barred from posting on ${boardNow(board).name} until ${shown}`);
+  }
+
   function startThread(boardSlug: string, character: Id, title: string, body: string, framing?: readonly Id[], poll?: PollDraft): Answer<{ thread: ThreadSummary; act: Act }> {
     const bad = request({ action: 'startThread', board: boardSlug, character, title, body, ...(framing ? { framing } : {}), ...(poll ? { poll } : {}) });
     if (bad) return bad;
@@ -1867,8 +1899,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok({ thread: summary(t), act: publicAct(written) });
   }
 
-  function spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id): Answer<{ thread: ThreadSummary; act: Act }> {
-    const bad = request({ action: 'spin', origin, character, title, body, ...(framing ? { framing } : {}), ...(at === undefined ? {} : { at }) });
+  function spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id, boardSlug?: string): Answer<{ thread: ThreadSummary; act: Act }> {
+    const bad = request({ action: 'spin', origin, character, title, body, ...(framing ? { framing } : {}), ...(at === undefined ? {} : { at }), ...(boardSlug ? { board: boardSlug } : {}) });
     if (bad) return bad;
     const c = acting(character);
     if (isRefusal(c)) return c;
@@ -1878,8 +1910,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     if (from.kind === 'poll_close') return refuse('spin the poll');
     if (from.kind === 'poll' && currentPoll(from.target!)?.id !== from.id) return refuse('that poll was replaced');
     if (from.kind === 'ballot' && acts.get(from.target!)?.payload.secret === true) return refuse('a secret ballot cannot be spun');
-    const home = boards.find((b) => b.id === threads.get(from.thread)!.board)!;
-    const board = home.isSystem ? playersBoard! : home;
+    /* No board is today's board; a named one is found as start_thread finds one, and open and bar are checked after the at-post check, as spin_written does. */
+    const named = boardSlug ? namedBoard(boardSlug) : spinBoard(origin)!;
+    if (isRefusal(named)) return named;
+    const board = named;
     /* spin_written (0351, 0357): a spin names a post only from a live character play, on a post of the character the play is on as the post shows its author (a veiled post is the stand-in's). Nothing here reads who owns either. */
     if (at !== undefined) {
       const reach = reachPlays.get(origin);
@@ -1888,6 +1922,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         && reach.endsAt > now() && !reversedPlays.has(origin) && cutBy(origin) === undefined;
       if (!there) return refuse('that card is not on that post');
     }
+    const shut = closedRefusal(board);
+    if (shut) return shut;
+    const barred = barRefusal(character, board);
+    if (barred) return barred;
     const stopped = stoppedQuote(null, null, body, '', forgedQuotes(body, stamp ?? now()));
     if (stopped) return refuse(stopped);
     const t = openThread(board.id, title, origin);
@@ -4118,8 +4156,8 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!account || characters.get(character)?.owner !== account.id) return [];
       return [...acts.values()].filter((a) => a.kind === 'appeal' && a.character === character && acts.get(a.target ?? '')?.kind === 'move' && !refundedAppeals.has(a.id)).map((a) => a.target!);
     },
-    apologize(move, character, title, body, framing) {
-      const bad = request({ action: 'apologize', move, character, title, body, ...(framing ? { framing } : {}) });
+    apologize(move, character, title, body, framing, boardSlug) {
+      const bad = request({ action: 'apologize', move, character, title, body, ...(framing ? { framing } : {}), ...(boardSlug ? { board: boardSlug } : {}) });
       if (bad) return bad;
       const c = acting(character);
       if (isRefusal(c)) return c;
@@ -4135,13 +4173,33 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (mine.some((a) => a.state === 'pending')) return refuse('an apology to that move is still waiting for a ruling');
       const next = Math.max(0, ...mine.filter((a) => a.character === character && a.state !== 'returned' && a.at > now() - apologyEveryMs()).map((a) => a.at + apologyEveryMs()));
       if (next > 0) return refuse(`this character has already apologized to that move in the last ${apologyEveryMs() / 3_600_000} hours; the next apology opens at ${iso(next).slice(0, 16).replace('T', ' ')} UTC`);
-      const t = openThread(threads.get(m.thread)!.board, title, move);
+      /* spin_written (0444) with no bar check: today's board for the move, else the named one, which must be open. */
+      const named = boardSlug ? namedBoard(boardSlug) : spinBoard(move)!;
+      if (isRefusal(named)) return named;
+      const shut = closedRefusal(named);
+      if (shut) return shut;
+      const t = openThread(named.id, title, move);
       const written = write({ character, kind: 'spin', thread: t.id, target: move, payload: { title, body } });
       apologies.push({ move, apology: written.id, character, state: 'pending', at: written.at });
       sendThread(t);
       sendAct(written);
       writeFramed(body, framing, written);
       return ok({ thread: summary(t), act: publicAct(written) });
+    },
+    spinPlaces(origin, character) {
+      const c = acting(character);
+      if (isRefusal(c)) throw new Error(c.error);
+      const bars = barsOf(character);
+      const today = spinBoard(origin);
+      return {
+        default: today === null ? null : boardNow(today).slug,
+        boards: boards.filter((b) => !b.isSystem && !closedBoards.has(b.id)).map((b) => {
+          const here = bars.filter((x) => x.board === b.id).map((x) => x.expiresAt);
+          const ends = here.flatMap((e) => (e === null ? [] : [e]));
+          const until = ends.length === 0 ? null : ends.reduce((a, e) => (Date.parse(e) > Date.parse(a) ? e : a));
+          return { slug: b.slug, name: boardNow(b).name, barred: here.length > 0, until };
+        }),
+      };
     },
     movesLog(staff, before) {
       const who = [...characters.values()].find((c) => c.staff?.key === staff);

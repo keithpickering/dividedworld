@@ -252,6 +252,43 @@ describe('the row', () => {
     expect(spun.querySelector('.kb-mini')).toBeNull();
   });
 
+  test('a row spun from another board, or from The System\'s board, names it in the same sentence; one from its own board or an update names none', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const off = fake.seed.thread('off-topic', w.spritey, 'Off thread', 'first', { at: T0 });
+    const sys = fake.seed.thread('announcements', null, 'The tally', 'Settled.');
+    const update = fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    const spins: ReadonlyArray<readonly [string, string, string?]> = [[off.act, 'From off', 'general'], [sys.act, 'From system'], [fake.seed.post(w.ids[0]!, w.spritey, 'own line', { at: T0 + 2 * DAY }), 'From own'], [update, 'From an update']];
+    for (const [from, title, board] of spins) {
+      const made = await fake.spin(from, w.mine!, title, 'x', undefined, undefined, board);
+      if (!made.ok) throw new Error(`${title}: ${made.error}`);
+      fake.clock.advance(DAY);
+    }
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'From own' });
+    const spunOf = (title: string) => rowOf(title).querySelector('.kb-thread-spun') as HTMLElement;
+    await waitFor(() => expect(spunOf('From off')).toHaveTextContent(/spun from #1 in Off thread on Off Topic$/u));
+    expect(spunOf('From system')).toHaveTextContent(/spun from #1 in The tally on Staff Announcements$/u);
+    expect(within(spunOf('From off')).getAllByRole('link')).toHaveLength(1);
+    expect(spunOf('From own')).toHaveTextContent(/spun from #2 in Thread 001$/u);
+    expect(spunOf('From an update')).toHaveTextContent(/spun from the update “Traps bite”$/u);
+  });
+
+  test('a row whose origin board the boards list does not hold reads as it does now', async () => {
+    const fake = buildWorld();
+    const w = world(fake, { threads: 1 });
+    const line = fake.seed.post(w.ids[0]!, w.spritey, 'own line', { at: T0 + 2 * DAY });
+    expect((await fake.spin(line, w.mine!, 'From nowhere', 'x')).ok).toBe(true);
+    withOrigin(fake, 'From nowhere', { kind: 'post', thread: w.ids[0]!, title: 'Thread 001', seq: 2, board: 'no-such-board' });
+    const read = vi.spyOn(fake, 'boot');
+    renderIn(fake, <LoadedBoard slug="general" />);
+    await screen.findByRole('link', { name: 'From nowhere' });
+    await waitFor(() => expect(read.mock.results.length).toBeGreaterThan(0));
+    await read.mock.results[0]!.value;
+    await act(async () => {});
+    expect(rowOf('From nowhere').querySelector('.kb-thread-spun')).toHaveTextContent(/spun from #2 in Thread 001$/u);
+  });
+
   test('a row with an origin Act but no place reads "spun from an Act"', async () => {
     const fake = buildWorld();
     const w = world(fake, { threads: 1 });

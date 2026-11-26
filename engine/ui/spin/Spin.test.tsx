@@ -2,7 +2,7 @@ import { act, cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { StrictMode, useEffect } from 'react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
-import { CARD_NOT_ON_POST } from './SpinForm.tsx';
+import { CARD_NOT_ON_POST, SpinForm } from './SpinForm.tsx';
 import { Swapper, openThread, threadWorld } from '../composer/support.tsx';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -83,7 +83,7 @@ describe('the Spin thread link', () => {
     const form = within(article).getByRole('form', { name: 'Spin a thread from post 2' });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'About post two');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'About post two', ''));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'About post two', '', undefined, undefined, 'general'));
     const made = await waitFor(async () => {
       const found = (await w.fake.spunFrom(w.ids[1]!))[0];
       expect(found).toBeDefined();
@@ -104,7 +104,7 @@ describe('the Spin thread link', () => {
     await userEvent.click(within(form).getByLabelText('Your opening post (optional)'));
     await userEvent.paste(`[quote=Spritey user=${w.spritey}]Nope.[/quote]`);
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Framed spin', expect.stringContaining('Nope.'), [w.spritey]));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Framed spin', expect.stringContaining('Nope.'), [w.spritey], undefined, 'general'));
   });
 
   test('a swap of the HUD\'s character mid-form needs the press again, like the reply box', async () => {
@@ -120,7 +120,7 @@ describe('the Spin thread link', () => {
     await userEvent.click(within(form).getByRole('button', { name: /Confirm posting as Zed/u }));
     expect(spun).not.toHaveBeenCalled();
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.zed, 'Mask check', ''));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.zed, 'Mask check', '', undefined, undefined, 'general'));
   });
 
   test('a refusal is shown in the server\'s words and the form keeps what was written', async () => {
@@ -191,6 +191,12 @@ const openSpun = (w: ReturnType<typeof threadWorld>, thread: string) =>
 const marks = (box: HTMLElement) => [...box.querySelectorAll('.kb-mark[data-kb-card]')].map((el) => `${el.getAttribute('data-kb-card')}:${el.getAttribute('data-kb-plays')}`);
 const origin = () => screen.findByRole('group', { name: 'Origin' });
 
+/** The boards have been read and taken in: a spy on `boot` or `boards` was called, its answer came, and the screen drew what it set. */
+async function namesLoaded(spy: { readonly mock: { readonly results: ReadonlyArray<{ readonly value: unknown }> } }) {
+  await waitFor(() => expect(spy.mock.results.length).toBeGreaterThan(0));
+  await spy.mock.results[0]!.value;
+  await act(async () => {});
+}
 describe('the ORIGIN box', () => {
   test('shows the origin Act, links back to it, and says what it came from', async () => {
     const w = threadWorld(3);
@@ -224,6 +230,55 @@ describe('the ORIGIN box', () => {
     const head = box.querySelector('.kb-origin-head-text') as HTMLElement;
     await waitFor(() => expect(head).toHaveTextContent(/Spun from the update “Traps bite”$/u));
     expect(within(head).getByRole('link', { name: 'the update “Traps bite”' })).toHaveAttribute('href', `/updates?update=${encodeURIComponent(update)}`);
+  });
+
+  test('the head names the board of an origin on another board, in the same sentence; on the same board it names none', async () => {
+    const w = threadWorld(3);
+    const over = await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    openSpun(w, over.value.thread.id);
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread on General$/u));
+    expect(within(head).getByRole('link', { name: '#2 in A short thread' })).toBeInTheDocument();
+    cleanup();
+    const same = await spinFrom(w, w.ids[1]!);
+    const read = vi.spyOn(w.fake, 'boot');
+    openSpun(w, same);
+    const sameHead = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await namesLoaded(read);
+    await waitFor(() => expect(sameHead).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u));
+  });
+
+  test('the head of a thread spun from a post on The System\'s board names that board', async () => {
+    const w = threadWorld(3);
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
+    const spun = await spinFrom(w, said.act);
+    openSpun(w, spun);
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from #1 in The tally on Staff Announcements$/u));
+  });
+
+  test('the head of an update-spun box names no board', async () => {
+    const w = threadWorld(3);
+    const update = w.fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    const read = vi.spyOn(w.fake, 'boot');
+    openSpun(w, await spinFrom(w, update, 'About the update'));
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await namesLoaded(read);
+    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from the update “Traps bite”/u));
+    expect(head).not.toHaveTextContent(/ on (General|Off Topic|Staff Announcements)/u);
+  });
+
+  test('an origin\'s board the boards list does not hold reads as it does now', async () => {
+    const w = threadWorld(3);
+    const over = await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    const realBoot = w.fake.boot.bind(w.fake);
+    const boards = vi.spyOn(w.fake, 'boot').mockImplementation(async () => ({ ...(await realBoot()), boards: [] }));
+    openSpun(w, over.value.thread.id);
+    const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await namesLoaded(boards);
+    expect(head).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u);
   });
 
   test('with no place, the head reads "an Act" and the box says nothing about the rest of the cards', async () => {
@@ -532,7 +587,7 @@ describe('the ORIGIN box', () => {
     const form = screen.getByRole('form', { name: 'Spin a thread from Spritey\'s Whoops!' });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'About the oops');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spin).toHaveBeenCalledWith(play, w.pipe, 'About the oops', ''));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(play, w.pipe, 'About the oops', '', undefined, undefined, 'general'));
   });
 
   test('a spin of a card Act draws the play as the box\'s one mark, whose Lens goes to the post the play landed on', async () => {
@@ -1245,6 +1300,30 @@ describe('Spun into', () => {
     expect(within(await screen.findByRole('article', { name: /^Post 3 /u })).queryByText(/Spun into/u)).toBeNull();
   });
 
+  test('a thread on another board names it: "(on Off Topic, 0 replies)"; one on this board reads as before', async () => {
+    const w = threadWorld(3);
+    const made = await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    expect(made.ok).toBe(true);
+    await spinFrom(w, w.ids[1]!, 'Right here');
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    const line = await within(article).findByText(/Spun into:/u);
+    await waitFor(() => expect(line.closest('p')).toHaveTextContent('↳ Spun into: Over there (on Off Topic, 0 replies) · Right here (0 replies)'));
+    expect(within(article).getByRole('link', { name: 'Over there' })).toBeInTheDocument();
+  });
+
+  test('a thread whose board the boards list does not hold reads as before', async () => {
+    const w = threadWorld(3);
+    await w.fake.spin(w.ids[1]!, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    const realBoot = w.fake.boot.bind(w.fake);
+    const boards = vi.spyOn(w.fake, 'boot').mockImplementation(async () => ({ ...(await realBoot()), boards: [] }));
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    const line = await within(article).findByText(/Spun into:/u);
+    await namesLoaded(boards);
+    expect(line.closest('p')).toHaveTextContent('↳ Spun into: Over there (0 replies)');
+  });
+
   test('lists the first five and says "and N more"; the button reads that Act\'s whole list', async () => {
     const w = threadWorld(3);
     for (let i = 1; i <= 7; i++) await spinFrom(w, w.ids[1]!, `Spin number ${i}`);
@@ -1322,7 +1401,7 @@ describe('a thread spun from a card on a character', () => {
     const form = screen.getByRole('form', { name: 'Spin a thread from Spritey\'s Glint' });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'About the shine');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(send).toHaveBeenCalledWith(w.play, w.pipe, 'About the shine', '', undefined, w.pressed));
+    await waitFor(() => expect(send).toHaveBeenCalledWith(w.play, w.pipe, 'About the shine', '', undefined, w.pressed, 'general'));
   });
 
   test('the box shows the pressed post as it was spun: its words, the glitter still, the two head links and the Cast from line', async () => {
@@ -1423,7 +1502,7 @@ describe('a thread spun from a card on a character', () => {
     expect(within(form).getByLabelText('Your opening post (optional)')).toHaveValue('Some words.');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
     await waitFor(() => expect(send).toHaveBeenCalledTimes(2));
-    expect(send).toHaveBeenLastCalledWith(w.play, w.pipe, 'About the shine', 'Some words.');
+    expect(send).toHaveBeenLastCalledWith(w.play, w.pipe, 'About the shine', 'Some words.', undefined, undefined, 'general');
     await waitFor(() => expect(window.location.pathname).not.toBe(`/t/${w.shiny.thread}`));
     const made = await w.fake.spunFrom(w.play);
     expect(made.map((t) => t.title)).toEqual(['About the shine']);
@@ -1768,5 +1847,264 @@ describe('the ORIGIN box of a thread spun from an ask or an answer', () => {
     const bare = await role(undefined);
     expect(bare).not.toContain('A Mod');
     expect(bare).not.toContain('The Boss');
+  });
+});
+
+describe('the spin form\'s Board field', () => {
+  const DAY = 86_400_000;
+  /** Pipewrench is barred by a staff member; `bar(board, expiresAt)` seeds one conferred-group move on that board. */
+  function boardsWorld() {
+    const w = threadWorld(3);
+    w.fake.seed.staff('s-boss', 'The Boss', 'boss');
+    const bar = (board: string, expiresAt: number | null) =>
+      w.fake.seed.groupMove('s-boss', { character: w.pipe, group: testGroups.conferred[0]!.key, board, at: w.fake.clock.now() - 3_600_000, expiresAt });
+    return { ...w, bar };
+  }
+  const boardIdOf = async (fake: ReturnType<typeof createFake>, slug: string) => (await fake.boards()).find((b) => b.slug === slug)!.id;
+  const openForm = async () => {
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    await userEvent.click(spinLink(article));
+    return within(article).getByRole('form', { name: 'Spin a thread from post 2' });
+  };
+  /** The Board select, once it has finished reading. */
+  const boardSelect = async (form: HTMLElement) => {
+    const select = (await within(form).findByLabelText('Board')) as HTMLSelectElement;
+    await waitFor(() => expect(select).toBeEnabled());
+    return select;
+  };
+  const optionTexts = (select: HTMLElement) => within(select).getAllByRole('option').map((o) => o.textContent);
+
+  test('is a labeled native select, first in the form above the title, holding "Loading boards…" while it reads, and keyboard-reachable', async () => {
+    const w = boardsWorld();
+    let release!: () => void;
+    const real = w.fake.spinPlaces.bind(w.fake);
+    vi.spyOn(w.fake, 'spinPlaces').mockImplementation(async (o, c) => { await new Promise<void>((r) => { release = r; }); return real(o, c); });
+    openThread(w);
+    const form = await openForm();
+    const select = within(form).getByLabelText('Board');
+    expect(select.tagName).toBe('SELECT');
+    expect(select).toBeDisabled();
+    expect(optionTexts(select)).toEqual(['Loading boards…']);
+    expect(select.compareDocumentPosition(within(form).getByLabelText('Thread title')) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    release();
+    await waitFor(() => expect(select).toBeEnabled());
+    await userEvent.tab({ shift: true });
+    expect(select).toHaveFocus();
+  });
+
+  test('starts on the origin\'s board, the options in the list\'s order', async () => {
+    const w = boardsWorld();
+    openThread(w);
+    const select = await boardSelect(await openForm());
+    expect(select).toHaveDisplayValue('General');
+    expect(optionTexts(select)).toEqual(['General', 'Off Topic']);
+  });
+
+  test('from an Act on The System\'s board it starts on the first open board', async () => {
+    const w = boardsWorld();
+    const said = w.fake.seed.thread('announcements', null, 'The tally', 'Settled.');
+    openThread({ ...w, thread: said.thread });
+    const article = await screen.findByRole('article', { name: /^Post 1 by the staff/u });
+    await userEvent.click(spinLink(article));
+    const select = await boardSelect(within(article).getByRole('form'));
+    expect(select).toHaveDisplayValue('General');
+    expect(optionTexts(select)).toEqual(['General', 'Off Topic']);
+  });
+
+  test('picking another board sends its slug, lands the thread there, and takes the player to it', async () => {
+    const w = boardsWorld();
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const form = await openForm();
+    await userEvent.selectOptions(await boardSelect(form), 'Off Topic');
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Over there');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Over there', '', undefined, undefined, 'off-topic'));
+    const made = await waitFor(async () => { const t = (await w.fake.spunFrom(w.ids[1]!))[0]; expect(t).toBeDefined(); return t!; });
+    expect(made.board).toBe(await boardIdOf(w.fake, 'off-topic'));
+    await waitFor(() => expect(window.location.pathname).toBe(`/t/${made.id}`));
+  });
+
+  test('a kept default is still sent by its slug', async () => {
+    const w = boardsWorld();
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const form = await openForm();
+    await boardSelect(form);
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Here');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Here', '', undefined, undefined, 'general'));
+  });
+
+  test('a barred board is a disabled option with the end rounded up to the minute, or "a time not yet set"', async () => {
+    const w = boardsWorld();
+    const ends = Math.floor((w.fake.clock.now() + DAY) / 60_000) * 60_000 + 30_000;
+    w.bar('off-topic', ends);
+    openThread(w);
+    const select = await boardSelect(await openForm());
+    const stamp = new Date(ends + 30_000).toISOString().slice(0, 16).replace('T', ' ');
+    expect(optionTexts(select)).toEqual(['General', `Off Topic (barred until ${stamp} UTC)`]);
+    expect(within(select).getByRole('option', { name: /^Off Topic/u })).toBeDisabled();
+    expect(select).toHaveDisplayValue('General');
+    w.bar('off-topic', null);
+    document.body.innerHTML = '';
+    openThread(w);
+    const again = await boardSelect(await openForm());
+    expect(optionTexts(again)[1]).toBe(`Off Topic (barred until ${stamp} UTC)`);
+  });
+
+  test('a bar with no end reads "a time not yet set"', async () => {
+    const w = boardsWorld();
+    w.bar('off-topic', null);
+    openThread(w);
+    const select = await boardSelect(await openForm());
+    expect(optionTexts(select)).toEqual(['General', 'Off Topic (barred until a time not yet set)']);
+  });
+
+  test('a barred default starts on "Pick a board" with its note, and the button waits for a pick', async () => {
+    const w = boardsWorld();
+    const ends = Math.floor((w.fake.clock.now() + DAY) / 60_000) * 60_000;
+    w.bar('general', ends);
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const form = await openForm();
+    const select = await boardSelect(form);
+    expect(optionTexts(select)).toEqual(['Pick a board', `General (barred until ${new Date(ends).toISOString().slice(0, 16).replace('T', ' ')} UTC)`, 'Off Topic']);
+    expect(select).toHaveDisplayValue('Pick a board');
+    const note = within(form).getByText(`Pipewrench is barred from posting on General until ${new Date(ends).toISOString().slice(0, 16).replace('T', ' ')} UTC. Pick another board.`);
+    expect(select).toHaveAccessibleDescription(note.textContent!);
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Away');
+    expect(within(form).getByRole('button', { name: 'Spin thread' })).toBeDisabled();
+    await userEvent.selectOptions(select, 'Off Topic');
+    expect(within(form).queryByText(/Pick another board/u)).toBeNull();
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Away', '', undefined, undefined, 'off-topic'));
+  });
+
+  test('every board barred: the note says so and the button stays disabled', async () => {
+    const w = boardsWorld();
+    w.bar('general', null);
+    w.bar('off-topic', null);
+    openThread(w);
+    const form = await openForm();
+    const select = await boardSelect(form);
+    const note = within(form).getByText('Pipewrench is barred from posting on every board right now.');
+    expect(select).toHaveAccessibleDescription(note.textContent!);
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Nowhere');
+    expect(within(form).getByRole('button', { name: 'Spin thread' })).toBeDisabled();
+  });
+
+  test('the bars are the character\'s: a swap re-reads, and a read that lands late for the old character is dropped', async () => {
+    const w = boardsWorld();
+    w.bar('general', null);
+    const real = w.fake.spinPlaces.bind(w.fake);
+    let late!: () => void;
+    vi.spyOn(w.fake, 'spinPlaces').mockImplementation(async (o, c) => {
+      const answer = await real(o, c);
+      if (c === w.pipe && late === undefined) { await new Promise<void>((r) => { late = r; }); }
+      return answer;
+    });
+    openThread(w);
+    const form = await openForm();
+    await waitFor(() => expect(late).toBeDefined());
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to Zed' }));
+    const select = await boardSelect(form);
+    expect(select).toHaveDisplayValue('General');
+    late();
+    await act(async () => { await Promise.resolve(); });
+    expect(select).toHaveDisplayValue('General');
+    expect(within(form).getByRole('option', { name: 'General' })).toBeEnabled();
+  });
+
+  test('in an apology the barred board is choosable, worded by its name alone, and the apology lands on it', async () => {
+    const w = boardsWorld();
+    const move = w.bar('general', w.fake.clock.now() + DAY);
+    const apologize = vi.spyOn(w.fake, 'apologize');
+    renderIn(w.fake, <SpinForm origin={move} label={null} onClose={() => undefined} apology={{ to: 'the Boss' }} />);
+    const form = await screen.findByRole('form', { name: 'Write an apology' });
+    const select = await boardSelect(form);
+    expect(optionTexts(select)).toEqual(['General', 'Off Topic']);
+    expect(select).toHaveDisplayValue('General');
+    expect(within(form).queryByText(/barred from posting/u)).toBeNull();
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Sorry');
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
+    await waitFor(() => expect(apologize).toHaveBeenCalledWith(move, w.pipe, 'Sorry', 'I was wrong.', undefined, 'general'));
+    const made = await waitFor(async () => { const t = (await w.fake.spunFrom(move))[0]; expect(t).toBeDefined(); return t!; });
+    expect(made.board).toBe(await boardIdOf(w.fake, 'general'));
+  });
+
+  test('a failed read replaces the select with a plain line and the spin is sent with no board', async () => {
+    const w = boardsWorld();
+    vi.spyOn(w.fake, 'spinPlaces').mockRejectedValue(new Error('offline'));
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const form = await openForm();
+    expect(await within(form).findByText('The boards could not be read. The thread will open where spins open by default.')).toBeInTheDocument();
+    expect(within(form).queryByLabelText('Board')).toBeNull();
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Anyway');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.pipe, 'Anyway', ''));
+    const made = await waitFor(async () => { const t = (await w.fake.spunFrom(w.ids[1]!))[0]; expect(t).toBeDefined(); return t!; });
+    expect(made.board).toBe(await boardIdOf(w.fake, 'general'));
+  });
+
+  test('an apology whose boards could not be read sends no board', async () => {
+    const w = boardsWorld();
+    const move = w.bar('general', w.fake.clock.now() + DAY);
+    vi.spyOn(w.fake, 'spinPlaces').mockRejectedValue(new Error('offline'));
+    const apologize = vi.spyOn(w.fake, 'apologize');
+    renderIn(w.fake, <SpinForm origin={move} label={null} onClose={() => undefined} apology={{ to: 'the Boss' }} />);
+    const form = await screen.findByRole('form', { name: 'Write an apology' });
+    expect(await within(form).findByText('The boards could not be read. The thread will open where spins open by default.')).toBeInTheDocument();
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Sorry');
+    await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
+    await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
+    await waitFor(() => expect(apologize).toHaveBeenCalledWith(move, w.pipe, 'Sorry', 'I was wrong.'));
+  });
+
+  test('a pick carried across a swap to a character barred on it falls back to today\'s board, and sends that', async () => {
+    const w = boardsWorld();
+    w.fake.seed.groupMove('s-boss', { character: w.zed, group: testGroups.conferred[0]!.key, board: 'off-topic', at: w.fake.clock.now() - 3_600_000, expiresAt: null });
+    const spun = vi.spyOn(w.fake, 'spin');
+    openThread(w);
+    const form = await openForm();
+    await userEvent.selectOptions(await boardSelect(form), 'Off Topic');
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Carried');
+    await userEvent.click(screen.getByRole('button', { name: 'Switch to Zed' }));
+    await within(form).findByText(/now posting as/u);
+    const select = await boardSelect(form);
+    expect(select).toHaveDisplayValue('General');
+    expect(within(select).getByRole('option', { name: /^Off Topic/u })).toBeDisabled();
+    await userEvent.click(within(form).getByRole('button', { name: /Confirm posting as Zed/u }));
+    expect(spun).not.toHaveBeenCalled();
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    await waitFor(() => expect(spun).toHaveBeenCalledWith(w.ids[1], w.zed, 'Carried', '', undefined, undefined, 'general'));
+  });
+
+  test('a refusal naming the board shows in the server\'s words', async () => {
+    const w = boardsWorld();
+    vi.spyOn(w.fake, 'spin').mockResolvedValue({ ok: false, error: 'this board was closed, and its threads are in General; start your thread there instead' });
+    openThread(w);
+    const form = await openForm();
+    await boardSelect(form);
+    await userEvent.type(within(form).getByLabelText('Thread title'), 'Late');
+    await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
+    expect(await within(form).findByRole('alert')).toHaveTextContent('this board was closed, and its threads are in General; start your thread there instead');
+  });
+
+  test('the choice survives the form closing and opening again, as the title does', async () => {
+    const w = boardsWorld();
+    openThread(w);
+    const article = await screen.findByRole('article', { name: /^Post 2 /u });
+    const link = () => within(article).getAllByRole('button', { name: 'Spin thread' }).find((b) => b.hasAttribute('aria-expanded'))!;
+    await userEvent.click(link());
+    const form = within(article).getByRole('form', { name: 'Spin a thread from post 2' });
+    await userEvent.selectOptions(await boardSelect(form), 'Off Topic');
+    await userEvent.click(link());
+    expect(within(article).queryByRole('form')).toBeNull();
+    await userEvent.click(link());
+    const again = await boardSelect(within(article).getByRole('form', { name: 'Spin a thread from post 2' }));
+    expect(again).toHaveDisplayValue('Off Topic');
   });
 });
