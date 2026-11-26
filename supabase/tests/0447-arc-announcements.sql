@@ -704,6 +704,8 @@ begin
   insert into unlisted_threads (thread) values (th);
   insert into threads (board, title) values (sb, 'The updates thread') returning id into th;
   insert into settings (key, value) values ('updatesThread', to_jsonb(th::text)) on conflict (key) do update set value = excluded.value;
+  -- Distinct last_at, so no tie leaves either order to chance.
+  update threads t set last_at = now() - x.n * interval '1 minute' from (select id, row_number() over (order by id) n from threads where board = sb) x where t.id = x.id;
   for pg in 1 .. 2 loop
     j := pg_temp.page(slug, pg);
     perform pg_temp.expect((select array_agg((e ->> 'id')::uuid order by n) from jsonb_array_elements(j -> 'threads') with ordinality x(e, n))
