@@ -8276,3 +8276,23 @@ describe('a talked-down Mod posts its concession', () => {
     expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
   });
 });
+
+describe('the jobs', () => {
+  test('jobStatus gives the rows a test set, adminJobs gives an admin each last run and the Vault, and a player no page', async () => {
+    const fake = createFake({ instance });
+    const admin = fake.seed.account('jobs-admin', { admin: true });
+    const player = fake.seed.account('jobs-player');
+    fake.seed.job('kayfabb-mail', { schedule: '*/5 * * * *' });
+    fake.seed.job('kayfabb-meet', { active: false });
+    fake.seed.jobRun('kayfabb-mail', { status: 'failed', message: 'boom', at: 0 });
+    fake.seed.jobVault({ jobsKey: false });
+    fake.signInAs(player);
+    expect((await fake.jobStatus()).map((r) => [r.job, r.schedule, r.active])).toEqual([['kayfabb-mail', '*/5 * * * *', true], ['kayfabb-meet', '* * * * *', false]]);
+    expect(await fake.adminJobs()).toBeNull();
+    fake.signInAs(admin);
+    const page = await fake.adminJobs();
+    expect(page?.vault).toEqual({ functionsUrl: true, jobsKey: false });
+    expect(page?.jobs[0]?.lastRun).toEqual({ status: 'failed', message: 'boom', at: '1970-01-01T00:00:00.000Z' });
+    expect(page?.jobs[1]?.lastRun).toBeNull();
+  });
+});

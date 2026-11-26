@@ -39,6 +39,7 @@ import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, type SignedIn, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
+import type { JobRow } from '../../rules/jobs.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { forgedList, forgedSet, holds, quoteHeld, quoteSource } from '../../bbcode/quoted.ts';
@@ -51,7 +52,7 @@ import { micros, readLogPageNow, type LedgerRow, type ShareRow } from './log-pag
 import type {
   SurfaceLogRow,
   AdminReport, AdminReview, ConductLogRow, DecideOutcome, FailedMail, PastDecision, ReportOutcome, ReportsPage,
-  AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
+  AdminJob, AdminJobs, AdminQueue, BoardName, Demand, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesCursor, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, Apology, Bar, AccountListener, PlayAbove, Tail, ActKind, Alert, ContactLink, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResult, SeasonResultRow, TallyName, SeasonShown, Update, UpdateChange, Answer, AvatarUpload, Bought, Unsealed, SealedPack, Board, BoardListener, BoardSummary, CardEvent, PackEvent, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, EffectState, PlayMoment, Rewind, PageOrigin,
   Estimate, EstimateLine, FollowedThread, Frame, HeldCard, Id, KayfaApi, LogShare, MyCharacter, MyInvite, MyReaction, PendingTurn, Preferences, PreferencesPatch, Refusal,
   Boot, BoardPage, BoardRef, StaffPin, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, LogPage,
@@ -156,6 +157,12 @@ export interface Seed {
   /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
   conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number; /** The version an admin's decision was about (a hide, an unhide, an approve): it is in the author's `conductLog`. */ version?: Id }): void;
   /** An open report (`report_post`, 0340) on a post's version, dated `at` (else now), by `reporter` (an account) when the open-report limit is under test: the screen shows the version's words, the section and the note. */
+  /** A job's `job_status` row, in the world from now: a job with no row reads "not scheduled". The first call for a job fills what it leaves out (a schedule of `* * * * *`, active, first seen at the clock). */
+  job(job: string, row?: { schedule?: string | null; active?: boolean; firstSeen?: string | null; lastOkAt?: string | null; grace?: Record<string, number> | null }): void;
+  /** The job's last pg_cron run (`admin_jobs`'s `lastRun`), `at` else the clock; null clears it. */
+  jobRun(job: string, run: { status: string; message?: string | null; at?: number } | null): void;
+  /** Whether the two Vault entries are present (both, by default). */
+  jobVault(vault: { functionsUrl?: boolean; jobsKey?: boolean }): void;
   conductReport(report: { version: Id; section: string; note?: string; at?: number; reporter?: Id }): number;
   /** A post hidden until its author edited it and edited since, awaiting an admin's second look (`reviews_due`): `words` are the edit's. */
   conductReview(review: { post: Id; version?: Id; words: string; at?: number }): void;
@@ -1383,6 +1390,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** The pages the reports screen reads (admin_reports, admin_failed_mail): 50 reports and edits, 200 failed mails, each with a flag for more. */
   const REPORTS_PAGE = 50;
   const FAILED_PAGE = 200;
+  /** `job_status`'s rows and pg_cron's last run of each, which a story or test sets (`Seed.job`, `Seed.jobRun`). */
+  const jobRows = new Map<string, JobRow>();
+  const jobRuns = new Map<string, { status: string; message: string | null; at: number }>();
+  const jobVault = { functionsUrl: true, jobsKey: true };
   const conductReports: ReportRec[] = [];
   const conductDecisions: DecisionRec[] = [];
   const conductReviews: { decision: number; post: Id; version: Id; words: string; at: number }[] = [];
@@ -5361,6 +5372,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...(handover !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
       };
     },
+    jobStatus(): readonly JobRow[] { return [...jobRows.values()]; },
+    adminJobs(): AdminJobs | null {
+      if (!core.isAdmin()) return null;
+      return {
+        jobs: [...jobRows.values()].map((r): AdminJob => { const run = jobRuns.get(r.job); return { ...r, lastRun: run === undefined ? null : { status: run.status, message: run.message, at: iso(run.at) } }; }),
+        vault: { ...jobVault },
+      };
+    },
     reportsPage(): ReportsPage | null {
       if (!core.isAdmin()) return null;
       const wordsOf = (v: Id): string => String(acts.get(v)?.payload['body'] ?? '');
@@ -5971,6 +5990,13 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     bar(account, until) { if (until === undefined) bars.delete(account); else bars.set(account, { until }); },
     unaccepted(account) { unaccepted.add(account); },
     conductDecision(d) { conductDecisions.push({ id: conductNextId++, report: null, version: d.version ?? null, account: d.account, outcome: d.outcome, until: d.until ?? null, note: d.note ?? '', at: d.at ?? now() }); },
+    job(job, row = {}) {
+      const was = jobRows.get(job);
+      const pick = <K extends keyof JobRow>(k: K, fallback: JobRow[K]): JobRow[K] => (k in row ? (row as unknown as JobRow)[k] : was?.[k] ?? fallback);
+      jobRows.set(job, { job, schedule: pick('schedule', '* * * * *'), active: pick('active', true), firstSeen: pick('firstSeen', iso(now())), lastOkAt: pick('lastOkAt', null), grace: pick('grace', null) });
+    },
+    jobRun(job, run) { if (run === null) jobRuns.delete(job); else jobRuns.set(job, { status: run.status, message: run.message ?? null, at: run.at ?? now() }); },
+    jobVault(v) { if (v.functionsUrl !== undefined) jobVault.functionsUrl = v.functionsUrl; if (v.jobsKey !== undefined) jobVault.jobsKey = v.jobsKey; },
     conductReport(r) {
       const id = conductNextId++;
       if (!acts.has(r.version)) throw new Error(`no such act ${r.version}`);
