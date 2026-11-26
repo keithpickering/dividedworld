@@ -191,9 +191,13 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: { fire: 1 } } }, [{ topic: `thread:${thread}`, event: 'tally', payload: { act: id, tally: { fire: 1 } } }]],
     [{ action: 'startThread', board: 'general', character: id, title: 't', body: 'b' }, { start_thread: { thread: { id: thread, board }, act: { id: 'a', thread } } },
       [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'a', thread } }]],
-    // A Turn waits for the settlement, whose tally the settlement sends (settle/core.ts): nothing now.
-    [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { pending: true, class: 'heel', loudness: 'silent' } }, []],
-    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced' }, { turn: { pending: true, class: 'heel', loudness: 'announced' } }, []],
+    // A silent Turn waits for the settlement and is posted nowhere: nothing now.
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'silent' }, { turn: { pending: true, class: 'heel', loudness: 'silent', announcement: null } }, []],
+    // An announced Turn writes its announcement Act at once, in its thread, and it is heard there like a reveal.
+    [{ action: 'turn', character: id, class: 'heel', loudness: 'announced', thread }, { turn: { pending: true, class: 'heel', loudness: 'announced', announcement: { id: 'n', thread } } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'n', thread } }]],
+    [{ action: 'announceTurn', character: id, thread }, { announce_turn: { pending: true, announcement: { id: 'n', thread } } },
+      [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'n', thread } }]],
     [{ action: 'withdrawTurn', character: id }, { withdraw_turn: { withdrawn: true } }, []],
     [{ action: 'buyCard', slot: id, price: 100 }, { whoami: id, buy_card: { card: 'whoops', balance: 0, held: 1 } }, []],
     [{ action: 'buyPack', slot: id, price: 300 }, { whoami: id, buy_pack: { pack: 'p', contents: ['whoops'], balance: 0 } }, []],
@@ -218,20 +222,8 @@ test('what an action wrote is broadcast as its public projection, on its thread\
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread: null, tally: {} } }, []],
     // A reaction to a blind post: its totals are hidden, so the answer's tally is null and nothing is sent.
     [{ action: 'react', act: id, character: id, kind: 'fire' }, { react: { act: id, thread, tally: null } }, []],
-    // A drop announced is The System's tally of one, sent now, with the Turns thread it opened; a
-    // waiting or silent character is its player's alone.
-    [{ action: 'createCharacter', name: 'Dropped', class: 'heel', timing: 'now', loudness: 'announced' },
-      { create_character: { id, waiting: false, announcement: { act: { id: 'd', thread }, thread: { id: thread, board } } } },
-      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'd', thread } }]],
-    [{ action: 'createCharacter', name: 'Waiting', class: 'heel' }, { create_character: { id, waiting: true, announcement: null } }, []],
-    [{ action: 'setDebut', character: id, timing: 'now', loudness: 'announced' },
-      { set_debut: { id, waiting: false, announcement: { act: { id: 'd', thread }, thread: null } } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'd', thread } }]],
-    [{ action: 'setDebut', character: id, timing: 'now', loudness: 'silent' }, { set_debut: { id, waiting: false, announcement: null } }, []],
-    // A drop with its class is one announce Act, after the thread when this opened it: no separate reveal is sent, even
-    // where an answer still carried one (0100 writes none).
-    [{ action: 'createCharacter', name: 'Dropped', class: 'heel', timing: 'now', loudness: 'with_class' },
-      { create_character: { id, waiting: false, announcement: { act: { id: 'd', thread }, thread: { id: thread, board }, unmask: { id: 'u', thread } } } },
-      [{ topic: `board:${board}`, event: 'thread', payload: { id: thread, board } }, { topic: `thread:${thread}`, event: 'act', payload: { id: 'd', thread } }]],
+    // A new character is active at once and writes no Act: nothing is sent.
+    [{ action: 'createCharacter', name: 'Dropped', class: 'heel' }, { create_character: { id, name: 'Dropped', class: 'heel' } }, []],
     // A reveal is the character's Act in its thread, sent like a post.
     [{ action: 'unmask', character: id, thread }, { unmask: { id: 'u', thread } }, [{ topic: `thread:${thread}`, event: 'act', payload: { id: 'u', thread } }]],
   ];
@@ -246,12 +238,12 @@ test('what an action wrote is broadcast as its public projection, on its thread\
 test('a new character\'s pronouns reach create_character, and none is a null', async () => {
   const id = '11111111-1111-4111-8111-111111111111';
   const she = { subject: 'she', object: 'her', determiner: 'her', possessive: 'hers', reflexive: 'herself', plural: false };
-  const made = pair({ create_character: { id, waiting: true, announcement: null } });
+  const made = pair({ create_character: { id, name: 'x', class: 'heel' } });
   await runAction(made.dbs, instance, { action: 'createCharacter', name: 'Hers', class: 'heel', pronouns: { ...she, subject: 'SHE' } });
   await runAction(made.dbs, instance, { action: 'createCharacter', name: 'Plain', class: 'heel' });
   assert.deepEqual(made.calls, [
-    `player:create_character:${JSON.stringify({ name: 'Hers', class: 'heel', timing: 'now', loudness: 'announced', pronouns: she })}`,
-    `player:create_character:${JSON.stringify({ name: 'Plain', class: 'heel', timing: 'now', loudness: 'announced', pronouns: null })}`,
+    `player:create_character:${JSON.stringify({ name: 'Hers', class: 'heel', pronouns: she })}`,
+    `player:create_character:${JSON.stringify({ name: 'Plain', class: 'heel', pronouns: null })}`,
   ]);
   const bad = pair({});
   const out = await runAction(bad.dbs, instance, { action: 'createCharacter', name: 'Bad', class: 'heel', pronouns: { ...she, subject: '' } });
@@ -290,7 +282,7 @@ test('a refused or failed action sends nothing live', async () => {
 test('only the reads and the writes that find their own earlier effect are safe to repeat after a lost answer', () => {
   for (const fn of ['whoami', 'card_target', 'card_target_reach', 'card_of_play', 'play_landed_at', 'open_account', 'instance_settings']) assert.equal(SAFE_TO_REPEAT(fn), true, fn);
   // A save repeated after a newer one landed would bring back the older strokes.
-  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'cast_ballot', 'close_poll', 'close_poll_as_admin', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'buy_pack', 'play_card', 'create_character', 'set_debut', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
+  for (const fn of ['save_effect_state', 'post', 'start_thread', 'edit_post', 'cast_ballot', 'close_poll', 'close_poll_as_admin', 'spin', 'apologize', 'react', 'turn', 'withdraw_turn', 'buy_card', 'buy_pack', 'play_card', 'create_character', 'announce_turn', 'create_invite', 'reissue_invite']) assert.equal(SAFE_TO_REPEAT(fn), false, fn);
 });
 
 test('a write whose answer was lost says plainly it may have gone through', async () => {

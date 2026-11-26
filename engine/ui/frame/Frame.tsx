@@ -96,8 +96,9 @@ export function Frame({ children }: { readonly children: ReactNode }) {
 
   return (
     <TipsProvider>
-      <PlayProvider>
-        <OpenThreadProvider>
+      {/* The open thread is read by the play form (a board card is played in a thread on its board, defaulting to this one), which PlayProvider draws: so the thread is provided outside it. */}
+      <OpenThreadProvider>
+        <PlayProvider>
         <div className="kb-frame" data-kb-loading={pending ? true : undefined}>
           <Wobble />
           <header className="kb-banner">
@@ -157,8 +158,8 @@ export function Frame({ children }: { readonly children: ReactNode }) {
           <div className="kb-vignette" aria-hidden="true" />
           <Hud />
         </div>
-        </OpenThreadProvider>
-      </PlayProvider>
+        </PlayProvider>
+      </OpenThreadProvider>
     </TipsProvider>
   );
 }

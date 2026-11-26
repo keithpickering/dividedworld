@@ -42,7 +42,8 @@ create function pg_temp.ann() returns uuid language sql as $$ select (value #>> 
 create function pg_temp.boss() returns text language sql as $$ select boss from seasons where ends_at is null $$;
 create function pg_temp.offices() returns bigint language sql as $$ select count(*) from staff_offices $$;
 create function pg_temp.handovers() returns bigint language sql as $$ select count(*) from season_handovers $$;
-create function pg_temp.said() returns bigint language sql as $$ select count(*) from acts a where a.kind = 'post' and a.thread = pg_temp.ann() $$;
+-- Posts in the threads handovers opened (a handover's farewell and arrival are written there, not in the announcements thread).
+create function pg_temp.said() returns bigint language sql as $$ select count(*) from acts a where a.kind = 'post' and a.thread in (select h.thread from season_handovers h where h.thread is not null) $$;
 -- The latest office row of a persona: 'benched/seed', 'mod/seed', or null where it has none.
 create function pg_temp.latest(k text) returns text language sql as $$
   select o.office || '/' || o.cause from staff_offices o where o.staff = k order by o.id desc limit 1
@@ -127,8 +128,8 @@ begin
     perform pg_temp.expect(pg_temp.latest('a') is not distinct from 'benched/seed', 'a is not benched by the seed: ' || coalesce(pg_temp.latest('a'), 'no row'));
     -- a's farewell (the stock line) was posted, and before the bench row was written: write_staff_act refuses a benched persona (scenario 1), so a post that exists was written before the bench. The clock cannot show it,
     -- since every `now()` in one transaction is the same instant; the office rows' ids show the handover row precedes the bench row.
-    select a.created_at into farewell_at from acts a join characters c on c.id = a.character where c.staff = 'a' and a.kind = 'post' and a.thread = pg_temp.ann() and a.payload ->> 'body' = 'Farewell from P a.';
-    perform pg_temp.expect(farewell_at is not null, 'a''s farewell was not posted: ' || (select string_agg(a.payload ->> 'body', ' | ') from acts a where a.thread = pg_temp.ann()));
+    select a.created_at into farewell_at from acts a join characters c on c.id = a.character where c.staff = 'a' and a.kind = 'post' and a.thread in (select h.thread from season_handovers h where h.thread is not null) and a.payload ->> 'body' = 'Farewell from P a.';
+    perform pg_temp.expect(farewell_at is not null, 'a''s farewell was not posted: ' || (select string_agg(a.payload ->> 'body', ' | ') from acts a where a.thread in (select h.thread from season_handovers h where h.thread is not null)));
     perform pg_temp.expect((select o.id from staff_offices o where o.staff = 'a' and o.office = 'benched')
       > (select o.id from staff_offices o where o.staff = 'a' and o.cause = 'handover'), 'a''s bench is not after its handover office row');
     perform pg_temp.expect(answer ->> 'handover' is not distinct from new_boss and answer -> 'departed' = '["w", "a"]'::jsonb and answer -> 'returned' = '[]'::jsonb, 'the answer does not name the departure: ' || answer::text);

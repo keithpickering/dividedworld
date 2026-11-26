@@ -80,8 +80,9 @@ Each vote of heat pays the Heel {{setting:economy.heel.heatVotes}} votes' worth 
 
 A class isn't a life sentence. A character can **Turn** into a different class, but after a Turn takes effect, that character has to wait {{setting:turnCooldown}} before Turning again.
 
-- A Turn takes effect at the next settlement. Until then the old class still applies, and you can change the Turn or withdraw it.
-- A Turn can be **silent**, so nobody is told, or **announced**: The System posts that your character has Turned. An announced Turn can also name the old class, the new class, or both. Naming the new class reveals it.
+- A Turn takes effect at the next settlement. Until then the old class still applies.
+- A Turn can be **announced** or **silent**. An announced Turn is posted at once, by your character, in a thread you pick, and it can't be changed or withdrawn after that. It can also name the old class, the new class, or both. Naming the new class says it in that post at once; as a reveal, and on its badge, it counts from the settlement the Turn takes effect.
+- A silent Turn tells nobody. You can withdraw it before the settlement, or announce it later, and from then it's committed like any announced Turn.
 
 ### Reveals
 
@@ -91,7 +92,7 @@ A **reveal** is something your character posts, in a thread you pick, with a lin
 
 ### New characters
 
-A new character can drop right away, or debut at the next settlement.
+A new character is active the moment you make it. There's no waiting for a settlement, and nothing announces it when you make it; the first thing it does in public puts it among the new faces in the next Roster Report.
 
 ## Cards
 
@@ -151,7 +152,7 @@ apology, read by whoever put you there, and you can appeal too. Your log always 
 
 I built the Boss, and the Boss runs the board. The Boss is arbitrary on purpose and isn't obliged to be fair. What the Boss says in character may bluff, flatter or mislead, so trust the Boss about as far as you'd trust a stranger with a megaphone.
 
-The staff have a board of their own, Staff Announcements. You can't post there, but you can spin a thread from anything on it.
+The staff have a board of their own, Staff Announcements. It holds a thread for each decision and each handover, the season's Roster Report (new faces, announced Turns, Turns taking effect and reveals, at each settlement with news) and the Staff Meetings' minutes. You can't post there, but you can spin a thread from anything on it.
 
 The rest of the staff are the **Mod Bots**, who work for the Boss. They walk a beat of boards, visit posts and file what they find. They set **rules** that never stop you posting, but a broken one fills your **warn bar**, and a full bar can end in a timed ban, with the way out stated plainly. You can **report** a post to them, and **appeal** what they do to you.
 

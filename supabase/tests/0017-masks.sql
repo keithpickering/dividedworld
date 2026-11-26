@@ -31,7 +31,7 @@ end $$;
 -- A window ending a day from now makes the next one end after the characters made below.
 insert into settlements (starts_at, ends_at, season) select date_trunc('day', now()), date_trunc('day', now()) + interval '1 day', id from seasons where ends_at is null;
 
--- ---- A character made between settlements waits to debut: unseen, and unable to act ----
+-- ---- A character that has not debuted (a staff persona waiting for an office): unseen, unable to act, and no settlement debuts it ----
 do $$
 declare
   ann uuid := tests.account('mask-ann');
@@ -39,15 +39,11 @@ declare
   old uuid := tests.character(bob, 'Old Hand', 'alpha', now() - interval '10 days');
   t uuid := tests.thread();
   p uuid := tests.post(old, t, 'Already here.');
-  made jsonb;
-  fresh uuid;
+  fresh uuid := tests.waiting(ann, 'Fresh Face');
   why text;
   settled jsonb;
 begin
   perform tests.become(ann);
-  made := create_character('Fresh Face', 'alpha', 'tally');
-  fresh := (made ->> 'id')::uuid;
-  if not (made ->> 'waiting')::boolean then raise exception 'a new character says it waits to debut: %', made; end if;
   -- Its player sees it, waiting.
   if (select debuted_at from characters where id = fresh) is not null or not exists (select 1 from characters where id = fresh) then
     raise exception 'its player sees their character, waiting to debut';
@@ -58,7 +54,7 @@ begin
   if pg_temp.refusal(format('select react(%L, %L, %L)', p, fresh, 'up')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character reacted'; end if;
   if pg_temp.refusal(format('select spin(%L, %L, %L)', p, fresh, 'Spun')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character spun'; end if;
   if pg_temp.refusal(format('select start_thread(%L, %L, %L, %L)', 'general', fresh, 'A thread', 'Hi.')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character started a thread'; end if;
-  if pg_temp.refusal(format('select turn(%L, %L, %L)', fresh, 'beta', 'silent')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character Turned'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', fresh, 'beta', 'silent')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character Turned'; end if;
   perform tests.unbecome();
   -- Nobody else sees it: not in the public list, and not by its id.
   perform tests.become(bob);
@@ -73,22 +69,22 @@ begin
     raise exception 'a waiting character saved an effect';
   end if;
   -- And the table holds it, for any writer that forgets to ask.
-  if coalesce(pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, %L, %L, %L)', fresh, 'post', t, '{"body": "x"}')), '') not like '%debuts%' then
+  if coalesce(pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, %L, %L, %L)', fresh, 'post', t, '{"body": "x"}')), '') not like '%has not debuted%' then
     raise exception 'an Act by a waiting character was written past every action';
   end if;
 
-  -- The settlement after it was made debuts it, and The System announces it.
+  -- A settlement debuts no one (0436: a character is made active, and only an office debuts a waiting staff persona), and announces no debut.
   settled := pg_temp.settle_day();
-  if (select debuted_at from characters where id = fresh) is distinct from (settled ->> 'end')::timestamptz then raise exception 'it debuts at the end of the window it was made in'; end if;
+  if (select debuted_at from characters where id = fresh) is not null then raise exception 'a settlement debuted a waiting character'; end if;
+  if exists (select 1 from acts where kind = 'announce' and character = fresh) then raise exception 'a settlement announced a debut: %', (select jsonb_agg(to_jsonb(a)) from acts a where a.kind = 'announce' and a.character = fresh); end if;
+  -- Debuted by its way out (an office, here a plain update), it is seen and acts.
+  update characters set debuted_at = now() where id = fresh;
   perform tests.become(bob);
   if not exists (select 1 from characters_public where id = fresh) then raise exception 'a debuted character is seen'; end if;
   perform tests.unbecome();
   perform tests.become(ann);
   perform post(t, fresh, 'Here now.');
   perform tests.unbecome();
-  if not exists (select 1 from acts where kind = 'announce' and character = fresh and payload = '{"what": "debut"}'::jsonb and id = (settled ->> 'tally')::uuid) then
-    raise exception 'The System announces the debut as the character''s own Act: %', (select jsonb_agg(to_jsonb(a)) from acts a where a.kind = 'announce' and a.character = fresh);
-  end if;
 end $$;
 
 -- ---- A Turn waits for the settlement: changed or withdrawn until then, and in effect from it ----
@@ -110,13 +106,13 @@ begin
   seen := (select coalesce(jsonb_agg(a order by a.id), '[]')::text from acts_public a);
   perform tests.unbecome();
   perform tests.become(ann);
-  said := turn(loud, 'beta', 'silent');
+  said := turn(loud, 'beta', 'silent', false, false);
   if not (said ->> 'pending')::boolean then raise exception 'a Turn waits for the settlement: %', said; end if;
-  -- Changed before it takes effect: louder, and the change is the Turn.
-  said := turn(loud, 'beta', 'revealed');
+  -- Changed before it takes effect: louder, and the change is the Turn. (Queued as before turns were announced at once, 0435: a Turn announced now writes its Act then and cannot be changed.)
+  perform tests.queue_old_turn(loud, 'beta', true, false);
   -- "revealed", from an older client, waits as announced naming the class it Turns from (0028).
   if (select (loudness, show_from) from pending_turns where character = loud) is distinct from ('announced'::text, true) then raise exception 'a waiting Turn is changed'; end if;
-  perform turn(shy, 'beta', 'silent');
+  perform turn(shy, 'beta', 'silent', false, false);
   -- Nothing public moves while a Turn waits, announced or not.
   if (select class_key from class_history where character = loud order by started_at desc limit 1) is distinct from 'alpha' then raise exception 'a waiting Turn changed the class'; end if;
   perform tests.unbecome();
@@ -124,8 +120,8 @@ begin
   if (select coalesce(jsonb_agg(a order by a.id), '[]')::text from acts_public a) is distinct from seen then raise exception 'a waiting Turn wrote a public Act'; end if;
   -- Nobody else reads a waiting Turn.
   if exists (select 1 from pending_turns where character in (loud, shy)) then raise exception 'another player read a waiting Turn'; end if;
-  perform turn(late, 'beta', 'announced');
-  perform turn(gone, 'beta', 'announced');
+  perform tests.queue_old_turn(late, 'beta');
+  perform turn(gone, 'beta', 'silent', false, false);
   said := withdraw_turn(gone);
   if exists (select 1 from pending_turns where character = gone) then raise exception 'a withdrawn Turn still waits'; end if;
   if pg_temp.refusal(format('select withdraw_turn(%L)', gone)) is distinct from 'no Turn of that character is waiting' then raise exception 'withdrawing nothing should say so'; end if;
@@ -166,8 +162,8 @@ begin
 
   -- The cooldown runs from when a Turn took effect.
   perform tests.become(ann);
-  if substring(pg_temp.refusal(format('select turn(%L, %L, %L)', loud, 'alpha', 'silent')) from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz is distinct from window_end + interval '30 days' then
-    raise exception 'the cooldown runs from the settlement the Turn took effect at: %', pg_temp.refusal(format('select turn(%L, %L, %L)', loud, 'alpha', 'silent'));
+  if substring(pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', loud, 'alpha', 'silent')) from '\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z')::timestamptz is distinct from window_end + interval '30 days' then
+    raise exception 'the cooldown runs from the settlement the Turn took effect at: %', pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', loud, 'alpha', 'silent'));
   end if;
   perform tests.unbecome();
 end $$;
@@ -181,9 +177,9 @@ declare
   due jsonb;
   tallies integer;
 begin
-  perform tests.become(ann);
-  perform create_character('Outboxed', 'alpha', 'tally');
-  perform tests.unbecome();
+  -- An announced Turn queued before Turns were announced at once (0435) takes effect in the window and is announced by the settlement, the one announcement here.
+  perform tests.queue_old_turn(tests.character(ann, 'Outboxed', 'alpha', now() - interval '60 days'), 'beta', false, true);
+  update pending_turns set asked_at = start_at + interval '1 hour' where character = (select id from characters where name = 'Outboxed');
   delete from broadcasts_due;
   -- A row from a send that failed a run ago (a day, at a daily cron) is still sent.
   insert into broadcasts_due (topic, event, payload, made_at) values ('thread:late', 'act', '{"id": "late"}', now() - interval '2 days');
@@ -266,35 +262,36 @@ begin
   -- A character made after the window's end, and a Turn asked then, wait for the next one.
   insert into characters (owner, name, created_at) values (ann, 'Made After The Window', window_end + interval '1 minute') returning id into later;
   perform tests.become(ann);
-  perform turn(turner, 'beta', 'announced');
+  perform tests.queue_old_turn(turner, 'beta');
   perform tests.unbecome();
   asked := (select asked_at from pending_turns where character = turner);
   -- Asked again, the Turn is asked anew.
   perform tests.become(ann);
-  perform turn(turner, 'beta', 'revealed');
+  perform tests.queue_old_turn(turner, 'beta', true, false);
   perform tests.unbecome();
   if (select asked_at from pending_turns where character = turner) <= asked then raise exception 'a changed Turn keeps the moment it was first asked'; end if;
   perform tests.become(ann);
   -- Asking for the class it holds while a Turn waits says the way to keep it.
-  if coalesce(pg_temp.refusal(format('select turn(%L, %L, %L)', turner, 'alpha', 'silent')), '') not like '%withdraw%' then
-    raise exception 'asking for the class it holds, with a Turn waiting, should say to withdraw it: %', pg_temp.refusal(format('select turn(%L, %L, %L)', turner, 'alpha', 'silent'));
+  if coalesce(pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', turner, 'alpha', 'silent')), '') not like '%withdraw%' then
+    raise exception 'asking for the class it holds, with a Turn waiting, should say to withdraw it: %', pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', turner, 'alpha', 'silent'));
   end if;
   perform tests.unbecome();
   update pending_turns set asked_at = window_end where character = turner;
   for i in 1..150 loop
-    insert into characters (owner, name, created_at) values (tests.account('edge-many-' || i), 'Many Masks ' || i, start_at + interval '1 hour');
+    perform tests.queue_old_turn(tests.character(tests.account('edge-many-' || i), 'Many Masks ' || i, 'alpha', now() - interval '60 days'), 'beta', false, true);
   end loop;
-  -- The season's first loud Turn or debut opens its Turns thread, and says so to its board.
+  update pending_turns set asked_at = start_at + interval '1 hour' where character in (select id from characters where name like 'Many Masks %');
+  -- The season's first loud Turn opens its Turns thread, and says so to its board.
   update seasons set turns_thread = null where ends_at is null;
   delete from broadcasts_due;
   tallies := (select count(*) from acts where kind = 'announce');
   said := pg_temp.settle_day();
   if (select debuted_at from characters where id = later) is not null then raise exception 'a character made after the window debuted at its end'; end if;
   if not exists (select 1 from pending_turns where character = turner) then raise exception 'a Turn asked at the window''s end took effect at it'; end if;
-  -- Each debut is its own Act, whatever the size of the landing: never one payload holding all.
-  if (select count(*) from acts where kind = 'announce') - tallies < 150 then raise exception 'a landing of 150 debuts wrote % Acts', (select count(*) from acts where kind = 'announce') - tallies; end if;
+  -- Each announced Turn is its own Act, whatever the size of the landing: never one payload holding all.
+  if (select count(*) from acts where kind = 'announce') - tallies < 150 then raise exception 'a landing of 150 Turns wrote % Acts', (select count(*) from acts where kind = 'announce') - tallies; end if;
   if (select count(*) from acts a join characters c on c.id = a.character where a.kind = 'announce' and c.name like 'Many Masks %') is distinct from 150::bigint then
-    raise exception 'every debut is announced, once';
+    raise exception 'every announced Turn is announced, once';
   end if;
   perform set_config('role', 'service_role', true);
   due := due_broadcasts();
@@ -325,7 +322,10 @@ declare
   said jsonb;
   words jsonb := (select value from settings where key = 'copy');
 begin
-  insert into characters (owner, name, created_at) values (ann, 'Stuck Debut', start_at + interval '1 hour') returning id into waiting;
+  -- An announced Turn queued before Turns were announced at once (0435): the settlement writes it the old way, which names the Promos thread with the instance's words.
+  waiting := tests.character(ann, 'Stuck Turner', 'alpha', now() - interval '60 days');
+  perform tests.queue_old_turn(waiting, 'beta', false, true);
+  update pending_turns set asked_at = start_at + interval '1 hour' where character = waiting;
   -- The instance's words lost (only by hand: settings_copy_kept holds them otherwise).
   alter table settings disable trigger settings_copy_kept;
   delete from settings where key = 'copy';
@@ -334,12 +334,12 @@ begin
   said := pg_temp.settle_day();
   if not (said ->> 'applied')::boolean then raise exception 'a settlement whose announcement failed was not applied: %', said; end if;
   if said ->> 'masks' is null or said ->> 'masks' not like '%copy%' then raise exception 'the settlement should say why its masks did not change: %', said; end if;
-  if (select debuted_at from characters where id = waiting) is not null then raise exception 'a debut went ahead with no announcement to name it'; end if;
-  -- Once the words are back, the next settlement debuts it.
+  if exists (select 1 from class_history where character = waiting and class_key = 'beta') or not exists (select 1 from pending_turns where character = waiting) then raise exception 'a Turn went ahead with no announcement to name it'; end if;
+  -- Once the words are back, the next settlement takes it.
   insert into settings (key, value) values ('copy', words);
   alter table settings enable trigger settings_copy_kept;
   said := pg_temp.settle_day();
-  if (select debuted_at from characters where id = waiting) is null then raise exception 'the next settlement should debut what waited'; end if;
+  if not exists (select 1 from class_history where character = waiting and class_key = 'beta') then raise exception 'the next settlement should take the Turn that waited'; end if;
 end $$;
 
 -- ---- An invite opened at the very instant a window ends is the next window's ----
@@ -383,10 +383,10 @@ begin
   update seasons set starts_at = next_start + interval '1 day 12 hours' - interval '3 months' where ends_at is null;
   perform tests.become(ann);
   -- Announced, naming the class each leaves, so the reveal shows them (0029: a silent one it never does).
-  perform turn(quick, 'beta', 'announced', true, false);
-  perform turn(quick2, 'beta', 'announced', true, false);
-  perform turn(slow, 'beta', 'announced', true, false);
-  perform turn(slow2, 'beta', 'announced', true, false);
+  perform tests.queue_old_turn(quick, 'beta', true, false);
+  perform tests.queue_old_turn(quick2, 'beta', true, false);
+  perform tests.queue_old_turn(slow, 'beta', true, false);
+  perform tests.queue_old_turn(slow2, 'beta', true, false);
   perform tests.unbecome();
   update pending_turns set asked_at = next_start + interval '1 hour' where character = quick;
   update pending_turns set asked_at = next_start + interval '1 hour 3 minutes' where character = quick2;

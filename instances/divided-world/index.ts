@@ -25,13 +25,14 @@ const boards = deepFreeze([
   { slug: 'arts-crafts', name: 'Arts & Crafts', description: 'Show off what you made: sprites, drawings, music, writing, anything.' },
   { slug: 'help', name: 'Help', description: 'Stuck on something? Ask here.' },
   { slug: 'pointless-post-palace', name: 'Pointless Post Palace', description: 'Post about nothing. The more pointless, the better.' },
-  // Only the staff and the game post here: the Boss's arrivals and farewells, the characters' Promos (the board look design, section 7).
+  // Only the staff post here: a thread for each decision, each handover, the Roster Report and the meetings' minutes (the board look design, section 7).
   { slug: 'announcements', name: 'Staff Announcements', description: 'Where the staff post. Reply by spinning a thread.', system: true },
 ]);
 
 /** The System's words, in its own voice. */
 const copy = deepFreeze({
-  announcementsThreadTitle: 'Season {season}: Promos',
+  rosterThreadTitle: 'Season {season}: Roster Report',
+  meetingsThreadTitle: 'Season {season}: Staff Meetings',
 });
 
 /** A 2003 member rank from the settled season standing. The names are the owner's placeholders, and the thresholds are the owner's to set. */

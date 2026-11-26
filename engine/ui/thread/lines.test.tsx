@@ -10,13 +10,18 @@ import type { Act } from '../data/api.ts';
 import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { AnnounceLine, when } from './lines.tsx';
 
-const lines: readonly { readonly what: 'debut' | 'turn'; readonly was?: string; readonly class?: string; readonly says: string }[] = [
+const lines: readonly { readonly what: 'debut' | 'turn'; readonly ahead?: boolean; readonly was?: string; readonly class?: string; readonly says: string }[] = [
   { what: 'debut', says: 'Spritey debuts.' },
   { what: 'debut', class: 'heel', says: 'Spritey debuts as a Heel.' },
   { what: 'turn', says: 'Spritey has Turned.' },
   { what: 'turn', was: 'heel', says: 'Spritey has Turned, leaving Heel.' },
   { what: 'turn', class: 'face', says: 'Spritey has Turned to Face.' },
   { what: 'turn', was: 'heel', class: 'face', says: 'Spritey has Turned from Heel to Face.' },
+  // A Turn announced ahead of its settlement (0435) says when it takes effect; every sentence older Acts read is the same.
+  { what: 'turn', ahead: true, says: 'Spritey has Turned. It takes effect at the next settlement.' },
+  { what: 'turn', ahead: true, was: 'heel', says: 'Spritey has Turned, leaving Heel. It takes effect at the next settlement.' },
+  { what: 'turn', ahead: true, class: 'face', says: 'Spritey has Turned to Face. It takes effect at the next settlement.' },
+  { what: 'turn', ahead: true, was: 'heel', class: 'face', says: 'Spritey has Turned from Heel to Face. It takes effect at the next settlement.' },
 ];
 
 function Line({ act, name }: { readonly act: string; readonly name: string }) {
@@ -27,11 +32,12 @@ function Line({ act, name }: { readonly act: string; readonly name: string }) {
 }
 
 describe('the announce line', () => {
-  test.each(lines)('says "$says"', async ({ what, was, class: cls, says }) => {
+  test.each(lines)('says "$says"', async ({ what, ahead, was, class: cls, says }) => {
     const fake = buildWorld();
     const owner = fake.seed.account('o');
     const spritey = fake.seed.character(owner, 'Spritey', 'face');
-    const act = fake.seed.announce(spritey, what, { was, class: cls });
+    /* A debut is history (0436 wrote the last of them): only the seed for old Acts writes one. */
+    const act = what === 'debut' ? fake.seed.debutHistory(spritey, { class: cls }) : fake.seed.announce(spritey, what, { was, class: cls, ahead });
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/' });
     await waitFor(() => expect(screen.getByText(says)).toBeInTheDocument());
     expect(screen.getByText(says).tagName).toBe('P');
@@ -41,7 +47,7 @@ describe('the announce line', () => {
     const fake = buildWorld();
     const owner = fake.seed.account('o');
     const spritey = fake.seed.character(owner, 'Spritey', 'face');
-    const act = fake.seed.announce(spritey, 'debut', { class: 'alpha' });
+    const act = fake.seed.debutHistory(spritey, { class: 'alpha' });
     const instance = { ...testInstance, classes: [...testInstance.classes, { key: 'alpha', name: 'Alpha', earn: () => [] }] };
     renderIn(fake, <Line act={act} name="Spritey" />, { path: '/', instance });
     await waitFor(() => expect(screen.getByText('Spritey debuts as an Alpha.')).toBeInTheDocument());

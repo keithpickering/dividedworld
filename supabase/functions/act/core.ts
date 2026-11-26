@@ -64,12 +64,6 @@ const onReach = (a: Row): Broadcast[] => {
 const without = (a: Row, key: string): Row => { const { [key]: _gone, ...rest } = a; return rest; };
 const thread = (t: unknown): Broadcast[] => (t && typeof t === 'object' && (t as Row).board ? [{ topic: `board:${(t as Row).board}`, event: 'thread', payload: t }] : []);
 
-const announcement = (a: Row): Broadcast[] => {
-  const told = a.announcement as Row | null | undefined;
-  // A drop announced is one announce Act, after the Promos thread when this opened it (supabase/migrations/0100_announce.sql).
-  return told ? [...thread(told.thread), ...act(told.act)] : [];
-};
-
 /** A reply a play carried, on the play's thread: `{ parent, play, act }`, two ids and the reply's public projection. */
 const under = (card: Row, u: unknown): Broadcast[] =>
   u && typeof u === 'object' && card.thread ? [{ topic: `thread:${card.thread}`, event: 'under', payload: u }] : [];
@@ -128,8 +122,9 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   // An apology is the spin of a move's Act (0130), and is heard as one.
   apologize: (a) => [...thread(a.thread), ...act(a.act)],
   unmask: (a) => act(a),
-  // A Turn waits for the settlement, whose tally is sent from there (settle/core.ts).
-  turn: () => [],
+  // A silent Turn waits for the settlement and is posted nowhere; an announced one writes its announcement Act at once (0435), heard in its thread as a reveal is.
+  turn: (a) => act(a.announcement),
+  announce_turn: (a) => act(a.announcement),
   withdraw_turn: () => [],
   // A null tally is a post whose totals are hidden (a blind study): there is none to send.
   react: (a) => withSprung(a, a.thread && a.tally !== null ? [{ topic: `thread:${a.thread}`, event: 'tally', payload: { act: a.act, tally: a.tally } }] : []),
@@ -141,11 +136,9 @@ const BROADCASTS: Record<string, (answer: Row, args: Row) => Broadcast[]> = {
   donate: (a) => act(a.gift),
   buy_card: () => [],
   buy_pack: () => [],
-  // A player's own: a character appears on the next load of who is here, and an invite or an
-  // account is nobody else's to hear of. A drop announced is the character's announce Act, sent now
-  // with the Promos thread it opened (0100_announce.sql).
-  create_character: (a) => announcement(a),
-  set_debut: (a) => announcement(a),
+  // A player's own: a character is active at once and writes no Act (0436), so it appears on the next
+  // load of who is here, and an invite or an account is nobody else's to hear of.
+  create_character: () => [],
   create_invite: () => [],
   reissue_invite: () => [],
   open_account: () => [],

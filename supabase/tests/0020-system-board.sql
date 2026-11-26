@@ -12,13 +12,15 @@ exception when others then
 end $$;
 
 -- Settle the next window, a day long, as the job does, as the service: from where the last one
--- ended, which an earlier file's committed race may have moved. A character made inside it debuts.
-create function pg_temp.settle_day_with_debut(owner uuid, name text) returns jsonb language plpgsql as $$
+-- ended, which an earlier file's committed race may have moved. A character with an announced Turn queued before Turns were announced at once (0435)
+-- has it take effect there, announced in the season's Promos thread.
+create function pg_temp.settle_day_with_turn(owner uuid, name text) returns jsonb language plpgsql as $$
 declare
   s timestamptz := coalesce((select max(ends_at) from settlements), (select min(starts_at) from seasons));
   said jsonb;
 begin
-  insert into characters (owner, name, created_at) values (owner, name, s + interval '1 hour');
+  perform tests.queue_old_turn(tests.character(owner, name, 'alpha', s - interval '60 days'), 'beta', false, true);
+  update pending_turns set asked_at = s + interval '1 hour' where character in (select id from characters c where c.name = settle_day_with_turn.name);
   perform set_config('role', 'service_role', true);
   said := apply_settlement(s, s + interval '1 day', '[]');
   perform tests.unbecome();
@@ -44,7 +46,7 @@ begin
   end if;
 
   -- The announcement opens its thread on The System's board.
-  settled := pg_temp.settle_day_with_debut(ann, 'Sys Debut');
+  settled := pg_temp.settle_day_with_turn(ann, 'Sys Debut');
   tally := (settled ->> 'tally')::uuid;
   if tally is null then raise exception 'the settlement announced nothing: %', settled; end if;
   if (select t.board from acts x join threads t on t.id = x.thread where x.id = tally) is distinct from sys then
@@ -112,7 +114,7 @@ begin
   if system_board() is distinct from general then raise exception 'an instance with no board flagged posts on its first, as before'; end if;
   -- No Turns thread yet, so the announcement opens one afresh on the board The System posts on now.
   update seasons set turns_thread = null;
-  settled := pg_temp.settle_day_with_debut(ann, 'Sys Old Debut');
+  settled := pg_temp.settle_day_with_turn(ann, 'Sys Old Debut');
   old_turns := (select thread from acts where id = (settled ->> 'tally')::uuid);
   if (select board from threads where id = old_turns) is distinct from general then raise exception 'the old instance''s announcement opened on its first board'; end if;
   -- Players still post on its first board, and an ordinary thread of theirs is there.

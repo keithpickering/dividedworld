@@ -110,8 +110,9 @@ function Results({ item, own, className }: { readonly item: SeasonNewsItem; read
   );
 }
 
-function Names({ names, own, verb, className }: { readonly names: readonly TallyName[]; readonly own: ReadonlySet<Id>; readonly verb: 'debuted' | 'turned'; readonly className: (key: string) => string }) {
-  const one = names.length === 1 ? names[0]! : null;
+/** `total` is how many the item stands for where `names` is only the first of them (a Roster Report entry lists 20 of however many Turns took effect); the rest are said as a count. */
+function Names({ names, own, verb, className, total = names.length }: { readonly names: readonly TallyName[]; readonly own: ReadonlySet<Id>; readonly verb: 'debuted' | 'turned'; readonly className: (key: string) => string; readonly total?: number }) {
+  const one = names.length === 1 && total <= 1 ? names[0]! : null;
   const profile = (n: TallyName) => <GlassLink className="kb-season-link" to={`/c/${encodeURIComponent(n.character)}`}>{n.name}</GlassLink>;
   const turn = (n: TallyName) => (
     <>
@@ -135,12 +136,25 @@ function Names({ names, own, verb, className }: { readonly names: readonly Tally
   }
   return (
     <>
-      <h3>{names.length} characters {verb}</h3>
+      <h3>{Math.max(total, names.length)} characters {verb}</h3>
       <ul className="kb-season-names">
         {names.map((n) => (
           <li key={n.character}>{profile(n)}{verb === 'turned' && turn(n)}{own.has(n.character) && <> <Yours /></>}</li>
         ))}
       </ul>
+      {total > names.length && <p>and {total - names.length} more</p>}
+    </>
+  );
+}
+
+/** A Roster Report entry that named Turns taking effect: the Turns as a tally lists them, and a link to the entry's first post, where the whole report is. */
+function RosterTurns({ item, own, className, perPage }: { readonly item: SeasonNewsItem; readonly own: ReadonlySet<Id>; readonly className: (key: string) => string; readonly perPage: number }) {
+  const entry = item.act !== null && item.thread !== null && item.seq !== null ? threadHref(item.thread, pageOf(item.seq, perPage), item.seq) : null;
+  const total = Math.max(item.count ?? item.turns.length, item.turns.length);
+  return (
+    <>
+      <Names names={item.turns} own={own} verb="turned" className={className} total={total} />
+      {entry !== null && <p><GlassLink className="kb-season-link" to={entry}>{`Read the Roster Report entry of ${dayAndTime(item.at)}, ${total} ${total === 1 ? 'Turn' : 'Turns'}`}</GlassLink></p>}
     </>
   );
 }
@@ -210,6 +224,7 @@ export function News({ items, mine, season, perPage, more, onMore, busy = false,
               const keys = newsKeys(item);
               const row = (key: string, body: React.ReactNode) => <Row key={key} at={item.at} entering={entering?.(key)}>{body}</Row>;
               if (item.kind === 'results') return [row(keys[0]!, <Results item={item} own={own} className={className} />)];
+              if (item.kind === 'roster') return [row(keys[0]!, <RosterTurns item={item} own={own} className={className} perPage={perPage} />)];
               if (item.kind === 'tally') {
                 /* newsKeys lists the debuts' row, where there are debuts, then the Turns' row, where there are Turns. */
                 const [debuts, turns] = item.debuts.length > 0 ? [keys[0]!, keys[1]] : [undefined, keys[0]];

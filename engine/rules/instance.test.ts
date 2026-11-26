@@ -118,7 +118,7 @@ const system: SystemContent = {
   roster: [boss, bot],
   firstBoss: 'boss-a',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'beat', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [],
   realWorld: ['politics'],
@@ -127,7 +127,10 @@ const system: SystemContent = {
   nameStyle: () => [],
   nameStyleBrief: 'any name',
   offices: { boss: { premise: 'B.', answerRules: 'Br.' }, mod: { premise: 'M.', answerRules: 'Mr.' }, member: { premise: 'E.', answerRules: 'Er.' } },
-  announcementsTitle: 'Announcements',
+  threadTitles: { setRule: 'New rule in {board}' },
+  handoverThreadTitle: '{boss} takes the chair',
+  rosterHeadings: { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' },
+  rosterStockHeading: 'The roster, as of the last settlement.',
 };
 
 const testCard = (over: Record<string, unknown>) => ({ key: 'splat', name: 'Splat', alignment: 'salty' as const, rarity: 'common' as const, playPrice: () => 0, canApply: () => ({ ok: true as const, value: undefined }), validateConfig: (c: unknown) => ({ ok: true as const, value: c }), ...over });
@@ -150,7 +153,7 @@ const good: Instance = {
   ranks: [{ name: 'Rookie', from: 0 }, { name: 'Regular', from: 100 }, { name: 'Legend', from: 1000 }],
   pipStyles: [{ key: 'default', name: 'Default', full: 'pip-full.svg', empty: 'pip-empty.svg' }],
   groups: testGroups,
-  copy: { announcementsThreadTitle: 'Season {season}: Promos' },
+  copy: { rosterThreadTitle: 'Season {season}: Roster Report', meetingsThreadTitle: 'Season {season}: Staff Meetings' },
   system,
   packs: [],
   machine: [],
@@ -433,12 +436,58 @@ test('deepFreeze reaches inside an object already frozen at the top, and survive
   assert.ok(Object.isFrozen(loop));
 });
 
-test('an instance says The System\'s words, each title naming its season', () => {
-  assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: ' ' } }).join('\n'), /no copy for announcementsThreadTitle/);
-  assert.match(instanceProblems({ ...good, copy: { ...good.copy, announcementsThreadTitle: 'Promos' } }).join('\n'), /announcementsThreadTitle does not say which season/);
-  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
+test('an instance says the copy the Roster Report and the Staff Meetings are titled with, each title naming its season and filling no other token', () => {
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: ' ' } }).join('\n'), /no copy for rosterThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: 'Roster Report' } }).join('\n'), /rosterThreadTitle does not say which season/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: 'Staff Meetings' } }).join('\n'), /meetingsThreadTitle does not say which season/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, meetingsThreadTitle: ' ' } }).join('\n'), /no copy for meetingsThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { ...good.copy, rosterThreadTitle: 'Season {season}: {boss} Report' } }).join('\n'), /copy for rosterThreadTitle uses \{boss\}/);
+  // meetingsThreadTitle is optional (Copy.meetingsThreadTitle?, and 0439 skips the minutes without it): its absence is no problem, a blank one is.
+  const { meetingsThreadTitle: _m, ...noMeetings } = good.copy!;
+  assert.deepEqual(instanceProblems({ ...good, copy: noMeetings }), [], 'an instance with no meetings title is whole');
+  assert.match(instanceProblems({ ...good, copy: undefined } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
   // A copy written before 0099 holds only the old keys, and so lacks the one now asked for (unknown keys are not refused).
-  assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for announcementsThreadTitle/);
+  assert.match(instanceProblems({ ...good, copy: { revealTitle: 'Season {season}', revealBody: 'x', turnsThreadTitle: 'S{season}' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
+  // The key it was called before the Roster Report (0440) no longer counts.
+  assert.match(instanceProblems({ ...good, copy: { announcementsThreadTitle: 'Season {season}: Promos', meetingsThreadTitle: 'Season {season}: Staff Meetings' } } as unknown as Instance).join('\n'), /no copy for rosterThreadTitle/);
+  assert.deepEqual(instanceProblems(good), []);
+});
+
+test('each thread title is a move kind the engine has, and fills only the tokens that move carries', () => {
+  const titled = (threadTitles: Record<string, string>) => said(withSystem({ threadTitles }));
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { renameBoard: '{board} is now {name}', createBoard: 'New board: {name}', awardTrophy: '{trophyName} goes to {characterName}', conferGroup: 'Welcome to {groupName}', nameSuccessor: 'On the matter of succession' } })), []);
+  assert.match(titled({ nonsenseKind: 'A thread.' }), /threadTitles names "nonsenseKind", which is not a move kind/);
+  assert.match(titled({ setRule: 'New rule in {board}, {nonsense}' }), /thread title for "setRule" uses \{nonsense\}/);
+  assert.match(titled({ createBoard: 'New board: {board}' }), /thread title for "createBoard" uses \{board\}/, 'a board is not a parameter of making one');
+  assert.match(titled({ setRule: 'Season {season} rule' }), /thread title for "setRule" uses \{season\}/, 'the season is filled in the copy, not in a move\'s title');
+  assert.match(titled({ setRule: '   ' }), /thread title for "setRule" is blank/);
+  assert.match(said(withSystem({ handoverThreadTitle: ' ' })), /handoverThreadTitle is empty/);
+  assert.match(said(withSystem({ handoverThreadTitle: '{boss} takes the chair, {board}' })), /handoverThreadTitle uses \{board\}/);
+  assert.deepEqual(instanceProblems(withSystem({ handoverThreadTitle: 'Season {season}: {boss} takes the chair' })), [], 'the season and the Boss are what a handover is given');
+});
+
+test('a thread title fills only tokens the database fills: strings, a readable board, the Boss and its pronouns, never a raw uuid or an optional field', () => {
+  const titled = (threadTitles: Record<string, string>) => said(withSystem({ threadTitles }));
+  // Numbers are filled (system_line_fill writes a number as its digits), so these are good.
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { repriceSlot: 'Prices cut {percent}%', flashSale: 'Flash sale for {hours} hours' } })), []);
+  // The pronoun forms of the Boss, and {rule} on the rule move, are filled.
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { setRule: '{boss} makes {boss.their} rule: {rule}', moveThread: '{boss.They} moved a thread to {board}' } })), []);
+  assert.match(titled({ setRule: '{boss.nonsense} rule' }), /thread title for "setRule" uses \{boss\.nonsense\}/);
+  assert.match(titled({ createBoard: '{rule} for {name}' }), /thread title for "createBoard" uses \{rule\}/, 'only the rule move is given a rule');
+  // A raw uuid is no words: the message points at the readable form.
+  assert.match(titled({ moveThread: 'Moved {thread}' }), /uses \{thread\}, which is a raw id/);
+  assert.match(titled({ mergeBoard: '{board} into {into}' }), /uses \{into\}, which is a raw id/);
+  assert.match(titled({ awardTrophy: '{trophyName} to {character}' }), /uses \{character\}, which is a raw id.*\{characterName\}/);
+  assert.match(titled({ pullSlot: 'Pulled {slot}' }), /uses \{slot\}, which is a raw id/);
+  // An optional field may be absent, and a token for it would stay as written.
+  assert.match(titled({ setRule: 'Rule for {predicate}: {param}' }), /uses \{param\}, which that move may not carry/);
+  assert.match(titled({ conferGroup: 'Welcome to {groupName} in {board}' }), /uses \{board\}, which that move may not carry/);
+  assert.deepEqual(instanceProblems(withSystem({ threadTitles: { setRule: 'New rule in {board}' } })), [], 'a rule move always has a board name (every board where it has none)');
+});
+
+test('the staff board\'s headings and stock heading are said for each list the Roster Report has', () => {
+  assert.match(said(withSystem({ rosterHeadings: { ...system.rosterHeadings, reveals: ' ' } })), /rosterHeadings has no heading for "reveals"/);
+  assert.match(said(withSystem({ rosterStockHeading: '' })), /rosterStockHeading is empty/);
 });
 
 /* ------------------------------------------------------------------------ The System's content ---- */
@@ -457,7 +506,7 @@ test('a duty assigned to a staff key that does not exist is a problem; a key tha
 test('a duty left unassigned is a problem, one for each', () => {
   const { appeal: _a, ...rest } = system.duties;
   assert.match(said(withSystem({ duties: rest as SystemContent['duties'] })), /duty "appeal" is assigned to no one/);
-  assert.equal(DUTIES.length, 11);
+  assert.equal(DUTIES.length, 12);
 });
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
@@ -584,7 +633,7 @@ test('a persona in each office\'s frame: every posting office has a premise and 
 
 test('the name style must also be said in words for the meeting\'s prompt', () => {
   assert.match(said(withSystem({ nameStyleBrief: ' ' })), /nameStyleBrief/);
-  assert.match(said(withSystem({ announcementsTitle: ' ' })), /announcementsTitle/);
+  assert.doesNotMatch(said(withSystem({ nameStyleBrief: 'x' })), /announcementsTitle/, 'no announcements thread is named by the system (0437)');
 });
 
 test('nameStyle must be a function', () => {

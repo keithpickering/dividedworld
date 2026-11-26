@@ -104,11 +104,11 @@ begin
   insert into pg_temp.last values (m, r);
   return r;
 end $$;
--- The words the persona has posted in the announcements thread, oldest first (one instant in a test, so the order is the words').
+-- The words the persona has posted in the threads handovers opened, oldest first (one instant in a test, so the order is the words').
 create function pg_temp.said_by(staff text) returns text[] language sql as $$
   select coalesce(array_agg(a.payload ->> 'body' order by a.payload ->> 'body'), '{}') from acts a
   where a.kind = 'post' and a.character = (select c.id from characters c where c.staff = said_by.staff)
-    and a.thread = (select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements')
+    and a.thread in (select h.thread from season_handovers h where h.thread is not null)
 $$;
 
 -- Season 1: begun 13 days ago, so it ends in a day, inside the 36 hours the farewell window is.

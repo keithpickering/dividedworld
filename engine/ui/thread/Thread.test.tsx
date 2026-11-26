@@ -3157,3 +3157,72 @@ describe('a reply cut in under its post', () => {
     expect(await axeViolations(post(3).parentElement!)).toEqual([]);
   });
 });
+
+/* A board card played in a thread (0438) is no post: its Act sits in the thread on no number, and the page carries it (`boardCards`) from its first Act to the next page's first, so a line in the log's words is drawn under the newest post before it. */
+describe('a board card played in this thread', () => {
+  const HOUR = 3_600_000;
+  const quake: CardRules = { key: 'bcquake', name: 'Bc Quake', alignment: 'salty', rarity: 'legendary', reaches: ['board'], lasts: { unit: 'day', count: 1 }, playPrice: () => 0, validateConfig: (c) => ok(c ?? {}), canApply: (t, e, _c, now) => landsOn(quake, t, e, now) };
+  const instance: Instance = { ...testInstance, cards: [...testInstance.cards, quake] };
+  /** Six posts an hour apart (3 to a page); cards after post 2 and post 4, and one after the last post. */
+  async function cardWorld() {
+    const fake = buildWorld(undefined, instance);
+    const me = fake.seed.account('me');
+    const other = fake.seed.account('other');
+    const pipe = fake.seed.character(me, 'Pipewrench', 'heel');
+    const spritey = fake.seed.character(other, 'Spritey', 'face');
+    const base = fake.clock.now() - 12 * HOUR;
+    const { thread } = fake.seed.thread('general', spritey, 'A board card thread', 'post 1', { at: base + HOUR });
+    for (let i = 2; i <= 6; i++) fake.seed.post(thread, i % 2 ? spritey : pipe, `post ${i}`, { at: base + (i + 1) * HOUR });
+    const general = (await fake.boards()).find((b) => b.slug === 'general')!;
+    const card = (hours: number) => fake.seed.reach(pipe, 'board', general.id, 'bcquake', { thread, at: base + hours * HOUR, ends: base + (hours + 1) * HOUR });
+    const cards = [card(3.5), card(5.5), card(9.5)];
+    fake.signInAs(me);
+    return { fake, thread, cards, general };
+  }
+  const line = (card: Id) => document.querySelector(`[data-kb-boardcard="${card}"]`) as HTMLElement | null;
+
+  test('the page of the posts a card was played among carries it, and the other pages do not', async () => {
+    const w = await cardWorld();
+    const one = await w.fake.threadPage(w.thread, { page: 1 }, 3, []);
+    const two = await w.fake.threadPage(w.thread, { page: 2 }, 3, []);
+    expect(one!.boardCards.map((c) => c.id)).toEqual([w.cards[0]]);
+    expect(two!.boardCards.map((c) => c.id)).toEqual([w.cards[1], w.cards[2]]);
+  });
+
+  test('a line in the log\'s words stands right under the newest post before it, on the right page', async () => {
+    const w = await cardWorld();
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, settings: { postsPerPage: 3 } });
+    const one = await screen.findByRole('article', { name: /^Post 2 /u });
+    const card = line(w.cards[0]!);
+    expect(card).not.toBeNull();
+    expect(card).toHaveTextContent('Pipewrench played Bc Quake on General.');
+    expect(one.nextElementSibling).toBe(card);
+    expect(line(w.cards[1]!)).toBeNull();
+    cleanup();
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}?page=2`, instance, settings: { postsPerPage: 3 } });
+    const four = await screen.findByRole('article', { name: /^Post 4 /u });
+    expect(four.nextElementSibling).toBe(line(w.cards[1]!));
+    const last = await screen.findByRole('article', { name: /^Post 6 /u });
+    expect(last.nextElementSibling).toBe(line(w.cards[2]!));
+    expect(line(w.cards[0]!)).toBeNull();
+    /* Its reactions and a Spin come with the line. */
+    expect(within(line(w.cards[1]!)!).getByRole('button', { name: 'Spin thread from Bc Quake on General' })).toBeInTheDocument();
+  });
+
+  test('paging to another page in one mount leaves the old page\'s lines behind, and paging back brings them back', async () => {
+    const w = await cardWorld();
+    renderIn(w.fake, <LoadedThread thread={w.thread} />, { path: `/t/${w.thread}`, instance, settings: { postsPerPage: 3 } });
+    await screen.findByRole('article', { name: /^Post 2 /u });
+    expect(line(w.cards[0]!)).not.toBeNull();
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 2' })[0]!);
+    const four = await screen.findByRole('article', { name: /^Post 4 /u });
+    expect(four.nextElementSibling).toBe(line(w.cards[1]!));
+    /* Card 0 was played before every post this page shows: it is on page 1, and drawn under no post here. */
+    expect(line(w.cards[0]!)).toBeNull();
+    expect(document.querySelectorAll('[data-kb-boardcard]')).toHaveLength(2);
+    await userEvent.click(screen.getAllByRole('link', { name: 'Page 1' })[0]!);
+    const two = await screen.findByRole('article', { name: /^Post 2 /u });
+    await waitFor(() => expect(two.nextElementSibling).toBe(line(w.cards[0]!)));
+    expect(line(w.cards[1]!)).toBeNull();
+  });
+});

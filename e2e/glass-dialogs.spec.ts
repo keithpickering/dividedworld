@@ -3,7 +3,7 @@ import { FIXTURE_OVERLAYS, OVERLAYS, STORIES, open, type E2eWindow, type Screen 
 
 /**
  * The glass dialogs' one frame (engine/ui/glass/Frame.tsx; the glass polish plan, "Modals"), read on every real dialog the layout
- * check opens (the Turn, the Reveal, both Debuts, the play form, card info, the React picker, Stick Around's view, the Lens),
+ * check opens (the Turn, the Reveal, the play form, card info, the React picker, Stick Around's view, the Lens),
  * in the browser:
  *  - the frame is the same: the chamfer's size, the border's width and color, the sheet it is drawn on, and Close's look, read from
  *    the computed style of each (a stylesheet that drew its own would show here, and in engine/ui/glass/frame.test.tsx's read of them);

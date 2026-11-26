@@ -131,7 +131,7 @@ declare
   said text;
 begin
   select a.id into arrival from acts a join characters c on c.id = a.character
-  where c.staff = 'cn-b' and a.kind = 'post' and a.thread = (select (value #>> '{}')::uuid from settings where key = 'systemAnnouncements');
+  where c.staff = 'cn-b' and a.kind = 'post' and a.thread = (select h.thread from season_handovers h where h.thread is not null order by h.id desc limit 1);
   select n.quote into said from season_news(null, 50) n where n.kind = 'bossArrived' and n.act = arrival;
   if said is distinct from 'Hello from Cn B.' then raise exception 'the arrival quotes its post while the post shows: %', said; end if;
   insert into admins (account) values (admin_n);

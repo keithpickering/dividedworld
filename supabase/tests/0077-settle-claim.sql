@@ -16,9 +16,14 @@ end $$;
 create function pg_temp.turning(label text, loudness text default 'silent') returns uuid language plpgsql as $$
 declare ann uuid := tests.account(label); a uuid := tests.character(ann, label, 'alpha', now() - interval '60 days');
 begin
-  perform tests.become(ann);
-  perform turn(a, 'beta', loudness, false, loudness = 'announced');
-  perform tests.unbecome();
+  -- An announced one is queued as before turns were announced at once (0435, which commits a Turn announced now): the settlement writes it the old way.
+  if loudness = 'announced' then
+    perform tests.queue_old_turn(a, 'beta', false, true);
+  else
+    perform tests.become(ann);
+    perform turn(a, 'beta', loudness, false, false);
+    perform tests.unbecome();
+  end if;
   update pending_turns set asked_at = now() - interval '2 hours' where character = a;
   return a;
 end $$;
@@ -317,7 +322,7 @@ begin
     perform masks_change(w1);
     if (select p.due_at from pending_turns p where p.character = a) is null then raise exception 'the setup: the Turn was passed over'; end if;
     perform tests.become((select owner from characters where id = a));
-    perform turn(a, 'beta', 'announced', true, false);
+    perform turn(a, 'beta', 'silent', false, false);
     perform tests.unbecome();
     if (select p.due_at from pending_turns p where p.character = a) is not null then raise exception 'a changed Turn is a new ask, with no due_at'; end if;
     perform tests.become((select owner from characters where id = a));
@@ -329,8 +334,8 @@ begin
   end;
 end $$;
 
--- The reveals masks_change writes itself, at this window's end, hold back no Turn in the same settlement: a character that debuts
--- with its class and has a Turn waiting takes the Turn, and its debut names the class it took.
+-- The reveals masks_change writes itself, at this window's end, hold back no Turn in the same settlement: a character whose Turn waits
+-- takes it, and a Turn queued the old way that names its new class (written in the Promos thread at this window's end) holds back no other.
 do $$
 declare
   w1 timestamptz := now() - interval '1 hour';
@@ -338,16 +343,16 @@ declare
   a uuid; b uuid;
 begin
   begin
-    insert into characters (owner, name, created_at, debut_loudness) values (ann, 'Backstop Debut', now() - interval '1 day', 'with_class') returning id into a;
+    insert into characters (owner, name, created_at, debuted_at) values (ann, 'Backstop Debut', now() - interval '1 day', now() - interval '1 day') returning id into a;
     insert into class_history (character, class_key, started_at) values (a, 'alpha', now() - interval '1 day');
     insert into pending_turns (character, class_key, loudness, show_from, show_to, asked_at) values (a, 'beta', 'silent', false, false, now() - interval '2 hours');
     -- And another character whose Turn names its new class, so masks_change writes its reveal at this window's end too.
     b := pg_temp.turning('backstop-loud', 'announced');
     perform masks_change(w1);
-    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'a debut''s own reveal does not hold back its Turn'; end if;
+    if (select class_key from class_now(a, 'infinity')) is distinct from 'beta' then raise exception 'another Turn''s own reveal does not hold back a Turn'; end if;
     if (select class_key from class_now(b, 'infinity')) is distinct from 'beta' then raise exception 'a Turn''s own reveal does not hold back its Turn'; end if;
-    if not exists (select 1 from acts x where x.character = a and x.kind = 'announce' and x.created_at = w1 and x.payload = '{"what": "debut", "class": "beta"}'::jsonb) then
-      raise exception 'the debut names the class the Turn took';
+    if not exists (select 1 from acts x where x.character = b and x.kind = 'announce' and x.created_at = w1 and x.payload ->> 'class' = 'beta') then
+      raise exception 'the announcement names the class the Turn took';
     end if;
     if exists (select 1 from pending_turns p where p.character in (a, b)) then raise exception 'both Turns landed'; end if;
     -- Neither landed late: no record says either was due earlier.
