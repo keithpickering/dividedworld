@@ -26,7 +26,7 @@ const HIDDEN = 'cccccccc-cccc-4ccc-8ccc-cccccccccccc';
 const HIDDEN2 = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeee02';
 
 const LINE_ASK = 'A move\'s line is the post your move lands with, in your voice; the screens say what it does plainly.';
-const settings = { ...systemSettings, reactionCap: 3 };
+const settings = { ...systemSettings, reactionCap: 3, titleMaxLength: 120 };
 
 const ctx = (): RepairContext => ({
   // The engine's own fixture, never an instance's content ("KayfaBB never knows which instance it runs").
