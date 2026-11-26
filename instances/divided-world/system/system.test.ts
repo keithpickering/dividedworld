@@ -333,6 +333,7 @@ test('FanGaME\'s aftermath is restore, then unfinished: restore follows everythi
   const [restore, unfinished] = aftermath as [Beat, Beat];
   assert.deepEqual(restore.unlock, [{ kind: 'beatLanded', beat: 'everything', of: 'predecessor' }, { kind: 'phase', phase: 'honeymoon' }]);
   assert.equal(restore.bundle?.name, 'Restoration');
+  assert.deepEqual(restore.bundle?.parts.map((p) => [p.role, p.kind, Object.keys(p.slots ?? {})]), [['restored', 'createBoard', ['name', 'premise', 'description']]], 'restore opens one board the successor names');
   assert.ok(restore.announce, 'restore announces itself');
   assert.deepEqual(unfinished.unlock, [
     { kind: 'beatLanded', beat: 'split', of: 'predecessor' },
