@@ -9,6 +9,8 @@ import { instanceProblems, withOverrides } from '../../../engine/rules/instance.
 import { defaults as settings } from '../settings.ts';
 import { on, seenOf } from './test-kit.ts';
 import { instance } from '../index.ts';
+import { coveredBody } from '../../../engine/system/cover.ts';
+import { stripsOf } from './autocorrect/tape.ts';
 
 /* ---- Autocorrect (docs/plans/2026-11-03-autocorrect-plan.md, Task 5) ---- */
 const config = (phrase: unknown, replacement: unknown = 'Luigi') => autocorrect.validateConfig({ phrase, replacement });
@@ -230,11 +232,45 @@ test('it draws an effect, and tape washed clean (the state\'s clean is true) sto
 
 test('Autocorrect says what is taped over what, and how much of the tape has been peeled', () => {
   const config = { phrase: 'Mario Kart', replacement: 'Wario Kart' };
-  assert.equal(seenOf('autocorrect', { config }), 'Wario taped over every “Mario Kart” in this post in masking tape with “Wario Kart” scrawled across it in marker, 2 days ago.');
+  assert.equal(seenOf('autocorrect', { config }), 'Wario taped over every “Mario Kart” in this post in masking tape with “Wario Kart” scrawled across it in marker, 2 days ago. The post above reads as the tape shows it; the marker words are Wario\'s.');
+  assert.match(seenOf('autocorrect', { config, by: null }), /2 days ago\. The post above reads as the tape shows it; the marker words are not the post's own\.$/);
+  assert.match(seenOf('autocorrect', { config, by: '  ' }), /the marker words are not the post's own\.$/);
+  assert.doesNotMatch(seenOf('autocorrect', { config, state: { peeled: [0] } }), /reads as the tape shows it/, 'a peeled strip is no longer the board\'s tape');
   assert.match(seenOf('autocorrect', { config, by: null }), /^Someone taped over every “Mario Kart”/);
   assert.match(seenOf('autocorrect', { config: {} }), /^Wario taped over the words it names in this post/, 'a play whose words are missing still reads');
   assert.doesNotMatch(seenOf('autocorrect', { config, state: { peeled: [] } }), /peeled/, 'nothing peeled says nothing');
   assert.match(seenOf('autocorrect', { config, state: { peeled: [0] } }), /2 days ago\. Some of the tape has been peeled off/);
   assert.match(seenOf('autocorrect', { config, state: { peeled: [], stuck: { 1: [[0, 0.5, 2]] } } }), /half peeled/);
   assert.match(seenOf('autocorrect', { config, state: { peeled: [0, 1], clean: true } }), /Every strip has been peeled away\.$/);
+});
+
+/* ---- A staff read lays the board's tape (docs/plans/2026-11-26-autocorrect-reads-design.md, sections 2, 4 and 5) ---- */
+const played = (config: unknown, state: unknown) => ({ play: 'p', card: 'autocorrect', at: '2026-11-24T00:00:00Z', by: 'Wario', config, state, text: null, covered: null });
+const covers = (text: string, state?: unknown, config: unknown = { phrase: 'warp pipe', replacement: 'haunted toilet' }) => autocorrect.covers!({ config, state, text });
+
+test('Autocorrect covers the stretches the board lays strips on, in the same order', () => {
+  const phrase = 'warp pipe', replacement = 'haunted toilet';
+  for (const text of ['The warp pipe is here.', 'warp pipe, then WARP PIPE', 'a Warp Pipe and a warp pipe and a warp pipe', 'wa', 'warp pipes and warpish pipe', 'War\np pipe and warp pipe']) {
+    const strips = stripsOf(text, [{ id: 'a', phrase, replacement }]).strips.map((s) => ({ from: s.from, to: s.to, words: s.replacement }));
+    assert.deepEqual(covers(text), strips, text);
+  }
+  const across = 'the warp [b]pipe[/b] here';
+  assert.equal(coveredBody(across, [played({ phrase, replacement }, null)], (_c, p) => autocorrect.covers!(p)), 'the haunted toilet[b][/b] here', 'across formatting: the words go over the stretch, the tags stay');
+  assert.ok((covers('warp pipe warp pipe')?.length ?? 0) === 2);
+});
+
+test('Autocorrect covers nothing once a peel is saved, or where its configuration has no phrase', () => {
+  const text = 'Is the warp pipe broken?';
+  for (const peeled of [{ peeled: [0] }, { peeled: [], stuck: { 0: [[0, 0.5, 2]] } }, { peeled: [], clean: true }, { peeled: [1, 2], clean: false }]) assert.equal(covers(text, peeled), null, JSON.stringify(peeled));
+  for (const cfg of [{}, null, { phrase: 'warp pipe' }, { replacement: 'x' }, { phrase: 7, replacement: 'x' }, 'phrase']) assert.equal(covers(text, undefined, cfg), null, JSON.stringify(cfg));
+  for (const open of [undefined, null, 'x', [], {}, { peeled: [] }, { peeled: [], stuck: {} }, { peeled: [], clean: false }]) assert.equal(covers(text, open)?.length, 1, JSON.stringify(open));
+});
+
+test('a staff read of the post reads the tape as the board shows it, and as written once the author peels', () => {
+  const body = 'Is the warp pipe broken?';
+  const config = { phrase: 'warp pipe', replacement: 'haunted toilet' };
+  const read = (state: unknown) => coveredBody(body, [played(config, state)], (card, p) => (card === 'autocorrect' ? autocorrect.covers!(p) : null));
+  assert.equal(read(null), 'Is the haunted toilet broken?');
+  assert.equal(read({ peeled: [] }), 'Is the haunted toilet broken?');
+  assert.equal(read({ peeled: [0] }), body);
 });
