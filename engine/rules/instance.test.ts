@@ -512,9 +512,9 @@ test('a duty left unassigned is a problem, one for each', () => {
 
 test('a standing order with no stock line is a problem, and so is one with an empty list', () => {
   const { moveExpired: _x, ...rest } = system.stockLines;
-  assert.match(said(withSystem({ stockLines: rest as SystemContent['stockLines'] })), /stock line "moveExpired"/);
-  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: [] } })), /stock line "moveMet"/);
-  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['  '] } })), /stock line "moveMet"/);
+  assert.match(said(withSystem({ stockLines: rest as SystemContent['stockLines'] })), /^stock line "moveExpired"/m);
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: [] } })), /^stock line "moveMet"/m);
+  assert.match(said(withSystem({ stockLines: { ...system.stockLines, moveMet: ['  '] } })), /^stock line "moveMet"/m);
 });
 
 test('a stock line naming a token its key does not offer is a problem', () => {

@@ -1453,6 +1453,7 @@ function systemProblems(instance: Instance): string[] {
   for (const key of Object.keys(duties)) if (!(DUTIES as readonly string[]).includes(key)) out.push(`the duties name "${key}", which is not a duty`);
   out.push(...checkStockLines(sys.stockLines, null));
   for (const p of roster) {
+    // One plain problem for a persona with no set at all, where checkStockLines would list every key as missing (or fail on a non-object).
     if (p.stockLines === undefined || p.stockLines === null || typeof p.stockLines !== 'object') out.push(`${p.key} has no stock lines; every persona speaks its own line at every standing order`);
     else out.push(...checkStockLines(p.stockLines, p.key));
   }
