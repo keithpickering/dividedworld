@@ -5,6 +5,8 @@
 -- 3. admin_jobs() as a player is refused; as an admin it returns the last run row of each job and the two Vault booleans (true, then false with the secret deleted, or empty).
 -- 4. Each SQL job's cron.job command runs its work before its record and names its own job (the poison: a scratch command with the record first fails the order reading).
 -- 5. record_job_run is the service role's alone; job_runs is no client's.
+-- 6. A job's row begins when it is scheduled (note_job_scheduled, called by each of the ten schedule functions): a fresh seed gives every job a row with a first_seen and no last_ok_at, a
+--    reschedule keeps first_seen, a database with no settings gets none, and the helper is no client's.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -135,4 +137,58 @@ begin
   perform record_job_run('kayfabb-settle');
   perform tests.unbecome();
   if not (select relrowsecurity from pg_class where oid = 'public.job_runs'::regclass) then raise exception 'job_runs has no row-level security'; end if;
+end $$;
+
+-- 6. A job's row begins when it is scheduled.
+do $$
+declare
+  jobs constant text[] := array['kayfabb-settle', 'kayfabb-meet', 'kayfabb-chatter', 'kayfabb-staff', 'kayfabb-write', 'kayfabb-mail', 'kayfabb-conceal', 'kayfabb-system-tick', 'kayfabb-search-rebuild', 'kayfabb-view-counts'];
+  j text; t timestamptz; kept jsonb;
+begin
+  -- The fixtures' instance, kept to be seeded again.
+  select jsonb_object_agg(key, value) into kept from settings;
+  delete from job_runs;
+  delete from cron.job where jobname like 'kayfabb-%';
+
+  -- A database with no settings: the schedule functions that read none add no row.
+  set local session_replication_role = replica;  -- the economy's guard refuses a delete of the settings; this is a database that never had them
+  delete from settings;
+  set local session_replication_role = origin;
+  perform schedule_card_writes(); perform schedule_mail(); perform schedule_conceal(); perform schedule_system_tick(); perform schedule_search_rebuild();
+  if (select count(*) from job_runs) is distinct from 0 then raise exception 'a schedule function made a row in a database with no settings: %', (select string_agg(job, ', ') from job_runs); end if;
+  if (select count(*) from cron.job where jobname like 'kayfabb-%') is distinct from 5 then raise exception 'the five were not scheduled'; end if;
+
+  -- A fresh seed: the settings arrive (their triggers schedule), then the jobs no setting keys.
+  insert into settings (key, value) select e.key, e.value from jsonb_each(kept) e;
+  -- The settings' arrival began the rows of the jobs already scheduled, the four no setting keys among them.
+  foreach j in array array['kayfabb-write', 'kayfabb-mail', 'kayfabb-conceal', 'kayfabb-search-rebuild'] loop
+    if not exists (select 1 from job_runs where job = j and last_ok_at is null) then raise exception '% has no row after the settings arrived', j; end if;
+  end loop;
+  -- The fixtures hold some of the keys the jobs read; the rest arrive as a seed's payload would bring them (written past the validators, which are not under test), each job scheduled as its trigger would.
+  set constraints all immediate;
+  alter table settings disable trigger settings_held;
+  insert into settings (key, value) values ('meetingCron', '"0 6 * * *"'), ('pool', '{"chatterCron": "0 7 * * *"}'), ('modBots', '{"filingCron": "0 8 * * *"}'), ('systemEnabled', 'true')
+    on conflict do nothing;
+  alter table settings enable trigger settings_held;
+  perform schedule_settlement(); perform schedule_meeting(); perform schedule_chatter(); perform schedule_staff(); perform schedule_system_tick(); perform schedule_view_counts();
+  perform schedule_card_writes(); perform schedule_mail(); perform schedule_conceal(); perform schedule_search_rebuild();
+  foreach j in array jobs loop
+    if not exists (select 1 from cron.job where jobname = j) then raise exception '% is not scheduled by the seed', j; end if;
+    if not exists (select 1 from job_runs where job = j and first_seen is not null and last_ok_at is null) then raise exception '% has no row with a first_seen and no last_ok_at after a seed', j; end if;
+  end loop;
+  if (select count(*) from job_runs) is distinct from 10 then raise exception 'job_runs holds % rows after a seed, not 10', (select count(*) from job_runs); end if;
+
+  -- A reschedule keeps first_seen and a recorded run.
+  update job_runs set first_seen = now() - interval '3 days';
+  perform record_job_run('kayfabb-settle');
+  update settings set value = '"7 7 * * *"' where key = 'settlementCron';
+  perform schedule_card_writes(); perform schedule_mail(); perform schedule_conceal(); perform schedule_system_tick(); perform schedule_search_rebuild(); perform schedule_view_counts();
+  if (select count(*) from job_runs where first_seen > now() - interval '2 days') is distinct from 0 then raise exception 'a reschedule moved a first_seen'; end if;
+  if (select last_ok_at from job_runs where job = 'kayfabb-settle') is null then raise exception 'a reschedule cleared last_ok_at'; end if;
+
+  -- The helper is no client's.
+  foreach j in array array['anon', 'authenticated'] loop
+    if pg_temp.refusal(format('set local role %s; select note_job_scheduled(%L)', j, 'kayfabb-settle')) is null then raise exception '% called note_job_scheduled', j; end if;
+    reset role;
+  end loop;
 end $$;

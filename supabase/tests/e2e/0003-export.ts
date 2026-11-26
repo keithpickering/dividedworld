@@ -118,7 +118,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into random_events (id, account, character, outcome, item, line, line_text) values
         ('00000000-0000-4000-8000-0000000000e2', ann, a, 'gear', 'expgear', 'exp-gear-line', 'Found a thing.'), ('00000000-0000-4000-8000-0000000000e3', ann, a, 'card', 'splat', 'exp-line', 'Carried across.');
       insert into random_event_rolls (account, rolled_at) values (ann, '2000-01-02T03:04:05Z');
-      insert into job_runs (job, first_seen, last_ok_at) values ('kayfabb-settle', '2000-01-02T03:04:05Z', '2000-01-03T03:04:05Z');
+      insert into job_runs (job, first_seen, last_ok_at) values ('kayfabb-settle', '2000-01-02T03:04:05Z', '2000-01-03T03:04:05Z')
+        on conflict (job) do update set first_seen = excluded.first_seen, last_ok_at = excluded.last_ok_at;  -- a seed already began the row (0450)
       insert into gear_ledger (account, gear, kind, event) values (ann, 'expgear', 'found', '00000000-0000-4000-8000-0000000000e2');
       insert into card_ledger (account, card, kind, price, event) values (ann, 'splat', 'found', 0, '00000000-0000-4000-8000-0000000000e3');
       insert into gear_ledger (account, gear, kind) values (ann, 'expgear', 'granted');

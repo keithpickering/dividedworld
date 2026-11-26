@@ -33,14 +33,37 @@ end $$;
 revoke execute on function record_job_run(text) from public, anon, authenticated;
 grant execute on function record_job_run(text) to service_role;
 
+-- A job's row begins when it is scheduled: each schedule_* function calls this after its cron.schedule, so a seeded or imported instance carries a first_seen for each job from the
+-- moment it is scheduled (a job that never ran is measured from there). Only where the instance has settings, as the bulk insert below: a database just migrated stays empty, which an import
+-- into it requires. A row that exists keeps its first_seen (an import's, a reschedule's).
+create function note_job_scheduled(job text) returns void
+language sql security definer set search_path = public, pg_temp as $$
+  insert into job_runs (job) select note_job_scheduled.job where exists (select 1 from settings) on conflict do nothing
+$$;
+revoke execute on function note_job_scheduled(text) from public, anon, authenticated;
+
 -- The jobs an instance already runs begin their row now: a job that has never run is measured from here. Only where the instance has settings: a database just
 -- migrated holds no rows in any table of its own (an import into it is refused as not empty, tools/import-instance.mjs; supabase/tests/e2e/0003-export.ts holds the list), and the
--- search rebuild is scheduled by 0117 even then. A seeded instance's rows for the jobs its seed schedules are a gap the plan names (job_runs rows at seed time).
+-- search rebuild is scheduled by 0117 even then. A seeded or imported instance's rows begin as each job is scheduled: every schedule_* function calls note_job_scheduled.
 insert into job_runs (job) select jobname from cron.job where jobname like 'kayfabb-%' and exists (select 1 from settings) on conflict do nothing;
+
+-- The jobs scheduled before any settings exist (the search rebuild, the card writes, mail and conceal: scheduled at migration) begin their rows when the settings arrive, which is a seed: the first
+-- statement that writes settings finds them scheduled and notes each. Every settings insert asks and a job that has a row keeps it, so an import (whose rows arrive first, on a replica role that skips this)
+-- and a later write change nothing.
+create function settings_begin_job_rows() returns trigger
+language plpgsql security definer set search_path = public, pg_temp as $$
+begin
+  insert into job_runs (job) select c.jobname from cron.job c where c.jobname ~ '^kayfabb-[a-z-]+$' on conflict do nothing;
+  return null;
+end $$;
+revoke execute on function settings_begin_job_rows() from public, anon, authenticated;
+create trigger settings_begin_job_rows after insert on settings for each statement execute function settings_begin_job_rows();
 
 -- One row per job in the union of the scheduled kayfabb- jobs and the rows; the grace is the settings row's whole value, read from `settings` directly (setting() raises on a missing row).
 create function job_status() returns table (job text, schedule text, active boolean, first_seen timestamptz, last_ok_at timestamptz, grace jsonb)
-language sql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable security definer set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
+begin
+  return query
   with names as (
     select c.jobname as job from cron.job c where c.jobname like 'kayfabb-%'
     union
@@ -50,14 +73,14 @@ language sql stable security definer set search_path = public, pg_temp as $$
   from names n
   left join cron.job c on c.jobname = n.job
   left join job_runs r on r.job = n.job
-  order by n.job
-$$;
+  order by n.job;
+end $$;
 revoke execute on function job_status() from public;
 grant execute on function job_status() to anon, authenticated;
 
 create function admin_jobs() returns table (job text, schedule text, active boolean, first_seen timestamptz, last_ok_at timestamptz, grace jsonb,
                                             last_status text, last_message text, last_start timestamptz, url_set boolean, key_set boolean)
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable security definer set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
 declare
   url_ok boolean;
   key_ok boolean;
@@ -81,20 +104,182 @@ grant execute on function admin_jobs() to authenticated;
 -- The three SQL jobs: the work, then the record, one transaction.
 create or replace function schedule_system_tick() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
 begin
-  return cron.schedule('kayfabb-system-tick', '* * * * *', 'select public.system_tick(); select public.record_job_run(''kayfabb-system-tick'');');
+  id := cron.schedule('kayfabb-system-tick', '* * * * *', 'select public.system_tick(); select public.record_job_run(''kayfabb-system-tick'');');
+  perform note_job_scheduled('kayfabb-system-tick');
+  return id;
 end $$;
 
 create or replace function schedule_search_rebuild() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
 begin
-  return cron.schedule('kayfabb-search-rebuild', '* * * * *', 'select public.search_rebuild_step(); select public.record_job_run(''kayfabb-search-rebuild'');');
+  id := cron.schedule('kayfabb-search-rebuild', '* * * * *', 'select public.search_rebuild_step(); select public.record_job_run(''kayfabb-search-rebuild'');');
+  perform note_job_scheduled('kayfabb-search-rebuild');
+  return id;
 end $$;
 
 create or replace function schedule_view_counts() returns bigint
 language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
 begin
-  return cron.schedule('kayfabb-view-counts', setting('viewCountCron') #>> '{}', 'select public.count_thread_views(); select public.record_job_run(''kayfabb-view-counts'');');
+  id := cron.schedule('kayfabb-view-counts', setting('viewCountCron') #>> '{}', 'select public.count_thread_views(); select public.record_job_run(''kayfabb-view-counts'');');
+  perform note_job_scheduled('kayfabb-view-counts');
+  return id;
+end $$;
+
+-- The seven function jobs, each as its latest definition (schedule_settlement and schedule_meeting 0071, schedule_chatter 0089, schedule_staff 0106, schedule_card_writes 0149, schedule_mail and
+-- schedule_conceal 0341; none was re-created later), changing only the end: the id is kept, the job's row begun, the id returned. They are not called here: the bulk insert above covers a running instance.
+create or replace function schedule_settlement() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-settle', setting('settlementCron') #>> '{}', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/settle',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := jsonb_build_object('until', date_trunc('minute', now()) - interval '1 minute'),
+      timeout_milliseconds := 60000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-settle');
+  return id;
+end $$;
+create or replace function schedule_meeting() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-meet', setting('meetingCron') #>> '{}', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/meet',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := jsonb_build_object('slot', date_trunc('minute', now())),
+      timeout_milliseconds := 150000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-meet');
+  return id;
+end $$;
+create or replace function schedule_chatter() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-chatter', setting('pool') ->> 'chatterCron', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/chatter',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := jsonb_build_object('slot', date_trunc('minute', now())),
+      timeout_milliseconds := 150000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-chatter');
+  return id;
+end $$;
+create or replace function schedule_staff() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-staff', setting('modBots') ->> 'filingCron', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/staff',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := jsonb_build_object('slot', date_trunc('minute', now())),
+      timeout_milliseconds := 150000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-staff');
+  return id;
+end $$;
+create or replace function schedule_card_writes() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-write', '* * * * *', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/write',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := jsonb_build_object('slot', date_trunc('minute', now())),
+      timeout_milliseconds := 150000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-write');
+  return id;
+end $$;
+create or replace function schedule_mail() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-mail', '* * * * *', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/mail',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 60000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-mail');
+  return id;
+end $$;
+create or replace function schedule_conceal() returns bigint
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  id bigint;
+begin
+  id := cron.schedule('kayfabb-conceal', '* * * * *', $job$
+    select net.http_post(
+      url := s.base || '/functions/v1/conceal',
+      headers := jsonb_build_object('Content-Type', 'application/json', 'apikey', s.secret),
+      body := '{}'::jsonb,
+      timeout_milliseconds := 60000
+    )
+    from (
+      select (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_functions_url') as base,
+             (select decrypted_secret from vault.decrypted_secrets where name = 'kayfabb_jobs_key') as secret
+    ) s
+    where s.base is not null and s.secret is not null
+  $job$);
+  perform note_job_scheduled('kayfabb-conceal');
+  return id;
 end $$;
 
 select schedule_system_tick() where exists (select 1 from settings where key = 'systemEnabled');
