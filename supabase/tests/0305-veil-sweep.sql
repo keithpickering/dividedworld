@@ -170,6 +170,8 @@ select 'function', n, m, w from (values
   ('spin_board', 'no author', 'the board a spin of an Act lands on (its thread''s board, the first open board for The System''s): a fact of the thread, never of a character (supabase/tests/0428-spin-board.sql)'),
   ('spin_places', 'no author', 'the open boards and the caller''s own character''s bars on them (acting() first): boards and bars are public, no post or author is read (supabase/tests/0428-spin-board.sql)'),
   ('admin_contact', 'no author', 'one setting, the same for every caller'),
+  ('job_status', 'no author', 'each scheduled kayfabb- job''s schedule, whether it is active, its first and last good run and the grace (0450): jobs, never a character or a post; the same for every caller'),
+  ('admin_jobs', 'no author', 'an admin''s read of the jobs: job_status''s columns, pg_cron''s last run and whether two Vault secrets exist, never a value (0450); refused to a player'),
   ('accept_conduct', 'no author', 'a write: the caller''s own acceptance of the code of conduct'),
   ('admin_failed_mail', 'no author', 'an admin''s read of the mail that failed: the account it was for and the template, never a post or a character; refused to a player'),
   ('admin_reports', 'swept', 'an admin''s open reports and edits awaiting a look: real moderation speaks plainly and names the author''s ACCOUNT (never the character, its name or the stand-in) beside the words, as admin_queue names its true author by design; it is probed as an admin against a reported veiled post, and refused to a player'),
