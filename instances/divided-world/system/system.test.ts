@@ -7,8 +7,9 @@ import { qualityControl } from './personas/quality-control.ts';
 import { placeholderBosses } from './fixtures/index.ts';
 import { BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, MEMBER_ANSWER_RULES, persona, offices } from './persona.ts';
 import { personaPrompt } from '../../../engine/system/prompt.ts';
-import { habitsProblem, instanceProblems } from '../../../engine/rules/instance.ts';
+import { habitsProblem, instanceProblems, QUIZ_BRIEF_MOST } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
+import { defaults } from '../settings.ts';
 import type { Beat } from '../../../engine/rules/types.ts';
 import { STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
 import { PRONOUN_FORMS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
@@ -406,4 +407,20 @@ test('no persona stock line equals a line of the instance\'s own set', () => {
       for (const line of p.stockLines[key]) assert.ok(!instanceLines.has(line), `${p.key}.${key}: "${line}" is the instance's line`);
     }
   }
+});
+
+test('every roster persona with a quiz weakness has a quiz brief within its bound', () => {
+  const quizzed = system.roster.filter((p) => p.weakness.kind === 'quiz');
+  assert.deepEqual(quizzed.map((p) => p.key), ['fangame', 'ontopic', 'quality-control']);
+  for (const p of quizzed) {
+    if (p.weakness.kind !== 'quiz') continue;
+    const brief = p.weakness.quizBrief;
+    assert.ok(typeof brief === 'string' && brief.trim().length > 0, `${p.key}: has a quizBrief`);
+    assert.ok(brief.length <= QUIZ_BRIEF_MOST, `${p.key}: quizBrief is ${brief.length} characters, at most ${QUIZ_BRIEF_MOST}`);
+  }
+});
+
+test('the settings hold the quiz duty\'s two values', () => {
+  assert.equal(defaults.modBots.quizQuestionsPerDay, 60);
+  assert.equal(defaults.modBots.quizWriteMinutes, 15);
 });

@@ -1747,6 +1747,22 @@ describe('a visit\'s tab', () => {
       expect(within(l).getByRole('status')).toBeEmptyDOMElement();
     });
 
+    test('a pending quiz is one line in the Mod\'s words and no answers to press', async () => {
+      width(false);
+      const w = visited({ challenge: { kind: 'quiz', pending: true } });
+      openVisit(w);
+      const l = await press(w);
+      expect(l).toHaveTextContent('The Clerk is writing a question. Check back in a few minutes.');
+      expect(within(l).queryByRole('group', { name: /Answers to/u })).toBeNull();
+      expect(within(l).queryByRole('button', { name: /^Form/u })).toBeNull();
+      expect(l).not.toHaveTextContent('asks:');
+    });
+
+    test('the fake refuses a try on a pending quiz in the same words the server will', async () => {
+      const w = visited({ challenge: { kind: 'quiz', pending: true } });
+      expect(await w.fake.intercept(w.pipe, w.visit, 'Form 0')).toEqual({ ok: false, error: 'the question is still being written; try again in a few minutes' });
+    });
+
     test('a right answer reached and pressed by keyboard talks it down: the result is said in the status region, and the tab and the mark follow', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });

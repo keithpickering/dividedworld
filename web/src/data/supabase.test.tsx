@@ -3824,6 +3824,14 @@ describe('reports, appeals and what a page says of a ban', () => {
     expect((await run(undefined))?.ruling).toBeUndefined();
   });
 
+  it('maps a written quiz and a pending one, and carries no answer from either', async () => {
+    const doc = (challenge: unknown) => ({ summary: THREAD_ROW, page: 1, acts: [], plays: [], above: [], visits: [{ visit: 'v1', post: A, mod: B, at: '2026-10-01T10:00:00+00:00', ends_at: '2026-10-01T12:00:00+00:00', line: 'x', charges: [], challenge, end: null }] });
+    const run = async (challenge: unknown) => (await harness((r) => (r.url.pathname === `${REST}/rpc/thread_page` ? json(doc(challenge)) : undefined)).api.threadPage(T, { page: 1 }, 20, []))?.visits[0]?.challenge;
+    expect(await run({ kind: 'quiz', question_index: 0, question: 'Which?', choices: ['a', 'b'], answer: 'a' })).toEqual({ kind: 'quiz', question: 'Which?', choices: ['a', 'b'] });
+    expect(await run({ kind: 'quiz', question_index: 0, pending: true })).toEqual({ kind: 'quiz', pending: true });
+    expect(await run({ kind: 'quiz', question_index: 0, pending: true, answer: 'a' })).toEqual({ kind: 'quiz', pending: true });
+  });
+
   it('reads a reversed end with no by_act as dropped, and one with a by_act as reversed', async () => {
     const doc = (end: unknown) => ({ summary: THREAD_ROW, page: 1, acts: [], plays: [], above: [], visits: [{ visit: 'v1', post: A, mod: B, at: '2026-10-01T10:00:00+00:00', ends_at: '2026-10-01T12:00:00+00:00', line: 'x', charges: [], challenge: { kind: 'distraction' }, end }] });
     const run = async (end: unknown) => (await harness((r) => (r.url.pathname === `${REST}/rpc/thread_page` ? json(doc(end)) : undefined)).api.threadPage(T, { page: 1 }, 20, []))?.visits[0]?.end;
