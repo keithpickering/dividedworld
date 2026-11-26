@@ -125,7 +125,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
   join threads t on t.id = v.thread
   left join boards_now b on b.id = t.board
   -- A visit whose persona has no bank question to fall back on is left out: it could never be banked, and at the head of the oldest-first scan it would starve the visits behind it.
-  where o.quiz_at is not null and bank_quiz_for(o.visit_act) is not null
+  where o.quiz_at is not null
+    and exists (select 1 from staff_quiz_questions q where q.staff = c.staff and q.idx = (v.payload #>> '{challenge,question_index}')::integer)
   order by o.quiz_at, o.visit_act
   limit greatest(pending_quizzes.most, 0)
 $$;
@@ -737,7 +738,9 @@ begin
   -- (the pending ones alone), at most `demandChecksPerTick`, and none once the budget is spent. A visit whose persona has no bank question for it (a reseed removed it) is not scanned at all, so it can never hold the head of the scan and starve the rest (pending_quizzes leaves it out for the same reason); it ends with its visit, or is banked once a reseed gives the bank that question back. Best effort per visit: one that fails is warned and left for the next tick; a row
   -- the staff run wrote first is left as it stands (write_visit_quiz answers it and writes nothing).
   for quiz_late in
-    select o.visit_act from visits_open o where o.quiz_at is not null and o.quiz_at <= now() - quiz_grace and bank_quiz_for(o.visit_act) is not null order by o.quiz_at, o.visit_act limit cap
+    select o.visit_act from visits_open o where o.quiz_at is not null and o.quiz_at <= now() - quiz_grace
+      and exists (select 1 from acts v join characters c on c.id = v.character join staff_quiz_questions q on q.staff = c.staff and q.idx = (v.payload #>> '{challenge,question_index}')::integer where v.id = o.visit_act)
+    order by o.quiz_at, o.visit_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     begin

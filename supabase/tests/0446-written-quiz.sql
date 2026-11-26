@@ -454,12 +454,17 @@ declare
   t uuid := tests.thread('Wq starved');
   v_gone uuid;
   v_ok uuid;
+  v_file uuid;
+  v_rev uuid;
+  filed jsonb;
   gone staff_quiz_questions%rowtype;
   tick jsonb;
   was jsonb := (select value from settings where key = 'demandChecksPerTick');
 begin
   v_gone := pg_temp.visit_drawing(0, t, author);
   v_ok := pg_temp.visit_drawing(1, t, author);
+  v_file := pg_temp.visit_drawing(0, t, author);
+  v_rev := pg_temp.visit_drawing(0, t, author);
   select * into gone from staff_quiz_questions where staff = 'wq-m1' and idx = 0;
   delete from staff_quiz_questions where staff = 'wq-m1' and idx = 0;
   if bank_quiz_for(v_gone) is not null then raise exception 'the visit still has a bank question'; end if;
@@ -473,6 +478,19 @@ begin
   if not exists (select 1 from visit_quizzes where visit_act = v_ok) then raise exception 'the older unbankable visit starved the bankable one: %', tick; end if;
   if exists (select 1 from visit_quizzes where visit_act = v_gone) then raise exception 'the unbankable visit was banked'; end if;
   if visit_quiz(v_gone) is distinct from '{"pending": true}'::jsonb then raise exception 'the unbankable visit stopped being pending'; end if;
+  -- Pending always ends ("No player is ever stuck"): a bankless pending visit is filed at its time although quiz_at is set, and its open row and mark go with it...
+  update visits_open set ends_at = now() - interval '1 minute' where visit_act = v_file;
+  if (select quiz_at from visits_open where visit_act = v_file) is null then raise exception 'the visit to file is not pending'; end if;
+  if not exists (select 1 from jsonb_array_elements(filings_due(100)) f where (f ->> 'visit')::uuid = v_file) then raise exception 'the filing scan does not reach a bankless pending visit'; end if;
+  filed := file_visit(v_file);
+  if (filed ->> 'filed')::boolean is not true or not exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = v_file and e.payload ->> 'outcome' = 'filed') then raise exception 'a bankless pending visit was not filed: %', filed; end if;
+  if exists (select 1 from visits_open where visit_act = v_file) then raise exception 'a filed visit still has its open row (and so its pending mark)'; end if;
+  if exists (select 1 from pending_quizzes(100) x where x.visit_act = v_file) then raise exception 'a filed visit is still listed as pending'; end if;
+  -- ...and an admin's reversal ends one before its time the same way.
+  perform end_visit(v_rev, 'reversed', null, 'Reversed.');
+  if not exists (select 1 from acts e where e.kind = 'visit_end' and e.target_act_id = v_rev and e.payload ->> 'outcome' = 'reversed') or exists (select 1 from visits_open where visit_act = v_rev) then
+    raise exception 'a reversal did not end a bankless pending visit';
+  end if;
   -- The reseed gives the question back and the visit is banked on a later tick.
   insert into staff_quiz_questions select gone.*;
   perform system_tick();
@@ -495,6 +513,7 @@ begin
   alter table settings enable trigger settings_held;
   if setting_modbots(old) is null then raise exception 'the planted row already passes the check'; end if;
   n := migrate_modbots_quiz_fields();
+  if current_setting('kayfabb.seeding', true) is distinct from 'on' then raise exception 'the migration left kayfabb.seeding as %, not on, after a call made with it on', current_setting('kayfabb.seeding', true); end if;
   select value into got from settings where key = 'modBots';
   if n is distinct from 1 or got -> 'quizWriteMinutes' is distinct from '15'::jsonb or got -> 'quizQuestionsPerDay' is distinct from '0'::jsonb or setting_modbots(got) is not null then raise exception 'the row was not migrated: % / %', n, got; end if;
   -- One missing: only that one is added, the other keeps its value.
@@ -504,6 +523,14 @@ begin
   perform migrate_modbots_quiz_fields();
   select value into got from settings where key = 'modBots';
   if got -> 'quizQuestionsPerDay' is distinct from '7'::jsonb or got -> 'quizWriteMinutes' is distinct from '15'::jsonb then raise exception 'a field the row held was changed, or the missing one not added: %', got; end if;
+  -- Called with the setting off, on a row that needs the change, it is off again afterwards (the write is a seed's only inside the call).
+  alter table settings disable trigger settings_held;
+  update settings set value = old where key = 'modBots';
+  alter table settings enable trigger settings_held;
+  perform set_config('kayfabb.seeding', 'off', true);
+  if migrate_modbots_quiz_fields() is distinct from 1 then raise exception 'the row to migrate was not migrated with the setting off'; end if;
+  if current_setting('kayfabb.seeding', true) is distinct from 'off' then raise exception 'the migration left kayfabb.seeding as %, not off, after a call made with it off', current_setting('kayfabb.seeding', true); end if;
+  perform set_config('kayfabb.seeding', 'on', true);
   -- A row that has both is left as it was.
   update settings set value = was where key = 'modBots';
   if migrate_modbots_quiz_fields() is distinct from 0 or (select value from settings where key = 'modBots') is distinct from was then raise exception 'a complete row was touched'; end if;
