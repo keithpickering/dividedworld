@@ -19,7 +19,7 @@
 -- it. No class, owner or reactor is read. Ways out. No state is added: a bar still ends at its time, by an accepted apology, by an admin or on appeal, and a barred board in the list says so and until when; a spin
 -- from the barred board now has a way through (another board). Append-only: nothing is updated. Scale: spin_board is three primary-key probes; spin_places reads boards_now once and bars_of once, and the list is
 -- the instance's open boards (a handful, never a function of players or Acts); thread_open's plan memory is untouched (no join), which supabase/tests/e2e/0028-cold-read-budget.ts watches.
--- The tests that drive it red are supabase/tests/0443-spin-board.sql.
+-- The tests that drive it red are supabase/tests/0444-spin-board.sql.
 
 -- ===================================================================================== 1. spin_board ====
 create function public.spin_board(origin uuid) returns uuid

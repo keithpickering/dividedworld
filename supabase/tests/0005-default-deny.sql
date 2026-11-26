@@ -170,7 +170,7 @@ declare
                            'post_kind(text)',
                            -- The place of a thread spun from a report, a verdict, an appeal or a ruling (0422): thread_open is read as its caller and calls it; a definer answering the public names, post and punishment of one public Act.
                            'spin_answer_place(uuid)',
-                           -- The board a spin of an Act lands on, and what the spin form reads (0443): a board is public and so are the caller's own character's bars; spin_places asks acting() first.
+                           -- The board a spin of an Act lands on, and what the spin form reads (0444): a board is public and so are the caller's own character's bars; spin_places asks acting() first.
                            'spin_board(uuid)', 'spin_places(uuid,uuid)',
                            -- What an Alerts page's ruling, gift and drew rows name, merged into the page (0423): alerts_page is read as its caller and calls it; public Acts and public names, from the caller's own page.
                            'alert_line_refs(jsonb)',
