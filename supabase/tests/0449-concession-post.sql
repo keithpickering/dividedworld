@@ -1,4 +1,4 @@
--- A talked-down Mod posts its concession in the thread (supabase/migrations/0447_concession_post.sql; docs/plans/2026-11-24-concession-post-design.md; its plan, Task 1).
+-- A talked-down Mod posts its concession in the thread (supabase/migrations/0449_concession_post.sql; docs/plans/2026-11-24-concession-post-design.md; its plan, Task 1).
 --
 -- 1. A quiz visit with a `model` concession, answered right: the visit ends intercepted; one `post` Act by the Mod in the visit's thread, quoting the visited post, its body the concession with `{who}` the interceptor's name; one visit_concession_posts row.
 -- 2. A bribe visit with no concession row, paid: the post is a stock line of that persona's, `{who}` filled; the row says `stock`. The line is drawn from the visit's id alone (concession_line_index), negative hashes included.

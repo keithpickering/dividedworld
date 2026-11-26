@@ -1,4 +1,4 @@
--- The concession post under concurrency (supabase/migrations/0447_concession_post.sql; docs/plans/2026-11-24-concession-post-plan.md, Task 1 and "Review focus").
+-- The concession post under concurrency (supabase/migrations/0449_concession_post.sql; docs/plans/2026-11-24-concession-post-plan.md, Task 1 and "Review focus").
 -- Races, so they commit through dblink on purpose (the way 0446-written-quiz-race.sql does), and each round's world is committed first. Every name is this file's (cr...).
 --   A. Two right answers to one quiz visit at once: one succeeds, the other finds the visit over; one concession post, one visit end.
 --      (A quiz answered right racing a distraction on one visit cannot happen: a quiz visit is moved only by an answer and a distraction visit only by a card, so the same-visit race a card allows is B.)

@@ -22,11 +22,11 @@
 -- backfill_visit_concessions()   service only, and run once below: a `none` row (why `before`) for every visit that has none, open or ended, so no staff run calls for an old visit and an open one talked down posts its stock. Idempotent.
 -- post_concession(visit, interceptor)   internal: security definer, with no grant to any role; only intercept and distract_visits call it. Posts the concession in a block of its own, so a refusal (a lockout, a benched or waiting
 --                         persona, a No quote, a spring) rolls back only the post, and records the outcome in visit_concession_posts either way.
--- system_tick       (0446), step 7 also writes the `none` concession row (why `window`) in the same step as a quiz's bank row, and a new step 8 writes `none` for each open visit with no concession row past its window
+-- system_tick       (0448_arc_announcements.sql), step 7 also writes the `none` concession row (why `window`) in the same step as a quiz's bank row, and a new step 8 writes `none` for each open visit with no concession row past its window
 --                   (`quizWriteMinutes` for a quiz visit, whether or not its question was written; `concessionWriteMinutes` for any other), whatever the switch says; counted as `concessionsLapsed`. Best effort per visit.
 -- intercept         (0446) and distract_visits (0108): after a successful talk-down's end_visit answers `ended: true`, they call post_concession (distract_visits after it has ended every visit, in the Mods' character order). See distract_visits below for the lock order.
--- seed_instance     (0413), seeding staff_concessions from each persona's `concessions`. setting_modbots (0446), holding `concessionsPerDay` and `concessionWriteMinutes`. staff_call_records (0446), taking the duty `concession`.
--- Latest definitions copied: system_tick (0446), intercept (0446), setting_modbots (0446), distract_visits (0108), seed_instance (0413); quiz_calls_today (0446) is the pattern for concession_calls_today.
+-- seed_instance     (0447_arc_lead_ins_aftermath.sql), seeding staff_concessions from each persona's `concessions`. setting_modbots (0446), holding `concessionsPerDay` and `concessionWriteMinutes`. staff_call_records (0446), taking the duty `concession`.
+-- Latest definitions copied: system_tick (0448_arc_announcements.sql), intercept (0446), setting_modbots (0446), distract_visits (0108), seed_instance (0447_arc_lead_ins_aftermath.sql); quiz_calls_today (0446) is the pattern for concession_calls_today.
 --
 -- Settings: `modBots` now requires both fields (the TypeScript check and every seeded settings object carry them); a stored row without them is given defaults below, an instance already seeded gets its own from its next reseed.
 
@@ -307,7 +307,7 @@ select migrate_modbots_concession_fields();
 
 -- ------------------------------------------------------------------------------------------- the seed ----
 
--- seed_instance (0413_rewind), also seeding `staff_concessions` from each persona's `concessions`. Everything else as 0413 wrote it. Its grants are as they were (replaced in place).
+-- seed_instance (0447_arc_lead_ins_aftermath.sql), also seeding `staff_concessions` from each persona's `concessions`. Everything else as 0447_arc_lead_ins_aftermath.sql wrote it. Its grants are as they were (replaced in place).
 create or replace function public.seed_instance(payload jsonb)
  RETURNS jsonb
  LANGUAGE plpgsql
@@ -650,12 +650,21 @@ begin
   on conflict (key) do update set plain = excluded.plain;
   -- A persona's arc (0332): one row each, rewritten by a reseed. An arc naming a condition the catalog lacks is refused, naming it: the check that no beat waits on a condition nothing reads.
   unknown := (select string_agg(distinct c ->> 'kind', ', ')
-              from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) p, jsonb_array_elements(coalesce(p -> 'arc', '[]')) b, jsonb_array_elements(coalesce(b -> 'unlock', '[]')) c
+              from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) p,
+                   jsonb_array_elements(coalesce(p -> 'arc', '[]') || coalesce(p -> 'aftermath', '[]')) b,
+                   jsonb_array_elements(coalesce(b -> 'unlock', '[]') || case when jsonb_typeof(b #> '{leadIn,unlock}') = 'array' then b #> '{leadIn,unlock}' else '[]'::jsonb end) c
               where not exists (select 1 from condition_kinds k where k.key = c ->> 'kind'));
   if unknown is not null then raise exception 'an arc names a condition the catalog lacks: %', unknown using errcode = '23514'; end if;
   delete from persona_arcs where staff in (select e ->> 'key' from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e);
-  insert into persona_arcs (staff, beats, holds_back, phase_days)
-  select e ->> 'key', coalesce(e -> 'arc', '[]'), coalesce(e -> 'holdsBack', '[]'), coalesce(e -> 'phaseDays', '{}')
+  -- `lead_ins` is {beat key: the lead-in's unlock} of the arc's beats that have one, and `aftermath` the persona's aftermath beats as the arc's are kept (key, mini, unlock, and a lead-in's unlock): never a brief or a mood.
+  insert into persona_arcs (staff, beats, holds_back, phase_days, lead_ins, aftermath)
+  select e ->> 'key', coalesce(e -> 'arc', '[]'), coalesce(e -> 'holdsBack', '[]'), coalesce(e -> 'phaseDays', '{}'),
+         (select coalesce(jsonb_object_agg(b.value ->> 'key', b.value #> '{leadIn,unlock}'), '{}'::jsonb)
+          from jsonb_array_elements(coalesce(e -> 'arc', '[]')) b where jsonb_typeof(b.value #> '{leadIn,unlock}') = 'array'),
+         (select coalesce(jsonb_agg(jsonb_build_object('key', a.value -> 'key', 'mini', coalesce(a.value -> 'mini', 'true'::jsonb), 'repeatable', false, 'unlock', coalesce(a.value -> 'unlock', '[]'::jsonb))
+                                    || case when jsonb_typeof(a.value #> '{leadIn,unlock}') = 'array' then jsonb_build_object('leadIn', jsonb_build_object('unlock', a.value #> '{leadIn,unlock}')) else '{}'::jsonb end
+                                    order by a.ord), '[]'::jsonb)
+          from jsonb_array_elements(coalesce(e -> 'aftermath', '[]')) with ordinality a(value, ord))
   from jsonb_array_elements(coalesce(payload -> 'system' -> 'staff', '[]')) e;
   -- The roster's order (0051): the seed's personas, in the order it lists them, so the rotation has one to follow. A seed with no
   -- persona leaves the setting as it was.
@@ -934,8 +943,8 @@ begin
 end $$;
 revoke execute on function distract_visits(uuid, uuid, uuid) from public, anon, authenticated;
 
--- system_tick (0446_written_quiz.sql), a quiz's bank row written beside its `none` concession row (step 7), and a step 8 that settles each pending visit past its window (`modBots.quizWriteMinutes` for a quiz visit,
--- `modBots.concessionWriteMinutes` otherwise) as `none`, the count in its answer as `concessionsLapsed`. Everything else as 0446 wrote it.
+-- system_tick (0448_arc_announcements.sql), a quiz's bank row written beside its `none` concession row (step 7), and a step 8 that settles each pending visit past its window (`modBots.quizWriteMinutes` for a quiz visit,
+-- `modBots.concessionWriteMinutes` otherwise) as `none`, the count in its answer as `concessionsLapsed`. Everything else as 0448_arc_announcements.sql wrote it.
 create or replace function system_tick() returns jsonb
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
@@ -986,6 +995,9 @@ declare
   owed_paid integer := 0;
   rq_public boolean;
   mt uuid;
+  ann_mt uuid;
+  ann_why text;
+  act_p jsonb;
   quiz_grace interval := make_interval(mins => coalesce((select (s.value ->> 'quizWriteMinutes')::integer from settings s where s.key = 'modBots'), 15));
   quiz_late record;
   quiz_bank jsonb;
@@ -1036,7 +1048,7 @@ begin
         end if;
         for rk in select e.key from jsonb_each(lp) e where jsonb_typeof(e.value) = 'object' and e.value ? 'role' loop
           resolved := case when (lp -> rk) ? 'beat'
-            then beat_role_board(meeting_season((select q.meeting from queued_moves q where q.id = due.id)), due.staff, lp #>> array[rk, 'beat'], lp #>> array[rk, 'role'])
+            then beat_role_board(meeting_season((select q.meeting from queued_moves q where q.id = due.id)), due.staff, lp #>> array[rk, 'beat'], lp #>> array[rk, 'role'], lp #>> array[rk, 'of'])
             else role_board(due.bundle, lp #>> array[rk, 'role']) end;
           if resolved is null then exit; end if;
           lp := jsonb_set(lp, array[rk], to_jsonb(resolved::text));
@@ -1088,16 +1100,41 @@ begin
         -- The move's thread (the staff-board threads design, section 6): a part of a bundle goes in the thread of the bundle's earliest landed part, whenever that landed; anything else, and a bundle's first part,
         -- opens a staff thread of its own, titled for its kind. It is opened here, inside this move's block, so a part that fails to land takes its thread with it and the next one that lands opens it again.
         mt := null;
+        ann_mt := null;
+        ann_why := null;
         if due.bundle is not null then
-          select a.thread into mt from queued_moves p join acts a on a.id = p.landed_act where p.bundle = due.bundle and p.landed_act is not null order by a.created_at, a.seq, a.id limit 1;
+          -- A bundle an announced beat played lands in that beat's announcement thread (arc_announcements, read through the play it announces); one with no announcement (a beat with no `announce` block, or a bundle played
+          -- before announcements) goes where 0437 sent it: the thread of the bundle's earliest landed part.
+          select n.thread into ann_mt from arc_announcements n join arc_beat_events e on e.id = n.play where e.bundle = due.bundle limit 1;
+          mt := ann_mt;
+          if mt is null then
+            select a.thread into mt from queued_moves p join acts a on a.id = p.landed_act where p.bundle = due.bundle and p.landed_act is not null order by a.created_at, a.seq, a.id limit 1;
+          end if;
         end if;
         if mt is null then mt := open_staff_thread(due.staff, move_thread_title(due.kind, lp, due.staff)); end if;
-        written := (write_staff_act(due.staff, 'move', mt, null,
-          jsonb_build_object('kind', due.kind, 'params', lp, 'body', case when nullif(btrim(due.line, E' \t\n\r\f\v'), '') is not null then system_line_fill(btrim(due.line, E' \t\n\r\f\v'), due.kind, lp, due.staff)
+        act_p := jsonb_build_object('kind', due.kind, 'params', lp, 'body', case when nullif(btrim(due.line, E' \t\n\r\f\v'), '') is not null then system_line_fill(btrim(due.line, E' \t\n\r\f\v'), due.kind, lp, due.staff)
             else system_line(case when due.kind = 'setRule' then 'ruleSet' else 'moveLanded' end, due.kind, lp, due.staff) end)
           || case when due.demand is not null then jsonb_build_object('demand', due.demand) else '{}'::jsonb end
-          || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end) ->> 'id')::uuid;
+          || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end;
+        if ann_mt is not null then
+          -- A part the announcement thread will not take (a refusal of write_staff_act) does not wait on it for good: it falls back to where 0437 sent a bundle (the thread of the bundle's earliest landed part outside the
+          -- announcement's, else a thread of its own), and the row says so. A thread moved to another board takes it as before: a move's Act is written in the thread wherever it stands.
+          begin
+            written := (write_staff_act(due.staff, 'move', ann_mt, null, act_p) ->> 'id')::uuid;
+          exception when others then
+            ann_why := left(sqlerrm, 300);
+            raise warning 'system_tick: queued move % could not land in its announcement thread %: % (%)', due.id, ann_mt, sqlerrm, sqlstate;
+            select a.thread into mt from queued_moves p join acts a on a.id = p.landed_act where p.bundle = due.bundle and p.landed_act is not null and a.thread <> ann_mt order by a.created_at, a.seq, a.id limit 1;
+            if mt is null then mt := open_staff_thread(due.staff, move_thread_title(due.kind, lp, due.staff)); end if;
+            written := (write_staff_act(due.staff, 'move', mt, null, act_p) ->> 'id')::uuid;
+          end;
+        else
+          written := (write_staff_act(due.staff, 'move', mt, null, act_p) ->> 'id')::uuid;
+        end if;
         update queued_moves set landed_act = written where id = due.id;
+        if ann_why is not null then
+          update queued_moves set failed_at = now(), failure = left('landed in a thread of its own: the announcement thread would not take it (' || ann_why || ')', 500) where id = due.id;
+        end if;
         -- A ruling on a player's own character (design section 2): the member a Boss put in a group is told, as is the starter of a thread the Boss moved. A mergeBoard and a group left alert no one.
         if due.kind = 'conferGroup' then
           perform write_alert(safe_uuid(lp ->> 'character'), 'ruling', 'grouped', written, null);

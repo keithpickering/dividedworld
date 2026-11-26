@@ -573,7 +573,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into tail_visits (tail, visit_act) select k.id, v.id from tails k, acts v where k.character = b and v.kind = 'visit' and v.target_act_id = p;
       insert into staff_quiz_questions (staff, idx, question, choices, answer) values ('exp-bot', 0, 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz');
       insert into visit_quizzes (visit_act, source, question, choices, answer) select v.id, 'model', 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz' from acts v where v.kind = 'visit' and v.target_act_id = p;
-      -- A visit's written concession and the concession post it made (0447): carried across with the Acts they name.
+      -- A visit's written concession and the concession post it made (0449): carried across with the Acts they name.
       insert into visit_concessions (visit_act, source, body) select v.id, 'model', 'Carried across, {who}.' from acts v where v.kind = 'visit' and v.target_act_id = p;
       insert into visit_concession_posts (visit_act, source, post_act) select v.id, 'model', (write_staff_act('exp-bot', 'post', t, p, jsonb_build_object('body', 'Carried across, Exported B.')) ->> 'id')::uuid
         from acts v where v.kind = 'visit' and v.target_act_id = p;
