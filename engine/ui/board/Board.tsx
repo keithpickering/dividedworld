@@ -205,7 +205,7 @@ function BoardView({ slug, doc }: { readonly slug: string; readonly doc: BoardPa
             <Stickies loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />
             <Pinned loaded={loaded} plays={plays} tallies={tallies} mine={mine} nameOf={nameOf} faceOf={faceOf} perPage={settings.postsPerPage} hot={settings.hotReplies} onSpin={setSpinOrigin} />
             <tbody role="rowgroup">
-              {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id) && !state.stickies.some((k) => k.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
+              {threads.filter((t) => !state.pins.some((p) => p.thread.id === t.id)).map((t) => <ThreadRow key={t.id} t={t} loaded={loaded} perPage={settings.postsPerPage} hot={settings.hotReplies} />)}
             </tbody>
             <Stubs stubs={state.stubs} />
           </table>

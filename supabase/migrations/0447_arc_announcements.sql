@@ -37,6 +37,7 @@
 --                       given only where there is no recap (it is the fallback, and only ever read inside a prompt). `initiatives` are the open season's arc_announcements, oldest first, a departed Boss's included
 --                       (the season's story is one), capped at the latest 12: a persona file may hold 24 beats (ARC_BEATS_MOST), and a Boss that announces every one would put about 24 x 350 characters in
 --                       every staff pool call; 12 keep the section to about 4,000 characters, and a season with more has its older ones scroll off, as they do the board.
+--   admin_staff_pins    (admin only) the open season's live staff pins on every board with each title, oldest first, for the Machine screen.
 --   pool_record         (0415) gains `plot` (arc_plot) for every persona and, for the sitting Boss alone, `push` (the authored push of each initiative that Boss announced in this season, blanks left out, oldest first, the
 --                       latest 12: a departed Boss's push is never the sitting Boss's) and `leadIns` (arc_lead_ins keys; the Edge Function maps them to mood lines). A Mod or a member has neither key.
 --   meeting_context     (0404) gains `plot` and `leadIns` for the current Boss.
@@ -1464,7 +1465,8 @@ declare
   last_season jsonb;
 begin
   if sn is null then return jsonb_build_object('last', null, 'initiatives', '[]'::jsonb); end if;
-  if sitting is not null then
+  -- An instance with no `phases` setting has no honeymoon to count (arc_season_span would refuse it), so it has no last season either.
+  if sitting is not null and exists (select 1 from settings g where g.key = 'phases') then
     select * into pred from arc_predecessor(sitting, sn) p;
     if found then
       select h.at into seated from season_handovers h
@@ -1489,6 +1491,21 @@ grant execute on function arc_plot(text) to service_role;
 -- board_page runs as its caller and reads the stickies of the board it shows: a signed-in read of staff threads, the same for every caller (it is in tools/check-web-reads.mjs's SCREEN_HELPERS, never called by the web).
 revoke execute on function staff_stickies(uuid) from public, anon;
 grant execute on function staff_stickies(uuid) to authenticated, service_role;
+
+-- The Machine screen's list for an admin: every live staff pin of the open season on any board (staff_stickies' predicate), oldest pin first, each with its thread's title.
+create function admin_staff_pins() returns table (thread uuid, title text, pinned_at timestamptz)
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+begin
+  perform only_admins('reads the pinned staff threads');
+  return query
+  select p.thread, t.title, p.at
+  from staff_pin_events p join threads t on t.id = p.thread
+  where p.season = (select x.id from seasons x where x.ends_at is null) and p.event = 'pinned'
+    and not exists (select 1 from staff_pin_events q where q.season = p.season and q.thread = p.thread and q.id > p.id)
+  order by p.at, p.id;
+end $$;
+revoke execute on function admin_staff_pins() from public, anon;
+grant execute on function admin_staff_pins() to authenticated;
 
 -- ---------------------------------------------------------------------------------- the reads ----
 

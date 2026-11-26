@@ -1065,7 +1065,7 @@ describe('staff stickies', () => {
   vi.setConfig({ testTimeout: 20_000 });
   const sticky = () => document.querySelector('[data-kb-stickies]') as HTMLElement | null;
 
-  function openStaff(page = 1) {
+  function openStaff(page = 1, recent = false) {
     return renderInWorld(<LoadedBoard slug="announcements" />, {
       path: `/b/announcements${page === 1 ? '' : `?page=${page}`}`,
       seed: (f) => {
@@ -1075,6 +1075,8 @@ describe('staff stickies', () => {
         for (let i = 0; i < 22; i++) staff.push(f.seed.thread('announcements', null, `Notice ${String(i + 1).padStart(3, '0')}`, 'x', { at: T0 + i * 60_000 }).thread);
         f.seed.stickyPin(staff[1]!, { at: T0 + 1000 });
         f.seed.stickyPin(staff[0]!, { at: T0 + 2000 });
+        /* A recently bumped thread, on page 1 in its own bump place, pinned last. */
+        if (recent) f.seed.stickyPin(staff[21]!, { at: T0 + 3000 });
         return { ...w, staff };
       },
     });
@@ -1092,6 +1094,15 @@ describe('staff stickies', () => {
     const list = document.querySelector('.kb-thread-list tbody:not([data-kb-stickies]):not([data-kb-pinned])') as HTMLElement;
     expect(within(list).getAllByRole('row')).toHaveLength(20);
     expect(within(list).queryByRole('link', { name: 'Notice 001' })).toBeNull();
+  });
+
+  test('a pinned thread that is on page 1 by its bump is drawn once, as a sticky, and not again in the rows', async () => {
+    openStaff(1, true);
+    await waitFor(() => expect(sticky()).not.toBeNull());
+    await screen.findByRole('link', { name: 'Notice 021' });
+    const titles = [...document.querySelectorAll('.kb-thread-title')].map((l) => l.textContent);
+    expect(titles.filter((t) => t?.endsWith('Notice 022'))).toEqual(['Sticky: Notice 022']);
+    expect(titles.slice(0, 3)).toEqual(['Sticky: Notice 002', 'Sticky: Notice 001', 'Sticky: Notice 022']);
   });
 
   test('page 2 and other boards have none: a thread is in its bump place, with no prefix', async () => {

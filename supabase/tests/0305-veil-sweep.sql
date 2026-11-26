@@ -244,6 +244,7 @@ select 'function', n, m, w from (values
   ('describe_board', 'no author', 'an admin''s write'),
   ('dismiss_handover_todo', 'no author', 'an admin''s write'),
   ('unpin_staff_thread', 'no author', 'an admin''s write: a staff thread''s pin'),
+  ('admin_staff_pins', 'no author', 'an admin''s read: the live pins of staff threads, with their titles'),
   ('drive_gifts', 'no author', 'a drive''s donors: characters that gave, public, never a post''s author'),
   ('drive_gifts_page', 'no author', 'a drive''s donors: characters that gave, public, never a post''s author'),
   ('author_veil_live', 'no author', 'whether a veil play is a live author veil (0434): acts_public''s own check, which its reader runs; it answers what the projection shows every reader and names no one'),
