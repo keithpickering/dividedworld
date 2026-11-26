@@ -33,6 +33,8 @@ const boards = deepFreeze([
 const copy = deepFreeze({
   rosterThreadTitle: 'Season {season}: Roster Report',
   meetingsThreadTitle: 'Season {season}: Staff Meetings',
+  banlistThreadTitle: 'Season {season}: Banlist',
+  banlistEntry: 'Banned: {character}, {days} days, {rule}. [url={post}]The post that did it.[/url]',
 });
 
 /** A 2003 member rank from the settled season standing. The names are the owner's placeholders, and the thresholds are the owner's to set. */

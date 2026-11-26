@@ -155,8 +155,13 @@ export const ontopic: Persona = {
       '★★☆☆☆ (2/5) "Unreviewed." The good: {asker}\'s request sat in the queue, unharmed. The less good: I did not get to it. The verdict: lapsed, with apologies from a very busy reviewer.',
       '★☆☆☆☆ (1/5) "Missed." The good: a pleasant request. The less good: I was reviewing the reviews of the request, and ran out of time. The verdict: lapsed, {asker}. Ask again, and I will review it first.',
     ],
-    // DRAFT placeholder, Task 5 writes these (outcome posts plan): this persona's line under a ban's entry in the Banlist.
-    banEntry: ['DRAFT placeholder for ontopic, {banned}.'],
+    // DRAFT for the owner's approval: this persona's line under a ban's entry in the Banlist.
+    banEntry: [
+      '★☆☆☆☆ (1/5) "Banned." The good: {banned} was consistent. The less good: consistently off topic. The verdict: the bar is full, the list is updated, and I will be reviewing the silence.',
+      '★★☆☆☆ (2/5) "A conclusion." The good: it ended with a clear result, which is more than {banned}\'s posts did. The less good: it ended. The verdict: filed by {mod.them}, with ink and no joy.',
+      '★★★☆☆ (3/5) "Necessary." The good: the Banlist now has {banned} on it. The less good: it did not need to. The verdict: a fair finding, and a shame about the topic.',
+      '★☆☆☆☆ (1/5) "Final review." The good: {banned} will have time to find the right board. The less good: it is not this board. The verdict: I do not recommend, and I do not expect a sequel.',
+    ],
   },
   beats: ['pointless-post-palace'],
   petRules: ['requiredWord', 'noDuplicateTitle', 'noNecropost'],

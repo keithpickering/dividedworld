@@ -159,6 +159,11 @@ export const stockLines: StockLines = Object.freeze({
     'Lost in the shuffle. Ask again, nicer.',
     'The meeting ran long, {asker}.',
   ]),
-  // DRAFT placeholder, Task 5 writes these (outcome posts plan): a ban's line in the Banlist.
-  banEntry: Object.freeze(['DRAFT placeholder for the instance, {banned}.']),
+  // A ban's line under its entry in the Banlist; the entry above it states the days and the rule. DRAFT for the owner's approval.
+  banEntry: Object.freeze([
+    'The bar was full. {mod} made it official, and {banned} is on the list.',
+    '{mod} did the paperwork on {banned}. The paperwork is this.',
+    'Another name for the wall. {banned}, by way of {mod}.',
+    '{banned} got a visit from {mod}, then another, and then the bar ran out. It happens.',
+  ]),
 });
