@@ -60,7 +60,7 @@ end $$;
 create function pg_temp.modbots(extra jsonb default '{}', minus text[] default '{}') returns jsonb language sql as $$
   select ((jsonb_build_object('allowanceMost', 3, 'ruleDaysMost', 7, 'visitHours', jsonb_build_object('least', 3, 'most', 5), 'patrolsPerDay', 6, 'patrolSample', 5, 'patrolPool', 20,
     'reportPrice', 25, 'reportsPerDay', 3, 'judgmentsPerDay', 60, 'filingLinesPerDay', 60, 'appealPrice', 50, 'tailHours', 24,
-    'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10, 'quizQuestionsPerDay', 60, 'quizWriteMinutes', 15)) || extra) - minus
+    'cap', jsonb_build_object('punishments', 3, 'days', 7), 'filingCron', '*/5 * * * *', 'filingGraceMinutes', 10, 'quizQuestionsPerDay', 60, 'quizWriteMinutes', 15, 'concessionsPerDay', 60, 'concessionWriteMinutes', 15)) || extra) - minus
 $$;
 
 -- ---- 8. The modBots check names the field it refuses (first: it needs no world) ----
