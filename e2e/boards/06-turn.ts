@@ -81,7 +81,7 @@ const manifest: BoardManifest = {
     { id: 'who-class-label', role: 'text', name: 'Class now', within: 'who' },
     { id: 'who-class', role: 'text', name: 'Heel', within: 'who' },
     { id: 'who-sees', role: 'text', name: 'Who can see it', within: 'who' },
-    { id: 'who-only', role: 'text', name: 'Only you', within: 'who' },
+    { id: 'who-only', role: 'text', name: 'Only you', buildName: 'No other player', within: 'who' }, // #1163: "no other player" (the owner, 2026-11-26)
 
     /* The class cards. */
     { id: 'classes', role: 'group', name: 'Choose a class', buildName: 'Turn to', within: 'dialog', type: false, box: 'position' },

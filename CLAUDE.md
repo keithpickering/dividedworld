@@ -307,3 +307,7 @@ one plan, reviews it and owns its PR. The owner merges, except as Merging below 
   to the owner waits on it. Merging changes no deployed database: applying migrations to an instance stays the owner's
   go-ahead each time. A PR that changes this file, or that turns on a rule the owner was asked about, still waits on the
   owner. This bullet is rewritten when the owner says the game has players.
+- **Ticking the license box.** A session that opens a PR ticks the template's license box, "I license this
+  contribution under the terms of the folders it changes", for the owner. It leaves the box unticked, and says why in the
+  PR, when the PR carries new material made by the owner or anyone else that was not meant to be offered under the
+  folder's regular terms, such as art, sound or writing supplied with other terms in mind.
