@@ -418,8 +418,9 @@
   min-height: var(--kb-meta-tile);
   margin-block: calc((var(--kb-meta-tile) - 1lh) / -2);
 }
-/* A pinned row reads as one above the list: the board's own rule under the last of them. */
-.kb-thread-pinned > tr:last-child > td {
+/* A pinned row, and a staff pin's sticky row, reads as one above the list: the board's own rule under the last of them. */
+.kb-thread-pinned > tr:last-child > td,
+.kb-thread-stickies > tr:last-child > td {
   border-bottom: 3px double var(--kb-rule);
 }
 

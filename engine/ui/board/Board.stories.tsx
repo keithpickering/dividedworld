@@ -104,3 +104,19 @@ export const ClosedNotMerged: Story = {
     path: '/b/short-lived',
   },
 };
+
+/** The staff board with two pinned announcements: each a row with "Sticky:" in bold, oldest pin first, above the rest. */
+export const StaffStickies: Story = {
+  args: { slug: 'announcements' },
+  parameters: {
+    world: ((fake, instance) => {
+      const w = players(fake, instance);
+      const first = fake.seed.thread(w.system, null, 'Improvement Initiative #1: World -1 (please read)', 'Per the board.', { at: T0 });
+      const second = fake.seed.thread(w.system, null, 'Improvement Initiative #FINAL: Everything is World -1', 'Circling back.', { at: T0 + HOUR });
+      fake.seed.thread(w.system, null, 'The Bulletin', 'Tonight.', { at: T0 + 2 * HOUR });
+      fake.seed.stickyPin(first.thread, { at: T0 + 1000 });
+      fake.seed.stickyPin(second.thread, { at: T0 + HOUR + 1000 });
+    }) satisfies World,
+    path: '/b/announcements',
+  },
+};

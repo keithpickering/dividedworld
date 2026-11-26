@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { CONDITIONS, CONDITION_KEYS, ACTIVITY_DAYS, conditionProblem, dueProblem } from './conditions.ts';
+import { CONDITIONS, CONDITION_KEYS, ACTIVITY_DAYS, DAYS_BEFORE_END_MOST, conditionProblem, dueProblem, isBoardTarget } from './conditions.ts';
 
 const UUID = '3f1d2c4e-5a6b-4c7d-8e9f-0a1b2c3d4e5f';
 const ref = { role: 'fangames', beat: 'split' };
@@ -84,4 +84,40 @@ test('a due point: a phase, days into it, days before the end', () => {
   assert.equal(dueProblem({ phase: 'summer' })?.predicate, 'oneOf(honeymoon, reign, meltdown)');
   assert.equal(dueProblem({ daysBeforeEnd: -1 })?.predicate, 'atLeast(0)');
   assert.equal(dueProblem({ phase: 'reign', moon: 1 })?.predicate, 'noParam');
+});
+
+test('phase: daysIntoPhase is whole days into a named phase, never beside daysBeforeEnd', () => {
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7 }), null);
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 0 }), null);
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: DAYS_BEFORE_END_MOST }), null);
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7, daysBeforeEnd: 3 })?.predicate, 'notWith(daysBeforeEnd)');
+  assert.equal(bad({ kind: 'phase', daysIntoPhase: 7 })?.predicate, 'atLeastOneOf(phase, daysBeforeEnd)');
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 99_999 })?.predicate, `atMost(${DAYS_BEFORE_END_MOST})`);
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: DAYS_BEFORE_END_MOST + 1 })?.predicate, `atMost(${DAYS_BEFORE_END_MOST})`);
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: -1 })?.predicate, 'atLeast(0)');
+  assert.equal(bad({ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 1.5 })?.predicate, 'isInteger');
+});
+
+test('beatLanded: of the predecessor, and not', () => {
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', of: 'predecessor' }), null);
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', not: true }), null);
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', of: 'predecessor', not: true }), null);
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', of: 'successor' })?.predicate, 'oneOf(predecessor)');
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', not: false })?.predicate, 'isTrue');
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', not: 'yes' })?.predicate, 'isTrue');
+  assert.equal(bad({ kind: 'beatLanded', beat: 'split', and: 1 })?.predicate, 'noParam');
+});
+
+test('a board ref may name the predecessor\'s board, and nothing else in its place', () => {
+  assert.equal(isBoardTarget({ ...ref, of: 'predecessor' }), true);
+  assert.equal(isBoardTarget({ ...ref, of: 'successor' }), false);
+  assert.equal(isBoardTarget({ role: 'fangames', of: 'predecessor' }), false);
+  assert.equal(bad({ kind: 'boardActivity', board: { ...ref, of: 'predecessor' }, days: 7, above: { ...ref, of: 'predecessor' } }), null);
+});
+
+test('the catalog says the new fields in plain words', () => {
+  const plain = (k: string) => CONDITIONS.find((c) => c.key === k)!.plain;
+  assert.match(plain('phase'), /days into/);
+  assert.match(plain('beatLanded'), /predecessor/);
+  assert.match(plain('beatLanded'), /not/);
 });

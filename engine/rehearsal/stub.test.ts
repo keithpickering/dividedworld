@@ -52,7 +52,7 @@ test('the meeting\'s schema gives an answer its repair accepts or rejects by nam
   settled(repair(answer, MEETING_RULE));
   const settings = { ...systemSettings, reactionCap: 3 };
   const ctx: RepairContext = {
-    settings, system: testSystem, boss: testSystem.firstBoss, phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, settings),
+    settings: { ...settings, titleMaxLength: 120 }, system: testSystem, boss: testSystem.firstBoss, phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, settings),
     bank: 5, now: NOW, boards: new Set([GAMES]), threads: new Set(), isPublic: () => false, successorAllowed: false, successors: new Set(), mods: new Set(), rules: [],
     groups: { conferred: new Map(), capped: new Set(), held: new Set() },
   };
@@ -62,7 +62,7 @@ test('the meeting\'s schema gives an answer its repair accepts or rejects by nam
 test('each part of the meeting, answered by the stub from its own schema, passes its part rule and repairAnswer', () => {
   const settings = { ...systemSettings, reactionCap: 3 };
   const ctx: RepairContext = {
-    settings, system: testSystem, boss: testSystem.firstBoss, phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, settings),
+    settings: { ...settings, titleMaxLength: 120 }, system: testSystem, boss: testSystem.firstBoss, phase: phaseAt({ startsAt: NOW - 30 * 24 * H, endsAt: NOW + 60 * 24 * H }, NOW, settings),
     bank: 5, now: NOW, boards: new Set([GAMES]), threads: new Set(), isPublic: () => false, successorAllowed: false, successors: new Set(), mods: new Set(), rules: [],
     groups: { conferred: new Map(), capped: new Set(), held: new Set() },
   };

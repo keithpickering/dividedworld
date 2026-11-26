@@ -24,7 +24,7 @@ const looks = (): Record<string, unknown> => ({
   face: { description: () => 'The crowd favorite. Earns from cheers.', hurtsBy: () => 'Hurt by boos.' },
   heel: { description: () => 'Earns heat.', hurtsBy: () => 'Hurt by the polite shrug.' },
 });
-const copy = { siteName: 'S', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', shopName: 'Shop', reducedMotionCard: 'x' };
+const copy = { siteName: 'S', siteTagline: 't', roleWord: 'The Boss', staffWord: 'The staff', gameWord: 'the game', staffBoardTag: 'Staff post here; you react and spin', stickyPrefix: 'Sticky:', adminStaffPins: 'Pinned staff threads', adminUnpin: 'Unpin', adminUnpinRefused: 'That thread has no live pin.', shopName: 'Shop', reducedMotionCard: 'x' };
 const goodConduct = (): InstanceUi['conduct'] => ({ version: 1, sections: [{ key: 'person', title: 'T.', text: 'Words.' }, { key: 'hate', title: 'U.', text: 'More words.' }] });
 const goodLicensing = (): InstanceUi['licensing'] => ({ source: 'https://example.com/source', terms: 'Terms.', credits: [] });
 const ui = (onboarding: unknown, frontDoor: unknown = goodDoor(), marquees?: unknown, badges?: unknown) => ({
@@ -286,7 +286,7 @@ describe('instanceUiProblems', () => {
     assert.deepEqual(instanceUiProblems(ui(good, goodDoor(), ['X'.repeat(21)]), rules), [`the marquee "${'X'.repeat(21)}" is 21 characters, over the 20 the sign holds`]);
   });
   test('refuses a copy that names no one who speaks for the board', () => {
-    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
+    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag', 'stickyPrefix', 'adminStaffPins', 'adminUnpin', 'adminUnpinRefused']) {
       const poisoned = ui(good);
       (poisoned.copy as Record<string, unknown>)[key] = ' ';
       assert.deepEqual(instanceUiProblems(poisoned, rules), [`the copy has no ${key}`]);
@@ -301,7 +301,7 @@ describe('instanceUiProblems', () => {
     }
   });
   test('refuses a copy key that is missing, and one that is not a string', () => {
-    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag']) {
+    for (const key of ['roleWord', 'staffWord', 'gameWord', 'staffBoardTag', 'stickyPrefix', 'adminStaffPins', 'adminUnpin', 'adminUnpinRefused']) {
       const missing = ui(good);
       delete (missing.copy as Record<string, unknown>)[key];
       assert.deepEqual(instanceUiProblems(missing, rules), [`the copy has no ${key}`]);

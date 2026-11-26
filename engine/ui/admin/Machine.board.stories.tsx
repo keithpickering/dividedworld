@@ -53,3 +53,14 @@ export const AdminMachinePhone: Story = {
 
 /** Retired slots: "Out of print" on a pack and a card, "Renamed to ..." and "Withdrawn" on cards, each with its availability control disabled. */
 export const AdminMachineRetired: Story = { name: 'Admin machine, retired slots', parameters: { world: retired } };
+
+/** Two live staff pins under the slots, each with its title, when it was pinned and an Unpin button. */
+const pinned: World = (fake, instance) => {
+  machine(fake, instance);
+  const system = instance.boards.find((b) => b.system)!.slug;
+  const first = fake.seed.thread(system, null, 'Improvement Initiative #1: World -1 (please read)', 'Per the board.', { at: Date.UTC(2026, 10, 20, 12) });
+  const second = fake.seed.thread(system, null, 'Improvement Initiative #FINAL: Everything is World -1', 'Circling back.', { at: Date.UTC(2026, 10, 24, 12) });
+  fake.seed.stickyPin(first.thread, { at: Date.UTC(2026, 10, 20, 13) });
+  fake.seed.stickyPin(second.thread, { at: Date.UTC(2026, 10, 24, 13) });
+};
+export const AdminMachinePinned: Story = { name: 'Admin machine, pinned staff threads', parameters: { world: pinned } };

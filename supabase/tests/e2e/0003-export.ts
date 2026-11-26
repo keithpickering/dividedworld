@@ -23,7 +23,7 @@ const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly s
 const root = path.resolve(import.meta.dirname, '../../..');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'lines_owed', 'lines_owed_open', 'lines_paid', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'lines_owed', 'lines_owed_open', 'lines_paid', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_facts', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'arc_announcements', 'staff_pin_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -441,6 +441,16 @@ test('an instance exported and imported into a fresh database is the same instan
         update season_handovers set thread = staff_thread where cause = 'departure';
         update seasons set meetings_thread = meetings where ends_at is null;
         assert (select count(*) from threads where staff_placed and id in (staff_thread, meetings)) = 2, 'the fixture holds its two staff threads';
+      end;
+      -- An announcement (0448): the Split played, its thread opened by the Boss with the post at seq 1, pinned and then unpinned by an admin, and the row naming the play, so the two insert-only tables round-trip with their links to a thread, an Act and a play.
+      declare ann_thread uuid; ann_act uuid; ann_play bigint;
+      begin
+        insert into arc_beat_events (season, staff, beat, event) select id, 'exp-boss', 'split', 'played' from seasons where ends_at is null returning id into ann_play;
+        ann_thread := open_staff_thread('exp-boss', 'Improvement Initiative, carried across');
+        ann_act := (write_staff_act('exp-boss', 'post', ann_thread, null, '{"body": "An announcement carried across."}') ->> 'id')::uuid;
+        insert into staff_pin_events (thread, season, event) select ann_thread, id, 'pinned' from seasons where ends_at is null;
+        insert into staff_pin_events (thread, season, event, by) select ann_thread, id, 'unpinned', ann from seasons where ends_at is null;
+        insert into arc_announcements (season, staff, beat, thread, act, title, pitch, push, play) select id, 'exp-boss', 'split', ann_thread, ann_act, 'Improvement Initiative, carried across', 'A pitch.', 'A push.', ann_play from seasons where ends_at is null;
       end;
       -- The Roster Report (0440): a settled window's entry holding the Boss's post, and a character it listed as new, so the two insert-only tables round-trip with their links to a settlement and an Act.
       declare roster_window timestamptz := now() - interval '40 days'; roster_post uuid;

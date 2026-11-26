@@ -3047,6 +3047,30 @@ describe('a screen in one call', () => {
     expect(await once('board_page', null).api.boardPage('nowhere', 1, [])).toBeNull();
   });
 
+  it('board_page: maps the stickies as thread rows, and their ids are among the views; a document without them has none', async () => {
+    const rest = { board: BOARD_ROW, total: 1, page: 1, threads: [THREAD_ROW], pins: [], banner: [], states: [], releases: [], tallies: [], mine: [], reading: [], characters: [], presence: PRESENCE, unread: 0 };
+    const sticky = { ...THREAD_ROW, id: C, title: 'Improvement Initiative #1' };
+    const page = await once('board_page', { ...rest, stickies: [sticky], views: [{ thread: C, views: 4 }, { thread: T, views: 9 }] }).api.boardPage('announcements', 1, []);
+    expect(page?.stickies).toHaveLength(1);
+    expect(page?.stickies[0]).toMatchObject({ id: C, title: 'Improvement Initiative #1', lastSeq: 2 });
+    expect(page?.views).toEqual({ [C]: 4, [T]: 9 });
+    expect((await once('board_page', { ...rest, views: [] }).api.boardPage('general', 1, []))?.stickies).toEqual([]);
+  });
+
+  it('admin_staff_pins: maps the live pins; a malformed row is dropped, a missing title or date reads empty, a non-array is none', async () => {
+    const got = await once('admin_staff_pins', [{ thread: T, title: 'Initiative', pinned_at: '2026-11-20T13:00:00+00:00' }, { thread: C }, { title: 'No thread', pinned_at: 'x' }, null]).api.adminStaffPins();
+    expect(got).toEqual([{ thread: T, title: 'Initiative', pinnedAt: '2026-11-20T13:00:00+00:00' }, { thread: C, title: '', pinnedAt: '' }]);
+    expect(await once('admin_staff_pins', { nope: 1 }).api.adminStaffPins()).toEqual([]);
+  });
+
+  it('unpin_staff_thread: sends the thread and returns it; the server\'s refusal comes back in its own words', async () => {
+    const h = once('unpin_staff_thread', { thread: T });
+    expect(await h.api.unpinStaffThread(T)).toEqual({ ok: true, value: { thread: T } });
+    expect(only(h, 'unpin_staff_thread')).toEqual({ in_thread: T });
+    const refused = harness((r) => (r.url.pathname.endsWith('/rpc/unpin_staff_thread') ? json({ code: 'P0002', message: 'That thread has no live pin.', hint: 'kayfabb.refusal' }, 404) : json({}, 404)));
+    expect(await refused.api.unpinStaffThread(T)).toEqual({ ok: false, error: 'That thread has no live pin.' });
+  });
+
   it('board_page: maps the stubs of moved threads, and a closed board\'s merge or fallback; an open board is not closed', async () => {
     const rest = { board: BOARD_ROW, total: 0, page: 1, threads: [], pins: [], banner: [], states: [], releases: [], tallies: [], mine: [], reading: [], views: [], characters: [], presence: PRESENCE, unread: 0 };
     const open = await once('board_page', { ...rest, closed: false, mergedInto: null, fallback: null, stubs: [{ id: T, title: 'Best bread', moved_to: C, moved_to_slug: 'off-topic', moved_to_name: 'Off Topic', moved_at: '2026-10-01T10:00:00+00:00' }] }).api.boardPage('general', 1, []);
