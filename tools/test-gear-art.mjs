@@ -42,6 +42,8 @@ const SVG = (inner = '', box = '0 0 64 32') => `<svg ${NS} viewBox="${box}">${in
 const b64 = (s) => Buffer.from(s, 'base64');
 const WEBP_ALPHA = b64('UklGRogAAABXRUJQVlA4WAoAAAAQAAAAPwAAHwAAQUxQSBUAAAABD/DA/4iIIBZM5i8dQm9E/6MKvgEAVlA4IEwAAADQAwCdASpAACAAPm0ylUckIyIhLBqoAIANiWMAxyKAAECMVfCI+gAA/u1N3/G7LOHB7/9cB/84D/5wH8t6iXsouG8tfGYj4sfQAAAA');
 const WEBP_OPAQUE = b64('UklGRjQAAABXRUJQVlA4ICgAAAAQAwCdASpAACAAPm02mEikIyKhJAgAgA2JaQAAJmh9iPAA/tA4AAAA');
+const WEBP_LOSSLESS_ALPHA = b64('UklGRigAAABXRUJQVlA4TBwAAAAvP8AHEA8wMoM8MifbjEOIBZP5S4fQG9H/gKpv');
+const WEBP_LOSSLESS_OPAQUE = b64('UklGRiQAAABXRUJQVlA4TBcAAAAvP8AHAAdQmSJXpv8BICH8P69G9D/1AQA=');
 const WEBP_WIDE = b64('UklGRsQAAABXRUJQVlA4WAoAAAAQAAAAzwcACQAAQUxQSBgAAAABD/DA/4iIIKYh9C8tgdci+j8BttN+MgBWUDgghgAAANAKAJ0BKtAHCgA+bTaaSaQjIqEgiACADYlpbuF0m9BPgGgA+QAACg0flgjYgqOe2IvEFRz2xF4gqOe2IvEFRz2xDye2xF4gqOe2IvEFRz2xF4gqOe2IvEFRz2xF4gEAAP7+QMavw5lUg/9cB8EXlHfZnngAA9Pxu/2l3LBsn69E4WgAAAAA');
 /** A copy of a buffer with `edit(copy)` applied. */
 const altered = (buf, edit) => {
@@ -54,6 +56,8 @@ const view = (width = 64, height = 32, pivot = { x: 32, y: 16 }) => ({ width, he
 /** A views.json text for the views named, each at 64 by 32 with its pivot in the middle. */
 const manifest = (names, def = names[0]) => JSON.stringify({ default: def, views: Object.fromEntries(names.map((n) => [n, view()])) });
 
+/** In a files map: a folder of that name, not a file. */
+const DIR = Buffer.from('dir');
 let n = 0;
 /**
  * A repository-shaped folder with one clean gear folder (one SVG view, `front`), then `poison(files, flat)` applied:
@@ -71,7 +75,10 @@ function repo(poison = () => {}) {
   const gear = path.join(dir, 'instances/demo/ui/gear');
   const item = path.join(gear, 'demo-cap');
   fs.mkdirSync(item, { recursive: true });
-  for (const [f, body] of Object.entries(files)) if (body !== null) fs.writeFileSync(path.join(item, f), body);
+  for (const [f, body] of Object.entries(files)) {
+    if (body === DIR) fs.mkdirSync(path.join(item, f));
+    else if (body !== null) fs.writeFileSync(path.join(item, f), body);
+  }
   for (const [f, body] of Object.entries(flat)) fs.writeFileSync(path.join(gear, f), body);
   return dir;
 }
@@ -139,6 +146,14 @@ try {
   red('a picture named for no view', (f) => { f['hero.webp'] = WEBP_ALPHA; }, /hero\.webp.*names no view/);
   red('an svg for a view that is not listed', (f) => { f['side-right.svg'] = SVG(); }, /side-right\.svg.*not listed/);
 
+  red('a folder named front.svg is not a picture', (f) => { f['front.svg'] = DIR; }, /front\.svg.*folder, not a picture/);
+  red('a folder named hero.webp is not a picture either', (f) => { f['hero.webp'] = DIR; }, /hero\.webp.*folder, not a picture/);
+  {
+    const dir = repo((f) => { f['views.json'] = JSON.stringify({ default: 'front', views: { front: view(), back: { width: 'x' } } }); f['back.svg'] = SVG(); });
+    const faults = gearArtFaults(dir);
+    check('a view key outside the five reports only that, with no picture or geometry fault for it', faults.length === 1 && /back.*not one of the five/.test(faults[0]), JSON.stringify(faults));
+  }
+
   /* ---- (3) geometry ---- */
   red('a pivot at width + 1', edit((m) => { m.views.front.pivot.x = 65; }), /front.*pivot\.x/);
   red('a pivot at height + 1', edit((m) => { m.views.front.pivot.y = 33; }), /front.*pivot\.y/);
@@ -153,7 +168,10 @@ try {
   red('a 2000 by 10 WebP (over 1024)', (f) => { webps(['front'], 'front', WEBP_WIDE)(f); f['views.json'] = JSON.stringify({ default: 'front', views: { front: view(2000, 10, { x: 1000, y: 5 }) } }); }, /front\.webp.*1024/);
   red('a WebP with no alpha', webps(['front'], 'front', WEBP_OPAQUE), /front\.webp.*alpha/);
   red('the alpha WebP with its animation flag set', webps(['front'], 'front', altered(WEBP_ALPHA, (c) => { c[20] |= 2; })), /front\.webp.*animated/);
-  red('a WebP padded past 200 KB', webps(['front'], 'front', Buffer.concat([WEBP_ALPHA, Buffer.alloc(201 * 1024)])), /front\.webp.*200 KB/);
+  red('a WebP padded past 200 KB', webps(['front'], 'front', altered(Buffer.concat([WEBP_ALPHA, Buffer.alloc(201 * 1024)]), (c) => { c.writeUInt32LE(c.length - 8, 4); })), /front\.webp.*200 KB/);
+  green('a lossless (VP8L) WebP with its alpha hint bit set', webps(['front'], 'front', WEBP_LOSSLESS_ALPHA));
+  red('a lossless (VP8L) WebP with its alpha hint bit clear', webps(['front'], 'front', WEBP_LOSSLESS_OPAQUE), /front\.webp.*alpha/);
+  red('a real WebP cut short', webps(['front'], 'front', WEBP_ALPHA.subarray(0, WEBP_ALPHA.length - 20)), /front\.webp.*is cut short: its header says 144 bytes, the file has 124/);
   red('a PNG named front.webp', webps(['front'], 'front', Buffer.concat([Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]), Buffer.alloc(40)])), /front\.webp.*is not a WebP image$/m);
 
   /* ---- (5) an SVG ---- */

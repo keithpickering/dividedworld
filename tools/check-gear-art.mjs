@@ -99,10 +99,13 @@ function itemFaults(dir) {
   if (!isObject(data.views) || Object.keys(data.views).length === 0) return [...out, `${p}: views must be an object with at least one view`];
   const listed = Object.keys(data.views);
   for (const v of listed) if (!VIEWS.includes(v)) out.push(`${p}: view "${v}" is not one of the five (${VIEWS.join(', ')})`);
+  const known = listed.filter((v) => VIEWS.includes(v));
   if (typeof data.default !== 'string' || !listed.includes(data.default)) out.push(`${p}: default "${data.default}" is not one of its views (${listed.join(', ')})`);
 
-  const names = fs.readdirSync(dir);
-  for (const view of listed) {
+  const entries = fs.readdirSync(dir, { withFileTypes: true });
+  const names = entries.filter((e) => e.isFile()).map((e) => e.name);
+  for (const e of entries) if (!e.isFile() && /\.(?:webp|svg)$/u.test(e.name)) out.push(`${path.join(dir, e.name)}: is a folder, not a picture`);
+  for (const view of known) {
     out.push(...geometryFaults(p, view, data.views[view]));
     const has = ['webp', 'svg'].filter((ext) => names.includes(`${view}.${ext}`));
     if (has.length === 0) out.push(`${dir}: lists ${view} but has no ${view}.webp or ${view}.svg`);

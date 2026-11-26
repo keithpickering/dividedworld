@@ -87,12 +87,14 @@ export function safetyFaults(name, text) {
  * A WebP read by its header alone, decoding nothing: `{ width, height, alpha, animated }`, or `{ fault }` with the
  * words after the file's name ("is not a WebP image", "is not a WebP image this guard can read"). `alpha` is the flag
  * byte's bit 4 (value 16) of a `VP8X` file, the alpha hint bit of a `VP8L` file (bit 28 of the value at 21), and false
- * for a `VP8 ` file, which has none. `animated` is a `VP8X` file's animation flag.
+ * for a `VP8 ` file, which has none. A file shorter than its RIFF size says is a fault (cut short). `animated` is a `VP8X` file's animation flag.
  * @param {Buffer} bytes
  * @returns {{ width: number, height: number, alpha: boolean, animated: boolean } | { fault: string }}
  */
 export function webpInfo(bytes) {
   if (bytes.length < 30 || bytes.toString('latin1', 0, 4) !== 'RIFF' || bytes.toString('latin1', 8, 12) !== 'WEBP') return { fault: 'is not a WebP image' };
+  const declared = bytes.readUInt32LE(4) + 8;
+  if (bytes.length < declared) return { fault: `is cut short: its header says ${declared} bytes, the file has ${bytes.length}` };
   const unreadable = { fault: 'is not a WebP image this guard can read' };
   const tag = bytes.toString('latin1', 12, 16);
   if (tag === 'VP8 ') {
