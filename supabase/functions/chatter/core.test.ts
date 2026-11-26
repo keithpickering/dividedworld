@@ -516,6 +516,20 @@ test('the plot so far reaches every staff persona\'s prompt; the push and the mo
   for (const who of [CLERK, SIGH]) assert.ok(!asked(who).includes('You announced World -1.') && !asked(who).includes('MOOD-SPLIT') && !asked(who).includes('What you are pushing'), `${who} reads neither`);
 });
 
+test('an aftermath lead-in key after:<predecessor>:<key> maps to that predecessor\'s aftermath beat\'s mood through the roster', async () => {
+  const mood = (k: string) => ({ unlock: [{ kind: 'phase' as const, phase: 'honeymoon' as const }], brief: 'lb', mood: k });
+  const inst: Instance = {
+    ...dividedWorld,
+    system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, aftermath: [{ key: 'tidy', unlock: [{ kind: 'phase' as const, phase: 'reign' as const }], brief: 'b', leadIn: mood('AFTER-MOOD uneasy') }] } : p)) },
+  };
+  const rec = { [HYPE]: { moves: [], rules: [], order: null, plot: PLOT, leadIns: [`after:${SIGH}:tidy`, `after:${CLERK}:tidy`] } };
+  const d = fakeDb({ named: [HYPE], pool: { threadsWeekly: 0 }, recordBy: rec });
+  const m = fakeModels((r) => ({ words: 'x' }));
+  await run(d, m, inst);
+  const system = m.chats.find((c) => c.staff === HYPE)!.system;
+  assert.ok(system.includes('AFTER-MOOD uneasy'), 'found in the predecessor\'s file');
+});
+
 test('a former Boss in a member\'s office reads last season in the second person', async () => {
   const former = { ...plotRecords, [CLERK]: { ...plotRecords[CLERK], plot: { ...PLOT, last: { ...PLOT.last, boss: CLERK } } } };
   const d = fakeDb({ named: [CLERK], pool: { threadsWeekly: 0 }, recordBy: former });

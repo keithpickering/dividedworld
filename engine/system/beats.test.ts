@@ -146,3 +146,10 @@ test('the plot bounds each initiative\'s title and pitch and shows the latest fe
   const long = plotText({ last: null, initiatives: [{ beat: 'b', title: 'T'.repeat(300), pitch: 'P'.repeat(PITCH_MOST + 100), thread: 't', boss: 'sitting' }] }, { key: 'x', boss: false }, 40).join('\n');
   assert.ok(!long.includes('T'.repeat(41)) && !long.includes('P'.repeat(PITCH_MOST + 1)), long);
 });
+
+test('a plot with no initiatives list reads as none, and one with neither last nor initiatives is nothing', () => {
+  const bare = { last: null } as unknown as PlotRead;
+  assert.deepEqual(plotText(bare, { key: 'x', boss: false }, 40), []);
+  const last = { last: { boss: 'o', name: 'Old', recap: 'Hi.', facts: null } } as unknown as PlotRead;
+  assert.ok(plotText(last, { key: 'x', boss: false }, 40)[0]!.includes('Last season Old was the Boss.'));
+});

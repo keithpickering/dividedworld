@@ -639,6 +639,7 @@ async function recordReads(db: Db, persona: Persona, roster: readonly Persona[],
  * predecessor's aftermath beats by `after:<predecessor>:<key>`, read in that predecessor's file on the roster). A key the file lacks is dropped, silently: a file edited since the database listed it is no fault.
  * A Mod's or a member's record has no `leadIns`, and is returned as it is.
  */
+// Maps for any record carrying `leadIns`; harmless, since the prompt shows mood to the Boss alone (plotSections' office gate).
 function withMoods(record: PublicRecord, persona: Persona, roster: readonly Persona[]): PublicRecord {
   return Array.isArray(record.leadIns) ? { ...record, leadIns: leadInMoods(persona, record.leadIns, roster) } : record;
 }

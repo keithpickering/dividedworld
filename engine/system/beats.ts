@@ -244,18 +244,19 @@ export function pushOf(persona: Pick<Persona, 'arc' | 'miniArcs'>, roster: reado
  * the Boss reads "You announced this", with no push. Nothing where there is neither. `reader.boss` is whether the persona reading holds the Boss's chair now.
  */
 export function plotText(plot: PlotRead | undefined, reader: { readonly key: string; readonly boss: boolean }, titleMax: number, push?: (beat: string) => string | undefined): string[] {
-  if (!plot || (!plot.last && plot.initiatives.length === 0)) return [];
+  const all = plot?.initiatives ?? [];
+  if (!plot || (!plot.last && all.length === 0)) return [];
   const lines = ['The plot so far. Everyone on staff has read it; it is public.'];
   if (plot.last) {
     const recap = (plot.last.recap !== null && plot.last.recap.trim() !== '' ? oneLine(plot.last.recap) : plot.last.facts ? recapFallback(plot.last.facts, plot.last.name) : '').slice(0, RECAP_MOST);
     if (plot.last.boss === reader.key) lines.push(recap ? `Last season you were the Boss. This is how you summed it up: ${recap}` : 'Last season you were the Boss.');
     else lines.push(recap ? `Last season ${oneLine(plot.last.name)} was the Boss. This is how they summed it up: ${recap}` : `Last season ${oneLine(plot.last.name)} was the Boss.`);
   }
-  if (plot.initiatives.length) {
+  if (all.length) {
     lines.push('Initiatives announced this season:');
-    const earlier = Math.max(0, plot.initiatives.length - PLOT_INITIATIVES_MOST);
+    const earlier = Math.max(0, all.length - PLOT_INITIATIVES_MOST);
     if (earlier) lines.push(`(and ${earlier} earlier)`);
-    for (const i of plot.initiatives.slice(earlier)) {
+    for (const i of all.slice(earlier)) {
       const mine = i.boss === reader.key;
       const pushed = reader.boss && mine ? push?.(i.beat) : undefined;
       const fit = (text: string, most: number): string => { const t = oneLine(text); return t.length > most ? cutAtSentence(t, most) : t; };
