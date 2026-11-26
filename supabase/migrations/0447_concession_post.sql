@@ -228,10 +228,19 @@ revoke execute on function post_concession(uuid, uuid) from public, anon, authen
 
 -- The concession post's id, for the thread page's visit (the web client's read, an allowed RPC). Only the post's Act is answered, never `source` or `error`, and null where the post was refused or none was tried. The post is a
 -- public post by a Mod in the visit's thread (anyone reading the thread sees it), and whether it exists is the same for every caller, so this proves no private fact: it names no owner, class or reaction.
+-- A client read, so plpgsql with one generic plan and no JIT, as every client read is (0368_client_reads_plan_once.sql).
 create function visit_concession_post(visit uuid) returns uuid
-language sql stable security definer set search_path = public, pg_temp as $$
-  select p.post_act from visit_concession_posts p where p.visit_act = visit_concession_post.visit
-$$;
+ language plpgsql
+ stable security definer
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  return (select p.post_act from visit_concession_posts p where p.visit_act = visit_concession_post.visit);
+end
+$function$;
 revoke execute on function visit_concession_post(uuid) from public;
 grant execute on function visit_concession_post(uuid) to anon, authenticated, service_role;
 
