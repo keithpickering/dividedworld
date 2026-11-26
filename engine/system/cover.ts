@@ -28,6 +28,8 @@ const valid = (c: Cover, text: string): boolean =>
 /** `words` as the text they are: every `[` is written inside a noparse, so nothing in them is ever read as a tag, and the visible text of the result is the words. */
 const literal = (words: string): string => words.replaceAll('[', '[noparse][[/noparse]');
 
+const BARRIER = '[noparse][/noparse]';
+
 /** Index of the first item in `list` (sorted, disjoint) whose end is past `x`: binary search. */
 function firstEndingAfter(list: readonly { readonly end: number }[], x: number): number {
   let lo = 0;
@@ -93,12 +95,18 @@ export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (c
     met.forEach((p, i) => {
       const a = Math.max(c.from, p.at) - p.at;
       const b = Math.min(c.to, p.at + p.length) - p.at;
-      edits.push({ from: p.from + a, to: p.from + b, words: i === 0 ? literal(c.words) : '' });
+      const words = i === 0 ? literal(c.words) : '';
+      // Next to a bracket the body's own text holds, or with a `]` in the words, plain words could join into a tag: write them between two empty noparse barriers.
+      const near = /[[\]]/.test(body.slice(p.from, p.to)) || (i === 0 && c.words.includes(']'));
+      edits.push({ from: p.from + a, to: p.from + b, words: near ? `${BARRIER}${words}${BARRIER}` : words });
     });
   }
   if (edits.length === 0) return body;
-  edits.sort((a, b) => b.from - a.from);
-  let out = body;
-  for (const e of edits) out = out.slice(0, e.from) + e.words + out.slice(e.to);
-  return out;
+  // The edits are disjoint: one pass over them in order, one join.
+  edits.sort((a, b) => a.from - b.from);
+  const chunks: string[] = [];
+  let at = 0;
+  for (const e of edits) { chunks.push(body.slice(at, e.from), e.words); at = e.to; }
+  chunks.push(body.slice(at));
+  return chunks.join('');
 }

@@ -135,7 +135,7 @@ test('a cover that splits a surrogate pair is dropped', () => {
   assert.equal(coveredBody(body, [fixed([{ from: 3, to: 7, words: 'X' }])], given), '😀 X');
 });
 
-test('a 20,000-character body of one repeated word with three plays is covered in well under a second', () => {
+test('the longest post an instance holds (20,000 characters, about 4,000 covers by each of three plays) is covered under a second; a bound, not a claim of linearity', () => {
   const body = 'warp '.repeat(4000);
   const all = (w: string): ReadPlay => play('fixed', Array.from({ length: 4000 }, (_, i) => ({ from: i * 5, to: i * 5 + 4, words: w })));
   const t = Date.now();
@@ -143,4 +143,39 @@ test('a 20,000-character body of one repeated word with three plays is covered i
   const ms = Date.now() - t;
   assert.equal(out, 'cc '.repeat(4000));
   assert.ok(ms < 1000, `took ${ms} ms`);
+});
+
+const plainOf = (body: string, from: number, to: number, words: string): string => {
+  const t = visibleText(parse(body));
+  return t.slice(0, from) + words + t.slice(to);
+};
+
+test('words next to the body\'s own brackets never join them into a tag', () => {
+  for (const [body, word, words] of [['[warp]', 'warp', 'b'], ['[/quote]', '/q', 'b]'], ['[spoiler', 'spoiler', 'b]'], ['x[ y', 'x', 'b'], ['a] b', 'b', 'c]']] as const) {
+    const out = coveredBody(body, [swap(word, words)], covers);
+    const at = visibleText(parse(body)).indexOf(word);
+    const nodes = parse(out);
+    assert.equal(visibleText(nodes), plainOf(body, at, at + word.length, words), `${body} -> ${out}`);
+    assert.ok(nodes.every((n) => n.type === 'text' || n.type === 'noparse'), `${body} -> ${out}`);
+  }
+});
+
+test('an ordinary edit with no brackets near stays bare', () => {
+  assert.equal(coveredBody('the warp pipe', [swap('warp pipe', 'haunted toilet')], covers), 'the haunted toilet');
+});
+
+test('random bodies with stray brackets read, with a cover on them, as the board shows them', () => {
+  let seed = 7;
+  const rnd = (n: number) => { seed = (seed * 1103515245 + 12345) % 2147483648; return seed % n; };
+  const alphabet = ['[', ']', 'b', '/', 'q', 'u', 'o', 't', 'e', '=', ' ', 'i', 'x'];
+  for (let n = 0; n < 1500; n++) {
+    const body = Array.from({ length: 1 + rnd(12) }, () => alphabet[rnd(alphabet.length)]!).join('');
+    const vis = visibleText(parse(body));
+    if (vis.length < 2 || vis.includes('\n')) continue;
+    const from = rnd(vis.length - 1);
+    const to = from + 1 + rnd(Math.min(3, vis.length - from));
+    const words = Array.from({ length: rnd(4) }, () => alphabet[rnd(alphabet.length)]!).join('');
+    const out = coveredBody(body, [fixed([{ from, to, words }])], given);
+    assert.equal(visibleText(parse(out)), out === body ? vis : plainOf(body, from, to, words), `${JSON.stringify(body)} ${from}-${to} ${JSON.stringify(words)} -> ${JSON.stringify(out)}`);
+  }
 });
