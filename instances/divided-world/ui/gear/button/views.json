@@ -1,0 +1,13 @@
+{
+  "default": "front",
+  "views": {
+    "front": {
+      "width": 60,
+      "height": 60,
+      "pivot": {
+        "x": 30,
+        "y": 30
+      }
+    }
+  }
+}

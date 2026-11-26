@@ -22,9 +22,9 @@ const square = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" 
 
 /** The board's gear, by the instance's keys, as fractions of the 1:2 portrait. */
 const OUTFIT: readonly Piece[] = [
-  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0 },
-  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1 },
-  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2 },
+  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0, view: null },
+  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1, view: null },
+  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2, view: null },
 ];
 
 const world: World = (fake, instance) => {

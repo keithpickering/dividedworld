@@ -4,10 +4,12 @@
  * a point. Each result is held to what `pieceProblem` allows and rounded to ten-thousandths, so a hundred presses of a key leave no float noise
  * in what is saved.
  */
-import { PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
+import { PIECE_TURN_MOST, PIECE_WIDTH, pieceHolds, type Piece, type pieceShape } from '../../rules/cosmetics.ts';
 
 /** How far each key and button moves a piece: a fraction of the portrait, a fraction of its width, degrees. */
 export const STEP = { move: 0.01, moveBig: 0.05, size: 0.05, turn: 5 } as const;
+
+type PieceShape = ReturnType<typeof pieceShape>;
 
 const round = (n: number) => Math.round(n * 1e4) / 1e4;
 const clamp = (n: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, n));
@@ -29,10 +31,13 @@ export const turned = (p: Piece, by: number): Piece => fit({ ...p, turn: p.turn 
 /** A drag of the piece by `dx` and `dy` pixels on a stage `width` by `height` pixels. */
 export const dragged = (start: Piece, dx: number, dy: number, width: number, height: number): Piece => fit({ ...start, x: start.x + dx / width, y: start.y + dy / height });
 
-/** A corner's drag: the piece's width scales by the pointer's distance from the piece's center now (`d`) over its distance when the drag began (`d0`). */
-export const dragSized = (start: Piece, d0: number, d: number): Piece => (d0 > 0 ? fit({ ...start, w: start.w * (d / d0) }) : start);
+/** The corner handle's size in pixels (wardrobe.css): the least a drag's start distance counts as, so a handle on the pivot cannot make the size jump. */
+export const HANDLE_SIZE = 16;
 
-/** The round handle's drag: the piece turns by the angle the pointer swept (degrees, `a0` to `a`), wrapped into half a turn either way. */
+/** A corner's drag: the piece's width scales by the pointer's distance from the piece's pivot (`x`, `y`) now (`d`) over its distance when the drag began (`d0`). */
+export const dragSized = (start: Piece, d0: number, d: number): Piece => fit({ ...start, w: start.w * (d / Math.max(d0, HANDLE_SIZE)) });
+
+/** The round handle's drag, measured from the pivot the piece turns about: the piece turns by the angle the pointer swept (degrees, `a0` to `a`), wrapped into half a turn either way. */
 export function dragTurned(start: Piece, a0: number, a: number): Piece {
   const t = start.turn + (a - a0);
   return fit({ ...start, turn: ((((t + 180) % 360) + 360) % 360) - 180 });
@@ -51,20 +56,15 @@ export function layered(pieces: readonly Piece[], index: number, by: 1 | -1): { 
 }
 
 /**
- * The topmost piece whose turned box holds the point (`px`, `py`) on a stage `width` by `height` pixels, or null. `aspectOf` is the art's height
- * over its width. The pieces are in layer order, so the search runs from the last.
+ * The topmost piece whose turned picture holds the point (`px`, `py`) on a stage `width` by `height` pixels, or null. `shapeOf` is the piece's
+ * shape in the view it shows (`pieceShape`), or undefined for gear the instance does not know, which is never hit. The pieces are in layer
+ * order, so the search runs from the last.
  */
-export function hit(pieces: readonly Piece[], aspectOf: (gear: string) => number, px: number, py: number, width: number, height: number): number | null {
+export function hit(pieces: readonly Piece[], shapeOf: (piece: Piece) => PieceShape | undefined, px: number, py: number, width: number, height: number): number | null {
   for (let i = pieces.length - 1; i >= 0; i--) {
     const p = pieces[i]!;
-    const rad = (-p.turn * Math.PI) / 180;
-    const dx = px - p.x * width;
-    const dy = py - p.y * height;
-    const lx = dx * Math.cos(rad) - dy * Math.sin(rad);
-    const ly = dx * Math.sin(rad) + dy * Math.cos(rad);
-    const halfW = (p.w * width) / 2;
-    const halfH = (p.w * width * aspectOf(p.gear)) / 2;
-    if (Math.abs(lx) <= halfW && Math.abs(ly) <= halfH) return i;
+    const shape = shapeOf(p);
+    if (shape !== undefined && pieceHolds(p, shape, height / width, px / width, py / width)) return i;
   }
   return null;
 }

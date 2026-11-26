@@ -7,7 +7,8 @@
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
 import { useEffect } from 'react';
-import type { Piece } from '../../rules/cosmetics.ts';
+import { GEAR_VIEWS, type GearView, type Piece } from '../../rules/cosmetics.ts';
+import { KayfaProvider, useKayfa } from '../context.tsx';
 import { Page } from '../glass/Page.tsx';
 import { usePlayer } from '../player.tsx';
 import type { World } from '../story.tsx';
@@ -18,10 +19,21 @@ const square = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" 
 
 /** The board's pieces on its 1:2 portrait: the cap reaching above the slot, turned; the mustache; the button, turned the other way. */
 const PIPEWRENCH: readonly Piece[] = [
-  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0 },
-  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1 },
-  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2 },
+  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0, view: null },
+  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1, view: null },
+  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2, view: null },
 ];
+
+/** A small picture for each facing of the fixture mustache: a bar with a knob that leans the way the piece looks (the instance's art ships one view each). */
+const lean: Record<GearView, number> = { 'side-left': 8, 'three-quarter-left': 30, front: 50, 'three-quarter-right': 70, 'side-right': 92 };
+const facing = (v: GearView) => `data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 60"><rect x="6" y="22" width="88" height="16" rx="8" fill="%23222"/><circle cx="${lean[v]}" cy="30" r="9" fill="%23c0392b"/></svg>`;
+const FIVE = { default: 'front', views: Object.fromEntries(GEAR_VIEWS.map((v) => [v, { art: facing(v), width: 100, height: 60, pivot: { x: 50, y: 30 } }])) } as const;
+
+/** The page with the mustache shipping all five views, so the Selected panel's Facing row is drawn. */
+function FiveViews({ children }: { readonly children: React.ReactNode }) {
+  const k = useKayfa();
+  return <KayfaProvider value={{ ...k, ui: { ...k.ui, gear: { ...k.ui.gear, mustache: FIVE } } }}>{children}</KayfaProvider>;
+}
 
 const arranging: World = (fake, instance) => {
   const me = fake.seed.account('story-player');
@@ -33,8 +45,8 @@ const arranging: World = (fake, instance) => {
   fake.seed.gear(me, { 'baseball-cap': 2, mustache: 6, button: 1, shades: 1, 'nostalgic-hat': 1 });
   fake.signInAs(me);
   void fake.setOutfit(pipe, PIPEWRENCH);
-  void fake.setOutfit(sock, [{ gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 0 }, { gear: 'mustache', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 1 }]);
-  void fake.setOutfit(bones, [{ gear: 'shades', x: 0.5, y: 0.3, w: 0.5, turn: 0, layer: 0 }]);
+  void fake.setOutfit(sock, [{ gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 0, view: null }, { gear: 'mustache', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 1, view: null }]);
+  void fake.setOutfit(bones, [{ gear: 'shades', x: 0.5, y: 0.3, w: 0.5, turn: 0, layer: 0, view: null }]);
 };
 
 /** The page opens on the mask the HUD acts as; the roster lists Dr. Bones first, so the story picks Pipewrench as a player would. */
@@ -42,7 +54,7 @@ function WardrobePage() {
   const { characters, hudCharacter, setHudCharacter } = usePlayer();
   const pipe = characters.find((c) => c.name === 'Pipewrench')?.id;
   useEffect(() => { if (pipe !== undefined && hudCharacter?.id !== pipe) setHudCharacter(pipe); }, [pipe, hudCharacter?.id, setHudCharacter]);
-  return <Page surface="settings"><Wardrobe /></Page>;
+  return <FiveViews><Page surface="settings"><Wardrobe /></Page></FiveViews>;
 }
 
 const meta: Meta<typeof WardrobePage> = {

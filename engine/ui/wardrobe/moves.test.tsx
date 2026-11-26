@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'vitest';
 import { pieceProblem, type Piece } from '../../rules/cosmetics.ts';
-import { dragged, dragSized, dragTurned, fit, hit, layered, nudge, renumber, resized, turned } from './moves.ts';
+import { dragged, dragSized, HANDLE_SIZE, dragTurned, fit, hit, layered, nudge, renumber, resized, turned } from './moves.ts';
 
-const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 0, ...over });
+const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 0, view: null, ...over });
 const rules = { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 } } as Parameters<typeof pieceProblem>[1];
 
 describe('the pointer\'s moves, in the portrait\'s fractions', () => {
@@ -15,7 +15,14 @@ describe('the pointer\'s moves, in the portrait\'s fractions', () => {
     expect(dragSized(piece(), 100, 150).w).toBe(0.6);
     expect(dragSized(piece(), 100, 1).w).toBe(0.05);
     expect(dragSized(piece(), 100, 10000).w).toBe(1.5);
-    expect(dragSized(piece(), 0, 50).w).toBe(0.4);
+  });
+
+  test('a corner drag begun at the pivot does not jump to the most: the start distance is floored at the handle\'s size', () => {
+    expect(dragSized(piece(), 0.5, 10).w).toBe(0.4 * (10 / HANDLE_SIZE));
+    expect(dragSized(piece(), 0.5, 10).w).toBeLessThan(1.5);
+    /* Begun on the pivot itself: a pointer still a handle's width away leaves the size as it was. */
+    expect(dragSized(piece(), 0, HANDLE_SIZE).w).toBe(0.4);
+    expect(dragSized(piece(), 100, 150).w).toBe(0.6);
   });
 
   test('the round handle turns the piece by the angle the pointer swept, wrapped and held to 180 either way', () => {
@@ -52,13 +59,24 @@ describe('layers', () => {
 });
 
 describe('what is under the pointer', () => {
-  const aspect = () => 0.5;
+  /* A picture twice as wide as tall, its pivot at its center. */
+  const aspect = (p: Piece) => ({ w: p.w, aspect: 0.5, px: 0.5, py: 0.5 });
 
   test('the topmost piece whose turned box holds the point', () => {
     const pieces = [piece({ gear: 'low', w: 0.8 }), piece({ gear: 'high', w: 0.2, layer: 1 })];
     expect(hit(pieces, aspect, 250, 500, 500, 1000)).toBe(1);
     expect(hit(pieces, aspect, 100, 500, 500, 1000)).toBe(0);
     expect(hit(pieces, aspect, 10, 10, 500, 1000)).toBeNull();
+  });
+
+  test('a piece is placed by its pivot: a point near its pivot-side edge is held, and one the old centered box held is not', () => {
+    /* 200 wide, 100 tall on a 500 by 1000 stage, its pivot at its bottom-left corner at (250, 500): it spans x 250 to 450 and y 400 to 500. */
+    const corner = (p: Piece) => ({ w: p.w, aspect: 0.5, px: 0, py: 1 });
+    const pieces = [piece()];
+    expect(hit(pieces, corner, 255, 495, 500, 1000)).toBe(0);
+    expect(hit(pieces, corner, 440, 410, 500, 1000)).toBe(0);
+    expect(hit(pieces, corner, 150, 540, 500, 1000)).toBeNull();
+    expect(hit(pieces, corner, 250, 540, 500, 1000)).toBeNull();
   });
 
   test('a turned piece is hit where it is, not where its unturned box was', () => {

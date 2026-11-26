@@ -1,0 +1,13 @@
+{
+  "default": "front",
+  "views": {
+    "front": {
+      "width": 80,
+      "height": 90,
+      "pivot": {
+        "x": 40,
+        "y": 45
+      }
+    }
+  }
+}
