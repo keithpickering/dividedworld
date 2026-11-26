@@ -2136,9 +2136,9 @@ describe('a visit\'s tab', () => {
   });
 
   describe('accessibility', () => {
-    test.each(['open quiz', 'open bribe', 'open distraction', 'filed'] as const)('axe passes on the Lens with the %s tab open', async (which) => {
+    test.each(['open quiz', 'pending quiz', 'open bribe', 'open distraction', 'filed'] as const)('axe passes on the Lens with the %s tab open', async (which) => {
       width(false);
-      const w = visited({ mine: which === 'filed', challenge: which === 'open bribe' ? { kind: 'bribe', price: 50 } : which === 'open distraction' ? { kind: 'distraction' } : QUIZ });
+      const w = visited({ mine: which === 'filed', challenge: which === 'open bribe' ? { kind: 'bribe', price: 50 } : which === 'open distraction' ? { kind: 'distraction' } : which === 'pending quiz' ? { kind: 'quiz', pending: true } : QUIZ });
       if (which === 'filed') file(w);
       openVisit(w);
       const l = await press(w);
