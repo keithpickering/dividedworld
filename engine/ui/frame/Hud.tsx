@@ -671,10 +671,10 @@ export function Hud() {
                           {hud.classShownAt !== null ? (
                             <span ref={revealedLine} tabIndex={-1} className="kb-hud-secret"><SecretLock open />Revealed</span>
                           ) : hud.debutedAt !== null && hud.retiredAt === null ? (
-                            <button ref={secret} type="button" className="kb-hud-secret" aria-label={`Only you see this: reveal ${hud.name}'s class`} onClick={() => setRevealing(true)}><SecretLock />Only you see this</button>
+                            <button ref={secret} type="button" className="kb-hud-secret" aria-label={`Hidden: no other player sees this. Reveal ${hud.name}'s class`} onClick={() => setRevealing(true)}><SecretLock />Hidden</button>
                           ) : (
                             /* Defensive: the HUD's mask is always a live one (player.tsx canAct), so this is never drawn today. */
-                            <span className="kb-hud-secret"><SecretLock />Only you see this</span>
+                            <span className="kb-hud-secret"><SecretLock />Hidden<span className="kb-visually-hidden">: no other player sees this</span></span>
                           )}
                           {wide && hiddenMark}
                         </span>

@@ -3,7 +3,7 @@
  * look and never a mark. The same node stands in a post, in a History row and inside a quote's frame, so a reader meets one sentence wherever the words would have been. It is
  * the glass speaking plainly and out of character ("The fiction may lie; the log never does"): what happened, and where the code is.
  *
- * The author of a version that is hidden until they edit it also sees their own words under it, in a muted panel only they see ("Only you see this"), with Edit; a version an
+ * The author of a version that is hidden until they edit it also sees their own words under it, in a muted panel only they see ("No other player sees this"), with Edit; a version an
  * admin hid outright shows its author the note alone, and an edit that waits for an admin after a second hide says so. The words come from `my_hidden_version`, which answers
  * only the post's own player (supabase/migrations/0238_conduct_admin.sql); a reader who does not play the post's mask never asks, so no one else's read depends on it.
  */
@@ -63,7 +63,7 @@ export function HiddenOwn({ own, onEdit, children }: { readonly own: MyHiddenVer
   }
   return (
     <div className="kb-glass kb-hidden-own">
-      <p className="kb-hidden-own-head">Only you see this</p>
+      <p className="kb-hidden-own-head">No other player sees this</p>
       <div className="kb-hidden-own-words">{children}</div>
       <GlassButton kind="secondary" size="s" onClick={onEdit}>Edit</GlassButton>
     </div>

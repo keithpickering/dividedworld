@@ -1504,7 +1504,7 @@ describe('a post-local reaction and a blind post', () => {
       const list = await screen.findByRole('list', { name: 'Reactions' });
       expect(within(list).getByText('Fire, 2')).toBeInTheDocument();
       expect(within(list).getByText('Tea, 1')).toBeInTheDocument();
-      expect(screen.getByText(`Only you and the caster can see these until ${until}.`)).toBeInTheDocument();
+      expect(screen.getByText(`No other player but the caster can see these until ${until}.`)).toBeInTheDocument();
       expect(screen.queryByText(/Reaction totals are hidden/u)).toBeNull();
     });
 
@@ -1513,13 +1513,13 @@ describe('a post-local reaction and a blind post', () => {
       const v = row(w, w.theirs, w.spritey, [blind(w.theirs, w.pipe)]);
       act(() => { v.tallies.merge(w.theirs, { fire: 2 }); });
       expect(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
-      expect(screen.getByText(`Only you and the author can see these until ${until}.`)).toBeInTheDocument();
+      expect(screen.getByText(`No other player but the author can see these until ${until}.`)).toBeInTheDocument();
     });
 
     test('for one who is both, the line says only you', async () => {
       const w = world();
       row(w, w.sibling, w.hooligan, [blind(w.sibling, w.pipe)]);
-      expect(await screen.findByText(`Only you can see these until ${until}.`)).toBeInTheDocument();
+      expect(await screen.findByText(`No other player can see these until ${until}.`)).toBeInTheDocument();
     });
 
     test('with no play of the card, or its play ended by an admin, the row is as ever', async () => {

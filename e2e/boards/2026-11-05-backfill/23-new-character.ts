@@ -46,7 +46,7 @@ const manifest: BoardManifest = {
     { id: 'menu', role: 'navigation', name: 'Menu', type: false },
     { id: 'menu-back', role: 'link', name: 'ESC BACK TO THE BOARD', buildName: 'Back to the board', within: 'menu', box: 'height' },
     { id: 'title', role: 'heading', name: 'New character', box: 'position', buildSize: 96 },
-    { id: 'lead', role: 'text', name: 'This page is out of character and only you can see it. Nobody else can tell who plays a character.', box: 'none', type: false },
+    { id: 'lead', role: 'text', name: 'This page is out of character and only you can see it. Nobody else can tell who plays a character.', buildName: 'This page is out of character, and no other player can see it. No other player can tell who plays a character.', box: 'none', type: false },
     { id: 'form', role: 'form', name: 'New character', type: false, box: 'across' },
 
     at('name-label', 'text', 'NAME'),
@@ -60,9 +60,9 @@ const manifest: BoardManifest = {
     at('technician', 'text', 'Technician', { within: 'classes', box: 'none', type: false }),
     at('lurker', 'text', 'Lurker', { within: 'classes', box: 'none', type: false }),
     at('face-hurt', 'text', 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', { buildName: 'Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.', within: 'classes', box: 'none', type: false }),
-    at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { type: false, origin: 'classes', originEdge: 'bottom', buildShift: { y: 0 } }),
+    at('note', 'text', 'Only you will know its class, unless you choose to reveal it.', { buildName: 'No other player will know its class, unless you choose to reveal it.', type: false, origin: 'classes', originEdge: 'bottom', buildShift: { y: 0 } }),
 
-    at('foot-line', 'text', 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', { buildName: 'Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays yours alone.', box: 'none' }),
+    at('foot-line', 'text', 'Waiting Wanda is on the board as soon as you make it, and The System announces it. Its class stays yours alone.', { buildName: 'Waiting Wanda is on the board as soon as you make it. Nobody is told, and its first post is its entrance. Its class stays hidden from every other player.', box: 'none' }),
     at('cancel', 'button', 'CANCEL', { buildName: 'Cancel', buildRole: 'link', type: false, box: 'none' }),
     at('make', 'button', 'MAKE THE CHARACTER', { buildName: 'Make the character', type: false, box: 'none' }),
   ],
@@ -124,7 +124,7 @@ export const phone: BoardManifest = {
     held('class-label', 'count', 'text', '1 OF 5', { x: -20 }, { buildName: '1–1 of 6' }),
     { id: 'face-hurt', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildName: 'Hurt by bored reactions, and by stealing a non-Salty post\'s thunder.', type: false, box: 'none' },
     { id: 'row', role: 'text', name: 'Hurt by bored reactions, and by a card that outdraws the post it was played on.', buildRole: 'group', buildName: 'Class', type: false, box: 'none' },
-    held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { x: 20, y: -20 }, { origin: 'row', originEdge: 'bottom' }),
+    held('class-label', 'note', 'text', 'Only you will know its class, unless you choose to reveal it.', { x: 20, y: -20 }, { buildName: 'No other player will know its class, unless you choose to reveal it.', origin: 'row', originEdge: 'bottom' }),
   ],
   also: [
     {
@@ -152,7 +152,7 @@ export const phone: BoardManifest = {
         ...bar(2),
         held('menu', 'title', 'heading', 'YOUR CHARACTERS', { y: 51 }, { buildName: 'Your characters (3 of 6)' }),
         held('menu', 'count', 'text', '3 OF 6', { y: -39 }, { buildName: '(3 of 6)' }),
-        held('menu', 'lead', 'text', 'This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.', { y: -55 }),
+        held('menu', 'lead', 'text', 'This page is out of character and only you can see it. Classes are shown here and nowhere else unless you reveal them.', { y: -55 }, { buildName: 'This page is out of character, and no other player can see it. Classes are shown here and nowhere else unless you reveal them.' }),
       ],
     },
   ],

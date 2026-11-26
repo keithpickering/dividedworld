@@ -139,7 +139,7 @@ export function useReactionChips(act: Id, author: Id | null, tallies: Tallies, m
   const shownKeys = hidden ? [...new Set([...ownKinds, ...waiting.map((p) => p.kind)])] : [...instance.reactions.map((r) => r.key).filter((k) => counted.includes(k)), ...counted.filter((k) => !instance.reactions.some((r) => r.key === k)).sort()];
   const shown = shownKeys.flatMap((k) => { const c = chipOf(k, hidden ? null : (tally[k] ?? 0) + (pendingOf(k) === null ? 0 : 1)); return c ? [c] : []; });
   const line = blindUntil === null ? null : sees
-    ? `Only you${isAuthor && caster ? '' : ` and the ${isAuthor ? 'caster' : 'author'}`} can see these until ${dayAndTime(blindUntil)}.`
+    ? `No other player${isAuthor && caster ? '' : ` but the ${isAuthor ? 'caster' : 'author'}`} can see these until ${dayAndTime(blindUntil)}.`
     : `Reaction totals are hidden on this post until ${dayAndTime(blindUntil)}.`;
   return { shown, line, kinds0, own, waiting } as const;
 }

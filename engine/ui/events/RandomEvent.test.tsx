@@ -47,7 +47,7 @@ describe('the Random Event dialog', () => {
     const dialog = await screen.findByRole('dialog', { name: 'SOMETHING HAPPENED!' });
     expect(dialog.querySelector('.kb-event-line')).toHaveTextContent('You found Headband under a park bench.');
     expect(within(dialog).getByText('Uncommon gear, now in your wardrobe.')).toBeInTheDocument();
-    expect(within(dialog).getByText('Only you see this')).toBeInTheDocument();
+    expect(within(dialog).getByText('No other player sees this')).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: 'Wear it' })).toBeInTheDocument();
     expect(within(dialog).getByRole('button', { name: 'OK' })).toBeInTheDocument();
   });
@@ -60,7 +60,7 @@ describe('the Random Event dialog', () => {
     expect(dialog.querySelector('.kb-event-line')).toHaveTextContent('A postcard was stuck to your shoe. It is Trap Card.');
     expect(within(dialog).getByText('Rare card, now in your hand.')).toBeInTheDocument();
     expect(within(dialog).queryByRole('link', { name: 'Wear it' })).toBeNull();
-    expect(within(dialog).getByText('Only you see this')).toBeInTheDocument();
+    expect(within(dialog).getByText('No other player sees this')).toBeInTheDocument();
   });
 
   test('the found item\'s name stands out in the line, wherever the line puts it', async () => {

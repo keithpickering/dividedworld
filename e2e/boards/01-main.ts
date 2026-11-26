@@ -95,7 +95,7 @@ const manifest: BoardManifest = {
     { id: 'hud', role: 'region', name: 'Game HUD', type: false },
     { id: 'hud-name', role: 'text', name: 'Pipewrench', within: 'hud' },
     { id: 'hud-class', role: 'text', name: 'Heel', within: 'hud' },
-    { id: 'hud-secret', role: 'text', name: 'Only you see this', within: 'hud' },
+    { id: 'hud-secret', role: 'text', name: 'Only you see this', buildName: 'Hidden', within: 'hud', buildShift: { width: -100.2 } },
     { id: 'hud-swap', role: 'combobox', name: 'Swap mask', within: 'hud' },
     /* The wallet's name is web Task 3's (section 3, the fifth departure). */
     { id: 'hud-orbs', role: 'img', name: 'Aura: 4.62 of 6.00 settled, about 0.30 more estimated', buildName: 'Wallet 4.62 of 6 orbs, 0.30 pending until the next settlement (estimate)', within: 'hud', type: false },
