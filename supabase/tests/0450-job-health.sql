@@ -8,8 +8,8 @@
 -- 6. A job's row begins when it is scheduled (note_job_scheduled, called by each of the ten schedule functions): a fresh seed gives every job a row with a first_seen and no last_ok_at, a
 --    reschedule keeps first_seen, a database with no settings gets none, and the helper is no client's.
 --
--- -- 7. A SQL job's command is atomic: with its work failing, the record is not written (the command run as pg_cron runs one: a whole string, one transaction; here one execute of the string in an exception block, which rolls the whole string back).
--- -- 8. A stray kayfabb-x1 in cron.job is skipped by the migration's bulk insert and by the settings trigger's; job_status() with a non-object jobGraceMinutes row; admin_jobs() for a job in job_runs and not in cron.job has no last run.
+-- 7. A SQL job's command is atomic: with its work failing, the record is not written (the command run as pg_cron runs one: a whole string, one transaction; here one execute of the string in an exception block, which rolls the whole string back).
+-- 8. A stray kayfabb-x1 in cron.job is skipped by the migration's bulk insert and by the settings trigger's; a non-object jobGraceMinutes row is refused; admin_jobs() for a job in job_runs and not in cron.job has no last run.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
 begin
@@ -169,13 +169,10 @@ begin
   delete from settings where key = 'jhProbe';
   delete from cron.job where jobname = 'kayfabb-x1';
 
-  -- job_status() with a jobGraceMinutes row that is not an object.
+  -- A jobGraceMinutes row that is not an object never reaches job_status(): settings_held refuses it where it is written.
   delete from settings where key = 'jobGraceMinutes';
   if pg_temp.refusal('insert into settings (key, value) values (''jobGraceMinutes'', ''5'')') is null then
-    perform tests.become_anon();
-    if (select count(*) from job_status() where grace = '5'::jsonb) is distinct from 10 then raise exception 'job_status did not carry a non-object grace as it is'; end if;
-    perform tests.unbecome();
-    delete from settings where key = 'jobGraceMinutes';
+    raise exception 'a jobGraceMinutes of 5 was written: job_status would hand the screens a grace that is not an object';
   end if;
 
   -- admin_jobs() for a job with a row and no schedule: its last run is null, never another job's.
