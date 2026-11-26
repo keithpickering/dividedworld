@@ -5,7 +5,7 @@ import { DatabaseError, type Db } from '../_shared/rpc.ts';
 import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import type { Instance as WorldInstance } from '../../../engine/rules/types.ts';
-import { LedgerWriteFailed } from '../_shared/models/index.ts';
+import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
 
 const dividedWorld: WorldInstance = placeholderWorld(realInstance);
@@ -63,12 +63,12 @@ test('a line is voiced: one light call with staff set, recorded, then paid with 
 });
 
 test('a failed call, a rejected answer and a blank line each pay stock', async () => {
-  const d = fakeDb([row(1), row(2), row(3)]);
-  const m = fakeModels((_r, n) => (n === 1 ? new Error('boom') : n === 2 ? { line: 5 } : { line: '   ' }));
+  const d = fakeDb([row(1), row(2), row(3), row(4)]);
+  const m = fakeModels((_r, n) => (n === 1 ? new Error('boom') : n === 2 ? { line: 5 } : n === 3 ? { line: '   ' } : new AnswerRejected('line', 'isString')));
   const out = await runOwedLines(d.db, m.models, dividedWorld);
-  assert.equal(m.chats.length, 3);
-  assert.deepEqual(paid(d), [{ owed: 1, body: null }, { owed: 2, body: null }, { owed: 3, body: null }]);
-  assert.deepEqual(out.status === 'ok' && out.lines.map((l) => l.status), ['stock', 'stock', 'stock']);
+  assert.equal(m.chats.length, 4);
+  assert.deepEqual(paid(d), [{ owed: 1, body: null }, { owed: 2, body: null }, { owed: 3, body: null }, { owed: 4, body: null }]);
+  assert.deepEqual(out.status === 'ok' && out.lines.map((l) => l.status), ['stock', 'stock', 'stock', 'stock']);
 });
 
 test('over perDay no call is made and the line is paid from stock', async () => {
