@@ -220,6 +220,7 @@ select 'function', n, m, w from (values
   ('board_page', 'swept', 'a board''s page: its threads'' first and last posters'),
   ('board_closed_to', 'no author', 'a closed board''s ways out: boards by name'),
   ('board_stubs', 'no author', 'the threads that moved off a board: ids, titles and boards'),
+  ('staff_stickies', 'no author', 'a board''s pinned staff threads: ids and the time each was pinned'),
   ('move_thread_names', 'no author', 'the titles and boards of the threads a move names'),
   ('boot', 'swept', 'the app''s first read: the caller''s own characters and public settings'),
   ('boss_roster_names', 'no author', 'staff names'),
