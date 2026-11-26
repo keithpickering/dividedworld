@@ -1302,7 +1302,7 @@ test('the answer\'s rulings go to apply_meeting repaired with their lines, and t
   assert.equal(out.status, 'ok', JSON.stringify(out));
   const sent = d.state.applied[0]!.payload.requests;
   assert.deepEqual(sent, [
-    { id: 12, ruling: 'fulfill', line: 'Granted, with ceremony.', move: { kind: 'moveThread', params: { thread: REQ_THREAD, board: BOARD2 }, expires_in_hours: 0, why: 'It belongs there.' } },
+    { id: 12, ruling: 'fulfill', line: 'Granted, with ceremony.', move: { kind: 'moveThread', params: { thread: REQ_THREAD, board: BOARD2 }, expires_in_hours: 0, why: 'It belongs there.', line: null } },
     { id: 13, ruling: 'reject', line: null },
   ]);
   assert.ok(out.trims.some((t: any) => t.path === 'requests[2].id' && t.predicate === 'shownRequest'), JSON.stringify(out.trims));
