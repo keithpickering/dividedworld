@@ -117,10 +117,7 @@ A **reveal** is something your character posts, in a thread you pick, with a lin
 
 ### How a class becomes public
 
-There are exactly two ways, and you're holding both:
-
-- a reveal;
-- an announced Turn that names the class.
+There are exactly two ways: a reveal, and an announced Turn that names a class.
 
 Nothing else does it. Not the staff, not another player, and not me.
 
