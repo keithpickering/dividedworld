@@ -3,6 +3,8 @@
  * shape from its play's id, which dents overlap, and the hit zone a short post's throws aim at (owner's answers of 2026-11-15, see dent.ts).
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'node:crypto';
+import { readFileSync } from 'node:fs';
 import { describe, test } from 'node:test';
 import { rng, throwOf } from './body.ts';
 import {
@@ -307,7 +309,7 @@ describe('dentShape: each dent its own shape, from the play id alone', () => {
     for (const id of ['sc1', 'sc2', 'sc3']) assert.deepEqual(dentShape(id), dentShape(id));
   });
   test('three ids give three shapes that differ', () => {
-    const [a, b, c] = ['sc1', 'sc2', 'sc3'].map(dentShape) as [ReturnType<typeof dentShape>, ReturnType<typeof dentShape>, ReturnType<typeof dentShape>];
+    const [a, b, c] = ['sc1', 'sc2', 'sc3'].map((id) => dentShape(id)) as [ReturnType<typeof dentShape>, ReturnType<typeof dentShape>, ReturnType<typeof dentShape>];
     for (const [p, q] of [[a, b], [a, c], [b, c]] as const) {
       assert.notDeepEqual(p, q);
       assert.notDeepEqual(p.crumple, q.crumple);
@@ -705,5 +707,188 @@ describe("zoneHeight: the area less the chairs' room, where that leaves a dent a
     assert.equal(zoneHeight(157), 80);
     assert.equal(zoneHeight(156), 156);
     assert.equal(zoneHeight(0), 0);
+  });
+});
+
+describe('dentShape: the chair keeps its recorded dents (dent-record.json, taken before the objects)', () => {
+  const record = JSON.parse(readFileSync(new URL('./dent-record.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+  test('50 ids, with no object and with chair, equal the record', () => {
+    const ids = Object.keys(record);
+    assert.equal(ids.length, 50);
+    for (const id of ids) {
+      assert.deepEqual(dentShape(id), record[id], id);
+      assert.deepEqual(dentShape(id, 'chair'), record[id], id);
+    }
+  });
+});
+
+describe('dentShape: each object has its own dent', () => {
+  const IDS200 = Array.from({ length: 200 }, (_, i) => `object-dent-${i}`);
+  const within = (v: number, lo: number, hi: number) => v >= lo - 1e-9 && v <= hi + 1e-9;
+  const lobesOk = (id: string, object: 'can' | 'ladder' | 'extinguisher', n: [number, number], radius: [number, number], depth: [number, number]) => {
+    const s = dentShape(id, object);
+    assert.ok(s.lobes.length >= n[0] && s.lobes.length <= n[1], `${object} ${id} lobes ${s.lobes.length}`);
+    for (const l of s.lobes) {
+      assert.ok(within(l.radius, ...radius), `${object} ${id} radius ${l.radius}`);
+      assert.ok(within(l.depth, ...depth), `${object} ${id} depth ${l.depth}`);
+    }
+    return s;
+  };
+  test('the ladder is long and a little wider than before (rx 0.45 to 0.55 of ry) with one ridge lobe', () => {
+    for (const id of IDS200) {
+      const s = lobesOk(id, 'ladder', [1, 1], [0.072, 0.132], [0.3, 0.6]);
+      assert.ok(within(s.rx / s.ry, 0.45, 0.55), `${id} ${s.rx / s.ry}`);
+      assert.ok(within(s.ry, AXIS_MIN, AXIS_MAX));
+    }
+  });
+  test('the can is rounder (axes within 5%), has 2 or 3 lobes and is deeper', () => {
+    for (const id of IDS200) {
+      const s = lobesOk(id, 'can', [2, 3], [0.12, 0.22], [0.45, 0.75]);
+      assert.ok(within(s.rx / s.ry, 0.95, 1.05), `${id} ${s.rx / s.ry}`);
+      assert.ok(s.rx <= AXIS_MAX && s.ry <= AXIS_MAX && s.rx >= AXIS_MIN * 0.96 && s.ry >= AXIS_MIN * 0.96);
+    }
+  });
+  test('the extinguisher is round, 80% of the chair, has 1 or 2 lobes and is the deepest', () => {
+    for (const id of IDS200) {
+      const s = lobesOk(id, 'extinguisher', [1, 2], [0.12, 0.22], [0.6, 0.9]);
+      assert.equal(s.rx, s.ry);
+      assert.ok(within(s.rx, AXIS_MIN * 0.8, AXIS_MAX * 0.8));
+    }
+  });
+  test('the extinguisher\'s box is the smallest: its largest is under 0.8 of the chair\'s cap, and smaller than the chair\'s on average', () => {
+    let ext = 0, chair = 0;
+    for (const id of IDS200) {
+      const a = dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'extinguisher') }], { width: 1000, height: 1000 })[0]!;
+      const b = dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'chair') }], { width: 1000, height: 1000 })[0]!;
+      assert.ok(a.size <= 0.8 * FULL_DENT + 1e-9, id);
+      ext += a.size; chair += b.size;
+    }
+    assert.ok(ext < 0.9 * chair, `${ext / 200} against the chair's ${chair / 200}`);
+  });
+  test('the same id and object give the same dent', () => {
+    for (const o of ['can', 'ladder', 'extinguisher'] as const) assert.deepEqual(dentShape('x', o), dentShape('x', o));
+  });
+});
+
+describe('the ladder\'s ridge lies across its long axis', () => {
+  test('the one lobe is centered along the long axis (ry) and reaches farther across it than along it', () => {
+    for (let i = 0; i < 200; i++) {
+      const s = dentShape(`ridge-${i}`, 'ladder');
+      assert.ok(s.ry > s.rx, 'ry is the long axis');
+      const [l] = s.lobes;
+      assert.equal(s.lobes.length, 1);
+      assert.equal(l!.u, 0);
+      assert.ok(Math.abs(l!.v) <= 0.1, `${l!.v}`);
+      assert.ok((l!.across ?? l!.radius) >= 3 * l!.radius, `across ${l!.across} radius ${l!.radius}`);
+    }
+  });
+  test('its height map is deeper along the ridge than the same way along the long axis', () => {
+    const s = dentShape('ridge-map', 'ladder');
+    const flat = { ...s, lobes: [], crumple: s.crumple.map(() => 0) };
+    const w = 120, h = 120, l = s.lobes[0]!;
+    const withR = dentHeight({ ...flat, lobes: s.lobes }, w, h), without = dentHeight(flat, w, h);
+    const at = (u: number, v: number) => {
+      const x = Math.floor(((u * 1.5 + 1) / 2) * w), y = Math.floor(((v * 1.5 + 1) / 2) * h);
+      return withR[y * w + x]! - without[y * w + x]!;
+    };
+    const d = 0.3;
+    assert.ok(at(d, l.v) < at(0, l.v + d) - 0.01, `${at(d, l.v)} vs ${at(0, l.v + d)}`);
+  });
+});
+
+describe('dentImages draws each object\'s own dent', () => {
+  const box = { x: 0, y: 0, size: 100, width: 100, height: 100 };
+  const toUrl = (px: Uint8ClampedArray) => Array.from(px).join(',');
+  // a play id whose object is a chair, and the same id drawn as a ladder
+  test('a ladder\'s images differ from a chair\'s for the same id', () => {
+    const chair = dentImages('obj-same-id', box, 1, [], toUrl as never, 'chair');
+    const ladder = dentImages('obj-same-id', box, 1, [], toUrl as never, 'ladder');
+    assert.notEqual(ladder.shade, chair.shade);
+    assert.notEqual(ladder.light, chair.light);
+  });
+  test('a chair\'s images are the images of dentShape(id, "chair")', () => {
+    const made = dentImages('obj-chair', box, 1, [], toUrl as never, 'chair');
+    const want = dentShade(dentHeight(dentShape('obj-chair'), 100, 100), 100, 100);
+    assert.equal(made.shade, toUrl(want as never));
+  });
+});
+
+describe('the chair\'s images and primitives equal main\'s (dent-images-record.json, hashed from dent.ts before the objects)', () => {
+  const record = JSON.parse(readFileSync(new URL('./dent-images-record.json', import.meta.url), 'utf8')) as Record<string, unknown>;
+  const toUrl = (px: Uint8ClampedArray, w: number, h: number) =>
+    createHash('sha1').update(Buffer.from(px.buffer, px.byteOffset, px.byteLength)).update(`${w}x${h}`).digest('hex');
+  test('10 ids at two sizes, alone and over an earlier dent, and the primitives', () => {
+    const got: Record<string, unknown> = {};
+    for (let i = 0; i < 10; i++) {
+      const id = `images-record-${i}`;
+      for (const [w, h] of [[160, 140], [120, 150]] as const) {
+        const box = { x: 0, y: 0, size: Math.max(w, h), width: w, height: h };
+        got[`${id}|${w}x${h}`] = dentImages(id, box, 1, [], toUrl as never, 'chair');
+        got[`${id}|${w}x${h}|over`] = dentImages(id, box, 2, [{ play: `images-record-before-${i}`, box: { ...box, x: 40, y: 20 }, object: 'chair' }], toUrl as never, 'chair');
+      }
+      got[`${id}|prim`] = dentPrimitives([{ x: 10, y: 20, shape: dentShape(id, 'chair') }], { width: 500, height: 300 });
+    }
+    assert.equal(Object.keys(record).length, 50);
+    assert.deepEqual(got, record);
+  });
+});
+
+describe('the owner\'s tuning of the dents (2026-11-25): the ladder bigger and darker, the can scaled to its size, the extinguisher a little bigger', () => {
+  const IDS = Array.from({ length: 100 }, (_, i) => `tuned-${i}`);
+  const larger = (p: { width: number; height: number }) => Math.max(p.width, p.height);
+  const meanOf = (object: 'chair' | 'can' | 'ladder' | 'extinguisher', box = { width: 2000, height: 2000 }) =>
+    IDS.reduce((sum, id) => sum + larger(dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, object) }], box)[0]!), 0) / IDS.length;
+  test('the chair\'s shape carries no size or darkness at all (so its records are what they were)', () => {
+    for (const id of IDS) { const s = dentShape(id, 'chair'); assert.equal('size' in s, false); assert.equal('darkness' in s, false); }
+  });
+  test('the ladder\'s dent is bigger than before (1.3 of the cap) and 0.28 / 0.18 as dark', () => {
+    const s = dentShape('tuned-0', 'ladder');
+    assert.equal(s.size, 1.3);
+    assert.ok(Math.abs(s.darkness! - 0.28 / 0.18) < 1e-9, `${s.darkness}`);
+    assert.ok(meanOf('ladder') > 1.2 * meanOf('chair'), `${meanOf('ladder')} against ${meanOf('chair')}`);
+    for (const id of IDS) assert.ok(larger(dentPrimitives([{ x: 0, y: 0, shape: dentShape(id, 'ladder') }], { width: 2000, height: 2000 })[0]!) <= 1.3 * FULL_DENT + 1e-9);
+  });
+  test('the can\'s dent is scaled to its size (1.25 of the cap), the extinguisher\'s is the smallest and has grown', () => {
+    assert.equal(dentShape('tuned-0', 'can').size, 1.25);
+    assert.ok(meanOf('can') > 1.15 * meanOf('chair'));
+    assert.ok(meanOf('extinguisher') < meanOf('chair'));
+    assert.ok(meanOf('extinguisher') / meanOf('chair') > 0.7 && meanOf('extinguisher') / meanOf('chair') < 0.85, `${meanOf('extinguisher') / meanOf('chair')}`);
+  });
+  test('a grown dent is still held to 60% of the box and to the height it may land in', () => {
+    for (const object of ['can', 'ladder'] as const) for (const id of IDS) {
+      const shape = dentShape(id, object);
+      const wide = dentPrimitives([{ x: 300, y: 30, shape }], { width: 120, height: 400 })[0]!;
+      assert.ok(larger(wide) <= 0.6 * 120 + 1e-9, `${object} ${larger(wide)} in 120 wide`);
+      const low = dentPrimitives([{ x: 300, y: 30, shape }], { width: 900, height: 62 })[0]!;
+      assert.ok(larger(low) <= 62 + 1e-9, `${object} ${larger(low)} in 62 high`);
+    }
+  });
+  test('each object\'s dent is centered on the point it is given, which is its body\'s hit point', () => {
+    for (const object of ['chair', 'can', 'ladder', 'extinguisher'] as const) for (const id of IDS) {
+      const p = dentPrimitives([{ x: 321.5, y: 87.25, shape: dentShape(id, object) }], { width: 700, height: 300 })[0]!;
+      assert.ok(Math.abs(p.x + p.width / 2 - 321.5) < 1e-9 && Math.abs(p.y + p.height / 2 - 87.25) < 1e-9, `${object} ${id}`);
+    }
+  });
+  test('a darker dent has every pixel of its shade at least as dark and some darker, and none past the 127 the darkest may be', () => {
+    const shape = dentShape('tuned-3', 'ladder');
+    const h = dentHeight(shape, 90, 90);
+    const plain = dentShade(h, 90, 90), dark = dentShade(h, 90, 90, shape.darkness);
+    let more = 0, sumPlain = 0, sumDark = 0;
+    for (let i = 3; i < plain.length; i += 4) {
+      assert.ok(dark[i]! >= plain[i]!, `pixel ${i}`);
+      assert.ok(dark[i]! <= 127);
+      if (dark[i]! > plain[i]!) more++;
+      sumPlain += plain[i]!; sumDark += dark[i]!;
+    }
+    assert.ok(more > 100, `${more}`);
+    assert.ok(sumDark > 1.15 * sumPlain && sumDark < 1.8 * sumPlain, `${sumDark / sumPlain}`);
+    assert.deepEqual(dentShade(h, 90, 90, 1), plain);
+  });
+  test('dentImages draws the ladder with its darkness: darker than the same shape made plain', () => {
+    const box = { x: 0, y: 0, size: 90, width: 90, height: 90 };
+    const toUrl = (px: Uint8ClampedArray) => Array.from(px).join(',');
+    const made = dentImages('tuned-3', box, 1, [], toUrl as never, 'ladder');
+    const shape = dentShape('tuned-3', 'ladder');
+    assert.equal(made.shade, toUrl(dentShade(dentHeight(shape, 90, 90), 90, 90, shape.darkness) as never));
   });
 });
