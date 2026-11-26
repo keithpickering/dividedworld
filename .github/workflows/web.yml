@@ -59,7 +59,7 @@ jobs:
           if-no-files-found: ignore
       # Every test's duration and outcome on this shard (playwright.config.ts's json reporter), on a pass as well, and the
       # assignment too (assigned.json, the tests this shard was given). `node tools/e2e-cost.mjs --refresh` reads both to
-      # re-price the manifest (issue #1166). globalTimeout means a shard always writes its file, so a missing one is an error.
+      # re-price the manifest (issue #1166). Once Playwright runs, globalTimeout means a shard always writes its file, so a missing one is an error.
       - uses: actions/upload-artifact@v4
         if: always()
         with:
