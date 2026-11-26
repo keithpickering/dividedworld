@@ -1,0 +1,97 @@
+/*
+ * The jobs admin page (Jobs.tsx; the job health design, section 7): the lead, the admin pages' strip, then one table of the jobs, a stopped job's
+ * diagnosis in a row under it. Sizes are the glass's tokens, never px (engine/ui/glass/board.test.tsx reads this file); every color is a glass token.
+ */
+.kb-jobs {
+  padding-top: 32px;
+  padding-bottom: 40px;
+}
+
+.kb-jobs-lead,
+.kb-jobs-note {
+  max-width: 900px;
+  margin: 8px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-jobs-calm {
+  margin-top: 34px;
+}
+
+.kb-jobs-table {
+  width: 100%;
+  border-collapse: collapse;
+  color: var(--kb-glass-text);
+}
+
+.kb-jobs-table thead th {
+  padding-bottom: 12px;
+  text-align: left;
+  font-size: var(--kb-glass-size-label);
+  font-weight: 800;
+  letter-spacing: 2.5px;
+  text-transform: uppercase;
+  color: var(--kb-glass-neon-text);
+}
+
+.kb-jobs-table tbody {
+  border-top: 1px solid color-mix(in srgb, var(--kb-glass-text) 14%, transparent);
+}
+
+.kb-jobs-table td,
+.kb-jobs-table tbody th {
+  padding: 10px 12px 10px 0;
+  text-align: left;
+  vertical-align: top;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+}
+
+.kb-jobs-about {
+  display: block;
+  font-weight: 500;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-jobs-table tbody[data-kb-stopped] .kb-jobs-state {
+  font-weight: 800;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-jobs-why td {
+  padding: 0 0 12px;
+  border-left: 3px solid var(--kb-glass-hurt);
+  padding-left: 12px;
+  color: var(--kb-glass-text-2);
+}
+
+.kb-jobs-why p {
+  margin: 0;
+}
+
+.kb-jobs-next {
+  font-weight: 800;
+  color: var(--kb-glass-text);
+}
+
+/* The phone's layout: each row a plate, its cells stacked. */
+:where(:root[data-kb-layout='phone']) .kb-jobs-table thead {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+:where(:root[data-kb-layout='phone']) .kb-jobs-table tbody tr:not(.kb-jobs-why) {
+  display: grid;
+  gap: 2px;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-jobs-table tbody tr:not(.kb-jobs-why) > * {
+  padding: 4px 0;
+}

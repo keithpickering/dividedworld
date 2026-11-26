@@ -225,7 +225,8 @@ describe('the page is its document', () => {
     seedMoves(fake, testInstance, { signIn: 'admin' });
     const boot = await fake.boot();
     const doc = { ...(await fake.queuePage())!, boards: await fake.boards() };
-    const read = holdReads(fake, ['session']);
+    /* The admin pages' strip reads the jobs on its own cache (useJobHealth), which is no read of the page's. */
+    const read = holdReads(fake, ['session', 'jobStatus']);
     renderIn(fake, <QueueScreen doc={doc} now={fake.clock.now()} />, { path: '/admin/queue', boot });
     expect(screen.getByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /^In force/u })).toBeInTheDocument();

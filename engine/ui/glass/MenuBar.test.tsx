@@ -9,8 +9,11 @@ import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { useNavigate, useRouterInternals } from '../router.tsx';
 import { Routes, type Route } from '../routes.tsx';
-import { buildWorld, renderIn, renderInWorld } from '../test-world.tsx';
+import { buildWorld, renderIn, renderInWorld, seedHealthyJobs } from '../test-world.tsx';
 import { boardPlace, forgetBoard, rememberBoard } from './back.ts';
+import fs from 'node:fs';
+import path from 'node:path';
+import { borderContrast, tokenDefaults } from './border-contrast.ts';
 import { MenuBar } from './MenuBar.tsx';
 
 const signedIn = (fake: Fake) => fake.signInAs(fake.seed.account('me'));
@@ -225,7 +228,7 @@ describe('the ADMIN tab', () => {
     await waitFor(() => expect(tabs()).toEqual(['Back to the board', 'Alerts', 'Vending Machine', 'My characters', 'Season', 'My log', 'Guide', 'Updates', 'Settings']));
     expect(within(bar()).queryByRole('link', { name: 'Admin' })).toBeNull();
     unmount();
-    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: (fake) => fake.signInAs(fake.seed.account('boss', { admin: true })) });
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: (fake) => { seedHealthyJobs(fake); fake.signInAs(fake.seed.account('boss', { admin: true })); } });
     const admin = await within(bar()).findByRole('link', { name: 'Admin' });
     expect(admin).toHaveAttribute('href', '/admin/queue');
     expect(admin).toHaveAttribute('aria-current', 'page');
@@ -419,5 +422,38 @@ describe('a load the menu bar waits on', () => {
     renderIn(fake, <MenuBar />, { path: '/season', boot });
     expect(await within(bar()).findByRole('link', { name: 'Admin' })).toBeInTheDocument();
     expect(asked).not.toHaveBeenCalled();
+  });
+});
+
+describe('the Admin tab\'s marker', () => {
+  const adminWorld = (stopped: readonly string[]) => (fake: Fake) => {
+    fake.signInAs(fake.seed.account('boss', { admin: true }));
+    seedHealthyJobs(fake, Object.fromEntries(stopped.map((j) => [`kayfabb-${j}`, 40])));
+  };
+  test('names one stopped job in the tab\'s accessible name, and the marker itself is hidden from readers', async () => {
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: adminWorld(['conceal']) });
+    const admin = await within(bar()).findByRole('link', { name: 'Admin, 1 job stopped' });
+    expect(admin.querySelector('[data-kb-job-mark]')).toHaveAttribute('aria-hidden', 'true');
+  });
+  test('says how many when more than one has stopped', async () => {
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: adminWorld(['conceal', 'mail']) });
+    expect(await within(bar()).findByRole('link', { name: 'Admin, 2 jobs stopped' })).toBeInTheDocument();
+  });
+  test('a player\'s bar never reads the jobs', async () => {
+    const fake = buildWorld();
+    signedIn(fake);
+    const read = vi.spyOn(fake, 'jobStatus');
+    renderIn(fake, <MenuBar />, { path: '/settings' });
+    await within(bar()).findByRole('link', { name: 'Settings' });
+    expect(read).not.toHaveBeenCalled();
+  });
+  test('the mark\'s border reaches 3:1 on the bar\'s dark ground with the tokens\' defaults', () => {
+    const sheet = (name: string) => fs.readFileSync(path.join(__dirname, name), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+    expect(borderContrast(sheet('shell.css'), /\.kb-glass-job-mark/, tokenDefaults(sheet('tokens.css')), 0)).toBeGreaterThanOrEqual(3);
+  });
+  test('is absent while every job is running', async () => {
+    renderInWorld(<MenuBar />, { path: '/admin/queue', seed: adminWorld([]) });
+    const admin = await within(bar()).findByRole('link', { name: 'Admin' });
+    expect(admin.querySelector('[data-kb-job-mark]')).toBeNull();
   });
 });
