@@ -152,6 +152,8 @@ export function scheduledOf(files) {
         end = stop < 0 ? rest.length : stop + open[0].length;
       } else {
         command = plainCommand(rest);
+        // The first `);`, which may sit inside the command's own text: `after` (where the row note is looked for) can then begin
+        // inside the command, which only widens it, since the note always follows the command.
         end = close < 0 ? rest.length : close;
       }
       const tail = rest.slice(end);
@@ -297,8 +299,9 @@ export function problems(files, context) {
     if (!/\/functions\/v1\/[\w-]+/.test(command)) out.push(...sqlRecordProblems(job, command));
     if (!jobs.includes(job)) out.push(`${MIGRATIONS}: E7 job ${job} is scheduled but is not in JOBS (engine/rules/jobs.ts), so nothing watches it; add it there`);
     if (!Object.hasOwn(grace, job)) out.push(`${MIGRATIONS}: E7 job ${job} has no jobGraceMinutes entry in the instance's settings; add one`);
-    const noted = new RegExp(`\\bnote_job_scheduled\\(\\s*'${job}'\\s*\\)`).test(after)
-      || new RegExp(`insert\\s+into\\s+(?:public\\.)?job_runs\\b[^;]*'${job}'`, 'i').test(allSql);
+    const name = job.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const noted = new RegExp(`\\bnote_job_scheduled\\(\\s*'${name}'\\s*\\)`).test(after)
+      || new RegExp(`insert\\s+into\\s+(?:public\\.)?job_runs\\b[^;]*'${name}'`, 'i').test(allSql);
     if (!noted) out.push(`${MIGRATIONS}: E7 job ${job}'s schedule function never calls note_job_scheduled('${job}') and no insert into job_runs names it, so its row never begins and it reads stopped from its seed`);
   }
   const live = new Set(scheduled.map((s) => s.job));
