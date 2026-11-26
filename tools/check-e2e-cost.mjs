@@ -94,16 +94,27 @@ export function matrixShards(text) {
   throw new Error('web.yml has no job with a strategy.matrix.shard list');
 }
 
-if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
+/**
+ * The suite as Playwright lists it: `--list --reporter=json` read from stdout (it prints there even when CI names an outputFile).
+ * @returns {{ list: any } | { error: string }}
+ */
+export function listSuite() {
   const cli = createRequire(import.meta.url).resolve('@playwright/test/cli');
   const run = spawnSync(process.execPath, [cli, 'test', '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  let list;
   try {
-    list = JSON.parse(run.stdout);
+    return { list: JSON.parse(run.stdout) };
   } catch {
-    console.error(`playwright --list did not print JSON (exit ${run.status})\n${run.stderr}`);
+    return { error: `playwright --list did not print JSON (exit ${run.status})\n${run.stderr}` };
+  }
+}
+
+if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
+  const listed = listSuite();
+  if ('error' in listed) {
+    console.error(listed.error);
     process.exit(1);
   }
+  const list = listed.list;
   const manifest = JSON.parse(fs.readFileSync('e2e/cost.json', 'utf8'));
   const shards = matrixShards(fs.readFileSync('.github/workflows/web.yml', 'utf8'));
   const { problems: found, report } = problems({ manifest, keys: keysOf(list), shards, list });
