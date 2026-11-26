@@ -190,6 +190,12 @@ for du, dt, rad in ((0.04, -0.04, 0.066), (-0.02, 0.07, 0.062), (-0.045, -0.075,
                               matrix=Matrix.Translation(c))
 bv = obj('berries', berries, BERRY)
 
+# the sprig's two objects take their origin at the spot in the band they are tucked into, so either can be moved,
+# turned or scaled there in Blender without swinging about the hat's axis
+for o in (lv, bv):
+    o.data.transform(Matrix.Translation(-here))
+    o.location = here
+
 for o in (crown, brim, band, lv, bv):
     sub = o.modifiers.new('smooth', 'SUBSURF')
     sub.levels = sub.render_levels = 1 if o is not lv else 0
