@@ -7,6 +7,7 @@ import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
+import { parse, sectionsOf } from '../../../engine/ui/guide/markdown.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { economyOf, faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
@@ -101,7 +102,20 @@ describe('Divided World\'s onboarding words', () => {
     }
   });
   test('the letter opens as Gabe\'s welcome does', () => {
-    expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
+    expect(instanceUi.onboarding.letter).toMatch(/^## Hi\. I'm Gabe\./u);
+  });
+  test('the letter\'s first block is a heading, which the welcome page draws as its headline', () => {
+    expect(parse(instanceUi.onboarding.letter)[0]?.t).toBe('heading');
+  });
+  test('the letter holds no conditional and no marker', () => {
+    expect(instanceUi.onboarding.letter).not.toMatch(/<!--|\{\{|kayfabb/u);
+  });
+  test('no tip and no line of the front door\'s note says "The System" or "Administrator"', () => {
+    const lines = [
+      ...Object.values(instanceUi.onboarding.tips).flatMap((t) => [t.title, t.line]),
+      ...instanceUi.frontDoor.note.split('\n'),
+    ];
+    for (const line of lines) expect(line, line).not.toMatch(/The System|Administrator/u);
   });
 });
 
@@ -132,6 +146,24 @@ describe('Divided World\'s Strategy Guide', () => {
     expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
+  });
+  test('never says "The System" in what a player reads (the comment at its top is not read)', () => {
+    const shown = instanceUi.guide.markdown.replace(/<!--[\s\S]*?-->/gu, '');
+    expect(shown).not.toContain('The System');
+  });
+  test('its sections, read as the page reads them, are in this order', () => {
+    const titles = sectionsOf(parse(instanceUi.guide.markdown), (p) => `{{setting:${p}}}`).map((s) => s.title);
+    expect(titles).toEqual([
+      'Welcome letter', 'The metagame', 'Your first character', 'Reactions', 'Aura', 'Seasons', 'Classes', 'Turns and reveals',
+      'Cards', 'The masks', 'The staff', 'Things that happen to you', 'The actual rules', 'Coming attractions',
+    ]);
+  });
+  test('"The actual rules" is real moderation, so the persona does not speak in it', () => {
+    const md = instanceUi.guide.markdown;
+    const rules = md.slice(md.indexOf('## The actual rules'), md.indexOf('## Coming attractions'));
+    expect(rules).toContain('## The actual rules');
+    /* The plan's "I ", "I'm", "my " and "yacht", read as whole words, so "I'd", "I've" and "I'll" count and "enemy" does not. */
+    for (const word of [/\bI\b/u, /\bmy\b/iu, /yacht/iu]) expect(rules, String(word)).not.toMatch(word);
   });
 });
 
@@ -213,9 +245,9 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
     expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
-    expect(guideMd).toMatch(/A Move is cast on a target, or set face down on your own post/u);
-    expect(guideMd).toMatch(/A Reversal is only ever set face down on your own post/u);
-    expect(guideMd).toMatch(/A Gimmick is played face up on your own post, your own character, or a thread your own character started/u);
+    expect(guideMd).toMatch(/A \*\*Move\*\* is cast on a target/u);
+    expect(guideMd).toMatch(/A \*\*Reversal\*\* is only ever set face down on your own post/u);
+    expect(guideMd).toMatch(/A \*\*Gimmick\*\* is played face up on your own post, your own character, or a thread your own character started/u);
     expect(guideMd).toMatch(/every card back looks the same/u);
     expect(guideMd).toMatch(/Sweet is babyface work, Salty is heel work/u);
     expect(guideMd).toMatch(/comes back to your hand/u);

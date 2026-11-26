@@ -62,9 +62,9 @@ export function Welcome() {
     void api.seeWelcome().catch(() => { /* the next board page decides again from the account */ });
   }, [api]);
 
-  /* The letter's first heading is the post's headline; the rest is its prose. A marker has no place in a letter. */
+  /* The letter's first heading is the post's headline; the rest is its prose. A marker has no place in a letter, nor has a conditional passage: a letter is the same for every state of the switch. */
   const letter = useMemo(() => {
-    const blocks = parse(ui.onboarding.letter).filter((b) => b.t !== 'marker');
+    const blocks = parse(ui.onboarding.letter).filter((b) => b.t !== 'marker' && b.t !== 'when');
     const first = blocks[0];
     const say = (p: string) => settingText(p, settings) ?? DASH;
     return first?.t === 'heading' && first.level === 2

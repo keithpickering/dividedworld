@@ -7,6 +7,7 @@
  * instance's, not this story's.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
+import { KayfaProvider, useKayfa } from '../context.tsx';
 import { Page } from '../glass/Page.tsx';
 import type { World } from '../story.tsx';
 import { GuideScreen } from './Guide.tsx';
@@ -14,8 +15,11 @@ import { GuideScreen } from './Guide.tsx';
 /** A signed-in player: the guide is the board's, and a signed-out visitor sees the sign-in prompt in its place. */
 const player: World = (fake) => { fake.signInAs(fake.seed.account('player')); };
 
-function GuideStory() {
-  return <Page surface="settings"><GuideScreen /></Page>;
+/** `systemEnabled` lays the instance's switch over the live settings, so the guide's conditional passages show as they do with the staff on or off. */
+function GuideStory({ systemEnabled }: { readonly systemEnabled?: boolean }) {
+  const kayfa = useKayfa();
+  const page = <Page surface="settings"><GuideScreen /></Page>;
+  return systemEnabled === undefined ? page : <KayfaProvider value={{ ...kayfa, settings: { ...kayfa.settings, systemEnabled } }}>{page}</KayfaProvider>;
 }
 
 const meta: Meta<typeof GuideStory> = {
@@ -42,3 +46,7 @@ export const TopPhone: Story = {
   parameters: { path: '/guide' },
   globals: { viewport: { value: 'glassPhone390', isRotated: false } },
 };
+/** From the top with the staff switched on: the passages written for `system-on` are drawn and those for `system-off` are not. */
+export const StaffOn: Story = { args: { systemEnabled: true }, parameters: { path: '/guide' } };
+/** From the top with the staff switched off: the reverse. */
+export const StaffOff: Story = { args: { systemEnabled: false }, parameters: { path: '/guide' } };
