@@ -1184,8 +1184,8 @@ describe('the cosmetics art files', () => {
         }
       }
     }
-    expect(webps, 'the ten caps ship five WebP views each').toBe(50);
-    expect(svgs, 'the four placeholders ship one SVG each').toBe(4);
+    expect(webps, 'the ten caps and the Nostalgic Hat ship five WebP views each').toBe(55);
+    expect(svgs, 'the three placeholders ship one SVG each').toBe(3);
     expect(fs.readdirSync(path.join(dir, 'gear')).filter((f) => f.endsWith('.svg')), 'no flat file of the old layout is left').toEqual([]);
   });
 
