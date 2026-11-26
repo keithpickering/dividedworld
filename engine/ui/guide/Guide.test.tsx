@@ -46,6 +46,48 @@ function stubObserver() {
   };
 }
 
+describe('conditional passages', () => {
+  const md = '## One\n\nBefore.\n\n<!-- kayfabb:if system-on -->\nStaff are on: {{setting:charactersPerPlayer}} masks, see [two](#two).\n<!-- kayfabb:end -->\n\n<!-- kayfabb:if system-off -->\nStaff are off.\n<!-- kayfabb:end -->\n\n## Two\n\nAfter.';
+  const shown = (settings: Partial<ScreenSettings>) => {
+    page(md, { settings });
+    return { on: screen.queryByText(/Staff are on/u), off: screen.queryByText(/Staff are off/u) };
+  };
+  test('with the staff on, the on passage is drawn and the off passage is not', () => {
+    const s = shown({ systemEnabled: true });
+    expect(s.on).toBeInTheDocument();
+    expect(s.off).toBeNull();
+  });
+  test('with the staff off, the reverse', () => {
+    const s = shown({ systemEnabled: false });
+    expect(s.on).toBeNull();
+    expect(s.off).toBeInTheDocument();
+  });
+  test('with the setting absent, neither', () => {
+    const s = shown({ systemEnabled: undefined });
+    expect(s.on).toBeNull();
+    expect(s.off).toBeNull();
+  });
+  test('the contents and the section ids are the same in all three', () => {
+    const ids: string[][] = [];
+    for (const systemEnabled of [true, false, undefined]) {
+      page(md, { settings: { systemEnabled } });
+      ids.push([within(contents()).getAllByRole('link').map((l) => l.getAttribute('href')).join(), [...document.querySelectorAll('section[id]')].map((e) => e.id).join()]);
+      cleanup();
+    }
+    expect(ids[0]).toEqual(['/guide#one,/guide#two', 'one,two']);
+    expect(ids[1]).toEqual(ids[0]);
+    expect(ids[2]).toEqual(ids[0]);
+  });
+  test('a setting and a fragment link inside a shown passage are drawn as outside one, and no wrapper is added', () => {
+    page(md, { settings: { systemEnabled: true } });
+    const para = screen.getByText(/Staff are on/u);
+    expect(para.tagName).toBe('P');
+    expect(para.parentElement).toBe(screen.getByText('Before.').parentElement);
+    expect(para).toHaveTextContent(/Staff are on: \d+ masks/u);
+    expect(within(para).getByRole('link', { name: 'two' })).toHaveAttribute('href', '/guide#two');
+  });
+});
+
 describe('the contents and the sections', () => {
   test('every second-level heading is a section with an anchor, and the contents link to each; a third-level heading is not one', () => {
     page('## Welcome letter\n\nA.\n\n## Turns and reveals\n\nB.\n\n### Not a section\n\nC.');

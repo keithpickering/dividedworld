@@ -5,7 +5,7 @@
  */
 import { describe, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { MARKERS, parse, safeHref, sectionsOf, settingText, slug, type Block, type Inline } from './markdown.ts';
+import { CONDITIONS, MARKERS, parse, safeHref, sectionsOf, settingText, slug, type Block, type Inline } from './markdown.ts';
 import type { ScreenSettings } from '../data/api.ts';
 
 const text = (t: string): Inline => ({ t: 'text', text: t });
@@ -123,6 +123,59 @@ describe('markers and comments', () => {
       { t: 'p', children: [text('Up to '), { t: 'setting', path: 'charactersPerPlayer' }, text(' masks.')] },
       { t: 'ul', items: [[{ t: 'setting', path: 'turnCooldown' }]] },
     ]);
+  });
+});
+
+describe('conditional passages', () => {
+  const on = '<!-- kayfabb:if system-on -->';
+  const off = '<!-- kayfabb:if system-off -->';
+  const end = '<!-- kayfabb:end -->';
+  test('the conditions are the staff on and the staff off', () => {
+    assert.deepEqual([...CONDITIONS], ['system-on', 'system-off']);
+  });
+  test('an on passage and an off passage are when blocks holding their blocks, and the text around them is untouched', () => {
+    assert.deepEqual(parse(`Before.\n\n${on}\nStaff.\n${end}\n\n${off}\nNo staff.\n${end}\n\nAfter.`), [
+      { t: 'p', children: [text('Before.')] },
+      { t: 'when', system: 'on', blocks: [{ t: 'p', children: [text('Staff.')] }] },
+      { t: 'when', system: 'off', blocks: [{ t: 'p', children: [text('No staff.')] }] },
+      { t: 'p', children: [text('After.')] },
+    ]);
+  });
+  test('a list, a table and a third-level heading inside one are read', () => {
+    const [b] = parse(`${on}\n### Staff\n\n- one\n- two\n\n| a | b |\n| --- | --- |\n| 1 | 2 |\n${end}`);
+    assert.equal(b!.t, 'when');
+    assert.deepEqual((b as Extract<Block, { t: 'when' }>).blocks.map((x) => x.t), ['heading', 'ul', 'table']);
+  });
+  test('an if with an unknown condition is a marker the check can name, and the rest of the guide is still there', () => {
+    assert.deepEqual(parse(`<!-- kayfabb:if weather-fine -->\nIn.\n${end}\n\nAfter.`), [
+      { t: 'marker', name: 'if weather-fine' },
+      { t: 'p', children: [text('In.')] },
+      { t: 'marker', name: 'end' },
+      { t: 'p', children: [text('After.')] },
+    ]);
+  });
+  test('an if inside an if is if-nested, and the outer passage is still one', () => {
+    const tree = parse(`${on}\nA.\n${off}\nB.\n${end}\n${end}\n\nAfter.`);
+    assert.deepEqual(tree.map((b) => b.t), ['when', 'p']);
+    const inner = (tree[0] as Extract<Block, { t: 'when' }>).blocks;
+    assert.deepEqual(inner.filter((b) => b.t === 'marker'), [{ t: 'marker', name: 'if-nested' }]);
+  });
+  test('an if never closed is if-unclosed and the guide below it is still there', () => {
+    assert.deepEqual(parse(`${on}\nText.\n\nMore.`), [
+      { t: 'marker', name: 'if-unclosed' },
+      { t: 'p', children: [text('Text.')] },
+      { t: 'p', children: [text('More.')] },
+    ]);
+  });
+  test('an end with no if is a marker named end', () => {
+    assert.deepEqual(parse(`Text.\n\n${end}\n\nMore.`), [
+      { t: 'p', children: [text('Text.')] },
+      { t: 'marker', name: 'end' },
+      { t: 'p', children: [text('More.')] },
+    ]);
+  });
+  test('a passage inside a quote is read too', () => {
+    assert.deepEqual(parse(`> ${on}\n> Hi.\n> ${end}`), [{ t: 'quote', blocks: [{ t: 'when', system: 'on', blocks: [{ t: 'p', children: [text('Hi.')] }] }] }]);
   });
 });
 

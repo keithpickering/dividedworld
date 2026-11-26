@@ -136,5 +136,5 @@ export function CardList() {
 /** The welcome letter, a marker inside it being nothing (the letter does not draw the guide). */
 export function Letter({ fill }: { readonly fill: Fill }) {
   const { ui } = useKayfa();
-  return <Blocks blocks={parse(ui.onboarding.letter).filter((b) => b.t !== 'marker')} fill={fill} demote={1} />;
+  return <Blocks blocks={parse(ui.onboarding.letter).filter((b) => b.t !== 'marker' && b.t !== 'when')} fill={fill} demote={1} />;
 }

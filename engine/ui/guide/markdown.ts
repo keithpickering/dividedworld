@@ -16,6 +16,12 @@
  *   `spanWords`), and any other number is the number. `settingText` is the one reading, used by the page and by tools/check-guide.mjs,
  *   so a path the check accepts is a path the page can say.
  *
+ * A conditional passage, `<!-- kayfabb:if system-on -->` (or `system-off`) alone on a line, then lines of Markdown, then `<!-- kayfabb:end -->`
+ * alone on a line, is a `when` block holding the blocks between them: the page draws it only while The System is switched on (or off), and a
+ * letter draws none of it (CONDITIONS). The reader is lenient and never throws, so the check can name each fault: an `if` with a condition
+ * it does not know is a marker named `if <condition>`, an `if` inside an `if` a marker named `if-nested`, an `if` never closed one named
+ * `if-unclosed`, and an `end` with no `if` one named `end`. The page draws nothing for those, as for any marker it does not know.
+ *
  * Any other `<!-- comment -->`, on one line or many, is the author's note and is dropped; one that never closes is text, so a stray
  * `<!--` cannot swallow the rest of the guide.
  */
@@ -36,10 +42,13 @@ export type Block =
   | { readonly t: 'quote'; readonly blocks: readonly Block[] }
   | { readonly t: 'table'; readonly head: readonly (readonly Inline[])[]; readonly rows: readonly (readonly (readonly Inline[])[])[] }
   | { readonly t: 'hr' }
-  | { readonly t: 'marker'; readonly name: string };
+  | { readonly t: 'marker'; readonly name: string }
+  | { readonly t: 'when'; readonly system: 'on' | 'off'; readonly blocks: readonly Block[] };
 
 /** The markers the engine fills (tools/check-guide.mjs refuses any other name). */
 export const MARKERS = ['letter', 'reactions', 'classes', 'cards'] as const;
+/** The conditions a passage may be shown under (`<!-- kayfabb:if <condition> -->`). */
+export const CONDITIONS = ['system-on', 'system-off'] as const;
 export type MarkerName = (typeof MARKERS)[number];
 
 /* ------------------------------------------------------------------------ links ---- */
@@ -174,6 +183,8 @@ export function sectionsOf(blocks: readonly Block[], say: (path: string) => stri
 /* ----------------------------------------------------------------------- blocks ---- */
 
 const MARKER_LINE = /^<!--\s*kayfabb:([A-Za-z][\w-]*)\s*-->$/u;
+const IF_LINE = /^<!--\s*kayfabb:if(?:\s+([^\s>]+(?:\s+[^\s>]+)*?))?\s*-->$/u;
+const END_LINE = /^<!--\s*kayfabb:end\s*-->$/u;
 const HEADING = /^(#{1,4})\s+(.+?)(?:\s+#+)?\s*$/u;
 const RULE = /^(?:(?:-\s*){3,}|(?:\*\s*){3,}|(?:_\s*){3,})$/u;
 const ITEM = /^(\s*)([-*+]|\d+[.)])\s+(.*)$/u;
@@ -203,6 +214,30 @@ function blocks(lines: readonly string[]): Block[] {
     if (t === '') { i++; continue; }
 
     if (t.startsWith('<!--')) {
+      const cond = IF_LINE.exec(t);
+      if (cond) {
+        const name = cond[1] ?? '';
+        const known = (CONDITIONS as readonly string[]).includes(name);
+        let j = i + 1;
+        for (let depth = 0; j < lines.length; j++) {
+          const l = lines[j]!.trim();
+          if (IF_LINE.test(l)) depth++;
+          else if (END_LINE.test(l) && depth-- === 0) break;
+        }
+        if (!known) { out.push({ t: 'marker', name: `if ${name}`.trim() }); i++; continue; }
+        if (j >= lines.length) { out.push({ t: 'marker', name: 'if-unclosed' }); i++; continue; }
+        /* An `if` inside the passage is nested: its own line becomes a marker the check refuses, and its `end` is dropped with it. */
+        let depth = 0;
+        const inner = lines.slice(i + 1, j).map((l) => {
+          if (IF_LINE.test(l.trim())) { depth++; return '<!-- kayfabb:if-nested -->'; }
+          if (END_LINE.test(l.trim()) && depth > 0) { depth--; return ''; }
+          return l;
+        });
+        out.push({ t: 'when', system: name === 'system-on' ? 'on' : 'off', blocks: blocks(inner) });
+        i = j + 1;
+        continue;
+      }
+      if (END_LINE.test(t)) { out.push({ t: 'marker', name: 'end' }); i++; continue; }
       const marker = MARKER_LINE.exec(t);
       if (marker) { out.push({ t: 'marker', name: marker[1]! }); i++; continue; }
       let j = i;
