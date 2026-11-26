@@ -207,7 +207,7 @@ begin
   perform pg_temp.expect(r = 'ERROR: P0002 there is no such board', 'a missing board: ' || r);
   -- The System's board.
   r := pg_temp.as_val(ann, format('select spin(origin => %L, through => %L, title => %L, body => %L, board_slug => %L)', pg_temp.f('pgen'), c, 'System board', 'Body.', 'the-system'));
-  perform pg_temp.expect(r = 'ERROR: 42501 a thread cannot be spun onto The System''s board; pick another board', 'The System''s board: ' || r);
+  perform pg_temp.expect(r = 'ERROR: 42501 ' || (select n.name from boards_now n join boards b on b.id = n.id where b.slug = 'the-system') || ' is the staff''s own board; pick another board', 'The System''s board: ' || r);
   -- A closed board (Sb Shut was merged away by its move's end).
   r := pg_temp.as_val(ann, format('select spin(origin => %L, through => %L, title => %L, body => %L, board_slug => %L)', pg_temp.f('pgen'), c, 'Closed board', 'Body.', 'sb-shut'));
   perform pg_temp.expect(r like 'ERROR: 55000 this board was closed, and its threads are in %; start your thread there instead', 'a closed board: ' || r);
@@ -249,7 +249,7 @@ begin
   before := pg_temp.rows();
   -- The System's board is no place for one.
   r := pg_temp.as_val(ann, format('select apologize(in_move => %L, through => %L, title => %L, body => %L, board_slug => %L)', m, d, 'Sorry', 'Sorry.', 'the-system'));
-  perform pg_temp.expect(r = 'ERROR: 42501 a thread cannot be spun onto The System''s board; pick another board', 'an apology on The System''s board: ' || r);
+  perform pg_temp.expect(r = 'ERROR: 42501 ' || (select n.name from boards_now n join boards b on b.id = n.id where b.slug = 'the-system') || ' is the staff''s own board; pick another board', 'an apology on The System''s board: ' || r);
   perform pg_temp.expect(pg_temp.rows() = before, 'a refused apology left rows behind');
   -- The board the apologizer is barred from is a place for one: the bar is not checked.
   r := pg_temp.as_val(ann, format('select apologize(in_move => %L, through => %L, title => %L, body => %L, board_slug => %L)', m, d, 'Sorry, here', 'Sorry.', 'sb-games'));
@@ -280,7 +280,7 @@ begin
   -- The refusals: The System's board, a missing one, a closed one, a bad origin; each leaves nothing behind. (A bar is not asked of a persona.)
   before := pg_temp.rows();
   perform pg_temp.expect(pg_temp.as_val(null, format('select write_staff_spin(staff_key => %L, origin => %L, title => %L, body => %L, board_slug => %L)', 'sb-kassie', pg_temp.f('pgames'), 'T', 'B', 'the-system'))
-    = 'ERROR: 42501 a thread cannot be spun onto The System''s board; pick another board', 'a persona''s spin onto The System''s board');
+    = 'ERROR: 42501 ' || (select n.name from boards_now n join boards b on b.id = n.id where b.slug = 'the-system') || ' is the staff''s own board; pick another board', 'a persona''s spin onto The System''s board');
   perform pg_temp.expect(pg_temp.as_val(null, format('select write_staff_spin(staff_key => %L, origin => %L, title => %L, body => %L, board_slug => %L)', 'sb-kassie', pg_temp.f('pgames'), 'T', 'B', 'sb-nowhere'))
     = 'ERROR: P0002 there is no such board', 'a persona''s spin onto a missing board');
   perform pg_temp.expect(pg_temp.as_val(null, format('select write_staff_spin(staff_key => %L, origin => %L, title => %L, body => %L, board_slug => %L)', 'sb-kassie', pg_temp.f('pgames'), 'T', 'B', 'sb-shut')) like 'ERROR: 55000 %',

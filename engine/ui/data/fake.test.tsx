@@ -266,7 +266,7 @@ describe('a spin picks its board (0442_spin_board.sql)', () => {
     fake.seed.closeBoard('attic', { fallback: 'general' });
     const before = await counts();
     expect(await fake.spin(opener, anaFace, 'T', 'b', undefined, undefined, 'nowhere')).toEqual(refused('there is no such board'));
-    expect(await fake.spin(opener, anaFace, 'T', 'b', undefined, undefined, 'announcements')).toEqual(refused('a thread cannot be spun onto The System\'s board; pick another board'));
+    expect(await fake.spin(opener, anaFace, 'T', 'b', undefined, undefined, 'announcements')).toEqual(refused('The System is the staff\'s own board; pick another board'));
     expect(await fake.spin(opener, anaFace, 'T', 'b', undefined, undefined, 'attic')).toEqual(refused('this board was closed, and its threads are in General; start your thread there instead'));
     expect(await counts()).toEqual(before);
   });
@@ -291,7 +291,7 @@ describe('a spin picks its board (0442_spin_board.sql)', () => {
   test('an apology names a board by the same rules (not The System\'s, not missing), and with none lands where it did', async () => {
     const { fake, anaFace, bar } = pickWorld();
     const move = bar('general', Date.now() + 86_400_000);
-    expect(await fake.apologize(move, anaFace, 'Sorry', 'x', undefined, 'announcements')).toEqual(refused('a thread cannot be spun onto The System\'s board; pick another board'));
+    expect(await fake.apologize(move, anaFace, 'Sorry', 'x', undefined, 'announcements')).toEqual(refused('The System is the staff\'s own board; pick another board'));
     expect(await fake.apologize(move, anaFace, 'Sorry', 'x', undefined, 'nowhere')).toEqual(refused('there is no such board'));
     expect(must(await fake.apologize(move, anaFace, 'Sorry', 'x')).thread.board).toBe(await boardId(fake, 'general'));
   });

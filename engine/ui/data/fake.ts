@@ -1831,7 +1831,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   function namedBoard(slug: string): Board | Refusal {
     const board = boards.find((b) => b.slug === slug);
     if (!board) return refuse('there is no such board');
-    if (board.isSystem) return refuse('a thread cannot be spun onto The System\'s board; pick another board');
+    if (board.isSystem) return refuse(`${boardNow(board).name} is the staff's own board; pick another board`);
     return board;
   }
 

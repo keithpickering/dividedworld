@@ -59,8 +59,9 @@ begin
   if board_slug is not null then
     select b.id into on_board from boards b where b.slug = board_slug;
     if on_board is null then raise exception 'there is no such board' using hint = 'kayfabb.refusal', errcode = 'P0002'; end if;
+    -- Named by the board's own name (a rename in force shows), never The System's: engine/ui/voice.ts holds that a player's string names no one.
     if exists (select 1 from boards b where b.id = on_board and b.is_system) then
-      raise exception 'a thread cannot be spun onto The System''s board; pick another board' using hint = 'kayfabb.refusal', errcode = '42501';
+      raise exception '% is the staff''s own board; pick another board', coalesce((select n.name from boards_now n where n.id = on_board), 'this board') using hint = 'kayfabb.refusal', errcode = '42501';
     end if;
   end if;
   -- The post a spin is pressed at: a post by the character a landed, live play was cast on. Public facts only; one sentence for every predicate that fails.
@@ -175,7 +176,7 @@ begin
   if board_slug is not null then
     select b.id into on_board from boards b where b.slug = board_slug;
     if on_board is null then raise exception 'there is no such board' using errcode = 'P0002'; end if;
-    if exists (select 1 from boards b where b.id = on_board and b.is_system) then raise exception 'a thread cannot be spun onto The System''s board; pick another board' using errcode = '42501'; end if;
+    if exists (select 1 from boards b where b.id = on_board and b.is_system) then raise exception '% is the staff''s own board; pick another board', coalesce((select n.name from boards_now n where n.id = on_board), 'this board') using errcode = '42501'; end if;
   end if;
   flag := coalesce(current_setting('kayfabb.staff_writer', true), '');
   perform set_config('kayfabb.staff_writer', 'on', true);
