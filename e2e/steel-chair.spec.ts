@@ -1,6 +1,7 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DEPTH, HALF } from '../instances/divided-world/ui/steel-chair/body.ts';
+import { DEPTH, HALF, STEP } from '../instances/divided-world/ui/steel-chair/body.ts';
 import { FLOOR_DEPTH, GIVE, INSET, K, roomHeightOf, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
+import { LID_SECONDS } from '../instances/divided-world/ui/steel-chair/lid.ts';
 import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
 import { pageViolations } from './axe.ts';
 import { watchPuff } from './puff-watch.ts';
@@ -1214,7 +1215,8 @@ const CAN_STORIES = [
 
 for (const { name, url, area: areaSelector } of CAN_STORIES) {
   test(`can ${name}: the lid leaves the content area and is seen outside it, clipped by nothing`, async ({ page }) => {
-    test.setTimeout(60_000);
+    /* The watcher runs on the effect's own capped clock, so a slow machine takes longer in wall time: this only ends a hang. */
+    test.setTimeout(120_000);
     await page.setViewportSize({ width: 1280, height: 900 });
     await page.addInitScript((given: number) => {
       const real = crypto.getRandomValues.bind(crypto);
@@ -1229,18 +1231,22 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
     await page.evaluate(() => document.fonts.ready);
     /* Centered, so that the lid has room above the post: at the top of the window it flies under the frame's header, which covers it. */
     await page.locator(areaSelector).first().evaluate((el) => el.scrollIntoView({ block: 'center' }));
-    const seen = await page.evaluate((selector) => new Promise<{
+    const seen = await page.evaluate(([selector, frameMost, lidSeconds]) => new Promise<{
       lids: number; frames: number; outside: number; visible: number; painted: number; clippers: string[]; gone: boolean; canPieces: number;
     }>((resolve) => {
       const area = document.querySelector<HTMLElement>(selector)!;
       const out = { lids: 0, frames: 0, outside: 0, visible: 0, painted: 0, clippers: [] as string[], gone: false, canPieces: -1 };
-      const started = performance.now();
+      /* The effect's own clock (Effect.tsx): each frame ages it by at most `frameMost`, so a slow frame does not age the lid as wall time would. */
+      let last = 0, clock = 0, lidFrom = -1;
       const clips = (el: Element): boolean => {
         const s = getComputedStyle(el);
         return s.overflowX !== 'visible' || s.overflowY !== 'visible' || /paint|strict|content/.test(s.contain) || s.clipPath !== 'none' || (s.clip !== 'auto' && s.clip !== '');
       };
-      const tick = (): void => {
+      const tick = (t: number): void => {
+        clock += last ? Math.min(frameMost, (t - last) / 1000) : 0;
+        last = t;
         const lid = area.querySelector<HTMLElement>('.dw-chair-lid');
+        if (lid && lidFrom < 0) lidFrom = clock;
         if (lid) {
           out.lids++;
           const rects = [...lid.querySelectorAll('.dw-chair-piece')].map((p) => p.getBoundingClientRect()).filter((r) => r.width > 0 && r.height > 0);
@@ -1287,11 +1293,12 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
           return;
         }
         out.frames++;
-        if (performance.now() - started > 15_000) { resolve(out); return; }
+        /* Stop once the lid has had its whole arc and some frames over, or when none has appeared by 5 s of the effect's time. */
+        if (lidFrom < 0 ? clock > 5 : clock - lidFrom > lidSeconds + 3 * frameMost) { resolve(out); return; }
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
-    }), areaSelector);
+    }), [areaSelector, 4 * STEP, LID_SECONDS] as const);
     console.log(`${name}: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.visible} of them seen; clipping ancestors: ${seen.clippers.join(', ') || 'none'}`);
     expect(seen.lids, 'a lid group was drawn').toBeGreaterThan(0);
     expect(seen.outside, `the lid was wholly outside the content area at some frame (clipping ancestors on the way up: ${seen.clippers.join(', ') || 'none'})`).toBeGreaterThan(0);
