@@ -19,16 +19,16 @@ function fieldValues(text: string, lo: number, hi: number, name: string): Set<nu
   const out = new Set<number>();
   for (const part of text.split(',')) {
     const m = /^(\*|(\d+)(?:-(\d+))?)(?:\/(\d+))?$/.exec(part);
-    if (!m) throw new Error(`cron ${name}: '${part}' is not a number, *, range or step`);
+    if (!m) throw new Error(`cron ${name}: "${part}" is not a number, *, range or step`);
     const step = m[4] === undefined ? 1 : Number(m[4]);
-    if (step < 1) throw new Error(`cron ${name}: step '${part}' must be at least 1`);
+    if (step < 1) throw new Error(`cron ${name}: step "${part}" must be at least 1`);
     let from = lo;
     let to = hi;
     if (m[1] !== '*') {
       from = Number(m[2]);
       to = m[3] === undefined ? (m[4] === undefined ? from : hi) : Number(m[3]);
     }
-    if (from < lo || to > hi || from > to) throw new Error(`cron ${name}: '${part}' is outside ${lo}-${hi}`);
+    if (from < lo || to > hi || from > to) throw new Error(`cron ${name}: "${part}" is outside ${lo}-${hi}`);
     for (let v = from; v <= to; v += step) out.add(v);
   }
   return out;
@@ -46,7 +46,7 @@ export interface CronSchedule {
 
 export function parseCron(expr: string): CronSchedule {
   const fields = expr.trim().split(/\s+/);
-  if (fields.length !== 5) throw new Error(`cron '${expr}': expected five fields`);
+  if (fields.length !== 5) throw new Error(`cron "${expr}": expected five fields`);
   const [, , fDom, , fDow] = fields as [string, string, string, string, string];
   const values = fields.map((f, i) => fieldValues(f, FIELDS[i]!.lo, FIELDS[i]!.hi, FIELDS[i]!.name));
   const [minute, hour, dom, month, dowRaw] = values as [Set<number>, Set<number>, Set<number>, Set<number>, Set<number>];
