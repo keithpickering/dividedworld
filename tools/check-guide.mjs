@@ -124,6 +124,7 @@ function walk(blocks, visit, inWhen = false) {
       if (n.t === 'setting') visit.setting?.(n.path);
       else if (n.t === 'link') { visit.link?.(n.href); inlines(n.children); }
       else if (n.t === 'strong' || n.t === 'em') inlines(n.children);
+      /* A `br` holds nothing to check. */
     }
   };
   for (const b of blocks) {

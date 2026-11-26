@@ -260,5 +260,5 @@ Still to come, and subject to change:
 
 That's the game as it stands. It's a pre-alpha, and every number in here is today's, so this guide changes when the game does. If it and the game ever disagree, the game is right and I'd like to hear about it.
 
-Have fun,
+Have fun,\
 Gabe

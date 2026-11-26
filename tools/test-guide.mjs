@@ -87,6 +87,13 @@ const fires = (markdown, pattern, o = {}) => {
   check('a link to a path or an address is not a fragment and is left alone', faultsOf('## Aura\n\n[a](/updates#x) [b](https://example.com/#y)\n').length === 0);
 }
 
+/* ---- a hard break: a backslash that ends a line ---- */
+{
+  check('clean: a guide with a hard break in a paragraph', faultsOf('## A\n\nHave fun,\\\nGabe\n').length === 0, JSON.stringify(faultsOf('## A\n\nHave fun,\\\nGabe\n')));
+  check('a retyped number across a hard break still fires: the break reads as a word boundary', fires('## A\n\nYou can play up to six\\\ncharacters.\n', /number|spelled|typed|\bsix\b/i), JSON.stringify(faultsOf('## A\n\nYou can play up to six\\\ncharacters.\n')));
+  check('a setting after a hard break is still read: an unknown path fires', fires('## A\n\nHave fun,\\\n{{setting:walletCapp}}\n', /walletCapp/), JSON.stringify(faultsOf('## A\n\nHave fun,\\\n{{setting:walletCapp}}\n')));
+}
+
 /* ---- a retyped number ---- */
 {
   const retyped = [

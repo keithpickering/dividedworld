@@ -155,6 +155,12 @@ describe('Divided World\'s Strategy Guide', () => {
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
   });
+  test('Gabe\'s sign-off is two short lines in both the letter and the guide: a hard break, no paragraph gap', () => {
+    for (const [name, md] of [['letter', instanceUi.onboarding.letter], ['guide', instanceUi.guide.markdown]] as const) {
+      const last = parse(md).filter((b) => b.t === 'p').at(-1)!;
+      expect(last, name).toEqual({ t: 'p', children: [{ t: 'text', text: 'Have fun,' }, { t: 'br' }, { t: 'text', text: 'Gabe' }] });
+    }
+  });
   test('never says "The System" in what a player reads (the comment at its top is not read)', () => {
     const shown = instanceUi.guide.markdown.replace(/<!--[\s\S]*?-->/gu, '');
     expect(shown).not.toContain('The System');

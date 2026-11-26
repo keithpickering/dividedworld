@@ -31,6 +31,7 @@ function Inlines({ nodes, fill }: { readonly nodes: readonly Inline[]; readonly 
           case 'text': return n.text;
           case 'strong': return <strong key={i}><Inlines nodes={n.children} fill={fill} /></strong>;
           case 'em': return <em key={i}><Inlines nodes={n.children} fill={fill} /></em>;
+          case 'br': return <br key={i} />;
           case 'code': return <code key={i}>{n.text}</code>;
           case 'setting': return settingText(n.path, fill.settings) ?? DASH;
           case 'link': {

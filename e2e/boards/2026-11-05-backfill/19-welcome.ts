@@ -13,8 +13,9 @@
  *  - The letter is the owner's new one (docs/plans/2026-11-21-gabes-voice-plan.md, Task 7), longer than the board's, and it wraps with the words, so
  *    what sits under it is measured from the bottom of the last paragraph above it (`p3`, then `p4`), never from the headline, which the
  *    paragraphs between them would move (e2e/boards-wrap.spec.ts). Its heading and paragraphs are named by `buildName`; the build has no separate
- *    signature (the sign-off "Have fun, Gabe" is the last paragraph, compared by its place only, 2px lower than the board's call to action "Go make
- *    somebody." from the paragraph above), so the board's signature has no counterpart and is not compared. Measured from `p4`'s bottom, the parts
+ *    signature (the sign-off "Have fun," and "Gabe" is the last paragraph, two short lines with a hard break between them, owner's call in #1146: it
+ *    is 33.5px taller than the board's one-line call to action "Go make somebody." and 2px lower than it from the paragraph above, compared by
+ *    its place and its height, and its words read "Have fun,Gabe" because the break holds no space), so the board's signature has no counterpart and is not compared. Measured from `p4`'s bottom, the parts
  *    under it stand 56.6px higher than before (`LETTER`) in place of 186.7px lower from the headline.
  *  - The post's top padding is 36px where the board draws 40, and the byline and the headline stand 12 and 9px higher.
  *  - The calls to action are GlassButtons, 48px tall where the board's `.btn` is 54 (the same as boards 14 to 17), at the glass's own width, so
@@ -56,7 +57,7 @@ const manifest: BoardManifest = {
     { id: 'headline', role: 'heading', name: 'After nine years of development', buildName: 'Hi. I\'m Gabe.', buildSize: 64, box: 'position', buildShift: { y: -9 } },
     { id: 'p1', role: 'text', name: '...hopefully it would have been worth the wait.', buildName: 'You might know me as the creator of Minus World, a forum and a fighting game all-in-one. Recently, I made the decision to strip the RAM from Minus World\'s servers and sell it to Sam Altman to pay for another yacht for myself. As a result, Minus World had to be shut down. Its denizens were left stranded with nowhere to go, like sad, wandering hobos. Hobos without yachts.', box: 'position', buildSize: 22, origin: 'headline', originEdge: 'bottom' },
     { id: 'p3', role: 'text', name: 'Everything anyone does here is public. Who\'s doing it isn\'t. Work it out, or don\'t.', buildName: 'I can\'t lie to you. Prioritizing this project meant that several in-development games nearing completion, most notably Half-Life: Nuts & Bolts, had to be shelved, likely permanently. These games\' assets will be repurposed as purchasable cosmetics, so they will live on in our hats. Uh, I mean hearts.', box: 'none', type: false, origin: 'headline', originEdge: 'bottom' },
-    { id: 'p4', role: 'text', name: 'Go make somebody.', buildName: 'Have fun, Gabe', type: false, buildSize: 22, buildShift: { y: 2 }, origin: 'p3', originEdge: 'bottom' },
+    { id: 'p4', role: 'text', name: 'Go make somebody.', buildName: 'Have fun,Gabe', type: false, buildSize: 22, buildShift: { y: 2, height: 33.5 }, origin: 'p3', originEdge: 'bottom' },
     { id: 'start', role: 'heading', name: 'BEFORE YOU START', buildSize: 40, buildShift: { y: 32 + LETTER }, origin: 'p4', originEdge: 'bottom' },
     { id: 'start-lede', role: 'text', name: 'How the board and the glass look and move. None of it changes how the game plays.', box: 'position', buildShift: PROSE, origin: 'p4', originEdge: 'bottom' },
     { id: 'theme', role: 'heading', name: 'THEME', box: 'position', buildShift: PROSE, origin: 'p4', originEdge: 'bottom' },
