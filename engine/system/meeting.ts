@@ -64,6 +64,8 @@ export const ORDER_MOST = 200;
 export const POINTS_MOST = 200;
 /** Characters of the handoff note, out of character: stored by `apply_meeting` into handoffs.note (0337). */
 export const HANDOFF_MOST = 2000;
+/** The most the minutes hold (the design's section 8): the Boss's post in the season's Staff Meetings thread. An answer past it is trimmed and the trim recorded. */
+export const MINUTES_MOST = 600;
 
 /* --------------------------------------------------------------------------------- the rule ---- */
 
@@ -221,6 +223,9 @@ function fieldRules(asked: boolean): Record<string, Rule> {
     // nothing to say, leaves them out, and nothing here is a reason to reject a paid answer. The farewell's bound is postMaxLength, a setting, so the repair trims it; the handoff's is HANDOFF_MOST.
     farewell: { type: 'string', optional: true },
     handoff: { type: 'string', maxLength: HANDOFF_MOST, optional: true },
+    // The minutes (the staff board threads design, section 8): a few lines on the meeting just held, posted as written in the season's Staff Meetings thread. Optional, and its bound is MINUTES_MOST,
+    // trimmed and recorded by the repair, so an answer that overshoots by a little loses nothing else.
+    minutes: { type: 'string', optional: true },
     // The requests waiting for the Boss's ruling (the staff requests design, section 3): each shown request answered fulfill (with one move, as the Boss's turn writes it) or reject, with the Boss's own line. Optional: a meeting with
     // none waiting is not asked, and one it leaves out stays waiting. Asked, the move is the flat request move (one text param for each of the five fields a request's kinds use: the provider's 40 properties allow no more, so a rename's
     // description is the stock one and a created board has no fallback); in the rule it is of any shape, so one malformed entry never costs a paid answer, and `repairAnswer` repairs or drops each and records it.
@@ -277,7 +282,7 @@ export const MEETING_PARTS = [
   { key: 'moves', fields: ['moves', 'inherited', 'successor'], ask: 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.' },
   { key: 'bundle', fields: ['bundle'], ask: 'Your moves stand as you answered them. This turn is your bundle: answer bundle if you compose one, and leave it out if you do not.' },
   { key: 'staff', fields: ['orders', 'patrols', 'points', 'requests'], ask: 'Your moves and your bundle stand as you answered them. This turn is your staff: answer orders and patrols, and points, the talking points you give each persona that posts, and requests if any wait for your ruling.' },
-  { key: 'self', fields: ['memory', 'profile', 'beats', 'farewell', 'handoff'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, and beats, farewell and handoff if you were given beats to play or told to write a farewell.' },
+  { key: 'self', fields: ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, the minutes of the meeting you just held, and beats, farewell and handoff if you were given beats to play or told to write a farewell.' },
 ] as const satisfies readonly { readonly key: string; readonly fields: readonly string[]; readonly ask: string }[];
 
 /**
@@ -509,6 +514,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       'Your memory. The memory you answer in the self part is your whole new memory: what you leave out of it is forgotten. Order every list most important first.',
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
       `Your profile: up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood (a short phrase, at most ${PROFILE_MOST.mood} characters) and a signature. It is public and in your voice. A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`,
+      `minutes: a few lines, in your voice, on the meeting you just held, for the board to read. Say what was argued and decided as you see it. It is posted as written, and decides nothing. At most ${MINUTES_MOST} characters.`,
     ].join('\n'),
     modsText(f),
     pointsText(f),
@@ -872,6 +878,8 @@ export interface RepairedAnswer {
   /** The Boss's last words in character (at most postMaxLength) and its note out of character (at most HANDOFF_MOST), or null: none given, blank, or the meeting was not in the window. */
   readonly farewell: string | null;
   readonly handoff: string | null;
+  /** The minutes of the meeting, in the Boss's voice, at most MINUTES_MOST: trimmed and recorded past it, or null where none was given or it was blank. Posted as written; never read as a move. */
+  readonly minutes: string | null;
   readonly trims: readonly Trim[];
 }
 
@@ -1635,7 +1643,16 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     farewell = farewell.slice(0, cutAt);
   }
 
-  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), points, requests, inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, farewell, handoff, trims };
+  // The minutes: a blank one is none; one past MINUTES_MOST is trimmed (never through a surrogate pair) and the trim recorded.
+  let minutes = typeof a['minutes'] === 'string' ? a['minutes'].trim() : '';
+  if (minutes.length > MINUTES_MOST) {
+    const last = minutes.charCodeAt(MINUTES_MOST - 1);
+    const cutAt = last >= 0xd800 && last <= 0xdbff ? MINUTES_MOST - 1 : MINUTES_MOST;
+    trims.push({ path: 'minutes', predicate: `maxLength(${MINUTES_MOST})`, before: minutes.length, after: cutAt });
+    minutes = minutes.slice(0, cutAt);
+  }
+
+  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), points, requests, inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, farewell, handoff, minutes: minutes === '' ? null : minutes, trims };
 }
 
 

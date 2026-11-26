@@ -842,6 +842,10 @@ describe('pinned threads and the banner', () => {
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
     await user.click(await within(banner).findByRole('button', { name: 'Play Rumble on General' }));
     const dialog = await screen.findByRole('dialog', { name: /Rumble/u });
+    /* A board card is written in a thread on its board (0438): the form asks which, and cannot be sent until one is picked. */
+    expect(within(dialog).getByRole('button', { name: /^Play as / })).toBeDisabled();
+    await user.type(within(dialog).getByRole('combobox', { name: 'Thread' }), 'Thread');
+    await user.click(await screen.findByRole('option', { name: /Thread 002/u }));
     await user.click(within(dialog).getByRole('button', { name: /^Play as / }));
     expect(await within(banner).findByRole('button', { name: /^Rumble, 1 play\b/u })).toBeInTheDocument();
     await waitFor(() => expect(document.activeElement).toBe(banner.querySelector('h1')));
@@ -872,7 +876,7 @@ describe('pinned threads and the banner', () => {
     /* The page listens from an effect, which can run after the list is on screen: a play sent before it would be heard by no one. */
     await waitFor(() => expect(heard).toHaveBeenCalled());
     const banner = document.querySelector('.kb-board-banner') as HTMLElement;
-    fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true });
+    fake.seed.reach(w.spritey, 'board', '99999999-9999-4999-8999-999999999999', 'rumble', { ends: Date.now() + DAY, live: true, thread: w.ids[0]! });
     await new Promise((r) => setTimeout(r, 50));
     expect(within(banner).queryByRole('button', { name: /^Rumble, \d play/u })).toBeNull();
   });

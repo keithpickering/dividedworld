@@ -71,6 +71,8 @@ const PENDING: Readonly<Record<string, string>> = {
  * manifest fails, and so does one that is also pending.
  */
 const COLORS_ONLY: Readonly<Record<string, string>> = {
+  '2026-11-05-backfill/24-debut': 'the Debut dialog is gone (a character is on the board when it is made), so the board is a record, kept as a record with no manifest any more',
+  '2026-11-05-backfill/40-debut-now': 'the Debut dialog is gone (a character is on the board when it is made), so the board is a record, kept as a record with no manifest any more',
   '2026-11-06-board-look/00-look': 'the tribute looks reference (Task 17 switches one board to each look), never a manifest',
   '2026-11-06-board-look/01-index-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',
   '2026-11-06-board-look/02-board-dark': 'the dark twin of the board before it, held to its colors by web/contrast.test.tsx, never a manifest',

@@ -70,7 +70,7 @@ describe('the play form of a locked-out mask', () => {
 
 /* A play beyond a post, opened as the thread's title, a postbit and a board's banner open it (thread/Post.tsx): the thread reach's target is the thread's own id, the character reach comes from a post. */
 describe('the play form of a locked-out mask, beyond a post', () => {
-  function Open({ w, as }: { readonly w: LockoutWorld; readonly as: 'thread' | 'character' | 'board' | 'elsewhere' }) {
+  function Open({ w, as, board }: { readonly w: LockoutWorld; readonly as: 'thread' | 'character' | 'board' | 'elsewhere'; readonly board: string }) {
     const openForm = usePlay()!.openForm;
     useEffect(() => {
       const plays = createPlays();
@@ -78,17 +78,18 @@ describe('the play form of a locked-out mask, beyond a post', () => {
       const post = { id: w.post, character: w.spritey, kind: 'post', thread: w.thread, targetActId: null, seq: 1, createdAt: '2026-10-29T21:00:00Z', payload: {}, currentPayload: {}, editedAt: null, shownEditedAt: null } as unknown as NonNullable<PlayTarget['post']>;
       const target: PlayTarget = as === 'thread' ? { ...common, post: null, reach: { reach: 'thread', target: w.thread, name: 'A short thread' } }
         : as === 'character' ? { ...common, post, reach: { reach: 'character', target: w.spritey, name: 'Spritey' } }
-        : as === 'board' ? { ...common, post: null, reach: { reach: 'board', target: 'general', name: 'General' } }
+        : as === 'board' ? { ...common, post: null, reach: { reach: 'board', target: board, name: 'General' } }
         : { ...common, post: null, reach: { reach: 'thread', target: w.elsewhere, name: 'Another thread' } };
       openForm('lkwide', target);
-    }, [openForm, w, as]);
+    }, [openForm, w, as, board]);
     return null;
   }
   async function reach(as: 'thread' | 'character' | 'board' | 'elsewhere') {
     const w = lockoutWorld();
     await lockOut(w);
+    const board = (await w.fake.thread(w.thread))!.board;
     localStorage.setItem(hudKey(w.me), w.pipe);
-    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /><Open w={w} as={as} /></Frame>, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
+    renderIn(w.fake, <Frame><LoadedThread thread={w.thread} /><Open w={w} as={as} board={board} /></Frame>, { path: `/t/${w.thread}`, instance: lockoutInstance, cards: lockoutCards, settings: { postMaxLength: 1000, cardEconomy: (await w.fake.settings()).cardEconomy } });
     return screen.findByRole('dialog', { name: /Lk Wide/u });
   }
 
@@ -104,12 +105,16 @@ describe('the play form of a locked-out mask, beyond a post', () => {
     expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
   });
 
-  test('a board reach is not blocked, nor a thread reach on another thread', async () => {
-    for (const as of ['board', 'elsewhere'] as const) {
-      const form = await reach(as);
-      expect(within(form).queryByText(/is locked out of this thread until/u)).toBeNull();
-      await waitFor(() => expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled());
-      cleanup();
-    }
+  test('a thread reach on another thread is not blocked', async () => {
+    const form = await reach('elsewhere');
+    expect(within(form).queryByText(/is locked out of this thread until/u)).toBeNull();
+    await waitFor(() => expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeEnabled());
+  });
+
+  /* A board card is written in a thread on its board (0438), and the lockout holds in that thread: the thread the player has open is the one offered, and it is this one. */
+  test('a board reach is written in the open thread, so the lockout there blocks it', async () => {
+    const form = await reach('board');
+    expect(await within(form).findByText(/is locked out of this thread until/u)).toBeInTheDocument();
+    expect(within(form).getByRole('button', { name: 'Play as Pipewrench' })).toBeDisabled();
   });
 });

@@ -19,7 +19,7 @@ import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
   id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
-  debutLoudness: 'silent', retiredAt: null, pendingTurn: null, presenceHidden: false,
+  retiredAt: null, pendingTurn: null, presenceHidden: false,
 });
 const pub = (id: string, name: string): Character => ({
   id, name, title: '', signature: '', avatarSquare: `data:image/webp;base64,${id}`, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-10-01', group: 'members',
@@ -1093,6 +1093,31 @@ describe('the HUD opens the Reveal, and says when a class is public', () => {
     await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
     expect(await screen.findByText(/Pipewrench revealed as Face in The tea thread\./u)).toBeInTheDocument();
   });
+
+  test('on a thread, the HUD opens the Turn dialog on that thread: the picker starts on it, and focus lands on the HUD\'s mask picker, which stays, when the opener is gone', async () => {
+    const w = RevealWorld();
+    await onThread(w);
+    await userEvent.click(await screen.findByRole('button', { name: 'Turn Pipewrench' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Turn Pipewrench' });
+    expect(within(dialog).getByRole('combobox', { name: 'Thread' })).toHaveValue('The tea thread');
+    const turn = vi.spyOn(w.fake, 'turn');
+    await userEvent.click(within(dialog).getByRole('radio', { name: /^Heel/u }));
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Confirm Turn' }));
+    await waitFor(() => expect(turn).toHaveBeenCalledWith(w.pipe, 'heel', 'announced', false, false, w.thread));
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull());
+    expect(await screen.findByText(/Pipewrench's Turn is announced in The tea thread\./u)).toBeInTheDocument();
+    /* A Turn waiting, announced or not, is My characters' to show: the opener is gone from the HUD. */
+    await waitFor(() => expect(screen.queryByRole('button', { name: 'Turn Pipewrench' })).toBeNull());
+    /* The opener unmounted with the Turn: focus is on the HUD's mask picker, a persistent control, not on the body and not on the status line (a live region that empties). */
+    const picker = await screen.findByRole('combobox', { name: 'Swap mask' });
+    await waitFor(() => expect(document.activeElement).toBe(picker));
+    expect(document.activeElement).not.toHaveClass('kb-hud-flash');
+    /* The done line empties after 8s; focus must still be on an element in the document. */
+    await act(async () => { await new Promise((r) => setTimeout(r, 8_500)); });
+    expect(screen.queryByText(/Pipewrench's Turn is announced/u)).toBeNull();
+    expect(document.activeElement).toBe(picker);
+    expect(document.body).toContainElement(picker);
+  }, 20_000);
 
   test('off a thread, the Board and Thread start empty', async () => {
     const w = RevealWorld();

@@ -73,7 +73,8 @@ begin
     raise exception 'the season''s end answers its season and the rows it wrote: %', rolled;
   end if;
   insert into pg_temp.sr values (sprit, pipe, gloom, hooli, in_season, before_threads, ended);
-  if (select count(*) from threads) is distinct from before_threads then raise exception 'a season''s end opens no thread'; end if;
+  -- A season's end opens no thread of its own; the handover it rolls over opens its one staff thread, where the instance has lines to say in it (0437).
+  if (select count(*) from threads) - before_threads is distinct from (select count(*) from season_handovers h where h.landed_at = now() and h.thread is not null) then raise exception 'a season''s end opens no thread of its own: % new', (select count(*) from threads) - before_threads; end if;
   if (select count(*) from acts where kind = 'reveal') is distinct from before_reveals then raise exception 'a season''s end writes no reveal Act'; end if;
   if (select reveal_act from seasons where id = in_season) is not null then raise exception 'the season points at no reveal Act'; end if;
   if (select results_at from seasons where id = in_season) is distinct from now() then raise exception 'the results landed in this transaction: %', (select results_at from seasons where id = in_season); end if;
@@ -335,18 +336,18 @@ begin
   end;
 end $$;
 
--- ---- The words The System needs: the Promos thread's title ----
+-- ---- The words The System needs: the season thread's title (rosterThreadTitle, 0440) ----
 do $$
 declare why text;
 begin
-  why := pg_temp.refusal($q$update settings set value = value - 'announcementsThreadTitle' where key = 'copy'$q$);
-  if why is null or why not like '%announcementsThreadTitle%' then raise exception 'copy lost its thread title: %', why; end if;
-  why := pg_temp.refusal($q$update settings set value = value || '{"announcementsThreadTitle": " "}' where key = 'copy'$q$);
-  if why is null or why not like '%announcementsThreadTitle%' then raise exception 'copy gave a blank title: %', why; end if;
+  why := pg_temp.refusal($q$update settings set value = value - 'rosterThreadTitle' where key = 'copy'$q$);
+  if why is null or why not like '%rosterThreadTitle%' then raise exception 'copy lost its thread title: %', why; end if;
+  why := pg_temp.refusal($q$update settings set value = value || '{"rosterThreadTitle": " "}' where key = 'copy'$q$);
+  if why is null or why not like '%rosterThreadTitle%' then raise exception 'copy gave a blank title: %', why; end if;
   -- The reveal's words are no longer asked for.
   perform set_config('kayfabb.test_copy', (select value::text from settings where key = 'copy'), true);
-  update settings set value = jsonb_build_object('announcementsThreadTitle', 'Season {season}: Promos') where key = 'copy';
-  if copy_of('announcementsThreadTitle', 4) is distinct from 'Season 4: Promos' then raise exception 'copy_of fills the season'; end if;
+  update settings set value = jsonb_build_object('rosterThreadTitle', 'Season {season}: Promos') where key = 'copy';
+  if copy_of('rosterThreadTitle', 4) is distinct from 'Season 4: Promos' then raise exception 'copy_of fills the season'; end if;
 end $$;
 
 -- ---- The finished seasons' view reads as its caller, so a tighter policy on seasons would hold through it ----

@@ -305,7 +305,7 @@ begin
   -- A play on a post, a thread's play and a board's play: neither key, and the rest as before.
   blot := (play_card(ann, 'blot', a, at_post, '{}', 0, '') ->> 'id')::uuid;
   marquee := (play_card(ann, 'marquee', a, t_at, '{}', 0, '', 'thread') ->> 'id')::uuid;
-  quake := (play_card(ann, 'quake', a, general, '{}', 0, '', 'board') ->> 'id')::uuid;
+  quake := (play_card(ann, 'quake', a, general, '{}', 0, '', 'board', null, null, null, null, '{}', t_at) ->> 'id')::uuid;
   s_post := pg_temp.spun_at(cat, c, blot, null);
   s_thread := pg_temp.spun_at(cat, c, marquee, null);
   s_board := pg_temp.spun_at(cat, c, quake, null);

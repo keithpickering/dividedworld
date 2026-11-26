@@ -23,7 +23,7 @@ const { MIGRATION_DATA } = (await import(files)) as { MIGRATION_DATA: readonly s
 const root = path.resolve(import.meta.dirname, '../../..');
 
 /** The tables that hold a row in the fixture, before the round trip and again after the import (an empty table would round-trip as well, and prove nothing). */
-const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings'];
+const HELD = ['staff_offices', 'staff_notes', 'pool_spends', 'pool_run_claims', 'pool_round_claims', 'pool_round_days', 'pool_kept_picks', 'staff_sessions', 'pool_turns', 'pool_answered', 'staff_requests', 'staff_request_rulings', 'staff_requests_open', 'pool_attempts', 'pool_attempt_replies', 'staff_points', 'season_handovers', 'handover_dismissals', 'staff_call_records', 'patrols', 'report_refunds', 'appeal_refunds', 'tails', 'tail_visits', 'staff_quiz_questions', 'season_results', 'apologies', 'card_texts', 'card_writes', 'card_write_refunds', 'scored_as', 'crowd_paid', 'paid_votes', 'tallied_lines', 'play_reach', 'play_post', 'post_kinds', 'post_veils', 'post_veil_cards', 'post_veil_cover', 'post_reaction_kinds', 'ledger', 'move_dependencies', 'condition_kinds', 'persona_arcs', 'arc_beat_events', 'handoffs', 'surfaces', 'surface_marks', 'surface_cuts', 'face_down_draws', 'post_under', 'warn_reliefs', 'ban_lifts', 'packs', 'pack_openings', 'roster_entries', 'roster_seen', 'roster_pending'];
 
 /** The polls the fixture wrote, as poll_counts reads them ("question:counts:voters:closed"), and the ballots each player reads in my_ballots ("question:character:picks", oldest first). */
 const POLL_COUNTS = 'Exported closed poll?:{0,1,1}:1:true,Exported replaced poll?:{0,0}:0:false,Exported secret poll?:{1,1}:2:false';
@@ -403,9 +403,8 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'card.skim', 7, jsonb_build_object('card', 'expskim', 'share', 0.1) from settlements;
       -- A share of that card-naming row (0290): its owner's my_ledger_shares reads the card it was paid by.
       insert into ledger_shares (ledger, act, quadrant, amount) select max(id), p, 'excitedPositive', 7 from ledger where reason = 'card.skim' and params ->> 'card' = 'expskim';
-      -- A ledger line with the numbers its words state (0073), and a settle run's claim on a window long settled.
+      -- A ledger line with the numbers its words state (0073).
       insert into ledger (settlement, account, character, reason, amount, params) select max(id), ann, a, 'lurker.postedTooMuch', -10, '{"lurker.postsAllowed": 3}' from settlements;
-      insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
       -- The first settlement made with its shares kept (0037): every one here.
       insert into ledger_shares_kept (from_settlement) values (1);
       -- A model call in the ledger (0042): the instance's own bookkeeping, carried across with the rest.
@@ -434,6 +433,26 @@ test('an instance exported and imported into a fresh database is the same instan
       -- A departure in the same season (0403): a second handover of it, its own id, dismissed on its own, so the ids and the dismissal's link to its handover are carried across (a restore that numbered the rows again would break the link).
       insert into season_handovers (season, outgoing, boss, how, cause) select (select id from seasons where ends_at is null), 'exp-bot', 'exp-boss', 'rotation', 'departure';
       insert into handover_dismissals (season, handover, admin) select season, id, ann from season_handovers order by id;
+      -- The staff-board threads (0437): a staff thread (the flag on a threads row), the departure's handover recording it (season_handovers.thread), and the open season's Staff Meetings thread (seasons.meetings_thread), so the three new columns round-trip.
+      declare staff_thread uuid; meetings uuid;
+      begin
+        staff_thread := open_staff_thread('exp-boss', 'Exported handover thread');
+        meetings := open_staff_thread('exp-boss', 'Exported staff meetings');
+        update season_handovers set thread = staff_thread where cause = 'departure';
+        update seasons set meetings_thread = meetings where ends_at is null;
+        assert (select count(*) from threads where staff_placed and id in (staff_thread, meetings)) = 2, 'the fixture holds its two staff threads';
+      end;
+      -- The Roster Report (0440): a settled window's entry holding the Boss's post, and a character it listed as new, so the two insert-only tables round-trip with their links to a settlement and an Act.
+      declare roster_window timestamptz := now() - interval '40 days'; roster_post uuid;
+      begin
+        insert into settlements (starts_at, ends_at, season) select roster_window - interval '1 day', roster_window, id from seasons where ends_at is null;
+        select id into roster_post from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
+        insert into roster_entries (window_end, season, acts, record) select roster_window, id, array[roster_post], '{"commentary": "Carried across.", "landedCount": 0, "landed": []}' from seasons where ends_at is null;
+        insert into roster_seen (character, window_end, act) select (select id from characters where staff = 'exp-boss'), roster_window, roster_post;
+        insert into roster_pending (character, window_end) select a.character, roster_window from acts a where a.id = roster_post;
+      end;
+      -- A settle run's claim on a window long settled (0073). Written after every settlement of the fixture: writing a settlement deletes the claims that begin before its end (0074), and the roster's window above ends later than this one.
+      insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
       -- A run's claim on a day (0089), which the pool's schedule would have taken.
       insert into pool_run_claims (day) values ('2030-01-07');
       -- The chattier staff's tables (0415), insert-only and no client's: a round's claim on its slot, the day's kept pick, a session of the Boss's, a turn in it with the reply it answered (the Boss's own post quoting Ann's), and the meeting's talking point.

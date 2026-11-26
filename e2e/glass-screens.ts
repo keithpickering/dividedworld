@@ -105,17 +105,6 @@ export const PAGES: readonly Screen[] = [
   },
 ];
 
-/** A new character waits to debut; its two debut dialogs open from its panel. */
-const debut = (button: string, dialog: string) => async (page: Page) => {
-  await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
-  await page.getByRole('radio').first().check();
-  /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
-  await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
-  await page.getByRole('button', { name: 'Make the character' }).click();
-  await page.getByRole('button', { name: button }).click();
-  await expect(page.getByRole('dialog', { name: dialog })).toBeVisible();
-};
-
 /** Every glass overlay (engine/ui/glass/Overlay.tsx), opened from where a player opens it. */
 export const OVERLAYS: readonly Screen[] = [
   {
@@ -157,8 +146,6 @@ export const OVERLAYS: readonly Screen[] = [
       await expect(page.getByRole('dialog', { name: 'Whoops!' })).toBeVisible();
     },
   },
-  { name: 'The Debut dialog, dropping now', board: '2026-11-05-backfill/40-debut-now', path: '/characters/new', then: debut('Drop Waiting Wanda now', 'Drop Waiting Wanda now') },
-  { name: 'The Debut dialog, choosing how', board: '2026-11-05-backfill/24-debut', path: '/characters/new', then: debut('Change how Waiting Wanda debuts', 'How Waiting Wanda debuts') },
 ];
 
 /**

@@ -172,9 +172,9 @@ begin
   insert into settings (key, value) values ('pronouns', they);
   perform tests.become(ann);
   setting := (create_character('Pn Setting', 'alpha') ->> 'id')::uuid;
-  hers := (create_character('Pn Hers', 'alpha', 'now', 'announced', she) ->> 'id')::uuid;
-  loud := (create_character('Pn Loud', 'alpha', 'now', 'announced', jsonb_set(she, '{subject}', '"SHE"')) ->> 'id')::uuid;
-  why := pg_temp.refusal($q$select create_character('Pn Bad', 'alpha', 'now', 'announced', '{"subject": "abcdefghijklm", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}')$q$);
+  hers := (create_character('Pn Hers', 'alpha', she) ->> 'id')::uuid;
+  loud := (create_character('Pn Loud', 'alpha', jsonb_set(she, '{subject}', '"SHE"')) ->> 'id')::uuid;
+  why := pg_temp.refusal($q$select create_character('Pn Bad', 'alpha', '{"subject": "abcdefghijklm", "object": "it", "determiner": "its", "possessive": "its", "reflexive": "itself", "plural": false}')$q$);
   perform tests.unbecome();
   if (select pronouns from character_profiles where character = setting) is distinct from they then raise exception 'with a setting a character is made with the setting''s set'; end if;
   if profile_projection(hers) -> 'pronouns' is distinct from she then raise exception 'a character made with she/her reads she/her from profile_projection: %', profile_projection(hers); end if;

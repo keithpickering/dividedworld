@@ -1756,7 +1756,9 @@ describe('a visit\'s tab', () => {
       await userEvent.keyboard('{Enter}');
       await waitFor(() => expect(within(l).getByRole('status')).toHaveTextContent('Pipewrench got past The Clerk. The visit is over, and nothing landed on Spritey.'));
       expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toBeInTheDocument();
-      expect(within(await article(2)).getByRole('button', { name: /^The Clerk's visit to this post was talked down/u })).toHaveTextContent('Talked down');
+      const talked = within(await article(2)).getByRole('button', { name: /^The Clerk's visit to this post was talked down/u });
+      expect(talked).toHaveTextContent(/^$/u);
+      expect(talked.querySelector('svg')).toHaveAttribute('data-kb-icon', 'slash');
       /* The try ended the visit and took the challenge with the button that was pressed: focus is on the open tab, not lost to the page. */
       expect(within(visitLens()).getByRole('tab', { name: 'Talked down' })).toHaveFocus();
     });
@@ -1879,13 +1881,23 @@ describe('a visit\'s tab', () => {
   });
 
   describe('once filed', () => {
-    test('says what landed on whom and when it drops off, and "Filed" names the tab and the mark', async () => {
+    test('an open visit\'s mark shows the time left beside a plain stopwatch', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ });
+      openVisit(w);
+      const mark = await visitMark(w.seq);
+      expect(mark).toHaveTextContent('2:41');
+      expect(mark.querySelector('svg')).toHaveAttribute('data-kb-icon', 'watch');
+    });
+
+    test('says what landed on whom and when it drops off, and "Filed" names the tab and the mark is the "!" stopwatch', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });
       file(w);
       openVisit(w);
       const mark = await visitMark(w.seq);
-      expect(mark).toHaveTextContent('Filed');
+      expect(mark).toHaveTextContent(/^$/u);
+      expect(mark.querySelector('svg')).toHaveAttribute('data-kb-icon', 'bang');
       await userEvent.click(mark);
       const l = visitLens();
       expect(within(l).getByRole('tab', { name: 'Filed' })).toHaveAttribute('aria-selected', 'true');
@@ -2004,6 +2016,20 @@ describe('a visit\'s tab', () => {
   });
 
   describe('when it ended another way', () => {
+    test('a trapped, ended or dropped visit\'s mark is its icon alone', async () => {
+      for (const [outcome, icon, how] of [['trapped', 'teeth', 'was trapped, ended by a trap'], ['reversed', 'stop', 'was ended by an admin'], ['dropped', 'dashed', 'could not be filed and was dropped']] as const) {
+        width(false);
+        const w = visited({ challenge: QUIZ });
+        w.fake.seed.visitEnd(w.visit, { outcome, line: 'Ended.' });
+        const { unmount } = openVisit(w);
+        const mark = await visitMark(w.seq);
+        expect(mark).toHaveTextContent(/^$/u);
+        expect(mark).toHaveAccessibleName(`The Clerk's visit to this post ${how}. Opens the visit.`);
+        expect(mark.querySelector('svg')).toHaveAttribute('data-kb-icon', icon);
+        unmount();
+      }
+    });
+
     test('talked down, it says who and that nothing landed', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });

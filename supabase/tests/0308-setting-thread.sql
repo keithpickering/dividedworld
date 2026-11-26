@@ -68,19 +68,22 @@ declare
   upd uuid := (select (s.value #>> '{}')::uuid from settings s where s.key = 'updatesThread');
   owner uuid := tests.account('st-own');
   a uuid := tests.character(owner, 'St Caster');
-  b1 uuid; b2 uuid; placed jsonb; laid uuid; threads_before bigint; settings_before jsonb;
+  b1 uuid; b2 uuid; th1 uuid; th2 uuid; placed jsonb; laid uuid; threads_before bigint; settings_before jsonb; ann_acts bigint;
 begin
   insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('stquake', 'St Quake', 'salty', 'legendary', 'cast', '{board}', interval '1 day');
   insert into boards (slug, name) values ('st-one', 'St One') returning id into b1;
   insert into boards (slug, name) values ('st-two', 'St Two') returning id into b2;
-  -- place_cast of a board card writes the play in the announcements thread.
-  placed := place_cast(a, 'stquake', b1, '{}', '', 'board', null, owner, 0);
-  if placed ->> 'thread' is distinct from ann::text then raise exception 'a board card was not written in the announcements thread: %', placed; end if;
-  -- lay_sprung of a board card does too.
+  insert into threads (board, title) values (b1, 'St One Thread') returning id into th1;
+  insert into threads (board, title) values (b2, 'St Two Thread') returning id into th2;
+  ann_acts := (select count(*) from acts x where x.thread = ann);
+  -- place_cast of a board card writes the play in a thread on the board (0438), and lay_sprung too: neither writes in the announcements thread.
+  placed := place_cast(a, 'stquake', b1, '{}', '', 'board', null, owner, 0, '{}', th1);
+  if placed ->> 'thread' is distinct from th1::text then raise exception 'a board card was not written in the thread named: %', placed; end if;
   laid := lay_sprung(a, 'stquake', '{}', b2, 'board', gen_random_uuid(), null);
-  if (select x.thread from acts x where x.id = laid) is distinct from ann then raise exception 'a sprung board card was not written in the announcements thread'; end if;
-  -- spring_facts, read before every face-down back's decision, finds it too (a back with nothing in it reads the same statement every back reads).
-  if (spring_facts(null::face_down, 'quote', null, null)).announce_thread is distinct from ann then raise exception 'spring_facts did not find the announcements thread'; end if;
+  if (select x.thread from acts x where x.id = laid) is distinct from th2 then raise exception 'a sprung board card was not written in its board''s thread'; end if;
+  if (select count(*) from acts x where x.thread = ann) is distinct from ann_acts then raise exception 'a board card wrote into the announcements thread'; end if;
+  -- spring_facts, read before every face-down back's decision, no longer reads the announcements setting (a back with nothing in it reads the same statement every back reads).
+  if (spring_facts(null::face_down, 'quote', null, null)).announce_thread is not null then raise exception 'spring_facts still names the announcements thread'; end if;
   -- seed_instance run again on a seeded instance makes no second announcements or updates thread, and moves neither setting.
   threads_before := (select count(*) from threads t where t.board = system_board());
   settings_before := (select jsonb_object_agg(s.key, s.value) from settings s where s.key in ('systemAnnouncements', 'updatesThread'));
@@ -96,7 +99,7 @@ do $$
 declare
   owner uuid := tests.account('st-scale');
   a uuid := tests.character(owner, 'St Scaler');
-  brd uuid[] := '{}'; ids uuid[]; i integer; one uuid; before bigint;
+  brd uuid[] := '{}'; ths uuid[] := '{}'; ids uuid[]; i integer; one uuid; th uuid; before bigint;
   st_few bigint; pc_few bigint; ls_few bigint; si_few bigint;
   st_many bigint; pc_many bigint; ls_many bigint; si_many bigint;
   held integer; bad text[] := '{}';
@@ -106,18 +109,19 @@ begin
   insert into card_kinds (key, name, alignment, rarity, play, reaches, lasts) values ('stscale', 'St Scale', 'salty', 'legendary', 'cast', '{board}', interval '1 day');
   for i in 1 .. 16 loop
     insert into boards (slug, name) values ('st-scale-' || i, 'St Scale ' || i) returning id into one;
-    brd := brd || one;
+    insert into threads (board, title) values (one, 'St Scale thread ' || i) returning id into th;
+    brd := brd || one; ths := ths || th;
   end loop;
   -- Warm: each statement planned.
   for i in 1 .. 3 loop
     perform setting_thread('systemAnnouncements');
-    perform place_cast(a, 'stscale', brd[i], '{}', '', 'board', null, owner, 0);
+    perform place_cast(a, 'stscale', brd[i], '{}', '', 'board', null, owner, 0, '{}', ths[i]);
     perform lay_sprung(a, 'stscale', '{}', brd[i + 3], 'board', gen_random_uuid(), null);
     perform pg_temp.seed();
   end loop;
 
   before := pg_temp.reads(); perform setting_thread('systemAnnouncements'); st_few := pg_temp.reads() - before;
-  before := pg_temp.reads(); perform place_cast(a, 'stscale', brd[7], '{}', '', 'board', null, owner, 0); pc_few := pg_temp.reads() - before;
+  before := pg_temp.reads(); perform place_cast(a, 'stscale', brd[7], '{}', '', 'board', null, owner, 0, '{}', ths[7]); pc_few := pg_temp.reads() - before;
   before := pg_temp.reads(); perform lay_sprung(a, 'stscale', '{}', brd[8], 'board', gen_random_uuid(), null); ls_few := pg_temp.reads() - before;
   before := pg_temp.reads(); perform pg_temp.seed(); si_few := pg_temp.reads() - before;
 
@@ -127,13 +131,13 @@ begin
   discard plans;
   for i in 1 .. 3 loop
     perform setting_thread('systemAnnouncements');
-    perform place_cast(a, 'stscale', brd[8 + i], '{}', '', 'board', null, owner, 0);
+    perform place_cast(a, 'stscale', brd[8 + i], '{}', '', 'board', null, owner, 0, '{}', ths[8 + i]);
     perform lay_sprung(a, 'stscale', '{}', brd[8 + i], 'board', gen_random_uuid(), null);
     perform pg_temp.seed();
   end loop;
 
   before := pg_temp.reads(); perform setting_thread('systemAnnouncements'); st_many := pg_temp.reads() - before;
-  before := pg_temp.reads(); perform place_cast(a, 'stscale', brd[12], '{}', '', 'board', null, owner, 0); pc_many := pg_temp.reads() - before;
+  before := pg_temp.reads(); perform place_cast(a, 'stscale', brd[12], '{}', '', 'board', null, owner, 0, '{}', ths[12]); pc_many := pg_temp.reads() - before;
   before := pg_temp.reads(); perform lay_sprung(a, 'stscale', '{}', brd[13], 'board', gen_random_uuid(), null); ls_many := pg_temp.reads() - before;
   before := pg_temp.reads(); perform pg_temp.seed(); si_many := pg_temp.reads() - before;
   perform set_config('enable_seqscan', 'on', true);

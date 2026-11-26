@@ -31,7 +31,7 @@ function Live() {
 async function world(grant = true) {
   const fake = buildWorld(undefined, instance);
   fake.signInAs(fake.seed.account('ana'));
-  if (grant) expect((await fake.createCharacter('Ana Face', 'face', 'now', 'silent')).ok).toBe(true);
+  if (grant) expect((await fake.createCharacter('Ana Face', 'face')).ok).toBe(true);
   /* Two cards already in hand, so there is a card group after the pack. */
   return fake;
 }

@@ -196,7 +196,7 @@ begin
     format('select start_thread(%L, %L, %L, %L)', 'general', boss, 'A thread', 'Body.'),
     format('select react(%L, %L, %L)', mine, boss, 'up'),
     format('select unmask(%L, %L)', boss, t),
-    format('select turn(%L, %L, %L)', boss, 'beta', 'x')] loop
+    format('select turn(%L, %L, %L, false, false)', boss, 'beta', 'x')] loop
     said := null;
     begin execute stmt; exception when others then said := sqlstate; end;
     if said is distinct from '42501' then raise exception 'a player acted as a staff character (%): %', stmt, coalesce(said, 'no refusal'); end if;
