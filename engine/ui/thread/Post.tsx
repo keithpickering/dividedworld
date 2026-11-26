@@ -11,7 +11,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { MoveTag } from '../board/MoveNotice.tsx';
-import { PostEffects } from '../cards/Effects.tsx';
+import { PostEffects, WriteLateNote } from '../cards/Effects.tsx';
 import { PostMarks, type FormAsk } from '../cards/Marks.tsx';
 import { AppealCtx, ViolationNotice } from '../cards/Visit.tsx';
 import { useReachShown } from '../cards/PlayActions.tsx';
@@ -201,6 +201,8 @@ function Actions({ act, about, canEdit, editing, onEdit, editButton, spinOrigin,
         </div>
         {/* Under the buttons, out of the content area: an effect on the post neither covers the list nor is sized around it. */}
         <SpunInto act={act.id} here={summary.board} />
+        {/* The write job's late note, out of the content area too: an effect fills that box border to border. */}
+        {act.kind === 'post' && <WriteLateNote plays={plays} post={act} />}
       </footer>
       <div className="kb-act-panels">
         <div id={`spin-${act.id}`}>

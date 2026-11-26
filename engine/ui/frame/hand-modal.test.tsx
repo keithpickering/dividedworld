@@ -40,6 +40,8 @@ const mine = (id: string, name: string): MyCharacter => ({
 
 function setup(page = <p>page</p>) {
   const api = {
+    now: () => Date.now(),
+    jobStatus: async () => [],
     session: async () => ({ signedIn: true, account: 'acc' }),
     onSession: () => () => {},
     myCharacters: async () => [mine('a', 'Pipewrench')],

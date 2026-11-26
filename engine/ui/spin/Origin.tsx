@@ -25,7 +25,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react';
 import { BbCode } from '../bbcode/render.tsx';
 import { billPost, drawnOf, type BillOver } from '../cards/billing.ts';
-import { PostEffects, momentParts } from '../cards/Effects.tsx';
+import { PostEffects, WriteLateNote, momentParts } from '../cards/Effects.tsx';
 import { useLensStore } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { MomentView } from '../cards/Moment.tsx';
@@ -400,6 +400,8 @@ export function Origin({ summary }: { readonly summary: ThreadSummary }) {
             {content}
           </div>
         )}
+        {/* The write job's late note, under the area and not in it: only where the box shows the post live (a moment is a past version). */}
+        {content !== null && act !== null && momentKey === null && isPostLike(act.kind) && <WriteLateNote plays={plays} post={act} />}
         {momentKey !== null && <div ref={setFoot} className="kb-origin-foot" data-kb-over-ink />}
       </div>
       {spinOrigin && (
