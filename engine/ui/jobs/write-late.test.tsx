@@ -2,7 +2,7 @@
  * The write job's late note is the glass's, and an effect fills the post's content area border to border (CLAUDE.md, "An effect fills the post, border to border"):
  * so the note a post with a waiting written play carries stands beside the content area, never in it, in a thread, on the front door and in a spun thread's ORIGIN box.
  */
-import { screen, waitFor } from '@testing-library/react';
+import { cleanup, screen, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
 import type { Instance } from '../../rules/types.ts';
@@ -82,5 +82,73 @@ describe('the write job\'s late note stands outside the content area', () => {
     const area = box.querySelector('[data-kb-content-area]')!;
     expect(area).not.toContainElement(note);
     await waitFor(() => expect(box.querySelector('[data-testid="effect"]')?.closest('[data-kb-content-area]')).not.toBeNull());
+  });
+});
+
+describe('the write job\'s late note is absent while the job runs, and once the words are written', () => {
+  const door = (w: ReturnType<typeof world>, tail: Tail) => {
+    vi.spyOn(w.fake, 'tails').mockResolvedValue([tail]);
+    const Door = () => {
+      const k = useKayfa();
+      const first = k.ui.frontDoor.posts[0]!;
+      return <KayfaProvider value={{ ...k, instance, ui: { ...k.ui, frontDoor: { ...k.ui.frontDoor, posts: [{ ...first, plays: [{ card: 'wrote', by: first.by, config: {} }] }] } } }}><FrontDoor /></KayfaProvider>;
+    };
+    renderIn(w.fake, <Door />, { instance, cards: [ui] });
+  };
+  const waiting: Tail = { post: 'front-door:0', play: 'front-door:0:0', version: 'v1', text: null, failed: false, waiting: true, createdAt: null };
+  const written: Tail = { ...waiting, text: 'Written words.', waiting: false };
+  const later = () => new Promise((r) => setTimeout(r, 50));
+
+  test('in a thread: the job running, no note; words written, no note', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    const running = world();
+    running.fake.seed.card(running.mask, running.post, 'wrote');
+    renderIn(running.fake, <LoadedThread thread={running.thread} />, { path: `/t/${running.thread}`, instance, cards: [ui] });
+    await screen.findByTestId('effect');
+    await later();
+    expect(screen.queryByRole('note')).toBeNull();
+    cleanup();
+    const done = world();
+    const play = done.fake.seed.card(done.mask, done.post, 'wrote');
+    vi.spyOn(done.fake, 'tails').mockImplementation(async () => [{ post: done.post, play: play as string, version: done.post, text: 'Written words.', failed: false, waiting: false, createdAt: null }]);
+    STOPPED(done.fake);
+    renderIn(done.fake, <LoadedThread thread={done.thread} />, { path: `/t/${done.thread}`, instance, cards: [ui] });
+    await screen.findByTestId('effect');
+    await later();
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  test('on the front door: the job running, no note; words written, no note', async () => {
+    const running = world();
+    door(running, waiting);
+    await screen.findByTestId('effect');
+    await later();
+    expect(screen.queryByRole('note')).toBeNull();
+    cleanup();
+    const done = world();
+    STOPPED(done.fake);
+    door(done, written);
+    await screen.findByTestId('effect');
+    await later();
+    expect(screen.queryByRole('note')).toBeNull();
+  });
+
+  test('in a spun thread\'s ORIGIN box: the job running, no note; words written, no note', async () => {
+    Element.prototype.scrollIntoView = vi.fn();
+    for (const stopped of [false, true]) {
+      const w = world();
+      const play = w.fake.seed.card(w.mask, w.post, 'wrote');
+      if (stopped) STOPPED(w.fake);
+      const made = await w.fake.spin(w.post, w.mask, 'Spun off', 'Elsewhere.');
+      if (!made.ok) throw new Error(made.error);
+      const spun = made.value.thread.id;
+      if (stopped) vi.spyOn(w.fake, 'tails').mockImplementation(async () => [{ post: w.post, play: play as string, version: w.post, text: 'Written words.', failed: false, waiting: false, createdAt: null }]);
+      renderIn(w.fake, <LoadedThread thread={spun} />, { path: `/t/${spun}`, instance, cards: [ui] });
+      const box = await screen.findByRole('group', { name: 'Origin' });
+      await waitFor(() => expect(box.querySelector('[data-testid="effect"]')).not.toBeNull());
+      await later();
+      expect(screen.queryByRole('note')).toBeNull();
+      cleanup();
+    }
   });
 });

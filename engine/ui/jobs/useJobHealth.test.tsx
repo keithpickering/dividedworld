@@ -103,4 +103,27 @@ describe('useJobHealth', () => {
     await act(async () => { await vi.advanceTimersByTimeAsync(MINUTE); });
     expect(screen.getByTestId('note')).toHaveTextContent('late since');
   });
+
+  test('a minute where nothing changed re-renders no consumer', async () => {
+    const fake = runningWorld();
+    /* Rows that say each job last ran at one fixed time: a job that ran again would change `since`, which is a change. */
+    const ran = new Date(fake.clock.now()).toISOString();
+    for (const j of JOBS) fake.seed.job(j.name, { lastOkAt: ran });
+    let renders = 0;
+    function Counted() {
+      const health = useJobHealth();
+      renders += 1;
+      return <p data-testid="counted">{health === null ? 'unknown' : 'known'}</p>;
+    }
+    const kayfa: Kayfa = { api: fake, instance: testInstance, ui: {} as Kayfa['ui'], settings: {} as ScreenSettings };
+    render(<KayfaProvider value={kayfa}><Counted /></KayfaProvider>);
+    await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+    expect(screen.getByTestId('counted')).toHaveTextContent('known');
+    const before = renders;
+    for (let i = 0; i < 3; i += 1) {
+      fake.clock.advance(MINUTE);
+      await act(async () => { await vi.advanceTimersByTimeAsync(MINUTE); });
+    }
+    expect(renders).toBe(before);
+  });
 });

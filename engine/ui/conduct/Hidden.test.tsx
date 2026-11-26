@@ -286,6 +286,24 @@ describe('a post that quotes a hidden post, before the conceal job has written i
     expect(rows[1]).toHaveTextContent('a clean rewrite');
   });
 
+  test('with the conceal job stopped, a post with two concealing versions in History carries one late note, and the History rows only the promise', async () => {
+    const w = world();
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
+    w.fake.seed.concealing(quoting);
+    const edit = w.fake.seed.edit(quoting, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]and again`, { at: Date.now() + 10 * 60_000 });
+    w.fake.seed.concealing(edit);
+    w.fake.seed.job('kayfabb-conceal', { lastOkAt: new Date(w.fake.clock.now() - 3 * 3_600_000).toISOString() });
+    open(w);
+    const art = await article(4);
+    await waitFor(() => expect(within(art).getAllByText(/^This is taking longer than it should/u)).toHaveLength(1));
+    await userEvent.click(within(art).getByRole('button', { name: 'History' }));
+    const rows = within(await within(art).findByRole('list', { name: 'Versions of this post, oldest first' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(within(row).getByRole('note')).toHaveTextContent(CONCEALING);
+    expect(within(art).getAllByText(/^This is taking longer than it should/u)).toHaveLength(1);
+  });
+
   test('has no axe violations', async () => {
     const w = world();
     const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);

@@ -34,9 +34,21 @@ const storeOf = (api: KayfaApi): Store => {
   return s;
 };
 
+const sameHealth = (a: readonly JobHealth[] | null, b: readonly JobHealth[] | null): boolean => {
+  if (a === null || b === null) return a === b;
+  if (a.length !== b.length) return false;
+  return a.every((x, i) => {
+    const y = b[i]!;
+    return (Object.keys(x) as (keyof JobHealth)[]).length === Object.keys(y).length && (Object.keys(x) as (keyof JobHealth)[]).every((k) => x[k] === y[k]);
+  });
+};
+
 function recompute(api: KayfaApi, s: Store): void {
   /* The grace is each row's own: `job_status` carries the `jobGraceMinutes` setting on every row, so there is no second source to agree with. */
-  s.health = s.rows === null ? null : jobHealth(s.rows, {}, new Date(api.now()));
+  const next = s.rows === null ? null : jobHealth(s.rows, {}, new Date(api.now()));
+  /* A minute where nothing changed keeps the array it had and tells no one, so no mounted part renders for it. */
+  if (sameHealth(s.health, next)) return;
+  s.health = next;
   for (const l of [...s.listeners]) l();
 }
 
