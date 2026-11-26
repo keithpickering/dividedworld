@@ -18,6 +18,7 @@ const BUILD = '.github/workflows/build.yml';
 const SQL = '.github/workflows/sql.yml';
 const WEB = '.github/workflows/web.yml';
 const REHEARSAL = '.github/workflows/rehearsal.yml';
+const JOB_HEALTH = '.github/workflows/job-health.yml';
 const NETLIFY = 'netlify.toml';
 
 let failures = 0;
@@ -299,6 +300,43 @@ red('release.yml names a secret in a workflow-level env', edit(RELEASE, (d) => {
 
 /* ---- R10 again: the object form of environment ---- */
 red('a non-backend job names environment in its object form', edit(RELEASE, (d) => { d.jobs.report.environment = { name: 'production' }; }), /R10.*report/);
+
+
+/* ---- R10, R11, R12 and R17: job-health.yml's one job in the production Environment, its one secret, and its shape ---- */
+const jhJob = (d) => d.jobs.check;
+const jhStep = (d) => jhJob(d).steps.find((s) => /check-job-health/.test(s.run ?? ''));
+quiet('job-health.yml, as written, holds its shape', edit(JOB_HEALTH, () => {}));
+red('job-health.yml is missing', without(JOB_HEALTH), /job-health\.yml.*R17.*missing/);
+red('job-health.yml gains a pull_request trigger', edit(JOB_HEALTH, (d) => { d.on.pull_request = null; }), /job-health\.yml.*R17.*pull_request/);
+red('job-health.yml gains a pull_request_target trigger', edit(JOB_HEALTH, (d) => { d.on.pull_request_target = {}; }), /job-health\.yml.*R17.*pull_request_target/);
+red('job-health.yml gains a push trigger', edit(JOB_HEALTH, (d) => { d.on.push = { branches: ['main'] }; }), /job-health\.yml.*R17.*push/);
+red('job-health.yml loses workflow_dispatch', edit(JOB_HEALTH, (d) => { delete d.on.workflow_dispatch; }), /job-health\.yml.*R17.*workflow_dispatch/);
+red('job-health.yml runs on another cron', edit(JOB_HEALTH, (d) => { d.on.schedule = [{ cron: '*/5 * * * *' }]; }), /job-health\.yml.*R17.*cron/);
+red('job-health.yml gains a second schedule', edit(JOB_HEALTH, (d) => { d.on.schedule.push({ cron: '9 * * * *' }); }), /job-health\.yml.*R17.*cron/);
+red('job-health.yml gains a second job', edit(JOB_HEALTH, (d) => { d.jobs.extra = { 'runs-on': 'ubuntu-latest', environment: 'production', steps: [{ run: 'echo hi' }] }; }), /job-health\.yml.*R17.*exactly one job/);
+red('job-health\'s job drops the production Environment', edit(JOB_HEALTH, (d) => { delete jhJob(d).environment; }), /job-health\.yml.*R10.*check/);
+red('job-health\'s job names another Environment', edit(JOB_HEALTH, (d) => { jhJob(d).environment = 'staging'; }), /job-health\.yml.*R10.*check/);
+red('job-health\'s step also reads the jobs key', edit(JOB_HEALTH, (d) => { jhStep(d).env.KAYFABB_JOBS_KEY = '${{ secrets.KAYFABB_JOBS_KEY }}'; }), /job-health\.yml.*R11.*KAYFABB_JOBS_KEY/);
+red('job-health\'s step reads the project ref too', edit(JOB_HEALTH, (d) => { jhStep(d).env.SUPABASE_PROJECT_REF = '${{ secrets.SUPABASE_PROJECT_REF }}'; }), /job-health\.yml.*R11/);
+red('job-health\'s step reads some other secret', edit(JOB_HEALTH, (d) => { jhStep(d).env.TOKEN = '${{ secrets.GITHUB_PAT }}'; }), /job-health\.yml.*R11.*GITHUB_PAT/);
+red('job-health reads a secret in a run line', edit(JOB_HEALTH, (d) => { jhJob(d).steps.push({ run: 'echo ${{ secrets.SUPABASE_DB_URL }}' }); }), /job-health\.yml.*R11.*run line/);
+red('job-health\'s SUPABASE_DB_URL comes from a literal', edit(JOB_HEALTH, (d) => { jhStep(d).env.SUPABASE_DB_URL = 'postgres://x'; }), /job-health\.yml.*R11.*SUPABASE_DB_URL/);
+red('job-health names the secret in a workflow-level env', edit(JOB_HEALTH, (d) => { d.env = { DB: '${{ secrets.SUPABASE_DB_URL }}' }; }), /job-health\.yml.*R11.*outside a job/);
+red('job-health names the secret at the job level', edit(JOB_HEALTH, (d) => { jhJob(d).env = { SUPABASE_DB_URL: '${{ secrets.SUPABASE_DB_URL }}' }; }), /job-health\.yml.*R11.*outside a step/);
+red('job-health traces its shell with set -x', edit(JOB_HEALTH, (d) => { jhStep(d).run = `set -x\n${jhStep(d).run}`; }), /job-health\.yml.*R12.*traces/);
+red('job-health runs a shell with -x', edit(JOB_HEALTH, (d) => { jhStep(d).shell = 'bash -x {0}'; }), /job-health\.yml.*R12.*traces/);
+red('job-health runs --debug', edit(JOB_HEALTH, (d) => { jhJob(d).steps.push({ run: 'npx supabase db push --debug' }); }), /job-health\.yml.*R12.*--debug/);
+red('job-health runs the check without the secret', edit(JOB_HEALTH, (d) => { jhStep(d).run = 'node tools/check-job-health.mjs --db postgres://x'; }), /job-health\.yml.*R17.*one command/);
+red('job-health runs a second command beside the check', edit(JOB_HEALTH, (d) => { jhStep(d).run += '\ncurl -X POST https://example.com'; }), /job-health\.yml.*R17.*one command/);
+red('job-health runs a step the shape does not list', edit(JOB_HEALTH, (d) => { jhJob(d).steps.push({ run: 'echo hi' }); }), /job-health\.yml.*R17.*one command|R17.*step/);
+red('job-health never runs the check', edit(JOB_HEALTH, (d) => { jhJob(d).steps = jhJob(d).steps.filter((s) => s !== jhStep(d)); }), /job-health\.yml.*R17.*one command/);
+red('job-health continues on error', edit(JOB_HEALTH, (d) => { jhStep(d)['continue-on-error'] = true; }), /job-health\.yml.*R17.*continue-on-error/);
+red('release.yml may not take job-health\'s allowance: a job named check there', edit(RELEASE, (d) => { d.jobs.check = { 'runs-on': 'ubuntu-latest', environment: 'production', steps: [] }; }), /release\.yml.*R10.*check/);
+red('job-health\'s job has an if that skips it', edit(JOB_HEALTH, (d) => { jhJob(d).if = 'false'; }), /job-health\.yml.*R17.*if/);
+red('job-health\'s check step has an if that skips it', edit(JOB_HEALTH, (d) => { jhStep(d).if = 'false'; }), /job-health\.yml.*R17.*if/);
+red('job-health uses an action the shape does not list', edit(JOB_HEALTH, (d) => { jhJob(d).steps.push({ uses: 'some/action@v1' }); }), /job-health\.yml.*R17.*uses/);
+// R8 reads only workflows that declare a Postgres service: job-health.yml declares none, and says nothing of R8.
+red('job-health.yml given an unpinned postgres service is named by R8', edit(JOB_HEALTH, (d) => { jhJob(d).services = { db: { image: 'postgres:17' } }; }), /job-health\.yml.*R8/);
 
 /* ---- R14: the seed goes red on anything but a 200 ---- */
 const seedStep = (d) => d.jobs.seed.steps.find((x) => /curl/.test(x.run ?? ''));
