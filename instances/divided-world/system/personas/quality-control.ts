@@ -22,6 +22,8 @@ export const qualityControl: Persona = {
   beats: ['video-games', 'arts-crafts'],
   petRules: ['noDuplicateTitle', 'minLength', 'noNecropost'],
   strictness: { visitHours: { least: 6, most: 12 }, bands: ['minor', 'moderate'] },
+  // The habits plan (docs/plans/2026-11-22-divided-world-habits-plan.md): works the queue in shifts, clocks in, stays long, clocks out, never there at night; hours are UTC (13 to 20 is 8am to 4pm Eastern).
+  habits: { perDay: 2, minutes: { least: 75, most: 150 }, hours: [13, 14, 15, 16, 17, 18, 19, 20] },
   // DRAFT for the owner: fangame-making trivia a regular answers without looking anything up, and two questions only the desk could ask.
   weakness: {
     kind: 'quiz',

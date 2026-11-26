@@ -354,3 +354,19 @@ test('QC-1000\'s habits are occasional', () => {
   assert.match(qualityControl.selfPrompt ?? '', /one or two of these habits/);
   assert.doesNotMatch(qualityControl.selfPrompt ?? '', /You open a visit with/);
 });
+
+test('each persona keeps the habits the habits plan gives, in UTC hours, and the roster\'s rule accepts them', async () => {
+  const { habitsProblem } = await import('../../../engine/rules/instance.ts');
+  const span = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
+  const want = {
+    // FanGaME's late night is 0 to 4 UTC (7pm to midnight Eastern), after a lunch peek at 17 UTC.
+    fangame: { perDay: 4, minutes: { least: 15, most: 40 }, hours: [17, 0, 1, 2, 3, 4] },
+    ontopic: { perDay: 5, minutes: { least: 15, most: 30 }, hours: [...span(14, 23), 1, 2, 3] },
+    'quality-control': { perDay: 2, minutes: { least: 75, most: 150 }, hours: span(13, 20) },
+  };
+  for (const p of system.roster) {
+    assert.deepEqual(p.habits, want[p.key as keyof typeof want], p.key);
+    assert.equal(habitsProblem(p.habits), null, p.key);
+  }
+  assert.deepEqual(instanceProblems(instance).filter((p) => /habits/.test(p)), []);
+});
