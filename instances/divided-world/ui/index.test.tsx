@@ -7,6 +7,7 @@ import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
+import { parse, sectionsOf } from '../../../engine/ui/guide/markdown.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { economyOf, faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
@@ -133,6 +134,23 @@ describe('Divided World\'s Strategy Guide', () => {
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
   });
+  test('never says "The System" in what a player reads (the comment at its top is not read)', () => {
+    const shown = instanceUi.guide.markdown.replace(/<!--[\s\S]*?-->/gu, '');
+    expect(shown).not.toContain('The System');
+  });
+  test('its sections, read as the page reads them, are in this order', () => {
+    const titles = sectionsOf(parse(instanceUi.guide.markdown), (p) => `{{setting:${p}}}`).map((s) => s.title);
+    expect(titles).toEqual([
+      'Welcome letter', 'The metagame', 'Your first character', 'Reactions', 'Aura', 'Seasons', 'Classes', 'Turns and reveals',
+      'Cards', 'The masks', 'The staff', 'Things that happen to you', 'The actual rules', 'Coming attractions',
+    ]);
+  });
+  test('"The actual rules" is real moderation, so the persona does not speak in it', () => {
+    const md = instanceUi.guide.markdown;
+    const rules = md.slice(md.indexOf('## The actual rules'), md.indexOf('## Coming attractions'));
+    expect(rules).toContain('## The actual rules');
+    for (const word of ['I ', 'I\'m', 'my ', 'yacht']) expect(rules, word).not.toContain(word);
+  });
 });
 
 describe('Divided World\'s cards in the guide, in the glass\'s words about setting them face down', () => {
@@ -213,9 +231,9 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
     expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
-    expect(guideMd).toMatch(/A Move is cast on a target, or set face down on your own post/u);
-    expect(guideMd).toMatch(/A Reversal is only ever set face down on your own post/u);
-    expect(guideMd).toMatch(/A Gimmick is played face up on your own post, your own character, or a thread your own character started/u);
+    expect(guideMd).toMatch(/A \*\*Move\*\* is cast on a target/u);
+    expect(guideMd).toMatch(/A \*\*Reversal\*\* is only ever set face down on your own post/u);
+    expect(guideMd).toMatch(/A \*\*Gimmick\*\* is played face up on your own post, your own character, or a thread your own character started/u);
     expect(guideMd).toMatch(/every card back looks the same/u);
     expect(guideMd).toMatch(/Sweet is babyface work, Salty is heel work/u);
     expect(guideMd).toMatch(/comes back to your hand/u);
