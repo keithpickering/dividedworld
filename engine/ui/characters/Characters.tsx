@@ -306,7 +306,7 @@ function Roster({ page }: { readonly page: MyCharactersPage }) {
           <dd>
             <ClassChip cls={c.class} name={className(c.class)} />{' '}
             {c.debutedAt === null ? `(chosen when ${words(c.pronouns).they} ${words(c.pronouns).was} made)` : `since ${shortDate(c.classSince)}`}{' '}
-            <span className="kb-private">only you</span>
+            <span className="kb-private">no other player</span>
           </dd>
           {before && <><dt>Was</dt><dd>{className(before)}, announced publicly</dd></>}
           <dt>Rank</dt><dd>{standingLine(c)}</dd>

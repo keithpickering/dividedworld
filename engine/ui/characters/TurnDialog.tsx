@@ -129,7 +129,7 @@ export function TurnDialog({ character, face, standing, nextSettlement, onClose,
           <dl className="kb-turn-facts">
             {standing !== undefined && <><dt>Season standing</dt><dd><span className="kb-num">{figure(standing)}</span></dd></>}
             <dt>Class now</dt><dd><ClassChip cls={character.class} name={now} /></dd>
-            <dt>Who can see it</dt><dd>Only you</dd>
+            <dt>Who can see it</dt><dd>No other player</dd>
           </dl>
           <p className="kb-turn-line">
             {character.name} is {withArticle(now)} (since {shortDate(character.classSince)}). After a Turn {pw.they} can Turn again in {spanWords(settings.turnCooldown)}.
