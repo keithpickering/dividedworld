@@ -8,6 +8,10 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
+
+/** Placeholder lines, one for every standing order: a fixture is never in the roster, so it says the same plain line everywhere. */
+const PLACEHOLDER_LINES = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
 
 const name = 'MEGA-MC 9000 (placeholder)';
 const title = 'Placeholder Boss: the showman';
@@ -17,6 +21,7 @@ export const hypeMan: Persona = {
   name,
   title,
   signature: 'THE BIGGEST SIGNATURE IN HISTORY. (Placeholder Boss.)',
+  stockLines: PLACEHOLDER_LINES,
   startingHobby: 'pro wrestling pay-per-views (fake ones, with cards that never end)',
   temperament: 'A hype-man who treats every thread as a main event and every post as a promo.',
   // DRAFT for the owner: strictness, weakness (a bribe), pet rules and what persuades it are drafts, and the rest are placeholders so every persona has every field.

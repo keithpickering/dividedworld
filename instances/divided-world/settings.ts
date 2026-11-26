@@ -180,6 +180,11 @@ export const defaults: Settings = deepFreeze<Settings>({
    */
   apology: { apologyEveryHours: 24, apologyJudgeBatch: 10, apologyRulingMaxWords: 80 },
   /**
+   * The owed lines (the persona-lines design, section 1.4): a line owed for an act that has happened waits 15 minutes for the staff run to voice it, then the tick pays it from the
+   * speaker's stock; at most 60 are voiced a day, and a run takes 20.
+   */
+  owedLines: { graceMinutes: 15, perDay: 60, perRun: 20 },
+  /**
    * The code of conduct's numbers (the conduct design, sections 5 and 7): an account holds at most three reports to admins open at once. The admin
    * address, where replies to a moderation email go so an appeal reaches a person, is the owner's to set when the instance deploys: null until then.
    */

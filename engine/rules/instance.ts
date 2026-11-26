@@ -6,7 +6,7 @@ import { ACT_KINDS, ALIGNMENTS, QUADRANTS } from './types.ts';
 import { LOCAL_PREFIX } from './emoji.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
-import type { AnonymousPoster, DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, SystemContent } from './types.ts';
+import type { AnonymousPoster, DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, StockLines, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { BEAT_KEY, conditionProblem, dueProblem } from '../system/conditions.ts';
 import { MOVE_KINDS } from '../system/moves.ts';
@@ -253,6 +253,20 @@ function apologyRule(v: unknown): string | null {
   return null;
 }
 
+/** The owed lines' settings (`Settings.owedLines`): graceMinutes 1 to 1440, perDay 0 to 10000, perRun 1 to 200, each a whole number. Mirrors the `owedLines` branch of `settings_held`. */
+const OWED_LINES_BOUNDS = { graceMinutes: [1, 1440], perDay: [0, 10000], perRun: [1, 200] } as const;
+function owedLinesRule(v: unknown): string | null {
+  const shape = 'an object giving graceMinutes (the minutes an owed line waits for the staff run, 1 to 1440), perDay (the most voiced owed lines a day, 0 to 10000) and perRun (the most owed lines one run takes, 1 to 200), each a whole number';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const extra = Object.keys(v).find((k) => !(k in OWED_LINES_BOUNDS));
+  if (extra !== undefined) return `${shape}; "${extra}" is not one of its fields`;
+  for (const [k, [least, most]] of Object.entries(OWED_LINES_BOUNDS)) {
+    const n = (v as Record<string, unknown>)[k];
+    if (!isWhole(n, least) || n > most) return `${shape}; "${k}" is not`;
+  }
+  return null;
+}
+
 /**
  * The staff requests' settings (`Settings.staffRequests`): exactly daysMost and meetingMost, each a whole number of at least 1. Mirrors
  * `setting_staffrequests` in supabase/migrations/0424_staff_requests.sql, and supabase/tests/0079-settings-held.sql lists its poisons and goods.
@@ -420,6 +434,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   modBots: modBotsRule,
   warnBar: warnBarRule,
   apology: apologyRule,
+  owedLines: owedLinesRule,
   conduct: conductRule,
   staffRequests: staffRequestsRule,
   boardNameMaxLength: whole(1, 'characters'),
@@ -1342,6 +1357,34 @@ function threadWordProblems(sys: SystemContent): string[] {
   return out;
 }
 
+/**
+ * One set of stock lines held to the engine's rules: every standing order has a non-empty list of non-blank lines, no key is for no standing
+ * order, and a line carries only the tokens its key is given. `who` is the persona's key, or null for the instance's own set, which words each problem
+ * (`stock line "moveMet"` or `bot-a's stock line "moveMet"`).
+ */
+function checkStockLines(set: StockLines | undefined, who: string | null): string[] {
+  const out: string[] = [];
+  const name = (key: string) => (who === null ? `stock line "${key}"` : `${who}'s stock line "${key}"`);
+  for (const key of STOCK_LINE_KEYS) {
+    const lines = set?.[key];
+    if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`${name(key)} is missing; every standing order needs at least one line`); continue; }
+    for (const line of lines) {
+      for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
+        const [tokenName, form, ...extra] = token!.split('.');
+        const given = STOCK_LINE_TOKENS[key];
+        if (form !== undefined && given.includes(tokenName!) && (STAFF_TOKENS as readonly string[]).includes(tokenName!)) {
+          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`${name(key)} uses {${token}}, which is not a pronoun form ({${tokenName}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
+        } else if (!given.includes(token!)) {
+          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(tokenName!) ? '' : form !== undefined ? ` ({${tokenName}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
+          out.push(`${name(key)} uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
+        }
+      }
+    }
+  }
+  for (const key of Object.keys(set ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`${name(key)} is for no standing order`);
+  return out;
+}
+
 function systemProblems(instance: Instance): string[] {
   const sys: SystemContent | undefined = instance.system;
   if (typeof sys !== 'object' || sys === null) return ['the instance has no system content (system)'];
@@ -1423,23 +1466,12 @@ function systemProblems(instance: Instance): string[] {
     else if (who !== 'boss' && who !== 'beat' && who !== 'filer' && !rosterKeys.has(who)) out.push(`duty "${d}" is assigned to "${who}", who is not "boss", "beat", "filer" or a staff member in the roster`);
   }
   for (const key of Object.keys(duties)) if (!(DUTIES as readonly string[]).includes(key)) out.push(`the duties name "${key}", which is not a duty`);
-  for (const key of STOCK_LINE_KEYS) {
-    const lines = sys.stockLines?.[key];
-    if (!Array.isArray(lines) || !lines.length || lines.some((l) => typeof l !== 'string' || l.trim() === '')) { out.push(`stock line "${key}" is missing; every standing order needs at least one line`); continue; }
-    for (const line of lines) {
-      for (const [, token] of line.matchAll(/\{([^{}]*)\}/g)) {
-        const [name, form, ...extra] = token!.split('.');
-        const given = STOCK_LINE_TOKENS[key];
-        if (form !== undefined && given.includes(name!) && (STAFF_TOKENS as readonly string[]).includes(name!)) {
-          if (extra.length || !(PRONOUN_FORMS as readonly string[]).includes(form)) out.push(`stock line "${key}" uses {${token}}, which is not a pronoun form ({${name}} may take one of: ${PRONOUN_FORMS.join(', ')})`);
-        } else if (!given.includes(token!)) {
-          const staff = form !== undefined && (STAFF_TOKENS as readonly string[]).includes(name!) ? '' : form !== undefined ? ` ({${name}} is a name only; only ${STAFF_TOKENS.map((t) => `{${t}}`).join(' and ')} take a pronoun form)` : '';
-          out.push(`stock line "${key}" uses {${token}}, which that line is never given (it may use ${given.map((t) => `{${t}}`).join(', ')})${staff}`);
-        }
-      }
-    }
+  out.push(...checkStockLines(sys.stockLines, null));
+  for (const p of roster) {
+    // One plain problem for a persona with no set at all, where checkStockLines would list every key as missing (or fail on a non-object).
+    if (p.stockLines === undefined || p.stockLines === null || typeof p.stockLines !== 'object') out.push(`${p.key} has no stock lines; every persona speaks its own line at every standing order`);
+    else out.push(...checkStockLines(p.stockLines, p.key));
   }
-  for (const key of Object.keys(sys.stockLines ?? {})) if (!(STOCK_LINE_KEYS as readonly string[]).includes(key)) out.push(`stock line "${key}" is for no standing order`);
   if (typeof sys.nameStyle !== 'function') out.push('system.nameStyle is not a function');
   if (typeof sys.nameStyleBrief !== 'string' || sys.nameStyleBrief.trim() === '') out.push('system.nameStyleBrief is empty; the meeting\'s prompt needs the name style in words');
   out.push(...threadWordProblems(sys));

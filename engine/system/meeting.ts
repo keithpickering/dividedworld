@@ -39,6 +39,7 @@ import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 // judgment.ts and chatter.ts import this module back (a cycle, and safe: each side uses the other only inside functions, never while its module loads).
 import { repairBossMove, requestKinds } from './judgment.ts';
 import { cutAtSentence } from './chatter.ts';
+import { repairLandingLine } from './stock.ts';
 
 const HOUR = 3_600_000;
 const DAY = 24 * HOUR;
@@ -184,6 +185,8 @@ function fieldRules(asked: boolean): Record<string, Rule> {
             go_live_at: { type: 'string', maxLength: 64 },
             expires_in_hours: { type: 'number' },
             why: whyRule,
+            // The post the move lands with, in the speaker's voice. Optional in both forms, and never a reason to drop a move: `repairLandingLine` trims it.
+            line: { type: 'string', optional: true },
           },
         },
       },
@@ -273,28 +276,38 @@ function fieldRules(asked: boolean): Record<string, Rule> {
 
 /**
  * The meeting is a few structured calls (provider schemas design, section 4), because the whole answer cannot compile as one schema: the moves
- * and what follows from them, then the Boss's own bundle (a part of its own: the moves part is 39 of the provider's 40 properties), then the staff, then the Boss's own memory and profile,
+ * and what follows from them, then the Boss's own bundle and, in the last week, its successor (a part of its own: the moves part, with each move's line, is 38 of the provider's 40 properties, and the successor's three fill the bundle part to 40), then the staff, then the Boss's own memory and profile,
  * with the beats it plays, its farewell and its handoff. Each part names the fields it answers and the user message
  * that asks for it; the first's ends the first message, and the others say which part is next and that the earlier answers stand. `MEETING_RULE`
  * is built from this list, so a field in no part or in two is red in meeting.test.ts ("Two lists that must agree are one list").
  */
 export const MEETING_PARTS = [
-  { key: 'moves', fields: ['moves', 'inherited', 'successor'], ask: 'Hold your meeting. This first turn is your moves: answer moves, inherited and successor.' },
-  { key: 'bundle', fields: ['bundle'], ask: 'Your moves stand as you answered them. This turn is your bundle: answer bundle if you compose one, and leave it out if you do not.' },
+  { key: 'moves', fields: ['moves', 'inherited'], ask: 'Hold your meeting. This first turn is your moves: answer moves and inherited.' },
+  { key: 'bundle', fields: ['bundle', 'successor'], ask: 'Your moves stand as you answered them. This turn is your bundle and your successor: answer bundle if you compose one and successor if you name one, and leave out whichever you do not.' },
   { key: 'staff', fields: ['orders', 'patrols', 'points', 'requests'], ask: 'Your moves and your bundle stand as you answered them. This turn is your staff: answer orders and patrols, and points, the talking points you give each persona that posts, and requests if any wait for your ruling.' },
   { key: 'self', fields: ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, the minutes of the meeting you just held, and beats, farewell and handoff if you were given beats to play or told to write a farewell.' },
 ] as const satisfies readonly { readonly key: string; readonly fields: readonly string[]; readonly ask: string }[];
 
 /**
- * The first turn's ask, which ends the first message: it names only what the meeting offers. `MEETING_PARTS[0].ask` names all three fields and stays as the
- * record of the part. A field the ask names is a field the model fills, so a meeting with no inherited moves is not asked for `inherited`, nor one in which
- * no successor may be named for `successor` (the rehearsal patch design, section 5). It is built from the part's own fields, `moves` always. The meeting's facts
- * are known before its first call and do not change within it, so the message it ends is the same in all four calls.
+ * The first turn's ask, which ends the first message: it names only what the meeting offers. `MEETING_PARTS[0].ask` names both fields and stays as the
+ * record of the part. A field the ask names is a field the model fills, so a meeting with no inherited moves is not asked for `inherited`. It is built from
+ * the part's own fields, `moves` always. The meeting's facts are known before its first call and do not change within it, so the message it ends is the same in all four calls.
+ * The successor is asked for in the bundle turn (`partAsk`): the moves part has no room for it beside each move's line.
  */
-export function movesAsk(o: { readonly inherited: boolean; readonly successor: boolean }): string {
-  const offered = MEETING_PARTS[0].fields.filter((f) => f === 'moves' || (f === 'inherited' && o.inherited) || (f === 'successor' && o.successor));
+export function movesAsk(o: { readonly inherited: boolean }): string {
+  const offered = MEETING_PARTS[0].fields.filter((f) => f === 'moves' || (f === 'inherited' && o.inherited));
   const list = offered.length > 1 ? `${offered.slice(0, -1).join(', ')} and ${offered[offered.length - 1]}` : offered[0];
-  return `Hold your meeting. This first turn is your moves: answer ${list}.`;
+  return `Hold your meeting. This first turn is your moves: answer ${list}. A move's line is the post your move lands with, in your voice; the screens say what it does plainly.`;
+}
+
+/**
+ * The ask that opens a later turn. The bundle turn names `successor` only where one may be named now (the rehearsal patch design, section 5), as `movesAsk` names
+ * `inherited` only where moves were inherited; every other turn's ask is its part's own.
+ */
+export function partAsk(key: (typeof MEETING_PARTS)[number]['key'], o: { readonly successor: boolean }): string {
+  const part = MEETING_PARTS.find((p) => p.key === key)!;
+  if (key !== 'bundle' || o.successor) return part.ask;
+  return 'Your moves stand as you answered them. This turn is your bundle: answer bundle if you compose one, and leave it out if you do not.';
 }
 
 /** The number of turns, in words, for the prompt. */
@@ -740,6 +753,8 @@ export interface PlannedMove {
   readonly goLiveAt: number;
   readonly expiresInHours: number;
   readonly why: string;
+  /** The post the move lands with, written ahead in the Boss's voice (repaired: cut, tokens stripped); null when none, and the stock line stands in. */
+  readonly line: string | null;
   readonly structural: boolean;
 }
 
@@ -1012,6 +1027,11 @@ function readLooseFields(raw: unknown): {
       for (const name of ['role', 'go_live_at']) if (out[name] === '') delete out[name];
       if (demand['kind'] === '') delete out['demand'];
     }
+    // The landing line is never a reason to lose the move: a value that is not text is left out (none), recorded.
+    if (path.startsWith('moves[') && 'line' in one && one['line'] !== null && typeof one['line'] !== 'string') {
+      delete out['line'];
+      trims.push({ path: `${path}.line`, predicate: 'isString', before: 1, after: 0 });
+    }
     if (refusals[0]) into.set(index, refusals[0]);
     return out;
   };
@@ -1281,7 +1301,8 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       if (kind.key === 'flashSale') flashing = true;
     }
     if (strayDemand) trims.push({ path: `${path}.demand`, predicate: 'noDemand', before: 1, after: 0 });
-    trims.push(...extraTrims.map((t) => ({ ...t, path: `${path}.${t.path}` })), ...[...clamps, ...params.trims].map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
+    const landing = repairLandingLine(m['line'], kind.key === 'setRule' ? 'ruleSet' : 'moveLanded');
+    trims.push(...landing.trims.map((t) => ({ ...t, path: `${path}.${t.path}` })), ...extraTrims.map((t) => ({ ...t, path: `${path}.${t.path}` })), ...[...clamps, ...params.trims].map((t) => ({ ...t, path: `${path}.params.${t.path}` })), ...demand.trims.map((t) => ({ ...t, path: `${path}.demand.${t.path}` })));
     return {
       kind: kind.key,
       params: given,
@@ -1289,6 +1310,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       goLiveAt: goLive,
       expiresInHours: expires,
       why: m['why'] as string,
+      line: landing.line,
       structural: kind.structural,
     };
   };

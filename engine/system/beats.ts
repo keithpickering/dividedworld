@@ -35,7 +35,7 @@ export interface ShownBeat {
 }
 
 /** A part of a bundle as it is queued: an ordinary move, with its role when another part (or a later beat) names it. */
-export interface PlannedPart extends PlannedMove {
+export interface PlannedPart extends Omit<PlannedMove, 'line'> {
   readonly role: string | null;
 }
 

@@ -385,3 +385,25 @@ test('each persona keeps the habits the habits plan gives, in UTC hours, and the
   }
   assert.deepEqual(instanceProblems(instance).filter((p) => /habits/.test(p)), []);
 });
+
+test('no two personas share a stock line', () => {
+  const seen = new Map<string, string>();
+  for (const p of system.roster) {
+    for (const key of STOCK_LINE_KEYS) {
+      for (const line of p.stockLines[key]) {
+        const where = `${p.key}.${key}`;
+        assert.equal(seen.get(line), undefined, `"${line}" is in ${seen.get(line)} and ${where}`);
+        seen.set(line, where);
+      }
+    }
+  }
+});
+
+test('no persona stock line equals a line of the instance\'s own set', () => {
+  const instanceLines = new Set<string>(STOCK_LINE_KEYS.flatMap((k) => [...system.stockLines[k]]));
+  for (const p of system.roster) {
+    for (const key of STOCK_LINE_KEYS) {
+      for (const line of p.stockLines[key]) assert.ok(!instanceLines.has(line), `${p.key}.${key}: "${line}" is the instance's line`);
+    }
+  }
+});

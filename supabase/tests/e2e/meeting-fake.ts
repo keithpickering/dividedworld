@@ -4,7 +4,7 @@
  * answered one part at a time: `partOf` says which part a request asks for (the last message ends with that part's `ask`), and
  * `partAnswer` keeps of the whole answer only the fields that part owns, as the real model's structured output would.
  */
-import { MEETING_PARTS, type MeetingPartKey } from '../../../engine/system/meeting.ts';
+import { MEETING_PARTS, partAsk, type MeetingPartKey } from '../../../engine/system/meeting.ts';
 
 type Content = string | undefined;
 type Body = { system?: Content; messages?: { role?: string; content?: Content }[] };
@@ -20,8 +20,9 @@ const lastMessageOf = (body: Body): string => textOf(body.messages?.[(body.messa
 export function partOf(body: Body): MeetingPartKey | null {
   const last = lastMessageOf(body).trimEnd();
   /* The first part's ask names only the fields the meeting offers (movesAsk), so it is read by its stem; the others are fixed text. */
-  if (/Hold your meeting\. This first turn is your moves: answer moves[a-z, ]*\.$/.test(last)) return 'moves';
-  return MEETING_PARTS.find((p) => last.endsWith(p.ask))?.key ?? null;
+  if (/Hold your meeting\. This first turn is your moves: answer moves[a-z, ]*\. .*$/.test(last)) return 'moves';
+  // The bundle turn's ask names the successor only where one may be named (partAsk), so both forms are read.
+  return MEETING_PARTS.find((p) => [true, false].some((successor) => last.endsWith(partAsk(p.key, { successor }))))?.key ?? null;
 }
 
 /** The fields of a whole meeting answer that one part answers. */

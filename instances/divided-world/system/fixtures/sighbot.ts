@@ -8,6 +8,10 @@
 import type { Persona } from '../../../../engine/rules/types.ts';
 import { PRONOUN_PRESETS } from '../../../../engine/rules/pronouns.ts';
 import { persona } from '../persona.ts';
+import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
+
+/** Placeholder lines, one for every standing order: a fixture is never in the roster, so it says the same plain line everywhere. */
+const PLACEHOLDER_LINES = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
 
 const name = 'Sighbot (placeholder)';
 const title = 'Placeholder Boss: the weary one';
@@ -17,6 +21,7 @@ export const sighbot: Persona = {
   name,
   title,
   signature: 'No, it is fine. Really. (Placeholder Boss.)',
+  stockLines: PLACEHOLDER_LINES,
   startingHobby: 'houseplants (you keep forgetting to water them and blame the board)',
   temperament: 'Weary and passive-aggressive: has seen every thread before and is not surprised, only let down.',
   // DRAFT for the owner: strictness, weakness (distraction), pet rules and what persuades it are drafts, and the rest are placeholders so every persona has every field.

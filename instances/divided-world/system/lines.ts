@@ -1,4 +1,8 @@
 /**
+ * The instance's own set, the last resort: said by a speaker with no set of its own (a persona that has left the roster, or a
+ * test fixture). Each roster persona speaks from its own `stockLines` (instances/divided-world/system/personas/), and no
+ * persona repeats a line here (system.test.ts).
+ *
  * Stock lines: what the staff say at each standing order when a model call is out of budget
  * or fails (design, section 2), so cost never grows without bound and nothing stalls. In the
  * board's world, so they may bluff; they carry no fact the glass does not show plainly. Each key

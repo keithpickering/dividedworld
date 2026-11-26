@@ -189,7 +189,7 @@ test('a filing with a move queues it as the Mod\'s, caused by the visit, then fi
   const [asked] = d.of('apply_mod_move');
   assert.equal(asked!.staff, MON);
   assert.equal(asked!.cause_act, V1);
-  assert.deepEqual(asked!.move, { kind: 'setRule', params: { board: GAMES, predicate: 'noAllCaps', param: null, band: 'minor' }, expires_in_hours: 48, why: 'Too much shouting.' });
+  assert.deepEqual(asked!.move, { kind: 'setRule', params: { board: GAMES, predicate: 'noAllCaps', param: null, band: 'minor' }, expires_in_hours: 48, why: 'Too much shouting.', line: null });
   assert.equal(d.state.moves.length, 1);
   assert.equal(d.state.allowance.get(MON), 1);
   assert.deepEqual(d.of('file_visit'), [{ visit_act: V1, line: 'Enough.' }]);
@@ -210,7 +210,7 @@ test('a filing passes its thread to the prompt and its board to the repair: a Mo
   assert.ok((await run(d, m)).status === 'ok');
   assert.ok(m.chats[0]!.system!.includes(`this thread, ${T1}, to another board`), 'the prompt names the visit\'s thread');
   assert.deepEqual((m.chats[0]!.schema as any).properties.move.properties.params.properties.thread, { type: 'string', enum: [T1] });
-  assert.deepEqual(d.of('apply_mod_move').map((a) => a.move), [{ kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.' }]);
+  assert.deepEqual(d.of('apply_mod_move').map((a) => a.move), [{ kind: 'moveThread', params: { thread: T1, board: MORE }, expires_in_hours: 0, why: 'It belongs in More.', line: null }]);
   const other = fakeDb({ visits: [due(V1, P1)], standing });
   const out = await run(other, fakeModels(() => mt('99999999-9999-4999-8999-999999999999')));
   assert.ok(out.status === 'ok');
@@ -596,7 +596,7 @@ test('a filing whose answer carries a conferGroup queues it with the apology dem
   const out = await run(d, m);
   assert.ok(out.status === 'ok');
   assert.match(m.chats[0]!.system, /trial \(Trial Members\)/);
-  assert.deepEqual(d.of('apply_mod_move')[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', demand: { kind: 'apologyAccepted', params: {} } });
+  assert.deepEqual(d.of('apply_mod_move')[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', line: null, demand: { kind: 'apologyAccepted', params: {} } });
   assert.equal(d.state.moves.length, 1);
   assert.equal(d.state.allowance.get(MON), 1);
   assert.deepEqual(d.of('file_visit'), [{ visit_act: V1, line: 'Cool off.' }]);
@@ -690,4 +690,18 @@ test('a filing is sent the judged post\'s poll, plays and reactions and the thre
   assert.ok(message.includes(`[Reactions: ${dividedWorld.reactions[0]!.emoji} 3]`), 'the reactions');
   assert.ok(message.includes('(This thread was spun '), 'the origin line');
   assert.ok(message.includes('The origin words.'), 'the origin block');
+});
+
+test('a Mod\'s landing line reaches apply_mod_move, trimmed to 280 and recorded on the call\'s record', async () => {
+  const d = fakeDb({ visits: [due(V1, P1)] });
+  await run(d, fakeModels(() => ({ words: 'Filed.', move: move({ line: '{appellant} is warned. '.repeat(20) }) })));
+  const [asked] = d.of('apply_mod_move');
+  const line = (asked!.move as { line: string | null }).line!;
+  assert.ok(line.length <= 280 && line.startsWith('appellant is warned.'), line);
+  const trims = d.state.records[0]!.record.trims as { path: string; predicate: string }[];
+  assert.ok(trims.some((t) => t.path === 'move.line' && t.predicate === 'tokens(ruleSet)'), JSON.stringify(trims));
+  assert.ok(trims.some((t) => t.path === 'move.line' && t.predicate === 'maxLength(280)'), JSON.stringify(trims));
+  const e = fakeDb({ visits: [due(V1, P1)] });
+  await run(e, fakeModels(() => ({ words: 'Filed.', move: move() })));
+  assert.equal((e.of('apply_mod_move')[0]!.move as { line: unknown }).line, null, 'no line is sent as null: the stock line stands in');
 });

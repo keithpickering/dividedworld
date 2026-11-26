@@ -386,7 +386,7 @@ test('a patrol\'s conferGroup is told the catalog, queued with the apology deman
   assert.ok(!m.chats[0]!.system.includes('VIPs'));
   assert.equal(d.state.moves.length, 1);
   assert.deepEqual([d.state.moves[0]!.staff, d.state.moves[0]!.cause], [MON, V(1)]);
-  assert.deepEqual(d.state.moves[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', demand: { kind: 'apologyAccepted', params: {} } });
+  assert.deepEqual(d.state.moves[0]!.move, { kind: 'conferGroup', params: { character: WHO, group: 'trial', board: GAMES }, expires_in_hours: 48, why: 'Needs a cooling off.', line: null, demand: { kind: 'apologyAccepted', params: {} } });
 });
 
 test('a patrol with no allowance reads no groups and queues no move, the conferGroup dropped for the allowance', async () => {

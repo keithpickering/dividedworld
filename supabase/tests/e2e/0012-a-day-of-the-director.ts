@@ -20,6 +20,7 @@ import { psqlDb, sql, scratchSeed, openSeasonAhead } from './psql-db.ts';
 import { runMeeting } from '../../functions/meet/core.ts';
 import { runSettlement } from '../../functions/settle/core.ts';
 import { instance } from '../../functions/_shared/instance.ts';
+import { stockLinesOf } from '../../../engine/system/stock.ts';
 import { models } from '../../functions/_shared/models/index.ts';
 import { ledgerWriter } from '../../functions/_shared/models/ledger.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
@@ -117,7 +118,8 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   assert.ok(moveAct, 'the move landed');
   assert.equal(boardName(), 'Director Day Docks', 'the board is called by the Boss\'s name for it');
   assert.equal(sql(`select c.staff from acts a join characters c on c.id = a.character where a.id = '${moveAct}'`), BOSS, 'the move is signed by the Boss');
-  const lines: string[] = JSON.parse(sql(`select value -> 'moveLanded' from settings where key = 'systemLines'`));
+  // The speaker's own set where its persona has a list for the key, else the instance's (0445).
+  const lines = stockLinesOf(instance.system, BOSS, 'moveLanded');
   const words = sql(`select value ->> 'renameBoard' from settings where key = 'systemMoveWords'`).replace('{name}', 'Director Day Docks');
   const body = sql(`select payload ->> 'body' from acts where id = '${moveAct}'`);
   assert.ok(lines.length > 0 && lines.map((l) => l.replace('{move}', words)).includes(body), `the move's body is a stock line: ${body}`);
@@ -143,6 +145,8 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   assert.deepEqual([ended.payload.why, ended.payload.by], ['met', 'demand']);
   assert.equal(boardName(), 'Director Day Diner', 'the old name returns');
   assert.equal(sql(`select count(*) from open_moves where move_act = '${moveAct}'`), '0');
+  // The end's line is owed (0445), and paid from stock here as the tick's grace pays it.
+  sql(`select pay_owed_line(owed, null) from lines_owed_open`);
   assert.equal(sql(`select count(*) from acts a join characters c on c.id = a.character where c.staff = '${BOSS}' and a.kind = 'post' and a.created_at >= '${ended.created_at}'`), '1', 'the Boss says it');
 
   // ---- The next meeting's digest shows the move as met, and who met it. ----
