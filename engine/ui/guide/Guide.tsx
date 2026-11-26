@@ -117,8 +117,13 @@ export function Guide() {
               button.current?.focus();
             }}
           >
-            <button ref={button} type="button" className="kb-guide-menu-button" aria-expanded={open} aria-controls={list} onClick={() => setOpen(!open)}>
-              <span>Contents{here ? ` · ${here.title}` : ''}</span>
+            {/*
+              * The button shows only "Contents"; the section on screen is in its name, which begins with the shown word. The owner chose this on 2026-11-26
+              * (PR #1133): the Phone board's button is static, so it is on screen only near the top and never shows the section a reader has scrolled to,
+              * and a long section name wrapped to a second line that no window could show whole.
+              */}
+            <button ref={button} type="button" className="kb-guide-menu-button" aria-expanded={open} aria-controls={list} aria-label={here ? `Contents · ${here.title}` : undefined} onClick={() => setOpen(!open)}>
+              <span>Contents</span>
               <svg aria-hidden="true" width="14" height="10" viewBox="0 0 14 10"><path d="M1 2l6 6 6-6" fill="none" stroke="currentColor" strokeWidth="2" /></svg>
             </button>
             <CalmRegion as="ul" id={list} className="kb-guide-toc">

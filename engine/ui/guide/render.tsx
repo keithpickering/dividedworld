@@ -3,6 +3,8 @@
  * in the prose is the characters it is, and a link is drawn only if the reader kept it (markdown.ts's `safeHref`). A site path is a
  * router link, so it moves without a reload; a fragment is this page's own; any other address is an ordinary link out.
  *
+ * A `when` block (a passage under `<!-- kayfabb:if system-on -->` or `system-off`) is drawn as its blocks while the instance's switch matches, and as nothing otherwise.
+ *
  * A marker is drawn by `marker`, which the screen gives (engine/ui/guide/markers.tsx), and a `{{setting:<path>}}` by `settingText`
  * against the live settings: a path it cannot say is a dash, never a number made up, and tools/check-guide.mjs refuses the path at build.
  */
@@ -63,6 +65,11 @@ export function Blocks({ blocks, fill, demote = 0 }: { readonly blocks: readonly
           }
           case 'quote': return <blockquote key={i}><Blocks blocks={b.blocks} fill={fill} demote={demote} /></blockquote>;
           case 'hr': return <hr key={i} />;
+          case 'when': {
+            /* Drawn only while the setting says so; while it is not a boolean (settings not loaded) neither passage is. No wrapper: the blocks are the section's own. */
+            const on = fill.settings.systemEnabled;
+            return on === (b.system === 'on') && typeof on === 'boolean' ? <Blocks key={i} blocks={b.blocks} fill={fill} demote={demote} /> : null;
+          }
           case 'marker': {
             const drawn = fill.marker(b.name);
             return drawn == null ? null : <div key={i} className="kb-guide-marker">{drawn}</div>;

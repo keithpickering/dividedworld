@@ -42,6 +42,8 @@ const FALLBACK: ScreenSettings = {
   pollLastsMax: { unit: 'day', count: 14 },
   registrationMode: 'invite',
   settlementLength: { unit: 'day', count: 1 },
+  systemEnabled: true,
+  seasonLength: { unit: 'month', count: 3 },
   setLasts: { unit: 'day', count: 7 },
   oldVoiceWindow: 1024,
   oldVoicePromptFloor: 256,

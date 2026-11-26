@@ -174,7 +174,9 @@ declare
                          -- How long a card set face down lasts (0156), for the line a card about to be set shows.
                          'setLasts',
                          -- The poll editor's bounds (0395).
-                         'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax'];
+                         'pollOptionsMax', 'pollQuestionMax', 'pollOptionMax', 'pollLastsMin', 'pollLastsMax',
+                         -- How long a season is (0442), for the Strategy Guide; the switch, systemEnabled, joins it where the instance holds one.
+                         'seasonLength'];
   k text;
 begin
   perform tests.become_anon();

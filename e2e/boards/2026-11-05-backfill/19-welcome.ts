@@ -10,6 +10,12 @@
  *    board draws 44; the prose is the glass's 22px body where the board draws 21, so its paragraphs run longer and the signature is 33px tall, not
  *    25, and everything under the prose stands 28px lower than the board draws it (`PROSE`). The signature's weight and color are the build's own
  *    (700 and the second text color, where the board draws 800 and the first), so its type is not compared.
+ *  - The letter is the owner's new one (docs/plans/2026-11-21-gabes-voice-plan.md, Task 7), longer than the board's, and it wraps with the words, so
+ *    what sits under it is measured from the bottom of the last paragraph above it (`p3`, then `p4`), never from the headline, which the
+ *    paragraphs between them would move (e2e/boards-wrap.spec.ts). Its heading and paragraphs are named by `buildName`; the build has no separate
+ *    signature (the sign-off "Have fun, Gabe" is the last paragraph, compared by its place only, 2px lower than the board's call to action "Go make
+ *    somebody." from the paragraph above), so the board's signature has no counterpart and is not compared. Measured from `p4`'s bottom, the parts
+ *    under it stand 56.6px higher than before (`LETTER`) in place of 186.7px lower from the headline.
  *  - The post's top padding is 36px where the board draws 40, and the byline and the headline stand 12 and 9px higher.
  *  - The calls to action are GlassButtons, 48px tall where the board's `.btn` is 54 (the same as boards 14 to 17), at the glass's own width, so
  *    each is compared by its y and height.
@@ -26,14 +32,16 @@
  */
 import type { BoardManifest } from '../../board-match.ts';
 
+/** Under the letter: the owner's new letter (docs/plans/2026-11-21-gabes-voice-plan.md, Task 7) runs longer than the board's, so everything under it, measured from the sign-off's bottom, stands this much higher than the board draws it (as the run measured). */
+const LETTER = -56.6;
 /** Under the prose: the glass's 22px body and its longer wrapping put everything below it 28px lower than the board draws it. */
-const PROSE = { y: 28 } as const;
+const PROSE = { y: 28 + LETTER } as const;
 /** Under the theme row: the PROSE shift and the tile row's own height over the three radios' (79px, as the first run measured). */
-const TILES = { y: 107.2 } as const;
+const TILES = { y: 107.2 + LETTER } as const;
 /** Under the Brighter effects row: the TILES shift and that row's own height (178px, as the first run measured). */
-const EFFECTS = { y: 285.2 } as const;
+const EFFECTS = { y: 285.2 + LETTER } as const;
 /** Under the two Sound rows: the EFFECTS shift and the two rows' heights (324.5px together, as the first run measured; each is one row of two radios and its sentence, 162px). */
-const SOUND = { y: 609.7 } as const;
+const SOUND = { y: 609.7 + LETTER } as const;
 
 const manifest: BoardManifest = {
   board: '2026-11-05-backfill/19-welcome',
@@ -45,19 +53,19 @@ const manifest: BoardManifest = {
     { id: 'rail', role: 'complementary', name: 'What happens next', type: false, box: 'across' },
     { id: 'rail-lede', role: 'text', name: 'You\'re in. One letter, three settings, then your first character.', buildSize: 21 },
     { id: 'by', role: 'text', name: 'GABE', nth: 0, box: 'position', buildShift: { y: -12 } },
-    { id: 'headline', role: 'heading', name: 'After nine years of development', buildSize: 64, box: 'position', buildShift: { y: -9 } },
-    { id: 'p1', role: 'text', name: '...hopefully it would have been worth the wait.', buildSize: 22, origin: 'headline', originEdge: 'bottom' },
-    { id: 'p4', role: 'text', name: 'Go make somebody.', buildSize: 22, buildShift: { y: 12.3 }, origin: 'headline', originEdge: 'bottom' },
-    { id: 'sig', role: 'text', name: 'Gabe', nth: 1, type: false, box: 'position', buildShift: { y: 14.7 }, origin: 'headline', originEdge: 'bottom' },
-    { id: 'start', role: 'heading', name: 'BEFORE YOU START', buildSize: 40, buildShift: { y: 32 }, origin: 'headline', originEdge: 'bottom' },
-    { id: 'start-lede', role: 'text', name: 'How the board and the glass look and move. None of it changes how the game plays.', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
-    { id: 'theme', role: 'heading', name: 'THEME', box: 'position', buildShift: PROSE, origin: 'headline', originEdge: 'bottom' },
-    { id: 'motion', role: 'heading', name: 'MOTION', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: TILES, origin: 'headline', originEdge: 'bottom' },
-    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'headline', originEdge: 'bottom' },
-    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'headline', originEdge: 'bottom' },
+    { id: 'headline', role: 'heading', name: 'After nine years of development', buildName: 'Hi. I\'m Gabe.', buildSize: 64, box: 'position', buildShift: { y: -9 } },
+    { id: 'p1', role: 'text', name: '...hopefully it would have been worth the wait.', buildName: 'You might know me as the creator of Minus World, a forum and a fighting game all-in-one. Recently, I made the decision to strip the RAM from Minus World\'s servers and sell it to Sam Altman to pay for another yacht for myself. As a result, Minus World had to be shut down. Its denizens were left stranded with nowhere to go, like sad, wandering hobos. Hobos without yachts.', box: 'position', buildSize: 22, origin: 'headline', originEdge: 'bottom' },
+    { id: 'p3', role: 'text', name: 'Everything anyone does here is public. Who\'s doing it isn\'t. Work it out, or don\'t.', buildName: 'I can\'t lie to you. Prioritizing this project meant that several in-development games nearing completion, most notably Half-Life: Nuts & Bolts, had to be shelved, likely permanently. These games\' assets will be repurposed as purchasable cosmetics, so they will live on in our hats. Uh, I mean hearts.', box: 'none', type: false, origin: 'headline', originEdge: 'bottom' },
+    { id: 'p4', role: 'text', name: 'Go make somebody.', buildName: 'Have fun, Gabe', type: false, buildSize: 22, buildShift: { y: 2 }, origin: 'p3', originEdge: 'bottom' },
+    { id: 'start', role: 'heading', name: 'BEFORE YOU START', buildSize: 40, buildShift: { y: 32 + LETTER }, origin: 'p4', originEdge: 'bottom' },
+    { id: 'start-lede', role: 'text', name: 'How the board and the glass look and move. None of it changes how the game plays.', box: 'position', buildShift: PROSE, origin: 'p4', originEdge: 'bottom' },
+    { id: 'theme', role: 'heading', name: 'THEME', box: 'position', buildShift: PROSE, origin: 'p4', originEdge: 'bottom' },
+    { id: 'motion', role: 'heading', name: 'MOTION', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
+    { id: 'motion-note', role: 'text', name: 'Off stops every animation. A card\'s effect still happens: Stick Around still snaps you back, only instantly. Smooth and Snappy are two speeds of the same animations.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
+    { id: 'size', role: 'heading', name: 'TEXT SIZE', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
+    { id: 'size-note', role: 'text', name: 'Applies to the board and the glass together. Past 150% the glass folds into one column, and nothing is cut off.', box: 'position', buildShift: TILES, origin: 'p4', originEdge: 'bottom' },
+    { id: 'make', role: 'link', name: 'MAKE YOUR FIRST CHARACTER', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'p4', originEdge: 'bottom' },
+    { id: 'read', role: 'link', name: 'READ THE STRATEGY GUIDE FIRST', box: 'height', buildShift: { ...SOUND, height: -6 }, origin: 'p4', originEdge: 'bottom' },
   ],
 };
 
@@ -75,7 +83,7 @@ export default manifest;
  * top), the options wrap one row more in the build's 326px column than the board's 358px, so the label stands 32px higher and the notes 32 and 19px
  * lower (`buildShift`, as the first run measured); the theme row is the tiles, three across (the board look's Task 16), five of them in two rows with Divided World's five themes (Task 17), so its sentence
  * is not on this page and Motion and its sentence stand about 53px and 57px lower than the board draws them (Text size is measured from the sentence); the guide is compared from its top (the build is one long article, the board draws Classes alone);
- * and the tour's tip stands 36px lower and 46px shorter than the board's (its docking above the build's own HUD, and its kicker and step on one line).
+ * and the tour's tip, whose top and height follow how its longer words wrap (docked by its bottom, so it is compared across only, and its Got it button by its place), is the owner's new Orbs tip (docs/plans/2026-11-21-gabes-voice-plan.md, Task 7), longer than the board's, with the docking above the build's own HUD, as the run measured.
  */
 const PHONE = '2026-11-05-backfill/22-onboarding-phone';
 
@@ -106,7 +114,8 @@ export const phone: BoardManifest = {
       name: 'The tour, step 2',
       build: { story: 'boards-14-tips--tour-orbs-phone' },
       landmarks: [
-        { id: 'tip', role: 'dialog', name: 'THESE ARE YOUR ORBS', type: false, buildShift: { x: -840, y: 36, height: -46 } },
+        { id: 'tip', role: 'dialog', name: 'THESE ARE YOUR ORBS', type: false, box: 'across', buildShift: { x: -840 } },
+        { id: 'got-it', role: 'button', name: 'GOT IT', type: false, box: 'position', buildShift: { x: -813.4, y: -8.2 } },
       ],
     },
   ],
