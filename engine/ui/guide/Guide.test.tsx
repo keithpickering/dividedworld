@@ -141,17 +141,19 @@ describe('the contents and the sections', () => {
     expect(link('Three')).toHaveAttribute('aria-current', 'location');
   });
 
-  test('on a phone the contents are a menu: a button names the section and opens the list, and choosing a section closes it', async () => {
+  test('on a phone the contents are a menu: a button says Contents, names the section to assistive tech and opens the list, and choosing a section closes it', async () => {
     const user = userEvent.setup();
     page('## One\n\nA.\n\n## Two\n\nB.');
     const button = screen.getByRole('button', { name: /Contents/u });
-    expect(button).toHaveTextContent(/One/u);
+    /* The section is in the name, not on the glass (Guide.tsx): the word shown is in the name, so a voice command for it works. */
+    expect(button).toHaveTextContent(/^Contents$/u);
+    expect(button).toHaveAccessibleName('Contents · One');
     expect(button).toHaveAttribute('aria-expanded', 'false');
     await user.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
     await user.click(within(contents()).getByRole('link', { name: 'Two' }));
     expect(button).toHaveAttribute('aria-expanded', 'false');
-    expect(button).toHaveTextContent(/Two/u);
+    expect(button).toHaveAccessibleName('Contents · Two');
   });
 
   test('choosing a section in the open menu moves the focus to that section\'s heading, so it does not fall to the page', async () => {
