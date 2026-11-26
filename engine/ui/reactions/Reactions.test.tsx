@@ -1452,7 +1452,7 @@ describe('a post-local reaction and a blind post', () => {
       expect(chips[0]).toHaveTextContent(/^E$/u);
       expect(chips[0]!.querySelector('[data-kb-own]')).not.toBeNull();
       expect(screen.getByText(`Reaction totals are hidden on this post until ${until}.`)).toBeInTheDocument();
-      expect(screen.queryByText(/Only you and/u)).toBeNull();
+      expect(screen.queryByText(/No other player/u)).toBeNull();
       expect(screen.queryByRole('button', { name: /^Fire/u })).toBeNull();
       expect(await screen.findByRole('button', { name: 'React' })).toBeInTheDocument();
     });
@@ -1516,7 +1516,7 @@ describe('a post-local reaction and a blind post', () => {
       expect(screen.getByText(`No other player but the author can see these until ${until}.`)).toBeInTheDocument();
     });
 
-    test('for one who is both, the line says only you', async () => {
+    test('for one who is both, the line says no other player can see them', async () => {
       const w = world();
       row(w, w.sibling, w.hooligan, [blind(w.sibling, w.pipe)]);
       expect(await screen.findByText(`No other player can see these until ${until}.`)).toBeInTheDocument();
@@ -1528,7 +1528,7 @@ describe('a post-local reaction and a blind post', () => {
       const v = row(w, w.theirs, w.spritey, [ended]);
       act(() => { v.plays.setEnded([ended.id]); v.tallies.merge(w.theirs, { fire: 2 }); });
       expect(await screen.findByRole('button', { name: 'Fire, 2. React as Mrs. Hooligan' })).toBeInTheDocument();
-      expect(screen.queryByText(/Reaction totals are hidden|Only you/u)).toBeNull();
+      expect(screen.queryByText(/Reaction totals are hidden|No other player/u)).toBeNull();
     });
 
     test('the line goes when its time passes, with nothing read', async () => {
