@@ -1,4 +1,4 @@
--- A move's landing line, written ahead (supabase/migrations/0443_persona_lines.sql, part 3; docs/plans/2026-11-25-persona-lines-plan.md, Task 5; design section 1.4).
+-- A move's landing line, written ahead (supabase/migrations/0444_persona_lines.sql, part 3; docs/plans/2026-11-25-persona-lines-plan.md, Task 5; design section 1.4).
 --
 -- 1. apply_meeting (a Boss's move) and apply_mod_move (a Mod's) store the move's `line` on its queued row; a move with none, or a blank one, stores null.
 -- 2. A line over 280 characters is refused by the column's check (the engine trims before it): a direct insert, and a Mod's move, which is refused with the reason.
@@ -145,7 +145,7 @@ begin
   update queued_moves set line = null where id = (select q from pg_temp.made where label = 'boss-none');
   r := pg_temp.refusal(format('update queued_moves set line = %L where id = %s', repeat('x', 281), (select q from pg_temp.made where label = 'boss-none')));
   if r is null or r not like '23514:%' then raise exception 'a 281-character line was not refused by the check: %', r; end if;
-  -- A Mod's 281-character line is cut to 280 where apply_mod_move stores it (0443 fix), not refused.
+  -- A Mod's 281-character line is cut to 280 where apply_mod_move stores it (0444 fix), not refused.
   got := apply_mod_move('ll-m1', pg_temp.mv(games, 'noP0', to_jsonb(repeat('y', 281))), pg_temp.cause('mod long'));
   if (got ->> 'queued')::boolean is distinct from true or (select char_length(q.line) from queued_moves q where q.id = (got ->> 'move')::bigint) is distinct from 280 then raise exception 'a Mod''s 281-character line was not queued cut to 280: %', got; end if;
   if exists (select 1 from queued_moves where char_length(line) > 280) then raise exception 'a line over 280 is stored'; end if;

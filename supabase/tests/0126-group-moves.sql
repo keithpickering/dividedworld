@@ -306,13 +306,13 @@ begin
     raise exception 'end_move took a reason outside its list';
   end if;
   perform say_move_end(a, 'unmet');
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if not exists (select 1 from acts where kind = 'post' and thread = pg_temp.announcements() and payload ->> 'body' = 'Withdrawn, moving a member into "Teacher''s Pet".') then
     raise exception 'unmet is said in moveUnmet, naming the group: %', (select jsonb_agg(payload ->> 'body') from acts where kind = 'post' and thread = pg_temp.announcements());
   end if;
   perform say_move_end(b, 'overturned');
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if not exists (select 1 from acts where kind = 'post' and thread = pg_temp.announcements() and payload ->> 'body' = 'Overturned, moving a member into "Trial Members".') then
     raise exception 'overturned is said in moveOverturned, naming the group: %', (select jsonb_agg(payload ->> 'body') from acts where kind = 'post' and thread = pg_temp.announcements());
@@ -369,13 +369,13 @@ begin
   -- A favor whose demand cannot be evaluated at its check is not stripped on that evidence; it is read again.
   insert into demand_kinds (key) values ('poisonKind');
   m_err := pg_temp.landed('gm-boss', erring, 'teachersPet', interval '3 hours', null, jsonb_build_object('kind', 'poisonKind', 'params', '{}'::jsonb), interval '2 hours', interval '2 days');
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   before_n := (select count(*) from acts where kind = 'post' and payload ->> 'body' = 'Withdrawn, moving a member into "Teacher''s Pet".');
   perform system_tick();
   -- A second tick strips nothing twice: one unmet end, one line.
   perform system_tick();
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if (select count(*) from acts where kind = 'move_end' and target_act_id = m_unmet) is distinct from 1::bigint then raise exception 'a second tick ended the unmet favor again'; end if;
   if (select count(*) from acts where kind = 'post' and payload ->> 'body' = 'Withdrawn, moving a member into "Teacher''s Pet".') is distinct from before_n + 1 then

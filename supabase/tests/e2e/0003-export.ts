@@ -470,7 +470,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into staff_request_rulings (request, ruling) select max(id), 'lapsed' from staff_requests;
       -- A request that still waits (0424): a confer joins the queue staff_requests_open, which the export carries as it carries every table (the lapsed one above has left it).
       insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) select post_act, thread, (select character from acts where id = post_act), 'exp-boss', post_act, 'confer', 'boss' from pool_turns limit 1;
-      -- Owed lines (0443), insert-only and no client's: one the Boss's staff run voiced (a debt and its payment) and one still owed (a debt and its place in the queue), carried by the export as every table is.
+      -- Owed lines (0444), insert-only and no client's: one the Boss's staff run voiced (a debt and its payment) and one still owed (a debt and its place in the queue), carried by the export as every table is.
       perform pay_owed_line(owe_line('exp-boss', 'moveMet', t, null, null, null, '{"maker": "exp-boss"}'), 'Carried across.');
       perform owe_line('exp-boss', 'moveMet', t, null, null, null, '{"maker": "exp-boss"}');
       -- The developer persona (0062): a staff character of its own kind, its avatar key, the updates thread The System's board never lists (updatesThread),

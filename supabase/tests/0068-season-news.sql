@@ -116,7 +116,7 @@ begin
 
   -- The Boss: the arrival quotes its first words and links its post in the thread the handover opened (a staff thread, not the announcements thread, which takes nothing new); so does the departure.
   if not exists (select 1 from threads t where t.id = pg_temp.hth() and t.staff_placed and t.id is distinct from pg_temp.ann()) then raise exception 'the handover opened no staff thread of its own'; end if;
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   select a.id into b_post from acts a join characters c on c.id = a.character where c.staff = 'sn-b' and a.kind = 'post' and a.thread = pg_temp.hth();
   select a.id into a_post from acts a join characters c on c.id = a.character where c.staff = 'sn-a' and a.kind = 'post' and a.thread = pg_temp.hth();

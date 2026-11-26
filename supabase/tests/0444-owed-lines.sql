@@ -1,4 +1,4 @@
--- Owed lines: the tables, the debt and the grace (supabase/migrations/0443_persona_lines.sql, part 2; docs/plans/2026-11-25-persona-lines-plan.md, Task 4; design sections 1.1, 1.3, 3 and 4).
+-- Owed lines: the tables, the debt and the grace (supabase/migrations/0444_persona_lines.sql, part 2; docs/plans/2026-11-25-persona-lines-plan.md, Task 4; design sections 1.1, 1.3, 3 and 4).
 --
 -- 1. A move that ends owes its key by its maker and posts nothing; pay_owed_line(id, 'Hi.') posts it as the maker and pays `voiced`; a second call writes nothing.
 -- 2. A superseded end is owed by the current Boss, and facts.maker is the move's staff.

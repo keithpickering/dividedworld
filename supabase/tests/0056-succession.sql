@@ -105,7 +105,7 @@ begin
   ran := pg_temp.roll();
   if ran is null then raise exception 'the season did not roll over'; end if;
   if pg_temp.boss() is distinct from 'su-b' then raise exception 'a held nomination did not leave the rotation to choose su-b, the next in the roster: %', pg_temp.boss(); end if;
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   select * into hand from season_handovers where season = (select id from seasons where ends_at is null);
   if hand.how is distinct from 'rotation' or hand.outgoing is distinct from 'su-a' then raise exception 'the handover recorded %', to_jsonb(hand); end if;
@@ -198,7 +198,7 @@ begin
   if (select e.payload from acts e where e.kind = 'move_end' and e.target_act_id = mv) is distinct from jsonb_build_object('why', 'spent', 'by', 'handover') then
     raise exception 'the nomination was not spent at the handover: %', (select e.payload from acts e where e.kind = 'move_end' and e.target_act_id = mv);
   end if;
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if pg_temp.posts_by('su-d', 'Hello from Su D.') is distinct from 1::bigint then raise exception 'the nominated Boss''s arrival was not said once'; end if;
 end $$;
@@ -306,7 +306,7 @@ begin
     raise exception 'the ended move was recorded as %', (select e.payload from acts e where e.kind = 'move_end' and e.target_act_id = m2);
   end if;
   if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = nom) then raise exception 'an answer ended a move that was not due (the nomination)'; end if;
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if pg_temp.posts_by(new_boss, 'Set aside: the renaming of a board to "Ended End".') is distinct from 1::bigint then raise exception 'the new Boss did not say the set-aside once'; end if;
   if (select array_agg(d.act order by d.landed_at, d.act) from inheritance_due(new_boss) d) is distinct from (select array_agg(x order by a.created_at, x) from unnest(array[m3, m4]) x join acts a on a.id = x) then
@@ -335,7 +335,7 @@ begin
   if not exists (select 1 from open_moves where move_act = m4) then raise exception 'the tick ended a move before its grace'; end if;
   if (select e.payload ->> 'why' from acts e where e.kind = 'move_end' and e.target_act_id = nom) is distinct from 'spent' then raise exception 'a stale nomination was not spent by the tick'; end if;
   if (select count(*) from acts e where e.kind = 'move_end' and e.target_act_id in (m1, m2, m3, m4, nom)) is distinct from 3::bigint then raise exception 'the tick wrote an end twice or ended the wrong ones'; end if;
-  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if pg_temp.posts_by(new_boss, 'Set aside: the renaming of a board to "Forgotten Fen".') is distinct from 1::bigint then raise exception 'the forgotten move''s set-aside was not said once'; end if;
 
