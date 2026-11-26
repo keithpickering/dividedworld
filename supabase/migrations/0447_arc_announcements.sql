@@ -46,6 +46,7 @@
 --   board_page          (0368) gains `stickies`: page 1's rows of the system board's staff pins (no other board has any, so no other board asks), each as thread_list gives it, in staff_stickies' order, and `[]` on any other page or board. As with `pins`, the rows are not taken out of
 --                       `threads` here (the pager's numbers stay the thread count's); the reader draws the stickies first and leaves them out of the rows below. Their characters, reads and views are in the page's lists.
 --                       staff_stickies is granted to the signed-in role for it (a definer reading staff threads: public facts, the same for every caller).
+--                       thread_list is read once, for the page's ids (board_page_ids, a definer over `threads` with the view's own two exclusions) and the stickies' ids together, then split: a second reference to the view kept 2 MB more plan (0028).
 -- Latest definitions copied: pool_record (0415_chattier_staff.sql), meeting_context (0404_card_retirement.sql), board_page (0368_client_reads_plan_once.sql).
 -- Masks: none of these reads who made a character, a class or who reacted; the plot is announcements, handoffs and handover rows. A busy instance: the plot is bounded (12 initiatives, one recap); stickies are the few pins of one board.
 
@@ -1520,9 +1521,26 @@ grant execute on function arc_plot(text) to service_role;
 revoke execute on function staff_stickies(uuid) from public, anon;
 grant execute on function staff_stickies(uuid) to authenticated, service_role;
 
+-- The ids of one page of a board's threads, newest activity first, with thread_list's own two exclusions (the Updates thread and the unlisted threads, which no API role reads), so that board_page reads thread_list ONCE, for these ids and the stickies' together:
+-- a second reference to that view planned a second copy of its subtree and board_page's kept plan grew by 2 MB (supabase/tests/e2e/0028-cold-read-budget.ts). Ids of listed threads, the same for every caller.
+create function board_page_ids(in_board uuid, in_offset integer, in_limit integer) returns table (id uuid)
+-- rows 20: one page.
+language sql stable security definer rows 20 set search_path = public, pg_temp as $$
+  select t.id
+  from threads t
+  where t.board = in_board
+    and t.id is distinct from (select (u.value #>> '{}')::uuid from settings u where u.key = 'updatesThread')
+    and not exists (select 1 from unlisted_threads x where x.thread = t.id)
+  order by t.last_at desc
+  offset in_offset
+  limit in_limit
+$$;
+revoke execute on function board_page_ids(uuid, integer, integer) from public, anon;
+grant execute on function board_page_ids(uuid, integer, integer) to authenticated, service_role;
+
 -- The Machine screen's list for an admin: every live staff pin of the open season on any board (staff_stickies' predicate), oldest pin first, each with its thread's title.
 create function admin_staff_pins() returns table (thread uuid, title text, pinned_at timestamptz)
-language plpgsql stable security definer set search_path = public, pg_temp as $$
+language plpgsql stable security definer set search_path = public, pg_temp set plan_cache_mode = force_generic_plan set jit = off as $$
 begin
   perform only_admins('reads the pinned staff threads');
   return query
@@ -1654,8 +1672,18 @@ begin
           SELECT board_closed_to(b_1.id) AS to_board
             FROM b b_1
            WHERE b_1.closed
-         ), listed AS MATERIALIZED (
-          SELECT l.id,
+         ), page_ids AS MATERIALIZED (
+          SELECT g.id
+            FROM p p_1
+              CROSS JOIN LATERAL board_page_ids(p_1.board, (p_1.page - 1) * 20, 20) g
+         ), sticky_ids AS MATERIALIZED (
+          SELECT s.thread, s.ord
+            FROM (p p_1
+              CROSS JOIN LATERAL staff_stickies(p_1.board) WITH ORDINALITY s(thread, pinned_at, ord))
+           WHERE (p_1.page = 1 AND (SELECT x.is_system FROM b x))
+         ), fetched AS MATERIALIZED (
+          SELECT
+             l.id,
              l.board,
              l.title,
              l.origin_act_id,
@@ -1671,14 +1699,30 @@ begin
              l.origin_thread,
              l.origin_place
             FROM thread_list l
-           WHERE (l.board = ( SELECT p_1.board
-                    FROM p p_1))
+           WHERE l.id IN ( SELECT g.id FROM page_ids g UNION ALL SELECT k.thread FROM sticky_ids k)
+         ), listed AS MATERIALIZED (
+          SELECT
+             l.id,
+             l.board,
+             l.title,
+             l.origin_act_id,
+             l.created_at,
+             l.last_at,
+             l.last_seq,
+             l.replies,
+             l.first_act,
+             l.first_character,
+             l.last_act,
+             l.last_character,
+             l.replies_this_week,
+             l.origin_thread,
+             l.origin_place
+            FROM fetched l
+           WHERE l.id IN ( SELECT g.id FROM page_ids g)
            ORDER BY l.last_at DESC
-          OFFSET ( SELECT ((p_1.page - 1) * 20)
-                    FROM p p_1)
-          LIMIT 20
          ), stickies AS MATERIALIZED (
-          SELECT l.id,
+          SELECT
+             l.id,
              l.board,
              l.title,
              l.origin_act_id,
@@ -1694,10 +1738,8 @@ begin
              l.origin_thread,
              l.origin_place,
              s.ord
-            FROM (p p_1
-              CROSS JOIN LATERAL staff_stickies(p_1.board) WITH ORDINALITY s(thread, pinned_at, ord))
-              JOIN thread_list l ON (l.id = s.thread)
-           WHERE (p_1.page = 1 AND (SELECT x.is_system FROM b x))
+            FROM sticky_ids s
+              JOIN fetched l ON (l.id = s.thread)
          ), pins AS MATERIALIZED (
           SELECT x.thread,
              x.play,
