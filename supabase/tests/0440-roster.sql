@@ -19,7 +19,9 @@
 -- 11. A planted deadlock (40P01) in the Boss's post propagates and leaves the window due; a post past postMaxLength is a skip, not an error.
 -- 12. Newcomers follow the window's activity: a character whose only Act is from before the last entry is not listed, a veil that ends in a later window lists its author there, a list stops at 25 and counts the rest
 --     (and all of them are written down as seen).
--- 13. A run of skipped entries (the System off) does not widen the scan: a window reads no more of `acts` after six skipped windows than after two; what they skipped is held (roster_pending) and listed once, by the next report that posts.
+-- 13. A run of skipped entries (the System off) does not widen the scan: a window reads no more of `acts` for each character it names after six skipped windows than after two; what they skipped is held (roster_pending) and listed once, by the next report that posts.
+-- 14. What a skipped entry holds is probed again when listed (a veil cast since keeps its author out); a newcomer whose first public Act has no number (a card play) neither fails the entry nor blocks its window; a report after a
+--     posting one reads no roster_pending row from before it.
 -- (Poison: roster_facts reading the class_history row's class for a landed Turn, instead of what the announcement names, is red on section 3's "a landed Turn that named no class shows none".)
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -531,6 +533,8 @@ declare
   before bigint;
   reads2 bigint;
   reads6 bigint;
+  rows2 bigint;
+  rows6 bigint;
   pending_n bigint;
   listed uuid[];
   facts jsonb;
@@ -559,8 +563,12 @@ begin
   perform roster_newcomers(ws[2]); perform roster_newcomers(ws[6]);
   before := pg_temp.act_reads(); perform roster_newcomers(ws[2]); reads2 := pg_temp.act_reads() - before;
   before := pg_temp.act_reads(); perform roster_newcomers(ws[6]); reads6 := pg_temp.act_reads() - before;
-  perform pg_temp.expect(reads2 > 0 and reads6 * 2 <= reads2 * 3,
-    format('roster_newcomers for the 6th System-off window reads %s of acts where the 2nd reads %s: it scans every Act since the System went off, where one window holds 15', reads6, reads2));
+  -- Each held character is probed again in acts_public (a veil cast since keeps it out), so the work follows the characters named (those held since the last report that posted, and the window's own), never the Acts skipped:
+  -- what a window reads of `acts` for each character it names is what it was for the 2nd window.
+  select count(*) into rows2 from roster_newcomers(ws[2]);
+  select count(*) into rows6 from roster_newcomers(ws[6]);
+  perform pg_temp.expect(reads2 > 0 and rows6 > rows2 and reads6 * rows2 <= reads2 * rows6 * 5 / 4,
+    format('roster_newcomers for the 6th System-off window reads %s of acts for %s characters where the 2nd reads %s for %s: it scans every Act since the System went off, where one window holds 15', reads6, rows6, reads2, rows2));
   -- Nothing was lost by it: each of the 90 is still a newcomer of the next window, and pending holds each only once.
   select count(*) into pending_n from roster_pending p where p.character = any(made);
   perform pg_temp.expect(pending_n = 90, 'the newcomers of the skipped windows are held, once each: ' || pending_n);
@@ -584,6 +592,88 @@ begin
   perform pg_temp.expect(not exists (select 1 from roster_newcomers(w + interval '2 hours') x where x.who = any(made)), 'and neither does the one after that');
   perform pg_temp.expect(to_regclass('roster_pending') is not null and (select count(*) from roster_pending p where p.character = any(made)) = 90, 'pending is insert-only: what was listed stays in it');
   perform pg_temp.expect(pg_temp.refusal('delete from roster_pending') like '55000%', 'and it is never taken back');
+end $$;
+
+-- ---- 14. What a skipped entry holds is re-read when it is listed; a card is no post; a held list is read by range ----
+-- Rows fetched and index entries returned on roster_pending in this transaction so far.
+create function pg_temp.pending_reads() returns bigint language sql as $$
+  select coalesce(sum(pg_stat_get_xact_tuples_fetched(o.oid) + pg_stat_get_xact_tuples_returned(o.oid)), 0)::bigint
+  from pg_class t cross join lateral (select t.oid union all select i.indexrelid from pg_index i where i.indrelid = t.oid) o(oid)
+  where t.relname = 'roster_pending' and t.relnamespace = 'public'::regnamespace
+$$;
+do $$
+declare
+  acct uuid := tests.account('rr-held');
+  osid bigint := (select id from seasons where ends_at is null);
+  t uuid := (select v::uuid from rr where k = 't');
+  p1 uuid := (select v::uuid from rr where k = 'p1');
+  b timestamptz := (select max(s.ends_at) from settlements s) + interval '1 hour';
+  wa timestamptz := b + interval '1 hour';
+  wb timestamptz := b + interval '2 hours';
+  wc timestamptz := b + interval '3 hours';
+  wd timestamptz := b + interval '4 hours';
+  we timestamptz := b + interval '5 hours';
+  wf timestamptz := b + interval '6 hours';
+  h uuid := tests.character(acct, 'Rr Held Veiled', 'alpha', now() - interval '60 days');
+  caster uuid := tests.character(acct, 'Rr Held Caster', 'alpha', now() - interval '60 days');
+  m uuid := tests.character(acct, 'Rr Card First', 'alpha', now() - interval '60 days');
+  other uuid := tests.character(acct, 'Rr Held Other', 'alpha', now() - interval '60 days');
+  hp uuid;
+  play uuid;
+  card uuid;
+  f jsonb;
+  r jsonb;
+  err text;
+  before bigint;
+  reads bigint;
+  older bigint;
+begin
+  perform set_config('enable_seqscan', 'off', true);
+  discard plans;
+  -- D1: a newcomer of a skipped window is held; a veil is cast on its post afterwards; the next report must not name it while the veil holds.
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  insert into settlements (starts_at, ends_at, season) values (wa - interval '1 hour', wa, osid);
+  hp := tests.post(h, t, 'Held words.', wa - interval '30 minutes');
+  r := write_roster_entry(wa, '{}'::uuid[], array['Skipped A'], '{}'::jsonb);
+  perform pg_temp.expect(r ->> 'skipped' like '%off%' and exists (select 1 from roster_pending p where p.character = h), 'window A is skipped and holds its newcomer: ' || r::text);
+  play := tests.act(caster, 'card', t, jsonb_build_object('card', 'rrveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', now() + interval '3 days'), hp, wa + interval '10 minutes');
+  insert into post_veils (play, post, veil, author, caster_account, ends_at) values (play, hp, 'author', h, null, now() + interval '3 days');
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+  insert into settlements (starts_at, ends_at, season) values (wa, wb, osid);
+  perform pg_temp.expect(not exists (select 1 from roster_newcomers(wb) x where x.who = h), 'a held newcomer whose post was veiled since is not named while the veil holds');
+  f := roster_facts(wb);
+  perform pg_temp.expect(not (pg_temp.ids(f, 'newcomers') @> array[h]) and not (f::text like '%' || hp::text || '%'), 'and its post is linked nowhere in the facts');
+  r := write_roster_entry(wb, pg_temp.ids(f, 'newcomers'), array['Posting B'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'posts')::integer = 1 and not exists (select 1 from roster_seen s where s.character = h), 'a report that posts does not write the veiled one down as seen: ' || r::text);
+  insert into settlements (starts_at, ends_at, season) values (wb, wc, osid);
+  perform set_config('kayfabb.card_end_writer', 'on', true);
+  insert into acts (character, kind, thread, target_act_id, payload, created_at) values (null, 'card_end', t, play, '{"why": "reversed", "by": "admin"}', wb + interval '30 minutes');
+  perform set_config('kayfabb.card_end_writer', '', true);
+  perform pg_temp.expect(exists (select 1 from roster_newcomers(wc) x where x.who = h and x.act = hp), 'once the veil ends the character is listed, with its post');
+
+  -- D2: a newcomer whose only public Act is a card play (it has no number) in a skipped window: the entry is written, the window is not due, and the next report that posts lists it.
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  insert into settlements (starts_at, ends_at, season) values (wc, wd, osid);
+  card := tests.act(m, 'card', t, jsonb_build_object('card', 'rrveil', 'message', '', 'config', '{}'::jsonb, 'layer', 1, 'ends', wc + interval '1 minute'), p1, wc + interval '20 minutes');
+  perform pg_temp.expect((select a.seq from acts a where a.id = card) is null, 'a card play has no number');
+  err := pg_temp.refusal(format('select write_roster_entry(%L, %L, array[''Skipped D''], ''{}''::jsonb)', wd, '{}'::uuid[]));
+  perform pg_temp.expect(err is null, 'the skipped window with a card-first newcomer is written: ' || coalesce(err, ''));
+  perform pg_temp.expect(exists (select 1 from roster_entries e where e.window_end = wd) and wd not in (select x from roster_due() x), 'its entry exists and the window is no longer due');
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+  insert into settlements (starts_at, ends_at, season) values (wd, we, osid);
+  perform tests.post(other, t, 'Another face.', wd + interval '10 minutes');
+  f := roster_facts(we);
+  perform pg_temp.expect(pg_temp.ids(f, 'newcomers') @> array[m], 'the next report that posts names the character whose first Act is a card: ' || f::text);
+  select count(*) into older from roster_pending p where p.window_end <= we;
+  r := write_roster_entry(we, pg_temp.ids(f, 'newcomers'), array['Posting E'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'posts')::integer = 1 and exists (select 1 from roster_seen s where s.character = m), 'the report posts and writes it down as seen: ' || r::text);
+
+  -- D3: after a report that posts, a later window reads none of the pending rows from before it.
+  insert into settlements (starts_at, ends_at, season) values (we, wf, osid);
+  perform pg_temp.expect(older > 0, 'there are pending rows from before the report: ' || older);
+  perform roster_newcomers(wf);
+  before := pg_temp.pending_reads(); perform roster_newcomers(wf); reads := pg_temp.pending_reads() - before;
+  perform pg_temp.expect(reads = 0, format('roster_newcomers after a posting report reads %s roster_pending rows or entries from before it (of %s): it reads the whole table', reads, older));
 end $$;
 
 -- ---- Put the instance back ----

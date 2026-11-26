@@ -449,7 +449,7 @@ test('an instance exported and imported into a fresh database is the same instan
         select id into roster_post from acts where character = (select id from characters where staff = 'exp-boss') and kind = 'post' order by created_at desc limit 1;
         insert into roster_entries (window_end, season, acts, record) select roster_window, id, array[roster_post], '{"commentary": "Carried across.", "landedCount": 0, "landed": []}' from seasons where ends_at is null;
         insert into roster_seen (character, window_end, act) select (select id from characters where staff = 'exp-boss'), roster_window, roster_post;
-        insert into roster_pending (character, window_end, act, thread, seq, at) select a.character, roster_window, a.id, a.thread, a.seq, a.created_at from acts a where a.id = roster_post;
+        insert into roster_pending (character, window_end) select a.character, roster_window from acts a where a.id = roster_post;
       end;
       -- A settle run's claim on a window long settled (0073). Written after every settlement of the fixture: writing a settlement deletes the claims that begin before its end (0074), and the roster's window above ends later than this one.
       insert into settlement_claims (window_start, window_end, claimed_at) values ('2000-01-01T00:00:00Z', '2000-01-02T00:00:00Z', '2000-01-02T00:00:00Z') on conflict do nothing;
