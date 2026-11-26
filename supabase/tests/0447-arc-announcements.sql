@@ -83,6 +83,7 @@ begin
   update seasons set starts_at = now() - interval '30 days' where ends_at is null;
 end $$;
 
+create function pg_temp.acct(label text) returns uuid language sql as $$ select id from auth.users where email = label || '@test.invalid' $$;
 create function pg_temp.season() returns bigint language sql as $$ select id from seasons where ends_at is null $$;
 create function pg_temp.boss(k text) returns void language sql as $$ update seasons set boss = k where ends_at is null $$;
 create function pg_temp.began(days numeric) returns void language sql as $$
@@ -347,7 +348,7 @@ begin
   perform pg_temp.expect((select count(*) from staff_stickies(system_board())) >= 3 and (select array_agg(s.thread order by s.pinned_at) from staff_stickies(system_board()) s)[1] = th, 'the stickies are not listed oldest first');
   perform pg_temp.expect(not exists (select 1 from staff_stickies((select id from boards where slug = 'elsewhere'))), 'a board with no staff thread lists a sticky');
   -- A player is refused; so is a visitor.
-  perform tests.become(tests.account('an-player'));
+  perform tests.become(pg_temp.acct('an-player'));
   msg := pg_temp.refusal(format('select unpin_staff_thread(%L)', th));
   perform pg_temp.expect(msg like '42501%only an admin%', 'a player unpinned a staff thread: ' || coalesce(msg, 'allowed'));
   perform tests.become_anon();
@@ -355,19 +356,19 @@ begin
   perform pg_temp.expect(msg like '42501%', 'a visitor called unpin_staff_thread: ' || coalesce(msg, 'allowed'));
   perform tests.unbecome();
   -- The stickies are no client's.
-  perform tests.become(tests.account('an-admin'));
+  perform tests.become(pg_temp.acct('an-admin'));
   msg := pg_temp.refusal('select * from staff_stickies(system_board())');
   perform pg_temp.expect(msg like '42501%', 'a client called staff_stickies: ' || coalesce(msg, 'allowed'));
   perform tests.unbecome();
   -- An admin unpins it; the pin is gone from the list, and the unpin is recorded with the admin.
-  perform tests.become(tests.account('an-admin'));
+  perform tests.become(pg_temp.acct('an-admin'));
   perform unpin_staff_thread(th);
   perform tests.unbecome();
   select * into e from staff_pin_events where thread = th order by id desc limit 1;
-  perform pg_temp.expect(e.event = 'unpinned' and e.by = tests.account('an-admin') and e.season = pg_temp.season(), 'the unpin is not recorded with the admin: ' || to_jsonb(e)::text);
+  perform pg_temp.expect(e.event = 'unpinned' and e."by" = pg_temp.acct('an-admin') and e.season = pg_temp.season(), 'the unpin is not recorded with the admin: ' || to_jsonb(e)::text);
   perform pg_temp.expect(not exists (select 1 from staff_stickies(system_board()) s where s.thread = th) and exists (select 1 from staff_stickies(system_board()) s where s.thread = other), 'the unpin did not take that thread alone off the list');
   -- Unpinned already, never pinned, and not a thread at all: the same plain refusal.
-  perform tests.become(tests.account('an-admin'));
+  perform tests.become(pg_temp.acct('an-admin'));
   msg := pg_temp.refusal(format('select unpin_staff_thread(%L)', th));
   perform pg_temp.expect(msg like 'P0002%That thread has no live pin.', 'an unpinned thread was unpinned again: ' || coalesce(msg, 'allowed'));
   msg := pg_temp.refusal(format('select unpin_staff_thread(%L)', (select min(id::text)::uuid from threads where not staff_placed)));
