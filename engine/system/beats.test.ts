@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { ANNOUNCE_MOST, PITCH_MOST, RECAP_MOST, announceRepair, beatsText, leadInMoods, leadInText, plotText, pushOf, recapFallback, shownBeats, type ArcRead, type PlotRead } from './beats.ts';
+import { ANNOUNCE_MOST, PITCH_MOST, PLOT_INITIATIVES_MOST, RECAP_MOST, announceRepair, beatsText, leadInMoods, leadInText, plotText, pushOf, recapFallback, shownBeats, type ArcRead, type PlotRead } from './beats.ts';
 import type { HandoffFacts } from './meeting.ts';
 import type { Beat, Persona } from '../rules/types.ts';
 
@@ -67,7 +67,8 @@ test('a lead-in shows its brief as a feeling and never the beat\'s own brief or 
   const text = leadInText(me, ['the-split'], []).join('\n');
   assert.ok(text.includes('LEAD-BRIEF the board feels crowded.'));
   assert.ok(!text.includes('SPLIT-BRIEF') && !text.includes('the-split') && !text.includes('MOOD-LINE'), text);
-  assert.match(text, /not a plan/);
+  assert.match(text, /a worry you have not decided what to do about/);
+  assert.ok(!/plan/.test(text), text);
   assert.deepEqual(leadInText(me, [], []), []);
   assert.deepEqual(leadInText(me, undefined), []);
   assert.deepEqual(leadInText(me, ['quiet-lap'], []), [], 'a beat with no lead-in');
@@ -103,29 +104,45 @@ const plot = (over: Partial<PlotRead> = {}): PlotRead => ({
 
 test('the plot so far reads last season\'s recap and each initiative, with the push for the sitting Boss only', () => {
   const push = pushOf(me, [old]);
-  const mod = plotText(plot(), { key: 'a-mod', boss: false }, push).join('\n');
+  const mod = plotText(plot(), { key: 'a-mod', boss: false }, 90, push).join('\n');
   assert.ok(mod.includes('Last season FanGaME was the Boss. This is how they summed it up: I put everything in World -1. You are welcome.'), mod);
   assert.ok(mod.includes('"The Split" (thread thread-1): Fangames get their own board.'));
   assert.ok(!mod.includes('PUSH-LINE') && !mod.includes('You announced'), mod);
-  const boss = plotText(plot(), { key: 'sitting', boss: true }, push).join('\n');
+  const boss = plotText(plot(), { key: 'sitting', boss: true }, 90, push).join('\n');
   assert.ok(boss.includes('Your push: PUSH-LINE talk it up'), boss);
   // The push is found for an aftermath initiative by `after:<predecessor>:<key>` or by its plain key.
   assert.equal(push('after:fangame:cleanup'), 'CLEANUP-PUSH');
-  assert.equal(push('cleanup'), 'CLEANUP-PUSH');
+  assert.equal(push('cleanup'), undefined, 'an aftermath beat is found only by the key its event is stored under');
+  assert.equal(push('after:elsewhere:cleanup'), undefined, 'a predecessor off the roster');
+  const twin: Pick<Persona, 'key' | 'aftermath'> = { key: 'other', aftermath: [{ ...CLEANUP, announce: { ...CLEANUP.announce!, push: 'TWIN-PUSH' } }] };
+  const both = pushOf(me, [twin, old]);
+  assert.equal(both('after:fangame:cleanup'), 'CLEANUP-PUSH', 'two predecessors sharing a key give each its own push');
+  assert.equal(both('after:other:cleanup'), 'TWIN-PUSH');
   assert.equal(push('quiet-lap'), undefined);
 });
 
 test('a former Boss reads the plot in the second person, and no push line goes to a persona that is not the Boss', () => {
-  const former = plotText(plot({ initiatives: [{ beat: 'the-split', title: 'The Split', pitch: 'p', thread: 't', boss: 'fangame' }] }), { key: 'fangame', boss: false }, pushOf(me, [old])).join('\n');
+  const former = plotText(plot({ initiatives: [{ beat: 'the-split', title: 'The Split', pitch: 'p', thread: 't', boss: 'fangame' }] }), { key: 'fangame', boss: false }, 90, pushOf(me, [old])).join('\n');
   assert.ok(former.includes('Last season you were the Boss. This is how you summed it up: I put everything'), former);
   assert.ok(former.includes('You announced this.') && !former.includes('PUSH-LINE'), former);
 });
 
 test('the recap falls back to the facts where the last meeting wrote none, and the plot says nothing where there is nothing', () => {
-  const text = plotText(plot({ last: { boss: 'fangame', name: 'FanGaME', recap: '  ', facts: facts() }, initiatives: [] }), { key: 'x', boss: false }).join('\n');
+  const text = plotText(plot({ last: { boss: 'fangame', name: 'FanGaME', recap: '  ', facts: facts() }, initiatives: [] }), { key: 'x', boss: false }, 90).join('\n');
   assert.ok(text.includes(recapFallback(facts(), 'FanGaME')), text);
-  assert.deepEqual(plotText(undefined, { key: 'x', boss: false }), []);
-  assert.deepEqual(plotText({ last: null, initiatives: [] }, { key: 'x', boss: true }), []);
-  assert.ok(plotText({ last: { boss: 'f', name: 'F', recap: null, facts: null }, initiatives: [] }, { key: 'x', boss: false }).join('').includes('Last season F was the Boss.'));
-  assert.ok(plotText(plot({ last: { boss: 'f', name: 'F', recap: 'r'.repeat(400), facts: null } }), { key: 'x', boss: false }).join('').length < 700, 'a recap past its bound is cut before it is read');
+  assert.deepEqual(plotText(undefined, { key: 'x', boss: false }, 90), []);
+  assert.deepEqual(plotText({ last: null, initiatives: [] }, { key: 'x', boss: true }, 90), []);
+  assert.ok(plotText({ last: { boss: 'f', name: 'F', recap: null, facts: null }, initiatives: [] }, { key: 'x', boss: false }, 90).join('').includes('Last season F was the Boss.'));
+  assert.ok(plotText(plot({ last: { boss: 'f', name: 'F', recap: 'r'.repeat(400), facts: null } }), { key: 'x', boss: false }, 90).join('').length < 700, 'a recap past its bound is cut before it is read');
+});
+
+test('the plot bounds each initiative\'s title and pitch and shows the latest few, saying how many are earlier', () => {
+  const many = Array.from({ length: PLOT_INITIATIVES_MOST + 3 }, (_, n) => ({ beat: `b${n}`, title: `Title ${n}`, pitch: `Pitch ${n}.`, thread: `t${n}`, boss: 'sitting' }));
+  const text = plotText({ last: null, initiatives: many }, { key: 'x', boss: false }, 90).join('\n');
+  assert.equal(text.split('\n').filter((l) => l.startsWith('- ')).length, PLOT_INITIATIVES_MOST);
+  assert.ok(text.includes('Title 10') && !text.includes('Title 2 ') && !text.includes('"Title 2"'), text);
+  assert.ok(text.includes('and 3 earlier'), text);
+  assert.ok(!plotText({ last: null, initiatives: many.slice(0, 2) }, { key: 'x', boss: false }, 90).join('').includes('earlier'));
+  const long = plotText({ last: null, initiatives: [{ beat: 'b', title: 'T'.repeat(300), pitch: 'P'.repeat(PITCH_MOST + 100), thread: 't', boss: 'sitting' }] }, { key: 'x', boss: false }, 40).join('\n');
+  assert.ok(!long.includes('T'.repeat(41)) && !long.includes('P'.repeat(PITCH_MOST + 1)), long);
 });

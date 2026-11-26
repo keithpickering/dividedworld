@@ -36,7 +36,7 @@ import { ASKABLE_MOVE_KINDS, ROLE, UUID, isRoleRef, machineLimits, moveKind, mov
 import { BEAT_WHY, BUNDLE_WORDS, DUE_WHY, RECAP_MOST, announceRepair, beatsText, dependencyOrder, fillBundle, leadInText, ownRoles, plotText, pushOf, type AftermathFile, type PlannedAnnouncement, type PlannedBundle, type PlannedPart, type PlotRead, type ShownBeat } from './beats.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
-// judgment.ts and chatter.ts import this module back (a cycle, and safe: each side uses the other only inside functions, never while its module loads).
+// judgment.ts and chatter.ts import this module back, and beats.ts, which this module imports, imports chatter.ts (cutAtSentence), so chatter -> meeting -> beats -> chatter is one too (a cycle, and safe: each side uses the other only inside functions, never while its module loads).
 import { repairBossMove, requestKinds } from './judgment.ts';
 import { cutAtSentence } from './chatter.ts';
 import { repairLandingLine } from './stock.ts';
@@ -134,8 +134,8 @@ const beatsRule = (asked: boolean): Rule =>
             beat: { type: 'string', maxLength: 40 },
             slots: { type: 'list', of: { type: 'object', fields: { slot: { type: 'string', maxLength: 80 }, value: { type: 'string', maxLength: 500 } } } },
             why: { type: 'string', maxLength: WHY_MOST },
-            // The beat's announcement (the arc announcements design, section 3). Asked of every entry, blank where the beat announces nothing or the Boss leaves a field to the writer; in the rule it is of any shape
-            // and `repairAnnounce` repairs it, so a blank, a long field or one on a beat with no block never costs a paid answer.
+            // The beat's announcement (the arc announcements design, section 3). Asked of every entry, blank where the beat announces nothing or the Boss leaves a field to the writer; in the rule the whole beats list is
+            // of any shape, and `announceRepair` (beats.ts) repairs each announce, so a blank, a long field, a malformed one or one on a beat with no block never costs a paid answer.
             announce: { type: 'object', fields: { title: { type: 'string' }, body: { type: 'string' }, pitch: { type: 'string' } } },
           },
         },
@@ -518,7 +518,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
     ].join('\n'),
     ...beatsText(f.beats ?? [], s.titleMaxLength),
     ...leadInText(f.boss, f.leadIns, f.aftermathFiles),
-    ...plotText(f.plot, { key: f.boss.key, boss: true }, pushOf(f.boss, f.aftermathFiles)),
+    ...plotText(f.plot, { key: f.boss.key, boss: true }, s.titleMaxLength, pushOf(f.boss, f.aftermathFiles)),
     ...machineText(),
     [
       'Every other move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',

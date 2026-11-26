@@ -68,6 +68,8 @@ export const BEAT_WHY = 'The Boss played this beat.';
 export const ANNOUNCE_MOST = 2000;
 export const PITCH_MOST = 200;
 export const RECAP_MOST = 300;
+/** The most initiatives the plot so far lists, the latest; a prompt stays bounded whatever the context sends. */
+export const PLOT_INITIATIVES_MOST = 8;
 export const PUSH_MOST = 300;
 export const MOOD_MOST = 300;
 export const LEAD_IN_BRIEF_MOST = 1000;
@@ -195,7 +197,7 @@ export function leadInText(persona: Pick<Persona, 'arc' | 'miniArcs'>, keys: rea
     return lead ? [oneLine(lead.brief)] : [];
   });
   if (briefs.length === 0) return [];
-  return [['How you have been feeling lately. It is a worry, not a plan: you do not know yet what you will do about it, and you may let it show in what you say and decide.', ...briefs.map((b) => `- ${b}`)].join('\n')];
+  return [['How you have been feeling lately. It is a worry you have not decided what to do about, and you may let it show in what you say and decide.', ...briefs.map((b) => `- ${b}`)].join('\n')];
 }
 
 /** The mood lines of the lead-ins live now, for the Boss's pool calls (section 6): the same lookup as `leadInText`. */
@@ -229,14 +231,11 @@ export function recapFallback(facts: HandoffFacts, bossName: string): string {
 }
 
 /**
- * The push line of a beat the sitting Boss plays, by the key an initiative names it with (a plain key of its own file, or `after:<predecessor>:<key>`; a plain key of the predecessor's aftermath too).
- * The push lives in the persona file's `announce` block, so the Boss's pool calls read it here and the context needs not carry it.
+ * The push line of a beat the sitting Boss plays, by the key an initiative is stored under (the beat's event key): a plain key of its own arc or mini-arcs, or `after:<predecessor>:<key>` for an aftermath
+ * beat, found only in that named predecessor's file, so two predecessors that share a beat key never give each other's push. The push lives in the persona file's `announce` block, so the Boss's pool calls read it here.
  */
-export function pushOf(persona: Pick<Persona, 'arc' | 'miniArcs' | 'aftermath'>, roster: readonly AftermathFile[] = []): (beat: string) => string | undefined {
-  return (beat) => {
-    const own = leadInBeat(persona, beat, roster) ?? (persona.aftermath ?? []).find((b) => b.key === beat) ?? roster.flatMap((p) => p.aftermath ?? []).find((b) => b.key === beat);
-    return own?.announce?.push;
-  };
+export function pushOf(persona: Pick<Persona, 'arc' | 'miniArcs'>, roster: readonly AftermathFile[] = []): (beat: string) => string | undefined {
+  return (beat) => leadInBeat(persona, beat, roster)?.announce?.push;
 }
 
 /**
@@ -244,7 +243,7 @@ export function pushOf(persona: Pick<Persona, 'arc' | 'miniArcs' | 'aftermath'>,
  * sitting Boss also each initiative's push, where `push` finds one; a persona that was last season's Boss reads it in the second person, and one that announced an initiative while no longer
  * the Boss reads "You announced this", with no push. Nothing where there is neither. `reader.boss` is whether the persona reading holds the Boss's chair now.
  */
-export function plotText(plot: PlotRead | undefined, reader: { readonly key: string; readonly boss: boolean }, push?: (beat: string) => string | undefined): string[] {
+export function plotText(plot: PlotRead | undefined, reader: { readonly key: string; readonly boss: boolean }, titleMax: number, push?: (beat: string) => string | undefined): string[] {
   if (!plot || (!plot.last && plot.initiatives.length === 0)) return [];
   const lines = ['The plot so far. Everyone on staff has read it; it is public.'];
   if (plot.last) {
@@ -254,10 +253,13 @@ export function plotText(plot: PlotRead | undefined, reader: { readonly key: str
   }
   if (plot.initiatives.length) {
     lines.push('Initiatives announced this season:');
-    for (const i of plot.initiatives) {
+    const earlier = Math.max(0, plot.initiatives.length - PLOT_INITIATIVES_MOST);
+    if (earlier) lines.push(`(and ${earlier} earlier)`);
+    for (const i of plot.initiatives.slice(earlier)) {
       const mine = i.boss === reader.key;
       const pushed = reader.boss && mine ? push?.(i.beat) : undefined;
-      lines.push(`- "${oneLine(i.title)}" (thread ${i.thread}): ${oneLine(i.pitch)}${mine && !reader.boss ? ' You announced this.' : ''}${pushed ? ` Your push: ${oneLine(pushed)}` : ''}`);
+      const fit = (text: string, most: number): string => { const t = oneLine(text); return t.length > most ? cutAtSentence(t, most) : t; };
+      lines.push(`- "${fit(i.title, titleMax)}" (thread ${i.thread}): ${fit(i.pitch, PITCH_MOST)}${mine && !reader.boss ? ' You announced this.' : ''}${pushed ? ` Your push: ${oneLine(pushed)}` : ''}`);
     }
   }
   return [lines.join('\n')];

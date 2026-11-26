@@ -1412,6 +1412,8 @@ test('a successor naming the Boss\'s standing nominee is dropped as no new nomin
 // The moves part is 38 of the provider's 40 (each move's line, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own). The successor (three properties) moved to the bundle part to make room for the line: the bundle part is 37 and its successor 3, so 40 of 40.
 // The staff part is 40 of the provider's 40: the orders and patrols, the talking points' list with its two fields (points, staff, line), and the requests' ruling (staff requests plan, Task 5): requests, its item's id, ruling, line and move,
 // the move's kind, params, expires_in_hours and why, and five params (thread, board, into, name, premise; a rename's description is left to the stock one, the fallback to none: the provider's 40 allows no more).
+// The self part is 34 of the provider's 40: the memory and the profile, the minutes, the farewell, the handoff and the recap (the arc announcements design, section 8), and the beats' list with its item's beat, slots (slot, value), why and
+// announce (title, body, pitch: four properties, the arc announcements design, section 3).
 const DESIGN_PROPERTIES = { moves: 38, bundle: 40, staff: 40, self: 34 } as const;
 const OPTIONAL = { moves: 1, bundle: 2, staff: 10, self: 6 } as const;
 for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {

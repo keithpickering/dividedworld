@@ -35,7 +35,7 @@ import { noteMost, type Memory } from './memory.ts';
 import type { PoolTrigger, PostingOffice } from './pool.ts';
 import type { Rule, Trim } from './validate.ts';
 import { readLines, READ_WORDS, type ReadPost, type ThreadReadResult } from './read.ts';
-// judgment.ts imports this module back (cutAtSentence, the thread fit, memoryLines): a cycle, and safe, because each side uses the other only inside functions, never while its module loads.
+// judgment.ts imports this module back (cutAtSentence, the thread fit, memoryLines), and so does beats.ts (cutAtSentence), which meeting.ts imports, which this module imports: cycles, and safe, because each side uses the other only inside functions, never while its module loads.
 import { predicateCatalogLines, punishmentList, punishmentsOf, repairBossMove, repairModMove, requestKinds, ruleParamsText, type BossMoveContext, type Dropped, type ModMove, type ModMoveContext, type RepairedMove } from './judgment.ts';
 
 /** A card the persona may play today: a Cast lands on the post it replies to, a Set on its own post. */
