@@ -6,7 +6,7 @@
 import type { DutyAssignee, SystemContent } from '../rules/types.ts';
 import type { Tier } from './model.ts';
 
-export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge', 'conversation', 'roster'] as const;
+export const DUTIES = ['meeting', 'standingOrderLine', 'microEvent', 'renameJudge', 'appeal', 'chatter', 'filing', 'reportJudge', 'patrolJudge', 'apologyJudge', 'conversation', 'roster', 'quizQuestion'] as const;
 export type Duty = (typeof DUTIES)[number];
 
 export interface DutySpec {
@@ -36,6 +36,8 @@ export const DUTY_SPECS: Readonly<Record<Duty, DutySpec>> = {
   conversation: { mode: 'chat', tier: 'light' },
   // The Roster Report's commentary (the staff-board threads plan, Task 7): one chat call a settlement, in the Boss's voice, given the day's public list and nothing else. Always the light tier.
   roster: { mode: 'chat', tier: 'light' },
+  // A quiz visit's question (the written quiz design, section 3): one chat call a visit, by the visit's own Mod in its voice, given only what every reader sees. Always the light tier.
+  quizQuestion: { mode: 'chat', tier: 'light' },
 };
 
 /**
