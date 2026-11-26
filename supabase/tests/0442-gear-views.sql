@@ -1,4 +1,4 @@
--- A worn piece's view (supabase/migrations/0434_gear_views.sql; the rendered gear plan, Task 2): set_outfit saves it, profile_cosmetics and profile_projection give it back,
+-- A worn piece's view (supabase/migrations/0442_gear_views.sql; the rendered gear plan, Task 2): set_outfit saves it, profile_cosmetics and profile_projection give it back,
 -- a piece with none reads back null, a view that is not one of the five is refused in piece_problem's words, and the column's own check holds it too.
 
 create function pg_temp.refusal(stmt text) returns text language plpgsql as $$
