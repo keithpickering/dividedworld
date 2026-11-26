@@ -352,6 +352,12 @@ export interface SeenPlay {
   readonly amountWords: (share: number) => string;
 }
 
+/** What a card's `covers` reads: one play's public configuration and state, and the post's visible text. */
+export interface CoverPlay { readonly config: unknown; readonly state: unknown; readonly text: string }
+
+/** A stretch of a post's visible text, [from, to), and the words a reader sees over it. */
+export interface Cover { readonly from: number; readonly to: number; readonly words: string }
+
 export interface CardRules<Config = unknown> {
   readonly key: string;
   readonly name: string;
@@ -361,6 +367,11 @@ export interface CardRules<Config = unknown> {
    * Never a number a player cannot see: an amount is said through `amountWords`. `by` may be null, and the sentence must read without it.
    */
   readonly seen?: (p: SeenPlay) => string;
+  /**
+   * The stretches of the post's visible text this play covers with other words, as every reader of the board sees them before touching the play, read by a model in place of the words under them
+   * (the post's own words stay the post's, and its `seen` line still says what lies over them); null or empty for none. Pure, never a private fact.
+   */
+  readonly covers?: (p: CoverPlay) => readonly Cover[] | null;
   readonly rarity: Rarity;
   /**
    * Out of print: nothing gives out a new copy (a pack, the machine, a Random Event), while every copy already out stays fully playable.
