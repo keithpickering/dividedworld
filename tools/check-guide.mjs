@@ -139,6 +139,12 @@ function conditionalLines(markdown) {
   return { 'if-nested': nested, end: stray, 'if-unclosed': open };
 }
 
+/** The 1-based line of the second-level heading whose text is `title`, or 0 when none is written as plain text (one with markup inside, say). */
+function headingLine(markdown, title) {
+  const at = markdown.split('\n').findIndex((l) => l.trim() === `## ${title}`);
+  return at < 0 ? 0 : at + 1;
+}
+
 /** The 1-based line of the first line of the Markdown holding `snippet`, or 0 when none does (a heading broken over lines, say). */
 function lineOf(markdown, snippet) {
   const at = markdown.split('\n').findIndex((l) => l.includes(snippet));
@@ -174,7 +180,9 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
     marker: (name) => {
       if (name === 'if-nested') fault(file, lines[name].shift() ?? 0, 'a conditional passage stands inside another');
       else if (name === 'if-unclosed') fault(file, lines[name].shift() ?? 0, 'a conditional passage is never closed with kayfabb:end');
-      else if (name === 'end') fault(file, lines[name].shift() ?? 0, 'kayfabb:end closes nothing');
+      /* The reader leaves the end that closes an `if` with an unknown condition as an `end` marker too; the source pairs it with that `if`,
+         so only an end the source finds nothing open for is a fault (the unknown condition is reported once, on its own line). */
+      else if (name === 'end') { if (lines.end.length) fault(file, lines.end.shift(), 'kayfabb:end closes nothing'); }
       else if (name === 'if' || name.startsWith('if ')) {
         const condition = name.slice(2).trim();
         fault(file, lineOf(markdown, `kayfabb:${name}`) || lineOf(markdown, 'kayfabb:if'), `the condition "${condition}" is not one the engine knows (${CONDITIONS.join(', ')})`);
@@ -183,7 +191,7 @@ export function guideFaults({ file, markdown, hints, hintsFile = file.replace(/s
     setting: (p) => {
       if (settingText(p, settings) === undefined) fault(file, lineOf(markdown, `{{setting:${p}`), `{{setting:${p}}} names no setting the page can say (a number or a span, by the name the screens read it)`);
     },
-    sectionInWhen: (title) => fault(file, lineOf(markdown, title), `the section "${title}" stands inside a conditional passage: a section cannot stand inside a conditional passage, since the guide's contents and its links must be the same whichever way the switch is`),
+    sectionInWhen: (title) => fault(file, headingLine(markdown, title) || lineOf(markdown, title), `the section "${title}" stands inside a conditional passage: a section cannot stand inside a conditional passage, since the guide's contents and its links must be the same whichever way the switch is`),
   });
 
   /* What the guide says of the staff is true whichever way the switch is: only a system-off passage may say they are not on. */

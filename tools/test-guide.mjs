@@ -155,7 +155,7 @@ const fires = (markdown, pattern, o = {}) => {
   check('poison 4: "30 days" typed inside a passage fires', fires(on('A Turn waits 30 days.'), /typed into the prose/) && fires(off('A Turn waits 30 days.'), /typed into the prose/));
   check('poison 4b: a stray {{ and a marker sharing its line, inside a passage, fire', fires(on('A {{ here.'), /not a \{\{setting/) && fires(on('See <!-- kayfabb:classes --> here.'), /does not stand alone/));
   const unknown = faultsOf('## A\n\n<!-- kayfabb:if system-maybe -->\n\nText.\n\n<!-- kayfabb:end -->\n');
-  check('poison 5: <!-- kayfabb:if system-maybe --> fires, naming the condition and the ones the engine knows', unknown.length >= 1 && unknown.some((f) => /the condition "system-maybe" is not one the engine knows \(system-on, system-off\)/.test(f.why) && f.line === 3), JSON.stringify(unknown));
+  check('poison 5: <!-- kayfabb:if system-maybe --> fires, naming the condition and the ones the engine knows', unknown.length === 1 && unknown.some((f) => /the condition "system-maybe" is not one the engine knows \(system-on, system-off\)/.test(f.why) && f.line === 3), JSON.stringify(unknown));
   const nested = faultsOf('## A\n\n<!-- kayfabb:if system-on -->\n\n<!-- kayfabb:if system-off -->\n\nText.\n\n<!-- kayfabb:end -->\n\n<!-- kayfabb:end -->\n');
   check('poison 6: an if inside an if fires once, "a conditional passage stands inside another"', nested.length === 1 && /a conditional passage stands inside another/.test(nested[0].why) && nested[0].line === 5, JSON.stringify(nested));
   const unclosed = faultsOf('## A\n\n<!-- kayfabb:if system-on -->\n\nText.\n');
@@ -164,12 +164,14 @@ const fires = (markdown, pattern, o = {}) => {
   check('poison 8: an end with no if fires, "kayfabb:end closes nothing"', stray.length === 1 && /kayfabb:end closes nothing/.test(stray[0].why) && stray[0].line === 5, JSON.stringify(stray));
   const section = faultsOf(on('## A section'));
   check('poison 9: a second-level heading inside a passage fires, naming why', section.length === 1 && /a section cannot stand inside a conditional passage, since the guide's contents and its links must be the same whichever way the switch is/.test(section[0].why) && section[0].line === 5, JSON.stringify(section));
+  const short = faultsOf('## Alpha\n\n<!-- kayfabb:if system-on -->\n\n## A\n\n<!-- kayfabb:end -->\n');
+  check('poison 9a: a section inside a passage is named on its own heading line, not on an earlier line holding its title', short.length === 1 && short[0].line === 5, JSON.stringify(short));
   check('poison 9b: a third-level heading inside a passage is clean', faultsOf(on('### A part')).length === 0);
   const SAY = 'They are not switched on yet.';
   const outside = faultsOf(`## A\n\n${SAY}\n`);
   check('poison 10: "not switched on" in a paragraph outside any passage fires', outside.length === 1 && /says the staff are not switched on outside a system-off passage, so it would be untrue the day they are switched on/.test(outside[0].why) && outside[0].line === 3, JSON.stringify(outside));
   check('poison 10b: the same inside a system-on passage fires', fires(on(SAY), /not switched on outside a system-off passage/));
-  check('poison 10c: it is case-blind, and read in a list, a heading and a table', fires('## A\n\nThey are NOT SWITCHED ON.\n', /not switched on/) && fires('## A\n\n- Not Switched On.\n', /not switched on/) && fires('## Not switched on\n', /not switched on/) && fires('## A\n\n| H |\n| --- |\n| not switched on |\n', /not switched on/));
+  check('poison 10c: it is case-blind, and read in a list, a heading, a table, a quote and the text of a link', fires('## A\n\nThey are NOT SWITCHED ON.\n', /not switched on/) && fires('## A\n\n- Not Switched On.\n', /not switched on/) && fires('## Not switched on\n', /not switched on/) && fires('## A\n\n| H |\n| --- |\n| not switched on |\n', /not switched on/) && fires('## A\n\n> They are not switched on.\n', /not switched on/) && fires('## A\n\nSee [not switched on](#a).\n', /not switched on/));
   check('clean: the same sentence inside a system-off passage', faultsOf(off(SAY)).length === 0);
   check('clean: a guide with one passage of each kind', faultsOf(`## A\n\nBefore.\n\n<!-- kayfabb:if system-on -->\n\nThe staff are here.\n\n<!-- kayfabb:end -->\n\n<!-- kayfabb:if system-off -->\n\n${SAY}\n\n<!-- kayfabb:end -->\n\nAfter.\n`).length === 0);
   check('clean: a guide with no passage', faultsOf(GOOD).length === 0);
