@@ -262,7 +262,7 @@ test('Autocorrect covers the stretches the board lays strips on, in the same ord
   assert.deepEqual(covers(shown), stripsOf(shown, [{ id: 'a', phrase, replacement }]).strips.map((s) => ({ from: s.from, to: s.to, words: s.replacement })), shown);
   assert.equal(covers(shown)?.length, 2);
   const across = 'the warp [b]pipe[/b] here';
-  assert.equal(coveredBody(across, [played({ phrase, replacement }, null)], (_c, p) => autocorrect.covers!(p)), 'the haunted toilet[b][/b] here', 'across formatting: the words go over the stretch, the tags stay');
+  assert.equal(coveredBody(across, [played({ phrase, replacement }, null)], (_c, p) => autocorrect.covers!(p), 20_000), 'the haunted toilet[b][/b] here', 'across formatting: the words go over the stretch, the tags stay');
   assert.ok((covers('warp pipe warp pipe')?.length ?? 0) === 2);
 });
 
@@ -276,7 +276,7 @@ test('Autocorrect covers nothing once a peel is saved, or where its configuratio
 test('a staff read of the post reads the tape as the board shows it, and as written once the author peels', () => {
   const body = 'Is the warp pipe broken?';
   const config = { phrase: 'warp pipe', replacement: 'haunted toilet' };
-  const read = (state: unknown) => coveredBody(body, [played(config, state)], (card, p) => (card === 'autocorrect' ? autocorrect.covers!(p) : null));
+  const read = (state: unknown) => coveredBody(body, [played(config, state)], (card, p) => (card === 'autocorrect' ? autocorrect.covers!(p) : null), 20_000);
   assert.equal(read(null), 'Is the haunted toilet broken?');
   assert.equal(read({ peeled: [] }), 'Is the haunted toilet broken?');
   assert.equal(read({ peeled: [0] }), body);

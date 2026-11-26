@@ -180,6 +180,19 @@ test('a veiled post\'s author is the read\'s stand-in, and a play\'s seen line r
   assert.ok(message.indexOf('post>>>') < message.indexOf('A SEEN LINE'), 'the line is outside the quoted post');
 });
 
+test('a post under untouched Autocorrect tape is sent as the tape shows it, with the play\'s line over the post', async () => {
+  const play = { play: 'play-1', card: 'autocorrect', at: '2026-11-04T09:30:00.000Z', by: 'Wario', config: { phrase: 'Odyssey', replacement: 'Sunshine Bridge' }, state: null, text: null, covered: null };
+  const d = fakeDb({ extras: { plays: [play] } });
+  const m = fakeModels();
+  await run(d, m);
+  const message = m.chats[0]!.messages[0]!.content;
+  const shown = message.slice(message.indexOf('<<<post\n'), message.indexOf('post>>>'));
+  assert.ok(shown.includes('Sunshine Bridge. Sunshine Bridge.'), message);
+  assert.ok(!shown.includes('Odyssey'), 'the words under the tape are not in the quoted post');
+  const after = message.slice(message.indexOf('post>>>'));
+  assert.match(after, /taped over .*The post above reads as the tape shows it; the marker words are Wario's\./, 'the play\'s own line lies under the post');
+});
+
 test('a lost race records the standing row\'s source and writes nothing of its own', async () => {
   const d = fakeDb();
   d.written.set(V1, { source: 'bank', ...BANK });

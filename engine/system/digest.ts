@@ -53,6 +53,8 @@ export interface DigestWords {
   readonly cardName?: (key: string) => string | undefined;
   /** The stretches a play of a card covers in a post's visible text, as the reader takes them (`ReadOptions.covers`); absent means none. */
   readonly covers?: (card: string | null, p: CoverPlay) => readonly Cover[] | null;
+  /** The longest a covered text may be, as the reader takes it (`ReadOptions.coveredMost`); absent with `covers` given, a text may not grow at all. */
+  readonly coveredMost?: number;
 }
 
 export interface DigestThread {
@@ -393,7 +395,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
   };
   // An excerpt's words as the board shows them: covered by the plays its extras carry, before `excerpt` cuts them. A request's body carries no plays and is never covered.
   // A text the digest already holds cut (its `cut`) is covered within what it holds: an occurrence the cut splits is not laid, and the words read as written there.
-  const shownText = (text: string, x: DigestSee): string => (words.covers === undefined || (x.extras?.plays ?? []).length === 0 ? text : coveredBody(text, x.extras!.plays, words.covers));
+  const shownText = (text: string, x: DigestSee): string => (words.covers === undefined || (x.extras?.plays ?? []).length === 0 ? text : coveredBody(text, x.extras!.plays, words.covers, words.coveredMost ?? 0));
   const { threads: T, boards: B, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
   const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E + (2 + DIGEST_MOST.conversationWith) * DIGEST_MOST.conversations).map((c) => [c.id, taggedName(clip(line(c.name), CLIPS.name), c.pronouns)]));
   const name = (id: string): string => known.get(id) ?? 'someone';

@@ -1035,7 +1035,12 @@ test('a patrol sample post is read covered, and the size it counts is the covere
   assert.ok(p.message.includes('"Taped. Odyssey."'), p.message);
   assert.ok(!p.message.includes('"Odyssey. Odyssey."'));
   const long = { ...post, plays: [{ ...tape, config: 1 }] };
-  const wide = (words: string) => patrolShown([long, long], { readMost: 250, now: NOW, seen: () => null, covers: () => [{ from: 0, to: 7, words }] }).length;
+  const wide = (words: string) => patrolShown([long, long], { readMost: 250, now: NOW, seen: () => null, covers: () => [{ from: 0, to: 7, words }], coveredMost: 20_000 }).length;
   assert.equal(wide('a'), 2);
   assert.equal(wide('a'.repeat(400)), 1, 'the covered body is longer than the ceiling');
+  // A sample post's covered words never pass the post limit, however long the typed replacement.
+  const body = 'abcd '.repeat(4000);
+  const every = (_: string | null, q: { text: string }) => Array.from(q.text.matchAll(/abcd/g), (m) => ({ from: m.index, to: m.index + 4, words: '['.repeat(100) }));
+  const big = patrolPrompt(patrol({ sample: [{ ...post, body, plays: [tape] }], reading: { readMost: 1e9, now: NOW, seen: () => null, covers: every, coveredMost: 20_000 } }));
+  assert.ok(big.message.length < 20_000 + 5_000, `${big.message.length}`);
 });

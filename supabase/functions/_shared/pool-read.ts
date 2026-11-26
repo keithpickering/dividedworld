@@ -29,11 +29,13 @@ export interface ReadContext {
   readonly now: number;
   readonly cards: readonly Pick<CardRules, 'key' | 'name' | 'seen' | 'covers'>[];
   readonly reactions: readonly { readonly key: string; readonly emoji: string }[];
+  /** The instance's post length limit (`settings.postMaxLength`): the most a covered body may be read at. */
+  readonly postMaxLength: number;
   readonly groupName?: (key: string) => string | undefined;
 }
 
-/** The context of a read from an instance (anything with its `cards` and `reactions`) and the time. */
-export const readContext = (instance: { readonly cards: ReadContext['cards']; readonly reactions: ReadContext['reactions'] }, now: number): ReadContext => ({ now, cards: instance.cards, reactions: instance.reactions });
+/** The context of a read from an instance (anything with its `cards`, `reactions` and `settings.postMaxLength`) and the time. */
+export const readContext = (instance: { readonly cards: ReadContext['cards']; readonly reactions: ReadContext['reactions']; readonly settings: { readonly postMaxLength: number } }, now: number): ReadContext => ({ now, cards: instance.cards, reactions: instance.reactions, postMaxLength: instance.settings.postMaxLength });
 
 /**
  * The reader's choice from what `pool_read` returned. A character with no profile row reads null pronouns, and takes `fallback` (the instance's default, else the engine's it-set) as the prompts have always written it.
@@ -58,6 +60,7 @@ export function readingOf(readMost: number, ctx: ReadContext): Omit<ReadOptions,
     // A card with no `seen`, a card the instance lacks and a back with no card are all null: the reader says what is known of them.
     seen: (card, p) => (card === null ? null : byKey.get(card)?.seen?.(p) ?? null),
     covers: (card, p) => (card === null ? null : byKey.get(card)?.covers?.(p) ?? null),
+    coveredMost: ctx.postMaxLength,
     cardName: (key) => byKey.get(key)?.name,
     groupName: ctx.groupName,
     reactionName: (kind) => emoji.get(kind) ?? kind,

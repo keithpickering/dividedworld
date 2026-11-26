@@ -408,7 +408,7 @@ const tapeCovers: NonNullable<ReadOptions['covers']> = (card, p) => {
 };
 const tapeSeen = (card: string | null) => (card === 'tape' ? 'Tape was put over some words.' : null);
 const taped = (from: number, to: number, words: string) => ({ play: 'pl1', card: 'tape', at: '2026-11-24T12:00:00Z', by: 'Wario', config: { from, to, words }, state: null, text: null, covered: null });
-const coverOpts = { covers: tapeCovers, seen: tapeSeen };
+const coverOpts = { covers: tapeCovers, seen: tapeSeen, coveredMost: 20_000 };
 
 test('a covered post reads its covered words, with its play line under them', () => {
   const a = cand(1, 'wario', 'Hello world', { plays: [taped(0, 5, 'MEEP')] });
@@ -447,4 +447,16 @@ test('the origin post is covered by its own plays', () => {
   const lines = readLines(rt([opener], { self: null, must: [] }, 10_000, { ...coverOpts, origin: withPlay }));
   assert.ok(lines.includes('Taped words'), lines.join('\n'));
   assert.ok(!lines.includes('Original words'));
+});
+
+test('a judged post taped with a long replacement is read at the post limit at most, in the must tier', () => {
+  const body = 'abcd '.repeat(4000); // the longest post an instance holds
+  const every: NonNullable<ReadOptions['covers']> = (card, p) => (card === 'tape' ? Array.from(p.text.matchAll(/abcd/g), (m) => ({ from: m.index, to: m.index + 4, words: p.config as string })) : null);
+  for (const words of ['x'.repeat(100), '['.repeat(100)]) {
+    const tape = { play: 'pl1', card: 'tape', at: '2026-11-24T12:00:00Z', by: 'Wario', config: words, state: null, text: null, covered: null };
+    const a = cand(1, 'wario', body, { plays: [tape] });
+    const r = rt([a], { self: null, must: [a.act] }, 1000, { covers: every, seen: tapeSeen, coveredMost: 20_000 });
+    assert.equal(r.answered.length, 1);
+    assert.ok(r.posts[0]!.body.length <= 20_000, `${words[0]}: ${r.posts[0]!.body.length}`);
+  }
 });

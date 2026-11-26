@@ -498,7 +498,7 @@ test('a tied poll in short form keeps its closing tail and its counts match the 
 test('an excerpt with a covering play is read covered; a request\'s body is not', () => {
   const tape = { ...play(1, 'tape'), config: { from: 0, to: 2, words: 'Not' } };
   const covers = (card: string | null, p: { config: unknown }) => (card === 'tape' ? [p.config as { from: number; to: number; words: string }] : null);
-  const words = { ...seeOpts, covers };
+  const words = { ...seeOpts, covers, coveredMost: 20_000 };
   const d: Digest = {
     ...small,
     bossReactions: [{ act: id(9), thread: id(1), total: 5, tally: { fire: 4 }, text: 'my own hot take', extras: { ...withExtras, plays: [tape] } }],
@@ -514,4 +514,14 @@ test('an excerpt with a covering play is read covered; a request\'s body is not'
   assert.ok(text.includes('persona line'), 'a post with no plays is as written');
   assert.ok(text.includes('It was me all along'), 'a request\'s body is whole');
   assert.ok(renderDigest(d, memory, [], undefined, seeOpts).includes('7 reactions: It was me all along'), 'with no covers, as written');
+});
+
+test('a covered excerpt is never longer than the post limit, however long the covering words', () => {
+  const tape = { ...play(1, 'tape'), config: null };
+  const body = 'abcd '.repeat(4000);
+  const every = (card: string | null, p: { text: string }) => (card === 'tape' ? Array.from(p.text.matchAll(/abcd/g), (m) => ({ from: m.index, to: m.index + 4, words: '['.repeat(100) })) : null);
+  const d: Digest = { ...small, excerpts: [{ ...small.excerpts[0]!, text: body, extras: { ...withExtras, plays: [tape] } }] };
+  const text = renderDigest(d, memory, [], undefined, { ...seeOpts, covers: every, coveredMost: 20_000 });
+  const plain = renderDigest(d, memory, [], undefined, seeOpts);
+  assert.ok(text.length - plain.length <= 0, `${text.length} against ${plain.length}`);
 });

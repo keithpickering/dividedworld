@@ -55,6 +55,8 @@ export interface ReadOptions {
   readonly seen: (card: string | null, p: SeenPlay) => string | null;
   /** The stretches a play of a card covers in a post's visible text (`CardRules.covers`; null for a card with none, or a back with no card); absent means none. Read bodies are covered before they are marked or sized. */
   readonly covers?: (card: string | null, p: CoverPlay) => readonly Cover[] | null;
+  /** The longest a covered body may be (the instance's post length limit, `coveredBody`'s `most`): a covered read is never longer than an uncovered one could be. Absent with `covers` given, a body may not grow at all. */
+  readonly coveredMost?: number;
   readonly origin: ReadOrigin | null;
   readonly cardName?: (key: string) => string | undefined;
   readonly groupName?: (key: string) => string | undefined;
@@ -176,7 +178,7 @@ export function originBlock(origin: ReadOrigin, o: ReadOptions): string[] {
 }
 
 /** A body as the board shows it: covered by its plays (`o.covers`). Reading only: the quote comparison (`sourceOf`) and every rule check keep the post's own words. */
-const coverRead = (body: string, plays: readonly ReadPlay[], o: Pick<ReadOptions, 'covers'>): string => (o.covers === undefined ? body : coveredBody(body, plays, o.covers));
+const coverRead = (body: string, plays: readonly ReadPlay[], o: Pick<ReadOptions, 'covers' | 'coveredMost'>): string => (o.covers === undefined ? body : coveredBody(body, plays, o.covers, o.coveredMost ?? 0));
 
 const length = (lines: readonly string[]): number => lines.reduce((n, l) => n + l.length, 0);
 

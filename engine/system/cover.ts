@@ -25,10 +25,14 @@ const splits = (text: string, i: number): boolean => {
 const valid = (c: Cover, text: string): boolean =>
   typeof c.words === 'string' && Number.isInteger(c.from) && Number.isInteger(c.to) && c.from >= 0 && c.to <= text.length && c.from < c.to && !splits(text, c.from) && !splits(text, c.to);
 
-/** `words` as the text they are: every `[` is written inside a noparse, so nothing in them is ever read as a tag, and the visible text of the result is the words. */
-const literal = (words: string): string => words.replaceAll('[', '[noparse][[/noparse]');
-
-const BARRIER = '[noparse][/noparse]';
+/**
+ * `words` as the text they are, in one noparse: nothing in them is read as a tag, and the visible text of the result is the words. The parser ends a noparse at the first `[/noparse]` (any case), so each
+ * of those inside the words is split where it stands: the wrap is closed at its `[`, that `[` is written in a noparse of its own, and a third carries on from the `/` (`[/noparse]` becomes
+ * `[/noparse][noparse][[/noparse][noparse]/noparse]`). The cost is the wrap's 19 characters, plus 30 for each closer in the words, never a tag per character: a typed replacement is at most 100
+ * characters, so it can only grow so far, and the words' own length is what the read bound (`coveredBody`'s `most`) is spent on.
+ */
+const literal = (words: string): string =>
+  `[noparse]${words.replace(/\[\/noparse\]/gi, (m) => `[/noparse][noparse][[/noparse][noparse]${m.slice(1)}`)}[/noparse]`;
 
 /** Index of the first item in `list` (sorted, disjoint) whose end is past `x`: binary search. */
 function firstEndingAfter(list: readonly { readonly end: number }[], x: number): number {
@@ -38,7 +42,11 @@ function firstEndingAfter(list: readonly { readonly end: number }[], x: number):
   return lo;
 }
 
-export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (card: string | null, p: CoverPlay) => readonly Cover[] | null): string {
+/**
+ * `most` is the longest a covered body may be: the instance's post length limit. Replacement words longer than their phrase are the game, but a covered read can never be longer than an uncovered
+ * one could be, so the result never exceeds `Math.max(body.length, most)`: the covers are applied in visible order, and the first that would take the result past that and every one after it read as written.
+ */
+export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (card: string | null, p: CoverPlay) => readonly Cover[] | null, most: number): string {
   if (plays.length === 0) return body;
   // Parsed and walked once, on the first read of a play's `text`: a card with no `covers` never reads it, so a body nobody covers is never parsed.
   const texts = new Map<BbNode, { from: number; to: number }>();
@@ -83,6 +91,8 @@ export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (c
   unrecorded.sort((a, b) => a.at - b.at);
   const pieceEnds = pieces.map((q) => ({ end: q.at + q.length }));
 
+  const bound = Math.max(body.length, most);
+  let length = body.length;
   const edits: { from: number; to: number; words: string }[] = [];
   for (const c of kept) {
     const u = unrecorded[firstEndingAfter(unrecorded, c.from)];
@@ -92,14 +102,21 @@ export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (c
     let reach = c.from; // every visible character of the stretch must lie in a recorded text node
     for (const p of met) { if (p.at > reach) break; reach = Math.max(reach, p.at + p.length); }
     if (reach < c.to) continue;
+    const mine: { from: number; to: number; words: string }[] = [];
+    let grows = 0;
     met.forEach((p, i) => {
       const a = Math.max(c.from, p.at) - p.at;
       const b = Math.min(c.to, p.at + p.length) - p.at;
-      const words = i === 0 ? literal(c.words) : '';
-      // Next to a bracket the body's own text holds, or with a `]` in the words, plain words could join into a tag: write them between two empty noparse barriers.
-      const near = /[[\]]/.test(body.slice(p.from, p.to)) || (i === 0 && c.words.includes(']'));
-      edits.push({ from: p.from + a, to: p.from + b, words: near ? `${BARRIER}${words}${BARRIER}` : words });
+      // Next to a bracket the body's own text holds, or with a bracket in the words, plain words could join into a tag: write them in a noparse, empty where there are none, which is also the barrier.
+      const near = /[[\]]/.test(body.slice(p.from, p.to)) || (i === 0 && (c.words.includes(']') || c.words.includes('[')));
+      const words = i === 0 ? c.words : '';
+      const written = near ? literal(words) : words;
+      mine.push({ from: p.from + a, to: p.from + b, words: written });
+      grows += written.length - (b - a);
     });
+    if (length + grows > bound) break; // the bound is reached: this cover and every later one read as written
+    length += grows;
+    edits.push(...mine);
   }
   if (edits.length === 0) return body;
   // The edits are disjoint: one pass over them in order, one join.

@@ -1044,7 +1044,7 @@ const extrasOf = (p: PatrolSamplePost) => ({ poll: p.poll ?? null, plays: p.play
 function patrolPostLines(p: PatrolSamplePost, reading: Omit<ReadOptions, 'origin'>): string[] {
   const o: ReadOptions = { ...reading, origin: null };
   const x = extraLines(extrasOf(p), o);
-  return [...(p.origin ? originBlock(p.origin, o) : []), ...x.before, `"${reading?.covers === undefined ? p.body : coveredBody(p.body, p.plays ?? [], reading.covers)}"`, ...x.after];
+  return [...(p.origin ? originBlock(p.origin, o) : []), ...x.before, `"${reading?.covers === undefined ? p.body : coveredBody(p.body, p.plays ?? [], reading.covers, reading.coveredMost ?? 0)}"`, ...x.after];
 }
 
 /**
