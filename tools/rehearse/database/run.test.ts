@@ -5,7 +5,7 @@ import { existsSync, mkdtempSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import assert from "node:assert/strict";
-import { matches } from "../cron.ts";
+import { matches } from "../../../engine/rules/cron.ts";
 import { rehearse, readWorld, type RunContext } from "../run.ts";
 import type { Scenario } from "../../../engine/rehearsal/types.ts";
 import { DAY_MS, MINUTE } from "../../../engine/rehearsal/generate.ts";

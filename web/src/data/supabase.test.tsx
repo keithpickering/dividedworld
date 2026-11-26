@@ -2840,6 +2840,27 @@ describe('the moves a board shows, a staff profile and the admin queue', () => {
     expect(await refused.api.replaceSuccessor(4, 'hype-man')).toEqual({ ok: false, error: 'that nomination has already landed; reverse it instead' });
   });
 
+  it('reads the jobs from job_status, and the Jobs page from admin_jobs with each last run and the Vault entries, and gives a player no page', async () => {
+    const row = { job: 'kayfabb-mail', schedule: '* * * * *', active: true, first_seen: '2026-11-01T10:00:00+00:00', last_ok_at: null, grace: { 'kayfabb-mail': 20, odd: 'x' } };
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/rpc/is_admin')) return json(true);
+      if (r.url.pathname.endsWith('/rpc/job_status')) return json([row, { job: 'kayfabb-meet', schedule: null, active: false, first_seen: null, last_ok_at: null, grace: null }]);
+      if (r.url.pathname.endsWith('/rpc/admin_jobs')) return json([{ ...row, last_status: 'succeeded', last_message: '1 row', last_start: '2026-11-02T10:00:00+00:00', url_set: true, key_set: false }, { ...row, job: 'kayfabb-meet', last_status: null, last_message: null, last_start: null, url_set: true, key_set: false }]);
+      return json({}, 404);
+    });
+    expect(await h.api.jobStatus()).toEqual([
+      { job: 'kayfabb-mail', schedule: '* * * * *', active: true, firstSeen: '2026-11-01T10:00:00+00:00', lastOkAt: null, grace: { 'kayfabb-mail': 20 } },
+      { job: 'kayfabb-meet', schedule: null, active: false, firstSeen: null, lastOkAt: null, grace: null },
+    ]);
+    const page = await h.api.adminJobs();
+    expect(page?.vault).toEqual({ functionsUrl: true, jobsKey: false });
+    expect(page?.jobs[0]?.lastRun).toEqual({ status: 'succeeded', message: '1 row', at: '2026-11-02T10:00:00+00:00' });
+    expect(page?.jobs[1]?.lastRun).toBeNull();
+    const player = harness((r) => (r.url.pathname.endsWith('/rpc/is_admin') ? json(false) : json({}, 404)));
+    expect(await player.api.adminJobs()).toBeNull();
+    expect(player.to('rpc/admin_jobs')).toHaveLength(0);
+  });
+
   it('reads the reports screen from admin_reports and admin_failed_mail, sends a decision as decide_report and an approval as decide, and gives a player no page', async () => {
     const A = '00000000-0000-4000-8000-00000000000a';
     const B = '00000000-0000-4000-8000-00000000000b';

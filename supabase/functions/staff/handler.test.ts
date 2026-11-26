@@ -43,9 +43,9 @@ test('staff: a good request runs the quizzes, then the concessions, then the fil
   assert.equal(body.patrols.status, 'ok');
   assert.equal(body.apologies.status, 'ok');
   assert.equal(body.owed.status, 'ok');
-  const order = d.calls.map((c) => c.fn).filter((fn) => fn !== 'instance_settings');
+  const order = d.calls.map((c) => c.fn).filter((fn) => fn !== 'instance_settings' && fn !== 'record_job_run');
   assert.deepEqual(order, ['pending_quizzes', 'pending_concessions', 'refund_stale_reports', 'refund_stale_appeals', 'filings_due', 'judgment_load_today', 'pending_apologies', 'owed_lines_due']);
-  assert.equal(d.dbs.length, 1);
+  assert.equal(d.dbs.length, 2, "the run's client, then the heartbeat's");
   assert.equal(d.dbs[0]!.env.secret, KEY);
   const safe = d.dbs[0]!.safeToRepeat!;
   for (const w of ['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol', 'pay_owed_line']) assert.equal(safe(w), false, w);

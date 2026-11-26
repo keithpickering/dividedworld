@@ -13,8 +13,9 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
+import { asJob } from '../_shared/job.ts';
 
-export async function handle(request: Request, deps: JobDeps): Promise<Response> {
+export const handle = asJob('kayfabb-meet', async (request: Request, deps: JobDeps): Promise<Response> => {
   const env = environment(deps.env);
   if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'the meeting is run by the service');
   const body = (await request.json().catch(() => ({}))) as { slot?: unknown };
@@ -36,4 +37,4 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     console.error('meet failed', slot, e instanceof Error ? e.message : 'unknown');
     return json(500, { error: 'the meeting failed and was closed as failed', slot });
   }
-}
+});

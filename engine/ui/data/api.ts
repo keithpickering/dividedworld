@@ -24,6 +24,7 @@ import type { AlertKind } from '../../rules/alerts.ts';
 import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
 import type { RecordKind } from '../profile/record.ts';
+import type { JobRow } from '../../rules/jobs.ts';
 
 export type Id = string;
 
@@ -2826,6 +2827,17 @@ export interface ReportsPage {
   readonly addressSet: boolean;
 }
 
+/** One job on the Jobs page (`admin_jobs`): its `job_status` columns and pg_cron's last run of it, null where there is none. */
+export interface AdminJob extends JobRow {
+  readonly lastRun: { readonly status: string; readonly message: string | null; readonly at: string } | null;
+}
+/** The Jobs page's read (`admin_jobs`); null for a caller who is not an admin. */
+export interface AdminJobs {
+  readonly jobs: readonly AdminJob[];
+  /** Whether the two Vault entries the function jobs read are present (the same on every row, so held once): never their values. */
+  readonly vault: { readonly functionsUrl: boolean; readonly jobsKey: boolean };
+}
+
 /** The admin queue page (queue_page, 0121); null for a caller who is not an admin. */
 export interface QueuePage {
   readonly queue: Awaited<ReturnType<KayfaApi['adminQueue']>>;
@@ -3171,6 +3183,10 @@ export interface KayfaApi {
   updatesPage(update: Id | null, before: string | null, handover: number | null): Promise<UpdatesPage>;
   /** The admin queue page in one read; null for a caller who is not an admin. */
   queuePage(): Promise<QueuePage | null>;
+  /** Every job's schedule and last good run (`job_status`): the same for every caller, the rows `jobHealth` reads. */
+  jobStatus(): Promise<readonly JobRow[]>;
+  /** The Jobs page in one read (`admin_jobs`); null for a caller who is not an admin. */
+  adminJobs(): Promise<AdminJobs | null>;
   /** The reports screen in one read; null for a caller who is not an admin. */
   reportsPage(): Promise<ReportsPage | null>;
   /** An admin decides an open report with one to six outcomes (`decide_report`); each tells the author what it says, the reporter is told the same whatever was decided. */

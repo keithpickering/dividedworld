@@ -26,6 +26,7 @@ export function fakeDeps(answer: (fn: string, args: Record<string, any>) => unkn
   const db: Db = {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
       calls.push({ fn, args });
+      if (fn === 'record_job_run') return null as T;
       if (fn === 'instance_settings') return { economy: dividedWorld.settings.economy, systemEnabled: true, modelTiers: TIERS } as T;
       return answer(fn, args) as T;
     },
@@ -40,6 +41,8 @@ export function fakeDeps(answer: (fn: string, args: Record<string, any>) => unkn
     models: ((read: JobDeps['env'], record: unknown, options: unknown) => { built.push({ read, record, options }); return models; }) as JobDeps['models'],
     fetch: (async () => { throw new Error('no network in this test'); }) as typeof fetch,
     broadcaster: (() => { throw new Error('no broadcaster in this test'); }) as unknown as JobDeps['broadcaster'],
+    mailer: () => { throw new Error('no mailer in this test'); },
+    authAdmin: () => { throw new Error('no Auth admin in this test'); },
     ...extra,
   };
   return { deps, calls, dbs, built };

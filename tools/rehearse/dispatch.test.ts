@@ -4,6 +4,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { instance as dividedWorld } from "../../supabase/functions/_shared/instance.ts";
 import { fakeDeps, KEY } from "../../supabase/functions/_shared/handler-test-kit.ts";
+import { recordingMail } from "./stand-ins.ts";
 import { drain, REAL, Stalled, UnknownFunction, type DispatchCtx, type QueueRow } from "./dispatch.ts";
 
 function setup(rows: QueueRow[], capped = false) {
@@ -87,13 +88,14 @@ test("a path named like an Object property (constructor) is unknown, not resolve
   await assert.rejects(() => drain(ctx), (e: unknown) => e instanceof UnknownFunction);
 });
 
-test("mail is handled by the real mail core with a recording mailer: the row is answered sent, nothing real is sent, and a null admin address makes it wait", async () => {
+test("mail is handled by the real mail handler with a recording mailer: the row is answered sent, nothing real is sent, and a null admin address makes it wait", async () => {
   const outbox = { id: 5, account: "acct-1", template: "banned", facts: { post: "/p/1", thread: "/t/1", section: "x", note: "n", conduct: "/conduct" }, bar: { outcome: "ban", until: null } };
   for (const adminAddress of ["admin@example.test", null]) {
     // The kit answers instance_settings itself, so the conduct setting rides in on the db it hands out.
     const kit = fakeDeps((fn) => (fn === "mail_due" ? [outbox] : null));
     const db = { rpc: async <T>(fn: string, args: Record<string, unknown>): Promise<T> => (fn === "instance_settings" ? { economy: dividedWorld.settings.economy, conduct: { ...dividedWorld.settings.conduct, adminAddress } } as T : kit.deps.db({} as never).rpc<T>(fn, args)) };
-    const calls = { ...kit, deps: { ...kit.deps, db: () => db } };
+    const mail = recordingMail();
+    const calls = { ...kit, deps: { ...kit.deps, db: () => db, mailer: mail.mailer, authAdmin: mail.authAdmin } };
     const ctx: DispatchCtx = {
       connection: { async sql(_t: string, p?: unknown[]) { return Number(p?.[0] ?? 0) < 1 ? ([{ id: 1, method: "POST", url: "https://x.supabase.co/functions/v1/mail", headers: { apikey: KEY }, body: {} }] as unknown as Record<string, unknown>[]) : []; } },
       deps: { ...calls.deps, fetch: (async () => { throw new Error("the rehearsal's mail must not touch the network"); }) as typeof fetch },
@@ -105,17 +107,33 @@ test("mail is handled by the real mail core with a recording mailer: the row is 
     const d = ctx.dispatched[0]!;
     assert.equal(d.function, "mail");
     assert.equal(d.status, 200);
-    const body = d.body as { status: string; sent?: number; recorded?: { sent: { to: string; replyTo: string | null; idempotencyKey: string }[]; bans: unknown[] } };
+    const body = d.body as { status: string; sent?: number };
     if (adminAddress === null) {
       assert.equal(body.status, "waiting for the admin address");
       assert.equal(calls.calls.filter((c) => c.fn === "record_mail_attempt").length, 0, "nothing is recorded while mail waits");
     } else {
       assert.equal(body.status, "done");
       assert.equal(body.sent, 1);
-      assert.deepEqual(body.recorded!.sent.map((m) => [m.to, m.replyTo, m.idempotencyKey]), [["acct-1@rehearsal.invalid", "admin@example.test", "kayfabb-mail-5"]]);
-      assert.deepEqual(body.recorded!.bans, [{ account: "acct-1", action: "ban", until: null }]);
+      assert.deepEqual(mail.recorded.sent.map((m) => [m.to, m.replyTo, m.idempotencyKey]), [["acct-1@rehearsal.invalid", "admin@example.test", "kayfabb-mail-5"]]);
+      assert.deepEqual(mail.recorded.bans, [{ account: "acct-1", action: "ban", until: null }]);
       assert.equal(calls.calls.filter((c) => c.fn === "record_mail_attempt" && c.args.kind === "sent").length, 1);
     }
+    assert.deepEqual(calls.calls.filter((c) => c.fn === "record_job_run").map((c) => c.args), [{ job: "kayfabb-mail" }], "the 200 is the heartbeat");
   }
   assert.ok(REAL.includes("mail"));
+});
+
+test("conceal is handled by the real conceal handler: due rows are concealed through the database and the run is recorded", async () => {
+  const kit = fakeDeps((fn) => (fn === "conceal_due" ? [] : null));
+  const ctx: DispatchCtx = {
+    connection: { async sql(_t: string, p?: unknown[]) { return Number(p?.[0] ?? 0) < 1 ? ([{ id: 1, method: "POST", url: "https://x.supabase.co/functions/v1/conceal", headers: { apikey: KEY }, body: {} }] as unknown as Record<string, unknown>[]) : []; } },
+    deps: kit.deps,
+    cap: { reached: () => true },
+    lastDrained: 0,
+    dispatched: [],
+  };
+  await drain(ctx);
+  assert.deepEqual(ctx.dispatched.map((d) => [d.function, d.status]), [["conceal", 200]]);
+  assert.deepEqual(kit.calls.map((c) => c.fn), ["conceal_due", "record_job_run"]);
+  assert.ok(REAL.includes("conceal"));
 });

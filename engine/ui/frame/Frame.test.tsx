@@ -16,6 +16,7 @@ import { axeViolations, describeViolations } from '../a11y.ts';
 import { Frame } from './Frame.tsx';
 import { LoadedThread } from '../loaded.tsx';
 import { ENGINE_DEFAULT_PRONOUNS } from '../../rules/pronouns.ts';
+import type { JobRow } from '../../rules/jobs.ts';
 
 const mine = (id: string, name: string, cls = 'heel'): MyCharacter => ({
   id, name, pronouns: ENGINE_DEFAULT_PRONOUNS, class: cls, classSince: '2026-10-01T00:00:00Z', classShownAt: null, classDueAt: null, turnOpensAt: null, debutedAt: '2026-10-01T00:00:00Z',
@@ -32,6 +33,13 @@ const isGlass = (path: string) => GLASS.has(path);
 /* What the backend says of the player's alerts: the count, and the channel the player's account hears (the test sends on it). */
 const alerts: { unread: number; account: AccountListener | null; subscribed: number; reads: number } = { unread: 0, account: null, subscribed: 0, reads: 0 };
 
+/** What `job_status` reads in these tests: every job's run just now (running) unless a test sets `settleLastOk` to an old time (stopped). */
+let settleLastOk: string | null = null;
+const jobRows = (): JobRow[] => {
+  const now = new Date().toISOString();
+  return [{ job: 'kayfabb-settle', schedule: '* * * * *', active: true, firstSeen: now, lastOkAt: settleLastOk ?? now, grace: null }];
+};
+
 function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [mine('a', 'Pipewrench'), mine('b', 'Mrs. Hooligan', 'face')], page = <p>page</p>, registrationMode: 'invite' | 'open' | 'closed' = 'invite', balance = 240, face: (id: string) => Character = (id) => pub(id, id)) {
   const api = {
     now: () => Date.now(),
@@ -47,6 +55,7 @@ function setup(signedIn = true, characters: readonly MyCharacter[] | 'fails' = [
       return [{ id: 'g', slug: 'general', name: 'General' }, { id: 's', slug: 'announcements', name: 'The System' }];
     },
     nextSettlementAt: async () => '2026-10-31T08:17:00Z',
+    jobStatus: async () => jobRows(),
     /* The frame holds the page's tips (engine/ui/tips/Tips.tsx), which read the account's state; these have them off. */
     preferences: async () => ({ tips: 'off', tipsSeen: [] }),
     alertsUnread: async () => { alerts.reads += 1; return alerts.unread; },
@@ -101,7 +110,7 @@ function width(px: number) {
 }
 
 /* These tests look at the page the moment the hand drawer closes (it stays mounted and plays its exit imperatively, glass/play.ts), as under Off; its exit at full motion is the one test that sets it. */
-beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
+beforeEach(() => { settleLastOk = null; document.documentElement.setAttribute('data-kb-motion', 'reduce'); alerts.unread = 0; alerts.account = null; alerts.subscribed = 0; alerts.reads = 0; localStorage.clear(); sessionStorage.clear(); forgetBoard(); window.history.replaceState(null, '', '/'); });
 afterEach(() => { document.documentElement.removeAttribute('data-kb-motion'); vi.unstubAllGlobals(); vi.restoreAllMocks(); delete (document.documentElement as { clientWidth?: number }).clientWidth; });
 
 describe('the counterfeit quote\'s filter', () => {
@@ -290,6 +299,17 @@ describe('the HUD: the glass, docked at the bottom', () => {
   test('the clock says when the next settlement is', async () => {
     setup();
     expect(await within(await hud()).findByText('Next settle')).toBeInTheDocument();
+  });
+  test('with the settle job stopped the clock says settlement is late, with when it was due; running, it says nothing', async () => {
+    setup();
+    const running = await hud();
+    await within(running).findByText('Next settle');
+    expect(within(running).queryByRole('note')).toBeNull();
+    cleanup();
+    settleLastOk = new Date(Date.now() - 3 * 3_600_000).toISOString();
+    setup();
+    const note = await within(await hud()).findByRole('note');
+    expect(note).toHaveTextContent(/^Settlement is late: it was due at .+ and has not run\. Nothing is lost: every missed window settles when it runs\. The admins can see this\.$/u);
   });
   test('Menu, with Esc as its key, opens the glass at My characters and keeps the board\'s place; it navigates, so it claims no popup', async () => {
     window.history.replaceState(null, '', '/b/general?page=2');

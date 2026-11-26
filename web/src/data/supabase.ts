@@ -38,6 +38,7 @@ import { buildMoveNotice, toDemand, toProgress } from '../../../engine/ui/data/m
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, MOVES_LOG_PAGE, REIGNS_PAGE, SEASON_NEWS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, UPDATES_PAGE } from '../../../engine/ui/data/api.ts';
 import { RECORD_PAGE } from '../../../engine/ui/profile/record.ts';
 import { ENGINE_DEFAULT_PRONOUNS, normalizePronouns, type PronounSet } from '../../../engine/rules/pronouns.ts';
+import type { JobRow } from '../../../engine/rules/jobs.ts';
 import { ALERT_KINDS, type AlertKind } from '../../../engine/rules/alerts.ts';
 import { GEAR_VIEWS, type GearView, type Piece } from '../../../engine/rules/cosmetics.ts';
 import { RARITIES } from '../../../engine/rules/cards.ts';
@@ -45,7 +46,7 @@ import type { Career } from '../../../engine/system/career.ts';
 import type { HandoffFacts } from '../../../engine/system/meeting.ts';
 import type {
   SurfaceAct, SurfaceNow, SurfaceWritten, Ballot, Poll, PollCounts, PollEvent, PollVoter, PollWritten,
-  AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
+  AdminJob, AdminJobs, AdminQueue, Apology, Bar, BoardName, HandoverTodo, MoveEnded, MoveInForce, MoveLogRow, MovesLog, QueuedMove, StaffCardPlay, StaffProfile,
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Rewind, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
@@ -468,6 +469,13 @@ const toUnread = (v: unknown): number => Math.min(ALERTS_UNREAD_BOUND, Math.max(
 /** character_post_counts' row, or none: a character that has done nothing counts zero. */
 const toCounts = (v: unknown): CharacterCounts => ({ posts: num(isObject(v) ? v['posts'] : 0), spins: num(isObject(v) ? v['spins'] : 0), cards: num(isObject(v) ? v['cards'] : 0) });
 const rowsOf = (v: unknown): Row[] => (Array.isArray(v) ? (v as Row[]) : []);
+/** A `job_status` row (snake case) as the engine reads it: `grace` is the `jobGraceMinutes` setting's object, or null. */
+function toJobRow(x: Row): JobRow {
+  const g = x['grace'];
+  const grace = isObject(g) ? Object.fromEntries(Object.entries(g).filter((e): e is [string, number] => typeof e[1] === 'number')) : null;
+  const at = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+  return { job: String(x['job'] ?? ''), schedule: at(x['schedule']), active: x['active'] === true, firstSeen: at(x['first_seen']), lastOkAt: at(x['last_ok_at']), grace };
+}
 
 const BANDS: readonly VisitBand[] = ['minor', 'moderate', 'severe'];
 const CAUSES: readonly VisitCharge['cause'][] = ['rule', 'patrol', 'report', 'tail', 'backfire'];
@@ -2245,6 +2253,22 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
         queue: toAdminQueue(d['queue']),
         boardNames: rowsOf(d['boardNames']).map((b): BoardName => ({ id: b['id'], slug: b['slug'], name: b['name'], was: b['was'] ?? b['name'] })),
         bosses: toBosses(d['bosses']), contact: toContact(d['contact']),
+      };
+    },
+    async jobStatus(): Promise<readonly JobRow[]> {
+      return rowsOf((await read(() => client.rpc('job_status'))).data).map(toJobRow);
+    },
+    async adminJobs(): Promise<AdminJobs | null> {
+      /* A caller who is not an admin has no page (admin_jobs would refuse them); is_admin is the one way to ask. */
+      if ((await read(() => client.rpc('is_admin'))).data !== true) return null;
+      const rows = rowsOf((await read(() => client.rpc('admin_jobs'))).data);
+      const at = (v: unknown): string | null => (typeof v === 'string' ? v : null);
+      return {
+        jobs: rows.map((x): AdminJob => {
+          const start = at(x['last_start']);
+          return { ...toJobRow(x), lastRun: at(x['last_status']) === null && start === null ? null : { status: String(x['last_status'] ?? ''), message: at(x['last_message']), at: start ?? '' } };
+        }),
+        vault: { functionsUrl: rows[0]?.['url_set'] === true, jobsKey: rows[0]?.['key_set'] === true },
       };
     },
     async reportsPage(): Promise<ReportsPage | null> {

@@ -293,16 +293,21 @@ a module is not found, stop there and file what it printed.
    Vault**, add `kayfabb_functions_url` with the value `https://<ref>.supabase.co` (no trailing slash), and
    `kayfabb_jobs_key` with the `kayfabb_jobs` secret key, which the jobs send in `apikey`. The Vault screen keeps the
    key out of the SQL editor's history. The next scheduled minute after both exist runs.
-3. **Check the schedules.** In the SQL editor:
-
-   ```sql
-   select jobname, schedule, active from cron.job order by jobname;
-   ```
-
-   It should list `kayfabb-meet`, `kayfabb-settle`, `kayfabb-system-tick` and `kayfabb-view-counts`. After the first
-   settlement time has passed (`settlementCron` in `instances/divided-world/settings.ts`),
-   `select * from cron.job_run_details order by start_time desc limit 10;` and the `settle` function's log say whether
-   it ran.
+3. **Check the schedules.** The admin **Jobs** page (`/admin/jobs`, from the strip's Jobs button or the Admin tab) reads
+   all ten jobs, each running or stopped since a time: `kayfabb-chatter`, `kayfabb-conceal`, `kayfabb-mail`,
+   `kayfabb-meet`, `kayfabb-search-rebuild`, `kayfabb-settle`, `kayfabb-staff`, `kayfabb-system-tick`,
+   `kayfabb-view-counts` and `kayfabb-write`. The seed's settings schedule them, so every one should read running within
+   its grace after the seed, and the two Vault entries of step 2 are what let the Edge Function jobs call out. The same
+   read runs every hour in the **Job health** workflow (`.github/workflows/job-health.yml`, in the `production`
+   environment, reading `SUPABASE_DB_URL`): it goes red, and GitHub emails you, when a job has stopped or is missing from
+   `cron.job`. It is apart from the Release workflow on purpose, so a stopped job never holds a release; run it once by
+   hand under **Actions > Job health > Run workflow** to see it green after a deploy. A `workflow_dispatch` run uses the branch it is dispatched from, so set the `production`
+   Environment's deployment-branch rule to allow `main` only (a setting in GitHub that the check cannot see). In the SQL editor,
+   `select * from job_status();` is the same read the page and the workflow make, and
+   `select jobname, schedule, active from cron.job order by jobname;` lists what is scheduled, with the times in
+   `instances/divided-world/settings.ts` (`settlementCron` and the rest).
+   `select * from cron.job_run_details order by start_time desc limit 10;` shows pg_cron's own record of what it
+   started.
 
 ### 7. Netlify: the site
 
@@ -442,8 +447,12 @@ and step 5 releases the site while it still points at the test project.
       ```
 
    3. Do step 6 of the first deploy against the new project: seed it, add its two Vault secrets, and check the
-      schedules. Season 1 opens at the seed. The list should show `kayfabb-meet` at `0 11 * * *` and `kayfabb-settle`
-      at `0 10 * * *`, with `kayfabb-system-tick` and `kayfabb-view-counts`.
+      schedules. Season 1 opens at the seed. The Jobs page should list all ten jobs, `kayfabb-meet` at `0 11 * * *` and
+      `kayfabb-settle` at `0 10 * * *` among them. The seed's schedule calls begin each job's row, so the check prints
+      "stopped, since <seed time>" (never "never run") for any job whose due time has passed its grace without a good
+      run. The hourly **Job health** workflow, now reading the new project, goes red then. The three SQL jobs
+      (`system-tick`, `search-rebuild`, `view-counts`) need no Vault entries; the other seven stay red until both exist.
+      Dispatch it once and read it green before counting the relaunch done.
 5. **Point the site at it.** In Netlify, set the **production** context's `VITE_SUPABASE_URL` and
    `VITE_SUPABASE_PUBLISHABLE_KEY` to the new project's, then redeploy production under **Deploys > Trigger deploy**
    (the variables are read at build time). Then remove the branch-deploy overrides from step 3.

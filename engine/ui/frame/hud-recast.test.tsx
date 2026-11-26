@@ -40,6 +40,8 @@ const mine = (id: string, name: string, cls: string): MyCharacter => ({
 
 function setup(faces: (ids: readonly string[]) => Promise<readonly Character[]> = async () => []) {
   const api = {
+    now: () => Date.now(),
+    jobStatus: async () => [],
     session: async () => ({ signedIn: true, account: 'acc' }),
     onSession: () => () => {},
     myCharacters: async () => [mine('a', 'Pipewrench', 'heel'), mine('b', 'Mrs. Hooligan', 'face'), mine('c', 'Gutterball', 'heel')],

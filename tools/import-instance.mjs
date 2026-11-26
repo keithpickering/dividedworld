@@ -157,6 +157,9 @@ async function load(db, dir, manifest) {
   select schedule_staff() where exists (select 1 from settings where key = 'modBots');
   select schedule_system_tick() where exists (select 1 from settings where key = 'systemEnabled');
   select schedule_card_writes();
+  select schedule_mail();
+  select schedule_conceal();
+  select schedule_search_rebuild();
   commit;\n`);
   if (!exited) child.stdin.end();
   const code = await done;

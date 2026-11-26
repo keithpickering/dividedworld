@@ -56,6 +56,16 @@
  * so the limit cannot creep back up unnoticed. No `sql-total` step has `if`, `shell`, `working-directory` or
  * `continue-on-error`, no `defaults` appears, and the gather and result steps' `run` is exactly their one command.
  *
+ * R17 holds `.github/workflows/job-health.yml` (the hourly check of the scheduled jobs, apart from Release so that a stopped job never
+ * holds a release), and R10, R11 and R12 allow it exactly one job: `check`, in the `production` Environment, reading SUPABASE_DB_URL
+ * and no other secret through `env:`, never traced. It runs on `schedule` (cron `7 * * * *`) and `workflow_dispatch` and on nothing
+ * else: a `pull_request`, `pull_request_target` or `push` trigger would let a run that is not the owner's read the database URL.
+ * Its steps are a checkout, Node, `npm ci`, `psql --version` and the one command `node tools/check-job-health.mjs --db "$SUPABASE_DB_URL"`.
+ * Keys are whitelisted: the workflow's are `name`, `on`, `permissions` (exactly `{ contents: read }`), `concurrency` and `jobs`; the job's
+ * are `runs-on` (exactly `ubuntu-latest`), `environment`, `timeout-minutes` (a number) and `steps`; a step's are `name`, `uses`, `with`,
+ * `run` and `env`. So no `shell`, `defaults`, `working-directory`, `container`, `services` or other key can send the secret elsewhere.
+ * R8 only reads workflows that declare a Postgres service, and this one declares none.
+ *
  * Carried from currents' check of the same name, cut down: its state paths, ignore script,
  * alive check and cockpit reference stay behind.
  *
@@ -71,9 +81,24 @@ const WORKFLOWS = '.github/workflows';
 const RELEASE = `${WORKFLOWS}/release.yml`;
 const CALLED = ['build', 'sql', 'web'];
 const BACKEND = ['schema', 'functions', 'seed'];
+/** The hourly job-health check (docs/plans/2026-11-20-job-health-design.md, section 3): one job, one secret, never a pull-request run. */
+const JOB_HEALTH = `${WORKFLOWS}/job-health.yml`;
+const JH_JOB = 'check';
+const JH_SECRET = 'SUPABASE_DB_URL';
+const JH_CRON = '7 * * * *';
+const JH_COMMAND = 'node tools/check-job-health.mjs --db "$' + JH_SECRET + '"';
+const JH_RUNS = ['npm ci --no-audit --no-fund', 'psql --version', JH_COMMAND];
+const JH_USES = ['actions/checkout', 'actions/setup-node'];
+/** Each action's version, anchored, and the `with` keys it may carry: none for checkout, two for setup-node. */
+const JH_USES_RE = { 'actions/checkout': /^actions\/checkout@[\w.-]+$/, 'actions/setup-node': /^actions\/setup-node@[\w.-]+$/ };
+const JH_WITH = { 'actions/checkout': [], 'actions/setup-node': ['node-version', 'cache'] };
+const JH_ENV = '${{ secrets.' + JH_SECRET + ' }}';
 const JOBS = ['candidate', 'build', 'sql', 'web', ...BACKEND, 'promote', 'report'];
 const SECRET_NAMES = ['SUPABASE_ACCESS_TOKEN', 'SUPABASE_DB_URL', 'SUPABASE_PROJECT_REF', 'KAYFABB_JOBS_KEY'];
 const SECRET_NAME = new RegExp(`\\b(?:${SECRET_NAMES.join('|')})\\b`);
+const SECRET_NAME_G = new RegExp(SECRET_NAME.source, 'g');
+/** A job that holds the production Environment's secrets: release.yml's three, and job-health.yml's one. */
+const isBackendJob = (path, jobName) => (path === RELEASE && BACKEND.includes(jobName)) || (path === JOB_HEALTH && jobName === JH_JOB);
 const SHA = '${{ needs.candidate.outputs.sha }}';
 const REF = '${{ inputs.ref }}';
 /**
@@ -356,7 +381,7 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     }
   }
 
-  // R10: the Environment holding the secrets is named by the three backend jobs and no other.
+  // R10: the Environment holding the secrets is named by the three backend jobs and job-health's one, and no other.
   if (docs[RELEASE]) {
     const rj = isObj(docs[RELEASE].jobs) ? docs[RELEASE].jobs : {};
     for (const name of BACKEND) if (!isObj(rj[name])) out.push(`${RELEASE}: R10 job ${name} is missing, so nothing declares environment production for it`);
@@ -365,19 +390,20 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
       const env = job?.environment;
       const named = typeof env === 'string' ? env : isObj(env) ? env.name : undefined;
-      const isBackend = path === RELEASE && BACKEND.includes(jobName);
+      const isBackend = isBackendJob(path, jobName);
       if (isBackend && named !== 'production') out.push(`${path}: R10 job ${jobName} declares environment ${JSON.stringify(named)}, not production`);
-      if (!isBackend && env !== undefined) out.push(`${path}: R10 job ${jobName} names an environment; only schema, functions and seed in release.yml do`);
+      if (!isBackend && env !== undefined) out.push(`${path}: R10 job ${jobName} names an environment; only schema, functions and seed in release.yml, and check in job-health.yml, do`);
     }
   }
 
-  // R11: the secrets' names appear in the three backend jobs and nowhere else, and only in `env:`.
+  // R11: the secrets' names appear in the three backend jobs and job-health's one and nowhere else, and only in `env:`.
+  // job-health's job may name SUPABASE_DB_URL and no other secret.
   for (const [path, doc] of Object.entries(docs)) {
     const found = new Set();
     const text = (v) => JSON.stringify(v ?? {});
     for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
-      const isBackend = path === RELEASE && BACKEND.includes(jobName);
-      if (!isBackend && SECRET_NAME.test(text(job))) found.add(`job ${jobName} names a secret; only schema, functions and seed in release.yml may`);
+      const isBackend = isBackendJob(path, jobName);
+      if (!isBackend && SECRET_NAME.test(text(job))) found.add(`job ${jobName} names a secret; only schema, functions and seed in release.yml, and check in job-health.yml, may`);
       if (isBackend) {
         for (const step of list(job?.steps)) {
           if (/\$\{\{\s*secrets\./.test(String(step?.run ?? ''))) found.add(`job ${jobName} puts \${{ secrets.* }} inside a run line; pass it through env:`);
@@ -387,10 +413,26 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
           }
         }
         if (SECRET_NAME.test(text({ ...job, steps: undefined })) ) found.add(`job ${jobName} names a secret outside a step's env`);
+        if (path === JOB_HEALTH) {
+          const others = new Set([
+            ...[...text(job).matchAll(SECRET_NAME_G)].map((m) => m[0]),
+            ...[...text(job).matchAll(/secrets\.(\w+)/g)].map((m) => m[1]),
+          ]);
+          others.delete(JH_SECRET);
+          for (const n of others) found.add(`job ${jobName} names ${n}; job-health.yml may name ${JH_SECRET} only`);
+        }
       }
     }
     // Everything outside the jobs, release.yml's own top level included.
-    if (SECRET_NAME.test(text({ ...doc, jobs: undefined }))) found.add('names a secret outside a job');
+    const top = text({ ...doc, jobs: undefined });
+    if (SECRET_NAME.test(top) || (path === JOB_HEALTH && /secrets\./.test(top))) found.add('names a secret outside a job');
+    // job-health.yml: each `secrets` anywhere in it, as a context, a function's argument or an index, is exactly secrets.SUPABASE_DB_URL.
+    if (path === JOB_HEALTH) {
+      const all = JSON.stringify(doc);
+      const bare = (all.match(/\bsecrets\b/g) ?? []).length;
+      const named = (all.match(new RegExp(`\\bsecrets\\.${JH_SECRET}\\b`, 'g')) ?? []).length;
+      if (bare !== named) found.add(`a \`secrets\` is not exactly secrets.${JH_SECRET} (toJSON(secrets), secrets['X'] and secrets[format(...)] are refused)`);
+    }
     if (found.size) out.push(`${path}: R11 ${[...found].join('; ')}`);
   }
 
@@ -398,7 +440,7 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
   for (const [path, doc] of Object.entries(docs)) {
     const bad12 = new Set();
     for (const [jobName, job] of Object.entries(isObj(doc.jobs) ? doc.jobs : {})) {
-      const isBackend = path === RELEASE && BACKEND.includes(jobName);
+      const isBackend = isBackendJob(path, jobName);
       if (isBackend) {
         // A shell named with the x flag traces every command, whether a step, the job or the workflow names it.
         const shells = [doc.defaults?.run?.shell, job?.defaults?.run?.shell, ...list(job?.steps).map((st) => st?.shell)];
@@ -451,6 +493,67 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
     if (curls.length && !lines.some((l) => /=\s*"?200"?\s*\]/.test(l) && /\$\{?code\b/.test(l))) bad14.push('never compares the status to 200 ([ "$code" = 200 ])');
     if (curls.length && !curls.some((l) => /-w\s+'%\{http_code\}'/.test(l))) bad14.push('its curl does not write the status (-w \'%{http_code}\')');
     if (bad14.length) out.push(`${RELEASE}: R14 seed ${bad14.join('; ')}`);
+  }
+
+  // R17: job-health.yml, the hourly check of the scheduled jobs: its triggers, its cron, its one job and its one command.
+  if (!(JOB_HEALTH in files)) out.push(`${JOB_HEALTH}: R17 the workflow is missing`);
+  else if (docs[JOB_HEALTH]) {
+    const doc = docs[JOB_HEALTH];
+    const bad17 = [];
+    const on = triggers(doc);
+    for (const t of on.filter((x) => x !== 'schedule' && x !== 'workflow_dispatch')) {
+      bad17.push(`has the trigger ${t}, which a run that is not the owner's could use to read the secret; only schedule and workflow_dispatch`);
+    }
+    for (const t of ['schedule', 'workflow_dispatch']) if (!on.includes(t)) bad17.push(`lacks the ${t} trigger`);
+    const crons = list(isObj(doc.on) ? doc.on.schedule : undefined).map((e) => (isObj(e) ? e.cron : undefined));
+    if (on.includes('schedule') && !(crons.length === 1 && crons[0] === JH_CRON)) bad17.push(`its cron must be exactly one entry, '${JH_CRON}' (it is ${JSON.stringify(crons)})`);
+    const jobs = isObj(doc.jobs) ? doc.jobs : {};
+    if (Object.keys(jobs).length !== 1 || !isObj(jobs[JH_JOB])) bad17.push(`it must have exactly one job, named ${JH_JOB} (it has ${Object.keys(jobs).join(', ') || 'none'})`);
+    if (JSON.stringify(doc).includes('"continue-on-error"')) bad17.push('continue-on-error appears; a failed step must stay failed');
+    if ('env' in doc) bad17.push('the workflow has an env; only the check step has one');
+    // Keys are whitelisted, as R16 holds sql.yml: a key this check never read (shell, defaults, container, a self-hosted runner, a
+    // widened permission) could carry the secret to code nobody reviewed while every other rule stays green.
+    const only = (what, obj, allowed) => {
+      for (const k of Object.keys(isObj(obj) ? obj : {})) if (!allowed.includes(k)) bad17.push(`${what} has the key ${k}; only ${allowed.join(', ')}`);
+    };
+    only('the workflow', doc, ['name', 'on', 'permissions', 'concurrency', 'jobs']);
+    if (!(isObj(doc.permissions) && JSON.stringify(doc.permissions) === '{"contents":"read"}')) bad17.push(`permissions must be exactly { contents: read } (it is ${JSON.stringify(doc.permissions ?? null)})`);
+    if ('concurrency' in doc && JSON.stringify(doc.concurrency) !== '{"group":"job-health","cancel-in-progress":false}') bad17.push(`concurrency must be exactly { group: job-health, cancel-in-progress: false } (it is ${JSON.stringify(doc.concurrency)})`);
+    const job = jobs[JH_JOB];
+    if (isObj(job)) {
+      only('the job', job, ['runs-on', 'environment', 'timeout-minutes', 'steps']);
+      if (job['runs-on'] !== 'ubuntu-latest') bad17.push(`runs-on must be exactly ubuntu-latest, a GitHub-hosted runner (it is ${JSON.stringify(job['runs-on'] ?? null)})`);
+      if (typeof job['timeout-minutes'] !== 'number') bad17.push(`timeout-minutes must be a plain number (it is ${JSON.stringify(job['timeout-minutes'] ?? null)})`);
+      for (const step of list(job.steps)) only(`a step (${JSON.stringify(step?.run ?? step?.uses ?? '')})`, step, ['name', 'uses', 'with', 'run', 'env']);
+      if ('if' in job) bad17.push('the job has an if, which could skip the check and leave it green');
+      let commands = 0;
+      for (const step of list(job.steps)) {
+        if (isObj(step) && 'if' in step) bad17.push(`a step has an if (${JSON.stringify(step.run ?? step.uses ?? '')}), which could skip it`);
+        if (typeof step?.run === 'string') {
+          const run = step.run.trim();
+          if (!JH_RUNS.includes(run)) bad17.push(`a step runs ${JSON.stringify(run)}; the steps are a checkout, Node, ${JH_RUNS.map((r) => `\`${r}\``).join(', ')} and nothing else`);
+          if (run === JH_COMMAND) commands += 1;
+          if ('with' in step) bad17.push('a run step has a with');
+        } else {
+          const u = JH_USES.find((x) => JH_USES_RE[x].test(String(step?.uses ?? '')));
+          if (!u) bad17.push(`a step uses ${JSON.stringify(step?.uses)}; only ${JH_USES.join(' and ')}, each at one version tag`);
+          else {
+            const extra = Object.keys(isObj(step.with) ? step.with : {}).filter((k) => !JH_WITH[u].includes(k));
+            if (extra.length || (step.with !== undefined && !isObj(step.with))) bad17.push(`${u} has a with it may not carry (${extra.join(', ') || 'not a map'}); ${JH_WITH[u].length ? `only ${JH_WITH[u].join(' and ')}` : 'none'}`);
+          }
+        }
+        // env: only the check step has one, and it is exactly the one secret.
+        if (isObj(step) && 'env' in step) {
+          const isCheck = step.run?.trim?.() === JH_COMMAND;
+          const e = isObj(step.env) ? step.env : {};
+          if (!isCheck) bad17.push(`a step other than the check has an env (${JSON.stringify(step.run ?? step.uses ?? '')}); only the check step does`);
+          else if (Object.keys(e).length !== 1 || e[JH_SECRET] !== JH_ENV) bad17.push(`the check step's env must be exactly { ${JH_SECRET}: ${JH_ENV} } (it is ${JSON.stringify(step.env)})`);
+        }
+      }
+      if ('env' in job) bad17.push('the job has an env; only the check step has one');
+      if (commands !== 1) bad17.push(`it must run the one command ${JH_COMMAND} exactly once (it runs it ${commands} times)`);
+    }
+    if (bad17.length) out.push(`${JOB_HEALTH}: R17 ${bad17.join('; ')}`);
   }
 
   // R15: the Data API's pool is set by the release, once, and by nothing else.

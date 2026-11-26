@@ -5,3 +5,17 @@
 .kb-admin-pages {
   margin: 28px 0 0;
 }
+
+/* The line over the strip while a job is stopped (AdminPages.tsx): plain words, its lead a link to Jobs. */
+.kb-admin-pages-stopped {
+  margin: 20px 0 0;
+  font-size: var(--kb-glass-size-body);
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--kb-glass-text);
+}
+
+.kb-admin-pages-stopped a {
+  color: var(--kb-glass-neon-text);
+  text-decoration: underline;
+}

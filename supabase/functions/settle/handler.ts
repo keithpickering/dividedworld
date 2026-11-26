@@ -11,9 +11,10 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import { rosterCopyOf } from '../../../engine/system/roster.ts';
 import type { JobDeps } from '../_shared/handler.ts';
+import { asJob } from '../_shared/job.ts';
 
 /** `choose` is the instance-choosing seam (a test hands it an instance with its own words); deployed, it is the composition root's. */
-export async function handle(request: Request, deps: JobDeps, choose: typeof chooseInstance = chooseInstance): Promise<Response> {
+export const handle = asJob('kayfabb-settle', async (request: Request, deps: JobDeps, choose: typeof chooseInstance = chooseInstance): Promise<Response> => {
   const env = environment(deps.env);
   if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'the settlement is run by the service');
   const body = (await request.json().catch(() => ({}))) as { until?: unknown };
@@ -38,4 +39,4 @@ export async function handle(request: Request, deps: JobDeps, choose: typeof cho
     console.error('settle failed', until, e);
     return json(500, { error: 'the settlement failed; the window stays unsettled for the next run', until });
   }
-}
+});

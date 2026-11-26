@@ -1,0 +1,28 @@
+# The hourly job-health check (docs/plans/2026-11-20-job-health-design.md, section 3). It reads job_status() in the deployed
+# database and goes red when a scheduled job has stopped or is missing from cron.job. It is apart from Release on purpose, so
+# that a stopped job never holds a release; GitHub's failed-run email to the owner is the alert. It runs in the `production`
+# Environment, which holds SUPABASE_DB_URL, and reads that one secret through env. It runs on a schedule and on dispatch, never
+# on a pull request, so no pull-request workflow can read the secret. tools/check-release-workflows.mjs holds this shape (R17).
+name: Job health
+on:
+  schedule:
+    - cron: '7 * * * *'
+  workflow_dispatch:
+concurrency: { group: job-health, cancel-in-progress: false }
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: npm }
+      - run: npm ci --no-audit --no-fund
+      # ubuntu-latest ships psql, which the check reads through. Asked for by name, so a runner image without it fails here.
+      - run: psql --version
+      - env:
+          SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+        run: node tools/check-job-health.mjs --db "$SUPABASE_DB_URL"

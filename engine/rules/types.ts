@@ -308,6 +308,11 @@ export interface Settings {
   /** The longest a play beyond a post lasts, per reach: a card's own `lasts` is at most this, and every such effect ends on its timer. */
   readonly reachLasts: Readonly<Record<BeyondPost, Span>>;
   /**
+   * How many minutes late a scheduled job may be before it reads as stopped, keyed by job name (`JOBS` in
+   * engine/rules/jobs.ts); a job left out keeps its default there. See docs/plans/2026-11-20-job-health-design.md, section 2.
+   */
+  readonly jobGraceMinutes: Readonly<Record<string, number>>;
+  /**
    * The numbers a card gives the screens, each named by the instance ("whoops.clean"): a card's effect
    * decides something on the client (how much of a layer counts as washed clean), so the number is one the
    * screens read (`screen_settings`). The screens read the economy there too, but only for words that state its

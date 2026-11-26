@@ -44,7 +44,7 @@ import { useLensStore } from './Lens.tsx';
 import { useStaged } from '../staged.ts';
 import { PRESENT_BACK, PRESENT_LABEL } from './lens-words.ts';
 import { MomentFrame, MomentView, useShownMoment, useShownPresent } from './Moment.tsx';
-import { backoff, REPEAT_TRIES, useTails } from './tails.ts';
+import { backoff, REPEAT_TRIES, tailStore, useTails } from './tails.ts';
 import { driveStore, drivesOfPlays, giftOf, useDriveGifts, type Gifts, type PlayedDrive } from './drives.ts';
 import { currentVersion, resolveWritten, versionAt, versionsOf } from './written.ts';
 import { createPlays, inPlayOrder, keepingKeys, livePlays, nextEnd, playOf, playsFallingOn, readSurface, shownPlays, TIMER_MOST, useAt, usePlays, useRewound, withHandedOut, type Plays } from './plays.ts';
@@ -58,6 +58,7 @@ import { glassInk } from './ink.ts';
 import { useOwnerOf } from '../thread/context.ts';
 import { useCovered, useRowCover } from '../thread/cover.tsx';
 import { useRowFold } from '../thread/fold.tsx';
+import { LateNote } from '../jobs/LateNote.tsx';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 /** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
@@ -319,6 +320,33 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
   const wrapped = wrapIn(wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length), covers, within.length + rest.length + takeovers.length);
   return <>{slot(wrapped)}</>;
+}
+
+/**
+ * The note a post with a play still waiting for its words carries once the write job has stopped, drawn by each screen beside the post's content area and never inside it
+ * (CLAUDE.md, "An effect fills the post, border to border": an effect fills that box, so nothing of the glass's stands in it). The thread draws it in the post's footer, the front
+ * door under the content area, and the ORIGIN box under its own; all three give it the plays store and the post `PostEffects` was given, so they share one reading of "a waiting play".
+ *
+ * It reads the tails `PostEffects` watches (a post it does not draw has none held, so a hidden post says nothing), of the plays that write and still count, at the version now.
+ * A live rewind and a shown moment draw a past version of the post, which has no waiting play to speak of, so no note stands then. A waiting play that writes is always among
+ * the post's acting plays (`writes` leaves out a reach and a face-down card, the filter here leaves out what `PostEffects` leaves out, and only a rewind hides the rest), so
+ * `PostEffects`' no-acting-layers return needs no note of its own.
+ */
+export function WriteLateNote({ plays, post }: { readonly plays: Plays; readonly post: Act }) {
+  const { api, instance } = useKayfa();
+  const here = usePlays(plays, post.id);
+  const rewound = useRewound(plays, post.id);
+  const moment = useShownMoment(useLensStore());
+  const writing = useMemo(() => writingKeys(instance.cards), [instance.cards]);
+  const store = tailStore(api);
+  const rows = useSyncExternalStore((l) => store.subscribe(post.id, l), () => store.rows(post.id));
+  const waiting = useMemo(() => {
+    const ids = new Set(here.plays.filter((p) => writes(p, writing) && !p.caught && !p.reversed && !p.cut && !p.untaken).map((p) => p.id));
+    const own = rows.filter((r) => ids.has(r.play));
+    return [...resolveWritten(own, versionsOf(own), currentVersion(own), 'current').values()].some((w) => 'waiting' in w);
+  }, [here.plays, rows, writing]);
+  if (rewound !== null || (moment !== null && here.plays.some((p) => p.id === moment)) || !waiting) return null;
+  return <LateNote job="kayfabb-write" lead={({ ran }) => `This card's words are late: the job that writes them ${ran}.`} />;
 }
 
 /** One card's effect on a post, as `PostEffects` draws it: the layer it is drawn for, the card, and the plays it is given (its own, then any another card lends it). */

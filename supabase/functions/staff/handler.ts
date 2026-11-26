@@ -26,11 +26,12 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
+import { asJob } from '../_shared/job.ts';
 
 /** The calls that write and are not idempotent: not sent again after an answer that may have been lost on the way back. */
 const WRITES = new Set(['record_model_call', 'record_staff_call', 'record_patrol_call', 'claim_patrol', 'pay_owed_line']);
 
-export async function handle(request: Request, deps: JobDeps): Promise<Response> {
+export const handle = asJob('kayfabb-staff', async (request: Request, deps: JobDeps): Promise<Response> => {
   const env = environment(deps.env);
   if (!fromTheService(request, env.jobs)) {
     // Not the service: a player's report or appeal, with the player's session, by the path (`/staff/appeal`; anything else is a report). Nothing is read as the service until
@@ -96,4 +97,4 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     console.error('staff failed', slot, e instanceof Error ? e.message : 'unknown');
     return json(500, { error: 'the filing run failed', slot });
   }
-}
+});

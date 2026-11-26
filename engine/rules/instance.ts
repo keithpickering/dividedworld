@@ -6,6 +6,7 @@ import { ACT_KINDS, ALIGNMENTS, QUADRANTS } from './types.ts';
 import { LOCAL_PREFIX } from './emoji.ts';
 import { groupsProblems } from './groups.ts';
 import { ALERT_KINDS } from './alerts.ts';
+import { JOBS } from './jobs.ts';
 import type { AnonymousPoster, Beat, DeveloperPersona, EconomyRead, Instance, Persona, Settings, QuizQuestion, Span, StockLines, SystemContent } from './types.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { BEAT_KEY, conditionProblem, dueProblem } from '../system/conditions.ts';
@@ -346,6 +347,18 @@ function cosmeticsRule(v: unknown): string | null {
   return weights(e.gearRarity, RARITIES, 'events.gearRarity') ?? weights(e.cardRarity, RARITIES, 'events.cardRarity');
 }
 
+/** The `jobGraceMinutes` setting: some of the scheduled jobs (engine/rules/jobs.ts), each a grace of whole minutes from 1 to 1440; a job left out keeps its default. */
+function jobGraceRule(v: unknown): string | null {
+  const shape = 'an object giving some of the jobs (the names engine/rules/jobs.ts lists), each a grace of a whole number of minutes from 1 to 1440';
+  if (typeof v !== 'object' || v === null || Array.isArray(v)) return shape;
+  const names = JOBS.map((j) => j.name) as string[];
+  for (const [key, minutes] of Object.entries(v)) {
+    if (!names.includes(key)) return `${shape}; "${key}" is not a job`;
+    if (!isWhole(minutes, 1) || (minutes as number) > 1440) return `${shape}; "${key}" is not a whole number of minutes from 1 to 1440`;
+  }
+  return null;
+}
+
 /** Every setting the engine reads, each with what it must be. */
 const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | null } = {
   walletCap: (v) => (isWhole(v, 1) ? null : 'a whole number of hundredths, at least 1'),
@@ -388,6 +401,7 @@ const SETTINGS: { readonly [K in keyof Settings]-?: (v: unknown) => string | nul
   setLasts: (v) => (isSpan(v) ? null : 'a span: a unit of day, week or month and a whole count from 1 to 1000'),
   reachRarity: perReach((r) => RARITIES.includes(r as never), 'an object giving character, thread and board each a rarity (common, uncommon, rare or legendary)'),
   reachLasts: perReach((r) => isSpan(r), 'an object giving character, thread and board each a span: a unit of day, week or month and a whole count from 1 to 1000'),
+  jobGraceMinutes: jobGraceRule,
   economy: namedNumbers,
   cardSettings: namedNumbers,
   systemEnabled: (v) => (typeof v === 'boolean' ? null : 'true or false'),

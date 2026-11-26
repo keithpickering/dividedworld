@@ -1732,6 +1732,26 @@ describe('a visit\'s tab', () => {
       expect(l).toHaveTextContent(/The time is up, so it files at the next check unless it is talked down first\./u);
     });
 
+    test('with the staff job stopped it adds that filing is late; running, or before the time is up, it adds nothing', async () => {
+      width(false);
+      const w = visited({ challenge: QUIZ, endsInMs: -60_000 });
+      openVisit(w);
+      const l = await press(w);
+      expect(within(l).queryByRole('note')).toBeNull();
+      cleanup();
+      const stopped = visited({ challenge: QUIZ, endsInMs: -60_000 });
+      stopped.fake.seed.job('kayfabb-staff', { lastOkAt: new Date(stopped.fake.clock.now() - 3 * 3_600_000).toISOString() });
+      openVisit(stopped);
+      const late = await press(stopped);
+      await waitFor(() => expect(within(late).getByRole('note')).toHaveTextContent(/^Filing is late: the check that files it has not run since .+\. Nothing is lost, and it catches up as soon as the job runs again\. The admins can see this\.$/u));
+      cleanup();
+      const open = visited({ challenge: QUIZ });
+      open.fake.seed.job('kayfabb-staff', { lastOkAt: new Date(open.fake.clock.now() - 3 * 3_600_000).toISOString() });
+      openVisit(open);
+      const before = await press(open);
+      expect(within(before).queryByRole('note')).toBeNull();
+    });
+
     test('a quiz is the Mod\'s question, quoted, and its answers as full-width block buttons, one to a row', async () => {
       width(false);
       const w = visited({ challenge: QUIZ });

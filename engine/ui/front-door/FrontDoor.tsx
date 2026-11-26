@@ -20,7 +20,7 @@ import { DEFAULT_DEVELOPER } from '../../rules/instance.ts';
 import { rankFloor } from '../../rules/ranks.ts';
 import { BYTES, cellsOf, count, GRID, hasCell, union, type Cells } from '../../rules/surface.ts';
 import { BbCode } from '../bbcode/render.tsx';
-import { PostEffects } from '../cards/Effects.tsx';
+import { PostEffects, WriteLateNote } from '../cards/Effects.tsx';
 import { LensProvider } from '../cards/Lens.tsx';
 import { PostMarks } from '../cards/Marks.tsx';
 import { createPlays, type Plays } from '../cards/plays.ts';
@@ -95,6 +95,7 @@ function Post({ staged, stores, nameOf }: { readonly staged: Staged; readonly st
           <PostEffects plays={stores.plays} post={act} place="thread" marks={marks} nameOf={nameOf}><BbCode text={body} forged={forgedList(act.currentPayload)} /></PostEffects>
           <Reactions act={act.id} author={act.character} authorName={name} tallies={stores.tallies} mine={stores.mine} />
         </div>
+        <WriteLateNote plays={stores.plays} post={act} />
       </FoldedRow>
     </article>
   );

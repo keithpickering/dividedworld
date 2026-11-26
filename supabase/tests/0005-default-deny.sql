@@ -176,6 +176,8 @@ declare
                            'spin_answer_place(uuid)',
                            -- The board a spin of an Act lands on, and what the spin form reads (0444): a board is public and so are the caller's own character's bars; spin_places asks acting() first.
                            'spin_board(uuid)', 'spin_places(uuid,uuid)',
+                           -- The jobs' health (0450): job_status() is the schedule, the active flag, the first and last good run and the grace of each kayfabb- job, the same for every caller and readable by a visitor; admin_jobs() adds pg_cron's last run and whether two Vault secrets exist (never a value) and refuses anyone who is not an admin.
+                           'job_status()', 'admin_jobs()',
                            -- What an Alerts page's ruling, gift and drew rows name, merged into the page (0423): alerts_page is read as its caller and calls it; public Acts and public names, from the caller's own page.
                            'alert_line_refs(jsonb)',
                            -- The ids of the Acts that cut a given list of plays (0405), a definer reading the one expression acts_cut_play holds: ids of card Acts whose `cut` acts_public already shows, never a caller's own.
@@ -200,6 +202,8 @@ declare
                            'visit_concession_post(uuid)',
                            -- The contact (0081): the player who most needs a person is often one who cannot sign in. One setting, the same for every caller.
                            'admin_contact()',
+                           -- Each kayfabb- job's schedule, whether it is active, its first and last good run and the grace (0450): jobs, the same for every caller, so a visitor's page can say a job is late.
+                           'job_status()',
                            -- The same three CHECK predicates, which PUBLIC (so anon too) may execute by 0080; pure, reading no table.
                            'tip_keys_ok(text[])', 'update_payload_problem(jsonb)', 'reaches_hold(text[])', 'pronouns_hold(jsonb)', 'pack_pulls_problem(jsonb)'];
 begin

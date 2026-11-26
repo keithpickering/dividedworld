@@ -241,6 +241,28 @@
   pointer-events: none;
 }
 
+/* The Admin tab's mark while a scheduled job is stopped (MenuBar.tsx): a dot in the alert color ringed in the brightest text color, so its edge stands 3:1 off the bar's dark ground whatever an instance's alert color is. The words that name it are read by a screen reader and not drawn. */
+.kb-glass-job-mark {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 12px;
+  height: 12px;
+  margin-left: 8px;
+  vertical-align: middle;
+  border: 2px solid var(--kb-glass-text-hi);
+  border-radius: 50%;
+  background: var(--kb-glass-hurt);
+}
+
+.kb-glass-menu-hidden {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
 /* The arrow and the key cap: empty, hidden elements the stylesheet writes into. The arrow is the phone's. */
 .kb-glass-menu-arrow::before,
 .kb-glass-menu-key::before {

@@ -4,7 +4,7 @@
  * History draws each version's own tail, still; a moment draws the version it landed on; and the body is a block a tail can follow inline.
  * The cards are the engine's own test cards, never an instance's.
  */
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import { useState } from 'react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
@@ -15,7 +15,7 @@ import { createFake } from '../data/fake.ts';
 import { ThreadCtx, type ThreadContext } from '../thread/context.ts';
 import { useHistory } from '../thread/lines.tsx';
 import { renderIn, testInstance } from '../test-world.tsx';
-import { MomentEffects, PostEffects } from './Effects.tsx';
+import { MomentEffects, PostEffects, WriteLateNote } from './Effects.tsx';
 import { createPlays } from './plays.ts';
 import { HELD_POSTS, POLL_FIRST, POLL_LAST, tailStore, TAILS_PER_READ } from './tails.ts';
 import type { CardUi, EffectProps, Written } from './types.ts';
@@ -60,6 +60,7 @@ async function page(w: World, posts: readonly Id[]) {
     <>{acts.map((a) => (
       <div key={a!.id} data-testid={`post-${a!.id}`}>
         <PostEffects plays={plays} post={a!} place="thread" nameOf={() => 'Someone'}><p>{a!.currentPayload.body as string}</p></PostEffects>
+        <WriteLateNote plays={plays} post={a!} />
       </div>
     ))}</>
   ), { cards: [tailing, quiet], instance });
@@ -551,5 +552,37 @@ describe('History reads only where the post has a writing play', () => {
     expect(await screen.findByText('first tail')).toHaveAttribute('data-still', 'true');
     expect(tails).toHaveBeenCalledTimes(1);
     expect(on).not.toHaveBeenCalled();
+  });
+});
+
+describe('a play still waiting for its words, with the write job stopped', () => {
+  const LATE = /^This card's words are late: the job that writes them has not run since .+\. Nothing is lost, and it catches up as soon as the job runs again\. The admins can see this\.$/u;
+
+  test('says its words are late beside the post\'s effect (`WriteLateNote`), outside it; with the job running, or the words written, it says nothing', async () => {
+    const running = seeded();
+    running.fake.seed.card(running.mask, running.p1, 'wrote');
+    await page(running, [running.p1]);
+    await waitFor(() => expect(tailsOf(running.p1)[0]).toHaveTextContent('...'));
+    await nextTick();
+    expect(screen.queryByRole('note')).toBeNull();
+    cleanup();
+
+    const w = seeded();
+    w.fake.seed.card(w.mask, w.p1, 'wrote');
+    w.fake.seed.job('kayfabb-write', { lastOkAt: new Date(w.fake.clock.now() - 3 * 3_600_000).toISOString() });
+    await page(w, [w.p1]);
+    const note = await screen.findByRole('note');
+    expect(note).toHaveTextContent(LATE);
+    expect(note.closest('[data-kb-tail]')).toBeNull();
+
+    cleanup();
+    const written = seeded();
+    const play = written.fake.seed.card(written.mask, written.p1, 'wrote');
+    written.fake.seed.text(play, written.p1, { text: ' done' }, { quiet: true });
+    written.fake.seed.job('kayfabb-write', { lastOkAt: new Date(written.fake.clock.now() - 3 * 3_600_000).toISOString() });
+    await page(written, [written.p1]);
+    expect(await screen.findByText('done')).toBeInTheDocument();
+    await nextTick();
+    expect(screen.queryByRole('note')).toBeNull();
   });
 });

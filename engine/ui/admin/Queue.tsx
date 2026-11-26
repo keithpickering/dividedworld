@@ -54,6 +54,8 @@ import { AdminPages } from './AdminPages.tsx';
 import './queue.css';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { Layers } from '../glass/layer.tsx';
+import { shortTime } from '../postbit/dates.ts';
+import { useJobLate } from '../jobs/useJobHealth.ts';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;
@@ -67,6 +69,17 @@ export function countdown(at: string, now: number): string {
   if (ms < HOUR) return plural(Math.round(ms / MINUTE), 'MINUTE');
   if (ms < 48 * HOUR) return plural(Math.round(ms / HOUR), 'HOUR');
   return plural(Math.round(ms / (24 * HOUR)), 'DAY');
+}
+
+/**
+ * `countdown`, except that a move whose time has come, with the tick that lands moves stopped, says so in place of "ANY MINUTE NOW" (job health design, section 4). `countdown` itself
+ * stays pure: it is a function of two times, and which job is running is not.
+ */
+function WaitingCountdown({ at, now }: { readonly at: string; readonly now: number }) {
+  const late = useJobLate('kayfabb-system-tick');
+  const said = countdown(at, now);
+  if (late === null || said !== 'ANY MINUTE NOW') return <>{said}</>;
+  return <>{late.since === null ? 'Late: the tick that lands moves has not run yet.' : `Late: the tick that lands moves has not run since ${shortTime(late.since, now)}.`}</>;
 }
 
 /** A Boss of the roster: its staff key and its name. */
@@ -404,7 +417,7 @@ function WaitingRow({ q, label, nested, characterOf, boards, bosses, roster, now
   return (
     <article className="kb-queue-move" data-kb-state="waiting">
       <div className="kb-queue-when">
-        <p className="kb-queue-countdown">{countdown(q.goLiveAt, now)}</p>
+        <p className="kb-queue-countdown"><WaitingCountdown at={q.goLiveAt} now={now} /></p>
         <p className="kb-queue-time">{dayAndTime(q.goLiveAt)}</p>
       </div>
       <div className="kb-queue-body">

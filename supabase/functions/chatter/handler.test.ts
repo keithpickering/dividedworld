@@ -10,7 +10,7 @@ test('chatter: a good request runs the pool on deps.db with the WRITES set, and 
   const res = await handle(post({ slot: SLOT }), d.deps);
   assert.equal(res.status, 200);
   assert.deepEqual(await res.json(), { status: 'busy' });
-  assert.equal(d.dbs.length, 1);
+  assert.equal(d.dbs.length, 2, "the run's client, then the heartbeat's");
   assert.equal(d.dbs[0]!.env.secret, KEY);
   const safe = d.dbs[0]!.safeToRepeat!;
   for (const w of ['write_staff_act', 'write_staff_thread', 'staff_play_card', 'staff_set_card', 'write_staff_note', 'record_pool_spend', 'claim_pool_run', 'claim_pool_round', 'write_staff_turn', 'write_sessions', 'keep_pick', 'record_model_call']) assert.equal(safe(w), false, w);

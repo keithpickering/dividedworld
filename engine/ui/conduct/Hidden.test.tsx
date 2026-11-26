@@ -6,7 +6,7 @@
  * The poison: a hidden post whose words reach the DOM for a non-author. The thread is handed an Act that says it is hidden and still carries the words (a server that forgot to empty
  * them), and the page must draw the note and never the words, since a version's words are drawn by its `hidden` flag and not by whether a body happens to be there.
  */
-import { act, render, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { axeViolations, describeViolations } from '../a11y.ts';
@@ -189,7 +189,7 @@ describe('a quote of a hidden version', () => {
 });
 
 describe('a post that quotes a hidden post, before the conceal job has written its layer', () => {
-  const CONCEALING = 'Part of this post quotes a post an admin hid. It will show again in a moment.';
+  const CONCEALING = 'Part of this post quotes a post an admin hid. It will show again within a few minutes.';
 
   test('shows the plain note in place of its words, which is not the hidden note, and none of the hidden words', async () => {
     const w = world();
@@ -205,6 +205,28 @@ describe('a post that quotes a hidden post, before the conceal job has written i
     expect(art).not.toHaveTextContent('I answer that.');
     expect(within(art).getByRole('group', { name: 'About Pipewrench' })).toBeInTheDocument();
     expect(within(art).getByRole('button', { name: 'History' })).toBeInTheDocument();
+  });
+
+  test('past the conceal job\'s bound it adds that the job has not run since its last run; running, only the promise', async () => {
+    const w = world();
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
+    w.fake.seed.concealing(quoting);
+    open(w);
+    const art = await article(4);
+    expect(within(art).getAllByRole('note')).toHaveLength(1);
+    cleanup();
+    const stopped = world();
+    const q2 = stopped.fake.seed.post(stopped.thread, stopped.pipe, `[quote=${stopped.theirs}]${WORDS}[/quote]I answer that.`);
+    stopped.fake.seed.hide(stopped.theirs, 'hide');
+    stopped.fake.seed.concealing(q2);
+    stopped.fake.seed.job('kayfabb-conceal', { lastOkAt: new Date(stopped.fake.clock.now() - 3 * 3_600_000).toISOString() });
+    open(stopped);
+    const late = await article(4);
+    await waitFor(() => expect(within(late).getAllByRole('note')).toHaveLength(2));
+    const [promise, lateNote] = within(late).getAllByRole('note');
+    expect(promise).toHaveTextContent(CONCEALING);
+    expect(lateNote).toHaveTextContent(/^This is taking longer than it should: the job that hides it has not run since .+\. Nothing is lost, and it catches up as soon as the job runs again\. The admins can see this\.$/u);
   });
 
   test('shows the words, with the hidden quote emptied, once the job has run (the note ends by itself)', async () => {
@@ -262,6 +284,24 @@ describe('a post that quotes a hidden post, before the conceal job has written i
     expect(within(rows[0]!).getByRole('note')).toHaveTextContent(CONCEALING);
     expect(within(rows[0]!).queryByText(NOTE)).toBeNull();
     expect(rows[1]).toHaveTextContent('a clean rewrite');
+  });
+
+  test('with the conceal job stopped, a post with two concealing versions in History carries one late note, and the History rows only the promise', async () => {
+    const w = world();
+    const quoting = w.fake.seed.post(w.thread, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]I answer that.`);
+    w.fake.seed.hide(w.theirs, 'hide');
+    w.fake.seed.concealing(quoting);
+    const edit = w.fake.seed.edit(quoting, w.pipe, `[quote=${w.theirs}]${WORDS}[/quote]and again`, { at: Date.now() + 10 * 60_000 });
+    w.fake.seed.concealing(edit);
+    w.fake.seed.job('kayfabb-conceal', { lastOkAt: new Date(w.fake.clock.now() - 3 * 3_600_000).toISOString() });
+    open(w);
+    const art = await article(4);
+    await waitFor(() => expect(within(art).getAllByText(/^This is taking longer than it should/u)).toHaveLength(1));
+    await userEvent.click(within(art).getByRole('button', { name: 'History' }));
+    const rows = within(await within(art).findByRole('list', { name: 'Versions of this post, oldest first' })).getAllByRole('listitem');
+    expect(rows).toHaveLength(2);
+    for (const row of rows) expect(within(row).getByRole('note')).toHaveTextContent(CONCEALING);
+    expect(within(art).getAllByText(/^This is taking longer than it should/u)).toHaveLength(1);
   });
 
   test('has no axe violations', async () => {

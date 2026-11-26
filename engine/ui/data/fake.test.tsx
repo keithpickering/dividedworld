@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { landsOn, ok, quadrantFree, refuse, refusalTime, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { cellsOf, count } from '../../rules/surface.ts';
+import { JOBS, jobHealth } from '../../rules/jobs.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
 import { failureKind, NOT_SENT, ReadFailure } from './api.ts';
@@ -27,7 +28,7 @@ const settings: Settings = {
   walletCap: 600, vote: 10, halving: 0.5, revealPerk: 0.2, debateDays: 3, reactionCap: 3, postEffects: 8, crowdPayEach: 2, crowdFloor: 2, crowdPayMost: 10, charactersPerPlayer: 3,
   settlementCron: '17 8 * * *', viewCountCron: '41 * * * *', settlementLength: { unit: 'day', count: 1 },
   seasonLength: { unit: 'month', count: 3 }, turnCooldown: { unit: 'day', count: 30 }, registrationMode: 'invite',
-  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  invitesPerPlayer: 2, inviteLifetime: { unit: 'day', count: 7 }, editGrace: { unit: 'minute', count: 2 }, presenceWindow: { unit: 'minute', count: 5 }, presenceNames: 15, presencePollSeconds: 30, setLasts: { unit: 'day', count: 7 }, reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' }, reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, jobGraceMinutes: {},
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } }, toastDefaults: ['quote'],
   postMaxLength: 50, pollOptionsMax: 10, pollQuestionMax: 200, pollOptionMax: 100, pollLastsMin: { unit: 'hour', count: 1 }, pollLastsMax: { unit: 'day', count: 14 }, titleMaxLength: 20, postsPerPage: 2, hotReplies: 10, searchLanguage: 'english', searchRankPool: 5000, cardSettings: {}, economy: {}, ...systemSettings,
 };
@@ -8274,5 +8275,55 @@ describe('a talked-down Mod posts its concession', () => {
     expect(await w.postsIn()).toHaveLength(before);
     expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).end?.outcome).toBe('intercepted');
     expect((await w.fake.visitStory(w.thread, w.visit, w.opener)).concessionPost).toBeNull();
+  });
+});
+
+describe('the jobs', () => {
+  test('a new world has all ten jobs healthy, last good at their latest due time, and it follows the clock', async () => {
+    const fake = createFake({ instance });
+    fake.signInAs(fake.seed.account('jobs-admin', { admin: true }));
+    const rows = await fake.jobStatus();
+    expect(rows.map((r) => r.job)).toEqual(JOBS.map((j) => j.name));
+    expect(rows.every((r) => r.active && r.schedule !== null && r.lastOkAt !== null)).toBe(true);
+    expect(Object.fromEntries(rows.map((r) => [r.job, r.schedule]))).toMatchObject({ 'kayfabb-staff': '*/5 * * * *', 'kayfabb-view-counts': '41 * * * *', 'kayfabb-chatter': '*/15 * * * *', 'kayfabb-mail': '* * * * *' });
+    expect(jobHealth(rows, {}, new Date(fake.clock.now())).some((h) => h.stopped)).toBe(false);
+    fake.clock.advance(40 * 60_000);
+    expect(jobHealth(await fake.jobStatus(), {}, new Date(fake.clock.now())).some((h) => h.stopped)).toBe(false);
+    const page = await fake.adminJobs();
+    expect(page?.vault).toEqual({ functionsUrl: true, jobsKey: true });
+    expect(page?.jobs.every((j) => j.lastRun?.status === 'succeeded' && j.lastRun.message === '1 row')).toBe(true);
+  });
+
+  test('a page that reads its own clock (onPageClock replaces the api\'s now) still finds every job healthy', async () => {
+    const fake = createFake({ instance });
+    /* As web/src/data/fixtures/page-clock.ts does: the screens read the page's clock, a month past the fake's own. */
+    const page = fake.clock.now() + 30 * 24 * 60 * 60_000;
+    (fake as { now: () => number }).now = () => page;
+    expect(jobHealth(await fake.jobStatus(), {}, new Date(fake.now())).filter((h) => h.stopped).map((h) => h.job)).toEqual([]);
+  });
+
+  test('seed.job overrides a row, null and noJob remove it, adminJobs gives an admin each last run, and a player no page', async () => {
+    const fake = createFake({ instance });
+    const admin = fake.seed.account('jobs-admin', { admin: true });
+    const player = fake.seed.account('jobs-player');
+    fake.seed.job('kayfabb-mail', { schedule: '*/5 * * * *' });
+    fake.seed.job('kayfabb-meet', { active: false });
+    fake.seed.job('kayfabb-write', null);
+    fake.seed.noJob('kayfabb-conceal');
+    fake.seed.jobRun('kayfabb-mail', { status: 'failed', message: 'boom', at: 0 });
+    fake.seed.jobRun('kayfabb-meet', null);
+    fake.seed.jobVault({ jobsKey: false });
+    fake.signInAs(player);
+    const rows = await fake.jobStatus();
+    expect(rows.map((r) => r.job)).not.toContain('kayfabb-write');
+    expect(rows.map((r) => r.job)).not.toContain('kayfabb-conceal');
+    expect(rows.find((r) => r.job === 'kayfabb-mail')?.schedule).toBe('*/5 * * * *');
+    expect(rows.find((r) => r.job === 'kayfabb-meet')?.active).toBe(false);
+    expect(await fake.adminJobs()).toBeNull();
+    fake.signInAs(admin);
+    const page = await fake.adminJobs();
+    expect(page?.vault).toEqual({ functionsUrl: true, jobsKey: false });
+    expect(page?.jobs.find((j) => j.job === 'kayfabb-mail')?.lastRun).toEqual({ status: 'failed', message: 'boom', at: '1970-01-01T00:00:00.000Z' });
+    expect(page?.jobs.find((j) => j.job === 'kayfabb-meet')?.lastRun).toBeNull();
   });
 });

@@ -92,6 +92,21 @@ describe('the admin queue', () => {
     expect(within(waiting).getByRole('button', { name: 'Hold: Minus World' })).toBeInTheDocument();
   });
 
+  test('a move whose time has come says "ANY MINUTE NOW", and with the tick stopped says the tick is late instead', async () => {
+    open({ build: (fake, w) => { fake.seed.queueMove('director', { board: w.second, name: 'Late Hall', goLiveAt: fake.clock.now() + 20_000 }); } });
+    const running = await group(/^Waiting to land/u);
+    expect(running).toHaveTextContent('ANY MINUTE NOW');
+    expect(running).not.toHaveTextContent(/Late:/u);
+    cleanup();
+    open({ build: (fake, w) => {
+      fake.seed.queueMove('director', { board: w.second, name: 'Late Hall', goLiveAt: fake.clock.now() + 20_000 });
+      fake.seed.job('kayfabb-system-tick', { lastOkAt: new Date(fake.clock.now() - 3 * 3_600_000).toISOString() });
+    } });
+    const stopped = await group(/^Waiting to land/u);
+    await waitFor(() => expect(stopped).toHaveTextContent(/Late: the tick that lands moves has not run since .+\./u));
+    expect(stopped).not.toHaveTextContent('ANY MINUTE NOW');
+  });
+
   test('a move the tick could not land shows the failure in the server\'s words, and stays open to a hold', async () => {
     open({ build: (fake, w) => { fake.seed.queueMove('director', { board: w.second, name: 'Stuck Hall', goLiveAt: fake.clock.now() - 60_000, failure: { at: fake.clock.now() - 30_000, text: 'the board no longer exists' } }); } });
     const waiting = await group(/^Waiting to land/u);
@@ -225,7 +240,8 @@ describe('the page is its document', () => {
     seedMoves(fake, testInstance, { signIn: 'admin' });
     const boot = await fake.boot();
     const doc = { ...(await fake.queuePage())!, boards: await fake.boards() };
-    const read = holdReads(fake, ['session']);
+    /* The admin pages' strip reads the jobs on its own cache (useJobHealth), which is no read of the page's. */
+    const read = holdReads(fake, ['session', 'jobStatus']);
     renderIn(fake, <QueueScreen doc={doc} now={fake.clock.now()} />, { path: '/admin/queue', boot });
     expect(screen.getByRole('region', { name: /^Waiting to land/u })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /^In force/u })).toBeInTheDocument();

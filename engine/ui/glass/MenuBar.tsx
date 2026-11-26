@@ -40,6 +40,8 @@ import { motionReduced } from '../appearance.ts';
 import { useKayfa } from '../context.tsx';
 import { usePlayer } from '../player.tsx';
 import { useIsAdmin } from '../mini.tsx';
+import { stoppedJobs } from '../../rules/jobs.ts';
+import { useJobHealth } from '../jobs/useJobHealth.ts';
 import { Link, useLocation, useNavigation } from '../router.tsx';
 import { ClaimsProvider, useHasClaims, usePendingControl, useUnclaimed } from './claims.tsx';
 import { Spinner } from './Spinner.tsx';
@@ -85,7 +87,7 @@ function density(count: number): 'few' | 'many' | 'most' {
  * A tab, which names its own load: while it is pending it takes `data-kb-pending` and tells the bar, which draws the one Signal spinner
  * in its corner. The tab itself never changes width. The claim keeps the bar from drawing the same wait twice.
  */
-function MenuTab({ tab, path, transition, onWait }: { readonly tab: Tab; readonly path: string; readonly transition: Transition; readonly onWait: (label: string, on: boolean) => void }) {
+function MenuTab({ tab, path, transition, onWait, stopped = 0 }: { readonly tab: Tab; readonly path: string; readonly transition: Transition; readonly onWait: (label: string, on: boolean) => void; /** How many scheduled jobs have stopped, for the Admin tab alone: a mark after its words and a name that says so. */ readonly stopped?: number }) {
   const { source, pending } = usePendingControl();
   const current = tab.current(path);
   useEffect(() => {
@@ -95,7 +97,15 @@ function MenuTab({ tab, path, transition, onWait }: { readonly tab: Tab; readonl
   return (
     <>
       <Link to={tab.to} source={source} className="kb-glass-menu-tab kb-glass-skew" aria-current={current ? 'page' : undefined} data-kb-pending={pending ? '' : undefined}>
-        <span className="kb-glass-upright">{tab.label}</span>
+        <span className="kb-glass-upright">
+          {tab.label}
+          {stopped > 0 && (
+            <>
+              <span className="kb-glass-menu-hidden">{`, ${stopped} ${stopped === 1 ? 'job' : 'jobs'} stopped`}</span>
+              <span className="kb-glass-job-mark" data-kb-job-mark="" aria-hidden="true" />
+            </>
+          )}
+        </span>
       </Link>
       {/* One element for the whole bar: it glides to the tab chosen (the layoutId), and under Off it is simply there. It sits in the item, not the skewed link, so its box is measured straight; its holder wears the link's skew, so the rule is drawn as the boards draw it, 3px along the foot of the skewed tab. */}
       {current && (
@@ -110,6 +120,12 @@ function MenuTab({ tab, path, transition, onWait }: { readonly tab: Tab; readonl
 /** The bar makes its own set of claimed sources where no page has (a bar drawn alone); on a page, Page.tsx's serves it and the page's controls. */
 export function MenuBar() {
   return useHasClaims() ? <Bar /> : <ClaimsProvider><Bar /></ClaimsProvider>;
+}
+
+/** The Admin tab, which reads the jobs for its mark: only an admin's bar mounts it, so no other bar asks for them. */
+function AdminTab(props: { readonly path: string; readonly transition: Transition; readonly onWait: (label: string, on: boolean) => void }) {
+  const health = useJobHealth();
+  return <MenuTab tab={ADMIN} {...props} stopped={health === null ? 0 : stoppedJobs(health).length} />;
 }
 
 function Bar() {
@@ -154,6 +170,7 @@ function Bar() {
   const list = useRef<HTMLUListElement>(null);
   const transition: Transition = feel ? (feel.spring ? { type: 'spring', stiffness: feel.spring.stiffness, damping: feel.spring.damping } : { duration: feel.screen / 1000, ease: bezier(feel.ease) }) : { duration: 0 };
   const shown = admin ? [...TABS, ADMIN] : TABS;
+
   const [fade, setFade] = useState<'none' | 'start' | 'end' | 'both'>('none');
   const bar = useRef<HTMLElement>(null);
 
@@ -250,7 +267,7 @@ function Bar() {
         {session.signedIn && (
           <ul ref={list} className="kb-glass-menu-list" data-kb-tabs={density(shown.length)} data-kb-fade={fade}>
             {shown.map((t) => (
-              <li key={t.label}><MenuTab tab={t} path={path} transition={transition} onWait={onWait} /></li>
+              <li key={t.label}>{t === ADMIN ? <AdminTab path={path} transition={transition} onWait={onWait} /> : <MenuTab tab={t} path={path} transition={transition} onWait={onWait} />}</li>
             ))}
           </ul>
         )}

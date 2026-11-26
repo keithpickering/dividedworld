@@ -9,6 +9,7 @@ import { STOCK_LINE_KEYS } from '../system/stock.ts';
 import { DIGEST_MOST } from '../system/digest.ts';
 import { testGroups } from './test-system.ts';
 import { PRONOUN_PRESETS } from './pronouns.ts';
+import { JOBS } from './jobs.ts';
 
 const settings: Settings = {
   walletCap: 600,
@@ -103,6 +104,7 @@ const settings: Settings = {
   setLasts: { unit: 'day', count: 7 },
   reachRarity: { character: 'uncommon', thread: 'rare', board: 'legendary' },
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } },
+  jobGraceMinutes: { 'kayfabb-mail': 10 },
   hints: { least: 10, share: 0.6, split: 0.3, window: { unit: 'minute', count: 360 } },
   toastDefaults: ['quote', 'cardOnYours', 'cardEnded', 'trapStruck', 'trapSprang', 'ruling', 'settlement', 'update'],
 };
@@ -1288,6 +1290,21 @@ test('each reach\'s least rarity and longest time are settings', () => {
   }
   for (const bad of [{ character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 1 } }, { character: { unit: 'minute', count: 7 }, thread: { unit: 'day', count: 1 }, board: { unit: 'day', count: 1 } }, 7]) {
     assert.match(settingsProblems({ ...settings, reachLasts: bad as never }).join('\n'), /setting "reachLasts" .*; it must be an object giving character, thread and board each a span/, JSON.stringify(bad));
+  }
+});
+
+test('jobGraceMinutes is keyed by job name, each a whole number of minutes from 1 to 1440', () => {
+  const { jobGraceMinutes: _j, ...without } = settings;
+  assert.match(settingsProblems(without as Settings).join('\n'), /setting "jobGraceMinutes" is missing/);
+  const all = Object.fromEntries(JOBS.map((j) => [j.name, j.defaultGraceMinutes]));
+  assert.deepEqual(settingsProblems({ ...settings, jobGraceMinutes: all }), []);
+  assert.deepEqual(settingsProblems({ ...settings, jobGraceMinutes: { 'kayfabb-mail': 1440 } }), [], 'a key may be left to the default');
+  assert.match(settingsProblems({ ...settings, jobGraceMinutes: { 'kayfabb-ghost': 10 } }).join('\n'), /setting "jobGraceMinutes" .*; it must be .*"kayfabb-ghost" is not a job/);
+  for (const bad of [0, 1441, 1.5, -3, '10', null, NaN]) {
+    assert.match(settingsProblems({ ...settings, jobGraceMinutes: { 'kayfabb-mail': bad as never } }).join('\n'), /setting "jobGraceMinutes" .*; it must be .*"kayfabb-mail" is not a whole number of minutes from 1 to 1440/, String(bad));
+  }
+  for (const bad of [7, 'kayfabb-mail', null, ['kayfabb-mail']]) {
+    assert.match(settingsProblems({ ...settings, jobGraceMinutes: bad as never }).join('\n'), /setting "jobGraceMinutes" .*; it must be an object giving some of the jobs/, JSON.stringify(bad));
   }
 });
 

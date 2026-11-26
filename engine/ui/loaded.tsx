@@ -19,6 +19,7 @@ import { addressOf, useLocation } from './router.tsx';
 import { boardKey, loadBoard, loadIndex, loadProfile, loadRecord, loadSearch, loadThread, recordKey, searchKey, threadKey, type LoadEnv, type ScreenDoc, type SearchDoc } from './screen-docs.ts';
 import { SearchScreen } from './search/SearchScreen.tsx';
 import { ThreadScreen } from './thread/Thread.tsx';
+import { JobsScreen } from './admin/Jobs.tsx';
 import { Characters } from './characters/Characters.tsx';
 import { NewCharacter } from './characters/NewCharacter.tsx';
 import { ProfileEdit } from './profile-edit/ProfileEdit.tsx';
@@ -105,7 +106,7 @@ const direct = <P,>(Component: GlassScreen<P>['Component']): GlassScreen<P> => (
 const SCREENS: GlassScreens = {
   signIn: direct(SignInScreen), characters: direct(Characters), newCharacter: direct(NewCharacter), profileEdit: direct(ProfileEdit),
   settings: direct(SettingsScreen), season: direct(SeasonScreen), vending: direct(Vending), alerts: direct(AlertsScreen), updates: direct(UpdatesScreen),
-  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), license: direct(LicenseScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), trophies: direct(TrophiesScreen), wardrobe: direct(Wardrobe), log: direct(LogScreen),
+  guide: direct(GuideScreen), contact: direct(ContactScreen), conduct: direct(ConductScreen), license: direct(LicenseScreen), welcome: direct(WelcomeScreen), queue: direct(QueueScreen), reports: direct(ReportsScreen), machine: direct(MachineScreen), trophies: direct(TrophiesScreen), jobs: direct(JobsScreen), wardrobe: direct(Wardrobe), log: direct(LogScreen),
   settlement: direct(SettlementScreen),
 };
 

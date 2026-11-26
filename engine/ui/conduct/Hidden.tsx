@@ -12,6 +12,7 @@ import { useKayfa } from '../context.tsx';
 import type { Id, MyHiddenVersion } from '../data/api.ts';
 import { GlassButton } from '../glass/Button.tsx';
 import { Link } from '../router.tsx';
+import { LateNote } from '../jobs/LateNote.tsx';
 import './report.css';
 
 /** The code of conduct's page, where the note's link goes. */
@@ -33,7 +34,12 @@ export function HiddenNote() {
  * hidden note, since no admin hid this post.
  */
 export function ConcealingNote() {
-  return <p className="kb-glass kb-hidden-note" role="note">Part of this post quotes a post an admin hid. It will show again in a moment.</p>;
+  return <p className="kb-glass kb-hidden-note" role="note">Part of this post quotes a post an admin hid. It will show again within a few minutes.</p>;
+}
+
+/** The late sentence under a post's own concealing note, once the conceal job has stopped. Drawn once per post, where the post shows its state; a History row carries the promise alone. */
+export function ConcealingLate() {
+  return <LateNote job="kayfabb-conceal" lead={({ ran }) => `This is taking longer than it should: the job that hides it ${ran}.`} />;
 }
 
 /**

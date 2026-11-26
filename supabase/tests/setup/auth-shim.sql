@@ -63,6 +63,17 @@ alter default privileges for role postgres in schema public grant all on sequenc
 -- doing it, and supabase/tests/0008-schedule.sql reads the record. Carried from currents.
 create schema if not exists cron;
 create table if not exists cron.job (jobid bigint generated always as identity primary key, jobname text unique, schedule text, command text, active boolean default true);
+-- The real cron.job also has nodename, nodeport, database and username, and pg_cron keeps cron.job_run_details beside it. Both shapes were read from the
+-- deployed database on 2026-11-20 (docs/plans/2026-11-20-job-health-design.md, section 0), so a read of them here is a read of the real columns. The extra
+-- columns are nullable: the stand-in's schedule() does not fill them.
+alter table cron.job add column if not exists nodename text;
+alter table cron.job add column if not exists nodeport integer;
+alter table cron.job add column if not exists database text;
+alter table cron.job add column if not exists username text;
+create table if not exists cron.job_run_details (
+  jobid bigint, runid bigint generated always as identity primary key, job_pid integer, database text, username text, command text,
+  status text, return_message text, start_time timestamptz, end_time timestamptz
+);
 create or replace function cron.schedule(job_name text, schedule text, command text) returns bigint language plpgsql as $$
 declare v bigint;
 begin

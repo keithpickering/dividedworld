@@ -76,6 +76,7 @@ export const STEPS = [
   'node tools/test-sql-refusal.mjs',
   'node tools/test-sql-coverage.mjs',
   'node tools/test-deployed-migrations.mjs',
+  'node tools/test-job-health.mjs',
   'node tools/test-data-api.mjs',
   'node tools/test-migration-versions.mjs',
   'node tools/check-migration-versions.mjs',
@@ -173,6 +174,7 @@ export const OUTSIDE_THE_BUILD = {
   'tools/test-sql.mjs': 'needs Postgres, which the build does not have; it runs in .github/workflows/sql.yml against a Postgres service, and its refusal of any database but localhost is driven red in the build by tools/test-sql-refusal.mjs',
   'tools/test-sql-drift.mjs': 'needs Postgres, which the build does not have; it builds a scratch database as the suite does and drives the suite\'s drift step red on a refund written with its trigger disabled, and it runs in .github/workflows/sql.yml beside tools/test-sql.mjs',
   'tools/check-deployed-migrations.mjs': 'reads supabase_migrations from a live database, named by --db and refused when it is this machine, which the build has not got; it runs in the release workflow around `supabase db push`, and its refusals, its comparison and its retry are driven red in the build by tools/test-deployed-migrations.mjs',
+  'tools/check-job-health.mjs': 'reads job_status() from a live database, named by --db and refused when it is this machine, which the build has not got; it runs hourly in .github/workflows/job-health.yml, and its refusals, its comparison and its retry are driven red in the build by tools/test-job-health.mjs',
   'tools/check-data-api.mjs': 'reads and sets a deployed project\'s Data API pool through Supabase\'s management API, which the build has not got; it runs in the release workflow, and its refusals, its comparison and its retry are driven red in the build by tools/test-data-api.mjs',
   'tools/test-e2e.mjs': 'needs a browser, which the build does not have; the web app\'s keyboard flows run in .github/workflows/web.yml under Playwright, against vite preview of the in-memory backend',
 };

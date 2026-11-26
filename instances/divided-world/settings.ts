@@ -231,6 +231,19 @@ export const defaults: Settings = deepFreeze<Settings>({
    * a thread is no stronger than a character). Good Vibes and Main Event keep their own shorter times. A board's lasts at most a day.
    */
   reachLasts: { character: { unit: 'day', count: 7 }, thread: { unit: 'day', count: 7 }, board: { unit: 'day', count: 1 } },
+  /** Every minute-jobs 10 minutes, the filing job 15 (its cron is every 5), the hourly count 30, the daily jobs 30 (the job-health design, section 2). */
+  jobGraceMinutes: {
+    'kayfabb-chatter': 30,
+    'kayfabb-conceal': 10,
+    'kayfabb-mail': 10,
+    'kayfabb-meet': 30,
+    'kayfabb-search-rebuild': 10,
+    'kayfabb-settle': 30,
+    'kayfabb-staff': 15,
+    'kayfabb-system-tick': 10,
+    'kayfabb-view-counts': 30,
+    'kayfabb-write': 10,
+  },
   /**
    * Hints (the alerts design's section 5): a pattern needs a crowd (eight reactions in the window, so one stray reaction is never a trend),
    * a clear lead (six in ten in one quadrant), and a real split (three in ten on each side to be divisive), counted over six hours.

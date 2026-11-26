@@ -14,11 +14,12 @@ import { ledgerWriter } from '../_shared/models/ledger.ts';
 import { withDatabaseSettings } from '../_shared/settings.ts';
 import { tokenCounter } from '../../../engine/system/tokens.ts';
 import type { JobDeps } from '../_shared/handler.ts';
+import { asJob } from '../_shared/job.ts';
 
 /** Jobs claimed in a round. */
 const MOST = 16;
 
-export async function handle(request: Request, deps: JobDeps): Promise<Response> {
+export const handle = asJob('kayfabb-write', async (request: Request, deps: JobDeps): Promise<Response> => {
   const env = environment(deps.env);
   if (!fromTheService(request, env.jobs)) return notTheService(env.jobs, 'card texts are written by the service');
   try {
@@ -30,4 +31,4 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     console.error('write failed', e instanceof Error ? e.message : 'unknown');
     return json(500, { error: 'the writing failed; claimed jobs are taken again when their claim runs out' });
   }
-}
+});
