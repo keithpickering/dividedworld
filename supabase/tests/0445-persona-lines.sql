@@ -1,4 +1,4 @@
--- A persona's stock lines and the settings that hold them (supabase/migrations/0444_persona_lines.sql, part 1; docs/plans/2026-11-25-persona-lines-plan.md, Task 3; design sections 1.2 and 1.5).
+-- A persona's stock lines and the settings that hold them (supabase/migrations/0445_persona_lines.sql, part 1; docs/plans/2026-11-25-persona-lines-plan.md, Task 3; design sections 1.2 and 1.5).
 --
 -- 1. system_line picks from the set of the speaker: the persona's own `personaLines`, else the instance's `systemLines`, else the move's plain words as it always has.
 --    `speaker` names the set where the poster is not the staff key whose name fills `{boss}`.
@@ -25,7 +25,7 @@ create function pg_temp.announcements() returns uuid language sql as $$
   select (s.value #>> '{}')::uuid from settings s where s.key = 'systemAnnouncements'
 $$;
 
--- Sets the instance's lines and the personas' (null deletes the row: that set is absent, as before 0444).
+-- Sets the instance's lines and the personas' (null deletes the row: that set is absent, as before 0445).
 create function pg_temp.sets(instance jsonb, personas jsonb) returns void language plpgsql as $$
 begin
   if instance is null then delete from settings where key = 'systemLines';

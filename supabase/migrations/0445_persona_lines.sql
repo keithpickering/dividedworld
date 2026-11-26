@@ -136,7 +136,7 @@ begin
     when 'searchLanguage' then case when not coalesce(jsonb_typeof(v) = 'string' and exists (select 1 from pg_ts_config c where c.cfgname = v #>> '{}'), false)
       then 'the name of a text search configuration this database holds (english or simple, for example)' end
     when 'searchRankPool' then case when not setting_whole(v, 100, 100000) then 'a whole number of matches from 100 to 100,000' end
-    -- The staff's own stock lines and what is owed (0444, docs/plans/2026-11-25-persona-lines-design.md, sections 1.2 and 1.5): personaLines is held by setting_personalines, and owedLines gives the grace, the day's cap and a run's cap.
+    -- The staff's own stock lines and what is owed (0445, docs/plans/2026-11-25-persona-lines-design.md, sections 1.2 and 1.5): personaLines is held by setting_personalines, and owedLines gives the grace, the day's cap and a run's cap.
     when 'personaLines' then case when not setting_personalines(v) then 'an object of objects, each key of a persona''s set holding a non-empty list of non-blank lines' end
     when 'owedLines' then case when not coalesce(jsonb_typeof(v) = 'object' and setting_whole(v -> 'graceMinutes', 1, 1440) and setting_whole(v -> 'perDay', 0, 10000) and setting_whole(v -> 'perRun', 1, 200), false)
       then 'an object giving graceMinutes (a whole number of minutes from 1 to 1440), perDay (a whole number from 0 to 10000) and perRun (a whole number from 1 to 200)' end
@@ -524,9 +524,11 @@ $$;
 revoke execute on function standing_order_line_calls_today() from public, anon, authenticated;
 grant execute on function standing_order_line_calls_today() to service_role;
 
--- staff_call_records (0424), taking the duty standingOrderLine, the call that voices an owed line. Everything else as 0424 wrote it.
+-- staff_call_records (0424), taking the duty standingOrderLine, the call that voices an owed line, and apologyJudge, which supabase/functions/staff/apology.ts
+-- records and no list before this one held (#1140): the check refused the record of every billed verdict, so the run threw before the apology was ruled.
+-- Everything else as 0424 wrote it.
 alter table staff_call_records drop constraint staff_call_records_duty_check;
-alter table staff_call_records add constraint staff_call_records_duty_check check (duty in ('filing', 'reportJudge', 'patrolJudge', 'appeal', 'ruling', 'standingOrderLine'));
+alter table staff_call_records add constraint staff_call_records_duty_check check (duty in ('filing', 'reportJudge', 'patrolJudge', 'appeal', 'ruling', 'apologyJudge', 'standingOrderLine'));
 
 -- staff_requests_now (0424), its post_act read from the lapse's payment where the ruling holds none: a lapse owes its line and the ruling row is written with no post (a ruling is never edited), so the post a lapse made is the
 -- payment's act (lines_paid.act) of the debt for this request. A ruling that holds its own post_act (a lapse before this, or a meeting's) keeps it. Everything else as 0424 wrote it; no client reads it.
@@ -538,7 +540,7 @@ create or replace view staff_requests_now as
   from staff_requests q left join staff_request_rulings g on g.request = q.id left join staff_requests_open o on o.request = q.id
   left join lateral (select p.act from lines_owed w join lines_paid p on p.owed = w.id where w.request = q.id and w.line_key = 'requestLapsed' order by w.id desc limit 1) lp on true;
 
--- say_move_end (0444, part 1), the end owed and not posted: the poster (the current Boss for a superseded end, the move's maker otherwise) owes the key for the end in the move's thread, with the facts the staff run and the stock line
+-- say_move_end (0445, part 1), the end owed and not posted: the poster (the current Boss for a superseded end, the move's maker otherwise) owes the key for the end in the move's thread, with the facts the staff run and the stock line
 -- need, as the voiced prompt reads them: `move` the move's plain words (system_line_fill with no template), `why` the move's own why, `ended` how it ended in plain words, and `maker`, the staff whose name fills {boss}; the move's Act is the debt's
 -- cause_act, which the stock path reads the kind and params from. Nothing is posted here; pay_owed_line posts it. Everything else as part 1 wrote it.
 create or replace function say_move_end(move_act uuid, why text) returns void
@@ -1089,7 +1091,7 @@ begin
 end $$;
 
 
--- season_news (0444, part 1), a Boss's arrival read through its payment: where the handover owed its arrival (lines_owed), the quote is the post that payment made (lines_paid.act), found by the debt's key (facts.handover) and
+-- season_news (0445, part 1), a Boss's arrival read through its payment: where the handover owed its arrival (lines_owed), the quote is the post that payment made (lines_paid.act), found by the debt's key (facts.handover) and
 -- never by time; a debt not yet paid, or paid unsaid, has no arrival to show. A handover with no debt (one recorded before the migration) is read as it was, by the thread or the instant. Everything else as part 1 wrote it.
 create or replace function public.season_news(before timestamp with time zone DEFAULT NULL::timestamp with time zone, most integer DEFAULT 20)
  returns setof season_news_row
@@ -1166,7 +1168,7 @@ begin
     select c.kind, p.id as act, p.thread, p.seq, c.at, c.season, (select ch.name from characters ch where ch.staff = c.who) as name,
            left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
     from boss_page c
-    -- A handover whose arrival was owed (lines_owed, 0444): the arrival is the post its payment made, by the debt's key (facts.handover), and no other post stands for it; a handover recorded before there was a debt is read as it was.
+    -- A handover whose arrival was owed (lines_owed, 0445): the arrival is the post its payment made, by the debt's key (facts.handover), and no other post stands for it; a handover recorded before there was a debt is read as it was.
     cross join lateral (select exists (select 1 from lines_owed w where w.line_key = 'bossArrival' and w.facts ->> 'handover' = c.handover_id::text and c.line = 'bossArrival') as owed) ow
     left join lateral (
       select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id), a.id) ->> 'body' as body

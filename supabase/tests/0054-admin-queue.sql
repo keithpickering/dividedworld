@@ -233,7 +233,7 @@ begin
   if (select name from boards_now where slug = 'general') is distinct from old_name then raise exception 'the old name did not return: %', (select name from boards_now where slug = 'general'); end if;
   if (select e.payload ->> 'why' || '/' || (e.payload ->> 'by') from acts e where e.kind = 'move_end' and e.target_act_id = landed) is distinct from 'reversed/admin' then raise exception 'the move did not end reversed by an admin'; end if;
   if exists (select 1 from open_moves where move_act = landed) then raise exception 'a reversed move is still in force'; end if;
-  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   -- The Boss says it, once, in the announcements thread, in the stock line for a reversal.
   if (select count(*) from acts a where a.kind = 'post' and a.thread = (select m.thread from acts m where m.id = landed) and a.payload ->> 'body' = 'Overruled: the renaming of a board to "Due Dune".') is distinct from 1::bigint then

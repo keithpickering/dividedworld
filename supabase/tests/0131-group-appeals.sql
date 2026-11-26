@@ -241,7 +241,7 @@ begin
   -- reduced, with half its length already past: it ends at once, expired, by the appeal, said once.
   c := pg_temp.player('redonce'); m := pg_temp.landed('ga-boss', c, 'trialMembers', interval '3 days', games, pg_temp.apology());
   ap := (pg_temp.opened(c, m) ->> 'appeal')::uuid;
-  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   before_n := (select count(*) from acts where kind = 'post' and payload ->> 'body' = 'Over: moving a member into "Trial Members".');
   perform pg_temp.closed(ap, 'reduced', 30);
@@ -250,7 +250,7 @@ begin
   end if;
   if exists (select 1 from open_moves where move_act = m) or pg_temp.grp(c) is distinct from 'members' then raise exception 'reduced at once: the move is still in force (group %)', pg_temp.grp(c); end if;
   if exists (select 1 from bars_now where move_act = m) then raise exception 'reduced at once: the bar is still up'; end if;
-  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   perform system_tick(); perform system_tick();
   if pg_temp.ends(m) is distinct from 1::bigint then raise exception 'the tick ended a move the ruling had ended: % ends', pg_temp.ends(m); end if;
@@ -297,7 +297,7 @@ begin
     raise exception 'overturned did not refund the fee: % -> %, %', w0, pg_temp.wallet(c), got;
   end if;
   if staff_punishments(c, 7) is distinct from 0 then raise exception 'a group punishment overturned on appeal is counted: %', staff_punishments(c, 7); end if;
-  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if not exists (select 1 from acts where kind = 'post' and thread = pg_temp.announcements() and payload ->> 'body' = 'Overturned: moving a member into "Trial Members".') then
     raise exception 'the overturning was not said: %', (select jsonb_agg(payload ->> 'body') from acts where kind = 'post' and thread = pg_temp.announcements());

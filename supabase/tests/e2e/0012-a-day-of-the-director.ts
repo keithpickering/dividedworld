@@ -118,7 +118,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   assert.ok(moveAct, 'the move landed');
   assert.equal(boardName(), 'Director Day Docks', 'the board is called by the Boss\'s name for it');
   assert.equal(sql(`select c.staff from acts a join characters c on c.id = a.character where a.id = '${moveAct}'`), BOSS, 'the move is signed by the Boss');
-  // The speaker's own set where its persona has a list for the key, else the instance's (0444).
+  // The speaker's own set where its persona has a list for the key, else the instance's (0445).
   const lines = stockLinesOf(instance.system, BOSS, 'moveLanded');
   const words = sql(`select value ->> 'renameBoard' from settings where key = 'systemMoveWords'`).replace('{name}', 'Director Day Docks');
   const body = sql(`select payload ->> 'body' from acts where id = '${moveAct}'`);
@@ -145,7 +145,7 @@ test('a rename is queued, lands, is met by three characters and ends, and the ne
   assert.deepEqual([ended.payload.why, ended.payload.by], ['met', 'demand']);
   assert.equal(boardName(), 'Director Day Diner', 'the old name returns');
   assert.equal(sql(`select count(*) from open_moves where move_act = '${moveAct}'`), '0');
-  // The end's line is owed (0444), and paid from stock here as the tick's grace pays it.
+  // The end's line is owed (0445), and paid from stock here as the tick's grace pays it.
   sql(`select pay_owed_line(owed, null) from lines_owed_open`);
   assert.equal(sql(`select count(*) from acts a join characters c on c.id = a.character where c.staff = '${BOSS}' and a.kind = 'post' and a.created_at >= '${ended.created_at}'`), '1', 'the Boss says it');
 

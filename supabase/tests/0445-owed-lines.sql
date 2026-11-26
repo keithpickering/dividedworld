@@ -1,4 +1,4 @@
--- Owed lines: the tables, the debt and the grace (supabase/migrations/0444_persona_lines.sql, part 2; docs/plans/2026-11-25-persona-lines-plan.md, Task 4; design sections 1.1, 1.3, 3 and 4).
+-- Owed lines: the tables, the debt and the grace (supabase/migrations/0445_persona_lines.sql, part 2; docs/plans/2026-11-25-persona-lines-plan.md, Task 4; design sections 1.1, 1.3, 3 and 4).
 --
 -- 1. A move that ends owes its key by its maker and posts nothing; pay_owed_line(id, 'Hi.') posts it as the maker and pays `voiced`; a second call writes nothing.
 -- 2. A superseded end is owed by the current Boss, and facts.maker is the move's staff.
@@ -9,7 +9,7 @@
 -- 7. With The System off, the grace pays `unsaid` and posts nothing.
 -- 8. No client reads lines_owed, lines_owed_open or lines_paid, and none of the functions is a client's to call.
 -- 6b. A speaker locked out of the thread pays unsaid as well.
--- 9. The staff run's reads: owed_lines_due (a jsonb array, oldest first, failed rows last, with the office now) and standing_order_line_calls_today; staff_call_records takes the duty standingOrderLine.
+-- 9. The staff run's reads: owed_lines_due (a jsonb array, oldest first, failed rows last, with the office now) and standing_order_line_calls_today; staff_call_records takes the duties standingOrderLine and apologyJudge.
 -- 10. A line whose payment raises transiently goes behind the rest and is paid on a later tick; transient failures alone never make it unsaid, however many.
 -- 11. A lapse paid after its request was hidden pays unsaid ('the request is no longer public') and posts nothing.
 
@@ -380,6 +380,9 @@ begin
   -- staff_call_records takes the duty.
   perform record_staff_call(b, 'standingOrderLine', 'tl-a', '{}'::jsonb);
   if not exists (select 1 from staff_call_records r where r.duty = 'standingOrderLine') then raise exception 'staff_call_records did not take the duty standingOrderLine'; end if;
+  -- And every duty a staff run records, the apology judge's among them (#1140: supabase/functions/staff/apology.ts records apologyJudge).
+  perform record_staff_call(b, 'apologyJudge', 'tl-a', '{}'::jsonb);
+  if not exists (select 1 from staff_call_records r where r.duty = 'apologyJudge') then raise exception 'staff_call_records did not take the duty apologyJudge'; end if;
 end $$;
 
 -- ---- 10. A transient failure sends a line behind the rest; it is paid on a later tick, and never unsaid for failing ----

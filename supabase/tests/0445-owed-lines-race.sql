@@ -1,4 +1,4 @@
--- Owed lines, the queue row's lock (supabase/migrations/0444_persona_lines.sql, pay_owed_line, pay_owed_unsaid and system_tick's step 6; docs/plans/2026-11-25-persona-lines-plan.md, Task 4).
+-- Owed lines, the queue row's lock (supabase/migrations/0445_persona_lines.sql, pay_owed_line, pay_owed_unsaid and system_tick's step 6; docs/plans/2026-11-25-persona-lines-plan.md, Task 4).
 -- A race, so it commits through dblink on purpose (the way 0077-trap-locks.sql does), and its world is committed first.
 --
 -- 1. The staff run's payment and the tick's, at once: one session pays a line inside an open transaction, a second pay_owed_line waits on the queue row's lock, and when the first commits it

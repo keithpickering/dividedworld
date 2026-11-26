@@ -129,7 +129,7 @@ test('the facts the call sees carry the maker as a name, and never the speaker a
 });
 
 test('a move end as say_move_end writes it: the message holds the move\'s words, its why and how it ended', async () => {
-  // Exactly the facts say_move_end stores (0444): plain words for the move, the move's own why, the end in plain words, the maker's key.
+  // Exactly the facts say_move_end stores (0445): plain words for the move, the move's own why, the end in plain words, the maker's key.
   const d = fakeDb([row(1, BOSS, { facts: { move: 'a rule: no all-caps posts', why: 'Too many shouting posts.', ended: 'it was met', maker: MON } })]);
   const m = fakeModels(() => ({ line: 'ok' }));
   await runOwedLines(d.db, m.models, dividedWorld);

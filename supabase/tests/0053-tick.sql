@@ -148,7 +148,7 @@ begin
   if (select e.payload ->> 'why' || '/' || (e.payload ->> 'by') from acts e where e.kind = 'move_end' and e.target_act_id = mv_met) is distinct from 'met/demand' then raise exception 'a met demand did not end its move met'; end if;
   if exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id in (mv_open, mv_never)) then raise exception 'a move whose demand is not met, or that has none, ended'; end if;
   if (ran ->> 'met')::integer is distinct from 1 or (ran ->> 'expired')::integer is distinct from 0 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the tick counted %', ran; end if;
-  -- The line is owed (0444) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0445) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   -- The Boss says it in the announcements thread, in the stock line for it, once.
   if (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Met: the renaming of a board to "Met Manor".') is distinct from 1::bigint then raise exception 'the Boss did not say the demand was met once'; end if;
