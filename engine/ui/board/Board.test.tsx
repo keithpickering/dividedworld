@@ -1088,7 +1088,7 @@ describe('staff stickies', () => {
     expect(rows.map((r) => r.querySelector('.kb-thread-title')!.textContent)).toEqual(['Sticky: Notice 002', 'Sticky: Notice 001']);
     expect(rows[0]!.querySelector('.kb-thread-title b')!.textContent).toBe('Sticky: Notice 002');
     /* Once only, and the page's twenty slots are all still there. */
-    expect(screen.getAllByRole('link', { name: /Notice 002$/ })).toHaveLength(1);
+    expect([...document.querySelectorAll('.kb-thread-title')].filter((l) => l.textContent?.endsWith('Notice 002'))).toHaveLength(1);
     const list = document.querySelector('.kb-thread-list tbody:not([data-kb-stickies]):not([data-kb-pinned])') as HTMLElement;
     expect(within(list).getAllByRole('row')).toHaveLength(20);
     expect(within(list).queryByRole('link', { name: 'Notice 001' })).toBeNull();
