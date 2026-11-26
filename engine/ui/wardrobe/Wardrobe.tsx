@@ -18,7 +18,7 @@
  * it says of itself, and no more.
  */
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
-import { pieceShape, type Piece } from '../../rules/cosmetics.ts';
+import { GEAR_VIEWS, pieceShape, shownView, type GearView, type Piece } from '../../rules/cosmetics.ts';
 import { gemOf, rarityName } from '../cards/faces.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, ShownTrophy, TrophyItem, WardrobeItem } from '../data/api.ts';
@@ -41,6 +41,9 @@ const FIRST_WIDTH = 0.4;
 const FALLBACK_TALLNESS = 1.5;
 /** What is said when a nudge changes nothing: the piece is at an edge of the portrait. */
 const STUCK = "It can't move further that way.";
+
+/** The words for each view of a piece: the option's name and the live line. */
+const FACING: Readonly<Record<GearView, string>> = { 'side-left': 'Side, facing left', 'three-quarter-left': 'Three-quarter, facing left', front: 'Front', 'three-quarter-right': 'Three-quarter, facing right', 'side-right': 'Side, facing right' };
 
 type Drag = { readonly mode: 'move' | 'size' | 'turn'; readonly index: number; readonly start: Piece; readonly sx: number; readonly sy: number; readonly d0: number; readonly a0: number; readonly dirty: boolean };
 
@@ -223,6 +226,20 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
     const p = f(current);
     if (JSON.stringify(p) === JSON.stringify(current)) { speak(none); return; }
     change(pieces.map((x, i) => (i === at ? p : x)), at, words?.(p));
+  };
+  const faces = current && ui.gear[current.gear] ? GEAR_VIEWS.filter((v) => ui.gear[current.gear]!.views[v] !== undefined) : [];
+  const facingShown = current && ui.gear[current.gear] ? shownView(ui.gear[current.gear]!, current.view) : null;
+  const faceTo = (v: GearView) => edit((p) => ({ ...p, view: v }), `${nameOf(current!.gear)} already faces ${FACING[v]}.`, () => `${nameOf(current!.gear)} now faces ${FACING[v]}.`);
+  /* A radio group's arrows, kept here because they move the page's choice (and focus), whatever the browser does with a name. */
+  const faceKeys = (e: KeyboardEvent<HTMLInputElement>, v: GearView) => {
+    const by = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
+    if (by === 0 || e.altKey || e.ctrlKey || e.metaKey) return;
+    e.preventDefault();
+    e.stopPropagation();
+    const to = faces[(faces.indexOf(v) + by + faces.length) % faces.length]!;
+    faceTo(to);
+    const radios = e.currentTarget.closest('fieldset')?.querySelectorAll<HTMLInputElement>('input[type="radio"]');
+    radios?.[faces.indexOf(to)]?.focus();
   };
   const takeOff = () => {
     if (at === null || !current || busy) return;
@@ -464,6 +481,21 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
             <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" disabled={current === null || top || busy} onClick={() => reorder(1)}>Bring forward</button>
             <button type="button" className="kb-wardrobe-ctl kb-wardrobe-wide" disabled={current === null || bottom || busy} onClick={() => reorder(-1)}>Send back</button>
           </div>
+          {current && faces.length > 1 && (
+            <fieldset className="kb-wardrobe-facing" disabled={busy}>
+              <legend className="kb-wardrobe-facing-legend">Facing</legend>
+              {faces.map((v) => (
+                <label key={v} className="kb-wardrobe-face" data-kb-chosen={facingShown === v || undefined}>
+                  <input
+                    type="radio" name={`${group}-facing`} value={v} className="kb-visually-hidden" checked={facingShown === v}
+                    tabIndex={facingShown === v ? 0 : -1} onChange={() => faceTo(v)} onKeyDown={(e) => faceKeys(e, v)}
+                  />
+                  <span className="kb-wardrobe-face-art" aria-hidden="true"><img src={ui.gear[current.gear]!.views[v]!.art} alt="" draggable={false} /></span>
+                  <span className="kb-wardrobe-face-name">{FACING[v]}</span>
+                </label>
+              ))}
+            </fieldset>
+          )}
           <ButtonRow><GlassButton onClick={takeOff} disabled={current === null || busy}>Take it off</GlassButton></ButtonRow>
         </section>
 

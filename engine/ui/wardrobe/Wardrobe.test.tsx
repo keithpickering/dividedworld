@@ -12,6 +12,7 @@ const shop: Instance = {
   gear: [
     { key: 'band', name: 'Headband', line: 'Holds a thought in place.', rarity: 'common' },
     { key: 'tall', name: 'Tall Hat', line: 'Taller than it needs to be.', rarity: 'rare' },
+    { key: 'visor', name: 'Visor', line: 'Looks where it is told.', rarity: 'common' },
   ],
 };
 
@@ -52,6 +53,68 @@ const said = () => screen.getByRole('status', { name: 'Outfit messages' });
 
 beforeEach(() => { document.documentElement.setAttribute('data-kb-motion', 'reduce'); });
 afterEach(() => { cleanup(); document.documentElement.removeAttribute('data-kb-motion'); vi.restoreAllMocks(); });
+
+describe('the Facing row', () => {
+  const FACES = ['Side, facing left', 'Three-quarter, facing left', 'Front', 'Three-quarter, facing right', 'Side, facing right'];
+  async function withVisor() {
+    const { fake, pipe } = seeded({ held: { band: 1, visor: 1 } });
+    open(fake);
+    press(await item('Visor'), 'Enter');
+    return { fake, pipe };
+  }
+  const facing = () => within(screen.getByRole('group', { name: 'Facing' })).getAllByRole('radio');
+
+  test('a one-view item shows no Facing group', async () => {
+    open(seeded().fake);
+    press(await item('Headband'), 'Enter');
+    expect(worn()).toHaveLength(1);
+    expect(screen.queryByRole('group', { name: 'Facing' })).toBeNull();
+  });
+
+  test('a five-view item shows five options in order, the default checked while the piece\'s view is null', async () => {
+    await withVisor();
+    const options = facing();
+    expect(options.map((o) => o.getAttribute('aria-label') ?? o.closest('label')?.textContent)).toEqual(FACES);
+    expect(options.map((o) => (o as HTMLInputElement).checked)).toEqual([false, false, true, false, false]);
+    expect(screen.getByRole('radio', { name: 'Front' })).toBeChecked();
+    expect(document.querySelectorAll('.kb-wardrobe-facing img[alt=""]')).toHaveLength(5);
+  });
+
+  test('choosing Side, facing right checks it, says so, marks the page changed, and the saved outfit carries it', async () => {
+    const { fake } = await withVisor();
+    const save = vi.spyOn(fake, 'setOutfit');
+    fireEvent.click(screen.getByRole('radio', { name: 'Side, facing right' }));
+    expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
+    expect(said()).toHaveTextContent('Visor now faces Side, facing right.');
+    expect(screen.getByText(/You have changes not saved yet/u)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![1][0]).toMatchObject({ gear: 'visor', view: 'side-right' });
+  });
+
+  test('the arrow keys move the choice along the group', async () => {
+    await withVisor();
+    const front = screen.getByRole('radio', { name: 'Front' });
+    front.focus();
+    press(front, 'ArrowRight');
+    expect(screen.getByRole('radio', { name: 'Three-quarter, facing right' })).toBeChecked();
+    press(screen.getByRole('radio', { name: 'Three-quarter, facing right' }), 'ArrowDown');
+    expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
+    press(screen.getByRole('radio', { name: 'Side, facing right' }), 'ArrowRight');
+    expect(screen.getByRole('radio', { name: 'Side, facing left' })).toBeChecked();
+    press(screen.getByRole('radio', { name: 'Side, facing left' }), 'ArrowLeft');
+    expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
+  });
+
+  test('the pivot stays put: a view change leaves x and y alone', async () => {
+    const { fake } = await withVisor();
+    const save = vi.spyOn(fake, 'setOutfit');
+    fireEvent.click(screen.getByRole('radio', { name: 'Three-quarter, facing left' }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
+    expect(save.mock.calls[0]![1][0]).toMatchObject({ x: 0.5, y: 0.5, view: 'three-quarter-left' });
+  });
+});
 
 describe('Wear it, from a Random Event', () => {
   test('the found gear is on the stage on that mask as the page opens, and on no other', async () => {
@@ -520,5 +583,16 @@ describe('review: the pointer, the drop and the words', () => {
     vi.spyOn(fake, 'wardrobe').mockReturnValue(new Promise(() => undefined));
     open(fake);
     expect(await screen.findByText('Loading the wardrobe.')).toBeInTheDocument();
+  });
+});
+
+describe('the Facing row, axe', () => {
+  test('is axe clean with the row shown', async () => {
+    const { fake } = seeded({ held: { visor: 1 } });
+    const { container } = open(fake);
+    press(await item('Visor'), 'Enter');
+    expect(screen.getByRole('group', { name: 'Facing' })).toBeInTheDocument();
+    const found = await axeViolations(container);
+    expect(found, describeViolations(found)).toEqual([]);
   });
 });

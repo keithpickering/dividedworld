@@ -291,3 +291,54 @@
 .kb-glass .kb-wardrobe .kb-notice {
   padding: 8px 12px;
 }
+
+.kb-wardrobe-facing {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  min-inline-size: 0;
+}
+
+.kb-wardrobe-facing-legend {
+  padding: 0;
+  margin-bottom: 6px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--kb-glass-text-hi);
+}
+
+.kb-wardrobe-face {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  min-height: 44px;
+  padding: 6px;
+  border: 1px solid var(--kb-glass-text-2);
+  background: var(--kb-glass-field);
+  color: var(--kb-glass-text-hi);
+  font-weight: 700;
+  text-align: center;
+  cursor: pointer;
+}
+
+.kb-wardrobe-face[data-kb-chosen] {
+  border-color: var(--kb-glass-ready);
+  box-shadow: inset 0 0 0 2px var(--kb-glass-ready);
+}
+
+.kb-wardrobe-face:focus-within {
+  outline: 2px solid var(--kb-glass-neon-text);
+  outline-offset: 2px;
+}
+
+.kb-wardrobe-face-art img {
+  display: block;
+  width: 64px;
+  height: 48px;
+  object-fit: contain;
+}
