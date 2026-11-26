@@ -319,6 +319,30 @@ test('the Boss premise says most moves end and a few stay, and no longer says ev
   assert.ok(BOSS_PREMISE.includes('Most moves you make end: each has a demand the characters can meet and a time it expires, and you say what both are in plain words when you are asked to. A few build things that stay: a board you create, a thread you move, a board you merge into another. Those last until a later move changes them, and whoever is Boss after you inherits them.'));
 });
 
+test('FanGaME\'s split has a lead-in in the honeymoon\'s second week, and an announcement; everything has an announcement', () => {
+  const [split, , , everything] = fangame.arc as [Beat, Beat, Beat, Beat];
+  assert.deepEqual(split.leadIn?.unlock, [{ kind: 'phase', phase: 'honeymoon', daysIntoPhase: 7 }]);
+  assert.ok((split.leadIn?.brief ?? '').length > 0 && (split.leadIn?.mood ?? '').length > 0);
+  assert.ok(split.announce, 'split announces itself');
+  assert.ok(everything.announce, 'everything announces itself');
+});
+
+test('FanGaME\'s aftermath is restore, then unfinished: restore follows everything of the predecessor, and unfinished follows split landed and everything not', () => {
+  const aftermath = fangame.aftermath ?? [];
+  assert.deepEqual(aftermath.map((b) => b.key), ['restore', 'unfinished']);
+  const [restore, unfinished] = aftermath as [Beat, Beat];
+  assert.deepEqual(restore.unlock, [{ kind: 'beatLanded', beat: 'everything', of: 'predecessor' }, { kind: 'phase', phase: 'honeymoon' }]);
+  assert.equal(restore.bundle?.name, 'Restoration');
+  assert.ok(restore.announce, 'restore announces itself');
+  assert.deepEqual(unfinished.unlock, [
+    { kind: 'beatLanded', beat: 'split', of: 'predecessor' },
+    { kind: 'beatLanded', beat: 'everything', of: 'predecessor', not: true },
+    { kind: 'phase', phase: 'honeymoon' },
+  ]);
+  assert.equal(unfinished.bundle, undefined);
+  assert.ok(unfinished.announce, 'unfinished announces itself');
+});
+
 test('the instance passes instanceProblems with the arc in', () => {
   assert.deepEqual(instanceProblems(instance), []);
 });
