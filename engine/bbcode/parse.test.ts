@@ -1,11 +1,19 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { BBCODE_TAGS, MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse, safeHref, safeImageSrc } from './parse.ts';
-import type { BbNode, QuoteSpan } from './parse.ts';
+import fs from 'node:fs';
+import { BBCODE_TAGS, MAX_DEPTH, MAX_TAG, MAX_URL_LENGTH, parse as parseInput, safeHref, safeImageSrc } from './parse.ts';
+import type { BbNode, QuoteSpan, TextSpan } from './parse.ts';
 import { visibleText } from './visible.ts';
 
 const text = (t: string): BbNode => ({ type: 'text', text: t });
 const ACT = '0f8fad5b-d9cb-469f-a165-70867728950e';
+
+/** Every input this file parses, so the last test can hold each of them to the `texts` out-parameter (the unquoted corpus's bodies are read from its file there). */
+const parsed = new Set<string>();
+const parse: typeof parseInput = (input, ...rest) => {
+  parsed.add(input);
+  return parseInput(input, ...rest);
+};
 
 /** The tree with each autolink put back as the text it was written as, so a test of the other tags does not see links. */
 function unlinked(input: string): BbNode[] {
@@ -1083,4 +1091,115 @@ test('a site-relative [url] with a query and a fragment stays a link, with a nam
   assert.equal(covered.length, 1);
   assert.equal(covered[0]!.type, 'url');
   assert.deepEqual((covered[0] as unknown as { children: readonly BbNode[] }).children, [{ type: 'noparse', text: '[b]Bob[/b]' }]);
+});
+
+/** The `text` nodes of a tree, in the order they stand. */
+function textNodes(nodes: readonly BbNode[]): BbNode[] {
+  const out: BbNode[] = [];
+  const walk = (list: readonly BbNode[]) => {
+    for (const n of list) {
+      if (n.type === 'text') out.push(n);
+      else if ('children' in n) walk(n.children);
+      else if (n.type === 'list') for (const item of n.items) walk(item);
+    }
+  };
+  walk(nodes);
+  return out;
+}
+
+/** The tree for `input` with `texts`, after checking the tree is the one without it and every recorded slice is its node's words; the spans in tree order, null for a node left out. */
+function spansOf(input: string): { tree: BbNode[]; nodes: BbNode[]; spans: (TextSpan | null)[] } {
+  const texts = new Map<BbNode, TextSpan>();
+  const tree = parseInput(input, undefined, undefined, texts);
+  assert.deepEqual(tree, parseInput(input), `texts changes the tree: ${JSON.stringify(input)}`);
+  const nodes = textNodes(tree);
+  const inTree = new Set(nodes);
+  for (const [node, span] of texts) {
+    assert.ok(inTree.has(node), `a recorded node is not in the tree: ${JSON.stringify(input)}`);
+    assert.equal(input.slice(span.from, span.to), (node as { text: string }).text, `span does not hold its node's words: ${JSON.stringify(input)}`);
+  }
+  return { tree, nodes, spans: nodes.map((n) => texts.get(n) ?? null) };
+}
+
+test('texts: plain text is recorded whole', () => {
+  const { nodes, spans } = spansOf('just some words');
+  assert.equal(nodes.length, 1);
+  assert.deepEqual(spans, [{ from: 0, to: 15 }]);
+});
+
+test('texts: text inside bold, color and a list item is recorded where it stands', () => {
+  assert.deepEqual(spansOf('a [b]bold[/b] z').spans, [{ from: 0, to: 2 }, { from: 5, to: 9 }, { from: 13, to: 15 }]);
+  assert.deepEqual(spansOf('[color=red]hue[/color]').spans, [{ from: 11, to: 14 }]);
+  assert.deepEqual(spansOf('[list][*]one[*]two[/list]').spans, [{ from: 9, to: 12 }, { from: 15, to: 18 }]);
+});
+
+test('texts: text either side of a real quote is recorded, and the quote\'s own words are too', () => {
+  const input = `before [quote=${ACT}]inside[/quote] after`;
+  const { nodes, spans } = spansOf(input);
+  assert.deepEqual(nodes.map((n) => (n as { text: string }).text), ['before ', 'inside', ' after']);
+  assert.ok(spans.every((s) => s !== null));
+});
+
+test('texts: a tag past MAX_DEPTH read as text is recorded, merged with the words around it when they are contiguous', () => {
+  const input = '[b]'.repeat(MAX_DEPTH) + 'x[b]y[/b]z' + '[/b]'.repeat(MAX_DEPTH);
+  const { nodes, spans } = spansOf(input);
+  const inner = nodes.find((n) => (n as { text: string }).text.startsWith('x[b]y'));
+  assert.ok(inner, 'the words and the tag read as text are one node');
+  assert.deepEqual(spans[nodes.indexOf(inner)], { from: 3 * MAX_DEPTH, to: 3 * MAX_DEPTH + 'x[b]y[/b]z'.length });
+});
+
+test('texts: an unclosed tag read as text is recorded with its words', () => {
+  assert.deepEqual(spansOf('a [url]b').spans, [{ from: 0, to: 8 }]);
+  assert.deepEqual(spansOf('a [url=javascript:x]b[/url] c').spans, [{ from: 0, to: 29 }]);
+  assert.deepEqual(spansOf('[color=nope]x').spans, [{ from: 0, to: 13 }]);
+});
+
+test('texts: text either side of a bare address is recorded and the address is not a text node', () => {
+  const input = 'see https://example.com/a now';
+  const { tree, spans } = spansOf(input);
+  assert.deepEqual(tree.map((n) => n.type), ['text', 'autolink', 'text']);
+  assert.deepEqual(spans, [{ from: 0, to: 4 }, { from: 25, to: 29 }]);
+  const inLink = spansOf('[b]x https://example.com/ y[/b]');
+  assert.deepEqual(inLink.spans, [{ from: 3, to: 5 }, { from: 25, to: 27 }]);
+});
+
+test('texts: words that are not one slice of the input are left out', () => {
+  /* An empty noparse leaves nothing between the words, so their joined text is nowhere in the input. */
+  const { nodes, spans } = spansOf('a[noparse][/noparse]b');
+  assert.deepEqual(nodes, [{ type: 'text', text: 'ab' }]);
+  assert.deepEqual(spans, [null]);
+});
+
+test('texts: every text node of plain prose with simple formatting is recorded', () => {
+  const input = 'The [b]quick[/b] brown [i]fox[/i] jumps over [color=#f00]the[/color] lazy dog, [u]twice[/u].\n[list][*]one[*]two[/list] [url=https://e.com/]link[/url] ok [quote=' + ACT + ']q[/quote] and https://e.com/x end';
+  const { nodes, spans } = spansOf(input);
+  assert.ok(nodes.length >= 12);
+  assert.equal(spans.filter((s) => s !== null).length, nodes.length);
+});
+
+test('texts: the existing inputs and the unquoted corpus keep their tree and every recorded slice is its node\'s words', () => {
+  const corpus = JSON.parse(fs.readFileSync(new URL('../../supabase/tests/data/unquoted-corpus.json', import.meta.url), 'utf8')) as { body: string }[];
+  assert.ok(corpus.length >= 600);
+  /* The megabyte shapes are held to the cost below, not here: a deep equality of trees that size is slow for no more proof. */
+  const inputs = new Set([...parsed, ...corpus.map((c) => c.body)].filter((input) => input.length <= 20_000));
+  assert.ok(inputs.size > 700);
+  let total = 0;
+  let recorded = 0;
+  for (const input of inputs) {
+    const { nodes, spans } = spansOf(input);
+    total += nodes.length;
+    recorded += spans.filter((s) => s !== null).length;
+  }
+  assert.ok(recorded > 0 && recorded <= total);
+  if (process.env.KAYFABB_TEXTS_COUNTS) console.log(`texts recorded ${recorded} of ${total} text nodes in ${inputs.size} inputs`);
+});
+
+test('texts: asking for spans keeps the parse linear', () => {
+  const input = '[b]bold[/b] plain [url=https://example.com]link[/url] [i]x https://example.com/y z'.repeat(20_000);
+  const started = performance.now();
+  const texts = new Map<BbNode, TextSpan>();
+  const tree = parseInput(input, undefined, undefined, texts);
+  const ms = performance.now() - started;
+  assert.ok(ms < 3000, `took ${ms}ms`);
+  assert.equal(texts.size, textNodes(tree).length);
 });
