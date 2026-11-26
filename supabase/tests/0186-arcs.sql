@@ -485,11 +485,13 @@ create function pg_temp.leaks(proc regprocedure) returns text language sql as $$
   select string_agg(distinct m[1], ',') from regexp_matches(lower(pg_get_functiondef(proc)), '(owner|account|reaction)', 'g') m
 $$;
 create function pg_temp.poisoned() returns integer language sql as $$ select count(*)::integer from reaction_tallies $$;
+create function pg_temp.poisoned_owner() returns integer language sql as $$ select count(distinct c.owner)::integer from characters c $$;
 do $$
 declare
   p regprocedure;
 begin
   perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned()'::regprocedure) = 'reaction', 'the masks check did not find the word it exists to find');
+  perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned_owner()'::regprocedure) = 'owner', 'the masks check did not find an owner read');
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('beat_condition_holds', 'arc_board', 'arc_board_posts', 'arc_season_span', 'beat_role_board', 'arc_pass', 'arc_pass_for', 'arc_latest_states', 'beat_is_due', 'held_back_kinds', 'arc_for_meeting', 'arc_predecessor', 'arc_lead_ins', 'arc_aftermath_cond', 'arc_beat_events_guard') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
