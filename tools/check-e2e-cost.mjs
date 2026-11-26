@@ -28,6 +28,7 @@ import { fileURLToPath } from 'node:url';
 import { parse } from 'yaml';
 import { SEP, keysOf, keyProblems, listProblems, price, pack, WORKERS, BUDGET_MINUTES } from './e2e-cost.mjs';
 
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 const isObject = (v) => typeof v === 'object' && v !== null && !Array.isArray(v);
 
 /** @param {any} manifest @returns {string[]} */
@@ -56,6 +57,9 @@ function manifestProblems(manifest) {
   return out;
 }
 
+/** One decimal, "under 1%" below one percent so a small share never reads 0%. @param {number} share */
+const shareText = (share) => (share === 0 ? '0%' : share < 0.01 ? 'under 1%' : `${Number((share * 100).toFixed(1))}%`);
+
 /**
  * @param {{ manifest: any, keys: string[], shards: number, list?: any }} input
  * @returns {{ problems: string[], report: { unpricedShare: number, busiestMinutes: number, lines: string[] } }}
@@ -77,21 +81,51 @@ export function problems({ manifest, keys, shards, list }) {
   const { totals } = pack(keys, usable, shards);
   const busiest = Math.max(0, ...totals) / WORKERS / 60;
   const lines = [
-    `${keys.length} tests; ${(share * 100).toFixed(0)}% of the estimated cost is unpriced (priced by fallback)${share > 0 ? ': refresh e2e/cost.json from a CI run' : ''}`,
+    `${keys.length} tests; ${shareText(share)} of the estimated cost is unpriced (priced by fallback)${share > 0 ? ': refresh e2e/cost.json from a CI run' : ''}`,
     `busiest shard at ${shards} shards: ${busiest.toFixed(1)} min of tests over ${WORKERS} workers, budget ${BUDGET_MINUTES} min`,
   ];
   if (busiest > BUDGET_MINUTES) lines.push(`over budget: add a shard number to the e2e matrix in .github/workflows/web.yml`);
   return { problems: found, report: { unpricedShare: share, busiestMinutes: busiest, lines } };
 }
 
-/** The length of the e2e job's `shard` list in web.yml. @param {string} text */
+/**
+ * The length of the e2e job's `shard` list in web.yml, or an error naming the fault.
+ * @param {string} text @returns {{ shards: number } | { error: string }}
+ */
 export function matrixShards(text) {
-  const wf = parse(text);
-  for (const job of Object.values(wf.jobs ?? {})) {
-    const shard = job?.strategy?.matrix?.shard;
-    if (Array.isArray(shard)) return shard.length;
+  const where = '.github/workflows/web.yml';
+  let wf;
+  try {
+    wf = parse(text);
+  } catch (e) {
+    return { error: `${where} is not valid YAML: ${e.message}` };
   }
-  throw new Error('web.yml has no job with a strategy.matrix.shard list');
+  const job = wf?.jobs && Object.hasOwn(wf.jobs, 'e2e') ? wf.jobs.e2e : undefined;
+  if (!job) return { error: `${where} has no job named e2e` };
+  const shard = job.strategy?.matrix?.shard;
+  if (!Array.isArray(shard)) return { error: `${where}: the e2e job's strategy.matrix.shard must be a list of shard numbers, not an expression or missing` };
+  if (shard.length === 0) return { error: `${where}: the e2e job's shard list is empty; it needs at least one shard` };
+  return { shards: shard.length };
+}
+
+/**
+ * Reads a spawnSync-shaped result of `playwright test --list --reporter=json`: the list, or an error naming the cause.
+ * @param {{ error?: Error, status: number | null, signal?: string | null, stdout?: string, stderr?: string }} run
+ * @returns {{ list: any } | { error: string }}
+ */
+export function readList(run) {
+  if (run.error) return { error: `playwright --list could not run: ${run.error.message}` };
+  const tail = (run.stderr ?? '').trim().split('\n').slice(-10).join('\n');
+  if (run.status !== 0) return { error: `playwright --list ${run.signal ? `was stopped by ${run.signal}` : `exited ${run.status}`}${tail ? `:\n${tail}` : ''}` };
+  let list;
+  try {
+    list = JSON.parse(run.stdout ?? '');
+  } catch {
+    return { error: `playwright --list did not print JSON (exit ${run.status})${tail ? `:\n${tail}` : ''}` };
+  }
+  const errors = Array.isArray(list?.errors) ? list.errors : [];
+  if (errors.length) return { error: `playwright --list reported errors:\n${errors.map((e) => `  ${e?.message ?? JSON.stringify(e)}`).join('\n')}` };
+  return { list };
 }
 
 /**
@@ -100,13 +134,13 @@ export function matrixShards(text) {
  */
 export function listSuite() {
   const cli = createRequire(import.meta.url).resolve('@playwright/test/cli');
-  const run = spawnSync(process.execPath, [cli, 'test', '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024 });
-  try {
-    return { list: JSON.parse(run.stdout) };
-  } catch {
-    return { error: `playwright --list did not print JSON (exit ${run.status})\n${run.stderr}` };
-  }
+  return readList(spawnSync(process.execPath, [cli, 'test', '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, cwd: ROOT }));
 }
+
+const bail = (message) => {
+  console.error(`PROBLEM ${message}`);
+  process.exit(1);
+};
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
   const listed = listSuite();
@@ -115,9 +149,21 @@ if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(proces
     process.exit(1);
   }
   const list = listed.list;
-  const manifest = JSON.parse(fs.readFileSync('e2e/cost.json', 'utf8'));
-  const shards = matrixShards(fs.readFileSync('.github/workflows/web.yml', 'utf8'));
-  const { problems: found, report } = problems({ manifest, keys: keysOf(list), shards, list });
+  let manifest;
+  try {
+    manifest = JSON.parse(fs.readFileSync(`${ROOT}e2e/cost.json`, 'utf8'));
+  } catch (e) {
+    bail(`e2e/cost.json could not be read as JSON: ${e.message}`);
+  }
+  let yamlText;
+  try {
+    yamlText = fs.readFileSync(`${ROOT}.github/workflows/web.yml`, 'utf8');
+  } catch (e) {
+    bail(`.github/workflows/web.yml could not be read: ${e.message}`);
+  }
+  const matrix = matrixShards(yamlText);
+  if ('error' in matrix) bail(matrix.error);
+  const { problems: found, report } = problems({ manifest, keys: keysOf(list), shards: matrix.shards, list });
   for (const line of report.lines) console.log(line);
   for (const p of found) console.error(`PROBLEM ${p}`);
   if (found.length) {

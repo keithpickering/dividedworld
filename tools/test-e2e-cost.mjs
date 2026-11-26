@@ -11,7 +11,7 @@
 import {
   keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES, refresh, manifestText, refreshCli,
 } from './e2e-cost.mjs';
-import { problems } from './check-e2e-cost.mjs';
+import { problems, matrixShards, readList } from './check-e2e-cost.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -388,6 +388,35 @@ throws('refresh: a missing keys list is refused', () => refresh(OLD, sh((s) => {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
+
+/* ---- readList, matrixShards, share text ---- */
+const okRun = { status: 0, stdout: JSON.stringify(LIST), stderr: '' };
+eq('readList: a clean run gives the list', readList(okRun), { list: LIST });
+const errOf = (name, run, re) => {
+  const got = readList(run);
+  if ('error' in got && re.test(got.error)) ok(name);
+  else fail(name, `expected an error matching ${re}, got ${JSON.stringify(got).slice(0, 200)}`);
+};
+errOf('readList: a spawn error', { error: new Error('spawn ENOENT'), status: null, stdout: '', stderr: '' }, /ENOENT/);
+errOf('readList: a non-zero exit with JSON still fails, naming stderr', { ...okRun, status: 1, stderr: 'a\nb\nboom here' }, /exited 1[\s\S]*boom here/);
+errOf('readList: killed by a signal', { ...okRun, status: null, signal: 'SIGKILL' }, /SIGKILL/);
+errOf('readList: list.errors are named', { ...okRun, stdout: JSON.stringify({ suites: [], errors: [{ message: 'config exploded' }] }) }, /config exploded/);
+errOf('readList: not JSON', { status: 0, stdout: 'nope', stderr: '' }, /JSON/);
+const wf = (jobs) => `jobs:\n${jobs}`;
+eq('matrixShards: found', matrixShards(wf('  e2e:\n    strategy:\n      matrix:\n        shard: [1, 2, 3]\n')), { shards: 3 });
+const msErr = (name, text, re) => {
+  const got = matrixShards(text);
+  if ('error' in got && re.test(got.error) && /web\.yml/.test(got.error)) ok(name);
+  else fail(name, `expected an error matching ${re} naming web.yml, got ${JSON.stringify(got)}`);
+};
+msErr('matrixShards: no e2e job', wf('  build:\n    strategy:\n      matrix:\n        shard: [1]\n'), /e2e/);
+msErr('matrixShards: wrong job only has the list', wf('  other:\n    strategy:\n      matrix:\n        shard: [1]\n  e2e:\n    runs-on: x\n'), /e2e/);
+msErr('matrixShards: empty list', wf('  e2e:\n    strategy:\n      matrix:\n        shard: []\n'), /empty|at least/);
+msErr('matrixShards: an expression string', wf("  e2e:\n    strategy:\n      matrix: ${{ fromJSON(x) }}\n"), /list/);
+msErr('matrixShards: YAML that does not parse', 'jobs: [unclosed', /YAML|parse/i);
+const tiny = problems({ manifest: { measured: null, specs: { 'a.spec.ts': { count: 1, mean: 1 } }, tests: {} }, keys: [...Array.from({ length: 299 }, (_, i) => `a.spec.ts › t${i}`), 'z.spec.ts › new'], shards: 2 }).report;
+if (tiny.lines.some((l) => /under 1%/.test(l)) && !tiny.lines.some((l) => /\b0% /.test(l))) ok('report: a share under 1% is not shown as 0%');
+else fail('report: a share under 1% is not shown as 0%', JSON.stringify(tiny.lines));
 
 if (failures) {
   console.error(`\n${failures} case${failures === 1 ? '' : 's'} failed`);
