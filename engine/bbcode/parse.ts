@@ -232,6 +232,8 @@ interface Frame {
   readonly name: string;
   /** The opening tag as written. */
   readonly raw: string;
+  /** Where `raw` begins in the input (a frame that is not the root's own). */
+  readonly rawFrom?: number;
   /** Nearest frame that is not literal, at or below this one (itself when it is not literal). */
   home: Frame;
   /** For a frame that is not literal, the home of the frame under it. */
@@ -356,7 +358,7 @@ function trimAddress(text: string, start: number, end: number): number {
  * (`url`, which would nest an anchor) or an inline spoiler (a button holds nothing interactive). `img`, `code`, `noparse`
  * and `video` hold no `text` node. Arrays are the parser's own, so they are rewritten in place.
  */
-function autolinkTree(root: Out): void {
+function autolinkTree(root: Out, known: Map<BbNode, TextSpan> | undefined): void {
   const stack: Out[] = [root];
   while (stack.length > 0) {
     const arr = stack.pop() as Out;
@@ -367,7 +369,14 @@ function autolinkTree(root: Out): void {
         const parts = n.text.includes('://') ? splitAddresses(n.text) : null;
         if (parts) {
           changed = true;
-          for (const p of parts) next.push(p);
+          /* The parts are consecutive slices of this node's text, so each text part lies where the node's span begins, plus the parts before it. */
+          const span = known?.get(n);
+          let at = span?.from ?? 0;
+          for (const p of parts) {
+            if (known && span && p.type === 'text') known.set(p, { from: at, to: at + p.text.length });
+            at += p.type === 'text' || p.type === 'autolink' ? p.text.length : 0;
+            next.push(p);
+          }
         } else next.push(n);
         continue;
       }
@@ -380,15 +389,31 @@ function autolinkTree(root: Out): void {
   }
 }
 
-function pushText(out: Out, text: string): void {
+/**
+ * Add text to a content list, merged into the `text` node before it when there is one. `known`, when the caller wants spans (`parse`'s `texts`), holds where each text node's
+ * words lie in the input, and `from` is where this piece lies there (null when the piece is not a copy of one stretch of the input). A merged node keeps a span only when both of
+ * its pieces have one and the second begins where the first ends, so a recorded node is always `input.slice(from, to)`.
+ */
+function pushText(out: Out, text: string, known: Map<BbNode, TextSpan> | undefined, from: number | null): void {
   if (text.length === 0) return;
   const last = out[out.length - 1];
-  if (last && last.type === 'text') out[out.length - 1] = { type: 'text', text: last.text + text };
-  else out.push({ type: 'text', text });
+  if (last && last.type === 'text') {
+    const node: BbNode = { type: 'text', text: last.text + text };
+    out[out.length - 1] = node;
+    if (known) {
+      const before = known.get(last);
+      known.delete(last);
+      if (before && from !== null && before.to === from) known.set(node, { from: before.from, to: from + text.length });
+    }
+  } else {
+    const node: BbNode = { type: 'text', text };
+    out.push(node);
+    if (known && from !== null) known.set(node, { from, to: from + text.length });
+  }
 }
 
-function pushNode(out: Out, node: BbNode): void {
-  if (node.type === 'text') pushText(out, node.text);
+function pushNode(out: Out, node: BbNode, known: Map<BbNode, TextSpan> | undefined): void {
+  if (node.type === 'text') pushText(out, node.text, known, known?.get(node)?.from ?? null);
   else out.push(node);
 }
 
@@ -448,11 +473,38 @@ export interface QuoteSpan {
   readonly to: number;
 }
 
+/** Where a `text` node's words lie in the input as written: `input.slice(from, to)` is exactly the node's text. */
+export interface TextSpan {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * Copy the span of each `text` node the finished tree holds (and no node that was merged or split away) from `known` to `texts`: one iterative walk, linear in the tree. A span is
+ * copied only where the input's slice is the node's text, so a span the bookkeeping got wrong is left out rather than handed to a caller who writes into the input by it.
+ */
+function collectTexts(input: string, root: readonly BbNode[], known: ReadonlyMap<BbNode, TextSpan>, texts: Map<BbNode, TextSpan>): void {
+  const stack: (readonly BbNode[])[] = [root];
+  while (stack.length > 0) {
+    for (const n of stack.pop() as readonly BbNode[]) {
+      if (n.type === 'text') {
+        const span = known.get(n);
+        if (span && input.slice(span.from, span.to) === n.text) texts.set(n, span);
+      } else if ('children' in n) stack.push(n.children);
+      else if (n.type === 'list') for (const item of n.items) stack.push(item);
+    }
+  }
+}
+
 /**
  * `spans`, when given, is filled with one entry for each real quote the parse builds, in the order they close, by the offsets the parser itself worked at, so a caller
  * can change the input without re-serializing the tree (engine/bbcode/conceal.ts). It changes nothing about the tree. `forged` is the Acts whose real quotes read as counterfeits (a forged quote records no span).
+ * `texts`, when given, is filled with one entry for each `text` node of the returned tree whose words are one contiguous slice of the input, keyed by the node as the tree holds it
+ * (as `visibleWalk`'s offsets are): `input.slice(from, to) === node.text`. A node whose pieces are not contiguous in the input, or whose text the parser built rather than copied, is left out. It changes nothing about the tree.
  */
-export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<string>): BbNode[] {
+export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<string>, texts?: Map<BbNode, TextSpan>): BbNode[] {
+  /* Where each text node built so far lies in the input, while the tree is still being made (a node that is merged or split away is dropped from it). */
+  const known: Map<BbNode, TextSpan> | undefined = texts ? new Map() : undefined;
   /* The ids as the parser reads a quote's: lowercase. */
   const forgedLower = forged && forged.size > 0 ? new Set([...forged].map((a) => a.toLowerCase())) : undefined;
   const root: Frame = { kind: 'root', name: '', raw: '', home: null as never, parent: null, depth: 0, out: [] };
@@ -485,9 +537,9 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
       if (href !== null && only) {
         into.push({ type: 'url', href, children: [only] });
       } else {
-        pushText(into, f.raw);
-        for (const n of f.out) pushNode(into, n);
-        if (closer !== null) pushText(into, closer);
+        pushText(into, f.raw, known, f.rawFrom ?? null);
+        for (const n of f.out) pushNode(into, n, known);
+        if (closer !== null) pushText(into, closer, known, tagAt);
       }
     }
   };
@@ -513,7 +565,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
   /** An opener that is text, remembered so its closer is text too. */
   const literalOpen = (name: string, raw: string): void => {
     const home = top().home;
-    pushText(home.out, raw);
+    pushText(home.out, raw, known, tagAt);
     push({ kind: 'literal', name, raw, home, parent: null, depth: home.depth, out: home.out });
   };
 
@@ -535,7 +587,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
       else literalOpen(name, raw);
       return;
     }
-    const f: Frame = { kind, name, raw, home: null as never, parent: home, depth: home.depth + 1, out: [], ...extra };
+    const f: Frame = { kind, name, raw, rawFrom: tagAt, home: null as never, parent: home, depth: home.depth + 1, out: [], ...extra };
     f.home = f;
     push(f);
     if (name === 'url') openUrls++;
@@ -555,13 +607,13 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
 
   const closeTag = (name: string, raw: string): void => {
     if ((open.get(name) ?? 0) === 0) {
-      pushText(top().home.out, raw);
+      pushText(top().home.out, raw, known, tagAt);
       return;
     }
     for (;;) {
       const f = pop();
       if (f.name === name) {
-        if (f.kind === 'literal') pushText(top().home.out, raw);
+        if (f.kind === 'literal') pushText(top().home.out, raw, known, tagAt);
         else finish(f, raw);
         return;
       }
@@ -619,7 +671,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
       if (eq >= 0) value = unquote(body.slice(eq + 1));
     }
 
-    pushText(top().home.out, input.slice(textStart, i));
+    pushText(top().home.out, input.slice(textStart, i), known, textStart);
     textStart = close + 1;
     pos = close + 1;
     tagAt = i;
@@ -627,7 +679,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
     if (openISpoilers > 0 && name !== '*' && (BLOCK.has(name) || name === 'url' || (name === 'ispoiler' && !isCloser))) {
       /* Opener or closer, a block tag, a link or a nested spoiler inside an inline spoiler is the words as written
          (the spoiler is a button, and a button holds nothing interactive). */
-      pushText(top().home.out, raw);
+      pushText(top().home.out, raw, known, tagAt);
     } else if (isCloser) {
       closeTag(name, raw);
     } else if (name === '*') {
@@ -637,7 +689,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
         (home.items ??= []).push(item);
         home.out = item;
       } else {
-        pushText(home.out, raw);
+        pushText(home.out, raw, known, tagAt);
       }
     } else if (name === 'code' || name === 'img' || name === 'video' || name === 'youtube' || name === 'noparse') {
       const end = rawEnds[name] as { re: RegExp; missing: boolean; at: number };
@@ -655,7 +707,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
         if (!end.missing) found = end.at;
       }
       if (found < 0) {
-        pushText(home.out, raw);
+        pushText(home.out, raw, known, tagAt);
       } else if (name === 'code') {
         home.out.push({ type: 'code', text: input.slice(close + 1, found) });
         textStart = pos = found + '[/code]'.length;
@@ -670,7 +722,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
         if (video) {
           home.out.push({ type: 'video', video });
           textStart = pos = found + name.length + 3;
-        } else pushText(home.out, raw);
+        } else pushText(home.out, raw, known, tagAt);
       } else if (
         /* A bound on work, not on meaning, so no test can see it: contents this much longer than
            the longest address cannot be one (surrounding blanks are trimmed), and checking them
@@ -682,7 +734,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
       } else {
         /* Only the opener is text; what follows is parsed as usual, so a bad image cannot
            swallow the words and tags between it and some later closer. */
-        pushText(home.out, raw);
+        pushText(home.out, raw, known, tagAt);
       }
     } else if (name in SIMPLE) {
       const type = SIMPLE[name] as 'bold' | 'italic' | 'underline' | 'strike';
@@ -739,7 +791,7 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
     } else if (name === 'hr') {
       /* No closer: it is a rule, whole. A `[/hr]` is not in CLOSERS, so it stays text. */
       if (value === undefined) top().home.out.push({ type: 'hr' });
-      else pushText(top().home.out, raw);
+      else pushText(top().home.out, raw, known, tagAt);
     } else if (name === 'sub' || name === 'sup' || name === 'marquee' || name === 'rainbow') {
       if (value === undefined) openReal(name, raw, 'simple', { build: (children) => ({ type: name, children }) });
       else literalOpen(name, raw);
@@ -764,12 +816,13 @@ export function parse(input: string, spans?: QuoteSpan[], forged?: ReadonlySet<s
     }
   }
 
-  pushText(top().home.out, input.slice(textStart));
+  pushText(top().home.out, input.slice(textStart), known, textStart);
   tagAt = input.length;
   while (stack.length > 1) {
     const f = pop();
     if (f.kind !== 'literal') finish(f, null);
   }
-  autolinkTree(root.out);
+  autolinkTree(root.out, known);
+  if (texts && known) collectTexts(input, root.out, known, texts);
   return root.out;
 }
