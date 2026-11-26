@@ -9,9 +9,12 @@
  * refuse both, so an assertion that has gone quiet fails here rather than reading as green.
  */
 import {
-  keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES, refresh, manifestText,
+  keysOf, keyProblems, listProblems, price, pack, parseCostShard, compareRun, testList, WORKERS, BUDGET_MINUTES, refresh, manifestText, refreshCli,
 } from './e2e-cost.mjs';
 import { problems } from './check-e2e-cost.mjs';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 
 let failures = 0;
 const ok = (name) => console.log(`ok    ${name}`);
@@ -331,6 +334,60 @@ throws('refresh: differing commits are refused', () => refresh(OLD, sh((s) => { 
 throws('refresh: differing n are refused', () => refresh(OLD, sh((s) => { s[2].assigned.n = 4; }), 'd', 'r'), /\bn\b/);
 throws('refresh: no shards at all is refused', () => refresh(OLD, [], 'd', 'r'), /no shards/i);
 throws('refresh: a key assigned to two shards is refused', () => refresh(OLD, sh((s) => { s[1].assigned.keys.push('a.spec.ts › t1'); }), 'd', 'r'), /two shards|more than one/i);
+
+/* review fixes: bad k and n, rounding, floor, the guard, the CLI */
+throws('refresh: a missing n is refused', () => refresh(OLD, sh((s) => { delete s[0].assigned.n; }), 'd', 'r'), /\bn\b.*(whole|integer|missing)/i);
+throws('refresh: a non-integer k is refused', () => refresh(OLD, sh((s) => { s[0].assigned.k = '1'; }), 'd', 'r'), /\bk\b.*(whole|integer)/i);
+throws('refresh: a missing keys list is refused', () => refresh(OLD, sh((s) => { delete s[0].assigned.keys; }), 'd', 'r'), /keys/i);
+{
+  const m = refresh({ measured: null, specs: {}, tests: {} }, [shard(1, 1, 'c', [
+    ['r.spec.ts › a', 'expected', [['passed', 1000]]], ['r.spec.ts › b', 'expected', [['passed', 1000]]], ['r.spec.ts › c', 'expected', [['passed', 1000]]],
+    ['r.spec.ts › d', 'expected', [['passed', 1000]]], ['r.spec.ts › e', 'expected', [['passed', 30040]]],
+  ])], '2026-11-26', '1');
+  eq('refresh: an entry is rounded to 0.1 s (30.04 s is 30)', m.tests['r.spec.ts › e'], 30);
+  const z = refresh({ measured: null, specs: {}, tests: {} }, [shard(1, 1, 'c', [['z.spec.ts › a', 'expected', [['passed', 0]]], ['z.spec.ts › b', 'expected', [['passed', 0]]]])], '2026-11-26', '1');
+  eq('refresh: the floor counts in the spec mean (two 0 ms passes give 0.1)', z.specs['z.spec.ts'].mean, 0.1);
+  const g = refresh({ measured: null, specs: { 'g.spec.ts': { count: 1, mean: 9 } }, tests: {} }, [shard(1, 1, 'c', [['g.spec.ts › a', 'expected', [['passed', 1000], ['interrupted', 5]]]])], '2026-11-26', '1');
+  eq('refresh: a status-expected test with an interrupted result keeps its old price', g.specs['g.spec.ts'].mean, 9);
+}
+{
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'e2e-cost-'));
+  try {
+    const put = (dir, name, v) => { fs.mkdirSync(path.join(dir, name.split('/')[0]), { recursive: true }); fs.writeFileSync(path.join(dir, name), typeof v === 'string' ? v : JSON.stringify(v)); };
+    const build = (name, times) => {
+      const dir = path.join(tmp, name);
+      times.forEach((time, i) => {
+        const key = `s${i + 1}.spec.ts › t`;
+        put(dir, `e2e-timings-${i + 1}/assigned.json`, { k: i + 1, n: times.length, commit: 'c', keys: [key] });
+        put(dir, `e2e-timings-${i + 1}/results.json`, reportOf([[key, 'expected', [['passed', 4000]]]], time));
+      });
+      return dir;
+    };
+    const out = path.join(tmp, 'cost.json');
+    const fresh = () => fs.writeFileSync(out, '{ "measured": null, "specs": {}, "tests": {} }\n');
+    fresh();
+    const ok2 = build('ok', ['2026-11-25T23:00:00Z', '2026-11-26T01:00:00Z']);
+    const said = refreshCli(['--refresh', ok2, '--run', '7', '--out', out]);
+    eq('cli: the date is the newest report\'s, and the file text is exact', fs.readFileSync(out, 'utf8'),
+      manifestText({ measured: { run: '7', date: '2026-11-26' }, specs: { 's1.spec.ts': { count: 1, mean: 4 }, 's2.spec.ts': { count: 1, mean: 4 } }, tests: {} }));
+    if (/shard 1\/2/.test(said) && /shard 2\/2/.test(said)) ok('cli: prints each shard\'s estimate'); else fail('cli: prints each shard\'s estimate', said);
+    throws('cli: a missing directory is refused plainly', () => refreshCli(['--refresh', path.join(tmp, 'nope'), '--run', '1', '--out', out]), /no such directory/i);
+    const noRes = build('nores', ['2026-11-26T01:00:00Z']);
+    fs.rmSync(path.join(noRes, 'e2e-timings-1/results.json'));
+    throws('cli: a folder without results.json is refused, naming it', () => refreshCli(['--refresh', noRes, '--run', '1', '--out', out]), /e2e-timings-1.*results\.json/);
+    const noTime = build('notime', ['2026-11-26T01:00:00Z']);
+    put(noTime, 'e2e-timings-1/results.json', { suites: [] });
+    throws('cli: a report without stats.startTime is refused', () => refreshCli(['--refresh', noTime, '--run', '1', '--out', out]), /startTime/);
+    const bad = build('bad', ['2026-11-26T01:00:00Z']);
+    put(bad, 'e2e-timings-1/assigned.json', '{ nope');
+    throws('cli: bad JSON names the file', () => refreshCli(['--refresh', bad, '--run', '1', '--out', out]), /assigned\.json/);
+    throws('cli: a flag where the value belongs is refused', () => refreshCli(['--refresh', '--run', '1']), /--refresh/);
+    throws('cli: --run without a value is refused', () => refreshCli(['--refresh', ok2, '--run']), /--run/);
+    throws('cli: a missing old manifest is refused, not read as empty', () => refreshCli(['--refresh', ok2, '--run', '1', '--out', path.join(tmp, 'absent.json')]), /manifest/i);
+  } finally {
+    fs.rmSync(tmp, { recursive: true, force: true });
+  }
+}
 
 if (failures) {
   console.error(`\n${failures} case${failures === 1 ? '' : 's'} failed`);

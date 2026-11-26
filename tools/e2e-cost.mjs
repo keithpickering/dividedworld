@@ -6,7 +6,7 @@
  * ones ran far past the rest. `--cost-shard=k/n` lists the suite, prices every test from the
  * manifest `e2e/cost.json`, packs the whole list into n shards longest first, and runs shard k
  * as a `--test-list`. Every function here is pure; the only file access is `refreshCli` (`--refresh`, see
- * its comment), and this module's self-test is tools/test-e2e-cost.mjs.
+ * its comment; the default manifest path is e2e/cost.json under the repository root, not the cwd), and this module's self-test is tools/test-e2e-cost.mjs.
  *
  * A KEY is a test's `file › describe › ... › title`: the file relative to e2e/, then each
  * describe title, then the test title, joined by ' › '. It is the line `--test-list` reads.
@@ -266,6 +266,14 @@ function measured(outcome) {
 export function refresh(old, shards, date, run) {
   const faults = [];
   if (shards.length === 0) throw new Error('refresh: no shards were given');
+  shards.forEach(({ assigned: a }, i) => {
+    const who = a?.k !== undefined ? `the folder for k=${a.k}` : `folder ${i + 1}`;
+    if (!Number.isInteger(a?.k) || a.k < 1) faults.push(`${who}: k must be a whole number of 1 or more`);
+    if (!Number.isInteger(a?.n) || a.n < 1) faults.push(`${who}: n must be a whole number of 1 or more`);
+    if (!Array.isArray(a?.keys)) faults.push(`${who}: keys must be a list`);
+    if (typeof a?.commit !== 'string' || !a.commit) faults.push(`${who}: commit must be a non-empty string`);
+  });
+  if (faults.length > 0) throw new Error(`refresh refused: ${faults.join('; ')}`);
   const ns = [...new Set(shards.map((s) => s.assigned.n))];
   if (ns.length > 1) faults.push(`the shards disagree on n: ${ns.join(', ')}`);
   const n = ns[0];
@@ -333,12 +341,16 @@ export function refreshCli(argv) {
     const hit = argv.find((a) => a.startsWith(`${name}=`));
     if (hit) return hit.slice(name.length + 1);
     const i = argv.indexOf(name);
-    return i >= 0 ? argv[i + 1] : undefined;
+    if (i < 0) return undefined;
+    const v = argv[i + 1];
+    if (v === undefined || v.startsWith('-')) throw new Error(`${name} needs a value`);
+    return v;
   };
   const dir = arg('--refresh');
   const run = arg('--run');
-  const out = arg('--out') ?? 'e2e/cost.json';
+  const out = arg('--out') ?? fileURLToPath(new URL('../e2e/cost.json', import.meta.url));
   if (!dir || !run) throw new Error('usage: node tools/e2e-cost.mjs --refresh <dir> --run <id> [--out <path>]');
+  if (!fs.existsSync(dir) || !fs.statSync(dir).isDirectory()) throw new Error(`no such directory: ${dir}`);
   const folders = fs.readdirSync(dir, { withFileTypes: true }).filter((d) => d.isDirectory() && d.name.startsWith('e2e-timings-')).map((d) => d.name).sort();
   if (folders.length === 0) throw new Error(`no e2e-timings-* folder in ${dir}`);
   const faults = [];
@@ -347,7 +359,7 @@ export function refreshCli(argv) {
     const read = (file) => {
       const path = `${dir}/${name}/${file}`;
       if (!fs.existsSync(path)) { faults.push(`${name} has no ${file}`); return null; }
-      return JSON.parse(fs.readFileSync(path, 'utf8'));
+      return parseJson(path);
     };
     const assigned = read('assigned.json');
     const report = read('results.json');
@@ -367,8 +379,18 @@ export function refreshCli(argv) {
   return lines.join('\n');
 }
 
+function parseJson(path) {
+  try {
+    return JSON.parse(fs.readFileSync(path, 'utf8'));
+  } catch (e) {
+    throw new Error(`refresh refused: ${path} is not readable JSON (${e.message})`);
+  }
+}
+
+/** The manifest being refreshed must exist: an absent one is a wrong path, not an empty suite. */
 function readManifest(path) {
-  return fs.existsSync(path) ? JSON.parse(fs.readFileSync(path, 'utf8')) : { measured: null, specs: {}, tests: {} };
+  if (!fs.existsSync(path)) throw new Error(`refresh refused: the old manifest ${path} does not exist (write it as { "measured": null, "specs": {}, "tests": {} } to start one)`);
+  return parseJson(path);
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === fs.realpathSync(process.argv[1])) {
