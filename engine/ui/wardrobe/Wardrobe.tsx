@@ -229,7 +229,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
   };
   const faces = current && ui.gear[current.gear] ? GEAR_VIEWS.filter((v) => ui.gear[current.gear]!.views[v] !== undefined) : [];
   const facingShown = current && ui.gear[current.gear] ? shownView(ui.gear[current.gear]!, current.view) : null;
-  const faceTo = (v: GearView) => edit((p) => ({ ...p, view: v }), `${nameOf(current!.gear)} already faces ${FACING[v]}.`, () => `${nameOf(current!.gear)} now faces ${FACING[v]}.`);
+  const faceTo = (v: GearView) => edit((p) => ({ ...p, view: v }), '', () => `${nameOf(current!.gear)} now faces ${FACING[v]}.`);
   /* A radio group's arrows, kept here because they move the page's choice (and focus), whatever the browser does with a name. */
   const faceKeys = (e: KeyboardEvent<HTMLInputElement>, v: GearView) => {
     const by = e.key === 'ArrowRight' || e.key === 'ArrowDown' ? 1 : e.key === 'ArrowLeft' || e.key === 'ArrowUp' ? -1 : 0;
@@ -490,9 +490,10 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
                     tabIndex={facingShown === v ? 0 : -1} onChange={() => faceTo(v)} onKeyDown={(e) => faceKeys(e, v)}
                   />
                   <span className="kb-wardrobe-face-art" aria-hidden="true"><img src={ui.gear[current.gear]!.views[v]!.art} alt="" draggable={false} /></span>
-                  <span className="kb-wardrobe-face-name">{FACING[v]}</span>
+                  <span className="kb-visually-hidden kb-wardrobe-face-name">{FACING[v]}</span>
                 </label>
               ))}
+              <p className="kb-wardrobe-facing-now">Facing: {FACING[facingShown!]}</p>
             </fieldset>
           )}
           <ButtonRow><GlassButton onClick={takeOff} disabled={current === null || busy}>Take it off</GlassButton></ButtonRow>

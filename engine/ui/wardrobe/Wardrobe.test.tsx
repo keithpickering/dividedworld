@@ -74,7 +74,9 @@ describe('the Facing row', () => {
   test('a five-view item shows five options in order, the default checked while the piece\'s view is null', async () => {
     await withVisor();
     const options = facing();
-    expect(options.map((o) => o.getAttribute('aria-label') ?? o.closest('label')?.textContent)).toEqual(FACES);
+    expect(options.map((o) => o.closest('label')?.textContent)).toEqual(FACES);
+    expect(screen.getByText('Facing: Front')).toBeInTheDocument();
+    expect(document.querySelectorAll('.kb-wardrobe-face-name:not(.kb-visually-hidden)')).toHaveLength(0);
     expect(options.map((o) => (o as HTMLInputElement).checked)).toEqual([false, false, true, false, false]);
     expect(screen.getByRole('radio', { name: 'Front' })).toBeChecked();
     expect(document.querySelectorAll('.kb-wardrobe-facing img[alt=""]')).toHaveLength(5);
@@ -86,6 +88,7 @@ describe('the Facing row', () => {
     fireEvent.click(screen.getByRole('radio', { name: 'Side, facing right' }));
     expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
     expect(said()).toHaveTextContent('Visor now faces Side, facing right.');
+    expect(screen.getByText('Facing: Side, facing right')).toBeInTheDocument();
     expect(screen.getByText(/You have changes not saved yet/u)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
     await waitFor(() => expect(save).toHaveBeenCalledTimes(1));
@@ -98,12 +101,35 @@ describe('the Facing row', () => {
     front.focus();
     press(front, 'ArrowRight');
     expect(screen.getByRole('radio', { name: 'Three-quarter, facing right' })).toBeChecked();
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Three-quarter, facing right' }));
     press(screen.getByRole('radio', { name: 'Three-quarter, facing right' }), 'ArrowDown');
     expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
     press(screen.getByRole('radio', { name: 'Side, facing right' }), 'ArrowRight');
     expect(screen.getByRole('radio', { name: 'Side, facing left' })).toBeChecked();
+    expect(document.activeElement).toBe(screen.getByRole('radio', { name: 'Side, facing left' }));
     press(screen.getByRole('radio', { name: 'Side, facing left' }), 'ArrowLeft');
     expect(screen.getByRole('radio', { name: 'Side, facing right' })).toBeChecked();
+  });
+
+  test('choosing the view already shown changes nothing', async () => {
+    await withVisor();
+    const before = said().textContent;
+    fireEvent.click(screen.getByRole('radio', { name: 'Front' }));
+    expect(screen.getByRole('radio', { name: 'Front' })).toBeChecked();
+    expect(said().textContent).toBe(before);
+  });
+
+  test('while a save is out the radios are disabled, and the arrow keys change nothing', async () => {
+    const { fake } = await withVisor();
+    let finish: (v: { ok: true; value: { worn: number } }) => void = () => undefined;
+    vi.spyOn(fake, 'setOutfit').mockReturnValue(new Promise((r) => { finish = r; }));
+    fireEvent.click(screen.getByRole('button', { name: 'Save the outfit' }));
+    await waitFor(() => expect(facing().every((o) => (o as HTMLInputElement).matches(':disabled'))).toBe(true));
+    press(screen.getByRole('radio', { name: 'Front' }), 'ArrowRight');
+    expect(screen.getByRole('radio', { name: 'Front' })).toBeChecked();
+    finish({ ok: true, value: { worn: 1 } });
+    await screen.findByText('Outfit saved.');
+    expect(facing().every((o) => !(o as HTMLInputElement).matches(':disabled'))).toBe(true);
   });
 
   test('the pivot stays put: a view change leaves x and y alone', async () => {

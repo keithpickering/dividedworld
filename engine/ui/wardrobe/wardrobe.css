@@ -293,8 +293,8 @@
 }
 
 .kb-wardrobe-facing {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(96px, 1fr));
+  display: flex;
+  flex-wrap: wrap;
   gap: 8px;
   margin: 0;
   padding: 0;
@@ -311,18 +311,22 @@
   color: var(--kb-glass-text-hi);
 }
 
+.kb-wardrobe-facing-now {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--kb-glass-text);
+}
+
 .kb-wardrobe-face {
+  flex: 1 1 44px;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
+  min-width: 44px;
   min-height: 44px;
-  padding: 6px;
+  padding: 4px;
   border: 1px solid var(--kb-glass-text-2);
   background: var(--kb-glass-field);
-  color: var(--kb-glass-text-hi);
-  font-weight: 700;
-  text-align: center;
   cursor: pointer;
 }
 
@@ -336,9 +340,14 @@
   outline-offset: 2px;
 }
 
+.kb-wardrobe-facing:disabled .kb-wardrobe-face {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .kb-wardrobe-face-art img {
   display: block;
-  width: 64px;
-  height: 48px;
+  width: 36px;
+  height: 28px;
   object-fit: contain;
 }
