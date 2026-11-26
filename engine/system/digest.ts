@@ -392,6 +392,7 @@ export function renderDigest(digest: Digest, memory: Memory | null, feed: readon
     ].map((t) => ` ${t}`).join('');
   };
   // An excerpt's words as the board shows them: covered by the plays its extras carry, before `excerpt` cuts them. A request's body carries no plays and is never covered.
+  // A text the digest already holds cut (its `cut`) is covered within what it holds: an occurrence the cut splits is not laid, and the words read as written there.
   const shownText = (text: string, x: DigestSee): string => (words.covers === undefined || (x.extras?.plays ?? []).length === 0 ? text : coveredBody(text, x.extras!.plays, words.covers));
   const { threads: T, boards: B, excerpts: E, excerptChars: C, feed: F } = DIGEST_MOST;
   const known = new Map(digest.characters.slice(0, (4 + DIGEST_MOST.metBy) * E + (2 + DIGEST_MOST.conversationWith) * DIGEST_MOST.conversations).map((c) => [c.id, taggedName(clip(line(c.name), CLIPS.name), c.pronouns)]));
