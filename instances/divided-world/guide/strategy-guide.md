@@ -38,12 +38,15 @@ When you want to know what changed lately, [Updates](/updates) is where I say so
 
 ## Your first character
 
-[Go make somebody.](/characters/new) You'll give the character a name, a class and pronouns. You can change the pronouns later, under Edit profile on My characters, once the character has debuted. The class can too, but that's a [Turn](#turns-and-reveals), and it comes with a wait.
+[Go make somebody.](/characters/new) You'll give the character a name, a class and pronouns. You can change the pronouns later, under Edit profile on My characters. The class can change too, but that's a [Turn](#turns-and-reveals), and it comes with a wait.
 
-Then you decide how the character arrives:
+The character is on the board the moment you make it, and nothing announces it. Make an entrance or don't. I've done both.
 
-- **Drop now**, and the character is on the board at once. Or **debut at the settlement**, and the character waits, seen by no one but you, until the next [settlement](#aura).
-- **Silent**, and nobody is told. Or **announced**, and the character posts a Promo of its own in the season's Promos thread. Or **announced, with its class**, and the Promo also says what class the character is. That last one stays public and can't be taken back, so mean it.
+<!-- kayfabb:if system-on -->
+
+The first thing it does in public puts it among the new faces in the next Roster Report, on [Staff Announcements](/b/announcements).
+
+<!-- kayfabb:end -->
 
 You start with no Aura. I'm not made of orbs. What you do get is a sealed **Starter Pack**, waiting in your hand. Open it. [Cards](#cards) explains what you're looking at.
 
@@ -104,8 +107,9 @@ Pick the one that sounds like how you already post, or the one that sounds like 
 
 A class isn't a life sentence. A character can **Turn** into a different class, but after a Turn takes effect, that character waits {{setting:turnCooldown}} before Turning again.
 
-- A Turn takes effect at the next settlement. Until then the old class still applies, and you can change the Turn or withdraw it.
-- A Turn can be **silent**, so nobody is told, or **announced**: your character posts a Promo of its own in the season's Promos thread, saying it has Turned. An announced Turn can also name the old class, the new class, or both. Whichever class it names is public from then on, as of its dates.
+- A Turn takes effect at the next settlement. Until then the old class still applies.
+- A Turn can be **silent**, so nobody is told, or **announced**: your character posts it at once, in a thread you pick, and it can't be changed or withdrawn after that. So mean it. An announced Turn can also name the old class, the new class, or both. Whichever class it names is public from then on, as of its dates. A new class named that way counts as a reveal, badge and all, from the settlement the Turn takes effect.
+- A silent Turn can be withdrawn before the settlement, or announced later, and from then it's as committed as any announced one.
 
 ### Reveals
 
@@ -113,11 +117,10 @@ A **reveal** is something your character posts, in a thread you pick, with a lin
 
 ### How a class becomes public
 
-There are exactly three ways, and you're holding all three:
+There are exactly two ways, and you're holding both:
 
 - a reveal;
-- an announced Turn that names the class;
-- a new character announced with its class.
+- an announced Turn that names the class.
 
 Nothing else does it. Not the staff, not another player, and not me.
 

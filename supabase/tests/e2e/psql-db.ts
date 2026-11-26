@@ -47,7 +47,7 @@ function cloneOfSnapshot(key: string, suffix: string): { url: string; drop: () =
   const server = new URL(scratch);
   server.pathname = '/postgres';
   const onServer = (text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', server.toString(), '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
-  // The settings a database starts with do not travel with a clone, so cloneSql gives the clone its own, scratch_url naming it.
+  // cloneSql copies what the snapshot stored for itself (a migration's `alter database … set`), then gives the clone its own settings after, scratch_url naming it.
   onServer(cloneSql(snapshot, name, server.toString()));
   const url = new URL(scratch);
   url.pathname = `/${name}`;
@@ -139,9 +139,14 @@ export function psqlDb(as?: string): Db {
         return `"${k}" => (:'args'::jsonb ->> '${k}')::${type}`;
       });
       try {
+        // A set-returning function answers as PostgREST answers it, one JSON array of its rows (or of its values, where it returns a scalar).
+        const setof = sql(`select coalesce(bool_or(p.proretset), false) from pg_proc p where p.proname = :'fn' and p.pronamespace = 'public'::regnamespace`, { fn }) === 't';
+        const call = setof
+          ? `select coalesce(jsonb_agg(r), '[]'::jsonb)::text from public.${fn}(${named.join(', ')}) r;`
+          : `select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`;
         const out = sql(`set role ${role};
           select set_config('request.jwt.claims', :'claims', false) \\g /dev/null
-          select coalesce(to_jsonb(public.${fn}(${named.join(', ')})), 'null'::jsonb)::text;`, { args: JSON.stringify(args), claims });
+          ${call}`, { args: JSON.stringify(args), claims });
         return JSON.parse(out) as T;
       } catch (e) {
         // psql's own report of the error: its message, and the hint it was raised with.

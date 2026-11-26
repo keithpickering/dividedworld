@@ -30,12 +30,12 @@ begin
   end if;
 
   perform tests.become(ann);
-  said := turn(turner, 'beta', 'announced');
+  said := turn(turner, 'beta', 'silent', false, false);
   promised := (said ->> 'takes_effect_at')::timestamptz;
   if promised is null or promised <= now() then raise exception 'a Turn says when it takes effect, after now: %', said; end if;
   if next_settlement_at() is distinct from promised then raise exception 'next_settlement_at() says what the Turn said: % and %', next_settlement_at(), promised; end if;
   -- Changed, it says the same.
-  if (turn(turner, 'beta', 'silent') ->> 'takes_effect_at')::timestamptz is distinct from promised then raise exception 'a changed Turn moved its time'; end if;
+  if (turn(turner, 'beta', 'silent', false, false) ->> 'takes_effect_at')::timestamptz is distinct from promised then raise exception 'a changed Turn moved its time'; end if;
   -- Its player reads it; nobody else does.
   if (select class_key from pending_turns where character = turner) is distinct from 'beta' then raise exception 'its player reads their pending Turn'; end if;
   perform tests.unbecome();
@@ -67,7 +67,7 @@ declare
   runs integer := 0;
 begin
   perform tests.become(who);
-  perform turn(turner, 'beta', 'silent');
+  perform turn(turner, 'beta', 'silent', false, false);
   perform tests.unbecome();
   update pending_turns set asked_at = asked where character = turner;
   promised := next_settlement_at(asked);
@@ -144,7 +144,7 @@ begin
     raise exception 'a Turn in a season''s last, short window is promised %, not the season''s end %', next_settlement_at(last_end + interval '1 minute'), season_end;
   end if;
   perform tests.become(ann);
-  said := turn(turner, 'beta', 'silent');
+  said := turn(turner, 'beta', 'silent', false, false);
   perform tests.unbecome();
   if (said ->> 'takes_effect_at')::timestamptz is distinct from season_end then raise exception 'turn() promises the season''s end: %', said; end if;
   delete from pending_turns where character = turner;
@@ -181,7 +181,7 @@ begin
   insert into seasons (number, starts_at) values ((select max(number) + 1 from seasons), last_end);
   if next_settlement_at(last_end) is not null then raise exception 'a season''s first window guessed its end: %', next_settlement_at(last_end); end if;
   perform tests.become(ann);
-  if (turn(turner, 'beta', 'silent') -> 'takes_effect_at') is distinct from 'null'::jsonb then raise exception 'a Turn in a season''s first window guessed its time'; end if;
+  if (turn(turner, 'beta', 'silent', false, false) -> 'takes_effect_at') is distinct from 'null'::jsonb then raise exception 'a Turn in a season''s first window guessed its time'; end if;
   perform tests.unbecome();
 end $$;
 
@@ -205,11 +205,11 @@ declare
   u acts%rowtype;
 begin
   perform tests.become(ann);
-  said := turn(plain, 'beta', 'announced', false, false);
-  if said - 'takes_effect_at' is distinct from '{"pending": true, "class": "beta", "loudness": "announced", "show_from": false, "show_to": false}'::jsonb then raise exception 'a Turn says how loud it is: %', said; end if;
-  perform turn(from_only, 'beta', 'announced', true, false);
-  perform turn(to_only, 'beta', 'announced', false, true);
-  perform turn(named_both, 'beta', 'announced', true, true);
+  -- Queued as before turns were announced at once (0435), with no announcement written: the settlement writes these the old way. (turn()'s own answer and its announcement: 0435-turns-announced-at-once.sql.)
+  perform tests.queue_old_turn(plain, 'beta', false, false);
+  perform tests.queue_old_turn(from_only, 'beta', true, false);
+  perform tests.queue_old_turn(to_only, 'beta', false, true);
+  perform tests.queue_old_turn(named_both, 'beta', true, true);
   -- A silent Turn names nothing; asking it to is refused.
   if pg_temp.refusal(format('select turn(%L, %L, %L, true, false)', plain, 'beta', 'silent')) is distinct from 'a silent Turn names no class' then raise exception 'a silent Turn named its old class'; end if;
   if pg_temp.refusal(format('select turn(%L, %L, %L, false, true)', plain, 'beta', 'silent')) is distinct from 'a silent Turn names no class' then raise exception 'a silent Turn named its new class'; end if;
@@ -249,16 +249,3 @@ begin
   if not exists (select 1 from threads where origin_act_id = u.id and board = players_board()) then raise exception 'a thread is spun from a Turn''s announcement, on the players'' board'; end if;
 end $$;
 
--- ---- The old three-argument turn() still takes an older client's "revealed": announced, naming its old class ----
-do $$
-declare
-  ann uuid := tests.account('show-old');
-  old uuid := tests.character(ann, 'Older Client', 'alpha', now() - interval '60 days');
-  said jsonb;
-begin
-  perform tests.become(ann);
-  said := turn(old, 'beta', 'revealed');
-  perform tests.unbecome();
-  if (said ->> 'loudness', (said ->> 'show_from')::boolean, (said ->> 'show_to')::boolean) is distinct from ('announced'::text, true, false) then raise exception 'an older client''s revealed Turn is announced with its old class: %', said; end if;
-  if (select (loudness, show_from, show_to) from pending_turns where character = old) is distinct from ('announced'::text, true, false) then raise exception 'it waits as announced, naming its old class'; end if;
-end $$;

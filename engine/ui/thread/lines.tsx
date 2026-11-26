@@ -190,24 +190,26 @@ export function UnmaskLine({ act, name }: { readonly act: Act; readonly name: st
 }
 
 /**
- * An announcement (the season-end design, section 4): the character's own Act, saying what its player chose to make public of a debut or a Turn
+ * An announcement (the season-end design, section 4): the character's own Act, saying what its player chose to make public of a Turn (or, in older Acts, a debut)
  * and nothing more. The class names are the instance's own. A class the Act does not name stays unnamed here, as it is everywhere.
  */
-export function announceWords(what: string, was: string, to: string, className: (key: string) => string): string {
+export function announceWords(what: string, was: string, to: string, className: (key: string) => string, ahead = false): string {
   if (what === 'debut') {
     const named = to === '' ? '' : className(to);
     return named === '' ? 'debuts.' : `debuts as ${/^[aeiou]/iu.test(named) ? 'an' : 'a'} ${named}.`;
   }
-  if (was !== '' && to !== '') return `has Turned from ${className(was)} to ${className(to)}.`;
-  if (was !== '') return `has Turned, leaving ${className(was)}.`;
-  if (to !== '') return `has Turned to ${className(to)}.`;
-  return 'has Turned.';
+  const turned = was !== '' && to !== '' ? `has Turned from ${className(was)} to ${className(to)}.`
+    : was !== '' ? `has Turned, leaving ${className(was)}.`
+    : to !== '' ? `has Turned to ${className(to)}.`
+    : 'has Turned.';
+  /* A Turn announced ahead of its settlement (0435) says so; one written at a settlement, an older Act, says only what happened. */
+  return ahead ? `${turned} It takes effect at the next settlement.` : turned;
 }
 
 export function AnnounceLine({ act, name }: { readonly act: Act; readonly name: string }) {
   const { instance } = useKayfa();
   const className = (key: string) => instance.classes.find((c) => c.key === key)?.name ?? key;
-  return <p className="kb-act-line">{name} {announceWords(text(act.payload.what), text(act.payload.was), text(act.payload.class), className)}</p>;
+  return <p className="kb-act-line">{name} {announceWords(text(act.payload.what), text(act.payload.was), text(act.payload.class), className, act.payload.ahead === true)}</p>;
 }
 
 /** The plain record that a move is over, in the engine's words and never the Boss's (the log never lies): how it ended, by whom. */

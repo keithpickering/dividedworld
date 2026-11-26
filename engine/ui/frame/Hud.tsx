@@ -95,6 +95,7 @@ import { useTip, useTipsStore } from '../tips/Tips.tsx';
 import { CalmRegion } from '../glass/Calm.tsx';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { RevealOverlay } from '../characters/RevealOverlay.tsx';
+import { TurnDialog } from '../characters/TurnDialog.tsx';
 import { useOpenThread } from '../thread/open.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
@@ -154,10 +155,13 @@ export function Hud() {
   const openThread = useOpenThread();
   const toCharacters = useMemo(() => (openThread ? { state: { thread: openThread } } : {}), [openThread]);
   const [revealing, setRevealing] = useState(false);
+  const [turning, setTurning] = useState(false);
+  const turnButton = useRef<HTMLButtonElement>(null);
   const [done, setDone] = useState('');
   const secret = useRef<HTMLButtonElement>(null);
   /* A reveal replaces the button with the Revealed line before the overlay closes, so focus returns to the line. */
   const revealedLine = useRef<HTMLSpanElement>(null);
+  /* A Turn written takes the Turn button away (it is My characters' to show from then): focus returns to the Swap mask picker, which stays (the status line that says it was done empties). */
   /* The Reveal's done line, in a status region of the HUD's own. It puts itself away, where My characters' flash stays until the player's next action: the HUD has no next action on its own surface to clear it. */
   useEffect(() => {
     if (!done) return undefined;
@@ -676,6 +680,11 @@ export function Hud() {
                         </span>
                         <span role="status" className="kb-hud-flash">{done}</span>
                       </span>
+                      {/* A Turn from here, under the avatar (the class line has no room for it, and a wrapped line makes the HUD taller): it is posted in the thread being read (`at`), or in one the player picks; it opens only where the character may Turn now and has no Turn waiting (My characters changes, withdraws or announces a waiting one). */}
+                      {hud.retiredAt === null && hud.debutedAt !== null && hud.pendingTurn === null && hud.turnOpensAt === null && (
+                        <button ref={turnButton} type="button" className="kb-hud-secret kb-hud-turn" aria-label={`Turn ${hud.name}`} onClick={() => setTurning(true)}>Turn</button>
+                      )}
+                      {turning && <TurnDialog kicker="Turn" character={hud} face={face ?? undefined} nextSettlement={null} at={openThread} onClose={() => setTurning(false)} onDone={(m) => { setDone(m); setTurning(false); }} returnFocusTo={() => turnButton.current ?? picker.current} />}
                       {revealing && <RevealOverlay kicker="Reveal" character={hud} at={openThread} onClose={() => setRevealing(false)} onDone={setDone} returnFocusTo={() => secret.current ?? revealedLine.current} />}
                       <CalmRegion as="span" calm={!wide} className="kb-hud-swap">
                         <label htmlFor={selectId} className="kb-hud-swap-label">{wide ? 'Swap mask' : 'Posting as'}</label>

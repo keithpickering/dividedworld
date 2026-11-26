@@ -247,7 +247,7 @@ for (const scheme of ['light', 'dark'] as const) {
         expect(await pageViolations(page)).toEqual([]);
       });
 
-      test('the Turn, Reveal and Debut dialogs have none', async ({ page }) => {
+      test('the Turn and Reveal dialogs have none', async ({ page }) => {
         await page.goto('/characters');
         /* On the glass a character's controls are in its panel, chosen by its card (the Roster board). */
         await page.getByRole('tablist', { name: /^Roster, /u }).getByRole('tab', { name: /^Pipewrench/u }).click();
@@ -259,20 +259,6 @@ for (const scheme of ['light', 'dark'] as const) {
         await expect(page.getByRole('dialog')).toBeVisible();
         expect(await pageViolations(page)).toEqual([]);
         await page.keyboard.press('Escape');
-        /* A new character waits to debut: its two debut dialogs. */
-        await page.goto('/characters/new');
-        await page.getByLabel(/name/iu).first().fill('Waiting Wanda');
-        await page.getByRole('radio').first().check();
-        /* Drop now is the default (the onboarding plan's Task 1), so a character that waits chooses the settlement. */
-        await page.getByRole('radio', { name: 'Debut at the settlement' }).check();
-        await page.getByRole('button', { name: 'Make the character' }).click();
-        await page.getByRole('button', { name: 'Drop Waiting Wanda now' }).click();
-        await expect(page.getByRole('dialog', { name: 'Drop Waiting Wanda now' })).toBeVisible();
-        expect(await pageViolations(page)).toEqual([]);
-        await page.keyboard.press('Escape');
-        await page.getByRole('button', { name: 'Change how Waiting Wanda debuts' }).click();
-        await expect(page.getByRole('dialog', { name: 'How Waiting Wanda debuts' })).toBeVisible();
-        expect(await pageViolations(page)).toEqual([]);
       });
 
       test('the Vending Machine\'s card info has none', async ({ page }) => {

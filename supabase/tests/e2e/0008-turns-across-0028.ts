@@ -1,7 +1,7 @@
 /**
  * A Turn waiting across supabase/migrations/0028_loud_classes.sql: asked "revealed" before it, it
- * takes effect after it as asked, announced with its old class named, and an older client's
- * "revealed" still reaches it through turn()'s three-argument form (the class reveal plan, Task 2).
+ * takes effect after it as asked, announced with its old class named, and so does an announced Turn queued the same way
+ * after it and before 0435 (which posts a Turn when it is asked, and dropped turn()'s three-argument form).
  * On a database of its own, made here beside the scratch one tools/test-sql.mjs made, from the
  * migrations before 0028, so the row is written by the schema that wrote such rows.
  */
@@ -43,12 +43,10 @@ test('a Turn asked "revealed" before 0028 takes effect after it with its old cla
 
     assert.equal(psqlOn(db.toString(), `select loudness || ',' || show_from || ',' || show_to from pending_turns where character = '00000000-0000-4000-8000-0000000000c1'`), 'announced,true,false',
       'a waiting "revealed" Turn becomes announced, naming its old class');
-    // An older client, after the migration, asks the same through the three-argument form.
+    // An older client's "revealed" no longer reaches turn() (0435 dropped the three-argument form, and an announced Turn is posted when it is asked); a Turn of the same
+    // shape queued before 0435 is a row with no announcement, which the settlement writes the old way.
     psqlOn(db.toString(), `
-      select set_config('request.jwt.claims', '{"sub": "00000000-0000-4000-8000-000000000001", "role": "authenticated"}', false);
-      set role authenticated;
-      select turn('00000000-0000-4000-8000-0000000000c2', 'beta', 'revealed');
-      reset role;`);
+      insert into pending_turns (character, class_key, loudness, show_from, show_to) values ('00000000-0000-4000-8000-0000000000c2', 'beta', 'announced', true, false);`);
     // Two statements: the second sees the announcements the first wrote.
     const written = psqlOn(db.toString(), `select masks_change(now() + interval '1 minute')`);
     assert.ok(written, 'the settlement announces the Turns');

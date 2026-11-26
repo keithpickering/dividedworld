@@ -10,7 +10,7 @@ async function tabTo(page: Page, target: ReturnType<Page['locator']>) {
   await expect(target).toBeFocused();
 }
 
-/* The Turn, by keyboard only: open the modal, choose, confirm, see it pending, change it, withdraw it. */
+/* The Turn, by keyboard only: open the modal, choose, make it silent (an announced Turn is posted at once and stands, e2e/turn-dialog.spec.ts), confirm, see it pending, change it, withdraw it. */
 test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alone', async ({ page }) => {
   await page.goto('/characters');
   /* On the glass a character's controls are in its panel, chosen by its card (the Roster board); before, its table row. */
@@ -42,7 +42,12 @@ test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alon
     await page.keyboard.press('Tab');
     expect(await dialog.evaluate((el) => el.contains(document.activeElement))).toBe(true);
   }
+  /* Announced is the default and needs a thread; Silent (one arrow up) is waiting, changeable and withdrawable. */
+  await tabTo(page, dialog.getByRole('radio', { name: /^Announced/u }));
+  await page.keyboard.press('ArrowUp');
+  await expect(dialog.getByRole('radio', { name: /^Silent/u })).toBeChecked();
   const confirm = dialog.getByRole('button', { name: 'Confirm Turn' });
+  await expect(confirm).toBeEnabled();
   await tabTo(page, confirm);
   await page.keyboard.press('Enter');
 
@@ -52,15 +57,17 @@ test('asks for a Turn, sees it pending, and withdraws it, with the keyboard alon
   /* Focus stays in the row: on Change, where the Turn button was. */
   await expect(row.getByRole('button', { name: /Change Pipewrench/u })).toBeFocused();
 
-  /* Change it to silent. */
+  /* Change it: the dialog opens with the silent choice filled in, and the arrow keys move within the loudness group. */
   await page.keyboard.press('Enter');
   const change = page.getByRole('dialog', { name: /Change Pipewrench/u });
   await expect(change).toBeVisible();
-  /* Tab reaches a radio group at its chosen option (Announced); the arrow keys move within it. */
-  const announced = change.getByRole('radio', { name: /^Announced/u });
-  await tabTo(page, announced);
+  const silent = change.getByRole('radio', { name: /^Silent/u });
+  await expect(silent).toBeChecked();
+  await tabTo(page, silent);
+  await page.keyboard.press('ArrowDown');
+  await expect(change.getByRole('radio', { name: /^Announced/u })).toBeChecked();
   await page.keyboard.press('ArrowUp');
-  await expect(change.getByRole('radio', { name: /^Silent/u })).toBeChecked();
+  await expect(silent).toBeChecked();
   await tabTo(page, change.getByRole('button', { name: 'Change the Turn' }));
   await page.keyboard.press('Enter');
   await expect(change).toBeHidden();
@@ -344,6 +351,8 @@ test('on a phone the arrow keys carry the choice to the Tweener and the row foll
 test('a Turn reopened on a pending Lurker opens with the Lurker in view', async ({ page }) => {
   const dialog = await openTurnAt(page, 1440);
   await classGroup(dialog).getByRole('radio', { name: 'Lurker' }).check();
+  /* Silent: it waits, and can be reopened to change (an announced Turn is posted at once and stands). */
+  await dialog.getByRole('radio', { name: /^Silent/u }).check();
   await dialog.getByRole('button', { name: 'Confirm Turn' }).click();
   await expect(dialog).toBeHidden();
   await page.getByRole('tabpanel', { name: 'Pipewrench' }).getByRole('button', { name: /Change Pipewrench/u }).click();

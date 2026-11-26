@@ -1,4 +1,4 @@
--- screen_settings carries the switch and the season's length (0434, docs/plans/2026-11-21-gabes-voice-plan.md Task 1): `systemEnabled` as a boolean and `seasonLength` as a span,
+-- screen_settings carries the switch and the season's length (0442, docs/plans/2026-11-21-gabes-voice-plan.md Task 1): `systemEnabled` as a boolean and `seasonLength` as a span,
 -- and every key the view held before (0416) it still holds, so a key dropped in the copy is red.
 
 do $$

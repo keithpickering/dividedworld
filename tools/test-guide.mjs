@@ -218,6 +218,9 @@ const fires = (markdown, pattern, o = {}) => {
       check(`${name}: the copy with the passage's ${END} line deleted fires`, guideFaults({ ...real, markdown: withPassage.replace(`${END}\n`, '') }).length >= 1);
     }
     check(`${name}: the real guide with "not switched on" appended outside a passage fires`, guideFaults({ ...real, markdown: `${real.markdown}\n\nThey are not switched on yet.\n` }).length === 1);
+    // The staff-board plan (Task 9): a character is active at once, so the guide offers no debut; a Turn is announced by the player in a thread they pick, never posted by The System.
+    check(`${name}: the real guide offers no debut`, !/\bdebut/i.test(real.markdown));
+    check(`${name}: the real guide does not say "The System posts"`, !real.markdown.includes('The System posts'));
     const r = guideFaults(real);
     check(`${name}: the real guide is clean`, r.length === 0, JSON.stringify(r));
   }

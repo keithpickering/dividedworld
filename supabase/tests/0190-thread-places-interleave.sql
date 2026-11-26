@@ -349,7 +349,7 @@ begin
   $sql$);
   move := (select q.landed_act from queued_moves q where q.kind = 'moveThread' and q.params ->> 'thread' = '7ace0000-0190-4000-8000-000000000d01');
   perform pg_temp.expect(move is not null, 'the second moveThread did not land');
-  perform pg_temp.expect((select a.thread from acts a where a.id = move) = '7ace0000-0190-4000-8000-000000000e02', 'the second moveThread did not land in the second announcements thread');
+  perform pg_temp.expect((select t.staff_placed and t.board = system_board() from acts a join threads t on t.id = a.thread where a.id = move), 'the second moveThread did not land in a staff thread of its own');
   perform pg_temp.expect((select board from threads where title = 'Il thread D1') = '7ace0000-0190-4000-8000-0000000000c3', 'thread D1 did not move');
 
   perform extensions.dblink_connect('gate', url);
@@ -466,6 +466,8 @@ do $$
 begin
   perform tests.commit($sql$
     set local session_replication_role = replica;
+    -- Each move the tick landed for il-boss opened a staff thread of its own (0437), titled by the move and not by this file; they are marked as this file's so the deletes below take them, with the reversals written in them.
+    update threads set title = 'Il ' || title where staff_placed and id in (select a.thread from acts a join characters c on c.id = a.character where c.staff = 'il-boss' and a.kind = 'move') and title not like 'Il %';
     delete from post_search where thread in (select id from threads where title like 'Il %');
     alter table thread_departures disable trigger thread_departures_fixed;
     delete from thread_departures where thread in (select id from threads where title like 'Il %');

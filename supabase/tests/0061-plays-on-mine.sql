@@ -37,13 +37,14 @@ begin
   pipe2_post := tests.post(pipe2, t, 'Pipe Two replies.');
   own_post := tests.post(pipe, mine_t, 'Pipe starts one.');
   insert into boards (slug, name) values ('pom-board', 'Pom Board') returning id into brd;
+  insert into threads (board, title) values (brd, 'Pom Board Thread');
   perform pg_temp.hand(ann, 'glint', 'marquee', 'quake', 'glint');
   perform pg_temp.hand(bob, 'glint', 'marquee');
 
   -- Ann's Pipe plays on Hoo (a character), on Hoo's thread, on a board, and a card on Hoo's post. Ann's two masks play on Ann's own.
   on_hoo := (play_card(ann, 'glint', pipe, hoo, '{}', 0, 'Sparkle.', 'character', hoo_post) ->> 'id')::uuid;
   on_thread := (play_card(ann, 'marquee', pipe, t, '{}', 0, '', 'thread') ->> 'id')::uuid;
-  on_board := (play_card(ann, 'quake', pipe, brd, '{}', 0, '', 'board') ->> 'id')::uuid;
+  on_board := (play_card(ann, 'quake', pipe, brd, '{}', 0, '', 'board', null, null, null, null, '{}', (select x.id from threads x where x.board = brd)) ->> 'id')::uuid;
   own_play := (play_card(ann, 'glint', pipe, pipe2, '{}', 0, '', 'character', pipe2_post) ->> 'id')::uuid;
   -- Bob's Hoo plays on Pipe: Ann's.
   by_hoo := (play_card(bob, 'glint', hoo, pipe, '{}', 0, '', 'character', pipe_post) ->> 'id')::uuid;

@@ -87,7 +87,7 @@ describe('the stylesheets: no dialog draws its own frame', () => {
 
   test('every className an Overlay or a Float is given is read, and the dialogs this repository has are among them', () => {
     expect(derived.flatMap((d) => d.unread)).toEqual([]);
-    for (const c of ['kb-turn-dialog', 'kb-debut-dialog', 'kb-reveal-dialog', 'kb-vending-about-dialog', 'kb-queue-dialog', 'kb-move-overlay']) expect(BOXES, c).toContain(c);
+    for (const c of ['kb-turn-dialog', 'kb-reveal-dialog', 'kb-vending-about-dialog', 'kb-queue-dialog', 'kb-move-overlay']) expect(BOXES, c).toContain(c);
   });
 
   test('a dialog planted in a component is found, and so is one a variable hides', () => {

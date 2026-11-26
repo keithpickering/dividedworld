@@ -218,9 +218,9 @@ export interface ScreenSettings {
   readonly pollLastsMax: Span;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
-  /** Whether The System is switched on (`systemEnabled`, in `screen_settings` from 0434): the Strategy Guide picks its not-switched-on line by it. The instance's own switch, the same for every reader. */
+  /** Whether The System is switched on (`systemEnabled`, in `screen_settings` from 0442): the Strategy Guide draws its system-on or system-off passages by it. The instance's own switch, the same for every reader. */
   readonly systemEnabled: boolean;
-  /** How long a season lasts (`seasonLength`, in `screen_settings` from 0434): the Strategy Guide says it in words. */
+  /** How long a season lasts (`seasonLength`, in `screen_settings` from 0442): the Strategy Guide says it in words. */
   readonly seasonLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
@@ -1345,9 +1345,8 @@ export interface MyCharacter {
   readonly classDueAt: string | null;
   /** When it may next Turn; null when it may now. */
   readonly turnOpensAt: string | null;
-  /** Null while it waits to debut at the next tally. */
+  /** Null while a staff persona waits for an office; every other character is active from its creation (0436), so it is never null for a player's. */
   readonly debutedAt: string | null;
-  readonly debutLoudness: 'silent' | 'announced' | 'with_class' | null;
   readonly retiredAt: string | null;
   readonly pendingTurn: PendingTurn | null;
   /** Hidden from "Who is online" and "Users browsing": listed nowhere, its player's switch in My characters. */
@@ -1381,6 +1380,11 @@ export interface PendingTurn {
   readonly showTo: boolean;
   /** When the next settlement applies it; null when no window is known yet ("at the next settlement"). */
   readonly takesEffectAt: string | null;
+  /**
+   * The announcement Act of a committed Turn (0435): written when the Turn was asked, in the thread named, `seq` its place there. A committed Turn stands until it
+   * takes effect and can be neither changed nor withdrawn; null for a silent one, which can still be announced later (`announceTurn`).
+   */
+  readonly announced: { readonly act: Id; readonly thread: Id; readonly seq: number; /** The thread's title, so the link to it needs no read of its own. */ readonly title: string } | null;
 }
 
 export interface Wallet {
@@ -1843,13 +1847,14 @@ export interface TallyName {
   readonly class: string | null;
   readonly was: string | null;
 }
-export type SeasonNewsKind = 'results' | 'tally' | 'bossArrived' | 'bossLeft';
+export type SeasonNewsKind = 'results' | 'tally' | 'roster' | 'bossArrived' | 'bossLeft';
 /**
  * One item of season news (`season_news`, supabase/migrations/0063_season_news.sql, 0099, 0100): public, and the same for every reader. `act`, `thread` and
  * `seq` name the Act to link (a landing's first announce Act, or the Boss's post, which is null where the instance wrote no line for it). A `results`
  * item has none of the three: a season's results are rows, not an Act, and the item opens the glass's Rankings of its season.
  * `results` carries the top three and `count`, the characters ranked; `tally` (a landing of announcements, or an old tally Act) its debuts and Turns,
- * at most 20 names with `count` the whole; a Boss row its `name` and the `quote` of its post.
+ * at most 20 names with `count` the whole; `roster` (0440) a Roster Report entry that named Turns taking effect, its first 20 in `turns` and `count` the whole, `act`, `thread` and `seq` the entry's first post;
+ * a Boss row its `name` and the `quote` of its post.
  */
 export interface SeasonNewsItem {
   readonly kind: SeasonNewsKind;
@@ -2273,15 +2278,11 @@ export interface LogCosmetic {
 
 /* ------------------------------------------------------------------ actions ---- */
 
-export type DebutTiming = 'now' | 'tally';
-export type DebutLoudness = 'silent' | 'announced' | 'with_class';
-
+/** A character made: active at once, with no Act (0436). */
 export interface CreatedCharacter {
   readonly id: Id;
   readonly name: string;
   readonly class: string;
-  readonly waiting: boolean;
-  readonly loudness: DebutLoudness;
 }
 
 export interface TurnAsked {
@@ -2290,6 +2291,8 @@ export interface TurnAsked {
   readonly showFrom: boolean;
   readonly showTo: boolean;
   readonly takesEffectAt: string | null;
+  /** The announcement Act an announced Turn wrote at once, and its thread; null for a silent one. */
+  readonly announced: { readonly act: Id; readonly thread: Id } | null;
 }
 
 /** What an avatar upload sends: the two re-encoded WebP crops and their frames, never the original. */
@@ -2581,6 +2584,8 @@ export interface ThreadPage {
   readonly page: number;
   /** `acts(thread, first, last)` of the page. */
   readonly acts: readonly Act[];
+  /** The board cards written in this thread (`board_card_ids`, 0438), which sit on no post: from the page's first Act up to the next page's first (the last page, to the end), oldest first. */
+  readonly boardCards: readonly Act[];
   /** The authors and casters on the page. */
   readonly people: readonly ThreadPerson[];
   /** The plays on the page's posts (`postPlays`): those in force, each kind's newest and most-drawn play, and the Acts that end or spring them. */
@@ -3290,7 +3295,7 @@ export interface KayfaApi {
    * its first draw (`first`, the card's own shape): a play without one is refused ("draw your tag first"), the refusal on the field `first`.
    * A card that replies carries `reply`, the caster's post written with the play: it lands under the target while the play is in force, and a play without one is refused ("write the reply this card carries"). A cast that is caught writes none.
    */
-  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }): Promise<Answer<Act>>;
+  playCard(card: string, character: Id, target: Id, config: Readonly<Record<string, unknown>>, message: string, reach?: Reach, fromPost?: Id, first?: unknown, reply?: { readonly body: string; readonly framing?: readonly Id[] }, boardThread?: Id): Promise<Answer<Act>>;
   /**
    * Give `amount` (hundredths, one the drive offers) to a drive, as one of the player's characters: the gift's Act and the giver's balance after.
    * A closed drive, an amount not offered, a short wallet, a banned character and a thing that is no drive are refused in the database's words.
@@ -3330,12 +3335,14 @@ export interface KayfaApi {
   surfaceActs(play: Id): Promise<SurfaceActs | null>;
   /** Leave a reaction: an instance's kind, or a post-local one (key `x-…`) its post offers. The tally is null where the post's totals are hidden (a blind post), for everyone alike. `keepalive` asks the request to outlive the page (a tab closing). */
   react(act: Id, character: Id, kind: string, opts?: { readonly keepalive?: boolean }): Promise<Answer<{ readonly act: Id; readonly tally: Tally | null }>>;
-  turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
+  /** An announced Turn names its `thread` and is posted there at once; a silent one is posted nowhere and takes none. */
+  turn(character: Id, to: string, loudness: 'silent' | 'announced', showFrom: boolean, showTo: boolean, thread?: Id): Promise<Answer<TurnAsked>>;
+  /** Announces and commits a silent Turn that is waiting (`announce_turn`, 0435): where, and which of its classes it names. */
+  announceTurn(character: Id, thread: Id, showFrom: boolean, showTo: boolean): Promise<Answer<TurnAsked>>;
   withdrawTurn(character: Id): Promise<Answer<{ readonly withdrawn: true }>>;
   unmask(character: Id, thread: Id, message: string): Promise<Answer<Act>>;
   /** `pronouns` left out: the instance's default (`Settings.pronouns`), as the server takes it. */
-  createCharacter(name: string, cls: string, timing: DebutTiming, loudness: DebutLoudness, pronouns?: PronounSet): Promise<Answer<CreatedCharacter>>;
-  setDebut(character: Id, timing: DebutTiming, loudness: DebutLoudness): Promise<Answer<{ readonly id: Id; readonly waiting: boolean; readonly loudness: DebutLoudness }>>;
+  createCharacter(name: string, cls: string, pronouns?: PronounSet): Promise<Answer<CreatedCharacter>>;
   /** `pronouns` left out: the stored set stays. */
   setProfile(character: Id, title: string, signature: string, pipStyle: string, pronouns?: PronounSet): Promise<Answer<Character>>;
   setAvatar(upload: AvatarUpload): Promise<Answer<Character>>;

@@ -56,8 +56,8 @@ declare
   on_system uuid;
 begin
   insert into threads (board, title) values (system_board(), 'The System speaks') returning id into on_system;
+  waiting := tests.waiting(ann, 'Not Yet Here');
   perform tests.become(ann);
-  waiting := (create_character('Not Yet Here', 'alpha', 'tally') ->> 'id')::uuid;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', b, t, '')) is distinct from 'you do not play that character' then raise exception 'another player''s character was unmasked'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', waiting, t, '')) is distinct from 'that character debuts at the next settlement' then raise exception 'a waiting character was unmasked'; end if;
   if pg_temp.refusal(format('select unmask(%L, %L, %L)', a, on_system, '')) is distinct from 'only the staff post here; spin a thread from what they said' then raise exception 'a reveal was made on The System''s board'; end if;
@@ -91,7 +91,7 @@ declare
   said jsonb;
 begin
   perform tests.become(ann);
-  perform turn(a, 'beta', 'silent');
+  perform turn(a, 'beta', 'silent', false, false);
   said := unmask(a, t, 'Still this.');
   perform tests.unbecome();
   if said -> 'payload' ->> 'class' is distinct from 'alpha' then raise exception 'a reveal while a Turn waits names the class held: %', said; end if;
@@ -115,8 +115,9 @@ begin
   -- A class held and a silent Turn taken, and nothing made public.
   insert into class_history (character, class_key, started_at) values (quiet, 'beta', now() - interval '2 days');
   perform tests.become(ann);
-  perform turn(loud, 'beta', 'announced');
-  perform turn(told, 'beta', 'revealed');
+  -- Queued as before turns were announced at once (0435): the settlement writes their announcements the old way.
+  perform tests.queue_old_turn(loud, 'beta');
+  perform tests.queue_old_turn(told, 'beta', true, false);
   perform tests.unbecome();
   tally := masks_change(now() + interval '1 minute');
   perform tests.become(tests.account('unmask-quiet-reader'));
@@ -174,7 +175,11 @@ begin
   -- one fresh batch; so it is flushed, as that would. Left in place, the plan depends on what VACUUM last saw:
   -- with the index's statistics from an earlier VACUUM (any file before this one can leave them), the
   -- pending pages price each probe above a walk of every tally, and the check below goes red at random.
-  perform gin_clean_pending_list('acts_tally_turns');
+  -- A busy instance holds thousands of reveals and Turn announcements too, which is what keeps a read of them by time (the
+  -- roster report's window, acts_unmasks_at and acts_announces_at, 0440) from being priced as cheap as a probe by character:
+  -- with none here, a walk of those tiny partial indexes ties the probe and wins it by a cost point.
+  insert into acts (character, kind, thread, payload) select poster, 'unmask', posts_in, '{"class": "alpha", "via": "act"}' from generate_series(1, 3000);
+  insert into acts (character, kind, thread, payload) select poster, 'announce', posts_in, '{"class": "alpha", "what": "turn"}' from generate_series(1, 3000);
   analyze acts;
   set local enable_seqscan = off;
   p := pg_temp.plan_of('select * from class_reveals where character in ' || page);
