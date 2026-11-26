@@ -1,4 +1,4 @@
--- A spin picks its board (supabase/migrations/0442_spin_board.sql; docs/plans/2026-11-25-spin-board-plan.md, Task 1; docs/plans/2026-11-25-spin-board-design.md, sections 1 to 5).
+-- A spin picks its board (supabase/migrations/0443_spin_board.sql; docs/plans/2026-11-25-spin-board-plan.md, Task 1; docs/plans/2026-11-25-spin-board-design.md, sections 1 to 5).
 --
 -- 0. The migration exists at all (so a missing one fails here, on an assertion that names the function, and not on a fixture below): the new functions, one overload each of the replaced ones, their grants and search paths.
 -- 1. spin_board(origin): the board an Act's spin lands on today: its thread's board, the first open board for The System's, null for an edit and for no Act.

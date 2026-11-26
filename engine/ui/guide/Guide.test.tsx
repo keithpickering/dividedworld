@@ -46,6 +46,48 @@ function stubObserver() {
   };
 }
 
+describe('conditional passages', () => {
+  const md = '## One\n\nBefore.\n\n<!-- kayfabb:if system-on -->\nStaff are on: {{setting:charactersPerPlayer}} masks, see [two](#two).\n<!-- kayfabb:end -->\n\n<!-- kayfabb:if system-off -->\nStaff are off.\n<!-- kayfabb:end -->\n\n## Two\n\nAfter.';
+  const shown = (settings: Partial<ScreenSettings>) => {
+    page(md, { settings });
+    return { on: screen.queryByText(/Staff are on/u), off: screen.queryByText(/Staff are off/u) };
+  };
+  test('with the staff on, the on passage is drawn and the off passage is not', () => {
+    const s = shown({ systemEnabled: true });
+    expect(s.on).toBeInTheDocument();
+    expect(s.off).toBeNull();
+  });
+  test('with the staff off, the reverse', () => {
+    const s = shown({ systemEnabled: false });
+    expect(s.on).toBeNull();
+    expect(s.off).toBeInTheDocument();
+  });
+  test('with the setting absent, neither', () => {
+    const s = shown({ systemEnabled: undefined });
+    expect(s.on).toBeNull();
+    expect(s.off).toBeNull();
+  });
+  test('the contents and the section ids are the same in all three', () => {
+    const ids: string[][] = [];
+    for (const systemEnabled of [true, false, undefined]) {
+      page(md, { settings: { systemEnabled } });
+      ids.push([within(contents()).getAllByRole('link').map((l) => l.getAttribute('href')).join(), [...document.querySelectorAll('section[id]')].map((e) => e.id).join()]);
+      cleanup();
+    }
+    expect(ids[0]).toEqual(['/guide#one,/guide#two', 'one,two']);
+    expect(ids[1]).toEqual(ids[0]);
+    expect(ids[2]).toEqual(ids[0]);
+  });
+  test('a setting and a fragment link inside a shown passage are drawn as outside one, and no wrapper is added', () => {
+    page(md, { settings: { systemEnabled: true } });
+    const para = screen.getByText(/Staff are on/u);
+    expect(para.tagName).toBe('P');
+    expect(para.parentElement).toBe(screen.getByText('Before.').parentElement);
+    expect(para).toHaveTextContent(/Staff are on: \d+ masks/u);
+    expect(within(para).getByRole('link', { name: 'two' })).toHaveAttribute('href', '/guide#two');
+  });
+});
+
 describe('the contents and the sections', () => {
   test('every second-level heading is a section with an anchor, and the contents link to each; a third-level heading is not one', () => {
     page('## Welcome letter\n\nA.\n\n## Turns and reveals\n\nB.\n\n### Not a section\n\nC.');
@@ -99,17 +141,19 @@ describe('the contents and the sections', () => {
     expect(link('Three')).toHaveAttribute('aria-current', 'location');
   });
 
-  test('on a phone the contents are a menu: a button names the section and opens the list, and choosing a section closes it', async () => {
+  test('on a phone the contents are a menu: a button says Contents, names the section to assistive tech and opens the list, and choosing a section closes it', async () => {
     const user = userEvent.setup();
     page('## One\n\nA.\n\n## Two\n\nB.');
     const button = screen.getByRole('button', { name: /Contents/u });
-    expect(button).toHaveTextContent(/One/u);
+    /* The section is in the name, not on the glass (Guide.tsx): the word shown is in the name, so a voice command for it works. */
+    expect(button).toHaveTextContent(/^Contents$/u);
+    expect(button).toHaveAccessibleName('Contents · One');
     expect(button).toHaveAttribute('aria-expanded', 'false');
     await user.click(button);
     expect(button).toHaveAttribute('aria-expanded', 'true');
     await user.click(within(contents()).getByRole('link', { name: 'Two' }));
     expect(button).toHaveAttribute('aria-expanded', 'false');
-    expect(button).toHaveTextContent(/Two/u);
+    expect(button).toHaveAccessibleName('Contents · Two');
   });
 
   test('choosing a section in the open menu moves the focus to that section\'s heading, so it does not fall to the page', async () => {

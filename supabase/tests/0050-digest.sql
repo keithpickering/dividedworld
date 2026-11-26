@@ -98,6 +98,8 @@ begin
       'version_hidden(uuid,uuid)', 'quote_hidden(uuid)', 'conceal_layer(uuid)', 'shown_payload(jsonb,boolean,boolean,boolean,text)',
       -- And whether a ballot's poll is secret (0395): acts_public withholds a secret ballot's character and picks, and the digest reads it through the view.
       'ballot_secret(uuid)',
+      -- And whether a live author veil covers an Act, and whether a veil play is one (0434): acts_public's veil checks, read by key, which the digest runs as the view's reader.
+      'author_veil_covers(uuid)', 'author_veil_live(uuid)',
       -- The waiting staff requests the meeting reads and their count (0424), owned by the role: they read the queue and the public columns of staff_requests, and the days a request waits, which is the one function the role is granted beside it.
       -- staff_request_shown is the one request both read by key (its request, its public post and its asker's public name), owned by the role too.
       'requests_waiting(integer)', 'requests_waiting_total()', 'staff_request_days()', 'staff_request_shown(bigint)',

@@ -231,7 +231,7 @@ describe('reading a thread by seq', () => {
   });
 });
 
-describe('a spin picks its board (0442_spin_board.sql)', () => {
+describe('a spin picks its board (0443_spin_board.sql)', () => {
   /* The shared world with a second player board, "side", and a third, "attic", made in that order. */
   function pickWorld() {
     const wide = { ...instance, boards: [...instance.boards, { slug: 'side', name: 'Side', description: 'Elsewhere.' }, { slug: 'attic', name: 'Attic', description: 'Up.' }] };

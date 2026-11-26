@@ -583,7 +583,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdFloor: settings.crowdFloor, crowdPayMost: settings.crowdPayMost,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
+    pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, systemEnabled: settings.systemEnabled, seasonLength: settings.seasonLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
@@ -993,7 +993,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   /** A spun thread's origin place, by the rules of thread_open's origin_place (0079), in order: none; an update; a play (kind first, so a numbered card is one) with its card (null for a set) and its target; any Act with a place number. A board is named as it is called now (0152), as boards_now names it. */
   function originPlace(origin: ActRec, first: ActRec | undefined): OriginPlace | null {
     const place = originPlaceBare(origin, first);
-    /* thread_open (0442): the origin's thread's board, on every kind but an update. */
+    /* thread_open (0443): the origin's thread's board, on every kind but an update. */
     return place !== null && place.kind !== 'update' ? { ...place, board: threads.get(origin.thread)!.board } : place;
   }
   function originPlaceBare(origin: ActRec, first: ActRec | undefined): OriginPlace | null {
@@ -1850,7 +1850,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return ok(publicAct(written));
   }
 
-  /** spin_board (0442): today's board for an origin, its thread's board or, where that is The System's, the players' board; null for no Act or an edit. */
+  /** spin_board (0443): today's board for an origin, its thread's board or, where that is The System's, the players' board; null for no Act or an edit. */
   function spinBoard(origin: Id): Board | null {
     const from = acts.get(origin);
     if (!from || from.kind === 'edit') return null;
@@ -1858,7 +1858,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return home.isSystem ? playersBoard! : home;
   }
 
-  /** The board a spin or an apology names (spin_written's, 0442): it exists and is not The System's; null slug is no board named. Open and bar are checked later, in start_thread's order. */
+  /** The board a spin or an apology names (spin_written's, 0443): it exists and is not The System's; null slug is no board named. Open and bar are checked later, in start_thread's order. */
   function namedBoard(slug: string): Board | Refusal {
     const board = boards.find((b) => b.slug === slug);
     if (!board) return refuse('there is no such board');
@@ -4171,7 +4171,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (mine.some((a) => a.state === 'pending')) return refuse('an apology to that move is still waiting for a ruling');
       const next = Math.max(0, ...mine.filter((a) => a.character === character && a.state !== 'returned' && a.at > now() - apologyEveryMs()).map((a) => a.at + apologyEveryMs()));
       if (next > 0) return refuse(`this character has already apologized to that move in the last ${apologyEveryMs() / 3_600_000} hours; the next apology opens at ${iso(next).slice(0, 16).replace('T', ' ')} UTC`);
-      /* spin_written (0442) with no bar check: today's board for the move, else the named one, which must be open. */
+      /* spin_written (0443) with no bar check: today's board for the move, else the named one, which must be open. */
       const named = boardSlug ? namedBoard(boardSlug) : spinBoard(move)!;
       if (isRefusal(named)) return named;
       const shut = closedRefusal(named);

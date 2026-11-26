@@ -218,6 +218,10 @@ export interface ScreenSettings {
   readonly pollLastsMax: Span;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** Whether The System is switched on (`systemEnabled`, in `screen_settings` from 0442): the Strategy Guide draws its system-on or system-off passages by it. The instance's own switch, the same for every reader. */
+  readonly systemEnabled: boolean;
+  /** How long a season lasts (`seasonLength`, in `screen_settings` from 0442): the Strategy Guide says it in words. */
+  readonly seasonLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
   /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0353): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */
@@ -357,7 +361,7 @@ export type OriginPlace = (
    */
   | { readonly kind: 'play'; readonly card: string | null; readonly on: PlaceOn | null; readonly from: PostPlace | null; readonly at: PostPlace | null }
 ) & (
-  /** The board the origin's thread is on (0442), on every kind but an update, which is no post in a thread. */
+  /** The board the origin's thread is on (0443), on every kind but an update, which is no post in a thread. */
   | { readonly kind: 'update' }
   | { readonly kind: 'post' | 'answer' | 'poll' | 'ballot' | 'play'; readonly board?: Id }
 );
@@ -3269,7 +3273,7 @@ export interface KayfaApi {
   closePollAsAdmin(poll: Id): Promise<Answer<PollWritten>>;
   /** A public poll's ballots, the changes included, newest first, 50 at a time; `after` is the last ballot of the page held (`at` and `act`). A secret poll is refused. */
   pollBallots(poll: Id, after?: { readonly at: string; readonly act: Id }): Promise<Answer<PollBallotsPage>>;
-  /** `board` is the slug of the board the thread opens on (0442); left out, today's board (the origin's thread's, or the players' board from The System's), with a bar checked on it. */
+  /** `board` is the slug of the board the thread opens on (0443); left out, today's board (the origin's thread's, or the players' board from The System's), with a bar checked on it. */
   spin(origin: Id, character: Id, title: string, body: string, framing?: readonly Id[], at?: Id, board?: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
    * A barred character's apology (`apologize`, 0130): the spin of the move that bars it, onto the board it bars, with the bar the one thing skipped, and a waiting
@@ -3278,7 +3282,7 @@ export interface KayfaApi {
    */
   apologize(move: Id, character: Id, title: string, body: string, framing?: readonly Id[], board?: string): Promise<Answer<{ readonly thread: ThreadSummary; readonly act: Act }>>;
   /**
-   * What a spin's form offers (`spin_places`, 0442): the slug of today's board for the origin (null for no Act) and every open board that is not The System's, in the index's order,
+   * What a spin's form offers (`spin_places`, 0443): the slug of today's board for the origin (null for no Act) and every open board that is not The System's, in the index's order,
    * with whether the character is barred from it and until when (null: no end set). The character must be the caller's. A failed read throws.
    */
   spinPlaces(origin: Id, character: Id): Promise<SpinPlaces>;

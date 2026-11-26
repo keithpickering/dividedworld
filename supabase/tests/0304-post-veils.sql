@@ -1287,7 +1287,8 @@ begin
     format('select * from acts_public where target_act_id = %L and kind = ''edit''', p)] loop
     plan := pg_temp.plan_of(q);
     if plan ~ 'Seq Scan on acts\y' then raise exception 'a read of acts_public scans acts: % %', q, plan; end if;
-    if plan !~ 'post_veils' then raise exception 'a read of acts_public does not probe the veils: % %', q, plan; end if;
+    -- the veils are probed for each Act by author_veil_covers (0434), which reads post_veil_cover, post_veils and the play's end by key; before 0434 the plan named post_veils itself
+    if plan !~ 'author_veil_covers' then raise exception 'a read of acts_public does not probe the veils: % %', q, plan; end if;
   end loop;
   reset enable_seqscan;
   -- And by what they touch, which a plan's shape does not say: with 3,000 posts by the author and a live veil, a profile's newest five, the stand-in's own newest five, a join that asks for a page's twenty Acts by
@@ -1297,7 +1298,9 @@ begin
   -- Main's concealment (0340_conduct) is in every read of acts_public: per row, the probes of conduct_decisions and quote_refs that acts_base pays too (127 buffers for this same read of acts_base, 429 for the twenty by id below and
   -- 380 for the page by thread and seq, measured in this file's state). The bounds are those plus what the veil adds (the second select's probes of the live veils, six of them up here), and stay an order of magnitude under a read of the rows.
   if touched > 200 then raise exception 'a profile''s newest five touch % buffers with 3,000 posts by the author', touched; end if;
-  touched := pg_temp.buffers_of(format('select * from acts_public where character = %L and kind in (''post'', ''spin'', ''card'') order by created_at desc limit 5', stand));
+  -- the stand-in's own newest five as its profile and record read them (0434, the owner's answer on #1107): the live veils' Acts (stand_in_acts), through acts_public by id. A read of acts_public by the stand-in tests every Act it walks
+  -- (3,175 buffers here once each test was a probe of its own, which a probe of one Act needs to be bounded on any plan), so the screens no longer read it that way.
+  touched := pg_temp.buffers_of(format('select * from acts_public where id = any (stand_in_acts(%L, array[''post'', ''spin'', ''card''], 0, 5)) and character = %L order by created_at desc limit 5', stand, stand));
   raise notice 'the stand-in''s newest five touch % buffers', touched;
   -- 200 is the margin over the 132 the full suite has measured, for the heap's state; the guard is the shape (the plan checks above: no sequential scan of acts, the veils' index probed) and this bound's order of
   -- magnitude: a read of the union whole, or of the author's 3,000 posts to find the stand-in's, pins a buffer per row, in the thousands.
