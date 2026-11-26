@@ -31,7 +31,7 @@ const CLASSES = ['face', 'heel'];
 const HINTS = { face: 'Get behind the posts you like.', heel: 'Being hated is a living.' };
 const SETTINGS = screenSettingsOf({
   walletCap: 600, reactionCap: 3, charactersPerPlayer: 6, registrationMode: 'invite',
-  turnCooldown: { unit: 'day', count: 30 }, economy: { 'whoops.price': 100, 'lurker.crowd': 3 },
+  turnCooldown: { unit: 'day', count: 30 }, systemEnabled: true, seasonLength: { unit: 'week', count: 8 }, economy: { 'whoops.price': 100, 'lurker.crowd': 3 },
 });
 const GOOD = '## Aura\n\nA wallet holds {{setting:walletCap}} orbs.\n\n<!-- kayfabb:classes -->\n';
 const faultsOf = (markdown, o = {}) => guideFaults({ file: FILE, markdown, hints: HINTS, classKeys: CLASSES, settings: SETTINGS, ...o });
@@ -73,6 +73,8 @@ const fires = (markdown, pattern, o = {}) => {
   check('a map key the map does not have fires', fires('## A\n\n{{setting:cardEconomy.nope.price}} here.\n', /nope/));
   check('a setting in a list, a table, a heading and a link is read too', faultsOf('## {{setting:nope1}}\n\n- {{setting:nope2}}\n\n| A |\n| --- |\n| {{setting:nope3}} |\n\n[{{setting:nope4}}](/x)\n').length === 4);
   check('a malformed {{…}} that is not a marker fires', fires('## A\n\nA {{setting:wallet cap}} here.\n', /not a \{\{setting/));
+  check('the season\'s length is a span and is clean', faultsOf('## A\n\nA season lasts {{setting:seasonLength}}.\n').length === 0);
+  check('the switch is not a number or a span, so {{setting:systemEnabled}} fires', fires('## A\n\nThe System is {{setting:systemEnabled}}.\n', /systemEnabled/));
   check('the wallet, a count, a span and a card\'s price are all clean', faultsOf('## A\n\n{{setting:walletCap}} {{setting:reactionCap}} {{setting:turnCooldown}} {{setting:cardEconomy.whoops.price}} {{setting:cardEconomy.lurker.crowd}}\n').length === 0);
 }
 

@@ -145,7 +145,7 @@ describe('settingText', () => {
   const settings = {
     walletCap: 600, charactersPerPlayer: 6, reactionCap: 3, postsPerPage: 20, crowdPayEach: 2, crowdFloor: 2, crowdPayMost: 10,
     turnCooldown: { unit: 'day', count: 30 }, settlementLength: { unit: 'day', count: 1 }, editGrace: { unit: 'minute', count: 2 },
-    registrationMode: 'invite', toastDefaults: ['quote'],
+    registrationMode: 'invite', toastDefaults: ['quote'], systemEnabled: true, seasonLength: { unit: 'week', count: 8 },
     cardSettings: { 'whoops.clean': 95 },
     cardEconomy: { 'whoops.price': 100, 'whoops.lengthStep': 500, 'lurker.crowd': 3 },
   } as unknown as ScreenSettings;
@@ -167,6 +167,10 @@ describe('settingText', () => {
     assert.equal(settingText('turnCooldown', settings), '30 days');
     assert.equal(settingText('settlementLength', settings), '1 day');
     assert.equal(settingText('editGrace', settings), '2 minutes');
+  });
+  test('the season\'s length is a span in words, and the switch is nothing a page can say', () => {
+    assert.equal(settingText('seasonLength', settings), '8 weeks');
+    assert.equal(settingText('systemEnabled', settings), undefined);
   });
   test('a path the settings do not have, or that is not a number or a span, is nothing', () => {
     for (const path of ['nope', 'cardEconomy.nope', 'registrationMode', 'toastDefaults', 'cardEconomy', 'toString', '__proto__', 'constructor.name', '']) {
