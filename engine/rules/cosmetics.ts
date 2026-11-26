@@ -26,8 +26,69 @@ export interface TrophyCatalog {
 /** A line a Random Event can say. `{item}` is replaced by the found item's name. */
 export interface EventLine { readonly key: string; readonly outcome: 'line' | 'gear' | 'card'; readonly text: string }
 
-/** A piece as worn: fractions of the portrait (center x of its width, center y of its height, width of its width). */
-export interface Piece { readonly gear: string; readonly x: number; readonly y: number; readonly w: number; readonly turn: number; readonly layer: number }
+/** The views an item may ship, in the dress-up page's Facing row order. */
+export const GEAR_VIEWS = ['side-left', 'three-quarter-left', 'front', 'three-quarter-right', 'side-right'] as const;
+export type GearView = (typeof GEAR_VIEWS)[number];
+
+/**
+ * A piece as worn: fractions of the portrait. `x` and `y` place the item's pivot (x of the portrait's width, y of its height), `w` is
+ * the width of the item's default view (of the portrait's width), `turn` rotates about the pivot, and `view` is one of the item's views
+ * (null is its default).
+ */
+export interface Piece { readonly gear: string; readonly x: number; readonly y: number; readonly w: number; readonly turn: number; readonly layer: number; readonly view: GearView | null }
+
+/** One view's picture, in its own pixels, and where the pivot lands in it. */
+export interface GearViewShape { readonly width: number; readonly height: number; readonly pivot: { readonly x: number; readonly y: number } }
+/** What an item's art says about its geometry: its default view and the views it ships. */
+export interface GearShape { readonly default: GearView; readonly views: Readonly<Partial<Record<GearView, GearViewShape>>> }
+
+/** The view drawn: `view` when the item ships it, else the item's default. */
+export function shownView(item: GearShape, view: GearView | null): GearView {
+  return view !== null && item.views[view] !== undefined ? view : item.default;
+}
+
+/**
+ * A piece's shape in the view shown: `w` its width as a fraction of the portrait's (the item's one scale, so a view is drawn at its own
+ * width in proportion to the default's), `aspect` its height over its width, `px` and `py` the pivot as fractions of the picture.
+ */
+export function pieceShape(piece: Piece, item: GearShape): { w: number; aspect: number; px: number; py: number } {
+  const shown = item.views[shownView(item, piece.view)] ?? item.views[item.default];
+  const base = item.views[item.default];
+  if (shown === undefined || base === undefined) throw new Error(`gear has no ${item.default} view`);
+  return { w: (piece.w * shown.width) / base.width, aspect: shown.height / shown.width, px: shown.pivot.x / shown.width, py: shown.pivot.y / shown.height };
+}
+
+type Shape = ReturnType<typeof pieceShape>;
+
+/** The picture's four corners relative to the pivot, in units of the box's width, before any turn. */
+function corners(shape: Shape): [number, number][] {
+  const l = -shape.px * shape.w, r = (1 - shape.px) * shape.w;
+  const t = -shape.py * shape.w * shape.aspect, b = (1 - shape.py) * shape.w * shape.aspect;
+  return [[l, t], [r, t], [r, b], [l, b]];
+}
+
+/**
+ * The turned picture's bounds in units of the box's width, where the box is 1 wide and `height` tall (the portrait's tallness, or 1 for
+ * the square) and the pivot sits at `(piece.x, piece.y * height)`. The four corners turn by `piece.turn` about the pivot (clockwise,
+ * y down, as CSS rotates).
+ */
+export function pieceExtent(piece: Piece, shape: Shape, height: number): { left: number; right: number; top: number; bottom: number } {
+  const rad = (piece.turn * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+  const cx = piece.x, cy = piece.y * height;
+  const xs: number[] = [], ys: number[] = [];
+  for (const [dx, dy] of corners(shape)) { xs.push(cx + dx * cos - dy * sin); ys.push(cy + dx * sin + dy * cos); }
+  return { left: Math.min(...xs), right: Math.max(...xs), top: Math.min(...ys), bottom: Math.max(...ys) };
+}
+
+/** Whether the point (`qx`, `qy`, in `pieceExtent`'s units) lies in the turned picture: turned back about the pivot, it falls in the unturned rectangle. */
+export function pieceHolds(piece: Piece, shape: Shape, height: number, qx: number, qy: number): boolean {
+  const rad = (-piece.turn * Math.PI) / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+  const dx = qx - piece.x, dy = qy - piece.y * height;
+  const ux = dx * cos - dy * sin, uy = dx * sin + dy * cos;
+  const l = -shape.px * shape.w, r = (1 - shape.px) * shape.w;
+  const t = -shape.py * shape.w * shape.aspect, b = (1 - shape.py) * shape.w * shape.aspect;
+  return ux >= l && ux <= r && uy >= t && uy <= b;
+}
 
 /** A frame as fractions of the picture it is cut from; the shape of `engine/ui/profile-edit/frames.ts`'s, restated so the rules import no screen. */
 export interface SquareFrame { readonly x: number; readonly y: number; readonly w: number; readonly h: number }
@@ -40,13 +101,14 @@ export const PIECE_WIDTH = { least: 0.05, most: 1.5 } as const;
 /** A piece's turn, in degrees either way. */
 export const PIECE_TURN_MOST = 180;
 
-/** The name of the first predicate a piece fails (`x`, `y`, `w`, `turn` or `layer`), or null when it is whole. */
+/** The name of the first predicate a piece fails (`x`, `y`, `w`, `turn`, `view` or `layer`), or null when it is whole. */
 export function pieceProblem(piece: Piece, settings: CosmeticsSettings): string | null {
   const within = (n: unknown, lo: number, hi: number) => typeof n === 'number' && Number.isFinite(n) && n >= lo && n <= hi;
   if (!within(piece.x, 0, 1)) return 'x';
   if (!within(piece.y, 0, 1)) return 'y';
   if (!within(piece.w, PIECE_WIDTH.least, PIECE_WIDTH.most)) return 'w';
   if (!within(piece.turn, -PIECE_TURN_MOST, PIECE_TURN_MOST)) return 'turn';
+  if (piece.view !== null && !(GEAR_VIEWS as readonly unknown[]).includes(piece.view)) return 'view';
   if (!Number.isInteger(piece.layer) || !within(piece.layer, 0, settings.gear.wornMost - 1)) return 'layer';
   return null;
 }
@@ -86,25 +148,23 @@ export function inSquare(piece: Piece, square: SquareFrame): Piece {
 
 /**
  * How far above the top of a tall slot its highest piece's turned box stands, in units of the slot's width, never below 0. The slot is 1
- * wide and `tallness ?? 2` tall (the portrait's own shape, null where unknown); a piece's `y` is a fraction of the slot's height, its
- * `w` of its width, and its height is `w * aspect`. Its half-height once turned is `(w*|sin| + w*aspect*|cos|) / 2`, the formula
- * `touchesSquare` (ui/gear/Outfit.tsx) uses. A piece whose art `aspectOf` does not know is skipped, as `Outfit` skips it. The result is
- * capped at `reach` (`settings.cosmetics.gear.reach`), where the layer's own clip cuts a piece, so nothing stands higher than that.
+ * wide and `tallness ?? 2` tall (the portrait's own shape, null where unknown); a piece's pivot sits at `(x, y * height)` and its picture
+ * is turned about the pivot (`pieceExtent`), so the overhang is `max(0, -top)` over the pieces. A piece whose art `shapeOf` does not know
+ * is skipped, as `Outfit` skips it. The result is capped at `reach` (`settings.cosmetics.gear.reach`), where the layer's own clip cuts a
+ * piece, so nothing stands higher than that.
  */
 export function outfitOverhang(
   pieces: readonly Piece[],
-  aspectOf: (gear: string) => number | undefined,
+  shapeOf: (piece: Piece) => ReturnType<typeof pieceShape> | undefined,
   tallness: number | null,
   reach: number,
 ): number {
   const height = tallness ?? 2;
   let over = 0;
   for (const p of pieces) {
-    const aspect = aspectOf(p.gear);
-    if (aspect === undefined) continue;
-    const rad = (p.turn * Math.PI) / 180;
-    const half = (p.w * Math.abs(Math.sin(rad)) + p.w * aspect * Math.abs(Math.cos(rad))) / 2;
-    over = Math.max(over, half - p.y * height);
+    const shape = shapeOf(p);
+    if (shape === undefined) continue;
+    over = Math.max(over, -pieceExtent(p, shape, height).top);
   }
   return Math.min(over, reach);
 }

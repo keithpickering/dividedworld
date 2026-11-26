@@ -387,7 +387,7 @@ describe('the Wearing row and the trophy case', () => {
     ],
     trophies: { kinds: [...testInstance.trophies.kinds, { key: 'belt', name: 'Test Belt', belt: true }], seasonPlaces: ['p1', 'p2', 'p3'], boss: ['belt'], demandMet: 'met' },
   };
-  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.2, w: 0.5, turn: 0, layer });
+  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.2, w: 0.5, turn: 0, layer, view: null as null });
   async function dressed() {
     const fake = buildWorld(undefined, shop);
     const owner = fake.seed.account('owner');

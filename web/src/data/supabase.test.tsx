@@ -601,7 +601,7 @@ describe('reads and their rows', () => {
     expect(h.to('gear_worn')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
     expect(h.to('gear_worn')[0]?.url.searchParams.get('select')).toBe('character,layer,gear,x,y,w,turn');
     expect(list).toEqual([
-      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, portraitTallness: 1.5, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 0 }, { gear: 'mustache', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 1 }], trophies: [], pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
+      { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, portraitTallness: 1.5, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 0, view: null }, { gear: 'mustache', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 1, view: null }], trophies: [], pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
       { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
     ]);
   });
@@ -625,7 +625,7 @@ describe('reads and their rows', () => {
   it('maps a profile projection\'s outfit and trophies (the shelf, with art URLs for an admin\'s kind)', async () => {
     const h = harness((r) => (r.url.pathname.endsWith('/rpc/set_profile') ? json({
       character: B, title: 'T', signature: 's', pip_style: 'default', pronouns: PRONOUN_PRESETS.she, portrait_tallness: 2,
-      outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 }],
+      outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0, view: null }],
       trophies: [
         { award: A, trophy: 'belt', name: 'The Belt', line: 'x', art: null, belt: true, at: '2026-10-01T00:00:00+00:00', by: 'the Boss', season: null, held: true },
         { award: T, trophy: 'made-1', name: 'Mine', line: null, art: 'k.webp', belt: false, at: '2026-10-01T00:00:00+00:00', by: 'an admin', season: null, held: null },
@@ -633,7 +633,7 @@ describe('reads and their rows', () => {
     }) : json({ id: B, name: 'Bea', joined: '2026-10-01' })));
     const set = await h.api.setProfile(B, 'T', 's', 'default');
     expect(set).toMatchObject({ ok: true, value: {
-      portraitTallness: 2, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 }],
+      portraitTallness: 2, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0, view: null }],
       trophies: [{ award: A, trophy: 'belt', name: 'The Belt', art: null, belt: true, held: true }, { award: T, trophy: 'made-1', name: 'Mine', art: `${URL_}/storage/v1/object/public/trophies/k.webp`, belt: false, held: false }],
     } });
   });
@@ -659,7 +659,7 @@ describe('reads and their rows', () => {
   });
 
   it('saves an outfit, the shown trophies and rolls an event through the wardrobe function, as the player\'s own session; null is a roll that found nothing', async () => {
-    const piece = { gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0 };
+    const piece = { gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0, layer: 0, view: null };
     const found = { event: A, outcome: 'gear', item: 'hat', rarity: 'common', line: 'You find {item}.', lineKey: 'found', character: B };
     const h = harness((r) => {
       const body = r.body as { action?: string } | null;

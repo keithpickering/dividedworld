@@ -24,14 +24,14 @@ describe('the profile avatar', () => {
 
 describe('gear on the profile avatar', () => {
   test('a portrait wears its pieces and takes its tallness as the slot\'s aspect ratio', () => {
-    const el = slot(character({ portraitTallness: 1.5, outfit: [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0 }] }));
+    const el = slot(character({ portraitTallness: 1.5, outfit: [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0, view: null }] }));
     expect((el as HTMLElement).style.aspectRatio).toBe('1 / 1.5');
     expect(el.querySelector('.kb-outfit')).toHaveAttribute('aria-hidden', 'true');
     expect(el.querySelectorAll('.kb-outfit img')).toHaveLength(1);
   });
 
   test('a mask with no portrait wears nothing', () => {
-    expect(slot(character({ avatarPortrait: null, outfit: [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0 }] })).querySelector('.kb-outfit')).toBeNull();
+    expect(slot(character({ avatarPortrait: null, outfit: [{ gear: 'band', x: 0.5, y: 0, w: 0.5, turn: 0, layer: 0, view: null }] })).querySelector('.kb-outfit')).toBeNull();
   });
 });
 

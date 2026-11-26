@@ -5,7 +5,7 @@ import type { Piece } from '../../rules/cosmetics.ts';
 import { renderInWorld } from '../test-world.tsx';
 import { Outfit, slotShape } from './Outfit.tsx';
 
-const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0, ...over });
+const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0, view: null, ...over });
 const show = (el: React.ReactElement) => renderInWorld(el).container.querySelector<HTMLElement>('.kb-outfit');
 const pieces = (box: HTMLElement | null) => [...(box?.querySelectorAll<HTMLImageElement>('img') ?? [])];
 

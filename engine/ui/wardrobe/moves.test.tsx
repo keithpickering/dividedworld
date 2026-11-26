@@ -2,7 +2,7 @@ import { describe, expect, test } from 'vitest';
 import { pieceProblem, type Piece } from '../../rules/cosmetics.ts';
 import { dragged, dragSized, dragTurned, fit, hit, layered, nudge, renumber, resized, turned } from './moves.ts';
 
-const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 0, ...over });
+const piece = (over: Partial<Piece> = {}): Piece => ({ gear: 'band', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 0, view: null, ...over });
 const rules = { gear: { wornMost: 12, reach: 0.4 }, trophies: { shownMost: 3 } } as Parameters<typeof pieceProblem>[1];
 
 describe('the pointer\'s moves, in the portrait\'s fractions', () => {

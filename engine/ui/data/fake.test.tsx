@@ -4348,7 +4348,7 @@ describe('gear, trophies and Random Events', () => {
     events: { lines: [{ key: 'nothing', outcome: 'line', text: 'Nothing happens.' }, { key: 'found', outcome: 'gear', text: 'You find {item}.' }] },
     settings: { ...settings, cosmetics: { ...settings.cosmetics, gear: { wornMost: 2, reach: 0.4 }, trophies: { shownMost: 2 }, events: { ...settings.cosmetics.events, windowMinutes: 15, dayMost: 2 } } },
   };
-  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.5, w: 0.4, turn: 0, layer });
+  const piece = (gear: string, layer: number) => ({ gear, x: 0.5, y: 0.5, w: 0.4, turn: 0, layer, view: null as null });
   function dressing() {
     const fake = createFake({ instance: dressed });
     const ana = fake.seed.account('ana');

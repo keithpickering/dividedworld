@@ -57,7 +57,7 @@ function Wearing({ layout }: { readonly layout: 'side' | 'stacked' }) {
   const { ui } = useKayfa();
   const keys = Object.keys(ui.gear);
   const spots = [{ x: 0.5, y: 0, w: 0.7, turn: -8 }, { x: 0.5, y: 0.3, w: 0.5, turn: 0 }, { x: 0.7, y: 0.62, w: 0.3, turn: 14 }];
-  const outfit: Piece[] = keys.slice(0, 3).map((gear, i) => ({ gear, layer: i, ...spots[i]! }));
+  const outfit: Piece[] = keys.slice(0, 3).map((gear, i) => ({ gear, layer: i, view: null, ...spots[i]! }));
   return <Postbit person={person({}, { outfit, portraitTallness: 1.4, squareFrame: { x: 0, y: 0, w: 1, h: 1 / 1.4 } })} layout={layout} />;
 }
 export const WearingGear: Story = { render: () => <Wearing layout="side" /> };

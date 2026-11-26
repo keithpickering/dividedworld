@@ -27,14 +27,14 @@ const square = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" 
 
 /** The board's pieces of gear, by the instance's keys and as fractions of the 1:2 portrait (the cap reaching above the slot, turned; the button turned the other way). */
 const PIPEWRENCH: readonly Piece[] = [
-  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0 },
-  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1 },
-  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2 },
+  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0, view: null },
+  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1, view: null },
+  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2, view: null },
 ];
 /** Dr. Bones's, on the 1:1.4 portrait: a hat reaching above the slot and shades over the eyes. */
 const BONES: readonly Piece[] = [
-  { gear: 'nostalgic-hat', x: 0.5, y: 0.05, w: 0.48, turn: 0, layer: 0 },
-  { gear: 'shades', x: 0.5, y: 0.4, w: 0.54, turn: 0, layer: 1 },
+  { gear: 'nostalgic-hat', x: 0.5, y: 0.05, w: 0.48, turn: 0, layer: 0, view: null },
+  { gear: 'shades', x: 0.5, y: 0.4, w: 0.54, turn: 0, layer: 1, view: null },
 ];
 
 const world: World = (fake, instance) => {

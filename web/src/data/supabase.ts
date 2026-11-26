@@ -1066,7 +1066,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
   const toOffice = (o: unknown): Office | undefined => (o === 'boss' || o === 'mod' || o === 'member' || o === 'benched' || o === 'waiting' || o === 'developer' || o === 'anonymous' ? o : undefined);
 
   /** A piece worn as gear_worn or a profile's `outfit` has it, in layer order. */
-  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']) })).sort((a, b) => a.layer - b.layer);
+  const toPieces = (v: unknown): Piece[] => rowsOf(v).map((w): Piece => ({ gear: w['gear'], x: num(w['x']), y: num(w['y']), w: num(w['w']), turn: num(w['turn']), layer: num(w['layer']), view: null })).sort((a, b) => a.layer - b.layer);
   /** An award as `trophy_item` has it; `held` is a belt's alone, null otherwise. */
   const toShownTrophy = (t: Row): ShownTrophy => ({ award: t['award'], trophy: t['trophy'], name: t['name'], art: trophyArtUrl(str(t['art'])), belt: t['belt'] === true, held: t['held'] === true });
   const toTrophyItem = (t: Row): TrophyItem => ({ ...toShownTrophy(t), line: str(t['line']), at: t['at'], by: t['by'], season: typeof t['season'] === 'number' ? t['season'] : null,

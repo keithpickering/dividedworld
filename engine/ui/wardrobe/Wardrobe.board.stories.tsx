@@ -18,9 +18,9 @@ const square = 'data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" 
 
 /** The board's pieces on its 1:2 portrait: the cap reaching above the slot, turned; the mustache; the button, turned the other way. */
 const PIPEWRENCH: readonly Piece[] = [
-  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0 },
-  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1 },
-  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2 },
+  { gear: 'baseball-cap', x: 0.5, y: 0.055, w: 0.76, turn: -8, layer: 0, view: null },
+  { gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 1, view: null },
+  { gear: 'button', x: 0.69, y: 0.605, w: 0.26, turn: 14, layer: 2, view: null },
 ];
 
 const arranging: World = (fake, instance) => {
@@ -33,8 +33,8 @@ const arranging: World = (fake, instance) => {
   fake.seed.gear(me, { 'baseball-cap': 2, mustache: 6, button: 1, shades: 1, 'nostalgic-hat': 1 });
   fake.signInAs(me);
   void fake.setOutfit(pipe, PIPEWRENCH);
-  void fake.setOutfit(sock, [{ gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 0 }, { gear: 'mustache', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 1 }]);
-  void fake.setOutfit(bones, [{ gear: 'shades', x: 0.5, y: 0.3, w: 0.5, turn: 0, layer: 0 }]);
+  void fake.setOutfit(sock, [{ gear: 'mustache', x: 0.5, y: 0.38, w: 0.4, turn: 0, layer: 0, view: null }, { gear: 'mustache', x: 0.5, y: 0.5, w: 0.4, turn: 0, layer: 1, view: null }]);
+  void fake.setOutfit(bones, [{ gear: 'shades', x: 0.5, y: 0.3, w: 0.5, turn: 0, layer: 0, view: null }]);
 };
 
 /** The page opens on the mask the HUD acts as; the roster lists Dr. Bones first, so the story picks Pipewrench as a player would. */

@@ -199,7 +199,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
     if (busy) return;
     const why = whyNot(key);
     if (why !== null) { speak(why); return; }
-    const piece = fit({ gear: key, x: where?.x ?? 0.5, y: where?.y ?? 0.5, w: FIRST_WIDTH, turn: 0, layer: pieces.length });
+    const piece = fit({ gear: key, x: where?.x ?? 0.5, y: where?.y ?? 0.5, w: FIRST_WIDTH, turn: 0, layer: pieces.length, view: null });
     change([...pieces, piece], pieces.length, `${nameOf(key)} put on, layer ${pieces.length + 1} of ${pieces.length + 1} worn. The buttons under Selected piece move it.`);
   };
 

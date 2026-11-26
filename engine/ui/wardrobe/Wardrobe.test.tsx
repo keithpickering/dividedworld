@@ -64,7 +64,7 @@ describe('Wear it, from a Random Event', () => {
 
   test('a gear with no free copy is not placed, and the page says why', async () => {
     const { fake, pipe, bones } = seeded({ held: { tall: 1 } });
-    await fake.setOutfit(bones, [{ gear: 'tall', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0 }]);
+    await fake.setOutfit(bones, [{ gear: 'tall', x: 0.5, y: 0.5, w: 0.5, turn: 0, layer: 0, view: null }]);
     renderIn(fake, <Wardrobe />, { instance: shop, path: '/wardrobe', state: { character: pipe, wear: 'tall' } });
     await waitFor(() => expect(said()).toHaveTextContent(/No copy of Tall Hat is free/u));
     expect(worn()).toHaveLength(0);
@@ -94,7 +94,7 @@ describe('placing', () => {
 
   test('an item with no free copy cannot be placed, and says where its copy is', async () => {
     const { fake, bones } = seeded({ held: { tall: 1 } });
-    expect((await fake.setOutfit(bones, [{ gear: 'tall', x: 0.5, y: 0.2, w: 0.5, turn: 0, layer: 0 }])).ok).toBe(true);
+    expect((await fake.setOutfit(bones, [{ gear: 'tall', x: 0.5, y: 0.2, w: 0.5, turn: 0, layer: 0, view: null }])).ok).toBe(true);
     open(fake);
     const hat = await item('Tall Hat');
     expect(screen.getByText('1 held · on Dr. Bones')).toBeInTheDocument();

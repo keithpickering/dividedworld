@@ -122,7 +122,7 @@ export const Postbit = memo(function Postbit({ person, layout, marks = null, lin
   const shelf = counts ? postbitTrophies(c.trophies, instance.settings.cosmetics.trophies.shownMost) : [];
   const belts = counts ? [] : heldBelts(c.trophies);
   /* On a phone the postbit's top edge is the post's: a piece standing above the slot would cover the post above, so the root pads by how far (postbit.css). */
-  const overhang = shape === 'side' && c.avatarPortrait ? outfitOverhang(c.outfit, (g) => ui.gear[g]?.aspect, c.portraitTallness, instance.settings.cosmetics.gear.reach) : 0;
+  const overhang = shape === 'side' && c.avatarPortrait ? outfitOverhang(c.outfit, (p) => { const aspect = ui.gear[p.gear]?.aspect; return aspect === undefined ? undefined : { w: p.w, aspect, px: 0.5, py: 0.5 }; }, c.portraitTallness, instance.settings.cosmetics.gear.reach) : 0;
   const pipImages = ui.pips?.[c.pipStyle] ?? ui.pips?.default;
   return (
     <div className="kb-postbit" role="group" aria-label={`About ${c.name}`} data-kb-postbit={shape} style={overhang > 0 ? ({ '--kb-overhang': overhang } as CSSProperties) : undefined}>
