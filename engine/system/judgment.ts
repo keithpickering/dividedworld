@@ -54,7 +54,7 @@ export interface ModMove {
   readonly params: Record<string, unknown>;
   readonly expires_in_hours: number;
   readonly why: string;
-  /** The post the move lands with, written ahead in the Mod's voice (repaired: cut, tokens stripped); null when none, and the speaker's stock line stands in. Absent on a Boss's request move, which lands with the stock line. */
+  /** The post the move lands with, written ahead in the Mod's voice (repaired: cut, tokens stripped); null when none, and the speaker's stock line stands in. A request's move carries it in either office (the staff turn's request block offers it). */
   readonly line?: string | null;
   /** A group punishment's demand, set by the code to the apology (never the model's); absent on a rule. */
   readonly demand?: { readonly kind: 'apologyAccepted'; readonly params: Record<string, never> };
@@ -334,7 +334,11 @@ export function repairBossMove(raw: unknown, ctx: BossMoveContext): RepairedMove
   if ('path' in whyRead) return no(whyRead.path, whyRead.predicate, trims);
   const hours = readHours(raw['expires_in_hours'], kind.lasting, ctx.expiryLeastHours, ctx.moveExpiryMostDays * 24, trims);
   if (typeof hours !== 'number') return no(hours.path, hours.predicate, trims);
-  return { move: { kind: kind.key, params: given, expires_in_hours: hours, why: whyRead.why }, trims, dropped: null };
+  // The line it lands with: repaired, never a reason to lose the move.
+  const landing = repairLandingLine(raw['line'], kind.key === 'setRule' ? 'ruleSet' : 'moveLanded');
+  trims.push(...landing.trims.map((t) => ({ ...t, path: `move.${t.path}` })));
+  if (raw['line'] !== undefined && raw['line'] !== null && typeof raw['line'] !== 'string') trims.push({ path: 'move.line', predicate: 'isString', before: 1, after: 0 });
+  return { move: { kind: kind.key, params: given, expires_in_hours: hours, why: whyRead.why, line: landing.line }, trims, dropped: null };
 }
 
 /** A move-only answer (an old voice's second call): the answer must be an object, and its `move` is repaired as any other. */

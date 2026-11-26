@@ -1799,7 +1799,7 @@ test('a fulfill of a shown request keeps its move (a Boss request move, repaired
   const r = repairAnswer(withRequests([grant(7), { id: 8, ruling: 'reject', line: 'No.' }]), requestsCtx());
   assert.ok(r.ok, JSON.stringify(r));
   assert.deepEqual(r.requests, [
-    { id: 7, ruling: 'fulfill', move: { kind: 'moveThread', params: { thread: R_THREAD, board: BOARD }, expires_in_hours: 0, why: 'The meeting says yes.' }, line: 'Fine. Done.' },
+    { id: 7, ruling: 'fulfill', move: { kind: 'moveThread', params: { thread: R_THREAD, board: BOARD }, expires_in_hours: 0, why: 'The meeting says yes.', line: null }, line: 'Fine. Done.' },
     { id: 8, ruling: 'reject', move: null, line: 'No.' },
   ]);
 });

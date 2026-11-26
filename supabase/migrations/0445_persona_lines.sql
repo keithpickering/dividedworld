@@ -1206,14 +1206,100 @@ $function$;
 -- ============================================================================================================================================================================================================
 -- Part 3 (Task 5 of the plan). The landing line, written ahead.
 --   A move is queued with the post it lands with (`line`, the maker's own words in its own voice, at most 280 characters; the engine trims before the column's check sees it). apply_meeting writes the
---   Boss's `move ->> 'line'` (single moves; a bundle part and the successor's nomination carry none, as the engine's bundle part has no line) and apply_mod_move a Mod's, a blank line stored as none. system_tick's landing posts it, its tokens filled as a stock line's are
+--   Boss's `move ->> 'line'` (single moves; a bundle part and the successor's nomination carry none, as the engine's bundle part has no line) and apply_mod_move a Mod's, and boss_move_queue a Boss's fulfill of a staff request (a turn's, through apply_boss_move, or a meeting's, through requests_ruled), a blank line stored as none. system_tick's landing posts it, its tokens filled as a stock line's are
 --   (system_line_fill, the one filler: `{boss}`, `{board}`, `{move}`, `{rule}` and the move's own parameters); a move queued with no line (or a blank one) lands with the speaker's stock line as before
 --   (system_line, whose set is the staff key that posts it, due.staff, then the instance's, then the move's words).
--- Latest definitions copied: apply_meeting (0439) and apply_mod_move (0424); system_tick is defined once, in part 2, which carries this part's landing (its select gains q.line, and the body reads it). Everything each does that is not named here is as written there; the security definer, search_path and grants stay.
+-- Latest definitions copied: apply_meeting (0439), apply_mod_move (0424) and boss_move_queue (0424); system_tick is defined once, in part 2, which carries this part's landing (its select gains q.line, and the body reads it). Everything each does that is not named here is as written there; the security definer, search_path and grants stay.
 -- Existing rows: the column is null on every queued move written before this, which lands as it always did.
 -- Ways out: no state is added (a line changes only the words a move lands with). Masks: the line is the maker's own words, written before the move lands; nothing here reads an owner, a class or a reactor.
 
 alter table queued_moves add column line text check (line is null or char_length(line) <= 280);
+
+-- boss_move_queue (0424), writing the move's `line` beside it (a Boss's fulfill of a staff request, from apply_boss_move or requests_ruled), a blank line stored as none. Everything else as 0424 wrote it.
+create or replace function boss_move_queue(staff text, move jsonb, cause_act uuid, in_meeting bigint, in_season bigint default null) returns jsonb
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  kind text;
+  params jsonb;
+  demand jsonb;
+  why text;
+  hours numeric;
+  hold interval := ((setting('structuralHoldHours')) #>> '{}')::numeric * interval '1 hour';
+  kind_row move_kinds%rowtype;
+  season_id bigint := coalesce(boss_move_queue.in_season, meeting_season(boss_move_queue.in_meeting), (select x.id from seasons x where x.ends_at is null));
+  problem text;
+  lives timestamptz := now();
+  check_at timestamptz;
+  existing bigint;
+  made bigint;
+begin
+  if jsonb_typeof(move) is distinct from 'object' then return jsonb_build_object('move', null, 'queued', false, 'reason', 'the move is no object'); end if;
+  kind := move ->> 'kind';
+  params := move -> 'params';
+  if kind is null or jsonb_typeof(params) is distinct from 'object' then return jsonb_build_object('move', null, 'queued', false, 'reason', 'the move names its kind and its params'); end if;
+  demand := case when jsonb_typeof(move -> 'demand') = 'object' then move -> 'demand' end;
+  why := left(btrim(regexp_replace(coalesce(move ->> 'why', ''), '\s+', ' ', 'g')), 200);
+  if why = '' then return jsonb_build_object('move', null, 'queued', false, 'reason', 'the move says why'); end if;
+  select * into kind_row from move_kinds k where k.key = kind;
+  if not found then return jsonb_build_object('move', null, 'queued', false, 'reason', 'there is no move kind "' || left(kind, 60) || '"'); end if;
+  if kind = any (held_back_kinds(boss_move_queue.staff, season_id)) then
+    return jsonb_build_object('move', null, 'queued', false, 'reason', 'the Boss does not use ' || kind || ' yet');
+  end if;
+  begin
+    if kind = 'setRule' then
+      problem := rule_params_problem(params);
+      if problem is null then problem := rule_conflict(nullif(params ->> 'board', '')::uuid, params ->> 'predicate', nullif(params -> 'param', 'null'::jsonb)); end if;
+    elsif kind in ('pullSlot', 'repriceSlot', 'flashSale') then
+      problem := machine_move_problem(kind,
+        case when jsonb_typeof(params -> 'slot') = 'string' then jsonb_set(params, '{slot}', to_jsonb(lower(params ->> 'slot'))) else params end,
+        demand, lives, case when jsonb_typeof(move -> 'expires_in_hours') = 'number' then lives + (move ->> 'expires_in_hours')::numeric * interval '1 hour' end, false);
+    elsif kind in ('createBoard', 'moveThread', 'mergeBoard') then
+      problem := case when demand is not null then 'a lasting move carries no demand' else lasting_move_problem(kind, params) end;
+      if problem is null and kind = 'moveThread' and thread_place(safe_uuid(params ->> 'thread')) = safe_uuid(params ->> 'board') then problem := 'the thread is already on that board'; end if;
+    end if;
+    if problem is null and demand is not null then
+      if not exists (select 1 from demand_kinds d where d.key = demand ->> 'kind') then problem := 'there is no such demand kind';
+      else problem := demand_params_problem(demand); end if;
+    end if;
+  exception when others then
+    problem := 'the move is malformed';
+  end;
+  if problem is not null then return jsonb_build_object('move', null, 'queued', false, 'reason', problem); end if;
+  if kind_row.structural then
+    if hold is null then return jsonb_build_object('move', null, 'queued', false, 'reason', 'this instance sets no structuralHoldHours'); end if;
+    lives := lives + hold;
+  end if;
+  if not kind_row.lasting then
+    if jsonb_typeof(move -> 'expires_in_hours') is distinct from 'number' then return jsonb_build_object('move', null, 'queued', false, 'reason', 'the move says how many hours it lasts'); end if;
+    hours := (move ->> 'expires_in_hours')::numeric;
+  end if;
+  -- A favor's check must fall between its go-live and its expiry as the queue lands them (as apply_meeting moves one that does not).
+  if kind = 'conferGroup' and params #> '{checkAt}' is not null and hours is not null then
+    begin
+      check_at := (params ->> 'checkAt')::timestamptz;
+    exception when others then
+      check_at := null;
+    end;
+    if check_at is null or check_at <= lives or check_at >= lives + hours * interval '1 hour' then
+      params := jsonb_set(params, '{checkAt}', to_jsonb(to_char((lives + hours * interval '30 minutes') at time zone 'UTC', 'YYYY-MM-DD"T"HH24:MI:SS.MS"Z"')));
+    end if;
+  end if;
+  begin
+    insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, cause_act, line)
+    values (boss_move_queue.in_meeting, boss_move_queue.staff, kind, params, demand, why, lives,
+            case when kind_row.lasting then null else lives + hours * interval '1 hour' end, kind_row.structural, boss_move_queue.cause_act,
+            left(nullif(btrim(move ->> 'line', E' \t\n\r\f\v'), ''), 280))
+    returning id into made;
+  exception
+    when unique_violation then
+      select q.id into existing from queued_moves q where q.staff = boss_move_queue.staff and q.cause_act = boss_move_queue.cause_act;
+      return jsonb_build_object('move', existing, 'queued', false, 'existing', true);
+    when check_violation or not_null_violation or invalid_text_representation or numeric_value_out_of_range or datetime_field_overflow or data_exception then
+      return jsonb_build_object('move', null, 'queued', false, 'reason', case when sqlstate in ('23514', '23502') then sqlerrm else 'the move is malformed' end);
+  end;
+  return jsonb_build_object('move', made, 'queued', true, 'existing', false);
+end $$;
+revoke execute on function boss_move_queue(text, jsonb, uuid, bigint, bigint) from public, anon, authenticated;
 
 -- apply_meeting (0439), writing each move's `line` beside it. Everything else as 0439 wrote it.
 create or replace function apply_meeting(meeting bigint, payload jsonb) returns jsonb

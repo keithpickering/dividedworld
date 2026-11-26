@@ -147,6 +147,8 @@ function requestSchema(office: 'boss' | 'mod', conferred?: readonly ConferredGro
           params: { type: 'object', properties: params, additionalProperties: false },
           expires_in_hours: { type: 'number' },
           why: text,
+          // Optional: the post the move lands with, in the speaker's own voice; blank is none, and the move lands with the speaker's stock line (`repairLandingLine` trims it).
+          line: text,
         },
         required: ['kind', 'params', 'expires_in_hours', 'why'],
         additionalProperties: false,
@@ -317,7 +319,7 @@ export function rulingWords(f: { readonly office: 'boss' | 'mod'; readonly daysM
   const structural = f.office === 'boss' ? [`A renameBoard, createBoard or mergeBoard waits ${f.structuralHoldHours} hours in the admin queue before it lands, and an admin can hold it.`] : [];
   return [
     'A reply in this thread may ask staff for something the game can do. If one asks you, you may rule on it in "request" (at most one reply, and only one of the replies you are shown), with "reply" (its id) and "ruling":',
-    `- fulfill: grant it with one move in "move", of a kind you may make: ${kinds.join(', ')}. ${spend} If the move cannot be made, the request passes to the next staff meeting instead.`,
+    `- fulfill: grant it with one move in "move", of a kind you may make: ${kinds.join(', ')}. ${spend} The move's "line" is the post it lands with, in your voice; leave it out and your stock line stands. If the move cannot be made, the request passes to the next staff meeting instead.`,
     '- reject: refuse it. Give no move.',
     `- confer: pass it on: ${f.office === 'boss' ? 'you rule on it at your next meeting' : 'the Boss rules on it at its next meeting'}; it lapses unanswered after ${f.daysMost} day${f.daysMost === 1 ? '' : 's'}. Give no move.`,
     ...beat,

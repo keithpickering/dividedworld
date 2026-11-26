@@ -220,3 +220,22 @@ begin
   perform system_tick();
   perform pg_temp.expect('a token the key is not given lands literal', pg_temp.landed_body(qid), 'Hello {mod}.');
 end $$;
+
+-- ---- 7. A Boss's fulfill of a staff request (apply_boss_move, through boss_move_queue) stores the move's line: written, blank as none, cut to 280 ----
+do $$
+declare
+  games uuid;
+  got jsonb;
+begin
+  insert into boards (slug, name, description) values ('ll-fresh', 'Fresh', 'A board with no rules yet.');
+  games := pg_temp.board('ll-fresh');
+  update move_bank set balance = 20, as_of = now() where staff = 'll-boss';
+  got := apply_boss_move('ll-boss', pg_temp.mv(games, 'noP0', to_jsonb('Boss fulfills {move}, says {boss}.'::text)), pg_temp.cause('boss fulfill'), 0, 20);
+  if (got ->> 'queued')::boolean is distinct from true then raise exception 'the Boss''s fulfill was not queued: %', got; end if;
+  perform pg_temp.expect('a Boss''s fulfill stores its line', (select q.line from queued_moves q where q.id = (got ->> 'move')::bigint), 'Boss fulfills {move}, says {boss}.');
+  got := apply_boss_move('ll-boss', pg_temp.mv(games, 'noP1', to_jsonb('   '::text)), pg_temp.cause('boss blank'), 0, 20);
+  if (got ->> 'queued')::boolean is distinct from true or (select q.line from queued_moves q where q.id = (got ->> 'move')::bigint) is not null then raise exception 'a Boss''s fulfill with a blank line did not store null: %', got; end if;
+  got := apply_boss_move('ll-boss', pg_temp.mv(games, 'noP2', to_jsonb(repeat('z', 300))), pg_temp.cause('boss long'), 0, 20);
+  if (got ->> 'queued')::boolean is distinct from true then raise exception 'a Boss''s fulfill with a long line was not queued: %', got; end if;
+  perform pg_temp.expect('a Boss''s 300-character line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.id = (got ->> 'move')::bigint), '280');
+end $$;

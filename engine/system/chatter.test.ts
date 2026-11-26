@@ -739,7 +739,7 @@ test('a reject or a confer carrying a move has the move dropped, noMove, and the
 
 test('a Boss fulfill of a thread move is kept; with bank 0 it becomes a confer naming bank', () => {
   const ok1 = repairRuling(rule('fulfill', { move: moveThread }), bossRuling());
-  assert.deepEqual(ok1.request, { reply: R1, ruling: 'fulfill', move: moveThread });
+  assert.deepEqual(ok1.request, { reply: R1, ruling: 'fulfill', move: { ...moveThread, line: null } });
   const none = repairRuling(rule('fulfill', { move: moveThread }), bossRuling({ bank: 0 }));
   assert.equal(none.request!.ruling, 'confer');
   assert.deepEqual(none.dropped, { path: 'request.move', predicate: 'bank' });
@@ -892,6 +892,13 @@ test('the ruling words name each offered kind\'s params, the expiry range and th
   assert.ok(!boss.includes('predicate ('), boss);
 });
 
+test('the ruling words say a fulfill\'s move may carry the line it lands with, in either office', () => {
+  for (const office of ['mod', 'boss'] as const) {
+    const words = rulingWords({ office, allowance: 1, bank: 1, beat: [{ id: B1, name: 'Games' }], daysMost: 3, structuralHoldHours: 24 });
+    assert.ok(words.includes('"line"') && words.includes('lands with'), office + ': ' + words);
+  }
+});
+
 test('a staff turn prompt carries the ruling words, a member turn none', () => {
   const words = rulingWords({ office: 'boss', bank: 1, daysMost: 3, structuralHoldHours: 24 });
   const staff = chatterPrompt({ ...base, premise: STAFF_TURN_PREMISE, ruling: words });
@@ -900,4 +907,29 @@ test('a staff turn prompt carries the ruling words, a member turn none', () => {
   const member = chatterPrompt({ ...base, premise: TURN_PREMISE });
   assert.ok(!member.system.includes('rule on it'));
   assert.ok(member.system.includes(TURN_PREMISE));
+});
+
+test('the request block offers the fulfill\'s move a line, in both offices, and the staff turn schema with the request and every card on offer stays within the provider\'s limits', () => {
+  for (const office of ['mod', 'boss'] as const) {
+    const schema = chatterSchema({ askedTitle: true, offered: [CAST, SET, PLAIN, INKED, TAGGED], ruling: { office } }) as any;
+    assert.deepEqual(schema.properties.request.properties.move.properties.line, { type: 'string' }, office);
+    assert.deepEqual(schema.properties.request.properties.move.required, ['kind', 'params', 'expires_in_hours', 'why'], `${office}: the line is optional`);
+    assert.deepEqual(schemaProblems(schema), [], office);
+  }
+  assert.deepEqual(schemaProblems(chatterSchema({ askedTitle: true, offered: [CAST, SET, PLAIN, INKED, TAGGED], ruling: { office: 'mod', conferred: [{ key: 'pariah', name: 'Pariah' } as any] } })), []);
+});
+
+test('a fulfill keeps the move\'s written line, cut and stripped as the others are, and null where it wrote none, in both offices', () => {
+  for (const [office, ruling] of [['mod', modRuling()], ['boss', bossRuling()]] as const) {
+    const kept = repairRuling(rule('fulfill', { move: { ...moveThread, line: '  Moved: {move}.  ' } }), ruling);
+    assert.equal(kept.dropped, null, office);
+    assert.equal((kept.request as any).move.line, 'Moved: {move}.', office);
+    const foreign = repairRuling(rule('fulfill', { move: { ...moveThread, line: 'Hear {appellant}: {move} stands.' } }), ruling);
+    assert.ok(foreign.trims.some((t) => t.path === 'request.move.line'), `${office}: a foreign token is a trim under request.move.line`);
+    assert.doesNotMatch((foreign.request as any).move.line, /\{appellant\}/, office);
+    const long = repairRuling(rule('fulfill', { move: { ...moveThread, line: 'A sentence here. '.repeat(40) } }), ruling);
+    assert.ok((long.request as any).move.line.length <= 280, office);
+    assert.ok(long.trims.some((t) => t.path === 'request.move.line'), office);
+    for (const blank of [undefined, null, '', '   ']) assert.equal((repairRuling(rule('fulfill', { move: { ...moveThread, line: blank } }), ruling).request as any).move.line, null, `${office} ${JSON.stringify(blank)}`);
+  }
 });
