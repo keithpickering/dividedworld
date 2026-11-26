@@ -73,7 +73,7 @@ export const qualityControl: Persona = {
     ],
     ruleSet: [
       'NEW GUIDELINE for {board}. {rule}. Violations will be declined, with notes. The notes will be long.',
-      'Submission guidelines updated on {board}: {rule}. Read before you upload. Nobody reads before they upload.',
+      'Submission guidelines updated on {board}: {rule}. Read before you upload. No submitter reads before they upload.',
       '{board}: {rule}. This replaces the version that already existed, which was not written down.',
       'REMINDER for {board}. {rule}. This is not a suggestion. A suggestion would be filed under How-Tos.',
       'Guidelines for {board}, revision 997: {rule}. I had a 998th and miscounted.',
