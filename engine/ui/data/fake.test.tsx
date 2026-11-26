@@ -4376,6 +4376,10 @@ describe('gear, trophies and Random Events', () => {
     expect(must(await fake.setOutfit(a1, [{ ...piece('monocle', 0), view: 'side-left' as const }]))).toEqual({ worn: 1 });
     expect((await fake.characters([a1]))[0]!.outfit[0]!.view).toBe('side-left');
     expect(await fake.setOutfit(a1, [{ ...piece('monocle', 0), view: 'back' as never }])).toEqual(refused('a piece\'s view is side-left, three-quarter-left, front, three-quarter-right or side-right'));
+    // A piece with no view key reads back as view null, as the server's missing key does.
+    const { view: _none, ...noView } = piece('monocle', 0);
+    expect(must(await fake.setOutfit(a1, [noView as never]))).toEqual({ worn: 1 });
+    expect((await fake.characters([a1]))[0]!.outfit[0]!.view).toBeNull();
   });
 
   test('a piece over the worn limit, a shared layer, a bad bound and an unknown gear are refused in the server\'s words', async () => {

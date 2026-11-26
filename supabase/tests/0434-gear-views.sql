@@ -29,7 +29,7 @@ do $$
 declare
   ann uuid := tests.account('gv-ann');
   a uuid := tests.character(ann, 'Gv Ann');
-  said text; outfit jsonb;
+  said text; outfit jsonb; v text;
 begin
   insert into gear_ledger (account, gear, kind) values (ann, 'gv-cap', 'granted'), (ann, 'gv-scarf', 'granted');
   insert into character_profiles (character) values (a);
@@ -49,6 +49,16 @@ begin
   if (select view from gear_worn where character = a) is not null then raise exception 'a JSON null view should save as none'; end if;
   said := pg_temp.refusal(format($q$select set_outfit(%L, %L, '[{"gear": "gv-cap", "x": 0.5, "y": 0.2, "w": 0.4, "turn": 0, "layer": 0, "view": "back"}]')$q$, ann, a));
   if said is distinct from 'a piece''s view is side-left, three-quarter-left, front, three-quarter-right or side-right' then raise exception 'view back was not refused in words: %', said; end if;
+  -- A view that is not a string is refused in the same words.
+  said := pg_temp.refusal(format($q$select set_outfit(%L, %L, '[{"gear": "gv-cap", "x": 0.5, "y": 0.2, "w": 0.4, "turn": 0, "layer": 0, "view": 5}]')$q$, ann, a));
+  if said is distinct from 'a piece''s view is side-left, three-quarter-left, front, three-quarter-right or side-right' then raise exception 'view 5 was not refused in words: %', said; end if;
+  said := pg_temp.refusal(format($q$select set_outfit(%L, %L, '[{"gear": "gv-cap", "x": 0.5, "y": 0.2, "w": 0.4, "turn": 0, "layer": 0, "view": {}}]')$q$, ann, a));
+  if said is distinct from 'a piece''s view is side-left, three-quarter-left, front, three-quarter-right or side-right' then raise exception 'view {} was not refused in words: %', said; end if;
+  -- Each of the five names is accepted, so a typo in any one fails here.
+  foreach v in array array['side-left', 'three-quarter-left', 'front', 'three-quarter-right', 'side-right'] loop
+    perform set_outfit(ann, a, format('[{"gear": "gv-cap", "x": 0.5, "y": 0.2, "w": 0.4, "turn": 0, "layer": 0, "view": %s}]', to_jsonb(v))::jsonb);
+    if (select view from gear_worn where character = a and layer = 0) is distinct from v then raise exception 'view % was not saved', v; end if;
+  end loop;
   -- The turn is checked before the view, the view before the layer.
   said := pg_temp.refusal(format($q$select set_outfit(%L, %L, '[{"gear": "gv-cap", "x": 0.5, "y": 0.2, "w": 0.4, "turn": 999, "layer": 9, "view": "back"}]')$q$, ann, a));
   if said not like '%turn%' then raise exception 'the turn comes first: %', said; end if;

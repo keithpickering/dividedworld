@@ -3383,7 +3383,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     for (const o of characters.values()) if (o.owner === account.id && o.id !== c.id) for (const w of o.outfit) elsewhere[w.gear] = (elsewhere[w.gear] ?? 0) + 1;
     const problems = outfitProblems(pieces, account.gear, elsewhere, cosmetics());
     if (problems.length > 0) return refuse(problems.join('; '));
-    c.outfit = pieces.map((p) => ({ gear: p.gear, x: p.x, y: p.y, w: p.w, turn: p.turn, layer: p.layer, view: p.view })).sort((a, b) => a.layer - b.layer);
+    c.outfit = pieces.map((p) => ({ gear: p.gear, x: p.x, y: p.y, w: p.w, turn: p.turn, layer: p.layer, view: p.view ?? null })).sort((a, b) => a.layer - b.layer);
     return ok({ worn: pieces.length });
   }
 
