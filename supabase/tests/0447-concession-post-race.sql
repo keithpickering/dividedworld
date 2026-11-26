@@ -198,8 +198,10 @@ begin
     perform * from extensions.dblink('cr_b', format($c$select set_config('request.jwt.claims', %L, true), set_config('role', 'authenticated', true)$c$,
       jsonb_build_object('sub', pg_temp.id(rd, 'ua'), 'role', 'authenticated')::text)) as x(a text, b text);
     perform extensions.dblink_send_query('cr_b', format('select intercept(%L, %L)', pg_temp.id(rd, 'ca'), pg_temp.id(rd, 'v3')));
-    -- B is in flight and waiting for a lock (the thread's row) before A goes on.
+    -- B is in flight and waiting for a lock (the thread's row) before A goes on. pg_stat_activity is read from a snapshot kept for the whole transaction (this block is one), so the snapshot is dropped before every
+    -- look: without it a first look taken before B had reached its wait stays the answer for the whole loop, and the poll times out (it did on CI, where B is slower to get there than on a quiet local machine).
     loop
+      perform pg_stat_clear_snapshot();
       exit when exists (select 1 from pg_stat_activity s where s.datname = current_database() and s.wait_event_type = 'Lock' and s.query like '%intercept(%' || pg_temp.id(rd, 'v3')::text || '%');
       waited := waited + 1;
       if waited > 400 then raise exception 'the interception never waited on a lock'; end if;
