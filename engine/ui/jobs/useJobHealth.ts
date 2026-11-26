@@ -28,6 +28,8 @@ interface Store {
 }
 
 const stores = new WeakMap<KayfaApi, Store>();
+/** The backend's clock; a hand-built api in a test that has none reads the page's, so a part that only waits on a job never breaks a screen. */
+const clock = (api: KayfaApi): number => (typeof api.now === 'function' ? api.now() : Date.now());
 const storeOf = (api: KayfaApi): Store => {
   let s = stores.get(api);
   if (s === undefined) { s = { rows: null, readAt: null, inflight: false, health: null, listeners: new Set(), timer: null }; stores.set(api, s); }
@@ -36,15 +38,16 @@ const storeOf = (api: KayfaApi): Store => {
 
 function recompute(api: KayfaApi, s: Store): void {
   /* The grace is each row's own: `job_status` carries the `jobGraceMinutes` setting on every row, so there is no second source to agree with. */
-  s.health = s.rows === null ? null : jobHealth(s.rows, {}, new Date(api.now()));
+  s.health = s.rows === null ? null : jobHealth(s.rows, {}, new Date(clock(api)));
   for (const l of [...s.listeners]) l();
 }
 
 function read(api: KayfaApi, s: Store): void {
-  if (s.inflight || (s.readAt !== null && api.now() - s.readAt < STALE)) return;
+  if (s.inflight || (s.readAt !== null && clock(api) - s.readAt < STALE)) return;
   s.inflight = true;
-  const at = api.now();
-  api.jobStatus().then(
+  const at = clock(api);
+  /* Started inside a promise, so an api that cannot answer (a thrown error) is a failed read like any other. */
+  Promise.resolve().then(() => api.jobStatus()).then(
     (rows) => { s.rows = rows; s.readAt = at; },
     () => { s.rows = null; s.readAt = at; },
   ).finally(() => { s.inflight = false; recompute(api, s); });

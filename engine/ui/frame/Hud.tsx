@@ -97,6 +97,7 @@ import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { RevealOverlay } from '../characters/RevealOverlay.tsx';
 import { TurnDialog } from '../characters/TurnDialog.tsx';
 import { useOpenThread } from '../thread/open.tsx';
+import { LateNote } from '../jobs/LateNote.tsx';
 
 /** The tab's slopes: 28px across, 24px tall, its top 20px wider than the aura each side, as the Main board draws them. */
 const SLOPE = 28;
@@ -756,6 +757,7 @@ export function Hud() {
                     <span className="kb-hud-clock-label">Next settle</span>
                     {next ? <time className="kb-hud-clock-time kb-num" dateTime={next}>{dayAndTime(next)}</time> : <span className="kb-hud-clock-time">not yet set</span>}
                   </CalmRegion>
+                  <LateNote job="kayfabb-settle" lead={({ missed }) => (missed === '' ? 'Settlement is late: it has not run.' : `Settlement is late: it was due at ${missed} and has not run.`)} tail="Nothing is lost: every missed window settles when it runs. The admins can see this." />
                   <Link
                     to={GLASS_NAV.alerts}
                     source={alertsWait.source}

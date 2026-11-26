@@ -139,6 +139,18 @@ describe('the reports screen', () => {
     expect(failed).toHaveTextContent('will not be tried again');
   });
 
+  test('with the mail job stopped the page says mail is late above its groups; running, it says nothing', async () => {
+    open();
+    await region(/^Mail that failed/u);
+    expect(screen.queryByText(/Mail is late/u)).toBeNull();
+    cleanup();
+    open({ build: (fake) => { fake.seed.job('kayfabb-mail', { lastOkAt: new Date(fake.clock.now() - 3 * 3_600_000).toISOString() }); } });
+    const note = await screen.findByText(/Mail is late/u);
+    expect(note).toHaveTextContent(/^Mail is late: the job that sends it has not run since .+\. Nothing is lost, and it catches up as soon as the job runs again\.$/u);
+    expect(note).toHaveAttribute('role', 'note');
+    expect(note).not.toHaveTextContent('The admins can see this');
+  });
+
   test('with no failed mail it says so, and with an address set it says nothing is waiting', async () => {
     open();
     const failed = await region(/^Mail that failed/u);

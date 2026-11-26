@@ -58,6 +58,7 @@ import { glassInk } from './ink.ts';
 import { useOwnerOf } from '../thread/context.ts';
 import { useCovered, useRowCover } from '../thread/cover.tsx';
 import { useRowFold } from '../thread/fold.tsx';
+import { LateNote } from '../jobs/LateNote.tsx';
 
 const NOT_AUTHOR = 'only the post\'s author saves what is on it';
 /** What a staged page's effect is answered with: it saves nothing and releases nothing, without asking anyone (staged.ts). */
@@ -142,6 +143,10 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   const played = drivesOfPlays(here.plays, driving, at);
   const drawn = currentVersion(tailRows);
   const written = useMemo(() => resolveWritten(tailRows, versionsOf(tailRows), drawn, 'current'), [tailRows, drawn]);
+  /* A play still waiting for its words, with the write job stopped, says so under the effect: a sibling of it, never inside an instance's effect or its fill of the content area. */
+  const lateWords = [...written.values()].some((w) => 'waiting' in w)
+    ? <LateNote job="kayfabb-write" lead={({ ran }) => `This card's words are late: the job that writes them ${ran}.`} />
+    : null;
   const moment = useShownMoment(lens);
   const onBoard = usePlays(plays, board ?? '');
   const onThread = usePlays(plays, post.thread);
@@ -318,7 +323,7 @@ export function PostEffects({ plays, post, board = null, place, marks = null, na
   }
   /* The effects of the cards that write wrap the words first, so a tail is their next sibling under every other card; a compose's body holds both. */
   const wrapped = wrapIn(wrapIn(wrapIn(plain(wrapIn(words, within, 0)), rest, within.length), takeovers, within.length + rest.length), covers, within.length + rest.length + takeovers.length);
-  return <>{slot(wrapped)}</>;
+  return <>{slot(wrapped)}{lateWords}</>;
 }
 
 /** One card's effect on a post, as `PostEffects` draws it: the layer it is drawn for, the card, and the plays it is given (its own, then any another card lends it). */

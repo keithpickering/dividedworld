@@ -29,6 +29,7 @@ import {
   VISIT_KIND, appealTerms, noticeWords, auraWords, chargeWords, markIcon, markLabel, markedAs, modRole, pointsWords, rulingWords, shortDate, stillCounts, timeLeft, topCharge, tryTerms, pointsPlain, visitState, type VisitIcon,
 } from './visit.ts';
 import { useMinute } from './minute.ts';
+import { LateNote } from '../jobs/LateNote.tsx';
 import './visit.css';
 
 /**
@@ -375,6 +376,7 @@ export function VisitPanel({ visit, thread, author, nameOf, modPronouns, tallies
             {fall !== null && ` ${liableName} has offered to take the fall for this post.`}
           </p>
         )}
+        {state === 'open' && timeIsUp && <LateNote job="kayfabb-staff" lead={({ ran }) => `Filing is late: the check that files it ${ran}.`} />}
         {state === 'filed' && (
           <p className="kb-visit-facts">
             {inf

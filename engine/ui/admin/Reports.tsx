@@ -26,6 +26,7 @@ import { Link } from '../router.tsx';
 import { AdminPages } from './AdminPages.tsx';
 import './queue.css';
 import './write-update.css';
+import { LateNote } from '../jobs/LateNote.tsx';
 import './reports.css';
 
 const LABELS: Readonly<Record<ReportOutcomeKey, string>> = {
@@ -97,6 +98,7 @@ function Reports({ page }: { readonly page: ReportsPage }) {
             : 'No admin reply-to address is set (Settings.conduct.adminAddress). Mail will wait until it is.'}
         </CalmRegion>
       )}
+      <LateNote job="kayfabb-mail" lead={({ ran }) => `Mail is late: the job that sends it ${ran}.`} tail="Nothing is lost, and it catches up as soon as the job runs again." />
       <CalmRegion as="section" className="kb-queue-group" aria-labelledby="reports-open">
         <Count id="reports-open" head={openHead} title="Open reports" count={shown.reports.length} more={shown.moreReports} />
         {shown.reports.length === 0 && <p className="kb-queue-note">No open reports.</p>}
