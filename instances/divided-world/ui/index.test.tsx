@@ -162,7 +162,8 @@ describe('Divided World\'s Strategy Guide', () => {
     const md = instanceUi.guide.markdown;
     const rules = md.slice(md.indexOf('## The actual rules'), md.indexOf('## Coming attractions'));
     expect(rules).toContain('## The actual rules');
-    for (const word of ['I ', 'I\'m', 'my ', 'yacht']) expect(rules, word).not.toContain(word);
+    /* The plan's "I ", "I'm", "my " and "yacht", read as whole words, so "I'd", "I've" and "I'll" count and "enemy" does not. */
+    for (const word of [/\bI\b/u, /\bmy\b/iu, /yacht/iu]) expect(rules, String(word)).not.toMatch(word);
   });
 });
 
