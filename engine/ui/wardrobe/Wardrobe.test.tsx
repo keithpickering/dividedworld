@@ -76,7 +76,8 @@ describe('the Facing row', () => {
     const options = facing();
     expect(options.map((o) => o.closest('label')?.textContent)).toEqual(FACES);
     expect(screen.getByText('Facing: Front')).toBeInTheDocument();
-    expect(document.querySelectorAll('.kb-wardrobe-face-name:not(.kb-visually-hidden)')).toHaveLength(0);
+    /* Each option's words are its name only: the one visible line of words is the one under the tiles. */
+    for (const o of options) expect(o.closest('label')!.querySelector('span:not([aria-hidden]):not(.kb-visually-hidden)')).toBeNull();
     expect(options.map((o) => (o as HTMLInputElement).checked)).toEqual([false, false, true, false, false]);
     expect(screen.getByRole('radio', { name: 'Front' })).toBeChecked();
     expect(document.querySelectorAll('.kb-wardrobe-facing img[alt=""]')).toHaveLength(5);

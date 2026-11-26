@@ -490,7 +490,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
                     tabIndex={facingShown === v ? 0 : -1} onChange={() => faceTo(v)} onKeyDown={(e) => faceKeys(e, v)}
                   />
                   <span className="kb-wardrobe-face-art" aria-hidden="true"><img src={ui.gear[current.gear]!.views[v]!.art} alt="" draggable={false} /></span>
-                  <span className="kb-visually-hidden kb-wardrobe-face-name">{FACING[v]}</span>
+                  <span className="kb-visually-hidden">{FACING[v]}</span>
                 </label>
               ))}
               <p className="kb-wardrobe-facing-now">Facing: {FACING[facingShown!]}</p>
