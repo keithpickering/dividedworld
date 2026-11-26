@@ -396,7 +396,7 @@ begin
   perform write_visit_quiz(v2, 'model', 'Written?', '["Yes", "No"]'::jsonb, 'Yes');
   if exists (select 1 from pending_quizzes(100) x where x.visit_act = v2) or not exists (select 1 from pending_quizzes(100) x where x.visit_act = v1) then raise exception 'pending_quizzes lists a written quiz or misses a pending one'; end if;
   -- The ledger's quizQuestion calls today, and no other duty's.
-  insert into model_calls (duty, staff, provider, model, cost_microdollars) values ('quizQuestion', 'wq-m1', 'fake', 'fake-light', 10), ('filing', 'wq-m1', 'fake', 'fake-light', 10);
+  insert into model_calls (duty, staff, provider, model, outcome, cost_microdollars) values ('quizQuestion', 'wq-m1', 'fake', 'fake-light', 'ok', 10), ('filing', 'wq-m1', 'fake', 'fake-light', 'ok', 10);
   if quiz_calls_today() is distinct from c0 + 1 then raise exception 'quiz_calls_today counted % more, not 1', quiz_calls_today() - c0; end if;
   -- The duty is one a call's record may carry.
   n := (record_staff_call(v1, 'quizQuestion', 'wq-m1', '{"source": "bank", "why": "the call failed", "trims": [], "calls": 1}'::jsonb) ->> 'attempt')::integer;
