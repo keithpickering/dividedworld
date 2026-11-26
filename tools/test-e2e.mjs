@@ -49,7 +49,13 @@ else {
   const listFile = `${dir}/shard.list`;
   const resultsFile = `${dir}/results.json`;
 
-  const listed = listSuite();
+  let listed;
+  try {
+    listed = listSuite();
+  } catch (e) {
+    console.error(e.message);
+    process.exit(1);
+  }
   if ('error' in listed) {
     console.error(listed.error);
     process.exit(1);
@@ -63,7 +69,12 @@ else {
   const manifest = JSON.parse(fs.readFileSync('e2e/cost.json', 'utf8'));
   const { shards, totals } = pack(keys, manifest, n);
   const mine = shards[k - 1];
-  const commit = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+  const head = spawnSync('git', ['rev-parse', 'HEAD'], { encoding: 'utf8' });
+  const commit = (head.stdout ?? '').trim();
+  if (head.error || head.status !== 0 || !commit) {
+    console.error(`git rev-parse HEAD failed (${head.error ? head.error.message : `exit ${head.status}`}): assigned.json needs the commit, and is never written without one`);
+    process.exit(1);
+  }
 
   fs.mkdirSync(dir, { recursive: true });
   /* An old report left in the folder would be compared as this run's: remove it before Playwright writes its own. */
@@ -79,11 +90,19 @@ else {
     console.error(`no report at ${resultsFile}: Playwright wrote none (is the CI json reporter on? CI=1), so the run cannot be compared with what was assigned`);
     process.exit(1);
   }
-  const { missing, extra } = compareRun(mine, JSON.parse(fs.readFileSync(resultsFile, 'utf8')));
+  let report;
+  try {
+    report = JSON.parse(fs.readFileSync(resultsFile, 'utf8'));
+  } catch (e) {
+    console.error(`report unreadable: ${resultsFile} is not JSON (${e.message}), so the run cannot be compared with what was assigned`);
+    process.exit(1);
+  }
+  const how = r.status === null ? `Playwright ended on signal ${r.signal}` : `Playwright exited ${r.status}`;
+  const { missing, extra } = compareRun(mine, report);
   for (const key of missing) console.error(`MISSING assigned but not run: ${key}`);
   for (const key of extra) console.error(`EXTRA run but not assigned: ${key}`);
   if (missing.length || extra.length) {
-    console.error(`shard ${k} of ${n}: ${missing.length} missing, ${extra.length} extra (Playwright exited ${r.status})`);
+    console.error(`shard ${k} of ${n}: ${missing.length} missing, ${extra.length} extra (${how})`);
     process.exit(1);
   }
   process.exit(r.status ?? 1);
