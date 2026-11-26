@@ -231,11 +231,11 @@
   },
   {
     "files": [
-      "ui/gear/baseball-cap.svg",
-      "ui/gear/button.svg",
-      "ui/gear/mustache.svg",
-      "ui/gear/nostalgic-hat.svg",
-      "ui/gear/shades.svg"
+      "ui/gear/baseball-cap/front.svg",
+      "ui/gear/button/front.svg",
+      "ui/gear/mustache/front.svg",
+      "ui/gear/nostalgic-hat/front.svg",
+      "ui/gear/shades/front.svg"
     ],
     "maker": "Divided World",
     "terms": "layer",

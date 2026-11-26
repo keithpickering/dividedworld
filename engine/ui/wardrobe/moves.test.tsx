@@ -52,13 +52,24 @@ describe('layers', () => {
 });
 
 describe('what is under the pointer', () => {
-  const aspect = () => 0.5;
+  /* A picture twice as wide as tall, its pivot at its center. */
+  const aspect = (p: Piece) => ({ w: p.w, aspect: 0.5, px: 0.5, py: 0.5 });
 
   test('the topmost piece whose turned box holds the point', () => {
     const pieces = [piece({ gear: 'low', w: 0.8 }), piece({ gear: 'high', w: 0.2, layer: 1 })];
     expect(hit(pieces, aspect, 250, 500, 500, 1000)).toBe(1);
     expect(hit(pieces, aspect, 100, 500, 500, 1000)).toBe(0);
     expect(hit(pieces, aspect, 10, 10, 500, 1000)).toBeNull();
+  });
+
+  test('a piece is placed by its pivot: a point near its pivot-side edge is held, and one the old centered box held is not', () => {
+    /* 200 wide, 100 tall on a 500 by 1000 stage, its pivot at its bottom-left corner at (250, 500): it spans x 250 to 450 and y 400 to 500. */
+    const corner = (p: Piece) => ({ w: p.w, aspect: 0.5, px: 0, py: 1 });
+    const pieces = [piece()];
+    expect(hit(pieces, corner, 255, 495, 500, 1000)).toBe(0);
+    expect(hit(pieces, corner, 440, 410, 500, 1000)).toBe(0);
+    expect(hit(pieces, corner, 150, 540, 500, 1000)).toBeNull();
+    expect(hit(pieces, corner, 250, 540, 500, 1000)).toBeNull();
   });
 
   test('a turned piece is hit where it is, not where its unturned box was', () => {

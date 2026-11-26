@@ -18,7 +18,7 @@
  * it says of itself, and no more.
  */
 import { memo, useCallback, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type DragEvent, type KeyboardEvent, type PointerEvent } from 'react';
-import type { Piece } from '../../rules/cosmetics.ts';
+import { pieceShape, type Piece } from '../../rules/cosmetics.ts';
 import { gemOf, rarityName } from '../cards/faces.ts';
 import { useKayfa } from '../context.tsx';
 import type { Character, Id, ShownTrophy, TrophyItem, WardrobeItem } from '../data/api.ts';
@@ -136,7 +136,11 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
   const most = instance.settings.cosmetics.gear.wornMost;
   const reach = instance.settings.cosmetics.gear.reach;
   const group = useId();
-  const [pieces, setPieces] = useState<Piece[]>(() => drafts.get(id) ?? renumber(face?.outfit ?? []));
+  const [pieces, setPieces] = useState<Piece[]>(() => {
+    /* A piece saved in a view its item does not ship (the art was replaced since) is drawn in the default view; the draft says so too, so what is saved is what is shown. */
+    const known = (p: Piece): Piece => { const item = ui.gear[p.gear]; return p.view !== null && item !== undefined && item.views[p.view] === undefined ? { ...p, view: null } : p; };
+    return (drafts.get(id) ?? renumber(face?.outfit ?? [])).map(known);
+  });
   const [at, setAt] = useState<number | null>(null);
   const [gear, setGear] = useState<string | null>(items.some((i) => i.gear === wear) ? wear : items[0]?.gear ?? null);
   const [say, setSay] = useState('');
@@ -158,7 +162,8 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
 
   const rules = (key: string) => instance.gear.find((g) => g.key === key);
   const nameOf = (key: string) => rules(key)?.name ?? key;
-  const aspectOf = (key: string) => ui.gear[key]?.aspect ?? 1;
+  /* A piece's shape in the view it shows; undefined for gear the instance has no art for. */
+  const shapeOf = (p: Piece) => { const item = ui.gear[p.gear]; return item === undefined ? undefined : pieceShape(p, item); };
   const masks = new Map(characters.map((c) => [c.id, c.name]));
 
   /* Where each gear's copies stand: held, those on the other masks (by mask), and those on this stage. */
@@ -274,7 +279,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
     const handle = (e.target as HTMLElement).closest('[data-kb-handle]')?.getAttribute('data-kb-handle');
     let index = at;
     if (handle === undefined || handle === null) {
-      index = hit(pieces, aspectOf, p.x, p.y, p.w, p.h);
+      index = hit(pieces, shapeOf, p.x, p.y, p.w, p.h);
       setAt(index);
       if (index === null) return;
       setFocusSel(true);
@@ -344,7 +349,7 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
               onChange={() => { setGear(i.gear); follow(i.gear); }} onFocus={() => follow(i.gear)}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); putGear(i.gear); } }}
             />
-            <span className="kb-wardrobe-art" aria-hidden="true">{ui.gear[i.gear] && <img src={ui.gear[i.gear]!.art} alt="" draggable={false} />}</span>
+            <span className="kb-wardrobe-art" aria-hidden="true">{ui.gear[i.gear] && <img src={ui.gear[i.gear]!.views[ui.gear[i.gear]!.default]!.art} alt="" draggable={false} />}</span>
             <span className="kb-wardrobe-rarity"><span className="kb-gem" aria-hidden="true" data-kb-rarity={i.rarity} data-kb-gem={gemOf(i.rarity)} /> <span>{rarityName(i.rarity)}</span></span>
             <b id={ids.name} className="kb-wardrobe-name">{nameOf(i.gear)}</b>
             <span id={ids.worn} className="kb-wardrobe-worn-line">{s.text}</span>
@@ -416,17 +421,22 @@ function Dressing({ id, name, face, items, reload, drafts, wear }: { readonly id
             <img src={portrait} alt="" draggable={false} onLoad={(e) => { const i = e.currentTarget; if (i.naturalWidth > 0) setTall(i.naturalHeight / i.naturalWidth); }} />
             <Outfit pieces={pieces} on="portrait" />
             <span className="kb-wardrobe-reach" aria-hidden="true" />
-            {current && ui.gear[current.gear] && (
+            {current && ui.gear[current.gear] && (() => {
+              /* The box is drawn as `Outfit` draws the piece (pivot, transform-origin, the shown view's width and aspect), so its handles hug the picture. */
+              const shape = pieceShape(current, ui.gear[current.gear]!);
+              const pct = (n: number) => `${Math.round(n * 1e6) / 1e4}%`;
+              return (
               <div
                 ref={sel} className="kb-wardrobe-sel" tabIndex={0} role="group" onKeyDown={keys}
                 aria-label={`${gearName(current)}, selected`} aria-describedby={help}
-                style={{ left: `${Math.round(current.x * 1e6) / 1e4}%`, top: `${Math.round(current.y * 1e6) / 1e4}%`, width: `${Math.round(current.w * 1e6) / 1e4}%`, aspectRatio: `1 / ${aspectOf(current.gear)}`, transform: `translate(-50%, -50%) rotate(${current.turn}deg)` }}
+                style={{ left: pct(current.x), top: pct(current.y), width: pct(shape.w), aspectRatio: `1 / ${shape.aspect}`, transformOrigin: `${pct(shape.px)} ${pct(shape.py)}`, transform: `translate(${pct(-shape.px)}, ${pct(-shape.py)}) rotate(${current.turn}deg)` }}
               >
                 <span id={help} className="kb-visually-hidden">Arrow keys move it, plus and minus size it, left and right brackets turn it, Delete takes it off.</span>
                 {['nw', 'ne', 'sw', 'se'].map((c) => <span key={c} className="kb-wardrobe-handle" data-kb-handle="size" data-kb-corner={c} aria-hidden="true" />)}
                 <span className="kb-wardrobe-handle kb-wardrobe-turn" data-kb-handle="turn" aria-hidden="true" />
               </div>
-            )}
+              );
+            })()}
           </div>
         </div>
       </section>

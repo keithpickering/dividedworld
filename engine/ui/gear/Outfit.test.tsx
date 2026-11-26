@@ -17,6 +17,20 @@ describe('the outfit on a portrait', () => {
     expect(img!.style.transform).toContain('translate(-50%, -50%)');
   });
 
+  test('a piece whose pivot is its bottom-left corner is placed by that corner and turns about it', () => {
+    const [img] = pieces(show(<Outfit pieces={[piece({ gear: 'corner', turn: 20 })]} on="portrait" />));
+    expect(img!.style.transformOrigin).toBe('0% 100%');
+    expect(img!.style.transform).toBe('translate(0%, -100%) rotate(20deg)');
+    expect(img!.style.aspectRatio).toBe('1 / 0.5');
+  });
+
+  test('a piece in a view its item does not ship draws the default view, and one in a view it ships draws that view\'s art, in that view\'s own width', () => {
+    const arts = (view: Piece['view']) => pieces(show(<Outfit pieces={[piece({ gear: 'sided', w: 0.4, view })]} on="portrait" />)).map((i) => [i.getAttribute('src'), i.style.width]);
+    expect(arts('side-right')).toEqual([['sided-front.svg', '40%']]);
+    expect(arts(null)).toEqual([['sided-front.svg', '40%']]);
+    expect(arts('side-left')).toEqual([['sided-left.svg', '20%']]);
+  });
+
   test('a piece is as wide as its fraction of the portrait, as tall as its art, turned and stacked by layer', () => {
     const box = show(<Outfit pieces={[piece({ gear: 'tall', layer: 2, turn: 30, w: 0.4 }), piece({ layer: 1 })]} on="portrait" />);
     const [low, high] = pieces(box);
@@ -58,6 +72,12 @@ describe('the outfit on the square', () => {
 
   test('a piece reaching into the square from below is kept', () => {
     expect(pieces(show(<Outfit pieces={[piece({ gear: 'tall', y: 0.7, w: 0.5 })]} on="square" frame={frame} />))).toHaveLength(1);
+  });
+
+  test('a piece whose pivot is outside the square but whose picture reaches into it is drawn, and one wholly outside is not', () => {
+    /* The corner item stands up and to the right of its pivot: 0.5 wide and 0.25 tall here. On the square, a pivot at 1.1 reaches up to 0.85. */
+    expect(pieces(show(<Outfit pieces={[piece({ gear: 'corner', x: 0.2, y: 0.55 })]} on="square" frame={frame} />))).toHaveLength(1);
+    expect(pieces(show(<Outfit pieces={[piece({ gear: 'corner', x: 0.2, y: 0.9 })]} on="square" frame={frame} />))).toHaveLength(0);
   });
 
   test('with no square frame there is nothing to map, so nothing is drawn', () => {

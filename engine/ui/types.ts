@@ -8,6 +8,7 @@
  * log never does"). The System's in-character words are the rules' `Copy`.
  */
 import type { ConductMailOverride } from '../mail/conduct.ts';
+import type { GearView, GearViewShape } from '../rules/cosmetics.ts';
 import type { Quadrant, Span } from '../rules/types.ts';
 import type { CardArt, CardUi, PackArtLook } from './cards/types.ts';
 import type { Alert } from './data/api.ts';
@@ -449,6 +450,9 @@ export interface LicenseCredit {
   readonly note?: string;
 }
 
+/** One view of a piece of gear: its picture's URL (a file the bundler resolved), and its size and pivot in the picture's own pixels. */
+export interface GearViewArt extends GearViewShape { readonly art: string }
+
 export interface InstanceUi {
   /** The themes a player may pick; the first is the house theme, used when the account says "system". */
   readonly themes: readonly ThemeOption[];
@@ -494,8 +498,12 @@ export interface InstanceUi {
   readonly cards: readonly CardUi[];
   /** How each pack the instance sells draws itself, by the rules' `PackRules.key`: its name and its face art, placed as a card's face art is (engine/ui/cards/types.ts, `CardArt`). */
   readonly packs: Readonly<Record<string, { readonly name: string; readonly art: PackArtLook }>>;
-  /** Each piece of gear's art, by the rules' `GearRules.key`: a URL the bundler resolved, and the art's height over its width. */
-  readonly gear: Readonly<Record<string, { readonly art: string; readonly aspect: number }>>;
+  /**
+   * Each piece of gear's art, by the rules' `GearRules.key`: `default`, the view drawn when a piece names none (or one the item does not ship),
+   * and `views`, one `GearViewArt` for each view the item ships. A rendered item's numbers (each view's size and pivot) come from the `views.json`
+   * beside its pictures, so the picture and its geometry are written once.
+   */
+  readonly gear: Readonly<Record<string, { readonly default: GearView; readonly views: Readonly<Partial<Record<GearView, GearViewArt>>> }>>;
   /** Each trophy kind's badge art, by the rules' `TrophyRules.key`, as a URL the bundler resolved. */
   readonly trophies: Readonly<Record<string, { readonly art: string }>>;
   /**
