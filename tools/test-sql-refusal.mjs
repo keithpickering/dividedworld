@@ -268,6 +268,30 @@ await prelaunch(Object.values(runs).flat());
   check('track_functions', sql.includes("alter database tmpl_3 set track_functions to 'all';"), sql);
   check('kayfabb.client_rpcs', /alter database tmpl_3 set kayfabb\.client_rpcs to '[^']+';/.test(sql), sql);
   check('and kayfabb.scratch_url, naming the clone itself', sql.includes("alter database tmpl_3 set kayfabb.scratch_url to 'postgres://postgres:pg@localhost:5432/tmpl_3';"), sql);
+  /* A clone carries what its source stored: the copy reads pg_db_role_setting by name (no list of settings), comes before the
+     runner's own `alter database` lines so the clone's scratch_url names the clone, and is driven red on both defects. */
+  const copyProblem = (text) => {
+    const copyAt = text.search(/pg_db_role_setting/);
+    const ownAt = text.indexOf('alter database tmpl_3 set');
+    if (copyAt < 0) return 'no statement reads pg_db_role_setting';
+    if (!/setdatabase\s*=\s*\(select oid from pg_database where datname = 'tmpl'\)/.test(text) || !/setrole\s*=\s*0/.test(text)) return 'the copy does not read the source\'s no-role settings';
+    if (!/alter database %I set %s to %L/.test(text) || !/\\gexec/.test(text)) return 'the copy does not run one alter database per stored setting with \\gexec';
+    // The copy (from the statement that reads the catalog to the runner's own lines) names no setting: not `jit`, which 0441
+    // stores, and none the runner stores either, so a setting a later migration adds travels without a list to keep.
+    const copy = text.slice(text.lastIndexOf('select', copyAt), ownAt < 0 ? undefined : ownAt);
+    if (['jit', ...Object.keys(SESSION_BOUNDS), 'track_functions', 'kayfabb'].some((name) => new RegExp(`\\b${name.replace('.', '\\.')}\\b`).test(copy))) return 'the copy names a setting';
+    if (ownAt < 0 || copyAt > ownAt) return 'the copy does not come before the runner\'s own settings';
+    return null;
+  };
+  const cloneUrl = 'postgres://postgres:pg@localhost:5432/postgres';
+  check('cloneSql copies the source\'s stored settings, by name from the catalog, before its own', copyProblem(sql) === null, String(copyProblem(sql)));
+  const own = runner.settingsSql('tmpl_3', cloneUrl);
+  const copyPart = sql.slice(sql.indexOf('select format('), sql.indexOf(own) >= 0 ? sql.indexOf(own) : undefined);
+  check('poison: a clone made with no copy fails the check', copyProblem(`create database tmpl_3 template tmpl;\n${own}`) !== null);
+  check('poison: a copy after the runner\'s own settings fails the check (scratch_url would name the template)', copyPart.length > 0 && copyProblem(`create database tmpl_3 template tmpl;\n${own}\n${copyPart}`) !== null);
+  check('poison: a copy that names a setting fails the check', copyProblem(sql.replace('select format(', "select 'jit' || format(")) !== null);
+  check('poison: a copy that names a bound fails the check', copyProblem(sql.replace('and s.setrole = 0', "and s.setrole = 0 and split_part(c, '=', 1) <> 'statement_timeout'")) !== null);
+  check('poison: a copy that names a kayfabb setting fails the check', copyProblem(sql.replace('and s.setrole = 0', "and s.setrole = 0 and c not like 'kayfabb.client_rpcs=%'")) !== null);
   const parsed = typeof runner.parseAfterFile === 'function' ? runner.parseAfterFile(['drift|p1|why one', 'calls|thread_page|3', '', 'calls|board_page|0']) : null;
   check('the after-file call\'s one result is read as drift rows and function counts', JSON.stringify(parsed) === JSON.stringify({ drift: [{ name: 'p1', calls: 'why one' }], calls: [{ name: 'thread_page', calls: '3' }, { name: 'board_page', calls: '0' }] }), JSON.stringify(parsed));
   check('afterFileSql asks for both, in one call', /play_post_drift\(\)/.test(runner.afterFileSql ?? '') && /pg_stat_user_functions/.test(runner.afterFileSql ?? ''));
@@ -692,7 +716,7 @@ const full = boundedSuite(runs.full);
   check('a pattern that selects no end-to-end file makes no snapshot', noE2e.records.length > 0 && !noE2e.records.some((c) => dbOf(c) === 'postgres' && /^create database \w+_(s\d+|migrated) /.test(bodyOf(c))), '');
 
   /* Whatever a file leaves named after its clone goes with the clone. */
-  const dropOf = pointed.records.filter((c) => dbOf(c) === 'postgres' && /pg_database/.test(bodyOf(c)) && /\\gexec/.test(bodyOf(c)));
+  const dropOf = pointed.records.filter((c) => dbOf(c) === 'postgres' && /pg_database/.test(bodyOf(c)) && !/^create database/.test(bodyOf(c)) && /\\gexec/.test(bodyOf(c)));
   check('when a clone is dropped, so is every database named for it (<clone>_%)', dropOf.length >= 1 && dropOf.every((c) => /like 'kayfabb_scratch_\d+_\d+_\d+\\_%'/.test(bodyOf(c))), dropOf[0] ? bodyOf(dropOf[0]) : 'no such call');
 
   /* A point no migration has fails the run before anything runs. */

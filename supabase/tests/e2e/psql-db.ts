@@ -47,7 +47,7 @@ function cloneOfSnapshot(key: string, suffix: string): { url: string; drop: () =
   const server = new URL(scratch);
   server.pathname = '/postgres';
   const onServer = (text: string) => execFileSync('psql', ['-v', 'ON_ERROR_STOP=1', '-qtAX', server.toString(), '-f', '-'], { input: text, encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'], timeout: FILE_TIMEOUT_MS, killSignal: 'SIGKILL' });
-  // The settings a database starts with do not travel with a clone, so cloneSql gives the clone its own, scratch_url naming it.
+  // cloneSql copies what the snapshot stored for itself (a migration's `alter database … set`), then gives the clone its own settings after, scratch_url naming it.
   onServer(cloneSql(snapshot, name, server.toString()));
   const url = new URL(scratch);
   url.pathname = `/${name}`;
