@@ -83,3 +83,15 @@ test('a play is handed its text lazily: no read, no parse; reads by two plays se
   assert.equal(reads, 2);
   assert.ok(texts.every((t) => t === 'x y'));
 });
+
+/** A test card whose config is a list of covers it gives as they are. */
+const fixed = (list: readonly Cover[]): ReadPlay => play('fixed', list);
+const given = (card: string | null, p: CoverPlay): readonly Cover[] | null => (card === 'fixed' ? (p.config as readonly Cover[]) : covers(card, p));
+
+test('covers of one play that overlap keep the first', () => {
+  assert.equal(coveredBody('one two three', [fixed([{ from: 0, to: 7, words: 'A' }, { from: 4, to: 13, words: 'B' }])], given), 'A three');
+});
+
+test('covers that change a length are written from the end back, so each lands on its own words', () => {
+  assert.equal(coveredBody('one two three', [fixed([{ from: 0, to: 3, words: 'a much longer one' }, { from: 8, to: 13, words: '3' }])], given), 'a much longer one two 3');
+});
