@@ -7,7 +7,7 @@ import { qualityControl } from './personas/quality-control.ts';
 import { placeholderBosses } from './fixtures/index.ts';
 import { BOSS_PREMISE, MOD_BOT_PREMISE, MEMBER_PREMISE, BOSS_ANSWER_RULES, MOD_BOT_ANSWER_RULES, MEMBER_ANSWER_RULES, persona, offices } from './persona.ts';
 import { personaPrompt } from '../../../engine/system/prompt.ts';
-import { instanceProblems } from '../../../engine/rules/instance.ts';
+import { habitsProblem, instanceProblems } from '../../../engine/rules/instance.ts';
 import { instance } from '../index.ts';
 import type { Beat } from '../../../engine/rules/types.ts';
 import { STAFF_TOKENS, STOCK_LINE_KEYS, STOCK_LINE_TOKENS } from '../../../engine/system/stock.ts';
@@ -355,8 +355,7 @@ test('QC-1000\'s habits are occasional', () => {
   assert.doesNotMatch(qualityControl.selfPrompt ?? '', /You open a visit with/);
 });
 
-test('each persona keeps the habits the habits plan gives, in UTC hours, and the roster\'s rule accepts them', async () => {
-  const { habitsProblem } = await import('../../../engine/rules/instance.ts');
+test('each persona keeps the habits the habits plan gives, in UTC hours, and the roster\'s rule accepts them', () => {
   const span = (from: number, to: number) => Array.from({ length: to - from + 1 }, (_, i) => from + i);
   const want = {
     // FanGaME's late night is 0 to 4 UTC (7pm to midnight Eastern), after a lunch peek at 17 UTC.
