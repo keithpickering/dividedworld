@@ -134,7 +134,9 @@ const doubles = (keys, man, n) => {
   shards[1].push(shards[0][0]);
   return { shards, totals: r.totals };
 };
-for (const [name, bad, want] of [['drops the last key', dropsLast, /not exactly once/], ['puts a key in two shards', doubles, /not exactly once/]]) {
+/** @type {[string, typeof pack, RegExp][]} */
+const POISON_PACKERS = [['drops the last key', dropsLast, /not exactly once/], ['puts a key in two shards', doubles, /not exactly once/]];
+for (const [name, bad, want] of POISON_PACKERS) {
   const c = exactlyOnce(MIXED, MIX_MAN, 3, bad);
   if (want.test(c)) ok(`the assertion refuses a packer that ${name}`);
   else fail(`the assertion refuses a packer that ${name}`, `got "${c}"`);

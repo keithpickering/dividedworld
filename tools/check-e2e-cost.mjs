@@ -137,6 +137,7 @@ export function listSuite() {
   return readList(spawnSync(process.execPath, [cli, 'test', '--list', '--reporter=json'], { encoding: 'utf8', maxBuffer: 256 * 1024 * 1024, cwd: ROOT }));
 }
 
+/** @type {(message: string) => never} */
 const bail = (message) => {
   console.error(`PROBLEM ${message}`);
   process.exit(1);

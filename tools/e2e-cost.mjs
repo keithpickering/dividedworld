@@ -138,7 +138,7 @@ export function suiteMean(manifest) {
  * A test's estimated seconds: its own entry, else its spec's mean, else the suite's mean per
  * test, else 1. Throws unless the price is finite and above 0, since a zero or NaN price would
  * quietly mis-pack. `mean` is the suite's mean when the caller has it already.
- * @param {string} key @param {{ specs?: Record<string,{count:number,mean:number}>, tests?: Record<string,number> }} manifest
+ * @param {string} key @param {{ measured?: unknown, specs?: Record<string,{count:number,mean:number}>, tests?: Record<string,number> }} manifest
  * @param {number | null} [mean]
  */
 export function price(key, manifest, mean = suiteMean(manifest)) {
