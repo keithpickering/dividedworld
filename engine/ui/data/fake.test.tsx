@@ -10,6 +10,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { landsOn, ok, quadrantFree, refuse, refusalTime, type CardEffect, type CardRules, type CardTarget } from '../../rules/cards.ts';
 import { cellsOf, count } from '../../rules/surface.ts';
+import { JOBS, jobHealth } from '../../rules/jobs.ts';
 import { momentParts } from '../cards/Effects.tsx';
 import type { CardUi } from '../cards/types.ts';
 import { failureKind, NOT_SENT, ReadFailure } from './api.ts';
@@ -8278,21 +8279,43 @@ describe('a talked-down Mod posts its concession', () => {
 });
 
 describe('the jobs', () => {
-  test('jobStatus gives the rows a test set, adminJobs gives an admin each last run and the Vault, and a player no page', async () => {
+  test('a new world has all ten jobs healthy, last good at their latest due time, and it follows the clock', async () => {
+    const fake = createFake({ instance });
+    fake.signInAs(fake.seed.account('jobs-admin', { admin: true }));
+    const rows = await fake.jobStatus();
+    expect(rows.map((r) => r.job)).toEqual(JOBS.map((j) => j.name));
+    expect(rows.every((r) => r.active && r.schedule !== null && r.lastOkAt !== null)).toBe(true);
+    expect(Object.fromEntries(rows.map((r) => [r.job, r.schedule]))).toMatchObject({ 'kayfabb-staff': '*/5 * * * *', 'kayfabb-view-counts': '41 * * * *', 'kayfabb-chatter': '*/15 * * * *', 'kayfabb-mail': '* * * * *' });
+    expect(jobHealth(rows, {}, new Date(fake.clock.now())).some((h) => h.stopped)).toBe(false);
+    fake.clock.advance(40 * 60_000);
+    expect(jobHealth(await fake.jobStatus(), {}, new Date(fake.clock.now())).some((h) => h.stopped)).toBe(false);
+    const page = await fake.adminJobs();
+    expect(page?.vault).toEqual({ functionsUrl: true, jobsKey: true });
+    expect(page?.jobs.every((j) => j.lastRun?.status === 'succeeded' && j.lastRun.message === '1 row')).toBe(true);
+  });
+
+  test('seed.job overrides a row, null and noJob remove it, adminJobs gives an admin each last run, and a player no page', async () => {
     const fake = createFake({ instance });
     const admin = fake.seed.account('jobs-admin', { admin: true });
     const player = fake.seed.account('jobs-player');
     fake.seed.job('kayfabb-mail', { schedule: '*/5 * * * *' });
     fake.seed.job('kayfabb-meet', { active: false });
+    fake.seed.job('kayfabb-write', null);
+    fake.seed.noJob('kayfabb-conceal');
     fake.seed.jobRun('kayfabb-mail', { status: 'failed', message: 'boom', at: 0 });
+    fake.seed.jobRun('kayfabb-meet', null);
     fake.seed.jobVault({ jobsKey: false });
     fake.signInAs(player);
-    expect((await fake.jobStatus()).map((r) => [r.job, r.schedule, r.active])).toEqual([['kayfabb-mail', '*/5 * * * *', true], ['kayfabb-meet', '* * * * *', false]]);
+    const rows = await fake.jobStatus();
+    expect(rows.map((r) => r.job)).not.toContain('kayfabb-write');
+    expect(rows.map((r) => r.job)).not.toContain('kayfabb-conceal');
+    expect(rows.find((r) => r.job === 'kayfabb-mail')?.schedule).toBe('*/5 * * * *');
+    expect(rows.find((r) => r.job === 'kayfabb-meet')?.active).toBe(false);
     expect(await fake.adminJobs()).toBeNull();
     fake.signInAs(admin);
     const page = await fake.adminJobs();
     expect(page?.vault).toEqual({ functionsUrl: true, jobsKey: false });
-    expect(page?.jobs[0]?.lastRun).toEqual({ status: 'failed', message: 'boom', at: '1970-01-01T00:00:00.000Z' });
-    expect(page?.jobs[1]?.lastRun).toBeNull();
+    expect(page?.jobs.find((j) => j.job === 'kayfabb-mail')?.lastRun).toEqual({ status: 'failed', message: 'boom', at: '1970-01-01T00:00:00.000Z' });
+    expect(page?.jobs.find((j) => j.job === 'kayfabb-meet')?.lastRun).toBeNull();
   });
 });

@@ -5,7 +5,6 @@
  * renders; it returns the backend and the ids the seed made.
  */
 import { render } from '@testing-library/react';
-import { JOBS } from '../rules/jobs.ts';
 import type { ReactElement } from 'react';
 import { landsOn, ok, type CardRules } from '../rules/cards.ts';
 import type { Instance, Settings } from '../rules/types.ts';
@@ -183,11 +182,6 @@ export function holdReads(fake: Fake, allowed: readonly string[] = []): readonly
     (fake as unknown as Record<string, unknown>)[name] = () => { read.push(name); return Promise.reject(new Error(`the first render read ${name}`)); };
   }
   return read;
-}
-
-/** Every scheduled job running as it should, as a deployed instance reads (a world with no rows reads every job "not scheduled", and a strip over the admin pages says so). `except` maps a job's name to how many minutes ago its last good run was. */
-export function seedHealthyJobs(fake: Fake, except: Readonly<Record<string, number>> = {}): void {
-  for (const j of JOBS) fake.seed.job(j.name, { lastOkAt: new Date(fake.clock.now() - (except[j.name] ?? 1) * 60_000).toISOString() });
 }
 
 /** The backend alone, for a test that must do something asynchronous (a spin) before it renders. */

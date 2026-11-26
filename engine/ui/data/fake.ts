@@ -39,7 +39,8 @@ import type { Career } from '../../system/career.ts';
 import type { HandoffFacts } from '../../system/meeting.ts';
 import { ADMIN_AWARDS_PAGE, ALERTS_PAGE, ALERTS_UNREAD_BOUND, type FailureKind, type SignedIn, CONTACT_HREF_MAX, CONTACT_LABEL_MAX, CONTACT_MOST, CONTACT_WS, DEFAULT_PREFERENCES, FOLLOWED_COUNT_CAP, LOST_ANSWER, MOVES_LOG_PAGE, NOT_SENT, PLAY_FROM, ReadFailure, REPORT_LIMIT, REIGNS_PAGE, TROPHIES_PAGE, TROPHY_FAILURES_PAGE, SEARCH_CARDS_MAX, SEARCH_COUNT_CAP, SEARCH_MATCHES_CAP, SEARCH_PER_PAGE, SEARCH_PER_PAGE_MAX, SEASON_NEWS_PAGE, SPUN_FROM_MAX, UPDATES_PAGE } from './api.ts';
 import { buildMoveNotice, toDemand, toProgress } from './moves.ts';
-import type { JobRow } from '../../rules/jobs.ts';
+import { lastDue } from '../../rules/cron.ts';
+import { JOBS, type JobRow } from '../../rules/jobs.ts';
 import { TIP_KEYS, TOUR_KEYS } from '../tips/keys.ts';
 import { quotedActs, visibleText } from '../../bbcode/visible.ts';
 import { forgedList, forgedSet, holds, quoteHeld, quoteSource } from '../../bbcode/quoted.ts';
@@ -156,9 +157,13 @@ export interface Seed {
   update(update: { title: string; body: string; changes?: readonly UpdateChange[]; at?: number }): Id;
   /** An account's decision recorded before the screen opens (the admin screen's past decisions), dated `at` (else now). */
   conductDecision(decision: { account: Id; outcome: string; until?: number; note?: string; at?: number; /** The version an admin's decision was about (a hide, an unhide, an approve): it is in the author's `conductLog`. */ version?: Id }): void;
-  /** A job's `job_status` row, in the world from now: a job with no row reads "not scheduled". The first call for a job fills what it leaves out (a schedule of `* * * * *`, active, first seen at the clock). */
-  job(job: string, row?: { schedule?: string | null; active?: boolean; firstSeen?: string | null; lastOkAt?: string | null; grace?: Record<string, number> | null }): void;
-  /** The job's last pg_cron run (`admin_jobs`'s `lastRun`), `at` else the clock; null clears it. */
+  /**
+   * A job's `job_status` row, in the world from now. Every job starts healthy: scheduled as a deployed instance schedules it, active, first seen when the world began, and last good at its latest due time at or before the clock (read lazily, so it never ages into stopped as the clock advances). What this leaves out keeps that default; null removes the job's row, so it reads "not scheduled".
+   */
+  job(job: string, row?: { schedule?: string | null; active?: boolean; firstSeen?: string | null; lastOkAt?: string | null; grace?: Record<string, number> | null } | null): void;
+  /** Removes a job's row: it reads "not scheduled" (`job(name, null)`). */
+  noJob(job: string): void;
+  /** The job's last pg_cron run (`admin_jobs`'s `lastRun`), `at` else the clock; null clears it. A job with no call here has a succeeded run of '1 row' at its last good run. */
   jobRun(job: string, run: { status: string; message?: string | null; at?: number } | null): void;
   /** Whether the two Vault entries are present (both, by default). */
   jobVault(vault: { functionsUrl?: boolean; jobsKey?: boolean }): void;
@@ -1391,8 +1396,22 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
   const REPORTS_PAGE = 50;
   const FAILED_PAGE = 200;
   /** `job_status`'s rows and pg_cron's last run of each, which a story or test sets (`Seed.job`, `Seed.jobRun`). */
-  const jobRows = new Map<string, JobRow>();
-  const jobRuns = new Map<string, { status: string; message: string | null; at: number }>();
+  const jobDefaults: Readonly<Record<string, string>> = {
+    'kayfabb-chatter': '*/15 * * * *', 'kayfabb-meet': '0 11 * * *', 'kayfabb-settle': '0 10 * * *', 'kayfabb-staff': '*/5 * * * *', 'kayfabb-view-counts': '41 * * * *',
+  };
+  const jobOverrides = new Map<string, Partial<JobRow>>();
+  const jobGone = new Set<string>();
+  const jobRuns = new Map<string, { status: string; message: string | null; at: number } | null>();
+  const jobFirstSeen = iso(now());
+  /** A job's row as `job_status()` reads it: the healthy default under what a test set. */
+  const jobRow = (job: string): JobRow => {
+    const o = jobOverrides.get(job) ?? {};
+    const schedule = 'schedule' in o ? o.schedule! : jobDefaults[job] ?? '* * * * *';
+    let due: string | null = null;
+    if (schedule !== null) { try { due = lastDue(schedule, new Date(now()))?.toISOString() ?? null; } catch { due = null; } }
+    return { job, schedule, active: o.active ?? true, firstSeen: 'firstSeen' in o ? o.firstSeen! : jobFirstSeen, lastOkAt: 'lastOkAt' in o ? o.lastOkAt! : due, grace: o.grace ?? null };
+  };
+  const jobRowsNow = (): JobRow[] => JOBS.filter((j) => !jobGone.has(j.name)).map((j) => jobRow(j.name));
   const jobVault = { functionsUrl: true, jobsKey: true };
   const conductReports: ReportRec[] = [];
   const conductDecisions: DecisionRec[] = [];
@@ -5372,11 +5391,14 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         ...(handover !== null && core.isAdmin() ? { queue: core.adminQueue() } : {}),
       };
     },
-    jobStatus(): readonly JobRow[] { return [...jobRows.values()]; },
+    jobStatus(): readonly JobRow[] { return jobRowsNow(); },
     adminJobs(): AdminJobs | null {
       if (!core.isAdmin()) return null;
       return {
-        jobs: [...jobRows.values()].map((r): AdminJob => { const run = jobRuns.get(r.job); return { ...r, lastRun: run === undefined ? null : { status: run.status, message: run.message, at: iso(run.at) } }; }),
+        jobs: jobRowsNow().map((r): AdminJob => {
+          const run = jobRuns.has(r.job) ? jobRuns.get(r.job)! : { status: 'succeeded', message: '1 row', at: r.lastOkAt === null ? now() : Date.parse(r.lastOkAt) };
+          return { ...r, lastRun: run === null ? null : { status: run.status, message: run.message, at: iso(run.at) } };
+        }),
         vault: { ...jobVault },
       };
     },
@@ -5991,11 +6013,12 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     unaccepted(account) { unaccepted.add(account); },
     conductDecision(d) { conductDecisions.push({ id: conductNextId++, report: null, version: d.version ?? null, account: d.account, outcome: d.outcome, until: d.until ?? null, note: d.note ?? '', at: d.at ?? now() }); },
     job(job, row = {}) {
-      const was = jobRows.get(job);
-      const pick = <K extends keyof JobRow>(k: K, fallback: JobRow[K]): JobRow[K] => (k in row ? (row as unknown as JobRow)[k] : was?.[k] ?? fallback);
-      jobRows.set(job, { job, schedule: pick('schedule', '* * * * *'), active: pick('active', true), firstSeen: pick('firstSeen', iso(now())), lastOkAt: pick('lastOkAt', null), grace: pick('grace', null) });
+      if (row === null) { jobGone.add(job); return; }
+      jobGone.delete(job);
+      jobOverrides.set(job, { ...jobOverrides.get(job), ...row });
     },
-    jobRun(job, run) { if (run === null) jobRuns.delete(job); else jobRuns.set(job, { status: run.status, message: run.message ?? null, at: run.at ?? now() }); },
+    noJob(job) { jobGone.add(job); },
+    jobRun(job, run) { jobRuns.set(job, run === null ? null : { status: run.status, message: run.message ?? null, at: run.at ?? now() }); },
     jobVault(v) { if (v.functionsUrl !== undefined) jobVault.functionsUrl = v.functionsUrl; if (v.jobsKey !== undefined) jobVault.jobsKey = v.jobsKey; },
     conductReport(r) {
       const id = conductNextId++;

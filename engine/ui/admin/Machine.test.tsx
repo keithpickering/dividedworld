@@ -2,7 +2,7 @@ import { cleanup, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
-import { buildWorld, renderIn, seedHealthyJobs, testInstance } from '../test-world.tsx';
+import { buildWorld, renderIn, testInstance } from '../test-world.tsx';
 import { hundredths, MachineScreen } from './Machine.tsx';
 
 beforeEach(() => localStorage.clear());
@@ -23,7 +23,6 @@ const packs = { booster: { name: 'Booster', art: {} } } as never;
 
 function open(as: 'admin' | 'player' = 'admin') {
   const fake = buildWorld(undefined, instance);
-  seedHealthyJobs(fake);
   const admin = fake.seed.account('machine-admin', { admin: true });
   const player = fake.seed.account('machine-player');
   fake.signInAs(as === 'admin' ? admin : player);

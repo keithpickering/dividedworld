@@ -59,7 +59,8 @@ describe('the jobs page', () => {
     expect(await rowOf('mail')).toHaveTextContent('every 5 minutes');
     expect(await rowOf('meet')).toHaveTextContent('hourly at :41');
     expect(await rowOf('staff')).toHaveTextContent('0 9 1 * *');
-    expect(await rowOf('chatter')).toHaveTextContent('every minute');
+    expect(await rowOf('chatter')).toHaveTextContent('every 15 minutes');
+    expect(await rowOf('conceal')).toHaveTextContent('every minute');
   });
 
   test('stopped jobs come first, then the rest by name', async () => {

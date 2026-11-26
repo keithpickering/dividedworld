@@ -2,6 +2,7 @@ import { act, cleanup, render, screen } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { KayfaProvider, type Kayfa } from '../context.tsx';
 import type { Fake } from '../data/fake.ts';
+import { JOBS } from '../../rules/jobs.ts';
 import { buildWorld, testInstance } from '../test-world.tsx';
 import type { ScreenSettings } from '../data/api.ts';
 import { useJobHealth, useJobLate } from './useJobHealth.ts';
@@ -23,14 +24,8 @@ function page(fake: Fake) {
   return render(<KayfaProvider value={kayfa}><Strip /><Note /></KayfaProvider>);
 }
 
-/** Every job scheduled every minute and last good at the clock, but for the ones a test stops. */
-function runningWorld(): Fake {
-  const fake = buildWorld();
-  for (const j of ['chatter', 'conceal', 'mail', 'meet', 'search-rebuild', 'settle', 'staff', 'system-tick', 'view-counts', 'write']) {
-    fake.seed.job(`kayfabb-${j}`, { lastOkAt: new Date(fake.clock.now()).toISOString() });
-  }
-  return fake;
-}
+/** Every job running, as a new world has them, but for the ones a test stops. */
+const runningWorld = (): Fake => buildWorld();
 
 beforeEach(() => vi.useFakeTimers({ shouldAdvanceTime: false }));
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -55,7 +50,8 @@ describe('useJobHealth', () => {
   });
 
   test('a read that failed shows nothing late, never a stopped job', async () => {
-    const fake = buildWorld(); // no job has a row: all would read stopped if the rows were taken as read
+    const fake = buildWorld();
+    for (const j of JOBS) fake.seed.noJob(j.name); // no job has a row: all would read stopped if the rows were taken as read
     fake.seed.failNextRead('offline');
     page(fake);
     await act(async () => { await vi.advanceTimersByTimeAsync(0); });

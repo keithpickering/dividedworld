@@ -2,7 +2,7 @@ import { act, cleanup, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test } from 'vitest';
 import type { Fake } from '../data/fake.ts';
 import { shortTime } from '../postbit/dates.ts';
-import { buildWorld, renderIn, seedHealthyJobs } from '../test-world.tsx';
+import { buildWorld, renderIn } from '../test-world.tsx';
 import { AdminPages } from './AdminPages.tsx';
 
 afterEach(cleanup);
@@ -12,7 +12,7 @@ const isoAgo = (fake: Fake, minutes: number) => new Date(fake.clock.now() - minu
 
 function world(stopped: Record<string, number> = {}): Fake {
   const fake = buildWorld();
-  seedHealthyJobs(fake, stopped);
+  for (const [job, minutes] of Object.entries(stopped)) fake.seed.job(job, { lastOkAt: isoAgo(fake, minutes) });
   fake.signInAs(fake.seed.account('strip-admin', { admin: true }));
   return fake;
 }
