@@ -780,7 +780,7 @@ describe('spinning from a play', () => {
     expect(within(form).getByLabelText('Thread title')).toHaveFocus();
     await userEvent.type(within(form).getByLabelText('Thread title'), 'About the ink');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spin).toHaveBeenCalledWith(play, w.pipe, 'About the ink', ''));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(play, w.pipe, 'About the ink', '', undefined, undefined, 'general'));
   });
 
   test('a draft typed for the post survives a switch to a play and back, and each origin keeps its own', async () => {

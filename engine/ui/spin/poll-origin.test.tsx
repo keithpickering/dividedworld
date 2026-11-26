@@ -108,7 +108,7 @@ describe('a thread spun from a poll', () => {
     const form = await screen.findByRole('form', { name: 'Spin a thread from this poll' });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'Again');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.poll, w.pipe, 'Again', ''));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.poll, w.pipe, 'Again', '', undefined, undefined, 'general'));
   });
 });
 
@@ -161,7 +161,7 @@ describe('the Ballots list of a poll', () => {
     const form = await screen.findByRole('form', { name: "Spin a thread from Wario's ballot" });
     await userEvent.type(within(form).getByLabelText('Thread title'), 'About a ballot');
     await userEvent.click(within(form).getByRole('button', { name: 'Spin thread' }));
-    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.ballot, w.pipe, 'About a ballot', ''));
+    await waitFor(() => expect(spin).toHaveBeenCalledWith(w.ballot, w.pipe, 'About a ballot', '', undefined, undefined, 'general'));
   });
 
   test('a secret poll has no list, so no ballot Spin is drawn', async () => {

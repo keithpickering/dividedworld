@@ -64,6 +64,13 @@ function OpenForm() {
   return first?.firstAct ? <SpinForm origin={first.firstAct} label="post 1" onClose={() => undefined} /> : <div aria-busy="true" />;
 }
 
+/** The move that bars the character in the apology story's world, which the world sets and the story reads. */
+let apologyMove = '';
+/** The apology form for the move that bars the character from the board it opens on. */
+function ApologyForm() {
+  return <SpinForm origin={apologyMove} label={null} onClose={() => undefined} apology={{ to: 'the Boss' }} />;
+}
+
 const meta: Meta = { title: 'Spin/Spin' };
 export default meta;
 
@@ -79,6 +86,21 @@ const world: World = (fake, instance) => {
   void fake.spin(t.act, mine, 'Spun from the start', 'Carrying on over here.');
   const play = fake.seed.card(other, t.act, cardOf(instance.cards, PLAYED).key, { message: 'Oops.' });
   void fake.spin(play, mine, 'Spun from the play', 'About that card.');
+};
+
+/** Pipewrench barred by the Boss for a day from one of two player boards (the instance's second, or one added). Returns the move. */
+const barredWorld = (fake: Parameters<World>[0], instance: Parameters<World>[1], board: 'other' | 'general'): string => {
+  const me = fake.seed.account('story-player');
+  const mine = fake.seed.character(me, 'Pipewrench', instance.classes[0]!.key);
+  const other = fake.seed.character(fake.seed.account('story-other'), 'Spritey', (instance.classes[1] ?? instance.classes[0]!).key);
+  const open = instance.boards.filter((b) => !b.system).map((b) => b.slug);
+  const general = open[0]!;
+  const elsewhere = open[1] ?? 'elsewhere';
+  if (open.length < 2) fake.seed.board(elsewhere, 'Elsewhere');
+  fake.seed.thread(general, other, TITLE, 'A post worth a thread of its own.');
+  fake.seed.staff('story-boss', 'The Boss', 'boss');
+  fake.signInAs(me);
+  return fake.seed.groupMove('story-boss', { character: mine, group: GROUP, board: board === 'general' ? general : elsewhere, expiresAt: fake.clock.now() + 86_400_000 });
 };
 
 /**
@@ -102,6 +124,15 @@ const reachWorld: World = (fake, instance) => {
 
 /** The small form under a post that starts a thread from it. */
 export const SpinFormOpen: StoryObj = { render: () => <OpenForm />, parameters: { world } };
+
+/** The Board field under a post, starting on the board the post is on, with another board offered. */
+export const BoardField: StoryObj = { render: () => <OpenForm />, parameters: { world } };
+
+/** The Board field with a board the character is barred from: a disabled option that says until when. */
+export const BoardFieldWithBarredBoard: StoryObj = { render: () => <OpenForm />, parameters: { world: ((fake, instance) => { barredWorld(fake, instance, 'other'); }) satisfies World } };
+
+/** An apology: the board the character is barred from is choosable, and the apology goes onto it. */
+export const BoardFieldInApology: StoryObj = { render: () => <ApologyForm />, parameters: { world: ((fake, instance) => { apologyMove = barredWorld(fake, instance, 'general'); }) satisfies World } };
 
 /** A spun thread, opening on its ORIGIN box: the Act it came from, live, with a link back. */
 export const OriginBox: StoryObj = { render: () => <SpunThread />, parameters: { world } };
