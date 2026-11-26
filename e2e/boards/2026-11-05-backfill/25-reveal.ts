@@ -15,8 +15,10 @@
  * board's does), section labels in the glass's quieter text, and the preview's words and type being previews.ts's; and the field labels are the lead's 24px
  * (characters.css), compared by their words and place with the board's 24px. The count's own line is held (the hint at the left, the count at the right).
  */
-import type { BoardManifest } from '../../board-match.ts';
-import { part } from './24-debut.ts';
+import type { BoardManifest, Landmark } from '../../board-match.ts';
+
+/** A part of the dialog, held by its place from the dialog's corner. */
+const part = (id: string, role: string, name: string, more: Partial<Landmark> = {}): Landmark => ({ id, role, name, within: 'dialog', origin: 'dialog', box: 'position', ...more });
 
 /**
  * How much lower the build stands what is under the sentence, from what the first run measured: the dialog's 44px section gap where the board

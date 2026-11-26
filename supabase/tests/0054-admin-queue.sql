@@ -234,8 +234,8 @@ begin
   if (select e.payload ->> 'why' || '/' || (e.payload ->> 'by') from acts e where e.kind = 'move_end' and e.target_act_id = landed) is distinct from 'reversed/admin' then raise exception 'the move did not end reversed by an admin'; end if;
   if exists (select 1 from open_moves where move_act = landed) then raise exception 'a reversed move is still in force'; end if;
   -- The Boss says it, once, in the announcements thread, in the stock line for a reversal.
-  if (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Overruled: the renaming of a board to "Due Dune".') is distinct from 1::bigint then
-    raise exception 'the Boss said the reversal % times', (select count(*) from acts a where a.kind = 'post' and a.thread = ann and a.payload ->> 'body' = 'Overruled: the renaming of a board to "Due Dune".');
+  if (select count(*) from acts a where a.kind = 'post' and a.thread = (select m.thread from acts m where m.id = landed) and a.payload ->> 'body' = 'Overruled: the renaming of a board to "Due Dune".') is distinct from 1::bigint then
+    raise exception 'the Boss said the reversal % times', (select count(*) from acts a where a.kind = 'post' and a.thread = (select m.thread from acts m where m.id = landed) and a.payload ->> 'body' = 'Overruled: the renaming of a board to "Due Dune".');
   end if;
   if (select a.character from acts a where a.payload ->> 'body' like 'Overruled:%') is distinct from (select id from characters where staff = 'aq-boss') then raise exception 'the reversal was not said by the move''s Boss'; end if;
   -- Reversing again, reversing what is no move, and the tick: refused in words, and nothing more is written or said.

@@ -101,9 +101,10 @@ begin
   if (ran ->> 'landed')::integer is distinct from 1 or (ran ->> 'failed')::integer is distinct from 0 then raise exception 'the first tick landed % moves: %', ran ->> 'landed', ran; end if;
   act := (select landed_act from queued_moves where id = due);
   if act is null then raise exception 'a due move did not land'; end if;
-  -- It is the Boss's move Act in the announcements thread, its body the stock line with its tokens filled, its params and expiry as queued.
-  if (select a.character::text || '|' || a.kind || '|' || a.thread::text from acts a where a.id = act)
-     is distinct from (select c.id::text || '|move|' || ann::text from characters c where c.staff = 'tk-boss') then raise exception 'the move Act is not the Boss''s move in the announcements thread'; end if;
+  -- It is the Boss's move Act, first in a staff thread of its own on the system board (not the announcements thread, which takes nothing new), its body the stock line with its tokens filled, its params and expiry as queued.
+  if (select a.character::text || '|' || a.kind || '|' || a.seq::text from acts a where a.id = act)
+     is distinct from (select c.id::text || '|move|1' from characters c where c.staff = 'tk-boss') then raise exception 'the move Act is not the Boss''s move, first in its thread'; end if;
+  if not exists (select 1 from acts a join threads t on t.id = a.thread where a.id = act and t.staff_placed and t.board = system_board() and t.id <> ann) then raise exception 'the move Act is not in a staff thread of its own'; end if;
   if (select a.payload ->> 'body' from acts a where a.id = act) is distinct from 'It is done: the renaming of a board to "Toast Palace".' then
     raise exception 'the move''s body is %', (select a.payload ->> 'body' from acts a where a.id = act);
   end if;
@@ -330,21 +331,21 @@ begin
   perform end_move(landed_act, 'reversed', 'test') from queued_moves where id = good;
 end $$;
 
--- ---- No announcements thread: the tick says so, lands nothing, and still ends ----
+-- ---- The System off: the tick lands nothing (a move needs no thread made beforehand, and the switch is the whole gate), and still ends ----
 do $$
 declare
-  was jsonb := (select value from settings where key = 'systemAnnouncements');
+  was jsonb := (select value from settings where key = 'systemEnabled');
   due bigint;
   ran jsonb;
 begin
   due := pg_temp.queued('Nowhere Nook', now() - interval '1 hour');
-  delete from settings where key = 'systemAnnouncements';
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
   ran := system_tick();
-  insert into settings (key, value) values ('systemAnnouncements', was);
-  if (ran ->> 'noThread')::boolean is not true or (ran ->> 'landed')::integer <> 0 then raise exception 'a tick with no thread said %', ran; end if;
-  if (select landed_act from queued_moves where id = due) is not null then raise exception 'a move landed with nowhere to say it'; end if;
+  update settings set value = was where key = 'systemEnabled';
+  if (ran ->> 'landed')::integer <> 0 or ran ? 'noThread' then raise exception 'a tick with The System off said %', ran; end if;
+  if (select landed_act from queued_moves where id = due) is not null then raise exception 'a move landed while The System was off'; end if;
   ran := system_tick();
-  if (ran ->> 'noThread')::boolean is not false or (select landed_act from queued_moves where id = due) is null then raise exception 'the move did not land once the thread was back: %', ran; end if;
+  if (select landed_act from queued_moves where id = due) is null then raise exception 'the move did not land once The System was on: %', ran; end if;
   perform end_move(landed_act, 'reversed', 'test') from queued_moves where id = due;
 end $$;
 

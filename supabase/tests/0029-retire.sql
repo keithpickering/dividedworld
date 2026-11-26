@@ -37,7 +37,7 @@ begin
   perform tests.unbecome();
   -- A waiting Turn goes with it, since it could no longer be withdrawn.
   perform tests.become(ann);
-  perform turn(old, 'beta', 'silent');
+  perform turn(old, 'beta', 'silent', false, false);
   perform tests.unbecome();
   perform tests.become(boss);
   perform retire_character(old);
@@ -57,7 +57,7 @@ begin
   why := pg_temp.refusal(format('select post(%L, %L, %L)', t, old, 'Back?'));
   if why is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired character posted: %', why; end if;
   if pg_temp.refusal(format('select react(%L, %L, %L)', p, old, 'up')) is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired character reacted'; end if;
-  if pg_temp.refusal(format('select turn(%L, %L, %L)', old, 'beta', 'silent')) is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired character Turned'; end if;
+  if pg_temp.refusal(format('select turn(%L, %L, %L, false, false)', old, 'beta', 'silent')) is distinct from 'that character is retired; an admin can restore it' then raise exception 'a retired character Turned'; end if;
   perform tests.unbecome();
   if coalesce(pg_temp.refusal(format('insert into acts (character, kind, thread, payload) values (%L, %L, %L, %L)', old, 'post', t, '{"body": "x"}')), '') not like '%retired%' then
     raise exception 'an Act by a retired character was written past every action';

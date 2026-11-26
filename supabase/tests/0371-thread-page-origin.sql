@@ -287,7 +287,7 @@ begin
 
   -- 7: a thread's play and a board's play have no moment; the page is answered all the same.
   marq := (play_card(bob, 'ormarq', ca, t_at, '{}', 0, '', 'thread') ->> 'id')::uuid;
-  quake := (play_card(bob, 'orquake', ca, general, '{}', 0, '', 'board') ->> 'id')::uuid;
+  quake := (play_card(bob, 'orquake', ca, general, '{}', 0, '', 'board', null, null, null, null, '{}', t_at) ->> 'id')::uuid;
   s_thread := pg_temp.spun_at(spn, sp, marq, null);
   s_board := pg_temp.spun_at(spn, sp, quake, null);
   for i in 1..2 loop

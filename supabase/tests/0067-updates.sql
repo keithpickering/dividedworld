@@ -312,7 +312,7 @@ begin
     format('select spin(%L, %L, %L, %L)', mine, dev, 'A spin', 'Body.'),
     format('select start_thread(%L, %L, %L, %L)', 'general', dev, 'A thread', 'Body.'),
     format('select react(%L, %L, %L)', mine, dev, 'up'),
-    format('select turn(%L, %L, %L)', dev, 'beta', 'x')] loop
+    format('select turn(%L, %L, %L, false, false)', dev, 'beta', 'x')] loop
     said := pg_temp.refusal(stmt);
     if said is null or said not like '42501%' then raise exception 'a player acted as the developer (%): %', stmt, coalesce(said, 'no refusal'); end if;
   end loop;

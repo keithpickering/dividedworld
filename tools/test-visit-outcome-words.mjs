@@ -6,7 +6,7 @@
  * The guard holds the glass's words for how a visit ended to the outcomes the database allows. Each poison must fire (naming what is wrong) and the real
  * tree must stay clean: the old `/^Rule \d/iu` notice test (which doubles "House Rule 1: x"); a `reversed` whose only writer passes a
  * null `by_act` while the words say "admin" (main before the plain-words plan's Task 6); an outcome added to the SQL's list with no
- * words; and words for an outcome the SQL does not allow.
+ * words; words for an outcome the SQL does not allow; and an outcome with no icon on the mark (`markIcon`).
  */
 import { visitWordFaults, readTree } from './check-visit-outcome-words.mjs';
 
@@ -45,6 +45,7 @@ await fire('a reversed whose only writer names no Act while the words say admin'
 
 await fire('an outcome added to the SQL list with no words', { sqlText: swap(tree.sqlText, "'reversed', 'dropped') then raise", "'reversed', 'dropped', 'vanished') then raise") }, 'vanished');
 await fire('words for an outcome the SQL does not allow', { sqlText: swap(tree.sqlText, "'reversed', 'dropped') then raise", "'reversed') then raise") }, 'dropped');
+await fire('an outcome with no icon on the mark', { visitText: swap(tree.visitText, "    case 'trapped': return 'teeth';\n", '') }, 'markIcon');
 
 if (failures.length) { console.error(`\n${failures.length} failed:`); for (const f of failures) console.error('  ' + f); process.exit(1); }
 console.log(`\n${pass} passed`);

@@ -29,10 +29,19 @@
  *  - The preview's words are previews.ts's, held equal to the thread's (no board crumb line), so
  *    only The System's name is compared.
  *  - The footer's sentence says the settlement's time in the reader's zone where the board counts
- *    down ("in 7 h 42 min"), so it is left out.
+ *    down ("in 7 h 42 min"), so it is left out. An announced Turn is also written at once and stands (the staff board threads design,
+ *    0435): the build's footer says it can't be changed or withdrawn, and a thread picker (Board, Thread, shared with Reveal) stands between
+ *    the two names and the preview, which the board does not draw, so everything under the names stands lower and is compared by size only.
+ *  - The post's line ends "It takes effect at the next settlement.", which the name tiles and the preview quote.
  *  - The board's portrait is a placeholder; the build's is the character's, so it is not compared.
  */
 import type { BoardManifest } from '../board-match.ts';
+
+/**
+ * An announced Turn is always written ahead of its settlement (0435), so the line the post carries ends with the sentence that says when it takes
+ * effect (announceWords, engine/ui/thread/lines.tsx), and the dialog's checkbox quotes it whole.
+ */
+const OLD_NAMED = 'Name the old class. Adds “Pipewrench has Turned, leaving Heel. It takes effect at the next settlement.” to the post.';
 
 const manifest: BoardManifest = {
   board: '06-turn',
@@ -41,7 +50,9 @@ const manifest: BoardManifest = {
   press: [
     { role: 'button', name: 'Turn Pipewrench' },
     { role: 'radio', name: 'Face' },
-    { role: 'checkbox', name: 'Name the old class. Adds “Pipewrench has Turned, leaving Heel.” to the post.' },
+    { role: 'checkbox', name: OLD_NAMED },
+    /* The board draws no thread picker; the build's (shared with Reveal) must be there for an announced Turn, which is posted at once in a thread named. Pressing its Board select shows it is. */
+    { role: 'combobox', name: 'Board (optional)' },
   ],
   landmarks: [
     /*
@@ -107,13 +118,17 @@ const manifest: BoardManifest = {
      */
     /* The third tile holds two names where the board's holds one line, so the group is taller and its own box is not compared. */
     { id: 'loud', role: 'group', name: 'How loud', within: 'dialog', type: false, box: 'none' },
-    { id: 'silent', role: 'text', name: 'SILENT', buildName: 'Silent.', within: 'loud', box: 'position', origin: 'loud' },
-    { id: 'announced', role: 'text', name: 'ANNOUNCED', buildName: 'Announced.', within: 'loud', box: 'position', origin: 'loud' },
+    /*
+     * The two names stand 66.2px lower than the board's: the third tile's sentence now ends with "It takes effect at the next settlement." (above), which wraps
+     * it to a line more, and the tiles are one row, so the other two stretch to it and center their words.
+     */
+    { id: 'silent', role: 'text', name: 'SILENT', buildName: 'Silent.', within: 'loud', box: 'position', origin: 'loud', buildShift: { y: 66.2 } },
+    { id: 'announced', role: 'text', name: 'ANNOUNCED', buildName: 'Announced.', within: 'loud', box: 'position', origin: 'loud', buildShift: { y: 66.2 } },
     { id: 'name-old', role: 'text', name: 'ANNOUNCED WITH OLD CLASS', buildName: 'Name the old class.', within: 'loud', box: 'position', origin: 'loud' },
     { id: 'preview-head', role: 'text', name: 'What everyone will see', within: 'dialog', box: 'size' },
     /* The preview's words are the type scale's (the glass polish, design section 7): 15px where the board draws 12px, so "The System" is 1.25 times as wide. */
     { id: 'preview-by', role: 'text', name: 'The System', buildName: 'Pipewrench', buildNth: -1, within: 'dialog', box: 'size', buildSize: 15, buildShift: { width: 19.8 } },
-    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned, leaving Heel.', within: 'dialog', box: 'none', buildSize: 15 },
+    { id: 'preview-line', role: 'text', name: 'Pipewrench has Turned. Now a Face. Before this, Pipewrench was a Heel.', buildName: 'Pipewrench has Turned, leaving Heel. It takes effect at the next settlement.', within: 'dialog', box: 'none', buildSize: 15 },
 
     /*
      * The foot: Cancel and Confirm Turn are GlassButtons in one ButtonRow (the glass polish, design section 2, and the owner's correction that Reveal's
@@ -121,6 +136,16 @@ const manifest: BoardManifest = {
      * at 26px. The parts' measure is held by parts.test.tsx and the layout check, so neither is compared here. Where the foot stands follows the
      * footer's sentence, which is left out (above).
      */
+    /*
+     * The board's footer says when the Turn takes effect and that it can be canceled from My characters. An announced Turn is posted at once and
+     * cannot be changed or withdrawn, so the build's says that instead (COMMITS, engine/ui/characters/TurnDialog.tsx), before the settlement's time. Its place is the
+     * foot's, which follows the thread picker the board does not draw, so it is found by its words and not compared.
+     */
+    {
+      id: 'foot-words', role: 'text', within: 'dialog', box: 'none', type: false,
+      name: 'Takes effect at the next settlement, in 7 h 42 min; today is still scored as a Heel. You can cancel it from My characters until then. Pipewrench\'s next Turn opens 30 days after this one.',
+      buildName: 'Once announced, this Turn can\'t be changed or withdrawn. It takes effect at the next settlement. Next settlement: Oct 30, 8:17 AM.',
+    },
     { id: 'cancel', role: 'button', name: 'Cancel', within: 'dialog', box: 'none', type: false },
     { id: 'confirm', role: 'button', name: 'Confirm Turn', within: 'dialog', box: 'none', type: false },
   ],

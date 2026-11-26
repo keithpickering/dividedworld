@@ -1,8 +1,7 @@
 /**
- * New character: a name, a class from the class cards, and how it debuts (drop now or at the
- * settlement, silent, announced, or announced with its class), with the preview of what everyone
- * will see. The preview shows no class unless the player chose the option that names it. A full
- * roster says so, and that an admin can retire a character on request.
+ * New character: a name, a class from the class cards and pronouns. The character is on the board
+ * as soon as it is made, and nothing announces it (0436). A full roster says so, and that an admin
+ * can retire a character on request.
  *
  * It is a glass page in the Roster board's look (My characters' own), and the menu bar's Back and
  * Cancel are its ways out. Its surface draws no class's large text (engine/ui/glass/apply.ts), so
@@ -10,7 +9,6 @@
  */
 import { useId, useState } from 'react';
 import { useKayfa } from '../context.tsx';
-import type { DebutLoudness, DebutTiming } from '../data/api.ts';
 import { ButtonRow, GlassButton } from '../glass/Button.tsx';
 import { useClaim } from '../glass/claims.tsx';
 import { FieldCount } from '../glass/FieldCount.tsx';
@@ -22,7 +20,6 @@ import { usePendingFrom, useNavigate } from '../router.tsx';
 import { ClassCards } from './ClassCards.tsx';
 import { PronounPicker, pronounsHold } from './PronounPicker.tsx';
 import { words, type PronounSet } from '../../rules/pronouns.ts';
-import { DebutChoice } from './DebutChoice.tsx';
 import { newCharacterFooter } from './footers.ts';
 import './characters.css';
 import { CalmRegion } from '../glass/Calm.tsx';
@@ -31,14 +28,12 @@ import { CalmRegion } from '../glass/Calm.tsx';
 const NAME_MAX = 40;
 
 export function NewCharacter() {
-  const { api, instance, settings } = useKayfa();
+  const { api, settings } = useKayfa();
   const { characters, loaded, refresh } = usePlayer();
   const navigate = useNavigate();
   const signedIn = useSignedIn(api);
   const [name, setName] = useState('');
   const [cls, setCls] = useState<string | null>(null);
-  const [timing, setTiming] = useState<DebutTiming>('now');
-  const [loudness, setLoudness] = useState<DebutLoudness>('announced');
   /* The instance's default (`Settings.pronouns`), which the screen settings carry. */
   const [pronouns, setPronouns] = useState<PronounSet>(settings.pronouns);
   const [busy, setBusy] = useState(false);
@@ -64,14 +59,12 @@ export function NewCharacter() {
     );
   }
 
-  const className = instance.classes.find((c) => c.key === cls)?.name ?? '';
-
   const submit = async () => {
     if (!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns) || busy) return;
     setBusy(true);
     setRefusal(null);
     try {
-      const answer = await api.createCharacter(name, cls, timing, loudness, pronouns);
+      const answer = await api.createCharacter(name, cls, pronouns);
       if (!answer.ok) { setRefusal(answer.error); return; }
       await refresh();
       /* My characters opens on the new one, carried in history.state, never in the address. Its roster is read afresh: one read ahead
@@ -100,10 +93,9 @@ export function NewCharacter() {
           <p className="kb-roster-line">Only you will know {words(pronouns).their} class, unless you choose to reveal it.</p>
         </div>
         <PronounPicker name={name} value={pronouns} onChange={setPronouns} />
-        <DebutChoice name={name} pronouns={pronouns} className={className} timing={timing} loudness={loudness} onTiming={setTiming} onLoudness={setLoudness} />
         {refusal && <p role="alert" className="kb-notice" data-kb-tone="refusal">{refusal}</p>}
         {/* In a calm, since "Make the character" waits drawn as text on a dashed edge until a name and a class are chosen. */}
-        <FormFoot line={newCharacterFooter({ name, pronouns, className, timing, loudness })}>
+        <FormFoot line={newCharacterFooter({ name, pronouns })}>
           <GlassButton to="/characters">Cancel</GlassButton>
           <GlassButton type="submit" kind="primary" busy={busy || pendingFromMe} disabled={!cls || name.trim() === '' || [...name].length > NAME_MAX || !pronounsHold(pronouns)}>Make the character</GlassButton>
         </FormFoot>

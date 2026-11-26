@@ -42,8 +42,8 @@ function world(places: readonly [number | null, number | null, number | null, nu
   const thwomp = seed.character(other, 'Thwompson', 'face', { at: at(1) });
   const bossA = seed.staff('lady-ledger', 'Lady Ledger', 'boss', { at: at(1) });
   const bossB = seed.staff('mister-spreadsheet', 'Mister Spreadsheet', 'boss', { at: at(1) });
-  /* The announcements thread is The System's board's first: where a Boss speaks. */
-  const announcements = seed.thread('announcements', null, 'Announcements', 'Welcome.', { at: at(1) });
+  /* A season's Roster Report thread on The System's board: where a Boss's Roster entries go. */
+  const roster = seed.thread('announcements', null, 'Season 1: Roster Report', 'Welcome.', { at: at(1) });
   const said = seed.thread('general', spritey, 'here it is', 'Fine.', { at: at(3) });
   seed.reveal(spritey, said.thread, { at: at(3, 13), class: 'face' });
   seed.season({ number: 1, startsAt: new Date(at(1)).toISOString(), endsAt: new Date(at(28)).toISOString() });
@@ -58,17 +58,15 @@ function world(places: readonly [number | null, number | null, number | null, nu
     { character: mrs, place: places[2], standing: unplacedAt(2, 795) },
     { character: pipe, place: places[3], standing: unplacedAt(3, 100) },
   ], { at: at(28) });
-  /* Season 1's Promos: a debut, then a Turn announced with its old class. */
-  seed.announce(thwomp, 'debut', { at: at(26, 8) });
+  /* Season 1's Roster Report: an old debut (written before 0436), then a Turn announced with its old class. */
+  seed.debutHistory(thwomp, { at: at(26, 8) });
   const turned = seed.announce(pipe, 'turn', { at: at(27, 8), was: 'heel' });
   seed.season({ number: 2, startsAt: new Date(at(28)).toISOString() });
-  /* The Boss changed at the roll-over, and each said a line in the announcements thread. */
-  seed.staffPost(bossA, announcements.thread, 'My [b]ledger[/b] is closed. Goodbye.', { at: at(28) });
-  seed.staffPost(bossB, announcements.thread, 'Efficiency is a virtue. So is fear.', { at: at(28) });
-  seed.handover({ outgoing: 'lady-ledger', boss: 'mister-spreadsheet', at: at(28) });
-  seed.settle({ at: at(29, 8), debut: false, standings: { [spritey]: 50, [pipe]: 30 } });
+  /* The Boss changed at the roll-over: the handover's own thread holds the farewell and then the arrival. */
+  const handover = seed.handover({ outgoing: 'lady-ledger', boss: 'mister-spreadsheet', at: at(28), farewell: 'My [b]ledger[/b] is closed. Goodbye.', arrival: 'Efficiency is a virtue. So is fear.' });
+  seed.settle({ at: at(29, 8), standings: { [spritey]: 50, [pipe]: 30 } });
   fake.signInAs(me);
-  return { fake, me, other, pipe, mrs, spritey, gloomba, thwomp, turned, announcements };
+  return { fake, me, other, pipe, mrs, spritey, gloomba, thwomp, turned, roster, handover };
 }
 
 function Probe() {
@@ -354,12 +352,12 @@ describe('the News tab', () => {
     expect(arrived).toHaveTextContent('Mister Spreadsheet runs the board for Season 2.');
     expect(within(arrived).getByText(/Efficiency is a virtue\. So is fear\./u).tagName).toBe('BLOCKQUOTE');
     const post = within(arrived).getByRole('link', { name: 'Read the post on the board' });
-    expect(post.getAttribute('href')).toMatch(new RegExp(`^/t/${w.announcements.thread}\\?page=1#post-\\d+$`, 'u'));
+    expect(post.getAttribute('href')).toMatch(new RegExp(`^/t/${w.handover}\\?page=1#post-\\d+$`, 'u'));
     const left = itemOf('Lady Ledger has left');
     expect(within(left).getByText(/My ledger is closed\. Goodbye\./u)).toBeInTheDocument();
     expect(left).toHaveTextContent('Lady Ledger has left');
     expect(left).toHaveTextContent("Season 1's Boss has left.");
-    expect(within(left).getByRole('link', { name: 'Read the last post on the board' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.announcements.thread}`));
+    expect(within(left).getByRole('link', { name: 'Read the last post on the board' })).toHaveAttribute('href', expect.stringContaining(`/t/${w.handover}`));
     /* The glass quotes; it does not speak as the Boss. */
     expect(arrived).not.toHaveTextContent(/^Mister Spreadsheet:/u);
   });
@@ -369,7 +367,7 @@ describe('the News tab', () => {
     const newBoss = w.fake.seed.staff('new-boss', 'Quiet Boss', 'boss', { at: at(29) });
     w.fake.seed.handover({ outgoing: 'mister-spreadsheet', boss: 'new-boss', at: at(29) });
     /* It speaks later, about something else: not its handover's words. */
-    w.fake.seed.staffPost(newBoss, w.announcements.thread, 'Unrelated.', { at: at(30) });
+    w.fake.seed.staffPost(newBoss, w.roster.thread, 'Unrelated.', { at: at(30) });
     show(w.fake);
     const arrived = await waitFor(() => itemOf('Quiet Boss has arrived'));
     expect(within(arrived).queryByRole('link')).toBeNull();
@@ -395,6 +393,44 @@ describe('the News tab', () => {
     expect(names[1]).toHaveTextContent('Gloomba was a Face, now a Heel');
     /* The player's own characters are the player's, read by the provider (boot, in the app). */
     expect(await within(names[0]!).findByText('Yours')).toBeInTheDocument();
+  });
+
+  test('a Roster Report entry that names Turns taking effect is one item listing them (the first of them and a count), linking the entry; an announcement written ahead of its Turn is none', async () => {
+    const w = world();
+    const boss = w.fake.seed.staff('roster-boss', 'Roster Boss', 'boss', { at: at(1) });
+    const entry = w.fake.seed.staffPost(boss, w.roster.thread, 'The Turns are in.', { at: at(29, 9) });
+    w.fake.seed.rosterEntry(entry, [
+      { character: w.gloomba, name: 'Gloomba', class: 'heel', was: 'face' },
+      { character: w.pipe, name: 'Pipewrench', class: null, was: null },
+    ], { at: at(29, 9), count: 23 });
+    /* Written ahead of its Turn: the Turn is news when it takes effect, in the entry that names it. */
+    w.fake.seed.announce(w.mrs, 'turn', { at: at(29, 8), ahead: true, class: 'heel' });
+    show(w.fake);
+    const item = await waitFor(() => itemOf('23 characters turned'));
+    const names = within(item).getAllByRole('listitem');
+    expect(names.map((n) => within(n).getByRole('link').textContent)).toEqual(['Gloomba', 'Pipewrench']);
+    expect(names[0]).toHaveTextContent('Gloomba was a Face, now a Heel');
+    expect(names[1]).not.toHaveTextContent(/was a|now a/u);
+    expect(item).toHaveTextContent('and 21 more');
+    expect(within(item).getByRole('link', { name: /^Read the Roster Report entry/u }).getAttribute('href')).toMatch(new RegExp(`^/t/${w.roster.thread}\\?page=1#post-\\d+$`, 'u'));
+    expect(screen.queryByRole('heading', { level: 3, name: /Mrs\. Hooligan/u })).toBeNull();
+    const heads = within(feed()).getAllByRole('heading', { level: 3 }).map((h) => h.textContent);
+    expect(heads.filter((h) => /turned/u.test(h ?? ''))).toEqual(['23 characters turned', 'Pipewrench turned']);
+  });
+
+  test('two Roster Report entries link under names that tell them apart: each says its own day and its Turns', async () => {
+    const w = world();
+    const boss = w.fake.seed.staff('roster-boss', 'Roster Boss', 'boss', { at: at(1) });
+    const first = w.fake.seed.staffPost(boss, w.roster.thread, 'The Turns are in.', { at: at(27, 9) });
+    w.fake.seed.rosterEntry(first, [{ character: w.gloomba, name: 'Gloomba', class: 'heel', was: 'face' }], { at: at(27, 9), count: 1 });
+    const second = w.fake.seed.staffPost(boss, w.roster.thread, 'More Turns.', { at: at(29, 9) });
+    w.fake.seed.rosterEntry(second, [{ character: w.pipe, name: 'Pipewrench', class: null, was: null }], { at: at(29, 9), count: 7 });
+    show(w.fake);
+    await waitFor(() => itemOf('7 characters turned'));
+    const names = within(feed()).getAllByRole('link', { name: /^Read the Roster Report entry/u }).map((l) => l.getAttribute('aria-label') ?? l.textContent);
+    expect(names).toHaveLength(2);
+    expect(new Set(names).size, `each link has a name of its own: ${names.join(' | ')}`).toBe(2);
+    expect(names.some((n) => /7 Turns/u.test(n ?? ''))).toBe(true);
   });
 
   test('each item is one seasonNews alert, the same for every player', async () => {

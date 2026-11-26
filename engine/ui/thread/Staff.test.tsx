@@ -8,7 +8,7 @@ import { LoadedThread } from '../loaded.tsx';
 
 beforeEach(() => localStorage.clear());
 
-/** The Director's announcements thread: a post, then a move in force, a move that was reversed (with its end), as the tick and an admin leave them. */
+/** The Director's staff threads: a post, then a move in force, a move that was reversed (with its end), as the tick and an admin leave them, each move in a thread of its own (0437). */
 function announcements() {
   const fake = buildWorld();
   const w = seedMoves(fake, testInstance);
@@ -41,11 +41,20 @@ describe('the Boss on The System\'s board', () => {
     expect(await within(post).findByRole('button', { name: /^Fire, 9\./u })).toBeInTheDocument();
   });
 
-  test('a move\'s end is a plain line in the thread, never in the Boss\'s voice', async () => {
+  /* Each landed move has a staff thread of its own (0437), so its end is read in that thread. */
+  test('a move\'s end is a plain line in the move\'s own thread, never in the Boss\'s voice', async () => {
     const { fake, w } = announcements();
     const moveThread = (await fake.act(w.reversed))!.thread;
+    expect((await fake.act(w.met))!.thread).not.toBe(moveThread);
     renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     await waitFor(() => expect(screen.getAllByText('A move has ended: an admin reversed it.').length).toBeGreaterThan(0));
+    expect(screen.queryByText('A move has ended: its demand was met.')).toBeNull();
+  });
+
+  test('a move that ran its demand out is a plain line in its own thread too', async () => {
+    const { fake, w } = announcements();
+    const moveThread = (await fake.act(w.met))!.thread;
+    renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
     await waitFor(() => expect(screen.getAllByText('A move has ended: its demand was met.').length).toBeGreaterThan(0));
   });
 
@@ -59,19 +68,31 @@ describe('the Boss on The System\'s board', () => {
     await waitFor(() => expect(screen.getAllByText('The Twin kept a move of an earlier Boss. The move is now theirs.').length).toBeGreaterThan(0));
   });
 
-  test('a handover\'s ends and keeps are plain lines too: set aside at the handover, used up, and a Boss keeping a move', async () => {
+  test('a handover\'s keep is a plain line in the kept move\'s own thread', async () => {
     const { fake, w } = announcements();
     fake.seed.staff('the-clerk', 'The Clerk', 'boss', { pronouns: PRONOUN_PRESETS.she });
-    const set = fake.seed.move('director', { board: w.general, name: 'Set Aside Alley' });
-    fake.seed.endMove(set, { why: 'superseded', by: 'boss' });
-    const used = fake.seed.move('director', { board: w.general, name: 'Used Up Ave' });
-    fake.seed.endMove(used, { why: 'spent', by: 'handover' });
     const kept = fake.seed.move('director', { board: w.general, name: 'Kept Kiosk Court' });
     fake.seed.keepMove(kept, 'the-clerk');
     const moveThread = (await fake.act(kept))!.thread;
     renderIn(fake, <LoadedThread thread={moveThread} />, { path: `/t/${moveThread}` });
+    await waitFor(() => expect(screen.getAllByText('The Clerk kept a move of an earlier Boss. The move is now hers.').length).toBeGreaterThan(0));
+  });
+
+  test('a move set aside at the handover and one used up are plain lines in their own threads', async () => {
+    const { fake, w } = announcements();
+    const set = fake.seed.move('director', { board: w.general, name: 'Set Aside Alley' });
+    fake.seed.endMove(set, { why: 'superseded', by: 'boss' });
+    const setThread = (await fake.act(set))!.thread;
+    renderIn(fake, <LoadedThread thread={setThread} />, { path: `/t/${setThread}` });
     await waitFor(() => expect(screen.getAllByText('A move has ended: it ended at the handover.').length).toBeGreaterThan(0));
-    expect(screen.getAllByText('A move has ended: it was used up at the handover.').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('The Clerk kept a move of an earlier Boss. The move is now hers.').length).toBeGreaterThan(0);
+  });
+
+  test('a move used up at the handover is a plain line in its own thread', async () => {
+    const { fake, w } = announcements();
+    const used = fake.seed.move('director', { board: w.general, name: 'Used Up Ave' });
+    fake.seed.endMove(used, { why: 'spent', by: 'handover' });
+    const usedThread = (await fake.act(used))!.thread;
+    renderIn(fake, <LoadedThread thread={usedThread} />, { path: `/t/${usedThread}` });
+    await waitFor(() => expect(screen.getAllByText('A move has ended: it was used up at the handover.').length).toBeGreaterThan(0));
   });
 });

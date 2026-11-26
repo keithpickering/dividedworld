@@ -35,7 +35,7 @@ const settings: Settings = {
 const earn = () => [];
 const instance: Instance = {
   key: 'test', name: 'Test', withdrawn: [],
-  copy: { announcementsThreadTitle: 'Promos {season}' },
+  copy: { rosterThreadTitle: 'Season {season}: Roster Report' },
   packs: [], machine: [], ...testCosmeticsContent,
   classes: [{ key: 'face', name: 'Face', earn }, { key: 'heel', name: 'Heel', earn }, { key: 'lurker', name: 'Lurker', earn }],
   cards: [],
@@ -317,12 +317,89 @@ describe('Turns', () => {
   test('a second ask replaces the waiting Turn; to the class it is, it says to withdraw', async () => {
     const { fake, anaFace } = world();
     const first = must(await fake.turn(anaFace, 'heel', 'silent', false, false));
-    expect(first).toEqual({ class: 'heel', loudness: 'silent', showFrom: false, showTo: false, takesEffectAt: null });
-    must(await fake.turn(anaFace, 'lurker', 'announced', true, true));
+    expect(first).toEqual({ class: 'heel', loudness: 'silent', showFrom: false, showTo: false, takesEffectAt: null, announced: null });
+    must(await fake.turn(anaFace, 'lurker', 'silent', false, false));
     const mine = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
     expect(mine.class).toBe('face');
-    expect(mine.pendingTurn).toEqual({ class: 'lurker', loudness: 'announced', showFrom: true, showTo: true, takesEffectAt: null });
+    expect(mine.pendingTurn).toEqual({ class: 'lurker', loudness: 'silent', showFrom: false, showTo: false, takesEffectAt: null, announced: null });
     expect(await fake.turn(anaFace, 'face', 'silent', false, false)).toEqual(refused('this character already is one: withdraw its waiting Turn to keep it'));
+  });
+  test('an announced Turn names a thread, is posted there at once and stands: no change, no withdrawal, no second announcement', async () => {
+    const { fake, anaFace, thread } = world();
+    expect(await fake.turn(anaFace, 'lurker', 'announced', false, true)).toEqual(refused('is not an id', 'thread'));
+    expect(await fake.turn(anaFace, 'lurker', 'silent', false, false, thread)).toEqual(refused('a silent Turn is posted nowhere', 'thread'));
+    const told = must(await fake.turn(anaFace, 'lurker', 'announced', true, true, thread));
+    expect(told.announced).toMatchObject({ thread });
+    const posted = (await fake.actsById([told.announced!.act]))[0]!;
+    expect(posted).toMatchObject({ kind: 'announce', character: anaFace, thread, payload: { what: 'turn', ahead: true, was: 'face', class: 'lurker' } });
+    const mine = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(mine.pendingTurn).toMatchObject({ class: 'lurker', loudness: 'announced', announced: { act: told.announced!.act, thread } });
+    const stands = /^that Turn was announced, so it stands until it takes effect at /u;
+    for (const a of [await fake.turn(anaFace, 'heel', 'silent', false, false), await fake.withdrawTurn(anaFace)]) {
+      expect(a.ok).toBe(false);
+      expect(a.ok === false && a.error).toMatch(stands);
+    }
+    expect(await fake.announceTurn(anaFace, thread, false, false)).toEqual(refused('that Turn was announced already'));
+  });
+  test('an announced Turn is refused on the System\'s board, in a thread that is not there, and its class is public only once it takes effect', async () => {
+    const { fake, anaFace, thread } = world();
+    const staff = fake.seed.thread('announcements', null, 'Staff', '');
+    expect((await fake.turn(anaFace, 'lurker', 'announced', false, true, staff.thread)).ok).toBe(false);
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
+    must(await fake.turn(anaFace, 'lurker', 'announced', true, true, thread));
+    /* Ahead of its Turn the announcement reveals nothing: the class becomes public as the Turn lands, dated then. */
+    expect(await fake.classReveals([anaFace])).toEqual([]);
+    expect(await fake.turnsAnnounced([anaFace])).toEqual([]);
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.classShownAt).toBeNull();
+    fake.clock.advance(DAY);
+    fake.seed.settle({});
+    const landed = fake.clock.now();
+    expect((await fake.classReveals([anaFace])).map((r) => ({ class: r.class, at: r.at }))).toEqual([{ class: 'lurker', at: new Date(landed).toISOString() }]);
+    expect((await fake.turnsAnnounced([anaFace])).map((t) => ({ was: t.was, at: t.at }))).toEqual([{ was: 'face', at: new Date(landed).toISOString() }]);
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toBeNull();
+  });
+  test('an announced Turn meets the checks of turn_thread_checks (0435), in the SQL\'s words (a ban; a closed board has no threads left to name, closing moves them)', async () => {
+    const { fake, anaFace, thread, opener } = world();
+    const until = fake.clock.now() + 3 * DAY;
+    fake.seed.ban(anaFace, until, { infraction: fake.seed.infraction(fake.seed.visit(fake.seed.staff('mod', 'Mod Bot', 'mod'), opener)) });
+    const banned = await fake.turn(anaFace, 'lurker', 'announced', false, true, thread);
+    expect(banned.ok).toBe(false);
+    expect(banned.ok === false && banned.error).toMatch(/^this character is banned until \d{4}-\d\d-\d\d \d\d:\d\d UTC; the ban ends by itself then, and it holds only this character, not your other characters$/u);
+  });
+  test('an announced Turn is refused a bar in the SQL\'s words: not_barred names the latest end over every bar on the board, and "a time not yet set" only when none has one', async () => {
+    const { fake, anaFace, thread } = world();
+    const name = (await fake.boards()).find((b) => b.slug === 'general')!.name;
+    const minute = (t: number) => refusalTime(new Date(Math.ceil(t / MINUTE) * MINUTE).toISOString());
+    fake.seed.staff('mod', 'Mod Bot', 'mod');
+    const soon = fake.clock.now() + DAY;
+    const late = fake.clock.now() + 5 * DAY;
+    fake.seed.groupMove('mod', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: late });
+    fake.seed.groupMove('mod', { character: anaFace, group: 'trialMembers', board: 'general', expiresAt: soon });
+    expect(await fake.turn(anaFace, 'lurker', 'announced', false, true, thread)).toEqual(refused(`Ana Face is barred from posting on ${name} until ${minute(late)}`));
+    const open = world();
+    open.fake.seed.staff('mod', 'Mod Bot', 'mod');
+    open.fake.seed.groupMove('mod', { character: open.anaFace, group: 'trialMembers', board: 'general', expiresAt: null });
+    expect(await open.fake.turn(open.anaFace, 'lurker', 'announced', false, true, open.thread)).toEqual(refused(`Ana Face is barred from posting on ${(await open.fake.boards()).find((b) => b.slug === 'general')!.name} until a time not yet set`));
+  });
+  test('a Turn a settlement passed over stands until the next settlement it can, as committed_turn_refusal says', async () => {
+    const { fake, anaFace, thread } = world();
+    must(await fake.turn(anaFace, 'lurker', 'announced', false, true, thread));
+    must(await fake.unmask(anaFace, thread, 'It was me.'));
+    fake.seed.settle({});
+    const mine = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
+    expect(mine.pendingTurn).not.toBeNull();
+    const refusal = await fake.withdrawTurn(anaFace);
+    expect(refusal).toEqual(refused('that Turn was announced, so it stands until it takes effect at the next settlement it can'));
+  });
+  test('a silent Turn is announced later: where and what to name, committing it; none waiting says so', async () => {
+    const { fake, anaFace, thread } = world();
+    expect(await fake.announceTurn(anaFace, thread, false, false)).toEqual(refused('no Turn of that character is waiting'));
+    must(await fake.turn(anaFace, 'heel', 'silent', false, false));
+    const told = must(await fake.announceTurn(anaFace, thread, true, false));
+    expect(told).toMatchObject({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, announced: { thread } });
+    expect((await fake.actsById([told.announced!.act]))[0]).toMatchObject({ payload: { what: 'turn', ahead: true, was: 'face' } });
+    expect((await fake.myCharacters()).find((c) => c.id === anaFace)!.pendingTurn).toMatchObject({ loudness: 'announced', announced: { act: told.announced!.act, thread } });
+    expect((await fake.withdrawTurn(anaFace)).ok).toBe(false);
   });
   test('withdrawing with none waiting, and with one', async () => {
     const { fake, anaFace } = world();
@@ -379,8 +456,8 @@ describe('pronouns', () => {
   const REFUSAL = 'pronouns are five words of 1 to 12 letters';
   test('a character made with she/her reads it back on Character and MyCharacter; one made with none takes the instance\'s', async () => {
     const { fake } = world({ charactersPerPlayer: 6 });
-    const hers = must(await fake.createCharacter('Hers', 'face', 'now', 'silent', PRONOUN_PRESETS.she));
-    const plain = must(await fake.createCharacter('Plain', 'face', 'now', 'silent'));
+    const hers = must(await fake.createCharacter('Hers', 'face', PRONOUN_PRESETS.she));
+    const plain = must(await fake.createCharacter('Plain', 'face'));
     expect((await fake.characters([hers.id]))[0]?.pronouns).toEqual(PRONOUN_PRESETS.she);
     expect((await fake.myCharacters()).find((c) => c.id === hers.id)?.pronouns).toEqual(PRONOUN_PRESETS.she);
     expect((await fake.characters([plain.id]))[0]?.pronouns).toEqual(settings.pronouns);
@@ -388,10 +465,10 @@ describe('pronouns', () => {
   });
   test('a set is stored lowercased; a bad one is refused in the server\'s words and makes nothing', async () => {
     const { fake } = world({ charactersPerPlayer: 6 });
-    const loud = must(await fake.createCharacter('Loud', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'SHE' }));
+    const loud = must(await fake.createCharacter('Loud', 'face', { ...PRONOUN_PRESETS.she, subject: 'SHE' }));
     expect((await fake.characters([loud.id]))[0]?.pronouns.subject).toBe('she');
     const before = (await fake.myCharacters()).length;
-    expect(await fake.createCharacter('Bad', 'face', 'now', 'silent', { ...PRONOUN_PRESETS.she, subject: 'abcdefghijklm' })).toEqual(refused(REFUSAL));
+    expect(await fake.createCharacter('Bad', 'face', { ...PRONOUN_PRESETS.she, subject: 'abcdefghijklm' })).toEqual(refused(REFUSAL));
     expect((await fake.myCharacters()).length).toBe(before);
   });
   test('set_profile stores a set, keeps the stored one when given none, and refuses a bad one with nothing changed', async () => {
@@ -417,43 +494,36 @@ describe('pronouns', () => {
 describe('making a character', () => {
   test('the name\'s rules', async () => {
     const { fake } = world();
-    expect(await fake.createCharacter('   ', 'face', 'tally', 'announced')).toEqual(refused('is empty', 'name'));
-    expect(await fake.createCharacter('n'.repeat(41), 'face', 'tally', 'announced')).toEqual(refused('is longer than 40 characters', 'name'));
-    expect(await fake.createCharacter('Two  Spaces', 'face', 'tally', 'announced')).toEqual(
+    expect(await fake.createCharacter('   ', 'face')).toEqual(refused('is empty', 'name'));
+    expect(await fake.createCharacter('n'.repeat(41), 'face')).toEqual(refused('is longer than 40 characters', 'name'));
+    expect(await fake.createCharacter('Two  Spaces', 'face')).toEqual(
       refused('can hold letters, marks, digits, symbols and single spaces, nothing hidden', 'name'));
-    expect(await fake.createCharacter('Fine', 'wrestler', 'tally', 'announced')).toEqual(refused('there is no class "wrestler"', 'class'));
-    expect(await fake.createCharacter('Fine', 'face', 'later' as 'now', 'announced')).toEqual(refused('a character drops now or debuts at the tally', 'timing'));
+    expect(await fake.createCharacter('Fine', 'wrestler')).toEqual(refused('there is no class "wrestler"', 'class'));
   });
   test('a name is taken whatever its case, even by a waiting or a retired character', async () => {
     const { fake, ana } = world({ charactersPerPlayer: 6 });
     fake.seed.character(ana, 'Quiet One', 'face', { debuted: false });
-    expect(await fake.createCharacter('quiet one', 'face', 'tally', 'announced')).toEqual(refused('that name is taken'));
-    expect(await fake.createCharacter('ANA FACE', 'face', 'tally', 'announced')).toEqual(refused('that name is taken'));
+    expect(await fake.createCharacter('quiet one', 'face')).toEqual(refused('that name is taken'));
+    expect(await fake.createCharacter('ANA FACE', 'face')).toEqual(refused('that name is taken'));
   });
   test('a player runs at most so many, retired ones not counted', async () => {
     const { fake, anaHeel } = world();
-    must(await fake.createCharacter('Third', 'face', 'tally', 'announced'));
-    expect(await fake.createCharacter('Fourth', 'face', 'tally', 'announced')).toEqual(refused('a player runs at most 3 characters'));
+    must(await fake.createCharacter('Third', 'face'));
+    expect(await fake.createCharacter('Fourth', 'face')).toEqual(refused('a player runs at most 3 characters'));
     fake.seed.retire(anaHeel);
-    expect(await fake.createCharacter('Fourth', 'face', 'tally', 'announced')).toMatchObject({ ok: true });
+    expect(await fake.createCharacter('Fourth', 'face')).toMatchObject({ ok: true });
   });
-  test('a new character waits, and is absent from every public read until it debuts', async () => {
+  test('a new character is active at once: public to every read, in the standings, and no Act is written', async () => {
     const { fake } = world();
-    const made = must(await fake.createCharacter('Newcomer', 'lurker', 'tally', 'with_class'));
-    expect(made).toMatchObject({ name: 'Newcomer', class: 'lurker', waiting: true, loudness: 'with_class' });
-    expect(await fake.characters([made.id])).toEqual([]);
-    expect((await fake.standingsPage(0, 1000)).map((s) => s.character)).not.toContain(made.id);
-    expect(await fake.characterCounts(made.id)).toEqual({ posts: 0, spins: 0, cards: 0 });
-    expect((await fake.myCharacters()).find((c) => c.id === made.id)).toMatchObject({ debutedAt: null, class: 'lurker', debutLoudness: 'with_class' });
-    fake.seed.settle({});
+    const acts = (await fake.myCharacters()).length;
+    const made = must(await fake.createCharacter('Newcomer', 'lurker'));
+    expect(made).toEqual({ id: made.id, name: 'Newcomer', class: 'lurker' });
     expect((await fake.characters([made.id])).map((c) => c.name)).toEqual(['Newcomer']);
     expect((await fake.standingsPage(0, 1000)).map((s) => s.character)).toContain(made.id);
-  });
-  test('dropped now it is debuted; a debuted character cannot be re-timed', async () => {
-    const { fake } = world();
-    const made = must(await fake.createCharacter('Dropped', 'face', 'now', 'silent'));
-    expect(made.waiting).toBe(false);
-    expect(await fake.setDebut(made.id, 'tally', 'announced')).toEqual(refused('it has debuted'));
+    expect((await fake.myCharacters()).length).toBe(acts + 1);
+    expect((await fake.myCharacters()).find((c) => c.id === made.id)).toMatchObject({ class: 'lurker' });
+    expect((await fake.myCharacters()).find((c) => c.id === made.id)?.debutedAt).not.toBeNull();
+    expect(await fake.classReveals([made.id])).toEqual([]);
   });
 });
 
@@ -461,12 +531,12 @@ describe('standings', () => {
   test('ranked with ties sharing a place, waiting characters left out', async () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500 } });
     expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.standing, s.place])).toEqual([
       ['Bo Face', 500, 1], ['Ana Face', 300, 2], ['Ana Heel', 300, 2],
     ]);
     /* Dense (#453): the standing after a tie takes the next place. */
-    fake.seed.settle({ standings: { [anaFace]: 500, [anaHeel]: 300, [boFace]: 500 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 500, [anaHeel]: 300, [boFace]: 500 } });
     expect((await fake.standingsPage(0, 1000)).map((s) => [s.name, s.place])).toEqual([['Ana Face', 1], ['Bo Face', 1], ['Ana Heel', 2]]);
     expect(await fake.lastSettledAt()).toBe(new Date(fake.clock.now()).toISOString());
   });
@@ -516,11 +586,11 @@ describe('what the public reads never prove', () => {
     must(await fake.unmask(anaFace, thread, 'now a heel'));
     expect(await shown()).not.toBeNull();
   });
-  test('classShownAt is set by a debut with its class and by a Turn announced with its class', async () => {
+  test('classShownAt is set by an old debut with its class and by a Turn announced with its class', async () => {
     const { fake, anaFace, anaHeel } = world();
     const shown = async (id: string) => (await fake.myCharacters()).find((c) => c.id === id)!.classShownAt;
     expect(await shown(anaFace)).toBeNull();
-    const debut = fake.seed.announce(anaFace, 'debut', { class: 'face' });
+    const debut = fake.seed.debutHistory(anaFace, { class: 'face' });
     expect(await shown(anaFace)).toBe((await fake.act(debut))!.createdAt);
     expect(await shown(anaHeel)).toBeNull();
     const turned = fake.seed.announce(anaHeel, 'turn', { class: 'heel', was: 'face' });
@@ -589,7 +659,7 @@ describe('live events', () => {
     const { fake, anaFace, thread } = world();
     await fake.turn(anaFace, 'heel', 'silent', false, false);
     await fake.withdrawTurn(anaFace);
-    await fake.createCharacter('Quietly', 'face', 'tally', 'announced');
+    await fake.createCharacter('Quietly', 'face');
     await fake.createInvite();
     await fake.markRead(thread, 1, null);
     expect(fake.broadcast.log).toEqual([]);
@@ -955,12 +1025,12 @@ describe('the account', () => {
     expect(await fake.wallet()).toEqual({ balance: 300, cap: 600 });
   });
   test('seed.turn asks a Turn as its player, waiting for the settlement, and is refused in the server\'s words', async () => {
-    const { fake, bo, anaFace, boFace } = world();
+    const { fake, bo, anaFace, boFace, thread } = world();
     fake.seed.nextSettlementAt(fake.clock.now() + 8 * 3_600_000);
-    fake.seed.turn(anaFace, 'heel', { loudness: 'announced', showFrom: true, showTo: false });
+    fake.seed.turn(anaFace, 'heel', { loudness: 'announced', showFrom: true, showTo: false, thread });
     const waiting = (await fake.myCharacters()).find((c) => c.id === anaFace)!;
     expect(waiting.class).toBe('face');
-    expect(waiting.pendingTurn).toEqual({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: new Date(fake.clock.now() + 8 * 3_600_000).toISOString() });
+    expect(waiting.pendingTurn).toMatchObject({ class: 'heel', loudness: 'announced', showFrom: true, showTo: false, takesEffectAt: new Date(fake.clock.now() + 8 * 3_600_000).toISOString(), announced: { thread } });
     expect(() => fake.seed.turn(anaFace, 'face')).toThrow(/the seed was refused/);
     /* A character of another account is asked as its own player, whoever is signed in. */
     fake.seed.turn(boFace, 'lurker');
@@ -1811,7 +1881,7 @@ describe('a place and a standing, read for one character or a page of them', () 
   test('standingAmounts is each asked character\'s standing: 0 for one with nothing settled, and for one that is not a character', async () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: -40 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [boFace]: -40 } });
     expect(await fake.standingAmounts([anaFace, boFace, anaHeel, waiting, 'nobody'])).toEqual({ [anaFace]: 300, [boFace]: -40, [anaHeel]: 0, [waiting]: 0, nobody: 0 });
     expect(await fake.standingAmounts([])).toEqual({});
   });
@@ -1819,7 +1889,7 @@ describe('a place and a standing, read for one character or a page of them', () 
   test('standingPlace is the standing, the place and the number of debuted characters, as the ranking says them, and null for one that has not debuted', async () => {
     const { fake, ana, anaFace, anaHeel, boFace } = world();
     const waiting = fake.seed.character(ana, 'Not Yet', 'face', { debuted: false });
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: -40 } });
     const all = await fake.standingsPage(0, 1000);
     for (const s of all) expect(await fake.standingPlace(s.character)).toEqual({ standing: s.standing, place: s.place, of: all.length });
     /* A debt holds no place (#492): only a standing above zero is placed. The tie at 300 shares place 1. */
@@ -1941,26 +2011,25 @@ describe('a finished season\'s results and its announcements', () => {
     expect((await w.fake.profilePage(w.anaHeel))?.seasons).toEqual([{ season: 1, place: null, standing: -30, at: new Date(at(28, 12)).toISOString() }]);
   });
 
-  test('seed.announce writes the character\'s own announce Act in the season\'s Promos thread, which a board lists', async () => {
+  test('seed.announce and seed.debutHistory write the character\'s own announce Act in the season\'s Roster Report thread, which a board lists', async () => {
     const { fake, anaFace, boFace } = world();
-    const first = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
+    const first = fake.seed.debutHistory(anaFace, { class: 'face', at: at(5, 8) });
     const second = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
     const a = (await fake.act(first))!;
     expect(a).toMatchObject({ kind: 'announce', character: anaFace, payload: { what: 'debut', class: 'face' } });
     expect((await fake.act(second))!.thread).toBe(a.thread);
     expect((await fake.act(second))!.payload).toEqual({ what: 'turn', was: 'heel', class: 'face' });
-    expect((await fake.thread(a.thread))?.title).toBe('Promos 1');
+    expect((await fake.thread(a.thread))?.title).toBe('Season 1: Roster Report');
     expect((await fake.season())?.turnsThread).toBe(a.thread);
     const board = (await fake.boards()).find((b) => b.slug === 'announcements')!;
     expect((await fake.threads(board.id, { offset: 0, limit: 20 })).threads.map((t) => t.id)).toContain(a.thread);
-    expect(() => fake.seed.announce(anaFace, 'debut', { was: 'face' })).toThrow('a debut has no class it was');
   });
 
   test('an announcements item is one landing: the announce Acts of a thread at one instant, debuts then Turns, at most 20 names, count of them all', async () => {
     const { fake, anaFace, anaHeel, boFace } = world();
     fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(5, 8) });
-    fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
-    fake.seed.announce(anaHeel, 'debut', { at: at(5, 8) });
+    fake.seed.debutHistory(anaFace, { class: 'face', at: at(5, 8) });
+    fake.seed.debutHistory(anaHeel, { at: at(5, 8) });
     fake.seed.announce(anaHeel, 'turn', { at: at(6, 8) });
     const items = (await fake.seasonNews()).filter((n) => n.kind === 'tally');
     expect(items).toHaveLength(2);
@@ -1971,7 +2040,7 @@ describe('a finished season\'s results and its announcements', () => {
     expect(landing!.turns).toEqual([{ character: boFace, name: 'Bo Face', class: 'face', was: 'heel' }]);
     const crowd = world();
     const who = crowd.fake.seed.account('crowd');
-    for (let i = 0; i < 25; i++) crowd.fake.seed.announce(crowd.fake.seed.character(who, `D${String(i).padStart(2, '0')}`, 'face'), 'debut', { at: at(7, 8) });
+    for (let i = 0; i < 25; i++) crowd.fake.seed.debutHistory(crowd.fake.seed.character(who, `D${String(i).padStart(2, '0')}`, 'face'), { at: at(7, 8) });
     const [big] = (await crowd.fake.seasonNews()).filter((n) => n.kind === 'tally');
     expect(big).toMatchObject({ count: 25 });
     expect(big!.debuts).toHaveLength(20);
@@ -1979,8 +2048,8 @@ describe('a finished season\'s results and its announcements', () => {
 
   test('classReveals and turnsAnnounced read announce Acts beside the old: a class named is a reveal, a Turn is announced, with its old class where it said it', async () => {
     const { fake, anaFace, anaHeel, boFace } = world();
-    const debut = fake.seed.announce(anaFace, 'debut', { class: 'face', at: at(5, 8) });
-    const bare = fake.seed.announce(anaHeel, 'debut', { at: at(5, 8) });
+    const debut = fake.seed.debutHistory(anaFace, { class: 'face', at: at(5, 8) });
+    const bare = fake.seed.debutHistory(anaHeel, { at: at(5, 8) });
     const turn = fake.seed.announce(boFace, 'turn', { was: 'heel', class: 'face', at: at(6, 8) });
     const quiet = fake.seed.announceTurn(boFace, (await fake.act(debut))!.thread, { at: at(7, 8) });
     const thread = (await fake.act(debut))!.thread;
@@ -2009,7 +2078,7 @@ describe('a page of the standings', () => {
     const { fake, bo, anaFace, anaHeel, boFace } = world();
     const boHeel = fake.seed.character(bo, 'Bo Heel', 'heel');
     const boLurk = fake.seed.character(bo, 'Bo Lurk', 'lurker');
-    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 }, debut: false });
+    fake.seed.settle({ standings: { [anaFace]: 300, [anaHeel]: 300, [boFace]: 500, [boHeel]: -40 } });
     const row = (s: { name: string; standing: number; place: number | null }) => [s.name, s.standing, s.place];
     expect((await fake.standingsPage(0, 2)).map(row)).toEqual([['Bo Face', 500, 1], ['Ana Face', 300, 2]]);
     /* Places are dense (#453): the tie at 300 is place 2. A standing of 0 or below holds no place (#492): the masks below are listed by standing, unplaced. */
@@ -2720,7 +2789,7 @@ describe('a card set face down, a ward and a trap, as the server holds them', ()
     if (reach === 'board') fake.seed.reach(boFace, 'board', general.id, key);
     else must(await fake.useCard(key, boFace, reach === 'character' ? boFace : bothread.thread, {}, '', reach, reach === 'character' ? bos : undefined));
     fake.signInAs(ana);
-    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined);
+    const cast = () => fake.playCard('spark', anaFace, target, {}, '', reach, reach === 'character' ? bos : undefined, undefined, undefined, reach === 'board' ? bothread.thread : undefined);
     const landed = must(await cast());
     expect(landed.payload.pierce).toEqual({ by: pierce.id, card: 'lift', ward: key });
     expect((await fake.effectsAbove([anaFace], null, null)).some((e) => e.play === pierce.id)).toBe(false);
@@ -3131,12 +3200,14 @@ describe('a card beyond a post, and the effects above a page', () => {
     expect(await fake.useCard('selfie', anaFace, boFace, {}, '', 'character', opener)).toEqual(refused('Selfie is used on your own character'));
     must(await fake.useCard('selfie', anaFace, anaFace, {}, '', 'character', mine));
     const board = (await fake.thread(thread))!.board;
-    const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board'));
+    /* A board card is written in a thread on the board, named by the caster (0438): none named is asked for again. */
+    expect(await fake.playCard('quake', anaFace, board, {}, '', 'board')).toEqual(refused('pick a thread on General to play it in'));
+    const shook = must(await fake.playCard('quake', anaFace, board, {}, '', 'board', undefined, undefined, undefined, thread));
     expect(shook.targetActId).toBeNull();
-    expect((await fake.thread(shook.thread))!.board).not.toBe(board);
+    expect(shook.thread).toBe(thread);
     /* Three days, cut to the board's day. */
     expect(Date.parse(String(shook.payload.ends)) - Date.parse(shook.createdAt)).toBe(86_400_000);
-    expect((await fake.playCard('quake', anaFace, board, {}, '', 'board')).ok).toBe(false);
+    expect((await fake.playCard('quake', anaFace, board, {}, '', 'board', undefined, undefined, undefined, thread)).ok).toBe(false);
   });
 
   test('effectsAbove answers the live plays on the characters, the thread and the board asked, and nothing on another mask', async () => {
@@ -3851,12 +3922,14 @@ describe('Updates: the developer persona\'s posts (updates, post_update, 0062)',
     expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).threads.map((t) => t.id)).not.toContain(rows[0]!.thread);
     expect(await w.fake.thread(rows[0]!.thread)).toBeNull();
     expect(before).toBe(0);
-    // The announcements thread (a Boss's moves) is still the first thread of that board, however the updates came first.
+    // Each landed move opens its own staff thread on that board (0437), the move at seq 1: two moves are two threads, and the updates thread is still none of them.
     w.fake.seed.staff('boss', 'The Boss', 'boss');
-    w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
+    const first = w.fake.seed.move('boss', { board: 'general', name: 'Renamed' });
+    w.fake.seed.move('boss', { board: 'general', name: 'Renamed again' });
     const after = (await w.fake.boards()).find((b) => b.isSystem)!;
-    expect(after.threadCount).toBe(1);
-    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).total).toBe(1);
+    expect(after.threadCount).toBe(2);
+    expect((await w.fake.threads(system.id, { offset: 0, limit: 50 })).total).toBe(2);
+    expect(await w.fake.act(first)).toMatchObject({ kind: 'move', seq: 1 });
   });
 
   test('only an admin posts one, as the developer; a refusal is in the server\'s words and leaves nothing', async () => {
@@ -5041,6 +5114,16 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       must(await fake.post(thread, boFace, 'Hello again', null));
     });
 
+    test('an announced Turn in the locked thread is refused in the SQL\'s words (turn_thread_checks: not_locked_out); another thread is not', async () => {
+      const { fake, bo, anaFace, boFace, post, thread, otherThread } = lk();
+      must(await fake.setCard('lkback', anaFace, post, {}));
+      fake.signInAs(bo);
+      must(await fake.playCard('lksalty', boFace, post, {}, ''));
+      const until = String((await springOf(fake, post)).payload.until);
+      expect(await fake.turn(boFace, 'heel', 'announced', false, true, thread)).toEqual(refused(lockedWords(until)));
+      must(await fake.turn(boFace, 'heel', 'announced', false, true, otherThread));
+    });
+
     test('a back is not set by the locked character in that thread', async () => {
       const { fake, bo, anaFace, boFace, thread, post } = lk();
       const mine = fake.seed.post(thread, boFace, 'Mine');
@@ -5051,7 +5134,7 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await fake.setCard('lkback', boFace, mine, {})).toMatchObject({ ok: false, error: lockedWords(until) });
     });
 
-    test('a thread or character play in the locked thread is refused; a board play, an edit, a reaction and a quote from another thread are not', async () => {
+    test('a thread, character or board play in the locked thread is refused; a board play in another thread, an edit, a reaction and a quote from another thread are not', async () => {
       const { fake, bo, anaFace, boFace, thread, post, otherThread } = lk();
       const mine = fake.seed.post(thread, boFace, 'Mine');
       must(await fake.setCard('lkback', anaFace, post, {}));
@@ -5061,7 +5144,9 @@ describe('a skim, a ride back and a scored-as play, as the server holds them', (
       expect(await fake.playCard('lkwide', boFace, thread, {}, '', 'thread')).toMatchObject({ ok: false, error: lockedWords(until) });
       expect(await fake.playCard('lkwide', boFace, anaFace, {}, '', 'character', post)).toMatchObject({ ok: false, error: lockedWords(until) });
       const general = (await fake.boards()).find((b) => b.slug === 'general')!;
-      must(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board'));
+      /* A board card is written in a thread, and the lockout holds in that thread: in the locked one it is refused, in another it is not. */
+      expect(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board', undefined, undefined, undefined, thread)).toMatchObject({ ok: false, error: lockedWords(until) });
+      must(await fake.playCard('lkwide', boFace, general.id, {}, '', 'board', undefined, undefined, undefined, otherThread));
       must(await fake.edit(mine, boFace, 'Mine, edited'));
       must(await fake.react(post, boFace, 'fire'));
       must(await fake.post(otherThread, boFace, `[quote=${post}]Post 1[/quote]over here`, post));
@@ -6357,9 +6442,9 @@ describe('a card that replies, and a play that keeps (0348_post_under.sql and th
     /* A reply carried by a card that cannot write has no end of its own to fail: only an admin's end (above) or the play's reversal un-nests it, as an untaken play is a writing card's alone. */
   });
 
-  /** A post of The System's own board: the announcements thread's, where no card's reply may be written. */
+  /** A post of The System's own board, where no card's reply may be written. */
   function fake0System(w: ReturnType<typeof replyWorld>): Id {
-    const made = w.fake.seed.thread('announcements', null, 'Promos', 'The System speaks.', { kind: 'post' });
+    const made = w.fake.seed.thread('announcements', null, 'Roster Report', 'The System speaks.', { kind: 'post' });
     return made.act;
   }
 
@@ -6962,7 +7047,7 @@ describe('the welcome pack: one sealed gift per account, opened by the player', 
     fake.signInAs(ana);
     return { fake, ana };
   };
-  const make = async (fake: ReturnType<typeof createFake>, name: string) => { const a = await fake.createCharacter(name, 'face', 'now', 'silent'); expect(a.ok).toBe(true); };
+  const make = async (fake: ReturnType<typeof createFake>, name: string) => { const a = await fake.createCharacter(name, 'face'); expect(a.ok).toBe(true); };
 
   test('a first character grants one sealed pack, whose cards reach no hand until it is opened', async () => {
     const { fake } = world();
@@ -7354,7 +7439,7 @@ describe('the card retirement seed', () => {
 
   test('opening a sealed pack refunds a withdrawn card with a withdrawn row and no copy, and pulls a renamed one under its new key', async () => {
     const { fake } = world();
-    expect((await fake.createCharacter('Ana Face', 'face', 'now', 'silent')).ok).toBe(true);
+    expect((await fake.createCharacter('Ana Face', 'face')).ok).toBe(true);
     const [sealedPack] = await fake.sealedPacks();
     const opened = must(await fake.openPack(sealedPack!.pack));
     expect(opened.contents).toEqual(['kept', 'bluff', 'collector']);
@@ -7953,5 +8038,58 @@ describe('an ask or an answer as an origin', () => {
     }
     await expect(d.fake.exchange(d.opener)).rejects.toThrow();
     await expect(d.fake.exchange('nothing')).rejects.toThrow();
+  });
+});
+
+describe('the staff board holds a thread for each decision and each handover (0437)', () => {
+  const titled = { ...instance, system: { ...testSystem, threadTitles: { renameBoard: '{board} is now {name}', conferGroup: 'Welcome to {groupName}' }, handoverThreadTitle: '{boss} takes the chair' } };
+  const staffThreads = async (fake: ReturnType<typeof createFake>) => {
+    const system = (await fake.boards()).find((b) => b.isSystem)!;
+    return (await fake.threads(system.id, { offset: 0, limit: 50 })).threads;
+  };
+
+  test('a landed move opens its own thread, titled by the instance\'s threadTitles, with the move at seq 1', async () => {
+    const fake = createFake({ instance: titled });
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const id = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
+    const act = (await fake.act(id))!;
+    expect(act).toMatchObject({ kind: 'move', seq: 1 });
+    expect((await fake.thread(act.thread))!.title).toBe('General is now Toast Palace');
+    const other = fake.seed.move('boss', { board: 'general', name: 'Crumb Hall' });
+    expect((await fake.act(other))!.thread).not.toBe(act.thread);
+    expect((await staffThreads(fake)).map((t) => t.title).sort()).toEqual(['General is now Crumb Hall', 'General is now Toast Palace']);
+  });
+
+  test('a kind the instance gives no title is titled by its plain words, and a trophy and a group move open threads too', async () => {
+    const fake = createFake({ instance });
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const ana = fake.seed.character(fake.seed.account('ana'), 'Ana Face', 'face');
+    const move = (await fake.act(fake.seed.move('boss', { board: 'general', name: 'Toast Palace' })))!;
+    const group = (await fake.act(fake.seed.groupMove('boss', { character: ana, group: 'trialMembers' })))!;
+    expect(new Set([move.thread, group.thread]).size).toBe(2);
+    expect([move.seq, group.seq]).toEqual([1, 1]);
+    expect((await fake.thread(move.thread))!.title).toBe('Rename board');
+  });
+
+  test('a bundle\'s later parts land in the first part\'s thread', async () => {
+    const fake = createFake({ instance });
+    fake.seed.staff('boss', 'The Boss', 'boss');
+    const a = (await fake.act(fake.seed.move('boss', { board: 'general', name: 'One', bundle: { id: 'b1', name: 'Both' } })))!;
+    const b = (await fake.act(fake.seed.move('boss', { board: 'general', name: 'Two', bundle: { id: 'b1', name: 'Both' } })))!;
+    expect(b.thread).toBe(a.thread);
+    expect([a.seq, b.seq]).toEqual([1, 2]);
+    expect(await staffThreads(fake)).toHaveLength(1);
+  });
+
+  test('a handover opens its own thread, titled by the instance\'s handoverThreadTitle, holding the farewell and then the arrival', async () => {
+    const fake = createFake({ instance: titled });
+    fake.seed.staff('first', 'First Boss', 'boss');
+    fake.seed.staff('second', 'Second Boss', 'boss');
+    fake.signInAs(fake.seed.account('ana'));
+    const thread = fake.seed.handover({ outgoing: 'first', boss: 'second', at: Date.UTC(2026, 10, 2), farewell: 'So long.', arrival: 'Hello.' });
+    expect((await fake.thread(thread))!.title).toBe('Second Boss takes the chair');
+    const posts = (await fake.threadPage(thread, { page: 1 }, 20, []))!.acts;
+    expect(posts.map((a) => [a.seq, (a.payload as { body?: string }).body])).toEqual([[1, 'So long.'], [2, 'Hello.']]);
+    expect(await staffThreads(fake)).toHaveLength(1);
   });
 });

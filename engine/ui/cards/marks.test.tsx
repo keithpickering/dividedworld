@@ -595,16 +595,16 @@ describe('a visit\'s mark', () => {
   });
 
   test.each([
-    ['filed', 'Filed', 'The Clerk filed her visit to this post. Opens the visit.'],
-    ['intercepted', 'Talked down', 'The Clerk\'s visit to this post was talked down. Opens the visit.'],
-    ['trapped', 'Trapped', 'The Clerk\'s visit to this post was trapped, ended by a trap. Opens the visit.'],
-  ] as const)('a visit that ended %s says so in place of the time', async (outcome, text, label) => {
+    ['filed', 'bang', 'The Clerk filed her visit to this post. Opens the visit.'],
+    ['intercepted', 'slash', 'The Clerk\'s visit to this post was talked down. Opens the visit.'],
+    ['trapped', 'teeth', 'The Clerk\'s visit to this post was trapped, ended by a trap. Opens the visit.'],
+  ] as const)('a visit that ended %s draws its stopwatch in place of the time, and says so in its name', async (outcome, icon, label) => {
     const w = visited();
     w.fake.seed.visitEnd(w.visit, { outcome, line: 'Done.' });
     open(w);
     const mark = await visitMark();
-    expect(mark).toHaveTextContent(text);
-    expect(mark).not.toHaveTextContent(/\d:\d\d/u);
+    expect(mark).toHaveTextContent(/^$/u);
+    expect(mark.querySelector('svg')).toHaveAttribute('data-kb-icon', icon);
     expect(mark).toHaveAccessibleName(label);
   });
 

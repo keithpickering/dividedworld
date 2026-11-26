@@ -180,7 +180,7 @@ export function playbook(fake: Fake, instance: Instance, made: Made) {
       const move = fake.seed.move('fangame', { board: '', name: '', body: LINES.merged.text, lasting: { kind: 'mergeBoard', params: { board: palace, into: minus } } });
       fake.seed.closeBoard(palace, { mergedInto: minus });
       fake.broadcast.rejoin();
-      /* The move's notice is posted in the Staff Announcements thread: the stage can show it (`show('thread:announcements')`). */
+      /* The move opens a thread of its own on the Staff Announcements board (the board's newest): the stage can show it (`show('thread:announcements')`). */
       const announcements = (await fake.boardPage('announcements', 1, []))?.threads[0]?.id;
       if (announcements !== undefined) (made.threads as Record<string, string>)['announcements'] = announcements;
       mark('staff:merge');

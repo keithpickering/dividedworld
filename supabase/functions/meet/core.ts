@@ -170,7 +170,7 @@ type PartResult = { part: string; outcome: 'ok' } | { part: string; outcome: 're
 const said = (e: unknown): string => clip(e instanceof Error ? e.message : String(e), 500);
 
 /** The most tokens each part of the meeting may answer with, by the part's key (the moves are the long one). */
-const PART_TOKENS = { moves: 6_000, bundle: 4_000, staff: 3_000, self: 4_500 } as const;
+const PART_TOKENS = { moves: 6_000, bundle: 4_000, staff: 3_000, self: 4_800 } as const;
 
 /** Errors that are facts about the database or the ledger, never about the model: thrown at once, after the row is closed failed. */
 const isInfrastructure = (e: unknown): boolean => e instanceof DatabaseError || e instanceof TransportError || e instanceof LedgerWriteFailed;
@@ -513,6 +513,8 @@ export async function runMeeting(
         // The Boss's last words, in character, and its note out of character (0337): present only from a meeting within the farewell window, trimmed, and stored as a row of their own.
         ...(repaired.farewell !== null ? { farewell: repaired.farewell } : {}),
         ...(repaired.handoff !== null ? { handoff: repaired.handoff } : {}),
+        // The minutes (0439): posted by the database as the Boss, in the season's Staff Meetings thread, once with the meeting; absent where the answer gave none.
+        ...(repaired.minutes !== null ? { minutes: repaired.minutes } : {}),
         // The Mods' orders: each with its beat, its line, its allowance (out of the Boss's bank, which the database charges) and its new memory.
         // The talking points: one line for each persona that posts, kept by the database beside the orders, in the same transaction.
         points: repaired.points.map((p) => ({ staff: p.staff, line: p.line })),

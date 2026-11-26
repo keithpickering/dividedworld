@@ -42,7 +42,7 @@ const sealedHand: World = (fake, instance) => {
   const [a] = instance.classes;
   const me = fake.seed.account('story-player', { seasoned: true });
   fake.signInAs(me);
-  void fake.createCharacter('Pipewrench', a!.key, 'now', 'silent');
+  void fake.createCharacter('Pipewrench', a!.key);
   fake.seed.settle({ wallet: { [me]: 240 } });
   fake.seed.cards(me, Object.fromEntries(THREE_KINDS.map((key, i) => [cardOf(instance.cards, key).key, i + 1])));
 };
