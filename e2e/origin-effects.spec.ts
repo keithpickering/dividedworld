@@ -1,17 +1,13 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
 import { FLOOR_DEPTH, roomHeightOf } from '../instances/divided-world/ui/steel-chair/chair.ts';
-import { MOST_STEPS, STEP } from '../instances/divided-world/ui/steel-chair/body.ts';
-import { LID_SECONDS } from '../instances/divided-world/ui/steel-chair/lid.ts';
 import { inflateSync } from 'node:zlib';
 import { pageViolations } from './axe.ts';
 import { watchPuff } from './puff-watch.ts';
 import { settled } from './settled.ts';
 import { BODY_FLOOR, REDRAWN_SHARE, redrawn, type Sample } from './shine-share.ts';
+import { FRAME_MOST_S, LID_SECONDS, NO_LID_BY_S } from './lid-watch.ts';
 
-/** How much of the effect's own time a can is given to throw its lid before the watcher gives up: a lid flies as the can first
-    lands, a fraction of this. */
-const NO_LID_BY_S = 5;
 
 /** The room a post of chairs keeps: the stories' plays have ids that roll chairs. */
 const ROOM_HEIGHT = roomHeightOf([]);
@@ -1100,7 +1096,7 @@ test('21. the can\'s lid leaves the box\'s area and is seen outside it', async (
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  }), [MOST_STEPS * STEP, LID_SECONDS, NO_LID_BY_S] as const);
+  }), [FRAME_MOST_S, LID_SECONDS, NO_LID_BY_S] as const);
   console.log(`origin can: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.seen} of them seen`);
   expect(seen.lids, 'a lid was drawn').toBeGreaterThan(0);
   expect(seen.outside, 'the lid was wholly outside the box\'s area at some frame').toBeGreaterThan(0);
