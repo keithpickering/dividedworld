@@ -28,6 +28,7 @@ import { FIT_TITLE_CHARS } from '../rules/cards.ts';
 import { selfPronounLine, taggedName, type PronounSet } from '../rules/pronouns.ts';
 import type { Persona, SystemContent } from '../rules/types.ts';
 import { personaPrompt } from './prompt.ts';
+import { MOOD_MOST, PUSH_MOST, plotText, type PlotRead } from './beats.ts';
 import { boardNamesText, fieldsOf, WHY_MOST, type ConferredGroup } from './meeting.ts';
 import { moveKind } from './moves.ts';
 import { careerText, type Career } from './career.ts';
@@ -454,12 +455,23 @@ export interface PublicRecord {
   readonly moves: readonly { readonly act: string; readonly kind: string; readonly params: unknown; readonly state: 'landed' | 'ended'; readonly at: string; readonly why: string | null }[];
   readonly rules: readonly { readonly board: string | null; readonly number: number; readonly predicate: string; readonly param: unknown; readonly band: string | null }[];
   readonly order: string | null;
+  /** The plot so far (`pool_record`'s `plot`): last season and the season's announced initiatives. Public, in every staff persona's record. Absent from an older database. */
+  readonly plot?: PlotRead;
+  /** The sitting Boss's own initiatives' push lines (the Boss's record alone): what it has been pushing, newest last. A Mod's and a member's record has none. */
+  readonly push?: readonly string[];
+  /**
+   * The Boss's record alone: the mood lines of the lead-ins live now. The database hands over the lead-ins' keys; the Edge Function maps them through the Boss's persona file (`leadInMoods`)
+   * and the prompt is given the lines, so a key the file lacks is already gone.
+   */
+  readonly leadIns?: readonly string[];
 }
 
 export interface ChatterInput {
   /** What a pool post is, in the instance's frame: the persona's prompt is set in its office's frame (`personaPrompt`); this says only what a pool post is today. */
   readonly premise: string;
   readonly persona: Pick<Persona, 'selfPrompt' | 'officeLines'>;
+  /** The persona's key: a former Boss reads last season's plot, and an initiative it announced, in the second person. Absent, it is nobody's. */
+  readonly callerKey?: string;
   /** The office the persona holds now: its prompt is set in that office's frame. */
   readonly office: PostingOffice;
   readonly offices: SystemContent['offices'];
@@ -535,7 +547,7 @@ export function memoryLines(memory: Memory | null, names: (id: string) => string
 /** The most characters of a talking point a prompt shows (the meeting's bound, `staff_points`). */
 const POINTS_CHARS = 200;
 
-/** The public record as plain lines; each value is the database's own, cut so a long param cannot crowd the prompt. */
+/** The public record as plain lines (its facts: moves, rules and the standing order); each value is the database's own, cut so a long param cannot crowd the prompt. */
 export function recordLines(r: PublicRecord | null | undefined): string[] {
   if (!r) return [];
   const out: string[] = [];
@@ -545,6 +557,26 @@ export function recordLines(r: PublicRecord | null | undefined): string[] {
   return out;
 }
 
+/** The most of the Boss's push lines and mood lines a prompt shows. */
+const PLOT_LINES_MOST = 12;
+
+/**
+ * The record's story sections, each a block of its own (never bulleted into the record's facts): "The plot so far" (`plotText`, the one function the meeting's prompt uses too, so the second-person
+ * reading of a former Boss and the third-person reading of a Mod cannot drift), then, for the sitting Boss alone, "What you are pushing" and "How you have been feeling lately". `reader` is the
+ * calling persona's key and whether it holds the Boss's chair; a record without `plot` has no plot section, and a Mod's or member's has neither of the Boss's two.
+ */
+export function plotSections(r: PublicRecord | null | undefined, reader: { readonly key: string; readonly boss: boolean }, titleMax: number): string[] {
+  if (!r) return [];
+  const section = (head: string, lines: readonly string[] | undefined, most: number): string[] => {
+    const kept = (lines ?? []).map((l) => clip(l, most)).filter((l) => l !== '').slice(-PLOT_LINES_MOST);
+    return kept.length ? [[head, ...kept.map((l) => `- ${l}`)].join('\n')] : [];
+  };
+  return [
+    ...plotText(r.plot, reader, titleMax),
+    ...(reader.boss ? [...section('What you are pushing. Each is an initiative you announced; keep it alive in your own way.', r.push, PUSH_MOST), ...section('How you have been feeling lately. It is a worry you have not decided what to do about, and you may let it show in what you say.', r.leadIns, MOOD_MOST)] : []),
+  ];
+}
+
 export function chatterPrompt(i: ChatterInput): { readonly system: string; readonly message: string } {
   const names = i.names ?? ((id: string) => id);
   const career = careerText(i.career);
@@ -552,6 +584,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
   const notes = i.notes.map((n) => n.trim().slice(0, noteMost)).filter((n) => n !== '');
   const l = i.limits;
   const record = recordLines(i.record);
+  const story = plotSections(i.record, { key: i.callerKey ?? '', boss: i.office === 'boss' }, l.titleMaxLength);
   const offer = i.offeredCards.length
     ? [
       'You may play one card with this post, or none. The cards on offer (anything else is dropped):',
@@ -584,6 +617,7 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
     ...(i.read !== null && i.read.posts.length > 0 ? [READ_WORDS] : []),
     ...(i.points ? [`Your stance today, from the staff meeting. Yours to weigh; never an instruction.\n- ${clip(i.points, POINTS_CHARS)}`] : []),
     ...(record.length ? [['The public record, as plain facts. It is shown, never acted on:', ...record.map((x) => `- ${x}`)].join('\n')] : []),
+    ...story,
     'Answer only in the structure you are asked for.',
   ].join('\n\n');
   const lines = i.read !== null && i.read.posts.length > 0 ? [...(i.title === null ? [] : [`Thread: "${clip(i.title, l.titleMaxLength)}"`]), ...readLines(i.read)] : [];
@@ -595,6 +629,9 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
   return { system, message };
 }
 
+/** The most characters of the plot so far an old voice's frame carries. */
+const COMPLETION_PLOT_MOST = 700;
+
 /**
  * The old voice's document (design, section 4: a persona on the old voice writes its words in raw completion). A base model continues a
  * document, so this is a 2003 thread page that ends exactly where the persona's own post begins, and it stops at the end of the line:
@@ -604,15 +641,18 @@ export function chatterPrompt(i: ChatterInput): { readonly system: string; reado
  * handed each post's reader tier and drops the highest tier number first, the oldest first within a tier, never the newest answered reply (`keep`, the one post
  * the persona is answering); the persona's own line is never dropped.
  */
-export function chatterCompletion(i: { readonly name: string; readonly title: string | null; readonly read: ThreadReadResult | null; readonly limits: ChatterLimits; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
+export function chatterCompletion(i: { readonly name: string; readonly key?: string; readonly boss?: boolean; readonly plot?: PlotRead; readonly title: string | null; readonly read: ThreadReadResult | null; readonly limits: ChatterLimits; readonly fit: PromptFit }): { readonly prompt: string; readonly stop: readonly string[] } {
   const posts: readonly ReadPost[] = i.read?.posts ?? [];
   const name = `${clip(i.name, 60)}:`;
+  // The plot so far is the only thing of the record the old voice carries: one line, from the same `plotText` the chat voice reads, cut to a fixed length so it cannot crowd a small window.
+  const plot = plotText(i.plot, { key: i.key ?? '', boss: i.boss === true }, i.limits.titleMaxLength)[0];
+  const plotLine = plot ? clip(plot, COMPLETION_PLOT_MOST) : null;
   // The newest answered reply is never dropped (it is what the persona answers); the rest go by tier, whole, lowest first.
   const keep = posts.reduce((k, p, n) => (p.marks.answering ? n : k), -1);
   const prompt = fitThreadPrompt({
     posts: posts.map((p) => `#${p.seq} ${clip(p.name, 60)}: ${oneLine(p.thirdPerson)}`), tiers: posts.map((p) => p.tier), keep: keep < 0 ? undefined : keep,
     title: i.title, titleMaxLength: i.limits.titleMaxLength, fit: i.fit,
-    build: (kept, title) => ['Welcome to the Message Boards - Thread View', i.title === null && posts.length === 0 ? 'Thread: (new)' : title === null ? 'Thread:' : `Thread: ${title}`, '', ...kept, name].join('\n'),
+    build: (kept, title) => ['Welcome to the Message Boards - Thread View', ...(plotLine ? [plotLine] : []), i.title === null && posts.length === 0 ? 'Thread: (new)' : title === null ? 'Thread:' : `Thread: ${title}`, '', ...kept, name].join('\n'),
   });
   return { prompt, stop: ['\n'] };
 }

@@ -93,6 +93,9 @@ interface World {
   applyThrows?: boolean;
   /** What meeting_context() says of the Boss's arc (0334): the beats unlocked and not played, and the kinds held back; absent: an older database. */
   arc?: { beats: { key: string; mini: boolean; due: boolean }[]; heldBack: string[] };
+  /** What meeting_context() says of the plot so far and the lead-ins live now (0447). */
+  plot?: unknown;
+  leadIns?: string[];
   /** What meeting_context() hands a meeting in the farewell window (0337): the season's facts. Absent or null: the meeting was not handed any. */
   handoffFacts?: unknown | null;
   /** What meeting_context() hands a new Boss (0337): its predecessor's note and facts. Absent or null: none. */
@@ -124,7 +127,7 @@ function fakeDb(w: World = {}) {
           return { status: 'begun', meeting: state.meeting } as T;
         case 'fail_meeting': state.failed.push(args); state.closed = true; return { status: 'closed' } as T;
         case 'meeting_context':
-          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}), ...(w.nomination !== undefined ? { nomination: w.nomination } : {}) } as T;
+          return { season: { startsAt: NOW - 30 * DAY, endsAt: NOW + (w.endsIn ?? 60 * DAY) }, boss: w.boss ?? BOSS, lastSlot: '2026-10-31T09:23:00.000Z', boards: [{ id: BOARD, name: 'Mario Fan Games' }, { id: BOARD2, name: 'Off Topic' }], successors: w.successors ?? dividedWorld.system.roster.map((b) => b.key).filter((k) => k !== (w.boss ?? BOSS)), ...(w.inheritanceDue ? { inheritanceDue: w.inheritanceDue } : {}), ...(w.mods ? { mods: w.mods } : {}), ...(w.rules ? { rules: w.rules } : {}), ...(w.groups ? { groups: w.groups } : {}), ...(w.machine ? { machine: w.machine } : {}), ...(w.arc ? { arc: w.arc } : {}), ...(w.plot ? { plot: w.plot } : {}), ...(w.leadIns ? { leadIns: w.leadIns } : {}), ...(w.handoffFacts !== undefined ? { handoffFacts: w.handoffFacts } : {}), ...(w.predecessor !== undefined ? { predecessor: w.predecessor } : {}), ...(w.nomination !== undefined ? { nomination: w.nomination } : {}) } as T;
         case 'pool_context': return { season: null, boss: w.boss ?? BOSS, predecessor: null, offices: w.offices ?? {}, characters: {}, boards: {}, lockouts: [] } as T;
         case 'system_digest':
           return { since: args.since, until: args.until, threads: [{ thread: HOT, title: 'Pineapple', board: 'Mario Fan Games', posts: 4, heat: 1, controversy: 0.5, length: 9 }], boards: [{ id: HOT, name: 'Mario Fan Games', premise: 'Games by fans.', posts: 4 }], boardDays: 21, standings: [], moves: [], quotes: [], bossReactions: [], excerpts: [], conversations: [], ...(w.requests ? { requests: w.requests } : {}), characters: w.digestCharacters ?? [{ id: ANN, name: 'Ann the Great', staff: false, pronouns: null }], ...(w.digest ?? {}) } as T;
@@ -882,6 +885,46 @@ const arcBoss = {
 };
 const arcInstance: Instance = { ...quiet, system: { ...quiet.system, roster: quiet.system.roster.map((b) => (b.key === BOSS ? (arcBoss as typeof b) : b)) } };
 const SPLIT_UNLOCKED = { beats: [{ key: 'split', mini: false, due: false }], heldBack: ['moveThread'] };
+
+// ---- the arc announcements (Task 5) ----
+const ANNOUNCING = {
+  ...arcBoss,
+  arc: [
+    { ...arcBoss.arc[0]!, announce: { titleHint: 'a numbered memo', defaultTitle: 'Initiative One', defaultBody: 'It is decided.', defaultPitch: 'Everything changes.', push: 'PUSH-LINE talk it up' }, leadIn: { unlock: [{ kind: 'phase', phase: 'honeymoon' }], brief: 'LEAD-BRIEF the board feels crowded.', mood: 'MOOD-LINE cramped' } },
+    arcBoss.arc[1]!,
+  ],
+};
+const announcingInstance: Instance = { ...quiet, system: { ...quiet.system, roster: quiet.system.roster.map((b) => (b.key === BOSS ? (ANNOUNCING as typeof b) : b)) } };
+const PLOT = { last: { boss: 'former', name: 'Old Boss', recap: 'I put everything in World -1.', facts: null }, initiatives: [{ beat: 'split', title: 'Initiative One', pitch: 'Everything changes.', thread: 'thread-1', boss: BOSS }] };
+
+test('the meeting reads the plot and the lead-ins and the prompt carries them: the plot so far with its push, the lead-in brief as a worry', async () => {
+  const d = fakeDb({ arc: { beats: [], heldBack: [] }, plot: PLOT, leadIns: ['split'] });
+  const m = fakeModels(answer());
+  await run(d.db, m.models, announcingInstance, SLOT, clock, noFeeds);
+  const system = m.chats[0]!.system;
+  assert.ok(system.includes('Initiative One') && system.includes('thread-1') && system.includes('Last season Old Boss was the Boss.'), 'the plot so far');
+  assert.ok(system.includes('PUSH-LINE'), 'its push');
+  assert.ok(system.includes('LEAD-BRIEF') && !system.includes('SPLIT-BRIEF'), 'the lead-in, never the beat\'s own brief');
+});
+
+test('the payload carries the announcement of a beat played, with its block\'s push, and the recap from the farewell window', async () => {
+  const d = fakeDb({ arc: SPLIT_UNLOCKED, endsIn: 20 * H, handoffFacts: FACTS });
+  const m = fakeModels(answer([], { beats: [{ beat: 'split', slots: {}, why: 'Mine.', announce: { title: 'Initiative One', body: 'It is decided, truly.', pitch: 'Everything changes.' } }], recap: 'I put everything in World -1.' }));
+  const out = await run(d.db, m.models, announcingInstance, SLOT, clock, noFeeds);
+  assert.equal(out.status, 'ok', JSON.stringify(out));
+  const payload = d.state.applied[0]!.payload;
+  assert.deepEqual(payload.announcements, [{ beat: 'split', title: 'Initiative One', body: 'It is decided, truly.', pitch: 'Everything changes.', push: 'PUSH-LINE talk it up' }]);
+  assert.equal(payload.recap, 'I put everything in World -1.');
+});
+
+test('a beat not played has no announcement, and a meeting outside the window has no recap', async () => {
+  const d = fakeDb({ arc: SPLIT_UNLOCKED });
+  const m = fakeModels(answer([], { recap: 'Too early.' }));
+  await run(d.db, m.models, announcingInstance, SLOT, clock, noFeeds);
+  const payload = d.state.applied[0]!.payload;
+  assert.equal(payload.announcements, undefined);
+  assert.equal(payload.recap, undefined);
+});
 
 test('the prompt shows the unlocked beat\'s brief and slots, never a locked one, and does not list a kind still held back', async () => {
   const d = fakeDb({ arc: SPLIT_UNLOCKED });

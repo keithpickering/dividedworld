@@ -74,6 +74,8 @@ interface World {
   bodies?: Record<string, string>;
   points?: Record<string, string>;
   record?: Record<string, unknown>;
+  /** What `pool_record` gives each persona, in place of `record`: the Boss's has the plot, a push and the lead-ins' keys; a Mod's and a member's only the plot. */
+  recordBy?: Record<string, Record<string, unknown>>;
   /** `claim_pool_round` refuses a slot a run already claimed, as the lease does. */
   leases?: boolean;
   /** `write_staff_turn` refuses with this reason (the kayfabb.refusal hint). */
@@ -196,7 +198,7 @@ function fakeDb(w: World = {}) {
           state.attempts.push({ staff: String(args.staff_key), session: Number(args.in_session), thread: String(args.in_thread), answers: [...new Set(args.answers as string[])], outcome: String(args.outcome), paid: Boolean(args.paid), chars: Number(args.in_chars) });
           return state.attempts.length as T;
         }
-        case 'pool_record': return (w.record ?? { moves: [], rules: [], order: null }) as T;
+        case 'pool_record': return (w.recordBy?.[String(args.staff_key)] ?? w.record ?? { moves: [], rules: [], order: null }) as T;
         case 'staff_points_latest': return (w.points?.[String(args.staff_key)] ?? null) as T;
         case 'write_staff_turn': {
           if (w.turnRefusal) throw new DatabaseError(`write_staff_turn: ${w.turnRefusal}`, '55000', 400, w.turnRefusal, 'kayfabb.refusal');
@@ -484,6 +486,53 @@ test('a persona is asked in the frame of the office it holds now: a member opens
   assert.ok(asked(HYPE).startsWith(offices.boss.premise), 'boss');
   assert.ok(asked(SIGH).startsWith(offices.mod.premise), 'mod');
   assert.ok(!asked(CLERK).includes(offices.boss.premise), 'a member is never told it is the Boss');
+});
+
+const PLOT = {
+  last: { boss: 'former-boss', name: 'Old Boss', recap: 'I put everything in World -1.', facts: null },
+  initiatives: [{ beat: 'split', title: 'Improvement Initiative #1', pitch: 'World -1 opens soon.', thread: 'thread-9', boss: HYPE }],
+};
+const plotRecords = {
+  [HYPE]: { moves: [], rules: [], order: null, plot: PLOT, push: ['You announced World -1.'], leadIns: ['split', 'after:gone:nothing', 'no-such-key'] },
+  [SIGH]: { moves: [], rules: [], order: null, plot: PLOT },
+  [CLERK]: { moves: [], rules: [], order: null, plot: PLOT },
+};
+/** The Boss's file holds a beat with a lead-in, so its mood line can be found; the keys the database lists that the file lacks are dropped. */
+const withMood: Instance = {
+  ...dividedWorld,
+  system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === HYPE ? { ...p, arc: [{ key: 'split', unlock: [{ kind: 'phase' as const, phase: 'reign' }], brief: 'b', leadIn: { unlock: [{ kind: 'phase' as const, phase: 'honeymoon' }], brief: 'lb', mood: 'MOOD-SPLIT cramped' } }] } : p)) },
+};
+
+test('the plot so far reaches every staff persona\'s prompt; the push and the mood reach the Boss alone, and a mood key the Boss\'s file lacks is dropped silently', async () => {
+  const d = fakeDb({ named: [CLERK, HYPE, SIGH], pool: { threadsWeekly: 0 }, recordBy: plotRecords });
+  const m = fakeModels((r) => ({ words: `A reply from ${r.staff}.` }));
+  const out = await run(d, m, withMood);
+  assert.ok(out.status === 'ok');
+  const asked = (staff: string) => m.chats.find((c) => c.staff === staff)!.system;
+  for (const who of [CLERK, HYPE, SIGH]) assert.ok(asked(who).includes('Improvement Initiative #1') && asked(who).includes('thread-9'), `${who} reads the initiative`);
+  assert.ok(asked(SIGH).includes('Last season Old Boss was the Boss.'), 'a Mod reads last season in the third person');
+  assert.ok(asked(HYPE).includes('You announced World -1.') && asked(HYPE).includes('MOOD-SPLIT cramped'), 'the Boss reads its push and its mood');
+  assert.ok(!asked(HYPE).includes('no-such-key') && !asked(HYPE).includes('after:gone'), 'a key the file lacks is dropped');
+  for (const who of [CLERK, SIGH]) assert.ok(!asked(who).includes('You announced World -1.') && !asked(who).includes('MOOD-SPLIT') && !asked(who).includes('What you are pushing'), `${who} reads neither`);
+});
+
+test('a former Boss in a member\'s office reads last season in the second person', async () => {
+  const former = { ...plotRecords, [CLERK]: { ...plotRecords[CLERK], plot: { ...PLOT, last: { ...PLOT.last, boss: CLERK } } } };
+  const d = fakeDb({ named: [CLERK], pool: { threadsWeekly: 0 }, recordBy: former });
+  const m = fakeModels((r) => ({ words: 'x' }));
+  await run(d, m);
+  const system = m.chats.find((c) => c.staff === CLERK)!.system;
+  assert.ok(system.includes('Last season you were the Boss. This is how you summed it up: I put everything in World -1.'));
+});
+
+test('an old voice\'s frame carries the plot so far as one line', async () => {
+  const old: Instance = { ...dividedWorld, system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === SIGH ? { ...p, voice: 'oldVoice' as const } : p)) } };
+  const d = fakeDb({ pool: { threadsWeekly: 0 }, named: [SIGH], recordBy: plotRecords });
+  const m = fakeModels(() => ({ words: 'chat' }), 'ok');
+  await run(d, m, old);
+  const prompt = m.completions[0]!.prompt as string;
+  assert.equal(prompt.split('\n').filter((l) => l.includes('The plot so far')).length, 1);
+  assert.ok(prompt.includes('World -1 opens soon.'));
 });
 
 test('a disabled System writes nothing and calls no model', async () => {

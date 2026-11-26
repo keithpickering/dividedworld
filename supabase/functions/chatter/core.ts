@@ -89,6 +89,7 @@ import {
   type OfferedCard,
   type PublicRecord,
 } from '../../../engine/system/chatter.ts';
+import { leadInMoods, type PlotRead } from '../../../engine/system/beats.ts';
 import { phaseAt } from '../../../engine/system/phases.ts';
 import type { ConferredGroup } from '../../../engine/system/meeting.ts';
 import { DUTY_SPECS } from '../../../engine/system/duties.ts';
@@ -625,12 +626,26 @@ async function recordTheRuling(r: TurnRun, post: string, quoting: string, raw: u
 }
 
 /** What a call reads of a thread beside the posts: the public record and the persona's talking point. A spin start reads the same of the origin's thread. */
-async function recordReads(db: Db, staff: string, thread: string) {
+async function recordReads(db: Db, persona: Persona, roster: readonly Persona[], thread: string) {
   const [record, points] = await Promise.all([
-    db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: staff }),
-    db.rpc<string | null>('staff_points_latest', { staff_key: staff }),
+    db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: persona.key }),
+    db.rpc<string | null>('staff_points_latest', { staff_key: persona.key }),
   ]);
-  return { record, points };
+  return { record: withMoods(record, persona, roster), points };
+}
+
+/**
+ * The record as the prompt is given it. For the sitting Boss alone the database lists the lead-ins' keys (`leadIns`); each is mapped to its mood line through the Boss's own persona file (its beats, and a
+ * predecessor's aftermath beats by `after:<predecessor>:<key>`, read in that predecessor's file on the roster). A key the file lacks is dropped, silently: a file edited since the database listed it is no fault.
+ * A Mod's or a member's record has no `leadIns`, and is returned as it is.
+ */
+function withMoods(record: PublicRecord, persona: Persona, roster: readonly Persona[]): PublicRecord {
+  return Array.isArray(record.leadIns) ? { ...record, leadIns: leadInMoods(persona, record.leadIns, roster) } : record;
+}
+
+/** An old voice's read of the record is the plot so far and nothing else (its frame carries one line of it); the whole record is still one read. */
+async function plotRead(db: Db, staff: string, thread: string): Promise<PlotRead | undefined> {
+  return (await db.rpc<PublicRecord>('pool_record', { in_thread: thread, staff_key: staff })).plot;
 }
 
 interface TurnsRun {
@@ -717,7 +732,7 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     // One read of the thread for the persona: the opener, the newest window, the replies it answers (`named`), its own posts and what replies to them, whole (pool_read). The reader chooses from it.
     const [pooled, extra, reads] = await Promise.all([
       db.rpc<PoolRead>('pool_read', { in_thread: planned.thread, staff_key: planned.staff, named: planned.answers, window: READ_WINDOW }),
-      recordReads(db, planned.staff, planned.thread),
+      recordReads(db, persona, tuned.system.roster, planned.thread),
       personaReads(db, settings, planned.staff),
     ]);
     // A turn answers the replies the reader took, newest first while they fit `readMost` (the newest is always taken); a reply it did not take is not named, and stays waiting. A reply that cannot be read is not answered either
@@ -736,14 +751,14 @@ async function oneTurn(r: TurnRun): Promise<TurnRecord> {
     try {
       if (persona.voice === 'oldVoice') {
         const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
-        const frame = chatterCompletion({ name: persona.name, title: pooled.title, read, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
+        const frame = chatterCompletion({ name: persona.name, key: persona.key, boss: r.office === 'boss', ...(extra.record.plot ? { plot: extra.record.plot } : {}), title: pooled.title, read, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
         const out = await scrubbedComplete(sender.models, {
           duty: 'conversation', staff: planned.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: settings.postMaxLength,
         }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: ruling ? STAFF_TURN_PREMISE : TURN_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title: pooled.title, read,
+          premise: ruling ? STAFF_TURN_PREMISE : TURN_PREMISE, persona, callerKey: persona.key, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title: pooled.title, read,
           trigger: 'answered', record: extra.record, points: extra.points,
           // A turn offers no card: the ceiling counts characters and nothing else.
           offeredCards: [], startThread: false, limits, names: namesOf(faces, instanceSet), ...(ruling ? { ruling: ruling.words } : {}),
@@ -871,7 +886,9 @@ async function onePick(r: PickRun): Promise<PickRecord> {
 
     const { career, memory, notes, faces } = await personaReads(db, settings, p.staff, [p.subject]);
     // The public record and the persona's talking point, as a turn is given them (the old voice writes its words from the thread alone).
-    const extra = read && persona.voice === 'chat' ? await recordReads(db, p.staff, p.thread!) : null;
+    const extra = read && persona.voice === 'chat' ? await recordReads(db, persona, tuned.system.roster, p.thread!) : null;
+    // The old voice carries the plot so far as one line and nothing else of the record.
+    const plot = read && persona.voice === 'oldVoice' ? await plotRead(db, p.staff, p.thread!) : undefined;
     const points = persona.voice !== 'chat' ? null : extra !== null ? extra.points : await db.rpc<string | null>('staff_points_latest', { staff_key: p.staff });
 
     const limits = limitsOf(settings);
@@ -883,14 +900,14 @@ async function onePick(r: PickRun): Promise<PickRecord> {
       if (persona.voice === 'oldVoice') {
         // The window's room for the answer, then the prompt fitted to what is left (design section 3); a prompt that still does not fit is refused by `models.complete` as a rejection.
         const maxTokens = Math.min(OLD_VOICE_POST_TOKENS, writeTokensMost(settings));
-        const frame = chatterCompletion({ name: persona.name, title, read, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
+        const frame = chatterCompletion({ name: persona.name, key: persona.key, boss: r.office === 'boss', ...(plot ? { plot } : {}), title, read, limits, fit: { budget: settings.oldVoiceWindow - maxTokens, count: tokenCounter(settings.oldVoiceTokenizer) } });
         const out = await scrubbedComplete(sender.models, {
           duty: 'chatter', staff: p.staff, prompt: frame.prompt, temperature: 0.9, topP: 0.95, stop: frame.stop, maxTokens, maxChars: settings.postMaxLength,
         }, tuned.system.scrubWords);
         raw = { words: out.value };
       } else {
         const frame = chatterPrompt({
-          premise: POOL_PREMISE, persona, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title, read,
+          premise: POOL_PREMISE, persona, callerKey: persona.key, office: r.office, offices: tuned.system.offices, pronouns: pronounsOr(persona.pronouns, instanceSet), career, memory, notes, title, read,
           record: extra?.record ?? null, points,
           trigger: p.trigger, subject: p.subject && faces[p.subject] ? p.subject : null, offeredCards: offered, startThread: startsThread, spinning: spins, limits, names: namesOf(faces, instanceSet),
         });
