@@ -1,0 +1,45 @@
+{
+  "default": "three-quarter-right",
+  "views": {
+    "side-left": {
+      "width": 1024,
+      "height": 617,
+      "pivot": {
+        "x": 526,
+        "y": 525
+      }
+    },
+    "three-quarter-left": {
+      "width": 932,
+      "height": 649,
+      "pivot": {
+        "x": 480,
+        "y": 545
+      }
+    },
+    "front": {
+      "width": 883,
+      "height": 624,
+      "pivot": {
+        "x": 442,
+        "y": 550
+      }
+    },
+    "three-quarter-right": {
+      "width": 932,
+      "height": 649,
+      "pivot": {
+        "x": 452,
+        "y": 545
+      }
+    },
+    "side-right": {
+      "width": 1024,
+      "height": 617,
+      "pivot": {
+        "x": 498,
+        "y": 525
+      }
+    }
+  }
+}

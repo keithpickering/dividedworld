@@ -27,6 +27,7 @@ supabase/.temp/
 *.blend1
 # Hot Box's scene is a Blender file, changed by hand past what its script built (the same README)
 !instances/divided-world/ui/cards/hot-box/scene.blend
+!instances/divided-world/ui/gear/*/model.blend
 !docs/research/2026-11-23-gear-renders/*.blend
 
 # Worktrees a session makes for agents working in parallel; each is a checkout of this repository, never content.
