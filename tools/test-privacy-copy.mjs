@@ -35,6 +35,8 @@ for (const [name, source, line] of [
   ['a past tense', 'const t = "So nobody learned who";\n', 1],
   ['an aria-label attribute', 'const J = () => <b aria-label="Only you know this">x</b>;\n', 1],
   ['a plain template with no substitution', 'const t = `No one saw it`;\n', 1],
+  ['a bare "only you" label (#1163)', 'const J = () => (\n  <dl><dt>Who can see it</dt><dd>Only you</dd></dl>\n);\n', 2],
+  ['a bare "only you" badge in a string', 'const t = "only you";\n', 1],
 ]) {
   const r = faultsOf(source);
   check(`${name} fires`, r.length === 1 && r[0].file === P && r[0].line === line && /more privacy than the game gives/.test(r[0].why), JSON.stringify(r));
@@ -45,6 +47,8 @@ check('the phrase in a // comment is not read', faultsOf('// Only you see this, 
 check('the phrase in a /* */ comment is not read', faultsOf('/* Only you see this, yours alone. */\nconst a = 1;\n').length === 0);
 check('the phrase in a JSX comment is not read', faultsOf('const J = () => <p>{/* only you see here */}ok</p>;\n').length === 0);
 check('"No other player sees this" is clean', faultsOf('const t = "No other player sees this";\n').length === 0);
+check('"only you" inside a longer label with no seeing verb is clean, as before (#1163 refuses it only bare)', faultsOf('const t = "Only you and your other masks";\n').length === 0);
+check('"Only yours" is not "only you"', faultsOf('const t = "Only yours";\n').length === 0);
 check('a *.test.ts path is not read', copyFiles(['engine/a.test.ts', 'engine/a.test.tsx', 'engine/a.ts']).join() === 'engine/a.ts');
 for (const path of ['engine/ui/Thing.stories.tsx', 'engine/ui/data/fake.ts', 'e2e/boards/x.ts', 'tools/x.ts', 'engine/ui/x.md', 'web/src/main.tsx', 'instances/divided-world/ui/cards/a/ui.ts']) {
   const kept = copyFiles([path]).length === 1;

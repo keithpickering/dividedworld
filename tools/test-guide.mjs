@@ -156,6 +156,7 @@ const fires = (markdown, pattern, o = {}) => {
     check(`a past tense fires: "${text}"`, privacyOverclaims(text).length === 1, JSON.stringify(privacyOverclaims(text)));
   }
   check('"Nobody heard" stays clean', privacyOverclaims('Nobody heard.').length === 0);
+  check('a bare "Only you" is refused, with its stop (#1163)', JSON.stringify(privacyOverclaims('Only you')) === JSON.stringify(['Only you']) && JSON.stringify(privacyOverclaims(' only you. ')) === JSON.stringify(['only you']), JSON.stringify([privacyOverclaims('Only you'), privacyOverclaims(' only you. ')]));
   check('privacyOverclaims names what it found', JSON.stringify(privacyOverclaims('Only you see it, and nobody knows. It is yours alone.')) === JSON.stringify(['Only you see', 'nobody knows', 'yours alone']), JSON.stringify(privacyOverclaims('Only you see it, and nobody knows. It is yours alone.')));
   for (const [name, markdown] of retyped) {
     const r = faultsOf(markdown);
