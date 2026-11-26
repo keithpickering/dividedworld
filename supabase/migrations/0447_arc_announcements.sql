@@ -21,7 +21,9 @@
 --   handoffs            gains `recap` (at most 300 characters); handoffs_latest gains it as its last column.
 --   queued_moves_guard  (0424) reads a role of the predecessor's beat, {role, beat, of: 'predecessor'}, through beat_role_board's fifth argument; a role is written with those keys and no others.
 --   system_tick         (0445) lands a part of a bundle in the thread of the announcement of the beat that played the bundle; a bundle with no announcement (an instance's played Split before this migration, a
---                       beat with no `announce` block) lands as 0437 wrote it: in the thread of the bundle's earliest landed part, else a thread of its own. Its role resolution passes `of` likewise.
+--                       beat with no `announce` block) lands as 0437 wrote it: in the thread of the bundle's earliest landed part, else a thread of its own. A part the announcement thread refuses (write_staff_act raises) does not wait
+--                       on it for good: it falls back the same way (the earliest landed part's thread outside the announcement's, else a thread of its own) and its row's `failure` says so; a thread moved to another board takes the
+--                       part as before. Its role resolution passes `of` likewise.
 --
 -- Latest definitions copied: apply_meeting and system_tick (0445_persona_lines.sql), queued_moves_guard (0424_staff_requests.sql), handoffs_latest (0403_departed_personas.sql). Everything each does that is not
 -- named here is as written there; security definer, search_path and grants stay (they are replaced in place).
@@ -41,7 +43,7 @@
 --   pool_record         (0415) gains `plot` (arc_plot) for every persona and, for the sitting Boss alone, `push` (the authored push of each initiative that Boss announced in this season, blanks left out, oldest first, the
 --                       latest 12: a departed Boss's push is never the sitting Boss's) and `leadIns` (arc_lead_ins keys; the Edge Function maps them to mood lines). A Mod or a member has neither key.
 --   meeting_context     (0404) gains `plot` and `leadIns` for the current Boss.
---   board_page          (0368) gains `stickies`: page 1's rows of the board's staff pins, each as thread_list gives it, in staff_stickies' order, and `[]` on any other page or board. As with `pins`, the rows are not taken out of
+--   board_page          (0368) gains `stickies`: page 1's rows of the system board's staff pins (no other board has any, so no other board asks), each as thread_list gives it, in staff_stickies' order, and `[]` on any other page or board. As with `pins`, the rows are not taken out of
 --                       `threads` here (the pager's numbers stay the thread count's); the reader draws the stickies first and leaves them out of the rows below. Their characters, reads and views are in the page's lists.
 --                       staff_stickies is granted to the signed-in role for it (a definer reading staff threads: public facts, the same for every caller).
 -- Latest definitions copied: pool_record (0415_chattier_staff.sql), meeting_context (0404_card_retirement.sql), board_page (0368_client_reads_plan_once.sql).
@@ -122,7 +124,8 @@ alter table staff_pin_events enable always trigger staff_pin_events_no_truncate;
 
 -- The threads of a board that stand pinned: the latest event of the thread in the open season is `pinned`, the oldest pin first. A season that is no longer open holds none, so a roll-over needs no write.
 create function staff_stickies(in_board uuid) returns table (thread uuid, pinned_at timestamptz)
-language sql stable security definer set search_path = public, pg_temp as $$
+-- rows 5: a board holds a handful of pins a season (FanGaME has two), and board_page joins this against thread_list on the hottest read; the default estimate of a thousand made the planner hash-join the whole view.
+language sql stable security definer rows 5 set search_path = public, pg_temp as $$
   select p.thread, p.at
   from staff_pin_events p
   join threads t on t.id = p.thread and t.board = in_board
@@ -498,6 +501,9 @@ declare
   owed_paid integer := 0;
   rq_public boolean;
   mt uuid;
+  ann_mt uuid;
+  ann_why text;
+  act_p jsonb;
 begin
   if not pg_try_advisory_xact_lock(hashtext('kayfabb.system_tick')) then return jsonb_build_object('skipped', true); end if;
 
@@ -593,21 +599,41 @@ begin
         -- The move's thread (the staff-board threads design, section 6): a part of a bundle goes in the thread of the bundle's earliest landed part, whenever that landed; anything else, and a bundle's first part,
         -- opens a staff thread of its own, titled for its kind. It is opened here, inside this move's block, so a part that fails to land takes its thread with it and the next one that lands opens it again.
         mt := null;
+        ann_mt := null;
+        ann_why := null;
         if due.bundle is not null then
           -- A bundle an announced beat played lands in that beat's announcement thread (arc_announcements, read through the play it announces); one with no announcement (a beat with no `announce` block, or a bundle played
           -- before announcements) goes where 0437 sent it: the thread of the bundle's earliest landed part.
-          select n.thread into mt from arc_announcements n join arc_beat_events e on e.id = n.play where e.bundle = due.bundle limit 1;
+          select n.thread into ann_mt from arc_announcements n join arc_beat_events e on e.id = n.play where e.bundle = due.bundle limit 1;
+          mt := ann_mt;
           if mt is null then
             select a.thread into mt from queued_moves p join acts a on a.id = p.landed_act where p.bundle = due.bundle and p.landed_act is not null order by a.created_at, a.seq, a.id limit 1;
           end if;
         end if;
         if mt is null then mt := open_staff_thread(due.staff, move_thread_title(due.kind, lp, due.staff)); end if;
-        written := (write_staff_act(due.staff, 'move', mt, null,
-          jsonb_build_object('kind', due.kind, 'params', lp, 'body', case when nullif(btrim(due.line, E' \t\n\r\f\v'), '') is not null then system_line_fill(btrim(due.line, E' \t\n\r\f\v'), due.kind, lp, due.staff)
+        act_p := jsonb_build_object('kind', due.kind, 'params', lp, 'body', case when nullif(btrim(due.line, E' \t\n\r\f\v'), '') is not null then system_line_fill(btrim(due.line, E' \t\n\r\f\v'), due.kind, lp, due.staff)
             else system_line(case when due.kind = 'setRule' then 'ruleSet' else 'moveLanded' end, due.kind, lp, due.staff) end)
           || case when due.demand is not null then jsonb_build_object('demand', due.demand) else '{}'::jsonb end
-          || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end) ->> 'id')::uuid;
+          || case when due.expires_at is not null then jsonb_build_object('expires_at', due.expires_at) else '{}'::jsonb end;
+        if ann_mt is not null then
+          -- A part the announcement thread will not take (a refusal of write_staff_act) does not wait on it for good: it falls back to where 0437 sent a bundle (the thread of the bundle's earliest landed part outside the
+          -- announcement's, else a thread of its own), and the row says so. A thread moved to another board takes it as before: a move's Act is written in the thread wherever it stands.
+          begin
+            written := (write_staff_act(due.staff, 'move', ann_mt, null, act_p) ->> 'id')::uuid;
+          exception when others then
+            ann_why := left(sqlerrm, 300);
+            raise warning 'system_tick: queued move % could not land in its announcement thread %: % (%)', due.id, ann_mt, sqlerrm, sqlstate;
+            select a.thread into mt from queued_moves p join acts a on a.id = p.landed_act where p.bundle = due.bundle and p.landed_act is not null and a.thread <> ann_mt order by a.created_at, a.seq, a.id limit 1;
+            if mt is null then mt := open_staff_thread(due.staff, move_thread_title(due.kind, lp, due.staff)); end if;
+            written := (write_staff_act(due.staff, 'move', mt, null, act_p) ->> 'id')::uuid;
+          end;
+        else
+          written := (write_staff_act(due.staff, 'move', mt, null, act_p) ->> 'id')::uuid;
+        end if;
         update queued_moves set landed_act = written where id = due.id;
+        if ann_why is not null then
+          update queued_moves set failed_at = now(), failure = left('landed in a thread of its own: the announcement thread would not take it (' || ann_why || ')', 500) where id = due.id;
+        end if;
         -- A ruling on a player's own character (design section 2): the member a Boss put in a group is told, as is the starter of a thread the Boss moved. A mergeBoard and a group left alert no one.
         if due.kind = 'conferGroup' then
           perform write_alert(safe_uuid(lp ->> 'character'), 'ruling', 'grouped', written, null);
@@ -1669,7 +1695,7 @@ begin
             FROM (p p_1
               CROSS JOIN LATERAL staff_stickies(p_1.board) WITH ORDINALITY s(thread, pinned_at, ord))
               JOIN thread_list l ON (l.id = s.thread)
-           WHERE (p_1.page = 1)
+           WHERE (p_1.page = 1 AND (SELECT x.is_system FROM b x))
          ), pins AS MATERIALIZED (
           SELECT x.thread,
              x.play,
