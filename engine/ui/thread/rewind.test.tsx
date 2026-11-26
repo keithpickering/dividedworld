@@ -3,7 +3,7 @@
  * point and keeps the ones before it, its marks say what is drawn, a quote takes the words it shows, and a rewind that lands while the reader is here draws rewound once, never the present
  * after its view is in. The cards are the engine's own test cards, never an instance's.
  */
-import { screen, waitFor, within } from '@testing-library/react';
+import { act, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import { landsOn, ok, type CardRules } from '../../rules/cards.ts';
@@ -130,14 +130,21 @@ describe('a rewind that lands while the reader is on the page', () => {
     let deliver!: (view: Rewind | null) => void;
     const real = w.fake.rewindView.bind(w.fake);
     const spy = vi.spyOn(w.fake, 'rewindView').mockImplementation((play) => new Promise<Rewind | null>((resolve) => { deliver = (v) => resolve(v ?? null); void real(play); }));
+    w.fake.broadcast.holdJoins();
+    const page = vi.spyOn(w.fake, 'threadPage');
     open(w, w.thread);
     const post = await post1();
     expect(post).toHaveTextContent('The second words.');
+    /* The screen's channels join and its catch-up reads the page before the play lands, as a reader already on the page has; a play sent before the join comes in that read, view and all (the next test). */
+    const before = page.mock.calls.length;
+    await act(async () => { w.fake.broadcast.join(); });
+    await waitFor(() => expect(page.mock.calls.length).toBeGreaterThan(before), landed);
+    await act(async () => { await Promise.all(page.mock.results.map((r) => r.value)); });
     const played = await w.fake.playCard('clock', w.boFace, w.opener, { to: w.opener }, '');
     expect(played.ok).toBe(true);
-    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(spy).toHaveBeenCalledTimes(1), landed);
     /* The play is in; its view is not: the post is as it was, not the old words and not a blank. */
-    await waitFor(() => expect(wraps(post)).toContain('clock'));
+    await waitFor(() => expect(wraps(post)).toContain('clock'), landed);
     expect(post).toHaveTextContent('The second words.');
     expect(post).not.toHaveTextContent('The first words.');
     /* Every record, not the state after a batch: words drawn and gone again between two commits of one task are caught too. */
@@ -150,12 +157,27 @@ describe('a rewind that lands while the reader is on the page', () => {
     });
     watch.observe(post, { childList: true, subtree: true, characterData: true });
     deliver((await real((played as { value: { id: string } }).value.id)));
-    await waitFor(() => expect(post).toHaveTextContent('The first words.'));
+    await waitFor(() => expect(post).toHaveTextContent('The first words.'), landed);
     watch.disconnect();
     expect(post).not.toHaveTextContent('The second words.');
     expect(seen.length).toBeGreaterThan(0);
     expect(seen.filter((t) => t.includes('The second words.'))).toEqual([]);
     expect(spy).toHaveBeenCalledTimes(1);
+  });
+  test('a play that lands before the screen joins is drawn rewound from the join\'s catch-up, with no view read', async () => {
+    const w = await world(false);
+    const spy = vi.spyOn(w.fake, 'rewindView');
+    w.fake.broadcast.holdJoins();
+    open(w, w.thread);
+    const post = await post1();
+    expect(post).toHaveTextContent('The second words.');
+    const played = await w.fake.playCard('clock', w.boFace, w.opener, { to: w.opener }, '');
+    expect(played.ok).toBe(true);
+    await act(async () => { w.fake.broadcast.join(); });
+    await waitFor(() => expect(post).toHaveTextContent('The first words.'), landed);
+    expect(post).not.toHaveTextContent('The second words.');
+    expect(wraps(post)).toContain('clock');
+    expect(spy).not.toHaveBeenCalled();
   });
 });
 
