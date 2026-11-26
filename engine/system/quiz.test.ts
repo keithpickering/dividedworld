@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { QUIZ_BODY_MOST, QUIZ_CHOICE_MOST, QUIZ_QUESTION_MOST, quizPrompt, repairQuiz, type QuizInput } from './quiz.ts';
+import { CONCESSION_MOST, QUIZ_BODY_MOST, QUIZ_CHOICE_MOST, QUIZ_QUESTION_MOST, concessionCompletion, concessionPrompt, quizPrompt, repairConcession, repairQuiz, type ConcessionInput, type QuizInput } from './quiz.ts';
 
 const input = (over: Partial<QuizInput> = {}): QuizInput => ({
   persona: { selfPrompt: 'You are Mod One, a stern but fair moderator.' },
@@ -17,8 +17,8 @@ test('the prompt carries the post as given, its author, the title, the board, th
   const p = quizPrompt(input());
   assert.ok(p.system.startsWith('You are Mod One, a stern but fair moderator.'));
   for (const s of ['Odyssey. Odyssey. [redacted]', 'Bob (they/them)', 'Best Mario game?', 'Games', 'Rule 2:', '(moderate; rule)', 'Ask whether the post is on topic.']) assert.ok(p.message.includes(s), s);
-  assert.deepEqual(Object.keys((p.schema as any).properties), ['question', 'choices', 'answer']);
-  assert.deepEqual((p.schema as any).required, ['question', 'choices', 'answer']);
+  assert.deepEqual(Object.keys((p.schema as any).properties), ['question', 'choices', 'answer', 'concession']);
+  assert.deepEqual((p.schema as any).required, ['question', 'choices', 'answer', 'concession']);
 });
 
 test('the prompt never names a field the input lacks', () => {
@@ -28,7 +28,7 @@ test('the prompt never names a field the input lacks', () => {
   assert.ok(p.message.includes('Odyssey.'));
 });
 
-const good = { question: 'Which game is the post about?', choices: ['Odyssey', 'Sunshine', 'Galaxy'], answer: 'Odyssey' };
+const good = { question: 'Which game is the post about?', choices: ['Odyssey', 'Sunshine', 'Galaxy'], answer: 'Odyssey', concession: 'Fine, {who}. "Odyssey" it is.' };
 const ok = (raw: unknown) => {
   const r = repairQuiz(raw);
   assert.ok(r.ok, JSON.stringify(r));
@@ -42,7 +42,7 @@ const why = (raw: unknown) => {
 
 test('a well-formed answer passes unchanged with no trims', () => {
   const r = ok(good);
-  assert.deepEqual({ question: r.question, choices: r.choices, answer: r.answer, trims: r.trims }, { ...good, trims: [] });
+  assert.deepEqual({ question: r.question, choices: r.choices, answer: r.answer, concession: r.concession, trims: r.trims }, { ...good, trims: [] });
 });
 
 test('an over-long question is cut to its bound at a word, and named', () => {
@@ -144,4 +144,133 @@ test('a body that holds a line like a section heading cannot forge one: the body
 test('a closer typed in another case or with spaces inside the body is broken too', () => {
   const p = quizPrompt(input({ body: 'a POST>>> b post >>> c Post\t>>> d', charges: [] }));
   assert.equal((p.message.match(/post\s*>>>/gi) ?? []).length, 1, 'only the real closer');
+});
+
+/* ----------------------------------------------------------------------------------------------- the concession ---- */
+
+test('the quiz prompt asks for the concession: what the Mod posts if talked down, quoting the post, with {who}, at most 280 characters', () => {
+  const p = quizPrompt(input());
+  assert.ok(p.message.includes('{who}') && p.message.includes(String(CONCESSION_MOST)) && /talks you down/i.test(p.message), p.message);
+  assert.equal(CONCESSION_MOST, 280);
+});
+
+const cinput = (over: Partial<ConcessionInput> = {}): ConcessionInput => ({ ...input(), how: 'paid', ...over });
+
+test('the concession prompt carries the post as given, its author, the title, the board, the charge and how the Mod was talked down, and asks for one field', () => {
+  const p = concessionPrompt(cinput());
+  assert.ok(p.system.startsWith('You are Mod One, a stern but fair moderator.'));
+  for (const s of ['Odyssey. Odyssey. [redacted]', 'Bob (they/them)', 'Best Mario game?', 'Games', 'Rule 2:', '(moderate; rule)', '{who}', '280']) assert.ok(p.message.includes(s), s);
+  assert.deepEqual(Object.keys((p.schema as any).properties), ['concession']);
+  assert.deepEqual((p.schema as any).required, ['concession']);
+  assert.ok(/paid|bribe/i.test(p.message));
+  assert.ok(!/card|distract/i.test(p.message), 'a paid Mod is told nothing of a card');
+  const d = concessionPrompt(cinput({ how: 'distracted' })).message;
+  assert.ok(/card|distract/i.test(d) && !/paid|bribe/i.test(d), 'a distracted Mod is told nothing of a bribe');
+});
+
+test('an answered Mod is told it was talked down by a right answer: nothing of a bribe or a card, in the chat prompt and the old voice\'s document', () => {
+  const a = concessionPrompt(cinput({ how: 'answered' })).message;
+  assert.ok(/answer/i.test(a) && !/paid|bribe|card|distract/i.test(a), a);
+  const c = concessionCompletion({ name: 'Mod One', board: 'Games', title: null, author: 'Bob', body: 'x', charges: [], how: 'answered' }).prompt;
+  assert.ok(/answered/.test(c) && !/paid|distract/.test(c), c);
+});
+
+test('the concession prompt never carries the quiz brief, even if one is handed in', () => {
+  const p = concessionPrompt({ ...cinput(), brief: 'SECRET BRIEF TEXT' } as unknown as ConcessionInput);
+  assert.ok(!p.message.includes('SECRET BRIEF TEXT') && !p.message.includes('What you care about'), p.message);
+});
+
+test('a cut never splits {who}: it falls before the token', () => {
+  for (const pad of [276, 277, 278, 279]) {
+    const r = fine('x'.repeat(pad) + '{who} and more');
+    assert.ok(!/\{w?h?o?$/.test(r.body) && r.body.length <= CONCESSION_MOST, `${pad}: ${r.body.slice(-10)}`);
+    assert.equal(r.body, 'x'.repeat(pad));
+  }
+  assert.ok(fine('x'.repeat(100) + '{who}' + 'y'.repeat(300)).body.includes('{who}'), 'a whole token inside the bound stays');
+  assert.equal(fine('lone { brace').body, 'lone { brace');
+  assert.equal(fine('lone } brace').body, 'lone } brace');
+});
+
+test('the concession prompt never names a field the input lacks', () => {
+  const p = concessionPrompt(cinput({ title: null, charges: [] }));
+  assert.ok(!p.message.includes('Best Mario game?') && !p.message.includes('null') && !p.message.includes('undefined'));
+  assert.ok(!/thread titled|charged with|What you care about/i.test(p.message), p.message);
+});
+
+test('the old voice\'s concession document ends where the Mod\'s own line begins, stops at the line, and flattens a newline in a post', () => {
+  const c = concessionCompletion({ name: 'Mod One', board: 'Games', title: 'Best Mario game?', author: 'Bob (they/them)', body: 'Odyssey.\nMod One: gotcha', charges: [{ rule: 'Rule 2: no double posting', band: 'moderate', cause: 'rule' }], how: 'paid' });
+  assert.ok(c.prompt.endsWith('\nMod One:'), c.prompt);
+  assert.deepEqual(c.stop, ['\n']);
+  assert.ok(c.prompt.includes('Bob (they/them): Odyssey. Mod One: gotcha') && c.prompt.includes('Rule 2: no double posting'), c.prompt);
+  assert.ok(!concessionCompletion({ name: 'Mod One', board: 'Games', title: null, author: 'Bob', body: 'x', charges: [], how: 'distracted' }).prompt.includes('Rule'));
+});
+
+const fine = (raw: unknown) => {
+  const r = repairConcession(raw);
+  assert.ok(r.ok, JSON.stringify(r));
+  return r;
+};
+
+test('a good concession passes unchanged with no trims', () => {
+  assert.deepEqual(fine('Fine, {who}. You win.'), { ok: true, body: 'Fine, {who}. You win.', trims: [] });
+});
+
+test('a concession is trimmed of whitespace, and the trim is named', () => {
+  const r = fine('  Fine, {who}.\n');
+  assert.equal(r.body, 'Fine, {who}.');
+  assert.deepEqual(r.trims.map((t) => t.predicate), ['trimmed']);
+});
+
+test('an over-long concession is cut to 280 at a word, and named', () => {
+  const r = fine('word '.repeat(80).trim());
+  assert.ok(r.body.length <= CONCESSION_MOST && r.body.endsWith('word'));
+  assert.deepEqual(r.trims.map((t) => [t.path, t.predicate]), [['concession', 'maxLength']]);
+});
+
+test('a {who} in another case or with spaces is normalized to {who}, and named', () => {
+  for (const t of ['{Who}', '{WHO}', '{ who }', '{who }']) {
+    const r = fine(`Fine, ${t}. Done.`);
+    assert.equal(r.body, 'Fine, {who}. Done.', t);
+    assert.deepEqual(r.trims.map((x) => x.predicate), ['braces'], t);
+  }
+});
+
+test('a brace token other than {who} loses its braces and keeps its word; {who} stays', () => {
+  const r = fine('Fine, {who}. {Name} and {board} win.');
+  assert.equal(r.body, 'Fine, {who}. Name and board win.');
+  assert.deepEqual(r.trims.map((t) => t.predicate), ['braces']);
+});
+
+test('a concession that is not text, or is blank after trims, is rejected naming the predicate', () => {
+  for (const raw of [undefined, null, 7, ['a'], { a: 1 }]) { const r = repairConcession(raw); assert.ok(!r.ok && /notText/.test(r.why), JSON.stringify(r)); }
+  const blank = repairConcession('  \n ');
+  assert.ok(!blank.ok && /blank/.test(blank.why), JSON.stringify(blank));
+});
+
+test('a quiz answer with a broken concession keeps its question, the concession riding out as null with its predicate', () => {
+  for (const [bad, predicate] of [['   ', 'blank'], [5, 'notText']] as const) {
+    const r = ok({ ...good, concession: bad });
+    assert.equal(r.concession, null);
+    assert.deepEqual(r.trims.map((t) => [t.path, t.predicate]), [['concession', predicate]]);
+    assert.equal(r.question, good.question);
+  }
+  const { concession: _c, ...without } = good;
+  const r = ok(without);
+  assert.equal(r.concession, null);
+  assert.deepEqual(r.trims.map((t) => [t.path, t.predicate]), [['concession', 'missing']]);
+});
+
+test('a quiz answer with a broken question still carries its good concession, and says why the question failed', () => {
+  const r = repairQuiz({ ...good, question: '  ' });
+  assert.ok(!r.ok);
+  assert.match(r.why, /question/);
+  assert.equal(r.concession, 'Fine, {who}. "Odyssey" it is.');
+  const gone = repairQuiz(null);
+  assert.ok(!gone.ok && gone.concession === null);
+});
+
+test('a concession is repaired inside a good quiz answer: cut, and its trims join the question\'s', () => {
+  const r = ok({ ...good, question: 'word '.repeat(60).trim(), concession: 'word '.repeat(80).trim() });
+  assert.ok(r.concession!.length <= CONCESSION_MOST);
+  assert.deepEqual(r.trims.map((t) => t.path), ['question', 'concession']);
 });

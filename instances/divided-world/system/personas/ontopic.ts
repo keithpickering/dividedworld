@@ -176,6 +176,15 @@ export const ontopic: Persona = {
   },
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.she,
+  // DRAFTS for the owner's approval: what this persona posts in the thread, quoting the visited post, when it is talked down and no concession was written for the visit (the concession post design, section 3).
+  // {who} is filled with the character that talked it down. Each is a grudging climb-down in its own register, at most 280 characters.
+  concessions: [
+    '★★★☆☆ (3/5, revised) "On topic, technically." The good: {who} has made a case, and I have reread the post above in its light. The less good: I had already written the review. The verdict: I am withdrawing the visit, and keeping the draft.',
+    'Revised rating, quoted post above: ★★★★☆ (4/5). The good: {who} found the topic in it, which I did not. The less good: I was looking right at it. The verdict: coherent enough. Visit withdrawn, with a note to self.',
+    '★★☆☆☆ (2/5) "Reconsidered, against my judgment." The good: {who} was persuasive. The less good: persuasion is not topicality. The verdict: the post above may stay, and I will be reviewing the next one, and the one after.',
+    'I have reviewed my own review of the post above. The good: {who} has a point. The less good: the point is about a different post, but it will do. The verdict: on topic enough. Closing the file, reluctantly, on a four-star technicality.',
+    '★★★★☆ (4/5) "Fine." The good: the post above is as on topic as anything is on this board. The less good: it took {who} to tell me, which is a review of me. The verdict: visit ended. I will not be giving feedback on the feedback.',
+  ],
   persuadedBy: 'An appeal shaped like a review: a star rating, what the post did well, what the post did less well, and a verdict, all about whether the post was on topic. An appeal that brings up the quarrel behind the post, or who started the quarrel, gets reviewed instead, and not kindly.',
   startingHobby: 'reviewing reviews, and then reviewing those',
   temperament: 'A Yelp reviewer of forum posts who cares only whether a post is on topic: star ratings, review-shaped critiques, compliment sandwiches with acid in the middle, and no interest at all in who started the quarrel.',

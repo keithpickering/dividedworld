@@ -6,7 +6,8 @@ import { instance as realInstance } from '../_shared/instance.ts';
 import { placeholderWorld } from '../../../instances/divided-world/system/fixtures/index.ts';
 import { AnswerRejected, LedgerWriteFailed } from '../_shared/models/index.ts';
 import { ProviderRefusal } from '../_shared/models/transport.ts';
-import type { ChatRequest, ModelResult, Models } from '../../../engine/system/model.ts';
+import type { ChatRequest, CompletionRequest, ModelResult, Models } from '../../../engine/system/model.ts';
+import { placeholderMonitor } from '../../../instances/divided-world/system/fixtures/placeholder-monitor.ts';
 import type { Instance } from '../../../engine/rules/types.ts';
 
 const dividedWorld: Instance = placeholderWorld(realInstance);
@@ -29,11 +30,12 @@ const GOOD = { question: 'What did Bob say twice?', choices: ['Odyssey', 'Sunshi
 interface World {
   enabled?: boolean; pending?: ReturnType<typeof pend>[]; today?: number; modBots?: Record<string, unknown>;
   office?: string | null; body?: string; name?: string; extras?: Record<string, unknown>; bank?: boolean;
-  standing?: Set<string>; failOn?: Record<string, 'always'>;
+  concessionsToday?: number; standing?: Set<string>; failOn?: Record<string, 'always'>;
 }
 function fakeDb(w: World = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
   const written = new Map<string, any>();
+  const concessions = new Map<string, any>();
   const records: { cause_act: string; duty: string; staff: string; record: any }[] = [];
   const pending = w.pending ?? [pend(V1, P1)];
   const db: Db = {
@@ -41,7 +43,7 @@ function fakeDb(w: World = {}) {
       calls.push({ fn, args });
       if (w.failOn?.[fn]) throw new DatabaseError(`${fn}: the connection dropped`, '08006', 500);
       switch (fn) {
-        case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, modBots: { ...dividedWorld.settings.modBots, quizQuestionsPerDay: 60, quizWriteMinutes: 15, ...(w.modBots ?? {}) } } as T;
+        case 'instance_settings': return { economy: dividedWorld.settings.economy, systemEnabled: w.enabled ?? true, modBots: { ...dividedWorld.settings.modBots, quizQuestionsPerDay: 60, quizWriteMinutes: 15, concessionsPerDay: 60, concessionWriteMinutes: 15, ...(w.modBots ?? {}) } } as T;
         case 'pending_quizzes': return pending.filter((p) => !written.has(p.visit_act)).slice(0, Number(args.most)) as T;
         case 'quiz_calls_today': return (w.today ?? 0) as T;
         case 'mod_standing': return { office: w.office === undefined ? 'mod' : w.office, allowance: 1, order: null, beat: [{ id: GAMES, name: 'Games' }] } as T;
@@ -58,21 +60,30 @@ function fakeDb(w: World = {}) {
           written.set(v, row);
           return { written: true, ...row } as T;
         }
+        case 'concession_calls_today': return (w.concessionsToday ?? 0) as T;
+        case 'write_visit_concession': {
+          const v = String(args.visit);
+          if (concessions.has(v)) return { written: false, ...concessions.get(v) } as T;
+          const row = { source: args.source, body: args.body, why: args.why };
+          concessions.set(v, row);
+          return { written: true, source: row.source } as T;
+        }
         case 'record_staff_call': records.push({ cause_act: String(args.cause_act), duty: String(args.duty), staff: String(args.staff), record: args.record }); return { recorded: true } as T;
         default: throw new Error(`the fake database has no ${fn}`);
       }
     },
   };
-  return { db, calls, written, records, of: (fn: string) => calls.filter((c) => c.fn === fn).map((c) => c.args), count: (fn: string) => calls.filter((c) => c.fn === fn).length };
+  return { db, calls, written, concessions, records, of: (fn: string) => calls.filter((c) => c.fn === fn).map((c) => c.args), count: (fn: string) => calls.filter((c) => c.fn === fn).length };
 }
 const result = <T,>(value: T): ModelResult<T> => ({ value, usage: {}, provider: 'fake', model: 'fake', trims: [], retries: 0, costMicrodollars: 0 });
-function fakeModels(reply: (r: ChatRequest) => unknown = () => GOOD) {
+function fakeModels(reply: (r: ChatRequest) => unknown = () => ({ ...GOOD, concession: 'Fine, {who}.' }), complete: (r: CompletionRequest) => string = () => ' Old fine, {who}.') {
   const chats: ChatRequest[] = [];
+  const completes: CompletionRequest[] = [];
   const models: Models = {
     async chat(r) { chats.push(r); const out = reply(r); if (out instanceof Error) throw out; return result(out) as never; },
-    async complete() { throw new Error('a quiz is a chat'); },
+    async complete(r) { completes.push(r); return result(complete(r)) as never; },
   };
-  return { models, chats };
+  return { models, chats, completes };
 }
 const run = (d: ReturnType<typeof fakeDb>, m: { models: Models }, instance: Instance = dividedWorld) => runQuizzes(d.db, m.models, instance, SLOT, () => Date.parse(SLOT));
 
@@ -86,7 +97,7 @@ test('a pending visit gets a model row from a good answer: one light quizQuestio
   assert.match(m.chats[0]!.messages[0]!.content, /Odyssey\. Odyssey\./);
   assert.match(m.chats[0]!.messages[0]!.content, /Rule 2: no double posting/);
   assert.deepEqual(d.of('write_visit_quiz'), [{ visit: V1, source: 'model', ...GOOD }]);
-  assert.deepEqual(d.records, [{ cause_act: V1, duty: 'quizQuestion', staff: MON, record: { source: 'model', trims: [], calls: 1 } }]);
+  assert.deepEqual(d.records, [{ cause_act: V1, duty: 'quizQuestion', staff: MON, record: { source: 'model', trims: [], calls: 1, concession: { source: 'model' } } }]);
   assert.deepEqual(out.quizzes.map((q) => [q.visit, q.status, q.source]), [[V1, 'written', 'model']]);
   assert.equal(d.count('bank_quiz_for'), 0);
 });
@@ -238,4 +249,91 @@ test('nothing pending reads nothing else', async () => {
   const out = await run(d, fakeModels());
   assert.equal(out.due, 0);
   assert.deepEqual(d.calls.map((c) => c.fn), ['pending_quizzes']);
+});
+
+const concessionRows = (d: ReturnType<typeof fakeDb>) => d.of('write_visit_concession').map((a) => [a.source, a.body, a.why]);
+
+test('a quiz answer\'s concession is written beside its question, after it, and the chat call is the only call', async () => {
+  const d = fakeDb();
+  const m = fakeModels();
+  await run(d, m);
+  assert.deepEqual(concessionRows(d), [['model', 'Fine, {who}.', null]]);
+  assert.deepEqual(d.of('write_visit_concession')[0]!.visit, V1);
+  const order = d.calls.map((c) => c.fn).filter((f) => f.startsWith('write_visit'));
+  assert.deepEqual(order, ['write_visit_quiz', 'write_visit_concession']);
+  assert.equal(m.chats.length + m.completes.length, 1);
+  assert.equal(d.count('concession_calls_today'), 0, 'a chat quiz Mod\'s concession is not a call of its own');
+});
+
+test('a broken concession is a none row with the predicate while the question stays model', async () => {
+  for (const [c, predicate] of [[undefined, 'missing'], ['   ', 'blank'], [7, 'notText']] as const) {
+    const d = fakeDb();
+    await run(d, fakeModels(() => ({ ...GOOD, ...(c === undefined ? {} : { concession: c }) })));
+    assert.equal(d.of('write_visit_quiz')[0]!.source, 'model');
+    const [row] = concessionRows(d);
+    assert.deepEqual([row![0], row![1]], ['none', null]);
+    assert.match(String(row![2]), new RegExp(`concession: ${predicate}`));
+  }
+});
+
+test('a good concession with a rejected question is a model concession beside a bank question', async () => {
+  const d = fakeDb();
+  await run(d, fakeModels(() => ({ question: 'Which?', choices: ['A', 'B'], answer: 'C', concession: 'Fine, {who}.' })));
+  assert.equal(d.of('write_visit_quiz')[0]!.source, 'bank');
+  assert.deepEqual(concessionRows(d), [['model', 'Fine, {who}.', null]]);
+});
+
+test('a concession is trimmed on the quiz call\'s record', async () => {
+  const d = fakeDb();
+  await run(d, fakeModels(() => ({ ...GOOD, concession: '  Fine, {who}.  ' })));
+  assert.deepEqual(concessionRows(d), [['model', 'Fine, {who}.', null]]);
+  assert.deepEqual(d.records[0]!.record.trims.map((t: any) => [t.path, t.predicate]), [['concession', 'trimmed']]);
+});
+
+test('where a bank question is written for want of an answer, the concession is none with that reason', async () => {
+  for (const w of [{ today: 60 }, { enabled: false }, { office: null }] as World[]) {
+    const d = fakeDb(w);
+    await run(d, fakeModels());
+    assert.equal(d.of('write_visit_quiz')[0]!.source, 'bank');
+    const [row] = concessionRows(d);
+    assert.deepEqual([row![0], row![1]], ['none', null]);
+    assert.ok(row![2], JSON.stringify(w));
+    assert.equal(d.records[0]!.record.concession.source, 'none');
+  }
+  const failed = fakeDb();
+  await run(failed, fakeModels(() => new ProviderRefusal('provider said no', 500)));
+  assert.match(String(concessionRows(failed)[0]![2]), /^the call failed: /);
+});
+
+const oldVoiceWorld = (): Instance => ({ ...dividedWorld, system: { ...dividedWorld.system, roster: dividedWorld.system.roster.map((p) => (p.key === MON ? { ...placeholderMonitor, voice: 'oldVoice' as const } : p)) } });
+
+test('an old-voice quiz Mod asks its question on chat and writes its concession on a completion, counted under concessionsPerDay', async () => {
+  const d = fakeDb({ concessionsToday: 0 });
+  const m = fakeModels();
+  const out = await run(d, m, oldVoiceWorld());
+  assert.equal(m.chats.length, 1);
+  assert.equal(m.chats[0]!.duty, 'quizQuestion');
+  assert.equal(m.completes.length, 1);
+  assert.deepEqual([m.completes[0]!.duty, m.completes[0]!.staff], ['concession', MON]);
+  assert.match(m.completes[0]!.prompt, /Odyssey\. Odyssey\./);
+  assert.match(m.completes[0]!.prompt, /answered/);
+  assert.doesNotMatch(m.completes[0]!.prompt, /distract/);
+  assert.deepEqual(concessionRows(d), [['model', 'Old fine, {who}.', null]], 'the chat answer\'s own concession is not used');
+  assert.equal(d.records[0]!.record.calls, 2);
+  assert.equal(out.quizzes[0]!.calls, 2);
+  const spent = fakeDb({ concessionsToday: 60 });
+  const n = fakeModels();
+  await run(spent, n, oldVoiceWorld());
+  assert.equal(n.completes.length, 0);
+  assert.equal(n.chats.length, 1, 'the question is still asked');
+  assert.match(String(concessionRows(spent)[0]![2]), /concessionsPerDay is spent/);
+});
+
+test('an old-voice quiz visit left pending makes no concession call, on this run or the next; a chat Mod\'s concession is written again, harmlessly', async () => {
+  const d = fakeDb({ bank: false, concessionsToday: 0 });
+  const m = fakeModels(() => ({ question: 'Which?', choices: ['A', 'B'], answer: 'C' }));
+  for (let n = 0; n < 2; n++) await run(d, m, oldVoiceWorld());
+  assert.equal(d.count('write_visit_quiz'), 0);
+  assert.equal(m.completes.length, 0);
+  assert.equal(d.count('write_visit_concession'), 0, 'nothing is written for the old voice until its question is');
 });

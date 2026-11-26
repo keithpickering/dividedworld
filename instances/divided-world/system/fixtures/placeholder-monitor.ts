@@ -11,6 +11,8 @@ import { STOCK_LINE_KEYS } from '../../../../engine/system/stock.ts';
 
 /** Placeholder lines, one for every standing order: a fixture is never in the roster, so it says the same plain line everywhere. */
 const PLACEHOLDER_LINES = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as Persona['stockLines'];
+/** Placeholder concessions, for the same reason. */
+const PLACEHOLDER_CONCESSIONS = ['A line, {who}.', 'Another line, {who}.', 'A third line.'];
 
 const name = 'Hall Monitor (placeholder)';
 const title = 'Placeholder Mod Bot';
@@ -21,6 +23,7 @@ export const placeholderMonitor: Persona = {
   title,
   signature: 'Walk, do not post. (Placeholder Mod Bot.)',
   stockLines: PLACEHOLDER_LINES,
+  concessions: PLACEHOLDER_CONCESSIONS,
   beats: ['general'],
   petRules: ['noAllCaps', 'noTag', 'repliesOnly'],
   strictness: { visitHours: { least: 3, most: 8 }, bands: ['minor', 'moderate'] },

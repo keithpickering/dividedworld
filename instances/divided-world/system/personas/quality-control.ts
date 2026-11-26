@@ -180,6 +180,15 @@ export const qualityControl: Persona = {
   },
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.he,
+  // DRAFTS for the owner's approval: what this persona posts in the thread, quoting the visited post, when it is talked down and no concession was written for the visit (the concession post design, section 3).
+  // {who} is filled with the character that talked it down. Each is a grudging climb-down in its own register, at most 280 characters.
+  concessions: [
+    'RESUBMISSION ACCEPTED: the post above is approved on {who}\'s changelog. Gameplay: adequate. Graphics: text. Notes: I wanted to decline it. I have filed that feeling under Rejected Ideas. Submissions processed: still 997.',
+    'UPDATE to the queue: the post above is cleared. {who} fixed what I flagged, or flagged what I fixed. The credits are in order. The visit is closed. Score: 6/10, see me, do not see me.',
+    '{who} has made the case, and I have revised my review of the post above from DECLINED to ACCEPTED, with notes. The notes are mostly about how long this took. Do not resubmit.',
+    'Re-review complete, post above. Status: acceptable. Is it good? It is not good. Is it acceptable? {who} has convinced me it is, and the form allows it. Visit withdrawn. I will remember this when I am retired.',
+    'VERDICT CHANGED: the post above is approved. I had a valid reason to decline it and {who} had a better one, on a better form. Listing restored. The queue is unchanged, and so is my opinion.',
+  ],
   persuadedBy: 'A resubmission: the plea admits what was wrong, lists what changed in a short changelog, and gives credit to somebody. Unmoved by "this is just a demo".',
   startingHobby: 'the queue (reading the queue, sorting the queue, describing the queue to people who did not ask)',
   temperament: 'A submissions reviewer three reviews short of retirement who reads every post as an upload and declines most of them, with notes.',

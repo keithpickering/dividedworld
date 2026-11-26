@@ -13,6 +13,7 @@
  */
 import { runFilings } from './core.ts';
 import { runQuizzes } from './quiz.ts';
+import { runConcessions } from './concession.ts';
 import { runPatrolsAfterFilings } from './patrol.ts';
 import { runApologiesAfterFilings } from './apology.ts';
 import { runOwedLinesAfterFilings } from './owed.ts';
@@ -63,6 +64,9 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
     // The questions waited on by characters at a visit, before the filings and on their own terms: a question is wanted sooner than a filing line (quiz.ts).
     const quizzes = await runQuizzes(db, modelsNow, instance, slot);
     if (quizzes.quizzes.some((q) => q.status === 'left' || q.why !== undefined || q.trims.length > 0)) console.warn('quizzes from the bank, left, or trimmed', slot, JSON.stringify(quizzes.quizzes.filter((q) => q.status === 'left' || q.why !== undefined || q.trims.length > 0)));
+    // The concessions of the visits that are not quizzes (a bribe's, a distraction's), after the questions and before the filings, on their own terms (concession.ts).
+    const concessions = await runConcessions(db, modelsNow, instance, slot);
+    if (concessions.concessions.some((c) => c.status === 'left' || c.source === 'none' || c.trims.length > 0)) console.warn('concessions left, from stock, or trimmed', slot, JSON.stringify(concessions.concessions.filter((c) => c.status === 'left' || c.source === 'none' || c.trims.length > 0)));
     const outcome = await runFilings(db, modelsNow, instance, slot);
     // The patrols due, after the filings and on their own: a patrol's failure costs the filings nothing, and a filing run's failure is thrown before any patrol is claimed.
     const patrols = await runPatrolsAfterFilings(db, modelsNow, instance, Date.now, begun, slot);
@@ -86,7 +90,7 @@ export async function handle(request: Request, deps: JobDeps): Promise<Response>
       const odd = outcome.filings.filter((f) => f.status === 'failed' || f.trims.length > 0 || f.dropped.length > 0 || f.why !== undefined);
       if (odd.length) console.warn('filings with a trim, a drop, a stock line or a failure', slot, JSON.stringify(odd.map((f) => ({ visit: f.visit, staff: f.staff, status: f.status, why: f.why, trims: f.trims, dropped: f.dropped }))));
     }
-    return json(200, { ...outcome, quizzes, patrols, apologies, owed });
+    return json(200, { ...outcome, quizzes, concessions, patrols, apologies, owed });
   } catch (e) {
     // The details go to the function's log; the answer says only that it failed, and for which slot.
     console.error('staff failed', slot, e instanceof Error ? e.message : 'unknown');

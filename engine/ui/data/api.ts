@@ -691,6 +691,11 @@ export interface VisitStory {
   readonly ruling: Act | null;
   /** The points on the infraction's character's warn bar now, read with the story (`characters_public`); null with no infraction. */
   readonly warnPoints: number | null;
+  /**
+   * The concession post a talked-down Mod wrote in the thread (`visit_concession_post`, read only for an intercepted visit), as the Act every reader sees; null where none was posted.
+   * An Act and not its id so the row can link it by its seq and the Lens needs no read of its own for where it stands.
+   */
+  readonly concessionPost: Act | null;
 }
 
 /** What `intercept` answers: the attempt's Act, whether it worked, and the character's tail where it did not. */

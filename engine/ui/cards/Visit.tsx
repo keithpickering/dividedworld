@@ -21,6 +21,8 @@ import { usePlayer } from '../player.tsx';
 import { Reactions } from '../reactions/Reactions.tsx';
 import type { Mine } from '../reactions/mine.ts';
 import { ThreadCtx } from '../thread/context.ts';
+import { Link } from '../router.tsx';
+import { pageOf, threadHref } from '../thread/pages.ts';
 import { dayAndTime } from '../characters/format.ts';
 import type { Tallies } from '../thread/tallies.ts';
 import {
@@ -91,6 +93,8 @@ interface Row {
   /** The words the Act carries, quoted as its author's. */
   readonly quote: string;
   readonly label: string;
+  /** A post the row's words point to, linked as "{who} posted a reply" (an intercepted visit's concession post). */
+  readonly reply?: { readonly act: Act; readonly by: string };
 }
 
 /** The visit's Acts as rows, in the order they happened: the report and its verdict, the visit's start, each attempt, the end, the appeal and its ruling. */
@@ -122,6 +126,7 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string,
       act: end.act, at: end.at, character: end.outcome === 'filed' ? visit.mod : null, ...(end.outcome === 'filed' ? { staff: true as const } : {}), label: `${mod}'s visit ending`,
       did: end.outcome === 'filed' ? 'filed' : end.outcome === 'intercepted' ? `The visit was talked down${by ? ` by ${name(by.character)}` : ''}` : end.outcome === 'trapped' ? 'The visit was ended by a trap set on the post' : end.outcome === 'dropped' ? 'The visit could not be filed and was dropped' : 'The visit was ended by an admin',
       quote: end.outcome === 'filed' ? end.line : '',
+      ...(end.outcome === 'intercepted' && story.concessionPost ? { reply: { act: story.concessionPost, by: mod } } : {}),
     });
   }
   if (story.appeal) out.push({ act: story.appeal.id, at: story.appeal.createdAt, character: story.appeal.character, did: 'appealed', quote: said(story.appeal.payload['plea'] as string | undefined), label: `${name(story.appeal.character)}'s appeal` });
@@ -137,6 +142,9 @@ function rowsOf(visit: Visit, story: VisitStory, name: (c: Id | null) => string,
 function HowRow({ row, name, role, tallies, mine, onSpin }: {
   readonly row: Row; readonly name: (c: Id | null) => string; readonly role: string; readonly tallies: Tallies; readonly mine: Mine; readonly onSpin: (act: Id, label: string) => void;
 }) {
+  const { settings } = useKayfa();
+  const perPage = useContext(ThreadCtx)?.perPage ?? settings.postsPerPage;
+  const reply = row.reply;
   return (
     <li className="kb-lens-row" data-kb-act={row.act}>
       <p className="kb-lens-by">
@@ -145,6 +153,11 @@ function HowRow({ row, name, role, tallies, mine, onSpin }: {
         {row.did} <time dateTime={row.at}>{dayAndTime(row.at)}</time>
       </p>
       {row.quote !== '' && <blockquote className="kb-lens-message">“{row.quote}”</blockquote>}
+      {reply && (
+        <p className="kb-lens-reply">
+          {reply.act.seq === null ? `${reply.by} posted a reply` : <Link to={threadHref(reply.act.thread, pageOf(reply.act.seq, perPage), reply.act.seq)}>{reply.by} posted a reply</Link>}
+        </p>
+      )}
       <div className="kb-lens-row-foot">
         <Reactions act={row.act} author={row.character} authorName={row.character === null ? 'the visit' : name(row.character)} subject={row.label} tallies={tallies} mine={mine} />
         <div className="kb-lens-actions">

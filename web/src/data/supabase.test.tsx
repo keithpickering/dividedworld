@@ -3717,6 +3717,52 @@ describe('a visit\'s story', () => {
   });
 });
 
+describe('a visit\'s concession post', () => {
+  const VISIT = '77777777-7777-4777-8777-777777777777';
+  const POST = '88888888-8888-4888-8888-888888888888';
+  const CONCESSION = 'eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee';
+  const row = (id: string, kind: string, extra: Record<string, unknown> = {}) => ({
+    id, character: B, kind, thread: T, target_act_id: POST, seq: 7, created_at: '2026-10-01T10:00:00+00:00', payload: {}, current_payload: {}, edited_at: null, shown_edited_at: null, ...extra,
+  });
+  const end = (outcome: string) => row('cccccccc-cccc-4ccc-8ccc-cccccccccccc', 'visit_end', { target_act_id: VISIT, payload: { visit_act: VISIT, outcome, line: 'Done.' } });
+  const router = (all: ReturnType<typeof row>[], concession: string | null): Router => (r) => {
+    if (r.url.pathname === `${REST}/rpc/visit_concession_post`) return json(concession);
+    if (r.url.pathname.endsWith('/characters_public')) return rows([]);
+    if (!r.url.pathname.endsWith('/acts_public')) return undefined;
+    let out = all;
+    for (const [k, v] of r.url.searchParams) {
+      if (!v.startsWith('eq.')) continue;
+      const want = v.slice(3);
+      out = out.filter((a) => (k.startsWith('payload->>') ? String((a.payload as Record<string, unknown>)[k.slice(10)]) : String((a as unknown as Record<string, unknown>)[k])) === want);
+    }
+    return rows(out);
+  };
+
+  it('an intercepted visit\'s story carries the post the RPC names, read as the Act', async () => {
+    const h = harness(router([end('intercepted'), row(CONCESSION, 'post', { payload: { body: 'Fine.' } })], CONCESSION));
+    const story = await h.api.visitStory(T, VISIT, POST);
+    expect(story.concessionPost).toMatchObject({ id: CONCESSION, seq: 7, thread: T });
+    const call = h.rest().find((r) => r.url.pathname.endsWith('/rpc/visit_concession_post'))!;
+    expect(call.body).toEqual({ visit: VISIT });
+  });
+
+  it('a post that cannot be read after the RPC named it leaves the story whole, with no post', async () => {
+    const good = router([end('intercepted')], CONCESSION);
+    const h = harness((r, n) => (r.url.pathname.endsWith('/acts_public') && r.url.searchParams.get('id') === `eq.${CONCESSION}` ? json({ message: 'boom' }, 500) : good(r, n)));
+    const story = await h.api.visitStory(T, VISIT, POST);
+    expect(story.concessionPost).toBeNull();
+    expect(story.end?.outcome).toBe('intercepted');
+  });
+
+  it('asks for none unless the visit was talked down, and an RPC that answers nothing is no post', async () => {
+    const filed = harness(router([end('filed')], CONCESSION));
+    expect((await filed.api.visitStory(T, VISIT, POST)).concessionPost).toBeNull();
+    expect(filed.rest().some((r) => r.url.pathname.endsWith('/rpc/visit_concession_post'))).toBe(false);
+    const none = harness(router([end('intercepted')], null));
+    expect((await none.api.visitStory(T, VISIT, POST)).concessionPost).toBeNull();
+  });
+});
+
 /* The exchange a spun report or appeal draws (Task 2 of the spin-mod-answers plan): the ask, its answer and the punishment, each read from acts_public. */
 describe('an exchange', () => {
   const ASK = '11111111-1111-4111-8111-111111111111';

@@ -175,6 +175,15 @@ export const fangame: Persona = {
   },
   voice: 'chat',
   pronouns: PRONOUN_PRESETS.he,
+  // DRAFTS for the owner's approval: what this persona posts in the thread, quoting the visited post, when it is talked down and no concession was written for the visit (the concession post design, section 3).
+  // {who} is filled with the character that talked it down. Each is a grudging climb-down in its own register, at most 280 characters.
+  concessions: [
+    'MEMO: Per {who}\'s feedback, I have re-reviewed the post above, and it is, in fact, a Mario fangame, or close enough for a demo. The visit is withdrawn. (I did my best. My best was a visit. Please see the attachment. There is no attachment.)',
+    'Circling back on the post above: {who} has explained it as a level, and I can see now that it is a fangame, and a fair one. I am retracting the visit. I am a little proud of how I took that.',
+    'Going forward, the post above counts as a fangame, and so, I am told, does almost everything. {who} said so, and I trust {who}, mostly because it is easier. I will update the spreadsheet. The spreadsheet is a sticky note.',
+    'Per the above, and the post above, I am calling this a fangame. {who} says it is, and I checked, and I have decided it is, in a way that is mine. The visit is ended. I will tell nobody I was unsure.',
+    'As discussed with {who}, the post above is a fangame, and the visit is ended. I want it noted that I was fair. I want it noted that I was also nervous. Please note both. I will note them later.',
+  ],
   persuadedBy: 'An argument made in platforming terms: a rule explained as a level, a punishment as a pit you can jump.',
   officeLines: {
     boss: 'You were given this job and you will do it. Every duty you are handed is one you can only understand as a Mario fangame, and you are quietly failing at the rest.',

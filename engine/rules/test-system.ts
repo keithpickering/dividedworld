@@ -15,7 +15,7 @@ export const testPool: Settings['pool'] = {
 };
 
 /** The Mod Bots' numbers as a test world holds them. */
-export const testModBots: Settings['modBots'] = { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10, quizQuestionsPerDay: 60, quizWriteMinutes: 15 };
+export const testModBots: Settings['modBots'] = { allowanceMost: 3, ruleDaysMost: 7, visitHours: { least: 2, most: 12 }, patrolsPerDay: 6, patrolSample: 5, patrolPool: 20, reportPrice: 25, reportsPerDay: 3, judgmentsPerDay: 60, filingLinesPerDay: 60, appealPrice: 50, tailHours: 24, cap: { punishments: 3, days: 7 }, filingCron: '*/5 * * * *', filingGraceMinutes: 10, quizQuestionsPerDay: 60, quizWriteMinutes: 15, concessionsPerDay: 60, concessionWriteMinutes: 15 };
 
 export const testWarnBar: Settings['warnBar'] = { size: 10, bands: { minor: 2, moderate: 4, severe: 7 }, decay: { unit: 'day', count: 14 }, banDays: [1, 3, 7] };
 
@@ -56,7 +56,7 @@ export const systemSettings: Pick<Settings, 'modBots' | 'warnBar' | 'apology' | 
 
 const personaLines = Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'];
 const botFields = {
-  beats: [], petRules: [], strictness: { visitHours: { least: 2, most: 12 }, bands: [] }, weakness: { kind: 'distraction' }, voice: 'chat', persuadedBy: 'Pedantry.',
+  beats: [], petRules: [], strictness: { visitHours: { least: 2, most: 12 }, bands: [] }, weakness: { kind: 'distraction' }, voice: 'chat', persuadedBy: 'Pedantry.', concessions: ['Fine, {who}.', 'Have it your way, {who}.', 'You win this one.'],
 } as const;
 
 export const testSystem: SystemContent = {
@@ -70,7 +70,7 @@ export const testSystem: SystemContent = {
   rosterHeadings: { newcomers: 'New faces', announced: 'Turns announced', landed: 'Turns taking effect', reveals: 'Reveals' },
   rosterStockHeading: 'The roster, as of the last settlement.',
   firstStaff: ['bot-a'],
-  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer' },
+  duties: { meeting: 'boss', standingOrderLine: 'boss', microEvent: 'boss', renameJudge: 'boss', appeal: 'boss', chatter: 'boss', filing: 'beat', reportJudge: 'beat', patrolJudge: 'beat', apologyJudge: 'beat', conversation: 'boss', roster: 'boss', quizQuestion: 'filer', concession: 'filer' },
   stockLines: Object.fromEntries(STOCK_LINE_KEYS.map((k) => [k, ['A line.']])) as unknown as SystemContent['stockLines'],
   feeds: [], realWorld: [], scrubWords: ['badword'], wheelhouse: [],
   nameStyle: () => [],
