@@ -124,6 +124,11 @@ pointer, a wake behind it, and fog that flows around it.
   (`docs/research/2026-11-15-hot-box-fog/01-fog.html`).
 - **Its sound** is the hiss, on the puff's start.
 
+*Addendum, 2026-11-25.* The owner approved the puff with the bench's starting numbers, relayed by the coordinating
+session from the owner's prototype bench ("Fire extinguisher is perfect"): color `#f2f4f7`, jet 250 ms, billow 600 ms,
+hold 400 ms, fade 4000 ms, full opacity 0.9, the billow reaching the content area's far corner. Its pointer clears as
+Hot Box's does, with Hot Box's own figures. `steel-chair/puff.ts` `PUFF` holds them.
+
 ## 5. The dents
 
 `dentShape(playId, object)` gives each object its own dent from the same pipeline (the height map, the displacement

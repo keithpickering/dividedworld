@@ -18,9 +18,11 @@ import { NO_INK } from '../../../../engine/ui/cards/claims.ts';
 import type { Act } from '../../../../engine/ui/data/api.ts';
 import { renderInWorld } from '../../../../engine/ui/test-world.tsx';
 import { bodies, cornersOf, DEPTH, HALF } from './body.ts';
-import { depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ROOM_HEIGHT, Z_FRONT } from './chair.ts';
+import { canPiecesOf, depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, ladderPiecesOf, piecesFor, project, roomHeightOf, Z_FRONT } from './chair.ts';
+import { objectOf } from './objects.ts';
 import { DENT_SCALE, FULL_DENT } from './dent.ts';
 import { LATE_MS, SteelChairEffect, VOICES } from './Effect.tsx';
+import { LID_SECONDS } from './lid.ts';
 
 const hub = vi.hoisted(() => ({
   trusted: true,
@@ -36,7 +38,24 @@ const hub = vi.hoisted(() => ({
   sleepAll: false,
   /** What the mocked `dentImages` calls (a spy made in `beforeEach`, so the effect's arguments can be read): fixed addresses from the play's id. */
   images: undefined as unknown as import('vitest').Mock<(play: string, ...rest: unknown[]) => { bend: string; shade: string; light: string }>,
+  /** The puffs the effect mounted (Puff.tsx is drawn by its own test): the props each was given, in order. */
+  puffs: [] as { key: string | null; spout: { x: number; y: number }; place: string }[],
+  /** The hits the world reported (body.ts `step`), in order: the point each body hit at. */
+  hits: [] as { id: number; at: { x: number; y: number } }[],
+  /** The calls to chair.ts's `piecesFor`, by object: how often a piece list was built. */
+  built: [] as string[],
 }));
+vi.mock('./chair.ts', async (original) => {
+  const actual = await original<typeof import('./chair.ts')>();
+  return { ...actual, piecesFor: (...a: Parameters<typeof actual.piecesFor>) => { hub.built.push(a[0]); return actual.piecesFor(...a); } };
+});
+vi.mock('./Puff.tsx', async () => {
+  const { createElement } = await import('react');
+  return {
+    Puff: (p: { spout: { x: number; y: number }; place: string }) => { hub.puffs.push({ key: null, spout: p.spout, place: p.place }); return createElement('i', { 'data-puff': '', 'data-x': p.spout.x, 'data-y': p.spout.y }); },
+    forgetScratch: () => {},
+  };
+});
 vi.mock('./body.ts', async (original) => {
   const actual = await original<typeof import('./body.ts')>();
   return {
@@ -44,6 +63,7 @@ vi.mock('./body.ts', async (original) => {
     step: (...a: Parameters<typeof actual.step>) => {
       hub.steps++;
       const events = actual.step(...a);
+      for (const e of events) if (e.kind === 'hit') hub.hits.push({ id: e.id, at: { ...e.at } });
       if (hub.sleepAll) for (const b of a[0].list) b.asleep = true;
       return events;
     },
@@ -63,7 +83,13 @@ vi.mock('./dent.ts', async (original) => {
 
 const post = { id: 'p1', character: 'c1', kind: 'post', thread: 't1', targetActId: null, seq: 1, createdAt: '2026-10-29T12:00:00Z', payload: { body: 'hi' }, currentPayload: { body: 'hi' }, editedAt: null } as unknown as Act;
 const FAR = '2099-01-01T00:00:00Z';
-const play = (n: number, ends: string | undefined = FAR): CardPlay => ({ id: `sc${n}`, card: 'steel-chair', layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T12:00:00Z', post: 'p1', ...(ends !== undefined ? { ends } : {}) });
+/** The room the chair's own post keeps (chair.ts `roomHeightOf`): the CSS's fallback and, with chairs alone, what the effect sets. */
+const ROOM_HEIGHT = roomHeightOf([]);
+/** The px the oblique view draws a body at its hit (z = 0) above its world y: where its dent is drawn from the hit. */
+const HIT_LIFT_PX = -project({ x: 0, y: 0, z: 0 }).y;
+/** A play's id that rolls a chair (objects.ts: nine in ten do), so that a test's chairs are drawn as chairs whatever the id table says: `sc9` rolls a ladder. */
+const chairId = (n: number): string => { let id = `sc${n}`; while (objectOf(id) !== 'chair') id += 'c'; return id; };
+const play = (n: number, ends: string | undefined = FAR): CardPlay => ({ id: chairId(n), card: 'steel-chair', layer: n, caster: 'c2', message: '', config: {}, playedAt: '2026-10-29T12:00:00Z', post: 'p1', ...(ends !== undefined ? { ends } : {}) });
 
 /* The page, as the test drives it. */
 let queue = new Map<number, FrameRequestCallback>();
@@ -227,6 +253,7 @@ let pinned: number | null = null;
 const pin = (seed: number | null) => { pinned = seed; };
 
 beforeEach(() => {
+  hub.puffs = [];
   vi.useFakeTimers();
   queue = new Map(); nextFrame = 1; requested = 0; clock = 0; watching.length = 0; sized.length = 0; size = { h: 200 }; areaWidth = 300; shaking = false; wordsScale = 1; roomAdds = false; textRects = null; seeds = 0; pinned = null; hub.steps = 0; hub.world = null; hub.sleepAll = false;
   const realRandom = crypto.getRandomValues.bind(crypto);
@@ -261,6 +288,7 @@ beforeEach(() => {
     bend: `data:image/png;base64,B${play}`, shade: `data:image/png;base64,S${play}`, light: `data:image/png;base64,L${play}`,
   }));
   hub.gameOn = false;
+  hub.hits = []; hub.built = [];
   hub.set = vi.fn();
   hub.sound = { play: vi.fn(async () => null), loop: vi.fn(), caption: vi.fn() };
   made.show.mockClear(); made.met.mockClear(); made.save.mockClear(); made.release.mockClear();
@@ -298,12 +326,12 @@ describe('which plays, and what is drawn', () => {
   test('1. the room is the marked body\'s last ROOM_HEIGHT px, by a rule that reads no :has() and sits in no @supports :has block', () => {
     expect(ruleOf('[data-dw-chair-room]::after'), 'the marked body has an ::after').toMatch(/content:\s*''/u);
     expect(ruleOf('[data-dw-chair-room]::after')).toMatch(/display:\s*block/u);
-    expect(ruleOf('[data-dw-chair-room]::after'), 'the ::after is ROOM_HEIGHT px tall').toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('[data-dw-chair-room]::after'), 'the ::after is the room tall, ROOM_HEIGHT px where nothing sets it').toMatch(new RegExp(`height:\\s*var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)`, 'u'));
     expect(sheet, 'no rule reads :has(').not.toContain(':has(');
     expect(sheet, 'no @supports block guards :has').not.toContain('@supports selector');
     expect(ruleOf('.dw-chair[data-kb-bleed] .dw-chair-room'), 'the strip in the host is hidden where a body was found').toMatch(/display:\s*none/u);
     /* The strip itself is a plain rule: where there is no body it stays, ROOM_HEIGHT px, in the host. */
-    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)`, 'u'));
   });
 
   test('2. in a thread the body carries data-dw-chair-room and the host data-kb-bleed, and both come off when the play ends', () => {
@@ -370,7 +398,7 @@ describe('which plays, and what is drawn', () => {
   test('4. with no marked ancestor the host\'s box is the world and the room stays in the host, after the words: ROOM_HEIGHT px', () => {
     mount({ place: 'origin', wrapped: false });
     const room = document.querySelector('.dw-chair-room')!;
-    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*${ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('.dw-chair-room')).toMatch(new RegExp(`height:\\s*var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)`, 'u'));
     expect(wordsEl().nextElementSibling).toBe(room);
     expect(host()).toContainElement(room as HTMLElement);
     run();
@@ -953,7 +981,7 @@ describe('a dent fits the room it has', () => {
 
   test('6. the least height of a marked area is the full dent and the room, held equal to the constants', () => {
     expect(FULL_DENT + ROOM_HEIGHT).toBe(237);
-    expect(ruleOf('[data-dw-chair-room]')).toMatch(new RegExp(`min-height:\\s*${FULL_DENT + ROOM_HEIGHT}px`, 'u'));
+    expect(ruleOf('[data-dw-chair-room]')).toMatch(new RegExp(`min-height:\\s*calc\\(${FULL_DENT}px \\+ var\\(--dw-chair-room,\\s*${ROOM_HEIGHT}px\\)\\)`, 'u'));
   });
 });
 
@@ -1218,6 +1246,314 @@ describe('sound', () => {
     settled();
     expect(groups()).toHaveLength(3);
     expect(counts(), 'Throw again sounds as the first run did').toEqual(first);
+  });
+});
+
+describe('sound by object', () => {
+  const keys = () => (hub.sound.play.mock.calls as unknown as [string][]).map((c) => c[0]);
+  const chairsOwn = (heard: string[]) => heard.filter((k) => k === 'steel-chair.hit' || /^steel-chair\.settle-[1-4]$/u.test(k));
+
+  test('a ladder (play-2) plays the chair\'s hit and one of its own two settles', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-2' }] });
+    run();
+    const heard = keys();
+    expect(heard.filter((k) => k === 'steel-chair.hit')).toHaveLength(1);
+    expect(heard.filter((k) => /^steel-chair\.ladder-settle-[12]$/u.test(k))).toHaveLength(1);
+    expect(heard.filter((k) => /^steel-chair\.settle-/u.test(k)), 'none of the chair\'s settles').toEqual([]);
+    expect(heard.filter((k) => k.includes('ladder-hit') || k.includes('can-hit'))).toEqual([]);
+  });
+
+  test('a can (play-6) hits and lands with the chair\'s sounds, and its lid lands out of sight 900 ms after its launch with a can-settle take, once', () => {
+    pin(2);
+    expect(objectOf('play-6')).toBe('can');
+    mount({ plays: [{ ...play(1), id: 'play-6' }] });
+    see(true); arm();
+    /* Run frames until the hit, then no further than 800 ms after it: the lid has not landed. */
+    let guard = 0;
+    while (hub.hits.length === 0 && guard++ < 600) frame();
+    expect(hub.hits).toHaveLength(1);
+    expect(keys().filter((k) => k === 'steel-chair.hit'), 'the can\'s hit is the chair\'s').toHaveLength(1);
+    expect(keys().filter((k) => k.includes('can-settle')), 'the lid has not landed at its launch').toEqual([]);
+    act(() => { vi.advanceTimersByTime(880); });
+    expect(keys().filter((k) => k.includes('can-settle')), 'not yet at 880 ms').toEqual([]);
+    act(() => { vi.advanceTimersByTime(40); });
+    const lands = (hub.sound.play.mock.calls as unknown as [string, { group?: string; voices?: number; lateMs?: number }][]).filter((c) => /^steel-chair\.can-settle-[12]$/u.test(c[0]));
+    expect(lands, 'at 920 ms the lid has landed').toHaveLength(1);
+    expect(lands[0]![1]).toEqual({ group: 'steel-chair', voices: VOICES, lateMs: LATE_MS });
+    settled();
+    const heard = keys();
+    expect(heard.filter((k) => /^steel-chair\.settle-[1-4]$/u.test(k)), 'the can\'s own floor sound is one of the chair\'s four').toHaveLength(1);
+    expect(heard.filter((k) => k.includes('can-hit') || k.includes('can-settle')).length, 'only the lid\'s landing').toBe(1);
+  });
+
+  test('a can that is cleared before its lid lands never makes the landing sound', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-6' }] });
+    see(true); arm();
+    let guard = 0;
+    while (hub.hits.length === 0 && guard++ < 600) frame();
+    see(false);
+    act(() => { vi.advanceTimersByTime(2000); });
+    expect(keys().filter((k) => k.includes('can-settle'))).toEqual([]);
+  });
+
+  test('a chair plays only the chair\'s sounds, and no lid lands', () => {
+    pin(2);
+    mount({ plays: [play(1)] });
+    run();
+    act(() => { vi.advanceTimersByTime(2000); });
+    const heard = keys();
+    expect(chairsOwn(heard)).toHaveLength(2);
+    expect(heard.filter((k) => k.includes('can-') || k.includes('ladder-') || k.includes('extinguisher-'))).toEqual([]);
+  });
+});
+
+describe('the hit shake', () => {
+  const shaken = () => areaEl().getAttribute('data-dw-chair-shake');
+  test('a ladder (play-2) shakes 1.5 times a chair: the heavy shake, and a chair or a can the plain one', () => {
+    for (const [id, want] of [['play-2', 'heavy'], ['play-6', ''], ['play-93', ''], [undefined, '']] as const) {
+      cleanup();
+      hub.hits = [];
+      pin(2);
+      mount({ plays: [id ? { ...play(1), id } : play(1)] });
+      see(true); arm();
+      let guard = 0;
+      while (hub.hits.length === 0 && guard++ < 600) frame();
+      expect(shaken(), `${id}`).toBe(want);
+    }
+  });
+  test('the stylesheet\'s heavy shake is 6 px against the chair\'s 4 px', () => {
+    const css = sheet;
+    const block = (name: string) => css.slice(css.indexOf(`@keyframes ${name}`), css.indexOf('}\n}', css.indexOf(`@keyframes ${name}`)));
+    expect(block('dw-chair-shake')).toContain('translate(4px, -1px)');
+    expect(block('dw-chair-shake-heavy')).toContain('translate(6px, -1px)');
+    expect(css).toMatch(/\[data-dw-chair-shake='heavy'\]\s*\{[^}]*dw-chair-shake-heavy/u);
+  });
+});
+
+describe('a dent is centered on its body\'s hit point, for every object', () => {
+  test.each([['play-0', 'chair'], ['play-6', 'can'], ['play-2', 'ladder'], ['play-93', 'extinguisher']] as const)('%s (%s)', (id, object) => {
+    expect(objectOf(id)).toBe(object);
+    pin(2);
+    mount({ plays: [{ ...play(1), id }] });
+    run();
+    expect(hub.hits).toHaveLength(1);
+    const hit = hub.hits[0]!.at;
+    const [d] = dents();
+    const box = { x: parseFloat(d!.style.left), y: parseFloat(d!.style.top), width: parseFloat(d!.style.width), height: parseFloat(d!.style.height) };
+    expect(box.x + box.width / 2, 'across').toBeCloseTo(hit.x + INSET, 1);
+    expect(box.y + box.height / 2, 'down').toBeCloseTo(hit.y - HIT_LIFT_PX, 1);
+    /* And the object's own dent is its own size: the box is the shape's from dentPrimitives, not the chair's. */
+    expect(box.width).toBeGreaterThan(0);
+  });
+});
+
+describe('a piece list is built once for an object that does not fold', () => {
+  test.each([['play-6', 'can'], ['play-93', 'extinguisher']] as const)('%s (%s): its pieces are the lists the effect holds, and none is built over a whole run, the can\'s lid leaving included', (id, object) => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id }] });
+    hub.built = [];
+    run();
+    expect(hub.built.filter((o) => o === object)).toEqual([]);
+  });
+  test('a ladder, which folds, is built again as it folds', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-2' }] });
+    hub.built = [];
+    run();
+    expect(hub.built.filter((o) => o === 'ladder').length).toBeGreaterThan(10);
+  });
+});
+
+describe("the extinguisher's puff", () => {
+  const keys = () => (hub.sound.play.mock.calls as unknown as [string, { group?: string; voices?: number; lateMs?: number }][]).map((c) => c[0]);
+  const puffEls = () => [...document.querySelectorAll<HTMLElement>('[data-puff]')];
+
+  test('an extinguisher (play-93) at its first floor contact mounts a puff at its spout, inside the content area, and plays the hiss once, in the group', () => {
+    pin(2);
+    expect(objectOf('play-93')).toBe('extinguisher');
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    see(true); arm();
+    expect(puffEls(), 'none before it lands').toHaveLength(0);
+    settled();
+    expect(puffEls()).toHaveLength(1);
+    const x = Number(puffEls()[0]!.dataset.x), y = Number(puffEls()[0]!.dataset.y);
+    expect(x).toBeGreaterThan(0);
+    expect(x).toBeLessThan(areaWidth);
+    expect(y).toBeGreaterThan(0);
+    expect(y).toBeLessThan(size.h + ROOM_HEIGHT);
+    expect(keys().filter((k) => k === 'steel-chair.extinguisher-hiss')).toHaveLength(1);
+    const call = (hub.sound.play.mock.calls as unknown as [string, { group?: string }][]).find((c) => c[0] === 'steel-chair.extinguisher-hiss')!;
+    expect(call[1].group).toBe('steel-chair');
+  });
+
+  test('a curtain that shuts while the puff stands clears it, as it clears the lid, and a puff is not drawn while covered', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    see(true); arm();
+    settled();
+    expect(puffEls(), 'the puff stands').toHaveLength(1);
+    act(() => { hub.setCovered(true); });
+    expect(puffEls(), 'the puff is gone the moment the curtain shuts').toHaveLength(0);
+    settled();
+    expect(puffEls(), 'and none is drawn over the curtain after').toHaveLength(0);
+  });
+
+  test('a chair mounts no puff and plays no hiss', () => {
+    pin(2);
+    mount({ plays: [play(1)] });
+    run();
+    expect(puffEls()).toHaveLength(0);
+    expect(hub.puffs).toHaveLength(0);
+    expect(keys().filter((k) => k.includes('hiss'))).toEqual([]);
+  });
+
+  test('a new throw of the same play while a puff stands starts a new one in its place', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    run();
+    expect(puffEls()).toHaveLength(1);
+    const first = hub.puffs.length;
+    const again = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+    act(() => { again.run(); });
+    settled();
+    expect(hub.puffs.length, 'a puff was started again').toBeGreaterThan(first);
+    expect(puffEls(), 'and only one stands').toHaveLength(1);
+    expect(keys().filter((k) => k === 'steel-chair.extinguisher-hiss')).toHaveLength(2);
+  });
+
+  test('under reduced motion there is no puff and no hiss', () => {
+    document.documentElement.setAttribute('data-kb-motion', 'reduce');
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    run();
+    expect(puffEls()).toHaveLength(0);
+    expect(keys().filter((k) => k.includes('hiss'))).toEqual([]);
+    document.documentElement.removeAttribute('data-kb-motion');
+  });
+});
+
+describe('each object is drawn as itself, in the room it needs', () => {
+  const roomOf = () => areaEl().style.getPropertyValue('--dw-chair-room');
+  const nodes = (id: string) => [...document.querySelectorAll<HTMLElement>(`.dw-chair-group[data-play="${id}"] .dw-chair-piece`)];
+
+  test('a chair post draws the chair\'s pieces and sets the chair\'s room', () => {
+    mount({ plays: [play(1)] });
+    run();
+    expect(roomOf()).toBe('77px');
+    expect(host()!.style.getPropertyValue('--dw-chair-room')).toBe('77px');
+    expect(nodes(play(1).id).map((n) => n.dataset.kind)).toEqual(piecesFor('chair', 1, true).map((p) => p.kind));
+  });
+
+  test('a ladder (play-2) draws the ladder\'s pieces, and the marked area carries the ladder\'s room, which goes with the play', () => {
+    expect(objectOf('play-2')).toBe('ladder');
+    mount({ plays: [{ ...play(1), id: 'play-2' }] });
+    run();
+    const drawnPieces = nodes('play-2');
+    const want = ladderPiecesOf(1);
+    expect(drawnPieces).toHaveLength(want.length);
+    expect(drawnPieces.map((n) => [parseFloat(n.style.width), parseFloat(n.style.height)])).toEqual(want.map((p) => [p.width, p.height]));
+    expect(drawnPieces.map((n) => n.dataset.kind)).toEqual(want.map((p) => p.kind));
+    expect(roomOf()).toBe(`${roomHeightOf(['ladder'])}px`);
+    expect(roomHeightOf(['ladder'])).toBeGreaterThan(77);
+    /* The pieces are shaded in the ladder's aluminum, not steel gray: bluer than the chair's rgb(b, b + 6, b + 16) by its color. */
+    expect(drawnPieces.some((n) => n.style.background !== '' || n.style.borderColor !== '')).toBe(true);
+    act(() => { hub.setPlays([]); });
+    expect(areaEl().style.getPropertyValue('--dw-chair-room'), 'the property goes with the effect').toBe('');
+  });
+
+  test('a can after a chair raises the room, and the can\'s end lowers it again', () => {
+    mount({ plays: [play(1)] });
+    run();
+    expect(roomOf()).toBe('77px');
+    act(() => { hub.setPlays([play(1), { ...play(2), id: 'play-6' }]); });
+    expect(roomOf()).toBe(`${roomHeightOf(['chair', 'can'])}px`);
+    act(() => { hub.setPlays([play(1)]); });
+    expect(roomOf()).toBe('77px');
+  });
+
+  describe('the can\'s lid', () => {
+    const lidsNow = () => [...document.querySelectorAll<HTMLElement>('.dw-chair-layer .dw-chair-lid')];
+    const canGroup = () => document.querySelector<HTMLElement>('.dw-chair-group[data-play="play-6"]')!;
+
+    test('at the hit the lid\'s group leaves the can\'s, flies on the same frame loop, and is gone after the arc\'s time, the can drawn without it', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      see(true); arm();
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(true).length);
+      let seen = 0;
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) { frame(); }
+      expect(lidsNow(), 'the lid comes off at the hit').toHaveLength(1);
+      const first = clock;
+      const lid = lidsNow()[0]!;
+      expect(lid.querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(true).length - canPiecesOf(false).length);
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(false).length);
+      frame(); frame();
+      expect(lid.style.transform, 'it follows the arc').toMatch(/^translate3d\(.*\) matrix3d\(/);
+      const before = lid.style.transform;
+      expect(queue.size, 'the loop stays up while a lid flies').toBeGreaterThan(0);
+      frame();
+      expect(lid.style.transform).not.toBe(before);
+      for (let i = 0; i < 200 && clock - first < (LID_SECONDS + 0.2) * 1000; i++) { frame(); if (lidsNow().length === 0) seen++; }
+      expect(lidsNow(), 'the lid\'s group is removed once it is done').toHaveLength(0);
+      expect(seen).toBeGreaterThan(0);
+      expect(canGroup().querySelectorAll('.dw-chair-piece'), 'the can\'s pieces no longer include the lid').toHaveLength(canPiecesOf(false).length);
+      settled();
+      expect(queue.size, 'and the loop comes to rest').toBe(0);
+    });
+
+    test('Throw again while the lid flies leaves no lid node behind, and draws a whole can again', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      see(true); arm();
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) frame();
+      expect(lidsNow()).toHaveLength(1);
+      const press = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+      act(() => { press.run(); });
+      expect(lidsNow(), 'no lid group is left on the layer').toHaveLength(0);
+      expect(document.querySelectorAll('.dw-chair-lid')).toHaveLength(0);
+      expect(canGroup().querySelectorAll('.dw-chair-piece'), 'the can is whole again').toHaveLength(canPiecesOf(true).length);
+    });
+
+    test('the play ending while the lid flies leaves no lid node behind, and the can is whole when it comes back', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      see(true); arm();
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) frame();
+      expect(lidsNow()).toHaveLength(1);
+      act(() => { hub.setPlays([play(2)]); });
+      expect(document.querySelectorAll('.dw-chair-lid'), 'the lid goes with its can').toHaveLength(0);
+      act(() => { hub.setPlays([play(2), { ...play(1), id: 'play-6' }]); });
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(true).length);
+    });
+
+    test('a can drawn at rest under reduced motion has no lid, and no lid group ever stands', () => {
+      document.documentElement.setAttribute('data-kb-motion', 'reduce');
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      run();
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(false).length);
+      expect(lidsNow()).toHaveLength(0);
+    });
+
+    test('Throw again puts a whole can on the layer again, and its lid comes off again', () => {
+      mount({ plays: [{ ...play(1), id: 'play-6' }] });
+      run();
+      expect(canGroup().querySelectorAll('.dw-chair-piece')).toHaveLength(canPiecesOf(false).length);
+      const press = lastView().controls.find((c) => c.kind === 'press')! as { run: () => void };
+      act(() => { press.run(); });
+      expect(canGroup().querySelectorAll('.dw-chair-piece'), 'a fresh run starts from the whole can').toHaveLength(canPiecesOf(true).length);
+      for (let i = 0; i < 400 && lidsNow().length === 0; i++) frame();
+      expect(lidsNow()).toHaveLength(1);
+    });
+  });
+
+  test('a clipped cap carries its clip-path', () => {
+    mount({ plays: [{ ...play(1), id: 'play-6' }] });
+    run();
+    expect(nodes('play-6').filter((n) => n.style.clipPath.startsWith('polygon(')).length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('the Lens names the objects', () => {
+    mount({ plays: [play(1), { ...play(2), id: 'play-2' }, { ...play(3), id: 'play-6' }] });
+    expect(lastView().state).toBe('Dented by a chair, a ladder and a trash can');
   });
 });
 
@@ -1559,14 +1895,14 @@ describe('what it tells the Lens', () => {
     expect(view).toMatchObject({ progress: null, yours: false, notes: {} });
     expect(viewProblems(view, { holds: false, covers: false })).toEqual([]);
     if (n === 1) expect(view.ends).toMatch(/^Ends /u);
-    else expect(view.ends).toMatch(/^The first chair is gone .*; each lasts 3 days\.$/u);
+    else expect(view.ends).toMatch(/^The first one is gone .*; each lasts 3 days\.$/u);
     expect(view.controls.map((c) => [c.kind, c.label])).toEqual([['press', 'Throw again'], ['toggle', 'Game sounds']]);
     expect(view.controls[1]).toMatchObject({ on: false, set: hub.set });
   });
 
   test('the soonest end is the first chair\'s', () => {
     mount({ plays: [play(1, '2026-11-03T12:00:00Z'), play(2, '2026-11-01T12:00:00Z')] });
-    expect(lastView().ends).toContain('The first chair is gone');
+    expect(lastView().ends).toContain('The first one is gone');
     mount({ plays: [play(3, '2026-11-01T12:00:00Z')] });
     expect(lastView().ends).toMatch(/^Ends /u);
   });

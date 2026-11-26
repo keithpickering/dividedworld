@@ -1,0 +1,294 @@
+<!doctype html>
+<html lang="en">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Steel Chair puff bench</title>
+<!--
+  Record, written 2026-11-23. A throwaway bench for docs/plans/2026-11-23-steel-chair-objects-design.md, section 4: the fire extinguisher's
+  puff, to judge by eye before it is drawn by the effect. Not product code. What the owner approves is copied into
+  instances/divided-world/ui/steel-chair/puff.ts.
+  Its fog is the Hot Box fog bench's (docs/research/2026-11-15-hot-box-fog/01-fog.html): makeCloud, advect, step and drawFog are copied from it,
+  with these changes. The field starts empty and the model's target is the puff's (clear outside the billow's front, fog inside), less the
+  pointer's clearing; the whole box is stepped while it runs; a radial push from the spout runs for the jet; the opacity is the puff's, and
+  the pointer clears as in Hot Box. The pointer's clearing is the fog bench's, minus the Lens sweep.
+    jet / billow / hold / fade : the milliseconds of puffAlpha, puffFront and puffDone in puff.ts. full : the opacity of whole fog.
+  ?auto=1 plays the puff over and over, and ?x=0.8&y=1 sets the extinguisher's place (0 to 1 of the box).
+-->
+<style>
+  body { font: 13px Verdana, sans-serif; margin: 16px; background: #dcdcdc; color: #000; }
+  .bar { display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; margin: 0 0 10px; max-width: 760px; }
+  .bar label { display: inline-flex; align-items: center; gap: 5px; }
+  .post { position: relative; background: #fff; color: #000; border: 1px solid #000; max-width: 760px; font: 13px/1.5 Verdana, sans-serif; }
+  .head { background: #000; color: #fff; padding: 3px 6px; font: bold 11px "Courier New", monospace; }
+  .body { position: relative; padding: 10px 12px; overflow: hidden; touch-action: pan-y; }
+  .body p { margin: 0 0 8px; } .body p:last-child { margin: 0; }
+  .can { position: absolute; width: 16px; height: 38px; margin: 0; background: #c1272d; border: 1px solid #5a0e12; border-radius: 4px 4px 3px 3px; }
+  .can::before { content: ""; position: absolute; left: 3px; top: -7px; width: 8px; height: 6px; background: #222; border-radius: 2px; }
+  .can::after { content: ""; position: absolute; left: 1px; top: 12px; width: 12px; height: 8px; background: #f2f2f2; }
+  canvas { position: absolute; left: 0; top: 0; pointer-events: none; }
+  #stats { font: 11px "Courier New", monospace; white-space: pre; }
+  button { font: bold 11px "Courier New", monospace; padding: 6px 10px; }
+  input[type=range] { width: 110px; }
+</style>
+<body>
+<div class="bar">
+  <button id="replay" type="button">Replay</button>
+  <label><input type="checkbox" id="loop"> Loop</label>
+  <label>Jet <input type="range" id="jet" min="50" max="800" step="10" value="250"> <span id="jetText"></span></label>
+  <label>Billow <input type="range" id="billow" min="200" max="2000" step="10" value="600"> <span id="billowText"></span></label>
+  <label>Hold <input type="range" id="hold" min="0" max="2000" step="10" value="400"> <span id="holdText"></span></label>
+  <label>Fade <input type="range" id="fade" min="500" max="8000" step="50" value="4000"> <span id="fadeText"></span></label>
+  <label>Full <input type="range" id="full" min="30" max="100" value="90"> <span id="fullText"></span></label>
+</div>
+<div class="bar">
+  <label>Can x <input type="range" id="cx" min="0" max="100" value="82"></label>
+  <label>Can y <input type="range" id="cy" min="0" max="100" value="100"></label>
+  <label>Fill lag <input type="range" id="wake" min="2" max="40" value="8"> <span id="wakeText"></span></label>
+  <label>Cell <input type="range" id="cell" min="3" max="10" value="5"> <span id="cellText"></span></label>
+</div>
+<div class="post">
+  <div class="head">#14 &nbsp; Gloomba &nbsp; Today, 4:20 PM</div>
+  <div class="body" id="body"><div id="words"></div><div class="can" id="can"></div><canvas id="cv"></canvas></div>
+</div>
+<p id="stats"></p>
+<script>
+(() => {
+  const q = new URLSearchParams(location.search);
+  const $ = (id) => document.getElementById(id);
+  const body = $('body'), words = $('words'), cv = $('cv'), ctx = cv.getContext('2d'), can = $('can');
+  const PARAS = [
+    'Okay, I have thought about this for three days and I am ready to say it: the water level in the second game is good, actually. You are all just bad at swimming.',
+    'The music carries it. The frog suit carries it. The part where the big fish eats you is a skill issue and I will not be taking questions.',
+    'In conclusion: world 3 is the best world, the sun is a coward, and this thread should be pinned.',
+  ];
+  /* The model, as steel-chair/puff.ts has it (the sliders move the numbers). */
+  const P_ = { color: '#f2f4f7', jetMs: 250, billowMs: 600, holdMs: 400, fadeMs: 4000, full: 0.9 };
+  const OVERSHOOT = 1.08, JET_PX_S = 900;
+  function puffFront(s, b, ms) {
+    const reach = Math.max(Math.hypot(s.x, s.y), Math.hypot(b.width - s.x, s.y), Math.hypot(s.x, b.height - s.y), Math.hypot(b.width - s.x, b.height - s.y)) * OVERSHOOT;
+    const t = Math.min(1, Math.max(0, ms / P_.billowMs));
+    return reach * (1 - (1 - t) * (1 - t) * (1 - t));
+  }
+  function puffTarget(s, b, ms) { const f = puffFront(s, b, ms); return (x, y) => (f > 0 && Math.hypot(x - s.x, y - s.y) <= f ? 1 : 0); }
+  function puffAlpha(ms) { const into = ms - (P_.billowMs + P_.holdMs); return into <= 0 ? P_.full : P_.full * Math.max(0, 1 - into / P_.fadeMs); }
+  const puffDone = (ms) => ms >= P_.billowMs + P_.holdMs + P_.fadeMs;
+
+  /* The pointer's clearing: smoke.ts's constants, as the fog bench has them (no Lens sweep here). */
+  const SMOKE = { hole: 90, holeMin: 56, holeShare: 0.22, edge: 0.35, roll: 2500, touchHold: 4000 };
+  const mulberry32 = (seed) => { let a = seed | 0; return () => { a = (a + 0x6d2b79f5) | 0; let t = Math.imul(a ^ (a >>> 15), 1 | a); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; }; };
+  const clamp = (v, a, b) => (v < a ? a : v > b ? b : v);
+  const smooth = (t) => { t = clamp(t, 0, 1); return t * t * (3 - 2 * t); };
+  let W = 0, H = 0, dpr = 1, rgb = [242, 244, 247], puffStart = performance.now();
+  const state = { mouse: null, rest: [], touch: null, pvx: 0, pvy: 0, lastMove: 0 };
+  const spout = () => ({ x: parseFloat(can.style.left) + 8, y: parseFloat(can.style.top) - 6 });
+  const holeRadius = () => Math.max(SMOKE.holeMin, Math.min(SMOKE.hole, W * SMOKE.holeShare));
+  const openness = (c, now) => { if (c.leftAt === null) return 1; const closing = now - c.leftAt - c.hold; if (closing <= 0) return 1; return Math.max(0, 1 - closing / SMOKE.roll); };
+  const clearings = () => [state.mouse, state.touch, ...state.rest].filter(Boolean);
+  function clearAt(x, y, cs, now, R) {
+    let clear = 0;
+    const core = R * (1 - SMOKE.edge);
+    for (const c of cs) {
+      const o = openness(c, now);
+      if (o <= 0) continue;
+      const d = Math.hypot(x - c.x, y - c.y);
+      const local = d <= core ? 0 : d >= R ? 1 : (d - core) / (R - core);
+      clear = Math.max(clear, (1 - local) * o);
+    }
+    return clear;
+  }
+
+  /* ------------------------------------------------------------------ the fog (the fog bench's, changed as the header says) ---- */
+  /* ------------------------------------------------------------------ the proposed fog ---- */
+  const T = 256;
+  /** A tileable cloud: five octaves of value noise, and beside it the same cloud lit from the upper left (its height less the height a step toward the light). */
+  function makeCloud(seed) {
+    const rnd = mulberry32(seed), n = new Float32Array(T * T);
+    let amp = 1, total = 0;
+    for (let oct = 0; oct < 5; oct++) {
+      const m = 4 << oct, g = new Float32Array(m * m);
+      for (let i = 0; i < g.length; i++) g[i] = rnd();
+      const s = m / T;
+      for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) {
+        const fx = x * s, fy = y * s, x0 = Math.floor(fx), y0 = Math.floor(fy), tx = smooth(fx - x0), ty = smooth(fy - y0);
+        const a = g[(y0 % m) * m + (x0 % m)], b = g[(y0 % m) * m + ((x0 + 1) % m)], c = g[((y0 + 1) % m) * m + (x0 % m)], d = g[((y0 + 1) % m) * m + ((x0 + 1) % m)];
+        n[y * T + x] += amp * (a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty);
+      }
+      total += amp; amp *= 0.55;
+    }
+    const lit = new Float32Array(T * T);
+    for (let i = 0; i < n.length; i++) n[i] = clamp((n[i] / total - 0.5) * 1.9 + 0.5, 0, 1);
+    for (let y = 0; y < T; y++) for (let x = 0; x < T; x++) lit[y * T + x] = n[y * T + x] - n[((y + T - 5) % T) * T + ((x + T - 4) % T)];
+    /* Each sheet's tone, made once: its light and a little of its height. */
+    const t1 = new Float32Array(T * T), t2 = new Float32Array(T * T);
+    for (let i = 0; i < n.length; i++) { t1[i] = lit[i] * 1.1 + (n[i] - 0.5) * 0.1; t2[i] = lit[i] * 1.9 + (n[i] - 0.5) * 0.3; }
+    return { n, lit, t1, t2 };
+  }
+  const cloud = makeCloud(20261115);
+  function sample(tile, x, y) {
+    const x0 = Math.floor(x), y0 = Math.floor(y), tx = x - x0, ty = y - y0, xa = x0 & 255, xb = (x0 + 1) & 255, ya = (y0 & 255) << 8, yb = ((y0 + 1) & 255) << 8;
+    const a = tile[ya | xa], b = tile[ya | xb], c = tile[yb | xa], d = tile[yb | xb];
+    return a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty;
+  }
+
+  let CELL = 5, gw = 0, gh = 0, D, D0, U, V, U0, V0, OX, OY, OX0, OY0, P, DIV, off, offCtx, img;
+  function alloc() {
+    CELL = +$('cell').value;
+    gw = Math.ceil(W / CELL) + 1; gh = Math.ceil(H / CELL) + 1;
+    const n = gw * gh, f = () => new Float32Array(n);
+    D = f(); D0 = f(); U = f(); V = f(); U0 = f(); V0 = f(); OX = f(); OY = f(); OX0 = f(); OY0 = f(); P = f(); DIV = f();
+    off = document.createElement('canvas'); off.width = gw; off.height = gh; offCtx = off.getContext('2d');
+  }
+  /** Semi-Lagrangian: each cell takes what the flow carried to it. `add` is added per unit of flow (the cloud's own offset moves with the fog). */
+  function advect(dst, src, dt, B, add) {
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
+      const i = y * gw + x, u = U0[i], v = V0[i];
+      const px = clamp(x - u * dt, 0, gw - 1.001), py = clamp(y - v * dt, 0, gh - 1.001);
+      const x0 = px | 0, y0 = py | 0, tx = px - x0, ty = py - y0, j = y0 * gw + x0;
+      const a = src[j], b = src[j + 1], c = src[j + gw], d = src[j + gw + 1];
+      dst[i] = a + (b - a) * tx + (c - a) * ty + (a - b - c + d) * tx * ty + (add === 1 ? -u * dt * CELL : add === 2 ? -v * dt * CELL : 0);
+    }
+  }
+  /* The disturbed box, in cells: everything outside it is fog at rest and is not stepped. Null when the whole field is at rest. */
+  let box = null;
+  function step(dt, now, r0, r1) {
+    const R = holeRadius(), cs = clearings(now), wake = $('wake').value / 100, rc = (R * 1.5) / CELL;
+    /* The puff disturbs the whole content area while it runs, so the whole field is stepped (the build's `view` keeps it to the rows on screen). */
+    const B = { x0: 1, x1: gw - 1, y0: Math.max(1, r0), y1: Math.min(gh - 1, r1) };
+    if (B.x1 <= B.x0 || B.y1 <= B.y0) { box = null; return 0; }
+    const ms = now - puffStart, sp = spout(), jetting = ms < P_.jetMs, sx = sp.x / CELL, sy = sp.y / CELL, front = puffFront(sp, { width: W, height: H }, ms);
+    const tf = puffTarget(sp, { width: W, height: H }, ms);
+    /* What moves it: each clearing that is moving drags the fog around it along. */
+    for (const c of cs) {
+      if (c.none) continue;
+      const moving = c === state.mouse ? [state.pvx, state.pvy] : c.vx ? [c.vx, 0] : null;
+      const burst = c === state.touch && now - c.openedAt < 260;
+      if (!moving && !burst) continue;
+      const cx = c.x / CELL, cy = c.y / CELL;
+      const ya = Math.max(B.y0, Math.floor(cy - rc)), yb = Math.min(B.y1, Math.ceil(cy + rc)), xa = Math.max(B.x0, Math.floor(cx - rc)), xb = Math.min(B.x1, Math.ceil(cx + rc));
+      for (let y = ya; y < yb; y++) for (let x = xa; x < xb; x++) {
+        const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy);
+        if (d >= rc) continue;
+        const w = (1 - d / rc) ** 2, i = y * gw + x;
+        if (moving) { const k = Math.min(1, dt * 14) * w; U[i] += (moving[0] / CELL - U[i]) * k; V[i] += (moving[1] / CELL - V[i]) * k; }
+        if (burst && d > 0.01) { U[i] += (dx / d) * w * 1400 / CELL * dt; V[i] += (dy / d) * w * 1400 / CELL * dt; }
+      }
+    }
+    if (jetting) {
+      const k = (1 - ms / P_.jetMs) * JET_PX_S / CELL * dt, rj = Math.max(rc, front / CELL);
+      for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
+        const dx = x - sx, dy = y - sy, d = Math.hypot(dx, dy);
+        if (d < 0.01 || d > rj) continue;
+        const w = (1 - d / rj) ** 2, i = y * gw + x;
+        U[i] += (dx / d) * w * k; V[i] += (dy / d) * w * k;
+      }
+    }
+    /* Fog is not squeezed: what is pushed ahead of the pointer goes around it and closes behind (a few rounds of a pressure solve). A tap's burst is let through. */
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const i = y * gw + x; DIV[i] = 0.5 * (U[i + 1] - U[i - 1] + V[i + gw] - V[i - gw]); P[i] = 0; }
+    for (let k = 0; k < 8; k++) for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const i = y * gw + x; P[i] = (P[i - 1] + P[i + 1] + P[i - gw] + P[i + gw] - DIV[i]) * 0.25; }
+    const keep = jetting || (state.touch && now - state.touch.openedAt < 260) ? 0.35 : 1;
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) { const i = y * gw + x; U[i] -= keep * 0.5 * (P[i + 1] - P[i - 1]); V[i] -= keep * 0.5 * (P[i + gw] - P[i - gw]); }
+    U0.set(U); V0.set(V); D0.set(D); OX0.set(OX); OY0.set(OY);
+    advect(U, U0, dt, B, 0); advect(V, V0, dt, B, 0); advect(D, D0, dt, B, 0); advect(OX, OX0, dt, B, 1); advect(OY, OY0, dt, B, 2);
+    const damp = Math.exp(-dt / 0.9), settle = Math.exp(-dt / 3.5), sink = 1 - Math.exp(-dt / 0.07);
+    D0.set(D);
+    let nx0 = gw, nx1 = 0, ny0 = gh, ny1 = 0;
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
+      const i = y * gw + x;
+      U[i] *= damp; V[i] *= damp; OX[i] *= settle; OY[i] *= settle;
+      /* The model is the floor: where it says clear, the fog is driven out; where it says fog, the fog comes back, from its neighbors inward. */
+      const target = Math.min(tf((x + 0.5) * CELL, (y + 0.5) * CELL), cs.length ? 1 - clearAt((x + 0.5) * CELL, (y + 0.5) * CELL, cs, now, R, false) : 1);
+      if (D[i] > target) D[i] += (target - D[i]) * sink;
+      else if (D[i] < 1) {
+        const nb = (D0[i - 1] + D0[i + 1] + D0[i - gw] + D0[i + gw]) * 0.25;
+        D[i] = Math.min(target, D[i] + (dt / wake) * (0.35 + 2.6 * nb) * (1.03 - D[i]));
+      }
+      if (D[i] < 0.999 || Math.abs(U[i]) + Math.abs(V[i]) > 0.08 || Math.abs(OX[i]) + Math.abs(OY[i]) > 0.4) { if (x < nx0) nx0 = x; if (x >= nx1) nx1 = x + 1; if (y < ny0) ny0 = y; if (y >= ny1) ny1 = y + 1; }
+      else { U[i] = 0; V[i] = 0; OX[i] = 0; OY[i] = 0; D[i] = 1; }
+    }
+    box = nx1 > nx0 ? { x0: nx0, x1: nx1, y0: ny0, y1: ny1 } : null;
+    return (B.x1 - B.x0) * (B.y1 - B.y0);
+  }
+  function drawFog(t, now, r0, r1) {
+    const reduced = false, R = holeRadius(), cs = reduced ? clearings(now) : null, A = puffAlpha(now - puffStart) * 255;
+    const rows = r1 - r0;
+    if (!img || img.width !== gw || img.height !== rows) img = offCtx.createImageData(gw, rows);
+    const px = img.data, s = reduced ? 0 : t / 1000;
+    /* Two sheets of the same cloud at two scales, drifting two ways: the near one fine and quick, the far one broad and slow. */
+    const S1 = 3.2, S2 = 8.5, ax = s * 7, ay = -s * 3.2, bx = -s * 2.6, by = -s * 1.4;
+    const [cr, cg, cb] = rgb;
+    /* The shade: the color pulled toward a deeper, cooler version of itself; the light: toward white. */
+    const sr = cr * 0.42, sg = cg * 0.44, sb = Math.min(255, cb * 0.5 + 18);
+    let o = 0;
+    for (let y = r0; y < r1; y++) for (let x = 0; x < gw; x++) {
+      const i = y * gw + x, wx = (x + 0.5) * CELL, wy = (y + 0.5) * CELL;
+      const d = reduced ? (cs.length ? 1 - clearAt(wx, wy, cs, now, R, true) : 1) : D[i];
+      if (d <= 0.002) { px[o + 3] = 0; o += 4; continue; }
+      const tx = wx + (reduced ? 0 : OX[i]), ty = wy + (reduced ? 0 : OY[i]);
+      /* The walls of a clearing are lit and shaded like the fog's own billows: thicker fog toward the lower right of a point faces the light. */
+      const wall = reduced || x === 0 || y === 0 ? 0 : D[i] - D[i - gw - 1];
+      const tone = 0.5 + sample(cloud.t1, (tx + ax) / S1, (ty + ay) / S1) + sample(cloud.t2, (tx + bx) / S2 + 91, (ty + by) / S2 + 37) + wall * 0.9;
+      let r, g, b;
+      if (tone >= 0.5) { const k = Math.min(0.5, (tone - 0.5) * 0.85); r = cr + (255 - cr) * k; g = cg + (255 - cg) * k; b = cb + (255 - cb) * k; }
+      else { const k = Math.min(0.85, (0.5 - tone) * 1.9); r = cr + (sr - cr) * k; g = cg + (sg - cg) * k; b = cb + (sb - cb) * k; }
+      /* At rest the fog is exactly as opaque as the model says (the ghost stays); where it is thinned, the cloud's own shape eats its edge into wisps. */
+      const e = d >= 0.999 ? 1 : smooth(d - (1 - d) * (0.25 + sample(cloud.n, (tx + ax) / S1, (ty + ay) / S1) * 1.1) * 0.9);
+      px[o++] = r; px[o++] = g; px[o++] = b; px[o++] = A * e;
+    }
+    offCtx.putImageData(img, 0, r0);
+    ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(off, 0, r0, gw, rows, 0, r0 * CELL, gw * CELL, rows * CELL);
+  }
+
+  /* ------------------------------------------------------------------ the page ---- */
+  function replay() { alloc(); box = null; puffStart = performance.now(); }
+  function reset() {
+    words.innerHTML = '';
+    for (const p of PARAS) { const el = document.createElement('p'); el.textContent = p; words.append(el); }
+    const r = body.getBoundingClientRect();
+    W = r.width; H = r.height; dpr = Math.min(2, devicePixelRatio || 1);
+    cv.width = Math.round(W * dpr); cv.height = Math.round(H * dpr); cv.style.width = W + 'px'; cv.style.height = H + 'px';
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    can.style.left = Math.round($('cx').value / 100 * (W - 16 - 2)) + 'px';
+    can.style.top = Math.round($('cy').value / 100 * (H - 38 - 2)) + 'px';
+    P_.jetMs = +$('jet').value; P_.billowMs = +$('billow').value; P_.holdMs = +$('hold').value; P_.fadeMs = +$('fade').value; P_.full = $('full').value / 100;
+    for (const id of ['jet', 'billow', 'hold', 'fade']) $(id + 'Text').textContent = $(id).value + ' ms';
+    $('fullText').textContent = P_.full.toFixed(2); $('wakeText').textContent = ($('wake').value / 100).toFixed(2) + ' s'; $('cellText').textContent = $('cell').value + ' px';
+    state.mouse = null; state.rest = []; state.touch = null;
+    replay();
+  }
+  for (const id of ['jet', 'billow', 'hold', 'fade', 'full', 'wake', 'cell', 'cx', 'cy']) $(id).addEventListener('input', reset);
+  $('replay').addEventListener('click', replay);
+  addEventListener('resize', reset);
+
+  const at = (e) => { const r = body.getBoundingClientRect(); return { x: e.clientX - r.left, y: e.clientY - r.top }; };
+  function moveTo(x, y, now) {
+    const m = state.mouse;
+    if (m) { const dt = Math.max(1, now - state.lastMove) / 1000, k = 0.5; state.pvx += ((x - m.x) / dt - state.pvx) * k; state.pvy += ((y - m.y) / dt - state.pvy) * k; }
+    state.mouse = { x, y, openedAt: m ? m.openedAt : now, leftAt: null, hold: 0 }; state.lastMove = now;
+  }
+  body.addEventListener('pointermove', (e) => { if (e.pointerType !== 'touch') { const p = at(e); moveTo(p.x, p.y, performance.now()); } });
+  body.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') { const p = at(e), t = performance.now(); state.touch = { x: p.x, y: p.y, openedAt: t, leftAt: t, hold: SMOKE.touchHold }; } });
+  body.addEventListener('pointerleave', (e) => { if (e.pointerType !== 'touch' && state.mouse) { state.rest.push({ ...state.mouse, leftAt: performance.now() }); state.mouse = null; state.pvx = state.pvy = 0; } });
+
+  let last = performance.now(), acc = 0, frames = 0;
+  function frame(now) {
+    const dt = Math.min(1 / 30, (now - last) / 1000); last = now;
+    if (now - state.lastMove > 60) { state.pvx *= 0.6; state.pvy *= 0.6; }
+    state.rest = state.rest.filter((c) => now < c.leftAt + c.hold + SMOKE.roll);
+    const ms = now - puffStart, t0 = performance.now();
+    ctx.clearRect(0, 0, W, H);
+    let stepped = 0;
+    if (puffDone(ms)) { if ($('loop').checked || q.get('auto')) replay(); }
+    else { stepped = step(dt, now, 0, gh); drawFog(now, now, 0, gh); }
+    acc += performance.now() - t0; frames++;
+    if (frames === 30) { $('stats').textContent = `${Math.round(Math.min(ms, 99999))} ms; ${(acc / 30).toFixed(2)} ms a frame in script, ${gw} x ${gh} cells of ${CELL} px, ${stepped} stepped; body ${Math.round(W)} x ${Math.round(H)} px; alpha ${puffAlpha(ms).toFixed(2)}`; acc = 0; frames = 0; }
+    requestAnimationFrame(frame);
+  }
+  if (q.get('x')) $('cx').value = Math.round(q.get('x') * 100);
+  if (q.get('y')) $('cy').value = Math.round(q.get('y') * 100);
+  reset();
+  requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>

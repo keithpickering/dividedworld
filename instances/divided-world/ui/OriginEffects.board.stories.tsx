@@ -32,6 +32,15 @@ import { cardOf, type World } from '../../../engine/ui/story.tsx';
 import { packStroke } from '../cards/whoops/points.ts';
 import { BRUSH_PX, brushOf } from '../cards/whoops/scrub.ts';
 
+/** A play id that rolls a chair (steel-chair/objects.ts), so that the stories' Steel Chair is the chair e2e/origin-effects.spec.ts measures. It is an id's shape, since a thread is spun from this play and a spin names its origin by a UUID (engine/rules/actions.ts). */
+const CHAIR_PLAY = '00000000-0000-4000-8000-000000000001';
+/** A play id that rolls a trash can (steel-chair/objects.ts): the lid comes off it at the hit and leaves the box (e2e/steel-chair.spec.ts). */
+const CAN_PLAY = 'play-6';
+/** A play id that rolls a fire extinguisher: its puff fills the box's area and is gone in about 5 s (e2e/origin-effects.spec.ts). */
+const EXTINGUISHER_PLAY = 'play-93';
+/** A play id that rolls a ladder (e2e/origin-effects.spec.ts holds it to the box's floor and walls). */
+const LADDER_PLAY = 'play-2';
+
 declare global {
   interface Window {
     /** The nth foil canvas of the ORIGIN box, as the worker that draws it holds it (the canvas's own size where the page draws it): e2e/origin-effects.spec.ts reads the backing size through it, since a handed-over canvas cannot be read on the page. */
@@ -52,7 +61,7 @@ declare global {
   }
 }
 
-type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
+type Case = 'whoops' | 'landed' | 'fab' | 'bright' | 'glitter' | 'hotbox' | 'hotbox-landed' | 'chair' | 'chair-short' | 'can' | 'extinguisher' | 'ladder' | 'mixed' | 'chair-landed' | 'chair-whoops' | 'glitter-whoops' | 'under' | 'over';
 
 const DAY = 86_400_000;
 const MINUTE = 60_000;
@@ -96,7 +105,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   const board = instance.boards.find((b) => !b.system)!.slug;
   const made = fake.seed.thread(board, author, 'Ranking every Mario Kart', 'Ranking every Mario Kart, worst to best.');
   const now = fake.clock.now();
-  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'chair-whoops' ? THREE
+  const words = shown === 'whoops' || shown === 'landed' || shown === 'hotbox' || shown === 'hotbox-landed' || shown === 'chair' || shown === 'can' || shown === 'extinguisher' || shown === 'ladder' || shown === 'mixed' || shown === 'chair-whoops' ? THREE
     : shown === 'chair-short' ? SHORT
       : shown === 'chair-landed' ? BANG
         : shown === 'bright' ? QUOTED
@@ -165,7 +174,7 @@ const worldOf = (shown: Case): World => (fake, instance) => {
   if (shown === 'under') fake.seed.card(caster, post, cardOf(instance.cards, '4d-chess').key, { layer: 1, live: true, config: {}, message: 'Check.' });
   if (shown === 'chair-landed') {
     /* The thread is spun from the play, so the box shows the chair's moment, "as it landed" (the case of issue #768). */
-    const play = fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
+    const play = fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: CHAIR_PLAY });
     spun(play);
     return;
   }
@@ -186,11 +195,18 @@ const worldOf = (shown: Case): World => (fake, instance) => {
       fake.signInAs(player);
       if (!saved.ok) throw new Error(`the wash was refused: ${saved.error}`);
       fake.clock.advance(MINUTE);
-      return fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 2, live: true, config: {}, message: 'Steel Chair' });
+      return fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 2, live: true, config: {}, message: 'Steel Chair', id: CHAIR_PLAY });
     })());
     return;
   }
-  if (shown === 'chair' || shown === 'chair-short') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair' });
+  if (shown === 'chair' || shown === 'chair-short' || shown === 'can' || shown === 'extinguisher' || shown === 'ladder') fake.seed.card(caster, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id: shown === 'can' ? CAN_PLAY : shown === 'extinguisher' ? EXTINGUISHER_PLAY : shown === 'ladder' ? LADDER_PLAY : CHAIR_PLAY });
+  /* A chair, a can and a fire extinguisher from three characters on the one post: the room is the tallest of the three's, and the puff fills the area. */
+  if (shown === 'mixed') {
+    [CHAIR_PLAY, CAN_PLAY, EXTINGUISHER_PLAY].forEach((id, i) => {
+      const who = i === 0 ? caster : fake.seed.character(fake.seed.account(`thrower-${i}`), ['Spritey', 'Gloomba', 'Bob-omb Bill'][i]!, (i % 2 === 0 ? first : (second ?? first))!.key);
+      fake.seed.card(who, post, cardOf(instance.cards, 'steel-chair').key, { layer: 1, live: true, config: {}, message: 'Steel Chair', id });
+    });
+  }
   spun(post);
 };
 
@@ -289,6 +305,14 @@ export const GlitterOverWhoopsPhone: Story = { ...of('glitter-whoops'), globals:
 export const HotBox: Story = of('hotbox');
 /** Steel Chair on a three-line post, live. */
 export const Chair: Story = of('chair');
+/** Steel Chair rolling a trash can on a three-line post, live: its lid comes off at the hit and leaves the box. */
+export const Can: Story = of('can');
+/** A fire extinguisher on a three-line post, live: its puff fills the box's area and is gone in about 5 s. */
+export const Extinguisher: Story = of('extinguisher');
+/** A ladder on a three-line post, live. */
+export const Ladder: Story = of('ladder');
+/** A chair, a can and a fire extinguisher on the one post, live. */
+export const MixedThree: Story = of('mixed');
 /** Steel Chair on one short line, live. */
 export const ChairShort: Story = of('chair-short');
 /** Steel Chair on a post that reads `!`, the thread spun from the play: the box shows the play's moment, with the cards met so no tip covers it (issue #768). */

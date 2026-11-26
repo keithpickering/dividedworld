@@ -1,0 +1,292 @@
+{
+ "images-record-0|160x140": {
+  "bend": "f63694ca22bd72eaeca88fc0304b8927de0a127c",
+  "shade": "5c3fe49dae380bc8ef7d730a9fed898e92eff3c0",
+  "light": "36e61d3e7f242cf9e8ec6500120ec48fde6f5079"
+ },
+ "images-record-0|160x140|over": {
+  "bend": "f63694ca22bd72eaeca88fc0304b8927de0a127c",
+  "shade": "cd9daa959fbd28b3239bf498a14aefd6ece353c4",
+  "light": "03724e460b51dfb87b137a8e7cebd0235f72ca9b"
+ },
+ "images-record-0|120x150": {
+  "bend": "765929c6cc9fec2e551aadc1c683c7260743f3bd",
+  "shade": "a80e6c592b843e4eda687c2136f021f405ed9d37",
+  "light": "13c18da4d00e7b05cf7befb3405b64535b5e4f15"
+ },
+ "images-record-0|120x150|over": {
+  "bend": "765929c6cc9fec2e551aadc1c683c7260743f3bd",
+  "shade": "c3d1cd00bd46aaea081406d43b158c1ef1d62bf0",
+  "light": "ed0f784434059b18abf4686a6e8c72f3aa767f54"
+ },
+ "images-record-0|prim": [
+  {
+   "x": -61.475759887177006,
+   "y": -44.21916219203369,
+   "size": 142.951519774354,
+   "width": 142.951519774354,
+   "height": 128.43832438406739
+  }
+ ],
+ "images-record-1|160x140": {
+  "bend": "024e0a035d3918050b736fa4a18656341c19a3d7",
+  "shade": "0387bec94bc28c0fa0e030fcb1cadf0775444f41",
+  "light": "95a965be816cab8bbd37241b99154c657fa43849"
+ },
+ "images-record-1|160x140|over": {
+  "bend": "024e0a035d3918050b736fa4a18656341c19a3d7",
+  "shade": "3f57f4d75256194da8993d190076755729dd726f",
+  "light": "334e651f2383fa3881013049e5f4ef5357a2d59c"
+ },
+ "images-record-1|120x150": {
+  "bend": "6ed2acf72c2641597368686f3a779204cc773bbb",
+  "shade": "14233611a4c8c49ea0c4d1312b4f2248a35927c7",
+  "light": "eab79ade5baef5da0aa1642be9ae2069102ded27"
+ },
+ "images-record-1|120x150|over": {
+  "bend": "6ed2acf72c2641597368686f3a779204cc773bbb",
+  "shade": "07e3e888dda33660ccf8188b2fe39baca1871365",
+  "light": "eab5c3b2513b709f054dd597161a2dbe20454808"
+ },
+ "images-record-1|prim": [
+  {
+   "x": -59.61580207490404,
+   "y": -47.14681259801854,
+   "size": 139.23160414980808,
+   "width": 139.23160414980808,
+   "height": 134.29362519603708
+  }
+ ],
+ "images-record-2|160x140": {
+  "bend": "f990a196b5c98650d8f3f2a5e4e8f98cdf225d3c",
+  "shade": "32527bfc530a60194814b9d023c2b230325a462c",
+  "light": "8f2c3b241f7be3e17012007be30b86134319fc8a"
+ },
+ "images-record-2|160x140|over": {
+  "bend": "f990a196b5c98650d8f3f2a5e4e8f98cdf225d3c",
+  "shade": "a74a1460c7dcdb75776c241af1efb3feae29a1af",
+  "light": "be9280038bea286fc3add0ad262f8a80adceea23"
+ },
+ "images-record-2|120x150": {
+  "bend": "98195696c75ac033bc9bb99690fa5d981e5adce4",
+  "shade": "40b22d3d3640fe4674cab3a53496a2d31c667806",
+  "light": "f4b8f7a13e29abcbda7970d03279e2ca48cfbdf6"
+ },
+ "images-record-2|120x150|over": {
+  "bend": "98195696c75ac033bc9bb99690fa5d981e5adce4",
+  "shade": "1f102134e06c80c981befa58f40fe7d5ca9fc5ab",
+  "light": "5607d8d26e263519e947807f6a0f8cded8b53b99"
+ },
+ "images-record-2|prim": [
+  {
+   "x": -68.23861686755782,
+   "y": -58.20604406297207,
+   "size": 156.47723373511565,
+   "width": 156.47723373511565,
+   "height": 156.41208812594414
+  }
+ ],
+ "images-record-3|160x140": {
+  "bend": "8ead8797b4c6e5a6dcfaf0359c71700d4bf0a112",
+  "shade": "e053cff7c6340591d8ec1d8fffd5e9eddc0aef26",
+  "light": "01abb0d6c9aa299c8f902df80d985b9bf9495f69"
+ },
+ "images-record-3|160x140|over": {
+  "bend": "8ead8797b4c6e5a6dcfaf0359c71700d4bf0a112",
+  "shade": "6a7f43fea736ea680fab0b58a938a5a4de621ab0",
+  "light": "44d9e42e16c0b627701abe515d105dabb890f8c7"
+ },
+ "images-record-3|120x150": {
+  "bend": "a469357503d2ba7d88766eb3f392602e93ccfedb",
+  "shade": "db42ac8ea62a3dad423d3905b86bff0b9cb42bd1",
+  "light": "2464dbaeec39e11550b65a5f77030996d4e1b69b"
+ },
+ "images-record-3|120x150|over": {
+  "bend": "a469357503d2ba7d88766eb3f392602e93ccfedb",
+  "shade": "993bbac28482f70598fa82571897bc51b6edd7df",
+  "light": "2161705eb0d8b7535a66bd3da2acfb127cf92ded"
+ },
+ "images-record-3|prim": [
+  {
+   "x": -51.49457058180934,
+   "y": -57.75515988793063,
+   "size": 155.51031977586126,
+   "width": 122.98914116361868,
+   "height": 155.51031977586126
+  }
+ ],
+ "images-record-4|160x140": {
+  "bend": "9cbac7fa01160db1e59214db3f7767357ffb657f",
+  "shade": "7c97a694d60f75f2b01d905aa27bfc00b9597ba2",
+  "light": "cd7ec93f27c6cba258dc1d2dad7ffd66decb7723"
+ },
+ "images-record-4|160x140|over": {
+  "bend": "9cbac7fa01160db1e59214db3f7767357ffb657f",
+  "shade": "44458d434a9c35c6f0e49d03f65356cee6f0a195",
+  "light": "714315266c89d154fcfd6ffb1bbe7382f445e2a3"
+ },
+ "images-record-4|120x150": {
+  "bend": "cfd976e8645c6247340e7fedb09d247cdceeefc2",
+  "shade": "2ad1fce38873456d32914e626463b10c014bb8f5",
+  "light": "8d6f2e17db867ea5bc1f5e1fe3197a384819b417"
+ },
+ "images-record-4|120x150|over": {
+  "bend": "cfd976e8645c6247340e7fedb09d247cdceeefc2",
+  "shade": "9b91c9cdd2cd6932bf596770b51dabbe04861d2f",
+  "light": "5d9daa07c9c7fba4ed2e2f8a21cfd55813920698"
+ },
+ "images-record-4|prim": [
+  {
+   "x": -56.30665000690067,
+   "y": -59.67891593180272,
+   "size": 159.35783186360544,
+   "width": 132.61330001380134,
+   "height": 159.35783186360544
+  }
+ ],
+ "images-record-5|160x140": {
+  "bend": "f7a98872f9f8d0025d9b69a7160719d50a9a146e",
+  "shade": "7e4fc2bcb7d587ed5a0e5345fc4f347ad1f54a2f",
+  "light": "0457a9d01346710fff3f7a501e3e315641f3e59b"
+ },
+ "images-record-5|160x140|over": {
+  "bend": "f7a98872f9f8d0025d9b69a7160719d50a9a146e",
+  "shade": "d5c513197da7883b01cfe59a82183af5d693492a",
+  "light": "40be58e053fb59247a05502193033107f0b42d12"
+ },
+ "images-record-5|120x150": {
+  "bend": "7035dca65258c7f5a58a56fd6ae44c4264411c62",
+  "shade": "ca4e76a18deb0c0ad51079dec3681cc5379e94bb",
+  "light": "bd8297473b3a3eab8b5c7f25e2df9f730f0977b2"
+ },
+ "images-record-5|120x150|over": {
+  "bend": "7035dca65258c7f5a58a56fd6ae44c4264411c62",
+  "shade": "8f56ce809dc3f33ad40727ee90eeefbc108e2a48",
+  "light": "2a40ea0f3b36aa991548e8bca077ffb8ef5afd06"
+ },
+ "images-record-5|prim": [
+  {
+   "x": -59.418524975038096,
+   "y": -54.74094619083664,
+   "size": 149.48189238167328,
+   "width": 138.8370499500762,
+   "height": 149.48189238167328
+  }
+ ],
+ "images-record-6|160x140": {
+  "bend": "bc80e9d179d5026091ea52dc3602234637e8419a",
+  "shade": "5812c453e6a34c91892646369302a537adac9e3d",
+  "light": "cde98a8fec86bc064ef3f1cb6eb71bd5f51da5fe"
+ },
+ "images-record-6|160x140|over": {
+  "bend": "bc80e9d179d5026091ea52dc3602234637e8419a",
+  "shade": "14b3371482fc11cb04f0bc2290000b72f0d3a92c",
+  "light": "8d4ba174c124e9af2b0fd4935a1cead7115c0a97"
+ },
+ "images-record-6|120x150": {
+  "bend": "0b94d0cab4fcc1d3cca401e1c4c28626f15d5bd8",
+  "shade": "d33d411a7bfa0710f9223f484e52b7a0664e4dd1",
+  "light": "e57697a3179b01b54dba8732a9e27b95455f6ae4"
+ },
+ "images-record-6|120x150|over": {
+  "bend": "0b94d0cab4fcc1d3cca401e1c4c28626f15d5bd8",
+  "shade": "947b3dad814e9cd730f9caf8642587bae9d6148f",
+  "light": "842d81ecf4efe6d115c953e4953bffa6905bd12c"
+ },
+ "images-record-6|prim": [
+  {
+   "x": -53.764842476533815,
+   "y": -46.81750999844593,
+   "size": 133.63501999689186,
+   "width": 127.52968495306763,
+   "height": 133.63501999689186
+  }
+ ],
+ "images-record-7|160x140": {
+  "bend": "77d2e5607681ca78481d3cba81ee16bd052f24f9",
+  "shade": "1f98b1c4bd283d01934cefb74514dd9eb30fe14d",
+  "light": "59b8a7f800ce69b87bdf720c99a2feb46be70240"
+ },
+ "images-record-7|160x140|over": {
+  "bend": "77d2e5607681ca78481d3cba81ee16bd052f24f9",
+  "shade": "ed32f040b53aec72262a57587253a98de8dbe037",
+  "light": "6175e6973794d53848ad4314e5e903faed6790b2"
+ },
+ "images-record-7|120x150": {
+  "bend": "b554c20eb1b016b67a22821a10af9c30e4f3afeb",
+  "shade": "40a337621bf6111119f98d6aab09f05d94390c99",
+  "light": "07aebde711bb009df9c107b9a7743dd88bc7f6e2"
+ },
+ "images-record-7|120x150|over": {
+  "bend": "b554c20eb1b016b67a22821a10af9c30e4f3afeb",
+  "shade": "504932d4186f5c1f3d0e7c30e2f27dbfa0605e98",
+  "light": "29c144a552f8f35c569f844870074f560214ae14"
+ },
+ "images-record-7|prim": [
+  {
+   "x": -67.46005094407693,
+   "y": -59.77573388620563,
+   "size": 159.55146777241126,
+   "width": 154.92010188815385,
+   "height": 159.55146777241126
+  }
+ ],
+ "images-record-8|160x140": {
+  "bend": "e78ce7bf27526cdd443d542916143b37b602e940",
+  "shade": "5d3ad5e803c0394c0dc88b2cda8ecb2138038b93",
+  "light": "03b76954b5e3a37b1d4c9a886a2495c6fb251002"
+ },
+ "images-record-8|160x140|over": {
+  "bend": "e78ce7bf27526cdd443d542916143b37b602e940",
+  "shade": "6d932f0a4fe0a1a1130e734f8646002f54b0424e",
+  "light": "a2d13e325689feb1b46cffa8871e59709f75ae01"
+ },
+ "images-record-8|120x150": {
+  "bend": "a75388c13fca2705911fd6aa83bd956eebb8ee70",
+  "shade": "294b020c201f78ad3798435f75a47517edf20a99",
+  "light": "fc3a56efb846e590fbbc72555fe8f2cac39c87d5"
+ },
+ "images-record-8|120x150|over": {
+  "bend": "a75388c13fca2705911fd6aa83bd956eebb8ee70",
+  "shade": "d107cb3596786b863ed4cb68426c81ea5380c0ad",
+  "light": "acee6f0f5638c3ad8bb17fe39eec4af0fc42dfb6"
+ },
+ "images-record-8|prim": [
+  {
+   "x": -67.73273630958538,
+   "y": -47.193446931955606,
+   "size": 155.46547261917075,
+   "width": 155.46547261917075,
+   "height": 134.3868938639112
+  }
+ ],
+ "images-record-9|160x140": {
+  "bend": "e936c5eb708582989f2a0d7d19664e1bdc37afe9",
+  "shade": "281de44cb6be029fd958aeb703e682bdf4ce5645",
+  "light": "954767f63acf3eb134aa49b230533a9885facf02"
+ },
+ "images-record-9|160x140|over": {
+  "bend": "e936c5eb708582989f2a0d7d19664e1bdc37afe9",
+  "shade": "b7e47de472d84a112124911e544263cb65eeed69",
+  "light": "8b63c320f7874d72b633c6712798aa66d831c0d2"
+ },
+ "images-record-9|120x150": {
+  "bend": "e31a472229d41afc57195e7c497b3403bb856d73",
+  "shade": "564de7f92d0512380ed6024239d39b71d2e31d4f",
+  "light": "46c2b23b178c6c97f3a0aeb19d99f52254ace34e"
+ },
+ "images-record-9|120x150|over": {
+  "bend": "e31a472229d41afc57195e7c497b3403bb856d73",
+  "shade": "55b34550446cf107710b88677a217b25caa33f50",
+  "light": "76dcbadf3aa983b123cdaa9d2f6bb2080fb2a26b"
+ },
+ "images-record-9|prim": [
+  {
+   "x": -53.753844020159356,
+   "y": -58.514653006973475,
+   "size": 157.02930601394695,
+   "width": 127.50768804031871,
+   "height": 157.02930601394695
+  }
+ ]
+}

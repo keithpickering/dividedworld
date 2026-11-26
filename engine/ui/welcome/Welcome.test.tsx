@@ -4,7 +4,7 @@
  * controls, saved as they change), Make your first character and Read the Strategy Guide first. It marks the welcome seen when it opens, so
  * it shows once whatever the player does next. The redirect that sends a new account here is held in web/src/App.test.tsx.
  */
-import { act, fireEvent, screen, waitFor, within } from '@testing-library/react';
+import { act, cleanup, fireEvent, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, test, vi } from 'vitest';
 import type { Instance } from '../../rules/types.ts';
@@ -22,6 +22,19 @@ const instance: Instance = { ...testInstance, developer: { name: 'Gabe', tagline
 const signedIn = (fake: ReturnType<typeof import('../test-world.tsx').buildWorld>) => { fake.signInAs(fake.seed.account('me')); };
 const page = (o: { readonly signed?: boolean } = {}) =>
   renderInWorld(<WelcomeScreen />, { path: '/welcome', instance, avatars: { gabe: 'gabe.png' }, ...(o.signed === false ? {} : { seed: signedIn }) });
+
+describe('a letter with conditional passages', () => {
+  test('shows none of it, whatever the switch is', async () => {
+    for (const systemEnabled of [true, false]) {
+      renderInWorld(<WelcomeScreen />, { path: '/welcome', instance, avatars: { gabe: 'gabe.png' }, seed: signedIn, settings: { systemEnabled }, letter: 'Hello.\n\n<!-- kayfabb:if system-on -->\nStaff are on.\n<!-- kayfabb:end -->\n\n<!-- kayfabb:if system-off -->\nStaff are off.\n<!-- kayfabb:end -->\n\nBye.' });
+      const letter = await screen.findByRole('article');
+      expect(within(letter).getByText('Hello.')).toBeInTheDocument();
+      expect(within(letter).getByText('Bye.')).toBeInTheDocument();
+      expect(within(letter).queryByText(/Staff are/u)).toBeNull();
+      cleanup();
+    }
+  });
+});
 
 describe('the welcome page', () => {
   test('its rows are drawn from boot\'s preferences: the account\'s preferences are not read, and the welcome is marked seen once it is drawn', async () => {

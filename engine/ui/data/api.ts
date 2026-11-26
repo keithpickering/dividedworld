@@ -218,6 +218,10 @@ export interface ScreenSettings {
   readonly pollLastsMax: Span;
   readonly registrationMode: 'open' | 'invite' | 'closed';
   readonly settlementLength: Span;
+  /** Whether The System is switched on (`systemEnabled`, in `screen_settings` from 0442): the Strategy Guide draws its system-on or system-off passages by it. The instance's own switch, the same for every reader. */
+  readonly systemEnabled: boolean;
+  /** How long a season lasts (`seasonLength`, in `screen_settings` from 0442): the Strategy Guide says it in words. */
+  readonly seasonLength: Span;
   /** How long a card set face down lasts from when it is set (`setLasts`, in `screen_settings` from 0156): the line for a card about to be set says when it would end. A back already set ends when its own `endsAt` says. */
   readonly setLasts: Span;
   /** The old voice's window in tokens (`oldVoiceWindow`, in `screen_settings` from 0353): the most a play may buy is the smaller of its own most and the window less `oldVoicePromptFloor`, so the length slider offers only lengths that fit. */

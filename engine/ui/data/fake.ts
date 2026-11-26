@@ -299,9 +299,10 @@ export interface Seed {
    * A card play by a character on an Act, in the Act's own thread (what a player's play makes; the cards plan makes the real action).
    * With `paid`, its player's card ledger records the play at that price and the wallet pays it, as `play_card` does (a wallet event
    * where it is more than 0); without, the play is an Act alone, held and paid for nowhere. With `unrecorded`, it is a play from before
-   * moments were snapshotted (0072): its moment is not taken.
+   * moments were snapshotted (0072): its moment is not taken. With `id`, the play's Act has that id instead of a fresh one (refused
+   * where an Act already has it), so a story or a test can choose what an id-seeded effect rolls.
    */
-  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; instant?: boolean; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string }): Id;
+  card(character: Id, target: Id, card: string, options?: { message?: string; config?: Readonly<Record<string, unknown>>; at?: number; live?: boolean; layer?: number; paid?: number; caught?: Id; ends?: string; instant?: boolean; unrecorded?: boolean; spring?: Id; tokens?: number; drawn?: string; id?: string }): Id;
   /**
    * A card played beyond a post (what `play_card` writes for a reach, 0055): on a character (from `post`, one of its posts), a thread or
    * a board, its Act where play_card puts it and its play_reach row ending at `ends` (an epoch, else the card's lasts cut to its reach's
@@ -583,7 +584,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     postsPerPage: settings.postsPerPage, searchLanguage: settings.searchLanguage, searchRankPool: settings.searchRankPool, hotReplies: settings.hotReplies, editGrace: settings.editGrace, reactionCap: settings.reactionCap, crowdPayEach: settings.crowdPayEach, crowdFloor: settings.crowdFloor, crowdPayMost: settings.crowdPayMost,
     charactersPerPlayer: settings.charactersPerPlayer, invitesPerPlayer: settings.invitesPerPlayer, inviteLifetime: settings.inviteLifetime,
     turnCooldown: settings.turnCooldown, walletCap: settings.walletCap, postMaxLength: settings.postMaxLength, titleMaxLength: settings.titleMaxLength,
-    pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
+    pollOptionsMax: settings.pollOptionsMax, pollQuestionMax: settings.pollQuestionMax, pollOptionMax: settings.pollOptionMax, pollLastsMin: settings.pollLastsMin, pollLastsMax: settings.pollLastsMax, registrationMode: settings.registrationMode, settlementLength: settings.settlementLength, systemEnabled: settings.systemEnabled, seasonLength: settings.seasonLength, setLasts: settings.setLasts, oldVoiceWindow: settings.oldVoiceWindow, oldVoicePromptFloor: settings.oldVoicePromptFloor, cardSettings: settings.cardSettings,
     presencePollSeconds: settings.presencePollSeconds, presenceWindow: settings.presenceWindow, toastDefaults: settings.toastDefaults,
     /* What screen_settings's groups holds (0128): the ladder lowest first, then the groups a move confers. */
     groups: options.settings?.groups ?? [...options.instance.groups.ladder.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: g.when.kind === 'staff' })), ...options.instance.groups.conferred.map((g) => ({ key: g.key, name: g.name, ...(g.badge !== undefined ? { badge: g.badge } : {}), color: g.color, stripe: g.stripe === true, staff: false }))],
@@ -6272,7 +6273,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (o?.instant === true) payload.instant = true;
       /* A play of a drive card joins the post's open drive, or opens one named by its own id (place_cast, 0153). */
       const driveRules = instance.cards.find((c) => c.key === card);
-      const seededId = uuid();
+      /* A given id is the play's own (a test that needs to know it before the play exists); one in use is refused. */
+      if (o?.id !== undefined && acts.has(o.id)) throw new Error(`an Act ${o.id} already exists`);
+      const seededId = o?.id ?? uuid();
       const drive = o?.caught === undefined && driveRules ? driveOf(driveRules, target, seededId, o?.at) : undefined;
       if (drive !== undefined) payload.drive = drive;
       /* A paid play is refused before its Act is written, as play_card refuses before it writes; the hand is the seed's to set (`cards`). */

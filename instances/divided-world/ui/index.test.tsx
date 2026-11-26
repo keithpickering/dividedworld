@@ -7,6 +7,7 @@ import { glassVars } from '../../../engine/ui/glass/apply.ts';
 import { boardSwitch } from '../../../engine/ui/glass/board.ts';
 import { SURFACES } from '../../../tools/check-glass-contrast.mjs';
 import { guideFaults, readInstance } from '../../../tools/check-guide.mjs';
+import { parse, sectionsOf } from '../../../engine/ui/guide/markdown.ts';
 import { QUADRANTS } from '../../../engine/rules/types.ts';
 import { economyOf, faceUpOnly, playOf, reachesOf } from '../../../engine/rules/cards.ts';
 import { instanceUiProblems } from '../../../engine/ui/tips/problems.ts';
@@ -49,6 +50,7 @@ import { LOG_DRAW, LOG_WASH, describeDraw } from '../cards/graffiti/words.ts';
 import { wordsProblems } from '../../../engine/ui/cards/lens-words.ts';
 import type { CardPlay } from '../../../engine/ui/cards/types.ts';
 import { ENGINE_DEFAULT_PRONOUNS, PRONOUN_PRESETS } from '../../../engine/rules/pronouns.ts';
+import { sounds } from './sounds.ts';
 
 describe('Divided World\'s developer persona', () => {
   test('is Gabe, with his tagline, and his picture is one the UI has', () => {
@@ -102,7 +104,20 @@ describe('Divided World\'s onboarding words', () => {
     }
   });
   test('the letter opens as Gabe\'s welcome does', () => {
-    expect(instanceUi.onboarding.letter).toMatch(/^## After nine years of development/u);
+    expect(instanceUi.onboarding.letter).toMatch(/^## Hi\. I'm Gabe\./u);
+  });
+  test('the letter\'s first block is a heading, which the welcome page draws as its headline', () => {
+    expect(parse(instanceUi.onboarding.letter)[0]?.t).toBe('heading');
+  });
+  test('the letter holds no conditional and no marker', () => {
+    expect(instanceUi.onboarding.letter).not.toMatch(/<!--|\{\{|kayfabb/u);
+  });
+  test('no tip and no line of the front door\'s note says "The System" or "Administrator"', () => {
+    const lines = [
+      ...Object.values(instanceUi.onboarding.tips).flatMap((t) => [t.title, t.line]),
+      ...instanceUi.frontDoor.note.split('\n'),
+    ];
+    for (const line of lines) expect(line, line).not.toMatch(/The System|Administrator/u);
   });
 });
 
@@ -143,6 +158,24 @@ describe('Divided World\'s Strategy Guide', () => {
     expect(Object.keys(instanceUi.guide.hints).sort()).toEqual(instance.classes.map((c) => c.key).sort());
     const real = await readInstance('divided-world');
     expect(guideFaults(real)).toEqual([]);
+  });
+  test('never says "The System" in what a player reads (the comment at its top is not read)', () => {
+    const shown = instanceUi.guide.markdown.replace(/<!--[\s\S]*?-->/gu, '');
+    expect(shown).not.toContain('The System');
+  });
+  test('its sections, read as the page reads them, are in this order', () => {
+    const titles = sectionsOf(parse(instanceUi.guide.markdown), (p) => `{{setting:${p}}}`).map((s) => s.title);
+    expect(titles).toEqual([
+      'Welcome letter', 'The metagame', 'Your first character', 'Reactions', 'Aura', 'Seasons', 'Classes', 'Turns and reveals',
+      'Cards', 'The masks', 'The staff', 'Things that happen to you', 'The actual rules', 'Coming attractions',
+    ]);
+  });
+  test('"The actual rules" is real moderation, so the persona does not speak in it', () => {
+    const md = instanceUi.guide.markdown;
+    const rules = md.slice(md.indexOf('## The actual rules'), md.indexOf('## Coming attractions'));
+    expect(rules).toContain('## The actual rules');
+    /* The plan's "I ", "I'm", "my " and "yacht", read as whole words, so "I'd", "I've" and "I'll" count and "enemy" does not. */
+    for (const word of [/\bI\b/u, /\bmy\b/iu, /yacht/iu]) expect(rules, String(word)).not.toMatch(word);
   });
 });
 
@@ -224,9 +257,9 @@ describe('Divided World\'s cards in the guide, in the glass\'s words about setti
   });
   test('the guide names the three kinds and says every card back looks the same, with no payout from a trap', () => {
     expect(guideMd).toMatch(/- \*\*Move, Reversal, Gimmick\.\*\*/u);
-    expect(guideMd).toMatch(/A Move is cast on a target, or set face down on your own post/u);
-    expect(guideMd).toMatch(/A Reversal is only ever set face down on your own post/u);
-    expect(guideMd).toMatch(/A Gimmick is played face up on your own post, your own character, or a thread your own character started/u);
+    expect(guideMd).toMatch(/A \*\*Move\*\* is cast on a target/u);
+    expect(guideMd).toMatch(/A \*\*Reversal\*\* is only ever set face down on your own post/u);
+    expect(guideMd).toMatch(/A \*\*Gimmick\*\* is played face up on your own post, your own character, or a thread your own character started/u);
     expect(guideMd).toMatch(/every card back looks the same/u);
     expect(guideMd).toMatch(/Sweet is babyface work, Salty is heel work/u);
     expect(guideMd).toMatch(/comes back to your hand/u);
@@ -494,7 +527,14 @@ describe('Divided World\'s InstanceUi covers its rules', () => {
   });
   test('Steel Chair and Laugh Track name the sounds their effects play', () => {
     const steel = instanceUi.cards.find((c) => c.key === 'steel-chair')!;
-    expect(steel.sounds).toEqual(['steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4']);
+    expect(steel.sounds).toEqual([
+      'steel-chair.hit', 'steel-chair.settle-1', 'steel-chair.settle-2', 'steel-chair.settle-3', 'steel-chair.settle-4',
+      'steel-chair.can-settle-1', 'steel-chair.can-settle-2',
+      'steel-chair.ladder-settle-1', 'steel-chair.ladder-settle-2',
+      'steel-chair.extinguisher-hit', 'steel-chair.extinguisher-settle-1', 'steel-chair.extinguisher-settle-2', 'steel-chair.extinguisher-hiss',
+    ]);
+    /* Every steel-chair slot the instance's sounds hold is one the card names, and it names no other. */
+    expect([...steel.sounds!].sort()).toEqual(sounds.slots.map((s) => s.key).filter((k) => k.startsWith('steel-chair.')).sort());
     const laugh = instanceUi.cards.find((c) => c.key === 'laugh-track')!;
     expect(laugh.sounds).toEqual([
       'laugh-track.laugh-1', 'laugh-track.laugh-2', 'laugh-track.laugh-3',
@@ -1455,6 +1495,14 @@ describe('Divided World\'s sounds', () => {
     { key: 'steel-chair.settle-2', file: 'steel-chair-settle-2.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-3', file: 'steel-chair-settle-3.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
     { key: 'steel-chair.settle-4', file: 'steel-chair-settle-4.mp3', caption: 'A chair clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.can-settle-1', file: 'steel-chair-can-settle-1.mp3', caption: 'A trash can lid clatters down somewhere', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.can-settle-2', file: 'steel-chair-can-settle-2.mp3', caption: 'A trash can lid clatters down somewhere', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.ladder-settle-1', file: 'steel-chair-ladder-settle-1.mp3', caption: 'A ladder clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.ladder-settle-2', file: 'steel-chair-ladder-settle-2.mp3', caption: 'A ladder clatters to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-hit', file: 'steel-chair-extinguisher-hit.mp3', caption: 'A fire extinguisher thunks', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-settle-1', file: 'steel-chair-extinguisher-settle-1.mp3', caption: 'A fire extinguisher clunks to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-settle-2', file: 'steel-chair-extinguisher-settle-2.mp3', caption: 'A fire extinguisher clunks to the floor', ink: 'var(--kb-salty)' },
+    { key: 'steel-chair.extinguisher-hiss', file: 'steel-chair-extinguisher-hiss.mp3', caption: 'A fire extinguisher hisses', ink: 'var(--kb-salty)' },
     { key: 'its-curtains.drumroll', file: 'its-curtains-drumroll.mp3', caption: 'Drumroll', ink: 'var(--kb-pepperoni)', loop: true, level: 0.8 },
     { key: 'its-curtains.crash', file: 'its-curtains-crash.mp3', caption: 'Cymbal crash', ink: 'var(--kb-pepperoni)' },
     { key: 'its-curtains.whoosh', file: 'its-curtains-whoosh.mp3', caption: 'Curtain whooshes open', ink: 'var(--kb-pepperoni)', level: 0.9 },
@@ -1462,7 +1510,7 @@ describe('Divided World\'s sounds', () => {
   ];
   const slots = instanceUi.sounds?.slots ?? [];
 
-  test('there are exactly the twenty-one slots of the design, in order, with their keys, captions, inks and loops', () => {
+  test('there are exactly the twenty-nine slots of the designs, in order, with their keys, captions, inks and loops', () => {
     expect(slots.map((s) => s.key)).toEqual(TABLE.map((t) => t.key));
     for (const row of TABLE) {
       const slot = slots.find((s) => s.key === row.key);
@@ -1471,7 +1519,7 @@ describe('Divided World\'s sounds', () => {
       expect(slot!.ink, `${row.key}'s ink`).toBe(row.ink);
       expect(slot!.loop, `${row.key}'s loop`).toEqual(row.loop ? true : undefined);
     }
-    expect(slots).toHaveLength(21);
+    expect(slots).toHaveLength(29);
   });
   /* The owner's mix for It's Curtains (2026-11-25): a level is a multiplier on the loudness the manifest brings a sound to. */
   test('every slot\'s gain is its manifest loudness times the level the design gives it', () => {
@@ -1537,7 +1585,8 @@ describe('where each card lands, as the screens ask it', () => {
 
 describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
   const chair = instanceUi.cards.find((c) => c.key === 'steel-chair')!;
-  const play = (n: number): CardPlay[] => Array.from({ length: n }, (_, i) => ({ id: `k${i}`, card: 'steel-chair', layer: 1, caster: null, message: '', config: {}, playedAt: '2026-11-15T00:00:00.000Z', post: 'p' }));
+  /* Known play ids and the objects they roll (ui/steel-chair/objects.ts): play-0 a chair, play-6 a can, play-2 a ladder, play-93 an extinguisher. */
+  const playAs = (...ids: string[]): CardPlay[] => ids.map((id) => ({ id, card: 'steel-chair', layer: 1, caster: null, message: '', config: {}, playedAt: '2026-11-15T00:00:00.000Z', post: 'p' }));
 
   test('it wears the Salty pink and ink, and says what it does in a tagline, a summary and a hint', () => {
     expect(chair.art.color).toBe('#ff3d7f');
@@ -1547,16 +1596,32 @@ describe('Steel Chair in plain words (the Steel Chair plan, Task 6)', () => {
     expect(chair.hint).toBe('Someone took a chair to this post. The Lens says who.');
   });
 
-  test('its status counts the chairs from two on', () => {
+  test('its status names each play\'s object, counting repeats, one kind after another', () => {
     const status = chair.status as (p: readonly CardPlay[]) => string;
-    expect(status(play(1))).toBe('Dented by a chair');
-    expect(status(play(2))).toBe('Dented by 2 chairs');
-    expect(status(play(3))).toBe('Dented by 3 chairs');
+    expect(status(playAs('play-0'))).toBe('Dented by a chair');
+    expect(status(playAs('play-0', 'play-1'))).toBe('Dented by 2 chairs');
+    expect(status(playAs('play-6'))).toBe('Dented by a trash can');
+    expect(status(playAs('play-6', 'play-10'))).toBe('Dented by 2 trash cans');
+    expect(status(playAs('play-2'))).toBe('Dented by a ladder');
+    expect(status(playAs('play-2', 'play-27'))).toBe('Dented by 2 ladders');
+    expect(status(playAs('play-93'))).toBe('Dented by a fire extinguisher');
+    expect(status(playAs('play-93', 'play-102'))).toBe('Dented by 2 fire extinguishers');
+  });
+
+  test('two kinds join with "and", three with commas and no serial comma, each kind named once in the order its first play appears', () => {
+    const status = chair.status as (p: readonly CardPlay[]) => string;
+    expect(status(playAs('play-0', 'play-2'))).toBe('Dented by a chair and a ladder');
+    expect(status(playAs('play-0', 'play-1', 'play-6'))).toBe('Dented by 2 chairs and a trash can');
+    expect(status(playAs('play-2', 'play-0', 'play-6'))).toBe('Dented by a ladder, a chair and a trash can');
+    expect(status(playAs('play-0', 'play-2', 'play-6', 'play-93'))).toBe('Dented by a chair, a ladder, a trash can and a fire extinguisher');
+    expect(status(playAs('play-6', 'play-0', 'play-1', 'play-93', 'play-6'))).toBe('Dented by 2 trash cans, 2 chairs and a fire extinguisher');
+    expect(status(playAs('play-0', 'play-6', 'play-10'))).toBe('Dented by a chair and 2 trash cans');
+    expect(status([])).toBe('Dented by a chair');
   });
 
   test('its words read the stack and the span from its rules', () => {
     expect(spanWords(STEEL_CHAIR_LASTS)).toBe('3 days');
-    expect(chair.describe(instance.settings)).toBe('A Salty card, common. A folding chair is thrown at a post and dents it: the words bend into the dent, and the chair drops to the floor under them. It covers none of the words and holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and each is gone 3 days after it lands. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
+    expect(chair.describe(instance.settings)).toBe('A Salty card, common. Something is thrown at a post and dents it, usually a folding chair, sometimes a trash can, a step ladder or a fire extinguisher: the words bend into the dent, and the thing drops to the floor under them. A trash can\'s lid flies off, and a fire extinguisher fills the post with spray that clears by itself in a few seconds. Once it lands it covers none of the words, and it holds nobody. It plays again each time the post scrolls into view, somewhere else each time, and with Game sounds on it clangs each time, unless motion is reduced. Up to 3 can stack on one post, each with its own dent, and each is gone 3 days after it lands. You can also set it face down on one of your own posts: it springs on the next quote of that post and lands on the quoting post at no further cost, using up the card. It costs nothing more to play.');
   });
 
   test('it has an effect and no form', () => {

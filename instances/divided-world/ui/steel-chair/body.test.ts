@@ -10,10 +10,13 @@
  */
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import {
-  addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
+  addThrow, boxShape, bodies, CHAIR, CHAIR_THICKNESS, SHAPES, cornersOf, createWorld, DEPTH, HALF, REST_RISE, remove, resize, probe, prismShape, rng, separation, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf,
   type BodyView, type Box, type Event, type World,
 } from './body.ts';
+import { Z_FRONT } from './chair.ts';
+import type { ThrownObject } from './objects.ts';
 
 const SEEDS = 200;
 /** How far past the glass or the back wall the middle of a chair may be pushed by a hard knock before the spring turns it. */
@@ -684,4 +687,327 @@ test('a body can be removed by its id and the others are woken; a given id is ke
   assert.equal(bodies(world).length, 1);
   assert.equal(at(bodies(world), 0).asleep, false, 'the others are woken');
   assert.ok(settle(world, 20));
+});
+
+/**
+ * The record: where a chair came to rest before the thrown objects had shapes (seeds 0 to 199, three throws a play apart as the effect
+ * staggers them, into a room 600 by 400). It was written from the body as it stood, and a chair's throw and rest must not move at all.
+ */
+test('the chair rests where it rested before shapes', () => {
+  const record = JSON.parse(readFileSync(new URL('./rest-record.json', import.meta.url), 'utf8')) as Array<Array<{ p: number[]; q: number[] }>>;
+  const words: Box = { left: 40, top: 30, width: 520, height: 330 };
+  assert.equal(record.length, 200);
+  for (let seed = 0; seed < 200; seed++) {
+    const world = createWorld(600, 400, 400);
+    const rand = rng(seed);
+    for (let i = 0; i < 3; i++) {
+      addThrow(world, throwOf(rand, words));
+      if (i < 2) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+    }
+    settle(world, SETTLE_S);
+    const now = bodies(world);
+    const was = at(record, seed);
+    assert.equal(now.length, was.length, `seed ${seed}: body count`);
+    for (const [i, b] of now.entries()) {
+      const r = at(was, i);
+      const got = [b.position.x, b.position.y, b.position.z, b.quaternion.w, b.quaternion.x, b.quaternion.y, b.quaternion.z];
+      const want = [...r.p, ...r.q];
+      for (const [k, v] of got.entries()) assert.ok(Math.abs(v - (want[k] as number)) < 1e-9, `seed ${seed} body ${i} value ${k}: ${v} against ${want[k]}`);
+    }
+  }
+});
+
+/* ---------- shapes ---------- */
+
+/**
+ * Today's chair constants, as the body held them before shapes: copied here, from the code on main, so that a box that drifts from them fails
+ * (the build of the chair's shape is the one under test, so it cannot be the reference for itself).
+ */
+const WAS_CORNERS: V3[] = [];
+for (let k = 0; k < 8; k++) WAS_CORNERS.push([k & 4 ? HALF[0] : -HALF[0], k & 2 ? HALF[1] : -HALF[1], k & 1 ? HALF[2] : -HALF[2]]);
+const WAS_SAMPLES: V3[] = [...WAS_CORNERS];
+for (const sz of [-1, 1]) {
+  for (const sx of [-1, 1]) for (let k = 1; k < 6; k++) WAS_SAMPLES.push([sx * HALF[0], -HALF[1] + (k * 2 * HALF[1]) / 6, sz * HALF[2]]);
+  for (const sy of [-1, 1]) for (let k = 1; k < 3; k++) WAS_SAMPLES.push([-HALF[0] + (k * 2 * HALF[0]) / 3, sy * HALF[1], sz * HALF[2]]);
+}
+const WAS_INERTIA: V3 = (() => {
+  const [w, h, d] = [HALF[0] * 2, HALF[1] * 2, HALF[2] * 2];
+  return [(h * h + d * d) / 12, (w * w + d * d) / 12, (w * w + h * h) / 12];
+})();
+
+test('the chair\'s shape is the box of today\'s constants: the same samples in the same order, corners and inertia', () => {
+  const shape = boxShape(HALF, true);
+  assert.deepEqual(shape.points, WAS_SAMPLES);
+  assert.deepEqual(shape.corners, WAS_CORNERS);
+  assert.deepEqual(shape.inertia, WAS_INERTIA);
+  assert.equal(shape.points.length, 36);
+  assert.equal(shape.reach, Math.hypot(...HALF));
+  assert.equal(shape.restRise, REST_RISE);
+  assert.deepEqual(CHAIR.points, WAS_SAMPLES);
+  assert.equal(CHAIR.hinge, true);
+  assert.equal(CHAIR.sleepsUpright, false);
+});
+
+/** A body as the geometry reads it: a place, a rotation and a shape. */
+function placed2(shape: typeof CHAIR, pos: V3, R: number[]): Parameters<typeof separation>[0] {
+  return { pos, R, shape } as unknown as Parameters<typeof separation>[0];
+}
+function rotationOf(q: number[]): number[] {
+  const [w, x, y, z] = q as [number, number, number, number];
+  const len = Math.hypot(w, x, y, z);
+  const [a, b, c, d] = [w / len, x / len, y / len, z / len];
+  return [
+    1 - 2 * (c * c + d * d), 2 * (b * c - d * a), 2 * (b * d + c * a),
+    2 * (b * c + d * a), 1 - 2 * (b * b + d * d), 2 * (c * d - b * a),
+    2 * (b * d - c * a), 2 * (c * d + b * a), 1 - 2 * (b * b + c * c),
+  ];
+}
+
+/** Today's separating axis test of two boxes, as it stood on main (the fifteen axes, the three faces of each and the nine crossed edges). */
+function wasSeparation(a: { pos: V3; R: number[] }, b: { pos: V3; R: number[] }): { n: V3; depth: number; reach: number } {
+  const A = a.R as number[], B = b.R as number[];
+  const t = [a.pos[0] - b.pos[0], a.pos[1] - b.pos[1], a.pos[2] - b.pos[2]];
+  let best = Infinity, n: V3 = [0, 1, 0], reach = 0;
+  const overlap = (x: number, y: number, z: number, edge: boolean): number => {
+    const len = Math.hypot(x, y, z);
+    if (len < 1e-6) return Infinity;
+    const ax = x / len, ay = y / len, az = z / len;
+    const ra = HALF[0] * Math.abs(A[0]! * ax + A[3]! * ay + A[6]! * az) + HALF[1] * Math.abs(A[1]! * ax + A[4]! * ay + A[7]! * az) +
+      HALF[2] * Math.abs(A[2]! * ax + A[5]! * ay + A[8]! * az);
+    const rb = HALF[0] * Math.abs(B[0]! * ax + B[3]! * ay + B[6]! * az) + HALF[1] * Math.abs(B[1]! * ax + B[4]! * ay + B[7]! * az) +
+      HALF[2] * Math.abs(B[2]! * ax + B[5]! * ay + B[8]! * az);
+    const dist = t[0]! * ax + t[1]! * ay + t[2]! * az;
+    const depth = ra + rb - Math.abs(dist);
+    if (depth < best - (edge ? 1e-3 : 0)) {
+      best = depth;
+      const sign = dist >= 0 ? 1 : -1;
+      n = [ax * sign, ay * sign, az * sign];
+      reach = ra;
+    }
+    return depth;
+  };
+  for (let k = 0; k < 3; k++) if (overlap(A[k]!, A[3 + k]!, A[6 + k]!, false) <= 0) return { n: [0, 1, 0], depth: -1, reach: 0 };
+  for (let k = 0; k < 3; k++) if (overlap(B[k]!, B[3 + k]!, B[6 + k]!, false) <= 0) return { n: [0, 1, 0], depth: -1, reach: 0 };
+  for (let i = 0; i < 3; i++) for (let j = 0; j < 3; j++) {
+    const ux = A[i]!, uy = A[3 + i]!, uz = A[6 + i]!, vx = B[j]!, vy = B[3 + j]!, vz = B[6 + j]!;
+    overlap(uy * vz - uz * vy, uz * vx - ux * vz, ux * vy - uy * vx, true);
+  }
+  return { n, depth: best, reach };
+}
+
+test('the separation of two boxes is today\'s, on 1000 seeded pairs (overlapping, touching and apart)', () => {
+  const rand = rng(77);
+  let overlapping = 0, apartPairs = 0;
+  for (let i = 0; i < 1000; i++) {
+    const q = (): number[] => [rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1, rand() * 2 - 1];
+    const reach = 1 + 99 * rand();
+    const a = placed2(CHAIR, [0, 0, 0], rotationOf(q()));
+    const b = placed2(CHAIR, [(rand() * 2 - 1) * reach, (rand() * 2 - 1) * reach, (rand() * 2 - 1) * reach], rotationOf(q()));
+    const now = separation(a, b), was = wasSeparation(a as never, b as never);
+    assert.deepEqual(now, was, `pair ${i}`);
+    if (was.depth > 0) overlapping++; else apartPairs++;
+  }
+  assert.ok(overlapping > 100 && apartPairs > 100, `the pairs must be both kinds: ${overlapping} overlapping, ${apartPairs} apart`);
+});
+
+test('a prism reaches its apothem along each side normal, its half height along its axis, and its radius along a corner', () => {
+  const [radius, height, sides] = [15, 40, 12];
+  const prism = prismShape(radius, height, sides);
+  const apothem = radius * Math.cos(Math.PI / sides);
+  assert.equal(prism.faces.length, sides / 2 + 1);
+  assert.equal(prism.edges.length, sides / 2 + 1);
+  for (const f of prism.faces.slice(0, sides / 2)) {
+    assert.ok(Math.abs(Math.hypot(...f) - 1) < 1e-12);
+    assert.ok(Math.abs(prism.support(f) - apothem) < 1e-9, `${f}: ${prism.support(f)} against ${apothem}`);
+  }
+  assert.ok(Math.abs(prism.support([0, 1, 0]) - height / 2) < 1e-12);
+  assert.ok(Math.abs(prism.support([1, 0, 0]) - radius) < 1e-9);
+  assert.equal(prism.corners.length, 2 * sides);
+  assert.deepEqual(prism.points.slice(0, 2 * sides), prism.corners);
+  assert.ok(prism.points.length > prism.corners.length);
+  // the inertia of a solid cylinder of mass 1
+  assert.ok(Math.abs((prism.inertia[1] as number) - radius * radius / 2) < 1e-9);
+  assert.ok(Math.abs((prism.inertia[0] as number) - (3 * radius * radius + height * height) / 12) < 1e-9);
+});
+
+test('a point just inside a prism\'s face probes out along that face, whichever way the prism is turned', () => {
+  const prism = prismShape(15, 40, 12);
+  const apothem = 15 * Math.cos(Math.PI / 12);
+  const owner = placed2(CHAIR, [0, 0, 0], rotationOf([1, 0, 0, 0]));
+  for (const angle of [0, 30, 77]) {
+    const c = Math.cos(angle * Math.PI / 180), s = Math.sin(angle * Math.PI / 180);
+    const R = [c, 0, s, 0, 1, 0, -s, 0, c];
+    const where: V3 = [100, 200, 5];
+    const box = placed2(prism, where, R);
+    for (const [k, f] of prism.faces.entries()) {
+      const reach = k < prism.faces.length - 1 ? apothem : 20;
+      const world: V3 = [R[0]! * f[0] + R[1]! * f[1] + R[2]! * f[2], R[3]! * f[0] + R[4]! * f[1] + R[5]! * f[2], R[6]! * f[0] + R[7]! * f[1] + R[8]! * f[2]];
+      for (const sign of [1, -1]) {
+        // a point 0.5 px inside the face, over its middle
+        const p: V3 = [where[0] + sign * world[0] * (reach - 0.5), where[1] + sign * world[1] * (reach - 0.5), where[2] + sign * world[2] * (reach - 0.5)];
+        owner.pos = p;
+        const hit = probe(owner, [0, 0, 0], box);
+        assert.ok(hit, `angle ${angle} face ${k} sign ${sign}: not inside`);
+        assert.ok(Math.abs(hit.depth - 0.5) < 1e-9, `depth ${hit.depth}`);
+        for (let i = 0; i < 3; i++) assert.ok(Math.abs((hit.n[i] as number) - sign * (world[i] as number)) < 1e-9, `angle ${angle} face ${k}: normal ${hit.n} against ${world}`);
+        // and a point 0.5 px outside is not inside
+        owner.pos = [where[0] + sign * world[0] * (reach + 0.5), where[1] + sign * world[1] * (reach + 0.5), where[2] + sign * world[2] * (reach + 0.5)];
+        assert.equal(probe(owner, [0, 0, 0], box), null);
+      }
+    }
+  }
+});
+
+/* ---------- the four objects ---------- */
+
+const OBJECT_LIST: ThrownObject[] = ['chair', 'can', 'ladder', 'extinguisher'];
+/** The most a point may be inside another body and still be a touching contact (body.ts TOUCH). */
+const TOUCH_PX = 0.5;
+const REST_WORDS: Box = { left: 40, top: 30, width: 520, height: 330 };
+
+test('no shape reaches farther than the chair, which is what holds chair.ts K for every post', () => {
+  const chair = Math.hypot(...HALF);
+  for (const o of OBJECT_LIST) assert.ok(SHAPES[o].reach <= chair + 1e-9, `${o} reaches ${SHAPES[o].reach} against the chair's ${chair}`);
+});
+
+test('the four shapes are the ladder, the can and the extinguisher the owner tuned (2026-11-25)', () => {
+  assert.equal(SHAPES.chair, CHAIR);
+  assert.deepEqual(SHAPES.ladder.half, [15, 48, 6]);
+  assert.equal(SHAPES.ladder.hinge, true);
+  assert.equal(SHAPES.ladder.sleepsUpright, false);
+  assert.equal(SHAPES.can.name, 'prism12');
+  assert.equal(SHAPES.can.sleepsUpright, true);
+  assert.ok(Math.abs(SHAPES.can.support([0, 1, 0]) - 42) < 1e-12);
+  assert.ok(Math.abs(SHAPES.can.support([1, 0, 0]) - 25) < 1e-9);
+  assert.equal(SHAPES.extinguisher.sleepsUpright, true);
+  assert.ok(Math.abs(SHAPES.extinguisher.support([0, 1, 0]) - 45) < 1e-12);
+  assert.ok(Math.abs(SHAPES.extinguisher.support([1, 0, 0]) - 13.5) < 1e-9);
+  assert.deepEqual(SHAPES.extinguisher.spout, [18, -39.6, 0]);
+  for (const o of ['chair', 'can', 'ladder'] as const) assert.equal(SHAPES[o].spout, undefined);
+  assert.equal(SHAPES.chair.restRise, REST_RISE);
+  /* The reaches the owner's bench gave: the can 48.9, the ladder 50.6, the extinguisher 47.0 (the chair's 50.7 is the cap). */
+  assert.ok(Math.abs(SHAPES.can.reach - 48.9) < 0.05, `${SHAPES.can.reach}`);
+  assert.ok(Math.abs(SHAPES.ladder.reach - 50.6) < 0.05, `${SHAPES.ladder.reach}`);
+  assert.ok(Math.abs(SHAPES.extinguisher.reach - 47.0) < 0.05, `${SHAPES.extinguisher.reach}`);
+});
+
+test('restRise is built from two chairs under it: two chair thicknesses, its own lying thickness twice (or its standing height), and 1 px', () => {
+  assert.equal(CHAIR_THICKNESS, 8);
+  for (const o of ['can', 'ladder', 'extinguisher'] as const) {
+    const s = SHAPES[o];
+    const lying = Math.min(...s.faces.map((f) => 2 * s.support(f)));
+    const standing = s.sleepsUpright ? 2 * s.support([0, 1, 0]) : 0;
+    assert.equal(s.restRise, 2 * CHAIR_THICKNESS + Math.max(2 * lying, standing) + 1, o);
+  }
+  assert.equal(SHAPES.ladder.restRise, 2 * 8 + 2 * 12 + 1);
+  assert.equal(SHAPES.extinguisher.restRise, 2 * 8 + 90 + 1);
+});
+
+/** The throws of one seed: each object alone, or three drawn uniformly from the seed (so each object is present often enough to mean something). */
+function throwsOf(seed: number, mode: ThrownObject | 'mixed'): ThrownObject[] {
+  if (mode !== 'mixed') return [mode, mode, mode];
+  const draw = rng(90000 + seed);
+  return [0, 1, 2].map(() => OBJECT_LIST[Math.floor(draw() * OBJECT_LIST.length)] as ThrownObject);
+}
+
+/** The rest of one run of throws into a roomy post, with what the rest test asserts measured. */
+function restOf(seed: number, objects: ThrownObject[]) {
+  const world = createWorld(600, 400, 400);
+  const rand = rng(seed);
+  for (const [i, o] of objects.entries()) {
+    addThrow(world, throwOf(rand, REST_WORDS, o));
+    if (i < objects.length - 1) for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+  }
+  const slept = settle(world, SETTLE_S);
+  const now = bodies(world);
+  const list = now.map((b, i) => {
+    const shape = SHAPES[objects[i] as ThrownObject];
+    const corners = cornersOf(b, shape);
+    const rise = 400 - Math.min(...corners.map((c) => c[1]));
+    const past = Math.max(...corners.map((c) => Math.abs(c[2])));
+    const R = rotationOf([b.quaternion.w, b.quaternion.x, b.quaternion.y, b.quaternion.z]);
+    const axisY = R[4] as number;
+    // standing on an end: the axis within 5 degrees of the vertical and the lower end's corners on the floor
+    const side = axisY > 0 ? 1 : -1;
+    const onEnd = shape.sleepsUpright && Math.abs(axisY) >= Math.cos(5 * DEG) &&
+      cornersOf(b, shape).filter((_, k) => (shape.corners[k] as V3)[1] * side > 0).every((c) => Math.abs(400 - c[1]) <= TOUCH_PX);
+    return { b, shape, rise, past, onEnd, R };
+  });
+  let deepest = 0;
+  for (let i = 0; i < list.length; i++) for (let j = i + 1; j < list.length; j++) {
+    const a = list[i]!, c = list[j]!;
+    const A = placed2(a.shape, [a.b.position.x, a.b.position.y, a.b.position.z], a.R);
+    const C = placed2(c.shape, [c.b.position.x, c.b.position.y, c.b.position.z], c.R);
+    deepest = Math.max(deepest, separation(A, C).depth);
+  }
+  return { slept, list, deepest, now };
+}
+
+function assertRest(seed: number, objects: ThrownObject[], label: string): void {
+  const r = restOf(seed, objects);
+  const where = `${label} seed ${seed} (${objects.join(', ')})`;
+  assert.ok(r.slept, `${where}: still moving after ${SETTLE_S} s`);
+  for (const [i, body] of r.list.entries()) {
+    assert.ok(body.b.asleep, `${where}: body ${i} awake`);
+    assert.equal(body.b.wedged, false, `${where}: body ${i} was let sleep wedged`);
+    assert.ok(body.past <= Z_FRONT, `${where}: body ${i} reaches z ${body.past}, past Z_FRONT ${Z_FRONT}`);
+    assert.ok(body.rise <= body.shape.restRise || body.onEnd, `${where}: body ${i} sleeps ${body.rise} px up, past its restRise ${body.shape.restRise}, and not on its end`);
+  }
+  assert.ok(r.deepest <= TOUCH_PX + 1e-6, `${where}: two bodies overlap by ${r.deepest}`);
+}
+
+for (const object of OBJECT_LIST) {
+  test(`${object}: three of them thrown alone from seeds 0 to 199 all sleep inside the room, no higher than restRise, none inside another`, () => {
+    const t0 = Date.now();
+    for (let seed = 0; seed < SEEDS; seed++) assertRest(seed, throwsOf(seed, object), object);
+    console.log(`# ${object} x3: ${Date.now() - t0} ms for ${SEEDS} seeds`);
+  });
+}
+
+test('three throws of objects drawn from the seed (each present at least 30 times in 200 seeds) all sleep as the single ones do', () => {
+  const count = new Map<ThrownObject, number>();
+  const t0 = Date.now();
+  for (let seed = 0; seed < SEEDS; seed++) {
+    const objects = throwsOf(seed, 'mixed');
+    for (const o of objects) count.set(o, (count.get(o) ?? 0) + 1);
+    assertRest(seed, objects, 'mixed');
+  }
+  for (const o of OBJECT_LIST) assert.ok((count.get(o) ?? 0) >= 30, `${o} is present ${count.get(o)} times`);
+  console.log(`# mixed: ${Date.now() - t0} ms; counts ${OBJECT_LIST.map((o) => `${o} ${count.get(o)}`).join(', ')}`);
+});
+
+/** Found by scanning seeds 0 to 199 of a lone can: 18 of them land on a base (9, 16, 47, 54, ...) and none is nudged (the can of 2026-11-25 is 50 across by 84). */
+const CAN_STANDING_SEED = 9;
+test('a can that lands on its base sleeps standing, and it is not nudged over', () => {
+  const r = restOf(CAN_STANDING_SEED, ['can']);
+  const [body] = r.list;
+  assert.ok(body && body.b.asleep);
+  assert.ok(body.onEnd, 'the can is not standing on an end');
+  assert.equal(body.b.nudges, 0);
+});
+
+test('the object draws no number: a throw of any object is the chair\'s throw apart from `object`', () => {
+  for (const seed of [0, 1, 7, 99, 150]) {
+    const chair = throwOf(rng(seed), WORDS);
+    for (const o of OBJECT_LIST) assert.deepEqual(throwOf(rng(seed), WORDS, o), { ...chair, object: o }, `${o} seed ${seed}`);
+  }
+});
+
+test('each object\'s hit lands at the throw\'s target, where its body is, so its dent (centered on the hit) is centered on the body', () => {
+  for (const o of OBJECT_LIST) for (const seed of [0, 1, 7, 42, 99]) {
+    const world = createWorld(600, 400, 400);
+    const th = throwOf(rng(seed), WORDS, o);
+    const id = addThrow(world, th);
+    let hit: { x: number; y: number } | undefined, middle: { x: number; y: number; z: number } | undefined;
+    for (let k = 0; k < 600 && !hit; k++) {
+      for (const e of step(world, STEP)) if (e.kind === 'hit' && e.id === id) {
+        hit = e.at;
+        const b = bodies(world).find((x) => x.id === id)!;
+        middle = b.position;
+      }
+    }
+    assert.ok(hit && middle, `${o} seed ${seed}: no hit`);
+    assert.ok(Math.abs(hit.x - th.target.x) < 1e-9 && Math.abs(hit.y - th.target.y) < 1e-9, `${o} seed ${seed}: hit ${hit.x},${hit.y} against target ${th.target.x},${th.target.y}`);
+    assert.ok(Math.abs(middle.x - hit.x) < 1e-9 && Math.abs(middle.y - hit.y) < 1e-9 && Math.abs(middle.z) < 1e-9, `${o} seed ${seed}: the body is at ${middle.x},${middle.y},${middle.z} at its hit`);
+  }
 });

@@ -33,6 +33,8 @@ export const fallbackSettings: ScreenSettings = Object.freeze({
   pollLastsMax: defaults.pollLastsMax,
   registrationMode: defaults.registrationMode,
   settlementLength: defaults.settlementLength,
+  systemEnabled: defaults.systemEnabled,
+  seasonLength: defaults.seasonLength,
   setLasts: defaults.setLasts,
   oldVoiceWindow: defaults.oldVoiceWindow,
   oldVoicePromptFloor: defaults.oldVoicePromptFloor,
