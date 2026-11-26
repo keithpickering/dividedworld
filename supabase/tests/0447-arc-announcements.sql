@@ -484,6 +484,193 @@ begin
   perform pg_temp.expect((select char_length(h.recap) = 300 from handoffs_latest h where h.season = s and h.staff = 'an-succ'), 'a recap that was not text displaced the recap');
 end $$;
 
+-- ---- 10b. The plot so far: arc_plot, pool_record's plot / push / leadIns, meeting_context's plot / leadIns ----
+-- Each read is asked by name and answers null when the migration lacks it, so a missing function fails an assertion and not a call.
+create function pg_temp.plot(k text) returns jsonb language plpgsql as $$
+declare j jsonb;
+begin
+  if to_regprocedure('arc_plot(text)') is null then return null; end if;
+  execute 'select arc_plot($1)' into j using k;
+  return j;
+end $$;
+-- The seated handover moves back or forward in time; the table's rows are only ever added by hand_over, so the fixture edits the one it planted.
+create function pg_temp.handed_over(days numeric) returns void language sql as $$
+  update season_handovers set at = now() - make_interval(secs => (days * 86400)::double precision) where boss = 'an-succ' and outgoing = 'an-pred'
+$$;
+create function pg_temp.a_thread() returns uuid language sql as $$ select id from threads order by created_at, id limit 1 $$;
+-- The block's edits (the handover's date, a persona's days, a recap, a lead-in) are undone by the block's own end: a subtransaction that raises RB000 is the rollback.
+do $$
+declare
+  s bigint := pg_temp.season();
+  j jsonb;
+  mc jsonb;
+  pr jsonb;
+  ids uuid[];
+  pushes jsonb;
+begin
+ begin
+  perform pg_temp.expect((select count(*) from arc_announcements where season = s) between 3 and 12, 'setup: the season holds ' || (select count(*) from arc_announcements where season = s) || ' announcements, not between 3 and 12');
+
+  -- Within the honeymoon after the handover that seated the sitting Boss: last season is there, its Boss named, with the fallback's facts where no recap was written.
+  perform pg_temp.handed_over(1);
+  j := pg_temp.plot('an-m1');
+  perform pg_temp.expect(j is not null and jsonb_typeof(j -> 'last') = 'object', 'the plot has no last season a day after a handover: ' || coalesce(j::text, 'no arc_plot'));
+  perform pg_temp.expect(j #>> '{last,boss}' = 'an-pred' and j #>> '{last,name}' = 'an-pred' and jsonb_typeof(j #> '{last,recap}') = 'null' and jsonb_typeof(j #> '{last,facts}') = 'object' and j #> '{last,facts}' ? 'beats',
+    'last season is not the outgoing Boss with no recap and its facts: ' || (j -> 'last')::text);
+  -- Every reader reads the same plot.
+  perform pg_temp.expect(pg_temp.plot('an-succ') = j and pg_temp.plot('an-pred') = j and pg_temp.plot(null) = j, 'the plot differs with its reader');
+  -- The initiatives are the open season's announcements, oldest first, each with its Boss.
+  select array_agg(a.thread order by a.at, a.id) into ids from arc_announcements a where a.season = s;
+  perform pg_temp.expect((select array_agg((e ->> 'thread')::uuid order by n) from jsonb_array_elements(j -> 'initiatives') with ordinality x(e, n)) = ids, 'the initiatives are not the open season''s announcements oldest first: ' || (j -> 'initiatives')::text);
+  perform pg_temp.expect((select bool_and(e ->> 'boss' = a.staff and e ->> 'beat' = a.beat and e ->> 'title' = a.title and e ->> 'pitch' = a.pitch and not e ? 'push' and not e ? 'act')
+    from jsonb_array_elements(j -> 'initiatives') e join arc_announcements a on a.thread = (e ->> 'thread')::uuid), 'an initiative is not {beat, title, pitch, thread, boss}');
+  perform pg_temp.expect(exists (select 1 from jsonb_array_elements(j -> 'initiatives') e where e ->> 'boss' = 'an-boss') and exists (select 1 from jsonb_array_elements(j -> 'initiatives') e where e ->> 'boss' = 'an-succ'),
+    'the plot leaves out a departed Boss''s initiative or the sitting Boss''s');
+
+  -- The recap of the outgoing Boss's season stands in the plot when it was written; the facts are then not carried.
+  insert into handoffs (season, staff, farewell, note, recap) values (s, 'an-pred', 'Bye.', '', 'I restored nothing.');
+  j := pg_temp.plot('an-m1');
+  perform pg_temp.expect(j #>> '{last,recap}' = 'I restored nothing.' and jsonb_typeof(j #> '{last,facts}') = 'null', 'the recap is not last season''s line: ' || (j -> 'last')::text);
+
+  -- The honeymoon's length is the sitting Boss's: the instance's 14 days, then its persona's own.
+  perform pg_temp.handed_over(13);
+  perform pg_temp.expect(jsonb_typeof(pg_temp.plot('an-m1') -> 'last') = 'object', 'last season is gone on the 13th day of a 14-day honeymoon');
+  perform pg_temp.handed_over(15);
+  perform pg_temp.expect(jsonb_typeof(pg_temp.plot('an-m1') -> 'last') = 'null' and jsonb_typeof(pg_temp.plot('an-m1') -> 'initiatives') = 'array', 'last season is still there after the honeymoon: ' || (pg_temp.plot('an-m1') -> 'last')::text);
+  update persona_arcs set phase_days = '{"honeymoon": 20}'::jsonb where staff = 'an-succ';
+  perform pg_temp.expect(jsonb_typeof(pg_temp.plot('an-m1') -> 'last') = 'object', 'a persona''s own honeymoon length was not read');
+  update persona_arcs set phase_days = '{"honeymoon": 3}'::jsonb where staff = 'an-succ';
+  perform pg_temp.handed_over(5);
+  perform pg_temp.expect(jsonb_typeof(pg_temp.plot('an-m1') -> 'last') = 'null', 'a persona''s shorter honeymoon was not read');
+  update persona_arcs set phase_days = '{}'::jsonb where staff = 'an-succ';
+  perform pg_temp.handed_over(1);
+
+  -- pool_record: the plot for every persona; the push and the lead-ins for the sitting Boss alone, and only for what the sitting Boss announced.
+  pr := pool_record(pg_temp.a_thread(), 'an-succ');
+  perform pg_temp.expect(pr -> 'plot' is not null and pr -> 'plot' = pg_temp.plot('an-succ'), 'the Boss''s pool record carries no plot: ' || pr::text);
+  select coalesce(jsonb_agg(a.push order by a.at, a.id), '[]') into pushes from arc_announcements a where a.season = s and a.staff = 'an-succ' and a.push <> '';
+  perform pg_temp.expect(pushes <> '[]'::jsonb and pr -> 'push' = pushes, 'the Boss''s push is not its own announcements'' pushes oldest first: ' || coalesce((pr -> 'push')::text, 'none') || ' vs ' || pushes::text);
+  perform pg_temp.expect(not (pr -> 'push') @> '"You announced World -1."'::jsonb, 'the sitting Boss was given a departed Boss''s push');
+  perform pg_temp.expect(pr -> 'leadIns' = to_jsonb(arc_lead_ins('an-succ', s)), 'the Boss''s lead-ins are not arc_lead_ins'' keys: ' || coalesce((pr -> 'leadIns')::text, 'none'));
+  for pr in select pool_record(pg_temp.a_thread(), k) from unnest(array['an-m1', 'an-m2', 'an-pred', 'an-boss']) k loop
+    perform pg_temp.expect(pr -> 'plot' = pg_temp.plot('an-m1') and not pr ? 'push' and not pr ? 'leadIns', 'a persona that is not the Boss was given the push or lead-ins, or no plot: ' || pr::text);
+  end loop;
+
+  -- The Boss's meeting: the plot and the lead-ins.
+  mc := meeting_context();
+  perform pg_temp.expect(mc -> 'plot' is not null and mc -> 'plot' = pg_temp.plot('an-succ'), 'meeting_context carries no plot');
+  perform pg_temp.expect(mc -> 'leadIns' = to_jsonb(arc_lead_ins('an-succ', s)) and jsonb_typeof(mc -> 'leadIns') = 'array', 'meeting_context carries no lead-ins: ' || coalesce((mc -> 'leadIns')::text, 'none'));
+
+  -- A live lead-in (the predecessor's aftermath beat the successor has not played, its phase begun) reaches the Boss's pool record and meeting, and no other persona's.
+  update persona_arcs set aftermath = aftermath || jsonb_build_array(jsonb_build_object('key', 'extra', 'mini', true,
+    'unlock', jsonb_build_array(jsonb_build_object('kind', 'beatLanded', 'beat', 'never-lands')),
+    'leadIn', jsonb_build_object('unlock', jsonb_build_array(jsonb_build_object('kind', 'phase', 'phase', 'honeymoon'))))) where staff = 'an-pred';
+  perform pg_temp.expect(arc_lead_ins('an-succ', s) = array['after:an-pred:extra'], 'setup: the lead-in is not live: ' || arc_lead_ins('an-succ', s)::text);
+  pr := pool_record(pg_temp.a_thread(), 'an-succ');
+  perform pg_temp.expect(pr -> 'leadIns' = '["after:an-pred:extra"]'::jsonb, 'the Boss''s pool record does not carry its live lead-in: ' || coalesce((pr -> 'leadIns')::text, 'none'));
+  perform pg_temp.expect(not pool_record(pg_temp.a_thread(), 'an-m1') ? 'leadIns', 'a Mod was given the Boss''s lead-ins');
+  perform pg_temp.expect(meeting_context() -> 'leadIns' = '["after:an-pred:extra"]'::jsonb, 'meeting_context does not carry the live lead-in');
+  raise exception using errcode = 'RB000', message = 'put the fixture back';
+exception when sqlstate 'RB000' then null;
+ end;
+end $$;
+
+-- ---- 10c. The size of the plot at a busy instance: the latest 12 initiatives, oldest first, and the push likewise ----
+do $$
+declare
+  s bigint := pg_temp.season();
+  th uuid := (select thread from arc_announcements where season = s order by id limit 1);
+  j jsonb;
+  pr jsonb;
+  k integer;
+begin
+ begin
+  -- Thirty more rows, as a Boss that announced every beat of a long file would leave (the guard wants a played event for each: the fixture plays them).
+  perform set_config('session_replication_role', 'replica', true);
+  for k in 1..30 loop
+    insert into arc_announcements (season, staff, beat, thread, act, title, pitch, push, play, repeatable)
+      select s, 'an-succ', 'busy' || k, th, a.act, 'Initiative ' || k, 'Pitch ' || k, 'Push ' || k, -k, true from arc_announcements a where a.thread = th limit 1;
+  end loop;
+  perform set_config('session_replication_role', 'origin', true);
+  j := pg_temp.plot('an-m1');
+  perform pg_temp.expect(jsonb_array_length(j -> 'initiatives') = 12, 'the plot is not capped at 12 initiatives: ' || jsonb_array_length(j -> 'initiatives'));
+  perform pg_temp.expect(j #>> '{initiatives,11,title}' = 'Initiative 30' and j #>> '{initiatives,0,title}' = 'Initiative 19', 'the cap did not keep the latest, oldest first: ' || (j -> 'initiatives' -> 0)::text);
+  pr := pool_record(pg_temp.a_thread(), 'an-succ');
+  perform pg_temp.expect(jsonb_array_length(pr -> 'push') = 12 and pr #>> '{push,11}' = 'Push 30' and pr #>> '{push,0}' = 'Push 19', 'the push is not the latest 12 pushes, oldest first: ' || (pr -> 'push')::text);
+  raise exception using errcode = 'RB000', message = 'put the fixture back';
+exception when sqlstate 'RB000' then null;
+ end;
+end $$;
+
+-- ---- 10d. board_page: page 1 of the system board lists the stickies, as thread_list gives each row; no other page or board does; an unpinned thread leaves them ----
+create function pg_temp.page(slug text, pg integer) returns jsonb language plpgsql as $$
+declare j jsonb;
+begin
+  perform tests.become(pg_temp.acct('an-player'));
+  j := board_page(slug, pg, array[]::text[]);
+  perform tests.unbecome();
+  return j;
+end $$;
+do $$
+declare
+  sb uuid := system_board();
+  slug text := (select b.slug from boards b where b.id = system_board());
+  want uuid[];
+  j jsonb;
+  row_ jsonb;
+  th uuid;
+begin
+  perform tests.character(pg_temp.acct('an-player'), 'An Reader');
+  -- Enough threads on the board that it has a second page.
+  insert into threads (board, title) select sb, 'Filler ' || n from generate_series(1, 25) n;
+  select array_agg(x.thread order by x.n) into want from staff_stickies(sb) with ordinality x(thread, pinned_at, n);
+  perform pg_temp.expect(cardinality(want) >= 2, 'setup: the system board has ' || coalesce(cardinality(want), 0) || ' stickies');
+
+  j := pg_temp.page(slug, 1);
+  perform pg_temp.expect(jsonb_typeof(j -> 'stickies') = 'array', 'board_page has no stickies: ' || coalesce((j -> 'stickies')::text, 'none'));
+  perform pg_temp.expect((select array_agg((e ->> 'id')::uuid order by n) from jsonb_array_elements(j -> 'stickies') with ordinality x(e, n)) = want, 'page 1 does not list the board''s stickies in staff_stickies'' order');
+  -- Each is the row thread_list gives (what `threads` and `pins` carry), and none takes a page slot: the page still holds 20 rows.
+  for row_ in select e from jsonb_array_elements(j -> 'stickies') e loop
+    perform pg_temp.expect(row_ = (select to_jsonb(l.*) from thread_list l where l.id = (row_ ->> 'id')::uuid), 'a sticky is not its thread_list row: ' || row_::text);
+  end loop;
+  perform pg_temp.expect(jsonb_array_length(j -> 'threads') = 20 and (j -> 'pins') = '[]'::jsonb, 'the stickies took a slot of the page or were counted among the pins');
+  -- The stickies' authors are in the page's characters, so the rows can be drawn.
+  perform pg_temp.expect((select count(distinct c ->> 'id') from jsonb_array_elements(j -> 'characters') c where (c ->> 'id')::uuid in (select first_character from thread_list where id = any (want))) >= 1, 'the stickies'' authors are not in the page''s characters');
+
+  -- Page 2 of the same board, and another board's page 1: none.
+  perform pg_temp.expect((pg_temp.page(slug, 2) -> 'page')::integer = 2 and pg_temp.page(slug, 2) -> 'stickies' = '[]'::jsonb, 'page 2 lists stickies: ' || coalesce((pg_temp.page(slug, 2) -> 'stickies')::text, 'none'));
+  perform pg_temp.expect(pg_temp.page('elsewhere', 1) -> 'stickies' = '[]'::jsonb, 'another board lists the system board''s stickies');
+
+  -- An admin unpins one: it leaves the page's stickies, and the thread is still on the board.
+  th := want[1];
+  perform tests.become(pg_temp.acct('an-admin'));
+  perform unpin_staff_thread(th);
+  perform tests.unbecome();
+  j := pg_temp.page(slug, 1);
+  perform pg_temp.expect(not exists (select 1 from jsonb_array_elements(j -> 'stickies') e where (e ->> 'id')::uuid = th) and jsonb_array_length(j -> 'stickies') = cardinality(want) - 1, 'an unpinned thread stayed in the stickies');
+  perform pg_temp.expect(exists (select 1 from threads where id = th and board = sb), 'setup: unpinning moved the thread');
+end $$;
+
+-- ---- 10e. The masks: the new reads hold no owner, account or reaction word (board_page, which reads the reader's own reactions for the cards' marks, is held to `owner` alone); driven red on a planted read ----
+create function pg_temp.leaks(proc regprocedure, words text default '(owner|account|reaction)') returns text language sql as $$
+  select string_agg(distinct m[1], ',') from regexp_matches(lower(pg_get_functiondef(proc)), words, 'g') m
+$$;
+create function pg_temp.poisoned() returns integer language sql as $$ select count(distinct c.owner)::integer from characters c $$;
+do $$
+declare
+  p regprocedure;
+begin
+  perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned()'::regprocedure) = 'owner', 'the masks check did not find an owner read');
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key') loop
+    perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
+  end loop;
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key')) = 3, 'a function the masks check reads is missing');
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('pool_record', 'meeting_context', 'board_page') loop
+    perform pg_temp.expect(pg_temp.leaks(p, '(owner)') is null, p::text || ' reads a character''s owner: ' || pg_temp.leaks(p, '(owner)'));
+  end loop;
+  perform pg_temp.expect(not has_function_privilege('anon', 'arc_plot(text)', 'execute') and not has_function_privilege('authenticated', 'arc_plot(text)', 'execute'), 'a client can call arc_plot');
+end $$;
+
 -- ---- 11. A roll-over ends the pins with their season: the open season holds none of them ----
 do $$
 declare
@@ -494,4 +681,12 @@ begin
   perform pg_temp.expect((select count(*) from seasons where ends_at is null and id <> (select max(season) from staff_pin_events)) = 1, 'setup: the season did not roll over');
   perform pg_temp.expect(not exists (select 1 from staff_stickies(system_board())), 'a pin outlived its season');
   perform pg_temp.expect((select count(*) from staff_pin_events where event = 'pinned') >= n, 'the roll-over wrote to or took away the pin events');
+end $$;
+
+-- ---- 12. After the roll-over the plot holds no initiative of the old season, and the board lists no sticky ----
+do $$
+begin
+  perform pg_temp.expect(jsonb_array_length(pg_temp.plot('an-m1') -> 'initiatives') = 0, 'the new season''s plot holds the old season''s initiatives: ' || (pg_temp.plot('an-m1') -> 'initiatives')::text);
+  perform pg_temp.expect(pool_record(pg_temp.a_thread(), 'an-m1') -> 'plot' -> 'initiatives' = '[]'::jsonb, 'a pool record holds the old season''s initiatives');
+  perform pg_temp.expect(pg_temp.page((select b.slug from boards b where b.id = system_board()), 1) -> 'stickies' = '[]'::jsonb, 'the board lists a sticky of the closed season');
 end $$;

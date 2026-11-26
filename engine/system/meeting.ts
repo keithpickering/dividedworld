@@ -33,7 +33,7 @@ import { MEETING_DEMAND_KINDS, demandKind, demandProblems } from './demands.ts';
 import { MEMORY_MOST, MEMORY_RULE, noteMost, recentNotes, repairMemory, type Memory } from './memory.ts';
 import { PREDICATES, readParam, ruleConflict, type RuleInForce } from '../rules/predicates.ts';
 import { ASKABLE_MOVE_KINDS, ROLE, UUID, isRoleRef, machineLimits, moveKind, moveParamsProblems, readBlankOptionals, type MachineLimits, type TrophyFacts } from './moves.ts';
-import { BEAT_WHY, BUNDLE_WORDS, DUE_WHY, beatsText, dependencyOrder, fillBundle, ownRoles, type PlannedBundle, type PlannedPart, type ShownBeat } from './beats.ts';
+import { BEAT_WHY, BUNDLE_WORDS, DUE_WHY, RECAP_MOST, announceRepair, beatsText, dependencyOrder, fillBundle, leadInText, ownRoles, plotText, pushOf, type AftermathFile, type PlannedAnnouncement, type PlannedBundle, type PlannedPart, type PlotRead, type ShownBeat } from './beats.ts';
 import type { PhaseAt } from './phases.ts';
 import { repair, type Repaired, type Rule, type Trim } from './validate.ts';
 // judgment.ts and chatter.ts import this module back (a cycle, and safe: each side uses the other only inside functions, never while its module loads).
@@ -134,6 +134,9 @@ const beatsRule = (asked: boolean): Rule =>
             beat: { type: 'string', maxLength: 40 },
             slots: { type: 'list', of: { type: 'object', fields: { slot: { type: 'string', maxLength: 80 }, value: { type: 'string', maxLength: 500 } } } },
             why: { type: 'string', maxLength: WHY_MOST },
+            // The beat's announcement (the arc announcements design, section 3). Asked of every entry, blank where the beat announces nothing or the Boss leaves a field to the writer; in the rule it is of any shape
+            // and `repairAnnounce` repairs it, so a blank, a long field or one on a beat with no block never costs a paid answer.
+            announce: { type: 'object', fields: { title: { type: 'string' }, body: { type: 'string' }, pitch: { type: 'string' } } },
           },
         },
       }
@@ -226,6 +229,8 @@ function fieldRules(asked: boolean): Record<string, Rule> {
     // nothing to say, leaves them out, and nothing here is a reason to reject a paid answer. The farewell's bound is postMaxLength, a setting, so the repair trims it; the handoff's is HANDOFF_MOST.
     farewell: { type: 'string', optional: true },
     handoff: { type: 'string', maxLength: HANDOFF_MOST, optional: true },
+    // The recap (the arc announcements design, section 8): the season in one in-character line, written in the farewell window with the farewell. Optional like them; its bound is RECAP_MOST, cut at a sentence and recorded by the repair.
+    recap: { type: 'string', optional: true },
     // The minutes (the staff board threads design, section 8): a few lines on the meeting just held, posted as written in the season's Staff Meetings thread. Optional, and its bound is MINUTES_MOST,
     // trimmed and recorded by the repair, so an answer that overshoots by a little loses nothing else.
     minutes: { type: 'string', optional: true },
@@ -285,7 +290,7 @@ export const MEETING_PARTS = [
   { key: 'moves', fields: ['moves', 'inherited'], ask: 'Hold your meeting. This first turn is your moves: answer moves and inherited.' },
   { key: 'bundle', fields: ['bundle', 'successor'], ask: 'Your moves stand as you answered them. This turn is your bundle and your successor: answer bundle if you compose one and successor if you name one, and leave out whichever you do not.' },
   { key: 'staff', fields: ['orders', 'patrols', 'points', 'requests'], ask: 'Your moves and your bundle stand as you answered them. This turn is your staff: answer orders and patrols, and points, the talking points you give each persona that posts, and requests if any wait for your ruling.' },
-  { key: 'self', fields: ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, the minutes of the meeting you just held, and beats, farewell and handoff if you were given beats to play or told to write a farewell.' },
+  { key: 'self', fields: ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff', 'recap'], ask: 'Your moves, bundle and staff stand as you answered them. This last turn is yourself: answer memory and profile, the minutes of the meeting you just held, and beats, farewell, handoff and recap if you were given beats to play or told to write a farewell.' },
 ] as const satisfies readonly { readonly key: string; readonly fields: readonly string[]; readonly ask: string }[];
 
 /**
@@ -406,7 +411,7 @@ export interface PromptFacts {
   /** The Boss's own pronouns: the persona file's, else `Settings.pronouns`, else the engine's it-set. Told to the Boss after its persona. */
   readonly bossPronouns: PronounSet;
   readonly system: Pick<SystemContent, 'nameStyleBrief' | 'realWorld' | 'offices'>;
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots' | 'bundleMostParts' | 'staffRequests'> & { readonly economy?: Readonly<Record<string, number>> };
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'pool' | 'modBots' | 'bundleMostParts' | 'staffRequests' | 'titleMaxLength'> & { readonly economy?: Readonly<Record<string, number>> };
   /** The Mod Bots on staff, in the order the roster lists them. */
   readonly mods: readonly ModFacts[];
   /** Every persona in a posting office (the Boss, each Mod, each member), in the roster's order: the personas the staff part writes talking points for. */
@@ -430,6 +435,12 @@ export interface PromptFacts {
   readonly beats?: readonly ShownBeat[];
   /** The kinds the Boss does not use yet (`meeting_context().arc.heldBack`): not listed. */
   readonly heldBack?: readonly string[];
+  /** The lead-ins live now (`meeting_context().arc.leadIns`), by key: each one's brief is shown as a worry, and only the ones listed (a beat the database does not list is never read). */
+  readonly leadIns?: readonly string[];
+  /** The plot so far (`meeting_context().plot`): last season's recap and the season's announced initiatives. Absent, or with neither, the prompt says nothing of it. */
+  readonly plot?: PlotRead;
+  /** The persona files that hold aftermath beats the database named (`arc_for_meeting`'s predecessor), to find an aftermath beat's lead-in and push in. */
+  readonly aftermathFiles?: readonly AftermathFile[];
   /** How many requests wait for the Boss's ruling and are shown it (`Digest.requests` as `renderDigest` left them): at least one, and the prompt tells of the requests part of the answer; absent or 0, it says nothing of them. */
   readonly requestsWaiting?: number;
   /** Present only for a meeting within the farewell window (`inFarewellWindow`): the Boss is told to write a farewell and a handoff. Absent, the prompt says nothing of either. */
@@ -505,7 +516,9 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `A move's go_live_at is a time (ISO 8601) from now to a day from now; a structural move is held at least ${s.structuralHoldHours} hours whatever you ask. Its expires_in_hours is from ${s.moveExpiryLeastHours} hours to ${Math.min(phase.numbers.moveExpiryMostDays, s.moveExpiryMostDays) * 24} hours. Its why is one line, at most ${WHY_MOST} characters, in your own words; the admins read it.`,
       `${BUNDLE_WORDS} Answer one in "bundle" as {name, parts: [{role, kind, params, demand, go_live_at, expires_in_hours, why}]}, every field of a part written (blank where unused: empty text, or 0, and a demand of an empty kind): at most ${s.bundleMostParts} parts, each a move of a kind above with its own reason (a part takes a demand, a go_live_at and expires_in_hours as any move does, where its kind needs them). A bundle costs one move for each of its parts. A part that makes a board may have a role, a short key of your own; a later part's board, into or fallback may be the text "role:" and that key (role:<key>) to mean the board the earlier part makes; otherwise it is a board's id, or blank.`,
     ].join('\n'),
-    ...beatsText(f.beats ?? []),
+    ...beatsText(f.beats ?? [], s.titleMaxLength),
+    ...leadInText(f.boss, f.leadIns, f.aftermathFiles),
+    ...plotText(f.plot, { key: f.boss.key, boss: true }, pushOf(f.boss, f.aftermathFiles)),
     ...machineText(),
     [
       'Every other move carries a demand the characters can meet, and the move ends when it is met or when it expires. The demands you may set (anything else drops the move):',
@@ -528,6 +541,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
       `You keep at most ${s.memoryOpinions} opinions, ${s.memoryGrudges} grudges, ${s.memoryWheelhouse} wheelhouse subjects and ${s.memoryRealWorld} real-world subjects; the rest are cut from the end. Opinions and grudges name characters by the ids you are given, scored -5 to 5. Leave alone these subjects, and add to them: ${f.system.realWorld.join('; ')}.`,
       `Your profile: up to ${PROFILE_MOST.interests} interests of at most ${PROFILE_MOST.interest} characters each, up to ${PROFILE_MOST.favorites} favorite characters (their ids), a mood (a short phrase, at most ${PROFILE_MOST.mood} characters) and a signature. It is public and in your voice. A hobby's name is at most ${MEMORY_MOST.hobbyName} characters, and a mark at most ${MEMORY_MOST.mark}.`,
       `minutes: a few lines, in your voice, on the meeting you just held, for the board to read. Say what was argued and decided as you see it. It is posted as written, and decides nothing. At most ${MINUTES_MOST} characters.`,
+      ...minutesNaming(f.beats ?? []),
     ].join('\n'),
     modsText(f),
     pointsText(f),
@@ -539,7 +553,7 @@ export function meetingSystemPrompt(f: PromptFacts): string {
         : 'If you want, name your successor:'} successor {boss, why}, where boss is one of these keys and not your own: ${f.roster.map((r) => `${r.key} (${r.name}, ${pronounLabel(r.pronouns)})`).join('; ')}. An admin can hold or replace it.`]
       : ['Do not answer with a successor.']),
     [
-      `How you answer. The meeting is answered in ${TURNS[MEETING_PARTS.length]} turns, and in each turn you answer one part and nothing else: ${MEETING_PARTS.map((p, i) => `${i === 0 ? 'first' : 'then'} the "${p.key}" part (${p.fields.filter((x) => (x !== 'farewell' && x !== 'handoff' ? true : f.farewell !== undefined) && (x !== 'beats' || (f.beats ?? []).length > 0) && (x !== 'requests' || (f.requestsWaiting ?? 0) > 0)).join(', ')})`).join(', ')}. What you answered in an earlier turn stands.`,
+      `How you answer. The meeting is answered in ${TURNS[MEETING_PARTS.length]} turns, and in each turn you answer one part and nothing else: ${MEETING_PARTS.map((p, i) => `${i === 0 ? 'first' : 'then'} the "${p.key}" part (${p.fields.filter((x) => (x !== 'farewell' && x !== 'handoff' && x !== 'recap' ? true : f.farewell !== undefined) && (x !== 'beats' || (f.beats ?? []).length > 0) && (x !== 'requests' || (f.requestsWaiting ?? 0) > 0)).join(', ')})`).join(', ')}. What you answered in an earlier turn stands.`,
       'Answer only in the structure you are asked for.',
     ].join(' '),
   ].join('\n\n');
@@ -613,13 +627,21 @@ function modsText(f: PromptFacts): string {
 }
 
 /**
+ * The beats played with no announcement are named to the minutes (the arc announcements design, section 2): the minutes are written in the same turn in which the beats are answered, so a beat shown with no
+ * `announce` block is named by its key and the Boss may say so in its own words. Its brief is never quoted: only what the Boss chooses to write is public.
+ */
+function minutesNaming(beats: readonly ShownBeat[]): string[] {
+  return beats.filter((b) => !b.beat.announce).map((b) => `If you play ${b.beat.key} today, your minutes may say so, in your own words.`);
+}
+
+/**
  * The talking points (the chattier staff design, section 4): one line for each persona that posts. The staff part is asked for them whether or not any Mod is on staff. A persona left out has none today.
  * Everything shown is public: its name, office and temperament.
  */
 function pointsText(f: PromptFacts): string {
   if (f.posting.length === 0) return 'No persona posts today. Do not answer with points.';
   return [
-    `Talking points. Give each persona that posts one line on the day in "points": {staff (its key), line (at most ${POINTS_MOST} characters, in your voice: its stance, who it is needling, what it defends or resents; it is read by that persona's posts until the next meeting and never acted on)}. One line for each key; a persona you leave out has no talking points today. A point must never mention a move you are proposing or one still waiting on admins: points speak only of what has landed. The personas that post:`,
+    `Talking points. Give each persona that posts one line on the day in "points": {staff (its key), line (at most ${POINTS_MOST} characters, in your voice: its stance, who it is needling, what it defends or resents; it is read by that persona's posts until the next meeting and never acted on)}. One line for each key; a persona you leave out has no talking points today. A point must never mention a move you are proposing or one still waiting on admins, unless it is part of an initiative you have announced (the plot so far); otherwise points speak only of what has landed. The personas that post:`,
     ...f.posting.map((p) => `- ${p.key}: ${oneLineText(p.name, 64)} (${pronounLabel(p.pronouns)}, ${oneLineText(p.office, 20)}). Temperament: ${oneLineText(p.temperament, 200)}`),
   ].join('\n');
 }
@@ -779,7 +801,7 @@ export const DEMAND_ID_ROLES: Readonly<Record<string, 'board' | 'thread' | 'char
 
 export interface RepairContext {
   /** Only the settings the repair reads, so a caller (or a test) need not hold an instance's whole set. */
-  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'modBots' | 'bundleMostParts'> & { readonly economy?: Readonly<Record<string, number>> };
+  readonly settings: Pick<Settings, 'structuralHoldHours' | 'boardNameMaxLength' | 'moveExpiryLeastHours' | 'reactionCap' | 'memoryOpinions' | 'memoryGrudges' | 'memoryWheelhouse' | 'memoryRealWorld' | 'moveExpiryMostDays' | 'modBots' | 'bundleMostParts' | 'titleMaxLength'> & { readonly economy?: Readonly<Record<string, number>> };
   readonly system: Pick<SystemContent, 'nameStyle'>;
   /** The season's Boss. */
   readonly boss: string;
@@ -890,9 +912,13 @@ export interface RepairedAnswer {
   readonly bundles: readonly PlannedBundle[];
   /** The due beats the answer left out, played with their defaults. */
   readonly defaulted: readonly string[];
+  /** The announcements of the announced beats played (the arc announcements design, section 3), in the order played; each carries its block's `push`. A beat with no block has none. */
+  readonly announcements: readonly PlannedAnnouncement[];
   /** The Boss's last words in character (at most postMaxLength) and its note out of character (at most HANDOFF_MOST), or null: none given, blank, or the meeting was not in the window. */
   readonly farewell: string | null;
   readonly handoff: string | null;
+  /** The recap (section 8), in character, at most RECAP_MOST: cut at a sentence and recorded past it, null where none was given, it was blank, or the meeting was not in the farewell window. */
+  readonly recap: string | null;
   /** The minutes of the meeting, in the Boss's voice, at most MINUTES_MOST: trimmed and recorded past it, or null where none was given or it was blank. Posted as written; never read as a move. */
   readonly minutes: string | null;
   readonly trims: readonly Trim[];
@@ -1337,6 +1363,13 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     boards: c.boards,
     threads: c.threads,
   };
+  const announcements: PlannedAnnouncement[] = [];
+  // A beat played, announced: what the Boss wrote (or the defaults, for a due beat the answer left out) is repaired by its block; a beat with no block drops what was written and records it.
+  const announce = (beat: ShownBeat['beat'], given: unknown, path: string): void => {
+    const r = announceRepair(beat, given, s.titleMaxLength, path);
+    trims.push(...r.trims);
+    if (r.announcement) announcements.push(r.announcement);
+  };
   const playBeat = (beat: ShownBeat['beat'], slots: unknown, why: string, path: string): boolean => {
     if (!beat.bundle) {
       bundles.push({ name: '', beat: beat.key, parts: [], cost: 0 });
@@ -1369,12 +1402,16 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
       trims.push({ path: `${path}.why`, predicate: `maxLength(${WHY_MOST})`, before: why.length, after: WHY_MOST });
       why = why.slice(0, WHY_MOST);
     }
-    if (playBeat(one.beat, given['slots'], why, path)) played.add(key);
+    if (playBeat(one.beat, given['slots'], why, path)) {
+      played.add(key);
+      announce(one.beat, given['announce'], path);
+    }
   });
   for (const one of c.beats ?? []) {
     if (!one.due || played.has(one.beat.key)) continue;
     if (!playBeat(one.beat, undefined, DUE_WHY, `beats.${one.beat.key}`)) continue;
     played.add(one.beat.key);
+    announce(one.beat, 'defaults', `beats.${one.beat.key}`);
     defaulted.push(one.beat.key);
     trims.push({ path: `beats.${one.beat.key}`, predicate: 'playedWithDefaults', before: 0, after: 1 });
   }
@@ -1645,7 +1682,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
 
   // The farewell and the handoff: only from a meeting that was told to write them. One from any other is dropped and recorded; a blank one is none; the farewell is trimmed to postMaxLength (the
   // handoff already was, by its rule) and the trim recorded, since a bound overshot by a little is the ordinary way a model treats "at most".
-  const said = (name: 'farewell' | 'handoff'): string | null => {
+  const said = (name: 'farewell' | 'handoff' | 'recap'): string | null => {
     const given = a[name];
     if (typeof given !== 'string') return null;
     if (!c.farewell) {
@@ -1665,6 +1702,14 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     farewell = farewell.slice(0, cutAt);
   }
 
+  // The recap is repaired as the farewell is: from any other meeting it is dropped and recorded, a blank is none, and one over RECAP_MOST is cut at a sentence, else a word, and the trim recorded.
+  let recap = said('recap');
+  if (recap !== null && recap.length > RECAP_MOST) {
+    const cut = cutAtSentence(recap, RECAP_MOST);
+    trims.push({ path: 'recap', predicate: `maxLength(${RECAP_MOST})`, before: recap.length, after: cut.length });
+    recap = cut;
+  }
+
   // The minutes: a blank one is none; one past MINUTES_MOST is trimmed (never through a surrogate pair) and the trim recorded.
   let minutes = typeof a['minutes'] === 'string' ? a['minutes'].trim() : '';
   if (minutes.length > MINUTES_MOST) {
@@ -1674,7 +1719,7 @@ export function repairAnswer(raw: unknown, c: RepairContext): RepairResult {
     minutes = minutes.slice(0, cutAt);
   }
 
-  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), points, requests, inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, farewell, handoff, minutes: minutes === '' ? null : minutes, trims };
+  return { ok: true, memory, profile, moves, orders: orders.map((x) => x.order), patrols: cut('patrols', patrols, s.modBots.patrolsPerDay), points, requests, inherited: cut('inherited', inherited, INHERITED_MOST), successor, bundles, defaulted, announcements, farewell, handoff, recap, minutes: minutes === '' ? null : minutes, trims };
 }
 
 
@@ -1743,10 +1788,11 @@ const dateAndTime = (at: number): string => `${new Date(at).toISOString().slice(
 /** The system prompt's words on the farewell and the handoff, for a meeting within the window. */
 function farewellText(postMaxLength: number, structuralHoldHours: number, seasonEndsAt?: number): string {
   return [
-    'The season is about to end, so this is your last meeting before the handover. You may say goodbye and leave a note for whoever is next, in "farewell" and "handoff":',
+    'The season is about to end, so this is your last meeting before the handover. You may say goodbye, leave a note for whoever is next and sum the season up, in "farewell", "handoff" and "recap":',
     `- farewell: your last post as Boss, in character, in your own voice, at most ${postMaxLength} characters. It is posted in the announcements when the season turns over.`,
     `- handoff: a note out of character, at most ${HANDOFF_MOST} characters, plain and honest, for the next Boss: why the season went the way it did, the state of things, and what you would tell whoever takes over. Players never read it; the next Boss and the admins do.`,
-    'Both are optional. Leave one out and it is simply not said.',
+    `- recap: a line, in character, on what your season was, at most ${RECAP_MOST} characters. The staff and the next Boss read it as the plot so far; it is public, so write it as public play.`,
+    'All three are optional. Leave one out and it is simply not said.',
     ...(seasonEndsAt === undefined ? [] : [`A move that would land after the season ends (${dateAndTime(seasonEndsAt)}) never lands: it is withdrawn when the next Boss takes the chair. A move that waits in the admin queue lands ${structuralHoldHours} hours after you make it.`]),
   ].join('\n');
 }

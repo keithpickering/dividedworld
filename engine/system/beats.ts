@@ -18,21 +18,29 @@
  */
 import type { BundleTemplate, Beat, Persona } from '../rules/types.ts';
 import { moveKind, moveParamsProblems, ROLE, UUID, type MachineLimits } from './moves.ts';
-import type { PlannedMove } from './meeting.ts';
+import type { HandoffFacts, PlannedMove } from './meeting.ts';
+import { cutAtSentence } from './chatter.ts';
 import { repair, type Rule, type Trim } from './validate.ts';
 
 /** What `meeting_context().arc` says (0334, over arc_for_meeting, 0333): the beats unlocked and not yet played, in the persona's order, and the kinds held back now. */
 export interface ArcRead {
-  readonly beats: readonly { readonly key: string; readonly mini: boolean; readonly due: boolean }[];
+  /** An aftermath beat is listed by its plain key with `aftermath: true` and `predecessor`, the staff key of the Boss whose file holds it (arc announcements design, section 7). */
+  readonly beats: readonly { readonly key: string; readonly mini: boolean; readonly due: boolean; readonly aftermath?: boolean; readonly predecessor?: string }[];
   readonly heldBack: readonly string[];
+  /** The lead-ins live now (section 6): the key of a beat of the Boss's own file, or `after:<predecessor>:<key>` for an aftermath beat's. Absent from an older database: none. */
+  readonly leadIns?: readonly string[];
 }
 
-/** A beat the meeting is shown: the persona's own beat, and whether it is past its due point (it "must be played at this meeting"). */
+/** A beat the meeting is shown: the persona's own beat, and whether it is past its due point (it "must be played at this meeting"). An aftermath beat is the predecessor's, written for any successor. */
 export interface ShownBeat {
   readonly beat: Beat;
   readonly mini: boolean;
   readonly due: boolean;
+  readonly aftermath?: boolean;
 }
+
+/** The part of a persona's file that carries a predecessor's aftermath beats: what the meeting looks one up in. */
+export type AftermathFile = Pick<Persona, 'key' | 'aftermath'>;
 
 /** A part of a bundle as it is queued: an ordinary move, with its role when another part (or a later beat) names it. */
 export interface PlannedPart extends Omit<PlannedMove, 'line'> {
@@ -70,17 +78,30 @@ const BOARD_PARAMS = ['board', 'into', 'fallback'] as const;
 const record = (v: unknown): Record<string, unknown> => (typeof v === 'object' && v !== null && !Array.isArray(v) ? (v as Record<string, unknown>) : {});
 
 /**
- * The beats to show: those the database lists (unlocked, unplayed), found by key in the persona's arc and then its mini-arcs, in the database's order. A key the persona does not hold (the
- * instance changed since the seed) is left out. Nothing the database did not list is ever returned: this is where a locked beat stays secret.
+ * The beats to show: those the database lists (unlocked, unplayed), found by key in the persona's arc and then its mini-arcs, in the database's order. An aftermath beat is found by its plain key
+ * in the persona file of the predecessor the database names, among `roster`'s files; a predecessor no longer on the roster shows none. A key the persona does not hold (the instance changed
+ * since the seed) is left out. Nothing the database did not list is ever returned: this is where a locked beat stays secret.
  */
-export function shownBeats(persona: Pick<Persona, 'arc' | 'miniArcs'>, read: ArcRead | undefined): ShownBeat[] {
+export function shownBeats(persona: Pick<Persona, 'arc' | 'miniArcs'>, read: ArcRead | undefined, roster: readonly AftermathFile[] = []): ShownBeat[] {
   if (!read) return [];
   const out: ShownBeat[] = [];
   for (const r of read.beats) {
+    if (r.aftermath) {
+      const beat = roster.find((p) => p.key === r.predecessor)?.aftermath?.find((b) => b.key === r.key);
+      if (beat) out.push({ beat, mini: r.mini, due: r.due, aftermath: true });
+      continue;
+    }
     const beat = (persona.arc ?? []).find((b) => b.key === r.key) ?? (persona.miniArcs ?? []).find((b) => b.key === r.key);
     if (beat) out.push({ beat, mini: r.mini, due: r.due });
   }
   return out;
+}
+
+/** A lead-in's beat by the key `arc_for_meeting` lists it under: the persona's own beat, or `after:<predecessor>:<key>` in the predecessor's aftermath. Undefined where the file no longer holds it. */
+function leadInBeat(persona: Pick<Persona, 'arc' | 'miniArcs'>, key: string, roster: readonly AftermathFile[]): Beat | undefined {
+  const m = /^after:([^:]+):(.+)$/.exec(key);
+  if (m) return roster.find((p) => p.key === m[1])?.aftermath?.find((b) => b.key === m[2]);
+  return (persona.arc ?? []).find((b) => b.key === key) ?? (persona.miniArcs ?? []).find((b) => b.key === key);
 }
 
 const oneLine = (s: string): string => s.replace(/\s+/g, ' ').trim();
@@ -91,17 +112,155 @@ const slotsOf = (t: BundleTemplate): string[] =>
 
 /**
  * The section of the prompt about beats, or nothing when none is unlocked. The owner's three sentences open it; each beat then follows with its brief, and how to answer it. A due beat
- * says so. Slots are shown with their hints; a part with none shows none.
+ * says so. Slots are shown with their hints; a part with none shows none. A beat with an `announce` block also says that playing it opens a sticky thread on the staff board in the Boss's name, and
+ * the title's hint and the bounds of the three fields (the arc announcements design, section 3); a beat with none says nothing new. `titleMax` is `Settings.titleMaxLength`.
  */
-export function beatsText(beats: readonly ShownBeat[]): string[] {
+export function beatsText(beats: readonly ShownBeat[], titleMax: number): string[] {
   if (beats.length === 0) return [];
   const lines = beats.map((b) => {
     const head = `- ${b.beat.key}${b.due ? ' (must be played at this meeting)' : ''}: ${oneLine(b.beat.brief)}`;
-    if (!b.beat.bundle) return `${head}\n  Name it in "beats" with {beat: "${b.beat.key}", why} when you have played it.`;
+    const say = b.beat.announce
+      ? `\n  Playing it opens a sticky thread on the staff board in your name. Write it in this beat's announce: {title, body, pitch}. title: at most ${titleMax} characters; ${oneLine(b.beat.announce.titleHint)}. body: your announcement post, in your own voice, at most ${ANNOUNCE_MOST} characters. pitch: the initiative in one line, at most ${PITCH_MOST} characters; it is the line every staff member will carry. A field you leave blank is the writer's own words.`
+      : '';
+    if (!b.beat.bundle) return `${head}\n  Name it in "beats" with {beat: "${b.beat.key}", why} when you have played it.${say}`;
     const slots = slotsOf(b.beat.bundle);
-    return `${head}\n  Play it in "beats" with {beat: "${b.beat.key}", slots: [{slot, value}], why}, which plays "${oneLine(b.beat.bundle.name)}". ${slots.length ? `Write each slot you fill as one entry of slots, {slot: "role.slot", value: your words, or a number's digits}, and leave out the ones you do not fill. Its slots: ${slots.join('; ')}.` : 'It has no slots to fill.'}`;
+    return `${head}\n  Play it in "beats" with {beat: "${b.beat.key}", slots: [{slot, value}], why}, which plays "${oneLine(b.beat.bundle.name)}". ${slots.length ? `Write each slot you fill as one entry of slots, {slot: "role.slot", value: your words, or a number's digits}, and leave out the ones you do not fill. Its slots: ${slots.join('; ')}.` : 'It has no slots to fill.'}${say}`;
   });
-  return [[`${BEAT_WORDS} ${BUNDLE_WORDS}`, ...lines].join('\n')];
+  const announced = beats.some((b) => b.beat.announce);
+  return [[`${BEAT_WORDS} ${BUNDLE_WORDS}`, ...lines, ...(announced ? ['Every entry of "beats" carries an announce; for a beat above that has no announce, write it with blank fields.'] : [])].join('\n')];
+}
+
+/* ------------------------------------------------------------------------------ announcements ---- */
+
+/** What a beat's announcement is as the meeting plans it: the beat (the key its beats answer used), the three fields as repaired, and the block's `push`, which the Boss's pool calls carry (section 5). */
+export interface PlannedAnnouncement {
+  readonly beat: string;
+  readonly title: string;
+  readonly body: string;
+  readonly pitch: string;
+  readonly push: string;
+}
+
+const blank = (v: unknown): boolean => typeof v !== 'string' || v.trim() === '';
+
+/**
+ * A beat's announcement from what the Boss wrote at `path` (the answer's path for the beat), or the block's defaults where `given` is `'defaults'` (a due beat played with them). A blank or missing
+ * field is the block's default, recorded (`defaulted`); a field over its bound is cut at a sentence, else a word (`cutAtSentence`), and the trim recorded. A beat with no block has none: what the
+ * Boss wrote there, if it wrote any words, is dropped and recorded (`hasAnnounce`). Nothing given is changed.
+ */
+export function announceRepair(beat: Beat, given: unknown, titleMax: number, path: string): { readonly announcement: PlannedAnnouncement | null; readonly trims: readonly Trim[] } {
+  const trims: Trim[] = [];
+  const asked = given === 'defaults' ? {} : record(given);
+  const block = beat.announce;
+  if (!block) {
+    if (['title', 'body', 'pitch'].some((f) => !blank(asked[f]))) trims.push({ path: `${path}.announce`, predicate: 'hasAnnounce', before: 1, after: 0 });
+    return { announcement: null, trims };
+  }
+  const field = (name: 'title' | 'body' | 'pitch', fallback: string, most: number): string => {
+    const at = `${path}.announce.${name}`;
+    let v: string;
+    if (blank(asked[name])) {
+      v = fallback.trim();
+      if (given !== 'defaults') trims.push({ path: at, predicate: 'defaulted', before: 0, after: 1 });
+    } else v = (asked[name] as string).trim();
+    if (name !== 'body') v = oneLine(v);
+    if (v.length > most) {
+      const cut = cutAtSentence(v, most);
+      trims.push({ path: at, predicate: `maxLength(${most})`, before: v.length, after: cut.length });
+      v = cut;
+    }
+    return v;
+  };
+  return {
+    announcement: {
+      beat: beat.key,
+      title: field('title', block.defaultTitle, titleMax),
+      body: field('body', block.defaultBody, ANNOUNCE_MOST),
+      pitch: field('pitch', block.defaultPitch, PITCH_MOST),
+      push: block.push,
+    },
+    trims,
+  };
+}
+
+/* ------------------------------------------------------------------- lead-ins and the plot ---- */
+
+/**
+ * The lead-in section of the Boss's meeting (section 6): for each lead-in the database lists live, its brief, framed as how the Boss has been feeling lately and never as a plan. A key the file
+ * does not hold, or a beat with no lead-in, is nothing; a beat the database does not list is not in the file's read at all, so its brief never reaches a prompt. Neither the beat's key nor its own brief is written.
+ */
+export function leadInText(persona: Pick<Persona, 'arc' | 'miniArcs'>, keys: readonly string[] | undefined, roster: readonly AftermathFile[] = []): string[] {
+  const briefs = (keys ?? []).flatMap((k) => {
+    const lead = leadInBeat(persona, k, roster)?.leadIn;
+    return lead ? [oneLine(lead.brief)] : [];
+  });
+  if (briefs.length === 0) return [];
+  return [['How you have been feeling lately. It is a worry, not a plan: you do not know yet what you will do about it, and you may let it show in what you say and decide.', ...briefs.map((b) => `- ${b}`)].join('\n')];
+}
+
+/** The mood lines of the lead-ins live now, for the Boss's pool calls (section 6): the same lookup as `leadInText`. */
+export function leadInMoods(persona: Pick<Persona, 'arc' | 'miniArcs'>, keys: readonly string[] | undefined, roster: readonly AftermathFile[] = []): string[] {
+  return (keys ?? []).flatMap((k) => {
+    const lead = leadInBeat(persona, k, roster)?.leadIn;
+    return lead ? [oneLine(lead.mood)] : [];
+  });
+}
+
+/** What `meeting_context().plot` says (section 5 and 8): last season's Boss and recap, and the season's announced initiatives. The recap is null where the last meeting wrote none. */
+export interface PlotRead {
+  readonly last: { readonly boss: string; readonly name: string; readonly recap: string | null; readonly facts: HandoffFacts | null } | null;
+  readonly initiatives: readonly { readonly beat: string; readonly title: string; readonly pitch: string; readonly thread: string; readonly boss: string }[];
+}
+
+/**
+ * One plain line from the handoff's facts, for a season whose last meeting wrote no recap (section 8): who led and what the code counted. Only ever read inside a prompt, at most `RECAP_MOST`.
+ */
+export function recapFallback(facts: HandoffFacts, bossName: string): string {
+  const n = (count: number, noun: string): string => `${count} ${noun}${count === 1 ? '' : 's'}`;
+  const name = (s: string): string => oneLine(s).slice(0, 60);
+  const made = [facts.created.length ? `${n(facts.created.length, 'board')} made` : '', facts.merged.length ? `${facts.merged.length} merged` : '', facts.closed.length ? `${facts.closed.length} closed` : ''].filter(Boolean);
+  const line = [
+    `Last season: ${name(bossName)} led.`,
+    made.length ? `${made.join(', ')}.` : 'No board was made, merged or closed.',
+    facts.beats.length ? `${n(facts.beats.length, 'beat')} played.` : '',
+    facts.busiest[0] ? `${name(facts.busiest[0].name)} was the busiest board.` : '',
+  ].filter(Boolean).join(' ');
+  return line.length > RECAP_MOST ? cutAtSentence(line, RECAP_MOST) : line;
+}
+
+/**
+ * The push line of a beat the sitting Boss plays, by the key an initiative names it with (a plain key of its own file, or `after:<predecessor>:<key>`; a plain key of the predecessor's aftermath too).
+ * The push lives in the persona file's `announce` block, so the Boss's pool calls read it here and the context needs not carry it.
+ */
+export function pushOf(persona: Pick<Persona, 'arc' | 'miniArcs' | 'aftermath'>, roster: readonly AftermathFile[] = []): (beat: string) => string | undefined {
+  return (beat) => {
+    const own = leadInBeat(persona, beat, roster) ?? (persona.aftermath ?? []).find((b) => b.key === beat) ?? roster.flatMap((p) => p.aftermath ?? []).find((b) => b.key === beat);
+    return own?.announce?.push;
+  };
+}
+
+/**
+ * The plot so far (sections 5, 8 and 8a), as plain lines: last season's recap (the code's fallback where the last meeting wrote none) and each announced initiative's title, pitch and thread; for the
+ * sitting Boss also each initiative's push, where `push` finds one; a persona that was last season's Boss reads it in the second person, and one that announced an initiative while no longer
+ * the Boss reads "You announced this", with no push. Nothing where there is neither. `reader.boss` is whether the persona reading holds the Boss's chair now.
+ */
+export function plotText(plot: PlotRead | undefined, reader: { readonly key: string; readonly boss: boolean }, push?: (beat: string) => string | undefined): string[] {
+  if (!plot || (!plot.last && plot.initiatives.length === 0)) return [];
+  const lines = ['The plot so far. Everyone on staff has read it; it is public.'];
+  if (plot.last) {
+    const recap = (plot.last.recap !== null && plot.last.recap.trim() !== '' ? oneLine(plot.last.recap) : plot.last.facts ? recapFallback(plot.last.facts, plot.last.name) : '').slice(0, RECAP_MOST);
+    if (plot.last.boss === reader.key) lines.push(recap ? `Last season you were the Boss. This is how you summed it up: ${recap}` : 'Last season you were the Boss.');
+    else lines.push(recap ? `Last season ${oneLine(plot.last.name)} was the Boss. This is how they summed it up: ${recap}` : `Last season ${oneLine(plot.last.name)} was the Boss.`);
+  }
+  if (plot.initiatives.length) {
+    lines.push('Initiatives announced this season:');
+    for (const i of plot.initiatives) {
+      const mine = i.boss === reader.key;
+      const pushed = reader.boss && mine ? push?.(i.beat) : undefined;
+      lines.push(`- "${oneLine(i.title)}" (thread ${i.thread}): ${oneLine(i.pitch)}${mine && !reader.boss ? ' You announced this.' : ''}${pushed ? ` Your push: ${oneLine(pushed)}` : ''}`);
+    }
+  }
+  return [lines.join('\n')];
 }
 
 /* ------------------------------------------------------------------------------------ order ---- */

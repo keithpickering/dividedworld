@@ -1,5 +1,5 @@
 -- Announcements, the staff pin and the recap (docs/plans/2026-11-25-arc-announcements-plan.md, Task 3; its design, sections 1, 3, 4, 5 and 8).
--- This is part 1 of the migration (Task 3); part 2 appends arc_plot, pool_record's `plot`, `push` and `mood`, meeting_context's `plot` and `leadIns`, and board_page's `stickies`.
+-- Part 1 of the migration (Task 3) stands first; part 2 is appended below (arc_plot, pool_record's `plot`, `push` and `leadIns`, meeting_context's `plot` and `leadIns`, board_page's `stickies`).
 --
 -- Part 1. An announced beat opens a sticky thread; the recap; two gaps Task 2 found.
 --   arc_announcements   insert-only (its guards fire always; RLS on, no client grant): one row per announcement the meeting wrote: season, staff, beat (the event key, `after:<pred>:<key>` for an aftermath beat),
@@ -8,7 +8,7 @@
 --                       announces once for each play. The pitch is cut at 200 characters and the push at 300 (PITCH_MOST, PUSH_MOST); a bound a model overshoots is trimmed and recorded, never a lost answer.
 --   staff_pin_events    insert-only (`pinned` | `unpinned`; by is null for the system, the admin's account otherwise), indexed (season, thread, id desc). staff_stickies(board) lists the threads of a board whose latest
 --                       event is `pinned` in the open season, oldest pin first: a pin ends with its season, or when an admin unpins it. unpin_staff_thread (admin only) writes `unpinned`, and refuses a thread
---                       with no live pin in plain words. Both are read-only to players: staff_stickies is no client's (board_page, in part 2, reads it); the admin's unpin is granted to authenticated as the
+--                       with no live pin in plain words. Both are read-only to players: staff_stickies is called by board_page, in part 2, which runs as its caller, so part 2 grants it to the signed-in role like board_stubs; the admin's unpin is granted to authenticated as the
 --                       other admin RPCs are.
 --   arc_beat_key        the event key a beat named in a payload stands for: the Boss's own beat, or an unlocked-or-not aftermath beat of the predecessor that seated it (the plain key arc_for_meeting lists, or
 --                       the full `after:<pred>:<key>`). Own beats win a plain key that both name.
@@ -29,6 +29,22 @@
 -- Ways out: a staff pin ends with its season or by an admin's unpin; no state is added to a player, a character or a post. A thread that promised something an admin held is the fiction; the log and the move posts
 -- say what landed. Masks: nothing here reads who made a character, a class or who reacted; staff_stickies reads staff threads only. At a busy instance: a few announcements a season, one thread and one pin each; the stickies of
 -- a board are a read of its pins in the open season through the index.
+--
+-- Part 2. The reads: the plot so far, the Boss's push and lead-ins, the stickies of a board.
+--   arc_plot(in_staff)  `{last, initiatives}`: the plot so far, the same for every reader (in_staff, the reader, changes nothing in it: the engine compares its own key with `last.boss` and each initiative's `boss`
+--                       for its second-person reading, design 8a). `last` is {boss, name, recap, facts} for the length of the CURRENT Boss's honeymoon (arc_season_span, so its persona's own phase_days count) after the
+--                       handover that seated it (season_handovers.at, the one arc_predecessor reads), else null; recap is handoffs_latest's (null where none) and `facts` is handoff_facts of the season that Boss served,
+--                       given only where there is no recap (it is the fallback, and only ever read inside a prompt). `initiatives` are the open season's arc_announcements, oldest first, a departed Boss's included
+--                       (the season's story is one), capped at the latest 12: a persona file may hold 24 beats (ARC_BEATS_MOST), and a Boss that announces every one would put about 24 x 350 characters in
+--                       every staff pool call; 12 keep the section to about 4,000 characters, and a season with more has its older ones scroll off, as they do the board.
+--   pool_record         (0415) gains `plot` (arc_plot) for every persona and, for the sitting Boss alone, `push` (the authored push of each initiative that Boss announced in this season, blanks left out, oldest first, the
+--                       latest 12: a departed Boss's push is never the sitting Boss's) and `leadIns` (arc_lead_ins keys; the Edge Function maps them to mood lines). A Mod or a member has neither key.
+--   meeting_context     (0404) gains `plot` and `leadIns` for the current Boss.
+--   board_page          (0368) gains `stickies`: page 1's rows of the board's staff pins, each as thread_list gives it, in staff_stickies' order, and `[]` on any other page or board. As with `pins`, the rows are not taken out of
+--                       `threads` here (the pager's numbers stay the thread count's); the reader draws the stickies first and leaves them out of the rows below. Their characters, reads and views are in the page's lists.
+--                       staff_stickies is granted to the signed-in role for it (a definer reading staff threads: public facts, the same for every caller).
+-- Latest definitions copied: pool_record (0415_chattier_staff.sql), meeting_context (0404_card_retirement.sql), board_page (0368_client_reads_plan_once.sql).
+-- Masks: none of these reads who made a character, a class or who reacted; the plot is announcements, handoffs and handover rows. A busy instance: the plot is bounded (12 initiatives, one recap); stickies are the few pins of one board.
 
 -- ------------------------------------------------------------------------------------ the tables ----
 
@@ -1423,3 +1439,319 @@ begin
     'returned', returned, 'handed', handed, 'requests', rr -> 'rulings');
 end $$;
 
+
+
+-- =========================================================================================== part 2 ====
+
+-- ----------------------------------------------------------------------------------- the plot so far ----
+
+-- The plot so far, for a staff persona's pool call and the Boss's meeting: {last, initiatives}. It is the season's, the same for every reader (in_staff, the reader, is not read: the engine compares its own key with
+-- `last.boss` and each initiative's `boss` for the second-person reading of the design's section 8a).
+--   last         {boss, name, recap, facts} for the sitting Boss's honeymoon (arc_season_span's length: its persona's own days where it sets them, else the instance's) counted from the handover that seated it
+--                (the season_handovers row arc_predecessor reads), else null. boss is the outgoing Boss's staff key and name its character's; recap is the outgoing Boss's latest for the season it served
+--                (handoffs_latest), null where none; facts is handoff_facts of that season, given only where there is no recap: it is what the engine's fallback line is built from, and nothing reads it otherwise.
+--   initiatives  the open season's announcements, oldest first, a departed Boss's among them, at most the latest 12. A file holds up to 24 beats (ARC_BEATS_MOST) and a Boss that announces every one would
+--                put 24 x about 350 characters in every pool call all season; 12 is about 4,000 characters, and an older initiative scrolls out of the plot as it does out of the board's sight.
+create function arc_plot(in_staff text) returns jsonb
+language plpgsql stable security definer set search_path = public, pg_temp as $$
+declare
+  sn bigint := (select x.id from seasons x where x.ends_at is null);
+  sitting text := current_boss();
+  pred record;
+  seated timestamptz;
+  span record;
+  recap text;
+  last_season jsonb;
+begin
+  if sn is null then return jsonb_build_object('last', null, 'initiatives', '[]'::jsonb); end if;
+  if sitting is not null then
+    select * into pred from arc_predecessor(sitting, sn) p;
+    if found then
+      select h.at into seated from season_handovers h
+      where h.boss = sitting and h.outgoing = pred.staff and h.season = pred.seated and h.how in ('nomination', 'rotation') order by h.id desc limit 1;
+      select * into span from arc_season_span(sitting, sn);
+      if seated is not null and found and now() < seated + (span.honeymoon_ends - span.starts_at) then
+        select nullif(btrim(x.recap), '') into recap from handoffs_latest x where x.season = pred.season and x.staff = pred.staff;
+        last_season := jsonb_build_object('boss', pred.staff, 'name', (select c.name from characters c where c.staff = pred.staff), 'recap', recap,
+          'facts', case when recap is null then handoff_facts(pred.season) end);
+      end if;
+    end if;
+  end if;
+  return jsonb_build_object('last', last_season,
+    'initiatives', coalesce((select jsonb_agg(jsonb_build_object('beat', z.beat, 'title', z.title, 'pitch', z.pitch, 'thread', z.thread, 'boss', z.staff) order by z.at, z.id)
+      from (select a.* from arc_announcements a where a.season = sn order by a.at desc, a.id desc limit 12) z), '[]'::jsonb));
+end $$;
+revoke execute on function arc_plot(text) from public, anon, authenticated;
+grant execute on function arc_plot(text) to service_role;
+
+-- ------------------------------------------------------------------------------------- the stickies ----
+
+-- board_page runs as its caller and reads the stickies of the board it shows: a signed-in read of staff threads, the same for every caller (it is in tools/check-web-reads.mjs's SCREEN_HELPERS, never called by the web).
+revoke execute on function staff_stickies(uuid) from public, anon;
+grant execute on function staff_stickies(uuid) to authenticated, service_role;
+
+-- ---------------------------------------------------------------------------------- the reads ----
+
+-- pool_record (0415) with `plot` for every persona and, for the sitting Boss alone, `push` and `leadIns`. Everything else as 0415 wrote it.
+create or replace function pool_record(in_thread uuid, staff_key text) returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  with since as (
+    select coalesce((select m.slot from meetings m where m.outcome = 'ok' order by m.slot desc limit 1), now() - interval '1 day') as at
+  ),
+  lines as (
+    select a.id as act, a.payload ->> 'kind' as kind, a.payload -> 'params' as params, 'landed'::text as state, a.created_at as at, null::text as why
+    from open_moves o join acts_public a on a.id = o.move_act, since s where a.created_at >= s.at
+    union all
+    select a.id, a.payload ->> 'kind', a.payload -> 'params', 'ended', e.created_at, e.payload ->> 'why'
+    from acts_public e join acts_public a on a.id = e.target_act_id, since s where e.kind = 'move_end' and e.created_at >= s.at
+  ),
+  newest as (select l.* from lines l order by l.at desc, l.act limit 10)
+  select jsonb_build_object(
+    'moves', coalesce((select jsonb_agg(jsonb_build_object('act', n.act, 'kind', n.kind, 'params', n.params, 'state', n.state, 'at', n.at, 'why', n.why) order by n.at desc, n.act) from newest n), '[]'::jsonb),
+    'rules', rules_in_force((select t.board from threads t where t.id = in_thread)),
+    'order', mod_standing(staff_key) -> 'order',
+    -- The plot so far (0447), the same for every persona; the Boss alone is also given the push of what it announced this season and the lead-ins that are live for it.
+    'plot', arc_plot(staff_key))
+    || case when staff_key is not distinct from current_boss() then jsonb_build_object(
+      'push', coalesce((select jsonb_agg(z.push order by z.at, z.id)
+                        from (select a.push, a.at, a.id from arc_announcements a
+                              where a.season = (select x.id from seasons x where x.ends_at is null) and a.staff = staff_key and a.push <> ''
+                              order by a.at desc, a.id desc limit 12) z), '[]'::jsonb),
+      'leadIns', to_jsonb(arc_lead_ins(staff_key, (select x.id from seasons x where x.ends_at is null))))
+    else '{}'::jsonb end
+$$;
+
+-- meeting_context (0404) with `plot` and `leadIns`. Everything else as 0404 wrote it.
+create or replace function meeting_context() returns jsonb
+language sql stable security definer set search_path = public, pg_temp as $$
+  select jsonb_build_object(
+    'season', (select jsonb_build_object('startsAt', (extract(epoch from s.starts_at) * 1000)::bigint,
+        'endsAt', (extract(epoch from coalesce(s.ends_at, s.starts_at + span_interval(setting('seasonLength')))) * 1000)::bigint)
+      from seasons s where s.ends_at is null order by s.starts_at desc limit 1),
+    'boss', current_boss(),
+    -- The Boss's arc (0334): the beats unlocked and not yet played, each with whether it is due, and the kinds still held back. Never a locked beat, a brief or a template.
+    'arc', arc_for_meeting(current_boss(), (select x.id from seasons x where x.ends_at is null)),
+    -- The plot so far (0447) and the lead-ins live for the Boss (the keys arc_for_meeting lists under `arc` as well; the Edge Function maps them to the briefs the Boss reads).
+    'plot', arc_plot(current_boss()),
+    'leadIns', to_jsonb(arc_lead_ins(current_boss(), (select x.id from seasons x where x.ends_at is null))),
+    -- The farewell and the handoff (0337, above): a meeting within farewellWindowHours of the season's end is shown what the code knows of the season (`handoffFacts`), to write its handoff from;
+    -- the new Boss is handed its predecessor's facts and note (`predecessor`) for inheritanceGraceDays after the handover. Both are null otherwise.
+    'handoffFacts', case when in_farewell_window() then handoff_facts((select x.id from seasons x where x.ends_at is null)) end,
+    'predecessor', predecessor_handoff(),
+    -- The Boss's standing nomination (the rehearsal patch design, section 5): its latest nameSuccessor, waiting or landed and not ended, that no admin held or refused.
+    'nomination', (select jsonb_build_object('boss', q.params ->> 'boss', 'at', (extract(epoch from m.started_at) * 1000)::bigint)
+      from queued_moves q join meetings m on m.id = q.meeting
+      where q.kind = 'nameSuccessor' and q.staff = current_boss() and q.held_at is null and q.refused_at is null
+        and (q.landed_act is null or not exists (select 1 from acts e where e.kind = 'move_end' and e.target_act_id = q.landed_act))
+      order by q.id desc limit 1),
+    'lastSlot', (select m.slot from meetings m where m.outcome in ('ok', 'failed', 'rejected') order by m.slot desc limit 1),
+    'boards', coalesce((select jsonb_agg(jsonb_build_object('id', b.id, 'name', b.name) order by b.name, b.id)
+      from (select n.id, n.name from boards_now n where not n.is_system and not n.closed order by n.name, n.id limit 50) b), '[]'),
+    'successors', to_jsonb(array(select r from unnest(boss_roster()) with ordinality x(r, ord) where r is distinct from current_boss() order by x.ord)),
+    'inheritanceDue', coalesce((select jsonb_agg(jsonb_build_object('act', d.act, 'kind', d.payload ->> 'kind', 'params', d.payload -> 'params',
+        'landedAt', d.landed_at, 'expiresAt', d.payload -> 'expires_at', 'by', d.author, 'boardName', d.board_name) order by d.landed_at, d.act)
+      from inheritance_due(current_boss(), 20) d), '[]'),
+    -- The Mods on staff: what the Boss's meeting needs to order each (its latest order, the allowance it has not spent, and so what returns to the bank).
+    'mods', coalesce((select jsonb_agg(jsonb_build_object('key', n.staff, 'since', n.since, 'allowance', order_unspent(n.staff), 'granted', o.allowance,
+        'boards', coalesce(to_jsonb(o.boards), '[]'::jsonb), 'order', o.order_line) order by n.staff)
+      from staff_now n left join lateral (select x.allowance, x.boards, x.order_line from staff_orders x where x.staff = n.staff order by x.id desc limit 1) o on true), '[]'),
+    -- The rules in force, so the meeting drops a rule that would leave no compliant post before the queue would refuse it.
+    'rules', coalesce((select jsonb_agg(jsonb_build_object('board', r.board, 'predicate', r.predicate, 'param', r.param, 'number', r.number) order by r.board nulls last, r.number)
+      from rules_now r), '[]'),
+    -- The groups (member groups design, section 5): the catalog a move may confer, and the characters the meeting may not choose. A character is held while a group move is
+    -- in force on it or queued and not held (the guard's one-at-a-time rule), and capped while staff_punishments is at the cap; each is listed with the group it is in now.
+    -- Only those two kinds are listed, which a busy instance keeps to a handful; every other character is in its earned group and free to be chosen.
+    'groups', jsonb_build_object(
+      'conferred', coalesce((select jsonb_agg(jsonb_build_object('key', g.key, 'name', g.name, 'tone', g.tone) order by g.tone desc, g.key) from group_kinds g where g.source = 'conferred'), '[]'),
+      'characters', group_move_bars()),
+    -- The machine, so the Boss can name a slot: the admins' own word on each (hidden ones too, for a flash sale), whether a pull of it could land, and the Boss's move
+    -- in force on it. Slots and moves only: no purchase, no buyer, nothing computed from who owns what.
+    'machine', coalesce((select jsonb_agg(jsonb_build_object('id', s.id, 'position', s.position, 'card', s.card, 'pack', s.pack, 'availability', s.availability, 'price', s.price,
+        'pullable', s.card is not null and s.availability = 'onSale' and card_in_open_pack(s.card),
+        'move', (select jsonb_build_object('kind', m.kind, 'act', m.move_act) from machine_moves_open m where m.slot = s.id order by m.landed_at desc, m.move_act desc limit 1)) order by s.position)
+      from (select x.* from machine_slots x where slot_in_print(x.id) order by x.position limit 60) s), '[]'))
+$$;
+
+-- board_page (0368) with `stickies`: page 1's staff pins of the board, each as thread_list gives it, in staff_stickies' order. Their characters, reads and views are in the page's lists. Everything else as 0368 wrote it.
+create or replace function public.board_page(in_slug text, in_page integer, effect_cards text[])
+ returns jsonb
+ language plpgsql
+ stable
+ set search_path to 'public', 'pg_temp'
+ set plan_cache_mode = force_generic_plan
+ set jit = off
+as $function$
+#variable_conflict use_column
+begin
+  return (
+  WITH b AS (
+          SELECT x.id,
+             x.slug,
+             x.name,
+             x.description,
+             x.is_system,
+             x.move_act,
+             x.closed
+            FROM boards_now x
+           WHERE ((x.slug = board_page.in_slug) OR ((x.id)::text = board_page.in_slug))
+           ORDER BY (x.slug = board_page.in_slug) DESC
+          LIMIT 1
+         ), p AS (
+          SELECT b_1.id AS board,
+             c.total,
+             LEAST(GREATEST(COALESCE(board_page.in_page, 1), 1), GREATEST(1, (ceil(((c.total)::numeric / 20.0)))::integer)) AS page
+            FROM (b b_1
+              CROSS JOIN LATERAL ( SELECT COALESCE(( SELECT n.threads
+                            FROM board_counts n
+                           WHERE (n.board = b_1.id)), 0) AS total) c)
+           WHERE (NOT b_1.closed)
+         ), went AS (
+          SELECT board_closed_to(b_1.id) AS to_board
+            FROM b b_1
+           WHERE b_1.closed
+         ), listed AS MATERIALIZED (
+          SELECT l.id,
+             l.board,
+             l.title,
+             l.origin_act_id,
+             l.created_at,
+             l.last_at,
+             l.last_seq,
+             l.replies,
+             l.first_act,
+             l.first_character,
+             l.last_act,
+             l.last_character,
+             l.replies_this_week,
+             l.origin_thread,
+             l.origin_place
+            FROM thread_list l
+           WHERE (l.board = ( SELECT p_1.board
+                    FROM p p_1))
+           ORDER BY l.last_at DESC
+          OFFSET ( SELECT ((p_1.page - 1) * 20)
+                    FROM p p_1)
+          LIMIT 20
+         ), stickies AS MATERIALIZED (
+          SELECT l.id,
+             l.board,
+             l.title,
+             l.origin_act_id,
+             l.created_at,
+             l.last_at,
+             l.last_seq,
+             l.replies,
+             l.first_act,
+             l.first_character,
+             l.last_act,
+             l.last_character,
+             l.replies_this_week,
+             l.origin_thread,
+             l.origin_place,
+             s.ord
+            FROM (p p_1
+              CROSS JOIN LATERAL staff_stickies(p_1.board) WITH ORDINALITY s(thread, pinned_at, ord))
+              JOIN thread_list l ON (l.id = s.thread)
+           WHERE (p_1.page = 1)
+         ), pins AS MATERIALIZED (
+          SELECT x.thread,
+             x.play,
+             x.ends_at,
+             x.act
+            FROM (p p_1
+              CROSS JOIN LATERAL pinned_threads(p_1.board) x(thread, play, ends_at, act))
+           WHERE (p_1.page = 1)
+         ), banner AS MATERIALIZED (
+          SELECT x.play,
+             x.reach,
+             x.target,
+             x.ends_at,
+             x.act
+            FROM (p p_1
+              CROSS JOIN LATERAL effects_above('{}'::uuid[], NULL::uuid, p_1.board) x(play, reach, target, ends_at, act))
+         ), marked AS MATERIALIZED (
+          SELECT ((m.act ->> 'id'::text))::uuid AS id,
+             (m.act ->> 'character'::text) AS "character",
+             (m.act #>> '{payload,card}'::text[]) AS card
+            FROM ( SELECT pins.act
+                    FROM pins
+                 UNION ALL
+                  SELECT banner.act
+                    FROM banner) m
+         ), wanted AS (
+          SELECT m.id
+            FROM marked m
+           WHERE (m.card = ANY (COALESCE(board_page.effect_cards, '{}'::text[])))
+         ), threads AS MATERIALIZED (
+          SELECT l.id,
+             l.first_character,
+             l.last_character
+            FROM listed l
+         UNION
+          SELECT ((x.thread ->> 'id'::text))::uuid AS uuid,
+             ((x.thread ->> 'first_character'::text))::uuid AS uuid,
+             ((x.thread ->> 'last_character'::text))::uuid AS uuid
+            FROM pins x
+         UNION
+          SELECT s.id,
+             s.first_character,
+             s.last_character
+            FROM stickies s
+         ), people AS (
+          SELECT t.first_character AS id
+            FROM threads t
+         UNION
+          SELECT t.last_character
+            FROM threads t
+         UNION
+          SELECT (m."character")::uuid AS "character"
+            FROM marked m
+         )
+  SELECT jsonb_build_object('board', (to_jsonb(b.*) - 'closed'::text), 'closed', b.closed, 'mergedInto', ( SELECT (w.to_board -> 'mergedInto'::text)
+            FROM went w), 'goesTo', ( SELECT (w.to_board -> 'goesTo'::text)
+            FROM went w), 'fallback', ( SELECT (w.to_board -> 'fallback'::text)
+            FROM went w), 'stubs',
+         CASE
+             WHEN (p.page = 1) THEN board_stubs(p.board)
+             ELSE '[]'::jsonb
+         END, 'total', COALESCE(p.total, 0), 'page', COALESCE(p.page, 1), 'threads', ( SELECT COALESCE(jsonb_agg(to_jsonb(l.*)), '[]'::jsonb) AS "coalesce"
+            FROM listed l), 'pins', ( SELECT COALESCE(jsonb_agg(to_jsonb(x.*) ORDER BY ((x.act ->> 'created_at'::text))::timestamp with time zone DESC, x.play DESC), '[]'::jsonb) AS "coalesce"
+            FROM pins x), 'stickies', ( SELECT COALESCE(jsonb_agg(to_jsonb(s.*) - 'ord'::text ORDER BY s.ord), '[]'::jsonb) AS "coalesce"
+            FROM stickies s), 'banner', ( SELECT COALESCE(jsonb_agg(to_jsonb(x.*) ORDER BY ((x.act ->> 'created_at'::text))::timestamp with time zone, x.play), '[]'::jsonb) AS "coalesce"
+            FROM banner x), 'states', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('play', s.play, 'state', s.state, 'saved_at', s.saved_at)), '[]'::jsonb) AS "coalesce"
+            FROM effect_state s
+           WHERE (s.play IN ( SELECT wanted.id
+                    FROM wanted))), 'releases', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('play', r.play)), '[]'::jsonb) AS "coalesce"
+            FROM effect_releases r
+           WHERE (r.play IN ( SELECT wanted.id
+                    FROM wanted))), 'tallies', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', t.act, 'kind', t.kind, 'count', t.count)), '[]'::jsonb) AS "coalesce"
+            FROM reaction_tallies t
+           WHERE (t.act IN ( SELECT marked.id
+                    FROM marked))), 'mine', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('act', r.act, 'kind', r.kind, 'character', r."character")), '[]'::jsonb) AS "coalesce"
+            FROM my_reactions r
+           WHERE (r.act IN ( SELECT marked.id
+                    FROM marked))), 'reading', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('thread', r.thread, 'furthest_seq', r.furthest_seq)), '[]'::jsonb) AS "coalesce"
+            FROM reading r
+           WHERE (r.thread IN ( SELECT threads.id
+                    FROM threads))), 'views', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('thread', v.thread, 'views', v.views)), '[]'::jsonb) AS "coalesce"
+            FROM thread_view_counts v
+           WHERE (v.thread IN ( SELECT threads.id
+                    FROM threads))), 'characters', ( SELECT COALESCE(jsonb_agg(jsonb_build_object('id', c.id, 'name', c.name, 'joined', c.joined, 'staff', c.staff, 'office', c.office, 'profile',
+                 CASE
+                     WHEN (f."character" IS NULL) THEN NULL::jsonb
+                     ELSE (jsonb_build_object('title', f.title, 'signature', f.signature, 'avatar_square', f.avatar_square, 'avatar_portrait', f.avatar_portrait, 'square_frame', f.square_frame, 'portrait_frame', f.portrait_frame, 'pip_style', f.pip_style, 'pronouns', f.pronouns) || profile_cosmetics(f."character"))
+                 END)), '[]'::jsonb) AS "coalesce"
+            FROM (characters_public c
+              LEFT JOIN character_profiles f ON ((f."character" = c.id)))
+           WHERE (c.id IN ( SELECT people.id
+                    FROM people
+                   WHERE (people.id IS NOT NULL)))), 'presence',
+         CASE
+             WHEN (p.board IS NULL) THEN NULL::jsonb
+             ELSE presence_box('board'::text, p.board)
+         END, 'unread', my_alerts_unread()) AS jsonb_build_object
+    FROM (b
+      LEFT JOIN p ON ((p.board = b.id)))
+  );
+end
+$function$;

@@ -11,7 +11,7 @@ import { repair, type Rule } from './validate.ts';
 import { phaseAt } from './phases.ts';
 import { personaPrompt } from './prompt.ts';
 import { PRONOUN_PRESETS } from '../rules/pronouns.ts';
-import { BEAT_WORDS, BUNDLE_WORDS, shownBeats, type ArcRead } from './beats.ts';
+import { ANNOUNCE_MOST, BEAT_WORDS, BUNDLE_WORDS, PITCH_MOST, RECAP_MOST, shownBeats, type ArcRead } from './beats.ts';
 import type { Beat, Persona } from '../rules/types.ts';
 
 const H = 3_600_000;
@@ -1363,7 +1363,7 @@ const tally = (schema: any): { properties: number; optional: number; unions: num
 
 test('every field of the answer is in exactly one part, and MEETING_RULE is built from the parts', () => {
   assert.deepEqual(MEETING_PARTS.map((p) => p.key), ['moves', 'bundle', 'staff', 'self']);
-  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited'], ['bundle', 'successor'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff']]);
+  assert.deepEqual(MEETING_PARTS.map((p) => [...p.fields]), [['moves', 'inherited'], ['bundle', 'successor'], ['orders', 'patrols', 'points', 'requests'], ['memory', 'profile', 'minutes', 'beats', 'farewell', 'handoff', 'recap']]);
   const listed = MEETING_PARTS.flatMap((p) => [...p.fields]);
   assert.equal(new Set(listed).size, listed.length, `a field is in two parts: ${listed.join(', ')}`);
   assert.deepEqual([...listed].sort(), Object.keys(MEETING_FIELDS).sort(), 'a field is in no part');
@@ -1412,8 +1412,8 @@ test('a successor naming the Boss\'s standing nominee is dropped as no new nomin
 // The moves part is 38 of the provider's 40 (each move's line, the fangame split's three kinds and awardTrophy's trophy param included: properties: the fangame split's kinds added their params (into, fallback, a thread's board) to the loose object every move carries, so a field added to any kind's params now needs a part of its own). The successor (three properties) moved to the bundle part to make room for the line: the bundle part is 37 and its successor 3, so 40 of 40.
 // The staff part is 40 of the provider's 40: the orders and patrols, the talking points' list with its two fields (points, staff, line), and the requests' ruling (staff requests plan, Task 5): requests, its item's id, ruling, line and move,
 // the move's kind, params, expires_in_hours and why, and five params (thread, board, into, name, premise; a rename's description is left to the stock one, the fallback to none: the provider's 40 allows no more).
-const DESIGN_PROPERTIES = { moves: 38, bundle: 40, staff: 40, self: 29 } as const;
-const OPTIONAL = { moves: 1, bundle: 2, staff: 10, self: 5 } as const;
+const DESIGN_PROPERTIES = { moves: 38, bundle: 40, staff: 40, self: 34 } as const;
+const OPTIONAL = { moves: 1, bundle: 2, staff: 10, self: 6 } as const;
 for (const key of ['moves', 'bundle', 'staff', 'self'] as const) {
   const t = tally(partSchema(key));
   test(`the ${key} part's schema is accepted by the provider's rules: ${t.properties} properties, ${t.optional} optional, ${t.unions} unions`, () => {
@@ -1595,10 +1595,10 @@ test('the system prompt says the meeting is answered in four turns, and names ea
   const text = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] } });
   assert.match(text, /The meeting is answered in four turns/);
   // The beats, the farewell, the handoff and the requests are named only to a meeting that has any to answer (the next two tests).
-  for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff', 'requests'].includes(f)).join(', ')})`).length - 1, 1, p.key);
+  for (const p of MEETING_PARTS) assert.equal(text.split(`the "${p.key}" part (${p.fields.filter((f) => !['beats', 'farewell', 'handoff', 'recap', 'requests'].includes(f)).join(', ')})`).length - 1, 1, p.key);
   assert.equal(MEETING_PARTS.length, 4);
   const told = meetingSystemPrompt({ boss: testSystem.roster[0]!, bossPronouns: PRONOUN_PRESETS.she, system: testSystem, settings, phase: ctx().phase, bank: 2, mods: [], posting: [], characterName: () => 'someone', successorAllowed: false, roster: [], notes: [], career: { led: [], offices: [] }, farewell: { postMaxLength: 500 }, beats: shownSplit });
-  assert.ok(told.includes('the "self" part (memory, profile, minutes, beats, farewell, handoff)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
+  assert.ok(told.includes('the "self" part (memory, profile, minutes, beats, farewell, handoff, recap)'), 'a meeting with beats and a farewell to write is told to answer them in the self part');
   assert.ok(text.endsWith('Answer only in the structure you are asked for.'));
 });
 
@@ -1984,4 +1984,137 @@ test('the moves\' field rule takes an optional line, and the ask says what it is
   const list = MEETING_FIELDS['moves'] as unknown as { of: { fields: Record<string, { type: string; optional?: boolean }> } };
   assert.deepEqual(list.of.fields['line'], { type: 'string', optional: true });
   assert.ok(movesAsk({ inherited: false }).includes('the post your move lands with, in your voice; the screens say what it does plainly'));
+});
+
+/* ------------------------------------------------------ announcements, lead-ins, the plot and the recap ---- */
+// The arc announcements design, sections 2, 3, 5, 6 and 8: the engine's own fixture.
+const ANNOUNCE_BLOCK = { titleHint: 'a proud name for a big decision', defaultTitle: 'A Big Decision', defaultBody: 'I have decided. It is done.', defaultPitch: 'Everything is changing.', push: 'PUSH-LINE talk it up' };
+const SPLIT_ANN: Beat = { ...SPLIT, announce: ANNOUNCE_BLOCK, leadIn: { unlock: [], brief: 'LEAD-BRIEF the board feels crowded.', mood: 'MOOD-LINE cramped' } };
+const annPersona: Pick<Persona, 'arc' | 'miniArcs'> = { arc: [SPLIT_ANN, APART, CONSOLIDATION, EVERYTHING], miniArcs: [LAP] };
+const shownAnn = shownBeats(annPersona, read(['split', 'picking-apart']));
+const dueAnn = shownBeats(annPersona, read(['split'], ['split']));
+const announced = (extra: Record<string, unknown>) => withAnswer({ beats: [{ beat: 'split', slots: {}, why: 'Because.', ...extra }] }, { beats: shownAnn, settings: { ...settings, titleMaxLength: 40 } });
+
+test('an announced beat\'s announcement is kept as written, with its block\'s push, and nothing is recorded', () => {
+  const r = announced({ announce: { title: 'The Great Split', body: 'Today the forum divides. It is glorious.', pitch: 'Fangames get a board.' } });
+  assert.deepEqual(r.announcements, [{ beat: 'split', title: 'The Great Split', body: 'Today the forum divides. It is glorious.', pitch: 'Fangames get a board.', push: 'PUSH-LINE talk it up' }]);
+  assert.ok(!r.trims.some((t) => t.path.includes('announce')), JSON.stringify(r.trims));
+});
+
+test('a blank or missing field of an announcement is the block\'s default, recorded', () => {
+  const r = announced({ announce: { title: '', body: '   ', pitch: 'Fangames get a board.' } });
+  assert.equal(r.announcements[0]!.title, 'A Big Decision');
+  assert.equal(r.announcements[0]!.body, 'I have decided. It is done.');
+  assert.equal(r.announcements[0]!.pitch, 'Fangames get a board.');
+  for (const f of ['title', 'body']) assert.ok(r.trims.some((t) => t.path === `beats[0].announce.${f}` && t.predicate === 'defaulted'), JSON.stringify(r.trims));
+  const none = announced({});
+  assert.deepEqual([none.announcements[0]!.title, none.announcements[0]!.pitch], ['A Big Decision', 'Everything is changing.'], 'a beat played with no announce still opens its thread, on the defaults');
+  assert.equal(none.trims.filter((t) => t.predicate === 'defaulted').length, 3);
+});
+
+test('an announcement over its bounds is cut at a sentence, else a word, and each trim recorded', () => {
+  const r = announced({ announce: { title: 'A short title. And a second sentence that is far too long to keep', body: `${'It is done. '.repeat(300)}`, pitch: `${'word '.repeat(60)}` } });
+  const a = r.announcements[0]!;
+  assert.equal(a.title, 'A short title.');
+  assert.ok(a.body.length <= ANNOUNCE_MOST && a.body.endsWith('It is done.'));
+  assert.ok(a.pitch.length <= PITCH_MOST && a.pitch.endsWith('word'), a.pitch);
+  for (const [f, most] of [['title', 40], ['body', ANNOUNCE_MOST], ['pitch', PITCH_MOST]] as const) {
+    const t = r.trims.find((x) => x.path === `beats[0].announce.${f}`);
+    assert.ok(t && t.predicate === `maxLength(${most})` && t.after < t.before && t.after <= most, `${f}: ${JSON.stringify(r.trims)}`);
+  }
+});
+
+test('an announcement on a beat with no announce block is dropped and recorded, and a due beat played with defaults takes every default', () => {
+  const r = withAnswer({ beats: [{ beat: 'picking-apart', why: 'x', announce: { title: 'Hello', body: 'There', pitch: 'x' } }] }, { beats: shownAnn });
+  assert.deepEqual(r.announcements, []);
+  assert.equal(r.bundles.length, 1);
+  assert.ok(r.trims.some((t) => t.path === 'beats[0].announce' && t.predicate === 'hasAnnounce'), JSON.stringify(r.trims));
+  const due = withAnswer({}, { beats: dueAnn });
+  assert.deepEqual(due.defaulted, ['split']);
+  assert.deepEqual(due.announcements, [{ beat: 'split', title: 'A Big Decision', body: 'I have decided. It is done.', pitch: 'Everything is changing.', push: 'PUSH-LINE talk it up' }]);
+  assert.ok(due.trims.some((t) => t.path === 'beats.split' && t.predicate === 'playedWithDefaults'));
+});
+
+test('an announcement on a beat that was not played is none: a beat not shown, one named twice, one whose bundle failed', () => {
+  assert.deepEqual(withAnswer({ beats: [{ beat: 'consolidation', why: 'x', announce: { title: 'A', body: 'B', pitch: 'C' } }] }, { beats: shownAnn }).announcements, []);
+  const twice = withAnswer({ beats: [{ beat: 'split', why: 'x' }, { beat: 'split', why: 'y', announce: { title: 'Second', body: 'B', pitch: 'C' } }] }, { beats: shownAnn });
+  assert.deepEqual(twice.announcements.map((a) => a.title), ['A Big Decision']);
+});
+
+test('the beats the provider is asked for carry an announce of three texts, every entry, and the rule leaves its shape to the repair', () => {
+  const item = (partSchema('self') as any).properties.beats.items;
+  assert.ok(item.required.includes('announce'));
+  assert.deepEqual(item.properties.announce.required, ['title', 'body', 'pitch']);
+  const asked = withAnswer({ beats: [{ beat: 'split', slots: [], why: 'x', announce: { title: 'T', body: 'B', pitch: 'P' } }] }, { beats: shownAnn });
+  assert.equal(asked.announcements[0]!.title, 'T');
+  const odd = withAnswer({ beats: [{ beat: 'split', why: 'x', announce: 'nope' }] }, { beats: shownAnn });
+  assert.equal(odd.announcements[0]!.title, 'A Big Decision', 'a malformed announce is the defaults, never a lost answer');
+});
+
+test('the prompt names an announced beat\'s sticky thread, title hint and bounds, and says nothing new of one with no block', () => {
+  const prompt = meetingSystemPrompt(promptFacts({ beats: shownAnn, heldBack: [], settings: { ...settings, titleMaxLength: 40 } }));
+  assert.match(prompt, /sticky thread on the staff board in your name/);
+  assert.ok(prompt.includes('a proud name for a big decision') && prompt.includes('title: at most 40 characters'));
+  assert.ok(prompt.includes(`at most ${ANNOUNCE_MOST} characters`) && prompt.includes(`at most ${PITCH_MOST} characters`));
+  assert.ok(!prompt.includes('PUSH-LINE'), 'the push is for the pool calls, not this prompt');
+  const quiet = meetingSystemPrompt(promptFacts({ beats: shownBeats(arcPersona, read(['split'])), heldBack: [] }));
+  assert.ok(!/sticky|announce/.test(quiet), 'a beat with no block, nothing new');
+});
+
+test('a beat shown with no announce block is named to the minutes, and its brief never is', () => {
+  const prompt = meetingSystemPrompt(promptFacts({ beats: shownAnn, heldBack: [] }));
+  const minutes = prompt.slice(prompt.indexOf('minutes: a few lines'), prompt.indexOf('minutes: a few lines') + 900);
+  assert.ok(minutes.includes('If you play picking-apart today, your minutes may say so, in your own words.'), minutes);
+  assert.ok(!minutes.includes('If you play split today'), 'an announced beat opens its own thread');
+  assert.ok(!minutes.includes('APART-BRIEF'));
+  assert.ok(!meetingSystemPrompt(promptFacts({ beats: [], heldBack: [] })).includes('If you play'));
+});
+
+test('a lead-in shows its brief at the meeting and none of the beat\'s own; one not listed is absent', () => {
+  const locked = shownBeats(annPersona, read([]));
+  const prompt = meetingSystemPrompt(promptFacts({ beats: locked, leadIns: ['split'], boss: { ...testSystem.roster[0]!, ...annPersona }, heldBack: [] }));
+  assert.ok(prompt.includes('LEAD-BRIEF the board feels crowded.'));
+  assert.ok(!prompt.includes('SPLIT-BRIEF') && !prompt.includes('MOOD-LINE') && !prompt.includes('The Split'), 'the beat\'s brief, its bundle and the pool mood are not here');
+  const unlisted = meetingSystemPrompt(promptFacts({ beats: locked, leadIns: [], boss: { ...testSystem.roster[0]!, ...annPersona }, heldBack: [] }));
+  assert.ok(!unlisted.includes('LEAD-BRIEF') && !unlisted.includes('feeling lately'));
+  const absent = meetingSystemPrompt(promptFacts({ beats: locked, boss: { ...testSystem.roster[0]!, ...annPersona }, heldBack: [] }));
+  assert.ok(!absent.includes('LEAD-BRIEF'));
+});
+
+test('the plot so far is in the Boss\'s prompt with the push of its own announced beat, and absent where there is none', () => {
+  const plot = {
+    last: { boss: 'old', name: 'Old Boss', recap: 'I did it all.', facts: null },
+    initiatives: [{ beat: 'split', title: 'The Great Split', pitch: 'Fangames get a board.', thread: THREAD, boss: testSystem.roster[0]!.key }],
+  };
+  const prompt = meetingSystemPrompt(promptFacts({ plot, boss: { ...testSystem.roster[0]!, ...annPersona }, heldBack: [] }));
+  assert.ok(prompt.includes('Last season Old Boss was the Boss. This is how they summed it up: I did it all.'));
+  assert.ok(prompt.includes('"The Great Split"') && prompt.includes('Fangames get a board.') && prompt.includes('Your push: PUSH-LINE talk it up'), prompt);
+  assert.ok(!meetingSystemPrompt(promptFacts({ heldBack: [] })).includes('The plot so far'));
+});
+
+test('the talking points carry the exception for an initiative the Boss has announced, and the rule for the rest', () => {
+  const prompt = meetingSystemPrompt(promptFacts({ posting: [{ key: 'm', name: 'Mod', pronouns: PRONOUN_PRESETS.she, office: 'mod', temperament: 'dry' }], heldBack: [] }));
+  assert.ok(prompt.includes('A point must never mention a move you are proposing or one still waiting on admins, unless it is part of an initiative you have announced (the plot so far)'), prompt);
+  assert.ok(prompt.includes('otherwise points speak only of what has landed'));
+});
+
+test('the farewell window asks for a recap, at most RECAP_MOST, and any other meeting is told nothing of it', () => {
+  const told = meetingSystemPrompt({ ...bossFacts, farewell: { postMaxLength: 777 } });
+  assert.ok(told.includes(`recap: a line, in character, on what your season was, at most ${RECAP_MOST} characters`), told);
+  assert.ok(!/recap/i.test(meetingSystemPrompt(bossFacts)), 'a meeting outside the window is told nothing of it');
+  const fields = (MEETING_RULE as { fields: Record<string, { optional?: boolean }> }).fields;
+  assert.ok(fields['recap']?.optional && !(partSchema('self') as any).required.includes('recap'));
+});
+
+test('a recap in the window is cut at a sentence past its bound and recorded; a blank is none; one outside the window is dropped and recorded', () => {
+  const window = { farewell: { postMaxLength: 500 } };
+  const long = withAnswer({ recap: `${'I did it all. '.repeat(40)}` }, window);
+  assert.ok(long.recap!.length <= RECAP_MOST && long.recap!.endsWith('I did it all.'));
+  assert.ok(long.trims.some((t) => t.path === 'recap' && t.predicate === `maxLength(${RECAP_MOST})` && t.after < t.before), JSON.stringify(long.trims));
+  assert.equal(withAnswer({ recap: 'Short and sweet.' }, window).recap, 'Short and sweet.');
+  assert.equal(withAnswer({ recap: '  ' }, window).recap, null);
+  assert.equal(withAnswer({}, window).recap, null);
+  const out = withAnswer({ recap: 'Too early.' });
+  assert.equal(out.recap, null);
+  assert.ok(out.trims.some((t) => t.path === 'recap' && t.predicate === 'inFarewellWindow'), JSON.stringify(out.trims));
 });
