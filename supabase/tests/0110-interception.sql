@@ -37,10 +37,16 @@ begin
 end $$;
 
 -- A visit by a Mod on a post, as the tick or a report would start it.
-create function pg_temp.visit(p uuid, staff text) returns uuid language sql as $$
-  select (start_visit(p, staff, jsonb_build_object('rule_number', 1, 'board', (select t.board from acts a join threads t on t.id = a.thread where a.id = p),
-    'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts')) ->> 'visit')::uuid
-$$;
+-- A quiz visit's question is the visit's own row (0446): this gives a quiz visit the bank's question, as the tick writes it, so the questions below are asked as they always were.
+create function pg_temp.visit(p uuid, staff text) returns uuid language plpgsql as $$
+declare
+  v uuid := (start_visit(p, staff, jsonb_build_object('rule_number', 1, 'board', (select t.board from acts a join threads t on t.id = a.thread where a.id = p),
+    'band', 'minor', 'cause', 'rule', 'about_act', p, 'rule', 'Rule 1: no all-caps posts')) ->> 'visit')::uuid;
+  bank jsonb := bank_quiz_for(v);
+begin
+  if bank is not null then perform write_visit_quiz(v, 'bank', bank ->> 'question', bank -> 'choices', bank ->> 'answer'); end if;
+  return v;
+end $$;
 
 -- An interception, as the account that owns the character.
 create function pg_temp.try(through uuid, visit uuid, answer text default null) returns jsonb language plpgsql as $$

@@ -562,6 +562,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into tails (character, staff, intercept_act, until) select b, 'exp-bot', i.id, now() + interval '1 day' from acts i where i.kind = 'intercept' and i.character = b;
       insert into tail_visits (tail, visit_act) select k.id, v.id from tails k, acts v where k.character = b and v.kind = 'visit' and v.target_act_id = p;
       insert into staff_quiz_questions (staff, idx, question, choices, answer) values ('exp-bot', 0, 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz');
+      insert into visit_quizzes (visit_act, source, question, choices, answer) select v.id, 'model', 'Which carries across?', '["The quiz", "Nothing"]', 'The quiz' from acts v where v.kind = 'visit' and v.target_act_id = p;
       -- An infraction against Ann's mask for her post, her appeal of it, the Mod's ruling, the price paid and returned, and the refund's own table (0109): carried across with the
       -- Acts that name them. (The bar's setting is planted where a database made from the migrations alone has none.)
       insert into settings (key, value) values ('warnBar', '{"size": 10, "bands": {"minor": 2, "moderate": 4, "severe": 7}, "decay": {"unit": "day", "count": 14}, "banDays": [1, 3, 7]}') on conflict (key) do nothing;

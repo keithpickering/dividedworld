@@ -290,7 +290,7 @@ declare
   t uuid := tests.thread('Wq reseed');
   v uuid := pg_temp.visit(tests.post(author, t, 'A reseed post.'), 'wq-m1');
   before_row visit_quizzes%rowtype;
-  idx integer := (select (payload #>> '{challenge,question_index}')::integer from acts where id = v);
+  qidx integer := (select (payload #>> '{challenge,question_index}')::integer from acts where id = v);
 begin
   perform pg_temp.age(v, 15);
   perform system_tick();
@@ -303,7 +303,7 @@ begin
   if visit_quiz(v) is distinct from jsonb_build_object('question', before_row.question, 'choices', before_row.choices) then raise exception 'visit_quiz shows the reseeded bank for a banked visit'; end if;
   perform tests.unbecome();
   -- (Both of the bank's questions are used across the file's visits, so the draw of idx 0 is not assumed: the row equals the question the bank held when it was written.)
-  if idx = 0 and before_row.question = 'Which is the very oldest of them all?' then raise exception 'the row holds the reseeded question'; end if;
+  if qidx = 0 and before_row.question = 'Which is the very oldest of them all?' then raise exception 'the row holds the reseeded question'; end if;
 end $$;
 
 -- ---- 6. The backfill: a quiz visit opened before the migration has a bank row after it, open and ended alike ----

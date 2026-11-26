@@ -81,6 +81,8 @@ end $$;
 revoke execute on function visit_quizzes_clear_mark() from public, anon, authenticated;
 create trigger visit_quizzes_clear_mark after insert on visit_quizzes for each row execute function visit_quizzes_clear_mark();
 
+revoke execute on function visit_quiz_choices_ok(jsonb) from public, anon, authenticated;
+
 -- ---------------------------------------------------------------------------------------------- the writers ----
 
 create function bank_quiz_for(visit uuid) returns jsonb

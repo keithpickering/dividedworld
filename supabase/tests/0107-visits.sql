@@ -797,6 +797,8 @@ begin
     'ends_at', now() + interval '1 hour', 'line', 'Looking.',
     'challenge', jsonb_build_object('kind', 'quiz', 'question_index', 1, 'price', 5, 'answer', 'SECRET', 'answers', jsonb_build_array('SECRET'))), p);
   perform set_config('kayfabb.staff_writer', '', true);
+  -- A quiz visit's question is the visit's own row (0446): the bank's question, as the tick writes it, so the page shows it.
+  perform write_visit_quiz(v, 'bank', (bank_quiz_for(v) ->> 'question'), (bank_quiz_for(v) -> 'choices'), (bank_quiz_for(v) ->> 'answer'));
   perform tests.become((select owner from characters where id = c));
   page := thread_page(t, 1, null, 20, '{}');
   perform tests.unbecome();

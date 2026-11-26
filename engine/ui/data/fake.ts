@@ -380,6 +380,7 @@ export interface SeedCharge { readonly rule?: string; readonly ruleNumber?: numb
 /** A seeded visit's challenge; a quiz's `answer` is one of its `choices`. */
 export type SeedChallenge =
   | { readonly kind: 'quiz'; readonly question: string; readonly choices: readonly string[]; readonly answer: string }
+  | { readonly kind: 'quiz'; readonly pending: true }
   | { readonly kind: 'bribe'; readonly price: number }
   | { readonly kind: 'distraction' };
 
@@ -953,7 +954,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     return {
       id: v.id, post: v.target!, mod: v.character!, at: iso(v.at), endsAt: v.payload.ends_at as string, line: (v.payload.line as string | undefined) ?? '',
       charges: [...(v.payload.charges as Record<string, unknown>[]), ...joins].map((x): VisitCharge => ({ rule: (x.rule as string | undefined) ?? null, ruleNumber: (x.rule_number as number | null | undefined) ?? null, band: x.band as VisitBand, cause: x.cause as VisitCharge['cause'] })),
-      challenge: c.kind === 'quiz' && quiz ? { kind: 'quiz', question: quiz.question, choices: quiz.choices } : c.kind === 'bribe' ? { kind: 'bribe', price: c.price ?? 0 } : { kind: 'distraction' },
+      challenge: c.kind === 'quiz' ? (quiz ? { kind: 'quiz', question: quiz.question, choices: quiz.choices } : { kind: 'quiz', pending: true }) : c.kind === 'bribe' ? { kind: 'bribe', price: c.price ?? 0 } : { kind: 'distraction' },
       end: end ? visitEndOf(end) : null,
       ...((r) => (r ? { ruling: r } : {}))(rulingOnVisit(v.id)),
     };
@@ -4478,9 +4479,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       let worked: boolean;
       let bribed = 0;
       if (challenge.kind === 'quiz') {
+        if (!quiz) return refuse('the question is still being written; try again in a few minutes');
         const said = (answer ?? '').trim();
         if (said === '') return refuse('pick an answer');
-        if (!quiz?.choices.includes(said)) return refuse('pick one of the answers shown');
+        if (!quiz.choices.includes(said)) return refuse('pick one of the answers shown');
         worked = said === quiz.answer;
       } else if (challenge.kind === 'bribe') {
         const account = me()!;
@@ -6417,10 +6419,10 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
         payload: {
           charges: (o?.charges ?? [{}]).map((c) => ({ rule: c.rule ?? 'Rule 2: No double posting', rule_number: c.ruleNumber === undefined ? 2 : c.ruleNumber, band: c.band ?? 'minor', cause: c.cause ?? 'rule', about_act: post })),
           ends_at: iso(at + (o?.endsInMs ?? 3 * 3_600_000)), line: o?.line ?? 'Routine inspection.',
-          challenge: ch.kind === 'quiz' ? { kind: 'quiz', question_index: 0 } : ch.kind === 'bribe' ? { kind: 'bribe', price: ch.price } : { kind: 'distraction' },
+          challenge: ch.kind === 'quiz' ? { kind: 'quiz', question_index: 0, ...('pending' in ch ? { pending: true } : {}) } : ch.kind === 'bribe' ? { kind: 'bribe', price: ch.price } : { kind: 'distraction' },
         },
       }).id;
-      if (ch.kind === 'quiz') visitQuizzes.set(id, { question: ch.question, choices: ch.choices, answer: ch.answer });
+      if (ch.kind === 'quiz' && !('pending' in ch)) visitQuizzes.set(id, { question: ch.question, choices: ch.choices, answer: ch.answer });
       return id;
     },
     staffRequest(staff, post, o) {
