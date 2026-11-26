@@ -17,6 +17,19 @@ describe('blocks', () => {
       { t: 'heading', level: 3, children: [text('Why')] },
     ]);
   });
+  test('a backslash that ends a line inside a paragraph is a hard break', () => {
+    assert.deepEqual(parse('Have fun,\\\nGabe'), [{ t: 'p', children: [text('Have fun,'), { t: 'br' }, text('Gabe')] }]);
+  });
+  test('a backslash that is not at the end of a line stays text', () => {
+    assert.deepEqual(parse('a \\ b c\\d'), [{ t: 'p', children: [text('a \\ b c\\d')] }]);
+  });
+  test('a paragraph\'s last line ending in a backslash stays literal, and so does an escaped backslash before a newline', () => {
+    assert.deepEqual(parse('One\nTwo\\'), [{ t: 'p', children: [text('One Two\\')] }]);
+    assert.deepEqual(parse('One\\\\\nTwo'), [{ t: 'p', children: [text('One\\ Two')] }]);
+  });
+  test('lines with no backslash are still joined by a space', () => {
+    assert.deepEqual(parse('Have fun,\nGabe'), [{ t: 'p', children: [text('Have fun, Gabe')] }]);
+  });
   test('a paragraph joins its lines with a space and ends at a blank line', () => {
     assert.deepEqual(parse('One\ntwo.\n\nThree.'), [
       { t: 'p', children: [text('One two.')] },

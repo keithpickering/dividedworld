@@ -50,7 +50,7 @@ export const onboarding: OnboardingUi = Object.freeze({
     '',
     'I can\'t lie to you. Prioritizing this project meant that several in-development games nearing completion, most notably Half-Life: Nuts & Bolts, had to be shelved, likely permanently. These games\' assets will be repurposed as purchasable cosmetics, so they will live on in our hats. Uh, I mean hearts.',
     '',
-    'Have fun,',
+    'Have fun,\\',
     'Gabe',
   ].join('\n'),
 });

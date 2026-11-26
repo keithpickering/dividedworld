@@ -95,6 +95,9 @@ needs Blender and two renders are not the same bytes. The art files are what shi
 
 ## The rig and the models
 
+A color variant's `rig.json` (`model`, `hue`, `recolor`, and optionally `value` and `saturation`, each a factor from 0 to 1
+that lifts the recolored stops toward 1: v becomes `1 - (1 - v) * (1 - f)`) is the instance's too; the engine never reads it.
+
 An instance's rendered items are made by its rig, `instances/divided-world/ui/gear/rig.py`, from a `model.blend` in the
 item's folder: the engine does not run it and does not know it. A model faces +X and has an empty named `pivot`. The
 rig's output is `views.json` and the WebP files, and the engine reads only those.

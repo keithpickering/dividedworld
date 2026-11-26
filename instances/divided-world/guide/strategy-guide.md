@@ -181,7 +181,7 @@ A phrase or passage is short, and the form tells you how short. A Reversal takes
 
 **Highlight to quote.** Select words inside one post and press **Quote** beside the selection, and only those words are quoted. That's how you quote a passage on purpose. The old way still works, and it's the keyboard route: quote the whole post, then trim the quote in the reply box.
 
-**What everyone sees.** Your conditions are yours alone, and no other player can read them while the card is set. When the card springs, the Lens shows what matched: the phrase, the passage, and who quoted if you used Only these. It never shows an Anyone but list, so nobody learns who you spared. A card nothing meets ends by itself when its time is up (the card's own words say when), so a trap that can no longer be sprung isn't a trap you're stuck in.
+**What everyone sees.** Your conditions are yours, and no other player can read them while the card is set. When the card springs, the Lens shows what matched: the phrase, the passage, and who quoted if you used Only these. It never shows an Anyone but list, so no other player learns who you spared. A card nothing meets ends by itself when its time is up (the card's own words say when), so a trap that can no longer be sprung isn't a trap you're stuck in.
 
 ## The masks
 
@@ -236,7 +236,7 @@ Every character also wears a **group bar**, staff or no staff. Most climb on the
 ## Things that happen to you
 
 - **[Alerts](/alerts)** is the list of what happened to your characters while you were away: a quote, a card on your post, a trap that sprang, a settlement. Every kind waits here either way; Settings decides which kinds also pop up while you read.
-- **Random Events.** Now and then, loading a page opens a small window that says SOMETHING HAPPENED! Sometimes it's just a line. Sometimes you've found a piece of gear, or once in a while a card. Only you see it. No Aura moves, and there's nothing to click in time. It's a gift. Don't read into it.
+- **Random Events.** Now and then, loading a page opens a small window that says SOMETHING HAPPENED! Sometimes it's just a line. Sometimes you've found a piece of gear, or once in a while a card. No other player sees it. No Aura moves, and there's nothing to click in time. It's a gift. Don't read into it.
 - **Gear and the [Wardrobe](/wardrobe).** Gear is cosmetic: something a character wears over its portrait. Any of your characters can wear what you've found. Yes, there are hats. I have a reputation to maintain.
 
 ## The actual rules
@@ -260,5 +260,5 @@ Still to come, and subject to change:
 
 That's the game as it stands. It's a pre-alpha, and every number in here is today's, so this guide changes when the game does. If it and the game ever disagree, the game is right and I'd like to hear about it.
 
-Have fun,
+Have fun,\
 Gabe

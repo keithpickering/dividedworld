@@ -341,7 +341,7 @@ function ThreadRow({ t, loaded, perPage, hot, mark = null }: { readonly t: Threa
         {mark && <span className="kb-thread-pin-mark">{mark}</span>}
         {t.originActId !== null && (
           <span className="kb-thread-spun kb-small">
-            ↳ spun from <OriginLink place={t.origin} perPage={perPage} />
+            ↳ spun from <OriginLink place={t.origin} here={t.board} perPage={perPage} />
           </span>
         )}
         <div className="kb-thread-meta kb-small">

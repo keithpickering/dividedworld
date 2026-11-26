@@ -143,7 +143,7 @@ describe('a card back', () => {
     await user.click(back(2)!);
     const lens = await screen.findByRole('dialog', { name: 'Cards on this post' });
     await user.click(within(lens).getByRole('button', { name: /^1 play/u }));
-    await waitFor(() => expect(lens.textContent).toContain('Yours: Snare, which nobody else can see.'));
+    await waitFor(() => expect(lens.textContent).toContain('Yours: Snare, which no other player can see.'));
     expect(back(2)!.innerHTML).toBe(seen);
     expect(post(2).querySelector('[data-kb-face]')).toBeNull();
   });

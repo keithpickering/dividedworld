@@ -12,7 +12,7 @@ import { words, type PronounSet } from '../../rules/pronouns.ts';
 export function newCharacterFooter(o: { readonly name: string; readonly pronouns: PronounSet }): string {
   const w = words(o.pronouns);
   const who = o.name.trim() || 'Your character';
-  return `${who} is on the board as soon as you make ${w.them}. Nobody is told, and ${w.their} first post is ${w.their} entrance. ${w.Their} class stays yours alone.`;
+  return `${who} is on the board as soon as you make ${w.them}. Nobody is told, and ${w.their} first post is ${w.their} entrance. ${w.Their} class stays hidden from every other player.`;
 }
 
 /** The Reveal overlay's line. */

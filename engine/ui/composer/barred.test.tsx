@@ -209,7 +209,7 @@ describe('the three states of an apology', () => {
     await userEvent.type(within(form).getByLabelText('Thread title'), 'I am sorry');
     await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
     await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
-    await waitFor(() => expect(apologize).toHaveBeenCalledWith(w.move, w.pipe, 'I am sorry', 'I was wrong.'));
+    await waitFor(() => expect(apologize).toHaveBeenCalledWith(w.move, w.pipe, 'I am sorry', 'I was wrong.', undefined, 'general'));
     expect(spin).not.toHaveBeenCalled();
   });
 
@@ -243,7 +243,7 @@ describe('the three states of an apology', () => {
     expect(within(form).getByLabelText('Thread title')).toHaveValue('I am sorry');
     await userEvent.type(within(form).getByLabelText('Your apology'), 'I was wrong.');
     await userEvent.click(within(form).getByRole('button', { name: 'Send apology' }));
-    await waitFor(() => expect(apologize).toHaveBeenLastCalledWith(w.move, w.pipe, 'I am sorry', '\u200bI was wrong.'));
+    await waitFor(() => expect(apologize).toHaveBeenLastCalledWith(w.move, w.pipe, 'I am sorry', '\u200bI was wrong.', undefined, 'general'));
   });
 
   test('an apology whose title the server refuses is worded with the title\'s label, and the form stays open', async () => {

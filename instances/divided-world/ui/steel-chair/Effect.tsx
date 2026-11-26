@@ -168,10 +168,11 @@ const LID_LANDS = 'steel-chair.can-settle';
 const LID_TAKES = 2;
 /** The extinguisher's hiss, played with its puff at its first floor contact. */
 const HISS = 'steel-chair.extinguisher-hiss';
-const SOUNDS: Readonly<Record<ThrownObject, { readonly hit: string; readonly settle: string; readonly settles: number }>> = Object.freeze({
+/** An object that borrows another's takes says its own words for them: `hitCaption` and `settleCaption` replace the slot's caption (the slot's ink stays). */
+const SOUNDS: Readonly<Record<ThrownObject, { readonly hit: string; readonly settle: string; readonly settles: number; readonly hitCaption?: string; readonly settleCaption?: string }>> = Object.freeze({
   chair: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4 },
-  can: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4 },
-  ladder: { hit: 'steel-chair.hit', settle: 'steel-chair.ladder-settle', settles: 2 },
+  can: { hit: 'steel-chair.hit', settle: 'steel-chair.settle', settles: 4, hitCaption: 'A trash can bangs', settleCaption: 'A trash can clatters to the floor' },
+  ladder: { hit: 'steel-chair.hit', settle: 'steel-chair.ladder-settle', settles: 2, hitCaption: 'A ladder clangs' },
   extinguisher: { hit: 'steel-chair.extinguisher-hit', settle: 'steel-chair.extinguisher-settle', settles: 2 },
 });
 /**
@@ -576,11 +577,14 @@ function Chairs(props: EffectProps & { live: readonly CardPlay[]; memory: Memory
         growing.set(play, null);
         shake(objectOf(play) === 'ladder');
         if (objectOf(play) === 'can') throwLid(play, e);
-        if (loud) void latest.current.sound.play(SOUNDS[objectOf(play)].hit, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
+        if (loud) {
+          const sounds = SOUNDS[objectOf(play)];
+          void latest.current.sound.play(sounds.hit, { group: GROUP, voices: VOICES, lateMs: LATE_MS, ...(sounds.hitCaption ? { caption: sounds.hitCaption } : {}) });
+        }
       } else if (e.kind === 'floor' && loud) {
         const sounds = SOUNDS[objectOf(play)];
         if (objectOf(play) === 'extinguisher') startPuff(e.id);
-        void latest.current.sound.play(`${sounds.settle}-${1 + Math.floor(soundRand() * sounds.settles)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS });
+        void latest.current.sound.play(`${sounds.settle}-${1 + Math.floor(soundRand() * sounds.settles)}`, { group: GROUP, voices: VOICES, lateMs: LATE_MS, ...(sounds.settleCaption ? { caption: sounds.settleCaption } : {}) });
       }
     };
 

@@ -2,7 +2,7 @@
  * The Random Event dialog (the cosmetics design, section 5; board 04 of docs/research/2026-11-04-cosmetics/): on a board page's or a thread page's load, for a signed-in
  * player with a character to roll for, one chance at an event (`randomEvent`, once per page load, never per render). An answer opens the glass's modal over the page:
  * "SOMETHING HAPPENED!", the item's picture beside the instance's line, with `{item}` filled by the item's name and set apart in it, the item's rarity in plain words
- * ("Uncommon gear, now in your wardrobe."), and a foot of Wear it (a gear only: the wardrobe with the piece placed) or OK beside the lock and "Only you see this". It names
+ * ("Uncommon gear, now in your wardrobe."), and a foot of Wear it (a gear only: the wardrobe with the piece placed) or OK beside the lock and "No other player sees this". It names
  * no mask: the roll is taken for the character being played, but an event is the player's, and what it gives is held by all their characters (the log says which mask, as
  * it does for everything). OK is its one control for closing, so the bar is the title alone; Esc and a press on the dimmed page are the other ways out, and focus returns
  * to where it was (the modal's own).
@@ -82,7 +82,7 @@ function Dialog({ event, onClose }: { readonly event: Event; readonly onClose: (
           {gear !== undefined && <GlassButton to="/wardrobe" kind="primary" state={{ character: event.character, wear: gear.key }} onClick={onClose}>Wear it</GlassButton>}
           <GlassButton onClick={onClose}>OK</GlassButton>
         </ButtonRow>
-        <p className="kb-event-secret"><SecretLock />Only you see this</p>
+        <p className="kb-event-secret"><SecretLock />No other player sees this</p>
       </div>
     </Overlay>
   );

@@ -138,6 +138,9 @@ for (const [label, viewport] of SIZES) {
     test.use({ viewport });
     for (const s of [...PAGES, ...OVERLAYS, ...FIXTURE_OVERLAYS, ...STORIES]) {
       test(`${s.name}: every line of glass text is legible on its smoke`, async ({ page }) => {
+        /* The same read as the text sizes' and high contrast's below, at the default preferences: the Strategy Guide rewritten in Gabe's voice
+           (#1133) takes about 23s alone at 1920×1080, and CI crossed the default 30s on it (PR #1150), so it gets their 90s. 90s still ends a hang. */
+        test.setTimeout(90_000);
         await open(page, s);
         expect(await measure(page)).toEqual([]);
       });

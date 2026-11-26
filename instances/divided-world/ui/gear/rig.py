@@ -18,8 +18,11 @@ unless its own `rig.json` gives one.
 
 A variant's `rig.json` is `{ "model": "<base key>", "hue": <degrees>, "recolor": ["<object>", ...] }`: the rig loads the
 base's model, then turns the hue of every color stop of every Color Ramp node in the materials of the named objects by
-`hue` degrees (HSV hue; saturation and value kept). A material the objects share, such as a cap's button and body,
-turns together; a material only other objects use is left as it is.
+`hue` degrees (HSV hue). Two optional fields lift the same stops toward 1, each a factor from 0 (no change) to 1 (full):
+`"value": f` makes a stop's HSV value v become 1 - (1 - v) * (1 - f), and `"saturation": f` does the same to its
+saturation. The lift keeps the order of the stops (a darker stop stays darker than a lighter one), so the shading is
+kept while the color brightens; a yellow, which a plain turn of a red ramp leaves mustard, uses it. A material the
+objects share, such as a cap's button and body, turns together; a material only other objects use is left as it is.
 
 The numbers below were measured from the research cap, docs/research/2026-11-23-gear-renders/hat.blend (the owner's
 revised Baseball Cap): its camera (Camera: 50 mm lens, 36 mm sensor, at (4.08, -2.88, 0.02), pitched 6 degrees below the
@@ -179,6 +182,9 @@ def recolor(objects, rig):
     """Turn the hue of every color stop of every Color Ramp in the materials of the named objects."""
     names = set(rig.get('recolor', []))
     hue = float(rig['hue']) / 360.0
+    lift_v, lift_s = float(rig.get('value', 0.0)), float(rig.get('saturation', 0.0))
+    if not (0.0 <= lift_v <= 1.0 and 0.0 <= lift_s <= 1.0):
+        sys.exit('recolor: "value" and "saturation" are factors from 0 to 1')
     mats = {}
     for o in objects:
         if o.name in names:
@@ -195,6 +201,7 @@ def recolor(objects, rig):
                 for stop in node.color_ramp.elements:
                     r, g, b, alpha = stop.color
                     h, s, v = colorsys.rgb_to_hsv(r, g, b)
+                    s, v = 1.0 - (1.0 - s) * (1.0 - lift_s), 1.0 - (1.0 - v) * (1.0 - lift_v)
                     stop.color = (*colorsys.hsv_to_rgb((h + hue) % 1.0, s, v), alpha)
                     turned += 1
     if turned == 0:

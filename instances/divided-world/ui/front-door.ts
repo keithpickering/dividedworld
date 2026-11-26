@@ -148,7 +148,7 @@ export const frontDoor: FrontDoorUi = Object.freeze({
     '',
     'These characters are all acting it up, as usual. The game is pretty simple:',
     '',
-    '- You play up to {{setting:charactersPerPlayer}} anonymous characters, each with a secret class only you can see.',
+    '- You play up to {{setting:charactersPerPlayer}} anonymous characters, each with a secret class no other player can see.',
     '- Each class benefits from a different posting style. Figure out how the crowd responds to your character, and play it up!',
     '- Crowd reactions turn into Aura at each settlement, {{setting:settlementLength}} apart. Spend Aura on booster packs to get Cards, add effects to posts, and get even more reactions.',
     '- Evade Mod Bots and appease the Boss. Learn what they like and you might be able to sweet-talk them!',

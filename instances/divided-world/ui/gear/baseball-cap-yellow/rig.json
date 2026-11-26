@@ -1,1 +1,1 @@
-{ "model": "baseball-cap", "hue": 55, "recolor": ["hat"] }
+{ "model": "baseball-cap", "hue": 55, "value": 0.9, "saturation": 1, "recolor": ["hat"] }
