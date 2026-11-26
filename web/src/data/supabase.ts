@@ -49,7 +49,7 @@ import type {
   Act, ActKind, AdminAward, AdminKind, Answer, AvatarUpload, BeltCursor, BeltPage, BeltReign, RandomEvent, ShownTrophy, TrophyAwardFailure, TrophyItem, WardrobeItem, Board, Bought, Unsealed, SealedPack, Donated, DriveGift, DriveGifts, BoardSummary, CardEnded, ScoredAs, CardEvent, PackEvent, SurfaceLogRow, WrittenOnMine, CaughtPlay, Character, CharacterCounts, Office, ClassReveal, CreatedCharacter, Estimate, EstimateLine, FaceDownEnd,
   Alert, ContactLink, EffectState, Tail, KindCount, KindPage, PostHit, SearchCursor, SearchPage, SearchQuery, Suggestions, ThreadHit, SeasonFinished, SeasonNewsItem, SeasonRecordRow, SeasonResultRow, SeasonShown, TallyName, Update, FollowedThread, Frame, HeldCard, Id, KayfaApi, MyCharacter, MyInvite, MyReaction, PendingTurn, PinnedThread, PlayAbove, PageOrigin, PlayMoment, Preferences, Rewind, Refusal, ScreenSettings, Season, Session, Standing,
   Tally, StandingPlace, ThreadSummary, OriginPlace, PlaceOn, TurnAnnounced, TurnAsked, Wallet, WalletEvent, CrowdPaid,
-  Boot, BoardPage, BoardRef, BoardStub, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
+  Boot, BoardPage, BoardRef, BoardStub, StaffPin, IndexPage, Opened, AdminSlot, Slot, SlotMove, Presence, ProfilePage, RecordPage, ThreadPage, ThreadPerson, MyCharactersPage, SeasonPage, AlertsPage, UpdatesPage, QueuePage, ReportsPage, MyHiddenVersion, AdminReport, AdminReview, FailedMail, PastDecision, ConductLogRow, LogPage,
   AppealResult, AppealVerdict, InterceptResult, MyBan, LogAppeal, LogBan, LogCosmetic, LogBallot, LogPollClose, LogThreadMoved, LogPlace, LogFall, LogGroupMove, GroupMoveEndWhy, LogInfraction, LogReport, ReportResult, ReportVerdict, Visit, VisitBand, VisitChallenge, VisitCharge, VisitEnd, VisitOutcome, VisitStory, Exchange,
 } from '../../../engine/ui/data/api.ts';
 
@@ -1863,6 +1863,14 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const v = (await read(() => client.rpc('admin_machine'))).data;
       return (Array.isArray(v) ? (v as Row[]) : []).flatMap(toAdminSlot);
     },
+    async adminStaffPins() {
+      const v = (await read(() => client.rpc('admin_staff_pins'))).data;
+      return (Array.isArray(v) ? (v as Row[]) : []).flatMap((r): StaffPin[] => (typeof r['thread'] === 'string' ? [{ thread: r['thread'], title: str(r['title']) ?? '', pinnedAt: str(r['pinned_at']) ?? '' }] : []));
+    },
+    async unpinStaffThread(thread) {
+      const a = await rpcWrite(() => client.rpc('unpin_staff_thread', { in_thread: thread }));
+      return a.ok ? { ok: true, value: { thread: a.value['thread'] } } : a;
+    },
     async setSlot(slot, availability, price) {
       const a = await rpcWrite(() => client.rpc('set_slot', { slot, availability, price }));
       return a.ok ? { ok: true, value: { slot: a.value['slot'], ended: num(a.value['ended']) } } : a;
@@ -1954,6 +1962,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       const pins = rowsOf(d['pins']).map(toPinned);
       const banner = rowsOf(d['banner']).map(toPlayAbove);
       const threads = rowsOf(d['threads']).map(toThread);
+      const stickies = rowsOf(d['stickies']).map(toThread);
       const marked = [...pins.map((p) => p.act.id), ...banner.map((p) => p.act.id)];
       const reading: Record<Id, number> = {};
       for (const r of rowsOf(d['reading'])) reading[r['thread']] = num(r['furthest_seq']);
@@ -1964,10 +1973,10 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
       });
       return {
         board: toBoard(d['board'] as Row), closed: d['closed'] === true ? { mergedInto: ref(d['mergedInto']), fallback: ref(d['fallback']), goesTo: ref(d['goesTo']) } : null, stubs,
-        total: num(d['total']), page: num(d['page'], 1), threads, pins, banner,
+        total: num(d['total']), page: num(d['page'], 1), threads, pins, stickies, banner,
         states: toStates(rowsOf(d['states'])), releases: rowsOf(d['releases']).map((r): Id => r['play']),
         tallies: toTallies(marked, rowsOf(d['tallies'])), mine: rowsOf(d['mine']).map(toMyReaction), reading,
-        views: toViews([...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),
+        views: toViews([...stickies.map((t) => t.id), ...pins.map((p) => p.thread.id), ...threads.map((t) => t.id)], rowsOf(d['views'])),
         characters: rowsOf(d['characters']).map(faceOf), presence: toPresence(d['presence'] ?? {}), unread: toUnread(d['unread']),
       };
     },
