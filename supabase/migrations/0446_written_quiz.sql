@@ -4,7 +4,8 @@
 -- fails, is rejected, the day's `quizQuestionsPerDay` is spent, the System is off, or `quizWriteMinutes` has passed. Until the row exists the quiz is PENDING: `visit_quiz` answers
 -- {"pending": true} and `intercept` refuses a quiz answer, in the same words for everyone and before anything is written, so the character's one try is not spent.
 --
--- visit_quizzes     one row per quiz visit: its source, question, choices (2 to 8 distinct strings: the model's are repaired to 4 by the engine, but the bank's may hold up to 8, which the seed allows, and a snapshot of it must never fail) and answer, and when it was written. Append-only (an update, delete or truncate is refused, always);
+-- visit_quizzes     one row per quiz visit: its source, question, choices (2 to 8 distinct strings). The 4-choice cap on a model question is the engine's repair (engine/system/quiz.ts) and is not held here; the table allows 2 to 8 because a bank question
+--                   (the seed allows up to 8 choices) is snapshotted whole and a snapshot of it must never fail; the choices' being distinct strings is a trigger's. Also the answer, and when it was written. Append-only (an update, delete or truncate is refused, always);
 --                   no client reads it (row security on, nothing granted). `visit_quiz` hands a page the question and choices and never the answer or the source.
 -- visits_open.quiz_at   the pending quizzes' index. A column on visits_open (the open visits, which a trigger on the visit Act already keeps) holding the visit's start while it awaits its question and null
 --                   otherwise, with a partial index on it, so "the open quiz visits with no row, oldest first" reads only the pending ones. A trigger sets it when the open row is made (the visit's
@@ -123,7 +124,8 @@ language sql stable security definer set search_path = public, pg_temp as $$
   join characters c on c.id = v.character
   join threads t on t.id = v.thread
   left join boards_now b on b.id = t.board
-  where o.quiz_at is not null
+  -- A visit whose persona has no bank question to fall back on is left out: it could never be banked, and at the head of the oldest-first scan it would starve the visits behind it.
+  where o.quiz_at is not null and bank_quiz_for(o.visit_act) is not null
   order by o.quiz_at, o.visit_act
   limit greatest(pending_quizzes.most, 0)
 $$;
@@ -190,6 +192,29 @@ begin
   if not setting_cron(v -> 'filingCron') then return shape || '; "filingCron" is not'; end if;
   return null;
 end $$;
+
+-- A deployed instance's stored `modBots` row lacks the two fields, and the staff function's settings check would refuse the whole staff run (filings included) until a reseed. The data step gives
+-- each missing field its default, independently: `quizWriteMinutes` 15 and `quizQuestionsPerDay` 0 (0 means the bank always, so no paid call starts until the instance's own seed sets its budget; Divided World's
+-- seed carries 60). A row that already holds a field keeps it. A migration's write is a seed's: kayfabb.seeding is on, so settings_tuned (0355) leaves tuned_at as it was. At replay there is no row, so it changes
+-- nothing on a fresh database. A function, so the test can call it on a row it plants.
+create function migrate_modbots_quiz_fields() returns integer
+language plpgsql security definer set search_path = public, pg_temp as $$
+declare
+  was text := current_setting('kayfabb.seeding', true);
+  n integer;
+begin
+  perform set_config('kayfabb.seeding', 'on', true);
+  update settings set value = value
+      || case when value ? 'quizWriteMinutes' then '{}'::jsonb else jsonb_build_object('quizWriteMinutes', 15) end
+      || case when value ? 'quizQuestionsPerDay' then '{}'::jsonb else jsonb_build_object('quizQuestionsPerDay', 0) end
+  where key = 'modBots' and not (value ? 'quizWriteMinutes' and value ? 'quizQuestionsPerDay');
+  get diagnostics n = row_count;
+  perform set_config('kayfabb.seeding', coalesce(nullif(was, ''), 'off'), true);
+  return n;
+end $$;
+revoke execute on function migrate_modbots_quiz_fields() from public, anon, authenticated;
+grant execute on function migrate_modbots_quiz_fields() to service_role;
+select migrate_modbots_quiz_fields();
 
 -- ------------------------------------------------------------------------------------------- the reads ----
 
@@ -709,10 +734,10 @@ begin
 
   -- 7. Pending quizzes (the written quiz plan, Task 1): a quiz visit with no question row whose start is `modBots.quizWriteMinutes` or more in the past is given its bank question (snapshotted into the row, so a reseed of
   -- the bank cannot change it), whatever the switch says: the staff run writes the model's question sooner where it can, and no visit waits longer than this. The oldest first, found by the partial index on visits_open
-  -- (the pending ones alone), at most `demandChecksPerTick`, and none once the budget is spent. Best effort per visit: one that fails (or whose persona has no such bank question) is warned and left for the next tick; a row
+  -- (the pending ones alone), at most `demandChecksPerTick`, and none once the budget is spent. A visit whose persona has no bank question for it (a reseed removed it) is not scanned at all, so it can never hold the head of the scan and starve the rest (pending_quizzes leaves it out for the same reason); it ends with its visit, or is banked once a reseed gives the bank that question back. Best effort per visit: one that fails is warned and left for the next tick; a row
   -- the staff run wrote first is left as it stands (write_visit_quiz answers it and writes nothing).
   for quiz_late in
-    select o.visit_act from visits_open o where o.quiz_at is not null and o.quiz_at <= now() - quiz_grace order by o.quiz_at, o.visit_act limit cap
+    select o.visit_act from visits_open o where o.quiz_at is not null and o.quiz_at <= now() - quiz_grace and bank_quiz_for(o.visit_act) is not null order by o.quiz_at, o.visit_act limit cap
   loop
     if clock_timestamp() > budget_ends then out_of_time := true; exit; end if;
     begin

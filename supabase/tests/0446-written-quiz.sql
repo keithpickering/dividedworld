@@ -232,6 +232,9 @@ begin
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A"]''::jsonb, ''A'')', v3)) is null then raise exception 'one choice was accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "B", "C", "D", "E", "F", "G", "H", "I"]''::jsonb, ''A'')', v3)) is null then raise exception 'nine choices were accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "A"]''::jsonb, ''A'')', v3)) is null then raise exception 'a repeated choice was accepted'; end if;
+    if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "A"]''::jsonb, ''A'')', v3)) !~ '^23514: a question''s choices are distinct strings' then raise exception 'a repeated choice was not refused by the choices trigger (23514)'; end if;
+    if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", 2]''::jsonb, ''A'')', v3)) !~ '^23514: a question''s choices are distinct strings' then raise exception 'a non-string choice was not refused (23514)'; end if;
+    if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", null]''::jsonb, ''A'')', v3)) !~ '^23514' then raise exception 'a null choice was not refused'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', ''Q?'', ''["A", "B"]''::jsonb, ''C'')', v3)) is null then raise exception 'an answer outside the choices was accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''model'', '' '', ''["A", "B"]''::jsonb, ''A'')', v3)) is null then raise exception 'an empty question was accepted'; end if;
     if pg_temp.refusal(format('select write_visit_quiz(%L, ''guess'', ''Q?'', ''["A", "B"]''::jsonb, ''A'')', v3)) is null then raise exception 'a source of guess was accepted'; end if;
@@ -401,4 +404,108 @@ begin
   -- The duty is one a call's record may carry.
   n := (record_staff_call(v1, 'quizQuestion', 'wq-m1', '{"source": "bank", "why": "the call failed", "trims": [], "calls": 1}'::jsonb) ->> 'attempt')::integer;
   if n is distinct from 1 then raise exception 'the quizQuestion record was not the first attempt'; end if;
+end $$;
+
+-- A visit of the quiz persona whose drawn question is the one named (the draw is a hash of the post, so posts are made until one draws it).
+create function pg_temp.visit_drawing(n integer, in_thread uuid, by_character uuid) returns uuid language plpgsql as $$
+declare
+  v uuid;
+  i integer := 0;
+begin
+  loop
+    i := i + 1;
+    if i > 60 then raise exception 'no post drew question %', n; end if;
+    v := pg_temp.visit(tests.post(by_character, in_thread, 'A drawing post ' || n || '/' || i), 'wq-m1');
+    exit when (select (payload #>> '{challenge,question_index}')::integer from acts where id = v) = n;
+  end loop;
+  return v;
+end $$;
+
+-- ---- 9. A bank question of six choices banks through the tick and through the backfill ----
+do $$
+declare
+  author uuid := pg_temp.chr('Wq Bob A');
+  t uuid := tests.thread('Wq six');
+  six jsonb := '["One", "Two", "Three", "Four", "Five", "Six"]';
+  v_tick uuid;
+  v_fill uuid;
+  keep jsonb := (select choices from staff_quiz_questions where staff = 'wq-m1' and idx = 1);
+  keep_answer text := (select answer from staff_quiz_questions where staff = 'wq-m1' and idx = 1);
+  r visit_quizzes%rowtype;
+begin
+  update staff_quiz_questions set choices = six, answer = 'Six' where staff = 'wq-m1' and idx = 1;
+  v_tick := pg_temp.visit_drawing(1, t, author);
+  v_fill := pg_temp.visit_drawing(1, t, author);
+  perform pg_temp.age(v_tick, 15);
+  perform system_tick();
+  select * into r from visit_quizzes where visit_act = v_tick;
+  if r.source is distinct from 'bank' or r.choices is distinct from six or r.answer is distinct from 'Six' then raise exception 'the tick did not bank a six-choice question: %', to_jsonb(r); end if;
+  if exists (select 1 from visit_quizzes where visit_act = v_fill) then raise exception 'the tick banked a visit that was not due'; end if;
+  perform backfill_visit_quizzes();
+  select * into r from visit_quizzes where visit_act = v_fill;
+  if r.source is distinct from 'bank' or r.choices is distinct from six then raise exception 'the backfill did not bank a six-choice question: %', to_jsonb(r); end if;
+  update staff_quiz_questions set choices = keep, answer = keep_answer where staff = 'wq-m1' and idx = 1;
+end $$;
+
+-- ---- 10. A visit with no bank question never holds the head of the scan: with the scan's cap at 1, the bankable visit behind it is still banked ----
+do $$
+declare
+  author uuid := pg_temp.chr('Wq Bob A');
+  t uuid := tests.thread('Wq starved');
+  v_gone uuid;
+  v_ok uuid;
+  gone staff_quiz_questions%rowtype;
+  tick jsonb;
+  was jsonb := (select value from settings where key = 'demandChecksPerTick');
+begin
+  v_gone := pg_temp.visit_drawing(0, t, author);
+  v_ok := pg_temp.visit_drawing(1, t, author);
+  select * into gone from staff_quiz_questions where staff = 'wq-m1' and idx = 0;
+  delete from staff_quiz_questions where staff = 'wq-m1' and idx = 0;
+  if bank_quiz_for(v_gone) is not null then raise exception 'the visit still has a bank question'; end if;
+  perform pg_temp.age(v_gone, 40);
+  perform pg_temp.age(v_ok, 20);
+  insert into settings (key, value) values ('demandChecksPerTick', '1') on conflict (key) do update set value = '1';
+  if exists (select 1 from pending_quizzes(100) x where x.visit_act = v_gone) or (select visit_act from pending_quizzes(1)) is distinct from v_ok then
+    raise exception 'pending_quizzes lists a visit that cannot be banked, or hides the one behind it';
+  end if;
+  tick := system_tick();
+  if not exists (select 1 from visit_quizzes where visit_act = v_ok) then raise exception 'the older unbankable visit starved the bankable one: %', tick; end if;
+  if exists (select 1 from visit_quizzes where visit_act = v_gone) then raise exception 'the unbankable visit was banked'; end if;
+  if visit_quiz(v_gone) is distinct from '{"pending": true}'::jsonb then raise exception 'the unbankable visit stopped being pending'; end if;
+  -- The reseed gives the question back and the visit is banked on a later tick.
+  insert into staff_quiz_questions select gone.*;
+  perform system_tick();
+  if (select source from visit_quizzes where visit_act = v_gone) is distinct from 'bank' then raise exception 'the visit was not banked once its question came back'; end if;
+  if was is null then delete from settings where key = 'demandChecksPerTick'; else update settings set value = was where key = 'demandChecksPerTick'; end if;
+end $$;
+
+-- ---- 11. A stored modBots row without the new fields is given them, each on its own; a row that has them is left as it was ----
+do $$
+declare
+  was jsonb := (select value from settings where key = 'modBots');
+  old jsonb := was - 'quizQuestionsPerDay' - 'quizWriteMinutes';
+  got jsonb;
+  n integer;
+begin
+  perform set_config('kayfabb.seeding', 'on', true);
+  -- Both missing: written as a deployed row was, under the held check's old shape, so the held trigger is stood down for the plant.
+  alter table settings disable trigger settings_held;
+  update settings set value = old where key = 'modBots';
+  alter table settings enable trigger settings_held;
+  if setting_modbots(old) is null then raise exception 'the planted row already passes the check'; end if;
+  n := migrate_modbots_quiz_fields();
+  select value into got from settings where key = 'modBots';
+  if n <> 1 or got -> 'quizWriteMinutes' is distinct from '15'::jsonb or got -> 'quizQuestionsPerDay' is distinct from '0'::jsonb or setting_modbots(got) is not null then raise exception 'the row was not migrated: % / %', n, got; end if;
+  -- One missing: only that one is added, the other keeps its value.
+  alter table settings disable trigger settings_held;
+  update settings set value = old || '{"quizQuestionsPerDay": 7}' where key = 'modBots';
+  alter table settings enable trigger settings_held;
+  perform migrate_modbots_quiz_fields();
+  select value into got from settings where key = 'modBots';
+  if got -> 'quizQuestionsPerDay' is distinct from '7'::jsonb or got -> 'quizWriteMinutes' is distinct from '15'::jsonb then raise exception 'a field the row held was changed, or the missing one not added: %', got; end if;
+  -- A row that has both is left as it was.
+  update settings set value = was where key = 'modBots';
+  if migrate_modbots_quiz_fields() <> 0 or (select value from settings where key = 'modBots') is distinct from was then raise exception 'a complete row was touched'; end if;
+  perform set_config('kayfabb.seeding', 'off', true);
 end $$;

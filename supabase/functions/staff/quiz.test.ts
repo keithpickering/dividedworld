@@ -133,6 +133,18 @@ test('a spent day and a System switched off write bank rows and make no call; th
   assert.match(d.records[1]!.record.why, /quizQuestionsPerDay is spent/);
 });
 
+test('a modBots row without quizQuestionsPerDay makes no call: the run stops on the instance check, and a settings object that slips past it is the bank always', async () => {
+  const row = { ...dividedWorld.settings.modBots } as Record<string, unknown>;
+  delete row.quizQuestionsPerDay;
+  const d = fakeDb({ modBots: row });
+  // The fake merges the defaults back; replace the row whole, as the database's does.
+  const whole: Db = { async rpc<T>(fn: string, args: Record<string, unknown>) { const r = await d.db.rpc<any>(fn, args); return (fn === 'instance_settings' ? { ...r, modBots: row } : r) as T; } };
+  const m = fakeModels();
+  await assert.rejects(runQuizzes(whole, m.models, dividedWorld, SLOT, () => Date.parse(SLOT)), /quizQuestionsPerDay/);
+  assert.equal(m.chats.length, 0);
+  assert.equal(d.count('write_visit_quiz'), 0);
+});
+
 test('a Mod gone from the roster, or no longer a Mod, gets a bank row and no call', async () => {
   const gone = fakeDb({ pending: [pend(V1, P1, 'nobody-at-all')] });
   const m = fakeModels();
@@ -156,7 +168,7 @@ test('a post with an admin-hidden version is sent blank: the read\'s own body, n
 });
 
 test('a veiled post\'s author is the read\'s stand-in, and a play\'s seen line reaches the prompt as a line over the post', async () => {
-  const withCard: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, { key: 'fake-card', name: 'Fake Card', seen: () => 'A SEEN LINE lies over this post.' } as never] };
+  const withCard: Instance = { ...dividedWorld, cards: [...dividedWorld.cards, { ...dividedWorld.cards[0]!, key: 'fake-card', name: 'Fake Card', seen: () => 'A SEEN LINE lies over this post.' }] };
   const play = { play: 'play-1', card: 'fake-card', at: '2026-11-04T09:30:00.000Z', by: null, config: null, state: null, text: null, covered: null };
   const d = fakeDb({ name: 'A Veiled Stranger', extras: { plays: [play] } });
   const m = fakeModels();

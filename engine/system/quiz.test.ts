@@ -9,14 +9,14 @@ const input = (over: Partial<QuizInput> = {}): QuizInput => ({
   title: 'Best Mario game?',
   author: 'Bob (they/them)',
   body: 'Odyssey. Odyssey. [redacted]',
-  charges: [{ board: '11111111-1111-1111-1111-111111111111', number: 2, predicate: 'noDoublePost', param: null, band: 'moderate' }],
+  charges: [{ rule: 'Rule 2: no double posting', band: 'moderate', cause: 'rule' }],
   ...over,
 });
 
 test('the prompt carries the post as given, its author, the title, the board, the charge and the brief, in the Mod\'s voice', () => {
   const p = quizPrompt(input());
   assert.ok(p.system.startsWith('You are Mod One, a stern but fair moderator.'));
-  for (const s of ['Odyssey. Odyssey. [redacted]', 'Bob (they/them)', 'Best Mario game?', 'Games', 'Rule 2:', '(moderate)', 'Ask whether the post is on topic.']) assert.ok(p.message.includes(s), s);
+  for (const s of ['Odyssey. Odyssey. [redacted]', 'Bob (they/them)', 'Best Mario game?', 'Games', 'Rule 2:', '(moderate; rule)', 'Ask whether the post is on topic.']) assert.ok(p.message.includes(s), s);
   assert.deepEqual(Object.keys((p.schema as any).properties), ['question', 'choices', 'answer']);
   assert.deepEqual((p.schema as any).required, ['question', 'choices', 'answer']);
 });

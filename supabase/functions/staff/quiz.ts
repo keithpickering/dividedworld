@@ -69,7 +69,9 @@ export async function runQuizzes(db: Db, models: Models, instance: Instance, slo
   const tuned = await withDatabaseSettings(instance, db);
   const settings = tuned.settings;
   let used = await db.rpc<number>('quiz_calls_today', {});
-  const most = settings.modBots.quizQuestionsPerDay;
+  // A missing or non-whole day's count is no budget at all (the bank always), never an unbounded one.
+  const given: unknown = settings.modBots.quizQuestionsPerDay;
+  const most = typeof given === 'number' && Number.isInteger(given) && given >= 0 ? given : 0;
   const roster = tuned.system.roster;
   const standings = new Map<string, Standing | null>();
   const standingOf = async (staff: string): Promise<Standing | null> => {
