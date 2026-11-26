@@ -1464,7 +1464,8 @@ declare
   last_season jsonb;
 begin
   if sn is null then return jsonb_build_object('last', null, 'initiatives', '[]'::jsonb); end if;
-  if sitting is not null then
+  -- An instance with no `phases` setting has no honeymoon to count (arc_season_span would refuse it), so it has no last season either.
+  if sitting is not null and exists (select 1 from settings g where g.key = 'phases') then
     select * into pred from arc_predecessor(sitting, sn) p;
     if found then
       select h.at into seated from season_handovers h

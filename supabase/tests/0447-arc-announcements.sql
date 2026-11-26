@@ -355,10 +355,10 @@ begin
   msg := pg_temp.refusal(format('select unpin_staff_thread(%L)', th));
   perform pg_temp.expect(msg like '42501%', 'a visitor called unpin_staff_thread: ' || coalesce(msg, 'allowed'));
   perform tests.unbecome();
-  -- The stickies are no client's.
-  perform tests.become(pg_temp.acct('an-admin'));
+  -- The stickies are a signed-in read (board_page runs as its caller and asks); a visitor is refused.
+  perform tests.become_anon();
   msg := pg_temp.refusal('select * from staff_stickies(system_board())');
-  perform pg_temp.expect(msg like '42501%', 'a client called staff_stickies: ' || coalesce(msg, 'allowed'));
+  perform pg_temp.expect(msg like '42501%', 'a visitor called staff_stickies: ' || coalesce(msg, 'allowed'));
   perform tests.unbecome();
   -- An admin unpins it; the pin is gone from the list, and the unpin is recorded with the admin.
   perform tests.become(pg_temp.acct('an-admin'));
@@ -651,6 +651,45 @@ begin
   perform pg_temp.expect(exists (select 1 from threads where id = th and board = sb), 'setup: unpinning moved the thread');
 end $$;
 
+-- ---- 10f. admin_staff_pins: an admin lists the open season's live staff pins on every board, oldest first, with each title; a player is refused; an unpinned thread leaves ----
+create function pg_temp.pins_as(label text) returns text language plpgsql as $$
+declare r text;
+begin
+  perform tests.become(pg_temp.acct(label));
+  r := (select coalesce(string_agg(p.thread::text || '|' || p.title, ',' order by p.pinned_at, p.thread), '') from admin_staff_pins() p);
+  perform tests.unbecome();
+  return r;
+exception when others then
+  perform tests.unbecome();
+  return 'refused ' || sqlstate;
+end $$;
+do $$
+declare
+  msg text;
+  live uuid[];
+  th uuid;
+begin
+  if to_regprocedure('admin_staff_pins()') is null then raise exception 'no admin_staff_pins'; end if;
+  select array_agg(p.thread order by p.id) into live from (
+    select distinct on (e.thread) e.thread, e.id, e.event from staff_pin_events e where e.season = pg_temp.season() order by e.thread, e.id desc) p where p.event = 'pinned';
+  perform pg_temp.expect(cardinality(live) >= 2, 'setup: the season has ' || coalesce(cardinality(live), 0) || ' live pins');
+  perform pg_temp.expect((select count(*) from unnest(string_to_array(pg_temp.pins_as('an-admin'), ',')) x) = cardinality(live), 'the admin does not see every live pin: ' || pg_temp.pins_as('an-admin'));
+  perform pg_temp.expect((select bool_and(pg_temp.pins_as('an-admin') like '%' || t.id::text || '|' || t.title || '%') from threads t where t.id = any (live)), 'a pin is listed without its title');
+  perform pg_temp.expect((select array_agg(split_part(x, '|', 1)::uuid order by n) from unnest(string_to_array(pg_temp.pins_as('an-admin'), ',')) with ordinality y(x, n)) = (select array_agg(thread order by n) from staff_stickies(system_board()) with ordinality z(thread, pinned_at, n)),
+    'the admin''s list is not in pin order');
+  perform pg_temp.expect(pg_temp.pins_as('an-player') like 'refused 42501' and pg_temp.pins_as('an-player') = pg_temp.pins_as('an-player'), 'a player read the staff pins: ' || pg_temp.pins_as('an-player'));
+  msg := pg_temp.refusal('select * from admin_staff_pins()');
+  perform tests.become_anon();
+  msg := pg_temp.refusal('select * from admin_staff_pins()');
+  perform tests.unbecome();
+  perform pg_temp.expect(msg like '42501%', 'a visitor called admin_staff_pins: ' || coalesce(msg, 'allowed'));
+  th := live[1];
+  perform tests.become(pg_temp.acct('an-admin'));
+  perform unpin_staff_thread(th);
+  perform tests.unbecome();
+  perform pg_temp.expect(pg_temp.pins_as('an-admin') not like '%' || th::text || '%' and pg_temp.pins_as('an-admin') like '%' || live[2]::text || '%', 'an unpinned thread stayed in the admin''s list');
+end $$;
+
 -- ---- 10e. The masks: the new reads hold no owner, account or reaction word (board_page, which reads the reader's own reactions for the cards' marks, is held to `owner` alone); driven red on a planted read ----
 create function pg_temp.leaks(proc regprocedure, words text default '(owner|account|reaction)') returns text language sql as $$
   select string_agg(distinct m[1], ',') from regexp_matches(lower(pg_get_functiondef(proc)), words, 'g') m
@@ -661,10 +700,10 @@ declare
   p regprocedure;
 begin
   perform pg_temp.expect(pg_temp.leaks('pg_temp.poisoned()'::regprocedure) = 'owner', 'the masks check did not find an owner read');
-  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key') loop
+  for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins') loop
     perform pg_temp.expect(pg_temp.leaks(p) is null, p::text || ' reads a private fact: ' || pg_temp.leaks(p));
   end loop;
-  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key')) = 3, 'a function the masks check reads is missing');
+  perform pg_temp.expect((select count(*) from pg_proc where pronamespace = 'public'::regnamespace and proname in ('arc_plot', 'staff_stickies', 'arc_beat_key', 'admin_staff_pins')) = 3, 'a function the masks check reads is missing');
   for p in select oid::regprocedure from pg_proc where pronamespace = 'public'::regnamespace and proname in ('pool_record', 'meeting_context', 'board_page') loop
     perform pg_temp.expect(pg_temp.leaks(p, '(owner)') is null, p::text || ' reads a character''s owner: ' || pg_temp.leaks(p, '(owner)'));
   end loop;
@@ -689,4 +728,5 @@ begin
   perform pg_temp.expect(jsonb_array_length(pg_temp.plot('an-m1') -> 'initiatives') = 0, 'the new season''s plot holds the old season''s initiatives: ' || (pg_temp.plot('an-m1') -> 'initiatives')::text);
   perform pg_temp.expect(pool_record(pg_temp.a_thread(), 'an-m1') -> 'plot' -> 'initiatives' = '[]'::jsonb, 'a pool record holds the old season''s initiatives');
   perform pg_temp.expect(pg_temp.page((select b.slug from boards b where b.id = system_board()), 1) -> 'stickies' = '[]'::jsonb, 'the board lists a sticky of the closed season');
+  perform pg_temp.expect(pg_temp.pins_as('an-admin') = '', 'the admin''s list holds a pin of the closed season: ' || pg_temp.pins_as('an-admin'));
 end $$;
