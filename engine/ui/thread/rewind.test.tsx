@@ -164,6 +164,7 @@ describe('a rewind that lands while the reader is on the page', () => {
     expect(seen.filter((t) => t.includes('The second words.'))).toEqual([]);
     expect(spy).toHaveBeenCalledTimes(1);
   });
+
   test('a play that lands before the screen joins is drawn rewound from the join\'s catch-up, with no view read', async () => {
     const w = await world(false);
     const spy = vi.spyOn(w.fake, 'rewindView');
