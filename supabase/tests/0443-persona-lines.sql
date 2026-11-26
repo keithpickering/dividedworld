@@ -1,4 +1,4 @@
--- A persona's stock lines and the settings that hold them (supabase/migrations/0442_persona_lines.sql, part 1; docs/plans/2026-11-25-persona-lines-plan.md, Task 3; design sections 1.2 and 1.5).
+-- A persona's stock lines and the settings that hold them (supabase/migrations/0443_persona_lines.sql, part 1; docs/plans/2026-11-25-persona-lines-plan.md, Task 3; design sections 1.2 and 1.5).
 --
 -- 1. system_line picks from the set of the speaker: the persona's own `personaLines`, else the instance's `systemLines`, else the move's plain words as it always has.
 --    `speaker` names the set where the poster is not the staff key whose name fills `{boss}`.

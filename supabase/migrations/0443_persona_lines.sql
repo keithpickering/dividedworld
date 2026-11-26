@@ -136,7 +136,7 @@ begin
     when 'searchLanguage' then case when not coalesce(jsonb_typeof(v) = 'string' and exists (select 1 from pg_ts_config c where c.cfgname = v #>> '{}'), false)
       then 'the name of a text search configuration this database holds (english or simple, for example)' end
     when 'searchRankPool' then case when not setting_whole(v, 100, 100000) then 'a whole number of matches from 100 to 100,000' end
-    -- The staff's own stock lines and what is owed (0442, docs/plans/2026-11-25-persona-lines-design.md, sections 1.2 and 1.5): personaLines is held by setting_personalines, and owedLines gives the grace, the day's cap and a run's cap.
+    -- The staff's own stock lines and what is owed (0443, docs/plans/2026-11-25-persona-lines-design.md, sections 1.2 and 1.5): personaLines is held by setting_personalines, and owedLines gives the grace, the day's cap and a run's cap.
     when 'personaLines' then case when not setting_personalines(v) then 'an object of objects, each key of a persona''s set holding a non-empty list of non-blank lines' end
     when 'owedLines' then case when not coalesce(jsonb_typeof(v) = 'object' and setting_whole(v -> 'graceMinutes', 1, 1440) and setting_whole(v -> 'perDay', 0, 10000) and setting_whole(v -> 'perRun', 1, 200), false)
       then 'an object giving graceMinutes (a whole number of minutes from 1 to 1440), perDay (a whole number from 0 to 10000) and perRun (a whole number from 1 to 200)' end
@@ -441,7 +441,7 @@ $function$;
 --   functions   owe_line, owed_lines_due (the staff run's read: a jsonb array, as filings_due returns), pay_owed_line (idempotent: it takes the queue row's lock, and a line already paid returns its payment and writes nothing),
 --               pay_owed_unsaid (the tick's, for The System off or a line that cannot be paid), owed_grace_minutes, standing_order_line_calls_today (the run's count of the day's calls from the ledger, as filing_calls_today counts
 --               filings); say_move_end, hand_over and system_tick re-created (the arrival and the lapse owe; step 6 of the tick pays what is late), season_news and staff_requests_now reading the paid act, and staff_call_records taking the duty standingOrderLine.
---   Latest definitions copied: hand_over and system_tick (0437), say_move_end (0442 part 1), season_news (0442 part 1), staff_requests_now (0424), staff_call_records' duty check (0424). Everything each does that is not named is as written.
+--   Latest definitions copied: hand_over and system_tick (0437), say_move_end (0443 part 1), season_news (0443 part 1), staff_requests_now (0424), staff_call_records' duty check (0424). Everything each does that is not named is as written.
 --   Existing rows: moves in force when this lands owe their ends from then on; a lapse already ruled keeps its post_act (staff_requests_now reads it first); an arrival posted before this is found by season_news as it was (no debt, no new finder); no row is written.
 --   Ways out: an owed line ends by itself: voiced by the staff run, or posted from stock by the tick at the grace, or paid from stock at once when it cannot be voiced, or paid unsaid with a reason when it cannot be posted; the act it belongs
 --   to has already happened, so no player, character or post waits on it. A line whose payment keeps raising is paid unsaid at the fifth failure.
@@ -648,7 +648,7 @@ create or replace view staff_requests_now as
   from staff_requests q left join staff_request_rulings g on g.request = q.id left join staff_requests_open o on o.request = q.id
   left join lateral (select p.act from lines_owed w join lines_paid p on p.owed = w.id where w.request = q.id and w.line_key = 'requestLapsed' order by w.id desc limit 1) lp on true;
 
--- say_move_end (0442, part 1), the end owed and not posted: the poster (the current Boss for a superseded end, the move's maker otherwise) owes the key for the end in the move's thread, with the facts the staff run and the stock line
+-- say_move_end (0443, part 1), the end owed and not posted: the poster (the current Boss for a superseded end, the move's maker otherwise) owes the key for the end in the move's thread, with the facts the staff run and the stock line
 -- need: the move, why it ended, when, and its maker (the staff whose name fills {boss}). Nothing is posted here; pay_owed_line posts it. Everything else as part 1 wrote it.
 create or replace function say_move_end(move_act uuid, why text) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -1201,7 +1201,7 @@ begin
 end $$;
 
 
--- season_news (0442, part 1), a Boss's arrival read through its payment: where the handover owed its arrival (lines_owed), the quote is the post that payment made (lines_paid.act), found by the debt's key (facts.handover) and
+-- season_news (0443, part 1), a Boss's arrival read through its payment: where the handover owed its arrival (lines_owed), the quote is the post that payment made (lines_paid.act), found by the debt's key (facts.handover) and
 -- never by time; a debt not yet paid, or paid unsaid, has no arrival to show. A handover with no debt (one recorded before the migration) is read as it was, by the thread or the instant. Everything else as part 1 wrote it.
 create or replace function public.season_news(before timestamp with time zone DEFAULT NULL::timestamp with time zone, most integer DEFAULT 20)
  returns setof season_news_row
@@ -1278,7 +1278,7 @@ begin
     select c.kind, p.id as act, p.thread, p.seq, c.at, c.season, (select ch.name from characters ch where ch.staff = c.who) as name,
            left(p.body, 600) as quote, null::integer as count, null::jsonb as detail
     from boss_page c
-    -- A handover whose arrival was owed (lines_owed, 0442): the arrival is the post its payment made, by the debt's key (facts.handover), and no other post stands for it; a handover recorded before there was a debt is read as it was.
+    -- A handover whose arrival was owed (lines_owed, 0443): the arrival is the post its payment made, by the debt's key (facts.handover), and no other post stands for it; a handover recorded before there was a debt is read as it was.
     cross join lateral (select exists (select 1 from lines_owed w where w.line_key = 'bossArrival' and w.facts ->> 'handover' = c.handover_id::text and c.line = 'bossArrival') as owed) ow
     left join lateral (
       select a.id, a.thread, a.seq, public_payload(a.payload, version_hidden(a.id), a.id) ->> 'body' as body

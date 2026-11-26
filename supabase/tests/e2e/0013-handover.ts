@@ -112,7 +112,7 @@ test('the outgoing Boss names a successor, the season rolls over, and the new Bo
   assert.equal(sql(`select count(*) from open_moves where move_act = '${oldRename}'`), '1', 'the old rename carries over');
   assert.equal(boardName(), 'Pirate Puns Palace');
   assert.equal(Number(sql(`select balance from move_bank where staff = '${NOMINEE}'`)), 0, 'an arriving Boss starts at zero');
-  // The arrival is owed (0442), and paid from stock here as the tick's grace pays it.
+  // The arrival is owed (0443), and paid from stock here as the tick's grace pays it.
   sql(`select pay_owed_line(owed, null) from lines_owed_open`);
   const said = (staff: string) => Number(sql(`select count(*) from acts a join characters c on c.id = a.character where c.staff = '${staff}' and a.kind = 'post' and a.created_at >= '${before}'`));
   assert.equal(said(OLD), 1, 'the outgoing Boss says farewell once');

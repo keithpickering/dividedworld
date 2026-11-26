@@ -126,7 +126,7 @@ begin
 end $$;
 
 -- ---- 2. A departure: a second row in the same season, the chair handed on at once ----
--- The first handover's arrival is owed (0442) and paid from stock here, so that the departure's posts are counted alone.
+-- The first handover's arrival is owed (0443) and paid from stock here, so that the departure's posts are counted alone.
 select pay_owed_line(lo.owed, null) from lines_owed_open lo order by lo.owed;
 do $$
 declare
@@ -146,7 +146,7 @@ begin
   answer := hand_over(pg_temp.open_season(), 'dp-mod', now(), true);
   perform pg_temp.expect(answer ->> 'boss' is not distinct from 'dp-mod2' and answer ->> 'how' is not distinct from 'rotation', 'the departure did not seat dp-mod2 by rotation: ' || answer::text);
   perform pg_temp.expect((select count(*) from season_handovers where season = pg_temp.open_season()) = 2, 'the open season does not hold two handover rows');
-  -- The line is owed (0442) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(lo.owed, null) from lines_owed_open lo join lines_owed w on w.id = lo.owed where w.line_key = 'bossArrival' order by lo.owed;
   select * into h from season_handovers where season = pg_temp.open_season() order by id desc limit 1;
   perform pg_temp.expect(h.cause is not distinct from 'departure' and h.how is not distinct from 'rotation' and h.outgoing is not distinct from 'dp-mod' and h.boss is not distinct from 'dp-mod2' and h.arrival_act is not null,

@@ -914,7 +914,7 @@ begin
   -- B is due a minute from now: it is neither lapsed nor out of the queue. Checked first, so a pass that lapses what is not yet due is named as that and not as a miscount.
   if exists (select 1 from staff_request_rulings g where g.request = rb) or (select v.waiting from staff_requests_now v where v.id = rb) is distinct from true then raise exception 'B lapsed a minute before lapses_at'; end if;
   if (tick ->> 'requestsLapsed')::integer is distinct from 3 then raise exception 'the tick lapsed % requests, not 3 (A, C and D): %', tick ->> 'requestsLapsed', tick; end if;
-  -- The line is owed (0442) and paid from stock here, as the tick's grace pays it.
+  -- The line is owed (0443) and paid from stock here, as the tick's grace pays it.
   perform pay_owed_line(o.owed, null) from lines_owed_open o order by o.owed;
   if (select (g.ruling, g.post_act is not null) from staff_requests_now g where g.id = ra) is distinct from row('lapsed'::text, true) then raise exception 'A did not lapse with a reply at lapses_at'; end if;
   if (select (g.ruling, g.post_act) from staff_request_rulings g where g.request = rc) is distinct from row('lapsed'::text, null::uuid) then raise exception 'a hidden request did not lapse with no reply'; end if;
