@@ -152,6 +152,10 @@ const fires = (markdown, pattern, o = {}) => {
     ['"nobody" with no seeing or knowing after it', '## A\n\nA silent Turn, so nobody is told. Nobody starts ahead.\n'],
     ['"you alone" that is not "yours alone"', '## A\n\nIt is yours, and no other player can read it.\n'],
   ]) check(`no claim of privacy fires: ${name}`, faultsOf(markdown).length === 0, JSON.stringify(faultsOf(markdown)));
+  for (const text of ['So nobody learned who you spared.', 'No one saw it.', 'Nobody knew.', 'Only you knew it.', 'Nobody has known.']) {
+    check(`a past tense fires: "${text}"`, privacyOverclaims(text).length === 1, JSON.stringify(privacyOverclaims(text)));
+  }
+  check('"Nobody heard" stays clean', privacyOverclaims('Nobody heard.').length === 0);
   check('privacyOverclaims names what it found', JSON.stringify(privacyOverclaims('Only you see it, and nobody knows. It is yours alone.')) === JSON.stringify(['Only you see', 'nobody knows', 'yours alone']), JSON.stringify(privacyOverclaims('Only you see it, and nobody knows. It is yours alone.')));
   for (const [name, markdown] of retyped) {
     const r = faultsOf(markdown);
