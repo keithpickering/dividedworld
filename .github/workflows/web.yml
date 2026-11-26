@@ -27,10 +27,10 @@ jobs:
     # Measured on 2026-11-26: the suite was 5,502 tests (4,306 on 2026-11-13, when it went to six shards). With six, the
     # first five took 13 to 18 minutes and the sixth 23 to 26, and one run in eight (45746088304) cancelled it at the
     # limit with no test failed. The last shard by count holds the specs late in the alphabet, the slowest per test:
-    # glass-text's 90-second budgets (#1150), list-rows, origin-effects, steel-chair, hot-box, graffiti and veils. Seven
-    # split glass-text across the last two shards (206 and 140 of its tests where the sixth held 271); the per-shard times
-    # this measured are in the PR that made the change (#1160). The 30-minute limit stays as the guard on a hang. The total
-    # comes from strategy.job-total, so the matrix is the one list: to add a shard, add a number to it.
+    # glass-text's 90-second budgets (#1150), list-rows, origin-effects, steel-chair, hot-box, graffiti and veils. Of
+    # glass-text's 346 tests the sixth of six held 271; the sixth of seven holds 206 and the seventh 140.
+    # The 30-minute limit is left above the slowest shard so that it still ends a hang. The total comes from
+    # strategy.job-total, so the matrix is the one list: to add a shard, add a number to it.
     # tools/check-release-workflows.mjs holds that shape (issue #605).
     strategy:
       fail-fast: false
