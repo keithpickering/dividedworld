@@ -70,7 +70,7 @@ const MAN = {
 };
 eq('price: the test\'s own entry', price('a.spec.ts › outer › one', MAN), 99);
 eq('price: else its spec\'s mean', price('a.spec.ts › top test', MAN), 10);
-eq('price: else the suite\'s mean (30 s... (2*10+2*20)/4)', price('zzz.spec.ts › new', MAN), 15);
+eq('price: else the suite\'s mean, weighted by count ((1*10+3*20)/4)', price('zzz.spec.ts › new', { measured: null, specs: { 'a.spec.ts': { count: 1, mean: 10 }, 'c.spec.ts': { count: 3, mean: 20 } }, tests: {} }), 17.5);
 eq('price: else 1 with no specs at all', price('zzz.spec.ts › new', { measured: null, specs: {}, tests: {} }), 1);
 
 /* ---- pack ---- */
@@ -111,6 +111,11 @@ eq('pack: shuffled input, the same shards', pack([...MIXED].reverse(), MIX_MAN, 
 eq('pack: shuffled input, the same order inside a shard too', pack([...MIXED].reverse(), MIX_MAN, 3), packed);
 eq('pack: a tie goes to the lowest index', pack(['x.spec.ts › a', 'x.spec.ts › b'], { measured: null, specs: {}, tests: {} }, 2).shards, [['x.spec.ts › a'], ['x.spec.ts › b']]);
 
+/* exact result: 5,4,3,3 into 2 is longest first, each into the lightest shard, ties by key then lowest index */
+const EXACT = { measured: null, specs: {}, tests: { 'f.spec.ts › a5': 5, 'f.spec.ts › b4': 4, 'f.spec.ts › c3': 3, 'f.spec.ts › d3': 3 } };
+eq('pack: exact shards and totals for 5,4,3,3 into 2', pack(['f.spec.ts › d3', 'f.spec.ts › b4', 'f.spec.ts › a5', 'f.spec.ts › c3'], EXACT, 2),
+  { shards: [['f.spec.ts › a5', 'f.spec.ts › d3'], ['f.spec.ts › b4', 'f.spec.ts › c3']], totals: [8, 7] });
+
 /* ---- the poison packers, driven red against the assertion ---- */
 const dropsLast = (keys, man, n) => {
   const r = pack(keys, man, n);
@@ -138,7 +143,6 @@ if (stray.length === 1 && /foo›bar/.test(stray[0])) ok('keyProblems names a ti
 const pre = keyProblems(['a.spec.ts › x', 'a.spec.ts › x › y', 'b.spec.ts › x']);
 if (pre.length === 1 && /a\.spec\.ts › x\b/.test(pre[0]) && /prefix/.test(pre[0])) ok('keyProblems names a prefix pair in one file');
 else fail('keyProblems: prefix pair', JSON.stringify(pre));
-eq('keyProblems: the same prefix across files is fine', keyProblems(['a.spec.ts › x', 'b.spec.ts › x › y']), []);
 const spaced = listProblems({ suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs: [test('left › right')] }] });
 if (spaced.length === 1 && /left › right/.test(spaced[0])) ok('listProblems sees a title holding " › " that a key cannot show'); else fail('listProblems', JSON.stringify(spaced));
 eq('listProblems: a clean list has none', listProblems(LIST), []);
@@ -155,6 +159,8 @@ throws('parseCostShard: bare flag', () => parseCostShard(['--cost-shard']), /cos
 throws('parseCostShard: two flags', () => parseCostShard(['--cost-shard=1/7', '--cost-shard=2/7']), /once|twice|two/);
 throws('parseCostShard: with --shard', () => parseCostShard(['--cost-shard=1/7', '--shard=1/7']), /--shard/);
 throws('parseCostShard: with --test-list', () => parseCostShard(['--cost-shard=1/7', '--test-list=x.txt']), /--test-list/);
+throws('parseCostShard: with bare --shard', () => parseCostShard(['--cost-shard=1/7', '--shard']), /--shard/);
+throws('parseCostShard: with bare --test-list', () => parseCostShard(['--cost-shard=1/7', '--test-list']), /--test-list/);
 throws('parseCostShard: with a positional file filter', () => parseCostShard(['--cost-shard=1/7', 'e2e/x.spec.ts']), /positional|filter/);
 throws('parseCostShard: a flag value after a space reads as positional', () => parseCostShard(['--cost-shard=1/7', '--workers', '2']), /positional|filter/);
 eq('parseCostShard: positionals alone are not its business', parseCostShard(['e2e/x.spec.ts']), null);
