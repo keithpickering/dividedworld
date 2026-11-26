@@ -423,4 +423,16 @@ test('every roster persona with a quiz weakness has a quiz brief within its boun
 test('the settings hold the quiz duty\'s two values', () => {
   assert.equal(defaults.modBots.quizQuestionsPerDay, 60);
   assert.equal(defaults.modBots.quizWriteMinutes, 15);
+  assert.equal(defaults.modBots.concessionsPerDay, 60);
+  assert.equal(defaults.modBots.concessionWriteMinutes, 15);
+});
+
+test('every roster persona carries five concessions that pass the instance check, and the concession duty is assigned', () => {
+  for (const p of system.roster) {
+    assert.equal(p.concessions.length, 5, `${p.key}: five drafted lines`);
+    assert.deepEqual(instanceProblems(instance).filter((m) => m.includes(`"${p.key}"`) && /concession/.test(m)), [], p.key);
+    assert.ok(p.concessions.filter((c) => c.includes('{who}')).length >= 3, `${p.key}: most of its lines name whoever talked it down`);
+    assert.equal(new Set(p.concessions).size, 5, `${p.key}: no line twice`);
+  }
+  assert.equal(system.duties.concession, 'filer');
 });
