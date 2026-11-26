@@ -245,6 +245,11 @@ export const instanceUi: InstanceUi = Object.freeze({
     staffWord: 'The staff',
     gameWord: 'the game',
     staffBoardTag: 'Staff post here; you react and spin',
+    // A staff pin on the board, and the admin's unpin on the Machine screen (the arc announcements design, section 4): plain words.
+    stickyPrefix: 'Sticky:',
+    adminStaffPins: 'Pinned staff threads',
+    adminUnpin: 'Unpin',
+    adminUnpinRefused: 'That thread has no live pin.',
     // The footer's 80 by 15 badges: pairs of short words, decoration in the footer's pixel face (Silkscreen, fonts/).
     badges: Object.freeze([Object.freeze(['Game', 'On'] as const), Object.freeze(['Masks', 'On'] as const), Object.freeze(['Kilter', 'Off'] as const)]),
     // A card's kind tag: a Move is cast (or set face down), a Reversal is only set face down, a Gimmick is used face up on your own post, character or thread.

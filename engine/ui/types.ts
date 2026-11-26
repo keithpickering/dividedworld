@@ -138,6 +138,16 @@ export interface UiCopy {
   readonly gameWord: string;
   readonly staffBoardTag: string;
   /**
+   * The staff board's stickies and the admin's unpin, in plain words (the arc announcements design, section 4): `stickyPrefix` goes
+   * before a staff pin's title on the board ("Sticky:"); the Machine screen lists the live staff pins under `adminStaffPins`, each with
+   * an `adminUnpin` button, and says `adminUnpinRefused` when the pin is already gone. Each is non-empty text; `instanceUiProblems`
+   * refuses one that is not.
+   */
+  readonly stickyPrefix: string;
+  readonly adminStaffPins: string;
+  readonly adminUnpin: string;
+  readonly adminUnpinRefused: string;
+  /**
    * How a card's kind is said on its face and in its spoken name, in the instance's words, for each way a card is played: cast on a
    * target (`cast`), set face down (`set`) and used on the player's own post (`use`). Absent, a face says the play capitalized
    * ("Cast", "Set", "Use"). Each is non-empty text; `instanceUiProblems` refuses one that is not.
