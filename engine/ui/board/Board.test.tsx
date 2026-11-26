@@ -280,9 +280,12 @@ describe('the row', () => {
     const line = fake.seed.post(w.ids[0]!, w.spritey, 'own line', { at: T0 + 2 * DAY });
     expect((await fake.spin(line, w.mine!, 'From nowhere', 'x')).ok).toBe(true);
     withOrigin(fake, 'From nowhere', { kind: 'post', thread: w.ids[0]!, title: 'Thread 001', seq: 2, board: 'no-such-board' });
+    const read = vi.spyOn(fake, 'boot');
     renderIn(fake, <LoadedBoard slug="general" />);
     await screen.findByRole('link', { name: 'From nowhere' });
-    await new Promise((r) => setTimeout(r, 20));
+    await waitFor(() => expect(read.mock.results.length).toBeGreaterThan(0));
+    await read.mock.results[0]!.value;
+    await act(async () => {});
     expect(rowOf('From nowhere').querySelector('.kb-thread-spun')).toHaveTextContent(/spun from #2 in Thread 001$/u);
   });
 

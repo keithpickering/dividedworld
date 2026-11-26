@@ -28,12 +28,15 @@ export function SpunInto({ act, here }: { readonly act: Id; readonly here: Id | 
   return (
     <p className="kb-spun">
       ↳ Spun into:{' '}
-      {threads.map((t, i) => (
-        <span key={t.id}>
-          {i > 0 && ' · '}
-          <Link to={`/t/${t.id}`}>{t.title}</Link> ({t.board !== here && boardName(t.board) !== null ? `on ${boardName(t.board)}, ` : ''}{t.replies} {t.replies === 1 ? 'reply' : 'replies'})
-        </span>
-      ))}
+      {threads.map((t, i) => {
+        const on = t.board === here ? null : boardName(t.board);
+        return (
+          <span key={t.id}>
+            {i > 0 && ' · '}
+            <Link to={`/t/${t.id}`}>{t.title}</Link> ({on !== null ? `on ${on}, ` : ''}{t.replies} {t.replies === 1 ? 'reply' : 'replies'})
+          </span>
+        );
+      })}
       {all === null && spun.more > 0 && (
         <>
           {' · '}

@@ -58,6 +58,20 @@ describe('a thread spun from a poll', () => {
     expect(within(head).getAllByRole('link')).toHaveLength(1);
   });
 
+  test('the poll\'s Spun into in the box reads against the board being read: no "on" for a thread on it, the board named for one elsewhere', async () => {
+    const w = world();
+    const here = await spinFrom(w, w.poll);
+    w.fake.clock.advance(86_400_000);
+    const over = await w.fake.spin(w.poll, w.zed, 'Over there', 'x', undefined, undefined, 'off-topic');
+    if (!over.ok) throw new Error(over.error);
+    open(w, here);
+    const poll = await question(await box());
+    const line = (await within(poll).findByText(/Spun into:/u)).closest('p')!;
+    await waitFor(() => expect(line).toHaveTextContent('Over there (on Off Topic, 0 replies)'));
+    expect(line).toHaveTextContent('About the poll (0 replies)');
+    expect(line).not.toHaveTextContent('on General');
+  });
+
   test('the box draws the poll in its content area, with its counts and who chose each option', async () => {
     const w = world();
     open(w, await spinFrom(w, w.poll));

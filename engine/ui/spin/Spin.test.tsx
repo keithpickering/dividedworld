@@ -191,6 +191,12 @@ const openSpun = (w: ReturnType<typeof threadWorld>, thread: string) =>
 const marks = (box: HTMLElement) => [...box.querySelectorAll('.kb-mark[data-kb-card]')].map((el) => `${el.getAttribute('data-kb-card')}:${el.getAttribute('data-kb-plays')}`);
 const origin = () => screen.findByRole('group', { name: 'Origin' });
 
+/** The boards have been read and taken in: a spy on `boot` or `boards` was called, its answer came, and the screen drew what it set. */
+async function namesLoaded(spy: { readonly mock: { readonly results: ReadonlyArray<{ readonly value: unknown }> } }) {
+  await waitFor(() => expect(spy.mock.results.length).toBeGreaterThan(0));
+  await spy.mock.results[0]!.value;
+  await act(async () => {});
+}
 describe('the ORIGIN box', () => {
   test('shows the origin Act, links back to it, and says what it came from', async () => {
     const w = threadWorld(3);
@@ -236,8 +242,10 @@ describe('the ORIGIN box', () => {
     expect(within(head).getByRole('link', { name: '#2 in A short thread' })).toBeInTheDocument();
     cleanup();
     const same = await spinFrom(w, w.ids[1]!);
+    const read = vi.spyOn(w.fake, 'boot');
     openSpun(w, same);
     const sameHead = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await namesLoaded(read);
     await waitFor(() => expect(sameHead).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u));
   });
 
@@ -253,8 +261,10 @@ describe('the ORIGIN box', () => {
   test('the head of an update-spun box names no board', async () => {
     const w = threadWorld(3);
     const update = w.fake.seed.update({ title: 'Traps bite', body: 'Hi.' });
+    const read = vi.spyOn(w.fake, 'boot');
     openSpun(w, await spinFrom(w, update, 'About the update'));
     const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
+    await namesLoaded(read);
     await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from the update “Traps bite”/u));
     expect(head).not.toHaveTextContent(/ on (General|Off Topic|Staff Announcements)/u);
   });
@@ -267,8 +277,8 @@ describe('the ORIGIN box', () => {
     const boards = vi.spyOn(w.fake, 'boot').mockImplementation(async () => ({ ...(await realBoot()), boards: [] }));
     openSpun(w, over.value.thread.id);
     const head = (await origin()).querySelector('.kb-origin-head-text') as HTMLElement;
-    await waitFor(() => expect(boards).toHaveBeenCalled());
-    await waitFor(() => expect(head).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u));
+    await namesLoaded(boards);
+    expect(head).toHaveTextContent(/^ORIGIN · Spun from #2 in A short thread$/u);
   });
 
   test('with no place, the head reads "an Act" and the box says nothing about the rest of the cards', async () => {
@@ -1310,8 +1320,8 @@ describe('Spun into', () => {
     openThread(w);
     const article = await screen.findByRole('article', { name: /^Post 2 /u });
     const line = await within(article).findByText(/Spun into:/u);
-    await waitFor(() => expect(boards).toHaveBeenCalled());
-    await waitFor(() => expect(line.closest('p')).toHaveTextContent('↳ Spun into: Over there (0 replies)'));
+    await namesLoaded(boards);
+    expect(line.closest('p')).toHaveTextContent('↳ Spun into: Over there (0 replies)');
   });
 
   test('lists the first five and says "and N more"; the button reads that Act\'s whole list', async () => {

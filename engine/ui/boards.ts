@@ -6,7 +6,21 @@
 import { useEffect, useState } from 'react';
 import { useBoot } from './boot.tsx';
 import { useKayfa } from './context.tsx';
-import type { BoardSummary, Id } from './data/api.ts';
+import type { BoardSummary, Id, KayfaApi } from './data/api.ts';
+
+/**
+ * The fallback read, shared: every instance mounted in the same moment (a board's rows each name a board) waits on one in-flight `api.boards()` per
+ * `api`, so N instances make one request. It is dropped when it settles, so a later mount reads fresh.
+ */
+const reading = new WeakMap<object, Promise<readonly BoardSummary[]>>();
+function readBoards(api: KayfaApi): Promise<readonly BoardSummary[]> {
+  let p = reading.get(api);
+  if (p === undefined) {
+    p = api.boards().finally(() => { reading.delete(api); });
+    reading.set(api, p);
+  }
+  return p;
+}
 
 export function useBoards(): readonly BoardSummary[] {
   const { api } = useKayfa();
@@ -15,7 +29,7 @@ export function useBoards(): readonly BoardSummary[] {
   useEffect(() => {
     if (boot) return;
     let live = true;
-    void api.boards().then((b) => { if (live) setRead(b); }, () => {});
+    void readBoards(api).then((b) => { if (live) setRead(b); }, () => {});
     return () => { live = false; };
   }, [api, boot]);
   return boot ? boot.boards : read;
