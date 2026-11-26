@@ -3,42 +3,42 @@
   "views": {
     "side-left": {
       "width": 1024,
-      "height": 598,
+      "height": 771,
       "pivot": {
         "x": 512,
-        "y": 536
+        "y": 549
       }
     },
     "three-quarter-left": {
-      "width": 958,
-      "height": 650,
+      "width": 962,
+      "height": 847,
       "pivot": {
         "x": 493,
-        "y": 540
+        "y": 554
       }
     },
     "front": {
-      "width": 920,
-      "height": 668,
+      "width": 928,
+      "height": 877,
       "pivot": {
-        "x": 460,
-        "y": 542
+        "x": 464,
+        "y": 556
       }
     },
     "three-quarter-right": {
-      "width": 958,
-      "height": 650,
+      "width": 962,
+      "height": 847,
       "pivot": {
-        "x": 465,
-        "y": 540
+        "x": 469,
+        "y": 554
       }
     },
     "side-right": {
       "width": 1024,
-      "height": 598,
+      "height": 771,
       "pivot": {
         "x": 512,
-        "y": 536
+        "y": 549
       }
     }
   }

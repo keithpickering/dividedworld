@@ -10,6 +10,12 @@ and writes `<key>/<view>.webp` and `<key>/views.json`. The design is docs/plans/
 The views come from `--views` and `--default` if given, else the item's own `views.json`, else (a variant with neither)
 the base item's `views.json`. An item with none of these must be given them.
 
+An item's `rig.json` is optional, and holds either or both of two things. `"pitch": <degrees>` is how far below the
+horizon the camera looks, from 0 to 60; without it the camera looks 6 degrees down, as in hat.blend. A pitch other than
+6 swings the camera, and nothing else, up round the horizontal axis through the pivot, so the item is seen from higher
+while the light stays where it is and the item is lit as every other item is. A variant takes its base item's pitch
+unless its own `rig.json` gives one.
+
 A variant's `rig.json` is `{ "model": "<base key>", "hue": <degrees>, "recolor": ["<object>", ...] }`: the rig loads the
 base's model, then turns the hue of every color stop of every Color Ramp node in the materials of the named objects by
 `hue` degrees (HSV hue; saturation and value kept). A material the objects share, such as a cap's button and body,
@@ -48,7 +54,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # --- measured from hat.blend (see the header) --------------------------------------------------------------------
 SIZE0 = 1.4175                   # the research cap's size: max(radius from the axis, height), in its units
 CAMERA = (4.9214, 0.0, 0.7925)   # relative to the pivot, on +X, looking along -X
-PITCH = 6.0                      # degrees below the horizon
+PITCH = 6.0                      # degrees below the horizon; an item's rig.json may give its own (see the header)
 LENS, SENSOR = 50.0, 36.0
 LIGHT = (3.5735, 0.4029, 6.6764)  # relative to the pivot, with the camera on +X
 LIGHT_ENERGY, LIGHT_EXPOSURE, LIGHT_RADIUS = 725.63, 1.3793106, 0.1
@@ -83,6 +89,17 @@ def args():
 def read_json(path):
     with open(path) as f:
         return json.load(f)
+
+
+def pitch_of(key, rig, base):
+    """The camera's pitch for this item: its own rig.json's, else its base item's, else hat.blend's."""
+    for where, data in ((key, rig), (rig.get('model') if rig else None, base)):
+        if data and 'pitch' in data:
+            p = data['pitch']
+            if isinstance(p, bool) or not isinstance(p, (int, float)) or not 0 <= p <= 60:
+                sys.exit(f'{where}/rig.json: pitch must be a number of degrees from 0 to 60, not {p!r}')
+            return float(p)
+    return PITCH
 
 
 def views_wanted(a, rig):
@@ -254,7 +271,11 @@ def main():
     key = a['key']
     item = os.path.join(HERE, key)
     rig_path = os.path.join(item, 'rig.json')
-    rig = read_json(rig_path) if os.path.exists(rig_path) else None
+    own = read_json(rig_path) if os.path.exists(rig_path) else None
+    rig = own if own and 'model' in own else None   # a variant: its model is another item's
+    base_path = os.path.join(HERE, rig['model'], 'rig.json') if rig else None
+    base = read_json(base_path) if base_path and os.path.exists(base_path) else None
+    pitch = pitch_of(key, own, base)
     views, default = views_wanted(a, rig)
     model = os.path.join(HERE, rig['model'] if rig else key, 'model.blend')
     if not os.path.exists(model):
@@ -267,10 +288,13 @@ def main():
     k = item_size(objects) / SIZE0
     cam.location = Vector(CAMERA) * k
     cam.rotation_euler = (math.radians(90 - PITCH), 0.0, math.radians(90))
+    bpy.context.view_layer.update()
+    # A pitch of its own swings the camera up round the horizontal axis through the pivot (the origin); the light stays.
+    cam.matrix_world = Matrix.Rotation(math.radians(-(pitch - PITCH)), 4, 'Y') @ cam.matrix_world
     light.location = Vector(LIGHT) * k
     light_data.energy, light_data.exposure, light_data.shadow_soft_size = LIGHT_ENERGY * k * k, LIGHT_EXPOSURE, LIGHT_RADIUS * k
     bpy.context.view_layer.update()
-    print(f'RIG {key}: size scale {k:.4f}, camera {tuple(round(x, 3) for x in cam.location)}, '
+    print(f'RIG {key}: pitch {pitch:g}, size scale {k:.4f}, camera {tuple(round(x, 3) for x in cam.location)}, '
           f'light {tuple(round(x, 3) for x in light.location)}, energy {light_data.energy:.1f}')
     px = world_to_camera_view(sc, cam, Vector((0.0, 0.0, 0.0)))
     pivot_px = (px.x * RENDER_PX, px.y * RENDER_PX)  # from the bottom left of the full render
