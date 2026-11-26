@@ -37,7 +37,7 @@ interface Due {
   readonly cause_act?: string | null;
 }
 
-export type OwedStatus = 'voiced' | 'stock' | 'failed';
+export type OwedStatus = 'voiced' | 'stock' | 'failed' | 'already';
 export interface OwedRecord { readonly owed: number; readonly staff: string; readonly status: OwedStatus; readonly why?: string; readonly trims: readonly Trim[] }
 export type OwedOutcome = { readonly status: 'off' } | { readonly status: 'ok'; readonly lines: readonly OwedRecord[] };
 
@@ -121,8 +121,9 @@ export async function runOwedLines(db: Db, models: Models, instance: Instance): 
       await db.rpc('record_staff_call', { cause_act: d.cause_act, duty: 'standingOrderLine', staff: d.staff, record: { ...(failed ? { why: failed } : {}), key: d.line_key, trims, calls: 1 } });
     }
     if (failed || line === null) return stock(failed ?? 'the line was blank', trims);
-    await db.rpc('pay_owed_line', { owed: d.id, body: line });
-    return { owed: d.id, staff: d.staff, status: 'voiced', trims };
+    // The tick's grace may have paid the line while the call was made: pay_owed_line then writes nothing and answers `already`, so the line was not voiced by this run.
+    const paid = await db.rpc<{ already?: boolean } | null>('pay_owed_line', { owed: d.id, body: line });
+    return { owed: d.id, staff: d.staff, status: paid?.already === true ? 'already' : 'voiced', trims };
   }
 
   /** The debt as the engine's prompt takes it: a staff key among the facts is shown as that persona's name, and a maker who is the speaker is left out. */

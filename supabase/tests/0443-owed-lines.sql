@@ -86,6 +86,18 @@ begin
   return mv;
 end $$;
 
+-- A landed move's own why, as the queue keeps it: a queued row whose landed_act is the move's Act.
+create function pg_temp.why_of(mv uuid, staff_key text, why text) returns void language plpgsql as $$
+declare m bigint := (begin_meeting(clock_timestamp()) ->> 'meeting')::bigint;
+begin
+  -- The queue's guard judges the rule as a meeting would; this row only has to exist to be the move's record.
+  set local session_replication_role = replica;
+  insert into queued_moves (meeting, staff, kind, params, why, go_live_at, expires_at, structural)
+  values (m, staff_key, 'setRule', jsonb_build_object('board', null, 'predicate', 'noAllCaps', 'param', null, 'band', 'minor'), why_of.why, now(), now() + interval '1 day', false);
+  update queued_moves set landed_act = why_of.mv where meeting = m and staff = staff_key and landed_act is null;
+  set local session_replication_role = origin;
+end $$;
+
 -- ---- 1. A met move owes its line by its maker, and posts nothing ----
 do $$
 declare
@@ -97,12 +109,19 @@ declare
   posted uuid;
 begin
   perform pg_temp.sets('{"moveMet": ["Instance met {move}."]}', null);
+  perform pg_temp.why_of(mv, 'tl-a', 'Too many shouting posts.');
   perform say_move_end(mv, 'met');
   oid := pg_temp.owed(mv, 'moveMet');
   if oid is null then raise exception 'a met move owed nothing'; end if;
-  if (select (o.staff, o.thread, o.facts ->> 'maker', o.facts ->> 'why', o.facts ->> 'move') from lines_owed o where o.id = oid) is distinct from row('tl-a'::text, th, 'tl-a'::text, 'met'::text, mv::text) then
-    raise exception 'the owed line is not the maker''s, in the move''s thread, with its facts: %', (select to_jsonb(o) from lines_owed o where o.id = oid);
+  if (select (o.staff, o.thread, o.facts ->> 'maker') from lines_owed o where o.id = oid) is distinct from row('tl-a'::text, th, 'tl-a'::text) then
+    raise exception 'the owed line is not the maker''s, in the move''s thread: %', (select to_jsonb(o) from lines_owed o where o.id = oid);
   end if;
+  -- The facts are what the voiced prompt reads: the move's plain words (never its Act's id), the move's own why, and the end in plain words.
+  if (select o.facts ->> 'move' from lines_owed o where o.id = oid) ~ '^[0-9a-f]{8}-[0-9a-f]{4}-' then raise exception 'facts.move is an Act id: %', (select o.facts from lines_owed o where o.id = oid); end if;
+  perform pg_temp.expect('facts.move is the move''s plain words', (select o.facts ->> 'move' from lines_owed o where o.id = oid), system_line_fill(null, 'setRule', jsonb_build_object('board', null, 'predicate', 'noAllCaps', 'param', null, 'band', 'minor'), 'tl-a'));
+  perform pg_temp.expect('facts.why is the move''s own why', (select o.facts ->> 'why' from lines_owed o where o.id = oid), 'Too many shouting posts.');
+  perform pg_temp.expect('facts.ended is the end in plain words', (select o.facts ->> 'ended' from lines_owed o where o.id = oid), 'it was met');
+  perform pg_temp.expect('the end is owed against the move''s Act', (select o.cause_act::text from lines_owed o where o.id = oid), mv::text);
   if not exists (select 1 from lines_owed_open where owed = oid) then raise exception 'the owed line is not in the queue'; end if;
   if pg_temp.posts_in(th) <> 0 then raise exception 'the end posted before it was paid'; end if;
   paid := pay_owed_line(oid, 'Hi.');
@@ -484,4 +503,64 @@ begin
   if row_ -> 'facts' ? 'body' or row_ -> 'facts' ? 'asker' or row_::text like '%secret request%' or row_::text like '%Duehid%' then
     raise exception 'owed_lines_due handed the staff run a hidden request''s words: %', row_;
   end if;
+end $$;
+
+-- ---- 13. A lapse's words are read at due time: a request edited after the lapse is handed over as it reads now ----
+do $$
+declare
+  th uuid := tests.thread('Owed lapse edited');
+  asker uuid := tests.character(tests.account('tl-p-edited'), 'Tl Edited');
+  req uuid := tests.post(asker, th, 'The first words?');
+  turn uuid;
+  rid bigint;
+  oid bigint;
+  row_ jsonb;
+begin
+  perform pg_temp.sets('{"requestLapsed": ["{boss} says to {asker}: lapsed."]}', null);
+  perform set_config('kayfabb.staff_writer', 'on', true);
+  turn := tests.post((select id from characters where staff = 'tl-a'), th, 'I will ask the Boss.');
+  perform set_config('kayfabb.staff_writer', '', true);
+  insert into staff_requests (request_act, thread, asker, staff, turn_act, ruling, office) values (req, th, asker, 'tl-a', turn, 'confer', 'mod') returning id into rid;
+  update staff_requests_open set at = now() - interval '4 days' where request = rid;
+  perform system_tick();
+  oid := (select o.id from lines_owed o where o.request = rid and o.line_key = 'requestLapsed');
+  if oid is null then raise exception 'the lapse owed nothing'; end if;
+  perform pg_temp.expect('the stored copy is the words at the lapse', (select o.facts ->> 'body' from lines_owed o where o.id = oid), 'The first words?');
+  perform tests.act(asker, 'edit', th, '{"body": "The second words?"}', req);
+  select r into row_ from jsonb_array_elements(owed_lines_due(100)) r where (r ->> 'id')::bigint = oid;
+  perform pg_temp.expect('owed_lines_due hands the request as it reads now', row_ -> 'facts' ->> 'body', 'The second words?');
+  perform pg_temp.expect('the asker is read now too', row_ -> 'facts' ->> 'asker', 'Tl Edited');
+  perform pg_temp.expect('the stored copy stays as the record', (select o.facts ->> 'body' from lines_owed o where o.id = oid), 'The first words?');
+end $$;
+
+-- ---- 14. hand_over's pay-at-once branch: no farewell said (no words, no bossFarewell line) and a bossArrival line pays the arrival from stock at once, as the thread's one post; with no arrival line at all no thread is kept ----
+do $$
+declare
+  open_id bigint := (select id from seasons where ends_at is null);
+  out_boss text := current_boss();
+  answer jsonb;
+  h record;
+begin
+  if farewell_words(out_boss, open_id, true) is not null then raise exception 'the world: the outgoing Boss has farewell words'; end if;
+  perform pg_temp.sets('{"bossArrival": ["Arrived: {boss}."]}', null);
+  if stock_lines('bossFarewell', out_boss) is not null then raise exception 'the world: the outgoing Boss has a farewell line'; end if;
+  answer := hand_over(open_id, out_boss, now(), true);
+  if answer ->> 'boss' is null or answer ->> 'boss' = out_boss then raise exception 'the handover seated no new Boss: %', answer; end if;
+  select * into h from season_handovers x where x.season = open_id order by x.id desc limit 1;
+  if h.thread is null then raise exception 'the handover kept no thread: %', to_jsonb(h); end if;
+  if pg_temp.posts_in(h.thread) is distinct from 1::bigint then raise exception 'the thread does not hold exactly one post: %', pg_temp.posts_in(h.thread); end if;
+  perform pg_temp.expect('the arrival was paid from stock', (select p.how from lines_owed w join lines_paid p on p.owed = w.id where w.line_key = 'bossArrival' and w.facts ->> 'handover' = h.id::text), 'stock');
+  if h.arrival_act is null or h.arrival_act is distinct from (select p.act from lines_owed w join lines_paid p on p.owed = w.id where w.line_key = 'bossArrival' and w.facts ->> 'handover' = h.id::text) then
+    raise exception 'the handover does not record the arrival it paid: %', to_jsonb(h);
+  end if;
+  perform pg_temp.expect('the arrival is the stock line', pg_temp.body(h.arrival_act), 'Arrived: ' || (select c.name from characters c where c.staff = answer ->> 'boss') || '.');
+
+  -- No arrival line at all (neither set): nothing can be posted, so no thread is kept and the row records none.
+  perform pg_temp.sets(null, null);
+  delete from settings where key = 'systemLines';
+  out_boss := current_boss();
+  answer := hand_over(open_id, out_boss, now(), false);
+  select * into h from season_handovers x where x.season = open_id order by x.id desc limit 1;
+  if h.thread is not null or h.arrival_act is not null then raise exception 'a handover with nothing to say kept a thread: %', to_jsonb(h); end if;
+  if exists (select 1 from lines_owed w where w.line_key = 'bossArrival' and w.facts ->> 'handover' = h.id::text) then raise exception 'a handover with no arrival line owed one'; end if;
 end $$;

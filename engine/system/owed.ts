@@ -39,7 +39,9 @@ function happened(o: Owed): string {
   }
   if (o.key === 'bossArrival') {
     const how = o.facts.how === 'nomination' ? 'you were nominated' : o.facts.how === 'rotation' ? 'the rotation chose you' : oneLine(o.facts.how);
-    return `You are the new Boss. Your predecessor was ${oneLine(o.facts.predecessor)}; ${how}.`;
+    const before = oneLine(o.facts.predecessor);
+    // No predecessor name (the first Boss, or one with no name to give): the clause is left out, never "Your predecessor was ;".
+    return before === '' ? `You are the new Boss. ${how.charAt(0).toUpperCase()}${how.slice(1)}.` : `You are the new Boss. Your predecessor was ${before}; ${how}.`;
   }
   const f = o.facts;
   return [`A move ended: "${oneLine(f.move)}". Why it was made: ${oneLine(f.why)}. How it ended: ${oneLine(f.ended)}.`, ...(f.maker !== null ? [`It was made by ${oneLine(f.maker)}.`] : [])].join(' ');

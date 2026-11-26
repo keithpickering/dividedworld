@@ -493,17 +493,24 @@ revoke execute on function pay_owed_line(bigint, text) from public, anon, authen
 grant execute on function pay_owed_line(bigint, text) to service_role;
 
 -- owed_lines_due: the lines the staff run voices next, at most `most`, as one jsonb array in the queue's order (failures last, then the oldest first): each line's id, speaker, key, thread, facts, the Act it is about
--- (the move, or the request post; null for an arrival) and the speaker's office now. A lapse whose request is no longer public (staff_request_post_public) is read with its asker and body left out of the facts, so the run never voices a hidden request's words; the row stays, and pay_owed_line pays it `unsaid`, its way out. Each row's debt and office are read by key, so the read walks the queue's index to the `most`th row and never the lines paid.
+-- (the move, or the request post; null for an arrival) and the speaker's office now. A lapse's asker and body are read at due time through staff_request_shown (one call by key for each of the `most` rows, a request edited after the lapse is handed over as it reads now; the copy the lapse stored stays as the record), and a lapse whose request is no longer shown (hidden, or its asker no longer public) is read with its asker and body left out of the facts, so the run never voices a hidden request's words; the row stays, and pay_owed_line pays it `unsaid`, its way out. Each row's debt and office are read by key, so the read walks the queue's index to the `most`th row and never the lines paid.
 create function owed_lines_due(most integer) returns jsonb
 language sql stable security definer set search_path = public, pg_temp as $$
   select coalesce(jsonb_agg(x.j order by x.failed_at nulls first, x.at, x.owed), '[]'::jsonb)
   from (
-    select o.failed_at, o.at, o.owed,
-           jsonb_build_object('id', w.id, 'staff', w.staff, 'line_key', w.line_key, 'thread', w.thread, 'facts', case when w.line_key = 'requestLapsed' and not staff_request_post_public(w.target) then w.facts - 'asker' - 'body' else w.facts end, 'cause_act', w.cause_act,
-                              'office', (select f.office from staff_office_now f where f.staff = w.staff)) as j
-    from lines_owed_open o cross join lateral (select y.* from lines_owed y where y.id = o.owed) w
-    order by o.failed_at nulls first, o.at, o.owed
-    limit greatest(coalesce(most, 0), 0)
+    select y.failed_at, y.at, y.owed,
+           jsonb_build_object('id', y.w_id, 'staff', y.w_staff, 'line_key', y.w_line_key, 'thread', y.w_thread,
+                              'facts', case when y.w_line_key = 'requestLapsed'
+                                            then case when s.ok then (y.w_facts - 'asker' - 'body') || jsonb_build_object('asker', coalesce(s.asker_name, ''), 'body', left(coalesce(s.body, ''), 600)) else y.w_facts - 'asker' - 'body' end
+                                            else y.w_facts end,
+                              'cause_act', y.w_cause_act, 'office', (select f.office from staff_office_now f where f.staff = y.w_staff)) as j
+    from (
+      select o.failed_at, o.at, o.owed, w.id as w_id, w.staff as w_staff, w.line_key as w_line_key, w.thread as w_thread, w.facts as w_facts, w.cause_act as w_cause_act, w.request as w_request
+      from lines_owed_open o cross join lateral (select z.* from lines_owed z where z.id = o.owed) w
+      order by o.failed_at nulls first, o.at, o.owed
+      limit greatest(coalesce(most, 0), 0)
+    ) y
+    left join lateral (select t.ok, t.asker_name, t.body from staff_request_shown(y.w_request) t where y.w_line_key = 'requestLapsed') s on true
   ) x
 $$;
 revoke execute on function owed_lines_due(integer) from public, anon, authenticated;
@@ -532,17 +539,22 @@ create or replace view staff_requests_now as
   left join lateral (select p.act from lines_owed w join lines_paid p on p.owed = w.id where w.request = q.id and w.line_key = 'requestLapsed' order by w.id desc limit 1) lp on true;
 
 -- say_move_end (0443, part 1), the end owed and not posted: the poster (the current Boss for a superseded end, the move's maker otherwise) owes the key for the end in the move's thread, with the facts the staff run and the stock line
--- need: the move, why it ended, when, and its maker (the staff whose name fills {boss}). Nothing is posted here; pay_owed_line posts it. Everything else as part 1 wrote it.
+-- need, as the voiced prompt reads them: `move` the move's plain words (system_line_fill with no template), `why` the move's own why, `ended` how it ended in plain words, and `maker`, the staff whose name fills {boss}; the move's Act is the debt's
+-- cause_act, which the stock path reads the kind and params from. Nothing is posted here; pay_owed_line posts it. Everything else as part 1 wrote it.
 create or replace function say_move_end(move_act uuid, why text) returns void
 language plpgsql security definer set search_path = public, pg_temp as $$
 declare
   m record;
+  mw record;
   poster text;
 begin
   select a.thread, a.payload, c.staff into m from acts a join characters c on c.id = a.character where a.id = move_act and a.kind = 'move';
+  -- The move's own why is the queue's, found by the Act the move landed as; a move written another way has none and reads `No reason given.`.
+  select q.why into mw from queued_moves q where q.landed_act = move_act;
   poster := case when why = 'superseded' then coalesce(current_boss(), m.staff) else m.staff end;
   perform owe_line(poster, case why when 'met' then 'moveMet' when 'reversed' then 'moveReversed' when 'superseded' then 'moveSuperseded' when 'unmet' then 'moveUnmet' when 'overturned' then 'moveOverturned' else 'moveExpired' end,
-    m.thread, null, move_act, null, jsonb_build_object('move', move_act, 'why', why, 'ended', clock_timestamp(), 'maker', m.staff));
+    m.thread, null, move_act, null, jsonb_build_object('move', system_line_fill(null, m.payload ->> 'kind', m.payload -> 'params', m.staff), 'why', coalesce(nullif(btrim(mw.why), ''), 'No reason given.'),
+      'ended', case why when 'met' then 'it was met' when 'reversed' then 'it was reversed' when 'superseded' then 'it was superseded' when 'unmet' then 'it went unmet' when 'overturned' then 'it was overturned' else 'it expired' end, 'maker', m.staff));
 exception when others then
   raise warning 'say_move_end: the end of move % was not owed: % (%)', move_act, sqlerrm, sqlstate;
 end $$;
@@ -1192,7 +1204,7 @@ $function$;
 -- ============================================================================================================================================================================================================
 -- Part 3 (Task 5 of the plan). The landing line, written ahead.
 --   A move is queued with the post it lands with (`line`, the maker's own words in its own voice, at most 280 characters; the engine trims before the column's check sees it). apply_meeting writes the
---   Boss's `move ->> 'line'` (bundle parts and single moves alike; the successor's nomination carries none) and apply_mod_move a Mod's, a blank line stored as none. system_tick's landing posts it, its tokens filled as a stock line's are
+--   Boss's `move ->> 'line'` (single moves; a bundle part and the successor's nomination carry none, as the engine's bundle part has no line) and apply_mod_move a Mod's, a blank line stored as none. system_tick's landing posts it, its tokens filled as a stock line's are
 --   (system_line_fill, the one filler: `{boss}`, `{board}`, `{move}`, `{rule}` and the move's own parameters); a move queued with no line (or a blank one) lands with the speaker's stock line as before
 --   (system_line, whose set is the staff key that posts it, due.staff, then the instance's, then the move's words).
 -- Latest definitions copied: apply_meeting (0439) and apply_mod_move (0424); system_tick is defined once, in part 2, which carries this part's landing (its select gains q.line, and the body reads it). Everything each does that is not named here is as written there; the security definer, search_path and grants stay.
@@ -1459,9 +1471,9 @@ begin
         if not authored and kind_row.key = any (held) then raise exception 'the kind % is held back', kind_row.key using errcode = '23514'; end if;
         live := greatest((bpart ->> 'go_live_at')::timestamptz, now());
         if kind_row.structural then live := greatest(live, now() + hold); end if;
-        insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, bundle, bundle_name, role, line)
+        insert into queued_moves (meeting, staff, kind, params, demand, why, go_live_at, expires_at, structural, bundle, bundle_name, role)
         values (apply_meeting.meeting, boss, kind_row.key, bpart -> 'params', bpart -> 'demand', bpart ->> 'why', live,
-          live + coalesce((bpart ->> 'expires_in_hours')::numeric, 0) * interval '1 hour', kind_row.structural, bundle_id, left(bnd ->> 'name', 120), nullif(bpart ->> 'role', ''), left(nullif(btrim(bpart ->> 'line', E' \t\n\r\f\v'), ''), 280));
+          live + coalesce((bpart ->> 'expires_in_hours')::numeric, 0) * interval '1 hour', kind_row.structural, bundle_id, left(bnd ->> 'name', 120), nullif(bpart ->> 'role', ''));
       end loop;
       if authored then
         insert into arc_beat_events (season, staff, beat, event, bundle) values (season_id, boss, bnd ->> 'beat', 'played', bundle_id);

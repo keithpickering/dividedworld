@@ -3,7 +3,7 @@
 -- 1. apply_meeting (a Boss's move) and apply_mod_move (a Mod's) store the move's `line` on its queued row; a move with none, or a blank one, stores null.
 -- 2. A line over 280 characters is refused by the column's check (the engine trims before it): a direct insert, and a Mod's move, which is refused with the reason.
 -- 3. system_tick lands a queued move with its own line, its tokens filled as a stock line's are ({move}, {board}, {rule}, {boss}).
--- 5. A line is cut to 280 characters where it is stored (a meeting's plain move, a bundle part, a Mod's move), never refusing the paid answer; 280 multibyte characters are kept; a token the key is not given lands literal.
+-- 5. A line is cut to 280 characters where it is stored (a meeting's plain move, a Mod's move; a bundle part carries none), never refusing the paid answer; 280 multibyte characters are kept; a token the key is not given lands literal.
 -- 4. A queued move with no line lands with the speaker's stock line (a rule's is ruleSet): the persona's own set, else the instance's, else the move's plain words.
 
 create function pg_temp.expect(label text, got text, want text) returns void language plpgsql as $$
@@ -185,7 +185,7 @@ begin
   perform pg_temp.expect('no line and neither set: the move''s words', pg_temp.landed_body(q), 'a rule');
 end $$;
 
--- ---- 6. A line is cut where it is stored: a bundle part's line, a plain move's 300-character line, 280 emoji, a token the key is not given ----
+-- ---- 6. A line is cut where it is stored (a bundle part carries none): a plain move's 300-character line, 280 emoji, a token the key is not given ----
 do $$
 declare
   games uuid := pg_temp.board('ll-games');
@@ -209,9 +209,10 @@ begin
   if (select count(*) from queued_moves where meeting = m) is distinct from 5 then raise exception 'the meeting did not queue five moves: %', (select jsonb_agg(to_jsonb(q)) from queued_moves q where meeting = m); end if;
   perform pg_temp.expect('a 300-character plain line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP1'), '280');
   perform pg_temp.expect('280 emoji are kept whole', (select char_length(q.line)::text from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP2'), '280');
-  perform pg_temp.expect('a bundle part''s line is stored', (select q.line from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP4'), 'Part {move}.');
+  -- A bundle part carries no line (the engine's bundle part has none): a line sent on one is not stored.
+  if (select q.line from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP4') is not null then raise exception 'a bundle part stored a line'; end if;
   if (select q.bundle from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP4') is null then raise exception 'the part is not in a bundle'; end if;
-  perform pg_temp.expect('a bundle part''s 300-character line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP5'), '280');
+  if (select q.line from queued_moves q where q.meeting = m and q.params ->> 'predicate' = 'noP5') is not null then raise exception 'a bundle part stored a 300-character line'; end if;
   got := apply_mod_move('ll-m1', pg_temp.mv(games, 'noP6', to_jsonb(repeat('c', 300))), pg_temp.cause('mod cut'));
   if (got ->> 'queued')::boolean is distinct from true then raise exception 'a Mod''s 300-character line was not queued: %', got; end if;
   perform pg_temp.expect('a Mod''s 300-character line is cut to 280', (select char_length(q.line)::text from queued_moves q where q.id = (got ->> 'move')::bigint), '280');

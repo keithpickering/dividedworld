@@ -101,3 +101,13 @@ test('an arrival says how the speaker was chosen', () => {
   const r = { ...fixture('bossArrival'), facts: { predecessor: 'P', how: 'rotation' } } as Owed;
   assert.ok(owedLinePrompt(testSystem, persona, 'boss', r).message.includes('the rotation chose you'));
 });
+
+test('a bossArrival with no predecessor name omits the clause, in the message and the completion', () => {
+  for (const predecessor of ['', '   ']) {
+    const o = { key: 'bossArrival', facts: { predecessor, how: 'rotation' } } as Owed;
+    const m = owedLinePrompt(testSystem, persona, 'boss', o).message;
+    assert.ok(!m.includes('predecessor'), m);
+    assert.ok(m.includes('You are the new Boss. The rotation chose you.'), m);
+    assert.ok(!owedLineCompletion({ name: 'Boss', owed: o }).prompt.includes('predecessor'));
+  }
+});

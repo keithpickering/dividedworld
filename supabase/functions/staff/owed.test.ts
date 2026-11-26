@@ -17,7 +17,7 @@ const row = (id: number, staff = MON, over: Record<string, unknown> = {}) => ({
   facts: { move: 'Ann was made Pariah on Games.', why: 'she bumped', ended: 'it was met', maker: null }, ...over,
 });
 
-function fakeDb(rows: ReturnType<typeof row>[], opts: { enabled?: boolean; today?: number; failPayOn?: number; failOn?: string } = {}) {
+function fakeDb(rows: ReturnType<typeof row>[], opts: { enabled?: boolean; today?: number; failPayOn?: number; failOn?: string; alreadyOn?: number } = {}) {
   const calls: { fn: string; args: Record<string, any> }[] = [];
   const db: Db = {
     async rpc<T>(fn: string, args: Record<string, unknown>): Promise<T> {
@@ -30,6 +30,7 @@ function fakeDb(rows: ReturnType<typeof row>[], opts: { enabled?: boolean; today
         case 'record_staff_call': return { recorded: true } as T;
         case 'pay_owed_line':
           if (args.owed === opts.failPayOn) throw new DatabaseError('pay failed', '08006', 500);
+          if (opts.alreadyOn === args.owed) return { how: 'stock', already: true } as T;
           return { how: args.body === null ? 'stock' : 'voiced' } as T;
         default: throw new Error(`unexpected ${fn}`);
       }
@@ -125,6 +126,35 @@ test('the facts the call sees carry the maker as a name, and never the speaker a
   const bossName = dividedWorld.system.roster.find((r) => r.key === BOSS)!.name;
   assert.ok((m.chats[0]!.messages[0]!.content as string).includes(`made by ${bossName}.`));
   assert.doesNotMatch(m.chats[1]!.messages[0]!.content as string, /made by/);
+});
+
+test('a move end as say_move_end writes it: the message holds the move\'s words, its why and how it ended', async () => {
+  // Exactly the facts say_move_end stores (0443): plain words for the move, the move's own why, the end in plain words, the maker's key.
+  const d = fakeDb([row(1, BOSS, { facts: { move: 'a rule: no all-caps posts', why: 'Too many shouting posts.', ended: 'it was met', maker: MON } })]);
+  const m = fakeModels(() => ({ line: 'ok' }));
+  await runOwedLines(d.db, m.models, dividedWorld);
+  const msg = m.chats[0]!.messages[0]!.content as string;
+  const monName = dividedWorld.system.roster.find((r) => r.key === MON)!.name;
+  assert.ok(msg.includes('A move ended: "a rule: no all-caps posts".'), msg);
+  assert.ok(msg.includes('Why it was made: Too many shouting posts.'), msg);
+  assert.ok(msg.includes('How it ended: it was met.'), msg);
+  assert.ok(msg.includes(`made by ${monName}.`), msg);
+});
+
+test('a null or empty predecessor leaves the predecessor clause out of the arrival', async () => {
+  const d = fakeDb([row(1, BOSS, { line_key: 'bossArrival', facts: { handover: 3, season: 2, predecessor: null, how: 'rotation' } })]);
+  const m = fakeModels(() => ({ line: 'ok' }));
+  await runOwedLines(d.db, m.models, dividedWorld);
+  const msg = m.chats[0]!.messages[0]!.content as string;
+  assert.ok(!msg.includes('predecessor'), msg);
+  assert.ok(msg.includes('You are the new Boss. The rotation chose you.'), msg);
+});
+
+test('a line the tick paid first (pay_owed_line answers already) is recorded as already, not voiced', async () => {
+  const d = fakeDb([row(1), row(2)], { alreadyOn: 1 });
+  const m = fakeModels(() => ({ line: 'Fine.' }));
+  const out = await runOwedLines(d.db, m.models, dividedWorld);
+  assert.deepEqual(out.status === 'ok' && out.lines.map((l) => l.status), ['already', 'voiced']);
 });
 
 /** The dividedWorld roster with the monitor on the old voice. */
