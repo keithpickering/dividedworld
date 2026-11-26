@@ -121,7 +121,7 @@ test('an instance exported and imported into a fresh database is the same instan
       insert into gear_ledger (account, gear, kind, event) values (ann, 'expgear', 'found', '00000000-0000-4000-8000-0000000000e2');
       insert into card_ledger (account, card, kind, price, event) values (ann, 'splat', 'found', 0, '00000000-0000-4000-8000-0000000000e3');
       insert into gear_ledger (account, gear, kind) values (ann, 'expgear', 'granted');
-      insert into gear_worn (character, layer, gear, x, y, w, turn) values (a, 2, 'expgear', 0.25, 0.75, 0.5, -30);
+      insert into gear_worn (character, layer, gear, x, y, w, turn, view) values (a, 2, 'expgear', 0.25, 0.75, 0.5, -30, 'three-quarter-right');
       -- Trophies (0206): an instance's kind with a place, a belt, and a kind an admin made with its picture's key; an award each by an admin, the season and the Boss (naming the post as its move Act),
       -- the admin's taken back, and the Boss's shown on a postbit. Each is carried as it was, and the picture is a file the export fetches from the trophies bucket.
       insert into trophy_kinds (key, name, line, belt, season_place) values ('exptrophy', 'Exported Trophy', 'Carried across.', false, null), ('expbelt', 'Exported Belt', null, true, null);

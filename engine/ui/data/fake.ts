@@ -24,7 +24,7 @@ import { pollHeard, type LogBallot, type LogPlace, type LogPollClose } from './a
 import { decide } from '../../rules/actions.ts';
 import { countedBallots, lastsHours, pickRefusal, pollCounts, pollDraftProblems, type PollDraft } from '../../rules/polls.ts';
 import { isFixed, rollPack } from '../../rules/packs.ts';
-import { beltHolder, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
+import { beltHolder, GEAR_VIEWS, outfitProblems, PIECE_TURN_MOST, PIECE_WIDTH, type Piece } from '../../rules/cosmetics.ts';
 import { fallsOn, instant, RARITIES, type Rarity } from '../../rules/cards.ts';
 import { atOrBelow, isLive, wardTurnsAway, giftSplit, refusalTime, spanMs, OLD_VOICE_OFF, withheld, playOf as kindOfPlay, postTarget, casterMessage, decidePlay, decideSet, decideUse, decideDraw, decideWash, effectsOnTarget, noQuoteWords, quoteStop, type BeyondPost, type CardEffect, type CardRules, type CardTarget, type EffectsAbove, type PostTarget, type Reach, type SetConditions } from '../../rules/cards.ts';
 import { sameName } from '../../rules/names.ts';
@@ -3348,6 +3348,7 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
       if (!within(piece.y, 0, 1)) return 'a piece\'s y is outside the portrait';
       if (!within(piece.w, PIECE_WIDTH.least, PIECE_WIDTH.most)) return 'a piece\'s width is from 0.05 to 1.5 of the portrait\'s width';
       if (!within(piece.turn, -PIECE_TURN_MOST, PIECE_TURN_MOST)) return 'a piece\'s turn is from -180 to 180 degrees';
+      if (piece.view != null && !(GEAR_VIEWS as readonly unknown[]).includes(piece.view)) return 'a piece\'s view is side-left, three-quarter-left, front, three-quarter-right or side-right';
       if (!Number.isInteger(piece.layer) || !within(piece.layer, 0, most - 1)) return `a piece's layer is a whole number below ${most}`;
       return null;
     })();

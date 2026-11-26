@@ -599,7 +599,7 @@ describe('reads and their rows', () => {
     expect(h.to('character_profiles')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
     expect(h.to('character_profiles')[0]?.url.searchParams.get('select')?.split(',')).toEqual(expect.arrayContaining(['pronouns', 'portrait_tallness']));
     expect(h.to('gear_worn')[0]?.url.searchParams.get('character')).toBe(`in.(${B},${A})`);
-    expect(h.to('gear_worn')[0]?.url.searchParams.get('select')).toBe('character,layer,gear,x,y,w,turn');
+    expect(h.to('gear_worn')[0]?.url.searchParams.get('select')).toBe('character,layer,gear,x,y,w,turn,view');
     expect(list).toEqual([
       { id: B, name: 'Bea', title: 'Champ', signature: '[b]hi[/b]', avatarSquare: `${URL_}/storage/v1/object/public/avatars/sq.webp`, avatarPortrait: `${URL_}/storage/v1/object/public/avatars/po.webp`, squareFrame: { x: 0, y: 0, w: 0.5, h: 0.5 }, portraitFrame: null, portraitTallness: 1.5, outfit: [{ gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 0, view: null }, { gear: 'mustache', x: 0.5, y: 0.1, w: 0.4, turn: -10, layer: 1, view: null }], trophies: [], pipStyle: 'fancy', pronouns: PRONOUN_PRESETS.she, joined: '2026-10-01', group: '' },
       { id: A, name: 'Al', title: '', signature: '', avatarSquare: null, avatarPortrait: null, squareFrame: null, portraitFrame: null, portraitTallness: null, outfit: [], trophies: [], pipStyle: 'default', pronouns: ENGINE_DEFAULT_PRONOUNS, joined: '2026-09-01', group: '' },
@@ -620,6 +620,17 @@ describe('reads and their rows', () => {
     expect(bea!.outfit).toHaveLength(1500);
     expect(h.to('gear_worn').length).toBeGreaterThan(1);
     expect(h.to('gear_worn')[0]?.url.searchParams.get('order')).toBe('character.asc,layer.asc');
+  });
+
+  it('reads a piece\'s view: a name it knows as that name, anything else as null', async () => {
+    const worn = { character: B, gear: 'hat', x: 0.5, y: 0.1, w: 0.4, turn: 0 };
+    const h = harness((r) => {
+      if (r.url.pathname.endsWith('/characters_public')) return rows([{ id: B, name: 'Bea', joined: '2026-10-01' }]);
+      if (r.url.pathname.endsWith('/gear_worn')) return rows([{ ...worn, layer: 0, view: 'front' }, { ...worn, layer: 1, view: 'sideways' }, { ...worn, layer: 2, view: null }]);
+      return rows([{ character: B }]);
+    });
+    const [bea] = await h.api.characters([B]);
+    expect(bea!.outfit.map((p) => p.view)).toEqual(['front', null, null]);
   });
 
   it('maps a profile projection\'s outfit and trophies (the shelf, with art URLs for an admin\'s kind)', async () => {
