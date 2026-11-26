@@ -9,6 +9,10 @@
  * (autocorrect/Effect.tsx). Both find the phrase with one matcher (autocorrect/match.ts) over the post's visible text, so the
  * strips the screens lay are the occurrences the server priced.
  *
+ * A staff read (`covers`, engine/system/cover.ts) reads untouched tape as the board shows it: each occurrence is written over with the replacement, and
+ * the sentence in `seen` says so. Once any peel is saved (a peeled place, a half peel, or `clean`) the author's tape is no longer what every reader sees,
+ * so the read goes back to the words as written and `seen` describes the peel (docs/plans/2026-11-26-autocorrect-reads-design.md).
+ *
  * - **The phrase** is 4 to 100 characters with at least 4 letters or digits (phrase-bound.ts), so tiny words cannot be carpet-bombed cheaply.
  * - **The replacement** is one line of plain text, 1 to 100 characters, and never the phrase itself (ignoring case). BBCode in
  *   it is kept as the text it is: the strip draws it as a string and never parses it.
@@ -28,11 +32,21 @@
  *   The author's saves are held for `autocorrect.holdHours` after the play lands (`stateHeldUntil`; the act function refuses them
  *   before then, and the screens show the author the tape as a reader sees it); 0 holds none.
  */
-import { economyOf, landsOn, ok, refuse, type CardRules } from '../../../engine/rules/cards.ts';
+import { economyOf, landsOn, ok, refuse, type Cover, type CardRules } from '../../../engine/rules/cards.ts';
 import { occurrences, sameWords } from './autocorrect/match.ts';
 import { LINE_BREAK, boundedPhrase, characters } from './phrase-bound.ts';
 import type { Hundredths, Settings } from '../../../engine/rules/types.ts';
 import { field, textField, who } from './seen-words.ts';
+
+/** Whether the author has saved any peel: a peeled place, a half-peeled strip, or the tape washed clean. Untouched tape is what the board shows every reader. */
+const holdsPeel = (state: unknown): boolean => {
+  const peeled = field(state, 'peeled'), stuck = field(state, 'stuck');
+  return (Array.isArray(peeled) && peeled.length > 0) || (typeof stuck === 'object' && stuck !== null && Object.keys(stuck).length > 0) || field(state, 'clean') === true;
+};
+
+/** Whether the play lays its strips in a staff read: its phrase and replacement are there and no peel is saved (`covers`, and the line that says so). */
+const tapeShown = (config: unknown, state: unknown): boolean =>
+  typeof field(config, 'phrase') === 'string' && typeof field(config, 'replacement') === 'string' && !holdsPeel(state);
 
 export const REPLACEMENT = { most: 100 } as const;
 /**
@@ -69,8 +83,14 @@ export const autocorrect: CardRules<AutocorrectConfig> = {
     const tape = phrase !== null && replacement !== null ? `every “${phrase}” in this post in masking tape with “${replacement}” scrawled across it in marker` : 'the words it names in this post in strips of masking tape with other words scrawled across them in marker';
     const peeled = field(p.state, 'peeled'), stuck = field(p.state, 'stuck');
     const loose = Array.isArray(peeled) ? peeled.length : 0, half = typeof stuck === 'object' && stuck !== null ? Object.keys(stuck).length : 0;
-    const rest = field(p.state, 'clean') === true ? ' Every strip has been peeled away.' : loose > 0 ? ' Some of the tape has been peeled off, leaving the words under it bare.' : half > 0 ? ' A strip has been half peeled, and hangs by a corner.' : '';
+    const rest = field(p.state, 'clean') === true ? ' Every strip has been peeled away.' : loose > 0 ? ' Some of the tape has been peeled off, leaving the words under it bare.' : half > 0 ? ' A strip has been half peeled, and hangs by a corner.'
+      : !tapeShown(p.config, p.state) ? '' : ` The post above reads as the tape shows it; the marker words are ${typeof p.by === 'string' && p.by.trim() !== '' ? `${p.by}'s` : "not the post's own"}.`;
     return `${who(p)} taped over ${tape}, ${p.ago}.${rest}`;
+  },
+  covers: (p) => {
+    if (!tapeShown(p.config, p.state)) return null;
+    const phrase = field(p.config, 'phrase') as string, replacement = field(p.config, 'replacement') as string;
+    return occurrences(p.text, phrase).map(({ from, to }): Cover => ({ from, to, words: replacement }));
   },
   playPrice: (settings, target, config) => {
     if (target.reach !== 'post') return 0;
