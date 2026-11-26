@@ -117,11 +117,12 @@ export function setSoundPreference(p: SoundPreference): void {
 
 export interface SoundPlay {
   /**
-   * Plays the slot through the mixer and says its caption. Resolves with what the mixer answered (null when nothing sounded). A play
+   * Plays the slot through the mixer and says its caption, or `caption` in its place when one is given (the slot's ink stays), on both the
+   * sounded and the skipped path. Resolves with what the mixer answered (null when nothing sounded). A play
    * the mixer drops for being later than `lateMs` answers null like any skipped play, so it is captioned through the game-bus branch below.
    * `voices` is the group's cap: how many of its voices may sound at once (1 when it is not given), the oldest fading out to make room.
    */
-  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number; voices?: number }): Promise<{ lengthMs: number } | null>;
+  play(key: string, opts?: { group?: string; fadeMs?: number; tailMs?: number; lateMs?: number; voices?: number; caption?: string }): Promise<{ lengthMs: number } | null>;
   /**
    * Starts a loop and returns its handle at once; the handle works before the sound has loaded (a gain set meanwhile applies when it does, the
    * latest winning; a `stop` meanwhile means it never sounds). The loop starts silent, and `setGain` holds the slot's caption under `id` while
@@ -140,7 +141,7 @@ function missing(key: string): void {
 /** What a loop of an unknown key returns: a handle that does nothing. */
 const INERT: LoopHandle = { setGain() { /* nothing sounds */ }, stop() { /* nothing sounds */ } };
 
-const wordsOf = (slot: SoundSlot) => ({ text: slot.caption, ...(slot.ink ? { ink: slot.ink } : {}) });
+const wordsOf = (slot: SoundSlot, text: string = slot.caption) => ({ text, ...(slot.ink ? { ink: slot.ink } : {}) });
 
 /**
  * Warm the sounds a screen or a card is about to use, so they are fetched (and decoded once the page unlocks) before anything plays
@@ -177,8 +178,8 @@ export function useSound(): SoundPlay {
       const slot = find(key);
       if (!slot) return Promise.resolve(null);
       return page.mixer.play(slot, opts).then((r) => {
-        if (r) captions.say({ ...wordsOf(slot), ms: r.lengthMs });
-        else if (slot.bus === 'game') captions.say({ ...wordsOf(slot), ms: CAPTION_MS });
+        if (r) captions.say({ ...wordsOf(slot, opts?.caption), ms: r.lengthMs });
+        else if (slot.bus === 'game') captions.say({ ...wordsOf(slot, opts?.caption), ms: CAPTION_MS });
         return r;
       });
     },

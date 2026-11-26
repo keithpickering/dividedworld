@@ -1264,6 +1264,46 @@ describe('sound by object', () => {
     expect(heard.filter((k) => k.includes('ladder-hit') || k.includes('can-hit'))).toEqual([]);
   });
 
+  const calls = () => hub.sound.play.mock.calls as unknown as [string, { caption?: string }][];
+  const captionsOf = (re: RegExp) => calls().filter((c) => re.test(c[0])).map((c) => c[1].caption);
+
+  test('a can (play-6) plays the chair\'s hit and floor sound, captioned for the can', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-6' }] });
+    run();
+    expect(captionsOf(/^steel-chair\.hit$/u)).toEqual(['A trash can bangs']);
+    expect(captionsOf(/^steel-chair\.settle-[1-4]$/u)).toEqual(['A trash can clatters to the floor']);
+  });
+
+  test('a ladder (play-2) hits captioned "A ladder clangs", and its settles pass no override', () => {
+    pin(2);
+    mount({ plays: [{ ...play(1), id: 'play-2' }] });
+    run();
+    expect(captionsOf(/^steel-chair\.hit$/u)).toEqual(['A ladder clangs']);
+    expect(calls().filter((c) => /^steel-chair\.ladder-settle-[12]$/u.test(c[0]))).toHaveLength(1);
+    expect(captionsOf(/^steel-chair\.ladder-settle-[12]$/u)).toEqual([undefined]);
+  });
+
+  test('a chair\'s hit and settle pass no caption override', () => {
+    pin(2);
+    mount({ plays: [play(1)] });
+    run();
+    const own = calls().filter((c) => c[0] === 'steel-chair.hit' || /^steel-chair\.settle-[1-4]$/u.test(c[0]));
+    expect(own).toHaveLength(2);
+    expect(own.map((c) => c[1].caption)).toEqual([undefined, undefined]);
+  });
+
+  test('an extinguisher (play-93) plays its own hit and exactly one of its two settles, and none of the chair\'s', () => {
+    pin(2);
+    expect(objectOf('play-93')).toBe('extinguisher');
+    mount({ plays: [{ ...play(1), id: 'play-93' }] });
+    run();
+    const heard = keys();
+    expect(heard.filter((k) => k === 'steel-chair.extinguisher-hit')).toHaveLength(1);
+    expect(heard.filter((k) => /^steel-chair\.extinguisher-settle-[12]$/u.test(k))).toHaveLength(1);
+    expect(heard.filter((k) => k === 'steel-chair.hit' || /^steel-chair\.settle-[1-4]$/u.test(k)), 'none of the chair\'s').toEqual([]);
+  });
+
   test('a can (play-6) hits and lands with the chair\'s sounds, and its lid lands out of sight 900 ms after its launch with a can-settle take, once', () => {
     pin(2);
     expect(objectOf('play-6')).toBe('can');
