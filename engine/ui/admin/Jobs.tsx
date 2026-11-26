@@ -92,6 +92,12 @@ export function JobsScreen() {
   /* undefined while the read is out; null is the server's answer for a caller who is not an admin. */
   const [read, setRead] = useState<AdminJobs | null | undefined>(undefined);
   const [failed, setFailed] = useState(false);
+  /* A minute's tick while the page is open, so a job that goes late in the meantime reads Stopped without a reload. The read itself is not repeated. */
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const id = setInterval(() => setTick((t) => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     let live = true;
@@ -155,13 +161,13 @@ export function JobsScreen() {
               <tbody key={spec.name} data-kb-stopped={h.stopped ? '' : undefined}>
                 <tr>
                   <th scope="row" className="kb-jobs-name">{short(spec.name)}<span className="kb-jobs-about">{spec.about}</span></th>
-                  <td>{scheduleWords(job?.schedule ?? null)}</td>
-                  <td className="kb-jobs-state">{stateWords(h, shown)}</td>
+                  <td><span className="kb-jobs-col">Schedule </span>{scheduleWords(job?.schedule ?? null)}</td>
+                  <td className="kb-jobs-state"><span className="kb-jobs-col">State </span>{stateWords(h, shown)}</td>
                 </tr>
                 {why !== null && (
                   <tr className="kb-jobs-why">
                     <td colSpan={3}>
-                      <p>{why.line}</p>
+                      <p><span className="kb-visually-hidden">Why {short(spec.name)} stopped: </span>{why.line}</p>
                       <p className="kb-jobs-next">{why.next}</p>
                     </td>
                   </tr>

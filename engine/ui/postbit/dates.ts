@@ -25,11 +25,12 @@ export function sameYear(d: Date, nowMs: number): boolean {
 
 /**
  * A time the screens say in a line: "2:02 PM" for a time on the reader's own day by the clock the page reads (`nowMs`, the backend's:
- * `api.now()`), and "Nov 20, 2:02 PM" for one on another day, in the reader's zone like every other time on a forum page. Nothing when it cannot be read.
+ * `api.now()`), and "Nov 20, 2:02 PM" for one on another day this year, and "Nov 20, 2025, 2:02 PM" for one in another year, in the reader's zone like every other time on a forum page. Nothing when it cannot be read.
  */
 export function shortTime(iso: string, nowMs: number): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return '';
   const time = d.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' });
-  return d.toDateString() === new Date(nowMs).toDateString() ? time : `${MONTHS[d.getMonth()]} ${d.getDate()}, ${time}`;
+  if (d.toDateString() === new Date(nowMs).toDateString()) return time;
+  return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${sameYear(d, nowMs) ? '' : `${d.getFullYear()}, `}${time}`;
 }

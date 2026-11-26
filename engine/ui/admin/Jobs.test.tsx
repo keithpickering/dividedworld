@@ -1,4 +1,7 @@
-import { cleanup, screen, within } from '@testing-library/react';
+import { readFileSync } from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { act, cleanup, screen, within } from '@testing-library/react';
 import { afterEach, describe, expect, test, vi } from 'vitest';
 import { JOBS } from '../../rules/jobs.ts';
 import type { Fake } from '../data/fake.ts';
@@ -177,5 +180,39 @@ describe('the jobs page', () => {
     open(fake);
     expect(await screen.findByRole('alert')).toHaveTextContent('The jobs could not be read. Reload the page to try again.');
     expect(screen.queryByText(/stopped/iu)).toBeNull();
+  });
+
+  test('each cell carries its column name, shown to a reader at phone width where the header row is clipped', async () => {
+    open(healthy());
+    const row = await rowOf('settle');
+    const cells = within(row).getAllByRole('cell');
+    expect(cells.map((c) => c.firstElementChild?.textContent)).toEqual(['Schedule ', 'State ']);
+    for (const c of cells) expect(c.firstElementChild).toHaveClass('kb-jobs-col');
+    /* jsdom does not match :where(), so the stylesheet is read: the label is off on a wide page and visually hidden (never display: none) on the phone. */
+    const css = readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), 'jobs.css'), 'utf8');
+    expect(css).toMatch(/^\.kb-jobs-col \{\s*display: none;/mu);
+    expect(css).toMatch(/:where\(:root\[data-kb-layout='phone'\]\) \.kb-jobs-col \{\s*display: inline;[^}]*clip-path: inset\(50%\)/u);
+  });
+
+  test('a diagnosis cell names which job it is about', async () => {
+    const fake = healthy();
+    stopConceal(fake, { status: 'succeeded', message: '1 row' });
+    open(fake);
+    expect(await screen.findByRole('cell', { name: /^Why conceal stopped:/u })).toBeInTheDocument();
+  });
+
+  test('a job that goes late while the page is open turns Stopped without a reload', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: false });
+    try {
+      const fake = healthy();
+      fake.seed.job('kayfabb-conceal', { lastOkAt: isoAgo(fake, 1) });
+      open(fake);
+      await act(async () => { await vi.advanceTimersByTimeAsync(0); });
+      const rowNow = () => screen.getByRole('rowheader', { name: /^conceal\b/u }).closest('tr')!;
+      expect(rowNow()).toHaveTextContent('Running');
+      fake.clock.advance(20 * MINUTE);
+      await act(async () => { await vi.advanceTimersByTimeAsync(MINUTE); });
+      expect(rowNow()).toHaveTextContent('Stopped since');
+    } finally { vi.useRealTimers(); }
   });
 });

@@ -78,6 +78,15 @@
   color: var(--kb-glass-text);
 }
 
+/*
+ * A cell's column name, for a reader who goes cell by cell: the header row is clipped at phone width and a stacked row is no longer a table's, so each cell
+ * carries its own. Nothing on a wide page, where the header row names the columns; on the phone it is visually hidden, so a sighted reader sees the cells
+ * as they were and a screen reader hears the column.
+ */
+.kb-jobs-col {
+  display: none;
+}
+
 /* The phone's layout: each row a plate, its cells stacked. */
 :where(:root[data-kb-layout='phone']) .kb-jobs-table thead {
   position: absolute;
@@ -94,4 +103,15 @@
 
 :where(:root[data-kb-layout='phone']) .kb-jobs-table tbody tr:not(.kb-jobs-why) > * {
   padding: 4px 0;
+}
+
+:where(:root[data-kb-layout='phone']) .kb-jobs-col {
+  display: inline;
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
 }
