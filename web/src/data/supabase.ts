@@ -1865,7 +1865,7 @@ export function createSupabaseApi(options: SupabaseApiOptions): KayfaApi {
     },
     async adminStaffPins() {
       const v = (await read(() => client.rpc('admin_staff_pins'))).data;
-      return (Array.isArray(v) ? (v as Row[]) : []).flatMap((r): StaffPin[] => (typeof r['thread'] === 'string' ? [{ thread: r['thread'], title: str(r['title']) ?? '', pinnedAt: str(r['pinned_at']) ?? '' }] : []));
+      return (Array.isArray(v) ? (v as Row[]) : []).flatMap((r): StaffPin[] => (isObject(r) && typeof r['thread'] === 'string' ? [{ thread: r['thread'], title: str(r['title']) ?? '', pinnedAt: str(r['pinned_at']) ?? '' }] : []));
     },
     async unpinStaffThread(thread) {
       const a = await rpcWrite(() => client.rpc('unpin_staff_thread', { in_thread: thread }));

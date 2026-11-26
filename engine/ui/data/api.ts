@@ -2503,7 +2503,7 @@ export interface BoardClosed {
   readonly goesTo: BoardRef | null;
 }
 
-/** A live pin on a staff thread, as the admin's Machine screen lists it (`admin_staff_pins`, which 0447 does not yet carry): the thread, its title and when it was pinned (ISO 8601). */
+/** A live pin on a staff thread, as `admin_staff_pins()` (added by 0447) returns a row of it for the admin's Machine screen: the thread, its title and when it was pinned (ISO 8601), the live pins of the open season, oldest pin first. */
 export interface StaffPin {
   readonly thread: Id;
   readonly title: string;

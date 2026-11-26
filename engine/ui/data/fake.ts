@@ -6219,6 +6219,9 @@ export function createFake(options: { instance: Instance; settings?: Partial<Scr
     },
     stickyPin(thread, o) {
       if (!core.thread(thread)) throw new Error('no such thread');
+      /* The latest event wins: a thread pinned again has one entry, at the new time. */
+      const had = staffPins.findIndex((p) => p.thread === thread);
+      if (had >= 0) staffPins.splice(had, 1);
       staffPins.push({ thread, at: o?.at ?? now() });
     },
     staffPost(staff, thread, body, o) {

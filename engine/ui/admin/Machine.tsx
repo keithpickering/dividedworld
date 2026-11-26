@@ -73,6 +73,7 @@ export function MachineScreen() {
   const [slots, setSlots] = useState<readonly AdminSlot[] | null>(null);
   const [failed, setFailed] = useState(false);
   const [pins, setPins] = useState<readonly StaffPin[] | null>(null);
+  const [pinsFailed, setPinsFailed] = useState(false);
   /* The order on the page: the slots' ids as the admin has moved them, or null while it is the saved one. Nothing is sent until Save changes. */
   const [order, setOrder] = useState<readonly string[] | null>(null);
   const [edits, setEdits] = useState<Readonly<Record<string, Edit>>>({});
@@ -85,12 +86,17 @@ export function MachineScreen() {
 
   const load = useCallback(async () => {
     try {
-      const [read, held] = await Promise.all([api.adminMachine(), api.adminStaffPins()]);
-      setSlots(read);
-      setPins(held);
+      setSlots(await api.adminMachine());
       setFailed(false);
     } catch {
       setFailed(true);
+    }
+    /* The pins are read on their own: a pins read that fails never blanks the slots. */
+    try {
+      setPins(await api.adminStaffPins());
+      setPinsFailed(false);
+    } catch {
+      setPinsFailed(true);
     }
   }, [api]);
 
@@ -266,7 +272,7 @@ export function MachineScreen() {
           </form>
         </CalmRegion>
       )}
-      {pins && <StaffPins pins={pins} onChange={setPins} />}
+      {(pins || pinsFailed) && <StaffPins pins={pins ?? []} failed={pinsFailed} onChange={(p) => { setPins(p); setPinsFailed(false); }} />}
     </div>
   );
 }
@@ -275,7 +281,7 @@ export function MachineScreen() {
  * The live pins on staff threads: plain words, an admin's alone. Unpin writes the unpin; the row leaves on success. A refusal is shown as the server words it (the glass's copy
  * `adminUnpinRefused` where the server gave none), and the list is read again, since a refusal means it was out of date. Focus goes to the heading after a row leaves, so a keyboard never loses its place.
  */
-function StaffPins({ pins, onChange }: { readonly pins: readonly StaffPin[]; readonly onChange: (pins: readonly StaffPin[]) => void }) {
+function StaffPins({ pins, failed, onChange }: { readonly pins: readonly StaffPin[]; readonly failed: boolean; readonly onChange: (pins: readonly StaffPin[]) => void }) {
   const { api, ui } = useKayfa();
   const id = useId();
   const [busy, setBusy] = useState<string | null>(null);
@@ -299,7 +305,7 @@ function StaffPins({ pins, onChange }: { readonly pins: readonly StaffPin[]; rea
   return (
     <CalmRegion as="section" aria-labelledby={`${id}-pins`} className="kb-machine-calm kb-machine-pins">
       <h2 id={`${id}-pins`} ref={heading} tabIndex={-1} className="kb-machine-pins-title">{ui.copy.adminStaffPins}</h2>
-      {pins.length === 0 ? <p className="kb-machine-note">No staff thread is pinned.</p> : (
+      {failed ? <p role="alert" className="kb-machine-problem">The pinned staff threads could not be read. Reload the page to try again.</p> : pins.length === 0 ? <p className="kb-machine-note">No staff thread is pinned.</p> : (
         <ul className="kb-machine-pin-list">
           {pins.map((p) => (
             <li key={p.thread} className="kb-machine-pin">

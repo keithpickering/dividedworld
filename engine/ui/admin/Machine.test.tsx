@@ -364,6 +364,16 @@ describe('the pinned staff threads', () => {
     await waitFor(() => expect(screen.queryByText('Improvement Initiative #1')).toBeNull());
   });
 
+  test('a failed read of the pins leaves the slots on screen and says in the pins section that they could not be read', async () => {
+    const fake = buildWorld(undefined, instance);
+    fake.signInAs(fake.seed.account('pins-admin', { admin: true }));
+    vi.spyOn(fake, 'adminStaffPins').mockRejectedValue(new Error('down'));
+    renderIn(fake, <MachineScreen />, { path: '/admin/machine', instance, packs });
+    expect(await names()).toEqual(['Booster', 'Whoops!', 'Dud', 'Card Collector', 'Main Event']);
+    const section = await screen.findByRole('region', { name: 'Pinned staff threads' });
+    expect(within(section).getByRole('alert')).toHaveTextContent('could not be read');
+  });
+
   test('with no live pin the section says so, and a player is not asked for it', async () => {
     const fake = buildWorld(undefined, instance);
     fake.signInAs(fake.seed.account('pins-admin', { admin: true }));
