@@ -1,7 +1,7 @@
 // The scheduler stands in for pg_cron. It reads cron.job (never a list of jobs written here: a job a later migration
 // adds runs with no edit), and at each simulated minute sets both clocks, checks the database agrees, runs the command of
 // every active job whose schedule matches, as the superuser pg_cron runs them as, and then drains the dispatcher.
-import { matches } from "./cron.ts";
+import { matches } from "../../engine/rules/cron.ts";
 import { drain, Stalled, within, type DispatchCtx } from "./dispatch.ts";
 
 export interface SqlConnection {

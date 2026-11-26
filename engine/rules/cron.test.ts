@@ -2,7 +2,7 @@
 // The list below is every schedule the migrations and instances/divided-world/settings.ts use today.
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { matches } from "./cron.ts";
+import { lastDue, matches, nextDue } from "./cron.ts";
 
 const at = (y: number, mo: number, d: number, h: number, mi: number) => new Date(Date.UTC(y, mo - 1, d, h, mi));
 
@@ -86,4 +86,52 @@ test("a field starting with * counts as unrestricted for the either-rule (vixie 
   // Same for dow */2 with a restricted dom: both must match.
   assert.ok(matches("0 0 7 * */2", at(2027, 3, 7, 0, 0)), "the 7th is a Sunday");
   assert.ok(!matches("0 0 8 * */2", at(2027, 3, 8, 0, 0)), "the 8th is a Monday");
+});
+
+// lastDue: the latest minute <= at the expression matches.
+const iso = (d: Date | null) => (d === null ? null : d.toISOString());
+test("lastDue: every minute is the minute itself, seconds dropped", () => {
+  assert.equal(iso(lastDue("* * * * *", new Date(Date.UTC(2027, 2, 1, 9, 5, 42)))), "2027-03-01T09:05:00.000Z");
+});
+test("lastDue: */5 and 41 * * * *", () => {
+  assert.equal(iso(lastDue("*/5 * * * *", at(2027, 3, 1, 9, 58))), "2027-03-01T09:55:00.000Z");
+  assert.equal(iso(lastDue("41 * * * *", at(2027, 3, 1, 9, 40))), "2027-03-01T08:41:00.000Z");
+  assert.equal(iso(lastDue("41 * * * *", at(2027, 3, 1, 0, 40))), "2027-02-28T23:41:00.000Z");
+});
+test("lastDue: a daily schedule, before and after the time on the same day", () => {
+  assert.equal(iso(lastDue("17 8 * * *", at(2027, 3, 1, 8, 16))), "2027-02-28T08:17:00.000Z");
+  assert.equal(iso(lastDue("17 8 * * *", at(2027, 3, 1, 8, 18))), "2027-03-01T08:17:00.000Z");
+  assert.equal(iso(lastDue("17 8 * * *", at(2027, 3, 1, 23, 59))), "2027-03-01T08:17:00.000Z");
+});
+test("lastDue: a daily schedule across a month end", () => {
+  assert.equal(iso(lastDue("23 9 * * *", at(2027, 3, 1, 9, 22))), "2027-02-28T09:23:00.000Z");
+  assert.equal(iso(lastDue("23 9 * * *", at(2027, 5, 1, 0, 0))), "2027-04-30T09:23:00.000Z");
+});
+test("lastDue: a leap day is found four years back or is null within 366 days", () => {
+  assert.equal(iso(lastDue("0 0 29 2 *", at(2028, 3, 1, 0, 0))), "2028-02-29T00:00:00.000Z");
+  assert.equal(iso(lastDue("0 0 29 2 *", at(2029, 3, 2, 0, 0))), null, "367 days on");
+  assert.equal(iso(lastDue("0 0 29 2 *", at(2029, 3, 1, 0, 0))), "2028-02-29T00:00:00.000Z", "366 days on is still in reach");
+});
+test("lastDue: both day fields restricted, either matches", () => {
+  // 2027-03-16 is a Tuesday and the 15th a Monday: on the 16th the latest "15th or a Monday" is the 15th.
+  assert.equal(iso(lastDue("0 0 15 * 1", at(2027, 3, 16, 12, 0))), "2027-03-15T00:00:00.000Z");
+  // 2027-03-12 is a Friday; "the 10th or a Monday": Monday the 8th.
+  assert.equal(iso(lastDue("0 0 10 * 1", at(2027, 3, 12, 12, 0))), "2027-03-10T00:00:00.000Z");
+  assert.equal(iso(lastDue("0 0 10 * 1", at(2027, 3, 9, 12, 0))), "2027-03-08T00:00:00.000Z");
+});
+test("lastDue: at exactly on a due minute is that minute", () => {
+  assert.equal(iso(lastDue("17 8 * * *", at(2027, 3, 1, 8, 17))), "2027-03-01T08:17:00.000Z");
+  assert.equal(iso(lastDue("*/5 * * * *", at(2027, 3, 1, 9, 55))), "2027-03-01T09:55:00.000Z");
+});
+test("lastDue: a malformed expression throws", () => {
+  assert.throws(() => lastDue("* * * *", new Date()), /five fields/);
+});
+
+test("nextDue: strictly after, across a day and a month end, and null past 366 days", () => {
+  assert.equal(iso(nextDue("17 8 * * *", at(2027, 3, 1, 8, 17))), "2027-03-02T08:17:00.000Z");
+  assert.equal(iso(nextDue("17 8 * * *", at(2027, 3, 1, 8, 16))), "2027-03-01T08:17:00.000Z");
+  assert.equal(iso(nextDue("* * * * *", new Date(Date.UTC(2027, 2, 1, 9, 5, 42)))), "2027-03-01T09:06:00.000Z");
+  assert.equal(iso(nextDue("23 9 * * *", at(2027, 2, 28, 9, 23))), "2027-03-01T09:23:00.000Z");
+  assert.equal(iso(nextDue("0 0 29 2 *", at(2027, 3, 1, 0, 0))), "2028-02-29T00:00:00.000Z");
+  assert.equal(iso(nextDue("0 0 29 2 *", at(2028, 3, 1, 0, 0))), null, "the next is four years on");
 });
