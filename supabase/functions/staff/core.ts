@@ -277,7 +277,7 @@ export async function runFilings(db: Db, models: Models, instance: Instance, slo
         ruleDaysMost: settings.modBots.ruleDaysMost, expiryLeastHours: settings.moveExpiryLeastHours, names: (id) => mod.names[id] ?? 'a character',
         ...(groups ? { conferred: groups.conferred } : {}),
         board: v.board, thread: v.thread, title: heard.title, read: heard.read, charges,
-        limits: { excerptChars: settings.digestExcerptChars, titleMaxLength: settings.titleMaxLength },
+        limits: { titleMaxLength: settings.titleMaxLength },
       });
 
       // The call. A transport failure was retried inside models(); what comes back is an answer, a rejection, or a failure. None is made for a post that was not read.

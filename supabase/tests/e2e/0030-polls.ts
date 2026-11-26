@@ -176,7 +176,17 @@ test('the masks of a secret poll hold in every read another account can make, an
 
   // ---- 5. The digest ----
   const digest = await service.rpc<{ excerpts: Row[] }>('system_digest', { since: new Date(Date.parse(since) - 60_000).toISOString(), until: new Date(Date.now() + 60_000).toISOString() });
-  assert.deepEqual(named(digest, voters), [], 'the digest names no voter, public or secret');
+  // 0433's standouts name the characters who cast the most PUBLIC ballots (top three, ties by name: in a database that earlier files left public ballots in, Gamma may be crowded out by a name that sorts first, so only Alpha and Gamma are allowed there,
+  // not required), and the digest's `characters` list names whoever the digest names. Beta, who voted on the secret poll alone, is named nowhere, and no voter is named anywhere else.
+  const { standouts, characters: shownChars, ...rest } = digest as unknown as { standouts: Record<string, Row[]>; characters: Row[] } & Record<string, unknown>;
+  assert.deepEqual(named(digest, [voters[1]!]), [], 'the digest names no voter of a secret poll alone');
+  // The one other place a public voter appears is the spin planted from a public ballot above, whose origin names its character as the board's own origin_place does (checked at 4); the spin from the secret ballot names no one.
+  const { spins, ...others } = rest as { spins: { title: string }[] } & Record<string, unknown>;
+  assert.deepEqual(named(others, voters), [], 'no voter, public or secret, is named outside the standouts, the characters they add and the spin from a public ballot');
+  assert.deepEqual(named(spins.filter((x) => x.title !== 'From a public ballot'), voters), [], 'the spin from a secret ballot names no one');
+  assert.deepEqual(named(spins.filter((x) => x.title === 'From a public ballot'), voters), [voters[0]!.id, voters[0]!.name], 'the spin from a public ballot names its character and no other voter');
+  assert.deepEqual(Object.entries(standouts).filter(([k, v]) => k !== 'days' && k !== 'ballots' && k !== 'spun' && named(v, voters).length > 0).map(([k]) => k), [], 'a voter is named in the ballots standouts and the spun ones alone (Gamma wrote the two spins planted at 4; no voter writes a post, card or poll here)');
+  assert.deepEqual(named(shownChars.filter((c) => !JSON.stringify(standouts).includes(String(c.id))), voters), [], 'the characters list names a voter only where the standouts do');
   const excerpt = digest.excerpts.find((e) => e.act === secret.post);
   assert.deepEqual(excerpt?.poll, { question: 'Which kart, in secret?', options: [{ text: 'Pipe Frame', count: 2 }, { text: 'Badwagon', count: 2 }, { text: 'Mach Bike', count: 0 }], closed: false }, 'the digest carries the poll\'s counts of characters');
 

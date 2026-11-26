@@ -6,7 +6,7 @@
 import { pronounsOr, type PronounSet } from '../../../engine/rules/pronouns.ts';
 import type { CardRules } from '../../../engine/rules/cards.ts';
 import type { ReadOrigin, ReadOriginPost, ReadPlay, ReadPoll, Reactions } from '../../../engine/system/extras.ts';
-import { readThread, type ReadCandidate, type ThreadReadResult } from '../../../engine/system/read.ts';
+import { readThread, type ReadCandidate, type ReadOptions, type ThreadReadResult } from '../../../engine/system/read.ts';
 
 export interface PoolRead {
   readonly title: string;
@@ -41,16 +41,24 @@ export const readContext = (instance: { readonly cards: ReadContext['cards']; re
  */
 export function readOf(pr: PoolRead, fallback: PronounSet, must: readonly string[], readMost: number, ctx: ReadContext): ThreadReadResult {
   const cands: ReadCandidate[] = pr.posts.map((x) => ({ ...x, pronouns: pronounsOr(x.pronouns, fallback), poll: x.poll ?? null, plays: x.plays ?? [], reactions: x.reactions ?? {}, rewoundTo: x.rewoundTo ?? null }));
-  const byKey = new Map(ctx.cards.map((c) => [c.key, c]));
-  const emoji = new Map(ctx.reactions.map((r) => [r.key, r.emoji]));
   const origin: ReadOrigin | null = pr.origin === undefined || pr.origin === null ? null
     : { ...pr.origin, post: pr.origin.post === null || pr.origin.post === undefined ? null : { ...pr.origin.post, pronouns: pronounsOr(pr.origin.post.pronouns, fallback), poll: pr.origin.post.poll ?? null, plays: pr.origin.post.plays ?? [], reactions: pr.origin.post.reactions ?? {}, rewoundTo: pr.origin.post.rewoundTo ?? null } };
-  return readThread(cands, { self: pr.self, must }, {
-    readMost, now: ctx.now, origin,
+  return readThread(cands, { self: pr.self, must }, { ...readingOf(readMost, ctx), origin });
+}
+
+/**
+ * What a read renders with, besides the origin: the ceiling, the call's time, the instance's `seen` sentence and name for each card, and each reaction as its emoji. The reader (`readOf`) and the patrol
+ * (which shows each sampled post whole with its extras, `patrolPrompt`) take it from here, so a card is told the same way to both.
+ */
+export function readingOf(readMost: number, ctx: ReadContext): Omit<ReadOptions, 'origin'> {
+  const byKey = new Map(ctx.cards.map((c) => [c.key, c]));
+  const emoji = new Map(ctx.reactions.map((r) => [r.key, r.emoji]));
+  return {
+    readMost, now: ctx.now,
     // A card with no `seen`, a card the instance lacks and a back with no card are all null: the reader says what is known of them.
     seen: (card, p) => (card === null ? null : byKey.get(card)?.seen?.(p) ?? null),
     cardName: (key) => byKey.get(key)?.name,
     groupName: ctx.groupName,
     reactionName: (kind) => emoji.get(kind) ?? kind,
-  });
+  };
 }
