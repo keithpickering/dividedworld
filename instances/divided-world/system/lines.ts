@@ -164,6 +164,5 @@ export const stockLines: StockLines = Object.freeze({
     'The bar was full. {mod} made it official, and {banned} is on the list.',
     '{mod} did the paperwork on {banned}. The paperwork is this.',
     'Another name for the wall. {banned}, by way of {mod}.',
-    '{banned} got a visit from {mod}, then another, and then the bar ran out. It happens.',
   ]),
 });
