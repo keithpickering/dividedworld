@@ -21,14 +21,15 @@ const valid = (c: Cover, length: number): boolean =>
 
 export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (card: string | null, p: CoverPlay) => readonly Cover[] | null): string {
   if (plays.length === 0) return body;
+  // Parsed and walked once, on the first read of a play's `text`: a card with no `covers` never reads it, so a body nobody covers is never parsed.
   const texts = new Map<BbNode, { from: number; to: number }>();
-  const nodes = parse(body, undefined, undefined, texts);
-  const { text, offsets } = visibleWalk(nodes);
+  let walked: ReturnType<typeof visibleWalk> | null = null;
+  const walk = () => (walked ??= visibleWalk(parse(body, undefined, undefined, texts)));
 
   // Each play's covers, later plays winning: a kept cover removes every earlier kept one it overlaps, whole.
   let kept: Cover[] = [];
   for (const p of plays) {
-    const given = (covers(p.card, { config: p.config, state: p.state, text }) ?? []).filter((c) => valid(c, text.length));
+    const given = (covers(p.card, { config: p.config, state: p.state, get text() { return walk().text; } }) ?? []).filter((c) => valid(c, walk().text.length));
     const mine: Cover[] = [];
     for (const c of given) if (!mine.some((m) => c.from < m.to && m.from < c.to)) mine.push(c);
     if (mine.length === 0) continue;
@@ -36,6 +37,7 @@ export function coveredBody(body: string, plays: readonly ReadPlay[], covers: (c
     kept.push(...mine);
   }
   if (kept.length === 0) return body;
+  const { offsets } = walk();
 
   // The recorded text nodes, in visible order, with where each lies in the visible text and in the body.
   const pieces: Piece[] = [];

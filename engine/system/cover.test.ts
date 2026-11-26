@@ -64,3 +64,22 @@ test('a cover meeting a line break or a link is skipped whole', () => {
   const out = coveredBody(body, [swap('one', 'X')], (_, p) => [{ from: 0, to: 5, words: 'X' }]);
   assert.ok(out === body);
 });
+
+test('a play is handed its text lazily: no read, no parse; reads by two plays see one string', () => {
+  const body = 'one two';
+  const seen: unknown[] = [];
+  let reads = 0;
+  const probe = (_: string | null, p: CoverPlay): null => {
+    const d = Object.getOwnPropertyDescriptor(p, 'text');
+    assert.equal(typeof d?.get, 'function', 'text is a getter, so nothing is parsed until a card reads it');
+    seen.push(d!.get);
+    return null;
+  };
+  assert.ok(coveredBody(body, [swap('a', 'b'), play(null)], probe) === body);
+  assert.equal(seen.length, 2);
+  const texts: string[] = [];
+  const reader = (_: string | null, p: CoverPlay): null => { reads++; texts.push(p.text, p.text); return null; };
+  assert.ok(coveredBody('x [b]y[/b]', [swap('a', 'b'), swap('a', 'b')], reader) === 'x [b]y[/b]');
+  assert.equal(reads, 2);
+  assert.ok(texts.every((t) => t === 'x y'));
+});
