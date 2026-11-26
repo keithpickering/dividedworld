@@ -55,7 +55,7 @@ export interface QuizInput {
 
 /** The body as quoted: capped (the cut said), and unable to close its own block. */
 const quoted = (body: string): string => {
-  const safe = body.replace(/post>>>/g, 'post> >>');
+  const safe = body.replace(/(post)\s*>>>/giu, '$1> >>');
   return safe.length <= QUIZ_BODY_MOST ? safe : `${safe.slice(0, QUIZ_BODY_MOST)}\n[the rest of the post is left out for space]`;
 };
 
