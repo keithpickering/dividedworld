@@ -26,7 +26,8 @@
  * as `--x=value` or a bare boolean `--x`. An argument that does not start with `-` is
  * positional, which includes the value in `--workers 2`, and is refused beside `--cost-shard`,
  * since a file filter would make the runner's list differ from the packing's. So a value is
- * always written with `=`.
+ * always written with `=`. The flags in REFUSED are refused too, n is at most 1000, and
+ * `compareRun` is the backstop for anything else that changes which tests run.
  */
 
 /** Workers per runner (playwright.config.ts) and the minutes a shard should take. */
@@ -34,6 +35,17 @@ export const WORKERS = 2;
 export const BUDGET_MINUTES = 15;
 
 const SEP = ' › ';
+
+/** The most shards `--cost-shard` accepts. */
+const MAX_SHARDS = 1000;
+
+/**
+ * Flags that choose which tests run, or how many times, and so would make the run differ from
+ * the packing: refused beside `--cost-shard` in both `--x` and `--x=v` forms. `--repeat-each`
+ * is here because the report would hold each key more than once. Anything else that changes the
+ * set is caught after the run by `compareRun`.
+ */
+const REFUSED = ['--shard', '--test-list', '--test-list-invert', '--grep', '-g', '--grep-invert', '--project', '--only-changed', '--last-failed', '--repeat-each', '--tag', '--tag-invert'];
 
 /**
  * Every test's title path ([file, ...describes, title]) in list order.
@@ -58,7 +70,7 @@ export function keysOf(listJson) {
 }
 
 /**
- * One string per key whose segment holds a bare `›`, and one per key that is a prefix of another
+ * One string per key whose segment holds a bare `›`, one per key listed twice, and one per key that is a prefix of another
  * key in the same file (Playwright would match both). A title holding " › " with its spaces is
  * indistinguishable from a describe in a key, so `listProblems` reads the titles.
  * @param {string[]} keys @returns {string[]}
@@ -67,6 +79,12 @@ export function keyProblems(keys) {
   const out = [];
   for (const key of keys) {
     if (key.split(SEP).some((part) => part.includes('›'))) out.push(`"${key}" has a title holding ›, which Playwright splits a test list on`);
+  }
+  const seen = new Set();
+  for (const key of keys) {
+    if (seen.has(key)) continue;
+    seen.add(key);
+    if (keys.indexOf(key) !== keys.lastIndexOf(key)) out.push(`"${key}" is listed twice, so its list line would match both tests`);
   }
   const fileOf = (k) => k.split(SEP)[0];
   const byFile = new Map();
@@ -80,42 +98,62 @@ export function keyProblems(keys) {
 }
 
 /**
- * One string per test or describe title in the list holding `›` at all, spaces included.
+ * One string per test whose path holds a title Playwright's `--test-list` reader cannot match:
+ * one holding `›` at all (spaces included), one with leading or trailing whitespace (the reader
+ * trims every line and every title token), or one holding a newline (a line is one key).
  * @param {any} listJson @returns {string[]}
  */
 export function listProblems(listJson) {
   const out = [];
   for (const path of paths(listJson)) {
-    const bad = path.slice(1).filter((t) => t.includes('›'));
-    if (bad.length) out.push(`"${path.join(SEP)}" has a title holding ›: "${bad[0]}"`);
+    for (const t of path.slice(1)) {
+      if (t.includes('›')) out.push(`"${path.join(SEP)}" has a title holding ›: "${t}"`);
+      else if (/[\r\n]/.test(t)) out.push(`"${path.join(SEP)}" has a title holding a newline`);
+      else if (t !== t.trim()) out.push(`"${path.join(SEP)}" has a title with leading or trailing whitespace: "${t}"`);
+      else continue;
+      break;
+    }
   }
   return out;
 }
 
 /**
- * A test's estimated seconds: its own entry, else its spec's mean, else the suite's mean per
- * test (total seconds over total count across `specs`), else 1.
- * @param {string} key @param {{ specs?: Record<string,{count:number,mean:number}>, tests?: Record<string,number> }} manifest
+ * The suite's mean seconds per test: total seconds over total count across `specs`, or null with
+ * no specs. Computed once per `pack` call and passed to `price`.
+ * @param {any} manifest @returns {number | null}
  */
-export function price(key, manifest) {
-  const own = manifest.tests?.[key];
-  if (typeof own === 'number') return own;
-  const spec = manifest.specs?.[key.split(SEP)[0]];
-  if (spec) return spec.mean;
+export function suiteMean(manifest) {
   const specs = Object.values(manifest.specs ?? {});
   const count = specs.reduce((t, s) => t + s.count, 0);
-  if (count > 0) return specs.reduce((t, s) => t + s.count * s.mean, 0) / count;
-  return 1;
+  return count > 0 ? specs.reduce((t, s) => t + s.count * s.mean, 0) / count : null;
+}
+
+/**
+ * A test's estimated seconds: its own entry, else its spec's mean, else the suite's mean per
+ * test, else 1. Throws unless the price is finite and above 0, since a zero or NaN price would
+ * quietly mis-pack. `mean` is the suite's mean when the caller has it already.
+ * @param {string} key @param {{ specs?: Record<string,{count:number,mean:number}>, tests?: Record<string,number> }} manifest
+ * @param {number | null} [mean]
+ */
+export function price(key, manifest, mean = suiteMean(manifest)) {
+  const own = manifest.tests?.[key];
+  const spec = manifest.specs?.[key.split(SEP)[0]];
+  const found = typeof own === 'number' ? own : spec ? spec.mean : mean ?? 1;
+  if (!Number.isFinite(found) || found <= 0) throw new Error(`price of "${key}" is ${found}, which must be a finite number above 0`);
+  return found;
 }
 
 /**
  * Longest first: sort by price descending then key ascending, and put each key in the shard with
- * the least total so far, the lowest index winning a tie.
+ * the least total so far, the lowest index winning a tie. n must be a whole number of 1 or more;
+ * with more shards than keys the extra shards are empty.
  * @param {string[]} keys @param {any} manifest @param {number} n
  * @returns {{ shards: string[][], totals: number[] }}
  */
 export function pack(keys, manifest, n) {
-  const priced = keys.map((key) => ({ key, cost: price(key, manifest) }));
+  if (!Number.isSafeInteger(n) || n < 1) throw new Error(`pack: the shard count n must be a whole number of 1 or more, got ${n}`);
+  const mean = suiteMean(manifest);
+  const priced = keys.map((key) => ({ key, cost: price(key, manifest, mean) }));
   priced.sort((a, b) => b.cost - a.cost || (a.key < b.key ? -1 : a.key > b.key ? 1 : 0));
   const shards = Array.from({ length: n }, () => []);
   const totals = Array.from({ length: n }, () => 0);
@@ -142,10 +180,12 @@ export function parseCostShard(argv) {
   if (!m) throw new Error(`--cost-shard must look like --cost-shard=k/n with whole numbers, got "${mine[0]}"`);
   const k = Number(m[1]);
   const n = Number(m[2]);
+  if (!Number.isSafeInteger(k) || !Number.isSafeInteger(n)) throw new Error(`--cost-shard=${m[1]}/${m[2]}: k and n must be safe whole numbers`);
+  if (n > MAX_SHARDS) throw new Error(`--cost-shard: n may be at most ${MAX_SHARDS}, got ${n}`);
   if (k > n) throw new Error(`--cost-shard=${k}/${n}: k must be between 1 and n`);
   for (const a of argv) {
-    if (a === '--shard' || a.startsWith('--shard=')) throw new Error('--cost-shard cannot be combined with --shard');
-    if (a === '--test-list' || a.startsWith('--test-list=')) throw new Error('--cost-shard cannot be combined with --test-list');
+    const flag = REFUSED.find((f) => a === f || a.startsWith(`${f}=`));
+    if (flag) throw new Error(`--cost-shard cannot be combined with ${flag}`);
   }
   const positional = argv.find((a) => !a.startsWith('-'));
   if (positional !== undefined) throw new Error(`--cost-shard refuses the positional argument "${positional}": a file filter would change the list (write flag values as --x=value)`);

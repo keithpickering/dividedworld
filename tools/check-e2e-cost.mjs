@@ -63,9 +63,10 @@ function manifestProblems(manifest) {
  */
 export function problems({ manifest, keys, shards, list }) {
   const found = manifestProblems(manifest);
+  const manifestOk = found.length === 0;
   found.push(...keyProblems(keys));
   if (list) found.push(...listProblems(list));
-  const usable = isObject(manifest) && isObject(manifest.specs) ? manifest : { specs: {}, tests: {} };
+  const usable = manifestOk ? manifest : { specs: {}, tests: {} };
   let all = 0;
   let unpriced = 0;
   for (const key of keys) {

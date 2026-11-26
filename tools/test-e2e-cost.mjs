@@ -148,6 +148,29 @@ const spaced = listProblems({ suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', 
 if (spaced.length === 1 && /left › right/.test(spaced[0])) ok('listProblems sees a title holding " › " that a key cannot show'); else fail('listProblems', JSON.stringify(spaced));
 eq('listProblems: a clean list has none', listProblems(LIST), []);
 
+/* duplicates, and titles Playwright's list reader cannot match */
+const dup = keyProblems(['a.spec.ts › x', 'a.spec.ts › y', 'a.spec.ts › x']);
+if (dup.length === 1 && /a\.spec\.ts › x/.test(dup[0]) && /twice|duplicate/.test(dup[0])) ok('keyProblems names a key listed twice once'); else fail('keyProblems: duplicate', JSON.stringify(dup));
+const listOf = (...titles) => ({ suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', specs: titles.map(test) }] });
+for (const [what, title] of [['trailing space', 'ends '], ['leading space', ' starts'], ['a newline', 'two\nlines'], ['a trailing tab', 'tab\t']]) {
+  const found = listProblems(listOf(title));
+  if (found.length === 1 && /whitespace|newline/.test(found[0])) ok(`listProblems refuses a title with ${what}`); else fail(`listProblems: ${what}`, JSON.stringify(found));
+}
+const inner = listProblems({ suites: [{ title: 'a.spec.ts', file: 'a.spec.ts', suites: [{ title: 'padded ', file: 'a.spec.ts', specs: [test('t')] }] }] });
+if (inner.length === 1 && /whitespace/.test(inner[0])) ok('listProblems refuses a describe title with trailing space'); else fail('listProblems: describe', JSON.stringify(inner));
+
+/* ---- price and pack refuse what would mis-pack ---- */
+for (const bad of [0, -1, NaN, Infinity]) {
+  throws(`price: refuses a price of ${bad}`, () => price('f.spec.ts › t', { specs: {}, tests: { 'f.spec.ts › t': bad } }), /price/);
+}
+throws('price: refuses a spec mean of 0', () => price('f.spec.ts › t', { specs: { 'f.spec.ts': { count: 1, mean: 0 } }, tests: {} }), /price/);
+throws('pack: refuses a bad price rather than mis-packing', () => pack(['f.spec.ts › t'], { specs: {}, tests: { 'f.spec.ts › t': NaN } }, 2), /price/);
+for (const bad of [0, -2, 1.5, NaN]) throws(`pack: refuses n = ${bad}`, () => pack(['f.spec.ts › t'], MAN, bad), /shard count|n must/);
+const sparse = pack(['f.spec.ts › a', 'f.spec.ts › b'], { specs: {}, tests: {} }, 5);
+eq('pack: n above the key count leaves empty shards, each key once', sparse.shards, [['f.spec.ts › a'], ['f.spec.ts › b'], [], [], []]);
+eq('pack: and their totals', sparse.totals, [1, 1, 0, 0, 0]);
+if (exactlyOnce(['f.spec.ts › a', 'f.spec.ts › b'], { specs: {}, tests: {} }, 5, pack) === '') ok('pack: n above the key count is still exactly once'); else fail('pack: sparse', 'not once');
+
 /* ---- parseCostShard ---- */
 eq('parseCostShard: 2/7', parseCostShard(['--cost-shard=2/7']), { k: 2, n: 7, rest: [] });
 eq('parseCostShard: other flags pass through in rest', parseCostShard(['--headed', '--cost-shard=1/3', '--retries=1']), { k: 1, n: 3, rest: ['--headed', '--retries=1'] });
@@ -162,6 +185,12 @@ throws('parseCostShard: with --shard', () => parseCostShard(['--cost-shard=1/7',
 throws('parseCostShard: with --test-list', () => parseCostShard(['--cost-shard=1/7', '--test-list=x.txt']), /--test-list/);
 throws('parseCostShard: with bare --shard', () => parseCostShard(['--cost-shard=1/7', '--shard']), /--shard/);
 throws('parseCostShard: with bare --test-list', () => parseCostShard(['--cost-shard=1/7', '--test-list']), /--test-list/);
+for (const flag of ['--test-list-invert', '--test-list-invert=x', '--grep', '--grep=foo', '-g', '-g=foo', '--grep-invert=foo', '--grep-invert', '--project', '--project=chromium', '--only-changed', '--only-changed=main', '--last-failed', '--repeat-each', '--repeat-each=2', '--tag=@x', '--tag-invert=@x']) {
+  throws(`parseCostShard: with ${flag}`, () => parseCostShard(['--cost-shard=1/7', flag]), new RegExp(flag.split('=')[0].replace(/-/g, '\\-')));
+}
+throws('parseCostShard: n above 1000', () => parseCostShard(['--cost-shard=1/1001']), /1000/);
+throws('parseCostShard: an n beyond safe integers', () => parseCostShard(['--cost-shard=1/99999999999999999999']), /cost-shard/);
+eq('parseCostShard: n of 1000 is the most', parseCostShard(['--cost-shard=1000/1000']), { k: 1000, n: 1000, rest: [] });
 throws('parseCostShard: with a positional file filter', () => parseCostShard(['--cost-shard=1/7', 'e2e/x.spec.ts']), /positional|filter/);
 throws('parseCostShard: a flag value after a space reads as positional', () => parseCostShard(['--cost-shard=1/7', '--workers', '2']), /positional|filter/);
 eq('parseCostShard: positionals alone are not its business', parseCostShard(['e2e/x.spec.ts']), null);
