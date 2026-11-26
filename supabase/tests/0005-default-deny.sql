@@ -251,13 +251,13 @@ begin
   if bad <> '' then raise exception 'handoffs can be changed or read:%', bad; end if;
 
   -- The Roster Report's tables (0440) are insert-only and no client's: guards firing always, and no grant to an API role (the service role reaches them through its functions).
-  for r in select t.tgname from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and not t.tgisinternal and t.tgenabled <> 'A'
+  for r in select t.tgname from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass, 'public.roster_pending'::regclass) and not t.tgisinternal and t.tgenabled <> 'A'
   loop bad := bad || format(E'\n  trigger %s does not fire always', r.tgname); end loop;
-  if (select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and t.tgname ~ '_no_(update|delete|truncate)$') is distinct from 6 then
+  if (select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass, 'public.roster_pending'::regclass) and t.tgname ~ '_no_(update|delete|truncate)$') is distinct from 9 then
     bad := bad || E'\n  a guard of the roster is missing';
   end if;
   for r in select c.relname, a.rolname from pg_class c cross join (values ('anon'), ('authenticated'), ('service_role')) a(rolname)
-    where c.relname in ('roster_entries', 'roster_seen') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
+    where c.relname in ('roster_entries', 'roster_seen', 'roster_pending') and c.relnamespace = 'public'::regnamespace and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete')
   loop bad := bad || format(E'\n  %s can reach %s', r.rolname, r.relname); end loop;
   if bad <> '' then raise exception 'the roster can be changed or read:%', bad; end if;
 end $$;

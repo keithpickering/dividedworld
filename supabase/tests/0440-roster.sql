@@ -19,6 +19,7 @@
 -- 11. A planted deadlock (40P01) in the Boss's post propagates and leaves the window due; a post past postMaxLength is a skip, not an error.
 -- 12. Newcomers follow the window's activity: a character whose only Act is from before the last entry is not listed, a veil that ends in a later window lists its author there, a list stops at 25 and counts the rest
 --     (and all of them are written down as seen).
+-- 13. A run of skipped entries (the System off) does not widen the scan: a window reads no more of `acts` after six skipped windows than after two; what they skipped is held (roster_pending) and listed once, by the next report that posts.
 -- (Poison: roster_facts reading the class_history row's class for a landed Turn, instead of what the announcement names, is red on section 3's "a landed Turn that named no class shows none".)
 
 create function pg_temp.expect(ok boolean, what text) returns void language plpgsql as $$
@@ -45,11 +46,11 @@ do $$
 declare bad text := '';
   r record;
 begin
-  perform pg_temp.expect(to_regclass('roster_entries') is not null and to_regclass('roster_seen') is not null, 'roster_entries and roster_seen exist');
+  perform pg_temp.expect(to_regclass('roster_entries') is not null and to_regclass('roster_seen') is not null and to_regclass('roster_pending') is not null, 'roster_entries, roster_seen and roster_pending exist');
   perform pg_temp.expect((select count(*) from pg_proc p where p.pronamespace = 'public'::regnamespace and p.proname in ('roster_facts', 'write_roster_entry', 'roster_due')) = 3, 'roster_facts, write_roster_entry and roster_due exist');
   -- No API role reads or writes the tables; the service role reaches them through the functions only.
   for r in select a.rolname, c.relname from pg_roles a cross join pg_class c
-    where a.rolname in ('anon', 'authenticated', 'service_role') and c.relname in ('roster_entries', 'roster_seen') and c.relnamespace = 'public'::regnamespace
+    where a.rolname in ('anon', 'authenticated', 'service_role') and c.relname in ('roster_entries', 'roster_seen', 'roster_pending') and c.relnamespace = 'public'::regnamespace
       and has_table_privilege(a.rolname, c.oid, 'select, insert, update, delete') loop
     bad := bad || E'\n  ' || r.rolname || ' reaches ' || r.relname;
   end loop;
@@ -66,7 +67,7 @@ begin
   perform pg_temp.expect((select p.prosrc !~* '(from|join)\s+(public\.)?(acts|reactions)\M' from pg_proc p where p.proname = 'roster_facts' and p.pronamespace = 'public'::regnamespace), 'roster_facts reads acts_public and characters_public, never acts or reactions');
   perform pg_temp.expect((select p.prosrc ~* 'acts_public' from pg_proc p where p.proname = 'roster_facts' and p.pronamespace = 'public'::regnamespace), 'roster_facts reads acts_public');
   -- Insert-only, guards firing always.
-  perform pg_temp.expect((select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass) and t.tgname in ('roster_entries_no_update', 'roster_entries_no_delete', 'roster_entries_no_truncate', 'roster_seen_no_update', 'roster_seen_no_delete', 'roster_seen_no_truncate') and t.tgenabled = 'A') = 6, 'six guards, each firing always');
+  perform pg_temp.expect((select count(*) from pg_trigger t where t.tgrelid in ('public.roster_entries'::regclass, 'public.roster_seen'::regclass, 'public.roster_pending'::regclass) and t.tgname ~ '_no_(update|delete|truncate)$' and t.tgenabled = 'A') = 9, 'nine guards, each firing always');
 end $$;
 
 -- ---- The fixture: a Boss, a season's thread, three windows, characters ----
@@ -508,6 +509,81 @@ begin
   perform pg_temp.expect(pg_temp.ids(f, 'newcomers') = array[vch], 'the author of a post whose veil ended in the window is listed in it, and only it: ' || f::text);
   perform pg_temp.expect((pg_temp.item(f, 'newcomers', vch) ->> 'act')::uuid = pv, 'with the post it wrote');
   perform pg_temp.expect((select p.prosrc !~* 'from\s+characters_public\s+p\s+cross join lateral' from pg_proc p where p.proname = 'roster_facts' and p.pronamespace = 'public'::regnamespace), 'roster_facts no longer probes each character');
+end $$;
+
+-- ---- 13. A run of skipped entries does not widen the scan; what they skipped is listed once, by the next report that posts ----
+-- Counted as 0308 counts, on `acts` and its indexes: rows fetched and index entries returned in this transaction so far.
+create function pg_temp.act_reads() returns bigint language sql as $$
+  select coalesce(sum(pg_stat_get_xact_tuples_fetched(o.oid) + pg_stat_get_xact_tuples_returned(o.oid)), 0)::bigint
+  from pg_class t cross join lateral (select t.oid union all select i.indexrelid from pg_index i where i.indrelid = t.oid) o(oid)
+  where t.relname = 'acts' and t.relnamespace = 'public'::regnamespace
+$$;
+do $$
+declare
+  accts uuid[] := '{}';
+  osid bigint := (select id from seasons where ends_at is null);
+  t uuid := (select v::uuid from rr where k = 't');
+  start_at timestamptz := (select max(s.ends_at) from settlements s) + interval '1 hour';
+  ws timestamptz[] := '{}';
+  w timestamptz;
+  made uuid[] := '{}';
+  c uuid;
+  before bigint;
+  reads2 bigint;
+  reads6 bigint;
+  pending_n bigint;
+  listed uuid[];
+  facts jsonb;
+  r jsonb;
+  nxt uuid;
+begin
+  for i in 0..18 loop accts := accts || tests.account('rr-off-' || i::text); end loop;
+  perform set_config('enable_seqscan', 'off', true);
+  discard plans;
+  update settings set value = 'false'::jsonb where key = 'systemEnabled';
+  -- Six daily-sized windows with the System off: each has 15 new faces, and each entry is written skipped.
+  for i in 1..6 loop
+    w := start_at + i * interval '1 hour';
+    ws := ws || w;
+    insert into settlements (starts_at, ends_at, season) values (w - interval '1 hour', w, osid);
+    for j in 1..15 loop
+      c := tests.character(accts[1 + ((i - 1) * 15 + j - 1) / 5], 'Rr Off ' || i::text || '-' || lpad(j::text, 2, '0'), 'alpha', now() - interval '60 days');
+      made := made || c;
+      perform tests.post(c, t, 'Off words ' || i || '-' || j, w - interval '30 minutes' + j * interval '1 second');
+    end loop;
+    r := write_roster_entry(w, '{}'::uuid[], array['Skipped ' || i], '{}'::jsonb);
+    perform pg_temp.expect((r ->> 'written')::boolean and r ->> 'skipped' like '%off%', 'the System off skips window ' || i || ': ' || r::text);
+  end loop;
+  perform pg_temp.expect(not exists (select 1 from roster_seen s where s.character = any(made)), 'nothing skipped is written down as seen');
+  -- What one window reads of `acts` does not grow with the windows skipped before it (the floor is the last entry of any kind).
+  perform roster_newcomers(ws[2]); perform roster_newcomers(ws[6]);
+  before := pg_temp.act_reads(); perform roster_newcomers(ws[2]); reads2 := pg_temp.act_reads() - before;
+  before := pg_temp.act_reads(); perform roster_newcomers(ws[6]); reads6 := pg_temp.act_reads() - before;
+  perform pg_temp.expect(reads2 > 0 and reads6 * 2 <= reads2 * 3,
+    format('roster_newcomers for the 6th System-off window reads %s of acts where the 2nd reads %s: it scans every Act since the System went off, where one window holds 15', reads6, reads2));
+  -- Nothing was lost by it: each of the 90 is still a newcomer of the next window, and pending holds each only once.
+  select count(*) into pending_n from roster_pending p where p.character = any(made);
+  perform pg_temp.expect(pending_n = 90, 'the newcomers of the skipped windows are held, once each: ' || pending_n);
+  -- The next report that posts lists them (the first 25, with the rest counted) and writes all of them down as seen.
+  update settings set value = 'true'::jsonb where key = 'systemEnabled';
+  w := start_at + interval '7 hours';
+  insert into settlements (starts_at, ends_at, season) values (w - interval '1 hour', w, osid);
+  nxt := tests.character(accts[19], 'Rr Off Next', 'alpha', now() - interval '60 days');
+  perform tests.post(nxt, t, 'Off words next', w - interval '30 minutes');
+  select array_agg(x.who) into listed from roster_newcomers(w) x;
+  perform pg_temp.expect(listed @> made and listed @> array[nxt], 'the next window names every newcomer a skipped window left, and its own');
+  facts := roster_facts(w);
+  perform pg_temp.expect(jsonb_array_length(facts -> 'newcomers') = 25, 'and lists the first 25: ' || jsonb_array_length(facts -> 'newcomers'));
+  r := write_roster_entry(w, pg_temp.ids(facts, 'newcomers'), array['At last'], '{}'::jsonb);
+  perform pg_temp.expect((r ->> 'posts')::integer = 1 and r -> 'skipped' is null, 'the entry posts: ' || r::text);
+  perform pg_temp.expect((select count(*) from roster_seen s where s.character = any(made) and s.act is not null) = 90 and exists (select 1 from roster_seen s where s.character = nxt), 'every one of them is written down as seen');
+  -- And only once: the window after it lists none of them.
+  insert into settlements (starts_at, ends_at, season) values (w, w + interval '1 hour', osid);
+  perform pg_temp.expect(not exists (select 1 from roster_newcomers(w + interval '1 hour') x where x.who = any(made) or x.who = nxt), 'the window after lists none of them again');
+  r := write_roster_entry(w + interval '1 hour', '{}'::uuid[], array['Quiet'], '{}'::jsonb);
+  perform pg_temp.expect(not exists (select 1 from roster_newcomers(w + interval '2 hours') x where x.who = any(made)), 'and neither does the one after that');
+  perform pg_temp.expect(to_regclass('roster_pending') is not null and (select count(*) from roster_pending p where p.character = any(made)) = 90, 'pending is insert-only: what was listed stays in it');
+  perform pg_temp.expect(pg_temp.refusal('delete from roster_pending') like '55000%', 'and it is never taken back');
 end $$;
 
 -- ---- Put the instance back ----

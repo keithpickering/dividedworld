@@ -6,16 +6,19 @@
 --   roster_entries      one row for each settlement window that has been looked at (primary key window_end, a foreign key to settlements.ends_at): its season, when it was written, the posts it holds (acts[]) and a
 --                       record (the commentary or why it has none, what the call trimmed, the Turns that took effect: `landed` (the first 20) and `landedCount`, and `skipped` where nothing was posted and why).
 --   roster_seen         the characters an entry has listed, so that each is listed once in its life; its `act` is the Act that made it a newcomer.
---                       Both are insert-only (guards firing always, as handoffs' are), and no API role reads or writes either.
+--   roster_pending      the newcomers of an entry that posted nothing (the System off, no Boss, a limit too small), with the Act that made each one and where it is, held for the next report that posts. It holds at most one row for
+--                       each character that acted while reports were skipped: it is bounded by distinct characters, never by Acts or by how long reports stay off. Rows are never removed; roster_newcomers leaves out those in roster_seen.
+--                       All three are insert-only (guards firing always, as handoffs' are), and no API role reads or writes any of them.
 --   roster_landed       the Turns taking effect at a window, from class_history and the announcement each links, shown as that announcement shows them (the class only where it named one).
---   roster_newcomers    the characters an entry would list as new for a window: those with a public Act in the window (or whose author veil ended in it) and no roster_seen row. Not for a client.
+--   roster_newcomers    the characters an entry would list as new for a window: those with a public Act in the window (or whose author veil ended in it) and no roster_seen row, and those held in roster_pending by earlier
+--                       entries that posted nothing and not yet seen. Not for a client.
 --   roster_facts        the list for a window, for the service role: it reads acts_public, characters_public and class_history, never `acts` or `reactions` (the candidates roster_newcomers names are a superset it
 --                       checks against acts_public). Each list holds at most 25 items (the same number as ITEMS_MOST in engine/system/roster.ts) and `more` counts the rest. Nothing in it is computed from a private fact:
 --                       a reaction is no Act; a post under a live author veil shows the stand-in, so its author is not seen while the veil holds; a Turn's class is what its announcement names, never
 --                       what class_history holds; a silent Turn (no announcement) is in no list.
 --   write_roster_entry  the Boss's posts in the season's thread (promos_thread, as the settlement opened it), the newcomers written down as seen, the entry. It returns at once for a window that has an entry.
 --                       With the System off, no Boss, a Boss benched or not yet debuted, a post past postMaxLength, no words for the thread's title or a Boss locked out of the thread, the entry is written with no posts and
---                       `skipped` says why, and the newcomers are not marked seen (they are listed at a later entry). Any other error (a deadlock, a lock timeout, a serialization failure) is raised, so the entry is not
+--                       `skipped` says why, and the newcomers are not marked seen: they are held in roster_pending and listed at a later entry. Any other error (a deadlock, a lock timeout, a serialization failure) is raised, so the entry is not
 --                       written and the window stays due: the settle run's DatabaseError path leaves it for the next run.
 --   roster_due          the applied windows with no entry, oldest first: the open season's, and the last window of the season closed just before it (reveal_season closes the season in the settlement's own transaction).
 --   news_announce       0100's, making no Season News item for an ahead announcement (a Turn announced at once is news when it takes effect, in the entry that names it).
@@ -26,8 +29,8 @@
 --
 -- The cost at a busy instance: one entry for each settlement, and the work in it follows the window's activity and never the cast. The newcomers are the characters with an Act in the window, found by acts_created
 -- (created_at), plus those whose author veil ended in it (post_veils_ends, acts_card_ends), less those with a roster_seen row: one probe of acts_public for each of those, through acts_character. A character that never
--- acts is never a candidate, so dormant characters cost nothing at any settlement. The window reaches back to the last entry that looked at newcomers (one written with posts, or with nothing to report, or the changeover's), so
--- a run of skipped entries (the System off) widens it by the activity of those windows only. The window's Turns and reveals are read through two partial indexes on created_at (announce Acts, unmask Acts) and one on
+-- acts is never a candidate, so dormant characters cost nothing at any settlement. The window reaches back to the last entry of any kind, so one scan covers one window's activity however many entries were skipped before it
+-- (a skipped entry hands its newcomers to roster_pending, which costs one row for each such character and no scan of Acts). The window's Turns and reveals are read through two partial indexes on created_at (announce Acts, unmask Acts) and one on
 -- class_history.started_at. A report lists at most 25 of each list and counts the rest, so its size does not grow with a busy window either.
 
 -- ---- the tables ----
@@ -45,9 +48,19 @@ create table roster_seen (
   window_end timestamptz not null,
   act uuid references acts (id)
 );
+-- The newcomers of an entry that posted nothing (the System off, a limit too small, no Boss), held for the next report that posts: one row for each character, with the Act that made it a newcomer and where that Act is.
+create table roster_pending (
+  character uuid primary key references characters (id),
+  window_end timestamptz not null,
+  act uuid not null references acts (id),
+  thread uuid not null,
+  seq integer not null,
+  at timestamptz not null
+);
 alter table roster_entries enable row level security;
 alter table roster_seen enable row level security;
-revoke all on roster_entries, roster_seen from public, anon, authenticated, service_role;
+alter table roster_pending enable row level security;
+revoke all on roster_entries, roster_seen, roster_pending from public, anon, authenticated, service_role;
 
 create function roster_guard() returns trigger
 language plpgsql security definer set search_path = public, pg_temp as $$
@@ -61,6 +74,12 @@ create trigger roster_entries_no_truncate before truncate on roster_entries for 
 create trigger roster_seen_no_update before update on roster_seen for each row execute function roster_guard();
 create trigger roster_seen_no_delete before delete on roster_seen for each row execute function roster_guard();
 create trigger roster_seen_no_truncate before truncate on roster_seen for each statement execute function roster_guard();
+create trigger roster_pending_no_update before update on roster_pending for each row execute function roster_guard();
+create trigger roster_pending_no_delete before delete on roster_pending for each row execute function roster_guard();
+create trigger roster_pending_no_truncate before truncate on roster_pending for each statement execute function roster_guard();
+alter table roster_pending enable always trigger roster_pending_no_update;
+alter table roster_pending enable always trigger roster_pending_no_delete;
+alter table roster_pending enable always trigger roster_pending_no_truncate;
 alter table roster_entries enable always trigger roster_entries_no_update;
 alter table roster_entries enable always trigger roster_entries_no_delete;
 alter table roster_entries enable always trigger roster_entries_no_truncate;
@@ -116,14 +135,14 @@ revoke execute on function roster_landed(timestamptz) from public, anon, authent
 -- probing every character: the candidates are the characters with an Act in (the last window an entry looked at newcomers in, this window's end], and the authors of posts whose author veil ended in it (a veil ending by
 -- itself, by an admin's end or by a refunded write), since a post under a live veil shows the stand-in and its author appears when the veil ends, in the window the veil ended in. The candidates read `acts` and post_veils
 -- only to name who to look at: each is then probed in acts_public (what the public reads now), so a post under a live veil makes no newcomer, and nothing here is any more than a superset checked against the public's view.
--- An entry that listed or found nothing to list is the last that "looked"; one that was skipped (the System off, a limit too small) leaves its newcomers for the next, and the changeover's entries count as looked, since
--- the changeover wrote the characters of before as seen. Not for a client.
+-- The window reaches back to the last entry of any kind (the changeover's too, which wrote the characters of before as seen), so one scan covers one window's activity however many entries were skipped before it. An entry that
+-- posted nothing (the System off, a limit too small) holds its newcomers in roster_pending instead (write_roster_entry), and they are listed here with the window's own, until a report that posts writes them down as seen.
+-- Not for a client.
 create function roster_newcomers(in_end timestamptz)
 returns table (who uuid, name text, act uuid, thread uuid, seq integer, at timestamptz)
 language sql stable security definer set search_path = public, pg_temp as $$
   with floor_at as (
-    select coalesce(max(e.window_end), '-infinity'::timestamptz) as at from roster_entries e
-    where e.window_end < in_end and (not (e.record ? 'skipped') or e.record ->> 'skipped' = 'before the Roster Report')
+    select coalesce(max(e.window_end), '-infinity'::timestamptz) as at from roster_entries e where e.window_end < in_end
   ),
   cand as (
     select a."character" as who from acts a, floor_at f where a.created_at > f.at and a.created_at <= in_end and a."character" is not null
@@ -135,16 +154,27 @@ language sql stable security definer set search_path = public, pg_temp as $$
     union
     select v.author from card_write_refunds r join post_veils v on v.play = r.play, floor_at f
     where r.at > f.at and r.at <= in_end and v.veil = 'author'
+  ),
+  fresh as (
+    select p.id, p.name, f.id as act, f.thread, f.seq, f.created_at as at
+    from cand c
+    join characters_public p on p.id = c.who
+    cross join lateral (
+      select a.id, a.thread, a.seq, a.created_at from acts_public a
+      where a."character" = p.id and a.created_at <= in_end
+      order by a.created_at, a.id limit 1
+    ) f
+    where p.staff is null and not exists (select 1 from roster_seen r where r.character = p.id)
+  ),
+  held as (
+    select p.id, p.name, d.act, d.thread, d.seq, d.at
+    from roster_pending d
+    join characters_public p on p.id = d.character
+    where d.window_end < in_end and p.staff is null and not exists (select 1 from roster_seen r where r.character = p.id)
   )
-  select p.id, p.name, f.id, f.thread, f.seq, f.created_at
-  from cand c
-  join characters_public p on p.id = c.who
-  cross join lateral (
-    select a.id, a.thread, a.seq, a.created_at from acts_public a
-    where a."character" = p.id and a.created_at <= in_end
-    order by a.created_at, a.id limit 1
-  ) f
-  where p.staff is null and not exists (select 1 from roster_seen r where r.character = p.id)
+  select distinct on (u.id) u.id, u.name, u.act, u.thread, u.seq, u.at
+  from (select * from fresh union all select * from held) u
+  order by u.id, u.at
 $$;
 revoke execute on function roster_newcomers(timestamptz) from public, anon, authenticated, service_role;
 
@@ -282,7 +312,13 @@ begin
   rec := rec || jsonb_build_object('landedCount', jsonb_array_length(landed), 'landed', coalesce((select jsonb_agg(x.e order by x.i) from jsonb_array_elements(landed) with ordinality x(e, i) where x.i <= 20), '[]'::jsonb));
   if skipped is not null then rec := rec || jsonb_build_object('skipped', skipped); end if;
   insert into roster_entries (window_end, season, acts, record) values (w.ends_at, w.season, made, rec);
-  if cardinality(made) > 0 then
+  if cardinality(made) = 0 then
+    -- Nothing was posted (the System off, no Boss, a limit too small, nothing to report): this window's newcomers are held for the next report that posts, since the next window's scan starts at this entry. A character
+    -- already held keeps its row; each is held once, so the table follows distinct characters, never Acts.
+    insert into roster_pending (character, window_end, act, thread, seq, at)
+    select x.who, w.ends_at, x.act, x.thread, x.seq, x.at from roster_newcomers(w.ends_at) x
+    on conflict (character) do nothing;
+  else
     -- Every newcomer of the window is written down as seen, the 25 it listed and those it only counted ("and N more"): each is listed once in its life, and a backlog that is never listed would widen every later window.
     insert into roster_seen (character, window_end, act)
     select p.id, w.ends_at, (select a.id from acts_public a where a."character" = p.id order by a.created_at, a.id limit 1)

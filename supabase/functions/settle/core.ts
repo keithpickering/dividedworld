@@ -211,7 +211,7 @@ async function runRoster(db: Db, tunedNow: () => Promise<Instance>, roster: Rost
         listed = [];
       }
     }
-    // What was not listed is not written down as seen: it is listed at a later entry.
+    // What was not listed is not written down as seen: an entry that posts nothing holds its newcomers (roster_pending), and they are listed at a later entry.
     await db.rpc('write_roster_entry', { window_end: end, newcomers: listed, bodies, record });
   }
 }
