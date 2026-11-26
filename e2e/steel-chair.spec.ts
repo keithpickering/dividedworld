@@ -1,5 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
-import { DEPTH, HALF, STEP } from '../instances/divided-world/ui/steel-chair/body.ts';
+import { DEPTH, HALF, MOST_STEPS, STEP } from '../instances/divided-world/ui/steel-chair/body.ts';
 import { FLOOR_DEPTH, GIVE, INSET, K, roomHeightOf, Z_FRONT } from '../instances/divided-world/ui/steel-chair/chair.ts';
 import { LID_SECONDS } from '../instances/divided-world/ui/steel-chair/lid.ts';
 import { DENT_SCALE, dentHeight, dentShade, dentShape } from '../instances/divided-world/ui/steel-chair/dent.ts';
@@ -1298,7 +1298,7 @@ for (const { name, url, area: areaSelector } of CAN_STORIES) {
         requestAnimationFrame(tick);
       };
       requestAnimationFrame(tick);
-    }), [areaSelector, 4 * STEP, LID_SECONDS] as const);
+    }), [areaSelector, MOST_STEPS * STEP, LID_SECONDS] as const);
     console.log(`${name}: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.visible} of them seen; clipping ancestors: ${seen.clippers.join(', ') || 'none'}`);
     expect(seen.lids, 'a lid group was drawn').toBeGreaterThan(0);
     expect(seen.outside, `the lid was wholly outside the content area at some frame (clipping ancestors on the way up: ${seen.clippers.join(', ') || 'none'})`).toBeGreaterThan(0);

@@ -1,7 +1,7 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 import { fogAlpha } from '../instances/divided-world/ui/hot-box/smoke.ts';
 import { FLOOR_DEPTH, roomHeightOf } from '../instances/divided-world/ui/steel-chair/chair.ts';
-import { STEP } from '../instances/divided-world/ui/steel-chair/body.ts';
+import { MOST_STEPS, STEP } from '../instances/divided-world/ui/steel-chair/body.ts';
 import { LID_SECONDS } from '../instances/divided-world/ui/steel-chair/lid.ts';
 import { inflateSync } from 'node:zlib';
 import { pageViolations } from './axe.ts';
@@ -1096,7 +1096,7 @@ test('21. the can\'s lid leaves the box\'s area and is seen outside it', async (
       requestAnimationFrame(tick);
     };
     requestAnimationFrame(tick);
-  }), [4 * STEP, LID_SECONDS] as const);
+  }), [MOST_STEPS * STEP, LID_SECONDS] as const);
   console.log(`origin can: ${seen.lids} frames with a lid, ${seen.outside} wholly outside the area, ${seen.seen} of them seen`);
   expect(seen.lids, 'a lid was drawn').toBeGreaterThan(0);
   expect(seen.outside, 'the lid was wholly outside the box\'s area at some frame').toBeGreaterThan(0);

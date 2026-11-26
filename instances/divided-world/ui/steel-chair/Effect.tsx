@@ -102,7 +102,7 @@ import { dayAndTime } from '../../../../engine/ui/characters/format.ts';
 import { watchInView } from '../../../../engine/ui/shine/inView.ts';
 import { STEEL_CHAIR_LASTS } from '../../cards/steel-chair.ts';
 import {
-  addThrow, bodies, createWorld, remove, resize, rng, settle, SETTLE_S, SHAPES, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
+  addThrow, bodies, createWorld, MOST_STEPS, remove, resize, rng, settle, SETTLE_S, SHAPES, STAGGER_STEPS, step, STEP, throwOf, type Box, type Event as BodyEvent, type World,
 } from './body.ts';
 import { depthOf, INSET, LID_TOP, piecesFor, project, roomHeightOf, shadeOf, transformOf, type Piece } from './chair.ts';
 import { lidArcOf, lidAt, type LidArc } from './lid.ts';
@@ -149,10 +149,6 @@ const ARM_ZONE = '-20% 0px -20% 0px';
 const ARM_MS = 300;
 /** How long a dent takes to reach its full depth (wall time). */
 const GROW_MS = 90;
-/**
- * The most steps one frame runs, whatever the clock owes (body.ts: a step costs up to 0.12 ms on a desktop, several times that on a phone).
- */
-const MOST_STEPS = 4;
 /**
  * The most time one frame adds to the clock the physics catches up to, in seconds: exactly MOST_STEPS of body.ts's STEP. A slower frame (a
  * background tab coming back) loses the rest.
