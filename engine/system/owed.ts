@@ -64,7 +64,8 @@ export function owedLineCompletion(i: { readonly name: string; readonly owed: Ow
 
 /** The model's line after its bound: cut at a sentence to `OWED_LINE_MOST` (recorded), blank as null (the run then pays stock). */
 export function repairOwedLine(raw: unknown): { readonly line: string | null; readonly trims: readonly Trim[] } {
-  const text = typeof raw === 'string' ? oneLine(raw) : '';
+  // The speaker's own words: only whitespace is collapsed. Quote marks and brackets are rewritten only in a player's words going into a prompt.
+  const text = typeof raw === 'string' ? raw.replace(/\s+/g, ' ').trim() : '';
   if (text === '') return { line: null, trims: [] };
   if (text.length <= OWED_LINE_MOST) return { line: text, trims: [] };
   const line = cutAtSentence(text, OWED_LINE_MOST);

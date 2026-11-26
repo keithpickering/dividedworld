@@ -85,6 +85,7 @@ test('repair: 300 characters become at most 280 at a sentence; blank is null', (
   assert.equal(r.trims[0]?.predicate, 'maxLength(280)');
   assert.deepEqual(repairOwedLine('  \n '), { line: null, trims: [] });
   assert.deepEqual(repairOwedLine('Fine.'), { line: 'Fine.', trims: [] });
+  assert.deepEqual(repairOwedLine('He said "no" [sic].'), { line: 'He said "no" [sic].', trims: [] }, 'the speaker\'s own words are posted as written, only their whitespace collapsed');
 });
 
 test('repair: a non-string is null; a run with no sentence end and an emoji run stay within 280', () => {
