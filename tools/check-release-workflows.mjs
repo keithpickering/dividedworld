@@ -19,8 +19,8 @@
  * every SQL run failed (issue #596), and two workflows that must name one image are two lists
  * that must agree, which a workflow file cannot check of another. R9 holds the e2e shards in
  * web.yml: the job that runs `npm run test:e2e` has a matrix whose only key is `shard`, a list
- * that is exactly 1 to n in order, and a command whose total is `${{ strategy.job-total }}`, so
- * the matrix is the one list. A list with a gap, or a command whose total is larger than the
+ * that is exactly 1 to n in order, and a command that is exactly `--cost-shard=${{ matrix.shard }}/${{ strategy.job-total }}`
+ * (the shards are cut by cost, tools/e2e-cost.mjs, not by Playwright's `--shard` count), so the matrix is the one list. A list with a gap, or a command whose total is larger than the
  * list, runs fewer tests and stays green (issue #605), and a second matrix key would multiply
  * `job-total`.
  *
@@ -276,10 +276,10 @@ export function problems(files, exists = (p) => fs.existsSync(p)) {
         bad9.push(`the shard list must be the integers 1 to n in order, with no gap or repeat (it is ${JSON.stringify(shard)})`);
       }
       for (const step of list(job.steps).filter(isE2e)) {
-        // The whole command, not a part of it: a digit after the total, a second --shard, or the
-        // flag behind a `#` would each run fewer tests and stay green.
-        if (String(step.run).trim() !== 'npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}') {
-          bad9.push('the command must be exactly npm run test:e2e -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}');
+        // The whole command, not a part of it: a digit after the total, a second shard flag, or the
+        // flag behind a `#` would each run fewer tests and stay green; the old `--shard=` would cut by count.
+        if (String(step.run).trim() !== 'npm run test:e2e -- --cost-shard=${{ matrix.shard }}/${{ strategy.job-total }}') {
+          bad9.push('the command must be exactly npm run test:e2e -- --cost-shard=${{ matrix.shard }}/${{ strategy.job-total }}');
         }
       }
       if (bad9.length) out.push(`${path}: R9 the e2e job: ${bad9.join('; ')}`);
