@@ -1871,7 +1871,7 @@ test('a persona\'s concessions are three to eight lines, each text of at most 28
   assert.match(said(withBot({ concessions: ['Fine.', '  ', 'Fine, {who}.'] })), /persona "bot-a"'s concession 2 is blank/);
   assert.match(said(withBot({ concessions: ['Fine.', 'x'.repeat(281), 'Fine, {who}.'] })), /persona "bot-a"'s concession 2 is 281 characters; at most 280/);
   assert.match(said(withBot({ concessions: ['Fine, {name}.', 'Fine.', 'Fine, {who}.'] })), /persona "bot-a"'s concession 1 uses \{name\}; the only token is \{who\}/);
-  assert.match(said(withBoss({ concessions: [7 as never, 'Fine.', 'Fine, {who}.'] })), /persona "boss-a"'s concession 1 is blank/);
+  assert.match(said(withBoss({ concessions: [7 as never, 'Fine.', 'Fine, {who}.'] })), /persona "boss-a"'s concession 1 is not text/);
 });
 
 test('a formerly or withdrawn entry has a name, and the instance has a withdrawn list', () => {

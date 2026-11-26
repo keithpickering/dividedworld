@@ -1460,7 +1460,8 @@ function systemProblems(instance: Instance): string[] {
       if (p.concessions.length < CONCESSIONS_LEAST || p.concessions.length > CONCESSIONS_MOST) out.push(`${who} has ${p.concessions.length} concessions; it needs ${CONCESSIONS_LEAST} to ${CONCESSIONS_MOST}`);
       p.concessions.forEach((c: unknown, i: number) => {
         const at = `${who}'s concession ${i + 1}`;
-        if (typeof c !== 'string' || !c.trim()) return void out.push(`${at} is blank; a concession is text`);
+        if (typeof c !== 'string') return void out.push(`${at} is not text; a concession is text`);
+        if (!c.trim()) return void out.push(`${at} is blank; a concession is text`);
         if (c.length > CONCESSION_MOST) out.push(`${at} is ${c.length} characters; at most ${CONCESSION_MOST}`);
         const token = /\{[^{}]*\}/g;
         for (const t of c.match(token) ?? []) if (t !== '{who}') out.push(`${at} uses ${t}; the only token is {who}`);

@@ -163,7 +163,9 @@ test('the concession prompt carries the post as given, its author, the title, th
   assert.deepEqual(Object.keys((p.schema as any).properties), ['concession']);
   assert.deepEqual((p.schema as any).required, ['concession']);
   assert.ok(/paid|bribe/i.test(p.message));
-  assert.ok(/card|distract/i.test(concessionPrompt(cinput({ how: 'distracted' })).message));
+  assert.ok(!/card|distract/i.test(p.message), 'a paid Mod is told nothing of a card');
+  const d = concessionPrompt(cinput({ how: 'distracted' })).message;
+  assert.ok(/card|distract/i.test(d) && !/paid|bribe/i.test(d), 'a distracted Mod is told nothing of a bribe');
 });
 
 test('the concession prompt never carries the quiz brief, even if one is handed in', () => {
@@ -216,6 +218,14 @@ test('an over-long concession is cut to 280 at a word, and named', () => {
   const r = fine('word '.repeat(80).trim());
   assert.ok(r.body.length <= CONCESSION_MOST && r.body.endsWith('word'));
   assert.deepEqual(r.trims.map((t) => [t.path, t.predicate]), [['concession', 'maxLength']]);
+});
+
+test('a {who} in another case or with spaces is normalized to {who}, and named', () => {
+  for (const t of ['{Who}', '{WHO}', '{ who }', '{who }']) {
+    const r = fine(`Fine, ${t}. Done.`);
+    assert.equal(r.body, 'Fine, {who}. Done.', t);
+    assert.deepEqual(r.trims.map((x) => x.predicate), ['braces'], t);
+  }
 });
 
 test('a brace token other than {who} loses its braces and keeps its word; {who} stays', () => {
