@@ -1261,7 +1261,7 @@ describe('what a list row shows', () => {
     expect(await place(fake.seed.reach(boFace, 'character', unborn, 'glint', { post: theirs }))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'character', id: unborn, name: null }, from: { kind: 'post', thread: sys, title: 'Notice', seq: 2 }, at: null, board: await boardId(fake, 'announcements') });
     expect(await place(fake.seed.reach(boFace, 'thread', thread, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'thread', id: thread, title: 'Hello' }, from: null, at: null, board });
     const general = (await fake.boards()).find((b) => b.slug === 'general')!;
-    expect(await place(fake.seed.reach(boFace, 'board', general.id, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' }, from: null, at: null, board: await boardId(fake, 'announcements') });
+    expect(await place(fake.seed.reach(boFace, 'board', general.id, 'glint'))).toEqual({ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name: 'General' }, from: null, at: null, board: general.id });
     // A card that kept an old place number (staged last, since it takes one): still a play, never a post.
     const old = fake.seed.card(anaFace, opener, 'whoops');
     fake.seed.legacyNumber(old);
@@ -1279,8 +1279,8 @@ describe('what a list row shows', () => {
       expect(row).toEqual(one);
       return [one, (await fake.boards()).find((b) => b.id === general.id)?.name];
     };
-    const system = await boardId(fake, 'announcements');
-    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name }, from: null, at: null, board: system }, name];
+    // The play's Act is in a thread on the board it reaches (0438), so the place's board is that board.
+    const on = (name: string) => [{ kind: 'play', card: 'glint', on: { kind: 'board', slug: 'general', name }, from: null, at: null, board: general.id }, name];
     expect(await names()).toEqual(on('General'));
     fake.seed.staff('boss', 'The Boss', 'boss');
     const first = fake.seed.move('boss', { board: 'general', name: 'Toast Palace' });
