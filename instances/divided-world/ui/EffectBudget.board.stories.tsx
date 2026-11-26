@@ -21,7 +21,7 @@
  * a canvas here is no fault of the build's.
  */
 import type { Meta, StoryObj } from '@storybook/react-vite';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Frame } from '../../../engine/ui/frame/Frame.tsx';
 import { useKayfa } from '../../../engine/ui/context.tsx';
 import type { Fake } from '../../../engine/ui/data/fake.ts';
@@ -31,6 +31,7 @@ import { cardOf } from '../../../engine/ui/story.tsx';
 import { bodyOf } from '../../../engine/ui/cards/body.ts';
 import { makeTileLayer } from '../../../engine/ui/cards/tiles.ts';
 import { probe } from '../../../engine/ui/cards/tileLoop.ts';
+import { Puff } from './steel-chair/Puff.tsx';
 
 const DAY = 86_400_000;
 
@@ -50,6 +51,12 @@ export const BUDGET = {
   'hot-box': (fake, caster, target, now, cards) => {
     fake.seed.card(caster, target, cardOf(cards, 'hot-box').key, {
       layer: 1, live: true, config: { color: '#ff69b4' }, message: 'Smoke out', at: now, ends: new Date(now + 3 * DAY).toISOString(),
+    });
+  },
+  /* Steel Chair is on the layer only for the extinguisher's puff (steel-chair/Puff.tsx), so the play's id is one that rolls an extinguisher (objects.ts: 'play-93'); the chairs and dents are not the layer's. */
+  'steel-chair': (fake, caster, target, now, cards) => {
+    fake.seed.card(caster, target, cardOf(cards, 'steel-chair').key, {
+      layer: 1, live: true, config: {}, message: 'Steel Chair', id: 'play-93', at: now, ends: new Date(now + 3 * DAY).toISOString(),
     });
   },
 } satisfies Record<string, Seeding>;
@@ -112,6 +119,28 @@ function Budgeted({ effect, poison }: Args) {
     return () => { live = false; };
   }, [api, instance, settings, thread, effect]);
   const body = usePostBody(thread, seeded === thread);
+  /* The puff lasts 5 s and a Steel Chair's lands only at the bottom of a post this tall, which the spec's scroll is not at when it lands, so the story keeps a puff of its own going over the post (steel-chair/Puff.tsx, the same component the effect mounts at the extinguisher's first floor contact), a new one as each ends, for the spec to measure the layer's time and pixels with the puff on it. */
+  const [puffs, nextPuff] = useState(0);
+  const again = useCallback(() => nextPuff((n) => n + 1), []);
+  /* The effect's own host is a positioned element in the content area (`.dw-chair`); here it is an empty one laid at the area's start, so the layer's canvases are placed as they are in the effect. */
+  const [puffHost, setPuffHost] = useState<HTMLElement | null>(null);
+  useEffect(() => {
+    if (!body || effect !== 'steel-chair') return;
+    const host = document.createElement('div');
+    host.style.position = 'relative';
+    body.insertBefore(host, body.firstChild);
+    setPuffHost(host);
+    return () => { host.remove(); setPuffHost(null); };
+  }, [body, effect]);
+  /* The effect's own puff (the played extinguisher's, in its host `.dw-chair`) is the one at a time that stands in a post: while it does, the story's stands down, so the spec never sees two. */
+  const [own, setOwn] = useState(false);
+  useEffect(() => {
+    if (!body || effect !== 'steel-chair') return;
+    const look = () => setOwn(body.querySelector('.dw-chair > canvas.dw-chair-puff') !== null);
+    const watch = new MutationObserver(look);
+    watch.observe(body, { childList: true, subtree: true });
+    return () => watch.disconnect();
+  }, [body, effect]);
   useEffect(() => {
     if (!body || !poison) return;
     if (poison === 'slow') {
@@ -133,7 +162,12 @@ function Budgeted({ effect, poison }: Args) {
     body.appendChild(whole);
     return () => { whole.width = 0; whole.height = 0; whole.remove(); };
   }, [body, poison]);
-  return <Frame>{thread && seeded === thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>;
+  return (
+    <>
+      <Frame>{thread && seeded === thread ? <LoadedThread thread={thread} /> : <div aria-busy="true" />}</Frame>
+      {effect === 'steel-chair' && body && puffHost && !own ? <Puff key={puffs} host={puffHost} place="thread" spout={{ x: body.clientWidth * 0.8, y: body.clientHeight / 2 }} done={again} /> : null}
+    </>
+  );
 }
 
 const meta: Meta<typeof Budgeted> = {
@@ -152,6 +186,9 @@ type Story = StoryObj<typeof Budgeted>;
 /* The fog is drawn a 5 px cell to a pixel and scaled up, so Hot Box asks the layer for a density of 1 (`density: 1` in hot-box/Effect.tsx); `effect-density-1`
    declares it, and the spec holds that its tiles are drawn at 1 per CSS px and no denser, so a fog that drops the ask and draws at the cap is red. */
 export const HotBox: Story = { args: { effect: 'hot-box' }, tags: ['effect-budget', 'effect-hides-words', 'effect-sheets-1', 'effect-density-1'] };
+
+/* The puff covers the words for about a second and leaves them readable; it is not `effect-hides-words` (the spec's bare-band check is for an effect whose words stay covered). Its fog is drawn a cell to a pixel, so it asks the layer for a density of 1 (`density: 1` in steel-chair/Puff.tsx) and declares it, as Hot Box does. */
+export const SteelChair: Story = { args: { effect: 'steel-chair' }, tags: ['effect-budget', 'effect-sheets-1', 'effect-density-1'] };
 
 export const PoisonSlow: Story = { args: { poison: 'slow' }, tags: ['effect-poison'] };
 export const PoisonWhole: Story = { args: { poison: 'whole' }, tags: ['effect-poison'] };

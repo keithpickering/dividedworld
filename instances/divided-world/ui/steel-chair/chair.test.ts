@@ -4,9 +4,10 @@
  */
 import assert from 'node:assert/strict';
 import { describe, test } from 'node:test';
-import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, rng, settle, SETTLE_S, STAGGER_STEPS, step, STEP, throwOf } from './body.ts';
+import { addThrow, bodies, cornersOf, createWorld, DEPTH, HALF, REST_RISE, rng, settle, SETTLE_S, SHAPES, STAGGER_STEPS, step, STEP, throwOf } from './body.ts';
+import { objectOf, OBJECTS } from './objects.ts';
 import {
-  BOX, depthOf, drawn, FLOOR_DEPTH, GIVE, INSET, K, PERSPECTIVE, piecesOf, project, REACH, ROOM_HEIGHT, shadeOf, transformOf, Z_FRONT,
+  BOX, canPiecesOf, depthOf, drawn, extinguisherPiecesOf, FLOOR_DEPTH, GIVE, INSET, K, ladderPiecesOf, PERSPECTIVE, piecesFor, piecesOf, prismPiecesOf, pieceOutline, project, protrusionOf, REACH, roomHeightOf, shadeOf, transformOf, Z_FRONT,
   type Matrix, type Piece,
 } from './chair.ts';
 
@@ -19,6 +20,7 @@ function corners(p: Piece): [number, number, number][] {
     return [m[0] * x + m[4] * y + m[12], m[1] * x + m[5] * y + m[13], m[2] * x + m[6] * y + m[14]] as [number, number, number];
   });
 }
+const ROOM_HEIGHT = roomHeightOf(['chair']);
 const byName = (ps: Piece[], name: string) => ps.find((p) => p.name === name)!;
 
 describe('piecesOf', () => {
@@ -197,6 +199,8 @@ function riseOf(b: ReturnType<typeof bodies>[number], h: number): number {
 
 describe('the room', () => {
   test('the room is derived from the lowest a body may sleep: REST_RISE high, at the back of the floor, and the insets', () => {
+    assert.equal(roomHeightOf([]), 77);
+    assert.equal(ROOM_HEIGHT, 77);
     assert.equal(ROOM_HEIGHT, Math.ceil(INSET + REST_RISE + K * (Z_FRONT + DEPTH + GIVE + HALF[1])));
     /* The floor is 28 px deep and a chair rests at most REST_RISE up (three flat chairs and a chair across them: 33), so the room is between
        the two summed and the old room, which had to cover a chair standing on its end. */
@@ -305,5 +309,195 @@ describe('depthOf', () => {
     assert.ok(depthOf(10) > depthOf(-10));
     assert.ok(depthOf(10.4) >= depthOf(10));
     assert.ok(depthOf(-Z_FRONT) >= 0);
+  });
+});
+
+/* ---------- the other objects ---------- */
+
+describe('the objects\' pieces', () => {
+  /** Whether every corner of every piece lies in the box `half` (plus `slack`) at fold 0; pieces with a `lid` or a handle or hose may stand out by their own `slack`. */
+  const inside = (ps: Piece[], half: readonly [number, number, number], slack = (_: Piece) => 0) => {
+    for (const p of ps) for (const [x, y, z] of corners(p)) {
+      const s = slack(p) + 1e-6;
+      assert.ok(Math.abs(x) <= half[0] + s && Math.abs(y) <= half[1] + s && Math.abs(z) <= half[2] + s, `${p.name} corner ${x.toFixed(2)}, ${y.toFixed(2)}, ${z.toFixed(2)} is outside ${half}`);
+    }
+  };
+  const looseName = (p: Piece) => (/^(lid|handle|valve|hose|lever|nozzle)/u.test(p.name) ? 8 : 0);
+  const names = (ps: Piece[]) => ps.map((p) => p.name);
+
+  test('the ladder: two rail frames, four treads 13 deep on the front frame, a spreader, yellow, and shut it lies in its 30 by 96 by 12 box', () => {
+    const ps = ladderPiecesOf(0);
+    assert.deepEqual(ps.filter((p) => p.kind === 'frame').map((p) => p.name), ['front', 'rear']);
+    const treads = ps.filter((p) => p.name.startsWith('tread'));
+    assert.equal(treads.length, 4);
+    for (const t of treads) { assert.equal(t.kind, 'panel'); assert.equal(t.height, 13); }
+    assert.ok(names(ps).includes('spreader'));
+    assert.ok(ps.some((p) => p.kind === 'tube'));
+    /* Front rails 6 px, rear rails 5 px (a tube is two strips of that width). */
+    for (const p of ps.filter((q) => q.name.startsWith('rail-'))) assert.equal(p.width, 6);
+    for (const p of ps.filter((q) => q.name.startsWith('rear-rail-'))) assert.equal(p.width, 5);
+    /* Yellow: red and green high, blue low, in every piece the ladder is made of but the spreader's darker brace. */
+    for (const p of ps) assert.ok(p.color && p.color[0] > 140 && p.color[2] < 80, `${p.name} ${p.color}`);
+    inside(ps, [15, 48, 6]);
+    assert.equal(ladderPiecesOf(1).length, ps.length, 'the list is the same at every fold');
+    assert.deepEqual(names(ladderPiecesOf(1)), names(ps));
+  });
+  test('open, the ladder\'s treads stand out from the front frame 13 px, as steps', () => {
+    for (const t of ladderPiecesOf(1).filter((p) => p.name.startsWith('tread'))) {
+      const zs = corners(t).map((c) => c[2]);
+      assert.ok(Math.max(...zs) - Math.min(...zs) > 12, `${t.name} ${zs}`);
+    }
+    for (const t of ladderPiecesOf(0).filter((p) => p.name.startsWith('tread'))) {
+      const zs = corners(t).map((c) => c[2]);
+      assert.ok(Math.max(...zs) - Math.min(...zs) < 1e-6, `${t.name} lies flat shut`);
+    }
+  });
+  test('the ladder opens: the rear frame turns 28 degrees back of the front one', () => {
+    const open = ladderPiecesOf(1);
+    const angle = (n: [number, number, number]) => Math.atan2(n[1], n[2]) * 180 / Math.PI;
+    assert.ok(Math.abs(Math.abs(angle(byName(open, 'rear').normal) - angle(byName(open, 'front').normal)) - 28) < 1e-3);
+    assert.ok(Math.abs(byName(ladderPiecesOf(0), 'rear').normal[2]) > 1 - 1e-6);
+  });
+  test('a prism: 12 side strips and two 12-gon caps clipped by a polygon, inside its own cylinder', () => {
+    const ps = prismPiecesOf(15, 40, 12);
+    assert.equal(ps.filter((p) => p.name.startsWith('side')).length, 12);
+    const caps = ps.filter((p) => p.name.startsWith('cap'));
+    assert.equal(caps.length, 2);
+    for (const c of caps) {
+      assert.equal(c.kind, 'panel');
+      assert.equal(c.clip!.match(/%\s+[\d.]+%/gu)!.length, 12, c.clip);
+      assert.match(c.clip!, /^polygon\(/u);
+    }
+    for (const p of ps.filter((q) => q.name.startsWith('side'))) assert.equal(p.kind, 'panel');
+    inside(ps, [15, 20, 15]);
+    /* The strips face outward all round: each normal is horizontal, and the twelve are distinct. */
+    const normals = new Set(ps.filter((p) => p.name.startsWith('side')).map((p) => p.normal.map((n) => n.toFixed(3)).join()));
+    assert.equal(normals.size, 12);
+    for (const p of ps.filter((q) => q.name.startsWith('side'))) assert.ok(Math.abs(p.normal[1]) < 1e-9);
+  });
+  test('the can: the prism, three bands, two handles and a lid with its handle, the lid pieces marked, in its box', () => {
+    const on = canPiecesOf(true), off = canPiecesOf(false);
+    assert.equal(on.filter((p) => p.name.startsWith('band-0')).length, 12);
+    assert.deepEqual(new Set(on.filter((p) => p.name.startsWith('band')).map((p) => p.name.split('-').slice(0, 2).join('-'))), new Set(['band-0', 'band-1', 'band-2']));
+    assert.ok(names(on).some((n) => n.startsWith('handle-left')) && names(on).some((n) => n.startsWith('handle-right')));
+    const lid = on.filter((p) => p.lid);
+    assert.ok(lid.some((p) => p.name === 'lid-cap') && lid.some((p) => p.name.startsWith('lid-handle')));
+    assert.equal(off.filter((p) => p.lid).length, 0);
+    assert.deepEqual(names(on).slice(0, off.length), names(off), 'lidless is the same list less its end');
+    assert.ok(on.length > off.length);
+    inside(off, [25, 42, 25], looseName);
+    inside(on, [25, 42, 25], looseName);
+    /* Strictly inside, apart from what stands out on purpose: the barrel, its bands and its caps. */
+    inside(off.filter((p) => /^(side|cap|band)/u.test(p.name)), [25, 42, 25]);
+    assert.equal(byName(on, 'lid-cap').width, 54.6, 'the lid is 27.3 across its radius');
+  });
+  test('the extinguisher: the red cylinder, a neck, a white label, a valve, a hose out to the spout and a gauge disc, 27 by 90', () => {
+    const ps = extinguisherPiecesOf();
+    assert.equal(ps.filter((p) => p.name.startsWith('side')).length, 12);
+    assert.ok(ps.every((p) => p.color));
+    assert.ok(byName(ps, 'side-0').color![0] > 150 && byName(ps, 'side-0').color![1] < 60, 'red');
+    assert.ok(ps.filter((p) => p.name.startsWith('label')).every((p) => p.color![0] > 200), 'white label');
+    assert.ok(names(ps).some((n) => n.startsWith('valve')) && names(ps).some((n) => n.startsWith('hose')) && names(ps).some((n) => n.startsWith('neck')));
+    assert.equal(byName(ps, 'gauge').clip, 'circle(50%)');
+    inside(ps, [13.5, 45, 13.5], looseName);
+    inside(ps.filter((p) => /^(side|cap|label|neck|gauge)/u.test(p.name)), [13.5, 45, 13.5]);
+  });
+  test('the hose runs from the valve out to the spout, 18 px from the center, and the spout is where the body says', () => {
+    const [sx, sy] = SHAPES.extinguisher.spout!;
+    assert.deepEqual(SHAPES.extinguisher.spout, [18, -39.6, 0]);
+    const hose = extinguisherPiecesOf().filter((p) => p.name.startsWith('hose'));
+    assert.equal(hose.length, 2);
+    const xs = corners(hose[0]!).map((c) => c[0]), ys = corners(hose[0]!).map((c) => c[1]);
+    assert.ok(Math.abs(Math.max(...xs) - sx) < 1e-6, `${xs}`);
+    assert.ok(Math.min(...ys) < sy && Math.max(...ys) > sy, `${ys}`);
+  });
+  test('piecesFor dispatches by object', () => {
+    assert.deepEqual(piecesFor('chair', 0.5, true), piecesOf(0.5));
+    assert.deepEqual(piecesFor('ladder', 0.5, true), ladderPiecesOf(0.5));
+    assert.deepEqual(piecesFor('can', 1, true), canPiecesOf(true));
+    assert.deepEqual(piecesFor('can', 1, false), canPiecesOf(false));
+    assert.deepEqual(piecesFor('extinguisher', 1, true), extinguisherPiecesOf());
+  });
+  test("a piece's color tints the shade in place of steel", () => {
+    assert.equal(shadeOf([0, 0, 1], [200, 40, 30]), 'rgb(187, 37, 28)');
+    assert.equal(shadeOf([0, 0, 1], undefined), shadeOf([0, 0, 1]));
+    assert.notEqual(shadeOf([0, 0, 1], [200, 40, 30]), shadeOf([0, 0, 1]));
+  });
+  test('every piece of every object has a unit normal and its left and top at minus half its size', () => {
+    for (const o of OBJECTS.map((x) => x.object)) for (const p of piecesFor(o, 1, true)) {
+      assert.ok(Math.abs(Math.hypot(...p.normal) - 1) < 1e-9, `${o} ${p.name}`);
+      assert.equal(p.left, -p.width / 2);
+      assert.equal(p.top, -p.height / 2);
+    }
+  });
+});
+
+describe('roomHeightOf', () => {
+  test('a chair, or nothing, is 77 px, as the constant was', () => {
+    assert.equal(roomHeightOf(['chair']), 77);
+    assert.equal(roomHeightOf([]), 77);
+    assert.equal(roomHeightOf(['chair', 'chair']), 77);
+  });
+  test('the tallest of the objects sets it: a can is taller, and a post is as tall as its tallest', () => {
+    for (const o of ['can', 'ladder', 'extinguisher'] as const) assert.ok(roomHeightOf([o]) > 77, o);
+    assert.equal(roomHeightOf(['chair', 'can']), roomHeightOf(['can']));
+    assert.equal(roomHeightOf(['can', 'ladder', 'extinguisher']), Math.max(...['can', 'ladder', 'extinguisher'].map((o) => roomHeightOf([o as 'can']))));
+  });
+  test('a post\'s room grows only with the objects it holds: the same plays give the same room on every replay, in any order', () => {
+    const plays = Array.from({ length: 400 }, (_, i) => `play-${i}`);
+    const roomOfPlays = (ids: string[]) => roomHeightOf(ids.map((id) => objectOf(id)));
+    for (let from = 0; from < 400; from += 8) {
+      const ids = plays.slice(from, from + 8);
+      const first = roomOfPlays(ids);
+      assert.equal(roomOfPlays([...ids]), first, `replay of ${ids}`);
+      assert.equal(roomOfPlays([...ids].reverse()), first, 'order does not matter');
+      /* Adding a chair never grows it; a post of chairs alone keeps the chair's. */
+      assert.equal(roomOfPlays([...ids, 'play-0']) >= first, true);
+      if (ids.every((id) => objectOf(id) === 'chair')) assert.equal(first, 77);
+    }
+    /* The known plays: 0 is a chair, 6 a can, 2 a ladder, 93 an extinguisher. */
+    assert.deepEqual(['play-0', 'play-6', 'play-2', 'play-93'].map((id) => objectOf(id)), ['chair', 'can', 'ladder', 'extinguisher']);
+    assert.equal(roomOfPlays(['play-0']), 77);
+    assert.equal(roomOfPlays(['play-0', 'play-6']), roomHeightOf(['can']));
+  });
+  test('the room includes what the resting object draws past its body: the extinguisher\'s valve and hose, measured from the pieces', () => {
+    assert.equal(protrusionOf('chair'), 0);
+    assert.equal(protrusionOf('ladder'), 0);
+    const ext = extinguisherPiecesOf();
+    const top = Math.max(...ext.flatMap((p) => pieceOutline(p).map((c) => -c[1]))) - SHAPES.extinguisher.support([0, 1, 0]);
+    const out = Math.max(...ext.flatMap((p) => pieceOutline(p).map((c) => Math.hypot(c[0], c[2])))) - SHAPES.extinguisher.support([1, 0, 0]);
+    assert.ok(top > 3 && out > 3, `valve ${top}, hose ${out}`);
+    assert.ok(protrusionOf('extinguisher') >= Math.max(top, out) - 1e-6, `${protrusionOf('extinguisher')}`);
+    const shape = SHAPES.extinguisher;
+    const half = Math.max(shape.support([1, 0, 0]), shape.support([0, 1, 0]), shape.support([0, 0, 1]));
+    assert.equal(roomHeightOf(['extinguisher']), Math.ceil(INSET + shape.restRise + protrusionOf('extinguisher') + K * (Z_FRONT + DEPTH + GIVE + half)));
+  });
+  test('over 200 seeded throws of each object, no rest is drawn higher than the object\'s room, bodies and drawn pieces both', () => {
+    for (const { object } of OBJECTS) {
+      const room = roomHeightOf([object]);
+      const h = 8 + 120 + 8 + room;
+      const aim = { left: 10 - INSET, top: 8 - project({ x: 0, y: 0, z: 0 }).y, width: 600 - 20, height: 120 };
+      /* The pieces as they rest (a chair or ladder shut, a can lidless), as points of the body's own frame. */
+      const drawnShape = { ...SHAPES[object], corners: piecesFor(object, 0, false).flatMap((p) => pieceOutline(p)) };
+      let tallest = 0, tallestDrawn = 0;
+      for (let s = 1; s <= 200; s++) {
+        const r = rng(s * 2654435761 + 7);
+        const world = createWorld(600 - 2 * INSET, h - INSET, h - INSET);
+        for (let i = 0; i < 1 + (s % 3); i++) {
+          addThrow(world, throwOf(r, aim, object));
+          for (let k = 0; k < STAGGER_STEPS; k++) step(world, STEP);
+        }
+        settle(world, SETTLE_S);
+        for (const b of bodies(world)) {
+          const center = { x: b.position.x + INSET, y: b.position.y, z: b.position.z };
+          const rise = h - Math.min(...cornersOf(b, SHAPES[object]).map((c) => drawn([c[0] + INSET, c[1], c[2]], center).y));
+          const riseDrawn = h - Math.min(...cornersOf(b, drawnShape).map((c) => drawn([c[0] + INSET, c[1], c[2]], center).y));
+          tallest = Math.max(tallest, rise); tallestDrawn = Math.max(tallestDrawn, riseDrawn);
+          assert.ok(rise <= room, `${object} seed ${s}: drawn ${rise.toFixed(1)} above the border, past the room ${room}`);
+          assert.ok(riseDrawn <= room, `${object} seed ${s}: its drawn pieces reach ${riseDrawn.toFixed(1)} above the border, past the room ${room}`);
+        }
+      }
+      console.log(`# ${object}: room ${room}, tallest of 200 seeded runs ${tallest.toFixed(1)} (pieces ${tallestDrawn.toFixed(1)}), protrusion ${protrusionOf(object).toFixed(2)}`);
+    }
   });
 });

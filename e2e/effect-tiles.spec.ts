@@ -60,6 +60,8 @@ const MIN_SAMPLES = 30;
 const JUMP_FRAMES = 8;
 /** How long a scroll takes, in ms. */
 const SCROLL_MS = 3000;
+/** The most a frame moves the scroll's clock, ms: two 60 Hz frames, so a frame that took longer scrolls no farther than that (about 110 px of the 3,250 px a second a long post goes at). */
+const MAX_STEP_MS = 33.4;
 /** The scroll starts this far above the post's top and ends this far past its bottom, in CSS px. */
 const SCROLL_MARGIN = 150;
 /** A canvas that holds pixels may lie this far outside the window: the layer holds the tiles near the window, and an observer reports after the frame that scrolled. */
@@ -249,7 +251,7 @@ type PageSample = () => Omit<Sample, 't'>;
  * returns the loop's own time in the frames it ran. The scroll's end is the post's, so that "at the bottom" has a post top to have released.
  */
 async function scrollRun(page: Page): Promise<Run> {
-  const run = await page.evaluate(async ({ ms, margin }) => {
+  const run = await page.evaluate(async ({ ms, margin, maxStep }) => {
     const main = document.querySelector<HTMLElement>('#post-43 .kb-act-main')!;
     const top = main.getBoundingClientRect().top + window.scrollY, bottom = main.getBoundingClientRect().bottom + window.scrollY;
     const from = Math.max(0, top - margin), to = Math.min(document.documentElement.scrollHeight - window.innerHeight, Math.max(from + 1, bottom - window.innerHeight + margin));
@@ -258,18 +260,22 @@ async function scrollRun(page: Page): Promise<Run> {
     const kb = window.__kbTiles!, f0 = kb.frames();
     return new Promise<Run>((done) => {
       const out: Sample[] = [];
-      let t0 = 0;
+      /* The scroll's clock is the frames', not the wall's: a frame moves it by at most `maxStep` ms of scroll, so a machine that draws 8 frames a second scrolls as far in each as one that draws 30 and
+         takes longer over the whole, and the checks measure the layer and not how starved the runner is (on a 2-core runner with a second worker, a 3 s scroll of 9,700 px moved the window 400 px a
+         frame, and a tile 800 to 1,660 px above it, the layer's release a frame or two behind, was named as a leak: the same failure, in Hot Box and Steel Chair alike, on main as on the branch). */
+      let last = 0, spent = 0;
       const tick = (t: number) => {
-        t0 ||= t;
+        spent += Math.min(last === 0 ? 0 : t - last, maxStep);
+        last = t;
         out.push({ t, ...(window as unknown as { __kbSample: PageSample }).__kbSample() });
-        const p = Math.min(1, (t - t0) / ms);
+        const p = Math.min(1, spent / ms);
         window.scrollTo(0, from + p * (to - from));
         if (p < 1) { requestAnimationFrame(tick); return; }
         done({ samples: out, work: kb.work(kb.frames() - f0), post: bottom - top, from, to });
       };
       requestAnimationFrame(tick);
     });
-  }, { ms: SCROLL_MS, margin: SCROLL_MARGIN });
+  }, { ms: SCROLL_MS, margin: SCROLL_MARGIN, maxStep: MAX_STEP_MS });
   return run;
 }
 

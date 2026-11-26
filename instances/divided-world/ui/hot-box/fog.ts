@@ -156,12 +156,36 @@ export interface FogField {
    * rest, after an `ease` step (carried texture only), and when a step returns early.
    */
   busy: boolean;
+  /**
+   * A fog that is made (`emptyField`) says what a row it newly stores, or that leaves the view, holds: the model's density at a point (px), kept current by the caller. Resting fog (1) where
+   * not given, as for every Hot Box field.
+   */
+  seed?: (x: number, y: number) => number;
 }
 
 /** A field at rest. It holds no array until it is disturbed. */
 export function makeField(width: number, height: number, cell: number = FOG.cell): FogField {
   const w = Number.isFinite(width) ? Math.max(0, width) : 0, h = Number.isFinite(height) ? Math.max(0, height) : 0;
   return { width: w, height: h, cell, gw: Math.ceil(w / cell) + 1 + 2 * PAD, gh: Math.ceil(h / cell) + 1 + 2 * PAD, box: null, store: null, quiet: false, busy: false };
+}
+
+/**
+ * A field with no fog in it (density 0 in the cells it stores), its box disturbed: a fog that is made, not one that is thinned. Steel Chair's puff starts from it
+ * (docs/plans/2026-11-23-steel-chair-objects-design.md, section 4) and fills it from the spout; a step with `whole` keeps the box stepped while it fills. Only the rows of `view`
+ * (px of the box; all of it when not given) are stored, as a step with a `view` stores only those, so a tall post costs what is drawn; a row outside them is resting fog, as ever, and
+ * is stepped, and driven to the model, when its tile is held. `seed` gives each stored cell its density (at the cell's center, px) instead of none, for a field made again in the middle of a puff.
+ */
+export function emptyField(width: number, height: number, cell: number = FOG.cell, o: { readonly view?: { readonly top: number; readonly bottom: number }; readonly seed?: (x: number, y: number) => number } = {}): FogField {
+  const field = makeField(width, height, cell);
+  const rows = o.view ? rowsOf(field, o.view.top, o.view.bottom) : { y0: 0, y1: field.gh };
+  const y0 = Math.max(1, rows.y0), y1 = Math.min(field.gh - 1, rows.y1);
+  if (y1 <= y0 || field.gw - 1 <= 1) return field;
+  field.box = { x0: 1, x1: field.gw - 1, y0, y1 };
+  if (o.seed) field.seed = o.seed;
+  const s = storeFor(field, y0 - 1, y1 + 1);
+  s.D.fill(0);
+  if (o.seed) for (let y = 0; y < s.rows; y++) for (let x = 0; x < field.gw; x++) s.D[y * field.gw + x] = o.seed((x - PAD + 0.5) * cell, (y + s.y0 - PAD + 0.5) * cell);
+  return field;
 }
 
 /** The grid rows that cover the box's px rows `top` to `bottom`, with a row over at each end so a scaled picture has a neighbor to blend with. */
@@ -190,6 +214,7 @@ function storeFor(field: FogField, r0: number, r1: number): FogStore {
   const y0 = Math.max(0, r0 - FOG.margin), y1 = Math.min(gh, r1 + FOG.margin), rows = y1 - y0, n = rows * gw;
   const f = () => new Float32Array(n);
   const next: FogStore = { y0, rows, D: f().fill(1), U: f(), V: f(), OX: f(), OY: f(), D0: f(), U0: f(), V0: f(), OX0: f(), OY0: f(), P: f(), DIV: f() };
+  if (field.seed) seedRows(field, next, y0, y1);
   if (old) {
     const a = Math.max(y0, old.y0), b = Math.min(y1, old.y0 + old.rows);
     if (b > a) {
@@ -203,6 +228,14 @@ function storeFor(field: FogField, r0: number, r1: number): FogStore {
   }
   field.store = next;
   return next;
+}
+
+/** Rows `r0` up to `r1` of the store hold the field's seed (a made fog's model), at their cells' centers. */
+function seedRows(field: FogField, s: FogStore, r0: number, r1: number): void {
+  const seed = field.seed;
+  if (!seed) return;
+  const a = Math.max(r0, s.y0), b = Math.min(r1, s.y0 + s.rows);
+  for (let y = a; y < b; y++) for (let x = 0; x < field.gw; x++) s.D[(y - s.y0) * field.gw + x] = seed((x - PAD + 0.5) * field.cell, (y - PAD + 0.5) * field.cell);
 }
 
 /** Rows `r0` up to `r1` of the store are resting fog again. */
@@ -271,6 +304,15 @@ export interface FogInput {
   readonly target: (x: number, y: number) => number;
   /** Rounds of the pressure solve; `FOG.rounds` when not given. */
   readonly rounds?: number;
+  /**
+   * The model reaches every cell of the box, not only those a clearing or the trail reaches (a puff's target is the whole box's): the whole box (the view's rows) is stepped, and
+   * `target` is asked of every cell in it. Without this a cell outside every clearing's reach is whole fog to the model and is not asked.
+   */
+  readonly whole?: boolean;
+  /** How long a thinned cell takes to fill back in, ms; `SMOKE.wake` when not given. A puff fills fast inside its front. */
+  readonly fill?: number;
+  /** A jet: fog pushed outward from a point (px) at `speed` (px a second, falling to nothing at `reach` px), a burst's way (a part of the pressure's correction is kept). */
+  readonly jet?: { readonly x: number; readonly y: number; readonly speed: number; readonly reach: number };
   /** The part of the box that is drawn (px rows): nothing outside it is stepped or stored. All of it when not given. */
   readonly view?: { readonly top: number; readonly bottom: number };
 }
@@ -289,7 +331,7 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   const real = (p: { readonly x: number; readonly y: number }): boolean => Number.isFinite(p.x) && Number.isFinite(p.y);
   const clearings = !Number.isFinite(R) ? [] : input.clearings.every(real) ? input.clearings : input.clearings.filter(real);
   const trail = !Number.isFinite(R) ? [] : input.trail.every(real) ? input.trail : input.trail.filter(real);
-  const modeled = clearings.length > 0 || trail.length > 0;
+  const modeled = clearings.length > 0 || trail.length > 0 || input.whole === true;
   const prev = field.box;
   field.busy = false;
   if (!prev && !modeled) return 0;
@@ -306,11 +348,15 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     x0 = Math.min(x0, Math.floor(cx - rr)); x1 = Math.max(x1, Math.ceil(cx + rr)); y0 = Math.min(y0, Math.floor(cy - rr)); y1 = Math.max(y1, Math.ceil(cy + rr));
   }
+  if (input.whole) { x0 = 0; x1 = gw; y0 = 0; y1 = gh; }
   const seen = input.view ? rowsOf(field, input.view.top, input.view.bottom) : { y0: 0, y1: gh };
   const B: CellBox = { x0: Math.max(1, x0), x1: Math.min(gw - 1, x1), y0: Math.max(1, seen.y0, y0), y1: Math.min(gh - 1, seen.y1, y1) };
   if (B.x1 <= B.x0 || B.y1 <= B.y0) { field.box = null; field.store = null; field.quiet = false; return 0; }
   /* Rows of the last box that this one leaves (they went out of view) are at rest when they are seen again. */
-  if (prev && field.store) { restRows(field.store, gw, prev.y0, B.y0); restRows(field.store, gw, B.y1, prev.y1); }
+  if (prev && field.store) {
+    restRows(field.store, gw, prev.y0, B.y0); restRows(field.store, gw, B.y1, prev.y1);
+    if (field.seed) { seedRows(field, field.store, prev.y0, B.y0); seedRows(field, field.store, B.y1, prev.y1); }
+  }
   const s = storeFor(field, B.y0 - 1, B.y1 + 1);
   const top = s.y0, { D, U, V, OX, OY, D0, U0, V0, OX0, OY0 } = s;
 
@@ -330,6 +376,17 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
       if (burst && d > 0.01) { const push = (w * FOG.burst.push) / cell * dt; U[i]! += (dx / d) * push; V[i]! += (dy / d) * push; }
     }
   }
+  const jet = input.jet;
+  if (jet && Number.isFinite(jet.x) && Number.isFinite(jet.y) && jet.reach > 0) {
+    const jx = jet.x / cell + PAD, jy = jet.y / cell + PAD, rj = jet.reach / cell, k = (jet.speed / cell) * dt;
+    for (let y = B.y0; y < B.y1; y++) for (let x = B.x0; x < B.x1; x++) {
+      const dx = x - jx, dy = y - jy, d = Math.sqrt(dx * dx + dy * dy);
+      if (d < 0.01 || d > rj) continue;
+      const w = (1 - d / rj) ** 2, i = (y - top) * gw + x;
+      U[i]! += (dx / d) * w * k; V[i]! += (dy / d) * w * k;
+    }
+    bursting = true;
+  }
   project(field, B, input.rounds ?? FOG.rounds, bursting ? FOG.burst.keep : 1);
   U0.set(U); V0.set(V); D0.set(D); OX0.set(OX); OY0.set(OY);
   /* The density as the step began, kept in `P`: the pressure solve is done with it, and the next step's `project` clears every cell of it that it reads before it reads it. */
@@ -337,10 +394,10 @@ export function stepField(field: FogField, dtMs: number, input: FogInput): numbe
   advect(s, gw, U, U0, dt, B, 0, cell); advect(s, gw, V, V0, dt, B, 0, cell); advect(s, gw, D, D0, dt, B, 0, cell); advect(s, gw, OX, OX0, dt, B, 1, cell); advect(s, gw, OY, OY0, dt, B, 2, cell);
 
   const damp = Math.exp(-dt / (FOG.damp / 1000)), settle = Math.exp(-dt / (FOG.settle / 1000)), sink = 1 - Math.exp(-dt / (FOG.sink / 1000));
-  const back = dt / (SMOKE.wake / 1000);
+  const back = dt / ((input.fill !== undefined && input.fill > 0 ? input.fill : SMOKE.wake) / 1000);
   D0.set(D);
   /* The cells the model can reach: it is asked about no other, and they are whole fog to it. */
-  let mx0 = gw, mx1 = 0, my0 = gh, my1 = 0;
+  let mx0 = input.whole ? 0 : gw, mx1 = input.whole ? gw : 0, my0 = input.whole ? 0 : gh, my1 = input.whole ? gh : 0;
   for (const p of [...clearings, ...trail]) {
     const cx = p.x / cell + PAD, cy = p.y / cell + PAD;
     mx0 = Math.min(mx0, Math.floor(cx - rr) - 1); mx1 = Math.max(mx1, Math.ceil(cx + rr) + 1); my0 = Math.min(my0, Math.floor(cy - rr) - 1); my1 = Math.max(my1, Math.ceil(cy + rr) + 1);
