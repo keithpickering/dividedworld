@@ -199,7 +199,7 @@ test('no bank question leaves the visit pending and says so on the record; a dat
   assert.equal(d.count('write_visit_quiz'), 0);
   assert.equal(out.quizzes[0]!.status, 'left');
   assert.match(d.records[0]!.record.why, /no bank question/);
-  const e = fakeDb({ pending: [pend(V1, P1), pend(V2, P2)], failOn: { bank_quiz_for: 'always' } });
+  const e = fakeDb({ enabled: false, pending: [pend(V1, P1), pend(V2, P2)], failOn: { bank_quiz_for: 'always' } });
   const bad = await run(e, fakeModels());
   assert.deepEqual(bad.quizzes.map((q) => q.status), ['left', 'left']);
 });

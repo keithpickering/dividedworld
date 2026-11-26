@@ -103,9 +103,16 @@ export async function runQuizzes(db: Db, models: Models, instance: Instance, slo
     else if (used >= most) why = 'the day\'s quizQuestionsPerDay is spent';
 
     if (!why && persona) {
-      const heard = await judgedRead(db, settings, v.thread, v.staff, v.post_act, readContext(tuned, clock()));
-      const post = heard.read.posts.find((p) => p.marks.answering);
-      if (!post) why = 'the post inspected cannot be read';
+      let heard: Awaited<ReturnType<typeof judgedRead>> | null = null;
+      try {
+        heard = await judgedRead(db, settings, v.thread, v.staff, v.post_act, readContext(tuned, clock()));
+      } catch (e) {
+        if (stopsTheRun(e) || !(e instanceof DatabaseError)) throw e;
+        why = `the read failed: ${said(e)}`;
+      }
+      const post = heard?.read.posts.find((p) => p.marks.answering);
+      if (!heard) { /* the bank row, with the read's failure on the record */ }
+      else if (!post) why = 'the post inspected cannot be read';
       else {
         const brief = persona.weakness.kind === 'quiz' ? persona.weakness.quizBrief ?? null : null;
         const frame = quizPrompt({
