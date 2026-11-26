@@ -5,6 +5,7 @@ says what it is not for:
 
 - `design-session/`: designs one thing with the owner and ends in a committed design and plan.
 - `build-session/`: carries out one plan, reviews it, and owns its PR until the owner merges it.
+- `gabes-voice/`: read before writing or changing any word Divided World's developer persona speaks.
 
 The roles are carried from currents (`docs/plans/port-manifest.md`), at the kit's first stage: the owner starts every
 session and merges. A coordinating session, the cockpit, comes when several build sessions are in flight at once.
